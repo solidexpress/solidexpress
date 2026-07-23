@@ -29,6 +29,8 @@ func _init() -> void:
 	test_hidden_survives_refresh(main)
 	test_select_in_rect(main)
 	test_box_select_drag(main)
+	test_box_select_crossing_drag(main)
+	test_select_similar(main)
 
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -117,33 +119,46 @@ func test_hidden_survives_refresh(main) -> void:
 
 
 func test_select_in_rect(main) -> void:
-	print("- select_in_rect")
+	print("- select_in_rect (window vs crossing)")
 	var view: DocumentView = main.view
 	view.new_document()
 	var a: String = view.insert_primitive("box", Vector3.ZERO)
 	var b: String = view.insert_primitive("box", Vector3(100, 0, 0))
 	view.clear_selection()
 
-	var sa := _screen_of(main, a)
-	var sb := _screen_of(main, b)
-	var both := Rect2(sa, sb - sa).abs().grow(8.0)
-	view.select_in_rect(both, main.camera, main.model_space, false)
-	check(view.selected_bodies.has(a) and view.selected_bodies.has(b), "rect covers both centers")
+	var aa := view.body_screen_aabb(a, main.camera, main.model_space)
+	var ab := view.body_screen_aabb(b, main.camera, main.model_space)
+	check(aa.size != Vector2.ZERO and ab.size != Vector2.ZERO, "screen AABBs present")
+	var both := aa.merge(ab).grow(8.0)
+	view.select_in_rect(both, main.camera, main.model_space, false, false)
+	check(view.selected_bodies.has(a) and view.selected_bodies.has(b), "window encloses both")
 	check(view.selection_size() == 2, "selection size 2")
 
-	var only_a := Rect2(sa - Vector2(4, 4), Vector2(8, 8))
-	view.select_in_rect(only_a, main.camera, main.model_space, false)
-	check(view.selected_bodies.has(a) and not view.selected_bodies.has(b), "rect covers only A")
+	# Tiny window around A's center: does not fully enclose A → empty.
+	var sa := _screen_of(main, a)
+	var tiny := Rect2(sa - Vector2(4, 4), Vector2(8, 8))
+	view.select_in_rect(tiny, main.camera, main.model_space, false, false)
+	check(view.selection_size() == 0, "window tiny rect selects nothing")
+
+	# Same tiny rect as crossing: intersects A only.
+	view.select_in_rect(tiny, main.camera, main.model_space, false, true)
+	check(view.selected_bodies.has(a) and not view.selected_bodies.has(b), "crossing tiny hits A only")
 	check(view.selected_body == a, "primary is A")
 
+	# Crossing rect that only clips B's AABB (not fully enclosing) should still get B.
+	var clip_b := Rect2(ab.position + ab.size * 0.25, ab.size * 0.2)
 	view.select_entity(a, "")
-	var only_b := Rect2(sb - Vector2(4, 4), Vector2(8, 8))
-	view.select_in_rect(only_b, main.camera, main.model_space, true)
-	check(view.selected_bodies.has(a) and view.selected_bodies.has(b), "additive rect unions B")
+	view.select_in_rect(clip_b, main.camera, main.model_space, true, true)
+	check(view.selected_bodies.has(a) and view.selected_bodies.has(b), "additive crossing unions B")
+
+	# Window must fully enclose A — use A's AABB grown slightly.
+	view.clear_selection()
+	view.select_in_rect(aa.grow(2.0), main.camera, main.model_space, false, false)
+	check(view.selected_bodies.has(a) and not view.selected_bodies.has(b), "window encloses only A")
 
 
 func test_box_select_drag(main) -> void:
-	print("- box select via _gui_input drag")
+	print("- Shift+left window box via _gui_input drag")
 	var view: DocumentView = main.view
 	var vi: ViewportInteraction = main.interaction
 	view.new_document()
@@ -151,9 +166,9 @@ func test_box_select_drag(main) -> void:
 	var b: String = view.insert_primitive("box", Vector3(100, 0, 0))
 	view.clear_selection()
 
-	var sa := _screen_of(main, a)
-	var sb := _screen_of(main, b)
-	var band := Rect2(sa, sb - sa).abs().grow(12.0)
+	var aa := view.body_screen_aabb(a, main.camera, main.model_space)
+	var ab := view.body_screen_aabb(b, main.camera, main.model_space)
+	var band := aa.merge(ab).grow(16.0)
 	# Start in empty screen space near the band corner, then drag across.
 	var start := band.position - Vector2(20, 20)
 	var ray := vi._model_ray(start)
@@ -163,7 +178,7 @@ func test_box_select_drag(main) -> void:
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
-	press.ctrl_pressed = true
+	press.shift_pressed = true
 	press.position = start
 	vi._gui_input(press)
 
@@ -174,15 +189,74 @@ func test_box_select_drag(main) -> void:
 		mm.position = start.lerp(end, t)
 		vi._gui_input(mm)
 	check(vi._drag_mode == ViewportInteraction.DragMode.BOX_SELECT, "drag armed BOX_SELECT")
+	check(not vi._box_crossing, "left-drag is window (exclusive)")
 	check(vi._box_rect.size.length() > 0.0, "rubber-band rect has size")
 
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
-	release.ctrl_pressed = true
+	release.shift_pressed = true
 	release.position = end
 	vi._gui_input(release)
 
 	check(view.selected_bodies.has(a) and view.selected_bodies.has(b),
-		"band select picked both (got %d)" % view.selection_size())
+		"window band selected both (got %d)" % view.selection_size())
 	check(vi._drag_mode == ViewportInteraction.DragMode.NONE, "drag mode cleared on release")
+
+
+func test_box_select_crossing_drag(main) -> void:
+	print("- Shift+right crossing box via _gui_input drag")
+	var view: DocumentView = main.view
+	var vi: ViewportInteraction = main.interaction
+	view.new_document()
+	var a: String = view.insert_primitive("box", Vector3.ZERO)
+	var b: String = view.insert_primitive("box", Vector3(100, 0, 0))
+	view.clear_selection()
+
+	var aa := view.body_screen_aabb(a, main.camera, main.model_space)
+	var ab := view.body_screen_aabb(b, main.camera, main.model_space)
+	# Band that only partially covers each AABB (crossing should still hit both).
+	var mid := (aa.get_center() + ab.get_center()) * 0.5
+	var start := mid - Vector2(30, 10)
+	var end := mid + Vector2(30, 10)
+	var ray := vi._model_ray(start)
+	check(view.pick_info(ray[0], ray[1]).is_empty(), "crossing drag starts empty")
+
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_RIGHT
+	press.pressed = true
+	press.shift_pressed = true
+	press.position = start
+	vi._gui_input(press)
+
+	for t in [0.35, 0.7, 1.0]:
+		var mm := InputEventMouseMotion.new()
+		mm.position = start.lerp(end, t)
+		vi._gui_input(mm)
+	check(vi._drag_mode == ViewportInteraction.DragMode.BOX_SELECT, "right-drag armed BOX_SELECT")
+	check(vi._box_crossing, "right-drag is crossing (inclusive)")
+
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_RIGHT
+	release.pressed = false
+	release.shift_pressed = true
+	release.position = end
+	vi._gui_input(release)
+
+	check(view.selected_bodies.has(a) and view.selected_bodies.has(b),
+		"crossing band selected both (got %d)" % view.selection_size())
+	check(vi._drag_mode == ViewportInteraction.DragMode.NONE, "crossing drag cleared")
+
+
+func test_select_similar(main) -> void:
+	print("- select_similar")
+	var view: DocumentView = main.view
+	view.new_document()
+	var a: String = view.insert_primitive("box", Vector3.ZERO)
+	var b: String = view.insert_primitive("box", Vector3(80, 0, 0))
+	var c: String = view.insert_primitive("cylinder", Vector3(160, 0, 0))
+	view.select_entity(a, "")
+	var added := view.select_similar()
+	check(added == 1, "similar added one other box")
+	check(view.selected_bodies.has(a) and view.selected_bodies.has(b), "both boxes selected")
+	check(not view.selected_bodies.has(c), "cylinder not selected")

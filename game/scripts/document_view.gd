@@ -874,19 +874,23 @@ func pick_info(origin: Vector3, direction: Vector3) -> Dictionary:
 	return _pick_visible(origin, direction)
 
 
-## Select every visible body whose center unprojects inside `rect` (screen space).
+## Select every visible body whose screen AABB matches `rect`.
+## `crossing=false` (window): AABB must be fully inside the rect.
+## `crossing=true`: AABB intersects the rect (partial capture counts).
 ## With `additive` false, replaces the selection; with true, unions into
 ## `selected_bodies`. Primary selection syncs to the last body in the set.
-func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D, additive := false) -> void:
+func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D,
+		additive := false, crossing := false) -> void:
+	var band := rect.abs()
 	var hits: Array[String] = []
 	for id in _body_nodes:
 		if hidden_bodies.has(id):
 			continue
-		var world: Vector3 = model_space.to_global(body_center(id))
-		if camera.is_position_behind(world):
+		var scr: Rect2 = body_screen_aabb(id, camera, model_space)
+		if scr.size == Vector2.ZERO:
 			continue
-		var screen: Vector2 = camera.unproject_position(world)
-		if rect.has_point(screen):
+		var ok := band.encloses(scr) if not crossing else band.intersects(scr)
+		if ok:
 			hits.append(id)
 	if not additive:
 		selected_bodies.assign(hits)
@@ -900,6 +904,74 @@ func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D, additive
 	_apply_selection_materials()
 	_highlight_edge()
 	selection_changed.emit(selected_body, selected_face)
+
+
+## Axis-aligned screen rect covering the body's mesh AABB, or zero-size if behind.
+## `model_space` is unused (kept for call-site symmetry with pad picks).
+func body_screen_aabb(body_id: String, camera: Camera3D, _model_space: Node3D = null) -> Rect2:
+	var node: MeshInstance3D = _body_nodes.get(body_id)
+	if node == null or node.mesh == null or camera == null:
+		return Rect2()
+	var aabb := node.get_aabb()
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	var any := false
+	for i in range(8):
+		var world: Vector3 = node.to_global(aabb.get_endpoint(i))
+		if camera.is_position_behind(world):
+			continue
+		var s: Vector2 = camera.unproject_position(world)
+		mn = mn.min(s)
+		mx = mx.max(s)
+		any = true
+	if not any:
+		return Rect2()
+	return Rect2(mn, mx - mn)
+
+
+## Feature similarity key for Select Similar (primitive kind or feature type).
+func body_similarity_key(body_id: String) -> String:
+	var info := feature_info(body_id)
+	if info.is_empty():
+		return ""
+	var t := str(info.get("type", ""))
+	if t == "primitive":
+		return "primitive:%s" % str(feature_params(body_id).get("kind", ""))
+	return t
+
+
+## Expand selection to every visible body sharing a similarity key with the
+## current selection (or primary body). Returns how many bodies were added.
+func select_similar() -> int:
+	var seeds: Array[String] = []
+	for b in selected_bodies:
+		seeds.append(b)
+	if seeds.is_empty() and selected_body != "":
+		seeds.append(selected_body)
+	if seeds.is_empty():
+		return 0
+	var keys := {}
+	for b in seeds:
+		var k := body_similarity_key(b)
+		if k != "":
+			keys[k] = true
+	if keys.is_empty():
+		return 0
+	var added := 0
+	for id in _body_nodes:
+		if hidden_bodies.has(id) or selected_bodies.has(id):
+			continue
+		if keys.has(body_similarity_key(id)):
+			selected_bodies.append(id)
+			added += 1
+	if added > 0:
+		selected_faces.clear()
+		selected_edges.clear()
+		_sync_primary_from_sets()
+		_apply_selection_materials()
+		_highlight_edge()
+		selection_changed.emit(selected_body, selected_face)
+	return added
 
 
 # --- visibility (hide / isolate) ---

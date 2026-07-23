@@ -34,6 +34,7 @@ func _init() -> void:
 	test_zero_viewport_guard()
 	test_scroll_gestures_gated(cam)
 	test_nav_presets_and_fit(cam)
+	await test_zoom_extents_and_zoom_out_recenter()
 
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -251,3 +252,53 @@ func test_nav_presets_and_fit(cam: OrbitCamera) -> void:
 
 	# frame_selection returns false without a selection/view.
 	check(not cam.frame_selection(), "frame_selection false without selection")
+
+
+func test_zoom_extents_and_zoom_out_recenter() -> void:
+	print("- zoom extents centers look + frustum-fits; zoom-out recenters")
+	var main_script: GDScript = load("res://scripts/main.gd") as GDScript
+	var main: Node = main_script.new()
+	root.add_child(main)
+	await process_frame
+	await process_frame
+	var cam: OrbitCamera = main.camera
+	var view: DocumentView = main.view
+	view.new_document()
+	var body: String = view.insert_primitive("box", Vector3(50, 0, 0))
+	check(body != "", "inserted box for framing")
+	await process_frame
+
+	cam.yaw = deg_to_rad(-35.0)
+	cam.pitch = deg_to_rad(40.0)
+	cam.distance = 2000.0
+	cam.pivot = Vector3(500, 200, -300)
+	cam._look_at_content = false
+	cam._update_transform()
+
+	cam.frame_contents()
+	check(cam._look_at_content, "frame_contents enables centered look-at")
+	check(cam.pivot.distance_to(Vector3(50, 0, 0)) < 30.0,
+		"frame_contents recenters pivot near body (got %s)" % cam.pivot)
+	check(cam.distance < 500.0, "frame_contents pulls distance in (got %.1f)" % cam.distance)
+
+	# Pivot should project near viewport center when look-at-content is on.
+	var pivot_screen: Vector2 = cam.unproject_position(cam.pivot)
+	var center := Vector2(root.size) * 0.5
+	check(pivot_screen.distance_to(center) < 40.0,
+		"framed pivot near screen center (got %s vs %s)" % [pivot_screen, center])
+
+	# Drift pivot off-model, zoom out repeatedly — soft recenter should pull back.
+	cam.pivot = Vector3(800, 0, 0)
+	cam.distance = cam._fit_distance_for_world_aabb(cam._visible_contents_aabb()) * 3.0
+	cam._update_transform()
+	var dist_to_body_before := cam.pivot.distance_to(Vector3(50, 0, 0))
+	for i in 12:
+		cam.zoom_at(Vector2(root.size.x * 0.9, root.size.y * 0.1), 1.12)
+	check(cam.pivot.distance_to(Vector3(50, 0, 0)) < dist_to_body_before,
+		"zoom-out nudges pivot toward content")
+	var fit_d := cam._fit_distance_for_world_aabb(cam._visible_contents_aabb())
+	check(cam.distance <= fit_d * OrbitCamera.ZOOM_OUT_MAX_FIT_MULT + 1.0,
+		"zoom-out soft-capped relative to fit distance")
+
+	main.queue_free()
+	await process_frame

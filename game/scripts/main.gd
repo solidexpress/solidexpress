@@ -458,8 +458,8 @@ func _build_ui() -> void:
 		_on_status("Framed selection" if view.selected_body != "" else "Framed all"))
 	view_hud.save_view_requested.connect(_on_save_named_view)
 	view_hud.view_restore_requested.connect(func(view_name: String) -> void:
-		if camera.restore_named_view(view_name):
-			_on_status("Restored view “%s”" % view_name)
+		if camera.restore_named_view(view_name, true):
+			_on_status("Restored view “%s” (orientation + zoom)" % view_name)
 		else:
 			_on_status("No saved view “%s”" % view_name))
 	view_hud.view_delete_requested.connect(func(view_name: String) -> void:
@@ -612,6 +612,7 @@ func _build_ui() -> void:
 	interaction.sketch_requested.connect(_request_sketch)
 	interaction.sketch_host_picked.connect(_on_sketch_host_picked)
 	interaction.sketch_pad_clicked.connect(_on_sketch_pad_clicked)
+	interaction.sketch_pads_box_selected.connect(_on_sketch_pads_box_selected)
 	interaction.paste_special_requested.connect(edit_paste_special)
 	_update_panel_visibility()
 	interaction.status.connect(_on_status)
@@ -627,18 +628,19 @@ func _build_ui() -> void:
 
 func _on_default_view(view_id: String) -> void:
 	# Immediate apply (no tween) so UI / tests see the pose right away.
+	# Standard views also zoom-extents so orientation + zoom land together.
 	match view_id:
 		"front":
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(0.0), false)
+			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0), false)
 			_on_status("Front view")
 		"right":
-			camera.set_view(deg_to_rad(90.0), deg_to_rad(0.0), false)
+			camera.apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0), false)
 			_on_status("Right view")
 		"top":
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(89.0), false)
+			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0), false)
 			_on_status("Top view")
 		"iso":
-			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
+			camera.apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
 			_on_status("Isometric view")
 		_:
 			_on_status("Unknown view “%s”" % view_id)
@@ -650,7 +652,7 @@ func _on_save_named_view(view_name: String) -> void:
 		return
 	camera.save_named_view(view_name)
 	view_hud.sync_named_views(camera.named_view_list())
-	_on_status("Saved view “%s” — pick it under Views to restore" % view_name)
+	_on_status("Saved view “%s” (orientation + zoom) — pick it under Views to restore" % view_name)
 
 
 func _on_sketch_solve(dofs: int, solve_status: String, conflicts: int) -> void:
@@ -750,15 +752,16 @@ func _on_sketch_host_picked(kind: String, face_id: String, body_id: String, pad_
 func _on_sketch_pad_clicked(fid: String, additive: bool = false) -> void:
 	if sketch_mode.active:
 		return
-	# Ctrl/Cmd+click accumulates pads for Merge sketches… (SW 3D-sketch substitute).
-	var multi := additive or Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META)
+	# Ctrl/Cmd/Shift+click accumulates pads for Merge / Loft workflows.
+	var multi := additive or Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META) \
+			or Input.is_key_pressed(KEY_SHIFT)
 	if multi:
 		if fid in selected_sketch_pads:
 			selected_sketch_pads.erase(fid)
 		else:
 			selected_sketch_pads.append(fid)
 		_refresh_merge_chrome()
-		_on_status("%d sketch pad(s) selected — Merge sketches…" % selected_sketch_pads.size())
+		_on_status("%d sketch pad(s) selected — Merge / Loft…" % selected_sketch_pads.size())
 		return
 	selected_sketch_pads.clear()
 	if sketch_chrome != null:
@@ -766,6 +769,23 @@ func _on_sketch_pad_clicked(fid: String, additive: bool = false) -> void:
 	if sketch_mode.begin_edit(fid):
 		_on_sketch_session_started("Editing sketch")
 		view.refresh_sketch_pads(sketch_mode.editing_fid)
+
+
+## Rubber-band box result for yellow pads (Shift+left window / Shift+right crossing).
+func _on_sketch_pads_box_selected(fids: Array, additive: bool = false) -> void:
+	if sketch_mode.active:
+		return
+	if not additive:
+		selected_sketch_pads.clear()
+	for fid in fids:
+		var id := str(fid)
+		if id == "" or id in selected_sketch_pads:
+			continue
+		selected_sketch_pads.append(id)
+	_refresh_merge_chrome()
+	if selected_sketch_pads.is_empty():
+		return
+	_on_status("%d sketch pad(s) selected — Merge / Loft…" % selected_sketch_pads.size())
 
 
 func _refresh_merge_chrome() -> void:

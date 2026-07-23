@@ -296,25 +296,25 @@ func _do_view(intent: Dictionary) -> void:
 	var verb: String = intent["verb"]
 	match verb:
 		"front":
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(0.0), true)
+			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0), true)
 			status.emit("Front view")
 		"right":
-			camera.set_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
+			camera.apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
 			status.emit("Right view")
 		"left":
-			camera.set_view(deg_to_rad(-90.0), deg_to_rad(0.0), true)
+			camera.apply_standard_view(deg_to_rad(-90.0), deg_to_rad(0.0), true)
 			status.emit("Left view")
 		"top":
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
+			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
 			status.emit("Top view")
 		"bottom":
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(-89.0), true)
+			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(-89.0), true)
 			status.emit("Bottom view")
 		"back":
-			camera.set_view(deg_to_rad(180.0), deg_to_rad(0.0), true)
+			camera.apply_standard_view(deg_to_rad(180.0), deg_to_rad(0.0), true)
 			status.emit("Back view")
 		"iso":
-			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
+			camera.apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
 			status.emit("Isometric view")
 		"zoom_fit":
 			camera.frame_contents()

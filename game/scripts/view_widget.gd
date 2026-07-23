@@ -62,8 +62,7 @@ func click_zone(zone: String) -> void:
 	if camera.sketch_orientation_locked:
 		return
 	var angles: Vector2 = angles_for(zone)
-	var duration := 0.0 if snap else 0.25
-	camera.animate_to(angles.x, angles.y, duration)
+	camera.apply_standard_view(angles.x, angles.y, not snap)
 
 
 func has_zone(zone: String) -> bool:

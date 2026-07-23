@@ -455,7 +455,8 @@ func test_view_hud(main) -> void:
 	cam._update_transform()
 	check(not is_equal_approx(cam.yaw, saved_yaw), "camera moved away from saved pose")
 	hud.view_restore_requested.emit("Side")
-	await process_frame
+	# Restore animates orientation + zoom (~0.25s).
+	await create_timer(0.35).timeout
 	check(is_equal_approx(cam.yaw, saved_yaw), "restore returns yaw")
 	check(is_equal_approx(cam.pitch, saved_pitch), "restore returns pitch")
 	check(is_equal_approx(cam.distance, saved_dist), "restore returns distance")

@@ -4,7 +4,9 @@ extends Camera3D
 ## SolidExpress). Two-finger orbits; middle / 3-finger grip pans under SX;
 ## Alt / empty-drag navigate; wheel zooms toward the cursor. Wheel / pan over
 ## ScrollContainers are left alone.
-## F frames selection (or all); Shift+F / double-middle-click fit all / selection.
+## F / Frame = zoom extents (center + frustum-fit selection or all); Shift+F /
+## double-middle fit all. Zoom-out past ~fit distance gently recenters on
+## content so cursor-anchored zoom cannot strand the pivot in empty space.
 ## 1/2/3/7 standard views; 5 toggles ortho. Named views in user://views.cfg.
 
 ## Fired after yaw/pitch/distance/pivot/projection update the camera transform.
@@ -30,7 +32,15 @@ const MIN_DISTANCE := 1.0
 const MAX_DISTANCE := 20000.0
 ## Fraction of half-frustum height to aim above the orbit pivot so the axis
 ## origin sits near the bottom of the screen (0 = centered, 1 ≈ bottom edge).
+## Disabled while framing content (`_look_at_content`) so zoom-extents faces
+## the objects dead-center — the usual CAD “fit” expectation.
 const VIEW_PIVOT_Y_BIAS := 0.72
+## Padding applied when frustum-fitting an AABB (CAD zoom-extents margin).
+const FRAME_PADDING := 1.2
+## Zoom-out past this multiple of fit-distance starts pulling the pivot back.
+const ZOOM_OUT_RECENTER_START := 1.5
+## Soft cap on how far past fit-distance a wheel zoom-out may go.
+const ZOOM_OUT_MAX_FIT_MULT := 10.0
 const ORBIT_SPEED := 0.008
 ## Two-finger pan sensitivity. Higher so a short trackpad swipe actually turns.
 const PAN_GESTURE_SCALE := 0.045
@@ -55,6 +65,9 @@ var sketch_orientation_locked := false
 var _sketch_view_up := Vector3.UP
 ## In-memory pose captured before entering sketch view (not persisted).
 var _sketch_pose: Dictionary = {}
+## After zoom-extents / look-at, look directly at the pivot (no empty-scene
+## Y bias) so framed objects stay centered on screen.
+var _look_at_content := false
 
 
 func _ready() -> void:
@@ -231,24 +244,16 @@ func handle_input(event: InputEvent, allow_scroll_gestures := true) -> bool:
 				frame_selection_or_all(k.shift_pressed)
 				return true
 			KEY_1:  # front: looking along -Y in model space (Z-up kernel)
-				if sketch_orientation_locked:
-					return true
-				set_view(deg_to_rad(0.0), deg_to_rad(0.0))
+				apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0))
 				return true
 			KEY_2:  # right: looking along -X
-				if sketch_orientation_locked:
-					return true
-				set_view(deg_to_rad(90.0), deg_to_rad(0.0))
+				apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0))
 				return true
 			KEY_3:  # top: looking down model +Z (world +Y)
-				if sketch_orientation_locked:
-					return true
-				set_view(deg_to_rad(0.0), deg_to_rad(89.0))
+				apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0))
 				return true
 			KEY_7:  # isometric
-				if sketch_orientation_locked:
-					return true
-				set_view(deg_to_rad(-35.0), deg_to_rad(40.0))
+				apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0))
 				return true
 			KEY_5:
 				if sketch_orientation_locked:
@@ -278,6 +283,8 @@ func _want_alt_pan(shift_held: bool) -> bool:
 ## approximately fixed: intersect the cursor ray with the plane through the
 ## pivot perpendicular to the view axis, then shift the pivot by (1 - factor)
 ## of that pivot→anchor vector (in-plane).
+## Zoom-out past ~fit distance gently pulls the pivot toward visible content
+## so a stray cursor-anchored zoom cannot leave the scene off-screen.
 func zoom_at(screen_pos: Vector2, factor: float) -> void:
 	var anchor := _zoom_anchor(screen_pos)
 	var basis := global_transform.basis if is_inside_tree() else transform.basis
@@ -287,6 +294,8 @@ func zoom_at(screen_pos: Vector2, factor: float) -> void:
 	var plane_delta := to_anchor - forward * to_anchor.dot(forward)
 	distance = clampf(distance * factor, MIN_DISTANCE, MAX_DISTANCE)
 	pivot += (1.0 - factor) * plane_delta
+	if factor > 1.0:
+		_nudge_pivot_on_zoom_out(factor)
 	_update_transform()
 
 
@@ -327,6 +336,24 @@ func set_view(new_yaw: float, new_pitch: float, animated := false) -> void:
 	_update_transform()
 
 
+## Standard view (Front / Right / Top / Iso): set orientation, then zoom-extents
+## so the objects stay framed. No-op while sketch orientation is locked.
+func apply_standard_view(
+		new_yaw: float, new_pitch: float, animated := false, fit := true) -> void:
+	if sketch_orientation_locked:
+		return
+	var from := capture_pose()
+	yaw = new_yaw
+	pitch = clampf(new_pitch, MIN_PITCH, MAX_PITCH)
+	_update_transform()
+	if fit:
+		frame_selection_or_all(false)
+	if animated and is_inside_tree():
+		var to := capture_pose()
+		apply_pose(from)
+		_animate_pose(to)
+
+
 ## Smoothly tween yaw/pitch to the target (shortest angular path for yaw).
 func animate_to(new_yaw: float, new_pitch: float, duration := 0.25) -> void:
 	new_pitch = clampf(new_pitch, MIN_PITCH, MAX_PITCH)
@@ -350,6 +377,54 @@ func animate_to(new_yaw: float, new_pitch: float, duration := 0.25) -> void:
 			_update_transform(),
 		0.0, 1.0, duration
 	)
+
+
+## Tween a full pose (orientation + zoom/pivot/projection). Used by named-view
+## restore and animated standard views.
+func _animate_pose(to: Dictionary, duration := 0.25) -> void:
+	if to.is_empty():
+		return
+	if _view_tween != null and _view_tween.is_valid():
+		_view_tween.kill()
+		_view_tween = null
+	var end_yaw := float(to.get("yaw", yaw))
+	var end_pitch := clampf(float(to.get("pitch", pitch)), MIN_PITCH, MAX_PITCH)
+	var end_dist := float(to.get("distance", distance))
+	var end_pivot: Vector3 = to.get("pivot", pivot) as Vector3
+	var end_proj := int(to.get("projection", projection)) as ProjectionType
+	var end_look := bool(to.get("look_at_content", _look_at_content))
+	if duration <= 0.0 or not is_inside_tree():
+		yaw = end_yaw
+		pitch = end_pitch
+		distance = end_dist
+		pivot = end_pivot
+		projection = end_proj
+		_look_at_content = end_look
+		_update_transform()
+		return
+	var start_yaw := yaw
+	var start_pitch := pitch
+	var start_dist := distance
+	var start_pivot := pivot
+	var yaw_delta := wrapf(end_yaw - start_yaw, -PI, PI)
+	var target_yaw := start_yaw + yaw_delta
+	# Projection snaps at the end (ortho size tracks distance during the tween).
+	_view_tween = create_tween()
+	_view_tween.tween_method(
+		func(t: float) -> void:
+			yaw = lerpf(start_yaw, target_yaw, t)
+			pitch = lerpf(start_pitch, end_pitch, t)
+			distance = lerpf(start_dist, end_dist, t)
+			pivot = start_pivot.lerp(end_pivot, t)
+			_look_at_content = end_look
+			_update_transform(),
+		0.0, 1.0, duration
+	)
+	_view_tween.finished.connect(func() -> void:
+		projection = end_proj
+		_look_at_content = end_look
+		_update_transform(),
+		CONNECT_ONE_SHOT)
 
 
 ## Frame selection when anything is selected; otherwise all bodies.
@@ -387,34 +462,127 @@ func frame_selection() -> bool:
 	return true
 
 
-## Frames all bodies (world-space AABB union); origin fallback when empty.
+## Frames all visible bodies (world-space AABB union); origin fallback when empty.
 func frame_contents() -> void:
-	if view == null or view.doc.body_ids().is_empty():
+	if not _has_visible_body():
+		_look_at_content = false
 		pivot = Vector3.ZERO
 		distance = DEFAULT_DISTANCE
 		_update_transform()
 		return
+	_frame_world_aabb(_visible_contents_aabb())
+
+
+func _has_visible_body() -> bool:
+	if view == null:
+		return false
+	for id in view.doc.body_ids():
+		if view.hidden_bodies.has(id):
+			continue
+		if view.body_node(id) != null:
+			return true
+	return false
+
+
+## World-space AABB of non-hidden body meshes. Caller must ensure visible bodies exist.
+func _visible_contents_aabb() -> AABB:
 	var united := AABB()
 	var first := true
 	for id in view.doc.body_ids():
+		if view.hidden_bodies.has(id):
+			continue
 		var node := view.body_node(id)
 		if node == null:
 			continue
 		var aabb := node.get_aabb()
-		# Transform into world space through ModelSpace.
 		var world_aabb: AABB = node.global_transform * aabb
 		united = world_aabb if first else united.merge(world_aabb)
 		first = false
-	if first:
-		return
-	_frame_world_aabb(united)
+	return united
 
 
+## CAD zoom-extents: pivot on the AABB center, look straight at it, and set
+## distance so every corner fits the current frustum (aspect-aware).
 func _frame_world_aabb(united: AABB) -> void:
+	_look_at_content = true
 	pivot = united.get_center()
-	var radius: float = united.size.length() / 2.0
-	distance = clampf(radius / tan(deg_to_rad(fov) / 2.0) * 1.2, MIN_DISTANCE, MAX_DISTANCE)
+	distance = _fit_distance_for_world_aabb(united)
 	_update_transform()
+
+
+## Minimum orbit distance so `united` fills the view with FRAME_PADDING margin.
+func _fit_distance_for_world_aabb(united: AABB) -> float:
+	var center := united.get_center()
+	var cam_dir := Vector3(
+		cos(pitch) * sin(yaw),
+		sin(pitch),
+		cos(pitch) * cos(yaw)
+	).normalized()
+	var up_ref := _view_up()
+	var right := cam_dir.cross(up_ref)
+	if right.length_squared() < 1e-10:
+		right = cam_dir.cross(Vector3.RIGHT)
+	if right.length_squared() < 1e-10:
+		right = cam_dir.cross(Vector3.FORWARD)
+	right = right.normalized()
+	var view_up := right.cross(cam_dir).normalized()
+
+	var half_v := tan(deg_to_rad(fov) * 0.5)
+	var aspect := 1.0
+	var vp := get_viewport()
+	if vp != null:
+		var r := vp.get_visible_rect().size
+		if r.y > 0.0:
+			aspect = r.x / r.y
+	var half_h := half_v * maxf(aspect, 1e-6)
+
+	var corners: Array[Vector3] = [
+		united.position,
+		united.position + Vector3(united.size.x, 0, 0),
+		united.position + Vector3(0, united.size.y, 0),
+		united.position + Vector3(0, 0, united.size.z),
+		united.position + Vector3(united.size.x, united.size.y, 0),
+		united.position + Vector3(united.size.x, 0, united.size.z),
+		united.position + Vector3(0, united.size.y, united.size.z),
+		united.position + united.size,
+	]
+	var d_needed := MIN_DISTANCE
+	for c in corners:
+		var p: Vector3 = c - center
+		# Camera at center+cam_dir*d looking toward center: depth of p is d - p·cam_dir.
+		var x := absf(p.dot(right))
+		var y := absf(p.dot(view_up))
+		var z_off := p.dot(cam_dir)
+		d_needed = maxf(d_needed, x / half_h + z_off)
+		d_needed = maxf(d_needed, y / half_v + z_off)
+	# Degenerate / tiny AABB fallback (sphere).
+	if d_needed <= MIN_DISTANCE + 1e-6:
+		var radius: float = united.size.length() * 0.5
+		d_needed = radius / maxf(half_v, 1e-6)
+	return clampf(d_needed * FRAME_PADDING, MIN_DISTANCE, MAX_DISTANCE)
+
+
+## When zooming out past fit, blend the pivot toward content and soft-cap distance.
+func _nudge_pivot_on_zoom_out(factor: float) -> void:
+	if not _has_visible_body():
+		return
+	var united := _visible_contents_aabb()
+	if united.size.length_squared() < 1e-12:
+		return
+	var center := united.get_center()
+	var fit_d := _fit_distance_for_world_aabb(united)
+	if fit_d < 1e-6:
+		return
+	var ratio := distance / fit_d
+	if ratio > ZOOM_OUT_MAX_FIT_MULT:
+		distance = fit_d * ZOOM_OUT_MAX_FIT_MULT
+		ratio = ZOOM_OUT_MAX_FIT_MULT
+	if ratio <= ZOOM_OUT_RECENTER_START:
+		return
+	# Stronger pull the farther past fit we are; scale by this zoom step size.
+	var over := (ratio - ZOOM_OUT_RECENTER_START) / (ZOOM_OUT_MAX_FIT_MULT - ZOOM_OUT_RECENTER_START)
+	var t := clampf(over * (factor - 1.0) * 10.0, 0.0, 0.4)
+	pivot = pivot.lerp(center, t)
 
 
 ## Orient the camera to look along -normal (face “normal to” / look-at).
@@ -428,6 +596,8 @@ func look_along_model_normal(normal: Vector3) -> void:
 	animate_to(yaw_n, pitch_n)
 	if view != null and view.selected_body != "":
 		frame_selection()
+	else:
+		_look_at_content = true
 
 
 ## Capture current pose into an in-memory dict (not written to views.cfg).
@@ -438,6 +608,7 @@ func capture_pose() -> Dictionary:
 		"distance": distance,
 		"pivot": pivot,
 		"projection": projection,
+		"look_at_content": _look_at_content,
 	}
 
 
@@ -450,6 +621,7 @@ func apply_pose(pose: Dictionary) -> void:
 	distance = float(pose.get("distance", distance))
 	pivot = pose.get("pivot", pivot) as Vector3
 	projection = int(pose.get("projection", projection)) as ProjectionType
+	_look_at_content = bool(pose.get("look_at_content", _look_at_content))
 	_update_transform()
 
 
@@ -483,6 +655,7 @@ func enter_sketch_view(
 		_sketch_view_up = Vector3.UP
 	var r := maxf(frame_radius, 5.0)
 	distance = clampf(r / tan(deg_to_rad(fov) / 2.0) * 1.35, MIN_DISTANCE, MAX_DISTANCE)
+	_look_at_content = true
 	_update_transform()
 
 
@@ -504,23 +677,38 @@ func save_named_view(view_name: String) -> void:
 		"distance": distance,
 		"pivot": pivot,
 		"projection": projection,
+		"look_at_content": _look_at_content,
 	}
 	_save_named_views()
 
 
-func restore_named_view(view_name: String) -> bool:
+func restore_named_view(view_name: String, animated := false) -> bool:
 	if not _named_views.has(view_name):
+		return false
+	if sketch_orientation_locked:
 		return false
 	if _view_tween != null and _view_tween.is_valid():
 		_view_tween.kill()
 		_view_tween = null
 	var v: Dictionary = _named_views[view_name]
-	yaw = float(v["yaw"])
-	pitch = float(v["pitch"])
-	distance = float(v["distance"])
-	pivot = v["pivot"] as Vector3
-	projection = int(v["projection"]) as ProjectionType
-	_update_transform()
+	var to := {
+		"yaw": float(v["yaw"]),
+		"pitch": float(v["pitch"]),
+		"distance": float(v["distance"]),
+		"pivot": v["pivot"] as Vector3,
+		"projection": int(v["projection"]) as ProjectionType,
+		"look_at_content": bool(v.get("look_at_content", true)),
+	}
+	if animated and is_inside_tree():
+		_animate_pose(to)
+	else:
+		yaw = float(to["yaw"])
+		pitch = float(to["pitch"])
+		distance = float(to["distance"])
+		pivot = to["pivot"] as Vector3
+		projection = int(to["projection"]) as ProjectionType
+		_look_at_content = bool(to["look_at_content"])
+		_update_transform()
 	return true
 
 
@@ -549,6 +737,7 @@ func _save_named_views() -> void:
 		cfg.set_value(view_name, "distance", v["distance"])
 		cfg.set_value(view_name, "pivot", v["pivot"])
 		cfg.set_value(view_name, "projection", v["projection"])
+		cfg.set_value(view_name, "look_at_content", v.get("look_at_content", true))
 	cfg.save(VIEWS_CFG)
 
 
@@ -564,6 +753,7 @@ func _load_named_views() -> void:
 			"distance": cfg.get_value(section, "distance", DEFAULT_DISTANCE),
 			"pivot": cfg.get_value(section, "pivot", Vector3.ZERO),
 			"projection": cfg.get_value(section, "projection", PROJECTION_PERSPECTIVE),
+			"look_at_content": cfg.get_value(section, "look_at_content", true),
 		}
 
 
@@ -595,9 +785,11 @@ func _update_transform() -> void:
 	view_changed.emit()
 
 
-## Aim above the orbit pivot along camera-up so the pivot projects low on screen.
+## Aim above the orbit pivot along camera-up so the pivot projects low on screen
+## (empty-scene / grid aesthetic). Framing content disables this so zoom-extents
+## faces the objects dead-center.
 func _look_target_for(camera_pos: Vector3) -> Vector3:
-	if VIEW_PIVOT_Y_BIAS <= 0.0:
+	if _look_at_content or VIEW_PIVOT_Y_BIAS <= 0.0:
 		return pivot
 	var to_pivot := pivot - camera_pos
 	if to_pivot.length_squared() < 1e-12:

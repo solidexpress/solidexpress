@@ -63,9 +63,8 @@ func _ready() -> void:
 	_fit_btn = Button.new()
 	_fit_btn.text = "Frame"
 	_fit_btn.tooltip_text = (
-		"Zoom the camera to frame the selection "
-		+ "(or the whole model if nothing is selected). Shortcut: F. "
-		+ "Shift+F always frames everything."
+		"Zoom extents — frame the selection (or the whole model) centered "
+		+ "in view. Shortcut: F. Shift+F always frames everything."
 	)
 	_fit_btn.pressed.connect(func() -> void: fit_requested.emit())
 	btn_col.add_child(_fit_btn)
@@ -96,7 +95,7 @@ func _ready() -> void:
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(1, 0)
 	strip_row.add_child(gap)
-	_save_view_btn = UIIcons.button("save", "", "Save current camera pose — name it, then Enter")
+	_save_view_btn = UIIcons.button("save", "", "Save current view — orientation, zoom, and target (name it, then Enter)")
 	_save_view_btn.icon = UIIcons.get_icon("save", 14)
 	_save_view_btn.custom_minimum_size = Vector2(22, 22)
 	_compact_icon_btn(_save_view_btn)
@@ -252,7 +251,7 @@ func _rebuild_views_popup() -> void:
 		var go := Button.new()
 		go.text = str(view_name)
 		go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		go.tooltip_text = "Restore camera pose “%s”" % view_name
+		go.tooltip_text = "Restore “%s” — orientation + zoom" % view_name
 		go.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		go.add_theme_font_size_override("font_size", 11)
 		var n := str(view_name)

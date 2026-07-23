@@ -53,10 +53,14 @@ var _press_empty := false
 var _press_travel := 0.0
 ## Screen-space rubber-band rect while in BOX_SELECT (drawn via _draw).
 var _box_rect := Rect2()
-## Ctrl held on the last LMB press: empty-drag becomes rubber-band box select.
+## Shift/Ctrl held on press: empty-drag becomes rubber-band box select.
 var _box_drag := false
+## True = crossing/inclusive (partial capture); false = window/exclusive.
+var _box_crossing := false
 ## Shift or Ctrl held on press: additive select; empty click will not clear.
 var _additive_click := false
+## Shift+RMB empty-drag armed crossing box select (instead of orbit).
+var _rmb_box_select := false
 ## SELECT-tool drag-to-edit in sketch mode (begin/update/end_drag).
 var _sketch_dragging := false
 var _sketch_drag_moved := false
@@ -75,6 +79,8 @@ var _strip_plane: Button
 var _strip_fuse: Button
 var _strip_cut: Button
 var _strip_common: Button
+var _strip_group: Button
+var _strip_similar: Button
 ## RMB: click = context menu, drag = orbit (peer FreeCAD / SW-like).
 var _rmb_pressed := false
 var _rmb_press_pos := Vector2.ZERO
@@ -131,6 +137,8 @@ var _picking_sketch_host := false
 signal sketch_host_picked(kind: String, face_id: String, body_id: String, pad_fid: String)
 ## `additive` is true for Ctrl/Cmd+click multi-select (from the pointer event).
 signal sketch_pad_clicked(fid: String, additive: bool)
+## Box-select result for yellow sketch pads (window / crossing).
+signal sketch_pads_box_selected(fids: Array, additive: bool)
 
 ## Resize-drag state (AABB corner / face-center handles).
 var _resize_min := Vector3.ZERO
@@ -245,8 +253,8 @@ func _build_selection_strip() -> void:
 	_selection_strip.visible = false
 	_selection_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_selection_strip.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_selection_strip.offset_left = -420
-	_selection_strip.offset_right = 420
+	_selection_strip.offset_left = -520
+	_selection_strip.offset_right = 520
 	_selection_strip.offset_top = 8
 	_selection_strip.offset_bottom = 44
 	add_child(_selection_strip)
@@ -263,6 +271,12 @@ func _build_selection_strip() -> void:
 	_strip_common = UIIcons.button("common", "Intersect", "Keep only the common volume of the selection")
 	_strip_common.pressed.connect(func() -> void: _ctx_boolean("common"))
 	row.add_child(_strip_common)
+	_strip_group = UIIcons.button("instance", "Group", "Isolate the selection (hide everything else)")
+	_strip_group.pressed.connect(func() -> void: _ctx_isolate())
+	row.add_child(_strip_group)
+	_strip_similar = UIIcons.button("pattern", "Similar", "Add bodies of the same feature kind to the selection")
+	_strip_similar.pressed.connect(func() -> void: _ctx_select_similar())
+	row.add_child(_strip_similar)
 	_strip_fillet = Button.new()
 	_strip_fillet.text = "Fillet"
 	_strip_fillet.pressed.connect(func() -> void: _ctx_fillet())
@@ -317,7 +331,7 @@ func _rebuild_orient_popup() -> void:
 	col.add_child(title)
 	for entry in [
 		["Front", 1], ["Right", 2], ["Top", 3], ["Isometric", 7],
-		["Frame selection", 20], ["Frame all", 21], ["Ortho/Persp", 5],
+		["Zoom extents", 20], ["Zoom all", 21], ["Ortho/Persp", 5],
 	]:
 		var b := Button.new()
 		b.text = str(entry[0])
@@ -339,8 +353,8 @@ func _rebuild_orient_popup() -> void:
 				nb.text = "Restore “%s”" % view_name
 				var n := str(view_name)
 				nb.pressed.connect(func() -> void:
-					if camera.restore_named_view(n):
-						status.emit("Restored view “%s”" % n)
+					if camera.restore_named_view(n, true):
+						status.emit("Restored view “%s” (orientation + zoom)" % n)
 					_orient_popup.hide())
 				col.add_child(nb)
 
@@ -1412,22 +1426,40 @@ func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
 func _handle_model_pointer(event: InputEvent) -> bool:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		# RMB click = context menu; RMB drag = orbit (FreeCAD / peer-friendly).
+		# RMB: Shift+empty-drag = crossing box select; plain drag = orbit;
+		# click alone opens the context menu.
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			if mb.pressed:
 				_rmb_pressed = true
 				_rmb_press_pos = mb.position
 				_rmb_orbiting = false
+				_rmb_box_select = false
 				_last_drag_pos = mb.position
+				_box_crossing = mb.shift_pressed
+				_additive_click = mb.shift_pressed or mb.ctrl_pressed
+				_box_drag = mb.shift_pressed
+				_box_rect = Rect2()
+				# Seed press-empty so Shift+RMB can arm box select on drag.
+				if mb.shift_pressed:
+					var ray := _model_ray(mb.position)
+					_press_empty = view.pick_info(ray[0], ray[1]).is_empty()
+					_pressed = true
+					_press_pos = mb.position
+					_press_travel = 0.0
 			else:
-				if _rmb_pressed and not _rmb_orbiting:
+				if _rmb_box_select or _drag_mode == DragMode.BOX_SELECT:
+					_on_release(mb.position)
+				elif _rmb_pressed and not _rmb_orbiting:
 					_open_context_menu(_rmb_press_pos)
 				_rmb_pressed = false
 				_rmb_orbiting = false
+				_rmb_box_select = false
 			return true
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				_box_drag = mb.ctrl_pressed
+				# Shift+empty-drag → window box (exclusive); Ctrl kept as alias.
+				_box_drag = mb.shift_pressed or mb.ctrl_pressed
+				_box_crossing = false
 				_additive_click = mb.shift_pressed or mb.ctrl_pressed
 				_on_press(mb.position)
 			else:
@@ -1443,6 +1475,17 @@ func _handle_model_pointer(event: InputEvent) -> bool:
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if _rmb_pressed:
+			if _box_drag and _press_empty and not _rmb_box_select \
+					and mm.position.distance_to(_rmb_press_pos) >= CLICK_SLOP:
+				_rmb_box_select = true
+				_rmb_orbiting = false
+				_drag_mode = DragMode.BOX_SELECT
+				_box_crossing = true
+				_last_drag_pos = _rmb_press_pos
+				status.emit("Crossing box select (Shift+right-drag) — partial capture")
+			if _rmb_box_select or _drag_mode == DragMode.BOX_SELECT:
+				_on_drag(mm.position)
+				return true
 			if not _rmb_orbiting and mm.position.distance_to(_rmb_press_pos) >= CLICK_SLOP:
 				_rmb_orbiting = true
 				_last_drag_pos = _rmb_press_pos
@@ -1784,7 +1827,7 @@ func _on_press(pos: Vector2) -> void:
 	_press_empty = hit.is_empty()
 
 	# Shift/Ctrl+click is additive selection only — never arms a move/push drag.
-	# Ctrl+empty-drag becomes a rubber-band box select in _on_drag.
+	# Shift/Ctrl+empty-drag becomes a rubber-band box select in _on_drag.
 	if _additive_click:
 		return
 
@@ -1927,11 +1970,16 @@ func _on_drag(pos: Vector2) -> void:
 		_pending_instance_move = false
 		_drag_mode = DragMode.MOVE_INSTANCE
 	# Empty-space drag: orbit (or pan when sketch orientation is locked).
-	# Ctrl+empty-drag: rubber-band box select.
+	# Shift/Ctrl+empty-drag: rubber-band box select (window when left).
 	if _drag_mode == DragMode.NONE and _press_empty and _place_kind == "":
 		_drag_mode = DragMode.BOX_SELECT if _box_drag else DragMode.ORBIT_VIEW
 		# Orbit from the press origin so the first post-slop frame applies real delta.
 		_last_drag_pos = _press_pos
+		if _drag_mode == DragMode.BOX_SELECT:
+			if _box_crossing:
+				status.emit("Crossing box select — partial capture counts")
+			else:
+				status.emit("Window box select (Shift+left-drag) — fully inside only")
 	match _drag_mode:
 		DragMode.ORBIT_VIEW:
 			var rel := pos - _last_drag_pos
@@ -2033,8 +2081,13 @@ func _on_drag(pos: Vector2) -> void:
 
 func _draw() -> void:
 	if _drag_mode == DragMode.BOX_SELECT and _box_rect.size != Vector2.ZERO:
-		draw_rect(_box_rect, Color(0.35, 0.6, 0.95, 0.18), true)
-		draw_rect(_box_rect, Color(0.35, 0.6, 0.95, 0.85), false, 1.0)
+		# Window (exclusive) = cool blue; crossing (inclusive) = warm amber.
+		var fill := Color(0.95, 0.55, 0.15, 0.16) if _box_crossing \
+				else Color(0.35, 0.6, 0.95, 0.18)
+		var edge := Color(0.95, 0.55, 0.15, 0.9) if _box_crossing \
+				else Color(0.35, 0.6, 0.95, 0.85)
+		draw_rect(_box_rect, fill, true)
+		draw_rect(_box_rect, edge, false, 1.0)
 	_draw_selection_gizmos()
 	if _drag_mode == DragMode.PUSH_PULL and absf(_pp_preview_dist) > 1e-3:
 		_draw_push_pull_preview()
@@ -2188,16 +2241,33 @@ func _on_release(pos: Vector2) -> void:
 			return
 		DragMode.BOX_SELECT:
 			_box_rect = Rect2(_press_pos, pos - _press_pos).abs()
-			view.select_in_rect(_box_rect, camera, model_space, _additive_click)
-			if view.selection_size() > 1:
-				status.emit("%d selected" % view.selection_size())
-			elif view.selection_size() == 1:
+			view.select_in_rect(_box_rect, camera, model_space, _additive_click, _box_crossing)
+			var pad_hits: Array = []
+			if view.sketch_pads != null and (sketch_mode == null or not sketch_mode.active):
+				pad_hits = view.sketch_pads.pads_in_rect(
+						_box_rect, camera, model_space, _box_crossing)
+				if not pad_hits.is_empty() or not _additive_click:
+					sketch_pads_box_selected.emit(pad_hits, _additive_click)
+			var n := view.selection_size()
+			var np: int = pad_hits.size()
+			if n > 1 or np > 1:
+				var parts: PackedStringArray = []
+				if n > 0:
+					parts.append("%d body%s" % [n, "" if n == 1 else "s"])
+				if np > 0:
+					parts.append("%d sketch pad%s" % [np, "" if np == 1 else "s"])
+				status.emit("Selected " + ", ".join(parts))
+			elif n == 1:
 				status.emit("Selected " + view.selected_body.left(8))
+			elif np == 1:
+				status.emit("Selected sketch pad")
 			else:
 				status.emit("")
 			_clear_box_band()
 			_box_drag = false
+			_box_crossing = false
 			_additive_click = false
+			_rmb_box_select = false
 			_press_travel = 0.0
 			return
 		DragMode.MOVE_BODY:
@@ -3180,6 +3250,9 @@ func _refresh_selection_strip() -> void:
 	_strip_fuse.visible = multi_body
 	_strip_cut.visible = multi_body
 	_strip_common.visible = multi_body
+	_strip_group.visible = multi_body
+	_strip_similar.visible = multi_body or (not has_instance and view.selected_body != "" \
+			and view.selected_face == "")
 	_strip_fillet.visible = not has_instance
 	_strip_sketch.visible = not has_instance and view.selected_face != ""
 	_strip_look.visible = not has_instance and view.selected_face != ""
@@ -3315,7 +3388,19 @@ func _ctx_hide() -> void:
 
 func _ctx_isolate() -> void:
 	view.isolate(_selected_body_ids())
-	status.emit("Isolated")
+	status.emit("Isolated (grouped)")
+
+
+func _ctx_select_similar() -> void:
+	if view == null:
+		return
+	var added := view.select_similar()
+	_refresh_selection_strip()
+	if added > 0:
+		status.emit("Similar: +%d body%s (%d total)" % [
+				added, "" if added == 1 else "s", view.selection_size()])
+	else:
+		status.emit("No similar bodies found")
 
 
 func _ctx_delete() -> void:
@@ -3344,22 +3429,26 @@ func _on_orient_id(id: int) -> void:
 		return
 	match id:
 		1:
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(0.0), true)
+			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0), true)
+			status.emit("Front view")
 		2:
-			camera.set_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
+			camera.apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
+			status.emit("Right view")
 		3:
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
+			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
+			status.emit("Top view")
 		7:
-			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
+			camera.apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
+			status.emit("Isometric view")
 		5:
 			camera.toggle_projection()
 			status.emit("Projection toggled")
 		20:
 			camera.frame_selection_or_all(false)
-			status.emit("Framed selection")
+			status.emit("Zoom extents")
 		21:
 			camera.frame_contents()
-			status.emit("Framed all")
+			status.emit("Zoom all")
 
 
 # --- on-canvas gizmos ---

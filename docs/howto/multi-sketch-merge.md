@@ -10,7 +10,7 @@ SolidWorks turns multiple 2D sketches into solids through several parallel paths
 | Boss extrude / cut | Extrude from closed profile | **Extrude** (New / Cut / Fuse) from sketch |
 | Revolve | Revolve boss/cut | **Revolve** from sketch + axis line |
 | Sweep | Profile + path (open or closed) | **Sweep along path** — profile sketch + Path feature |
-| Loft | 2+ closed profiles | **Loft ruled / smooth** — Ctrl+select profile pads |
+| Loft | 2+ closed profiles | **Loft ruled / smooth** — Shift+box or Ctrl+select profile pads |
 | Guide curves | Sweep/loft guides | Not yet |
 | Thin feature | Wall thickness on extrude/sweep | Not yet |
 | Convert entities | Project model edges into sketch | Partial (Convert tool in sketch) |
@@ -31,7 +31,9 @@ SolidWorks turns multiple 2D sketches into solids through several parallel paths
 ## Workflow B — Loft between profiles (funnel, transition)
 
 1. Create **Sketch A** and **Sketch B** on different planes — each a **closed** profile (circle, rectangle, closed loop).
-2. **Ctrl+click** both profile pads (no open rails in the selection).
+2. **Shift+drag** (or **Ctrl+click**) both profile pads (no open rails in the selection).
+   - **Shift+left-drag** empty space = window box (fully inside only)
+   - **Shift+right-drag** empty space = crossing box (partial capture counts)
 3. Choose **Loft ruled** or **Loft smooth**.
 
 ## Workflow C — Simple extrude (baseline)

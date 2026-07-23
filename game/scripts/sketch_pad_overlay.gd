@@ -323,3 +323,47 @@ func pick_pad(ray_origin: Vector3, ray_dir: Vector3) -> String:
 			best_score = score
 			best_fid = fid
 	return best_fid
+
+
+## Pads whose screen AABB matches `rect` (window vs crossing, same as bodies).
+func pads_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D, crossing := false) -> Array[String]:
+	var band := rect.abs()
+	var out: Array[String] = []
+	if camera == null:
+		return out
+	for fid in _pads:
+		var scr := pad_screen_aabb(fid, camera, model_space)
+		if scr.size == Vector2.ZERO:
+			continue
+		var ok := band.encloses(scr) if not crossing else band.intersects(scr)
+		if ok:
+			out.append(fid)
+	return out
+
+
+## Screen AABB of a pad's plane extents (min2/max2 corners).
+func pad_screen_aabb(fid: String, camera: Camera3D, model_space: Node3D) -> Rect2:
+	if not _pads.has(fid) or camera == null:
+		return Rect2()
+	var e: Dictionary = _pads[fid]
+	var origin: Vector3 = e["origin"]
+	var x: Vector3 = e["x"]
+	var y: Vector3 = e["y"]
+	var mn2: Vector2 = e["min2"]
+	var mx2: Vector2 = e["max2"]
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	var any := false
+	for u in [mn2.x, mx2.x]:
+		for v in [mn2.y, mx2.y]:
+			var model: Vector3 = origin + x * u + y * v
+			var world: Vector3 = model_space.to_global(model) if model_space != null else model
+			if camera.is_position_behind(world):
+				continue
+			var s: Vector2 = camera.unproject_position(world)
+			mn = mn.min(s)
+			mx = mx.max(s)
+			any = true
+	if not any:
+		return Rect2()
+	return Rect2(mn, mx - mn)

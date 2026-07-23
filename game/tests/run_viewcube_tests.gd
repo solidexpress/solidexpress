@@ -123,6 +123,13 @@ func test_named_views(cam: OrbitCamera) -> void:
 	check(cam.named_view_list().has("beta"), "beta still present")
 
 	# Re-save alpha so both exist on disk for reload check.
+	cam._look_at_content = true
+	cam.yaw = 0.4
+	cam.pitch = 0.2
+	cam.distance = 250.0
+	cam.pivot = Vector3(10, 20, 30)
+	cam.projection = Camera3D.PROJECTION_PERSPECTIVE
+	cam._update_transform()
 	cam.save_named_view("alpha")
 
 	# Fresh instance must reload from user://views.cfg in _ready.
@@ -135,6 +142,9 @@ func test_named_views(cam: OrbitCamera) -> void:
 	check(cam2.restore_named_view("beta"), "reloaded restore beta")
 	check(is_equal_approx(cam2.yaw, -0.8), "reloaded beta yaw")
 	check(is_equal_approx(cam2.distance, 500.0), "reloaded beta distance")
+	check(cam2.restore_named_view("alpha"), "reloaded restore alpha")
+	check(is_equal_approx(cam2.distance, 250.0), "reloaded alpha distance (zoom)")
+	check(cam2._look_at_content, "reloaded alpha look_at_content")
 
 	# Cleanup.
 	check(cam2.remove_named_view("alpha"), "cleanup remove alpha")
