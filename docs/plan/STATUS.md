@@ -38,7 +38,8 @@ Key files: `game/scripts/document_view.gd` (view-model), `viewport_interaction.g
 - [x] 2.5 SxSketch GDExtension binding (entities, constraints, solve, entity_info snapshots) + `SxDocument.extrude_sketch/revolve_sketch`
 - [x] 2.6 Sketch mode UI v1: sketch on ground plane or selected planar face; line-chain/rect/circle tools with live preview; toolbar with extrude distance; Esc cancel (`game/scripts/sketch_mode.gd`) — constraint toolbar + dimension input still TODO
 - [x] 2.7 Sketch persistence: sketches embed in features.json inside .sxp (sketch_json.cpp); sketch entity cards still TODO
-- [x] SW sketch parity (visual-first): compact left rail + on-canvas chips; Power Trim hover/drag; entity variants (rect/circle/arc), ellipse/slot/point/centerline/spline approximations; Convert/Mirror/Pattern; Smart Dim; sketch blocks + picture underlay; multi-sketch **Path** feature (no free 3D sketch). Howtos: `docs/howto/visual-sketch-tools.md`, `docs/howto/multi-sketch-merge.md`.
+- [x] SW sketch parity (visual-first): compact left rail + on-canvas chips; Power Trim hover/drag; entity variants (rect/circle/arc), ellipse/slot/point/centerline; Convert/Mirror/Pattern; Smart Dim; sketch blocks + picture underlay; multi-sketch **Path** feature (no free 3D sketch). Howtos: `docs/howto/visual-sketch-tools.md`, `docs/howto/multi-sketch-merge.md`.
+- [x] SW-class sketch upgrades (A–F): Midpoint/Symmetric/Fix/Diameter + driven dims; expression dims (`=w/2`) via VariableTable; definition-state / Fully Define / Analyze; associative Convert Entities; kernel Spline + PlaneGCS poles; loft guide rails. Kernel: `test_sketch_sw_upgrades.cpp`. Godot: `run_sketch_fully_defined_tests.gd`, `run_sketch_expr_dim_tests.gd`, `run_convert_entities_tests.gd`.
 
 Test state additions: kernel [sketch]+[extrude] 14 cases; Godot sketch binding 23 checks PASS (parametric re-solve verified).
 

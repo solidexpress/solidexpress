@@ -44,7 +44,7 @@ Useful details:
 
 - Default CMake build type is `RelWithDebInfo`.
 - Kernel tests: `build/sxkernel/sxkernel_tests` (also via `make test-kernel`).
-- Godot tests (`make test-godot`): `run_tests.gd`, `run_ui_tests.gd`, `run_sketch_tests.gd`, `run_sketch_tools_tests.gd`, `run_display_tests.gd`, `run_menu_tests.gd`.
+- Godot tests (`make test-godot`): includes sketch suites (`run_sketch_*.gd`, `run_sketch_fully_defined_tests.gd`, `run_sketch_expr_dim_tests.gd`, `run_convert_entities_tests.gd`, sweep/loft, UI, workflow, …).
 
 ## Architecture
 
@@ -75,13 +75,18 @@ Bindings verified in `game/scripts/orbit_camera.gd`, `viewport_interaction.gd`, 
 
 | Input | Action |
 |-------|--------|
+| Empty-drag / right-drag / two-finger | Orbit |
 | Middle-drag / 3-finger grip | Pan (SX/Fusion default; SW preset orbits) |
 | Shift + middle-drag | Orbit (SX/Fusion); pan under SW preset |
-| Two-finger drag | Orbit (trackpad) |
 | Shift + two-finger | Pan (trackpad) |
-| Mouse wheel | Zoom toward / away from pivot |
-| `F` | Zoom to fit (frame all bodies) |
-| `1` / `2` / `3` / `7` | Front / right / top / isometric |
+| Mouse wheel | Zoom toward cursor |
+| Shift / Alt / Shift+Alt + wheel | Pan vertically / yaw / pan horizontally |
+| One-finger / two-finger touch | Orbit (emulated) / pan + pinch-zoom |
+| Arrow keys / Shift+arrows | Pan / orbit |
+| Alt+WASD | Pan (plain WASD left for modeling tools) |
+| `+` `−` / Page Up/Down | Zoom at view center |
+| `F` / Home | Zoom extents (selection, else all) |
+| `1` / `2` / `3` / `7` | Front / right / top / isometric (+ fit) |
 | `5` | Toggle orthographic / perspective |
 
 ### Modeling
@@ -112,7 +117,7 @@ Active while a sketch session is open (`sketch_mode.active`).
 | `C` | Circle |
 | `T` | Trim |
 | `X` | Toggle construction geometry on selection |
-| Right-click | End line chain |
+| Right-click | End line chain (auto-closes when Auto-close is on) |
 | `Esc` | Cancel current tool / gesture |
 
 ## `.sxp` document format

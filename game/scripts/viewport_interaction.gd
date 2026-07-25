@@ -377,6 +377,7 @@ func _build_dim_edit_popup() -> void:
 
 ## Open the in-viewport dimension editor for dimensions[index] (SELECT click
 ## on the label). Enter commits + re-solves; Esc / clicking away cancels.
+## Prefill shows an expression when present (`=w/2`); Alt+click toggles driven.
 func _show_dim_edit(index: int) -> void:
 	if sketch_mode == null or _dim_edit_popup == null:
 		return
@@ -384,7 +385,15 @@ func _show_dim_edit(index: int) -> void:
 		return
 	_dim_edit_index = index
 	var dim: Dictionary = sketch_mode.dimensions[index]
-	_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
+	if Input.is_key_pressed(KEY_ALT):
+		var driving: bool = dim.get("driving", true)
+		sketch_mode.set_dimension_driving(index, not driving)
+		status.emit("Dimension is now " + ("driving" if not driving else "driven (reference)"))
+		return
+	if dim.has("expr") and str(dim["expr"]).strip_edges() != "":
+		_dim_edit_line.text = str(dim["expr"])
+	else:
+		_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
 	var at := Vector2i(get_viewport().get_mouse_position()) + Vector2i(8, 8)
 	_dim_edit_popup.popup(Rect2i(at, Vector2i(150, 40)))
 	_dim_edit_line.grab_focus()
@@ -394,11 +403,22 @@ func _apply_dim_edit(text: String) -> void:
 	_dim_edit_popup.hide()
 	if sketch_mode == null or _dim_edit_index < 0:
 		return
-	var v := text.to_float()
-	if v <= 0.0:
-		status.emit("Dimension must be a positive number")
+	var raw := text.strip_edges()
+	if raw.is_empty():
+		_dim_edit_index = -1
 		return
-	var result: String = sketch_mode.set_dimension_value(_dim_edit_index, v)
+	# Expressions (`=w/2`) or plain positive numbers.
+	if not raw.begins_with("="):
+		var v := raw.to_float()
+		if v <= 0.0 and not raw.is_valid_float():
+			status.emit("Dimension must be a positive number or =expression")
+			_dim_edit_index = -1
+			return
+		if v <= 0.0 and raw.is_valid_float():
+			status.emit("Dimension must be a positive number or =expression")
+			_dim_edit_index = -1
+			return
+	var result: String = sketch_mode.set_dimension_value(_dim_edit_index, raw)
 	_dim_edit_index = -1
 	if result == "failed":
 		status.emit("Dimension rejected — constraints could not be satisfied")
@@ -1362,10 +1382,17 @@ func _gui_input(event: InputEvent) -> void:
 	# hovered target). Keep `_gui_input` as a fallback for headless tests and
 	# for sketch which historically used Control-local events.
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
-	if camera != null and camera.is_nav_event(event, allow_scroll):
-		if camera.handle_input(event, allow_scroll):
+	if event is InputEventScreenTouch and camera != null:
+		if camera.note_screen_touch(event as InputEventScreenTouch):
 			accept_event()
-		return
+			return
+	if camera != null and camera.is_nav_event(event, allow_scroll):
+		if event is InputEventKey and _nav_keys_blocked(event as InputEventKey):
+			pass
+		else:
+			if camera.handle_input(event, allow_scroll):
+				accept_event()
+			return
 	# Place is owned entirely by `_input` — do not swallow `_gui_input` here.
 	if _place_kind != "" or _picking_active_plane:
 		return
@@ -1374,6 +1401,16 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if _handle_model_pointer(event):
 		accept_event()
+
+
+## True when camera keyboard nav must yield (text fields, or sketch digits).
+func _nav_keys_blocked(ke: InputEventKey) -> bool:
+	if _sketch_keys_blocked():
+		return true
+	# Number-row view snaps must not steal sketch length typing (1–9 / period).
+	if sketch_mode != null and sketch_mode.active and _is_length_type_key(ke):
+		return true
+	return false
 
 
 ## True when a LineEdit / TextEdit / SpinBox editor has focus — sketch hotkeys
@@ -3043,14 +3080,22 @@ func _input(event: InputEvent) -> void:
 	# before place so Alt+drag / two-finger pan don't commit a solid.
 	# Never steal wheel / two-finger pan from ScrollContainers; pinch always zooms.
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
+	# Track every finger so two-finger pan/pinch can see the first contact.
+	if event is InputEventScreenTouch and camera != null:
+		if camera.note_screen_touch(event as InputEventScreenTouch):
+			get_viewport().set_input_as_handled()
+			return
 	# Magnify must never fall through place/sketch even if scroll gating diffs.
 	if event is InputEventMagnifyGesture and camera != null:
 		if camera.handle_input(event, true):
 			get_viewport().set_input_as_handled()
 			return
 	if camera != null and camera.is_nav_event(event, allow_scroll):
-		if camera.handle_input(event, allow_scroll):
-			get_viewport().set_input_as_handled()
+		if event is InputEventKey and _nav_keys_blocked(event as InputEventKey):
+			pass  # fall through — text field or sketch length entry owns the key
+		else:
+			if camera.handle_input(event, allow_scroll):
+				get_viewport().set_input_as_handled()
 			return
 	# Place mode uses viewport mouse coords so ghost/commit work even when the
 	# cursor is "over" a sibling Control or Interaction fails hit-tests.

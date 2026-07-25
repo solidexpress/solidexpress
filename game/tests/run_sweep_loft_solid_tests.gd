@@ -88,12 +88,10 @@ func _polyline_length(path: PackedVector3Array) -> float:
 
 
 func _add_open_spline_sketch(sk: SxSketch, control: Array) -> void:
-	var pts := _densify_open_2d(control)
-	for i in range(pts.size() - 1):
-		var a: Vector2 = pts[i]
-		var b: Vector2 = pts[i + 1]
-		if a.distance_to(b) > 1e-6:
-			sk.add_line(a.x, a.y, b.x, b.y)
+	var pts := PackedVector2Array()
+	for p in control:
+		pts.append(p as Vector2)
+	sk.add_spline(pts)
 
 
 func _add_closed_spline_profile(sk: SxSketch, radius: float, segments: int = 8) -> void:

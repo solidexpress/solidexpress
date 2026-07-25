@@ -1,11 +1,15 @@
 #include "sx/features.hpp"
+#include "sx/solver.hpp"
 
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepGProp.hxx>
+#include <BRep_Tool.hxx>
 #include <BRepBuilderAPI_TransitionMode.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
@@ -17,21 +21,31 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepTools.hxx>
+#include <GeomAPI_PointsToBSpline.hxx>
+#include <Geom_BSplineCurve.hxx>
 #include <Standard_Failure.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Iterator.hxx>
 #include <TopoDS_Wire.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
+#include <gp_Lin.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
+#include <GProp_GProps.hxx>
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -589,24 +603,20 @@ std::vector<gp_Pnt> sketch_line_points(const Sketch& sk) {
     return pts;
 }
 
-// Ordered polyline through line entities (preserves spline densification order).
+// Ordered polyline through line + spline entities (preserves drawing order).
 json sketch_ordered_polyline(const Sketch& sk) {
     const double eps = 1e-9;
     json path = json::array();
     const auto& pl = sk.plane();
     gp_Pnt last;
     bool have_last = false;
-    for (const auto& e : sk.entities()) {
-        if (e.construction) continue;
-        if (e.type != SketchEntityType::Line || e.params.size() < 4) continue;
-        gp_Pnt a = sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1]));
-        gp_Pnt b = sketch_uv_to_3d(pl, sk.param(e.params[2]), sk.param(e.params[3]));
+    auto append_seg = [&](gp_Pnt a, gp_Pnt b) {
         if (!have_last) {
             path.push_back(pnt_to_json(a));
             if (a.Distance(b) >= eps) path.push_back(pnt_to_json(b));
             last = b;
             have_last = true;
-            continue;
+            return;
         }
         if (last.Distance(a) < eps) {
             if (last.Distance(b) >= eps) path.push_back(pnt_to_json(b));
@@ -618,6 +628,42 @@ json sketch_ordered_polyline(const Sketch& sk) {
             path.push_back(pnt_to_json(a));
             if (a.Distance(b) >= eps) path.push_back(pnt_to_json(b));
             last = b;
+        }
+    };
+    for (const auto& e : sk.entities()) {
+        if (e.construction) continue;
+        if (e.type == SketchEntityType::Line && e.params.size() >= 4) {
+            gp_Pnt a = sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1]));
+            gp_Pnt b = sketch_uv_to_3d(pl, sk.param(e.params[2]), sk.param(e.params[3]));
+            append_seg(a, b);
+        } else if (e.type == SketchEntityType::Spline) {
+            // Sample the interpolating B-spline (not just fit-point chords).
+            auto fits = sk.spline_fit_points(e.id);
+            if (fits.size() < 2) continue;
+            TColgp_Array1OfPnt poles(1, static_cast<int>(fits.size()));
+            for (int i = 0; i < static_cast<int>(fits.size()); ++i)
+                poles.SetValue(i + 1, sketch_uv_to_3d(pl, fits[static_cast<size_t>(i)][0],
+                                                      fits[static_cast<size_t>(i)][1]));
+            GeomAPI_PointsToBSpline mk(poles);
+            if (!mk.IsDone()) {
+                for (size_t i = 1; i < fits.size(); ++i) {
+                    gp_Pnt a = sketch_uv_to_3d(pl, fits[i - 1][0], fits[i - 1][1]);
+                    gp_Pnt b = sketch_uv_to_3d(pl, fits[i][0], fits[i][1]);
+                    append_seg(a, b);
+                }
+                continue;
+            }
+            Handle(Geom_BSplineCurve) curve = mk.Curve();
+            const int samples = std::max(8, static_cast<int>(fits.size()) * 8);
+            double u0 = curve->FirstParameter();
+            double u1 = curve->LastParameter();
+            gp_Pnt prev = curve->Value(u0);
+            for (int s = 1; s <= samples; ++s) {
+                double u = u0 + (u1 - u0) * (static_cast<double>(s) / samples);
+                gp_Pnt cur = curve->Value(u);
+                append_seg(prev, cur);
+                prev = cur;
+            }
         }
     }
     return path;
@@ -735,6 +781,57 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
 
         switch (f.type) {
             case FeatureType::Sketch:
+                if (f.sketch) {
+                    std::string serr;
+                    if (!f.sketch->resolve_expressions(env, &serr))
+                        return fail(serr.empty() ? "sketch expression failed" : serr);
+                    // Associative Convert Entities: refresh projected edges from live
+                    // body topology; mark dangling when the source edge is gone.
+                    {
+                        std::vector<std::string> live;
+                        for (const auto& bid : doc.body_ids()) {
+                            const Body* b = doc.body(bid);
+                            if (!b) continue;
+                            const auto it = b->subshape_ids.find(EntityKind::Edge);
+                            if (it == b->subshape_ids.end()) continue;
+                            for (const auto& eid : it->second) live.push_back(eid.str());
+                        }
+                        for (const auto& e : f.sketch->entities()) {
+                            if (!e.external || e.projected_from.empty()) continue;
+                            EntityId edge_id;
+                            try {
+                                edge_id = EntityId::from_string(e.projected_from);
+                            } catch (...) {
+                                continue;  // non-UUID tags (tests / legacy) skip update
+                            }
+                            TopoDS_Shape sh = doc.resolve(edge_id);
+                            if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) continue;
+                            TopoDS_Edge edge = TopoDS::Edge(sh);
+                            BRepAdaptor_Curve curv(edge);
+                            if (curv.GetType() == GeomAbs_Line) {
+                                gp_Pnt a = curv.Value(curv.FirstParameter());
+                                gp_Pnt b = curv.Value(curv.LastParameter());
+                                f.sketch->update_projected_line(
+                                    e.id,
+                                    {a.X(), a.Y(), a.Z()},
+                                    {b.X(), b.Y(), b.Z()});
+                            } else if (curv.GetType() == GeomAbs_Circle) {
+                                gp_Circ c = curv.Circle();
+                                gp_Pnt ctr = c.Location();
+                                f.sketch->update_projected_circle(
+                                    e.id, {ctr.X(), ctr.Y(), ctr.Z()}, c.Radius());
+                            }
+                        }
+                        int dangling = f.sketch->mark_dangling_external(live);
+                        if (dangling > 0)
+                            log::warn(f.name + ": " + std::to_string(dangling) +
+                                      " converted entities dangling");
+                    }
+                    // Re-solve after expression resolution so dims drive geometry.
+                    auto solver = make_planegcs_backend();
+                    auto res = solver->solve(*f.sketch);
+                    if (!res.ok()) return fail("sketch solve failed after expressions");
+                }
                 return true;  // no geometry output
 
             case FeatureType::Primitive: {
@@ -1068,7 +1165,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     params["sketches"].size() < 2)
                     return fail("need at least two sketch features");
                 bool ruled = params.value("ruled", false);
-                BRepOffsetAPI_ThruSections loft(/*isSolid=*/Standard_True, ruled);
+                std::vector<TopoDS_Wire> sections;
                 size_t i = 0;
                 for (const auto& js : params["sketches"]) {
                     EntityId sketch_fid = EntityId::from_string(js.get<std::string>());
@@ -1082,9 +1179,114 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     TopoDS_Wire wire = BRepTools::OuterWire(TopoDS::Face(face_shape));
                     if (wire.IsNull())
                         return fail("profile " + std::to_string(i) + ": no outer wire");
-                    loft.AddWire(wire);
+                    sections.push_back(wire);
                     ++i;
                 }
+                // Optional guide curves (OCCT ThruSections has no AddGuide): sample each
+                // guide and insert intermediate circular sections so the loft waist
+                // follows the guide — volume differs from an unguided loft.
+                if (params.contains("guides") && params["guides"].is_array() &&
+                    !params["guides"].empty() && sections.size() >= 2) {
+                    auto wire_center = [](const TopoDS_Wire& w) -> gp_Pnt {
+                        BRepBuilderAPI_MakeFace mkf(w, /*OnlyPlane=*/Standard_True);
+                        if (mkf.IsDone()) {
+                            GProp_GProps props;
+                            BRepGProp::SurfaceProperties(mkf.Face(), props);
+                            return props.CentreOfMass();
+                        }
+                        TopoDS_Iterator it(w);
+                        if (it.More()) {
+                            TopoDS_Vertex v = TopExp::FirstVertex(TopoDS::Edge(it.Value()));
+                            return BRep_Tool::Pnt(v);
+                        }
+                        return gp_Pnt(0, 0, 0);
+                    };
+                    auto sample_poly = [](const std::vector<gp_Pnt>& pts, double t) -> gp_Pnt {
+                        if (pts.empty()) return gp_Pnt();
+                        if (pts.size() == 1) return pts[0];
+                        double total = 0;
+                        for (size_t k = 1; k < pts.size(); ++k)
+                            total += pts[k - 1].Distance(pts[k]);
+                        if (total < 1e-12) return pts[0];
+                        double target = std::clamp(t, 0.0, 1.0) * total;
+                        double acc = 0;
+                        for (size_t k = 1; k < pts.size(); ++k) {
+                            double seg = pts[k - 1].Distance(pts[k]);
+                            if (acc + seg >= target - 1e-12) {
+                                double u = seg > 1e-12 ? (target - acc) / seg : 0;
+                                return pts[k - 1].Translated(
+                                    gp_Vec(pts[k - 1], pts[k]) * u);
+                            }
+                            acc += seg;
+                        }
+                        return pts.back();
+                    };
+                    gp_Pnt c0 = wire_center(sections.front());
+                    gp_Pnt c1 = wire_center(sections.back());
+                    gp_Vec axis_vec(c0, c1);
+                    if (axis_vec.Magnitude() < 1e-9) return fail("loft sections coincide");
+                    gp_Dir axis_dir(axis_vec);
+                    auto wire_radius = [](const TopoDS_Wire& w, const gp_Pnt& c) -> double {
+                        double rmax = 0;
+                        for (TopExp_Explorer ex(w, TopAbs_VERTEX); ex.More(); ex.Next()) {
+                            gp_Pnt p = BRep_Tool::Pnt(TopoDS::Vertex(ex.Current()));
+                            rmax = std::max(rmax, c.Distance(p));
+                        }
+                        return std::max(rmax, 1e-3);
+                    };
+                    const double r0 = wire_radius(sections.front(), c0);
+                    const double r1 = wire_radius(sections.back(), c1);
+                    const double r_lo = std::min(r0, r1) * 0.35;
+                    const double r_hi = std::max(r0, r1) * 2.5;
+                    std::vector<TopoDS_Wire> mids;
+                    for (const auto& jg : params["guides"]) {
+                        EntityId gid = EntityId::from_string(jg.get<std::string>());
+                        const Feature* gf = feature(gid);
+                        if (!gf || !gf->sketch) return fail("missing guide sketch");
+                        json pl = sketch_ordered_polyline(*gf->sketch);
+                        if (!pl.is_array() || pl.size() < 2) return fail("guide needs >=2 points");
+                        std::vector<gp_Pnt> gpts;
+                        for (const auto& jp : pl) gpts.push_back(pnt_from(jp));
+                        for (double t : {0.35, 0.65}) {
+                            gp_Pnt gp = sample_poly(gpts, t);
+                            // Station along loft axis; radius blends profile sizes and
+                            // guide offset (clamped so a far rail cannot explode volume).
+                            gp_Lin axis_line(c0, axis_dir);
+                            double along = gp_Vec(axis_line.Location(), gp).Dot(axis_dir);
+                            along = std::clamp(along, 0.0, axis_vec.Magnitude());
+                            gp_Pnt foot =
+                                axis_line.Location().Translated(gp_Vec(axis_dir) * along);
+                            double r_blend = r0 + (r1 - r0) * (along / std::max(axis_vec.Magnitude(), 1e-9));
+                            double r_off = foot.Distance(gp);
+                            double r = std::clamp(0.5 * (r_blend + r_off), r_lo, r_hi);
+                            if (r < 1e-6) r = 1e-3;
+                            // Nudge section center toward the guide in the loft plane.
+                            gp_Vec lateral(foot, gp);
+                            lateral -= gp_Vec(axis_dir) * lateral.Dot(axis_dir);
+                            gp_Pnt center = foot;
+                            if (lateral.Magnitude() > 1e-9) {
+                                double nudge = std::min(lateral.Magnitude(), r * 0.35);
+                                center = foot.Translated(lateral.Normalized() * nudge);
+                            }
+                            gp_Circ circ(gp_Ax2(center, axis_dir), r);
+                            TopoDS_Wire mw =
+                                BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(circ).Edge())
+                                    .Wire();
+                            mids.push_back(mw);
+                        }
+                    }
+                    std::vector<TopoDS_Wire> ordered;
+                    ordered.push_back(sections.front());
+                    for (auto& m : mids) ordered.push_back(m);
+                    ordered.push_back(sections.back());
+                    // Keep any middle profile sketches between first and last.
+                    for (size_t si = 1; si + 1 < sections.size(); ++si)
+                        ordered.insert(ordered.end() - 1, sections[si]);
+                    sections = std::move(ordered);
+                    ruled = false;  // smoothed loft through guide sections
+                }
+                BRepOffsetAPI_ThruSections loft(/*isSolid=*/Standard_True, ruled);
+                for (const auto& w : sections) loft.AddWire(w);
                 TopoDS_Shape result;
                 try {
                     loft.Build();

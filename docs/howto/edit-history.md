@@ -24,7 +24,7 @@ sketch dimensions by clicking them, and manage constraints as visible badges.
 1. Enter a sketch (select a face → **Sketch**). While drawing lines, a yellow
    **H / V / ◉ hint** follows the cursor whenever the segment would get an
    automatic horizontal / vertical / coincident relation on commit. The
-   **Snap** and **Infer** toolbar toggles turn snapping and auto-relations off.
+   **Snap**, **Infer**, and **Auto-close** toolbar toggles control snapping (including perpendicular), auto-relations, and closing multi-line chains on finish.
 2. Committed constraints appear as small **badges** beside their geometry
    (H, V, ∥, ⊥, =, ◉). With the Select tool, click a badge to select the
    constraint (it turns orange) and press **Del** to remove it.

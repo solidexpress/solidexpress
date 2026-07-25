@@ -54,6 +54,8 @@ func _init() -> void:
 	ctx.chrome = chrome
 	ctx.clock = FilmClock.new()
 	ctx.tree = self
+	FilmUI.reset_fail_count()
+	await FilmUI.ensure_test_viewport(ctx, Vector2i(1600, 900))
 
 	var script_path: String = str(entry.get("script", ""))
 	if script_path.is_empty():
@@ -82,6 +84,11 @@ func _init() -> void:
 		else:
 			printerr("movie_maker_run_one: failed to write %s" % captions_out)
 	print("film done: %s" % film_id)
+	if FilmUI.fail_count > 0:
+		printerr("movie_maker_run_one: FilmUI reported %d error(s) (offscreen cursor, etc.)" % FilmUI.fail_count)
+		await process_frame
+		quit(1)
+		return
 	# quit() can race MovieWriter teardown (double-free on some builds); sx-movies
 	# treats a non-zero exit as OK when the AVI was written. --quit-after is only
 	# a safety ceiling if a film hangs.

@@ -44,7 +44,8 @@ enum class FeatureType {
     Shell,      // params: {target, faces: [1-based face indices], thickness}
     Offset,     // params: {target, offset}
     Sweep,      // params: {sketch: <fid>, path: [[x,y,z], ...] OR path_feature: <fid>}
-    Loft,       // params: {sketches: [<fid>, ...], ruled: bool}
+    Loft,       // params: {sketches: [<fid>, ...], ruled: bool,
+                //          optional guides: [<fid>, ...]}
     Path,       // params: {sketches: [<fid>, ...], mode: "join_endpoints|bridge_spline|composite",
                 //          path: [[x,y,z], ...] rebuilt on regenerate}
                 // No solid output — consumed by Sweep via path_feature.

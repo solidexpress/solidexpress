@@ -188,6 +188,12 @@ func show_action_alert(keys: String, desc: String) -> void:
 
 ## Move pointer, flash white on click, update alerts. Await before applying the real action.
 func animate_pointer_click(screen_pos: Vector2, keys: String = "Click", desc: String = "") -> void:
+	var vp := get_viewport().get_visible_rect().grow(-2.0)
+	if not vp.has_point(screen_pos):
+		push_error("FilmChrome: cursor offscreen for %s at %s (vp %s)" % [
+			desc if desc != "" else keys, str(screen_pos), str(get_viewport().get_visible_rect())])
+		FilmUI.fail_count += 1
+		return
 	show_action_alert(keys, desc)
 	_pointer.visible = true
 	var half: Vector2 = _pointer.size * 0.5

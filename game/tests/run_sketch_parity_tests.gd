@@ -141,7 +141,12 @@ func test_blocks_and_spline(main) -> void:
 	sm.click(Vector2(5, 25))
 	sm.click(Vector2(10, 20))
 	sm.end_chain()
-	check(sm.sketch.entity_ids().size() > 2, "spline densified to lines")
+	var has_spline := false
+	for id in sm.sketch.entity_ids():
+		if str(sm.sketch.entity_info(id).get("type", "")) == "spline":
+			has_spline = true
+			break
+	check(has_spline, "spline tool commits kernel spline entity")
 	sm.exit_sketch()
 
 

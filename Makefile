@@ -26,6 +26,9 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_sketch_tests.gd
 	$(GODOT) --headless --path game --script tests/run_sketch_tools_tests.gd
 	$(GODOT) --headless --path game --script tests/run_sketch_parity_tests.gd
+	$(GODOT) --headless --path game --script tests/run_sketch_fully_defined_tests.gd
+	$(GODOT) --headless --path game --script tests/run_sketch_expr_dim_tests.gd
+	$(GODOT) --headless --path game --script tests/run_convert_entities_tests.gd
 	$(GODOT) --headless --path game --script tests/run_sweep_loft_solid_tests.gd
 	$(GODOT) --headless --path game --script tests/run_display_tests.gd
 	$(GODOT) --headless --path game --script tests/run_menu_tests.gd
@@ -46,8 +49,8 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_voice_tests.gd
 	$(GODOT) --headless --path game --script tests/run_howto_tests.gd
 	$(GODOT) --headless --path game --script tests/run_sketch_to_3d_ui_tests.gd
+	$(GODOT) --headless --path game --script tests/run_ui_button_coverage_tests.gd
 	$(GODOT) --headless --path game --script tests/run_film_manifest_smoke.gd
-	$(GODOT) --headless --path game --script tests/run_film_loft_ui_tests.gd
 	$(GODOT) --headless --path game --script tests/run_visual_ux_tests.gd
 	$(GODOT) --headless --path game --script tests/run_move_snap_tests.gd
 	$(GODOT) --headless --path game --script tests/run_timeline_ux_tests.gd

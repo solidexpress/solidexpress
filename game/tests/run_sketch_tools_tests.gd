@@ -37,7 +37,10 @@ func _init() -> void:
 	test_snap_midpoint(main)
 	test_snap_circle_center(main)
 	test_snap_axis_horizontal(main)
+	test_snap_perpendicular(main)
 	test_snap_disabled(main)
+	test_auto_close_line_chain(main)
+	test_profile_is_closed()
 	test_dimension_distance_label(main)
 	test_dimension_radius_label(main)
 	test_dimensions_visible_toggle(main)
@@ -366,6 +369,37 @@ func test_snap_axis_horizontal(main) -> void:
 	sm.cancel()
 
 
+func test_snap_perpendicular(main) -> void:
+	print("- snap perpendicular to previous diagonal segment")
+	var sm: SketchMode = main.sketch_mode
+	main.view.clear_selection()
+	main._start_sketch()
+	sm.set_snap(true)
+	sm.set_auto_close(false)
+	sm.set_tool(SketchMode.Tool.LINE)
+	# Diagonal first segment (45°).
+	sm.click(Vector2(0, 0))
+	sm.click(Vector2(30, 30))
+	# Cursor nearly perpendicular to previous (perp to (1,1) is (-1,1)).
+	var last := Vector2(30, 30)
+	var perp_dir := Vector2(-1, 1).normalized()
+	var along_err := Vector2(1, 1).normalized() * 0.8  # within SNAP_RADIUS
+	var near_perp: Vector2 = last + perp_dir * 40.0 + along_err
+	var snapped: Vector2 = sm.snap_point(near_perp)
+	var got := snapped - last
+	check(absf(Vector2(1, 1).normalized().dot(got.normalized())) < 0.05,
+		"snap_point is perpendicular to previous segment")
+	sm.click(near_perp)
+	var ids: PackedStringArray = sm.sketch.entity_ids()
+	check(ids.size() == 2, "perpendicular snap created second line")
+	var info: Dictionary = sm.sketch.entity_info(ids[1])
+	var d: Vector2 = info["end"] - info["start"]
+	var prev := Vector2(30, 30)
+	check(absf(prev.normalized().dot(d.normalized())) < 0.05,
+		"committed second line is perpendicular")
+	sm.cancel()
+
+
 func test_snap_disabled(main) -> void:
 	print("- set_snap(false) passes raw positions")
 	var sm: SketchMode = main.sketch_mode
@@ -386,6 +420,60 @@ func test_snap_disabled(main) -> void:
 	check(info["start"].distance_to(Vector2(40, 0)) > 1e-3, "did not snap to endpoint")
 	sm.set_snap(true)
 	sm.cancel()
+
+
+func test_auto_close_line_chain(main) -> void:
+	print("- auto-close adds closing segment on end_chain")
+	var sm: SketchMode = main.sketch_mode
+	main.view.clear_selection()
+	main._start_sketch()
+	sm.set_snap(false)
+	sm.set_auto_close(true)
+	sm.set_tool(SketchMode.Tool.LINE)
+	sm.click(Vector2(0, 0))
+	sm.click(Vector2(20, 0))
+	sm.click(Vector2(20, 15))
+	# Open U — three points / two segments.
+	check(sm.sketch.entity_ids().size() == 2, "two segments before close")
+	sm.end_chain()
+	check(sm.sketch.entity_ids().size() == 3, "auto-close added third segment")
+	check(SketchMode.profile_is_closed(sm.sketch), "closed triangle profile")
+	# Toggle off: leave open.
+	sm.cancel()
+	main._start_sketch()
+	sm.set_snap(false)
+	sm.set_auto_close(false)
+	sm.set_tool(SketchMode.Tool.LINE)
+	sm.click(Vector2(0, 0))
+	sm.click(Vector2(10, 0))
+	sm.click(Vector2(10, 8))
+	sm.end_chain()
+	check(sm.sketch.entity_ids().size() == 2, "auto-close off leaves chain open")
+	check(not SketchMode.profile_is_closed(sm.sketch), "open chain is not closed")
+	sm.set_auto_close(true)
+	sm.cancel()
+
+
+func test_profile_is_closed() -> void:
+	print("- profile_is_closed helper")
+	var open_sk := SxSketch.new()
+	open_sk.add_line(0, 0, 10, 0)
+	open_sk.add_line(10, 0, 10, 8)
+	check(not SketchMode.profile_is_closed(open_sk), "open L is not closed")
+	var closed_sk := SxSketch.new()
+	closed_sk.add_line(0, 0, 10, 0)
+	closed_sk.add_line(10, 0, 10, 8)
+	closed_sk.add_line(10, 8, 0, 0)
+	check(SketchMode.profile_is_closed(closed_sk), "triangle is closed")
+	var circ := SxSketch.new()
+	circ.add_circle(0, 0, 5)
+	check(SketchMode.profile_is_closed(circ), "circle is closed")
+	var rect := SxSketch.new()
+	rect.add_line(0, 0, 20, 0)
+	rect.add_line(20, 0, 20, 10)
+	rect.add_line(20, 10, 0, 10)
+	rect.add_line(0, 10, 0, 0)
+	check(SketchMode.profile_is_closed(rect), "rectangle is closed")
 
 
 func _dimension_label_texts(sm: SketchMode) -> Array[String]:

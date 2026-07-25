@@ -1,13 +1,16 @@
 class_name OrbitCamera
 extends Camera3D
 ## Turntable orbit camera with CAD-familiar presets (SolidWorks / Fusion /
-## SolidExpress). Two-finger orbits; middle / 3-finger grip pans under SX;
-## Alt / empty-drag navigate; wheel zooms toward the cursor. Wheel / pan over
-## ScrollContainers are left alone.
-## F / Frame = zoom extents (center + frustum-fit selection or all); Shift+F /
-## double-middle fit all. Zoom-out past ~fit distance gently recenters on
-## content so cursor-anchored zoom cannot strand the pivot in empty space.
-## 1/2/3/7 standard views; 5 toggles ortho. Named views in user://views.cfg.
+## SolidExpress).
+##
+## Mouse: empty / RMB / Alt / middle per nav preset; wheel zooms at cursor;
+## Shift+wheel pans; Alt+wheel yaws; Ctrl/Cmd+wheel zooms harder.
+## Trackpad: two-finger orbit, Shift+two-finger pan, pinch / Ctrl+two-finger zoom.
+## Touch: one-finger follows mouse emulation (empty-drag orbit); two-finger
+## pans + pinch-zooms via ScreenTouch/ScreenDrag.
+## Keyboard: arrows pan (Shift+arrows orbit); Alt+WASD pan; +/- and PageUp/Down
+## zoom; F / Home zoom-extents; 1/2/3/7 views; 5 ortho. Wheel / pan over
+## ScrollContainers are left alone. Plain WASD is reserved for modeling tools.
 
 ## Fired after yaw/pitch/distance/pivot/projection update the camera transform.
 ## Overlay gizmos connect so they redraw only when the view actually moves.
@@ -42,14 +45,24 @@ const ZOOM_OUT_RECENTER_START := 1.5
 ## Soft cap on how far past fit-distance a wheel zoom-out may go.
 const ZOOM_OUT_MAX_FIT_MULT := 10.0
 const ORBIT_SPEED := 0.008
-## Two-finger pan sensitivity. Higher so a short trackpad swipe actually turns.
-const PAN_GESTURE_SCALE := 0.045
-## Map pan-gesture deltas into `_pan_by` pixel units (≈ PAN_GESTURE_SCALE / ORBIT_SPEED).
-const PAN_GESTURE_MOVE_SCALE := 5.5
+## Two-finger orbit sensitivity (trackpad PanGesture). Kept modest — libinput
+## already sends large per-frame deltas on a normal swipe.
+const PAN_GESTURE_SCALE := 0.02
+## Map pan-gesture deltas into `_pan_by` pixel units (Shift+two-finger / sketch pan).
+const PAN_GESTURE_MOVE_SCALE := 2.4
 ## Amplify near-1.0 MagnifyGesture deltas (Wayland/libinput often sends tiny factors).
-const MAGNIFY_GAIN := 4.0
+## Kept low so a pinch does not leap through the scene.
+const MAGNIFY_GAIN := 2.0
 ## Ctrl/Cmd + two-finger drag vertical → zoom (fallback when MagnifyGesture is absent).
-const PAN_ZOOM_SCALE := 0.018
+const PAN_ZOOM_SCALE := 0.008
+## Keyboard / Shift+wheel pan step in `_pan_by` pixel units.
+const KEY_PAN_PX := 28.0
+const WHEEL_PAN_PX := 28.0
+## Keyboard / Alt+wheel orbit step in `_orbit_by` pixel units.
+const KEY_ORBIT_PX := 22.0
+const WHEEL_ORBIT_PX := 24.0
+## Discrete keyboard / PageUp-Down zoom factor (< 1 = in).
+const KEY_ZOOM_FACTOR := 0.9
 const MIN_PITCH := deg_to_rad(-89.0)
 const MAX_PITCH := deg_to_rad(89.0)
 const VIEWS_CFG := "user://views.cfg"
@@ -68,6 +81,11 @@ var _sketch_pose: Dictionary = {}
 ## After zoom-extents / look-at, look directly at the pivot (no empty-scene
 ## Y bias) so framed objects stay centered on screen.
 var _look_at_content := false
+## Active finger index → screen position (multi-touch pan / pinch).
+var _touches: Dictionary = {}
+## Previous two-finger midpoint / separation for pinch+pan.
+var _pinch_prev_mid := Vector2.ZERO
+var _pinch_prev_dist := 0.0
 
 
 func _ready() -> void:
@@ -111,12 +129,23 @@ static func pointer_over_scrollable_ui() -> bool:
 	return false
 
 
-## True when this event should drive the camera (middle, Alt+left, pan gesture, wheel).
-## Pass `allow_scroll_gestures=false` when the pointer is over a scrolling UI panel.
-## Pinch-zoom (MagnifyGesture) is never gated — docks don't use pinch.
+## True when this event should drive the camera (middle, Alt+left, pan gesture,
+## wheel, multi-touch, keyboard nav). Pass `allow_scroll_gestures=false` when the
+## pointer is over a scrolling UI panel. Pinch-zoom (MagnifyGesture) is never
+## gated — docks don't use pinch. Caller must still block keyboard nav while a
+## text field has focus or sketch length-entry is consuming digits.
 func is_nav_event(event: InputEvent, allow_scroll_gestures := true) -> bool:
 	if event is InputEventMagnifyGesture:
 		return true
+	# Multi-touch pan/pinch only. Single-finger uses mouse emulation → empty-drag.
+	if event is InputEventScreenTouch:
+		var st := event as InputEventScreenTouch
+		if st.pressed:
+			return _touches.size() >= 1 and not _touches.has(st.index)
+		return _touches.size() >= 2 or (_touches.has(st.index) and _touches.size() >= 2)
+	if event is InputEventScreenDrag:
+		return _touches.size() >= 2 or (
+				_touches.has((event as InputEventScreenDrag).index) and _touches.size() >= 2)
 	if event is InputEventPanGesture:
 		# Ctrl/Cmd+pan is treated as pinch-zoom and always available.
 		if event.ctrl_pressed or event.meta_pressed:
@@ -127,7 +156,8 @@ func is_nav_event(event: InputEvent, allow_scroll_gestures := true) -> bool:
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP \
 				or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			# Ctrl+wheel is pinch-zoom on many Linux trackpads — never gate it.
-			if mb.ctrl_pressed or mb.meta_pressed:
+			# Shift/Alt wheel are camera pan/orbit — also never leave to docks.
+			if mb.ctrl_pressed or mb.meta_pressed or mb.shift_pressed or mb.alt_pressed:
 				return true
 			return allow_scroll_gestures
 		if mb.button_index == MOUSE_BUTTON_MIDDLE:
@@ -145,6 +175,48 @@ func is_nav_event(event: InputEvent, allow_scroll_gestures := true) -> bool:
 			return true
 		if (mm.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0 and mm.alt_pressed:
 			return true
+	if event is InputEventKey:
+		return _is_nav_key(event as InputEventKey)
+	return false
+
+
+## Feed every screen-touch so two-finger nav can see the first finger. Returns
+## true when the event was consumed as multi-touch camera nav (caller should
+## mark handled). Single-finger never consumes — mouse emulation owns it.
+func note_screen_touch(st: InputEventScreenTouch) -> bool:
+	if st.pressed:
+		_touches[st.index] = st.position
+		if _touches.size() == 2:
+			_pinch_reset()
+		return _touches.size() >= 2
+	var was_multi := _touches.size() >= 2
+	_touches.erase(st.index)
+	if _touches.size() < 2:
+		_pinch_prev_dist = 0.0
+	elif _touches.size() == 2:
+		_pinch_reset()
+	return was_multi
+
+
+## Keys owned by the camera. Number-row views are claimed here; Interaction
+## suppresses them while sketch length-entry / text fields are active.
+func _is_nav_key(k: InputEventKey) -> bool:
+	if not k.pressed or k.ctrl_pressed or k.meta_pressed:
+		return false
+	match k.keycode:
+		KEY_F, KEY_HOME:
+			return true
+		KEY_1, KEY_2, KEY_3, KEY_5, KEY_7:
+			return not k.alt_pressed
+		KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN:
+			return true
+		KEY_PAGEUP, KEY_PAGEDOWN:
+			return true
+		KEY_EQUAL, KEY_KP_ADD, KEY_MINUS, KEY_KP_SUBTRACT:
+			return true
+		# Alt+WASD pans — plain WASD stays with display / sketch / select tools.
+		KEY_W, KEY_A, KEY_S, KEY_D:
+			return k.alt_pressed
 	return false
 
 
@@ -160,6 +232,10 @@ func handle_input(event: InputEvent, allow_scroll_gestures := true) -> bool:
 		var pos := vp.get_mouse_position() if vp != null else Vector2.ZERO
 		zoom_at(pos, factor)
 		return true
+	if event is InputEventScreenTouch:
+		return note_screen_touch(event as InputEventScreenTouch)
+	if event is InputEventScreenDrag:
+		return _handle_screen_drag(event as InputEventScreenDrag)
 	if event is InputEventPanGesture and (event.ctrl_pressed or event.meta_pressed):
 		# Ctrl+two-finger drag → zoom (Linux fallback when MagnifyGesture is missing).
 		var pg_zoom := event as InputEventPanGesture
@@ -175,7 +251,9 @@ func handle_input(event: InputEvent, allow_scroll_gestures := true) -> bool:
 				(event as InputEventMouseButton).button_index == MOUSE_BUTTON_WHEEL_UP
 				or (event as InputEventMouseButton).button_index == MOUSE_BUTTON_WHEEL_DOWN)
 				and not (event as InputEventMouseButton).ctrl_pressed
-				and not (event as InputEventMouseButton).meta_pressed)):
+				and not (event as InputEventMouseButton).meta_pressed
+				and not (event as InputEventMouseButton).shift_pressed
+				and not (event as InputEventMouseButton).alt_pressed)):
 		return false
 	if event is InputEventPanGesture:
 		# Two-finger drag orbits. Shift+two-finger pans. A 3-finger grip
@@ -197,7 +275,7 @@ func handle_input(event: InputEvent, allow_scroll_gestures := true) -> bool:
 		var scale := PAN_GESTURE_SCALE
 		# Left-click held under the fingers → slightly snappier turn.
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-			scale *= 1.35
+			scale *= 1.15
 		yaw -= pg.delta.x * scale
 		pitch = clampf(pitch + pg.delta.y * scale, MIN_PITCH, MAX_PITCH)
 		_update_transform()
@@ -205,12 +283,9 @@ func handle_input(event: InputEvent, allow_scroll_gestures := true) -> bool:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			zoom_at(mb.position, 0.85 if (mb.ctrl_pressed or mb.meta_pressed) else 0.9)
-			return true
+			return _handle_wheel(mb, true)
 		if mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			var out := 0.85 if (mb.ctrl_pressed or mb.meta_pressed) else 0.9
-			zoom_at(mb.position, 1.0 / out)
-			return true
+			return _handle_wheel(mb, false)
 		if mb.button_index == MOUSE_BUTTON_MIDDLE:
 			# SolidWorks muscle memory: double-middle = zoom to fit.
 			if mb.pressed and mb.double_click:
@@ -235,32 +310,159 @@ func handle_input(event: InputEvent, allow_scroll_gestures := true) -> bool:
 			_orbit_by(mm.relative.x, mm.relative.y)
 		return true
 	elif event is InputEventKey:
-		var k := event as InputEventKey
-		if not k.pressed or k.ctrl_pressed:
-			return false
-		match k.keycode:
-			KEY_F:
-				# F → selection (or all); Shift+F → always all.
-				frame_selection_or_all(k.shift_pressed)
-				return true
-			KEY_1:  # front: looking along -Y in model space (Z-up kernel)
-				apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0))
-				return true
-			KEY_2:  # right: looking along -X
-				apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0))
-				return true
-			KEY_3:  # top: looking down model +Z (world +Y)
-				apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0))
-				return true
-			KEY_7:  # isometric
-				apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0))
-				return true
-			KEY_5:
-				if sketch_orientation_locked:
-					return true
-				toggle_projection()
-				return true
+		return _handle_nav_key(event as InputEventKey)
 	return false
+
+
+## Wheel: zoom (Ctrl = stronger). Shift = vertical pan; Alt = yaw; Shift+Alt =
+## horizontal pan — common CAD / DCC modifiers when the middle button is scarce.
+## Honors `factor` so high-rate trackpad scroll ticks stay small.
+func _handle_wheel(mb: InputEventMouseButton, wheel_up: bool) -> bool:
+	var amount := maxf(mb.factor, 0.05)
+	var sign := -1.0 if wheel_up else 1.0
+	if mb.shift_pressed and mb.alt_pressed:
+		_pan_by(sign * WHEEL_PAN_PX * amount, 0.0)
+		return true
+	if mb.shift_pressed:
+		_pan_by(0.0, sign * WHEEL_PAN_PX * amount)
+		return true
+	if mb.alt_pressed:
+		if sketch_orientation_locked:
+			_pan_by(sign * WHEEL_PAN_PX * amount, 0.0)
+		else:
+			_orbit_by(sign * WHEEL_ORBIT_PX * amount, 0.0)
+		return true
+	# Per-notch scale (< 1 = zoom in). Milder than the old 0.9 so a trackpad
+	# flurry of notches does not leap through the model.
+	var unit := 0.88 if (mb.ctrl_pressed or mb.meta_pressed) else 0.94
+	var step := pow(unit, amount)
+	if wheel_up:
+		zoom_at(mb.position, step)
+	else:
+		zoom_at(mb.position, 1.0 / step)
+	return true
+
+
+func _handle_screen_drag(sd: InputEventScreenDrag) -> bool:
+	if not _touches.has(sd.index):
+		_touches[sd.index] = sd.position
+	else:
+		_touches[sd.index] = sd.position
+	if _touches.size() < 2:
+		return false
+	# Two-finger: midpoint motion pans; separation change pinch-zooms.
+	var pts: Array = _touches.values()
+	if pts.size() < 2:
+		return false
+	var a: Vector2 = pts[0]
+	var b: Vector2 = pts[1]
+	var mid := (a + b) * 0.5
+	var dist := a.distance_to(b)
+	if _pinch_prev_dist > 1.0 and dist > 1.0:
+		var mid_delta := mid - _pinch_prev_mid
+		_pan_by(mid_delta.x, mid_delta.y)
+		var zfactor := clampf(_pinch_prev_dist / dist, 0.5, 2.0)
+		if absf(zfactor - 1.0) > 0.002:
+			zoom_at(mid, zfactor)
+	_pinch_prev_mid = mid
+	_pinch_prev_dist = dist
+	return true
+
+
+func _pinch_reset() -> void:
+	var pts: Array = _touches.values()
+	if pts.size() < 2:
+		_pinch_prev_dist = 0.0
+		return
+	_pinch_prev_mid = (pts[0] + pts[1]) * 0.5
+	_pinch_prev_dist = pts[0].distance_to(pts[1])
+
+
+func _handle_nav_key(k: InputEventKey) -> bool:
+	if not k.pressed or k.ctrl_pressed or k.meta_pressed:
+		return false
+	match k.keycode:
+		KEY_F, KEY_HOME:
+			# F / Home → selection (or all); Shift+F / Shift+Home → always all.
+			frame_selection_or_all(k.shift_pressed)
+			return true
+		KEY_1:  # front: looking along -Y in model space (Z-up kernel)
+			apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0))
+			return true
+		KEY_2:  # right: looking along -X
+			apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0))
+			return true
+		KEY_3:  # top: looking down model +Z (world +Y)
+			apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0))
+			return true
+		KEY_7:  # isometric
+			apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0))
+			return true
+		KEY_5:
+			if sketch_orientation_locked:
+				return true
+			toggle_projection()
+			return true
+		KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN:
+			return _handle_arrow_key(k)
+		KEY_W, KEY_A, KEY_S, KEY_D:
+			if not k.alt_pressed:
+				return false
+			return _handle_wasd_pan(k.keycode)
+		KEY_PAGEUP, KEY_EQUAL, KEY_KP_ADD:
+			_zoom_at_view_center(KEY_ZOOM_FACTOR)
+			return true
+		KEY_PAGEDOWN, KEY_MINUS, KEY_KP_SUBTRACT:
+			_zoom_at_view_center(1.0 / KEY_ZOOM_FACTOR)
+			return true
+	return false
+
+
+func _handle_arrow_key(k: InputEventKey) -> bool:
+	var dx := 0.0
+	var dy := 0.0
+	match k.keycode:
+		KEY_LEFT:
+			dx = -1.0
+		KEY_RIGHT:
+			dx = 1.0
+		KEY_UP:
+			dy = -1.0
+		KEY_DOWN:
+			dy = 1.0
+	if k.shift_pressed:
+		if sketch_orientation_locked:
+			_pan_by(dx * KEY_PAN_PX, dy * KEY_PAN_PX)
+		else:
+			# Arrow-left turns the view left (same feel as dragging right).
+			_orbit_by(-dx * KEY_ORBIT_PX, dy * KEY_ORBIT_PX)
+		return true
+	_pan_by(dx * KEY_PAN_PX, dy * KEY_PAN_PX)
+	return true
+
+
+func _handle_wasd_pan(keycode: int) -> bool:
+	var dx := 0.0
+	var dy := 0.0
+	match keycode:
+		KEY_A:
+			dx = -1.0
+		KEY_D:
+			dx = 1.0
+		KEY_W:
+			dy = -1.0
+		KEY_S:
+			dy = 1.0
+	_pan_by(dx * KEY_PAN_PX, dy * KEY_PAN_PX)
+	return true
+
+
+func _zoom_at_view_center(factor: float) -> void:
+	var vp := get_viewport()
+	var center := Vector2.ZERO
+	if vp != null:
+		center = vp.get_visible_rect().size * 0.5
+	zoom_at(center, factor)
 
 
 ## SX / Fusion: middle (3-finger grip on clickfinger trackpads) pans,

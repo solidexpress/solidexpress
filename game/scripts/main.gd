@@ -507,7 +507,7 @@ func _build_ui() -> void:
 	status_bar.offset_top = -30
 	ui.add_child(status_bar)
 	status_label = Label.new()
-	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle / 3-finger pan · wheel zoom · F fit · 1/2/3/7 views · click select · drag to move · drag face to push/pull · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
+	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle pan · wheel zoom (Shift/Alt pan/orbit) · arrows pan · Alt+WASD pan · F fit · 1/2/3/7 views · click select · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
 	status_label.add_theme_font_size_override("font_size", 12)
 	status_bar.add_child(status_label)
 
@@ -562,16 +562,22 @@ func _build_ui() -> void:
 	rows.add_child(dof_label)
 	var snap_toggle := CheckBox.new()
 	snap_toggle.text = ""
-	snap_toggle.tooltip_text = "Snap to grid / endpoints"
+	snap_toggle.tooltip_text = "Snap to endpoints / midpoints / H-V / perpendicular"
 	snap_toggle.button_pressed = sketch_mode.snap_enabled
 	snap_toggle.toggled.connect(sketch_mode.set_snap)
 	rows.add_child(snap_toggle)
 	var infer_toggle := CheckBox.new()
 	infer_toggle.text = ""
-	infer_toggle.tooltip_text = "Infer constraints while drawing"
+	infer_toggle.tooltip_text = "Infer constraints while drawing (H / V / ⊥ / coincident)"
 	infer_toggle.button_pressed = sketch_mode.infer_enabled
 	infer_toggle.toggled.connect(sketch_mode.set_infer)
 	rows.add_child(infer_toggle)
+	var autoclose_toggle := CheckBox.new()
+	autoclose_toggle.text = ""
+	autoclose_toggle.tooltip_text = "Auto-close line chain on finish (right-click / double-click)"
+	autoclose_toggle.button_pressed = sketch_mode.auto_close_enabled
+	autoclose_toggle.toggled.connect(sketch_mode.set_auto_close)
+	rows.add_child(autoclose_toggle)
 	# Kept for tests / voice that still read these nodes.
 	dim_value = SpinBox.new()
 	dim_value.visible = false
@@ -802,22 +808,22 @@ func _refresh_merge_chrome() -> void:
 
 
 ## Classify a committed sketch pad for multi-sketch → 3D workflows.
+## Closed profiles (loft / sweep section) vs open rails (path merge).
 func _sketch_pad_role(fid: String) -> String:
 	var sk: SxSketch = view.doc.graph_get_sketch(fid)
 	if sk == null:
 		return "unknown"
-	var has_circle := false
-	var line_count := 0
+	if SketchMode.profile_is_closed(sk):
+		return "profile"
+	var edge_count := 0
 	for id in sk.entity_ids():
+		if sk.is_construction(id):
+			continue
 		var info: Dictionary = sk.entity_info(id)
 		match str(info.get("type", "")):
-			"circle":
-				has_circle = true
-			"line", "arc":
-				line_count += 1
-	if has_circle:
-		return "profile"
-	if line_count >= 1:
+			"line", "arc", "spline":
+				edge_count += 1
+	if edge_count >= 1:
 		return "rail"
 	return "unknown"
 
@@ -843,11 +849,12 @@ func _sketch_to_3d_actions() -> Array:
 				profiles += 1
 			"rail":
 				rails += 1
-	if n >= 2 and rails >= 1:
+	if n >= 2 and rails >= 1 and profiles < 2:
 		actions.append("merge_join")
 		actions.append("merge_spline")
 		actions.append("merge_composite")
-	if n >= 2 and profiles >= 2 and rails == 0:
+	# Loft: 2+ profiles; open rails in the same selection become guide curves.
+	if profiles >= 2:
 		actions.append("loft_ruled")
 		actions.append("loft_smooth")
 	if n == 1 and profiles == 1:
@@ -874,20 +881,28 @@ func _on_timeline_feature_selected(fid: String, ftype: String) -> void:
 
 
 func _loft_selected_sketches(ruled: bool) -> void:
-	if selected_sketch_pads.size() < 2:
-		_on_status("Select 2+ closed profile pads (Ctrl+click) to loft")
-		return
-	var fids := PackedStringArray()
+	var profiles := PackedStringArray()
+	var guides := PackedStringArray()
 	for fid in selected_sketch_pads:
-		fids.append(fid)
-	var loft_fid: String = view.doc.graph_add_loft(fids, ruled)
+		match _sketch_pad_role(fid):
+			"profile":
+				profiles.append(fid)
+			"rail":
+				guides.append(fid)
+	if profiles.size() < 2:
+		_on_status("Select 2+ closed profile pads (Ctrl+click) to loft; open rails become guides")
+		return
+	var loft_fid: String = view.doc.graph_add_loft(profiles, ruled, guides)
 	if loft_fid == "":
 		_on_status("Loft failed — need closed profiles on separate planes")
 		return
 	selected_sketch_pads.clear()
 	selected_path_fid = ""
 	_refresh_merge_chrome()
-	_on_status("Loft solid created (%s)" % ("ruled" if ruled else "smooth"))
+	var guide_note := ""
+	if guides.size() > 0:
+		guide_note = " + %d guide(s)" % guides.size()
+	_on_status("Loft solid created (%s%s)" % [("ruled" if ruled else "smooth"), guide_note])
 	view.refresh()
 	_on_document_changed()
 
@@ -898,7 +913,7 @@ func _sweep_profile_along_path() -> void:
 		return
 	var prof_fid: String = selected_sketch_pads[0]
 	if _sketch_pad_role(prof_fid) != "profile":
-		_on_status("Selected pad is not a closed profile (try a circle)")
+		_on_status("Selected pad is not a closed profile")
 		return
 	var path_fid := selected_path_fid if selected_path_fid != "" else _latest_path_fid()
 	if path_fid == "":
@@ -985,8 +1000,12 @@ func _on_sketch_action(action: String) -> void:
 		"revolve":
 			sketch_mode.finish_revolve(TAU, _finish_op_name())
 		"horizontal", "vertical", "parallel", "perpendicular", "equal", "coincident", \
-		"tangent", "midpoint", "symmetric", "concentric", "collinear":
+		"tangent", "midpoint", "symmetric", "concentric", "collinear", "fix", "diameter":
 			_apply_constraint(action, 0.0)
+		"fully_define":
+			sketch_mode.fully_define()
+		"analyze":
+			sketch_mode.analyze_sketch()
 		_:
 			_on_status("Sketch action: %s" % action)
 

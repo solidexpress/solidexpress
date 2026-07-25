@@ -4,7 +4,9 @@ Goal: use the compact left rail and on-canvas chips to draw, modify, and constra
 
 ## Left rail (primaries)
 
-In sketch mode the left rail shows: **Exit Sketch**, Select, Line, Arc, Circle, Rect, Polygon, Ellipse, Slot, Spline, Point, Trim, Extend, Smart Dim, Convert, Mirror, Pattern — plus Snap / Infer and DOF readout.
+In sketch mode the left rail shows: **Exit Sketch**, Select, Line, Arc, Circle, Rect, Polygon, Ellipse, Slot, Spline, Point, Trim, Extend, Smart Dim, Convert, Mirror, Pattern — plus Snap / Infer / Auto-close and DOF readout.
+
+Snap (default on) magnets to endpoints, midpoints, centers, H/V, and **perpendicular** to the previous segment (or nearby lines). Infer (default on) adds H / V / ⊥ / coincident while drawing. Auto-close (default on) finishes a multi-line chain with a closing segment back to the first point (right-click or double-click); uncheck it for open rails.
 
 Variants and numeric options appear **on-canvas** (floating chips), not as permanent rail spinboxes.
 
@@ -21,11 +23,13 @@ Variants and numeric options appear **on-canvas** (floating chips), not as perma
 
 ## Derived geometry
 
-- **Convert**: turns pierce / plane-intersection points into sketch points.
+- **Convert**: with body edges selected, projects them onto the sketch plane as **associative** external lines/circles (`projected_from` edge id). On regen, geometry updates from the live edge; dangling edges become construction. Without an edge selection, Convert still turns pierce / plane-intersection points into sketch points.
 - **Mirror**: select geometry plus one axis line, then Mirror.
 - **Pattern**: linear (kernel) or circular (rotated copies) via variant chips.
-- **Smart Dim** (D): click a line for length, circle/arc for radius, or two points for distance.
+- **Smart Dim** (D): click a line for length, circle/arc for radius, or two points for distance. Edit a label to type a number or `=w/2` (variables). **Alt+click** a dim label toggles driving vs driven (reference).
+- **Relations**: selection chips include midpoint, symmetric, fix, diameter, plus Fully Define / Analyze.
 - **Typed length while drawing**: after the first click of a line / center-circle / polygon / slot / center-arc, the finish-strip mm blank tracks the rubber-band. Type a number (or click the blank) to lock distance; mouse still steers direction; **Enter** places the point. Esc unlocks.
+- **Spline**: commits a true kernel spline entity (fit points → B-spline profile/path), not densified lines.
 
 ## Blocks & picture
 

@@ -13,14 +13,18 @@ Goal: drop one solid that sits on the ground plane, keep it selected, and orbit 
    - **Empty-space drag** (left-drag where nothing is picked)
    - **Right-drag** (right-**click** alone opens the context menu)
    - **Alt + left-drag** — orbit on SX/SW (handy on a touchpad); Fusion matches middle (pans)
-   - **Middle-drag** on a mouse — SX/Fusion: pan; set **Nav: SW** in the view HUD for SolidWorks-style middle-orbit
+   - **Middle-drag** on a mouse — SX/Fusion: pan; SolidWorks-style middle-orbit exists as a nav preset in code
    - **Shift** held with middle → orbit under SX/Fusion (or pan under SW); **Alt+Shift** pans under SX/SW
    - **Double-middle** → fit selection (or all)
    - **Wheel** or **pinch** → zoom toward the cursor (same UI rule as two-finger scroll)
+   - **Shift+wheel** → pan vertically; **Alt+wheel** → yaw; **Shift+Alt+wheel** → pan horizontally; **Ctrl+wheel** → stronger zoom
+   - **Touch**: one-finger drag orbits (mouse emulation); two-finger drag pans and pinch-zooms
+   - **Arrow keys** → pan; **Shift+arrows** → orbit; **Alt+WASD** → pan (plain WASD stays with modeling tools)
+   - **+ / − / Page Up / Page Down** → zoom at view center; **Home** same as **F**
    - **Ctrl + empty-drag** → rubber-band box select
    - **Shift + click** → add / toggle multi-select (Shift+empty keeps selection)
    - **Empty click** → clear selection
-   - **F** frames the **selection** (or all if none); **Shift+F** always frames all; **Space** opens the orientation panel; **1 / 2 / 3 / 7** jump to front / right / top / isometric
+   - **F** frames the **selection** (or all if none); **Shift+F** always frames all; **Space** opens the orientation panel; **1 / 2 / 3 / 7** jump to front / right / top / isometric; **5** toggles ortho
 5. Drag on the solid to **move** it on the active plane (old/new centers + editable Δ). Grab the yellow **lift** grip (inset elevator along the plane normal) to leave / approach the plane. Tap **X**/**Y**/**Z** mid-drag to lock that axis. Blue **stretch arrows** (single outward chevron) on each face or a **rotate arc** reshape / rotate — Enter refines the focused Δ / Δ°.
    - Set the active plane with **View → Set Active Plane…** (then click a flat face), or select a face and use **Active plane** on the strip / **Set as active plane** on RMB. The white grid follows that plane; empty ground during pick mode resets both to world XY.
 6. To cancel a place before committing, press **Esc** (or right-click without dragging). Click empty space to deselect and bring **Primitives** back.

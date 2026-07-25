@@ -34,6 +34,7 @@ func _init() -> void:
 	test_zero_viewport_guard()
 	test_scroll_gestures_gated(cam)
 	test_nav_presets_and_fit(cam)
+	test_keyboard_wheel_touch_nav(cam)
 	await test_zoom_extents_and_zoom_out_recenter()
 
 	print("%d checks, %d failures" % [checks, failures])
@@ -196,6 +197,7 @@ func test_scroll_gestures_gated(cam: OrbitCamera) -> void:
 
 func test_nav_presets_and_fit(cam: OrbitCamera) -> void:
 	print("- nav presets + selection fit helpers")
+	cam.nav_preset = OrbitCamera.NavPreset.SOLIDEXPRESS
 	check(cam._want_pan(false) == true, "SX: middle / 3-finger grip = pan")
 	check(cam._want_pan(true) == false, "SX: Shift+middle = orbit")
 	check(cam._want_alt_pan(false) == false, "SX: Alt-drag orbits")
@@ -252,6 +254,121 @@ func test_nav_presets_and_fit(cam: OrbitCamera) -> void:
 
 	# frame_selection returns false without a selection/view.
 	check(not cam.frame_selection(), "frame_selection false without selection")
+
+
+func test_keyboard_wheel_touch_nav(cam: OrbitCamera) -> void:
+	print("- keyboard / wheel modifiers / multi-touch nav")
+	_reset_cam(cam)
+
+	# Arrow keys pan; Shift+arrows orbit.
+	var pivot0 := cam.pivot
+	var yaw0 := cam.yaw
+	var left := InputEventKey.new()
+	left.keycode = KEY_LEFT
+	left.pressed = true
+	check(cam.is_nav_event(left, true), "arrow is nav event")
+	check(cam.handle_input(left, true), "arrow handled")
+	check(cam.pivot.distance_to(pivot0) > 1e-4, "arrow pans pivot")
+	check(is_equal_approx(cam.yaw, yaw0), "arrow does not orbit")
+
+	_reset_cam(cam)
+	yaw0 = cam.yaw
+	pivot0 = cam.pivot
+	var shift_left := InputEventKey.new()
+	shift_left.keycode = KEY_LEFT
+	shift_left.pressed = true
+	shift_left.shift_pressed = true
+	check(cam.handle_input(shift_left, true), "Shift+arrow handled")
+	check(absf(cam.yaw - yaw0) > 1e-6, "Shift+arrow orbits")
+	check(cam.pivot.is_equal_approx(pivot0), "Shift+arrow does not pan")
+
+	# Alt+WASD pans; plain W is not a nav event.
+	_reset_cam(cam)
+	pivot0 = cam.pivot
+	var plain_w := InputEventKey.new()
+	plain_w.keycode = KEY_W
+	plain_w.pressed = true
+	check(not cam.is_nav_event(plain_w, true), "plain W is not camera nav")
+	var alt_d := InputEventKey.new()
+	alt_d.keycode = KEY_D
+	alt_d.pressed = true
+	alt_d.alt_pressed = true
+	check(cam.is_nav_event(alt_d, true), "Alt+D is nav event")
+	check(cam.handle_input(alt_d, true), "Alt+D handled")
+	check(cam.pivot.distance_to(pivot0) > 1e-4, "Alt+D pans")
+
+	# F / 1 are nav keys (wired through is_nav_event).
+	var f_key := InputEventKey.new()
+	f_key.keycode = KEY_F
+	f_key.pressed = true
+	check(cam.is_nav_event(f_key, true), "F is nav event")
+	var one := InputEventKey.new()
+	one.keycode = KEY_1
+	one.pressed = true
+	check(cam.is_nav_event(one, true), "1 is nav event")
+	check(cam.handle_input(one, true), "1 applies front view")
+
+	# +/- zoom at center.
+	_reset_cam(cam)
+	var dist0 := cam.distance
+	var plus := InputEventKey.new()
+	plus.keycode = KEY_EQUAL
+	plus.pressed = true
+	check(cam.handle_input(plus, true), "+ zoom handled")
+	check(cam.distance < dist0, "+ zooms in")
+
+	# Shift+wheel pans; Alt+wheel orbits; plain wheel still zooms.
+	_reset_cam(cam)
+	pivot0 = cam.pivot
+	yaw0 = cam.yaw
+	dist0 = cam.distance
+	var shift_wheel := InputEventMouseButton.new()
+	shift_wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	shift_wheel.pressed = true
+	shift_wheel.shift_pressed = true
+	shift_wheel.position = Vector2(100, 100)
+	check(cam.is_nav_event(shift_wheel, false), "Shift+wheel nav even over scroll UI")
+	check(cam.handle_input(shift_wheel, false), "Shift+wheel handled")
+	check(cam.pivot.distance_to(pivot0) > 1e-4, "Shift+wheel pans")
+	check(is_equal_approx(cam.distance, dist0), "Shift+wheel does not zoom")
+
+	_reset_cam(cam)
+	yaw0 = cam.yaw
+	pivot0 = cam.pivot
+	var alt_wheel := InputEventMouseButton.new()
+	alt_wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	alt_wheel.pressed = true
+	alt_wheel.alt_pressed = true
+	alt_wheel.position = Vector2(100, 100)
+	check(cam.handle_input(alt_wheel, true), "Alt+wheel handled")
+	check(absf(cam.yaw - yaw0) > 1e-6, "Alt+wheel yaws")
+	check(cam.pivot.is_equal_approx(pivot0), "Alt+wheel does not pan")
+
+	# Multi-touch: first finger tracks only; second finger + drag pans.
+	_reset_cam(cam)
+	cam._touches.clear()
+	pivot0 = cam.pivot
+	var t0 := InputEventScreenTouch.new()
+	t0.index = 0
+	t0.pressed = true
+	t0.position = Vector2(100, 100)
+	check(not cam.note_screen_touch(t0), "first finger does not consume")
+	check(cam._touches.size() == 1, "first finger tracked")
+	var t1 := InputEventScreenTouch.new()
+	t1.index = 1
+	t1.pressed = true
+	t1.position = Vector2(200, 100)
+	check(cam.note_screen_touch(t1), "second finger consumes as multi-touch")
+	var drag := InputEventScreenDrag.new()
+	drag.index = 1
+	drag.position = Vector2(220, 120)
+	drag.relative = Vector2(20, 20)
+	# Update stored position via handle; pinch baseline set on second press.
+	check(cam.is_nav_event(drag, true), "two-finger drag is nav")
+	check(cam.handle_input(drag, true), "two-finger drag handled")
+	# Midpoint moved from (150,100) toward (160,110) → pan.
+	check(cam.pivot.distance_to(pivot0) > 1e-4 or not is_equal_approx(cam.distance, 400.0),
+		"two-finger drag pans or pinch-zooms")
 
 
 func test_zoom_extents_and_zoom_out_recenter() -> void:

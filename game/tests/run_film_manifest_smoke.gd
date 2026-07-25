@@ -54,6 +54,7 @@ func _run_one(entry: Dictionary) -> void:
 	var script_path := str(entry.get("script", ""))
 	var budget_frames := int(entry.get("quit_after", 1200)) * 2 + 600
 	print("- smoke %s" % film_id)
+	FilmUI.reset_fail_count()
 
 	var main_scene: PackedScene = load("res://scenes/main.tscn")
 	var main = main_scene.instantiate()
@@ -67,6 +68,7 @@ func _run_one(entry: Dictionary) -> void:
 	ctx.camera = FilmCamera.new(main.camera)
 	ctx.clock = FilmClock.new()
 	ctx.tree = self
+	await FilmUI.ensure_test_viewport(ctx)
 
 	var film_script: GDScript = load(script_path) as GDScript
 	if film_script == null:
@@ -92,6 +94,8 @@ func _run_one(entry: Dictionary) -> void:
 	else:
 		check(true, "%s: finished" % film_id)
 		films_run += 1
+	check(FilmUI.fail_count == 0,
+			"%s: no FilmUI offscreen/control errors (got %d)" % [film_id, FilmUI.fail_count])
 
 	main.queue_free()
 	await process_frame

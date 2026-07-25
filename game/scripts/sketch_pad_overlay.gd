@@ -1,13 +1,17 @@
 class_name SketchPadOverlay
 extends Node3D
-## Yellow translucent pads for committed Sketch features (extents + 20%).
-## Thin fill + high-reflection rim + profile curves; clickable when not editing.
+## Translucent pads for committed Sketch features (extents + 20%).
+## Closed profiles: gold fill / rim / strokes (loft / extrude / sweep section).
+## Open rails: cyan fill / rim / strokes (path merge). Clickable when not editing.
 
 ## Fill is deliberately thin (1/10 of the previous 0.28 alpha).
-const PAD_COLOR := Color(1.0, 0.9, 0.2, 0.028)
-const EDGE_COLOR := Color(1.0, 0.95, 0.55, 1.0)
+const PAD_COLOR_CLOSED := Color(1.0, 0.9, 0.2, 0.028)
+const PAD_COLOR_OPEN := Color(0.25, 0.85, 0.95, 0.035)
+const EDGE_COLOR_CLOSED := Color(1.0, 0.95, 0.55, 1.0)
+const EDGE_COLOR_OPEN := Color(0.45, 0.92, 1.0, 1.0)
 ## Opaque profile so the 2D shape reads clearly on the pad in 3D.
-const PROFILE_COLOR := Color(0.98, 0.78, 0.08, 1.0)
+const PROFILE_COLOR_CLOSED := Color(0.98, 0.78, 0.08, 1.0)
+const PROFILE_COLOR_OPEN := Color(0.35, 0.88, 1.0, 1.0)
 const CONSTRUCTION_COLOR := Color(0.85, 0.7, 0.25, 0.45)
 const PAD_FRAC := 0.2
 ## Rim half-width in sketch-plane units (mm); ~1/3 of the original 0.35.
@@ -17,33 +21,22 @@ const PROFILE_HALF := 0.28
 
 ## DocumentView (avoid typed cycle).
 var view: Node
-## fid -> {mesh, edge, profile, origin, x, y, min2, max2, normal}
+## fid -> {mesh, edge, profile, origin, x, y, min2, max2, normal, closed}
 var _pads: Dictionary = {}
-var _mat: StandardMaterial3D
-var _edge_mat: StandardMaterial3D
+var _mat_closed: StandardMaterial3D
+var _mat_open: StandardMaterial3D
+var _edge_mat_closed: StandardMaterial3D
+var _edge_mat_open: StandardMaterial3D
 var _profile_mat: StandardMaterial3D
 ## Feature id currently being edited (hide that pad); "" = show all.
 var _hidden_fid := ""
 
 
 func _ready() -> void:
-	_mat = StandardMaterial3D.new()
-	_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_mat.albedo_color = PAD_COLOR
-	_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-
-	_edge_mat = StandardMaterial3D.new()
-	_edge_mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
-	_edge_mat.albedo_color = EDGE_COLOR
-	_edge_mat.metallic = 1.0
-	_edge_mat.roughness = 0.08
-	_edge_mat.metallic_specular = 1.0
-	_edge_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_edge_mat.rim_enabled = true
-	_edge_mat.rim = 0.85
-	_edge_mat.rim_tint = 0.4
+	_mat_closed = _make_pad_mat(PAD_COLOR_CLOSED)
+	_mat_open = _make_pad_mat(PAD_COLOR_OPEN)
+	_edge_mat_closed = _make_edge_mat(EDGE_COLOR_CLOSED)
+	_edge_mat_open = _make_edge_mat(EDGE_COLOR_OPEN)
 
 	_profile_mat = StandardMaterial3D.new()
 	_profile_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -52,6 +45,30 @@ func _ready() -> void:
 	_profile_mat.vertex_color_use_as_albedo = true
 	_profile_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_profile_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+
+
+func _make_pad_mat(col: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = col
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	return m
+
+
+func _make_edge_mat(col: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	m.albedo_color = col
+	m.metallic = 1.0
+	m.roughness = 0.08
+	m.metallic_specular = 1.0
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.rim_enabled = true
+	m.rim = 0.85
+	m.rim_tint = 0.4
+	return m
 
 
 ## Rebuild pads from graph sketch features. Pass editing_fid to hide that pad
@@ -91,6 +108,8 @@ func _add_pad(fid: String, sk: SxSketch) -> void:
 	var x_dir: Vector3 = (pi["x_dir"] as Vector3).normalized()
 	var y_dir: Vector3 = (pi["y_dir"] as Vector3).normalized()
 	var normal: Vector3 = (pi["normal"] as Vector3).normalized()
+	var closed := SketchMode.profile_is_closed(sk)
+	var pad_col := PAD_COLOR_CLOSED if closed else PAD_COLOR_OPEN
 	var mn := Vector2(INF, INF)
 	var mx := Vector2(-INF, -INF)
 	for id in sk.entity_ids():
@@ -110,6 +129,12 @@ func _add_pad(fid: String, sk: SxSketch) -> void:
 				var p: Vector2 = info["position"]
 				mn = mn.min(p)
 				mx = mx.max(p)
+			"spline":
+				var fits: Array = info.get("fit_points", [])
+				for fp in fits:
+					var pv: Vector2 = fp as Vector2
+					mn = mn.min(pv)
+					mx = mx.max(pv)
 			_:
 				pass
 	if not is_finite(mn.x):
@@ -131,7 +156,7 @@ func _add_pad(fid: String, sk: SxSketch) -> void:
 
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_color(PAD_COLOR)
+	st.set_color(pad_col)
 	# Two triangles (both windings via CULL_DISABLED).
 	st.add_vertex(corners[0])
 	st.add_vertex(corners[1])
@@ -141,15 +166,15 @@ func _add_pad(fid: String, sk: SxSketch) -> void:
 	st.add_vertex(corners[3])
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = st.commit()
-	mesh.material_override = _mat
+	mesh.material_override = _mat_closed if closed else _mat_open
 	mesh.name = "SketchPad_%s" % fid.substr(0, 8)
 	add_child(mesh)
 
-	var edge := _make_edge_mesh(corners, normal)
+	var edge := _make_edge_mesh(corners, normal, closed)
 	edge.name = "SketchPadEdge_%s" % fid.substr(0, 8)
 	add_child(edge)
 
-	var profile := _make_profile_mesh(sk, origin, x_dir, y_dir, normal)
+	var profile := _make_profile_mesh(sk, origin, x_dir, y_dir, normal, closed)
 	if profile != null:
 		profile.name = "SketchPadProfile_%s" % fid.substr(0, 8)
 		add_child(profile)
@@ -164,13 +189,14 @@ func _add_pad(fid: String, sk: SxSketch) -> void:
 		"normal": normal,
 		"min2": mn,
 		"max2": mx,
+		"closed": closed,
 	}
 
 
 ## Reflective rim: thin quads around the pad perimeter (screen-stable width in mm).
 ## Odd-numbered sides extend by full line thickness so corners overlap cleanly
 ## instead of leaving a jagged notch where ribbons meet.
-func _make_edge_mesh(corners: Array, normal: Vector3) -> MeshInstance3D:
+func _make_edge_mesh(corners: Array, normal: Vector3, closed: bool) -> MeshInstance3D:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	# Lift the rim a hair above the fill so it wins depth without z-fight.
@@ -202,23 +228,25 @@ func _make_edge_mesh(corners: Array, normal: Vector3) -> MeshInstance3D:
 		st.add_vertex(i1)
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = st.commit()
-	mesh.material_override = _edge_mat
+	mesh.material_override = _edge_mat_closed if closed else _edge_mat_open
 	return mesh
 
 
 ## Draw the sketch's lines / circles / arcs on the pad so the profile is readable in 3D.
+## Gold = closed (loft/extrude); cyan = open rail (path merge).
 func _make_profile_mesh(sk: SxSketch, origin: Vector3, x_dir: Vector3, y_dir: Vector3,
-		normal: Vector3) -> MeshInstance3D:
+		normal: Vector3, closed: bool) -> MeshInstance3D:
 	var lift := normal * 0.07
 	var to3 := func(p: Vector2) -> Vector3:
 		return origin + x_dir * p.x + y_dir * p.y + lift
+	var stroke := PROFILE_COLOR_CLOSED if closed else PROFILE_COLOR_OPEN
 
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var has := false
 	for id in sk.entity_ids():
 		var info: Dictionary = sk.entity_info(id)
-		var col := CONSTRUCTION_COLOR if bool(info.get("construction", false)) else PROFILE_COLOR
+		var col := CONSTRUCTION_COLOR if bool(info.get("construction", false)) else stroke
 		match str(info.get("type", "")):
 			"line":
 				has = true
@@ -260,6 +288,13 @@ func _make_profile_mesh(sk: SxSketch, origin: Vector3, x_dir: Vector3, y_dir: Ve
 						to3.call(pt + Vector2(MARK, 0)), normal, col)
 				_add_profile_seg(st, to3.call(pt + Vector2(0, -MARK)),
 						to3.call(pt + Vector2(0, MARK)), normal, col)
+			"spline":
+				var fits: Array = info.get("fit_points", [])
+				if fits.size() >= 2:
+					has = true
+					for i in range(fits.size() - 1):
+						_add_profile_seg(st, to3.call(fits[i] as Vector2),
+								to3.call(fits[i + 1] as Vector2), normal, col)
 			_:
 				pass
 	if not has:

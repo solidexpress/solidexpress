@@ -233,13 +233,24 @@ func test_sketch_exit_pad_reopen(main) -> void:
 	if view.sketch_pads != null and view.sketch_pads.has_method("pick_pad"):
 		pad_hit = view.sketch_pads.call("pick_pad",
 			Vector3(10, 5, 100), Vector3(0, 0, -1))
-	check(pad_hit == fid, "yellow pad pickable from above")
+	check(pad_hit == fid, "closed pad pickable from above")
 	var pads: Dictionary = view.sketch_pads.get("_pads")
 	check(pads.has(fid), "pad entry for sketch feature")
+	check(pads[fid].get("closed", false) == true, "rect pad marked closed")
 	var profile_mesh: MeshInstance3D = pads[fid].get("profile")
 	check(profile_mesh != null and is_instance_valid(profile_mesh),
 			"pad draws profile curves")
 	check(profile_mesh.mesh != null, "profile mesh has geometry")
+	# Open rail pad uses cyan styling.
+	var open_sk := SxSketch.new()
+	open_sk.add_line(0, 0, 30, 0)
+	var open_fid: String = view.doc.graph_add_sketch(open_sk)
+	view.refresh_sketch_pads("")
+	pads = view.sketch_pads.get("_pads")
+	check(pads.has(open_fid), "open pad entry exists")
+	check(pads[open_fid].get("closed", true) == false, "open line pad marked open")
+	check(main._sketch_pad_role(fid) == "profile", "closed rect is profile role")
+	check(main._sketch_pad_role(open_fid) == "rail", "open line is rail role")
 	check(sm.begin_edit(fid), "reopen sketch")
 	check(sm.active and sm.editing_fid == fid, "editing same feature")
 	check(sm.sketch.entity_ids().size() == 4, "reopened rect has 4 lines")
@@ -249,7 +260,7 @@ func test_sketch_exit_pad_reopen(main) -> void:
 	for f3 in view.doc.graph_features():
 		if str(f3.get("type", "")) == "sketch":
 			sketch_count += 1
-	check(sketch_count == 1, "extrude reused sketch feature (count=%d)" % sketch_count)
+	check(sketch_count == 2, "extrude reused sketch feature (count=%d, open rail still present)" % sketch_count)
 
 
 func test_sketch_camera_lock(main) -> void:

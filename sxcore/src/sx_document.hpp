@@ -178,7 +178,8 @@ public:
     godot::String graph_add_path(const godot::PackedStringArray& sketch_fids,
                                  const godot::String& mode);
     // Loft through two or more sketch profiles (each on its own plane).
-    godot::String graph_add_loft(const godot::PackedStringArray& sketch_fids, bool ruled);
+    godot::String graph_add_loft(const godot::PackedStringArray& sketch_fids, bool ruled,
+                                 const godot::PackedStringArray& guide_fids = {});
     // Dress-up features on a timeline body. Edge ids are converted to the
     // 1-based edge-map indices the graph stores.
     godot::String graph_add_fillet(const godot::String& target_fid,
