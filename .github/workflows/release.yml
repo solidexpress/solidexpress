@@ -1,0 +1,185 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ curl unzip \
+            libocct-foundation-dev libocct-modeling-data-dev \
+            libocct-modeling-algorithms-dev libocct-ocaf-dev \
+            libocct-data-exchange-dev libocct-visualization-dev \
+            libocct-draw-dev \
+            libeigen3-dev libboost-dev
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ ^v(.+)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync VERSION file with tag
+        run: echo "${{ steps.ver.outputs.version }}" > VERSION
+
+      - name: Fetch Godot editor + export templates
+        run: |
+          chmod +x scripts/release/fetch-godot-templates.sh
+          ./scripts/release/fetch-godot-templates.sh
+
+      - name: Run kernel tests
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j "$(nproc)" --target sxkernel_tests
+          ./build/sxkernel/sxkernel_tests
+
+      - name: Export Linux release
+        run: |
+          chmod +x scripts/release/export-linux.sh
+          ./scripts/release/export-linux.sh
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SolidExpress-linux-x86_64
+          path: |
+            dist/releases/SolidExpress-*.tar.gz
+            dist/releases/SolidExpress-*.sha256
+
+  publish:
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+- name: Download Linux artifact
+  uses: actions/download-artifact@v4
+  with:
+    name: SolidExpress-linux-x86_64
+    path: dist/releases
+
+- name: Download Windows artifact
+  uses: actions/download-artifact@v4
+  with:
+    name: SolidExpress-windows-x86_64
+    path: dist/releases
+
+- name: Download macOS artifact
+  uses: actions/download-artifact@v4
+  with:
+    name: SolidExpress-macos
+    path: dist/releases
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/releases/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+windows:
+  runs-on: windows-latest
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install build dependencies
+      shell: bash
+      run: |
+        choco install ninja cmake -y || true
+        if command -v vcpkg >/dev/null; then vcpkg install opencascade eigen3 boost --triplet x64-windows || true; fi
+
+    - name: Resolve version
+      id: ver
+      shell: bash
+      run: |
+        if [[ "${GITHUB_REF_NAME}" =~ ^v(.+)$ ]]; then
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Sync VERSION
+      shell: bash
+      run: echo "${{ steps.ver.outputs.version }}" > VERSION
+
+    - name: Fetch Godot
+      shell: bash
+      run: |
+        chmod +x scripts/release/fetch-godot-templates.sh
+        ./scripts/release/fetch-godot-templates.sh
+
+    - name: Export Windows release
+      shell: bash
+      run: |
+        chmod +x scripts/release/export-windows.sh
+        ./scripts/release/export-windows.sh
+
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SolidExpress-windows-x86_64
+        path: |
+          dist/releases/SolidExpress-*-windows-x86_64.zip
+          dist/releases/SolidExpress-*-windows-x86_64.zip.sha256
+
+macos:
+  runs-on: macos-14
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install build dependencies
+      run: |
+        brew install cmake ninja opencascade eigen boost
+
+    - name: Resolve version
+      id: ver
+      run: |
+        if [[ "${GITHUB_REF_NAME}" =~ ^v(.+)$ ]]; then
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Sync VERSION
+      run: echo "${{ steps.ver.outputs.version }}" > VERSION
+
+    - name: Fetch Godot
+      run: |
+        chmod +x scripts/release/fetch-godot-templates.sh
+        ./scripts/release/fetch-godot-templates.sh
+
+    - name: Export macOS release
+      run: |
+        chmod +x scripts/release/export-macos.sh
+        ./scripts/release/export-macos.sh
+
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SolidExpress-macos
+        path: |
+          dist/releases/SolidExpress-*-macos.zip
+          dist/releases/SolidExpress-*-macos.zip.sha256
