@@ -16,6 +16,7 @@ compile_commands.json
 /tmp/
 # Generated movie / howto film outputs (often huge)
 dist/movies/
+dist/releases/
 *.avi
 *.mp4
 *.webm

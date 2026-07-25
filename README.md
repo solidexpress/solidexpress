@@ -40,6 +40,15 @@ make test    # Catch2 kernel suite + headless Godot suites
 
 `make run` and Godot test targets invoke `make import` automatically. Import runs Godot headless once to bake the `.godot` cache so scripts and the editor resolve correctly.
 
+## Releases
+
+Tagged builds and Linux desktop exports are documented in [docs/release.md](docs/release.md). Quick path:
+
+```bash
+make release-linux          # fetch Godot templates + export .tar.gz under dist/releases/
+git tag v0.1.0 && git push origin v0.1.0   # triggers GitHub Release CI
+```
+
 Useful details:
 
 - Default CMake build type is `RelWithDebInfo`.

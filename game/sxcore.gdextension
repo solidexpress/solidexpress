@@ -5,3 +5,7 @@ compatibility_minimum = "4.7"
 [libraries]
 linux.debug.x86_64 = "res://bin/libsxcore.so"
 linux.release.x86_64 = "res://bin/libsxcore.so"
+windows.debug.x86_64 = "res://bin/libsxcore.dll"
+windows.release.x86_64 = "res://bin/libsxcore.dll"
+macos.debug = "res://bin/libsxcore.dylib"
+macos.release = "res://bin/libsxcore.dylib"

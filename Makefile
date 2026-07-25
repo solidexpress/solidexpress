@@ -2,7 +2,9 @@ BUILD_DIR := build
 GODOT := tools/godot/godot
 JOBS := $(shell nproc)
 
-.PHONY: all configure build test test-kernel test-godot clean import movies
+.PHONY: all configure build test test-kernel test-godot clean import movies release-linux fetch-godot-templates
+
+VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 
 all: build
 
@@ -72,6 +74,14 @@ run: build import
 movies: import
 	chmod +x scripts/sx-movies
 	./scripts/sx-movies all
+
+fetch-godot-templates:
+	chmod +x scripts/release/fetch-godot-templates.sh
+	./scripts/release/fetch-godot-templates.sh
+
+release-linux: fetch-godot-templates
+	chmod +x scripts/release/export-linux.sh
+	./scripts/release/export-linux.sh
 
 clean:
 	rm -rf $(BUILD_DIR)
