@@ -324,8 +324,7 @@ func _apply_dressup(fillet: bool) -> void:
 	elif view.selected_edge != "":
 		scope = "edge"
 	var value: float = _radius_spin.value
-	# Timeline bodies get a parametric feature; free bodies (e.g. STEP imports)
-	# use the direct command.
+	# Timeline bodies get a parametric feature; free bodies use the direct command.
 	var fid := view.feature_of_body(view.selected_body)
 	var ok: bool
 	if fid != "":
@@ -352,7 +351,12 @@ func _mirror() -> void:
 	var bb: Dictionary = view.doc.measure_bbox(body)
 	if bb.is_empty():
 		return
-	var created: String = view.doc.mirror_body(body, Vector3(bb["max"].x, 0, 0), Vector3(1, 0, 0), true)
+	var fid := view.feature_of_body(body)
+	var created := ""
+	if fid != "":
+		created = view.doc.graph_add_mirror(fid, Vector3(bb["max"].x, 0, 0), Vector3(1, 0, 0))
+	else:
+		created = view.doc.mirror_body(body, Vector3(bb["max"].x, 0, 0), Vector3(1, 0, 0), true)
 	view.graph_changed()
 	status.emit("Mirrored body" if created != "" else "Mirror failed")
 
@@ -361,8 +365,16 @@ func _linear_pattern() -> void:
 	var body := view.selected_body
 	if body == "":
 		return
-	var made: PackedStringArray = view.doc.linear_pattern(
-		body, Vector3(1, 0, 0), _pattern_spacing.value, int(_pattern_count.value))
+	var fid := view.feature_of_body(body)
+	var made: PackedStringArray = PackedStringArray()
+	if fid != "":
+		var pfid: String = view.doc.graph_add_linear_pattern(
+			fid, Vector3(1, 0, 0), _pattern_spacing.value, int(_pattern_count.value))
+		if pfid != "":
+			made = PackedStringArray([pfid])
+	else:
+		made = view.doc.linear_pattern(
+			body, Vector3(1, 0, 0), _pattern_spacing.value, int(_pattern_count.value))
 	view.graph_changed()
 	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
 
@@ -371,9 +383,16 @@ func _circular_pattern() -> void:
 	var body := view.selected_body
 	if body == "":
 		return
-	# Around the Z axis through the world origin.
-	var made: PackedStringArray = view.doc.circular_pattern(
-		body, Vector3.ZERO, Vector3(0, 0, 1), int(_pattern_count.value), TAU)
+	var fid := view.feature_of_body(body)
+	var made: PackedStringArray = PackedStringArray()
+	if fid != "":
+		var pfid: String = view.doc.graph_add_circular_pattern(
+			fid, Vector3.ZERO, Vector3(0, 0, 1), int(_pattern_count.value), TAU)
+		if pfid != "":
+			made = PackedStringArray([pfid])
+	else:
+		made = view.doc.circular_pattern(
+			body, Vector3.ZERO, Vector3(0, 0, 1), int(_pattern_count.value), TAU)
 	view.graph_changed()
 	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
 
@@ -398,7 +417,13 @@ func _offset() -> void:
 	var body := view.selected_body
 	if body == "":
 		return
-	if view.doc.offset_body(body, _offset_spin.value):
+	var fid := view.feature_of_body(body)
+	var ok: bool
+	if fid != "":
+		ok = view.doc.graph_add_offset(fid, _offset_spin.value) != ""
+	else:
+		ok = view.doc.offset_body(body, _offset_spin.value)
+	if ok:
 		view.graph_changed()
 		status.emit("Offset %.1f mm applied" % _offset_spin.value)
 	else:
@@ -412,7 +437,13 @@ func _shell() -> void:
 		faces = PackedStringArray([view.selected_face])
 	if faces.is_empty():
 		return
-	if view.doc.shell_body(faces, _thickness_spin.value):
+	var fid := view.feature_of_body(view.selected_body)
+	var ok: bool
+	if fid != "":
+		ok = view.doc.graph_add_shell(fid, faces, _thickness_spin.value) != ""
+	else:
+		ok = view.doc.shell_body(faces, _thickness_spin.value)
+	if ok:
 		view.graph_changed()
 		status.emit("Shelled %d face(s), wall %.1f mm" % [faces.size(), _thickness_spin.value])
 	else:
@@ -433,8 +464,15 @@ func _draft() -> bool:
 	# Neutral plane at the body's bounding-box bottom; pull along +Z.
 	var neutral_point := Vector3((mn.x + mx.x) * 0.5, (mn.y + mx.y) * 0.5, mn.z)
 	var angle: float = _draft_angle_spin.value
-	if view.doc.draft_faces(PackedStringArray([face]), angle, Vector3(0, 0, 1),
-			neutral_point, Vector3(0, 0, 1)):
+	var fid := view.feature_of_body(body)
+	var ok: bool
+	if fid != "":
+		ok = view.doc.graph_add_draft(fid, PackedStringArray([face]), angle, Vector3(0, 0, 1),
+				neutral_point, Vector3(0, 0, 1)) != ""
+	else:
+		ok = view.doc.draft_faces(PackedStringArray([face]), angle, Vector3(0, 0, 1),
+				neutral_point, Vector3(0, 0, 1))
+	if ok:
 		view.graph_changed()
 		status.emit("Draft %.1f° applied" % angle)
 		return true

@@ -282,13 +282,30 @@ func test_keyboard_wheel_touch_nav(cam: OrbitCamera) -> void:
 	check(absf(cam.yaw - yaw0) > 1e-6, "Shift+arrow orbits")
 	check(cam.pivot.is_equal_approx(pivot0), "Shift+arrow does not pan")
 
-	# Alt+WASD pans; plain W is not a nav event.
+	# WASD flies (in/out + strafe); Alt+WASD screen-pans; Shift+W is not nav.
 	_reset_cam(cam)
 	pivot0 = cam.pivot
+	var dist_before := cam.distance
 	var plain_w := InputEventKey.new()
 	plain_w.keycode = KEY_W
 	plain_w.pressed = true
-	check(not cam.is_nav_event(plain_w, true), "plain W is not camera nav")
+	check(cam.is_nav_event(plain_w, true), "plain W is camera fly nav")
+	check(cam.handle_input(plain_w, true), "plain W handled")
+	check(cam.pivot.distance_to(pivot0) > 1e-4, "W flies pivot along look")
+	check(is_equal_approx(cam.distance, dist_before), "W fly keeps orbit distance")
+
+	_reset_cam(cam)
+	pivot0 = cam.pivot
+	var basis0 := cam.global_transform.basis if cam.is_inside_tree() else cam.transform.basis
+	var plain_d := InputEventKey.new()
+	plain_d.keycode = KEY_D
+	plain_d.pressed = true
+	check(cam.handle_input(plain_d, true), "plain D handled")
+	var strafe_delta := cam.pivot - pivot0
+	check(strafe_delta.dot(basis0.x) > 1e-4, "D strafes along camera-right")
+
+	_reset_cam(cam)
+	pivot0 = cam.pivot
 	var alt_d := InputEventKey.new()
 	alt_d.keycode = KEY_D
 	alt_d.pressed = true
@@ -296,6 +313,28 @@ func test_keyboard_wheel_touch_nav(cam: OrbitCamera) -> void:
 	check(cam.is_nav_event(alt_d, true), "Alt+D is nav event")
 	check(cam.handle_input(alt_d, true), "Alt+D handled")
 	check(cam.pivot.distance_to(pivot0) > 1e-4, "Alt+D pans")
+
+	# Sketch-locked: plain WASD yields to sketch tools; Alt+WASD still pans.
+	_reset_cam(cam)
+	cam.sketch_orientation_locked = true
+	var sketch_w := InputEventKey.new()
+	sketch_w.keycode = KEY_W
+	sketch_w.pressed = true
+	check(not cam.is_nav_event(sketch_w, true), "plain W not nav while sketch-locked")
+	pivot0 = cam.pivot
+	var sketch_alt_a := InputEventKey.new()
+	sketch_alt_a.keycode = KEY_A
+	sketch_alt_a.pressed = true
+	sketch_alt_a.alt_pressed = true
+	check(cam.handle_input(sketch_alt_a, true), "Alt+A pans while sketch-locked")
+	check(cam.pivot.distance_to(pivot0) > 1e-4, "Alt+A moves pivot while sketch-locked")
+	cam.sketch_orientation_locked = false
+
+	var shift_w := InputEventKey.new()
+	shift_w.keycode = KEY_W
+	shift_w.pressed = true
+	shift_w.shift_pressed = true
+	check(not cam.is_nav_event(shift_w, true), "Shift+W is not camera nav")
 
 	# F / 1 are nav keys (wired through is_nav_event).
 	var f_key := InputEventKey.new()

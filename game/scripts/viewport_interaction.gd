@@ -2540,7 +2540,7 @@ func _gui_key(event: InputEventKey) -> bool:
 				status.emit("Redo")
 				return true
 		KEY_W:
-			if not event.ctrl_pressed:
+			if not event.ctrl_pressed and event.shift_pressed:
 				var mode: int = view.cycle_display_mode()
 				status.emit("Display: " + ["Shaded", "Shaded + Edges", "Wireframe"][mode])
 				return true

@@ -32,7 +32,7 @@ enum class FeatureType {
                 //          op: "new|fuse|cut", target: <feature uuid, for fuse/cut>}
     Revolve,    // params: {sketch, axis_point: [u,v], axis_dir: [u,v], angle, op, target}
     Boolean,    // params: {op: "fuse|cut|common", target: <fid>, tool: <fid>}
-    Fillet,     // params: {target: <fid>, radius, edges: [1-based map indices]}
+    Fillet,     // params: {target: <fid>, radius, edges: [<edge uuid>|legacy 1-based index]}
     Chamfer,    // params: {target: <fid>, distance, edges: [...]}
     Hole,       // params: {target: <fid>, type: "simple|counterbore|countersink",
                 //          position: [x,y,z], direction: [x,y,z], diameter, depth
@@ -41,8 +41,12 @@ enum class FeatureType {
     Mirror,     // params: {target: <fid>, plane_point: [x,y,z], plane_normal: [x,y,z]}
     LinearPattern,   // params: {target, direction: [x,y,z], spacing, count}
     CircularPattern, // params: {target, axis_point, axis_dir, count, total_angle}
-    Shell,      // params: {target, faces: [1-based face indices], thickness}
+    Shell,      // params: {target, faces: [<face uuid>|legacy 1-based index], thickness}
     Offset,     // params: {target, offset}
+    PushPull,   // params: {target: <fid>, face: <face uuid>, distance}
+    Draft,      // params: {target: <fid>, faces: [<face uuid>...], angle_deg,
+                //          pull_dir: [x,y,z], neutral_point: [x,y,z],
+                //          neutral_normal: [x,y,z]}
     Sweep,      // params: {sketch: <fid>, path: [[x,y,z], ...] OR path_feature: <fid>}
     Loft,       // params: {sketches: [<fid>, ...], ruled: bool,
                 //          optional guides: [<fid>, ...]}

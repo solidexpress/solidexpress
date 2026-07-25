@@ -8,9 +8,10 @@ extends Camera3D
 ## Trackpad: two-finger orbit, Shift+two-finger pan, pinch / Ctrl+two-finger zoom.
 ## Touch: one-finger follows mouse emulation (empty-drag orbit); two-finger
 ## pans + pinch-zooms via ScreenTouch/ScreenDrag.
-## Keyboard: arrows pan (Shift+arrows orbit); Alt+WASD pan; +/- and PageUp/Down
-## zoom; F / Home zoom-extents; 1/2/3/7 views; 5 ortho. Wheel / pan over
-## ScrollContainers are left alone. Plain WASD is reserved for modeling tools.
+## Keyboard: arrows pan (Shift+arrows orbit); WASD fly (in/out + strafe);
+## Alt+WASD screen-pan; +/- and PageUp/Down zoom; F / Home zoom-extents;
+## 1/2/3/7 views; 5 ortho. Wheel / pan over ScrollContainers are left alone.
+## While sketch view is locked, plain WASD stays with sketch tools (S/A/D).
 
 ## Fired after yaw/pitch/distance/pivot/projection update the camera transform.
 ## Overlay gizmos connect so they redraw only when the view actually moves.
@@ -58,6 +59,8 @@ const PAN_ZOOM_SCALE := 0.008
 ## Keyboard / Shift+wheel pan step in `_pan_by` pixel units.
 const KEY_PAN_PX := 28.0
 const WHEEL_PAN_PX := 28.0
+## Fraction of orbit distance per WASD fly step (key / echo).
+const KEY_FLY_FRAC := 0.08
 ## Keyboard / Alt+wheel orbit step in `_orbit_by` pixel units.
 const KEY_ORBIT_PX := 22.0
 const WHEEL_ORBIT_PX := 24.0
@@ -214,9 +217,14 @@ func _is_nav_key(k: InputEventKey) -> bool:
 			return true
 		KEY_EQUAL, KEY_KP_ADD, KEY_MINUS, KEY_KP_SUBTRACT:
 			return true
-		# Alt+WASD pans — plain WASD stays with display / sketch / select tools.
+		# WASD: fly when not sketch-locked; Alt+WASD always screen-pans.
+		# Shift+W is display-mode (not nav). Sketch tools keep plain WASD.
 		KEY_W, KEY_A, KEY_S, KEY_D:
-			return k.alt_pressed
+			if k.shift_pressed:
+				return false
+			if k.alt_pressed:
+				return true
+			return not sketch_orientation_locked
 	return false
 
 
@@ -406,9 +414,13 @@ func _handle_nav_key(k: InputEventKey) -> bool:
 		KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN:
 			return _handle_arrow_key(k)
 		KEY_W, KEY_A, KEY_S, KEY_D:
-			if not k.alt_pressed:
+			if k.shift_pressed:
 				return false
-			return _handle_wasd_pan(k.keycode)
+			if k.alt_pressed:
+				return _handle_wasd_pan(k.keycode)
+			if sketch_orientation_locked:
+				return false
+			return _handle_wasd_fly(k.keycode)
 		KEY_PAGEUP, KEY_EQUAL, KEY_KP_ADD:
 			_zoom_at_view_center(KEY_ZOOM_FACTOR)
 			return true
@@ -454,6 +466,28 @@ func _handle_wasd_pan(keycode: int) -> bool:
 		KEY_S:
 			dy = 1.0
 	_pan_by(dx * KEY_PAN_PX, dy * KEY_PAN_PX)
+	return true
+
+
+## Translate the orbit pivot in camera space: W/S along the look axis (in/out),
+## A/D along camera-right (strafe). Distance and orientation stay put.
+func _handle_wasd_fly(keycode: int) -> bool:
+	var basis := global_transform.basis if is_inside_tree() else transform.basis
+	var step := maxf(distance * KEY_FLY_FRAC, MIN_DISTANCE * 0.25)
+	var delta := Vector3.ZERO
+	match keycode:
+		KEY_W:
+			delta = -basis.z * step
+		KEY_S:
+			delta = basis.z * step
+		KEY_A:
+			delta = -basis.x * step
+		KEY_D:
+			delta = basis.x * step
+		_:
+			return false
+	pivot += delta
+	_update_transform()
 	return true
 
 

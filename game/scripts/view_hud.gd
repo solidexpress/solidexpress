@@ -51,7 +51,7 @@ func _ready() -> void:
 	controls.add_child(btn_col)
 	_display_btn = Button.new()
 	_display_btn.text = "Shade"
-	_display_btn.tooltip_text = "Cycle display mode (W)"
+	_display_btn.tooltip_text = "Cycle display mode (Shift+W)"
 	_display_btn.pressed.connect(func() -> void: display_cycle_requested.emit())
 	btn_col.add_child(_display_btn)
 	_section_btn = Button.new()

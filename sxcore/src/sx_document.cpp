@@ -26,6 +26,8 @@
 #include "sx/interop.hpp"
 #include "sx/sketch_json.hpp"
 #include "sx_sketch.hpp"
+#include "sx_measure.hpp"
+#include "sx_interop.hpp"
 #include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
@@ -38,9 +40,23 @@
 #include "sx/sxp.hpp"
 #include "sx/tessellate.hpp"
 
+#include <atomic>
+#include <thread>
+
 using namespace godot;
 
 namespace sx_godot {
+
+struct SxDocument::AsyncRegenState {
+    std::atomic<bool> pending{false};
+    std::atomic<bool> done{false};
+    bool ok = false;
+    std::string error;
+    std::thread worker;
+    ~AsyncRegenState() {
+        if (worker.joinable()) worker.join();
+    }
+};
 
 static std::string to_std(const String& s) { return s.utf8().get_data(); }
 static String to_gd(const std::string& s) { return String::utf8(s.c_str()); }
@@ -54,6 +70,8 @@ static sx::EntityId parse_id(const String& s) {
 }
 
 SxDocument::SxDocument() : doc_(std::make_unique<sx::Document>()) {}
+
+SxDocument::~SxDocument() { async_regen_state_.reset(); }
 
 String SxDocument::add_primitive(sx::PrimitiveType type, double a, double b, double c,
                                  const Vector3& origin) {
@@ -407,6 +425,13 @@ double SxDocument::measure_face_angle(const String& f1, const String& f2) const 
     return r ? *r : -1.0;
 }
 
+Ref<SxMeasure> SxDocument::measure_api() {
+    Ref<SxMeasure> api;
+    api.instantiate();
+    api->bind(Ref<SxDocument>(this));
+    return api;
+}
+
 PackedStringArray SxDocument::import_step(const String& path) {
     PackedStringArray out;
     std::string err;
@@ -423,6 +448,13 @@ PackedStringArray SxDocument::import_stl(const String& path) {
     if (ids.empty() && !err.empty()) sx::log::error("import_stl: " + err);
     for (const auto& id : ids) out.push_back(to_gd(id.str()));
     return out;
+}
+
+Ref<SxInterop> SxDocument::interop_api() {
+    Ref<SxInterop> api;
+    api.instantiate();
+    api->bind(Ref<SxDocument>(this));
+    return api;
 }
 
 bool SxDocument::undo() { return stack_.undo(*doc_); }
@@ -667,15 +699,29 @@ bool SxDocument::apply_graph_edit(const std::string& label,
     if (!mutate()) return false;
     nlohmann::json after = doc_->graph().to_json();
     std::string err;
-    if (!doc_->graph().regenerate(*doc_, &err)) {
+    bool ok = false;
+    try {
+        ok = doc_->graph().regenerate(*doc_, &err);
+    } catch (const std::exception& e) {
+        ok = false;
+        err = e.what();
+    } catch (...) {
+        ok = false;
+        err = "unknown regenerate failure";
+    }
+    if (!ok) {
         sx::log::error(label + ": " + err);
         // Blame the offending feature before the revert wipes the graph state;
         // the timeline badges the row if the feature still exists afterwards.
         const sx::EntityId failed = doc_->graph().last_failed_feature();
         last_failed_fid_ = failed.is_null() ? std::string() : failed.str();
         last_graph_error_ = err;
-        doc_->set_graph(sx::FeatureGraph::from_json(before));
-        doc_->graph().regenerate(*doc_, nullptr);
+        try {
+            doc_->set_graph(sx::FeatureGraph::from_json(before));
+            doc_->graph().regenerate(*doc_, nullptr);
+        } catch (...) {
+            sx::log::error(label + ": rollback after failed regenerate also failed");
+        }
         return false;
     }
     last_failed_fid_.clear();
@@ -843,15 +889,15 @@ String SxDocument::graph_add_loft(const PackedStringArray& sketch_fids, bool rul
 
 String SxDocument::graph_add_dressup(bool fillet, const String& target_fid,
                                      const PackedStringArray& edge_ids, double value) {
-    // Convert stable edge ids to the 1-based map indices stored in params.
-    std::vector<int> indices;
+    // Store durable edge UUID strings so regen remapping via naming survives.
+    nlohmann::json edges = nlohmann::json::array();
     for (int i = 0; i < edge_ids.size(); ++i) {
         auto ref = doc_->find_subshape(parse_id(edge_ids[i]));
         if (!ref || ref->kind != sx::EntityKind::Edge) {
             sx::log::error("graph_add_dressup: not an edge id");
             return {};
         }
-        indices.push_back(ref->index);
+        edges.push_back(to_std(edge_ids[i]));
     }
     sx::EntityId fid;
     bool ok = apply_graph_edit(fillet ? "fillet" : "chamfer", [&] {
@@ -859,7 +905,7 @@ String SxDocument::graph_add_dressup(bool fillet, const String& target_fid,
         f.type = fillet ? sx::FeatureType::Fillet : sx::FeatureType::Chamfer;
         f.params = {{"target", to_std(target_fid)},
                     {fillet ? "radius" : "distance", value},
-                    {"edges", indices}};
+                    {"edges", edges}};
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -874,6 +920,141 @@ String SxDocument::graph_add_fillet(const String& target_fid, const PackedString
 String SxDocument::graph_add_chamfer(const String& target_fid, const PackedStringArray& edge_ids,
                                      double distance) {
     return graph_add_dressup(false, target_fid, edge_ids, distance);
+}
+
+String SxDocument::graph_add_mirror(const String& target_fid, const Vector3& plane_point,
+                                    const Vector3& plane_normal) {
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("mirror", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Mirror;
+        f.params = {{"target", to_std(target_fid)},
+                    {"plane_point", {plane_point.x, plane_point.y, plane_point.z}},
+                    {"plane_normal", {plane_normal.x, plane_normal.y, plane_normal.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_linear_pattern(const String& target_fid, const Vector3& direction,
+                                            double spacing, int count) {
+    if (count < 2) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("linear pattern", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::LinearPattern;
+        f.params = {{"target", to_std(target_fid)},
+                    {"direction", {direction.x, direction.y, direction.z}},
+                    {"spacing", spacing},
+                    {"count", count}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_circular_pattern(const String& target_fid, const Vector3& axis_point,
+                                              const Vector3& axis_dir, int count,
+                                              double total_angle) {
+    if (count < 2) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("circular pattern", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::CircularPattern;
+        f.params = {{"target", to_std(target_fid)},
+                    {"axis_point", {axis_point.x, axis_point.y, axis_point.z}},
+                    {"axis_dir", {axis_dir.x, axis_dir.y, axis_dir.z}},
+                    {"count", count},
+                    {"total_angle", total_angle}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_shell(const String& target_fid, const PackedStringArray& face_ids,
+                                   double thickness) {
+    nlohmann::json faces = nlohmann::json::array();
+    for (int i = 0; i < face_ids.size(); ++i) {
+        auto ref = doc_->find_subshape(parse_id(face_ids[i]));
+        if (!ref || ref->kind != sx::EntityKind::Face) {
+            sx::log::error("graph_add_shell: not a face id");
+            return {};
+        }
+        faces.push_back(to_std(face_ids[i]));
+    }
+    if (faces.empty()) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("shell", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Shell;
+        f.params = {{"target", to_std(target_fid)}, {"faces", faces}, {"thickness", thickness}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_offset(const String& target_fid, double offset) {
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("offset", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Offset;
+        f.params = {{"target", to_std(target_fid)}, {"offset", offset}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_push_pull(const String& target_fid, const String& face_id,
+                                       double distance) {
+    auto ref = doc_->find_subshape(parse_id(face_id));
+    if (!ref || ref->kind != sx::EntityKind::Face) {
+        sx::log::error("graph_add_push_pull: not a face id");
+        return {};
+    }
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("push/pull", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::PushPull;
+        f.params = {{"target", to_std(target_fid)},
+                    {"face", to_std(face_id)},
+                    {"distance", distance}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_draft(const String& target_fid, const PackedStringArray& face_ids,
+                                   double angle_deg, const Vector3& pull_dir,
+                                   const Vector3& neutral_point, const Vector3& neutral_normal) {
+    nlohmann::json faces = nlohmann::json::array();
+    for (int i = 0; i < face_ids.size(); ++i) {
+        auto ref = doc_->find_subshape(parse_id(face_ids[i]));
+        if (!ref || ref->kind != sx::EntityKind::Face) {
+            sx::log::error("graph_add_draft: not a face id");
+            return {};
+        }
+        faces.push_back(to_std(face_ids[i]));
+    }
+    if (faces.empty()) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("draft", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Draft;
+        f.params = {{"target", to_std(target_fid)},
+                    {"faces", faces},
+                    {"angle_deg", angle_deg},
+                    {"pull_dir", {pull_dir.x, pull_dir.y, pull_dir.z}},
+                    {"neutral_point", {neutral_point.x, neutral_point.y, neutral_point.z}},
+                    {"neutral_normal", {neutral_normal.x, neutral_normal.y, neutral_normal.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
 }
 
 String SxDocument::graph_add_hole(const String& target_fid, const String& type,
@@ -999,7 +1180,14 @@ bool SxDocument::graph_rename(const String& fid, const String& name) {
 Dictionary SxDocument::graph_regenerate() {
     Dictionary out;
     std::string err;
-    bool ok = doc_->graph().regenerate(*doc_, &err);
+    bool ok = false;
+    try {
+        ok = doc_->graph().regenerate(*doc_, &err);
+    } catch (const std::exception& e) {
+        ok = false;
+        err = e.what();
+        sx::log::error(std::string("graph_regenerate: ") + err);
+    }
     if (ok) {
         last_failed_fid_.clear();
         last_graph_error_.clear();
@@ -1010,6 +1198,66 @@ Dictionary SxDocument::graph_regenerate() {
     }
     out["ok"] = ok;
     out["error"] = to_gd(err);
+    return out;
+}
+
+void SxDocument::set_async_regen(bool enabled) { async_regen_ = enabled; }
+
+bool SxDocument::async_regen_enabled() const { return async_regen_; }
+
+bool SxDocument::graph_regenerate_async() {
+    // Spike: regenerate on a worker thread. Caller must not touch the document
+    // until graph_async_regen_poll reports done. Default off (async_regen_).
+    if (!async_regen_) {
+        auto r = graph_regenerate();
+        return bool(r.get("ok", false));
+    }
+    if (async_regen_state_ && async_regen_state_->pending.load()) return false;
+    async_regen_state_ = std::make_unique<AsyncRegenState>();
+    async_regen_state_->pending = true;
+    async_regen_state_->done = false;
+    AsyncRegenState* st = async_regen_state_.get();
+    st->worker = std::thread([this, st] {
+        std::string err;
+        bool ok = false;
+        try {
+            ok = doc_->graph().regenerate(*doc_, &err);
+        } catch (const std::exception& e) {
+            ok = false;
+            err = e.what();
+        } catch (...) {
+            ok = false;
+            err = "unknown regenerate failure";
+        }
+        st->ok = ok;
+        st->error = err;
+        st->done = true;
+        st->pending = false;
+    });
+    return true;
+}
+
+Dictionary SxDocument::graph_async_regen_poll() {
+    Dictionary out;
+    out["pending"] = false;
+    out["done"] = false;
+    out["ok"] = false;
+    out["error"] = String();
+    if (!async_regen_state_) return out;
+    out["pending"] = async_regen_state_->pending.load();
+    const bool done = async_regen_state_->done.load();
+    out["done"] = done;
+    if (!done) return out;
+    if (async_regen_state_->worker.joinable()) async_regen_state_->worker.join();
+    out["ok"] = async_regen_state_->ok;
+    out["error"] = to_gd(async_regen_state_->error);
+    if (async_regen_state_->ok) {
+        last_failed_fid_.clear();
+        last_graph_error_.clear();
+    } else {
+        last_graph_error_ = async_regen_state_->error;
+    }
+    async_regen_state_.reset();
     return out;
 }
 
@@ -1303,10 +1551,12 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("measure_edge_length", "edge_id"), &SxDocument::measure_edge_length);
     ClassDB::bind_method(D_METHOD("measure_face_area", "face_id"), &SxDocument::measure_face_area);
     ClassDB::bind_method(D_METHOD("measure_face_angle", "f1", "f2"), &SxDocument::measure_face_angle);
+    ClassDB::bind_method(D_METHOD("measure_api"), &SxDocument::measure_api);
     ClassDB::bind_method(D_METHOD("export_step", "path"), &SxDocument::export_step);
     ClassDB::bind_method(D_METHOD("export_stl", "path", "binary"), &SxDocument::export_stl);
     ClassDB::bind_method(D_METHOD("import_step", "path"), &SxDocument::import_step);
     ClassDB::bind_method(D_METHOD("import_stl", "path"), &SxDocument::import_stl);
+    ClassDB::bind_method(D_METHOD("interop_api"), &SxDocument::interop_api);
     ClassDB::bind_method(D_METHOD("get_edge_ids", "body_id"), &SxDocument::get_edge_ids);
     ClassDB::bind_method(D_METHOD("undo"), &SxDocument::undo);
     ClassDB::bind_method(D_METHOD("redo"), &SxDocument::redo);
@@ -1356,6 +1606,27 @@ void SxDocument::_bind_methods() {
                          &SxDocument::graph_add_loft, DEFVAL(PackedStringArray()));
     ClassDB::bind_method(D_METHOD("graph_add_fillet", "target_fid", "edge_ids", "radius"), &SxDocument::graph_add_fillet);
     ClassDB::bind_method(D_METHOD("graph_add_chamfer", "target_fid", "edge_ids", "distance"), &SxDocument::graph_add_chamfer);
+    ClassDB::bind_method(D_METHOD("graph_add_mirror", "target_fid", "plane_point", "plane_normal"),
+                         &SxDocument::graph_add_mirror);
+    ClassDB::bind_method(D_METHOD("graph_add_linear_pattern", "target_fid", "direction", "spacing",
+                                  "count"),
+                         &SxDocument::graph_add_linear_pattern);
+    ClassDB::bind_method(D_METHOD("graph_add_circular_pattern", "target_fid", "axis_point",
+                                  "axis_dir", "count", "total_angle"),
+                         &SxDocument::graph_add_circular_pattern);
+    ClassDB::bind_method(D_METHOD("graph_add_shell", "target_fid", "face_ids", "thickness"),
+                         &SxDocument::graph_add_shell);
+    ClassDB::bind_method(D_METHOD("graph_add_offset", "target_fid", "offset"),
+                         &SxDocument::graph_add_offset);
+    ClassDB::bind_method(D_METHOD("graph_add_push_pull", "target_fid", "face_id", "distance"),
+                         &SxDocument::graph_add_push_pull);
+    ClassDB::bind_method(D_METHOD("graph_add_draft", "target_fid", "face_ids", "angle_deg",
+                                  "pull_dir", "neutral_point", "neutral_normal"),
+                         &SxDocument::graph_add_draft);
+    ClassDB::bind_method(D_METHOD("set_async_regen", "enabled"), &SxDocument::set_async_regen);
+    ClassDB::bind_method(D_METHOD("async_regen_enabled"), &SxDocument::async_regen_enabled);
+    ClassDB::bind_method(D_METHOD("graph_regenerate_async"), &SxDocument::graph_regenerate_async);
+    ClassDB::bind_method(D_METHOD("graph_async_regen_poll"), &SxDocument::graph_async_regen_poll);
     ClassDB::bind_method(D_METHOD("graph_add_hole", "target_fid", "type", "position", "direction",
                                   "diameter", "depth", "cb_diameter", "cb_depth", "cs_diameter",
                                   "cs_angle_deg"),

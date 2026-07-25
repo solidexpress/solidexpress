@@ -83,7 +83,8 @@ Bindings verified in `game/scripts/orbit_camera.gd`, `viewport_interaction.gd`, 
 | Shift / Alt / Shift+Alt + wheel | Pan vertically / yaw / pan horizontally |
 | One-finger / two-finger touch | Orbit (emulated) / pan + pinch-zoom |
 | Arrow keys / Shift+arrows | Pan / orbit |
-| Alt+WASD | Pan (plain WASD left for modeling tools) |
+| WASD | Fly: W/S in/out along look, A/D strafe (sketch tools reclaim these while sketching) |
+| Alt+WASD | Screen-space pan |
 | `+` `−` / Page Up/Down | Zoom at view center |
 | `F` / Home | Zoom extents (selection, else all) |
 | `1` / `2` / `3` / `7` | Front / right / top / isometric (+ fit) |
@@ -101,7 +102,7 @@ Bindings verified in `game/scripts/orbit_camera.gd`, `viewport_interaction.gd`, 
 | `Ctrl+Y` or `Ctrl+Shift+Z` | Redo |
 | `Ctrl+S` | Save |
 | `Ctrl+O` | Open |
-| `W` | Cycle display mode (shaded → shaded+edges → wireframe) |
+| `Shift+W` | Cycle display mode (shaded → shaded+edges → wireframe) |
 | `K` | Toggle section-view clipping plane |
 | `G` | Toggle world gizmos (origin triad + XY grid) |
 

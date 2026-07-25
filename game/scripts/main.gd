@@ -507,7 +507,7 @@ func _build_ui() -> void:
 	status_bar.offset_top = -30
 	ui.add_child(status_bar)
 	status_label = Label.new()
-	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle pan · wheel zoom (Shift/Alt pan/orbit) · arrows pan · Alt+WASD pan · F fit · 1/2/3/7 views · click select · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
+	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle pan · wheel zoom · WASD fly · arrows pan · F fit · 1/2/3/7 views · click select · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
 	status_label.add_theme_font_size_override("font_size", 12)
 	status_bar.add_child(status_label)
 

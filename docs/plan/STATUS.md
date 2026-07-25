@@ -52,9 +52,9 @@ Kernel suite now 51 cases / 5492 assertions.
 
 ## Phase 3 — Parametric timeline
 - [x] 3.1 FeatureGraph: data-driven features (primitive/sketch/extrude/revolve/boolean/fillet/chamfer) with JSON params, stable output-body ids across regeneration, suppression, dependency protection, failure reporting naming the offending feature; persisted as features.json in .sxp; parametric edit-after-reload verified ([features], 7 cases)
-- [ ] 3.2 Topological naming service (positional re-match is the current fallback)
-- [ ] 3.3 Timeline UI (feature list panel, suppress/edit/rollback) + SxDocument graph bindings
-- [ ] 3.4 Route interactive commands (palette insert, sketch-extrude, fillet UI) through the graph instead of direct commands
+- [x] 3.2 Topological naming service ([naming]): signature matching; face/edge/shell/push-pull/draft feature params store durable UUID refs (legacy map indices still load) — see [decisions.md](decisions.md) ADR-002
+- [x] 3.3 Timeline UI (feature list panel, suppress/edit/rollback) + SxDocument graph bindings
+- [x] 3.4 Route interactive commands through the graph: palette/sketch/extrude, fillet/chamfer, boolean, mirror/pattern/shell/offset, push-pull, draft via `graph_add_*` (direct commands remain free-body / test fallbacks) — ADR-001
 
 ## Modeling operations round 2 (parallel agents, merged)
 - [x] Transforms: MirrorBody, LinearPattern, CircularPattern, RotateBody (in-place, ids preserved) ([transform], 5 cases)
@@ -186,6 +186,13 @@ Round 19 test state: kernel 210 cases / 7043 assertions; Godot voice 29 + help 1
 
 ## Later phases
 See friendliness plan (phases 21-27) + AI-first solver upgrade for unmatched voice.
+
+## Architecture hardening (2026-07-24)
+- [x] ADR ledger: [decisions.md](decisions.md) (FeatureGraph SoR, UUID topology refs, non-throwing Godot boundary, opt-in async regen)
+- [x] Interactive modeling routes through `graph_add_*` (mirror/pattern/shell/offset/push-pull/draft/dress-up); free-body direct commands remain fallbacks
+- [x] Feature apply handlers split under `sxkernel/src/features/`; UI `CommandRegistry` + `SelectionService`; `SxMeasure` / `SxInterop` facades
+- [x] CI: `.github/workflows/ci.yml` runs kernel Catch2 on Ubuntu; Godot job stubbed until `tools/godot` is provisioned
+- [x] `SxDocument.set_async_regen` / `graph_regenerate_async` / `graph_async_regen_poll` spike (default off)
 
 ## Environment notes
 - System deps installed via apt: ninja-build, zip, libocct-*-dev (7.9.2), libeigen3-dev, libboost-dev

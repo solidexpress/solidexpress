@@ -27,6 +27,9 @@ const DATUM_POINT_COLOR := Color(0.2, 0.7, 0.45)
 enum DisplayMode { SHADED, SHADED_EDGES, WIREFRAME }
 
 var doc: SxDocument = SxDocument.new()
+## Selection-set helpers (toggle / clear / query). DocumentView keeps owning
+## the arrays below for public API stability.
+var _selection := SelectionService.new()
 ## Primary (most recent) selection — single-select API, kept for panels/tests.
 var selected_body := ""
 var selected_face := ""
@@ -637,7 +640,7 @@ func _pick_visible(origin: Vector3, direction: Vector3) -> Dictionary:
 
 func _toggle_hit(hit: Dictionary) -> void:
 	var body: String = hit["body"]
-	var body_selected := body == selected_body or selected_bodies.has(body)
+	var body_selected := _selection.body_selected(selected_body, selected_bodies, body)
 	# In a multi-body set, ctrl+click on a member deselects it (SolidWorks
 	# behavior); refinement to faces/edges applies to single-body selections.
 	if selected_bodies.size() > 1 and selected_bodies.has(body):
@@ -646,9 +649,9 @@ func _toggle_hit(hit: Dictionary) -> void:
 		# Refine within an already-selected body: edge first, then face.
 		var edge := _edge_near_point(body, hit["point"])
 		if edge != "":
-			_toggle_in(selected_edges, edge)
+			_selection.toggle_in(selected_edges, edge)
 		else:
-			_toggle_in(selected_faces, hit["face"])
+			_selection.toggle_in(selected_faces, hit["face"])
 		# Keep the body's whole-body tint only if it has no sub-selection left.
 		if selected_faces.is_empty() and selected_edges.is_empty():
 			if not selected_bodies.has(body):
@@ -656,18 +659,11 @@ func _toggle_hit(hit: Dictionary) -> void:
 		else:
 			selected_bodies.erase(body)
 	else:
-		_toggle_in(selected_bodies, body)
+		_selection.toggle_in(selected_bodies, body)
 	_sync_primary_from_sets()
 	_apply_selection_materials()
 	_highlight_edge()
 	selection_changed.emit(selected_body, selected_face)
-
-
-func _toggle_in(arr: Array[String], id: String) -> void:
-	if arr.has(id):
-		arr.erase(id)
-	else:
-		arr.append(id)
 
 
 ## Primary selection mirrors the most recently added set entry so existing
@@ -706,10 +702,8 @@ func _owner_body_of(subshape_id: String) -> String:
 
 ## Number of selected entities across all sets (0 when nothing selected).
 func selection_size() -> int:
-	var n := selected_bodies.size() + selected_faces.size() + selected_edges.size()
-	if n == 0 and selected_body != "":
-		n = 1
-	return n
+	return _selection.selection_count(
+		selected_bodies, selected_faces, selected_edges, selected_body)
 
 
 ## Closest edge of `body_id` to a model-space point, "" when none in tolerance.
@@ -1183,6 +1177,7 @@ static func _ray_aabb_t(origin: Vector3, dir: Vector3, aabb: AABB) -> float:
 
 
 func clear_selection() -> void:
+	_selection.clear_sets(selected_bodies, selected_faces, selected_edges)
 	select_entity("", "")
 
 
@@ -1360,9 +1355,15 @@ func push_pull_selected(distance: float) -> bool:
 		return false
 	var face := selected_face
 	var body := selected_body
-	var ok := doc.push_pull(face, distance)
-	if ok and is_primitive_body(body):
+	var fid := feature_of_body(body)
+	var ok: bool
+	if fid != "":
+		ok = doc.graph_add_push_pull(fid, face, distance) != ""
+	else:
+		ok = doc.push_pull(face, distance)
+	if ok and is_primitive_body(body) and fid == "":
 		# Bake pull into cylinder/cone params without rebuilding (keeps length).
+		# Graph push-pull already records the edit on the timeline.
 		var info := feature_info(body)
 		var params := feature_params(body)
 		if not info.is_empty() and not params.is_empty():

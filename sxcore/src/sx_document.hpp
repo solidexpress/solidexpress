@@ -3,6 +3,7 @@
 // command stack. All ids cross the boundary as UUID strings.
 
 #include <godot_cpp/classes/array_mesh.hpp>
+#include <godot_cpp/classes/ref.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -18,12 +19,15 @@
 
 namespace sx_godot {
 
+class SxMeasure;
+class SxInterop;
+
 class SxDocument : public godot::RefCounted {
     GDCLASS(SxDocument, godot::RefCounted)
 
 public:
     SxDocument();
-    ~SxDocument() override = default;
+    ~SxDocument() override;
 
     // --- creation (drag-and-drop palette) ---
     godot::String add_box(double dx, double dy, double dz, const godot::Vector3& origin);
@@ -92,6 +96,8 @@ public:
     double measure_face_area(const godot::String& face_id) const;
     // Radians; -1.0 when faces are not planar / invalid.
     double measure_face_angle(const godot::String& f1, const godot::String& f2) const;
+    // Facade over the measure_* methods above (split starting point).
+    godot::Ref<SxMeasure> measure_api();
 
     // --- interop ---
     bool export_step(const godot::String& path);
@@ -99,6 +105,8 @@ public:
     // Returns uuids of imported bodies (empty on failure).
     godot::PackedStringArray import_step(const godot::String& path);
     godot::PackedStringArray import_stl(const godot::String& path);
+    // Facade over import/export methods (split starting point).
+    godot::Ref<SxInterop> interop_api();
 
     // --- undo/redo ---
     bool undo();
@@ -180,12 +188,40 @@ public:
     // Loft through two or more sketch profiles (each on its own plane).
     godot::String graph_add_loft(const godot::PackedStringArray& sketch_fids, bool ruled,
                                  const godot::PackedStringArray& guide_fids = {});
-    // Dress-up features on a timeline body. Edge ids are converted to the
-    // 1-based edge-map indices the graph stores.
+    // Dress-up features on a timeline body. Edge ids are stored as durable
+    // UUID strings in feature params (legacy integer indices still load).
     godot::String graph_add_fillet(const godot::String& target_fid,
                                    const godot::PackedStringArray& edge_ids, double radius);
     godot::String graph_add_chamfer(const godot::String& target_fid,
                                     const godot::PackedStringArray& edge_ids, double distance);
+    // Mirror / patterns / shell / offset / push-pull / draft as timeline features.
+    godot::String graph_add_mirror(const godot::String& target_fid,
+                                   const godot::Vector3& plane_point,
+                                   const godot::Vector3& plane_normal);
+    godot::String graph_add_linear_pattern(const godot::String& target_fid,
+                                           const godot::Vector3& direction, double spacing,
+                                           int count);
+    godot::String graph_add_circular_pattern(const godot::String& target_fid,
+                                             const godot::Vector3& axis_point,
+                                             const godot::Vector3& axis_dir, int count,
+                                             double total_angle);
+    godot::String graph_add_shell(const godot::String& target_fid,
+                                  const godot::PackedStringArray& face_ids, double thickness);
+    godot::String graph_add_offset(const godot::String& target_fid, double offset);
+    godot::String graph_add_push_pull(const godot::String& target_fid,
+                                      const godot::String& face_id, double distance);
+    godot::String graph_add_draft(const godot::String& target_fid,
+                                  const godot::PackedStringArray& face_ids, double angle_deg,
+                                  const godot::Vector3& pull_dir,
+                                  const godot::Vector3& neutral_point,
+                                  const godot::Vector3& neutral_normal);
+    // Async regen spike: when enabled, graph_regenerate_async runs off the
+    // main thread; call graph_async_regen_poll to finish and swap results.
+    void set_async_regen(bool enabled);
+    bool async_regen_enabled() const;
+    bool graph_regenerate_async();
+    // {pending: bool, done: bool, ok: bool, error: String}
+    godot::Dictionary graph_async_regen_poll();
     // Drill a parametric hole into a timeline body's output. type:
     // "simple" | "counterbore" | "countersink". depth <= 0 = through-all.
     godot::String graph_add_hole(const godot::String& target_fid, const godot::String& type,
@@ -283,6 +319,9 @@ private:
     std::string last_failed_fid_;
     std::string last_graph_error_;
     sx::CommandStack stack_;
+    bool async_regen_ = false;
+    struct AsyncRegenState;
+    std::unique_ptr<AsyncRegenState> async_regen_state_;
 };
 
 }  // namespace sx_godot

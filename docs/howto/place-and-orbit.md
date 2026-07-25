@@ -19,7 +19,7 @@ Goal: drop one solid that sits on the ground plane, keep it selected, and orbit 
    - **Wheel** or **pinch** → zoom toward the cursor (same UI rule as two-finger scroll)
    - **Shift+wheel** → pan vertically; **Alt+wheel** → yaw; **Shift+Alt+wheel** → pan horizontally; **Ctrl+wheel** → stronger zoom
    - **Touch**: one-finger drag orbits (mouse emulation); two-finger drag pans and pinch-zooms
-   - **Arrow keys** → pan; **Shift+arrows** → orbit; **Alt+WASD** → pan (plain WASD stays with modeling tools)
+   - **Arrow keys** → pan; **Shift+arrows** → orbit; **WASD** → fly in/out + strafe; **Alt+WASD** → screen pan (while sketching, plain WASD stays with tools)
    - **+ / − / Page Up / Page Down** → zoom at view center; **Home** same as **F**
    - **Ctrl + empty-drag** → rubber-band box select
    - **Shift + click** → add / toggle multi-select (Shift+empty keeps selection)

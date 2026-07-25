@@ -214,7 +214,13 @@ func _do_model(intent: Dictionary) -> void:
 			if edges.is_empty():
 				status.emit("Select an edge, then ask again")
 				return
-			if view.doc.fillet_edges(edges, v):
+			var ffid := view.feature_of_body(view.selected_body)
+			var fok: bool
+			if ffid != "":
+				fok = view.doc.graph_add_fillet(ffid, edges, v) != ""
+			else:
+				fok = view.doc.fillet_edges(edges, v)
+			if fok:
 				view.graph_changed()
 				status.emit("Fillet %.2f applied — Ctrl+Z to undo" % v)
 			else:
@@ -224,7 +230,13 @@ func _do_model(intent: Dictionary) -> void:
 			if edges2.is_empty():
 				status.emit("Select an edge, then ask again")
 				return
-			if view.doc.chamfer_edges(edges2, v):
+			var cfid := view.feature_of_body(view.selected_body)
+			var cok: bool
+			if cfid != "":
+				cok = view.doc.graph_add_chamfer(cfid, edges2, v) != ""
+			else:
+				cok = view.doc.chamfer_edges(edges2, v)
+			if cok:
 				view.graph_changed()
 				status.emit("Chamfer %.2f applied — Ctrl+Z to undo" % v)
 			else:
@@ -238,7 +250,13 @@ func _do_model(intent: Dictionary) -> void:
 			if faces.is_empty():
 				status.emit("Select a face to open, then ask again")
 				return
-			if view.doc.shell_body(faces, v):
+			var sfid := view.feature_of_body(view.selected_body)
+			var sok: bool
+			if sfid != "":
+				sok = view.doc.graph_add_shell(sfid, faces, v) != ""
+			else:
+				sok = view.doc.shell_body(faces, v)
+			if sok:
 				view.graph_changed()
 				status.emit("Shell thickness %.2f — Ctrl+Z to undo" % v)
 			else:

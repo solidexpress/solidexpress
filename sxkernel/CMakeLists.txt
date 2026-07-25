@@ -2,7 +2,7 @@
 
 # GLOB with CONFIGURE_DEPENDS so parallel agents can add sources without
 # editing this file (merge-conflict avoidance is worth the non-idiomatic glob).
-file(GLOB SXKERNEL_SOURCES CONFIGURE_DEPENDS src/*.cpp)
+file(GLOB SXKERNEL_SOURCES CONFIGURE_DEPENDS src/*.cpp src/features/*.cpp)
 
 add_library(sxkernel STATIC ${SXKERNEL_SOURCES})
 target_include_directories(sxkernel PUBLIC include)

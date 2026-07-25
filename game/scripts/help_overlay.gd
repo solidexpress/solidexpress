@@ -1,8 +1,8 @@
 class_name HelpOverlay
 extends PanelContainer
-## F1 cheat sheet: lists Shortcuts.by_context() in a centered semi-transparent panel.
-## Hidden by default; toggle() flips visibility. Any key or mouse click while
-## visible closes it.
+## F1 cheat sheet: lists CommandRegistry.entries() (via by_context) in a
+## centered semi-transparent panel. Hidden by default; toggle() flips
+## visibility. Any key or mouse click while visible closes it.
 
 
 func _ready() -> void:
@@ -29,7 +29,13 @@ func _ready() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(title)
 
-	var grouped := Shortcuts.by_context()
+	# Group CommandRegistry.entries() by context (same order as TABLE).
+	var grouped: Dictionary = {}
+	for entry in CommandRegistry.entries():
+		var ctx: String = entry["context"]
+		if not grouped.has(ctx):
+			grouped[ctx] = [] as Array
+		(grouped[ctx] as Array).append(entry)
 	# Preserve TABLE order: View, Model, Sketch, Timeline, File.
 	for ctx in ["View", "Model", "Sketch", "Timeline", "File"]:
 		if not grouped.has(ctx):
