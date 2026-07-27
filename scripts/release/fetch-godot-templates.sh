@@ -2,16 +2,32 @@
 # Download Godot 4.7 editor + export templates (all platforms in template pack).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-GODOT_VERSION="${GODOT_VERSION:-4.7.stable}"
 GODOT_BUILD="${GODOT_BUILD:-4.7.1}"
+GODOT_VERSION="${GODOT_VERSION:-${GODOT_BUILD}.stable}"
 BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_BUILD}-stable"
 TOOLS="$ROOT/tools/godot"
-TEMPLATES="${GODOT_TEMPLATES_DIR:-$HOME/.local/share/godot/export_templates/${GODOT_VERSION}}"
+
+os="$(uname -s)"
+case "$os" in
+  Linux)
+    TEMPLATES_DEFAULT="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}"
+    ;;
+  Darwin)
+    TEMPLATES_DEFAULT="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}"
+    ;;
+  MINGW*|MSYS*|CYGWIN*|Windows*)
+    TEMPLATES_DEFAULT="${APPDATA:-$HOME/AppData/Roaming}/Godot/export_templates/${GODOT_VERSION}"
+    ;;
+  *)
+    echo "Unsupported OS for fetch-godot-templates: $os" >&2
+    exit 1
+    ;;
+esac
+TEMPLATES="${GODOT_TEMPLATES_DIR:-$TEMPLATES_DEFAULT}"
 
 mkdir -p "$TOOLS" "$TEMPLATES"
 cd "$TOOLS"
 
-os="$(uname -s)"
 case "$os" in
   Linux)
     editor_zip="Godot_v${GODOT_BUILD}-stable_linux.x86_64.zip"
@@ -66,13 +82,9 @@ case "$os" in
       exit 1
     fi
     ;;
-  *)
-    echo "Unsupported OS for fetch-godot-templates: $os" >&2
-    exit 1
-    ;;
 esac
 
-if [[ ! -f "$TEMPLATES/version.txt" && ! -f "$TEMPLATES/linux_release.x86_64" ]]; then
+if [[ ! -f "$TEMPLATES/version.txt" && ! -f "$TEMPLATES/linux_release.x86_64" && ! -f "$TEMPLATES/macos.zip" ]]; then
   echo "Fetching export templates (all platforms)..."
   curl -fsSL -o templates.zip "${BASE}/Godot_v${GODOT_BUILD}-stable_export_templates.tpz"
   rm -rf /tmp/godot-templates-unpack

@@ -18,9 +18,10 @@ if [[ ! -f "$GODOT" ]]; then
   exit 1
 fi
 
-echo "==> cmake build (Release)"
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ${CMAKE_TOOLCHAIN_FILE:+-DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE}
-cmake --build build -j "${NUMBER_OF_PROCESSORS:-4}"
+echo "==> cmake build (Release, sxcore only)"
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF \
+  ${CMAKE_TOOLCHAIN_FILE:+-DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE}
+cmake --build build -j "${NUMBER_OF_PROCESSORS:-4}" --target sxcore
 
 mkdir -p game/bin
 PLANEGCS="$(find build -name 'libplanegcs.dll' -o -name 'planegcs.dll' 2>/dev/null | head -1 || true)"

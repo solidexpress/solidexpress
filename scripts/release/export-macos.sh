@@ -15,9 +15,9 @@ if [[ ! -x "$GODOT" ]]; then
   exit 1
 fi
 
-echo "==> cmake build (Release)"
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+echo "==> cmake build (Release, sxcore only)"
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF
+cmake --build build -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" --target sxcore
 
 mkdir -p game/bin
 for candidate in build/libplanegcs.dylib build/thirdparty/planegcs/libplanegcs.dylib; do

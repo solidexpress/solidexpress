@@ -100,6 +100,8 @@ jobs:
           chmod +x scripts/release/fetch-godot-templates.sh
           ./scripts/release/fetch-godot-templates.sh
 
+      - uses: ilammy/msvc-dev-cmd@v1
+
       - name: Export Windows release
         shell: bash
         run: |
