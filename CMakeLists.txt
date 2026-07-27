@@ -10,6 +10,10 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
+if(MSVC)
+    add_compile_definitions(_USE_MATH_DEFINES)
+endif()
+
 option(SX_BUILD_GDEXTENSION "Build the sxcore Godot GDExtension" ON)
 option(SX_BUILD_TESTS "Build kernel unit tests" ON)
 option(SX_BUILD_VOICE "Build sxvoice with whisper.cpp when vendored" OFF)

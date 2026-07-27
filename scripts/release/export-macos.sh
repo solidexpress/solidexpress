@@ -28,7 +28,7 @@ if [[ -n "$PLANEGCS" && ! -f game/bin/libplanegcs.dylib ]]; then cp -f "$PLANEGC
 
 "$GODOT" --headless --path game --import >/dev/null 2>&1 || true
 rm -rf "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
-mkdir -p "$ROOT/dist/releases"
+mkdir -p "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 
 echo "==> Godot export-release preset=${PRESET}"
 "$GODOT" --headless --path game --export-release "$PRESET" "$OUT_APP"
@@ -39,8 +39,19 @@ if [[ -f game/bin/libplanegcs.dylib ]]; then
   cp -f game/bin/libplanegcs.dylib "$OUT_APP/Contents/MacOS/" || true
 fi
 
+# Legal notices next to the .app (and inside Resources for Finder discovery).
+BUNDLE_DIR="$(dirname "$OUT_APP")"
+cp -f "$ROOT/NOTICE" "$BUNDLE_DIR/NOTICE"
+[[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$BUNDLE_DIR/THIRD_PARTY.md"
+[[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$BUNDLE_DIR/LICENSE"
+mkdir -p "$OUT_APP/Contents/Resources"
+cp -f "$ROOT/NOTICE" "$OUT_APP/Contents/Resources/NOTICE"
+[[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_APP/Contents/Resources/THIRD_PARTY.md"
+[[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_APP/Contents/Resources/LICENSE"
+
 rm -f "$ARCHIVE"
-ditto -c -k --sequesterRsrc --keepParent "$OUT_APP" "$ARCHIVE"
+# Zip the whole release folder so NOTICE / LICENSE sit beside the .app.
+ditto -c -k --sequesterRsrc --keepParent "$BUNDLE_DIR" "$ARCHIVE"
 shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
 echo "OK: $ARCHIVE"
 cat "${ARCHIVE}.sha256"
