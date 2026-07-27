@@ -16,7 +16,7 @@ if [[ ! -x "$GODOT" ]]; then
 fi
 
 echo "==> cmake build (Release, sxcore only)"
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF -DGODOTCPP_TARGET=template_release
 cmake --build build -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" --target sxcore
 
 mkdir -p game/bin

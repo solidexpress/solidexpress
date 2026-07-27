@@ -20,6 +20,7 @@ fi
 
 echo "==> cmake build (Release, sxcore only)"
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF \
+  -DGODOTCPP_TARGET=template_release \
   ${CMAKE_TOOLCHAIN_FILE:+-DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE}
 cmake --build build -j "${NUMBER_OF_PROCESSORS:-4}" --target sxcore
 
