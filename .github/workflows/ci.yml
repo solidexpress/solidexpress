@@ -22,7 +22,7 @@ jobs:
             libocct-modeling-algorithms-dev libocct-ocaf-dev \
             libocct-data-exchange-dev libocct-visualization-dev \
             libocct-draw-dev \
-            libeigen3-dev libboost-dev
+            libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DSX_BUILD_GDEXTENSION=OFF -DSX_BUILD_VOICE=OFF

@@ -25,7 +25,7 @@ jobs:
             libocct-modeling-algorithms-dev libocct-ocaf-dev \
             libocct-data-exchange-dev libocct-visualization-dev \
             libocct-draw-dev \
-            libeigen3-dev libboost-dev
+            libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev
 
       - name: Resolve version
         id: ver
@@ -78,7 +78,7 @@ jobs:
           "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"
           echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
           echo "CMAKE_TOOLCHAIN_FILE=$RUNNER_TEMP/vcpkg/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
-          "$RUNNER_TEMP/vcpkg/vcpkg.exe" install opencascade eigen3 boost-system boost-filesystem --triplet x64-windows
+          "$RUNNER_TEMP/vcpkg/vcpkg.exe" install opencascade eigen3 tbb boost-system boost-filesystem boost-graph --triplet x64-windows
 
       - name: Resolve version
         id: ver
@@ -122,7 +122,7 @@ jobs:
           submodules: recursive
 
       - name: Install build dependencies
-        run: brew install cmake ninja opencascade eigen boost
+        run: brew install cmake ninja opencascade eigen boost tbb
 
       - name: Resolve version
         id: ver

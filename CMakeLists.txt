@@ -17,6 +17,7 @@ option(SX_BUILD_VOICE "Build sxvoice with whisper.cpp when vendored" OFF)
 # --- system deps ---
 find_package(OpenCASCADE REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
+find_package(Boost REQUIRED)
 
 # --- vendored: miniz (MIT, static) ---
 add_library(miniz STATIC thirdparty/miniz/miniz.c)
@@ -30,7 +31,8 @@ target_include_directories(sx_json INTERFACE thirdparty)
 file(GLOB PLANEGCS_SOURCES thirdparty/planegcs/*.cpp)
 add_library(planegcs SHARED ${PLANEGCS_SOURCES})
 target_include_directories(planegcs PUBLIC thirdparty/planegcs thirdparty/planegcs-shim)
-target_link_libraries(planegcs PUBLIC Eigen3::Eigen)
+target_link_libraries(planegcs PUBLIC Eigen3::Eigen Boost::headers)
+target_include_directories(planegcs SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
 target_compile_options(planegcs PRIVATE -w)  # vendored code: silence warnings
 
 add_subdirectory(sxkernel)

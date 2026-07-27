@@ -1,32 +1,86 @@
 #!/usr/bin/env bash
-# Download Godot 4.7 editor + export templates into tools/godot (repo-local).
+# Download Godot 4.7 editor + export templates (all platforms in template pack).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 GODOT_VERSION="${GODOT_VERSION:-4.7.stable}"
 GODOT_BUILD="${GODOT_BUILD:-4.7.1}"
 BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_BUILD}-stable"
 TOOLS="$ROOT/tools/godot"
-TEMPLATES="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}"
+TEMPLATES="${GODOT_TEMPLATES_DIR:-$HOME/.local/share/godot/export_templates/${GODOT_VERSION}}"
 
 mkdir -p "$TOOLS" "$TEMPLATES"
 cd "$TOOLS"
 
-if [[ ! -x "$TOOLS/godot" ]]; then
-  echo "Fetching Godot editor ${GODOT_BUILD}..."
-  curl -fsSL -o godot.zip "${BASE}/Godot_v${GODOT_BUILD}-stable_linux.x86_64.zip"
-  unzip -o godot.zip
-  mv "Godot_v${GODOT_BUILD}-stable_linux.x86_64" godot
-  chmod +x godot
-  rm -f godot.zip
-fi
+os="$(uname -s)"
+case "$os" in
+  Linux)
+    editor_zip="Godot_v${GODOT_BUILD}-stable_linux.x86_64.zip"
+    editor_path="$TOOLS/godot"
+    if [[ ! -x "$editor_path" ]]; then
+      echo "Fetching Godot editor ${GODOT_BUILD} (Linux)..."
+      curl -fsSL -o godot.zip "${BASE}/${editor_zip}"
+      unzip -o godot.zip
+      mv "Godot_v${GODOT_BUILD}-stable_linux.x86_64" godot
+      chmod +x godot
+      rm -f godot.zip
+    fi
+    ;;
+  Darwin)
+    editor_path="$TOOLS/godot"
+    if [[ ! -x "$editor_path" ]]; then
+      echo "Fetching Godot editor ${GODOT_BUILD} (macOS)..."
+      curl -fsSL -o godot.zip "${BASE}/Godot_v${GODOT_BUILD}-stable_macos.universal.zip"
+      unzip -o godot.zip
+      app="Godot.app"
+      if [[ ! -d "$app" ]]; then
+        app="$(find . -maxdepth 1 -name 'Godot*.app' -print -quit)"
+      fi
+      if [[ -z "$app" || ! -d "$app" ]]; then
+        echo "Godot.app not found in macOS editor zip" >&2
+        exit 1
+      fi
+      cp -f "$app/Contents/MacOS/Godot" godot
+      chmod +x godot
+      rm -rf "$app" godot.zip
+    fi
+    ;;
+  MINGW*|MSYS*|CYGWIN*|Windows*)
+    editor_path="$TOOLS/godot.exe"
+    rm -f "$TOOLS/godot"
+    if [[ ! -f "$editor_path" ]]; then
+      echo "Fetching Godot editor ${GODOT_BUILD} (Windows)..."
+      curl -fsSL -o godot.zip "${BASE}/Godot_v${GODOT_BUILD}-stable_win64.exe.zip"
+      unzip -o godot.zip
+      if [[ -f "Godot_v${GODOT_BUILD}-stable_win64.exe" ]]; then
+        mv "Godot_v${GODOT_BUILD}-stable_win64.exe" godot.exe
+      elif [[ -f Godot_win64.exe ]]; then
+        mv Godot_win64.exe godot.exe
+      else
+        exe="$(find . -maxdepth 1 -name '*.exe' -print -quit)"
+        [[ -n "$exe" ]] && mv "$exe" godot.exe
+      fi
+      rm -f godot.zip
+    fi
+    if [[ ! -f "$editor_path" ]]; then
+      echo "Godot.exe not found after Windows editor download" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "Unsupported OS for fetch-godot-templates: $os" >&2
+    exit 1
+    ;;
+esac
 
-if [[ ! -f "$TEMPLATES/linux_release.x86_64" ]]; then
-  echo "Fetching Linux export templates..."
+if [[ ! -f "$TEMPLATES/version.txt" && ! -f "$TEMPLATES/linux_release.x86_64" ]]; then
+  echo "Fetching export templates (all platforms)..."
   curl -fsSL -o templates.zip "${BASE}/Godot_v${GODOT_BUILD}-stable_export_templates.tpz"
+  rm -rf /tmp/godot-templates-unpack
+  mkdir -p /tmp/godot-templates-unpack
   unzip -o templates.zip -d /tmp/godot-templates-unpack
   cp -a /tmp/godot-templates-unpack/templates/* "$TEMPLATES/"
   rm -rf /tmp/godot-templates-unpack templates.zip
 fi
 
-echo "Godot: $TOOLS/godot"
+echo "Godot editor: ${editor_path:-$TOOLS/godot}"
 echo "Templates: $TEMPLATES"
