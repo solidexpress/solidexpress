@@ -22,11 +22,21 @@ echo "==> cmake build (Release, sxcore only)"
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF \
   -DGODOTCPP_TARGET=template_release \
   ${CMAKE_TOOLCHAIN_FILE:+-DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE}
-cmake --build build -j "${NUMBER_OF_PROCESSORS:-4}" --target planegcs sxcore
+cmake --build build -j "${NUMBER_OF_PROCESSORS:-4}" --target planegcs
+cmake --build build -j "${NUMBER_OF_PROCESSORS:-4}" --target sxcore
 
 mkdir -p game/bin
-PLANEGCS="$(find build -name 'libplanegcs.dll' -o -name 'planegcs.dll' 2>/dev/null | head -1 || true)"
-if [[ -n "$PLANEGCS" ]]; then cp -f "$PLANEGCS" game/bin/libplanegcs.dll; fi
+PLANEGCS_DLL="$(find build -name 'planegcs.dll' -print -quit 2>/dev/null || true)"
+PLANEGCS_LIB="$(find build -name 'planegcs.lib' -print -quit 2>/dev/null || true)"
+if [[ -z "$PLANEGCS_DLL" ]]; then
+  PLANEGCS_DLL="$(find build -name 'libplanegcs.dll' -print -quit 2>/dev/null || true)"
+fi
+if [[ -n "$PLANEGCS_DLL" ]]; then cp -f "$PLANEGCS_DLL" game/bin/libplanegcs.dll; fi
+if [[ -z "$PLANEGCS_LIB" ]]; then
+  echo "error: planegcs.lib missing after build (sxcore link will fail)" >&2
+  find build -name '*.lib' 2>/dev/null | head -20 >&2 || true
+  exit 1
+fi
 
 "$GODOT" --headless --path game --import >/dev/null 2>&1 || true
 rm -rf "$OUT_DIR"

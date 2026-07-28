@@ -37,7 +37,13 @@ add_library(planegcs SHARED ${PLANEGCS_SOURCES})
 target_include_directories(planegcs PUBLIC thirdparty/planegcs thirdparty/planegcs-shim)
 target_link_libraries(planegcs PUBLIC Eigen3::Eigen Boost::headers)
 target_include_directories(planegcs SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
-target_compile_options(planegcs PRIVATE -w)  # vendored code: silence warnings
+if(MSVC)
+  target_compile_options(planegcs PRIVATE /w)
+  # MSVC only emits planegcs.lib (needed to link sxcore.dll) when symbols are exported.
+  set_target_properties(planegcs PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+else()
+  target_compile_options(planegcs PRIVATE -w)  # vendored code: silence warnings
+endif()
 
 add_subdirectory(sxkernel)
 # Always build sxvoice (stub by default). Whisper links only when SX_BUILD_VOICE=ON
