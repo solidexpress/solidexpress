@@ -284,6 +284,8 @@ func _build_ui() -> void:
 	insert_popup.add_item("Datum Axis Z", 5)
 	insert_popup.add_separator()
 	insert_popup.add_item("Datum Point at Origin", 6)
+	insert_popup.add_separator()
+	insert_popup.add_item("Helix Spring…", 7)
 	insert_popup.id_pressed.connect(_on_insert_menu)
 
 	# View menu: entry points for panels that auto-hide when they have no data,
@@ -534,7 +536,7 @@ func _build_ui() -> void:
 	rows.add_child(HSeparator.new())
 	for entry in [
 			[SketchMode.Tool.SELECT, "select", "Select (S)"],
-			[SketchMode.Tool.LINE, "line", "Line / centerline (L)"],
+			[SketchMode.Tool.LINE, "line", "Line chain (L) — Done / Esc to finish"],
 			[SketchMode.Tool.ARC, "arc", "Arc tool (A)"],
 			[SketchMode.Tool.CIRCLE, "circle", "Circle (C)"],
 			[SketchMode.Tool.RECT, "rect", "Rectangle (R)"],
@@ -574,7 +576,7 @@ func _build_ui() -> void:
 	rows.add_child(infer_toggle)
 	var autoclose_toggle := CheckBox.new()
 	autoclose_toggle.text = ""
-	autoclose_toggle.tooltip_text = "Auto-close line chain on finish (right-click / double-click)"
+	autoclose_toggle.tooltip_text = "Auto-close line chain on finish (Done / Esc / right-click / double-click)"
 	autoclose_toggle.button_pressed = sketch_mode.auto_close_enabled
 	autoclose_toggle.toggled.connect(sketch_mode.set_auto_close)
 	rows.add_child(autoclose_toggle)
@@ -767,7 +769,7 @@ func _on_sketch_pad_clicked(fid: String, additive: bool = false) -> void:
 		else:
 			selected_sketch_pads.append(fid)
 		_refresh_merge_chrome()
-		_on_status("%d sketch pad(s) selected — Merge / Loft…" % selected_sketch_pads.size())
+		_on_status("%d sketch pad(s) selected — Merge / Loft / Sweep…" % selected_sketch_pads.size())
 		return
 	selected_sketch_pads.clear()
 	if sketch_chrome != null:
@@ -791,7 +793,7 @@ func _on_sketch_pads_box_selected(fids: Array, additive: bool = false) -> void:
 	_refresh_merge_chrome()
 	if selected_sketch_pads.is_empty():
 		return
-	_on_status("%d sketch pad(s) selected — Merge / Loft…" % selected_sketch_pads.size())
+	_on_status("%d sketch pad(s) selected — Merge / Loft / Sweep…" % selected_sketch_pads.size())
 
 
 func _refresh_merge_chrome() -> void:
@@ -849,17 +851,21 @@ func _sketch_to_3d_actions() -> Array:
 				profiles += 1
 			"rail":
 				rails += 1
-	if n >= 2 and rails >= 1 and profiles < 2:
-		actions.append("merge_join")
-		actions.append("merge_spline")
-		actions.append("merge_composite")
+	# Open rails alone → Path (single rail or merge).
+	if profiles == 0 and rails >= 1:
+		if rails == 1:
+			actions.append("use_as_path")
+		else:
+			actions.append("merge_join")
+			actions.append("merge_spline")
+			actions.append("merge_composite")
 	# Loft: 2+ profiles; open rails in the same selection become guide curves.
 	if profiles >= 2:
 		actions.append("loft_ruled")
 		actions.append("loft_smooth")
-	if n == 1 and profiles == 1:
-		var path_fid := selected_path_fid if selected_path_fid != "" else _latest_path_fid()
-		if path_fid != "":
+	# Sweep: explicit Path on timeline, or one-shot profile + rail(s).
+	if profiles == 1:
+		if rails >= 1 or selected_path_fid != "":
 			actions.append("sweep_path")
 	if actions.is_empty() and n >= 2:
 		# Mixed or unknown — offer everything.
@@ -908,31 +914,50 @@ func _loft_selected_sketches(ruled: bool) -> void:
 
 
 func _sweep_profile_along_path() -> void:
-	if selected_sketch_pads.size() != 1:
-		_on_status("Ctrl+click exactly one profile pad, then Sweep along path")
+	var profiles := PackedStringArray()
+	var rails := PackedStringArray()
+	for fid in selected_sketch_pads:
+		match _sketch_pad_role(fid):
+			"profile":
+				profiles.append(fid)
+			"rail":
+				rails.append(fid)
+	if profiles.size() != 1:
+		_on_status("Select exactly one closed profile pad for Sweep")
 		return
-	var prof_fid: String = selected_sketch_pads[0]
-	if _sketch_pad_role(prof_fid) != "profile":
-		_on_status("Selected pad is not a closed profile")
+	var prof_fid: String = profiles[0]
+	var path_fid := selected_path_fid
+	var guides := PackedStringArray()
+	if path_fid != "":
+		# Explicit Path on timeline — open rails in the selection are guides.
+		guides = rails
+	elif rails.size() >= 1:
+		# One-shot: build Path from selected rails, then sweep.
+		path_fid = view.doc.graph_add_path(rails, "join_endpoints")
+		if path_fid == "":
+			_on_status("Could not create Path from selected rail(s)")
+			return
+		selected_path_fid = path_fid
+	else:
+		_on_status("Select a Path on the timeline, or select profile + rail(s)")
 		return
-	var path_fid := selected_path_fid if selected_path_fid != "" else _latest_path_fid()
-	if path_fid == "":
-		_on_status("Create a Path first (merge open rails) or select a Path row on the timeline")
-		return
-	var sw_fid: String = view.doc.graph_add_sweep_along_path(prof_fid, path_fid)
+	var sw_fid: String = view.doc.graph_add_sweep_along_path(prof_fid, path_fid, guides)
 	if sw_fid == "":
 		_on_status("Sweep along path failed")
 		return
 	selected_sketch_pads.clear()
 	_refresh_merge_chrome()
-	_on_status("Sweep solid created along path")
+	var note := ""
+	if guides.size() > 0:
+		note = " + %d guide(s)" % guides.size()
+	_on_status("Sweep solid created along path%s" % note)
 	view.refresh()
 	_on_document_changed()
 
 
 func _merge_selected_sketches(mode: String) -> void:
-	if selected_sketch_pads.size() < 2:
-		_on_status("Select 2+ sketch pads (Ctrl+click) to merge")
+	if selected_sketch_pads.is_empty():
+		_on_status("Select open rail pad(s) to create a Path")
 		return
 	var fids := PackedStringArray()
 	for fid in selected_sketch_pads:
@@ -951,6 +976,9 @@ func _merge_selected_sketches(mode: String) -> void:
 
 func _on_sketch_action(action: String) -> void:
 	match action:
+		"use_as_path":
+			_merge_selected_sketches("join_endpoints")
+			return
 		"merge_join":
 			_merge_selected_sketches("join_endpoints")
 			return
@@ -999,6 +1027,9 @@ func _on_sketch_action(action: String) -> void:
 			_apply_dimension_from_chrome()
 		"revolve":
 			sketch_mode.finish_revolve(TAU, _finish_op_name())
+		"done":
+			sketch_mode.end_chain()
+			_on_status("Chain ended")
 		"horizontal", "vertical", "parallel", "perpendicular", "equal", "coincident", \
 		"tangent", "midpoint", "symmetric", "concentric", "collinear", "fix", "diameter":
 			_apply_constraint(action, 0.0)
@@ -1600,6 +1631,16 @@ func _on_insert_menu(id: int) -> void:
 		4: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
 		5: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
 		6: did = view.doc.add_datum_point(Vector3.ZERO)
+		7:
+			# Default spring matching workflow tests (edit via property panel).
+			did = view.doc.graph_add_helix(2.0, 15.0, 8.0, 5.0, false,
+					Vector3.ZERO, Vector3(0, 0, 1))
+			if did != "":
+				view.graph_changed()
+				_on_status("Helix spring added (edit profile/pitch on timeline)")
+				return
+			_on_status("Helix creation failed")
+			return
 	if did != "":
 		view.graph_changed()
 		_on_status("Datum added")

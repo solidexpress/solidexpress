@@ -9,7 +9,7 @@ Goal: sketch a closed S-shaped profile and extrude it into a solid.
 
    `(0,0) → (20,0) → (20,15) → (5,15) → (5,25) → (20,25) → (20,40) → (0,40) → (0,25) → (15,25) → (15,15) → (0,15) → (0,0)`
 
-   That closed loop is a thick letter **S** (an S-channel). Click back near the start to close, or right-click to end the chain after the last segment lands on the start.
+   That closed loop is a thick letter **S** (an S-channel). Click back near the start to close, or **Done** / Esc / right-click to end the chain after the last segment lands on the start.
 3. Press **Extrude** on the left sketch rail with a distance such as **10**. Operation **New** creates a body. Or **Exit Sketch** to keep a yellow pad and extrude later — see [sketch-edit-in-out.md](sketch-edit-in-out.md).
 4. Orbit (**Middle-drag**) to inspect the solid. It should be a single body with non-zero volume.
 
@@ -17,7 +17,7 @@ Goal: sketch a closed S-shaped profile and extrude it into a solid.
 
 - The profile must be **closed** or extrude fails — check that the last point meets the first.
 - **R** draws rectangles; **C** circles; **S** returns to select for constraints.
-- Esc cancels the sketch without creating a body.
+- Esc ends an open line chain first; Esc again (with no chain) cancels the sketch without creating a body.
 - For a letter with a hole (outer + inner loop), see [extrude-letter-a.md](extrude-letter-a.md).
 
 ## What “good” looks like

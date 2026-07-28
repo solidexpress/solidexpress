@@ -2,6 +2,8 @@
 
 Goal: place a box and a cylinder, tip the cylinder on its side, lengthen it, slide it through the box, and **Subtract** so the box keeps a clean horizontal hole.
 
+For a **vertical drilled hole at a chosen point** (Ø, depth, counterbore/countersink): select a face → set Hole Ø / Depth → **Place hole…** → click the face. Clicks near a **corner** snap then inset by **Inset** (auto from Ø, face thickness, and material softness — softer/thicker stock and larger Ø push farther in). Clicks near an edge/face mid snap there; farther clicks place freely. **Apply hole** still drills at face center in one click.
+
 ## Steps
 
 1. Click **Box** in the left **Primitives** palette, optionally set size in the bottom bar (a **20×20×20** cube is easy to see), then click the ground to place it.

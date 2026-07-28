@@ -11,7 +11,7 @@ static func alert(keys: String, desc: String) -> Dictionary:
 static func tool_keys(tool: int) -> Dictionary:
 	match tool:
 		SketchMode.Tool.LINE:
-			return alert("L", "Line tool — click start and end points")
+			return alert("L", "Line tool — click points to chain; Done / Esc to finish")
 		SketchMode.Tool.CIRCLE:
 			return alert("C", "Circle tool — click center, then radius")
 		SketchMode.Tool.SPLINE:
@@ -71,4 +71,8 @@ static func place_click(kind: String) -> Dictionary:
 
 static func edit_pad() -> Dictionary:
 	return alert("Click", "Reopen sketch pad for editing")
+
+
+static func place_hole() -> Dictionary:
+	return alert("Place hole…", "Arm: click near a corner (auto-inset) or free on face")
 

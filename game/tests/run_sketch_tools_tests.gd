@@ -40,6 +40,7 @@ func _init() -> void:
 	test_snap_perpendicular(main)
 	test_snap_disabled(main)
 	test_auto_close_line_chain(main)
+	test_esc_ends_line_chain(main)
 	test_profile_is_closed()
 	test_dimension_distance_label(main)
 	test_dimension_radius_label(main)
@@ -451,6 +452,31 @@ func test_auto_close_line_chain(main) -> void:
 	check(sm.sketch.entity_ids().size() == 2, "auto-close off leaves chain open")
 	check(not SketchMode.profile_is_closed(sm.sketch), "open chain is not closed")
 	sm.set_auto_close(true)
+	sm.cancel()
+
+
+func test_esc_ends_line_chain(main) -> void:
+	print("- Esc ends open line chain without discarding sketch")
+	var sm: SketchMode = main.sketch_mode
+	var ix: ViewportInteraction = main.interaction
+	main.view.clear_selection()
+	main._start_sketch()
+	sm.set_snap(false)
+	sm.set_auto_close(true)
+	sm.set_tool(SketchMode.Tool.LINE)
+	sm.click(Vector2(0, 0))
+	sm.click(Vector2(12, 0))
+	sm.click(Vector2(12, 9))
+	check(sm.has_open_chain(), "chain open before Esc")
+	check(sm.sketch.entity_ids().size() == 2, "two segments before Esc")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	ix._input(esc)
+	check(sm.active, "Esc ended chain, sketch still active")
+	check(not sm.has_open_chain(), "chain cleared after Esc")
+	check(sm.sketch.entity_ids().size() == 3, "auto-close ran on Esc end")
+	check(main.sketch_chrome.done_button() != null, "Done chip exists on finish bar")
 	sm.cancel()
 
 

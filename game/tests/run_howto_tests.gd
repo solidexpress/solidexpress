@@ -135,7 +135,9 @@ func howto_extrude_s_shape(main) -> void:
 	]
 	for p in pts:
 		sk.click(p)
+	# Same as Done / Esc / right-click in the UI.
 	sk.end_chain()
+	check(not sk.has_open_chain(), "S chain ended")
 	check(sk.sketch.entity_ids().size() >= 12, "S outline has many line entities")
 	sk.finish_extrude(10.0, "new")
 	await process_frame
@@ -166,6 +168,7 @@ func howto_extrude_letter_a(main) -> void:
 	for p in outer:
 		sk.click(p)
 	sk.end_chain()
+	check(not sk.has_open_chain(), "outer A chain ended")
 	# Inner triangular counter
 	var inner: Array[Vector2] = [
 		Vector2(20, 28), Vector2(30, 28), Vector2(25, 42), Vector2(20, 28),
@@ -173,6 +176,7 @@ func howto_extrude_letter_a(main) -> void:
 	for p in inner:
 		sk.click(p)
 	sk.end_chain()
+	check(not sk.has_open_chain(), "inner A chain ended")
 	check(sk.sketch.entity_ids().size() >= 10, "A outline has outer + inner lines")
 	sk.finish_extrude(10.0, "new")
 	await process_frame

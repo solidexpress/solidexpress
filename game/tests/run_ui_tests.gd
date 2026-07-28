@@ -35,6 +35,7 @@ func _init() -> void:
 	await test_timeline(main)
 	test_ops_panel(main)
 	test_sketch_constraints(main)
+	await test_done_ends_line_chain(main)
 	test_revolve_and_cut(main)
 	test_card_editing(main)
 	test_edge_selection(main)
@@ -220,6 +221,32 @@ func test_sketch_constraints(main) -> void:
 	sm.click(Vector2(500, 500))
 	check(sm.selected.is_empty(), "empty click clears selection")
 	check(sm.constrain("horizontal") == "", "constrain with no selection is no-op")
+	sm.cancel()
+
+
+## Finish-bar Done ends a multi-line chain (keeps the sketch session).
+func test_done_ends_line_chain(main) -> void:
+	print("- Done chip ends line chain")
+	var sm: SketchMode = main.sketch_mode
+	var chrome: SketchContextChrome = main.sketch_chrome
+	main.view.clear_selection()
+	main._start_sketch()
+	await process_frame
+	sm.set_snap(false)
+	sm.set_auto_close(true)
+	sm.set_tool(SketchMode.Tool.LINE)
+	sm.click(Vector2(0, 0))
+	sm.click(Vector2(10, 0))
+	sm.click(Vector2(10, 8))
+	check(sm.has_open_chain(), "chain open before Done")
+	check(sm.sketch.entity_ids().size() == 2, "two segments before Done")
+	var done := chrome.done_button()
+	check(done != null and done.is_visible_in_tree(), "Done chip visible")
+	done.pressed.emit()
+	await process_frame
+	check(sm.active, "Done kept sketch session")
+	check(not sm.has_open_chain(), "Done cleared open chain")
+	check(sm.sketch.entity_ids().size() == 3, "Done auto-closed the chain")
 	sm.cancel()
 
 

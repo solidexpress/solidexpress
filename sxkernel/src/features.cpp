@@ -15,6 +15,7 @@
 #include <BRepBuilderAPI_TransitionMode.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
@@ -26,6 +27,7 @@
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
@@ -46,6 +48,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <vector>
 
 #include "sx/curves.hpp"
 #include "sx/document.hpp"
@@ -119,10 +122,10 @@ FeatureType feature_type_from_string(const std::string& s) {
 static bool creates_body(const Feature& f) {
     if (f.type == FeatureType::Primitive || f.type == FeatureType::ImportStep ||
         f.type == FeatureType::ImportStl || f.type == FeatureType::Mirror ||
-        f.type == FeatureType::Sweep || f.type == FeatureType::Loft ||
-        f.type == FeatureType::HelixSweep)
+        f.type == FeatureType::Loft || f.type == FeatureType::HelixSweep)
         return true;
-    if (f.type == FeatureType::Extrude || f.type == FeatureType::Revolve)
+    if (f.type == FeatureType::Extrude || f.type == FeatureType::Revolve ||
+        f.type == FeatureType::Sweep)
         return f.params.value("op", "new") == "new";
     return false;
 }
@@ -164,15 +167,17 @@ bool FeatureGraph::set_params(const EntityId& id, json params) {
 
 namespace {
 
-// Collect feature ids referenced by params keys sketch/target/tool/sketches.
+// Collect feature ids referenced by params keys sketch/target/tool/sketches/guides.
 void collect_deps(const Feature& f, std::vector<std::string>& out) {
     for (const char* key : {"sketch", "target", "tool", "path_feature"}) {
         if (f.params.contains(key) && f.params[key].is_string())
             out.push_back(f.params[key].get<std::string>());
     }
-    if (f.params.contains("sketches") && f.params["sketches"].is_array()) {
-        for (const auto& s : f.params["sketches"]) {
-            if (s.is_string()) out.push_back(s.get<std::string>());
+    for (const char* arr_key : {"sketches", "guides"}) {
+        if (f.params.contains(arr_key) && f.params[arr_key].is_array()) {
+            for (const auto& s : f.params[arr_key]) {
+                if (s.is_string()) out.push_back(s.get<std::string>());
+            }
         }
     }
 }
@@ -251,14 +256,10 @@ bool FeatureGraph::has_dependents(const EntityId& id) const {
             continue;
         }
         if (!found_self) continue;
-        for (const char* key : {"sketch", "target", "tool"}) {
-            if (f.params.contains(key) && f.params[key].get<std::string>() == needle)
-                return true;
-        }
-        if (f.params.contains("sketches") && f.params["sketches"].is_array()) {
-            for (const auto& s : f.params["sketches"]) {
-                if (s.is_string() && s.get<std::string>() == needle) return true;
-            }
+        std::vector<std::string> deps;
+        collect_deps(f, deps);
+        for (const auto& d : deps) {
+            if (d == needle) return true;
         }
     }
     return false;
@@ -445,27 +446,42 @@ json simplify_path_for_sweep(const json& path) {
     return p;
 }
 
-TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path) {
+TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
+                                  const json* guide_path = nullptr,
+                                  double thin_thickness = 0.0) {
     json simplified = simplify_path_for_sweep(path);
     TopoDS_Wire spine = make_polyline_wire(simplified);
-    TopTools_IndexedMapOfShape edges;
-    TopExp::MapShapes(spine, TopAbs_EDGE, edges);
-    if (edges.Extent() <= 1) {
-        BRepOffsetAPI_MakePipe pipe(spine, face);
-        if (!pipe.IsDone()) throw std::runtime_error("MakePipe failed");
-        return pipe.Shape();
-    }
     TopoDS_Wire profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
     if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
+
+    // Prefer MakePipeShell for all cases: MakePipe often yields an empty/invalid
+    // solid when the profile plane contains the spine tangent (common for ground
+    // sketches swept along an in-plane rail).
     BRepOffsetAPI_MakePipeShell shell(spine);
-    shell.SetMode();
+    if (guide_path && guide_path->is_array() && guide_path->size() >= 2) {
+        json gsimp = simplify_path_for_sweep(*guide_path);
+        TopoDS_Wire aux = make_polyline_wire(gsimp);
+        // Auxiliary spine steers profile orientation / scale along the path.
+        shell.SetMode(aux, /*CurvilinearEquivalence=*/Standard_False);
+    } else {
+        shell.SetMode();
+    }
     shell.SetTransitionMode(BRepBuilderAPI_RightCorner);
     shell.Add(profile_wire, /*withContact=*/Standard_False,
               /*withCorrection=*/Standard_True);
     shell.Build();
     if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");
     if (!shell.MakeSolid()) throw std::runtime_error("MakePipeShell could not make solid");
-    return shell.Shape();
+    TopoDS_Shape result = shell.Shape();
+    if (thin_thickness > 0.0) {
+        // Closed hollow: offset the swept solid inward (no open faces removed).
+        BRepOffsetAPI_MakeThickSolid mk;
+        TopTools_ListOfShape closing;
+        mk.MakeThickSolidByJoin(result, closing, -thin_thickness, 1e-3);
+        if (!mk.IsDone()) throw std::runtime_error("thin wall shell failed");
+        result = mk.Shape();
+    }
+    return result;
 }
 
 // Pipe a circular profile along a helix spine (spring / thread groundwork).
@@ -612,6 +628,37 @@ json sketch_ordered_polyline(const Sketch& sk) {
             gp_Pnt a = sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1]));
             gp_Pnt b = sketch_uv_to_3d(pl, sk.param(e.params[2]), sk.param(e.params[3]));
             append_seg(a, b);
+        } else if (e.type == SketchEntityType::Arc && e.params.size() >= 5) {
+            const double cx = sk.param(e.params[0]);
+            const double cy = sk.param(e.params[1]);
+            const double r = sk.param(e.params[2]);
+            double a0 = sk.param(e.params[3]);
+            double a1 = sk.param(e.params[4]);
+            if (r < eps) continue;
+            // Sweep CCW from start to end (same convention as Sketch::add_arc).
+            while (a1 <= a0) a1 += 2.0 * M_PI;
+            const double span = a1 - a0;
+            const int samples = std::max(8, static_cast<int>(std::ceil(span / (M_PI / 12.0))));
+            gp_Pnt prev = sketch_uv_to_3d(pl, cx + r * std::cos(a0), cy + r * std::sin(a0));
+            for (int s = 1; s <= samples; ++s) {
+                double t = a0 + span * (static_cast<double>(s) / samples);
+                gp_Pnt cur = sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t));
+                append_seg(prev, cur);
+                prev = cur;
+            }
+        } else if (e.type == SketchEntityType::Circle && e.params.size() >= 3) {
+            const double cx = sk.param(e.params[0]);
+            const double cy = sk.param(e.params[1]);
+            const double r = sk.param(e.params[2]);
+            if (r < eps) continue;
+            const int samples = 32;
+            gp_Pnt prev = sketch_uv_to_3d(pl, cx + r, cy);
+            for (int s = 1; s <= samples; ++s) {
+                double t = 2.0 * M_PI * (static_cast<double>(s) / samples);
+                gp_Pnt cur = sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t));
+                append_seg(prev, cur);
+                prev = cur;
+            }
         } else if (e.type == SketchEntityType::Spline) {
             // Sample the interpolating B-spline (not just fit-point chords).
             auto fits = sk.spline_fit_points(e.id);
@@ -886,6 +933,11 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
             }
 
             case FeatureType::Hole: {
+                if (params.contains("target")) {
+                    const Feature* tf =
+                        feature(EntityId::from_string(params["target"].get<std::string>()));
+                    if (!tf || tf->suppressed) return true;
+                }
                 EntityId target = find_feature_body("target");
                 const Body* tb = doc.body(target);
                 if (!tb) return fail("missing target body");
@@ -948,8 +1000,8 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
 
             case FeatureType::Path: {
                 if (!params.contains("sketches") || !params["sketches"].is_array() ||
-                    params["sketches"].size() < 2)
-                    return fail("path needs at least two sketch features");
+                    params["sketches"].empty())
+                    return fail("path needs at least one sketch feature");
                 std::string mode = params.value("mode", "join_endpoints");
                 json path = json::array();
                 std::vector<json> sketch_polys;
@@ -1014,9 +1066,26 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 }
                 if (!path.is_array() || path.size() < 2)
                     return fail("sweep needs a path with at least two points");
+
+                // Optional guide: first guide sketch becomes MakePipeShell auxiliary spine.
+                json guide_path;
+                const json* guide_ptr = nullptr;
+                if (params.contains("guides") && params["guides"].is_array() &&
+                    !params["guides"].empty()) {
+                    EntityId gid =
+                        EntityId::from_string(params["guides"][0].get<std::string>());
+                    const Feature* gf = feature(gid);
+                    if (!gf || !gf->sketch) return fail("missing guide sketch");
+                    guide_path = sketch_ordered_polyline(*gf->sketch);
+                    if (!guide_path.is_array() || guide_path.size() < 2)
+                        return fail("guide needs >=2 points");
+                    guide_ptr = &guide_path;
+                }
+                const double thin = num_param(params, "thin_thickness", 0.0, env);
+
                 TopoDS_Shape result;
                 try {
-                    result = sweep_along_polyline(face, path);
+                    result = sweep_along_polyline(face, path, guide_ptr, thin);
                 } catch (const Standard_Failure& e) {
                     return fail(std::string("sweep failed: ") + e.GetMessageString());
                 } catch (const std::runtime_error& e) {
@@ -1025,7 +1094,20 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 if (result.IsNull() || !shape::is_valid(result))
                     return fail("sweep result invalid");
                 if (shape::count(result).solids < 1) return fail("sweep result is not a solid");
-                put_body(doc, f.output_body, result, f.name);
+
+                std::string op = params.value("op", "new");
+                if (op == "new") {
+                    put_body(doc, f.output_body, result, f.name);
+                } else {
+                    EntityId target = find_feature_body("target");
+                    const Body* tb = doc.body(target);
+                    if (!tb) return fail("missing target body");
+                    TopoDS_Shape merged = (op == "cut")
+                                              ? TopoDS_Shape(BRepAlgoAPI_Cut(tb->shape, result).Shape())
+                                              : TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, result).Shape());
+                    if (merged.IsNull()) return fail("boolean failed");
+                    doc.replace_body_shape(target, merged);
+                }
                 return true;
             }
 
@@ -1201,6 +1283,11 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
             case FeatureType::Thread: {
                 if (!params.contains("axis_point") || !params.contains("axis_dir"))
                     return fail("missing axis_point/axis_dir");
+                if (params.contains("target")) {
+                    const Feature* tf =
+                        feature(EntityId::from_string(params["target"].get<std::string>()));
+                    if (!tf || tf->suppressed) return true;
+                }
                 EntityId target = find_feature_body("target");
                 const Body* tb = doc.body(target);
                 if (!tb) return fail("missing target body");

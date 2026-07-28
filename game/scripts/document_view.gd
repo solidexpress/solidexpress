@@ -7,6 +7,9 @@ extends Node3D
 
 signal document_changed
 signal selection_changed(body_id: String, face_id: String)
+## Exact B-rep hit from the latest select_ray (even when selection is unchanged).
+## Used by armed ops (hole place, pattern direction) that need the pick point.
+signal picked(body_id: String, face_id: String, point: Vector3)
 ## Emitted when section clipping is enabled or cleared (world bg, HUD, etc.).
 signal section_changed(enabled: bool)
 
@@ -41,6 +44,10 @@ var selected_faces: Array[String] = []
 var selected_edges: Array[String] = []
 ## Selected component instance (viewport click on an instance mesh).
 var selected_instance := ""
+## Last successful select_ray hit (model space). Empty body means no pick yet.
+var last_pick_body := ""
+var last_pick_face := ""
+var last_pick_point := Vector3.ZERO
 ## Pre-selection hover (distinct from selected materials).
 var hovered_body := ""
 var hovered_face := ""
@@ -606,11 +613,14 @@ func select_ray(origin: Vector3, direction: Vector3, additive := false) -> bool:
 		if not additive:
 			clear_selection()
 		return false
+	_record_pick(hit["body"], hit["face"], hit["point"])
 	if additive:
 		_toggle_hit(hit)
 		return true
 	# First click on a body selects the body; clicking again refines to an
 	# edge (when the hit point is within tolerance of one) or the hit face.
+	# A third click on the same face collapses back to the body. Armed ops
+	# (hole place, etc.) already received `picked` above with the hit point.
 	if selected_body == hit["body"]:
 		var edge := _edge_near_point(hit["body"], hit["point"])
 		if edge != "" and edge != selected_edge:
@@ -621,6 +631,13 @@ func select_ray(origin: Vector3, direction: Vector3, additive := false) -> bool:
 			return true
 	select_entity(hit["body"], "")
 	return true
+
+
+func _record_pick(body_id: String, face_id: String, point: Vector3) -> void:
+	last_pick_body = body_id
+	last_pick_face = face_id
+	last_pick_point = point
+	picked.emit(body_id, face_id, point)
 
 
 ## Kernel pick that advances past hidden bodies so the next solid can be hit.
@@ -1214,6 +1231,35 @@ func selection_card() -> String:
 ## Outward normal (model space) of the selected face, from its tessellation.
 func selected_face_normal() -> Vector3:
 	return face_normal(selected_body, selected_face)
+
+
+## Unit direction along an edge polyline (first→last). ZERO if missing/degenerate.
+func edge_direction(body_id: String, edge_id: String) -> Vector3:
+	if body_id == "" or edge_id == "":
+		return Vector3.ZERO
+	var lines: Dictionary = doc.get_edge_lines(body_id)
+	if not lines.has(edge_id):
+		return Vector3.ZERO
+	var pts: PackedVector3Array = lines[edge_id]
+	if pts.size() < 2:
+		return Vector3.ZERO
+	var d: Vector3 = pts[pts.size() - 1] - pts[0]
+	if d.length_squared() < 1e-12:
+		return Vector3.ZERO
+	return d.normalized()
+
+
+## Midpoint of an edge polyline, or ZERO if missing.
+func edge_midpoint(body_id: String, edge_id: String) -> Vector3:
+	if body_id == "" or edge_id == "":
+		return Vector3.ZERO
+	var lines: Dictionary = doc.get_edge_lines(body_id)
+	if not lines.has(edge_id):
+		return Vector3.ZERO
+	var pts: PackedVector3Array = lines[edge_id]
+	if pts.is_empty():
+		return Vector3.ZERO
+	return _polyline_midpoint(pts)
 
 
 func body_center(body_id: String) -> Vector3:

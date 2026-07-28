@@ -24,6 +24,10 @@ class CommandStack {
 public:
     // Executes and takes ownership. Clears the redo list.
     void push(Document& doc, std::unique_ptr<Command> cmd);
+    // Takes ownership without executing — for callers that already applied the
+    // mutation (e.g. graph edit + regenerate). Undo/redo still work via the
+    // command's undo/execute. Clears the redo list.
+    void push_executed(std::unique_ptr<Command> cmd);
     bool can_undo() const { return !done_.empty(); }
     bool can_redo() const { return !undone_.empty(); }
     bool undo(Document& doc);

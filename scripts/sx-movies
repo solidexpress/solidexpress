@@ -7,7 +7,10 @@
 #   scripts/sx-movies one ID         # render single film
 #
 # Output: ID.webm (VP9) + ID.vtt (closed captions). Intermediate ID.avi is kept.
-# Requires a display (not --headless). Set SX_MOVIES_OUT to change output dir.
+# Needs a GPU display driver (not --headless). The film runner minimizes the
+# Godot window and hides the OS cursor so it does not steal the desktop or
+# record the operator mouse (override with SX_TEST_WINDOW=onscreen).
+# Optional: install xvfb and set SX_MOVIES_XVFB=1 to render on a virtual display.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,6 +28,15 @@ fi
 mkdir -p "$OUT"
 
 "$GODOT" --headless --path "$GAME" --import >/dev/null 2>&1 || true
+
+# Optional virtual framebuffer — never appears on the operator's screen.
+godot_cmd() {
+  if [[ "${SX_MOVIES_XVFB:-0}" == "1" ]] && command -v xvfb-run >/dev/null 2>&1; then
+    xvfb-run -a -s "-screen 0 1920x1080x24" "$GODOT" "$@"
+  else
+    "$GODOT" "$@"
+  fi
+}
 
 list_entries() {
   python3 - "$MANIFEST" <<'PY'
@@ -64,7 +76,7 @@ render_one() {
   # quit_after is a safety ceiling only; the film script quit()s when done.
   echo "=== sx-movies: $id → $avi_abs (max $quit_after frames @ ${FPS}fps)"
   set +e
-  "$GODOT" --path "$GAME" \
+  godot_cmd --path "$GAME" \
     --write-movie "$avi_abs" \
     --fixed-fps "$FPS" \
     --disable-vsync \

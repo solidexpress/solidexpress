@@ -21,6 +21,7 @@ func _init() -> void:
 	test_sweep_along_path_join_spline_3d()
 	test_sweep_along_path_bridge_spline()
 	test_sweep_path_merge_spline_rail_solid()
+	test_sweep_single_rail_path_solid()
 	test_loft_spline_profiles_solid()
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -262,6 +263,24 @@ func test_sweep_path_merge_spline_rail_solid() -> void:
 	var body := _output_body(doc, sw_fid)
 	var vol: float = doc.body_volume(body)
 	check(vol > 350.0, "coplanar merged spline path sweep solid (got %.0f)" % vol)
+
+
+func test_sweep_single_rail_path_solid() -> void:
+	print("-- sweep along single-rail Path")
+	var doc := SxDocument.new()
+	var rail := SxSketch.new()
+	rail.add_line(0, 0, 40, 0)
+	var rail_fid: String = doc.graph_add_sketch(rail)
+	var path_fid: String = doc.graph_add_path(PackedStringArray([rail_fid]), "join_endpoints")
+	check(path_fid != "", "single-sketch Path")
+	var profile := SxSketch.new()
+	profile.add_circle(0, 0, 2)
+	var prof_fid: String = doc.graph_add_sketch(profile)
+	var sw_fid: String = doc.graph_add_sweep_along_path(prof_fid, path_fid)
+	check(sw_fid != "", "sweep along single-rail Path")
+	var body := _output_body(doc, sw_fid)
+	var vol: float = doc.body_volume(body)
+	check(vol > 400.0, "single-rail Path sweep solid (got %.0f)" % vol)
 
 
 func test_loft_spline_profiles_solid() -> void:

@@ -33,6 +33,15 @@ struct ApplyCtx {
         return ref ? ref->output_body : EntityId{};
     }
 
+    // True when the referenced feature is missing or suppressed — modifying
+    // features should no-op rather than fail the whole regenerate.
+    bool target_inactive(const std::string& key) const {
+        if (!params.contains(key)) return true;
+        const Feature* ref =
+            graph.feature(EntityId::from_string(params[key].get<std::string>()));
+        return ref == nullptr || ref->suppressed;
+    }
+
     bool fail(const std::string& msg) const {
         if (err) *err = feature.name + ": " + msg;
         return false;

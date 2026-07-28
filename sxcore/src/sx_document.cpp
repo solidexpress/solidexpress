@@ -16,6 +16,9 @@
 #include <gp_Pnt.hxx>
 #include <gp_Quaternion.hxx>
 #include <gp_Vec.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Face.hxx>
 #include <type_traits>
 #include <variant>
 #include "sx/drawings.hpp"
@@ -697,7 +700,6 @@ bool SxDocument::apply_graph_edit(const std::string& label,
                                   const std::function<bool()>& mutate) {
     nlohmann::json before = doc_->graph().to_json();
     if (!mutate()) return false;
-    nlohmann::json after = doc_->graph().to_json();
     std::string err;
     bool ok = false;
     try {
@@ -726,8 +728,11 @@ bool SxDocument::apply_graph_edit(const std::string& label,
     }
     last_failed_fid_.clear();
     last_graph_error_.clear();
-    stack_.push(*doc_, std::make_unique<sx::GraphSnapshotCommand>(label, std::move(before),
-                                                                  std::move(after)));
+    // Snapshot AFTER regenerate so remapped topo UUIDs survive undo/redo.
+    // push_executed: live doc already matches `after` — do not re-execute.
+    nlohmann::json after = doc_->graph().to_json();
+    stack_.push_executed(std::make_unique<sx::GraphSnapshotCommand>(label, std::move(before),
+                                                                    std::move(after)));
     return true;
 }
 
@@ -835,7 +840,8 @@ String SxDocument::graph_add_sweep(const String& sketch_fid, const PackedVector3
     return ok ? to_gd(fid.str()) : String();
 }
 
-String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const String& path_fid) {
+String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const String& path_fid,
+                                              const PackedStringArray& guide_fids) {
     if (sketch_fid.is_empty() || path_fid.is_empty()) return {};
     sx::EntityId fid;
     bool ok = apply_graph_edit("sweep", [&] {
@@ -843,6 +849,11 @@ String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const St
         f.type = sx::FeatureType::Sweep;
         f.params["sketch"] = to_std(sketch_fid);
         f.params["path_feature"] = to_std(path_fid);
+        if (guide_fids.size() > 0) {
+            nlohmann::json guides = nlohmann::json::array();
+            for (int i = 0; i < guide_fids.size(); ++i) guides.push_back(to_std(guide_fids[i]));
+            f.params["guides"] = guides;
+        }
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -850,7 +861,7 @@ String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const St
 }
 
 String SxDocument::graph_add_path(const PackedStringArray& sketch_fids, const String& mode) {
-    if (sketch_fids.size() < 2) return {};
+    if (sketch_fids.size() < 1) return {};
     nlohmann::json sketches = nlohmann::json::array();
     for (int i = 0; i < sketch_fids.size(); ++i) sketches.push_back(to_std(sketch_fids[i]));
     std::string m = to_std(mode);
@@ -1015,6 +1026,19 @@ String SxDocument::graph_add_push_pull(const String& target_fid, const String& f
         sx::log::error("graph_add_push_pull: not a face id");
         return {};
     }
+    // Geometric cue so regen after a free-body move can re-find the face when
+    // the UUID no longer resolves (naming v0 + consumed-face cases).
+    auto mid = sx::measure::face_midpoint(*doc_, parse_id(face_id));
+    TopoDS_Shape fs = doc_->resolve(parse_id(face_id));
+    gp_Dir normal(0, 0, 1);
+    if (!fs.IsNull() && fs.ShapeType() == TopAbs_FACE) {
+        TopoDS_Face face = TopoDS::Face(fs);
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() == GeomAbs_Plane) {
+            normal = surf.Plane().Axis().Direction();
+            if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
+        }
+    }
     sx::EntityId fid;
     bool ok = apply_graph_edit("push/pull", [&] {
         sx::Feature f;
@@ -1022,6 +1046,10 @@ String SxDocument::graph_add_push_pull(const String& target_fid, const String& f
         f.params = {{"target", to_std(target_fid)},
                     {"face", to_std(face_id)},
                     {"distance", distance}};
+        if (mid) {
+            f.params["face_point"] = {(*mid)[0], (*mid)[1], (*mid)[2]};
+            f.params["face_normal"] = {normal.X(), normal.Y(), normal.Z()};
+        }
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -1078,6 +1106,55 @@ String SxDocument::graph_add_hole(const String& target_fid, const String& type,
                     {"cb_depth", static_cast<double>(cb_depth)},
                     {"cs_diameter", static_cast<double>(cs_diameter)},
                     {"cs_angle_deg", static_cast<double>(cs_angle_deg)}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_helix(float profile_radius, float helix_radius, float pitch,
+                                   float turns, bool left_handed, const Vector3& axis_point,
+                                   const Vector3& axis_dir) {
+    if (profile_radius <= 0.0f || helix_radius <= 0.0f || pitch <= 0.0f || turns <= 0.0f)
+        return {};
+    if (axis_dir.length_squared() < 1e-12f) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("helix", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::HelixSweep;
+        f.params = {{"profile_radius", static_cast<double>(profile_radius)},
+                    {"radius", static_cast<double>(helix_radius)},
+                    {"pitch", static_cast<double>(pitch)},
+                    {"turns", static_cast<double>(turns)},
+                    {"left_handed", left_handed},
+                    {"axis_point", {axis_point.x, axis_point.y, axis_point.z}},
+                    {"axis_dir", {axis_dir.x, axis_dir.y, axis_dir.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_thread(const String& target_fid, float major_radius, float pitch,
+                                    float turns, float depth, float profile_angle_deg,
+                                    const Vector3& axis_point, const Vector3& axis_dir) {
+    if (target_fid.is_empty() || major_radius <= 0.0f || pitch <= 0.0f || turns <= 0.0f)
+        return {};
+    if (axis_dir.length_squared() < 1e-12f) return {};
+    if (depth <= 0.0f) depth = pitch * 0.6f;
+    if (profile_angle_deg <= 0.0f) profile_angle_deg = 60.0f;
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("thread", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Thread;
+        f.params = {{"target", to_std(target_fid)},
+                    {"major_radius", static_cast<double>(major_radius)},
+                    {"pitch", static_cast<double>(pitch)},
+                    {"turns", static_cast<double>(turns)},
+                    {"depth", static_cast<double>(depth)},
+                    {"profile_angle_deg", static_cast<double>(profile_angle_deg)},
+                    {"axis_point", {axis_point.x, axis_point.y, axis_point.z}},
+                    {"axis_dir", {axis_dir.x, axis_dir.y, axis_dir.z}}};
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -1285,13 +1362,14 @@ bool SxDocument::remove_variable(const String& name) {
     // snapshot; graph_regenerate exposes the error.
     nlohmann::json before = doc_->graph().to_json();
     if (!doc_->graph().variables().remove(to_std(name))) return false;
-    nlohmann::json after = doc_->graph().to_json();
     std::string err;
     if (!doc_->graph().regenerate(*doc_, &err) && !err.empty()) {
         sx::log::error(std::string("remove variable: ") + err);
     }
-    stack_.push(*doc_, std::make_unique<sx::GraphSnapshotCommand>(
-        "remove variable", std::move(before), std::move(after)));
+    // Already applied; avoid re-execute which would double-regenerate.
+    nlohmann::json after_done = doc_->graph().to_json();
+    stack_.push_executed(std::make_unique<sx::GraphSnapshotCommand>(
+        "remove variable", std::move(before), std::move(after_done)));
     return true;
 }
 
@@ -1599,8 +1677,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op", "target_fid"), &SxDocument::graph_add_extrude);
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
-    ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid"),
-                         &SxDocument::graph_add_sweep_along_path);
+    ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid", "guide_fids"),
+                         &SxDocument::graph_add_sweep_along_path, DEFVAL(PackedStringArray()));
     ClassDB::bind_method(D_METHOD("graph_add_path", "sketch_fids", "mode"), &SxDocument::graph_add_path);
     ClassDB::bind_method(D_METHOD("graph_add_loft", "sketch_fids", "ruled", "guide_fids"),
                          &SxDocument::graph_add_loft, DEFVAL(PackedStringArray()));
@@ -1631,6 +1709,12 @@ void SxDocument::_bind_methods() {
                                   "diameter", "depth", "cb_diameter", "cb_depth", "cs_diameter",
                                   "cs_angle_deg"),
                          &SxDocument::graph_add_hole);
+    ClassDB::bind_method(D_METHOD("graph_add_helix", "profile_radius", "helix_radius", "pitch",
+                                  "turns", "left_handed", "axis_point", "axis_dir"),
+                         &SxDocument::graph_add_helix);
+    ClassDB::bind_method(D_METHOD("graph_add_thread", "target_fid", "major_radius", "pitch", "turns",
+                                  "depth", "profile_angle_deg", "axis_point", "axis_dir"),
+                         &SxDocument::graph_add_thread);
     ClassDB::bind_method(D_METHOD("graph_add_import_step", "path", "scale"),
                          &SxDocument::graph_add_import_step);
     ClassDB::bind_method(D_METHOD("graph_add_import_stl", "path", "scale"),

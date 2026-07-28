@@ -48,6 +48,23 @@ func test_registry() -> void:
 	check(fit_desc.to_lower().contains("fit"), "describe(F) mentions fit")
 	check(Shortcuts.describe("NotARealKey") == "", "describe unknown returns empty")
 
+	var sketch_entries: Array = Shortcuts.by_context()["Sketch"]
+	var found_chain_end := false
+	var found_esc_chain := false
+	for e in sketch_entries:
+		var keys := str(e.get("keys", "")).to_lower()
+		var desc := str(e.get("desc", "")).to_lower()
+		if (keys.contains("done") or keys.contains("right-click")) and desc.contains("chain"):
+			found_chain_end = true
+		if keys == "esc" and desc.contains("chain"):
+			found_esc_chain = true
+	check(found_chain_end, "Sketch shortcuts document Done/RMB end chain")
+	check(found_esc_chain, "Sketch Esc shortcut mentions ending chain")
+	check(Shortcuts.describe("Esc").to_lower().contains("chain"),
+			"describe(Esc) mentions ending chain")
+	check(Shortcuts.describe("Done").to_lower().contains("chain"),
+			"describe(Done) ends chain")
+
 
 func test_overlay() -> void:
 	print("- HelpOverlay")

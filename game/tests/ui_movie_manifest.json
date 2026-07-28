@@ -40,5 +40,12 @@
     "script": "res://tests/films/film_sketch_edit_in_out.gd",
     "enabled": true,
     "quit_after": 1300
+  },
+  {
+    "id": "precision_plate",
+    "title": "Plate with inset corner holes (Place hole…)",
+    "script": "res://tests/films/film_precision_plate.gd",
+    "enabled": true,
+    "quit_after": 2200
   }
 ]

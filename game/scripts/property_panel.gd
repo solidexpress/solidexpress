@@ -27,7 +27,8 @@ const SCHEMAS := {
 		{"key": "op", "label": "Result", "kind": "enum", "options": ["new", "fuse", "cut"]},
 	],
 	"revolve": [
-		{"key": "angle", "label": "Angle (rad)", "kind": "float", "min": 0.01, "max": TAU, "step": 0.1},
+		{"key": "angle", "label": "Angle (°)", "kind": "float", "min": 0.1, "max": 360.0, "step": 5.0,
+			"ui_unit": "deg_from_rad"},
 		{"key": "op", "label": "Result", "kind": "enum", "options": ["new", "fuse", "cut"]},
 	],
 	"fillet": [
@@ -57,7 +58,8 @@ const SCHEMAS := {
 	],
 	"circular_pattern": [
 		{"key": "count", "label": "Count", "kind": "int", "min": 2, "max": 200, "step": 1},
-		{"key": "total_angle", "label": "Total angle (rad)", "kind": "float", "min": 0.01, "max": TAU, "step": 0.1},
+		{"key": "total_angle", "label": "Total angle (°)", "kind": "float", "min": 0.1, "max": 360.0,
+			"step": 5.0, "ui_unit": "deg_from_rad"},
 	],
 	"helix_sweep": [
 		{"key": "profile_radius", "label": "Profile r", "kind": "float", "min": 0.01, "max": 1000.0, "step": 0.5},
@@ -81,6 +83,14 @@ const SCHEMAS := {
 	],
 	"loft": [
 		{"key": "ruled", "label": "Ruled", "kind": "bool"},
+	],
+	"path": [
+		{"key": "mode", "label": "Mode", "kind": "enum",
+			"options": ["join_endpoints", "bridge_spline", "composite"]},
+	],
+	"sweep": [
+		{"key": "op", "label": "Result", "kind": "enum", "options": ["new", "fuse", "cut"]},
+		{"key": "thin_thickness", "label": "Thin wall", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
 	],
 	"boolean": [
 		{"key": "op", "label": "Operation", "kind": "enum", "options": ["fuse", "cut", "common"]},
@@ -186,10 +196,17 @@ func _add_spin_row(field: Dictionary, value) -> void:
 	spin.step = 1.0 if field["kind"] == "int" else 0.001
 	spin.custom_arrow_step = field.get("step", 1.0)
 	spin.rounded = field["kind"] == "int"
-	spin.value = float(value)
+	var display := float(value)
+	# Kernel stores some angles in radians; show degrees in the UI.
+	if field.get("ui_unit", "") == "deg_from_rad":
+		display = rad_to_deg(display)
+	spin.value = display
 	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spin.value_changed.connect(func(v: float) -> void:
-		_set_param(field["key"], int(v) if field["kind"] == "int" else v))
+		var store = int(v) if field["kind"] == "int" else v
+		if field.get("ui_unit", "") == "deg_from_rad":
+			store = deg_to_rad(float(v))
+		_set_param(field["key"], store))
 	row.add_child(spin)
 
 

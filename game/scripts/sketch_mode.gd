@@ -312,7 +312,7 @@ func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO) -> 
 	sketch = SxSketch.new()
 	sketch.set_plane(origin, plane_x, plane_y)
 	_activate_session()
-	status.emit("Sketch: Select · Line · Rect · Circle · Exit Sketch · Esc discard")
+	status.emit("Sketch: Line chains until Done / Esc · Exit Sketch to save")
 
 
 ## New sketch on an explicit plane (3D path legs, UI movies).
@@ -349,7 +349,7 @@ func begin_edit(fid: String) -> bool:
 	plane_y = (pi["y_dir"] as Vector3).normalized()
 	sketch = loaded
 	_activate_session()
-	status.emit("Editing sketch — Exit Sketch to save · Esc discard")
+	status.emit("Editing sketch — Exit Sketch to save · Esc ends chain / discard")
 	return true
 
 
@@ -643,6 +643,16 @@ func clear_length_override() -> void:
 
 func has_length_override() -> bool:
 	return _length_override >= 0.0
+
+
+## True while a multi-click line/centerline chain or spline has pending points.
+## Esc / Done / right-click / double-click call end_chain() in this state.
+func has_open_chain() -> bool:
+	if tool == Tool.SPLINE:
+		return not _spline_pts.is_empty()
+	if tool == Tool.LINE or tool == Tool.CENTERLINE:
+		return not _tool_points.is_empty()
+	return false
 
 
 ## Hover / preview endpoint: mouse when free; last + dir×override when locked.
@@ -2227,7 +2237,7 @@ func set_dimension_driving(index: int, driving: bool) -> void:
 	_rebuild_dimension_labels()
 
 
-## Double-click or right-click ends a line chain / commits a spline.
+## Done / Esc / double-click / right-click ends a line chain / commits a spline.
 ## With auto_close_enabled, an open line chain of 2+ segments gets a closing
 ## segment back to the first point.
 func end_chain() -> void:

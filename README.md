@@ -127,8 +127,8 @@ Active while a sketch session is open (`sketch_mode.active`).
 | `C` | Circle |
 | `T` | Trim |
 | `X` | Toggle construction geometry on selection |
-| Right-click | End line chain (auto-closes when Auto-close is on) |
-| `Esc` | Cancel current tool / gesture |
+| Right-click / Done / double-click | End line chain (auto-closes when Auto-close is on) |
+| `Esc` | Unlock typed length, end open chain, or discard sketch |
 
 ## `.sxp` document format
 

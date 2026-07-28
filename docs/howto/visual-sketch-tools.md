@@ -6,7 +6,7 @@ Goal: use the compact left rail and on-canvas chips to draw, modify, and constra
 
 In sketch mode the left rail shows: **Exit Sketch**, Select, Line, Arc, Circle, Rect, Polygon, Ellipse, Slot, Spline, Point, Trim, Extend, Smart Dim, Convert, Mirror, Pattern — plus Snap / Infer / Auto-close and DOF readout.
 
-Snap (default on) magnets to endpoints, midpoints, centers, H/V, and **perpendicular** to the previous segment (or nearby lines). Infer (default on) adds H / V / ⊥ / coincident while drawing. Auto-close (default on) finishes a multi-line chain with a closing segment back to the first point (right-click or double-click); uncheck it for open rails.
+Snap (default on) magnets to endpoints, midpoints, centers, H/V, and **perpendicular** to the previous segment (or nearby lines). Infer (default on) adds H / V / ⊥ / coincident while drawing. **Line** is a multi-segment chain: keep clicking corners; finish with **Done**, **Esc**, right-click, or double-click. Auto-close (default on) then adds a closing segment back to the first point; uncheck it for open rails.
 
 Variants and numeric options appear **on-canvas** (floating chips), not as permanent rail spinboxes.
 

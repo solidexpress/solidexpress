@@ -56,6 +56,8 @@ func _init() -> void:
 	ctx.tree = self
 	FilmUI.reset_fail_count()
 	await FilmUI.ensure_test_viewport(ctx, Vector2i(1600, 900))
+	if str(OS.get_environment("SX_TEST_WINDOW")).to_lower() not in ["onscreen", "1", "show", "visible"]:
+		print("film window: minimized / no-focus (SX_TEST_WINDOW=onscreen to watch)")
 
 	var script_path: String = str(entry.get("script", ""))
 	if script_path.is_empty():

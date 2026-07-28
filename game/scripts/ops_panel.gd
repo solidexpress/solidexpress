@@ -3,11 +3,13 @@ extends PanelContainer
 ## Context operations for the current selection. Body selected: fillet/chamfer
 ## (all edges), mirror, linear/circular pattern, offset, boolean (arm, then
 ## click the tool body), measure (arm, then click the other entity). Face
-## selected: shell (removes that face) plus face measurements.
+## selected: shell (removes that face) plus face measurements. Armed
+## precision picks (hole place, pattern direction, mirror plane) listen to
+## DocumentView.picked so a re-click on the same face still lands a point.
 
 signal status(text: String)
 
-enum Pending { NONE, BOOLEAN, MEASURE }
+enum Pending { NONE, BOOLEAN, MEASURE, HOLE, LINEAR, CIRCULAR, MIRROR }
 
 var view: DocumentView
 
@@ -28,9 +30,20 @@ var _hole_type: OptionButton
 var _material_option: OptionButton
 var _hole_diameter: SpinBox
 var _hole_depth: SpinBox
+var _hole_inset: SpinBox
+## True after the user edits Inset; auto-inferred defaults stop overwriting.
+var _hole_inset_manual := false
+var _hole_inset_syncing := false
 var _boolean_op := "fuse"
 var _pending: Pending = Pending.NONE
 var _pending_first := ""  # armed source entity (body for boolean, any for measure)
+## Body/face captured when arming hole / pattern / mirror (selection may change).
+var _pending_body := ""
+var _pending_face := ""
+var _pending_fid := ""
+## World-space magnet hold for Place hole… (mm). Farther clicks stay free.
+const HOLE_SNAP_MM := 8.0
+const HOLE_CORNER_TOL_MM := 0.45
 
 
 var _scroll: ScrollContainer
@@ -62,6 +75,7 @@ func _ready() -> void:
 	_build_face_ops()
 
 	view.selection_changed.connect(_on_selection_changed)
+	view.picked.connect(_on_picked)
 	_on_selection_changed(view.selected_body, view.selected_face)
 
 
@@ -159,11 +173,19 @@ func _build_body_ops() -> void:
 	var pat_row := HBoxContainer.new()
 	_body_ops.add_child(pat_row)
 	_op_button(pat_row, "Linear", _linear_pattern, "linear_pattern",
-		"Repeat the body along X with the spacing and count above")
+		"Repeat along +X (default). Use Linear… to pick an edge for direction.")
 	_op_button(pat_row, "Circular", _circular_pattern, "circular_pattern",
-		"Repeat the body around the Z axis with the count above")
+		"Repeat around +Z (default). Use Circular… to pick an edge/face for the axis.")
 	_op_button(pat_row, "Mirror", _mirror, "mirror",
-		"Mirror the body across the YZ plane")
+		"Mirror across the body's +X face (default). Use Mirror… to pick a plane.")
+	var pat_pick_row := HBoxContainer.new()
+	_body_ops.add_child(pat_pick_row)
+	_op_button(pat_pick_row, "Linear…", _arm_linear, "linear_pattern",
+		"Arm: click an edge to set the pattern direction")
+	_op_button(pat_pick_row, "Circular…", _arm_circular, "circular_pattern",
+		"Arm: click an edge or face to set the pattern axis")
+	_op_button(pat_pick_row, "Mirror…", _arm_mirror, "mirror",
+		"Arm: click a planar face to set the mirror plane")
 
 	# Instance placement (direct doc mutation — not undoable in v1).
 	_body_ops.add_child(HSeparator.new())
@@ -202,6 +224,8 @@ func _build_body_ops() -> void:
 			status.emit("%s: %.1f g · %.0f mm^3 · CoM %s" % [mp.get("material", "?"),
 				mp.get("mass_g", 0.0), mp.get("volume", 0.0), str(mp.get("center_of_mass"))]),
 		"mass", "Show mass, volume, and center of mass for this body")
+	_op_button(_body_ops, "Thread…", _apply_thread, "hole",
+		"Cut an external thread on this body (axis +Z through body center)")
 
 
 func _build_face_ops() -> void:
@@ -228,16 +252,26 @@ func _build_face_ops() -> void:
 	hole_type_row.add_child(_hole_type)
 	_hole_diameter = _labeled_spin(_face_ops, "Hole Ø", 0.1, 200.0, 0.5, 6.0)
 	_hole_depth = _labeled_spin(_face_ops, "Depth", 0.0, 1000.0, 1.0, 0.0)
-	_op_button(_face_ops, "Apply hole", _apply_hole, "hole",
-		"Drill the hole at the center of this face")
+	_hole_inset = _labeled_spin(_face_ops, "Inset", 0.5, 500.0, 0.5, 8.0)
+	_hole_inset.tooltip_text = "Corner edge distance (auto from Ø, thickness, material softness)"
+	_hole_diameter.value_changed.connect(_on_hole_diameter_changed)
+	_hole_inset.value_changed.connect(_on_hole_inset_changed)
+	var hole_row := HBoxContainer.new()
+	_face_ops.add_child(hole_row)
+	_op_button(hole_row, "Apply hole", _apply_hole, "hole",
+		"Drill at the center of this face")
+	_op_button(hole_row, "Place hole…", _arm_hole, "hole",
+		"Arm: click a point on a face (near corner → inset; near mid → snap; else free)")
 	_op_button(_face_ops, "Face area", func() -> void:
 		status.emit("Area: %.2f mm^2" % view.doc.measure_face_area(view.selected_face)),
 		"area", "Show the area of this face")
 
 
 func _on_selection_changed(body: String, face: String) -> void:
-	if _pending != Pending.NONE:
-		_resolve_pending(body, face)
+	# Boolean / measure still resolve on selection change (different entity).
+	# Hole / pattern / mirror resolve via picked so same-face re-clicks work.
+	if _pending == Pending.BOOLEAN or _pending == Pending.MEASURE:
+		_resolve_pending(body, face, view.last_pick_point)
 		return
 	visible = body != ""
 	_body_ops.visible = body != "" and face == ""
@@ -246,7 +280,17 @@ func _on_selection_changed(body: String, face: String) -> void:
 		_name_edit.text = view.doc.body_name(body)
 		_color_picker.color = view.doc.get_body_color(body)
 		_sync_material_option(body)
+	if face != "":
+		# New face: re-infer inset unless the user typed one this session.
+		_hole_inset_manual = false
+		_sync_hole_inset_default()
 	_clamp_height()
+
+
+func _on_picked(body: String, face: String, point: Vector3) -> void:
+	if _pending == Pending.HOLE or _pending == Pending.LINEAR \
+			or _pending == Pending.CIRCULAR or _pending == Pending.MIRROR:
+		_resolve_pending(body, face, point)
 
 
 func _sync_material_option(body: String) -> void:
@@ -265,6 +309,61 @@ func _on_material_selected(index: int) -> void:
 	if view.doc.set_body_material(view.selected_body, mat):
 		var mp: Dictionary = view.doc.measure_mass(view.selected_body)
 		status.emit("%s: %.1f g" % [mat, mp.get("mass_g", 0.0)])
+		# Softer / denser stock changes the inferred corner inset.
+		if not _hole_inset_manual:
+			_sync_hole_inset_default()
+
+
+func _on_hole_diameter_changed(_v: float) -> void:
+	if not _hole_inset_manual:
+		_sync_hole_inset_default()
+
+
+func _on_hole_inset_changed(_v: float) -> void:
+	if not _hole_inset_syncing:
+		_hole_inset_manual = true
+
+
+func _sync_hole_inset_default() -> void:
+	if _hole_inset == null or view == null:
+		return
+	var body := view.selected_body
+	var face := view.selected_face
+	if body == "" or face == "":
+		return
+	var suggested := suggested_hole_inset(
+			_hole_diameter.value, _face_thickness_mm(body, face), view.doc.body_material(body))
+	_hole_inset_syncing = true
+	_hole_inset.value = suggested
+	_hole_inset_syncing = false
+
+
+## Softness 0 (hard metal) … ~1 (elastomer). Drives default corner inset.
+static func material_softness(material_name: String) -> float:
+	match material_name:
+		"TPU":
+			return 0.95
+		"Nylon", "PLA", "PC", "PPA":
+			return 0.55
+		"Aluminum", "Titanium":
+			return 0.25
+		"Copper", "Stainless Steel", "Tool Steel", "Inconel", "Cobalt Chrome":
+			return 0.1
+		_:
+			return 0.4  # Unspecified / unknown — middle of the road
+
+
+## Default center-to-edge distance for corner snaps (mm).
+## Bigger Ø and softer + thicker stock push the hole farther in.
+static func suggested_hole_inset(diameter: float, thickness: float, material_name: String) -> float:
+	var d := maxf(diameter, 0.5)
+	var t := maxf(thickness, 0.5)
+	var soft := material_softness(material_name)
+	# ~1×Ø on hard thin stock; grows with softness and thickness (tear-out).
+	var inset := d * (1.0 + 0.55 * soft) + t * soft * 0.35
+	var lo := d * 0.75
+	var hi := maxf(d * 3.0, t * 2.5)
+	return clampf(snapped(inset, 0.5), lo, hi)
 
 
 func _clamp_height() -> void:
@@ -347,54 +446,106 @@ func _mirror() -> void:
 	var body := view.selected_body
 	if body == "":
 		return
-	# Mirror across the YZ plane through the body's +X extent.
+	# Default: mirror across the YZ plane through the body's +X extent.
 	var bb: Dictionary = view.doc.measure_bbox(body)
 	if bb.is_empty():
 		return
-	var fid := view.feature_of_body(body)
-	var created := ""
-	if fid != "":
-		created = view.doc.graph_add_mirror(fid, Vector3(bb["max"].x, 0, 0), Vector3(1, 0, 0))
-	else:
-		created = view.doc.mirror_body(body, Vector3(bb["max"].x, 0, 0), Vector3(1, 0, 0), true)
-	view.graph_changed()
-	status.emit("Mirrored body" if created != "" else "Mirror failed")
+	_do_mirror(body, Vector3(bb["max"].x, 0, 0), Vector3(1, 0, 0))
 
 
 func _linear_pattern() -> void:
 	var body := view.selected_body
 	if body == "":
 		return
-	var fid := view.feature_of_body(body)
-	var made: PackedStringArray = PackedStringArray()
-	if fid != "":
-		var pfid: String = view.doc.graph_add_linear_pattern(
-			fid, Vector3(1, 0, 0), _pattern_spacing.value, int(_pattern_count.value))
-		if pfid != "":
-			made = PackedStringArray([pfid])
-	else:
-		made = view.doc.linear_pattern(
-			body, Vector3(1, 0, 0), _pattern_spacing.value, int(_pattern_count.value))
-	view.graph_changed()
-	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
+	_do_linear(body, Vector3(1, 0, 0))
 
 
 func _circular_pattern() -> void:
 	var body := view.selected_body
 	if body == "":
 		return
+	_do_circular(body, Vector3.ZERO, Vector3(0, 0, 1))
+
+
+func _do_mirror(body: String, plane_point: Vector3, plane_normal: Vector3) -> void:
+	var fid := view.feature_of_body(body)
+	var created := ""
+	if fid != "":
+		created = view.doc.graph_add_mirror(fid, plane_point, plane_normal)
+	else:
+		created = view.doc.mirror_body(body, plane_point, plane_normal, true)
+	view.graph_changed()
+	status.emit("Mirrored body" if created != "" else "Mirror failed")
+
+
+func _do_linear(body: String, direction: Vector3) -> void:
+	if direction.length_squared() < 1e-12:
+		status.emit("Pattern failed (zero direction)")
+		return
+	var fid := view.feature_of_body(body)
+	var made: PackedStringArray = PackedStringArray()
+	if fid != "":
+		var pfid: String = view.doc.graph_add_linear_pattern(
+			fid, direction.normalized(), _pattern_spacing.value, int(_pattern_count.value))
+		if pfid != "":
+			made = PackedStringArray([pfid])
+	else:
+		made = view.doc.linear_pattern(
+			body, direction.normalized(), _pattern_spacing.value, int(_pattern_count.value))
+	view.graph_changed()
+	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
+
+
+func _do_circular(body: String, axis_point: Vector3, axis_dir: Vector3) -> void:
+	if axis_dir.length_squared() < 1e-12:
+		status.emit("Pattern failed (zero axis)")
+		return
 	var fid := view.feature_of_body(body)
 	var made: PackedStringArray = PackedStringArray()
 	if fid != "":
 		var pfid: String = view.doc.graph_add_circular_pattern(
-			fid, Vector3.ZERO, Vector3(0, 0, 1), int(_pattern_count.value), TAU)
+			fid, axis_point, axis_dir.normalized(), int(_pattern_count.value), TAU)
 		if pfid != "":
 			made = PackedStringArray([pfid])
 	else:
 		made = view.doc.circular_pattern(
-			body, Vector3.ZERO, Vector3(0, 0, 1), int(_pattern_count.value), TAU)
+			body, axis_point, axis_dir.normalized(), int(_pattern_count.value), TAU)
 	view.graph_changed()
 	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
+
+
+func _apply_thread() -> void:
+	var body := view.selected_body
+	if body == "":
+		return
+	var fid := view.feature_of_body(body)
+	if fid == "":
+		status.emit("Thread needs a timeline body")
+		return
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if bb.is_empty():
+		status.emit("Thread failed (no bbox)")
+		return
+	var mn: Vector3 = bb["min"]
+	var mx: Vector3 = bb["max"]
+	var size := mx - mn
+	# Assume cylinder-like: major radius = half the smaller XY extent; height = Z.
+	var major_r: float = 0.5 * minf(size.x, size.y)
+	var height: float = size.z
+	if major_r < 0.5 or height < 1.0:
+		status.emit("Thread failed (body too small)")
+		return
+	var pitch: float = clampf(major_r * 0.2, 0.5, 4.0)
+	var turns: float = maxf(1.0, height / pitch - 1.0)
+	var depth: float = pitch * 0.5
+	var axis_point := Vector3((mn.x + mx.x) * 0.5, (mn.y + mx.y) * 0.5, mn.z)
+	var tid: String = view.doc.graph_add_thread(
+		fid, major_r, pitch, turns, depth, 60.0, axis_point, Vector3(0, 0, 1))
+	if tid != "":
+		view.graph_changed()
+		status.emit("Thread Ø%.1f pitch %.2f (%d turns)" % [2.0 * major_r, pitch, int(turns)])
+	else:
+		status.emit("Thread failed")
 
 
 # Direct document mutation — not undoable in v1.
@@ -485,19 +636,38 @@ func _apply_hole() -> bool:
 	var body := view.selected_body
 	if face == "" or body == "":
 		return false
-	var target_fid := view.feature_of_body(body)
-	if target_fid == "":
-		status.emit("Hole needs a timeline body")
-		return false
 	var face_bb: Dictionary = view.doc.measure_bbox(face)
 	if face_bb.is_empty():
 		status.emit("Hole failed (no face bbox)")
 		return false
 	var fmn: Vector3 = face_bb["min"]
 	var fmx: Vector3 = face_bb["max"]
-	var position := (fmn + fmx) * 0.5
-	# Outward face normal → reverse so direction points into the material.
-	var outward: Vector3 = view.selected_face_normal()
+	return _commit_hole(body, face, (fmn + fmx) * 0.5)
+
+
+func _arm_hole() -> void:
+	var face := view.selected_face
+	var body := view.selected_body
+	if face == "" or body == "":
+		return
+	var fid := view.feature_of_body(body)
+	if fid == "":
+		status.emit("Hole needs a timeline body")
+		return
+	_pending = Pending.HOLE
+	_pending_body = body
+	_pending_face = face
+	_pending_fid = fid
+	_pending_first = face
+	status.emit("Hole: click face (near corner → inset %.1f mm)" % _hole_inset.value)
+
+
+func _commit_hole(body: String, face: String, position: Vector3) -> bool:
+	var target_fid := view.feature_of_body(body)
+	if target_fid == "":
+		status.emit("Hole needs a timeline body")
+		return false
+	var outward: Vector3 = view.face_normal(body, face)
 	var direction: Vector3
 	if outward.length_squared() > 1e-12:
 		direction = -outward.normalized()
@@ -519,13 +689,13 @@ func _apply_hole() -> bool:
 		1.6 * d, 0.5 * d, 2.0 * d, 90.0)
 	if hole_fid != "":
 		view.graph_changed()
-		status.emit("Hole Ø%.1f applied" % d)
+		status.emit("Hole Ø%.1f at (%.1f, %.1f, %.1f)" % [d, position.x, position.y, position.z])
 		return true
 	status.emit("Hole failed")
 	return false
 
 
-# --- two-target ops: arm, then click the second entity ---
+# --- two-target / precision-pick ops: arm, then click ---
 
 func _arm_boolean(op: String) -> void:
 	if view.selected_body == "":
@@ -545,13 +715,42 @@ func _arm_measure() -> void:
 	status.emit("Measure: click the other body/face")
 
 
-func _resolve_pending(body: String, face: String) -> void:
+func _arm_linear() -> void:
+	var body := view.selected_body
+	if body == "":
+		return
+	_pending = Pending.LINEAR
+	_pending_body = body
+	_pending_fid = view.feature_of_body(body)
+	_pending_first = body
+	status.emit("Linear pattern: click an edge for direction")
+
+
+func _arm_circular() -> void:
+	var body := view.selected_body
+	if body == "":
+		return
+	_pending = Pending.CIRCULAR
+	_pending_body = body
+	_pending_fid = view.feature_of_body(body)
+	_pending_first = body
+	status.emit("Circular pattern: click an edge or face for the axis")
+
+
+func _arm_mirror() -> void:
+	var body := view.selected_body
+	if body == "":
+		return
+	_pending = Pending.MIRROR
+	_pending_body = body
+	_pending_fid = view.feature_of_body(body)
+	_pending_first = body
+	status.emit("Mirror: click a planar face for the mirror plane")
+
+
+func _resolve_pending(body: String, face: String, point: Vector3) -> void:
 	var mode := _pending
 	_pending = Pending.NONE
-	var second := face if face != "" else body
-	if second == "" or second == _pending_first:
-		status.emit("Cancelled")
-		return
 	match mode:
 		Pending.BOOLEAN:
 			if body == "" or body == _pending_first:
@@ -563,8 +762,221 @@ func _resolve_pending(body: String, face: String) -> void:
 			else:
 				status.emit("Boolean %s failed" % _boolean_op)
 		Pending.MEASURE:
+			var second := face if face != "" else body
+			if second == "" or second == _pending_first:
+				status.emit("Cancelled")
+				return
 			var r: Dictionary = view.doc.measure_distance(_pending_first, second)
 			if r.is_empty():
 				status.emit("Measure failed")
 			else:
 				status.emit("Distance: %.2f mm" % r["distance"])
+		Pending.HOLE:
+			_resolve_hole_pick(body, face, point)
+		Pending.LINEAR:
+			_resolve_linear_pick(body, face)
+		Pending.CIRCULAR:
+			_resolve_circular_pick(body, face)
+		Pending.MIRROR:
+			_resolve_mirror_pick(body, face)
+
+
+func _resolve_hole_pick(body: String, face: String, point: Vector3) -> void:
+	var target_body := _pending_body
+	var target_face := face if face != "" else _pending_face
+	if body != "" and body != target_body:
+		# Allow drilling into another face of the same body only.
+		status.emit("Hole cancelled (pick the same body)")
+		return
+	if target_face == "":
+		status.emit("Hole cancelled (need a face)")
+		return
+	var position := _hole_place_position(target_body, target_face, point)
+	_commit_hole(target_body, target_face, position)
+
+
+## Resolve click → drill point: nearby magnets snap; corners inset by Inset.
+func _hole_place_position(body: String, face: String, point: Vector3) -> Vector3:
+	var snap: Vector3 = view.closest_measure_snap(body, point)
+	var snap_tol := maxf(HOLE_SNAP_MM, maxf(_hole_diameter.value * 0.75, _hole_inset.value * 0.5))
+	var raw_on_face: Dictionary = view.doc.closest_point_on(face, point)
+	var raw: Vector3 = raw_on_face["point_b"] if not raw_on_face.is_empty() else point
+	if point.distance_to(snap) > snap_tol:
+		return raw
+	if _is_corner_snap(body, snap):
+		var inset_pt := _inset_from_corner(body, face, snap, _hole_inset.value)
+		var on_face: Dictionary = view.doc.closest_point_on(face, inset_pt)
+		return on_face["point_b"] if not on_face.is_empty() else inset_pt
+	var mid_on_face: Dictionary = view.doc.closest_point_on(face, snap)
+	return mid_on_face["point_b"] if not mid_on_face.is_empty() else snap
+
+
+## Body extent along the face normal (plate thickness for a top face).
+func _face_thickness_mm(body: String, face: String) -> float:
+	var n: Vector3 = view.face_normal(body, face)
+	if n.length_squared() < 1e-12:
+		return 1.0
+	n = n.normalized()
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if bb.is_empty():
+		return 1.0
+	var size: Vector3 = bb["max"] - bb["min"]
+	return maxf(absf(n.x) * size.x + absf(n.y) * size.y + absf(n.z) * size.z, 0.5)
+
+
+func _is_corner_snap(body: String, snap: Vector3) -> bool:
+	for c in _corner_candidates(body):
+		if snap.distance_to(c) <= HOLE_CORNER_TOL_MM:
+			return true
+	return false
+
+
+func _corner_candidates(body: String) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if not bb.is_empty():
+		var mn: Vector3 = bb["min"]
+		var mx: Vector3 = bb["max"]
+		for x in [mn.x, mx.x]:
+			for y in [mn.y, mx.y]:
+				for z in [mn.z, mx.z]:
+					out.append(Vector3(x, y, z))
+	var lines: Dictionary = view.doc.get_edge_lines(body)
+	for edge_id in lines:
+		var pts: PackedVector3Array = lines[edge_id]
+		if pts.is_empty():
+			continue
+		out.append(pts[0])
+		if pts.size() > 1:
+			out.append(pts[pts.size() - 1])
+	return out
+
+
+func _inset_from_corner(body: String, face: String, corner: Vector3, inset: float) -> Vector3:
+	var mid: Vector3 = view.doc.face_midpoint(face)
+	var n: Vector3 = view.face_normal(body, face)
+	if n.length_squared() < 1e-12:
+		return corner
+	n = n.normalized()
+	var to_mid := mid - corner
+	to_mid -= n * to_mid.dot(n)
+	var dirs := _corner_inward_edge_dirs(body, face, corner, n, to_mid)
+	if dirs.size() >= 2:
+		return corner + dirs[0] * inset + dirs[1] * inset
+	if dirs.size() == 1:
+		var along: Vector3 = dirs[0]
+		var perp := n.cross(along).normalized()
+		if perp.dot(to_mid) < 0.0:
+			perp = -perp
+		return corner + along * inset + perp * inset
+	if to_mid.length_squared() < 1e-12:
+		return corner
+	return corner + to_mid.normalized() * (inset * sqrt(2.0))
+
+
+func _corner_inward_edge_dirs(
+		body: String, face: String, corner: Vector3, normal: Vector3, to_mid: Vector3
+) -> Array[Vector3]:
+	var face_plane_pt: Vector3 = view.doc.face_midpoint(face)
+	var dirs: Array[Vector3] = []
+	var lines: Dictionary = view.doc.get_edge_lines(body)
+	for edge_id in lines:
+		var pts: PackedVector3Array = lines[edge_id]
+		if pts.size() < 2:
+			continue
+		var a: Vector3 = pts[0]
+		var b: Vector3 = pts[pts.size() - 1]
+		var near_a := a.distance_to(corner) <= HOLE_CORNER_TOL_MM
+		var near_b := b.distance_to(corner) <= HOLE_CORNER_TOL_MM
+		if not near_a and not near_b:
+			continue
+		var da := absf((a - face_plane_pt).dot(normal))
+		var db := absf((b - face_plane_pt).dot(normal))
+		if da > 0.75 or db > 0.75:
+			continue
+		var along := (b - a).normalized()
+		if near_b:
+			along = -along
+		if absf(along.dot(normal)) > 0.35:
+			continue
+		if along.dot(to_mid) <= 1e-6:
+			continue
+		var dup := false
+		for existing in dirs:
+			if absf(existing.dot(along)) > 0.92:
+				dup = true
+				break
+		if not dup:
+			dirs.append(along)
+		if dirs.size() >= 2:
+			break
+	return dirs
+
+
+func _resolve_linear_pick(body: String, _face: String) -> void:
+	var src := _pending_body
+	var edge_body := body if body != "" else src
+	var edge := _nearest_edge(edge_body, view.last_pick_point)
+	var dir := view.edge_direction(edge_body, edge)
+	if dir.length_squared() < 1e-12:
+		status.emit("Linear cancelled (pick an edge)")
+		return
+	_do_linear(src, dir)
+	view.select_entity(src, "")
+
+
+func _resolve_circular_pick(body: String, face: String) -> void:
+	var src := _pending_body
+	var axis_point := Vector3.ZERO
+	var axis_dir := Vector3.ZERO
+	var pick_body := body if body != "" else src
+	# Prefer an edge near the click (axis along the edge); else use face normal.
+	var edge := _nearest_edge(pick_body, view.last_pick_point)
+	var edge_dir := view.edge_direction(pick_body, edge)
+	if edge != "" and edge_dir.length_squared() > 1e-12 \
+			and view.last_pick_point.distance_to(view.edge_midpoint(pick_body, edge)) < 8.0:
+		axis_dir = edge_dir
+		axis_point = view.edge_midpoint(pick_body, edge)
+	elif face != "":
+		axis_dir = view.face_normal(pick_body, face)
+		axis_point = view.doc.face_midpoint(face)
+	if axis_dir.length_squared() < 1e-12:
+		status.emit("Circular cancelled (pick an edge or face)")
+		return
+	_do_circular(src, axis_point, axis_dir)
+	view.select_entity(src, "")
+
+
+func _resolve_mirror_pick(body: String, face: String) -> void:
+	var src := _pending_body
+	if face == "":
+		status.emit("Mirror cancelled (pick a planar face)")
+		return
+	var face_body := body if body != "" else src
+	var n := view.face_normal(face_body, face)
+	if n.length_squared() < 1e-12:
+		status.emit("Mirror cancelled (need a planar face)")
+		return
+	var pt := view.doc.face_midpoint(face)
+	_do_mirror(src, pt, n.normalized())
+	view.select_entity(src, "")
+
+
+func _nearest_edge(body_id: String, point: Vector3) -> String:
+	if body_id == "":
+		return ""
+	var lines: Dictionary = view.doc.get_edge_lines(body_id)
+	var best_d := 1e30
+	var best_e := ""
+	for eid in lines:
+		var pts: PackedVector3Array = lines[eid]
+		if pts.size() < 2:
+			continue
+		var mid: Vector3 = view.edge_midpoint(body_id, eid)
+		var d: float = mid.distance_squared_to(point)
+		d = minf(d, pts[0].distance_squared_to(point))
+		d = minf(d, pts[pts.size() - 1].distance_squared_to(point))
+		if d < best_d:
+			best_d = d
+			best_e = eid
+	return best_e

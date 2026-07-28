@@ -364,3 +364,118 @@ TEST_CASE("featsweep: Path merge preserves sketch order for dense spline + 3D co
     REQUIRE(doc.body(body) != nullptr);
     REQUIRE(shape::volume(doc.body(body)->shape) > 0.0);
 }
+
+TEST_CASE("featsweep: Path from a single sketch and Sweep path_feature deps",
+          "[featsweep][path]") {
+    Document doc;
+    FeatureGraph graph;
+
+    Feature rail;
+    rail.type = FeatureType::Sketch;
+    rail.sketch = std::make_shared<Sketch>("Rail");
+    rail.sketch->add_line(0, 0, 40, 0);
+    auto rail_fid = graph.add(std::move(rail));
+
+    Feature pathf;
+    pathf.type = FeatureType::Path;
+    pathf.params = {{"sketches", json::array({rail_fid.str()})}, {"mode", "join_endpoints"}};
+    auto path_fid = graph.add(std::move(pathf));
+
+    Feature profile;
+    profile.type = FeatureType::Sketch;
+    profile.sketch = circle_sketch(2.0);
+    auto profile_fid = graph.add(std::move(profile));
+
+    Feature sw;
+    sw.type = FeatureType::Sweep;
+    sw.params = {{"sketch", profile_fid.str()}, {"path_feature", path_fid.str()}};
+    auto sw_fid = graph.add(std::move(sw));
+
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    REQUIRE(graph.feature(path_fid)->params["path"].size() >= 2);
+    EntityId body = graph.feature(sw_fid)->output_body;
+    REQUIRE(doc.body(body) != nullptr);
+    REQUIRE(shape::volume(doc.body(body)->shape) ==
+            Approx(M_PI * 4.0 * 40.0).epsilon(0.05));
+
+    REQUIRE(graph.has_dependents(path_fid));
+    REQUIRE(!graph.remove(path_fid));
+    REQUIRE(graph.remove(sw_fid));
+    REQUIRE(!graph.has_dependents(path_fid));
+    REQUIRE(graph.remove(path_fid));
+}
+
+TEST_CASE("featsweep: Path densifies arc rails", "[featsweep][path]") {
+    Document doc;
+    FeatureGraph graph;
+
+    Feature rail;
+    rail.type = FeatureType::Sketch;
+    rail.sketch = std::make_shared<Sketch>("ArcRail");
+    rail.sketch->add_arc(0, 0, 20, 0, M_PI / 2.0);
+    auto rail_fid = graph.add(std::move(rail));
+
+    Feature pathf;
+    pathf.type = FeatureType::Path;
+    pathf.params = {{"sketches", json::array({rail_fid.str()})}, {"mode", "join_endpoints"}};
+    auto path_fid = graph.add(std::move(pathf));
+
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    const json& path = graph.feature(path_fid)->params["path"];
+    REQUIRE(path.is_array());
+    REQUIRE(path.size() >= 8);
+}
+
+TEST_CASE("featsweep: sweep cut/fuse ops and thin_thickness", "[featsweep]") {
+    Document doc;
+    FeatureGraph graph;
+
+    Feature boxf;
+    boxf.type = FeatureType::Primitive;
+    boxf.params = {{"kind", "box"}, {"a", 40.0}, {"b", 40.0}, {"c", 20.0}};
+    auto box_fid = graph.add(std::move(boxf));
+
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = circle_sketch(5.0);
+    auto sketch_fid = graph.add(std::move(skf));
+
+    Feature sw;
+    sw.type = FeatureType::Sweep;
+    sw.params = {{"sketch", sketch_fid.str()},
+                 {"path", json::array({json::array({0.0, 0.0, 0.0}),
+                                       json::array({0.0, 0.0, 30.0})})},
+                 {"op", "cut"},
+                 {"target", box_fid.str()}};
+    graph.add(std::move(sw));
+
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    EntityId box_body = graph.feature(box_fid)->output_body;
+    REQUIRE(doc.body(box_body) != nullptr);
+    const double box_vol = 40.0 * 40.0 * 20.0;
+    REQUIRE(shape::volume(doc.body(box_body)->shape) < box_vol - 1.0);
+
+    // Thin sweep as a new body.
+    FeatureGraph g2;
+    Feature sk2;
+    sk2.type = FeatureType::Sketch;
+    sk2.sketch = circle_sketch(5.0);
+    auto sk2_fid = g2.add(std::move(sk2));
+    Feature thin;
+    thin.type = FeatureType::Sweep;
+    thin.params = {{"sketch", sk2_fid.str()},
+                   {"path", json::array({json::array({0.0, 0.0, 0.0}),
+                                         json::array({0.0, 0.0, 20.0})})},
+                   {"thin_thickness", 1.0}};
+    auto thin_fid = g2.add(std::move(thin));
+    Document doc2;
+    REQUIRE(g2.regenerate(doc2, &err));
+    const Body* tb = doc2.body(g2.feature(thin_fid)->output_body);
+    REQUIRE(tb != nullptr);
+    REQUIRE(shape::is_valid(tb->shape));
+    const double solid_vol = M_PI * 25.0 * 20.0;
+    REQUIRE(shape::volume(tb->shape) < solid_vol - 1.0);
+}

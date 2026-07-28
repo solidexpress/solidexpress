@@ -36,6 +36,9 @@ func _init() -> void:
 	await FilmUI.ensure_test_viewport(ctx)
 
 	await test_path_merge_and_sweep_ui(ctx, main)
+	await test_single_rail_path_and_sweep_ui(ctx, main)
+	await test_one_shot_profile_rail_sweep_ui(ctx, main)
+	await test_sweep_requires_explicit_path_ui(ctx, main)
 	await test_loft_ruled_ui(ctx, main)
 	await test_loft_smooth_ui(ctx, main)
 	await test_loft_with_guide_rail_ui(ctx, main)
@@ -127,6 +130,108 @@ func test_path_merge_and_sweep_ui(ctx: FilmContext, main) -> void:
 	var sw := _feature_body_volume(doc, "sweep")
 	check(sw["fid"] != "", "sweep feature from Sweep Path chip")
 	check(sw["volume"] > 50.0, "sweep solid volume from UI (got %.1f)" % sw["volume"])
+
+
+## One open rail → Use as path → profile → Sweep (explicit Path selection).
+func test_single_rail_path_and_sweep_ui(ctx: FilmContext, main) -> void:
+	print("-- single-rail path + sweep (UI)")
+	var doc := _fresh_doc(main)
+	var sm: SketchMode = main.sketch_mode
+
+	await FilmUI.enter_sketch(ctx)
+	await FilmUI.draw_line(ctx, sm, Vector2(0, 0), Vector2(20, 0))
+	var rail_fid := await FilmUI.exit_sketch(ctx)
+	await ctx.after_regen()
+	check(not rail_fid.is_empty(), "single rail pad")
+
+	await FilmUI.clear_pad_selection(ctx)
+	main.selected_sketch_pads.clear()
+	main.selected_path_fid = ""
+	await FilmUI.select_sketch_pad_ctrl(ctx, rail_fid)
+	var actions: Array = main._sketch_to_3d_actions()
+	check(actions.has("use_as_path"), "Use as path chip for single rail")
+	check(not actions.has("sweep_path"), "no sweep without profile")
+	await FilmUI.merge_sketches_ui(ctx, "use_as_path")
+	await ctx.after_regen()
+	check(FilmUI.last_feature_id(doc, "path") != "", "path from Use as path")
+	check(main.selected_path_fid != "", "Path stays selected after Use as path")
+
+	await FilmUI.enter_sketch(ctx)
+	sm = main.sketch_mode
+	await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(2, 0))
+	var prof_fid := await FilmUI.exit_sketch(ctx)
+	await ctx.after_regen()
+	await FilmUI.clear_pad_selection(ctx)
+	await FilmUI.select_sketch_pad_ctrl(ctx, prof_fid)
+	await FilmUI.sweep_along_path_ui(ctx)
+	await ctx.after_regen()
+	var sw := _feature_body_volume(doc, "sweep")
+	check(sw["fid"] != "", "sweep from single-rail Path")
+	check(sw["volume"] > 20.0, "single-rail sweep volume (got %.1f)" % sw["volume"])
+
+
+## Profile + rail selected together → one-shot Sweep (creates Path + solid).
+func test_one_shot_profile_rail_sweep_ui(ctx: FilmContext, main) -> void:
+	print("-- one-shot profile+rail sweep (UI)")
+	var doc := _fresh_doc(main)
+	var sm: SketchMode = main.sketch_mode
+
+	await FilmUI.enter_sketch(ctx)
+	await FilmUI.draw_line(ctx, sm, Vector2(0, 0), Vector2(18, 0))
+	var rail_fid := await FilmUI.exit_sketch(ctx)
+	await ctx.after_regen()
+	await FilmUI.enter_sketch(ctx)
+	sm = main.sketch_mode
+	await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(2.5, 0))
+	var prof_fid := await FilmUI.exit_sketch(ctx)
+	await ctx.after_regen()
+
+	await FilmUI.clear_pad_selection(ctx)
+	main.selected_sketch_pads.clear()
+	main.selected_path_fid = ""
+	await FilmUI.select_sketch_pad_ctrl(ctx, prof_fid)
+	await FilmUI.select_sketch_pad_ctrl(ctx, rail_fid)
+	var actions: Array = main._sketch_to_3d_actions()
+	check(actions.has("sweep_path"), "one-shot Sweep chip for profile+rail")
+	await FilmUI.sweep_along_path_ui(ctx)
+	await ctx.after_regen()
+	check(FilmUI.last_feature_id(doc, "path") != "", "one-shot created Path")
+	var sw := _feature_body_volume(doc, "sweep")
+	check(sw["fid"] != "", "one-shot sweep feature")
+	check(sw["volume"] > 20.0, "one-shot sweep volume (got %.1f)" % sw["volume"])
+
+
+## Profile alone with no Path selected must not offer Sweep (no silent latest-Path).
+func test_sweep_requires_explicit_path_ui(ctx: FilmContext, main) -> void:
+	print("-- sweep requires explicit path (UI)")
+	var doc := _fresh_doc(main)
+	var sm: SketchMode = main.sketch_mode
+
+	# Leave a stale Path in the document that must NOT auto-bind.
+	await FilmUI.enter_sketch(ctx)
+	await FilmUI.draw_line(ctx, sm, Vector2(0, 0), Vector2(10, 0))
+	var rail_fid := await FilmUI.exit_sketch(ctx)
+	await ctx.after_regen()
+	await FilmUI.clear_pad_selection(ctx)
+	main.selected_sketch_pads.clear()
+	await FilmUI.select_sketch_pad_ctrl(ctx, rail_fid)
+	await FilmUI.merge_sketches_ui(ctx, "use_as_path")
+	await ctx.after_regen()
+	check(FilmUI.last_feature_id(doc, "path") != "", "stale path exists")
+	main.selected_path_fid = ""
+
+	await FilmUI.enter_sketch(ctx)
+	sm = main.sketch_mode
+	await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(3, 0))
+	var prof_fid := await FilmUI.exit_sketch(ctx)
+	await ctx.after_regen()
+	await FilmUI.clear_pad_selection(ctx)
+	main.selected_sketch_pads.clear()
+	main.selected_path_fid = ""
+	await FilmUI.select_sketch_pad_ctrl(ctx, prof_fid)
+	var actions: Array = main._sketch_to_3d_actions()
+	check(not actions.has("sweep_path"),
+			"Sweep chip hidden without selected Path or rail")
 
 
 ## Ground circle + box-top circle → Loft Ruled chip.

@@ -54,6 +54,14 @@ if [[ -f game/bin/libplanegcs.so ]]; then
   cp -f game/bin/libplanegcs.so "$OUT_DIR/"
 fi
 
+cp -f "$ROOT/NOTICE" "$OUT_DIR/NOTICE"
+if [[ -f "$ROOT/THIRD_PARTY.md" ]]; then
+  cp -f "$ROOT/THIRD_PARTY.md" "$OUT_DIR/THIRD_PARTY.md"
+fi
+if [[ -f "$ROOT/LICENSE" ]]; then
+  cp -f "$ROOT/LICENSE" "$OUT_DIR/LICENSE"
+fi
+
 echo "==> archive"
 tar -czf "$ARCHIVE" -C "$ROOT/dist/releases" "SolidExpress-${VERSION}-linux-x86_64"
 sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256"

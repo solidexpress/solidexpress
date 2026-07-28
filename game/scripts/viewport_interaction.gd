@@ -1695,6 +1695,9 @@ func _sketch_input(event: InputEvent) -> void:
 						and not sketch_mode.drag_hit(p2).is_empty():
 					sketch_mode.begin_drag(p2)
 					_sketch_dragging = true
+				elif mb.double_click and sketch_mode.has_open_chain():
+					# First click of the double already placed the last point.
+					sketch_mode.end_chain()
 				else:
 					sketch_mode.click(p2)
 			accept_event()
@@ -1779,6 +1782,9 @@ func _sketch_input(event: InputEvent) -> void:
 				elif sketch_mode.has_length_override():
 					sketch_mode.clear_length_override()
 					status.emit("Length unlock")
+				elif sketch_mode.has_open_chain():
+					sketch_mode.end_chain()
+					status.emit("Chain ended")
 				else:
 					sketch_mode.cancel()
 		accept_event()
@@ -2371,14 +2377,20 @@ func _on_release(pos: Vector2) -> void:
 						_show_precision_after_drag(dist, "Δ push")
 					else:
 						status.emit("Push/pull failed (planar faces only for now)")
+				_pp_preview_dist = 0.0
+				_drag_mode = DragMode.NONE
+				_box_drag = false
+				_additive_click = false
+				_refresh_transform_hud()
+				queue_redraw()
+				_press_travel = 0.0
+				return
+			# Click without drag: do not consume the event as push/pull.
+			# Fall through so select_ray emits `picked` (Place hole… / pattern
+			# axis picks) and same-face re-click can collapse to the body.
 			_pp_preview_dist = 0.0
 			_drag_mode = DragMode.NONE
-			_box_drag = false
-			_additive_click = false
-			_refresh_transform_hud()
 			queue_redraw()
-			_press_travel = 0.0
-			return
 		DragMode.RESIZE_BODY:
 			if not was_click and absf(_resize_distance) > 1e-3:
 				_commit_resize()

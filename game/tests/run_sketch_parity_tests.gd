@@ -44,6 +44,7 @@ func test_compact_rail(main) -> void:
 	for c in main.sketch_toolbar.find_children("*", "Button", true, false):
 		tips.append(str(c.tooltip_text))
 	check(_tip_has(tips, "Exit Sketch"), "Exit Sketch on rail")
+	check(_tip_has(tips, "Line chain") or _tip_has(tips, "Line"), "Line on rail")
 	check(_tip_has(tips, "Arc"), "Arc on rail")
 	check(_tip_has(tips, "Polygon"), "Polygon on rail")
 	check(_tip_has(tips, "Power Trim") or _tip_has(tips, "Trim"), "Trim on rail")
@@ -67,6 +68,8 @@ func test_chrome_exists(main) -> void:
 	main._start_sketch()
 	await process_frame
 	check(main.sketch_chrome.visible, "chrome visible in session")
+	var done := main.sketch_chrome.done_button()
+	check(done != null and done.is_visible_in_tree(), "Done chip on finish bar")
 	var variants: Array = main.sketch_mode.variants_for_tool(SketchMode.Tool.RECT)
 	check(variants.has("corner") and variants.has("center"), "rect variants")
 	main.sketch_mode.set_tool(SketchMode.Tool.RECT)

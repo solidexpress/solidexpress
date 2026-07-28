@@ -70,7 +70,8 @@ run: build import
 		$(GODOT) --path game; \
 	fi
 
-# UI demo movies (needs display + ffmpeg). Output: dist/movies/*.webm + *.vtt
+# UI demo movies (needs display/GPU + ffmpeg). Window is minimized by default.
+# SX_TEST_WINDOW=onscreen to watch; SX_MOVIES_XVFB=1 if xvfb-run is installed.
 movies: import
 	chmod +x scripts/sx-movies
 	./scripts/sx-movies all

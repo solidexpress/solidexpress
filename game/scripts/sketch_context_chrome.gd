@@ -94,6 +94,12 @@ func _build_finish_bar() -> void:
 	rv.custom_minimum_size = Vector2(72, CHIP_H)
 	rv.pressed.connect(func() -> void: action_chosen.emit("revolve"))
 	_finish_bar.add_child(rv)
+	var done := Button.new()
+	done.text = "Done"
+	done.custom_minimum_size = Vector2(56, CHIP_H)
+	done.tooltip_text = "End line / spline chain (Esc · right-click · double-click)"
+	done.pressed.connect(func() -> void: action_chosen.emit("done"))
+	_finish_bar.add_child(done)
 
 
 func dim_value() -> float:
@@ -176,6 +182,13 @@ func extrude_button() -> Button:
 func revolve_button() -> Button:
 	for c in _finish_bar.get_children():
 		if c is Button and str(c.text) == "Revolve":
+			return c as Button
+	return null
+
+
+func done_button() -> Button:
+	for c in _finish_bar.get_children():
+		if c is Button and str(c.text) == "Done":
 			return c as Button
 	return null
 

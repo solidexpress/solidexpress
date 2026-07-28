@@ -10,6 +10,11 @@ void CommandStack::push(Document& doc, std::unique_ptr<Command> cmd) {
     undone_.clear();
 }
 
+void CommandStack::push_executed(std::unique_ptr<Command> cmd) {
+    done_.push_back(std::move(cmd));
+    undone_.clear();
+}
+
 bool CommandStack::undo(Document& doc) {
     if (done_.empty()) return false;
     done_.back()->undo(doc);

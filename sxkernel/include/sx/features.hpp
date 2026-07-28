@@ -47,10 +47,13 @@ enum class FeatureType {
     Draft,      // params: {target: <fid>, faces: [<face uuid>...], angle_deg,
                 //          pull_dir: [x,y,z], neutral_point: [x,y,z],
                 //          neutral_normal: [x,y,z]}
-    Sweep,      // params: {sketch: <fid>, path: [[x,y,z], ...] OR path_feature: <fid>}
+    Sweep,      // params: {sketch: <fid>, path: [[x,y,z], ...] OR path_feature: <fid>,
+                //          optional guides: [<fid>, ...],
+                //          optional op: "new"|"fuse"|"cut", target: <fid>,
+                //          optional thin_thickness: >0 hollow wall}
     Loft,       // params: {sketches: [<fid>, ...], ruled: bool,
                 //          optional guides: [<fid>, ...]}
-    Path,       // params: {sketches: [<fid>, ...], mode: "join_endpoints|bridge_spline|composite",
+    Path,       // params: {sketches: [<fid>, ...] (1+), mode: "join_endpoints|bridge_spline|composite",
                 //          path: [[x,y,z], ...] rebuilt on regenerate}
                 // No solid output — consumed by Sweep via path_feature.
     HelixSweep, // params: {profile_radius (default 1), axis_point: [x,y,z],

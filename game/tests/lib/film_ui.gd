@@ -24,6 +24,8 @@ static func reset_fail_count() -> void:
 
 ## Headless Godot defaults to ~64²; force a real window so palette / chrome
 ## clicks and model picks stay on-screen (offscreen cursor is a hard fail).
+## On a real display, also tuck the window away so movie / UI runners do not
+## leap onto the desktop or record the operator's mouse.
 static func ensure_test_viewport(ctx: FilmContext, size: Vector2i = Vector2i(1280, 720)) -> void:
 	if ctx == null or ctx.tree == null:
 		return
@@ -32,6 +34,33 @@ static func ensure_test_viewport(ctx: FilmContext, size: Vector2i = Vector2i(128
 	if ix != null and ix is Control:
 		(ix as Control).size = Vector2(size)
 	await wait_frames(ctx.tree, 2)
+	isolate_background_window(ctx.tree)
+
+
+## Minimize / unfocus the Godot window and hide the OS cursor so demo films and
+## non-headless UI runners stay off the operator's desktop. Synthetic FilmUI
+## input still works (it injects events, it does not need a focused window).
+## No-op under the headless display server. Set env SX_TEST_WINDOW=onscreen to keep
+## the window visible while debugging a film.
+static func isolate_background_window(tree: SceneTree) -> void:
+	if tree == null:
+		return
+	if str(OS.get_environment("SX_TEST_WINDOW")).to_lower() in ["onscreen", "1", "show", "visible"]:
+		return
+	# Headless display has no real window manager surface to steal focus.
+	var driver := DisplayServer.get_name()
+	if driver.is_empty() or driver.to_lower().contains("headless"):
+		return
+	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+	var win_id := DisplayServer.MAIN_WINDOW_ID
+	# Prefer no-focus so the operator keeps keyboard/mouse on their desktop.
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true, win_id)
+	# Minimized: stays in the task list but does not cover the screen. MovieWriter
+	# still receives rendered frames on typical desktop GPUs (X11/Vulkan).
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED, win_id)
+	# Keep the logical viewport size (minimize must not shrink FilmUI hit tests).
+	if tree.root != null and tree.root.size.x < 64:
+		tree.root.size = Vector2i(1600, 900)
 
 
 static func wait_frames(tree: SceneTree, n: int = 1) -> void:
@@ -688,6 +717,8 @@ static func merge_sketches_ui(ctx: FilmContext, mode: String) -> void:
 			action = "merge_spline"
 		"composite", "merge_composite":
 			action = "merge_composite"
+		"use_as_path":
+			action = "use_as_path"
 	var chip_label := action.capitalize().replace("_", " ")
 	var sk_chrome: SketchContextChrome = ctx.main.sketch_chrome
 	if sk_chrome == null or not sk_chrome.visible:
@@ -800,8 +831,10 @@ static func draw_line(ctx: FilmContext, sm: SketchMode, a: Vector2, b: Vector2) 
 	await select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
 	await click_sketch(ctx, sm, a, "Line — first point")
 	await click_sketch(ctx, sm, b, "Line — second point")
+	await end_line_chain(ctx)
 
 
+## Multi-segment line chain (one Line arming). Ends with Done when available.
 static func draw_polyline(ctx: FilmContext, sm: SketchMode, points: PackedVector2Array) -> void:
 	if points.size() < 2:
 		return
@@ -809,6 +842,28 @@ static func draw_polyline(ctx: FilmContext, sm: SketchMode, points: PackedVector
 	await click_sketch(ctx, sm, points[0], "Line — start")
 	for i in range(1, points.size()):
 		await click_sketch(ctx, sm, points[i], "Line — next point")
+	await end_line_chain(ctx)
+
+
+## Finish an open line / spline chain via the Done chip (Esc fallback).
+static func end_line_chain(ctx: FilmContext) -> void:
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var done: Button = null
+	if chrome != null and chrome.visible and chrome.has_method("done_button"):
+		done = chrome.done_button()
+	if done != null and done.is_visible_in_tree():
+		await click_control(ctx, done, FilmUICues.alert("Done", "End line chain"))
+		return
+	# Fallback when Done chrome is missing: Esc ends chain without discarding.
+	if ctx.chrome != null:
+		ctx.chrome.show_action_alert("Esc", "End line chain")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	ctx.main.interaction._input(esc)
+	await wait_frames(ctx.tree, 2)
+	if ctx.chrome != null:
+		ctx.chrome.clear_keys()
 
 
 static func draw_spline_through(ctx: FilmContext, sm: SketchMode, points: PackedVector2Array) -> void:
@@ -893,8 +948,52 @@ static func place_primitive(ctx: FilmContext, kind: String) -> void:
 	await place_primitive_at(ctx, kind, Vector3(15, 0, 0))
 
 
+## SpinBox next to a Label with exact (or prefix) text in the same row.
+static func find_labeled_spin(root: Node, label: String) -> SpinBox:
+	if root == null or label.is_empty():
+		return null
+	for c in root.find_children("*", "Label", true, false):
+		var lbl := c as Label
+		if lbl == null:
+			continue
+		if not lbl.is_visible_in_tree():
+			continue
+		var t := str(lbl.text)
+		if t != label and not t.begins_with(label):
+			continue
+		var row := lbl.get_parent()
+		if row == null:
+			continue
+		for sibling in row.get_children():
+			if sibling is SpinBox:
+				return sibling as SpinBox
+	return null
+
+
+## Cue the labeled SpinBox, then set its value (same path as typing a number).
+static func set_labeled_spin(
+		ctx: FilmContext, root: Node, label: String, value: float, desc: String = ""
+) -> bool:
+	var spin := find_labeled_spin(root, label)
+	if spin == null or not spin.is_visible_in_tree():
+		_fail("labeled spin '%s' missing or hidden" % label)
+		return false
+	var center := ensure_control_visible(spin)
+	await wait_frames(ctx.tree, 1)
+	center = spin.get_global_rect().get_center()
+	var cue_desc := desc if desc != "" else "Set %s to %.2f" % [label, value]
+	if not await _cue_click(ctx, center, FilmUICues.alert(label, cue_desc)):
+		return false
+	spin.value = value
+	await wait_frames(ctx.tree, 1)
+	return true
+
+
 ## Place a palette primitive by clicking the palette button then a world drop point.
-static func place_primitive_at(ctx: FilmContext, kind: String, world: Vector3) -> void:
+## Optional `size` (W,H,D mm) is typed into the place TransformHud before the drop.
+static func place_primitive_at(
+		ctx: FilmContext, kind: String, world: Vector3, size := Vector3.ZERO
+) -> void:
 	# A selected body swaps the left rail to Modify tools and hides the palette.
 	if ctx.view != null and ctx.view.selected_body != "":
 		ctx.view.clear_selection()
@@ -905,6 +1004,21 @@ static func place_primitive_at(ctx: FilmContext, kind: String, world: Vector3) -
 	if not await click_control(ctx, b, FilmUICues.place_primitive(kind)):
 		return
 	await wait_frames(ctx.tree, 2)
+	if size.x > 0.0:
+		var hud: Node = null
+		var ix_hud = ctx.main.interaction
+		if ix_hud != null:
+			hud = ix_hud.transform_hud
+		if hud == null or not (hud as CanvasItem).visible:
+			_fail("place TransformHud not visible for size")
+			return
+		if not await set_labeled_spin(ctx, hud, "W", size.x, "Plate width %.0f mm" % size.x):
+			return
+		if not await set_labeled_spin(ctx, hud, "H", size.y, "Plate depth %.0f mm" % size.y):
+			return
+		if not await set_labeled_spin(ctx, hud, "D", size.z, "Plate thickness %.0f mm" % size.z):
+			return
+		await wait_frames(ctx.tree, 1)
 	var drop := model_to_screen(ctx, world)
 	if not is_on_screen(ctx, drop):
 		drop = model_to_screen(ctx, Vector3(8, 8, 0))
@@ -922,6 +1036,41 @@ static func place_primitive_at(ctx: FilmContext, kind: String, world: Vector3) -
 		ix2._disarm_place(false)
 	if ctx.chrome != null:
 		ctx.chrome.clear_keys()
+
+
+## Select a body face via viewport click (frames the camera first).
+static func select_face(ctx: FilmContext, body_id: String, face_id: String) -> void:
+	if ctx.view == null or body_id == "" or face_id == "":
+		_fail("select_face: missing body/face")
+		return
+	var pt := face_pick_point(ctx.view, body_id, face_id)
+	if pt == Vector3.INF:
+		_fail("select_face: no pick point for %s/%s" % [body_id, face_id])
+		return
+	var cam = ctx.main.camera
+	if cam != null and cam.has_method("set_view"):
+		cam.pivot = pt
+		cam.distance = maxf(cam.distance, 90.0)
+		cam.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
+		await wait_frames(ctx.tree, 2)
+	var screen := model_to_screen(ctx, pt)
+	if not is_on_screen(ctx, screen):
+		_fail("select_face: face not on screen")
+		return
+	await viewport_click(ctx, screen, FilmUICues.alert("Click", "Select face"))
+	await wait_frames(ctx.tree, 2)
+	if ctx.view.selected_face != face_id:
+		# Retry once with a slightly higher camera.
+		if cam != null and cam.has_method("set_view"):
+			cam.distance = maxf(cam.distance, 120.0)
+			cam.set_view(deg_to_rad(-55.0), deg_to_rad(20.0), false)
+			await wait_frames(ctx.tree, 2)
+		screen = model_to_screen(ctx, pt)
+		if is_on_screen(ctx, screen):
+			await viewport_click(ctx, screen, FilmUICues.alert("Click", "Select face"))
+			await wait_frames(ctx.tree, 2)
+	if ctx.view.selected_face != face_id:
+		_fail("select_face: got '%s', want '%s'" % [ctx.view.selected_face, face_id])
 
 
 static func edit_sketch_pad(ctx: FilmContext, fid: String) -> void:

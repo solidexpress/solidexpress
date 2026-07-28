@@ -185,7 +185,20 @@ Round 19 test state: kernel 210 cases / 7043 assertions; Godot voice 29 + help 1
 - [x] Edit menu: Undo/Redo/Cut/Copy/Paste/Paste Special/Select All/Delete; Ctrl+X cut (materialized clipboard); Ctrl+Shift+V paste special; sketch entity clipboard; context-menu clipboard
 
 ## Later phases
-See friendliness plan (phases 21-27) + AI-first solver upgrade for unmatched voice.
+See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched voice.
+
+## Phase 21 — Precision placement (friendliness)
+- [x] 21.1 Pickable hole placement: **Place hole…** arms a pick; nearby magnets snap
+  (corner → edge **Inset**, mid / face mid as-is); far clicks place freely. **Inset** defaults from
+  Hole Ø + face thickness + material softness (TPU/thick > steel/thin). **Apply hole** remains face-center
+- [x] 21.2 Property panel angles in degrees: revolve `angle` and circular `total_angle` display °,
+  convert ↔ kernel radians (JSON storage unchanged)
+- [x] 21.3 Pickable pattern / mirror: **Linear…** / **Circular…** / **Mirror…** arm edge/face picks;
+  one-click Linear/Circular/Mirror keep +X / +Z / +X-face defaults
+- [x] 21.4 Expose helix + thread: `graph_add_helix` / `graph_add_thread` bindings;
+  Insert → Helix Spring…; Modify → Thread… on selected body
+- [x] 21.5 Graph undo hygiene: `CommandStack::push_executed` so graph edits do not double-regenerate;
+  push/pull stores face_point/normal fallback; modifying features no-op when target is suppressed
 
 ## Architecture hardening (2026-07-24)
 - [x] ADR ledger: [decisions.md](decisions.md) (FeatureGraph SoR, UUID topology refs, non-throwing Godot boundary, opt-in async regen)

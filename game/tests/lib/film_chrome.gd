@@ -31,11 +31,11 @@ func _ready() -> void:
 
 	_cc_panel = PanelContainer.new()
 	_cc_panel.visible = false
-	_cc_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_cc_panel.anchor_top = 1.0
-	_cc_panel.anchor_bottom = 1.0
-	_cc_panel.offset_top = -96
-	_cc_panel.offset_bottom = -28
+	# Top-center, under File/Insert/View + Snap (~42px rail) — avoids TransformHud /
+	# status / dim readouts at the bottom of the viewport.
+	_cc_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_cc_panel.offset_top = 48
+	_cc_panel.offset_bottom = 48 + 52
 	_cc_panel.offset_left = -420
 	_cc_panel.offset_right = 420
 	_cc_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -60,8 +60,8 @@ func _ready() -> void:
 	_badge = Label.new()
 	_badge.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_badge.offset_left = 16
-	_badge.offset_top = 50
-	_badge.offset_right = 480
+	_badge.offset_top = 100
+	_badge.offset_right = 520
 	_badge.add_theme_font_size_override("font_size", 16)
 	_badge.add_theme_color_override("font_color", Color(0.9, 0.95, 1))
 	_badge.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
@@ -75,9 +75,10 @@ func _ready() -> void:
 
 	_toast_panel = PanelContainer.new()
 	_toast_panel.visible = false
+	# Intent banner sits just under the step caption band.
 	_toast_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_toast_panel.offset_top = 88
-	_toast_panel.offset_bottom = 88 + 52
+	_toast_panel.offset_top = 108
+	_toast_panel.offset_bottom = 108 + 52
 	_toast_panel.offset_left = -360
 	_toast_panel.offset_right = 360
 	_toast_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -176,14 +177,20 @@ func clear_keys() -> void:
 	_badge.text = ""
 
 
-## Shortcut chip (top-left) + closed caption (bottom) for doc-style films.
+## Closed caption at top-center (under menus). Key hints fold into the caption
+## so a left badge does not cover Modify / Place hole docks.
 func show_action_alert(keys: String, desc: String) -> void:
-	var chip := keys.strip_edges()
-	if not desc.is_empty():
-		chip = ("[%s]  %s" % [keys, desc]) if keys != "" else desc
-	show_keys(chip)
-	if not desc.is_empty():
-		show_caption(desc)
+	clear_keys()
+	var k := keys.strip_edges()
+	var d := desc.strip_edges()
+	if d.is_empty() and k.is_empty():
+		return
+	if d.is_empty():
+		show_caption("[%s]" % k)
+	elif k.is_empty():
+		show_caption(d)
+	else:
+		show_caption("[%s]  %s" % [k, d])
 
 
 ## Move pointer, flash white on click, update alerts. Await before applying the real action.

@@ -15,10 +15,9 @@ func run_film(ctx: FilmContext) -> void:
 	await FilmUI.enter_sketch(ctx)
 	if sm.has_method("set_snap"):
 		sm.set_snap(false)
-	await FilmUI.draw_line(ctx, sm, Vector2(10, 0), Vector2(14, 0))
-	await FilmUI.draw_line(ctx, sm, Vector2(14, 0), Vector2(14, 4))
-	await FilmUI.draw_line(ctx, sm, Vector2(14, 4), Vector2(10, 4))
-	await FilmUI.draw_line(ctx, sm, Vector2(10, 4), Vector2(10, 0))
+	await FilmUI.draw_polyline(ctx, sm, PackedVector2Array([
+		Vector2(10, 0), Vector2(14, 0), Vector2(14, 4), Vector2(10, 4),
+	]))
 	if sm.has_method("set_snap"):
 		sm.set_snap(true)
 

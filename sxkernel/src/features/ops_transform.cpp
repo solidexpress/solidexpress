@@ -14,6 +14,7 @@
 namespace sx::feature_ops {
 
 bool apply_mirror(ApplyCtx& ctx) {
+    if (ctx.target_inactive("target")) return true;
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
@@ -29,6 +30,7 @@ bool apply_mirror(ApplyCtx& ctx) {
 }
 
 bool apply_linear_pattern(ApplyCtx& ctx) {
+    if (ctx.target_inactive("target")) return true;
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
@@ -50,6 +52,7 @@ bool apply_linear_pattern(ApplyCtx& ctx) {
 }
 
 bool apply_circular_pattern(ApplyCtx& ctx) {
+    if (ctx.target_inactive("target")) return true;
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");

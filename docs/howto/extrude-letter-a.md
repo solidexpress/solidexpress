@@ -5,11 +5,11 @@ Goal: sketch a closed capital **A** with a triangular counter (hole) and extrude
 ## Steps
 
 1. Click **Sketch** in the palette (or start a sketch on the ground plane). The sketch toolbar shows labeled tools: **Select**, **Line**, **Rect**, **Circle**.
-2. Click **Line** (or press **L**). With **Snap** on, draw the outer silhouette by clicking these plane coordinates (mm), then **right-click** to end the chain:
+2. Click **Line** (or press **L**). With **Snap** on, draw the outer silhouette by clicking these plane coordinates (mm), then **Done** (or Esc / right-click) to end the chain:
 
    `(0,0) → (12,0) → (18,22) → (32,22) → (38,0) → (50,0) → (30,55) → (20,55) → (0,0)`
 
-3. Still in **Line**, draw the inner triangular counter and right-click to end:
+3. Still in **Line**, draw the inner triangular counter and **Done** (or Esc) to end:
 
    `(20,28) → (30,28) → (25,42) → (20,28)`
 

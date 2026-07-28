@@ -179,9 +179,11 @@ public:
     godot::String graph_add_sweep(const godot::String& sketch_fid,
                                   const godot::PackedVector3Array& path);
     // Sweep along a Path feature (params rebuilt associatively from source sketches).
+    // Optional open guide sketches become MakePipeShell auxiliary spines.
     godot::String graph_add_sweep_along_path(const godot::String& sketch_fid,
-                                             const godot::String& path_fid);
-    // Composite 3D path from two or more planar sketches (SW 3D-sketch substitute).
+                                             const godot::String& path_fid,
+                                             const godot::PackedStringArray& guide_fids = {});
+    // Composite 3D path from one or more planar sketches (SW 3D-sketch substitute).
     // mode: "join_endpoints" | "bridge_spline" | "composite"
     godot::String graph_add_path(const godot::PackedStringArray& sketch_fids,
                                  const godot::String& mode);
@@ -228,6 +230,15 @@ public:
                                  const godot::Vector3& position, const godot::Vector3& direction,
                                  float diameter, float depth, float cb_diameter, float cb_depth,
                                  float cs_diameter, float cs_angle_deg);
+    // Helical spring / tube solid (new body). Axis in model space.
+    godot::String graph_add_helix(float profile_radius, float helix_radius, float pitch,
+                                  float turns, bool left_handed, const godot::Vector3& axis_point,
+                                  const godot::Vector3& axis_dir);
+    // Cut an external triangular thread from a timeline body's output.
+    godot::String graph_add_thread(const godot::String& target_fid, float major_radius,
+                                   float pitch, float turns, float depth, float profile_angle_deg,
+                                   const godot::Vector3& axis_point,
+                                   const godot::Vector3& axis_dir);
     // Import a STEP solid as a timeline BASE feature (index 0, uniform scale).
     godot::String graph_add_import_step(const godot::String& path, float scale);
     // Import an STL mesh as a timeline BASE feature (uniform scale).

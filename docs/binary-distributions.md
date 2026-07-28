@@ -27,9 +27,9 @@ For pipeline internals, see [release.md](./release.md).
 ### Accounts and legal
 
 - [ ] **GitHub**: push access to `solidexpress/solidexpress`; Actions enabled on the repo.
-- [ ] **Privacy policy URL** (required for stores): e.g. page on `solidexpress.github.io`.
-- [ ] **Support channel**: GitHub Issues URL in store listings and README.
-- [ ] **Third-party notices**: maintain `NOTICE` / third-party file (OCCT LGPL, PlaneGCS LGPL, Godot MIT, etc.) and ship it inside every binary bundle.
+- [x] **Privacy policy URL** (required for stores): https://solid.express/privacy.html
+- [x] **Support channel**: https://solid.express/support.html → [GitHub Issues](https://github.com/solidexpress/solidexpress/issues)
+- [x] **Third-party notices**: root `NOTICE` (+ `LICENSE`, `THIRD_PARTY.md`) copied into every export by `scripts/release/export-*.sh`
 
 ### Versioning (every release)
 
@@ -230,8 +230,9 @@ Use one set of assets everywhere:
 | Screenshots | `make movies` → last frames (already on GitHub Pages) |
 | Short description | solidexpress.github.io tagline |
 | Long description | README + feature list |
-| Privacy policy | GitHub Pages |
-| Copyright / license | Apache-2.0 app + LGPL notices for OCCT/PlaneGCS |
+| Privacy policy | https://solid.express/privacy.html |
+| Support | https://solid.express/support.html |
+| Copyright / license | Apache-2.0 (`LICENSE`) + `NOTICE` / `THIRD_PARTY.md` for OCCT/PlaneGCS/etc. |
 
 - [ ] Flathub: `metainfo.xml` screenshots + releases
 - [ ] Microsoft Partner Center: listing + MSIX
@@ -293,7 +294,7 @@ Track these as issues if not done:
 3. [ ] `scripts/release/export-windows.sh` / `export-macos.sh` mirroring Linux
 4. [ ] Inno Setup or WiX script under `packaging/windows/`
 5. [ ] `packaging/macos/entitlements.plist` + dmg script
-6. [ ] `NOTICE` file bundled in all exports
+6. [x] `NOTICE` file bundled in all exports (`export-linux.sh` / `export-windows.sh` / `export-macos.sh`)
 7. [ ] Release workflow: attach all three OS artifacts + unified release notes
 
 ---

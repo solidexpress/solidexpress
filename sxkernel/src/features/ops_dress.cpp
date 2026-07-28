@@ -21,10 +21,12 @@
 
 #include "sx/shape_utils.hpp"
 #include "sx/variables.hpp"
+#include "sx/measure.hpp"
 
 namespace sx::feature_ops {
 
 bool apply_fillet_chamfer(ApplyCtx& ctx) {
+    if (ctx.target_inactive("target")) return true;
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
@@ -64,6 +66,7 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
 }
 
 bool apply_shell(ApplyCtx& ctx) {
+    if (ctx.target_inactive("target")) return true;
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
@@ -88,6 +91,7 @@ bool apply_shell(ApplyCtx& ctx) {
 }
 
 bool apply_offset(ApplyCtx& ctx) {
+    if (ctx.target_inactive("target")) return true;
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
@@ -103,6 +107,7 @@ bool apply_offset(ApplyCtx& ctx) {
 }
 
 bool apply_push_pull(ApplyCtx& ctx) {
+    if (ctx.target_inactive("target")) return true;
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
@@ -110,8 +115,40 @@ bool apply_push_pull(ApplyCtx& ctx) {
     TopoDS_Shape face_shape;
     std::string why;
     if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Face, ctx.params.at("face"), face_shape,
-                            &why))
-        return ctx.fail(why);
+                            &why)) {
+        // UUID may not survive a move+regen; fall back to stored plane cue.
+        if (!ctx.params.contains("face_point") || !ctx.params.contains("face_normal"))
+            return ctx.fail(why);
+        gp_Pnt want = pnt_from(ctx.params.at("face_point"));
+        gp_Dir want_n = dir_from(ctx.params.at("face_normal"));
+        double best = 1e300;
+        TopoDS_Shape best_face;
+        for (const auto& fid : tb->subshape_ids.at(EntityKind::Face)) {
+            TopoDS_Shape fs = ctx.doc.resolve(fid);
+            if (fs.IsNull() || fs.ShapeType() != TopAbs_FACE) continue;
+            TopoDS_Face f = TopoDS::Face(fs);
+            BRepAdaptor_Surface surf(f);
+            if (surf.GetType() != GeomAbs_Plane) continue;
+            gp_Dir n = surf.Plane().Axis().Direction();
+            if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
+            if (n.Dot(want_n) < 0.95) continue;
+            gp_Pnt c = surf.Plane().Location();
+            // Prefer the face whose plane is closest to the stored pick point.
+            double dist = std::abs(gp_Vec(c, want).Dot(n));
+            // Also prefer proximity of the UV midpoint when available.
+            auto mid = measure::face_midpoint(ctx.doc, fid);
+            if (mid) {
+                gp_Pnt m((*mid)[0], (*mid)[1], (*mid)[2]);
+                dist += want.Distance(m) * 0.01;
+            }
+            if (dist < best) {
+                best = dist;
+                best_face = fs;
+            }
+        }
+        if (best_face.IsNull()) return ctx.fail(why);
+        face_shape = best_face;
+    }
     TopoDS_Face face = TopoDS::Face(face_shape);
     BRepAdaptor_Surface surf(face);
     if (surf.GetType() != GeomAbs_Plane)
@@ -138,6 +175,7 @@ bool apply_push_pull(ApplyCtx& ctx) {
 }
 
 bool apply_draft(ApplyCtx& ctx) {
+    if (ctx.target_inactive("target")) return true;
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
