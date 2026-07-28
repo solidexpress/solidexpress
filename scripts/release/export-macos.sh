@@ -17,7 +17,7 @@ fi
 
 echo "==> cmake build (Release, sxcore only)"
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF -DGODOTCPP_TARGET=template_release
-cmake --build build -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" --target sxcore
+cmake --build build -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" --target planegcs sxcore
 
 mkdir -p game/bin
 for candidate in build/libplanegcs.dylib build/thirdparty/planegcs/libplanegcs.dylib; do
@@ -41,11 +41,11 @@ fi
 
 # Legal notices next to the .app (and inside Resources for Finder discovery).
 BUNDLE_DIR="$(dirname "$OUT_APP")"
-cp -f "$ROOT/NOTICE" "$BUNDLE_DIR/NOTICE"
+[[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$BUNDLE_DIR/NOTICE"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$BUNDLE_DIR/THIRD_PARTY.md"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$BUNDLE_DIR/LICENSE"
 mkdir -p "$OUT_APP/Contents/Resources"
-cp -f "$ROOT/NOTICE" "$OUT_APP/Contents/Resources/NOTICE"
+[[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$OUT_APP/Contents/Resources/NOTICE"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_APP/Contents/Resources/THIRD_PARTY.md"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_APP/Contents/Resources/LICENSE"
 

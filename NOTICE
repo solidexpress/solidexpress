@@ -1,0 +1,58 @@
+SolidExpress
+Copyright 2024–2026 Express Consortium and contributors
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in the source repository:
+https://github.com/solidexpress/solidexpress
+
+Privacy: https://solid.express/privacy.html
+Support: https://solid.express/support.html
+         https://github.com/solidexpress/solidexpress/issues
+
+This distribution includes third-party software. Maintainers keep a full
+dependency ledger in THIRD_PARTY.md. Notable components shipped with or
+required by binary builds:
+
+---------------------------------------------------------------------------
+Open CASCADE Technology (OCCT)
+License: LGPL-2.1 with OCCT exception
+https://dev.opencascade.org/
+Linked dynamically. Source is available from the upstream project / OS packages.
+---------------------------------------------------------------------------
+PlaneGCS (from FreeCAD Sketcher)
+License: LGPL-2.1-or-later
+https://github.com/FreeCAD/FreeCAD
+Built and linked as a shared library (libplanegcs) for LGPL compliance.
+---------------------------------------------------------------------------
+Godot Engine (export template / runtime)
+License: MIT
+Copyright (c) 2014-present Godot Engine contributors.
+Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.
+https://godotengine.org/
+---------------------------------------------------------------------------
+godot-cpp
+License: MIT
+https://github.com/godotengine/godot-cpp
+---------------------------------------------------------------------------
+Eigen
+License: MPL-2.0
+https://eigen.tuxfamily.org/
+---------------------------------------------------------------------------
+Boost (headers, as used by PlaneGCS)
+License: Boost Software License 1.0
+https://www.boost.org/
+---------------------------------------------------------------------------
+miniz
+License: MIT
+https://github.com/richgel999/miniz
+---------------------------------------------------------------------------
+nlohmann/json
+License: MIT
+https://github.com/nlohmann/json
+---------------------------------------------------------------------------
+
+Optional components (when enabled in a given build) may include additional
+MIT/BSL libraries listed in THIRD_PARTY.md (e.g. whisper.cpp, Catch2 for tests).
+
+For complete license texts of LGPL components, see the corresponding upstream
+distribution or the copies under thirdparty/ in the SolidExpress source tree.

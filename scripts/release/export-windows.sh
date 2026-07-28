@@ -22,7 +22,7 @@ echo "==> cmake build (Release, sxcore only)"
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF \
   -DGODOTCPP_TARGET=template_release \
   ${CMAKE_TOOLCHAIN_FILE:+-DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE}
-cmake --build build -j "${NUMBER_OF_PROCESSORS:-4}" --target sxcore
+cmake --build build -j "${NUMBER_OF_PROCESSORS:-4}" --target planegcs sxcore
 
 mkdir -p game/bin
 PLANEGCS="$(find build -name 'libplanegcs.dll' -o -name 'planegcs.dll' 2>/dev/null | head -1 || true)"
@@ -38,6 +38,10 @@ echo "==> Godot export-release preset=${PRESET}"
 if [[ ! -f "$EXPORT_BIN" ]]; then echo "Export failed" >&2; exit 1; fi
 
 if [[ -f game/bin/libplanegcs.dll ]]; then cp -f game/bin/libplanegcs.dll "$OUT_DIR/"; fi
+
+[[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$OUT_DIR/NOTICE"
+[[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_DIR/THIRD_PARTY.md"
+[[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_DIR/LICENSE"
 
 rm -f "$ARCHIVE"
 powershell.exe -NoProfile -Command "Compress-Archive -Path '$OUT_DIR/*' -DestinationPath '$ARCHIVE' -Force"
