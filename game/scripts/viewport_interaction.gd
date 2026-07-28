@@ -20,6 +20,7 @@ var sketch_chrome: SketchContextChrome  # finish-bar dim blank while sketching
 var world_gizmos: WorldGizmos
 var measure_overlay: MeasureOverlay
 var transform_hud: TransformHud
+var scale_bar: ScaleBarHud
 var ops_panel: OpsPanel
 
 enum DragMode { NONE, MOVE_BODY, ROTATE_BODY, PUSH_PULL, BOX_SELECT, ORBIT_VIEW, RESIZE_BODY, MOVE_INSTANCE }
@@ -194,6 +195,7 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	_mount_world_gizmos()
 	_mount_measure_overlay()
+	_mount_scale_bar()
 	_build_place_snap_ui()
 	_build_transform_hud()
 	_build_context_menu()
@@ -210,7 +212,9 @@ func _ready() -> void:
 		view.document_changed.connect(_on_view_document_changed)
 	if camera != null:
 		camera.view_changed.connect(_on_camera_view_changed)
-	resized.connect(queue_redraw)
+	resized.connect(_on_interaction_resized)
+	# Initial LOD once the viewport has a size (and after camera pose settles).
+	call_deferred("_refresh_grid_lod")
 
 
 func is_placing() -> bool:
@@ -224,9 +228,29 @@ func refresh_selection_chrome() -> void:
 
 
 func _on_camera_view_changed() -> void:
+	_refresh_grid_lod()
 	# Gizmo screen projections only need a redraw when the camera moves.
 	if view != null and view.selected_body != "" and _place_kind == "":
 		queue_redraw()
+
+
+func _on_interaction_resized() -> void:
+	_refresh_grid_lod()
+	queue_redraw()
+
+
+## Keep the work grid from going sub-pixel (plaid) and sync the mm scale bar.
+func _refresh_grid_lod() -> void:
+	if camera == null:
+		return
+	var ppm := camera.pixels_per_mm_at_pivot()
+	if world_gizmos != null:
+		world_gizmos.refresh_lod(ppm)
+		if scale_bar != null:
+			scale_bar.visible = world_gizmos.gizmos_visible and world_gizmos.grid_visible
+			scale_bar.set_mm_scale(world_gizmos.grid_major_mm, ppm)
+	elif scale_bar != null:
+		scale_bar.set_mm_scale(WorldGizmos.GRID_MAJOR, ppm)
 
 
 func _build_transform_hud() -> void:
@@ -816,6 +840,15 @@ func _mount_measure_overlay() -> void:
 	if not measure_overlay.changed.is_connected(_on_measure_overlay_changed):
 		measure_overlay.changed.connect(_on_measure_overlay_changed)
 	measure_overlay.refresh_bounds()
+
+
+func _mount_scale_bar() -> void:
+	if get_node_or_null("ScaleBarHud") != null:
+		scale_bar = get_node("ScaleBarHud") as ScaleBarHud
+	else:
+		scale_bar = ScaleBarHud.new()
+		scale_bar.name = "ScaleBarHud"
+		add_child(scale_bar)
 
 
 func _on_measure_overlay_changed() -> void:
@@ -2563,6 +2596,8 @@ func _gui_key(event: InputEventKey) -> bool:
 		KEY_G:
 			if not event.ctrl_pressed and world_gizmos != null:
 				world_gizmos.set_gizmos_visible(not world_gizmos.gizmos_visible)
+				if scale_bar != null:
+					scale_bar.visible = world_gizmos.gizmos_visible and world_gizmos.grid_visible
 				status.emit("Gizmos " + ("on" if world_gizmos.gizmos_visible else "off"))
 				return true
 		KEY_H:

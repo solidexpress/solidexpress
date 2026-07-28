@@ -293,6 +293,7 @@ func test_view_hud(main) -> void:
 	var hud: ViewHud = main.view_hud
 	var view: DocumentView = main.view
 	var cam: OrbitCamera = main.camera
+	var ix: ViewportInteraction = main.interaction
 	check(hud != null, "ViewHud mounted")
 
 	# Far bottom-right dock — above the status bar, same chrome pad as File bar.
@@ -307,6 +308,16 @@ func test_view_hud(main) -> void:
 	check(is_equal_approx(hud.offset_left, -main._CHROME_PAD), "HUD grows from right pad")
 	check(hud.origin_triad != null, "OriginTriad sits above the view menu")
 	check(hud.origin_triad.camera == cam, "OriginTriad linked to OrbitCamera")
+	check(ix.scale_bar != null, "ScaleBarHud mounted on Interaction")
+	if ix.scale_bar != null:
+		check(ix.scale_bar.visible, "scale bar visible with gizmos on")
+		ix.world_gizmos.set_gizmos_visible(false)
+		ix._refresh_grid_lod()
+		check(not ix.scale_bar.visible, "scale bar hides with gizmos")
+		ix.world_gizmos.set_gizmos_visible(true)
+		ix._refresh_grid_lod()
+		check(ix.scale_bar.visible, "scale bar restores with gizmos")
+
 	check(not hud.has_signal("nav_preset_changed"), "nav menu signal removed")
 	check(cam.nav_preset == OrbitCamera.NavPreset.FUSION, "Fusion is the only mouse preset")
 

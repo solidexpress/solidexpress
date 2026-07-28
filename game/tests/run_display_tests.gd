@@ -233,3 +233,24 @@ func test_world_gizmos() -> void:
 	gizmos.set_active_plane(Vector3.ZERO, Vector3(0, 0, 1))
 	check(grid.transform.is_equal_approx(Transform3D.IDENTITY),
 		"reset active plane restores grid at ground")
+
+	# Zoom LOD: keep minor cells ≥ MIN_MINOR_PX; bump by decades when denser.
+	check(is_equal_approx(WorldGizmos.pick_minor_step_mm(100.0), 0.1),
+		"high px/mm keeps 0.1 mm minors (0.01 is sub-threshold)")
+	check(is_equal_approx(WorldGizmos.pick_minor_step_mm(40.0), 0.1),
+		"default-ish zoom (~4 px on 0.1 mm) keeps 0.1 mm minors")
+	check(is_equal_approx(WorldGizmos.pick_minor_step_mm(20.0), 1.0),
+		"zoomed out: 0.1 mm would be < 3.5 px → bump to 1 mm")
+	check(is_equal_approx(WorldGizmos.pick_minor_step_mm(0.5), 10.0),
+		"far zoom bumps to 10 mm minors")
+	check(is_equal_approx(WorldGizmos.pick_minor_step_mm(500.0), 0.01),
+		"close zoom allows 0.01 mm minors")
+
+	gizmos.refresh_lod(20.0)
+	check(is_equal_approx(gizmos.grid_step_mm, 1.0), "refresh_lod sets 1 mm minor")
+	check(is_equal_approx(gizmos.grid_major_mm, 10.0), "major is 10× minor")
+	check(gizmos.grid_half_mm >= 500.0 - 1e-3, "coarser LOD grows the sheet")
+	if grid != null and grid.mesh != null:
+		var aabb2: AABB = grid.get_aabb()
+		check(aabb2.size.x > gizmos.grid_half_mm * 1.9,
+			"rebuilt mesh spans the coarser half-extent")

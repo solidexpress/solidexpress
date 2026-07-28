@@ -68,7 +68,7 @@ func test_chrome_exists(main) -> void:
 	main._start_sketch()
 	await process_frame
 	check(main.sketch_chrome.visible, "chrome visible in session")
-	var done := main.sketch_chrome.done_button()
+	var done: Button = main.sketch_chrome.done_button()
 	check(done != null and done.is_visible_in_tree(), "Done chip on finish bar")
 	var variants: Array = main.sketch_mode.variants_for_tool(SketchMode.Tool.RECT)
 	check(variants.has("corner") and variants.has("center"), "rect variants")

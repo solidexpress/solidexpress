@@ -553,6 +553,25 @@ func _zoom_anchor(screen_pos: Vector2) -> Vector3:
 	return ray_origin + ray_dir * t
 
 
+## Pixels per model millimetre at the orbit pivot (viewport height / frustum
+## height). Used by the work grid LOD and the scale bar.
+func pixels_per_mm_at_pivot() -> float:
+	var vp := get_viewport()
+	if vp == null:
+		return 1.0
+	var h := vp.get_visible_rect().size.y
+	if h <= 0.0:
+		return 1.0
+	var world_h: float
+	if projection == PROJECTION_ORTHOGONAL:
+		world_h = size
+	else:
+		world_h = 2.0 * distance * tan(deg_to_rad(fov) * 0.5)
+	if world_h < 1e-9:
+		return 1.0
+	return h / world_h
+
+
 ## Switch between perspective and orthographic, keeping apparent size:
 ## the ortho frustum height matches what the perspective fov sees at the pivot.
 func toggle_projection() -> void:
