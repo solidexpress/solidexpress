@@ -46,3 +46,7 @@ if(SX_BUILD_TESTS)
     enable_testing()
     add_test(NAME sxkernel_tests COMMAND sxkernel_tests)
 endif()
+
+if(MSVC)
+  target_link_libraries(sxkernel PUBLIC legacy_stdio_definitions.lib)
+endif()

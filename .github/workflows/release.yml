@@ -59,8 +59,8 @@ jobs:
       - name: Build Flatpak bundle
         run: |
           sudo apt-get install -y flatpak flatpak-builder
-          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 || true
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
+          flatpak install --user -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 2>/dev/null || true
           chmod +x packaging/flatpak/build-flatpak.sh
           ./packaging/flatpak/build-flatpak.sh || echo "flatpak skipped if tarball layout mismatch"
 
