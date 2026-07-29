@@ -39,6 +39,18 @@ if [[ -z "$PLANEGCS_LIB" ]]; then
   exit 1
 fi
 
+# Godot expects game/bin/libsxcore.dll (see sxcore.gdextension). Stage before --import/export.
+SXCORE_DLL="$(find build/game/bin -name 'libsxcore.dll' -print -quit 2>/dev/null || true)"
+if [[ -z "$SXCORE_DLL" ]]; then
+  SXCORE_DLL="$(find build/game/bin -name 'sxcore.dll' -print -quit 2>/dev/null || true)"
+fi
+if [[ -z "$SXCORE_DLL" || ! -f "$SXCORE_DLL" ]]; then
+  echo "error: libsxcore.dll/sxcore.dll missing after build under build/game/bin" >&2
+  find build -name '*sxcore*.dll' 2>/dev/null | head -20 >&2 || true
+  exit 1
+fi
+cp -f "$SXCORE_DLL" game/bin/libsxcore.dll
+
 "$GODOT" --headless --path game --import >/dev/null 2>&1 || true
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR" "$ROOT/dist/releases"
@@ -53,8 +65,7 @@ if [[ -f game/bin/libplanegcs.dll ]]; then cp -f game/bin/libplanegcs.dll "$OUT_
 if [[ -n "${VCPKG_ROOT:-}" && -f "$VCPKG_ROOT/vcpkg.exe" ]]; then
   "$VCPKG_ROOT/vcpkg.exe" z-applocal --installed-root "$VCPKG_ROOT/installed/x64-windows/bin" --target-binary "$EXPORT_BIN" 2>/dev/null ||   "$VCPKG_ROOT/vcpkg.exe" z-applocal --installed-root "$VCPKG_ROOT/installed/x64-windows" --target-binary "$EXPORT_BIN" || true
 fi
-SXDLL="$(find build -name 'sxcore.dll' -print -quit 2>/dev/null || true)"
-[[ -n "$SXDLL" && -f "$SXDLL" ]] && cp -f "$SXDLL" "$OUT_DIR/"
+if [[ -f game/bin/libsxcore.dll ]]; then cp -f game/bin/libsxcore.dll "$OUT_DIR/"; fi
 
 
 [[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$OUT_DIR/NOTICE"
