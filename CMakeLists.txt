@@ -12,9 +12,14 @@ endif()
 
 if(MSVC)
     add_compile_definitions(_USE_MATH_DEFINES)
-endif()
-
-if(MSVC)
+    # Force shared CRT (/MD) for ALL targets. godot-cpp defaults to
+    # GODOTCPP_USE_STATIC_CPP=ON (/MT); sxkernel/miniz are created before
+    # godot-cpp and default to /MD, so sxcore (/MT) then fails to link with
+    # unresolved __imp_* CRT symbols (hypot, miniz time/stdio, etc.).
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+        CACHE STRING "MSVC runtime library" FORCE)
+    set(GODOTCPP_USE_STATIC_CPP OFF CACHE BOOL
+        "Link MSVC CRT dynamically for GDExtension" FORCE)
     link_libraries(legacy_stdio_definitions.lib)
 endif()
 
