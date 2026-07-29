@@ -48,6 +48,13 @@ echo "==> Godot export-release preset=${PRESET}"
 if [[ ! -f "$EXPORT_BIN" ]]; then echo "Export failed" >&2; exit 1; fi
 
 if [[ -f game/bin/libplanegcs.dll ]]; then cp -f game/bin/libplanegcs.dll "$OUT_DIR/"; fi
+# Bundle vcpkg runtime DLLs next to the game binary (OCCT, etc.)
+if [[ -n "${VCPKG_ROOT:-}" && -f "$VCPKG_ROOT/vcpkg.exe" ]]; then
+  "$VCPKG_ROOT/vcpkg.exe" z-applocal --installed-root "$VCPKG_ROOT/installed/x64-windows/bin" --target-binary "$EXPORT_BIN" 2>/dev/null ||   "$VCPKG_ROOT/vcpkg.exe" z-applocal --installed-root "$VCPKG_ROOT/installed/x64-windows" --target-binary "$EXPORT_BIN" || true
+fi
+SXDLL="$(find build -name 'sxcore.dll' -print -quit 2>/dev/null || true)"
+[[ -n "$SXDLL" && -f "$SXDLL" ]] && cp -f "$SXDLL" "$OUT_DIR/"
+
 
 [[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$OUT_DIR/NOTICE"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_DIR/THIRD_PARTY.md"
