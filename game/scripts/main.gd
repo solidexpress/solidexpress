@@ -1162,13 +1162,13 @@ func _on_sketch_dim_submitted(value: float) -> void:
 	_apply_dimension()
 
 
-func _on_sketch_finish(op: String, distance: float) -> void:
+func _on_sketch_finish(op: String, distance: float, end: String = "blind") -> void:
 	extrude_distance.value = distance
 	match op:
 		"cut": finish_op.selected = 1
 		"fuse": finish_op.selected = 2
 		_: finish_op.selected = 0
-	sketch_mode.finish_extrude(distance, op)
+	sketch_mode.finish_extrude(distance, op, end)
 
 
 func _selected_entity() -> String:

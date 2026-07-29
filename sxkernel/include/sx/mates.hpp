@@ -76,4 +76,10 @@ bool apply_mate(Document& doc, const Mate& m);
 // Applies every mate stored on the document in insertion order.
 bool solve_mates(Document& doc);
 
+// World-space axis of the first concentric mate that moves `instance` as
+// instance_b. When present, the instance has a free rotational DOF about this
+// axis (axial slide may also be free). Empty when no concentric mate applies.
+std::optional<MateAxis> instance_revolute_axis(const Document& doc,
+                                              const EntityId& instance);
+
 }  // namespace sx

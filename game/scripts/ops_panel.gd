@@ -251,7 +251,8 @@ func _build_face_ops() -> void:
 	_hole_type.add_item("Countersink", 2)
 	hole_type_row.add_child(_hole_type)
 	_hole_diameter = _labeled_spin(_face_ops, "Hole Ø", 0.1, 200.0, 0.5, 6.0)
-	_hole_depth = _labeled_spin(_face_ops, "Depth", 0.0, 1000.0, 1.0, 0.0)
+	_hole_depth = _labeled_spin(_face_ops, "Depth (0=thru)", 0.0, 1000.0, 1.0, 0.0)
+	_hole_depth.tooltip_text = "Blind depth in mm; 0 = through-all"
 	_hole_inset = _labeled_spin(_face_ops, "Inset", 0.5, 500.0, 0.5, 8.0)
 	_hole_inset.tooltip_text = "Corner edge distance (auto from Ø, thickness, material softness)"
 	_hole_diameter.value_changed.connect(_on_hole_diameter_changed)

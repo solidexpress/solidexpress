@@ -167,9 +167,11 @@ public:
     // Replace a Sketch feature's geometry and regenerate dependents (undoable).
     bool graph_update_sketch(const godot::String& fid, const godot::Ref<class SxSketch>& sketch);
     // op: "new" | "fuse" | "cut"; target_fid required for fuse/cut.
+    // end: "blind" | "through_all" | "midplane" (midplane also sets symmetric).
     godot::String graph_add_extrude(const godot::String& sketch_fid, double distance,
                                     bool symmetric, const godot::String& op,
-                                    const godot::String& target_fid);
+                                    const godot::String& target_fid,
+                                    const godot::String& end = "blind");
     // Axis in sketch 2D coordinates (point + direction on the sketch plane).
     godot::String graph_add_revolve(const godot::String& sketch_fid,
                                     const godot::Vector2& axis_point,
@@ -308,6 +310,9 @@ public:
     bool remove_mate(const godot::String& id);
     // Applies all mates in order; true when every mate solved.
     bool solve_mates();
+    // {ok, point, dir} for the concentric revolute axis of an instance, or
+    // {ok: false} when the instance has no concentric mate as instance_b.
+    godot::Dictionary instance_revolute_axis(const godot::String& instance_id) const;
 
     // Three-view (front/top/right) HLR drawing sheet as SVG. False when the
     // document has no bodies or the file cannot be written.

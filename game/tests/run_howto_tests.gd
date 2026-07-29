@@ -28,6 +28,7 @@ func _init() -> void:
 	await howto_extrude_s_shape(main)
 	await howto_extrude_letter_a(main)
 	await howto_horizontal_hole(main)
+	await howto_mounting_block(main)
 
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -332,4 +333,63 @@ func howto_horizontal_hole(main) -> void:
 			has_boolean = true
 			break
 	check(has_boolean, "Subtract recorded as a timeline boolean feature")
+	await process_frame
+
+
+## docs/howto/mounting-block.md — box + Apply hole via O (Depth 0 = through).
+func howto_mounting_block(main) -> void:
+	print("- howto_mounting_block")
+	var view: DocumentView = main.view
+	var ops: OpsPanel = main.ops_panel
+	var ix: ViewportInteraction = main.interaction
+	view.new_document()
+
+	# 1–3. Sized box on the ground.
+	var body: String = view.insert_primitive("box", Vector3.ZERO, Vector3(100, 60, 30))
+	check(body != "", "box placed")
+	check(view.doc.body_ids().size() == 1, "one body")
+	var vol0: float = view.doc.body_volume(body)
+	check(absf(vol0 - 180000.0) < 1.0, "box volume 180000 (got %.0f)" % vol0)
+
+	# 4. Select top face (+Z).
+	var top_face := ""
+	for face_id in view.doc.get_face_ids(body):
+		var mid: Vector3 = view.doc.face_midpoint(face_id)
+		if absf(mid.z - 30.0) < 0.5:
+			top_face = face_id
+			break
+	check(top_face != "", "top face found")
+	view.select_entity(body, top_face)
+	ix._refresh_selection_strip()
+	check(ix._strip_hole != null and ix._strip_hole.visible, "Hole strip visible with face")
+
+	# 5. Ø20; Depth 0 (through). Apply via O shortcut (keyboard path).
+	ops._hole_diameter.value = 20.0
+	ops._hole_depth.value = 0.0
+	var key := InputEventKey.new()
+	key.keycode = KEY_O
+	key.pressed = true
+	check(ix._gui_key(key), "O applies hole")
+	check(view.doc.body_ids().size() == 1, "still one body after hole")
+	var expected: float = 180000.0 - PI * 100.0 * 30.0
+	var vol: float = view.doc.body_volume(body)
+	check(absf(vol - expected) < expected * 0.02,
+		"through-hole volume ~%.0f (got %.0f)" % [expected, vol])
+
+	# Strip button path also works (click path parity).
+	view.new_document()
+	body = view.insert_primitive("box", Vector3.ZERO, Vector3(100, 60, 30))
+	top_face = ""
+	for face_id in view.doc.get_face_ids(body):
+		var mid2: Vector3 = view.doc.face_midpoint(face_id)
+		if absf(mid2.z - 30.0) < 0.5:
+			top_face = face_id
+			break
+	view.select_entity(body, top_face)
+	ops._hole_diameter.value = 20.0
+	ops._hole_depth.value = 0.0
+	ix._ctx_apply_hole()
+	vol = view.doc.body_volume(body)
+	check(absf(vol - expected) < expected * 0.02,
+		"strip Apply hole volume ~%.0f (got %.0f)" % [expected, vol])
 	await process_frame

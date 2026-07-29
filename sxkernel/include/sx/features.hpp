@@ -29,6 +29,7 @@ enum class FeatureType {
                 //          origin: [x,y,z], optional z_dir/x_dir: [x,y,z]}
     Sketch,     // embedded sketch; no geometry output
     Extrude,    // params: {sketch: <feature uuid>, distance, symmetric,
+                //          end: "blind|through_all|midplane" (midplane ⇒ symmetric),
                 //          op: "new|fuse|cut", target: <feature uuid, for fuse/cut>}
     Revolve,    // params: {sketch, axis_point: [u,v], axis_dir: [u,v], angle, op, target}
     Boolean,    // params: {op: "fuse|cut|common", target: <fid>, tool: <fid>}

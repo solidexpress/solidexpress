@@ -5,7 +5,7 @@ extends Control
 
 signal variant_chosen(kind: String, variant: String)
 signal action_chosen(action: String)
-signal finish_requested(op: String, distance: float)
+signal finish_requested(op: String, distance: float, end: String)
 ## Enter in the dim blank while drawing: typed length/radius commit.
 signal dim_submitted(value: float)
 
@@ -18,6 +18,7 @@ var _action_bar: HBoxContainer
 var _finish_bar: HBoxContainer
 var _extrude_spin: SpinBox
 var _finish_op: OptionButton
+var _finish_end: OptionButton
 var _dim_spin: SpinBox
 var _active_kind := ""
 ## True while the dim LineEdit has focus — mouse must not overwrite typed digits.
@@ -77,7 +78,14 @@ func _build_finish_bar() -> void:
 	_extrude_spin.value = 20
 	_extrude_spin.suffix = "mm"
 	_extrude_spin.custom_minimum_size = Vector2(88, CHIP_H)
+	_extrude_spin.tooltip_text = "Blind distance (ignored for Through All cuts)"
 	_finish_bar.add_child(_extrude_spin)
+	_finish_end = OptionButton.new()
+	_finish_end.tooltip_text = "Extrude end: Blind / Through All / Midplane"
+	for n in ["Blind", "Through All", "Midplane"]:
+		_finish_end.add_item(n)
+	_finish_end.custom_minimum_size = Vector2(100, CHIP_H)
+	_finish_bar.add_child(_finish_end)
 	_finish_op = OptionButton.new()
 	for n in ["New", "Cut", "Fuse"]:
 		_finish_op.add_item(n)
@@ -87,7 +95,10 @@ func _build_finish_bar() -> void:
 	ex.text = "Extrude"
 	ex.custom_minimum_size = Vector2(72, CHIP_H)
 	ex.pressed.connect(func() -> void:
-		finish_requested.emit(["new", "cut", "fuse"][_finish_op.selected], _extrude_spin.value))
+		finish_requested.emit(
+			["new", "cut", "fuse"][_finish_op.selected],
+			_extrude_spin.value,
+			["blind", "through_all", "midplane"][_finish_end.selected]))
 	_finish_bar.add_child(ex)
 	var rv := Button.new()
 	rv.text = "Revolve"

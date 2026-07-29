@@ -178,4 +178,18 @@ bool solve_mates(Document& doc) {
     return ok;
 }
 
+std::optional<MateAxis> instance_revolute_axis(const Document& doc,
+                                              const EntityId& instance) {
+    if (instance.is_null() || !doc.instance(instance)) return std::nullopt;
+    for (const auto& m : doc.mates()) {
+        if (m.type != MateType::Concentric) continue;
+        if (m.instance_b != instance) continue;
+        // Prefer the grounded / A-side axis (stable under B's motion).
+        auto ax = mate_axis(doc, m.instance_a, m.face_a);
+        if (ax) return ax;
+        return mate_axis(doc, m.instance_b, m.face_b);
+    }
+    return std::nullopt;
+}
+
 }  // namespace sx

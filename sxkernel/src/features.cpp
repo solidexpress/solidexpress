@@ -6,6 +6,7 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
@@ -20,6 +21,7 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepTools.hxx>
+#include <Bnd_Box.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Standard_Failure.hxx>
@@ -880,8 +882,44 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     gp_Vec dir(n[0], n[1], n[2]);
                     dir.Normalize();
                     double dist = num_param(params, "distance", 10.0, env);
+                    std::string end = params.value("end", "blind");
+                    bool midplane = params.value("symmetric", false) || end == "midplane";
+                    std::string op = params.value("op", "new");
+                    if (end == "through_all") {
+                        // Peer Through All: long enough to exit all target
+                        // geometry (cut/fuse) or a generous blind for new.
+                        double sign = dist < 0.0 ? -1.0 : 1.0;
+                        double extent = 1.0e6;
+                        if (op != "new") {
+                            EntityId tid = find_feature_body("target");
+                            const Body* tb = doc.body(tid);
+                            if (tb && !tb->shape.IsNull()) {
+                                Bnd_Box box;
+                                BRepBndLib::Add(tb->shape, box);
+                                if (!box.IsVoid()) {
+                                    double xmin, ymin, zmin, xmax, ymax, zmax;
+                                    box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+                                    gp_Pnt c((xmin + xmax) * 0.5, (ymin + ymax) * 0.5,
+                                             (zmin + zmax) * 0.5);
+                                    gp_Pnt corners[8] = {
+                                        {xmin, ymin, zmin}, {xmax, ymin, zmin},
+                                        {xmin, ymax, zmin}, {xmax, ymax, zmin},
+                                        {xmin, ymin, zmax}, {xmax, ymin, zmax},
+                                        {xmin, ymax, zmax}, {xmax, ymax, zmax},
+                                    };
+                                    double max_along = 0.0;
+                                    for (const auto& p : corners) {
+                                        max_along = std::max(max_along,
+                                            std::abs(gp_Vec(c, p).Dot(dir)));
+                                    }
+                                    extent = std::max(max_along * 2.0 + 10.0, std::abs(dist));
+                                }
+                            }
+                        }
+                        dist = sign * extent;
+                    }
                     TopoDS_Shape profile = face;
-                    if (params.value("symmetric", false)) {
+                    if (midplane) {
                         gp_Trsf t;
                         t.SetTranslation(dir * (-dist / 2.0));
                         profile = BRepBuilderAPI_Transform(face, t, true).Shape();

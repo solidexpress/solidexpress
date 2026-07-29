@@ -1,5 +1,6 @@
 #include <catch.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -9,6 +10,9 @@
 #include <Bnd_Box.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <gp_Ax1.hxx>
+#include <gp_Quaternion.hxx>
+#include <gp_Trsf.hxx>
 
 #include "sx/document.hpp"
 #include "sx/instances.hpp"
@@ -125,6 +129,52 @@ TEST_CASE("concentric mate drops a pin into a hole axis", "[mates]") {
     CHECK((bb[0] + bb[3]) / 2.0 == Approx(60.0).margin(1e-6));
     CHECK((bb[1] + bb[4]) / 2.0 == Approx(30.0).margin(1e-6));
     CHECK(bb[3] - bb[0] == Approx(8.0).margin(1e-4));  // re-aligned to Z
+}
+
+TEST_CASE("concentric mate leaves revolute DOF about the axis", "[mates]") {
+    Document doc;
+    auto boss = doc.add_body(shape::make_cylinder(10, 40, {{0, 0, 0}}), "Boss");
+    auto pin = doc.add_body(shape::make_cylinder(4, 25), "Pin");
+    auto inst = doc.add_instance(pin, {80, 0, 0}, {0, 0, 0, 1}, "Pin-1");
+    auto boss_face = cylindrical_face(doc, boss);
+    auto pin_face = cylindrical_face(doc, pin);
+    REQUIRE(!boss_face.is_null());
+    REQUIRE(!pin_face.is_null());
+
+    Mate m;
+    m.type = MateType::Concentric;
+    m.face_a = boss_face;
+    m.instance_b = inst;
+    m.face_b = pin_face;
+    REQUIRE(!doc.add_mate(m).is_null());
+    REQUIRE(solve_mates(doc));
+
+    auto axis = instance_revolute_axis(doc, inst);
+    REQUIRE(axis.has_value());
+    CHECK(std::abs(axis->dir.Z()) == Approx(1.0).margin(1e-6));
+
+    // Rotate 30° about the revolute axis; solve must preserve that angle.
+    const Instance* before = doc.instance(inst);
+    REQUIRE(before);
+    gp_Trsf cur = transform_of(*before);
+    gp_Trsf spin;
+    spin.SetRotation(gp_Ax1(axis->point, axis->dir), M_PI / 6.0);
+    gp_Trsf next = spin * cur;
+    gp_Quaternion q = next.GetRotation();
+    gp_XYZ tr = next.TranslationPart();
+    std::array<double, 3> tarr{tr.X(), tr.Y(), tr.Z()};
+    std::array<double, 4> qarr{q.X(), q.Y(), q.Z(), q.W()};
+    REQUIRE(doc.set_instance_transform(inst, tarr, qarr));
+    REQUIRE(solve_mates(doc));
+
+    const Instance* after = doc.instance(inst);
+    REQUIRE(after);
+    gp_Trsf at = transform_of(*after);
+    // A corner of the pin's local +X should have rotated ~30° about Z.
+    gp_Pnt local(4, 0, 12.5);
+    gp_Pnt world = local.Transformed(at);
+    double ang = std::atan2(world.Y() - axis->point.Y(), world.X() - axis->point.X());
+    CHECK(ang == Approx(M_PI / 6.0).margin(1e-3));
 }
 
 TEST_CASE("mate validation and cascade", "[mates]") {

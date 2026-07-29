@@ -75,6 +75,7 @@ var _strip_fillet: Button
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
+var _strip_hole: Button
 var _strip_look: Button
 var _strip_plane: Button
 var _strip_fuse: Button
@@ -95,6 +96,12 @@ var _pending_instance_move := false
 var _drag_instance_id := ""
 var _instance_start_xform := Transform3D.IDENTITY
 var _instance_grab_point := Vector3.ZERO
+## When set, MOVE_INSTANCE rotates about this concentric mate axis (revolute DOF).
+var _revolute_axis_point := Vector3.ZERO
+var _revolute_axis_dir := Vector3.ZERO
+var _revolute_active := false
+var _revolute_start_angle := 0.0
+var _revolute_angle := 0.0
 ## Spacebar orientation / named-view popup (SW Spacebar / Onshape S lite).
 var _orient_popup: PopupPanel
 ## Click-a-dimension in-viewport editor (sketch SELECT tool).
@@ -310,6 +317,11 @@ func _build_selection_strip() -> void:
 	_strip_sketch.tooltip_text = "Sketch on the selected face (then Extrude from the sketch bar)"
 	_strip_sketch.pressed.connect(func() -> void: sketch_requested.emit())
 	row.add_child(_strip_sketch)
+	_strip_hole = Button.new()
+	_strip_hole.text = "Hole"
+	_strip_hole.tooltip_text = "Apply hole at face center (O). Shift+O arms Place hole…"
+	_strip_hole.pressed.connect(func() -> void: _ctx_apply_hole())
+	row.add_child(_strip_hole)
 	_strip_look = Button.new()
 	_strip_look.text = "Look at"
 	_strip_look.tooltip_text = "Orient the camera normal to the selected face"
@@ -2045,6 +2057,15 @@ func _on_drag(pos: Vector2) -> void:
 	if _pending_instance_move and _drag_mode == DragMode.NONE:
 		_pending_instance_move = false
 		_drag_mode = DragMode.MOVE_INSTANCE
+		_revolute_active = false
+		_revolute_angle = 0.0
+		var rax: Dictionary = view.doc.instance_revolute_axis(_drag_instance_id)
+		if bool(rax.get("ok", false)):
+			_revolute_active = true
+			_revolute_axis_point = rax["point"]
+			_revolute_axis_dir = (rax["dir"] as Vector3).normalized()
+			_revolute_start_angle = _angle_about_axis(
+					_press_pos, _revolute_axis_dir, _revolute_axis_point)
 	# Empty-space drag: orbit (or pan when sketch orientation is locked).
 	# Shift/Ctrl+empty-drag: rubber-band box select (window when left).
 	if _drag_mode == DragMode.NONE and _press_empty and _place_kind == "":
@@ -2140,19 +2161,35 @@ func _on_drag(pos: Vector2) -> void:
 			_update_resize_drag(pos)
 			queue_redraw()
 		DragMode.MOVE_INSTANCE:
-			# Live preview on the grabbed instance's horizontal plane.
-			var plane_z := _instance_grab_point.z
-			var gp = _horizontal_plane_point(pos, plane_z)
-			var gp0 = _horizontal_plane_point(_press_pos, plane_z)
-			if gp == null or gp0 == null:
-				return
-			var delta: Vector3 = gp - gp0
 			var inode := view.instance_node(_drag_instance_id)
-			if inode != null:
+			if inode == null:
+				return
+			if _revolute_active:
+				var ang := _angle_about_axis(pos, _revolute_axis_dir, _revolute_axis_point)
+				_revolute_angle = wrapf(ang - _revolute_start_angle, -PI, PI)
+				inode.transform = Transform3D(
+						Basis(Quaternion(_revolute_axis_dir, _revolute_angle)) \
+								* _instance_start_xform.basis,
+						_rotate_point_about_axis(_instance_start_xform.origin,
+								_revolute_axis_point, _revolute_axis_dir, _revolute_angle))
+				status.emit("Revolve instance: %.1f° — release re-solves mates"
+						% rad_to_deg(_revolute_angle))
+			else:
+				# Live preview on the grabbed instance's horizontal plane.
+				var plane_z := _instance_grab_point.z
+				var gp = _horizontal_plane_point(pos, plane_z)
+				var gp0 = _horizontal_plane_point(_press_pos, plane_z)
+				if gp == null or gp0 == null:
+					return
+				var delta: Vector3 = gp - gp0
 				inode.transform = Transform3D(_instance_start_xform.basis,
 						_instance_start_xform.origin + delta)
-			status.emit("Move instance Δ (%.1f, %.1f) — release re-solves mates"
-					% [delta.x, delta.y])
+				status.emit("Move instance Δ (%.1f, %.1f) — release re-solves mates"
+						% [delta.x, delta.y])
+
+
+func _rotate_point_about_axis(p: Vector3, origin: Vector3, axis: Vector3, angle: float) -> Vector3:
+	return origin + Quaternion(axis.normalized(), angle) * (p - origin)
 
 
 func _draw() -> void:
@@ -2278,6 +2315,16 @@ func _instance_rotation(instance_id: String) -> Array:
 		if str(inst["id"]) == instance_id:
 			return [inst["rotation_axis"], inst["rotation_angle_deg"]]
 	return [Vector3(0, 0, 1), 0.0]
+
+
+## Axis-angle from a live Transform3D basis (for committing revolute previews).
+func _instance_rotation_from_xform(xf: Transform3D) -> Array:
+	var q := xf.basis.get_rotation_quaternion()
+	var axis := Vector3(q.x, q.y, q.z)
+	var angle := 2.0 * atan2(axis.length(), q.w)
+	if axis.length_squared() < 1e-16:
+		return [Vector3(0, 0, 1), 0.0]
+	return [axis.normalized(), rad_to_deg(angle)]
 
 
 func _push_pull_distance(pos: Vector2) -> float:
@@ -2436,14 +2483,18 @@ func _on_release(pos: Vector2) -> void:
 		DragMode.MOVE_INSTANCE:
 			var inode := view.instance_node(_drag_instance_id)
 			if not was_click and inode != null:
-				var rot := _instance_rotation(_drag_instance_id)
+				var rot := _instance_rotation_from_xform(inode.transform)
 				if view.doc.set_instance_transform(_drag_instance_id,
 						inode.transform.origin, rot[0], rot[1]):
-					# Peer feel: drop the instance, then mates pull it home.
+					# Peer feel: drop the instance, then mates pull it home
+					# (concentric preserves revolute angle about the pin).
 					var had_mates: bool = view.doc.mate_list().size() > 0
 					var solved: bool = view.doc.solve_mates() if had_mates else true
 					view.refresh()
-					if had_mates:
+					if _revolute_active and had_mates:
+						status.emit("Instance revolved — mates re-solved" if solved
+								else "Instance revolved — mate solve FAILED")
+					elif had_mates:
 						status.emit("Instance moved — mates re-solved" if solved
 								else "Instance moved — mate solve FAILED")
 					else:
@@ -2453,6 +2504,7 @@ func _on_release(pos: Vector2) -> void:
 					status.emit("Move instance failed")
 			_drag_mode = DragMode.NONE
 			_drag_instance_id = ""
+			_revolute_active = false
 			_box_drag = false
 			_additive_click = false
 			_press_travel = 0.0
@@ -2616,6 +2668,15 @@ func _gui_key(event: InputEventKey) -> bool:
 				var ids := _selected_body_ids()
 				view.isolate(ids)
 				status.emit("All shown" if ids.is_empty() else "Isolated")
+				return true
+		KEY_O:
+			if not event.ctrl_pressed:
+				if sketch_mode != null and sketch_mode.active:
+					return false
+				if event.shift_pressed:
+					_ctx_arm_hole()
+				else:
+					_ctx_apply_hole()
 				return true
 		KEY_SPACE:
 			# SolidWorks Spacebar / Onshape S-lite: orientation + named views.
@@ -3347,6 +3408,7 @@ func _refresh_selection_strip() -> void:
 			and view.selected_face == "")
 	_strip_fillet.visible = not has_instance
 	_strip_sketch.visible = not has_instance and view.selected_face != ""
+	_strip_hole.visible = not has_instance and view.selected_face != ""
 	_strip_look.visible = not has_instance and view.selected_face != ""
 	_strip_plane.visible = not has_instance and view.selected_face != ""
 	_strip_hide.visible = not has_instance
@@ -3362,6 +3424,8 @@ func _open_context_menu(screen_pos: Vector2) -> void:
 		_context_menu.add_item("Fillet", 1)
 		if view.selected_face != "":
 			_context_menu.add_item("Sketch on face…", 2)
+			_context_menu.add_item("Apply hole (center)", 16)
+			_context_menu.add_item("Place hole…", 17)
 			_context_menu.add_item("Set as active plane", 8)
 			_context_menu.add_item("Look at face", 6)
 			_context_menu.add_item("Push/Pull (drag orange arrow)", 7)
@@ -3402,6 +3466,8 @@ func _on_context_id(id: int) -> void:
 		7:
 			status.emit("Drag the orange Pull arrow on the face to push/pull")
 		8: _ctx_set_active_plane()
+		16: _ctx_apply_hole()
+		17: _ctx_arm_hole()
 		10:
 			if camera != null:
 				camera.frame_contents()
@@ -3506,6 +3572,27 @@ func _ctx_look_at() -> void:
 	var n := view.selected_face_normal()
 	camera.look_along_model_normal(n)
 	status.emit("Look at face")
+
+
+func _ctx_apply_hole() -> void:
+	if ops_panel == null:
+		status.emit("Hole: open Modify panel")
+		return
+	if view == null or view.selected_face == "":
+		status.emit("Select a face first")
+		return
+	if not ops_panel._apply_hole():
+		status.emit("Hole failed")
+
+
+func _ctx_arm_hole() -> void:
+	if ops_panel == null:
+		status.emit("Hole: open Modify panel")
+		return
+	if view == null or view.selected_face == "":
+		status.emit("Select a face first")
+		return
+	ops_panel._arm_hole()
 
 
 func _show_orient_popup() -> void:

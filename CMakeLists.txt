@@ -14,6 +14,10 @@ if(MSVC)
     add_compile_definitions(_USE_MATH_DEFINES)
 endif()
 
+if(MSVC)
+    link_libraries(legacy_stdio_definitions.lib)
+endif()
+
 option(SX_BUILD_GDEXTENSION "Build the sxcore Godot GDExtension" ON)
 option(SX_BUILD_TESTS "Build kernel unit tests" ON)
 option(SX_BUILD_VOICE "Build sxvoice with whisper.cpp when vendored" OFF)
@@ -26,6 +30,9 @@ find_package(Boost REQUIRED)
 # --- vendored: miniz (MIT, static) ---
 add_library(miniz STATIC thirdparty/miniz/miniz.c)
 target_include_directories(miniz PUBLIC thirdparty/miniz)
+if(MSVC)
+  set_property(TARGET miniz PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
 
 # --- vendored: nlohmann/json + catch2 (header-only) ---
 add_library(sx_json INTERFACE)

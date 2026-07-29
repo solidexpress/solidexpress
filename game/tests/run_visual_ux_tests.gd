@@ -226,14 +226,19 @@ func test_selection_strip_and_context(main) -> void:
 		ix._refresh_selection_strip()
 		check(ix._strip_look.visible, "Look at visible with face selected")
 		check(ix._strip_sketch.visible, "Sketch visible with face selected")
+		check(ix._strip_hole.visible, "Hole visible with face selected")
 		check(ix._strip_plane.visible, "Active plane visible with face selected")
 		ix._open_context_menu(Vector2(40, 40))
 		var has_plane_item := false
+		var has_hole_item := false
 		for i in range(ix._context_menu.item_count):
-			if str(ix._context_menu.get_item_text(i)).contains("active plane"):
+			var txt := str(ix._context_menu.get_item_text(i))
+			if txt.contains("active plane"):
 				has_plane_item = true
-				break
+			if txt.contains("Apply hole"):
+				has_hole_item = true
 		check(has_plane_item, "RMB includes Set as active plane")
+		check(has_hole_item, "RMB includes Apply hole")
 	view.clear_selection()
 	ix._open_context_menu(Vector2(40, 40))
 	check(ix._context_menu.item_count >= 1, "context has Fit/Unhide when empty")

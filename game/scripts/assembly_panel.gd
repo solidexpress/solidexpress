@@ -14,9 +14,10 @@ var _type_option: OptionButton
 var _offset_spin: SpinBox
 var _refreshing := false
 
-## Armed two-click mate flow: wait for ground face A, then instanced face B.
+## Armed two-click mate flow: face A (ground or instance), then face B on an instance.
 var _mate_armed := false
 var _mate_face_a := ""
+var _mate_instance_a := ""  # "" = grounded body face
 ## Sticky error from the last mate add / solve ("" when healthy). Shown as a
 ## red badge above the mates list instead of only a transient status line.
 var _mate_error := ""
@@ -59,7 +60,7 @@ func _ready() -> void:
 
 	_offset_spin = _labeled_spin(vbox, "Offset", -1000.0, 1000.0, 0.5, 0.0)
 	_op_button(vbox, "Add mate", _arm_mate, "mate",
-		"Add a mate: click a ground face, then a face on an instance")
+		"Add a mate: click face A (ground or instance), then a face on the instance to move")
 	_op_button(vbox, "Solve mates", _solve_mates, "solve",
 		"Re-apply all mates in order, moving instances into position")
 
@@ -196,9 +197,10 @@ func _remove_instance(id: String) -> void:
 func _arm_mate() -> void:
 	_mate_armed = true
 	_mate_face_a = ""
+	_mate_instance_a = ""
 	view.mate_anchor_face = ""
 	refresh_lists()
-	status.emit("Mate: click ground face, then instance face")
+	status.emit("Mate: click face A (ground or instance), then face B on the moving instance")
 
 
 func _on_selection_changed(_body: String, face: String) -> void:
@@ -208,23 +210,30 @@ func _on_selection_changed(_body: String, face: String) -> void:
 		return
 	if _mate_face_a == "":
 		_mate_face_a = face
-		# Keep the anchor face tinted green while waiting for the second pick.
+		# Prefer the selected instance when the face belongs to its source.
+		_mate_instance_a = _instance_for_face(face)
 		view.mate_anchor_face = face
-		status.emit("Mate: click face on an instanced body (anchor shown green)")
+		status.emit("Mate: click face on the instance to move (anchor shown green)")
 		return
 	_resolve_mate_b(view.selected_body, face)
 
 
 func _resolve_mate_b(body: String, face_b: String) -> void:
-	var inst_b := _instance_for_source(body)
+	var inst_b := _instance_for_face(face_b)
+	if inst_b == "":
+		inst_b = _instance_for_source(body)
 	if inst_b == "":
 		status.emit("Pick a face on an instanced body")
 		return
+	if inst_b == _mate_instance_a and _mate_instance_a != "":
+		status.emit("Pick a different instance for the moving side")
+		return
 	var mtype: String = _type_option.get_item_text(_type_option.selected)
 	var mid: String = view.doc.add_mate(
-		mtype, "", _mate_face_a, inst_b, face_b, _offset_spin.value, false, "")
+		mtype, _mate_instance_a, _mate_face_a, inst_b, face_b, _offset_spin.value, false, "")
 	_mate_armed = false
 	_mate_face_a = ""
+	_mate_instance_a = ""
 	view.mate_anchor_face = ""
 	if mid == "":
 		_mate_error = "Mate rejected — %s needs matching face types" % mtype
@@ -238,6 +247,29 @@ func _resolve_mate_b(body: String, face_b: String) -> void:
 	status.emit("Mate added" if solved else "Mate added — solve FAILED")
 
 
+## Instance that owns `face` when exactly one instance of that source is selected
+## or exists; prefers `view.selected_instance` when its source owns the face.
+func _instance_for_face(face: String) -> String:
+	if face == "" or view == null:
+		return ""
+	var owner := ""
+	for body_id in view.doc.body_ids():
+		for fid in view.doc.get_face_ids(body_id):
+			if fid == face:
+				owner = body_id
+				break
+		if owner != "":
+			break
+	if owner == "":
+		return ""
+	if view.selected_instance != "":
+		for inst in view.doc.instance_list():
+			if str(inst["id"]) == view.selected_instance \
+					and str(inst["source_body"]) == owner:
+				return view.selected_instance
+	return _instance_for_source(owner)
+
+
 func _instance_for_source(body: String) -> String:
 	if body == "":
 		return ""
@@ -247,6 +279,9 @@ func _instance_for_source(body: String) -> String:
 			matches.append(inst["id"])
 	if matches.size() == 1:
 		return matches[0]
+	# Multiple instances of the same source: use the selected one if it matches.
+	if view.selected_instance != "" and matches.has(view.selected_instance):
+		return view.selected_instance
 	return ""
 
 

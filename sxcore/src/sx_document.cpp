@@ -788,13 +788,16 @@ bool SxDocument::graph_update_sketch(const String& fid, const Ref<SxSketch>& ske
 
 String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
                                      bool symmetric, const String& op,
-                                     const String& target_fid) {
+                                     const String& target_fid, const String& end) {
     sx::EntityId fid;
     bool ok = apply_graph_edit("extrude", [&] {
         sx::Feature f;
         f.type = sx::FeatureType::Extrude;
+        std::string end_s = to_std(end);
+        if (end_s.empty()) end_s = "blind";
+        bool sym = symmetric || end_s == "midplane";
         f.params = {{"sketch", to_std(sketch_fid)}, {"distance", distance},
-                    {"symmetric", symmetric}, {"op", to_std(op)}};
+                    {"symmetric", sym}, {"op", to_std(op)}, {"end", end_s}};
         if (!target_fid.is_empty()) f.params["target"] = to_std(target_fid);
         fid = doc_->graph().add(std::move(f));
         return true;
@@ -1593,6 +1596,19 @@ bool SxDocument::remove_mate(const String& id) {
 
 bool SxDocument::solve_mates() { return sx::solve_mates(*doc_); }
 
+Dictionary SxDocument::instance_revolute_axis(const String& instance_id) const {
+    Dictionary out;
+    out["ok"] = false;
+    auto id = parse_id(instance_id);
+    if (id.is_null()) return out;
+    auto ax = sx::instance_revolute_axis(*doc_, id);
+    if (!ax) return out;
+    out["ok"] = true;
+    out["point"] = Vector3(ax->point.X(), ax->point.Y(), ax->point.Z());
+    out["dir"] = Vector3(ax->dir.X(), ax->dir.Y(), ax->dir.Z());
+    return out;
+}
+
 bool SxDocument::export_drawing_svg(const String& path, double scale) {
     return sx::drawings::export_three_view_svg(*doc_, to_std(path), scale);
 }
@@ -1674,7 +1690,9 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_get_sketch", "fid"), &SxDocument::graph_get_sketch);
     ClassDB::bind_method(D_METHOD("graph_update_sketch", "fid", "sketch"),
                          &SxDocument::graph_update_sketch);
-    ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op", "target_fid"), &SxDocument::graph_add_extrude);
+    ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op",
+                                  "target_fid", "end"),
+                         &SxDocument::graph_add_extrude, DEFVAL(String("blind")));
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid", "guide_fids"),
@@ -1757,6 +1775,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("mate_list"), &SxDocument::mate_list);
     ClassDB::bind_method(D_METHOD("remove_mate", "id"), &SxDocument::remove_mate);
     ClassDB::bind_method(D_METHOD("solve_mates"), &SxDocument::solve_mates);
+    ClassDB::bind_method(D_METHOD("instance_revolute_axis", "instance_id"),
+                         &SxDocument::instance_revolute_axis);
     ClassDB::bind_method(D_METHOD("export_drawing_svg", "path", "scale"),
                          &SxDocument::export_drawing_svg);
 }

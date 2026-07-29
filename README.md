@@ -75,6 +75,7 @@ Short, verified walkthroughs (each ends with the automated test that proves the 
 - [Stack three blocks](docs/howto/stack-three-blocks.md) — place on top faces (total height 150 mm)
 - [Extrude an S shape](docs/howto/extrude-s-shape.md) — closed S-channel sketch → solid
 - [Cut a horizontal hole](docs/howto/horizontal-hole.md) — rotate + lengthen a cylinder, Subtract through a box
+- [Mounting block with through-hole](docs/howto/mounting-block.md) — Box + Apply hole (`O`); click vs keyboard vs SolidWorks
 
 ## Keyboard and mouse
 
@@ -153,6 +154,7 @@ Short, verified walkthroughs (same steps exercised by `game/tests/run_howto_test
 - [Stack three blocks](docs/howto/stack-three-blocks.md)
 - [Extrude an S-shaped profile](docs/howto/extrude-s-shape.md)
 - [Cut a horizontal hole](docs/howto/horizontal-hole.md)
+- [Mounting block with through-hole](docs/howto/mounting-block.md)
 
 ## License policy
 

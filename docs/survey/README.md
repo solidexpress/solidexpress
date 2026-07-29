@@ -13,6 +13,8 @@ A survey of the seven major commercial parametric mechanical CAD (MCAD) applicat
 | [master-feature-list.md](master-feature-list.md) | ~230 features across 16 categories, each with a canonical name and a vendor-neutral description of what it does and why it matters. The core deliverable. |
 | [feature-matrix.md](feature-matrix.md) | Products-by-features support matrix (Full / Partial / Add-on / Not supported) with ~190 footnotes covering per-product terminology and tier nuances. |
 | [interaction-patterns.md](interaction-patterns.md) | How peers make actions visually discoverable (hover, gizmos, context chrome) and how SolidExpress maps those patterns. |
+| [workflow-study-mounting-block.md](workflow-study-mounting-block.md) | Click-count study: SolidWorks “brick + through-hole” (processed Cut Extrude video + beginner recipes) vs SolidExpress Place hole / sketch→cut. |
+| [workflow-study-needle-nose-pliers.md](workflow-study-needle-nose-pliers.md) | Gap map for the SolidWorks needle-nose pliers series (midplane/thin/through-all + revolute DOF drag). |
 | [profiles/](profiles/) | One deep-dive per product: positioning, architecture (kernel, formats, deployment), standout features, weaknesses, licensing/pricing, ecosystem. |
 
 ## Products and versions surveyed

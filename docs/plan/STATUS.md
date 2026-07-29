@@ -207,6 +207,12 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 - [x] CI: `.github/workflows/ci.yml` runs kernel Catch2 on Ubuntu; Godot job stubbed until `tools/godot` is provisioned
 - [x] `SxDocument.set_async_regen` / `graph_regenerate_async` / `graph_async_regen_poll` spike (default off)
 
+## Needle-nose pliers gaps (2026-07-28)
+- [x] Survey: [workflow-study-needle-nose-pliers.md](../survey/workflow-study-needle-nose-pliers.md)
+- [x] P0: `instance_revolute_axis` + MOVE_INSTANCE revolute drag; AssemblyPanel instance↔instance mates
+- [x] P1 (partial): Extrude end conditions `blind` / `through_all` / `midplane` (thin + open-profile cut deferred)
+- [x] Golden: `game/tests/run_pliers_motion_tests.gd` (jaws+pin, concentric+coincident, drag angle)
+
 ## Environment notes
 - System deps installed via apt: ninja-build, zip, libocct-*-dev (7.9.2), libeigen3-dev, libboost-dev
 - Godot 4.7-stable binary at `tools/godot/godot` (gitignored; re-download from godot-builds if missing)

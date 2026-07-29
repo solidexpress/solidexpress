@@ -62,6 +62,7 @@ func _init() -> void:
 
 	workflow_chamfered_plate()
 	workflow_hole_corner_inset()
+	workflow_mounting_block()
 	workflow_bracket()
 	workflow_hollow_box()
 	workflow_washer()
@@ -195,6 +196,75 @@ func workflow_hole_corner_inset() -> void:
 	check(ops._commit_hole(body, top_face, placed), "inset hole committed")
 	gesture(2)
 	end_workflow("hole corner inset", 6)
+
+
+## 1c. Mounting block 100×60×30 + Ø20 center through-hole (study howto).
+## Reports click-path vs keyboard-path gesture counts against dual ceilings.
+func workflow_mounting_block() -> void:
+	var expected_vol := 180000.0 - PI * 100.0 * 30.0
+	var click_gestures := 0
+	var kb_gestures := 0
+
+	# --- Click path: Box + size fields + place + face + Ø + Apply hole button ---
+	begin_workflow("mounting block (click)")
+	var fid: String = view.doc.graph_add_primitive("box", 100, 60, 30, Vector3.ZERO)
+	view.graph_changed()
+	gesture(1)  # Box palette
+	gesture(3)  # size W/H/D fields
+	gesture(1)  # click ground
+	var body := view.body_of_feature(fid)
+	check(body != "", "click path: box body")
+	var top_face := _top_face_at_z(body, 30.0)
+	check(top_face != "", "click path: top face")
+	view.select_entity(body, top_face)
+	gesture(2)  # body then face (or re-click to refine to face)
+	ops._hole_diameter.value = 20.0
+	ops._hole_depth.value = 0.0
+	gesture(1)  # set Ø (Depth left at 0 = through)
+	ops._apply_hole()
+	gesture(1)  # Apply hole button / strip Hole
+	check(absf(_volume(body) - expected_vol) < expected_vol * 0.02,
+		"click path volume ~%.0f (got %.0f)" % [expected_vol, _volume(body)])
+	click_gestures = _gestures
+	end_workflow("mounting block (click)", 10)
+
+	# --- Keyboard path: same place; type Ø; O applies hole ---
+	begin_workflow("mounting block (keyboard)")
+	fid = view.doc.graph_add_primitive("box", 100, 60, 30, Vector3.ZERO)
+	view.graph_changed()
+	gesture(1)  # Box
+	gesture(3)  # type three size values
+	gesture(1)  # place
+	body = view.body_of_feature(fid)
+	check(body != "", "kb path: box body")
+	top_face = _top_face_at_z(body, 30.0)
+	check(top_face != "", "kb path: top face")
+	view.select_entity(body, top_face)
+	gesture(1)  # refine to face (body already selected after place)
+	ops._hole_diameter.value = 20.0
+	ops._hole_depth.value = 0.0
+	gesture(1)  # type Ø + Enter (Depth stays 0)
+	var key := InputEventKey.new()
+	key.keycode = KEY_O
+	key.pressed = true
+	check(main.interaction._gui_key(key), "kb path: O applies hole")
+	gesture(1)  # O
+	check(absf(_volume(body) - expected_vol) < expected_vol * 0.02,
+		"kb path volume ~%.0f (got %.0f)" % [expected_vol, _volume(body)])
+	kb_gestures = _gestures
+	end_workflow("mounting block (keyboard)", 8)
+
+	print("  mounting block click %d / kb %d / ceilings 10,8" % [click_gestures, kb_gestures])
+	check(kb_gestures <= click_gestures,
+		"keyboard path ≤ click path (%d <= %d)" % [kb_gestures, click_gestures])
+
+
+func _top_face_at_z(body: String, z: float) -> String:
+	for face_id in view.doc.get_face_ids(body):
+		var mid: Vector3 = view.doc.face_midpoint(face_id)
+		if absf(mid.z - z) < 0.5:
+			return face_id
+	return ""
 
 
 ## 2. L-bracket: sketch profile, extrude, fillet the inner vertical edge.
