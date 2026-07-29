@@ -1,0 +1,109 @@
+# Source transcript — SolidWorks Cut Extrude video
+
+Source: https://youtu.be/RKIEQVR-qJw
+Title: Creating a Cut Extrude (Beginner's Guide to SOLIDWORKS)
+Speaker: Nick Ler, SolidWorks training team
+Series: Model a pair of needle-nose pliers (video 3)
+Captured: 2026-07-28 via yt-dlp auto-captions (en)
+Note: Auto-caption wording may differ slightly from spoken audio.
+
+---
+
+[Music]
+my name is Nick ler and I'm a member of
+the SolidWorks training team in this
+multi video series I will show you how
+to start with SolidWorks as a Model A
+pair of needlenose pliers in this video
+the third in the series I'll demonstrate
+the tools and techniques for removing
+material using the cut extrude feature
+let's get started I'll start this first
+extruded cut with a sketch on the front
+face of the model which will form the
+hole for the PIN
+I'll use the circle command and place my
+first selection at the origin to center
+it the diameter of the pin is 38 of an
+inch so I'll use the smart Dimension
+command to ensure the hole is the same
+size now I'll use this sketch for the
+cut extrude which I'll access through
+the features tab of the command manager
+the cut extrude feature operates
+similarly to the extruded boss base
+command but removes material instead of
+adding
+material the cut extrude extends the
+parts thickness half an inch so these
+settings will deliver the desired
+outcome however I'll use the drop- down
+and select through all ensuring the cut
+extends through the currently modeled
+geometry regardless of thickness I'll
+click
+okay the hole looks good now I'll use a
+previously defined sketch with a cut
+extrude to form the cutout that will
+form the faces that will join the pliers
+together I'll expand the first boss
+extrude feature from the feature manager
+tree to do this here we see the sketch I
+use to define this feature I'll select
+the sketch and click show the IE icon to
+Overlay the sketch on top of the
+geometry now I'll click cut extrude and
+select the circular sketch profile the
+preview indicates that the cut will
+remove half the parts thickness with the
+through all option selected which occurs
+because the sketch is in the parts
+Center I'll click reverse direction to
+toggle the side from which I'll remove
+material I'll click
+okay the cut looks good I'll toggle off
+the sketch's visibility by selecting it
+and clicking
+hide now I'll create the third cut
+extrude which will narrow the head of
+the pliers I'll form this cut with an
+open Sketch profile that will start from
+the inside face of the plier head I'll
+select the face and click sketch from
+the popup I'll access the the line
+command and pick up on the top Edge to
+start the line carefully avoiding the
+Edge's midpoint
+inference I'll terminate the line at the
+vertex I'll use the smart Dimension
+command to create a horizontal Dimension
+between the origin and the top of the
+line the smart Dimension commands
+flexibility enables me to create linear
+vertical and horizontal Dimensions
+therefore before I click I'll move my
+cursor so the preview shows the intended
+Dimension I'll specify 1/8 of an inch
+for the dimension which constrains the
+sketch this open Sketch is all I need to
+create the cut I intend to make so I'll
+exit out of the sketch
+environment now I'll click extruded cut
+the preview displays three arrows the
+arrow perpendicular to the profile
+indicates what material the feature will
+cut away activating flip side to cut
+toggles the arrows Direction I'll
+deactivate flip side to cut to remove
+the sliver geometry and click
+okay in the following video I'll show
+you how to use the mirror feature to
+replicate this cut on the other side of
+the part I'll also show you how to use
+the fillet command to round off this
+model's sharp
+Corners thank you for watching this
+video if you found this content helpful
+watch the following video in this series
+and visit the site below to access a
+complete Sol CAD fundamentals playlist
