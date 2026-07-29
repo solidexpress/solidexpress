@@ -39,14 +39,22 @@ if [[ -z "$PLANEGCS_LIB" ]]; then
   exit 1
 fi
 
-# Godot expects game/bin/libsxcore.dll (see sxcore.gdextension). Stage before --import/export.
-SXCORE_DLL="$(find build/game/bin -name 'libsxcore.dll' -print -quit 2>/dev/null || true)"
-if [[ -z "$SXCORE_DLL" ]]; then
-  SXCORE_DLL="$(find build/game/bin -name 'sxcore.dll' -print -quit 2>/dev/null || true)"
+# Godot expects game/bin/libsxcore.dll (see sxcore.gdextension).
+# CMake RUNTIME_OUTPUT_DIRECTORY writes there directly; also accept build/ fallbacks.
+mkdir -p game/bin
+if [[ -f game/bin/libsxcore.dll ]]; then
+  SXCORE_DLL="game/bin/libsxcore.dll"
+elif [[ -f game/bin/sxcore.dll ]]; then
+  SXCORE_DLL="game/bin/sxcore.dll"
+else
+  SXCORE_DLL="$(find game/bin build -name 'libsxcore.dll' -print -quit 2>/dev/null || true)"
+  if [[ -z "$SXCORE_DLL" ]]; then
+    SXCORE_DLL="$(find game/bin build -name 'sxcore.dll' -print -quit 2>/dev/null || true)"
+  fi
 fi
 if [[ -z "$SXCORE_DLL" || ! -f "$SXCORE_DLL" ]]; then
-  echo "error: libsxcore.dll/sxcore.dll missing after build under build/game/bin" >&2
-  find build -name '*sxcore*.dll' 2>/dev/null | head -20 >&2 || true
+  echo "error: libsxcore.dll/sxcore.dll missing after sxcore build" >&2
+  find game/bin build -name '*sxcore*.dll' 2>/dev/null | head -20 >&2 || true
   exit 1
 fi
 cp -f "$SXCORE_DLL" game/bin/libsxcore.dll
