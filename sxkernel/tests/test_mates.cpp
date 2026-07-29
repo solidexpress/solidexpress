@@ -14,6 +14,7 @@
 #include <gp_Quaternion.hxx>
 #include <gp_Trsf.hxx>
 
+#include "sx/commands_boolean.hpp"
 #include "sx/document.hpp"
 #include "sx/instances.hpp"
 #include "sx/mates.hpp"
@@ -45,13 +46,23 @@ EntityId planar_face_with_normal(const Document& doc, const EntityId& body_id,
     return {};
 }
 
-EntityId cylindrical_face(const Document& doc, const EntityId& body_id) {
+EntityId cylindrical_face(const Document& doc, const EntityId& body_id, bool encloses) {
     const Body* b = doc.body(body_id);
     REQUIRE(b != nullptr);
     for (const auto& fid : b->subshape_ids.at(EntityKind::Face)) {
-        if (mate_axis(doc, {}, fid)) return fid;
+        auto ax = mate_axis(doc, {}, fid);
+        if (ax && ax->encloses == encloses) return fid;
     }
     return {};
+}
+
+// Block with a through-hole of radius `hole_r` centered at (cx, cy).
+EntityId bored_block(Document& doc, CommandStack& stack, double hole_r, double cx,
+                     double cy) {
+    auto block = doc.add_body(shape::make_box(60, 60, 40, {{cx - 30, cy - 30, 0}}), "Block");
+    auto drill = doc.add_body(shape::make_cylinder(hole_r, 40, {{cx, cy, 0}}), "Drill");
+    stack.push(doc, std::make_unique<BooleanCommand>(block, drill, BooleanOp::Cut));
+    return block;
 }
 
 void world_bbox(const Document& doc, const Instance& inst, double out[6]) {
@@ -103,26 +114,29 @@ TEST_CASE("plane coincident mate stacks a block onto a base", "[mates]") {
 
 TEST_CASE("concentric mate drops a pin into a hole axis", "[mates]") {
     Document doc;
-    auto hole_cyl = doc.add_body(shape::make_cylinder(10, 40, {{60, 30, 0}}), "Boss");
+    CommandStack stack;
+    // Hole Ø10 (r=5) at (60,30); pin Ø8 (r=4) → 1 mm radial clearance.
+    auto block = bored_block(doc, stack, 5.0, 60, 30);
     auto pin = doc.add_body(shape::make_cylinder(4, 25), "Pin");
     auto inst = doc.add_instance(pin, {-80, 15, 3}, {0, 0.7071068, 0, 0.7071068},
                                  "Pin-1");  // 90 deg about Y: axis now along X
     REQUIRE(!inst.is_null());
 
-    auto boss_face = cylindrical_face(doc, hole_cyl);
-    auto pin_face = cylindrical_face(doc, pin);
-    REQUIRE(!boss_face.is_null());
+    auto hole_face = cylindrical_face(doc, block, /*encloses=*/true);
+    auto pin_face = cylindrical_face(doc, pin, /*encloses=*/false);
+    REQUIRE(!hole_face.is_null());
     REQUIRE(!pin_face.is_null());
 
     Mate m;
     m.type = MateType::Concentric;
-    m.face_a = boss_face;
+    m.face_a = hole_face;
     m.instance_b = inst;
     m.face_b = pin_face;
+    m.offset = 1.0;  // radial tolerance
     REQUIRE(!doc.add_mate(m).is_null());
     REQUIRE(solve_mates(doc));
 
-    // Pin axis must be colinear with the boss axis (x=60, y=30, dir Z):
+    // Pin axis must be colinear with the hole axis (x=60, y=30, dir Z):
     // bbox is centered on (60, 30) with 4mm radius in x/y.
     double bb[6];
     world_bbox(doc, *doc.instance(inst), bb);
@@ -133,19 +147,21 @@ TEST_CASE("concentric mate drops a pin into a hole axis", "[mates]") {
 
 TEST_CASE("concentric mate leaves revolute DOF about the axis", "[mates]") {
     Document doc;
-    auto boss = doc.add_body(shape::make_cylinder(10, 40, {{0, 0, 0}}), "Boss");
+    CommandStack stack;
+    auto block = bored_block(doc, stack, 5.0, 0, 0);
     auto pin = doc.add_body(shape::make_cylinder(4, 25), "Pin");
     auto inst = doc.add_instance(pin, {80, 0, 0}, {0, 0, 0, 1}, "Pin-1");
-    auto boss_face = cylindrical_face(doc, boss);
-    auto pin_face = cylindrical_face(doc, pin);
-    REQUIRE(!boss_face.is_null());
+    auto hole_face = cylindrical_face(doc, block, /*encloses=*/true);
+    auto pin_face = cylindrical_face(doc, pin, /*encloses=*/false);
+    REQUIRE(!hole_face.is_null());
     REQUIRE(!pin_face.is_null());
 
     Mate m;
     m.type = MateType::Concentric;
-    m.face_a = boss_face;
+    m.face_a = hole_face;
     m.instance_b = inst;
     m.face_b = pin_face;
+    m.offset = 1.0;
     REQUIRE(!doc.add_mate(m).is_null());
     REQUIRE(solve_mates(doc));
 
@@ -177,6 +193,53 @@ TEST_CASE("concentric mate leaves revolute DOF about the axis", "[mates]") {
     CHECK(ang == Approx(M_PI / 6.0).margin(1e-3));
 }
 
+TEST_CASE("concentric requires enclosure and positive radial tolerance", "[mates]") {
+    Document doc;
+    CommandStack stack;
+    auto block = bored_block(doc, stack, 5.0, 0, 0);
+    auto pin = doc.add_body(shape::make_cylinder(4, 25), "Pin");
+    auto boss = doc.add_body(shape::make_cylinder(10, 40), "Boss");
+    auto inst = doc.add_instance(pin, {80, 0, 0}, {0, 0, 0, 1}, "Pin-1");
+    auto hole_face = cylindrical_face(doc, block, true);
+    auto pin_face = cylindrical_face(doc, pin, false);
+    auto boss_face = cylindrical_face(doc, boss, false);
+    REQUIRE(!hole_face.is_null());
+    REQUIRE(!pin_face.is_null());
+    REQUIRE(!boss_face.is_null());
+
+    SECTION("zero tolerance rejected at add") {
+        Mate m;
+        m.type = MateType::Concentric;
+        m.face_a = hole_face;
+        m.instance_b = inst;
+        m.face_b = pin_face;
+        m.offset = 0.0;
+        CHECK(doc.add_mate(m).is_null());
+    }
+
+    SECTION("outer↔outer rejected (no enclosure)") {
+        Mate m;
+        m.type = MateType::Concentric;
+        m.face_a = boss_face;
+        m.instance_b = inst;
+        m.face_b = pin_face;
+        m.offset = 1.0;
+        REQUIRE(!doc.add_mate(m).is_null());
+        CHECK_FALSE(solve_mates(doc));
+    }
+
+    SECTION("tolerance larger than geometric clearance fails") {
+        Mate m;
+        m.type = MateType::Concentric;
+        m.face_a = hole_face;
+        m.instance_b = inst;
+        m.face_b = pin_face;
+        m.offset = 2.0;  // geometry only has 1.0
+        REQUIRE(!doc.add_mate(m).is_null());
+        CHECK_FALSE(solve_mates(doc));
+    }
+}
+
 TEST_CASE("mate validation and cascade", "[mates]") {
     Document doc;
     auto body = doc.add_body(shape::make_box(10, 10, 10), "B");
@@ -195,6 +258,7 @@ TEST_CASE("mate validation and cascade", "[mates]") {
         m.face_a = doc.body(body)->subshape_ids.at(EntityKind::Face).front();
         m.instance_b = inst;
         m.face_b = m.face_a;
+        m.offset = 0.1;
         REQUIRE(!doc.add_mate(m).is_null());
         CHECK_FALSE(solve_mates(doc));
     }

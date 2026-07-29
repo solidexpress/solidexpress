@@ -6,11 +6,13 @@
 #   scripts/sx-movies list         # show manifest entries
 #   scripts/sx-movies one ID         # render single film
 #
-# Output: ID.webm (VP9) + ID.vtt (closed captions). Intermediate ID.avi is kept.
-# Needs a GPU display driver (not --headless). The film runner minimizes the
-# Godot window and hides the OS cursor so it does not steal the desktop or
-# record the operator mouse (override with SX_TEST_WINDOW=onscreen).
-# Optional: install xvfb and set SX_MOVIES_XVFB=1 to render on a virtual display.
+# Output: ID.webm (VP9) + ID.vtt (closed captions).
+#
+# Capture path: Godot --write-movie ID.sxpipe → SxFfmpegMovieWriter (GDExtension)
+# pipes raw RGB24 frames to ffmpeg stdin (libvpx-vp9). No AVI/MJPEG scratch file.
+#
+# Needs a GPU display driver (not --headless). Film window is minimized by default
+# (SX_TEST_WINDOW=onscreen to watch). Optional: SX_MOVIES_XVFB=1 with xvfb-run.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,10 +20,14 @@ GODOT="${GODOT:-$ROOT/tools/godot/godot}"
 GAME="$ROOT/game"
 MANIFEST="$GAME/tests/ui_movie_manifest.json"
 OUT="${SX_MOVIES_OUT:-$ROOT/dist/movies}"
-FPS="${SX_MOVIES_FPS:-60}"
+FPS="${SX_MOVIES_FPS:-30}"
 
 if [[ ! -x "$GODOT" ]]; then
   echo "sx-movies: Godot not found at $GODOT" >&2
+  exit 1
+fi
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "sx-movies: ffmpeg required (SxFfmpegMovieWriter pipes raw frames to it)" >&2
   exit 1
 fi
 
@@ -29,7 +35,6 @@ mkdir -p "$OUT"
 
 "$GODOT" --headless --path "$GAME" --import >/dev/null 2>&1 || true
 
-# Optional virtual framebuffer — never appears on the operator's screen.
 godot_cmd() {
   if [[ "${SX_MOVIES_XVFB:-0}" == "1" ]] && command -v xvfb-run >/dev/null 2>&1; then
     xvfb-run -a -s "-screen 0 1920x1080x24" "$GODOT" "$@"
@@ -65,19 +70,38 @@ for e in data:
 PY
 }
 
+mux_vtt_if_present() {
+  local webm="$1"
+  local vtt="$2"
+  if [[ ! -f "$vtt" ]] || [[ ! -s "$vtt" ]] || [[ ! -f "$webm" ]]; then
+    return 0
+  fi
+  local tmp="${webm}.mux.webm"
+  ffmpeg -y -loglevel error \
+    -i "$webm" -i "$vtt" \
+    -map 0:v:0 -map 1:0 \
+    -c:v copy -c:s webvtt \
+    "$tmp" </dev/null
+  mv -f "$tmp" "$webm"
+}
+
 render_one() {
   local id="$1"
   local quit_after="$2"
-  local avi="$OUT/${id}.avi"
+  local pipe="$OUT/${id}.sxpipe"
+  local webm="$OUT/${id}.webm"
   local vtt="$OUT/${id}.vtt"
-  local avi_abs vtt_abs
-  avi_abs="$(cd "$(dirname "$avi")" && pwd)/$(basename "$avi")"
+  local pipe_abs webm_abs vtt_abs
+  pipe_abs="$(cd "$(dirname "$pipe")" && pwd)/$(basename "$pipe")"
+  webm_abs="$(cd "$(dirname "$webm")" && pwd)/$(basename "$webm")"
   vtt_abs="$(cd "$(dirname "$vtt")" && pwd)/$(basename "$vtt")"
+  rm -f "$pipe_abs" "$webm_abs" "$OUT/${id}.avi"
+
   # quit_after is a safety ceiling only; the film script quit()s when done.
-  echo "=== sx-movies: $id → $avi_abs (max $quit_after frames @ ${FPS}fps)"
+  echo "=== sx-movies: $id → $webm_abs (raw RGB24 → ffmpeg, max $quit_after frames @ ${FPS}fps)"
   set +e
   godot_cmd --path "$GAME" \
-    --write-movie "$avi_abs" \
+    --write-movie "$pipe_abs" \
     --fixed-fps "$FPS" \
     --disable-vsync \
     --quit-after "$quit_after" \
@@ -85,39 +109,24 @@ render_one() {
       --film-id "$id" --movie-capture 1 --captions-out "$vtt_abs"
   godot_ec=$?
   set -e
-  if [[ $godot_ec -ne 0 ]]; then
-    if [[ -f "$avi_abs" ]] && [[ $(stat -c%s "$avi_abs" 2>/dev/null || echo 0) -gt 4096 ]]; then
-      echo "sx-movies: warning: Godot exited $godot_ec after writing $avi_abs (known MovieWriter teardown bug on some builds)" >&2
-    else
-      echo "sx-movies: Godot failed (exit $godot_ec) and no usable AVI at $avi_abs" >&2
-      exit "$godot_ec"
-    fi
+  rm -f "$pipe_abs" # marker path only; writer never keeps it as a media file
+
+  if [[ ! -f "$webm_abs" ]] || [[ $(stat -c%s "$webm_abs" 2>/dev/null || echo 0) -lt 4096 ]]; then
+    echo "sx-movies: Godot/ffmpeg failed (exit $godot_ec); missing or tiny $webm_abs" >&2
+    exit "${godot_ec:-1}"
   fi
+  if [[ $godot_ec -ne 0 ]]; then
+    echo "sx-movies: warning: Godot exited $godot_ec after writing $webm_abs (known MovieWriter teardown bug on some builds)" >&2
+  fi
+
+  mux_vtt_if_present "$webm_abs" "$vtt_abs"
+
   if [[ -f "$vtt_abs" ]]; then
     echo "    vtt: $vtt_abs"
   else
     echo "sx-movies: warning: no captions at $vtt_abs" >&2
   fi
-  if command -v ffmpeg >/dev/null 2>&1; then
-    local webm="$OUT/${id}.webm"
-    # VP9 + soft WebVTT track when captions exist (sidecar .vtt kept for translation).
-    if [[ -f "$vtt_abs" ]]; then
-      ffmpeg -y -loglevel error \
-        -i "$avi_abs" -i "$vtt_abs" \
-        -map 0:v:0 -map 1:0 \
-        -c:v libvpx-vp9 -crf 32 -b:v 0 -row-mt 1 \
-        -c:s webvtt \
-        "$webm" </dev/null
-    else
-      ffmpeg -y -loglevel error \
-        -i "$avi_abs" \
-        -c:v libvpx-vp9 -crf 32 -b:v 0 -row-mt 1 \
-        "$webm" </dev/null
-    fi
-    echo "    webm: $webm"
-  else
-    echo "    (install ffmpeg to emit .webm)"
-  fi
+  echo "    webm: $webm_abs"
 }
 
 cmd="${1:-all}"

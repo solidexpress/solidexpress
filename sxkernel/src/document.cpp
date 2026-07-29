@@ -417,6 +417,9 @@ EntityId Document::add_mate(Mate m) {
     if (m.type != MateType::Fixed || !m.instance_b.is_null()) {
         if (!instance(m.instance_b)) return {};
     }
+    // Concentric is a radial fit constraint: callers must declare a positive
+    // clearance up front. Enclosure / geometry checks run on apply.
+    if (m.type == MateType::Concentric && m.offset <= 0.0) return {};
     if (m.id.is_null()) m.id = EntityId::generate();
     if (m.name.empty())
         m.name = std::string(to_string(m.type)) + " " + std::to_string(mates_.size() + 1);

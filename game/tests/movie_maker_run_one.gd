@@ -1,5 +1,5 @@
 # Runs one UI film from ui_movie_manifest.json (invoked by scripts/sx-movies).
-# Godot CLI: --write-movie out.avi --fixed-fps 60 --quit-after N --script tests/movie_maker_run_one.gd -- --film-id ID [--captions-out path.vtt]
+# Godot CLI: --write-movie out.avi --fixed-fps 30 --quit-after N --script tests/movie_maker_run_one.gd -- --film-id ID [--captions-out path.vtt]
 # Quits when the film finishes; --quit-after is a hang safety ceiling only.
 extends SceneTree
 
@@ -40,7 +40,7 @@ func _init() -> void:
 	await process_frame
 
 	var chrome := FilmChrome.new()
-	chrome.fps = 60.0
+	chrome.fps = 30.0
 	var fixed := _arg_value_from_all("--fixed-fps")
 	if not fixed.is_empty():
 		chrome.fps = float(fixed)
@@ -57,7 +57,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await FilmUI.ensure_test_viewport(ctx, Vector2i(1600, 900))
 	if str(OS.get_environment("SX_TEST_WINDOW")).to_lower() not in ["onscreen", "1", "show", "visible"]:
-		print("film window: minimized / no-focus (SX_TEST_WINDOW=onscreen to watch)")
+		print("film window: off-screen / no-focus (SX_TEST_WINDOW=onscreen to watch)")
 
 	var script_path: String = str(entry.get("script", ""))
 	if script_path.is_empty():
@@ -75,9 +75,12 @@ func _init() -> void:
 		quit(1)
 		return
 
+	# Arm the raw MovieWriter only for the film body (skip boot / teardown frames).
+	OS.set_environment("SX_MOVIE_RECORD", "1")
 	await film.run_film(ctx)
 	# Brief hold so the last caption/showcase is on screen, then stop recording.
 	await create_timer(0.6).timeout
+	OS.set_environment("SX_MOVIE_RECORD", "0")
 	chrome.finish_captions()
 	var captions_out := _arg_value("--captions-out")
 	if not captions_out.is_empty():

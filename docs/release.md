@@ -41,7 +41,16 @@ Workflow `.github/workflows/release.yml`:
 2. `export-linux.sh`
 3. GitHub Release with `.tar.gz` + checksum
 
-## Windows / macOS (developer machines)
+## Demo movies (marketing site)
+
+Needs a GPU/display (not covered by `release.yml` on GitHub-hosted runners):
+
+```bash
+make movies                 # → dist/movies/*.webm
+make publish-demo-movies    # posters → ../solidexpress.github.io; WebMs → website Release tag demo-movies
+```
+
+Then commit/push poster (and any HTML) changes in `solidexpress.github.io`. Do this each app release so solid.express demos match the shipped build.
 
 Godot presets are in `game/export_presets.cfg` (`Windows Desktop`, `macOS`). Steps:
 

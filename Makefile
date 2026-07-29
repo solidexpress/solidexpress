@@ -79,6 +79,11 @@ movies: import
 	chmod +x scripts/sx-movies
 	./scripts/sx-movies all
 
+# Extract posters into solidexpress.github.io and upload WebMs to Release tag demo-movies.
+publish-demo-movies:
+	chmod +x scripts/sx-publish-demo-movies
+	./scripts/sx-publish-demo-movies
+
 fetch-godot-templates:
 	chmod +x scripts/release/fetch-godot-templates.sh
 	./scripts/release/fetch-godot-templates.sh

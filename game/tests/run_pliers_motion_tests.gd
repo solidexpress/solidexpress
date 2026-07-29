@@ -54,13 +54,16 @@ func test_revolute_axis_api(main) -> void:
 	var view: DocumentView = main.view
 	view.new_document()
 	var doc: SxDocument = view.doc
-	var boss: String = doc.add_cylinder(10, 40, Vector3.ZERO)
+	# Pin-in-hole with 1 mm radial clearance (hole r=5, pin r=4).
+	var block: String = doc.add_box(40, 40, 40, Vector3.ZERO)
+	var bore: String = doc.add_cylinder(5, 40, Vector3(20, 20, 0))
+	check(doc.boolean_op(block, bore, "cut", false), "bore block")
 	var pin: String = doc.add_cylinder(4, 25, Vector3(80, 0, 0))
 	var iid: String = doc.add_instance(pin, Vector3(80, 0, 0), Vector3(0, 0, 1), 0.0, "Pin-1")
-	var bf := _cyl_face(doc, boss)
+	var hf := _cyl_face(doc, block)
 	var pf := _cyl_face(doc, pin)
-	check(bf != "" and pf != "", "cylindrical faces found")
-	var mid: String = doc.add_mate("concentric", "", bf, iid, pf, 0.0, false, "pin")
+	check(hf != "" and pf != "", "cylindrical faces found")
+	var mid: String = doc.add_mate("concentric", "", hf, iid, pf, 1.0, false, "pin")
 	check(mid != "", "concentric mate added")
 	check(doc.solve_mates(), "solve concentric")
 	var ax: Dictionary = doc.instance_revolute_axis(iid)
@@ -87,7 +90,8 @@ func test_revolute_drag_changes_angle(main) -> void:
 	var pin_face := _cyl_face(doc, pin)
 	var hole_face := _cyl_face(doc, jaw)
 	check(pin_face != "" and hole_face != "", "pin + hole faces")
-	check(doc.add_mate("concentric", "", pin_face, iid, hole_face, 0.0, false, "") != "",
+	# Radial tolerance 0.2 mm matches hole r=3.2 vs pin r=3.
+	check(doc.add_mate("concentric", "", pin_face, iid, hole_face, 0.2, false, "") != "",
 		"concentric jaw to pin")
 	check(doc.solve_mates(), "initial solve")
 	view.refresh()
@@ -133,24 +137,28 @@ func test_instance_to_instance_mate(main) -> void:
 	main.add_child(panel)
 	await process_frame
 
-	var a: String = doc.add_cylinder(5, 20, Vector3.ZERO)
-	var b: String = doc.add_cylinder(4, 20, Vector3(60, 0, 0))
-	var ia: String = doc.add_instance(a, Vector3(0, 0, 0), Vector3(0, 0, 1), 0.0, "A-1")
-	var ib: String = doc.add_instance(b, Vector3(40, 20, 0), Vector3(0, 0, 1), 0.0, "B-1")
+	# Block-with-hole instance ↔ pin instance (enclosure + 1 mm radial tolerance).
+	var block: String = doc.add_box(40, 40, 20, Vector3.ZERO)
+	var bore: String = doc.add_cylinder(5, 20, Vector3(20, 20, 0))
+	check(doc.boolean_op(block, bore, "cut", false), "bore for instance mate")
+	var pin: String = doc.add_cylinder(4, 20, Vector3(60, 0, 0))
+	var ia: String = doc.add_instance(block, Vector3(0, 0, 0), Vector3(0, 0, 1), 0.0, "A-1")
+	var ib: String = doc.add_instance(pin, Vector3(40, 20, 0), Vector3(0, 0, 1), 0.0, "B-1")
 	view.refresh()
 	panel.refresh_lists()
-	var fa := _cyl_face(doc, a)
-	var fb := _cyl_face(doc, b)
+	var fa := _cyl_face(doc, block)
+	var fb := _cyl_face(doc, pin)
 	check(fa != "" and fb != "", "faces for instance mate")
 	for i in panel._type_option.item_count:
 		if panel._type_option.get_item_text(i) == "concentric":
 			panel._type_option.select(i)
 			break
+	panel._offset_spin.value = 1.0
 	panel._arm_mate()
 	view.select_instance(ia)
-	view.select_entity(a, fa)
+	view.select_entity(block, fa)
 	view.select_instance(ib)
-	view.select_entity(b, fb)
+	view.select_entity(pin, fb)
 	check(doc.mate_list().size() == 1, "instance↔instance mate created")
 	var m: Dictionary = doc.mate_list()[0]
 	check(str(m["instance_a"]) == ia, "instance_a is first instance")
@@ -230,13 +238,14 @@ func test_pliers_mvp_assembly(main) -> void:
 	check(pin_face != "" and hole_face != "", "pin + hole faces")
 	check(jaw_bottom != "" and jaw_top != "", "jaw planar faces")
 
-	check(doc.add_mate("concentric", "", pin_face, jaw_a, hole_face, 0.0, false, "A-pin") != "",
+	# Radial tolerance 0.2 mm (hole r=3.2 − pin r=3); axial face gap 0.5 mm so
+	# the jaws do not kiss — physical hinges need clearance on both axes.
+	check(doc.add_mate("concentric", "", pin_face, jaw_a, hole_face, 0.2, false, "A-pin") != "",
 		"concentric Jaw-A → pin")
-	check(doc.add_mate("concentric", "", pin_face, jaw_b, hole_face, 0.0, false, "B-pin") != "",
+	check(doc.add_mate("concentric", "", pin_face, jaw_b, hole_face, 0.2, false, "B-pin") != "",
 		"concentric Jaw-B → pin")
-	# Face mate between jaws (instance↔instance); pin is cylindrical so not used here.
-	check(doc.add_mate("plane_coincident", jaw_a, jaw_top, jaw_b, jaw_bottom, 0.0, false, "faces") != "",
-		"plane_coincident Jaw-A top ↔ Jaw-B bottom")
+	check(doc.add_mate("plane_coincident", jaw_a, jaw_top, jaw_b, jaw_bottom, 0.5, false, "faces") != "",
+		"plane_coincident Jaw-A top ↔ Jaw-B bottom (0.5 mm gap)")
 	check(doc.solve_mates(), "pliers mates solve")
 	view.refresh()
 	await process_frame

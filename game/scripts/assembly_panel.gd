@@ -52,13 +52,16 @@ func _ready() -> void:
 	vbox.add_child(_mates_list)
 
 	_type_option = OptionButton.new()
-	_type_option.tooltip_text = "Mate type: plane-to-plane, axis-to-axis, or fixed"
+	_type_option.tooltip_text = (
+		"plane_coincident / concentric (radial: needs enclosure + positive Offset) / fixed")
 	_type_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for t in ["plane_coincident", "concentric", "fixed"]:
 		_type_option.add_item(t)
 	vbox.add_child(_type_option)
 
 	_offset_spin = _labeled_spin(vbox, "Offset", -1000.0, 1000.0, 0.5, 0.0)
+	_offset_spin.tooltip_text = (
+		"plane_coincident: face gap. concentric: required radial clearance (>0; hole must enclose pin)")
 	_op_button(vbox, "Add mate", _arm_mate, "mate",
 		"Add a mate: click face A (ground or instance), then a face on the instance to move")
 	_op_button(vbox, "Solve mates", _solve_mates, "solve",

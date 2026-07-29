@@ -3,7 +3,7 @@ extends CanvasLayer
 
 ## On-screen closed captions + soft-subtitle cue list (WebVTT).
 
-var fps := 60.0
+var fps := 30.0
 
 var _root: Control
 var _cc_panel: PanelContainer
@@ -135,7 +135,7 @@ static func format_webvtt_time(sec: float) -> String:
 	return "%02d:%02d:%02d.%03d" % [h, m, s, ms]
 
 
-static func cues_to_webvtt(cue_list: Array, cue_fps: float = 60.0) -> String:
+static func cues_to_webvtt(cue_list: Array, cue_fps: float = 30.0) -> String:
 	var rate := maxf(cue_fps, 1.0)
 	var lines: PackedStringArray = PackedStringArray(["WEBVTT", ""])
 	var n := 0

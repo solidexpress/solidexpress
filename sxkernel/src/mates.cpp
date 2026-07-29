@@ -89,12 +89,24 @@ std::optional<MatePlane> mate_plane(const Document& doc, const EntityId& instanc
 
 std::optional<MateAxis> mate_axis(const Document& doc, const EntityId& instance,
                                   const EntityId& face) {
+    // Classify enclosure on the source face (orientation is placement-invariant);
+    // transform the axis into the reference frame afterward.
+    TopoDS_Shape raw = doc.resolve(face);
+    if (raw.IsNull() || raw.ShapeType() != TopAbs_FACE) return std::nullopt;
+    const TopoDS_Face& src = TopoDS::Face(raw);
+    BRepAdaptor_Surface src_surf(src);
+    if (src_surf.GetType() != GeomAbs_Cylinder) return std::nullopt;
+    const double radius = src_surf.Cylinder().Radius();
+    // REVERSED cylindrical faces are hole walls (material outside); FORWARD are
+    // outer bosses/pins. Verified against BRepPrimAPI_MakeCylinder / Cut.
+    const bool encloses = (src.Orientation() == TopAbs_REVERSED);
+
     TopoDS_Shape f = reference_face(doc, instance, face);
     if (f.IsNull()) return std::nullopt;
     BRepAdaptor_Surface surf(TopoDS::Face(f));
     if (surf.GetType() != GeomAbs_Cylinder) return std::nullopt;
     gp_Ax1 ax = surf.Cylinder().Axis();
-    return MateAxis{ax.Location(), ax.Direction()};
+    return MateAxis{ax.Location(), ax.Direction(), radius, encloses};
 }
 
 namespace {
@@ -149,10 +161,32 @@ bool apply_mate(Document& doc, const Mate& m) {
             return move_instance(doc, m.instance_b, shift * corr);
         }
         case MateType::Concentric: {
+            // Radial constraint: one face must enclose the other (hole around
+            // pin) with a declared positive clearance (offset) that the
+            // geometry satisfies. Axes-only mates without fit are rejected.
+            if (m.offset <= 0.0) {
+                log::error("mate " + m.name +
+                           ": concentric requires a positive radial tolerance");
+                return false;
+            }
             auto a = mate_axis(doc, m.instance_a, m.face_a);
             auto b = mate_axis(doc, m.instance_b, m.face_b);
             if (!a || !b) {
                 log::error("mate " + m.name + ": cylindrical faces required");
+                return false;
+            }
+            if (a->encloses == b->encloses) {
+                log::error("mate " + m.name +
+                           ": concentric requires enclosure (hole around pin)");
+                return false;
+            }
+            const double r_hole = a->encloses ? a->radius : b->radius;
+            const double r_pin = a->encloses ? b->radius : a->radius;
+            const double clearance = r_hole - r_pin;
+            if (clearance + 1e-9 < m.offset) {
+                log::error("mate " + m.name +
+                           ": radial clearance " + std::to_string(clearance) +
+                           " is below tolerance " + std::to_string(m.offset));
                 return false;
             }
             gp_Dir target = a->dir;

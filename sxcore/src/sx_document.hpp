@@ -316,7 +316,9 @@ public:
 
     // --- assembly mates (closed-form placement; solve moves instance_b) ---
     // type: "fixed" | "plane_coincident" | "concentric". instance_a may be ""
-    // for a grounded body reference. Returns the mate id or "".
+    // for a grounded body reference. Concentric is a radial fit: offset must
+    // be > 0 (clearance) and the faces must enclose (hole around pin).
+    // Returns the mate id or "".
     godot::String add_mate(const godot::String& type, const godot::String& instance_a,
                            const godot::String& face_a, const godot::String& instance_b,
                            const godot::String& face_b, double offset, bool flip,

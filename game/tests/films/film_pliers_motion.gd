@@ -93,13 +93,14 @@ func run_film(ctx: FilmContext) -> void:
 		return
 
 	await _hold(ctx, "Concentric + coincident mates leave a revolute DOF", 50)
-	if doc.add_mate("concentric", "", pin_face, jaw_a, hole_face, 0.0, false, "A-pin") == "":
+	# Radial tolerance 0.2 mm (hole − pin); axial face gap 0.5 mm (no kissing jaws).
+	if doc.add_mate("concentric", "", pin_face, jaw_a, hole_face, 0.2, false, "A-pin") == "":
 		FilmUI._fail("concentric A failed")
 		return
-	if doc.add_mate("concentric", "", pin_face, jaw_b, hole_face, 0.0, false, "B-pin") == "":
+	if doc.add_mate("concentric", "", pin_face, jaw_b, hole_face, 0.2, false, "B-pin") == "":
 		FilmUI._fail("concentric B failed")
 		return
-	if doc.add_mate("plane_coincident", jaw_a, jaw_top, jaw_b, jaw_bottom, 0.0, false, "faces") == "":
+	if doc.add_mate("plane_coincident", jaw_a, jaw_top, jaw_b, jaw_bottom, 0.5, false, "faces") == "":
 		FilmUI._fail("plane_coincident failed")
 		return
 	if not doc.solve_mates():

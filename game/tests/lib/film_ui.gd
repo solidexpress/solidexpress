@@ -37,11 +37,15 @@ static func ensure_test_viewport(ctx: FilmContext, size: Vector2i = Vector2i(128
 	isolate_background_window(ctx.tree)
 
 
-## Minimize / unfocus the Godot window and hide the OS cursor so demo films and
-## non-headless UI runners stay off the operator's desktop. Synthetic FilmUI
-## input still works (it injects events, it does not need a focused window).
+## Keep the Godot window from stealing the operator's desktop during films /
+## non-headless UI runners, without stopping per-frame presents.
+## Synthetic FilmUI input still works (injected events; focus not required).
 ## No-op under the headless display server. Set env SX_TEST_WINDOW=onscreen to keep
 ## the window visible while debugging a film.
+##
+## Important: do **not** minimize during Movie Maker capture. A minimized window
+## often skips DisplayServer presents while fixed-fps process/tweens still run,
+## so MovieWriter sees stale textures and pointer/camera motion looks teleported.
 static func isolate_background_window(tree: SceneTree) -> void:
 	if tree == null:
 		return
@@ -53,14 +57,13 @@ static func isolate_background_window(tree: SceneTree) -> void:
 		return
 	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	var win_id := DisplayServer.MAIN_WINDOW_ID
-	# Prefer no-focus so the operator keeps keyboard/mouse on their desktop.
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true, win_id)
-	# Minimized: stays in the task list but does not cover the screen. MovieWriter
-	# still receives rendered frames on typical desktop GPUs (X11/Vulkan).
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED, win_id)
-	# Keep the logical viewport size (minimize must not shrink FilmUI hit tests).
-	if tree.root != null and tree.root.size.x < 64:
+	# Stay windowed so Vulkan/X11 keep presenting every fixed-fps tick.
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, win_id)
+	if tree.root != null:
 		tree.root.size = Vector2i(1600, 900)
+	# Park off-screen instead of minimizing (still composited/drawn on typical GPUs).
+	DisplayServer.window_set_position(Vector2i(-4200, -4200), win_id)
 
 
 static func wait_frames(tree: SceneTree, n: int = 1) -> void:

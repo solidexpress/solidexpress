@@ -31,7 +31,7 @@ class Document;
 enum class MateType {
     Fixed,            // locks instance_b where it is (no-op on apply)
     PlaneCoincident,  // face planes opposed, signed gap = offset
-    Concentric,       // cylindrical face axes colinear (axial slide free)
+    Concentric,       // radial pin-in-hole: axes colinear (axial slide free)
 };
 
 const char* to_string(MateType t);
@@ -44,7 +44,10 @@ struct Mate {
     EntityId face_a;
     EntityId instance_b;  // the moved side; must be an instance
     EntityId face_b;
-    double offset = 0.0;  // PlaneCoincident: signed gap along A's normal
+    // PlaneCoincident: signed face gap along A's normal.
+    // Concentric: required minimum radial clearance (must be > 0); geometry
+    // must enclose (hole around pin) with R_hole - R_pin >= offset.
+    double offset = 0.0;
     bool flip = false;    // PlaneCoincident: align normals instead of opposing
     std::string name;
 };
@@ -59,6 +62,10 @@ struct MatePlane {
 struct MateAxis {
     gp_Pnt point;
     gp_Dir dir;
+    double radius = 0.0;
+    // True when the cylindrical face is a hole wall (material outside the
+    // cylinder, OCCT REVERSED) — it can enclose a smaller outer cylinder.
+    bool encloses = false;
 };
 
 // World-space plane / cylinder axis of a mate reference (face under the

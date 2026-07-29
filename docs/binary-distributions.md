@@ -227,7 +227,7 @@ Use one set of assets everywhere:
 | Asset | Source |
 |-------|--------|
 | Icon 512×512 | `docs/branding/logo.png` |
-| Screenshots | `make movies` → last frames (already on GitHub Pages) |
+| Screenshots | `make movies` → last frames via `make publish-demo-movies` (PNG posters on GitHub Pages; full WebMs on solidexpress.github.io Release `demo-movies`) |
 | Short description | solidexpress.github.io tagline |
 | Long description | README + feature list |
 | Privacy policy | https://solid.express/privacy.html |
@@ -250,11 +250,16 @@ Use this every version:
 4. **Tag** `vX.Y.Z` and push.
 5. **Wait** for GitHub Actions release workflow; verify Release assets and checksums.
 6. **Smoke** download Release tarball on a clean VM.
-7. **Update** marketing site / README “Latest release” link.
-8. **Optional manual gates** (until CI secrets exist):
+7. **Demo movies** (GPU machine — not in CI yet):
+   ```bash
+   make movies && make publish-demo-movies
+   ```
+   Uploads WebMs to [solidexpress.github.io `demo-movies`](https://github.com/solidexpress/solidexpress.github.io/releases/tag/demo-movies) and refreshes PNG posters in the Pages checkout. Commit and push poster/HTML changes in `solidexpress.github.io`.
+8. **Update** marketing site download links / README “Latest release” if the version changed.
+9. **Optional manual gates** (until CI secrets exist):
    - macOS: notarize local export, upload dmg to Release manually
    - Windows: sign installer, upload manually
-9. **Store promotion** (when ready): bump Flatpak manifest tag; submit MSIX / MAS builds that match the GitHub Release version.
+10. **Store promotion** (when ready): bump Flatpak manifest tag; submit MSIX / MAS builds that match the GitHub Release version.
 
 ---
 
