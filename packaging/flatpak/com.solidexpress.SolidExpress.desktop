@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=SolidExpress
+Exec=SolidExpress.x86_64
+Icon=com.solidexpress.SolidExpress
+Terminal=false
+Categories=Graphics;Engineering;

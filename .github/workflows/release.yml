@@ -55,12 +55,29 @@ jobs:
           chmod +x scripts/release/export-linux.sh
           ./scripts/release/export-linux.sh
 
+
+      - name: Build Flatpak bundle
+        run: |
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 || true
+          chmod +x packaging/flatpak/build-flatpak.sh
+          ./packaging/flatpak/build-flatpak.sh || echo "flatpak skipped if tarball layout mismatch"
+
+      - name: Build Snap
+        run: |
+          sudo snap install snapcraft --classic || true
+          chmod +x packaging/snap/build-snap.sh packaging/snap/wrapper
+          ./packaging/snap/build-snap.sh || echo "snap skipped — run locally with LXD if CI fails"
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: SolidExpress-linux-x86_64
           path: |
             dist/releases/SolidExpress-*.tar.gz
+            dist/releases/SolidExpress-*.flatpak
+            dist/releases/*.snap
             dist/releases/SolidExpress-*.sha256
 
   windows:
@@ -118,13 +135,27 @@ jobs:
           chmod +x scripts/release/export-windows.sh
           ./scripts/release/export-windows.sh
 
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build Inno installer
+        shell: bash
+        run: |
+          VER=$(tr -d '[:space:]' < VERSION)
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          SRC="dist/releases/SolidExpress-${VER}-windows-x86_64"
+          "$ISCC" "/DMyAppVersion=$VER" "/DMySourceDir=$SRC" packaging/windows/SolidExpress.iss
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: SolidExpress-windows-x86_64
           path: |
             dist/releases/SolidExpress-*-windows-x86_64.zip
-            dist/releases/SolidExpress-*-windows-x86_64.zip.sha256
+            dist/releases/SolidExpress-*-x64-setup.exe
+            dist/releases/SolidExpress-*-windows-x86_64.zip
+            dist/releases/SolidExpress-*-x64-setup.exe.sha256
 
   macos:
     runs-on: macos-14
@@ -160,13 +191,21 @@ jobs:
           chmod +x scripts/release/export-macos.sh
           ./scripts/release/export-macos.sh
 
+
+      - name: Build DMG
+        run: |
+          chmod +x packaging/macos/create-dmg.sh
+          ./packaging/macos/create-dmg.sh
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: SolidExpress-macos
           path: |
             dist/releases/SolidExpress-*-macos.zip
-            dist/releases/SolidExpress-*-macos.zip.sha256
+            dist/releases/SolidExpress-*-macos.dmg
+            dist/releases/SolidExpress-*-macos.zip
+            dist/releases/SolidExpress-*-macos.dmg.sha256
 
   publish:
     needs: [linux, windows, macos]

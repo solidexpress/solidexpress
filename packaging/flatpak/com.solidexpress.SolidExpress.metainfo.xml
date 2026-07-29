@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.solidexpress.SolidExpress</id>
+  <name>SolidExpress</name>
+  <summary>Open parametric solid modeling</summary>
+  <description><p>Sketch, extrude, revolve, loft, and sweep — OCCT B-rep solids with a modern UI.</p></description>
+  <launchable type="desktop-id">com.solidexpress.SolidExpress.desktop</launchable>
+  <url type="homepage">https://solidexpress.github.io</url>
+  <url type="bugtracker">https://github.com/solidexpress/solidexpress/issues</url>
+  <developer_name>Express Consortium</developer_name>
+  <project_license>LicenseRef-proprietary=See repository</project_license>
+  <releases><release version="0.0.1"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

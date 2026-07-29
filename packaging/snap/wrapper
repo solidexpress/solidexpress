@@ -1,0 +1,3 @@
+#!/bin/sh
+export LD_LIBRARY_PATH="$SNAP/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$SNAP/bin/SolidExpress.x86_64" "$@"
