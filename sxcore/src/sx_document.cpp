@@ -788,7 +788,9 @@ bool SxDocument::graph_update_sketch(const String& fid, const Ref<SxSketch>& ske
 
 String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
                                      bool symmetric, const String& op,
-                                     const String& target_fid, const String& end) {
+                                     const String& target_fid, const String& end,
+                                     double thin_thickness, const String& thin_type,
+                                     bool flip_side) {
     sx::EntityId fid;
     bool ok = apply_graph_edit("extrude", [&] {
         sx::Feature f;
@@ -799,6 +801,13 @@ String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
         f.params = {{"sketch", to_std(sketch_fid)}, {"distance", distance},
                     {"symmetric", sym}, {"op", to_std(op)}, {"end", end_s}};
         if (!target_fid.is_empty()) f.params["target"] = to_std(target_fid);
+        if (thin_thickness > 0.0) {
+            f.params["thin_thickness"] = thin_thickness;
+            std::string tt = to_std(thin_type);
+            if (tt.empty()) tt = "one_side";
+            f.params["thin_type"] = tt;
+            if (flip_side) f.params["flip_side"] = true;
+        }
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -937,14 +946,26 @@ String SxDocument::graph_add_chamfer(const String& target_fid, const PackedStrin
 }
 
 String SxDocument::graph_add_mirror(const String& target_fid, const Vector3& plane_point,
-                                    const Vector3& plane_normal) {
+                                    const Vector3& plane_normal,
+                                    const PackedStringArray& source_feature_ids) {
     sx::EntityId fid;
     bool ok = apply_graph_edit("mirror", [&] {
         sx::Feature f;
         f.type = sx::FeatureType::Mirror;
-        f.params = {{"target", to_std(target_fid)},
-                    {"plane_point", {plane_point.x, plane_point.y, plane_point.z}},
+        f.params = {{"plane_point", {plane_point.x, plane_point.y, plane_point.z}},
                     {"plane_normal", {plane_normal.x, plane_normal.y, plane_normal.z}}};
+        if (source_feature_ids.size() > 0) {
+            // Feature mode: mirror Extrude/Revolve tools; optional target for cut/fuse.
+            nlohmann::json sources = nlohmann::json::array();
+            for (int i = 0; i < source_feature_ids.size(); ++i)
+                sources.push_back(to_std(source_feature_ids[i]));
+            f.params["source_feature_ids"] = sources;
+            if (!target_fid.is_empty()) f.params["target"] = to_std(target_fid);
+        } else {
+            // Body mode: require a target body/feature to duplicate across the plane.
+            if (target_fid.is_empty()) return false;
+            f.params["target"] = to_std(target_fid);
+        }
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -1102,6 +1123,40 @@ String SxDocument::graph_add_hole(const String& target_fid, const String& type,
         f.params = {{"target", to_std(target_fid)},
                     {"type", htype},
                     {"position", {position.x, position.y, position.z}},
+                    {"direction", {direction.x, direction.y, direction.z}},
+                    {"diameter", static_cast<double>(diameter)},
+                    {"depth", static_cast<double>(depth)},
+                    {"cb_diameter", static_cast<double>(cb_diameter)},
+                    {"cb_depth", static_cast<double>(cb_depth)},
+                    {"cs_diameter", static_cast<double>(cs_diameter)},
+                    {"cs_angle_deg", static_cast<double>(cs_angle_deg)}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_holes(const String& target_fid, const String& type,
+                                   const PackedVector3Array& positions, const Vector3& direction,
+                                   float diameter, float depth, float cb_diameter, float cb_depth,
+                                   float cs_diameter, float cs_angle_deg) {
+    if (diameter <= 0.0f || positions.is_empty()) return {};
+    if (direction.length_squared() < 1e-12f) return {};
+    std::string htype = to_std(type);
+    if (htype != "simple" && htype != "counterbore" && htype != "countersink") return {};
+    nlohmann::json pos_json = nlohmann::json::array();
+    for (int i = 0; i < positions.size(); ++i) {
+        const Vector3& p = positions[i];
+        pos_json.push_back({p.x, p.y, p.z});
+    }
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("holes", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Hole;
+        f.params = {{"target", to_std(target_fid)},
+                    {"type", htype},
+                    {"positions", pos_json},
+                    {"position", {positions[0].x, positions[0].y, positions[0].z}},
                     {"direction", {direction.x, direction.y, direction.z}},
                     {"diameter", static_cast<double>(diameter)},
                     {"depth", static_cast<double>(depth)},
@@ -1691,8 +1746,9 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_update_sketch", "fid", "sketch"),
                          &SxDocument::graph_update_sketch);
     ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op",
-                                  "target_fid", "end"),
-                         &SxDocument::graph_add_extrude, DEFVAL(String("blind")));
+                                  "target_fid", "end", "thin_thickness", "thin_type", "flip_side"),
+                         &SxDocument::graph_add_extrude, DEFVAL(String("blind")), DEFVAL(0.0),
+                         DEFVAL(String("one_side")), DEFVAL(false));
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid", "guide_fids"),
@@ -1702,8 +1758,9 @@ void SxDocument::_bind_methods() {
                          &SxDocument::graph_add_loft, DEFVAL(PackedStringArray()));
     ClassDB::bind_method(D_METHOD("graph_add_fillet", "target_fid", "edge_ids", "radius"), &SxDocument::graph_add_fillet);
     ClassDB::bind_method(D_METHOD("graph_add_chamfer", "target_fid", "edge_ids", "distance"), &SxDocument::graph_add_chamfer);
-    ClassDB::bind_method(D_METHOD("graph_add_mirror", "target_fid", "plane_point", "plane_normal"),
-                         &SxDocument::graph_add_mirror);
+    ClassDB::bind_method(D_METHOD("graph_add_mirror", "target_fid", "plane_point", "plane_normal",
+                                  "source_feature_ids"),
+                         &SxDocument::graph_add_mirror, DEFVAL(PackedStringArray()));
     ClassDB::bind_method(D_METHOD("graph_add_linear_pattern", "target_fid", "direction", "spacing",
                                   "count"),
                          &SxDocument::graph_add_linear_pattern);
@@ -1727,6 +1784,10 @@ void SxDocument::_bind_methods() {
                                   "diameter", "depth", "cb_diameter", "cb_depth", "cs_diameter",
                                   "cs_angle_deg"),
                          &SxDocument::graph_add_hole);
+    ClassDB::bind_method(D_METHOD("graph_add_holes", "target_fid", "type", "positions", "direction",
+                                  "diameter", "depth", "cb_diameter", "cb_depth", "cs_diameter",
+                                  "cs_angle_deg"),
+                         &SxDocument::graph_add_holes);
     ClassDB::bind_method(D_METHOD("graph_add_helix", "profile_radius", "helix_radius", "pitch",
                                   "turns", "left_handed", "axis_point", "axis_dir"),
                          &SxDocument::graph_add_helix);

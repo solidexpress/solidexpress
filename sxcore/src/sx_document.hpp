@@ -168,10 +168,14 @@ public:
     bool graph_update_sketch(const godot::String& fid, const godot::Ref<class SxSketch>& sketch);
     // op: "new" | "fuse" | "cut"; target_fid required for fuse/cut.
     // end: "blind" | "through_all" | "midplane" (midplane also sets symmetric).
+    // thin_thickness > 0: wall from open/closed profile; thin_type: "one_side"|"midplane".
     godot::String graph_add_extrude(const godot::String& sketch_fid, double distance,
                                     bool symmetric, const godot::String& op,
                                     const godot::String& target_fid,
-                                    const godot::String& end = "blind");
+                                    const godot::String& end = "blind",
+                                    double thin_thickness = 0.0,
+                                    const godot::String& thin_type = "one_side",
+                                    bool flip_side = false);
     // Axis in sketch 2D coordinates (point + direction on the sketch plane).
     godot::String graph_add_revolve(const godot::String& sketch_fid,
                                     const godot::Vector2& axis_point,
@@ -199,9 +203,13 @@ public:
     godot::String graph_add_chamfer(const godot::String& target_fid,
                                     const godot::PackedStringArray& edge_ids, double distance);
     // Mirror / patterns / shell / offset / push-pull / draft as timeline features.
+    // Body mode (default): mirror target body → new output_body.
+    // Feature mode: non-empty source_feature_ids rebuilds Extrude/Revolve tools,
+    // mirrors them, and applies the same op (cut/fuse into target_fid when set).
     godot::String graph_add_mirror(const godot::String& target_fid,
                                    const godot::Vector3& plane_point,
-                                   const godot::Vector3& plane_normal);
+                                   const godot::Vector3& plane_normal,
+                                   const godot::PackedStringArray& source_feature_ids = {});
     godot::String graph_add_linear_pattern(const godot::String& target_fid,
                                            const godot::Vector3& direction, double spacing,
                                            int count);
@@ -232,6 +240,14 @@ public:
                                  const godot::Vector3& position, const godot::Vector3& direction,
                                  float diameter, float depth, float cb_diameter, float cb_depth,
                                  float cs_diameter, float cs_angle_deg);
+    // Multi-point Hole Wizard: one Hole feature with params.positions (same
+    // diameter/depth/type/direction at every point). Additive — does not change
+    // graph_add_hole. Requires at least one position.
+    godot::String graph_add_holes(const godot::String& target_fid, const godot::String& type,
+                                  const godot::PackedVector3Array& positions,
+                                  const godot::Vector3& direction, float diameter, float depth,
+                                  float cb_diameter, float cb_depth, float cs_diameter,
+                                  float cs_angle_deg);
     // Helical spring / tube solid (new body). Axis in model space.
     godot::String graph_add_helix(float profile_radius, float helix_radius, float pitch,
                                   float turns, bool left_handed, const godot::Vector3& axis_point,

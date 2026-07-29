@@ -5,7 +5,8 @@ extends Control
 
 signal variant_chosen(kind: String, variant: String)
 signal action_chosen(action: String)
-signal finish_requested(op: String, distance: float, end: String)
+signal finish_requested(op: String, distance: float, end: String,
+		thin_thickness: float, thin_type: String, flip_side: bool)
 ## Enter in the dim blank while drawing: typed length/radius commit.
 signal dim_submitted(value: float)
 
@@ -19,6 +20,9 @@ var _finish_bar: HBoxContainer
 var _extrude_spin: SpinBox
 var _finish_op: OptionButton
 var _finish_end: OptionButton
+var _thin_spin: SpinBox
+var _thin_type: OptionButton
+var _flip_side: CheckButton
 var _dim_spin: SpinBox
 var _active_kind := ""
 ## True while the dim LineEdit has focus — mouse must not overwrite typed digits.
@@ -91,6 +95,26 @@ func _build_finish_bar() -> void:
 		_finish_op.add_item(n)
 	_finish_op.custom_minimum_size = Vector2(64, CHIP_H)
 	_finish_bar.add_child(_finish_op)
+	_thin_spin = SpinBox.new()
+	_thin_spin.min_value = 0
+	_thin_spin.max_value = 1000
+	_thin_spin.step = 0.5
+	_thin_spin.value = 0
+	_thin_spin.suffix = "mm"
+	_thin_spin.custom_minimum_size = Vector2(72, CHIP_H)
+	_thin_spin.tooltip_text = "Thin wall (0 = solid closed profile)"
+	_finish_bar.add_child(_thin_spin)
+	_thin_type = OptionButton.new()
+	_thin_type.tooltip_text = "Thin wall offset: One Side / Midplane"
+	for n in ["One Side", "Midplane"]:
+		_thin_type.add_item(n)
+	_thin_type.custom_minimum_size = Vector2(88, CHIP_H)
+	_finish_bar.add_child(_thin_type)
+	_flip_side = CheckButton.new()
+	_flip_side.text = "Flip"
+	_flip_side.custom_minimum_size = Vector2(56, CHIP_H)
+	_flip_side.tooltip_text = "Flip thin wall / extrude side"
+	_finish_bar.add_child(_flip_side)
 	var ex := Button.new()
 	ex.text = "Extrude"
 	ex.custom_minimum_size = Vector2(72, CHIP_H)
@@ -98,7 +122,10 @@ func _build_finish_bar() -> void:
 		finish_requested.emit(
 			["new", "cut", "fuse"][_finish_op.selected],
 			_extrude_spin.value,
-			["blind", "through_all", "midplane"][_finish_end.selected]))
+			["blind", "through_all", "midplane"][_finish_end.selected],
+			_thin_spin.value,
+			["one_side", "midplane"][_thin_type.selected],
+			_flip_side.button_pressed))
 	_finish_bar.add_child(ex)
 	var rv := Button.new()
 	rv.text = "Revolve"

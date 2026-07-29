@@ -319,7 +319,8 @@ func _build_selection_strip() -> void:
 	row.add_child(_strip_sketch)
 	_strip_hole = Button.new()
 	_strip_hole.text = "Hole"
-	_strip_hole.tooltip_text = "Apply hole at face center (O). Shift+O arms Place hole…"
+	_strip_hole.tooltip_text = (
+		"Apply hole at face center (O). Shift+O Place hole… · Ctrl+Shift+O Hole Wizard…")
 	_strip_hole.pressed.connect(func() -> void: _ctx_apply_hole())
 	row.add_child(_strip_hole)
 	_strip_look = Button.new()
@@ -2577,6 +2578,8 @@ func _gui_key(event: InputEventKey) -> bool:
 			if _place_kind != "":
 				_disarm_place(true)
 				return true
+			if ops_panel != null and ops_panel.cancel_pending_pick():
+				return true
 			if _picking_active_plane:
 				cancel_pick_active_plane()
 				return true
@@ -2587,6 +2590,13 @@ func _gui_key(event: InputEventKey) -> bool:
 			view.clear_selection()
 			status.emit("")
 			return true
+		KEY_ENTER, KEY_KP_ENTER:
+			if sketch_mode != null and sketch_mode.active:
+				return false
+			if ops_panel != null and ops_panel.is_hole_wizard_armed():
+				if not ops_panel._apply_hole_wizard():
+					status.emit("Hole Wizard: need at least one point")
+				return true
 		KEY_DELETE, KEY_BACKSPACE:
 			return _delete_selection()
 		KEY_C:
@@ -2670,14 +2680,18 @@ func _gui_key(event: InputEventKey) -> bool:
 				status.emit("All shown" if ids.is_empty() else "Isolated")
 				return true
 		KEY_O:
-			if not event.ctrl_pressed:
-				if sketch_mode != null and sketch_mode.active:
-					return false
-				if event.shift_pressed:
-					_ctx_arm_hole()
-				else:
-					_ctx_apply_hole()
+			if sketch_mode != null and sketch_mode.active:
+				return false
+			if event.ctrl_pressed and event.shift_pressed:
+				_ctx_arm_hole_wizard()
 				return true
+			if event.ctrl_pressed:
+				return false  # File > Open (Ctrl+O) in main
+			if event.shift_pressed:
+				_ctx_arm_hole()
+			else:
+				_ctx_apply_hole()
+			return true
 		KEY_SPACE:
 			# SolidWorks Spacebar / Onshape S-lite: orientation + named views.
 			if not event.ctrl_pressed and _place_kind == "" \
@@ -3426,6 +3440,7 @@ func _open_context_menu(screen_pos: Vector2) -> void:
 			_context_menu.add_item("Sketch on face…", 2)
 			_context_menu.add_item("Apply hole (center)", 16)
 			_context_menu.add_item("Place hole…", 17)
+			_context_menu.add_item("Hole Wizard…", 18)
 			_context_menu.add_item("Set as active plane", 8)
 			_context_menu.add_item("Look at face", 6)
 			_context_menu.add_item("Push/Pull (drag orange arrow)", 7)
@@ -3468,6 +3483,7 @@ func _on_context_id(id: int) -> void:
 		8: _ctx_set_active_plane()
 		16: _ctx_apply_hole()
 		17: _ctx_arm_hole()
+		18: _ctx_arm_hole_wizard()
 		10:
 			if camera != null:
 				camera.frame_contents()
@@ -3593,6 +3609,16 @@ func _ctx_arm_hole() -> void:
 		status.emit("Select a face first")
 		return
 	ops_panel._arm_hole()
+
+
+func _ctx_arm_hole_wizard() -> void:
+	if ops_panel == null:
+		status.emit("Hole Wizard: open Modify panel")
+		return
+	if view == null or view.selected_face == "":
+		status.emit("Select a face first")
+		return
+	ops_panel._arm_hole_wizard()
 
 
 func _show_orient_popup() -> void:

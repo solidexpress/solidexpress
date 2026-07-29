@@ -32,6 +32,9 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_sketch_expr_dim_tests.gd
 	$(GODOT) --headless --path game --script tests/run_convert_entities_tests.gd
 	$(GODOT) --headless --path game --script tests/run_sweep_loft_solid_tests.gd
+	$(GODOT) --headless --path game --script tests/run_mirror_feature_tests.gd
+	$(GODOT) --headless --path game --script tests/run_hole_wizard_tests.gd
+	$(GODOT) --headless --path game --script tests/run_pliers_motion_tests.gd
 	$(GODOT) --headless --path game --script tests/run_display_tests.gd
 	$(GODOT) --headless --path game --script tests/run_menu_tests.gd
 	$(GODOT) --headless --path game --script tests/run_workflow_tests.gd

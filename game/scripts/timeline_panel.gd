@@ -23,6 +23,10 @@ var _renaming_fid := ""
 var property_panel: PropertyPanel
 var rollback_bar: Control
 
+
+func selected_feature_id() -> String:
+	return _selected_fid
+
 ## Feature type -> UIIcons glyph. Primitives resolve their kind from params.
 const TYPE_ICONS := {
 	"sketch": "sketch", "extrude": "extrude", "revolve": "revolve",

@@ -486,6 +486,7 @@ func _build_ui() -> void:
 	timeline.offset_top = -420
 	timeline.offset_bottom = -42
 	ui.add_child(timeline)
+	ops_panel.timeline_panel = timeline
 	timeline.status.connect(_on_status)
 	timeline.feature_selected.connect(_on_timeline_feature_selected)
 
@@ -1162,13 +1163,15 @@ func _on_sketch_dim_submitted(value: float) -> void:
 	_apply_dimension()
 
 
-func _on_sketch_finish(op: String, distance: float, end: String = "blind") -> void:
+func _on_sketch_finish(op: String, distance: float, end: String = "blind",
+		thin_thickness: float = 0.0, thin_type: String = "one_side",
+		flip_side: bool = false) -> void:
 	extrude_distance.value = distance
 	match op:
 		"cut": finish_op.selected = 1
 		"fuse": finish_op.selected = 2
 		_: finish_op.selected = 0
-	sketch_mode.finish_extrude(distance, op, end)
+	sketch_mode.finish_extrude(distance, op, end, thin_thickness, thin_type, flip_side)
 
 
 func _selected_entity() -> String:

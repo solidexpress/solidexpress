@@ -509,11 +509,168 @@ TopoDS_Shape Sketch::profile_face(std::string* err) const {
         TopoDS_Shape alt = make_with_holes(false);
         if (!alt.IsNull() && shape::area(alt) < best_area - 1e-6) face = alt;
     }
-    if (shape::area(face) >= best_area - 1e-6) {
-        if (err) *err = "inner loops did not form holes";
+    return face;
+}
+
+TopoDS_Shape Sketch::thin_profile_face(double thickness, bool midplane, bool flip_side,
+                                       std::string* err) const {
+    if (!(thickness > 0.0)) {
+        if (err) *err = "thin thickness must be > 0";
         return {};
     }
-    return face;
+
+    auto p = [&](const SketchEntity& e, size_t i) { return params_[e.params[i]]; };
+
+    struct UVSeg {
+        double x1, y1, x2, y2;
+        bool used = false;
+    };
+    std::vector<UVSeg> segs;
+    for (const auto& e : entities_) {
+        if (e.construction || e.type != SketchEntityType::Line) continue;
+        double x1 = p(e, 0), y1 = p(e, 1), x2 = p(e, 2), y2 = p(e, 3);
+        if (std::hypot(x2 - x1, y2 - y1) < 1e-9) continue;
+        segs.push_back({x1, y1, x2, y2, false});
+    }
+    if (segs.empty()) {
+        if (err) *err = "no usable open line chain for thin profile";
+        return {};
+    }
+
+    constexpr double tol = 1e-6;
+    auto near = [&](double ax, double ay, double bx, double by) {
+        return std::hypot(ax - bx, ay - by) < tol;
+    };
+
+    // Greedy-chain line segments into one UV polyline (open allowed).
+    UVSeg* seed = &segs[0];
+    seed->used = true;
+    std::vector<std::array<double, 2>> pts;
+    pts.push_back({seed->x1, seed->y1});
+    pts.push_back({seed->x2, seed->y2});
+
+    auto extend = [&](bool forward) {
+        bool progressing = true;
+        while (progressing) {
+            progressing = false;
+            double cx = forward ? pts.back()[0] : pts.front()[0];
+            double cy = forward ? pts.back()[1] : pts.front()[1];
+            for (auto& s : segs) {
+                if (s.used) continue;
+                std::array<double, 2> nxt{};
+                bool hit = false;
+                if (near(s.x1, s.y1, cx, cy)) {
+                    nxt = {s.x2, s.y2};
+                    hit = true;
+                } else if (near(s.x2, s.y2, cx, cy)) {
+                    nxt = {s.x1, s.y1};
+                    hit = true;
+                }
+                if (!hit) continue;
+                s.used = true;
+                if (forward) pts.push_back(nxt);
+                else pts.insert(pts.begin(), nxt);
+                progressing = true;
+                break;
+            }
+        }
+    };
+    extend(true);
+    extend(false);
+
+    for (const auto& s : segs) {
+        if (!s.used) {
+            // Prefer a single chain for MVP; leftover segments are ignored only if
+            // we already have a usable polyline. Fail if chain is degenerate.
+            break;
+        }
+    }
+    if (pts.size() < 2) {
+        if (err) *err = "no usable open line chain for thin profile";
+        return {};
+    }
+
+    auto left_normal = [](double x1, double y1, double x2, double y2) {
+        double dx = x2 - x1, dy = y2 - y1;
+        double len = std::hypot(dx, dy);
+        if (len < 1e-12) return std::array<double, 2>{0.0, 0.0};
+        return std::array<double, 2>{-dy / len, dx / len};
+    };
+
+    auto offset_poly = [&](const std::vector<std::array<double, 2>>& src, double dist) {
+        std::vector<std::array<double, 2>> out(src.size());
+        for (size_t i = 0; i < src.size(); ++i) {
+            double nx = 0.0, ny = 0.0;
+            if (i + 1 < src.size()) {
+                auto n = left_normal(src[i][0], src[i][1], src[i + 1][0], src[i + 1][1]);
+                nx += n[0];
+                ny += n[1];
+            }
+            if (i > 0) {
+                auto n = left_normal(src[i - 1][0], src[i - 1][1], src[i][0], src[i][1]);
+                nx += n[0];
+                ny += n[1];
+            }
+            double len = std::hypot(nx, ny);
+            if (len < 1e-12) {
+                out[i] = src[i];
+            } else {
+                out[i] = {src[i][0] + dist * nx / len, src[i][1] + dist * ny / len};
+            }
+        }
+        return out;
+    };
+
+    std::vector<std::array<double, 2>> path_a, path_b;
+    if (midplane) {
+        double d = thickness * 0.5;
+        if (flip_side) d = -d;
+        path_a = offset_poly(pts, d);
+        path_b = offset_poly(pts, -d);
+    } else {
+        double d = flip_side ? -thickness : thickness;
+        path_a = pts;
+        path_b = offset_poly(pts, d);
+    }
+
+    const auto n = plane_.normal();
+    gp_Pln pln(gp_Pnt(plane_.origin[0], plane_.origin[1], plane_.origin[2]),
+               gp_Dir(n[0], n[1], n[2]));
+    gp_Dir xd(plane_.x_dir[0], plane_.x_dir[1], plane_.x_dir[2]);
+    gp_Dir nd(n[0], n[1], n[2]);
+    gp_Ax2 ax(gp_Pnt(plane_.origin[0], plane_.origin[1], plane_.origin[2]), nd, xd);
+    auto to3d = [&](double u, double v) {
+        gp_Pnt o = ax.Location();
+        gp_XYZ x = ax.XDirection().XYZ(), y = ax.YDirection().XYZ();
+        return gp_Pnt(o.XYZ() + x * u + y * v);
+    };
+
+    // Closed wire: forward path_a, endcap, reverse path_b, endcap.
+    if (path_a.size() < 2 || path_b.size() < 2) {
+        if (err) *err = "thin profile path degenerate";
+        return {};
+    }
+    BRepBuilderAPI_MakeWire wire;
+    auto add_edge = [&](const std::array<double, 2>& u, const std::array<double, 2>& v) {
+        gp_Pnt a = to3d(u[0], u[1]);
+        gp_Pnt b = to3d(v[0], v[1]);
+        if (a.Distance(b) < 1e-9) return;
+        wire.Add(BRepBuilderAPI_MakeEdge(a, b).Edge());
+    };
+    for (size_t i = 0; i + 1 < path_a.size(); ++i) add_edge(path_a[i], path_a[i + 1]);
+    add_edge(path_a.back(), path_b.back());
+    for (size_t i = path_b.size(); i-- > 1;) add_edge(path_b[i], path_b[i - 1]);
+    add_edge(path_b.front(), path_a.front());
+    if (!wire.IsDone()) {
+        if (err) *err = "thin wire construction failed";
+        return {};
+    }
+    BRepBuilderAPI_MakeFace mk(pln, wire.Wire());
+    if (!mk.IsDone()) {
+        if (err) *err = "thin face construction failed";
+        return {};
+    }
+    return mk.Face();
 }
 
 std::array<double, 2> Sketch::to_sketch_uv(const std::array<double, 3>& p) const {

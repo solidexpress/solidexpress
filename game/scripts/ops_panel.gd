@@ -9,9 +9,10 @@ extends PanelContainer
 
 signal status(text: String)
 
-enum Pending { NONE, BOOLEAN, MEASURE, HOLE, LINEAR, CIRCULAR, MIRROR }
+enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, LINEAR, CIRCULAR, MIRROR }
 
 var view: DocumentView
+var timeline_panel: TimelinePanel
 
 var _body_ops: VBoxContainer
 var _face_ops: VBoxContainer
@@ -31,6 +32,7 @@ var _material_option: OptionButton
 var _hole_diameter: SpinBox
 var _hole_depth: SpinBox
 var _hole_inset: SpinBox
+var _apply_holes_btn: Button
 ## True after the user edits Inset; auto-inferred defaults stop overwriting.
 var _hole_inset_manual := false
 var _hole_inset_syncing := false
@@ -41,6 +43,9 @@ var _pending_first := ""  # armed source entity (body for boolean, any for measu
 var _pending_body := ""
 var _pending_face := ""
 var _pending_fid := ""
+## Accumulated drill points for Hole Wizard (one Hole feature on Apply).
+var _hole_wizard_positions: PackedVector3Array = PackedVector3Array()
+var _hole_wizard_direction := Vector3.ZERO
 ## World-space magnet hold for Place hole… (mm). Farther clicks stay free.
 const HOLE_SNAP_MM := 8.0
 const HOLE_CORNER_TOL_MM := 0.45
@@ -263,6 +268,13 @@ func _build_face_ops() -> void:
 		"Drill at the center of this face")
 	_op_button(hole_row, "Place hole…", _arm_hole, "hole",
 		"Arm: click a point on a face (near corner → inset; near mid → snap; else free)")
+	var wizard_row := HBoxContainer.new()
+	_face_ops.add_child(wizard_row)
+	_op_button(wizard_row, "Hole Wizard…", _arm_hole_wizard, "hole",
+		"Multi-place: click several face points, then Apply holes / Enter (one Hole feature)")
+	_apply_holes_btn = _op_button(wizard_row, "Apply holes", _apply_hole_wizard, "",
+		"Commit accumulated Hole Wizard points as one feature (Enter)")
+	_apply_holes_btn.disabled = true
 	_op_button(_face_ops, "Face area", func() -> void:
 		status.emit("Area: %.2f mm^2" % view.doc.measure_face_area(view.selected_face)),
 		"area", "Show the area of this face")
@@ -289,6 +301,9 @@ func _on_selection_changed(body: String, face: String) -> void:
 
 
 func _on_picked(body: String, face: String, point: Vector3) -> void:
+	if _pending == Pending.HOLE_WIZARD:
+		_accumulate_hole_wizard_pick(body, face, point)
+		return
 	if _pending == Pending.HOLE or _pending == Pending.LINEAR \
 			or _pending == Pending.CIRCULAR or _pending == Pending.MIRROR:
 		_resolve_pending(body, face, point)
@@ -447,11 +462,14 @@ func _mirror() -> void:
 	var body := view.selected_body
 	if body == "":
 		return
-	# Default: mirror across the YZ plane through the body's +X extent.
 	var bb: Dictionary = view.doc.measure_bbox(body)
 	if bb.is_empty():
 		return
-	_do_mirror(body, Vector3(bb["max"].x, 0, 0), Vector3(1, 0, 0))
+	# Feature mode: mid-X of bbox. Body mode: +X extent (keeps body tests green).
+	var plane_x: float = bb["max"].x
+	if _mirror_source_feature_id(body) != "":
+		plane_x = (bb["min"].x + bb["max"].x) * 0.5
+	_do_mirror(body, Vector3(plane_x, 0, 0), Vector3(1, 0, 0))
 
 
 func _linear_pattern() -> void:
@@ -468,15 +486,58 @@ func _circular_pattern() -> void:
 	_do_circular(body, Vector3.ZERO, Vector3(0, 0, 1))
 
 
+func _mirror_source_feature_id(body: String) -> String:
+	if timeline_panel == null:
+		return ""
+	var selected_fid := timeline_panel.selected_feature_id()
+	if selected_fid == "":
+		return ""
+	var target_fid := view.feature_of_body(body)
+	if target_fid == "":
+		return ""
+	const MODIFYING := {
+		"extrude": true, "revolve": true, "fillet": true, "chamfer": true,
+		"hole": true, "shell": true, "draft": true, "push_pull": true,
+	}
+	for f in view.doc.graph_features():
+		if str(f.get("id", "")) != selected_fid:
+			continue
+		var ftype := str(f.get("type", ""))
+		if not MODIFYING.has(ftype):
+			return ""
+		# Modifying features target a body via params.target (feature id).
+		var params: Dictionary = f.get("params", {})
+		var tgt := str(params.get("target", ""))
+		if tgt == target_fid or tgt == body:
+			return selected_fid
+		# Also accept when the selected feature's output is this body (rare).
+		if str(f.get("output_body", "")) == body:
+			return selected_fid
+		return ""
+	return ""
+
+
 func _do_mirror(body: String, plane_point: Vector3, plane_normal: Vector3) -> void:
 	var fid := view.feature_of_body(body)
 	var created := ""
-	if fid != "":
+	var feature_mode := false
+	var source_fid := _mirror_source_feature_id(body)
+	if source_fid != "" and fid != "":
+		var sources := PackedStringArray()
+		sources.append(source_fid)
+		created = view.doc.graph_add_mirror(fid, plane_point, plane_normal, sources)
+		feature_mode = true
+	elif fid != "":
 		created = view.doc.graph_add_mirror(fid, plane_point, plane_normal)
 	else:
 		created = view.doc.mirror_body(body, plane_point, plane_normal, true)
 	view.graph_changed()
-	status.emit("Mirrored body" if created != "" else "Mirror failed")
+	if created == "":
+		status.emit("Mirror failed")
+	elif feature_mode:
+		status.emit("Mirrored feature")
+	else:
+		status.emit("Mirrored body")
 
 
 func _do_linear(body: String, direction: Vector3) -> void:
@@ -655,12 +716,129 @@ func _arm_hole() -> void:
 	if fid == "":
 		status.emit("Hole needs a timeline body")
 		return
+	_clear_hole_wizard()
 	_pending = Pending.HOLE
 	_pending_body = body
 	_pending_face = face
 	_pending_fid = fid
 	_pending_first = face
 	status.emit("Hole: click face (near corner → inset %.1f mm)" % _hole_inset.value)
+
+
+func _arm_hole_wizard() -> void:
+	var face := view.selected_face
+	var body := view.selected_body
+	if face == "" or body == "":
+		return
+	var fid := view.feature_of_body(body)
+	if fid == "":
+		status.emit("Hole Wizard needs a timeline body")
+		return
+	_pending = Pending.HOLE_WIZARD
+	_pending_body = body
+	_pending_face = face
+	_pending_fid = fid
+	_pending_first = face
+	_hole_wizard_positions = PackedVector3Array()
+	_hole_wizard_direction = Vector3.ZERO
+	_sync_apply_holes_btn()
+	status.emit("Hole Wizard: click points on face, then Apply holes / Enter")
+
+
+func _clear_hole_wizard() -> void:
+	_hole_wizard_positions = PackedVector3Array()
+	_hole_wizard_direction = Vector3.ZERO
+	_sync_apply_holes_btn()
+
+
+func _sync_apply_holes_btn() -> void:
+	if _apply_holes_btn != null:
+		_apply_holes_btn.disabled = _hole_wizard_positions.is_empty()
+
+
+func is_hole_wizard_armed() -> bool:
+	return _pending == Pending.HOLE_WIZARD
+
+
+func hole_wizard_point_count() -> int:
+	return _hole_wizard_positions.size()
+
+
+## Cancel Hole Wizard (or any armed pending pick). Returns true if something was armed.
+func cancel_pending_pick() -> bool:
+	if _pending == Pending.NONE:
+		return false
+	var was_wizard := _pending == Pending.HOLE_WIZARD
+	_pending = Pending.NONE
+	_clear_hole_wizard()
+	status.emit("Hole Wizard cancelled" if was_wizard else "Cancelled")
+	return true
+
+
+func _accumulate_hole_wizard_pick(body: String, face: String, point: Vector3) -> void:
+	var target_body := _pending_body
+	var target_face := face if face != "" else _pending_face
+	if body != "" and body != target_body:
+		status.emit("Hole Wizard: pick the same body (or Apply holes / Esc)")
+		return
+	if target_face == "":
+		status.emit("Hole Wizard: need a face")
+		return
+	var position := _hole_place_position(target_body, target_face, point)
+	_pending_face = target_face
+	if _hole_wizard_direction.length_squared() < 1e-12:
+		var outward: Vector3 = view.face_normal(target_body, target_face)
+		if outward.length_squared() > 1e-12:
+			_hole_wizard_direction = -outward.normalized()
+		else:
+			_hole_wizard_direction = Vector3(0, 0, -1)
+	_hole_wizard_positions.append(position)
+	_sync_apply_holes_btn()
+	status.emit("Hole Wizard: %d point(s) — click more, Apply holes / Enter, Esc cancel" %
+			_hole_wizard_positions.size())
+
+
+func _apply_hole_wizard() -> bool:
+	if _pending != Pending.HOLE_WIZARD and _hole_wizard_positions.is_empty():
+		status.emit("Hole Wizard: arm first (Hole Wizard…), then click points")
+		return false
+	if _hole_wizard_positions.is_empty():
+		status.emit("Hole Wizard: click at least one point")
+		return false
+	var body := _pending_body if _pending_body != "" else view.selected_body
+	var face := _pending_face if _pending_face != "" else view.selected_face
+	var ok := _commit_holes(body, face, _hole_wizard_positions, _hole_wizard_direction)
+	_pending = Pending.NONE
+	_clear_hole_wizard()
+	return ok
+
+
+func _commit_holes(body: String, face: String, positions: PackedVector3Array,
+		direction: Vector3) -> bool:
+	var target_fid := view.feature_of_body(body)
+	if target_fid == "" or positions.is_empty():
+		status.emit("Hole Wizard needs a timeline body and points")
+		return false
+	var dir := direction
+	if dir.length_squared() < 1e-12:
+		var outward: Vector3 = view.face_normal(body, face) if face != "" else Vector3.ZERO
+		if outward.length_squared() > 1e-12:
+			dir = -outward.normalized()
+		else:
+			dir = Vector3(0, 0, -1)
+	var d: float = _hole_diameter.value
+	var depth: float = _hole_depth.value
+	var type_names := ["simple", "counterbore", "countersink"]
+	var htype: String = type_names[_hole_type.selected]
+	var hole_fid: String = view.doc.graph_add_holes(
+		target_fid, htype, positions, dir, d, depth,
+		1.6 * d, 0.5 * d, 2.0 * d, 90.0)
+	if hole_fid != "":
+		view.graph_changed()
+		status.emit("Hole Wizard: %d × Ø%.1f" % [positions.size(), d])
+		return true
+	status.emit("Hole Wizard failed")
+	return false
 
 
 func _commit_hole(body: String, face: String, position: Vector3) -> bool:

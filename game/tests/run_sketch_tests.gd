@@ -20,6 +20,7 @@ func _init() -> void:
 	test_entities()
 	test_solve_rectangle()
 	test_extrude()
+	test_thin_open_line_extrude()
 	test_revolve()
 	test_conflict_reporting()
 	test_derive_face_plane()
@@ -32,6 +33,7 @@ func _init() -> void:
 	await process_frame
 	test_sketch_on_face_extrude(main)
 	test_sketch_exit_pad_reopen(main)
+	test_sketch_finish_thin_open_line(main)
 	test_sketch_camera_lock(main)
 	await test_sketch_screen_axes(main)
 	test_sketch_left_rail(main)
@@ -116,6 +118,32 @@ func test_extrude() -> void:
 	check(doc.get_mesh(body).get_surface_count() == 6, "box-like solid has 6 faces")
 	check(doc.undo(), "extrude is undoable")
 	check(doc.body_ids().size() == 0, "gone after undo")
+
+
+## Open polyline + thin_thickness>0 → solid wall; volume ≈ length*thickness*distance.
+func test_thin_open_line_extrude() -> void:
+	print("- thin extrude open line")
+	var doc := SxDocument.new()
+	var sk := SxSketch.new()
+	sk.add_line(0, 0, 40, 0)
+	var sk_fid: String = doc.graph_add_sketch(sk)
+	check(sk_fid != "", "open line sketch feature")
+	var length := 40.0
+	var thickness := 5.0
+	var distance := 10.0
+	var ex_fid: String = doc.graph_add_extrude(
+		sk_fid, distance, false, "new", "", "blind", thickness, "one_side", false)
+	check(ex_fid != "", "thin extrude feature")
+	var body := ""
+	for f in doc.graph_features():
+		if str(f.get("id", "")) == ex_fid:
+			body = str(f.get("output_body", ""))
+			break
+	check(body != "", "thin extrude output body")
+	var expected := length * thickness * distance
+	var vol: float = doc.body_volume(body)
+	check(absf(vol - expected) < expected * 0.02,
+		"thin volume ~ length*thickness*distance (%.1f vs %.1f)" % [vol, expected])
 
 
 func test_revolve() -> void:
@@ -261,6 +289,37 @@ func test_sketch_exit_pad_reopen(main) -> void:
 		if str(f3.get("type", "")) == "sketch":
 			sketch_count += 1
 	check(sketch_count == 2, "extrude reused sketch feature (count=%d, open rail still present)" % sketch_count)
+
+
+## Open line via SketchMode.finish_extrude(thin_thickness>0) — same API path as chrome.
+## Chrome signal wiring is covered by thin args on finish_extrude; unit path asserts volume.
+func test_sketch_finish_thin_open_line(main) -> void:
+	print("- sketch finish_extrude thin open line")
+	var view: DocumentView = main.view
+	var sm: SketchMode = main.sketch_mode
+	view.new_document()
+	view.clear_selection()
+	main._start_sketch()
+	check(sm.active, "sketch active for thin finish")
+	sm.set_tool(SketchMode.Tool.LINE)
+	sm.click(Vector2(0, 0))
+	sm.click(Vector2(40, 0))
+	sm.end_chain()
+	check(sm.sketch.entity_ids().size() == 1, "one open line before thin finish")
+	var length := 40.0
+	var thickness := 5.0
+	var distance := 10.0
+	sm.finish_extrude(distance, "new", "blind", thickness, "one_side", false)
+	check(not sm.active, "thin finish left sketch mode")
+	var body := ""
+	var bodies: PackedStringArray = view.doc.body_ids()
+	check(bodies.size() >= 1, "thin finish created a body")
+	if bodies.size() >= 1:
+		body = bodies[bodies.size() - 1]
+	var expected := length * thickness * distance
+	var vol: float = view.doc.body_volume(body) if body != "" else 0.0
+	check(body != "" and absf(vol - expected) < expected * 0.02,
+		"finish_extrude thin volume ~ L*t*d (%.1f vs %.1f)" % [vol, expected])
 
 
 func test_sketch_camera_lock(main) -> void:

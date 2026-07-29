@@ -1358,7 +1358,21 @@ func _nudge_feature_placement(fid: String, delta: Vector3) -> void:
 		params["origin"] = _vec3_to_param(_param_vec3(params, "origin", Vector3.ZERO) + delta)
 	if params.has("position"):
 		params["position"] = _vec3_to_param(_param_vec3(params, "position", Vector3.ZERO) + delta)
+	if params.has("positions") and params["positions"] is Array:
+		var moved: Array = []
+		for entry in params["positions"]:
+			var p := _param_vec3_from_any(entry)
+			moved.append(_vec3_to_param(p + delta))
+		params["positions"] = moved
 	_write_feature_params_quiet(fid, params)
+
+
+func _param_vec3_from_any(entry) -> Vector3:
+	if entry is Array and entry.size() >= 3:
+		return Vector3(float(entry[0]), float(entry[1]), float(entry[2]))
+	if entry is Dictionary:
+		return Vector3(float(entry.get("x", 0)), float(entry.get("y", 0)), float(entry.get("z", 0)))
+	return Vector3.ZERO
 
 
 func _transform_feature_placement(fid: String, axis_point: Vector3, R: Basis) -> void:
@@ -1372,6 +1386,12 @@ func _transform_feature_placement(fid: String, axis_point: Vector3, R: Basis) ->
 	if params.has("position"):
 		var p := _param_vec3(params, "position", Vector3.ZERO)
 		params["position"] = _vec3_to_param(axis_point + R * (p - axis_point))
+	if params.has("positions") and params["positions"] is Array:
+		var moved: Array = []
+		for entry in params["positions"]:
+			var p := _param_vec3_from_any(entry)
+			moved.append(_vec3_to_param(axis_point + R * (p - axis_point)))
+		params["positions"] = moved
 	# Primitives always keep an axis frame so later stretch/regen stay oriented.
 	var is_prim := str(rec.get("type", "")) == "primitive"
 	if is_prim or params.has("z_dir") or params.has("x_dir"):

@@ -25,6 +25,7 @@ const SCHEMAS := {
 		{"key": "distance", "label": "Distance", "kind": "float", "min": 0.01, "max": 10000.0, "step": 1.0},
 		{"key": "symmetric", "label": "Symmetric", "kind": "bool"},
 		{"key": "op", "label": "Result", "kind": "enum", "options": ["new", "fuse", "cut"]},
+		{"key": "thin_thickness", "label": "Thin wall", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
 	],
 	"revolve": [
 		{"key": "angle", "label": "Angle (°)", "kind": "float", "min": 0.1, "max": 360.0, "step": 5.0,
@@ -45,6 +46,7 @@ const SCHEMAS := {
 		{"key": "cb_depth", "label": "C'bore depth", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
 		{"key": "cs_diameter", "label": "C'sink Ø", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
 		{"key": "cs_angle_deg", "label": "C'sink angle", "kind": "float", "min": 10.0, "max": 170.0, "step": 5.0},
+		# positions: [[x,y,z],...] — Hole Wizard multi-point; edit via timeline Params JSON.
 	],
 	"shell": [
 		{"key": "thickness", "label": "Thickness", "kind": "float", "min": 0.01, "max": 1000.0, "step": 0.5},
@@ -172,6 +174,13 @@ func _build_fields(type: String) -> void:
 				_add_check_row(field, value)
 			"enum":
 				_add_enum_row(field, value)
+	if type == "hole" and _params.has("positions") and _params["positions"] is Array:
+		var note := Label.new()
+		var n: int = (_params["positions"] as Array).size()
+		note.text = "positions: %d point(s) — edit array in Params JSON" % n
+		note.add_theme_font_size_override("font_size", 11)
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_fields.add_child(note)
 	_building = false
 
 

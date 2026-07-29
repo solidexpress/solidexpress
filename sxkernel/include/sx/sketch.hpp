@@ -151,6 +151,11 @@ public:
     // Returns a null shape if no closed profile exists.
     TopoDS_Shape profile_face(std::string* err = nullptr) const;
 
+    // Builds a planar face by in-plane offsetting an open (or closed)
+    // non-construction polyline profile to the given wall thickness.
+    TopoDS_Shape thin_profile_face(double thickness, bool midplane, bool flip_side,
+                                   std::string* err = nullptr) const;
+
     // Diagnostics for open profiles / gaps / zero-length.
     std::vector<SketchIssue> analyze(double gap_tol = 1e-4) const;
 

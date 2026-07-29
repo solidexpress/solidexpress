@@ -13,6 +13,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Pin Windows vcpkg cache key
+        run: python3 scripts/release/test_windows_vcpkg_cache_key.py
+
       - name: Install dependencies
         run: |
           sudo apt-get update

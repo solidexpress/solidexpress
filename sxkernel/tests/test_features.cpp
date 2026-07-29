@@ -302,3 +302,62 @@ TEST_CASE("graph snapshot command: undo/redo restores timeline and bodies", "[fe
     REQUIRE(doc.body(body_id) != nullptr);
     REQUIRE(shape::volume(doc.body(body_id)->shape) == Approx(2000.0));
 }
+
+
+TEST_CASE("feature graph: thin extrude open line", "[features][thin]") {
+    Document doc;
+    FeatureGraph graph;
+
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("OpenLine");
+    skf.sketch->add_line(0, 0, 40, 0);
+    auto sketch_fid = graph.add(std::move(skf));
+
+    Feature ext;
+    ext.type = FeatureType::Extrude;
+    ext.params = {{"sketch", sketch_fid.str()},
+                  {"distance", 10.0},
+                  {"thin_thickness", 5.0},
+                  {"op", "new"}};
+    auto ext_fid = graph.add(std::move(ext));
+
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    EntityId body_id = graph.feature(ext_fid)->output_body;
+    REQUIRE(doc.body(body_id) != nullptr);
+    REQUIRE(shape::volume(doc.body(body_id)->shape) == Approx(2000.0).epsilon(1e-6));
+}
+
+TEST_CASE("feature graph: thin extrude flip_side changes COM", "[features][thin]") {
+    auto run = [](bool flip) {
+        Document doc;
+        FeatureGraph graph;
+
+        Feature skf;
+        skf.type = FeatureType::Sketch;
+        skf.sketch = std::make_shared<Sketch>("OpenLine");
+        skf.sketch->add_line(0, 0, 40, 0);
+        auto sketch_fid = graph.add(std::move(skf));
+
+        Feature ext;
+        ext.type = FeatureType::Extrude;
+        ext.params = {{"sketch", sketch_fid.str()},
+                      {"distance", 10.0},
+                      {"thin_thickness", 5.0},
+                      {"flip_side", flip},
+                      {"op", "new"}};
+        auto ext_fid = graph.add(std::move(ext));
+
+        std::string err;
+        REQUIRE(graph.regenerate(doc, &err));
+        EntityId body_id = graph.feature(ext_fid)->output_body;
+        REQUIRE(doc.body(body_id) != nullptr);
+        return shape::center_of_mass(doc.body(body_id)->shape);
+    };
+
+    auto com_a = run(false);
+    auto com_b = run(true);
+    REQUIRE(com_a[1] == Approx(-com_b[1]).margin(1e-3));
+    REQUIRE(std::abs(com_a[1] - com_b[1]) > 1e-3);
+}

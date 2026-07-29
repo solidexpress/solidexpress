@@ -123,9 +123,14 @@ FeatureType feature_type_from_string(const std::string& s) {
 
 static bool creates_body(const Feature& f) {
     if (f.type == FeatureType::Primitive || f.type == FeatureType::ImportStep ||
-        f.type == FeatureType::ImportStl || f.type == FeatureType::Mirror ||
-        f.type == FeatureType::Loft || f.type == FeatureType::HelixSweep)
+        f.type == FeatureType::ImportStl || f.type == FeatureType::Loft ||
+        f.type == FeatureType::HelixSweep)
         return true;
+    // Body-mode Mirror always creates a mirrored body. Feature-mode Mirror
+    // modifies a target in place (cut/fuse); op==new sources get output slots
+    // allocated during apply.
+    if (f.type == FeatureType::Mirror)
+        return !f.params.contains("source_feature_ids");
     if (f.type == FeatureType::Extrude || f.type == FeatureType::Revolve ||
         f.type == FeatureType::Sweep)
         return f.params.value("op", "new") == "new";
@@ -175,7 +180,7 @@ void collect_deps(const Feature& f, std::vector<std::string>& out) {
         if (f.params.contains(key) && f.params[key].is_string())
             out.push_back(f.params[key].get<std::string>());
     }
-    for (const char* arr_key : {"sketches", "guides"}) {
+    for (const char* arr_key : {"sketches", "guides", "source_feature_ids"}) {
         if (f.params.contains(arr_key) && f.params[arr_key].is_array()) {
             for (const auto& s : f.params[arr_key]) {
                 if (s.is_string()) out.push_back(s.get<std::string>());
@@ -873,7 +878,17 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 const Feature* skf = feature(sketch_fid);
                 if (!skf || !skf->sketch) return fail("missing sketch feature");
                 std::string perr;
-                TopoDS_Shape face = skf->sketch->profile_face(&perr);
+                TopoDS_Shape face;
+                double thin_thickness = num_param(params, "thin_thickness", 0.0, env);
+                if (thin_thickness > 0.0) {
+                    std::string thin_type = params.value("thin_type", "one_side");
+                    bool thin_midplane = (thin_type == "midplane");
+                    bool flip_side = params.value("flip_side", false);
+                    face = skf->sketch->thin_profile_face(thin_thickness, thin_midplane, flip_side,
+                                                          &perr);
+                } else {
+                    face = skf->sketch->profile_face(&perr);
+                }
                 if (face.IsNull()) return fail("profile: " + perr);
 
                 TopoDS_Shape result;
@@ -984,19 +999,46 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 double depth_param = num_param(params, "depth", 0.0, env);
                 double depth = depth_param > 0.0 ? depth_param : k_hole_through;
                 std::string htype = params.value("type", "simple");
-                TopoDS_Shape tool = build_feature_hole_tool(
-                    pnt_from(params.at("position")), dir_from(params.at("direction")),
-                    diameter, depth, htype, num_param(params, "cb_diameter", 0.0, env),
-                    num_param(params, "cb_depth", 0.0, env),
-                    num_param(params, "cs_diameter", 0.0, env),
-                    num_param(params, "cs_angle_deg", 90.0, env));
-                if (tool.IsNull() || !shape::is_valid(tool)) return fail("hole tool failed");
-                BRepAlgoAPI_Cut cut(tb->shape, tool);
-                if (!cut.IsDone()) return fail("hole cut failed");
-                TopoDS_Shape result = cut.Shape();
-                if (result.IsNull() || !shape::is_valid(result)) return fail("hole result invalid");
-                if (shape::count(result).solids < 1 || shape::volume(result) <= 0.0)
-                    return fail("hole destroyed the solid");
+                // Multi-point: prefer non-empty positions[]; else single position.
+                std::vector<gp_Pnt> drill_pts;
+                if (params.contains("positions") && params["positions"].is_array() &&
+                    !params["positions"].empty()) {
+                    for (const auto& jp : params["positions"]) {
+                        if (!jp.is_array() || jp.size() < 3)
+                            return fail("hole positions entry must be [x,y,z]");
+                        drill_pts.push_back(pnt_from(jp));
+                    }
+                } else if (params.contains("position")) {
+                    drill_pts.push_back(pnt_from(params.at("position")));
+                } else {
+                    return fail("hole needs position or positions");
+                }
+                if (!params.contains("direction")) return fail("hole needs direction");
+                const gp_Dir dir = dir_from(params.at("direction"));
+                const double cb_d = num_param(params, "cb_diameter", 0.0, env);
+                const double cb_dep = num_param(params, "cb_depth", 0.0, env);
+                const double cs_d = num_param(params, "cs_diameter", 0.0, env);
+                const double cs_ang = num_param(params, "cs_angle_deg", 90.0, env);
+
+                TopoDS_Shape result = tb->shape;
+                for (size_t i = 0; i < drill_pts.size(); ++i) {
+                    TopoDS_Shape tool = build_feature_hole_tool(
+                        drill_pts[i], dir, diameter, depth, htype, cb_d, cb_dep, cs_d, cs_ang);
+                    if (tool.IsNull() || !shape::is_valid(tool))
+                        return fail("hole tool failed at point " + std::to_string(i + 1) + " of " +
+                                    std::to_string(drill_pts.size()));
+                    BRepAlgoAPI_Cut cut(result, tool);
+                    if (!cut.IsDone())
+                        return fail("hole cut failed at point " + std::to_string(i + 1) + " of " +
+                                    std::to_string(drill_pts.size()));
+                    result = cut.Shape();
+                    if (result.IsNull() || !shape::is_valid(result))
+                        return fail("hole result invalid at point " + std::to_string(i + 1) +
+                                    " of " + std::to_string(drill_pts.size()));
+                    if (shape::count(result).solids < 1 || shape::volume(result) <= 0.0)
+                        return fail("hole destroyed the solid at point " + std::to_string(i + 1) +
+                                    " of " + std::to_string(drill_pts.size()));
+                }
                 doc.replace_body_shape(target, result);
                 return true;
             }

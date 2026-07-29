@@ -1,7 +1,7 @@
 [
   {
     "id": "path_merge_sweep",
-    "title": "Merge sketches → path → sweep solid",
+    "title": "Merge sketches \u2192 path \u2192 sweep solid",
     "script": "res://tests/films/film_path_merge_sweep.gd",
     "enabled": true,
     "quit_after": 1800
@@ -22,7 +22,7 @@
   },
   {
     "id": "revolve_washer",
-    "title": "Revolve washer profile 360°",
+    "title": "Revolve washer profile 360\u00b0",
     "script": "res://tests/films/film_revolve_washer.gd",
     "enabled": true,
     "quit_after": 1400
@@ -43,9 +43,16 @@
   },
   {
     "id": "precision_plate",
-    "title": "Plate with inset corner holes (Place hole…)",
+    "title": "Plate with inset corner holes (Place hole\u2026)",
     "script": "res://tests/films/film_precision_plate.gd",
     "enabled": true,
     "quit_after": 2200
+  },
+  {
+    "id": "pliers_motion",
+    "title": "Needle-nose pliers: mates + revolute drag",
+    "script": "res://tests/films/film_pliers_motion.gd",
+    "enabled": true,
+    "quit_after": 3600
   }
 ]

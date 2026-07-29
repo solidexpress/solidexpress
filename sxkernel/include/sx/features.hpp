@@ -30,7 +30,9 @@ enum class FeatureType {
     Sketch,     // embedded sketch; no geometry output
     Extrude,    // params: {sketch: <feature uuid>, distance, symmetric,
                 //          end: "blind|through_all|midplane" (midplane ⇒ symmetric),
-                //          op: "new|fuse|cut", target: <feature uuid, for fuse/cut>}
+                //          op: "new|fuse|cut", target: <feature uuid, for fuse/cut>,
+                //          optional thin_thickness: >0 wall from open/closed profile,
+                //          thin_type: "one_side"|"midplane", flip_side: bool}
     Revolve,    // params: {sketch, axis_point: [u,v], axis_dir: [u,v], angle, op, target}
     Boolean,    // params: {op: "fuse|cut|common", target: <fid>, tool: <fid>}
     Fillet,     // params: {target: <fid>, radius, edges: [<edge uuid>|legacy 1-based index]}
@@ -38,8 +40,19 @@ enum class FeatureType {
     Hole,       // params: {target: <fid>, type: "simple|counterbore|countersink",
                 //          position: [x,y,z], direction: [x,y,z], diameter, depth
                 //          (<=0 = through-all), cb_diameter, cb_depth,
-                //          cs_diameter, cs_angle_deg}
-    Mirror,     // params: {target: <fid>, plane_point: [x,y,z], plane_normal: [x,y,z]}
+                //          cs_diameter, cs_angle_deg,
+                //          optional positions: [[x,y,z], ...] — multi-point Hole Wizard.
+                //          Rule: if positions is present and non-empty, drill at every
+                //          point (same diameter/depth/type/direction); otherwise use
+                //          single position. When both are set and positions is non-empty,
+                //          positions wins (position is ignored).}
+    Mirror,     // Body mode: {target: <fid>, plane_point: [x,y,z], plane_normal: [x,y,z]}
+                // Feature mode: {source_feature_ids: [fid...], plane_point, plane_normal,
+                //                optional target: body/feature to modify for cut/fuse results}
+                // Body mode when source_feature_ids absent (mirrors target body → output_body).
+                // Feature mode rebuilds Extrude/Revolve tools, mirrors them, applies same op
+                // (cut/fuse into target, or new → output_body). Fillet/Chamfer in the list
+                // is not supported yet (regenerate fails with a clear message).
     LinearPattern,   // params: {target, direction: [x,y,z], spacing, count}
     CircularPattern, // params: {target, axis_point, axis_dir, count, total_angle}
     Shell,      // params: {target, faces: [<face uuid>|legacy 1-based index], thickness}

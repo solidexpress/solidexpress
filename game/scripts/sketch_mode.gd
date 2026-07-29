@@ -460,7 +460,10 @@ func exit_sketch() -> String:
 ## appear on the timeline and stay editable. op: "new" | "cut" | "fuse";
 ## cut/fuse require a target body (the one sketched on) and cut extrudes
 ## into the body (negated distance). end: "blind" | "through_all" | "midplane".
-func finish_extrude(distance: float, op: String = "new", end: String = "blind") -> void:
+## thin_thickness > 0: wall from open/closed profile; thin_type one_side|midplane.
+func finish_extrude(distance: float, op: String = "new", end: String = "blind",
+		thin_thickness: float = 0.0, thin_type: String = "one_side",
+		flip_side: bool = false) -> void:
 	if not active:
 		return
 	if op != "new" and target_fid == "":
@@ -473,8 +476,12 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind") 
 	if sk_fid == "":
 		return
 	var ex_fid: String = view.doc.graph_add_extrude(
-		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end)
-	_finish_feature(sk_fid, ex_fid, op, "Extrude failed — is the profile closed?")
+		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
+		thin_thickness, thin_type, flip_side)
+	var fail_msg := "Extrude failed — is the profile closed?"
+	if thin_thickness <= 0.0 and not profile_is_closed(sketch):
+		fail_msg = "Extrude failed — open profile needs Thin wall > 0 (or close the profile)"
+	_finish_feature(sk_fid, ex_fid, op, fail_msg)
 
 
 ## Finish the sketch and revolve. The axis is the selected line when one is

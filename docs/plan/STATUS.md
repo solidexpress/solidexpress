@@ -36,7 +36,7 @@ Key files: `game/scripts/document_view.gd` (view-model), `viewport_interaction.g
 - [x] 2.3 Profile→face builder (closed loop chaining of lines/arcs, circle→disk, construction geometry excluded)
 - [x] 2.4 Extrude (incl. symmetric) + Revolve commands, undoable, snapshot pattern
 - [x] 2.5 SxSketch GDExtension binding (entities, constraints, solve, entity_info snapshots) + `SxDocument.extrude_sketch/revolve_sketch`
-- [x] 2.6 Sketch mode UI v1: sketch on ground plane or selected planar face; line-chain/rect/circle tools with live preview; toolbar with extrude distance; Esc cancel (`game/scripts/sketch_mode.gd`) — constraint toolbar + dimension input still TODO
+- [x] 2.6 Sketch mode UI v1: sketch on ground plane or selected planar face; line-chain/rect/circle tools with live preview; toolbar with extrude distance; Esc cancel (`game/scripts/sketch_mode.gd`) — constraint toolbar + dims delivered in Phase 5 / SW parity (stale TODO removed)
 - [x] 2.7 Sketch persistence: sketches embed in features.json inside .sxp (sketch_json.cpp); sketch entity cards still TODO
 - [x] SW sketch parity (visual-first): compact left rail + on-canvas chips; Power Trim hover/drag; entity variants (rect/circle/arc), ellipse/slot/point/centerline; Convert/Mirror/Pattern; Smart Dim; sketch blocks + picture underlay; multi-sketch **Path** feature (no free 3D sketch). Howtos: `docs/howto/visual-sketch-tools.md`, `docs/howto/multi-sketch-merge.md`.
 - [x] SW-class sketch upgrades (A–F): Midpoint/Symmetric/Fix/Diameter + driven dims; expression dims (`=w/2`) via VariableTable; definition-state / Fully Define / Analyze; associative Convert Entities; kernel Spline + PlaneGCS poles; loft guide rails. Kernel: `test_sketch_sw_upgrades.cpp`. Godot: `run_sketch_fully_defined_tests.gd`, `run_sketch_expr_dim_tests.gd`, `run_convert_entities_tests.gd`.
@@ -210,8 +210,21 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 ## Needle-nose pliers gaps (2026-07-28)
 - [x] Survey: [workflow-study-needle-nose-pliers.md](../survey/workflow-study-needle-nose-pliers.md)
 - [x] P0: `instance_revolute_axis` + MOVE_INSTANCE revolute drag; AssemblyPanel instance↔instance mates
-- [x] P1 (partial): Extrude end conditions `blind` / `through_all` / `midplane` (thin + open-profile cut deferred)
-- [x] Golden: `game/tests/run_pliers_motion_tests.gd` (jaws+pin, concentric+coincident, drag angle)
+- [x] P1: Extrude end conditions `blind` / `through_all` / `midplane`; thin wall + flip in sketch finish chrome → `finish_extrude`
+- [x] Golden: `game/tests/run_pliers_motion_tests.gd` (jaws+pin, concentric+coincident, drag angle) — gated in `test-godot`
+
+## Major 1c — Hole Wizard MVP (2026-07-29)
+- [x] Kernel Hole `positions: [[x,y,z],...]` (prefer over single `position` when non-empty); sequential cuts
+- [x] Catch2 `[feathole][holewizard]`; GDExtension `graph_add_holes` (additive)
+- [x] Ops: **Hole Wizard…** multi-click → **Apply holes** / Enter; Esc cancel; single Apply/Place unchanged
+- [x] Godot `run_hole_wizard_tests.gd` in `test-godot`
+
+## Sketch leftover audit (2026-07-29)
+- [x] Audit: do NOT reopen full sketch overhaul (suites green)
+- [x] Thin wall + flip wired into sketch finish chrome → finish_extrude
+- [x] run_pliers_motion_tests.gd added to test-godot
+- [ ] Open-profile cut (material-side) still follow-up if jaw cuts need it beyond thin boss
+- Stale: STATUS 2.6 "constraint toolbar still TODO" is obsolete
 
 ## Environment notes
 - System deps installed via apt: ninja-build, zip, libocct-*-dev (7.9.2), libeigen3-dev, libboost-dev
@@ -219,3 +232,10 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 - Build: `make build` (CMake+Ninja superbuild, ~5 min cold for godot-cpp)
 - PlaneGCS builds as `libplanegcs.so` (LGPL dynamic-link compliance); not yet consumed by sxkernel (Phase 2)
 - Voice STT: default stub (`SX_BUILD_VOICE=OFF`). Enable with vendored `thirdparty/whisper.cpp` + `ggml-tiny.en.bin` under `tools/whisper/` (gitignored)
+
+## Architecture Track A re-verify (2026-07-29)
+- [x] Track A already complete: ADR-001/002 + STATUS 3.2/3.4; interactive ops use `graph_add_*` with free-body Command fallbacks
+- [x] Re-checked after pliers Major 1–2: ops/voice dress-up + boolean + push-pull prefer graph when `feature_of_body` is set
+- [x] Pliers path green: thin/open extrude, feature-mirror, hole wizard multi-point, `run_pliers_motion_tests` gated in `test-godot`
+- Next architecture work is Track B (modularize) / Track C (CI hardening) — not blocking pliers
+

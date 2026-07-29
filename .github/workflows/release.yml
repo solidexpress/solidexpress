@@ -83,23 +83,26 @@ jobs:
   windows:
     runs-on: windows-latest
     env:
-      # Reuse compiled OCCT/Boost/TBB/etc across runs (first run still builds from source).
-      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+      # vcpkg removed x-gha; cache compiled packages via actions/cache + files provider.
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-binary-cache,readwrite"
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Export GitHub Actions cache environment variables
-        uses: actions/github-script@v7
+      # Bump key when vcpkg packages/triplet change; sync EXPECTED_VCPKG_WIN_CACHE_KEY in scripts/release/test_windows_vcpkg_cache_key.py
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
         with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+          path: ${{ github.workspace }}/vcpkg-binary-cache
+          key: vcpkg-win-x64-opencascade-eigen3-tbb-boost-system-filesystem-graph
+          restore-keys: |
+            vcpkg-win-x64-
 
       - name: Install build dependencies
         shell: bash
         run: |
+          mkdir -p "${GITHUB_WORKSPACE}/vcpkg-binary-cache"
           choco install ninja cmake -y
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
           "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"

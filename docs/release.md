@@ -68,5 +68,7 @@ make release-linux    # same as export-linux.sh (after fetch-godot-templates)
 ```
 
 ## Next CI steps
+- Windows vcpkg binary cache key: bump the cache key in .github/workflows/release.yml together with EXPECTED_VCPKG_WIN_CACHE_KEY in scripts/release/test_windows_vcpkg_cache_key.py (CI pin test).
+
 
 - `windows` / `macos` jobs in `release.yml` (currently disabled): vcpkg/homebrew OCCT, cache godot-cpp, attach artifacts to the same GitHub Release.
