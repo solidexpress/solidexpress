@@ -3,7 +3,8 @@
   #define MyAppVersion "0.0.0"
 #endif
 #ifndef MySourceDir
-  #define MySourceDir "..\..\dist\releases\SolidExpress-{#MyAppVersion}-windows-x86_64"
+  ; Concatenate — {#MyAppVersion} inside a #define string stays literal in ISPP.
+  #define MySourceDir "..\..\dist\releases\SolidExpress-" + MyAppVersion + "-windows-x86_64"
 #endif
 [Setup]
 AppId={{A7B3C4D5-E6F7-4890-ABCD-SOLIDEXPRESS01}
