@@ -108,7 +108,27 @@ jobs:
           "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"
           echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
           echo "CMAKE_TOOLCHAIN_FILE=$RUNNER_TEMP/vcpkg/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
-          "$RUNNER_TEMP/vcpkg/vcpkg.exe" install opencascade eigen3 tbb boost-system boost-filesystem boost-graph --triplet x64-windows
+          # Prefetch boost license via github.com; raw.githubusercontent.com SSL often fails on GHA Windows.
+          mkdir -p "$RUNNER_TEMP/vcpkg/downloads"
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "$RUNNER_TEMP/vcpkg/downloads/boost-1.91.0-LICENSE_1_0.txt" \
+            "https://github.com/boostorg/boost/raw/boost-1.91.0/LICENSE_1_0.txt" \
+            || curl -fsSL --retry 5 --retry-all-errors \
+              -o "$RUNNER_TEMP/vcpkg/downloads/boost-1.91.0-LICENSE_1_0.txt" \
+              "https://raw.githubusercontent.com/boostorg/boost/boost-1.91.0/LICENSE_1_0.txt" \
+            || true
+          # Retry whole install: vcpkg treats SSL errors as non-transient and will not retry itself.
+          ok=0
+          for attempt in 1 2 3; do
+            echo "==> vcpkg install attempt ${attempt}/3"
+            if "$RUNNER_TEMP/vcpkg/vcpkg.exe" install opencascade eigen3 tbb boost-system boost-filesystem boost-graph --triplet x64-windows; then
+              ok=1
+              break
+            fi
+            echo "vcpkg install failed on attempt ${attempt}; sleeping before retry"
+            sleep 20
+          done
+          [[ "$ok" -eq 1 ]] || exit 1
 
       - name: Resolve version
         id: ver
