@@ -160,15 +160,17 @@ jobs:
 
 
       - name: Install Inno Setup
-        run: choco install innosetup -y
+        run: choco install innosetup -y --no-progress
+        continue-on-error: true
 
       - name: Build Inno installer
         shell: bash
         run: |
           VER=$(tr -d '[:space:]' < VERSION)
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
-          SRC="dist/releases/SolidExpress-${VER}-windows-x86_64"
-          "$ISCC" "/DMyAppVersion=$VER" "/DMySourceDir=$SRC" packaging/windows/SolidExpress.iss
+          # Git Bash rewrites leading /D... args as Windows paths; disable that.
+          # MySourceDir defaults in SolidExpress.iss from MyAppVersion.
+          MSYS_NO_PATHCONV=1 "$ISCC" "/DMyAppVersion=$VER" packaging/windows/SolidExpress.iss
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
