@@ -76,8 +76,14 @@ if [[ ! -f "$EXPORT_BIN" ]]; then echo "Export failed" >&2; exit 1; fi
 
 if [[ -f game/bin/libplanegcs.dll ]]; then cp -f game/bin/libplanegcs.dll "$OUT_DIR/"; fi
 # Bundle vcpkg runtime DLLs next to the game binary (OCCT, etc.)
+# Newer vcpkg uses --installed-bin-dir (not --installed-root).
 if [[ -n "${VCPKG_ROOT:-}" && -f "$VCPKG_ROOT/vcpkg.exe" ]]; then
-  "$VCPKG_ROOT/vcpkg.exe" z-applocal --installed-root "$VCPKG_ROOT/installed/x64-windows/bin" --target-binary "$EXPORT_BIN" 2>/dev/null ||   "$VCPKG_ROOT/vcpkg.exe" z-applocal --installed-root "$VCPKG_ROOT/installed/x64-windows" --target-binary "$EXPORT_BIN" || true
+  INSTALLED_BIN="$VCPKG_ROOT/installed/x64-windows/bin"
+  if [[ -d "$INSTALLED_BIN" ]]; then
+    "$VCPKG_ROOT/vcpkg.exe" z-applocal \
+      --target-binary "$EXPORT_BIN" \
+      --installed-bin-dir "$INSTALLED_BIN" || true
+  fi
 fi
 if [[ -f game/bin/libsxcore.dll ]]; then cp -f game/bin/libsxcore.dll "$OUT_DIR/"; fi
 
@@ -87,6 +93,23 @@ if [[ -f game/bin/libsxcore.dll ]]; then cp -f game/bin/libsxcore.dll "$OUT_DIR/
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_DIR/LICENSE"
 
 rm -f "$ARCHIVE"
-powershell.exe -NoProfile -Command "Compress-Archive -Path '$OUT_DIR/*' -DestinationPath '$ARCHIVE' -Force"
+# PowerShell needs Windows paths; Git Bash $ROOT is /d/a/... which Compress-Archive rejects.
+to_win_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    local p="$1"
+    if [[ "$p" =~ ^/([a-zA-Z])/(.*)$ ]]; then
+      local drive="${BASH_REMATCH[1]}"
+      local rest="${BASH_REMATCH[2]//\//\\}"
+      echo "${drive^^}:\\${rest}"
+    else
+      echo "$p"
+    fi
+  fi
+}
+OUT_WIN="$(to_win_path "$OUT_DIR")"
+ARCHIVE_WIN="$(to_win_path "$ARCHIVE")"
+powershell.exe -NoProfile -Command "Compress-Archive -Path '$OUT_WIN\\*' -DestinationPath '$ARCHIVE_WIN' -Force"
 sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256" 2>/dev/null || certutil -hashfile "$ARCHIVE" SHA256 > "${ARCHIVE}.sha256"
 echo "OK: $ARCHIVE"
