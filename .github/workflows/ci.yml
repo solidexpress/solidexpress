@@ -36,6 +36,53 @@ jobs:
       - name: Run kernel tests
         run: ./build/sxkernel/sxkernel_tests
 
+  # Populate the Windows vcpkg binary cache on main so tag releases can restore it.
+  # Release runs only on tags; without a main-scoped cache, each release rebuilds from scratch.
+  windows-vcpkg:
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-binary-cache,readwrite"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-binary-cache
+          key: vcpkg-win-x64-opencascade-eigen3-tbb-boost-system-filesystem-graph
+          restore-keys: |
+            vcpkg-win-x64-
+
+      - name: Install vcpkg packages
+        shell: bash
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/vcpkg-binary-cache"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"
+          mkdir -p "$RUNNER_TEMP/vcpkg/downloads"
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "$RUNNER_TEMP/vcpkg/downloads/boost-1.91.0-LICENSE_1_0.txt" \
+            "https://github.com/boostorg/boost/raw/boost-1.91.0/LICENSE_1_0.txt" \
+            || curl -fsSL --retry 5 --retry-all-errors \
+              -o "$RUNNER_TEMP/vcpkg/downloads/boost-1.91.0-LICENSE_1_0.txt" \
+              "https://raw.githubusercontent.com/boostorg/boost/boost-1.91.0/LICENSE_1_0.txt" \
+            || true
+          ok=0
+          for attempt in 1 2 3; do
+            echo "==> vcpkg install attempt ${attempt}/3"
+            if "$RUNNER_TEMP/vcpkg/vcpkg.exe" install opencascade eigen3 tbb boost-system boost-filesystem boost-graph --triplet x64-windows; then
+              ok=1
+              break
+            fi
+            echo "vcpkg install failed on attempt ${attempt}; sleeping before retry"
+            sleep 20
+          done
+          [[ "$ok" -eq 1 ]] || exit 1
+
   # Godot headless suites need a local Godot binary (tools/godot/godot).
   # Enable when the CI image caches that binary; until then kernel is the gate.
   godot-smoke:
