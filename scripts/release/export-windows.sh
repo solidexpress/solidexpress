@@ -57,7 +57,13 @@ if [[ -z "$SXCORE_DLL" || ! -f "$SXCORE_DLL" ]]; then
   find game/bin build -name '*sxcore*.dll' 2>/dev/null | head -20 >&2 || true
   exit 1
 fi
-cp -f "$SXCORE_DLL" game/bin/libsxcore.dll
+# Git Bash `cp` fails when source and dest are the same file (e.g. already game/bin/libsxcore.dll).
+SXCORE_DEST="game/bin/libsxcore.dll"
+src_resolved="$(cd "$(dirname "$SXCORE_DLL")" && pwd)/$(basename "$SXCORE_DLL")"
+dest_resolved="$(cd "$(dirname "$SXCORE_DEST")" && pwd)/$(basename "$SXCORE_DEST")"
+if [[ "$src_resolved" != "$dest_resolved" ]]; then
+  cp -f "$SXCORE_DLL" "$SXCORE_DEST"
+fi
 
 "$GODOT" --headless --path game --import >/dev/null 2>&1 || true
 rm -rf "$OUT_DIR"
