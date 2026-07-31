@@ -74,7 +74,7 @@ tar -xzf dist/releases/SolidExpress-*.tar.gz -C /tmp
 Check:
 
 - [ ] `SolidExpress.x86_64` runs on a clean-ish Ubuntu (22.04/24.04).
-- [ ] `libsxcore.so` and `libplanegcs.so` are next to the binary (export script copies PlaneGCS).
+- [ ] `libsxcore.so`, `libplanegcs.so`, and OCCT/TBB (via `packaging/linux/bundle-shared-libs.sh`) are next to the binary with `RUNPATH=$ORIGIN`.
 - [ ] `.sha256` file matches: `sha256sum -c dist/releases/*.sha256`.
 
 ### Publish
@@ -191,16 +191,23 @@ You have an **Apple Developer Program** membership.
 
 ### Export (local)
 
+Prefer the release script (builds sxcore, exports, **bundles Homebrew OCCT into Frameworks**):
+
 ```bash
-godot --headless --path game --export-release "macOS" dist/releases/SolidExpress.app
+./scripts/release/export-macos.sh
+# or manually after Godot export:
+./packaging/macos/bundle-dylibs.sh dist/releases/SolidExpress-<ver>-macos/SolidExpress.app
 ```
+
+`libsxcore.dylib` links OCCT from Homebrew (`/opt/homebrew/opt/opencascade/...`). Without bundling, end users get a grey empty window because `SxDocument` never registers.
 
 ### Sign and notarize
 
-1. Sign all binaries inside `.app` (Frameworks, MacOS, dylibs).
-2. Sign the `.app` bundle: `codesign --force --deep --options runtime --sign "Developer ID Application: ..." SolidExpress.app`
-3. Submit: `xcrun notarytool submit SolidExpress.zip --apple-id ... --team-id ... --password ... --wait`
-4. Staple: `xcrun stapler staple SolidExpress.app` (or staple the dmg).
+1. Run `bundle-dylibs.sh` first (rewrites install names; ad-hoc signs).
+2. Sign all binaries inside `.app` (Frameworks, MacOS, dylibs) with Developer ID.
+3. Sign the `.app` bundle: `codesign --force --deep --options runtime --sign "Developer ID Application: ..." SolidExpress.app`
+4. Submit: `xcrun notarytool submit SolidExpress.zip --apple-id ... --team-id ... --password ... --wait`
+5. Staple: `xcrun stapler staple SolidExpress.app` (or staple the dmg).
 
 Checklist:
 
@@ -281,10 +288,12 @@ Document secret rotation in your password manager; never commit certs.
 | Symptom | Check |
 |---------|--------|
 | Export fails “No export template” | Run `fetch-godot-templates.sh`; template version must match Godot |
-| App starts, no OCCT / crash on open | `libsxcore` missing or wrong arch in `game/bin/` |
+| App starts, no OCCT / crash on open | `libsxcore` missing or wrong arch; or OCCT not bundled (Linux/macOS/Windows packagers must ship TK* next to the GDExtension) |
 | Sketch constraints fail | `libplanegcs.so` / `.dll` / `.dylib` beside binary or in `game/bin/` |
 | Linux CI fails kernel tests | Fix on `main` before re-tagging (prefer new tag, not force-push) |
 | macOS “damaged” / Gatekeeper | Notarization + staple; or quarantine `xattr -cr` for local dev only |
+| macOS grey empty window / can’t open libsxcore | OCCT dylibs not bundled — `packaging/macos/bundle-dylibs.sh` (wired into `export-macos.sh`). Workaround: `brew install opencascade`. |
+| Windows missing TK*.dll | `packaging/windows/bundle-dlls.sh` must run against `libsxcore.dll` (not only the .exe). |
 | Windows SmartScreen | Sign binary; EV cert helps reputation over time |
 | Flatpak blank window | `--device=dri`, Wayland/X11 sockets; verify GL in sandbox |
 
@@ -298,9 +307,9 @@ Track these as issues if not done:
 2. [ ] Enable `windows` / `macos` jobs with cached OCCT/godot-cpp
 3. [ ] `scripts/release/export-windows.sh` / `export-macos.sh` mirroring Linux
 4. [ ] Inno Setup or WiX script under `packaging/windows/`
-5. [ ] `packaging/macos/entitlements.plist` + dmg script
+5. [x] Runtime lib bundlers: `packaging/linux/bundle-shared-libs.sh`, `packaging/windows/bundle-dlls.sh`, `packaging/macos/bundle-dylibs.sh` (+ dmg script)
 6. [x] `NOTICE` file bundled in all exports (`export-linux.sh` / `export-windows.sh` / `export-macos.sh`)
-7. [ ] Release workflow: attach all three OS artifacts + unified release notes
+7. [x] Release workflow: attach all three OS artifacts + unified release notes
 
 ---
 

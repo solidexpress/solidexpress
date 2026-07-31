@@ -75,18 +75,15 @@ echo "==> Godot export-release preset=${PRESET}"
 if [[ ! -f "$EXPORT_BIN" ]]; then echo "Export failed" >&2; exit 1; fi
 
 if [[ -f game/bin/libplanegcs.dll ]]; then cp -f game/bin/libplanegcs.dll "$OUT_DIR/"; fi
-# Bundle vcpkg runtime DLLs next to the game binary (OCCT, etc.)
-# Newer vcpkg uses --installed-bin-dir (not --installed-root).
-if [[ -n "${VCPKG_ROOT:-}" && -f "$VCPKG_ROOT/vcpkg.exe" ]]; then
-  INSTALLED_BIN="$VCPKG_ROOT/installed/x64-windows/bin"
-  if [[ -d "$INSTALLED_BIN" ]]; then
-    "$VCPKG_ROOT/vcpkg.exe" z-applocal \
-      --target-binary "$EXPORT_BIN" \
-      --installed-bin-dir "$INSTALLED_BIN" || true
-  fi
-fi
 if [[ -f game/bin/libsxcore.dll ]]; then cp -f game/bin/libsxcore.dll "$OUT_DIR/"; fi
+if [[ ! -f "$OUT_DIR/libsxcore.dll" ]]; then
+  echo "error: $OUT_DIR/libsxcore.dll missing after export" >&2
+  exit 1
+fi
 
+echo "==> bundle non-system DLLs (OCCT, TBB, …) next to libsxcore"
+chmod +x "$ROOT/packaging/windows/bundle-dlls.sh"
+"$ROOT/packaging/windows/bundle-dlls.sh" "$OUT_DIR"
 
 [[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$OUT_DIR/NOTICE"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_DIR/THIRD_PARTY.md"

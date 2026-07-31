@@ -26,6 +26,19 @@ done
 PLANEGCS="$(find build -name 'libplanegcs.dylib' -print -quit 2>/dev/null || true)"
 if [[ -n "$PLANEGCS" && ! -f game/bin/libplanegcs.dylib ]]; then cp -f "$PLANEGCS" game/bin/; fi
 
+if [[ ! -f game/bin/libsxcore.dylib ]]; then
+  SXCORE="$(find build game/bin -name 'libsxcore.dylib' -print -quit 2>/dev/null || true)"
+  if [[ -n "$SXCORE" ]]; then cp -f "$SXCORE" game/bin/libsxcore.dylib; fi
+fi
+if [[ ! -f game/bin/libsxcore.dylib ]]; then
+  echo "error: game/bin/libsxcore.dylib missing after sxcore build" >&2
+  exit 1
+fi
+if [[ ! -f game/bin/libplanegcs.dylib ]]; then
+  echo "error: game/bin/libplanegcs.dylib missing after planegcs build" >&2
+  exit 1
+fi
+
 "$GODOT" --headless --path game --import >/dev/null 2>&1 || true
 rm -rf "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 mkdir -p "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
@@ -34,10 +47,17 @@ echo "==> Godot export-release preset=${PRESET}"
 "$GODOT" --headless --path game --export-release "$PRESET" "$OUT_APP"
 if [[ ! -d "$OUT_APP" ]]; then echo "Export failed: $OUT_APP" >&2; exit 1; fi
 
-if [[ -f game/bin/libplanegcs.dylib ]]; then
-  mkdir -p "$OUT_APP/Contents/MacOS"
-  cp -f game/bin/libplanegcs.dylib "$OUT_APP/Contents/MacOS/" || true
+# Ensure PlaneGCS is present before bundling (Godot may not copy non-gdextension dylibs).
+mkdir -p "$OUT_APP/Contents/MacOS" "$OUT_APP/Contents/Frameworks"
+cp -f game/bin/libplanegcs.dylib "$OUT_APP/Contents/MacOS/"
+# If Godot omitted libsxcore from Frameworks, place it ourselves.
+if [[ ! -f "$OUT_APP/Contents/Frameworks/libsxcore.dylib" ]]; then
+  cp -f game/bin/libsxcore.dylib "$OUT_APP/Contents/Frameworks/"
 fi
+
+echo "==> bundle Homebrew OCCT / transitive dylibs into Frameworks"
+chmod +x "$ROOT/packaging/macos/bundle-dylibs.sh"
+"$ROOT/packaging/macos/bundle-dylibs.sh" "$OUT_APP"
 
 # Legal notices next to the .app (and inside Resources for Finder discovery).
 BUNDLE_DIR="$(dirname "$OUT_APP")"

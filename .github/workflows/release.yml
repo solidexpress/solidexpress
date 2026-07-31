@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build g++ curl unzip \
+            cmake ninja-build g++ curl unzip patchelf file \
             libocct-foundation-dev libocct-modeling-data-dev \
             libocct-modeling-algorithms-dev libocct-ocaf-dev \
             libocct-data-exchange-dev libocct-visualization-dev \

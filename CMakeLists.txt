@@ -56,6 +56,18 @@ if(MSVC)
 else()
   target_compile_options(planegcs PRIVATE -w)  # vendored code: silence warnings
 endif()
+# Sibling lookup for packaged releases (game/bin or next to the Godot binary).
+if(APPLE)
+  set_target_properties(planegcs PROPERTIES
+    BUILD_RPATH "@loader_path"
+    INSTALL_RPATH "@loader_path"
+    BUILD_WITH_INSTALL_RPATH TRUE)
+elseif(UNIX)
+  set_target_properties(planegcs PROPERTIES
+    BUILD_RPATH "\$ORIGIN"
+    INSTALL_RPATH "\$ORIGIN"
+    BUILD_WITH_INSTALL_RPATH TRUE)
+endif()
 
 add_subdirectory(sxkernel)
 # Always build sxvoice (stub by default). Whisper links only when SX_BUILD_VOICE=ON

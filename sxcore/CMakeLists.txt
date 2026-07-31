@@ -15,3 +15,15 @@ set_target_properties(sxcore PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game/bin"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game/bin"
 )
+# Packaged releases put OCCT/PlaneGCS beside libsxcore; prefer $ORIGIN / @loader_path.
+if(APPLE)
+  set_target_properties(sxcore PROPERTIES
+    BUILD_RPATH "@loader_path"
+    INSTALL_RPATH "@loader_path"
+    BUILD_WITH_INSTALL_RPATH TRUE)
+elseif(UNIX)
+  set_target_properties(sxcore PROPERTIES
+    BUILD_RPATH "\$ORIGIN"
+    INSTALL_RPATH "\$ORIGIN"
+    BUILD_WITH_INSTALL_RPATH TRUE)
+endif()

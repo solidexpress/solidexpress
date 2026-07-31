@@ -49,10 +49,21 @@ if [[ ! -f "$EXPORT_BIN" ]]; then
   exit 1
 fi
 
-# Ensure PlaneGCS is beside the game binary for $ORIGIN loading.
+# Ensure GDExtension + PlaneGCS are beside the game binary for $ORIGIN loading.
+if [[ -f game/bin/libsxcore.so ]]; then
+  cp -f game/bin/libsxcore.so "$OUT_DIR/"
+fi
 if [[ -f game/bin/libplanegcs.so ]]; then
   cp -f game/bin/libplanegcs.so "$OUT_DIR/"
 fi
+if [[ ! -f "$OUT_DIR/libsxcore.so" ]]; then
+  echo "error: $OUT_DIR/libsxcore.so missing after export" >&2
+  exit 1
+fi
+
+echo "==> bundle non-system shared libs (OCCT, TBB, …) + RUNPATH=\$ORIGIN"
+chmod +x "$ROOT/packaging/linux/bundle-shared-libs.sh"
+"$ROOT/packaging/linux/bundle-shared-libs.sh" "$OUT_DIR"
 
 cp -f "$ROOT/NOTICE" "$OUT_DIR/NOTICE"
 if [[ -f "$ROOT/THIRD_PARTY.md" ]]; then
