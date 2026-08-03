@@ -107,6 +107,9 @@ jobs:
           choco install ninja cmake -y
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
           "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"
+          # SX_VCPKG_ROOT survives ilammy/msvc-dev-cmd, which overwrites VCPKG_ROOT
+          # with Visual Studio's bundled vcpkg (no OpenCASCADE packages).
+          echo "SX_VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
           echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
           echo "CMAKE_TOOLCHAIN_FILE=$RUNNER_TEMP/vcpkg/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
           # Prefetch boost license via github.com; raw.githubusercontent.com SSL often fails on GHA Windows.
@@ -152,6 +155,14 @@ jobs:
           ./scripts/release/fetch-godot-templates.sh
 
       - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Restore project vcpkg root
+        shell: bash
+        run: |
+          if [[ -n "${SX_VCPKG_ROOT:-}" ]]; then
+            echo "VCPKG_ROOT=$SX_VCPKG_ROOT" >> "$GITHUB_ENV"
+            echo "Restored VCPKG_ROOT=$SX_VCPKG_ROOT"
+          fi
 
       - name: Export Windows release
         shell: bash

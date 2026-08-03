@@ -74,8 +74,12 @@ echo "==> Godot export-release preset=${PRESET}"
 "$GODOT" --headless --path game --export-release "$PRESET" "$EXPORT_BIN"
 if [[ ! -f "$EXPORT_BIN" ]]; then echo "Export failed" >&2; exit 1; fi
 
-if [[ -f game/bin/libplanegcs.dll ]]; then cp -f game/bin/libplanegcs.dll "$OUT_DIR/"; fi
-if [[ -f game/bin/libsxcore.dll ]]; then cp -f game/bin/libsxcore.dll "$OUT_DIR/"; fi
+# Copy GDExtension + every runtime DLL cmake/vcpkg already staged in game/bin.
+shopt -s nullglob
+for dll in game/bin/*.dll; do
+  cp -f "$dll" "$OUT_DIR/"
+done
+shopt -u nullglob
 if [[ ! -f "$OUT_DIR/libsxcore.dll" ]]; then
   echo "error: $OUT_DIR/libsxcore.dll missing after export" >&2
   exit 1
