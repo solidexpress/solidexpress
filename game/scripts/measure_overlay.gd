@@ -1,9 +1,10 @@
 class_name MeasureOverlay
 extends Node
-## Measure chrome state: AABB size labels on the selection, plus a single
-## hover pair (touch A → X sticks, touch B → live cardinal + diagonal dims
-## to the nearest edge). Drawn in screen space by ViewportInteraction so
-## marks stay on top at a fixed fraction of the viewport height.
+## Measure chrome state: AABB size labels on the selection, plus up to two
+## sticky hover ✕ marks (touch A → X sticks; approach a snap on B → second X
+## plants while A is retained). The active mark drives live cardinal + diagonal
+## dims. Drawn in screen space by ViewportInteraction at a DPI-stable font size
+## (not tied to window size — stays readable when the app is resized).
 
 signal changed
 
@@ -12,24 +13,33 @@ const COLOR_Y := Color(0.35, 0.9, 0.4)
 const COLOR_Z := Color(0.4, 0.55, 1.0)
 const COLOR_DIAG := Color(0.95, 0.9, 0.35)
 const COLOR_BOUND := Color(0.85, 0.88, 0.95)
+## Idle / retained previous ✕.
 const COLOR_MARK := Color(1.0, 0.55, 0.2)
+## Active ✕ while it drives a snap / live pair (more orange-red).
+const COLOR_MARK_ACTIVE := Color(0.95, 0.35, 0.25)
+const MAX_STICKY := 2
 
 const BOUND_OFFSET_FRAC := 0.08
 const BOUND_OFFSET_MIN := 2.5
-## Label / mark size relative to viewport height (drawn in screen space).
-const SCREEN_FRAC := 1.0 / 40.0
+## Label / mark base size in screen px (UiScale applies DPI; not window size).
+const FONT_PX := 14
 
 var view: DocumentView
 ## Optional sketch session for 2D measure mode (Δu/Δv along plane axes).
 var sketch_mode: SketchMode
 
-## Pinned / following anchor from the first touched body.
+## Active (measure-driving) sticky ✕.
 var anchor_point: Variant = null  # Vector3 when set
 var anchor_body := ""
 ## Sketch-mode entity id for A (when measuring sketch entities).
 var anchor_entity := ""
-## True while the cursor is still on the anchor body (X follows nearest edge).
+## True while the cursor is still on the active anchor body (X follows nearest edge).
 var following := false
+## Retained previous sticky ✕ (null when only one mark). Kept when a new snap
+## plants a second mark so nearby snaps do not erase the prior reference.
+var prev_point: Variant = null  # Vector3 when set
+var prev_body := ""
+var prev_entity := ""
 ## Last live B point while hovering a second body (null when not showing pair).
 var _last_b: Variant = null
 
@@ -39,11 +49,14 @@ var marks: Array = []  # {p: Vector3, color: Color}
 var labels: Array = []  # {p: Vector3, text: String, color: Color}
 
 
-## Clear the A→B pair (keeps selection bound dims until refresh).
+## Clear both sticky ✕ marks and live dims (keeps selection bound dims until refresh).
 func clear_pair() -> void:
 	anchor_point = null
 	anchor_body = ""
 	anchor_entity = ""
+	prev_point = null
+	prev_body = ""
+	prev_entity = ""
 	following = false
 	_last_b = null
 	_rebuild()
@@ -103,13 +116,51 @@ func update_sketch_hover(entity_id: String, hit_point: Vector3) -> void:
 	_rebuild(hit_point)
 
 
-## Force the X onto `body` at the nearest measure snap to `hit_point`. Always
-## becomes the new A — never treats the body as a B measure target.
+## Plant / move the active ✕ onto `body` at the nearest measure snap to
+## `hit_point`. With one sticky already on another body, retains it as `prev`
+## and plants a second mark (up to MAX_STICKY). With two stickies already,
+## relocates only the active mark. Approaching a snap on the previous mark's
+## body promotes that mark back to active.
 func relocate_anchor(body: String, hit_point: Vector3) -> void:
 	if view == null or body == "":
 		return
+	var snap: Vector3 = view.closest_measure_snap(body, hit_point)
+
+	# Snap on the retained mark's body — promote it and update.
+	if prev_point != null and body == prev_body:
+		_swap_active_prev()
+		anchor_point = snap
+		anchor_entity = ""
+		following = true
+		_rebuild()
+		return
+
+	# Still on the active body — follow without touching prev.
+	if anchor_point != null and body == anchor_body:
+		anchor_point = snap
+		anchor_entity = ""
+		following = true
+		_rebuild()
+		return
+
+	# New body while an active mark exists: keep the prior ✕ when we still
+	# have a free sticky slot; otherwise relocate active only.
+	if anchor_point != null and body != anchor_body:
+		if prev_point == null:
+			prev_point = anchor_point
+			prev_body = anchor_body
+			prev_entity = anchor_entity
+		anchor_body = body
+		anchor_entity = ""
+		anchor_point = snap
+		following = true
+		_rebuild()
+		return
+
+	# First plant.
 	anchor_body = body
-	anchor_point = view.closest_measure_snap(body, hit_point)
+	anchor_entity = ""
+	anchor_point = snap
 	following = true
 	_rebuild()
 
@@ -140,8 +191,33 @@ func has_anchor() -> bool:
 	return anchor_point != null
 
 
+func has_prev() -> bool:
+	return prev_point != null
+
+
 func is_showing_pair() -> bool:
 	return anchor_point != null and _last_b != null
+
+
+func sticky_count() -> int:
+	var n := 0
+	if anchor_point != null:
+		n += 1
+	if prev_point != null:
+		n += 1
+	return n
+
+
+func _swap_active_prev() -> void:
+	var tp: Variant = anchor_point
+	var tb := anchor_body
+	var te := anchor_entity
+	anchor_point = prev_point
+	anchor_body = prev_body
+	anchor_entity = prev_entity
+	prev_point = tp
+	prev_body = tb
+	prev_entity = te
 
 
 func _rebuild(b_point: Variant = null) -> void:
@@ -150,17 +226,27 @@ func _rebuild(b_point: Variant = null) -> void:
 	marks.clear()
 	labels.clear()
 
-	# Bound size labels only when idle (no live A→B pair crowding the view).
-	if _last_b == null:
+	var two_stickies := anchor_point != null and prev_point != null
+	var inter_sticky := two_stickies and _last_b == null and not following
+	# Bound size labels only when idle (no live A→B / A↔prev pair crowding the view).
+	if _last_b == null and not inter_sticky:
 		_append_selection_bounds()
+
+	if prev_point != null:
+		var p: Vector3 = prev_point
+		marks.append({"p": p, "color": COLOR_MARK})
 
 	if anchor_point != null:
 		var a: Vector3 = anchor_point
-		marks.append({"p": a, "color": COLOR_MARK})
+		var driving := following or _last_b != null or inter_sticky
+		marks.append({"p": a, "color": COLOR_MARK_ACTIVE if driving else COLOR_MARK})
 		if _last_b != null:
 			var b: Vector3 = _last_b
 			marks.append({"p": b, "color": COLOR_DIAG})
 			_append_pair_dims(a, b)
+		elif inter_sticky:
+			var prev: Vector3 = prev_point
+			_append_pair_dims(a, prev)
 
 	changed.emit()
 

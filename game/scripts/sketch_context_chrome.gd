@@ -6,7 +6,8 @@ extends Control
 signal variant_chosen(kind: String, variant: String)
 signal action_chosen(action: String)
 signal finish_requested(op: String, distance: float, end: String,
-		thin_thickness: float, thin_type: String, flip_side: bool)
+		thin_thickness: float, thin_type: String, flip_side: bool,
+		selected_contours: Array)
 ## Enter in the dim blank while drawing: typed length/radius commit.
 signal dim_submitted(value: float)
 
@@ -23,6 +24,8 @@ var _finish_end: OptionButton
 var _thin_spin: SpinBox
 var _thin_type: OptionButton
 var _flip_side: CheckButton
+var _contour_bar: HBoxContainer
+var _selected_contours: Array = []  # int indices; empty = all
 var _dim_spin: SpinBox
 var _active_kind := ""
 ## True while the dim LineEdit has focus — mouse must not overwrite typed digits.
@@ -36,8 +39,10 @@ func _ready() -> void:
 	_variant_bar = _make_bar()
 	_action_bar = _make_bar()
 	_finish_bar = _make_bar()
+	_contour_bar = _make_bar()
 	_build_finish_bar()
 	_finish_bar.visible = false
+	_contour_bar.visible = false
 	_variant_bar.visible = false
 	_action_bar.visible = false
 
@@ -113,7 +118,8 @@ func _build_finish_bar() -> void:
 	_flip_side = CheckButton.new()
 	_flip_side.text = "Flip"
 	_flip_side.custom_minimum_size = Vector2(56, CHIP_H)
-	_flip_side.tooltip_text = "Flip thin wall / extrude side"
+	_flip_side.tooltip_text = (
+		"Thin wall side, or Extruded Cut Flip Side to Cut on an open profile")
 	_finish_bar.add_child(_flip_side)
 	var ex := Button.new()
 	ex.text = "Extrude"
@@ -125,7 +131,8 @@ func _build_finish_bar() -> void:
 			["blind", "through_all", "midplane"][_finish_end.selected],
 			_thin_spin.value,
 			["one_side", "midplane"][_thin_type.selected],
-			_flip_side.button_pressed))
+			_flip_side.button_pressed,
+			_selected_contours.duplicate()))
 	_finish_bar.add_child(ex)
 	var rv := Button.new()
 	rv.text = "Revolve"
@@ -210,6 +217,67 @@ func set_extrude_distance(v: float) -> void:
 		_extrude_spin.value = v
 
 
+func set_finish_op(op: String) -> void:
+	if _finish_op == null:
+		return
+	var map := {"new": 0, "cut": 1, "fuse": 2}
+	if map.has(op):
+		_finish_op.select(map[op])
+
+
+func set_finish_end(end: String) -> void:
+	if _finish_end == null:
+		return
+	var map := {"blind": 0, "through_all": 1, "midplane": 2}
+	if map.has(end):
+		_finish_end.select(map[end])
+
+
+func set_flip_side(on: bool) -> void:
+	if _flip_side:
+		_flip_side.button_pressed = on
+
+
+func flip_side_button() -> CheckButton:
+	return _flip_side
+
+
+## Refresh Selected Contours chips from the live sketch (SW multi-region pick).
+func refresh_contours(sketch: SxSketch) -> void:
+	_clear_bar(_contour_bar)
+	_selected_contours.clear()
+	if sketch == null or not sketch.has_method("contour_count"):
+		_contour_bar.visible = false
+		return
+	var n: int = int(sketch.contour_count())
+	if n <= 1:
+		_contour_bar.visible = false
+		return
+	var lbl := Label.new()
+	lbl.text = "Contours"
+	lbl.add_theme_font_size_override("font_size", 11)
+	_contour_bar.add_child(lbl)
+	for i in n:
+		_selected_contours.append(i)
+		var b := CheckButton.new()
+		b.text = str(i + 1)
+		b.button_pressed = true
+		b.custom_minimum_size = Vector2(40, CHIP_H)
+		b.tooltip_text = "Selected Contours — include region %d" % (i + 1)
+		var idx := i
+		b.toggled.connect(func(on: bool) -> void:
+			if on:
+				if not _selected_contours.has(idx):
+					_selected_contours.append(idx)
+					_selected_contours.sort()
+			else:
+				_selected_contours.erase(idx)
+		)
+		_contour_bar.add_child(b)
+	_contour_bar.visible = true
+	_place_bar(_contour_bar, Vector2(60, 42 + CHIP_H + 4))
+
+
 func extrude_button() -> Button:
 	for c in _finish_bar.get_children():
 		if c is Button and str(c.text) == "Extrude":
@@ -236,9 +304,13 @@ func show_for_session(on: bool) -> void:
 	if on:
 		# Sit to the right of the icon sketch rail, under the top chrome row.
 		_place_bar(_finish_bar, Vector2(60, 42))
+		if sketch_mode != null and sketch_mode.sketch != null:
+			refresh_contours(sketch_mode.sketch)
 	else:
 		_variant_bar.visible = false
 		_action_bar.visible = false
+		_contour_bar.visible = false
+		_selected_contours.clear()
 		_dim_editing = false
 
 

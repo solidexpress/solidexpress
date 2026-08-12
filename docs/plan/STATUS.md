@@ -1,6 +1,6 @@
 # solidexpress build status
 
-Updated by agents on every merge. See `docs/plan/implementation-plan.md` for task definitions.
+Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
 ## Operating protocol (current)
 - Most implementation work goes to Grok background agents with exclusive, non-overlapping file sets and scratch build dirs; Fable only integrates, reviews, fixes failures, and commits.
@@ -60,7 +60,7 @@ Kernel suite now 51 cases / 5492 assertions.
 - [x] Transforms: MirrorBody, LinearPattern, CircularPattern, RotateBody (in-place, ids preserved) ([transform], 5 cases)
 - [x] Shell (open-face hollow via MakeThickSolidByJoin) + OffsetBody ([hollow], 3 cases). Note: oversized shell must use thickness ≥ half the box to reliably fail in OCCT
 - [x] Measure: min_distance, closest_point (perp foot), face_midpoint, bounding_box, mass_properties (incl. inertia), edge_length, face_area, angle_between_faces ([measure])
-- [x] Hover tap-measure: X snaps to corner / edge mid / surface mid; approach shows perpendicular onto near body before X relocates; move magnets include real face mids
+- [x] Hover tap-measure: X snaps to corner / edge mid / surface mid; approach shows perpendicular onto near body before a second X plants (prior kept, max 2); active ✕ orange-red while driving; move magnets include real face mids
 
 Kernel suite: 72 cases / 5678 assertions.
 
@@ -223,8 +223,15 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 - [x] Audit: do NOT reopen full sketch overhaul (suites green)
 - [x] Thin wall + flip wired into sketch finish chrome → finish_extrude
 - [x] run_pliers_motion_tests.gd added to test-godot
-- [ ] Open-profile cut (material-side) still follow-up if jaw cuts need it beyond thin boss
 - Stale: STATUS 2.6 "constraint toolbar still TODO" is obsolete
+
+## Ladder residual (see ROADMAP)
+- [x] Open-profile **cut** (material-side / Flip Side, no thin wall) — half-plane tool + Flip chrome; films `open_profile_cut`
+- [x] Flip Mate Alignment UI (kernel `Mate.flip` was already there) — Assembly checkbox + film `flip_mate_alignment`
+- [x] Selected Contours — disjoint regions fuse as solids; **shared-edge** (circle+nose / chord) via planar split; film `selected_contours` matches SW Video 2 pliers head
+- [x] Mate / instance undo via CommandStack (`AssemblySnapshotCommand`); film `assembly_undo`
+- [x] Revolute joint limits (`Mate.angle_min` / `angle_max` deg) — clamp on solve + drag
+- [ ] Multi-doc component insert (assembly depth — top open ladder item)
 
 ## Environment notes
 - System deps installed via apt: ninja-build, zip, libocct-*-dev (7.9.2), libeigen3-dev, libboost-dev
@@ -236,6 +243,7 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 ## Architecture Track A re-verify (2026-07-29)
 - [x] Track A already complete: ADR-001/002 + STATUS 3.2/3.4; interactive ops use `graph_add_*` with free-body Command fallbacks
 - [x] Re-checked after pliers Major 1–2: ops/voice dress-up + boolean + push-pull prefer graph when `feature_of_body` is set
-- [x] Pliers path green: thin/open extrude, feature-mirror, hole wizard multi-point, `run_pliers_motion_tests` gated in `test-godot`
-- Next architecture work is Track B (modularize) / Track C (CI hardening) — not blocking pliers
+- [x] Pliers MVP path green: thin extrude (open profile + flip), feature-mirror, hole wizard multi-point, `run_pliers_motion_tests` gated in `test-godot`
+- Residual vs full SW jaw scripts: open-profile cut without thin — see Ladder residual + [ROADMAP.md](ROADMAP.md)
+- Next architecture work is Track B (modularize) / Track C (CI hardening) — demoted vs demo ladder
 

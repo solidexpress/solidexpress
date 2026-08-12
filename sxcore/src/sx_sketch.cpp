@@ -358,6 +358,11 @@ int SxSketch::fully_define() {
     return sketch_->fully_define();
 }
 
+int SxSketch::contour_count() const {
+    std::string err;
+    return static_cast<int>(sketch_->contour_faces(&err).size());
+}
+
 String SxSketch::project_line_edge(const Vector3& a, const Vector3& b, const String& edge_id) {
     auto id = sketch_->project_line_edge({a.x, a.y, a.z}, {b.x, b.y, b.z}, to_std(edge_id));
     return to_gd(id.str());
@@ -428,6 +433,7 @@ void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("solve"), &SxSketch::solve);
     ClassDB::bind_method(D_METHOD("analyze", "gap_tol"), &SxSketch::analyze, DEFVAL(1e-4));
     ClassDB::bind_method(D_METHOD("fully_define"), &SxSketch::fully_define);
+    ClassDB::bind_method(D_METHOD("contour_count"), &SxSketch::contour_count);
     ClassDB::bind_method(D_METHOD("project_line_edge", "a", "b", "edge_id"),
                          &SxSketch::project_line_edge);
     ClassDB::bind_method(D_METHOD("project_circle_edge", "center", "radius", "edge_id"),

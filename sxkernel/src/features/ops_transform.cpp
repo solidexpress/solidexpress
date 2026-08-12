@@ -38,13 +38,44 @@ bool build_pad_tool(ApplyCtx& ctx, const Feature& src, const nlohmann::json& par
     std::string perr;
     TopoDS_Shape face;
     double thin_thickness = num_param(params, "thin_thickness", 0.0, ctx.env);
+    bool flip_side = params.value("flip_side", false);
     if (thin_thickness > 0.0) {
         std::string thin_type = params.value("thin_type", "one_side");
         bool thin_midplane = (thin_type == "midplane");
-        bool flip_side = params.value("flip_side", false);
         face = skf->sketch->thin_profile_face(thin_thickness, thin_midplane, flip_side, &perr);
     } else {
-        face = skf->sketch->profile_face(&perr);
+        std::vector<int> contour_idxs;
+        if (params.contains("selected_contours") && params["selected_contours"].is_array()) {
+            for (const auto& v : params["selected_contours"]) {
+                if (v.is_number_integer()) contour_idxs.push_back(v.get<int>());
+            }
+        }
+        if (!contour_idxs.empty()) {
+            face = skf->sketch->profile_face_selected(contour_idxs, &perr);
+        } else {
+            face = skf->sketch->profile_face(&perr);
+        }
+        std::string op_early = params.value("op", "new");
+        if (face.IsNull() && (op_early == "cut" || op_early == "fuse")) {
+            double pad = 1.0e5;
+            if (extent_hint && !extent_hint->shape.IsNull()) {
+                Bnd_Box box;
+                BRepBndLib::Add(extent_hint->shape, box);
+                if (!box.IsVoid()) {
+                    double xmin, ymin, zmin, xmax, ymax, zmax;
+                    box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+                    double diag =
+                        std::hypot(xmax - xmin, std::hypot(ymax - ymin, zmax - zmin));
+                    pad = std::max(diag * 4.0, 100.0);
+                }
+            }
+            std::string oerr;
+            face = skf->sketch->open_cut_profile_face(flip_side, pad, &oerr);
+            if (face.IsNull())
+                perr = perr.empty() ? oerr : (perr + "; open-cut: " + oerr);
+            else
+                perr.clear();
+        }
     }
     if (face.IsNull()) return ctx.fail("profile: " + perr);
 

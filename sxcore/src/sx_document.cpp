@@ -1,11 +1,13 @@
 #include "sx_document.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <nlohmann/json.hpp>
 
 #include "sx/commands_boolean.hpp"
 #include "sx/commands_draft.hpp"
 #include "sx/commands_dress.hpp"
 #include "sx/commands_graph.hpp"
+#include "sx/commands_assembly.hpp"
 #include "sx/commands_hollow.hpp"
 #include "sx/commands_sketch.hpp"
 #include "sx/commands_transform.hpp"
@@ -736,6 +738,18 @@ bool SxDocument::apply_graph_edit(const std::string& label,
     return true;
 }
 
+bool SxDocument::apply_assembly_edit(const std::string& label,
+                                     const std::function<bool()>& mutate) {
+    nlohmann::json before = sx::assembly_to_json(*doc_);
+    if (!mutate()) return false;
+    nlohmann::json after = sx::assembly_to_json(*doc_);
+    // Skip no-op edits (e.g. transform that did not change).
+    if (before == after) return true;
+    stack_.push_executed(std::make_unique<sx::AssemblySnapshotCommand>(
+        label, std::move(before), std::move(after)));
+    return true;
+}
+
 String SxDocument::graph_add_primitive(const String& kind, double a, double b, double c,
                                        const Vector3& origin) {
     sx::EntityId fid;
@@ -790,7 +804,7 @@ String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
                                      bool symmetric, const String& op,
                                      const String& target_fid, const String& end,
                                      double thin_thickness, const String& thin_type,
-                                     bool flip_side) {
+                                     bool flip_side, const Array& selected_contours) {
     sx::EntityId fid;
     bool ok = apply_graph_edit("extrude", [&] {
         sx::Feature f;
@@ -806,7 +820,15 @@ String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
             std::string tt = to_std(thin_type);
             if (tt.empty()) tt = "one_side";
             f.params["thin_type"] = tt;
-            if (flip_side) f.params["flip_side"] = true;
+        }
+        // Flip Side applies to thin wall OR open-profile cut (SW Flip Side to Cut).
+        if (flip_side) f.params["flip_side"] = true;
+        if (selected_contours.size() > 0) {
+            nlohmann::json arr = nlohmann::json::array();
+            for (int i = 0; i < selected_contours.size(); ++i) {
+                arr.push_back(static_cast<int>(selected_contours[i]));
+            }
+            f.params["selected_contours"] = arr;
         }
         fid = doc_->graph().add(std::move(f));
         return true;
@@ -1564,9 +1586,13 @@ String SxDocument::add_instance(const String& source_body, const Vector3& transl
     auto src = parse_id(source_body);
     if (src.is_null()) return {};
     auto quat = axis_angle_to_quat(rotation_axis, rotation_angle_deg);
-    auto id = doc_->add_instance(src, {translation.x, translation.y, translation.z}, quat,
-                                 to_std(name));
-    return id.is_null() ? String() : to_gd(id.str());
+    sx::EntityId id;
+    bool ok = apply_assembly_edit("add instance", [&] {
+        id = doc_->add_instance(src, {translation.x, translation.y, translation.z}, quat,
+                                to_std(name));
+        return !id.is_null();
+    });
+    return ok ? to_gd(id.str()) : String();
 }
 
 Array SxDocument::instance_list() const {
@@ -1593,17 +1619,22 @@ Array SxDocument::instance_list() const {
 bool SxDocument::remove_instance(const String& id) {
     auto eid = parse_id(id);
     if (eid.is_null()) return false;
-    return doc_->remove_instance(eid);
+    return apply_assembly_edit("remove instance", [&] { return doc_->remove_instance(eid); });
 }
 
 bool SxDocument::set_instance_transform(const String& id, const Vector3& translation,
                                         const Vector3& rotation_axis,
-                                        double rotation_angle_deg) {
+                                        double rotation_angle_deg, bool resolve_mates) {
     auto eid = parse_id(id);
     if (eid.is_null()) return false;
     auto quat = axis_angle_to_quat(rotation_axis, rotation_angle_deg);
-    return doc_->set_instance_transform(eid, {translation.x, translation.y, translation.z},
-                                        quat);
+    return apply_assembly_edit(resolve_mates ? "move instance (mates)" : "move instance", [&] {
+        if (!doc_->set_instance_transform(eid, {translation.x, translation.y, translation.z},
+                                          quat))
+            return false;
+        if (resolve_mates) (void)sx::solve_mates(*doc_);
+        return true;
+    });
 }
 
 String SxDocument::add_mate(const String& type, const String& instance_a, const String& face_a,
@@ -1622,8 +1653,14 @@ String SxDocument::add_mate(const String& type, const String& instance_a, const 
     m.offset = offset;
     m.flip = flip;
     m.name = to_std(name);
-    auto id = doc_->add_mate(std::move(m));
-    return id.is_null() ? String() : to_gd(id.str());
+    sx::EntityId id;
+    bool ok = apply_assembly_edit("add mate", [&] {
+        id = doc_->add_mate(std::move(m));
+        if (id.is_null()) return false;
+        (void)sx::solve_mates(*doc_);
+        return true;
+    });
+    return ok ? to_gd(id.str()) : String();
 }
 
 Array SxDocument::mate_list() const {
@@ -1646,7 +1683,8 @@ Array SxDocument::mate_list() const {
 
 bool SxDocument::remove_mate(const String& id) {
     auto mid = parse_id(id);
-    return !mid.is_null() && doc_->remove_mate(mid);
+    if (mid.is_null()) return false;
+    return apply_assembly_edit("remove mate", [&] { return doc_->remove_mate(mid); });
 }
 
 bool SxDocument::solve_mates() { return sx::solve_mates(*doc_); }
@@ -1661,6 +1699,14 @@ Dictionary SxDocument::instance_revolute_axis(const String& instance_id) const {
     out["ok"] = true;
     out["point"] = Vector3(ax->point.X(), ax->point.Y(), ax->point.Z());
     out["dir"] = Vector3(ax->dir.X(), ax->dir.Y(), ax->dir.Z());
+    if (auto ang = sx::instance_revolute_angle(*doc_, id))
+        out["angle_deg"] = *ang * 180.0 / M_PI;
+    for (const auto& m : doc_->mates()) {
+        if (m.type != sx::MateType::Concentric || m.instance_b != id) continue;
+        if (m.angle_min) out["angle_min"] = *m.angle_min;
+        if (m.angle_max) out["angle_max"] = *m.angle_max;
+        break;
+    }
     return out;
 }
 
@@ -1746,9 +1792,10 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_update_sketch", "fid", "sketch"),
                          &SxDocument::graph_update_sketch);
     ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op",
-                                  "target_fid", "end", "thin_thickness", "thin_type", "flip_side"),
+                                  "target_fid", "end", "thin_thickness", "thin_type", "flip_side",
+                                  "selected_contours"),
                          &SxDocument::graph_add_extrude, DEFVAL(String("blind")), DEFVAL(0.0),
-                         DEFVAL(String("one_side")), DEFVAL(false));
+                         DEFVAL(String("one_side")), DEFVAL(false), DEFVAL(Array()));
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid", "guide_fids"),
@@ -1828,8 +1875,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("instance_list"), &SxDocument::instance_list);
     ClassDB::bind_method(D_METHOD("remove_instance", "id"), &SxDocument::remove_instance);
     ClassDB::bind_method(D_METHOD("set_instance_transform", "id", "translation", "rotation_axis",
-                                  "rotation_angle_deg"),
-                         &SxDocument::set_instance_transform);
+                                  "rotation_angle_deg", "resolve_mates"),
+                         &SxDocument::set_instance_transform, DEFVAL(false));
     ClassDB::bind_method(D_METHOD("add_mate", "type", "instance_a", "face_a", "instance_b",
                                   "face_b", "offset", "flip", "name"),
                          &SxDocument::add_mate);

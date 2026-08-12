@@ -31,7 +31,7 @@
     "id": "sketch_tools",
     "title": "Sketch tools: block, spline, and extend",
     "script": "res://tests/films/film_sketch_tools.gd",
-    "enabled": true,
+    "enabled": false,
     "quit_after": 1800
   },
   {
@@ -54,5 +54,33 @@
     "script": "res://tests/films/film_pliers_motion.gd",
     "enabled": true,
     "quit_after": 3600
+  },
+  {
+    "id": "flip_mate_alignment",
+    "title": "Flip Mate Alignment (oppose vs align)",
+    "script": "res://tests/films/film_flip_mate_alignment.gd",
+    "enabled": true,
+    "quit_after": 2200
+  },
+  {
+    "id": "assembly_undo",
+    "title": "Assembly undo — place, mate, Flip, rewind",
+    "script": "res://tests/films/film_assembly_undo.gd",
+    "enabled": true,
+    "quit_after": 2200
+  },
+  {
+    "id": "open_profile_cut",
+    "title": "Open-profile cut + Flip Side to Cut",
+    "script": "res://tests/films/film_open_profile_cut.gd",
+    "enabled": true,
+    "quit_after": 2800
+  },
+  {
+    "id": "selected_contours",
+    "title": "Selected Contours — multi-region extrude",
+    "script": "res://tests/films/film_selected_contours.gd",
+    "enabled": true,
+    "quit_after": 2400
   }
 ]

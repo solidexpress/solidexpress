@@ -1,8 +1,13 @@
 #include "sx/mates.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include <BRepAdaptor_Surface.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <gp_Ax1.hxx>
 #include <gp_Quaternion.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
@@ -42,6 +47,8 @@ void to_json(nlohmann::json& j, const Mate& m) {
         {"flip", m.flip},
         {"name", m.name},
     };
+    if (m.angle_min) j["angle_min"] = *m.angle_min;
+    if (m.angle_max) j["angle_max"] = *m.angle_max;
 }
 
 static EntityId id_or_null(const std::string& s) {
@@ -58,6 +65,12 @@ void from_json(const nlohmann::json& j, Mate& m) {
     m.offset = j.value("offset", 0.0);
     m.flip = j.value("flip", false);
     m.name = j.value("name", "");
+    m.angle_min = std::nullopt;
+    m.angle_max = std::nullopt;
+    if (j.contains("angle_min") && !j["angle_min"].is_null())
+        m.angle_min = j["angle_min"].get<double>();
+    if (j.contains("angle_max") && !j["angle_max"].is_null())
+        m.angle_max = j["angle_max"].get<double>();
 }
 
 namespace {
@@ -208,7 +221,10 @@ bool apply_mate(Document& doc, const Mate& m) {
 
 bool solve_mates(Document& doc) {
     bool ok = true;
-    for (const auto& m : doc.mates()) ok = apply_mate(doc, m) && ok;
+    for (const auto& m : doc.mates()) {
+        ok = apply_mate(doc, m) && ok;
+        ok = clamp_revolute_limits(doc, m) && ok;
+    }
     return ok;
 }
 
@@ -224,6 +240,65 @@ std::optional<MateAxis> instance_revolute_axis(const Document& doc,
         return mate_axis(doc, m.instance_b, m.face_b);
     }
     return std::nullopt;
+}
+
+namespace {
+
+// Orthonormal X in the plane ⊥ `dir`, stable for a given axis direction.
+gp_Dir plane_ref_x(const gp_Dir& dir) {
+    gp_Dir seed = (std::abs(dir.Z()) < 0.9) ? gp_Dir(0, 0, 1) : gp_Dir(1, 0, 0);
+    gp_Vec x = gp_Vec(dir).Crossed(gp_Vec(seed));
+    if (x.Magnitude() < 1e-12) x = gp_Vec(dir).Crossed(gp_Vec(0, 1, 0));
+    return gp_Dir(x);
+}
+
+double angle_about_axis(const gp_Trsf& t, const MateAxis& ax) {
+    // Tip of local +X (fallback +Y) projected into the plane ⊥ axis.
+    gp_Pnt tip = gp_Pnt(1, 0, 0).Transformed(t);
+    gp_Vec v(ax.point, tip);
+    gp_Vec radial = v - gp_Vec(ax.dir) * v.Dot(gp_Vec(ax.dir));
+    if (radial.Magnitude() < 1e-9) {
+        tip = gp_Pnt(0, 1, 0).Transformed(t);
+        v = gp_Vec(ax.point, tip);
+        radial = v - gp_Vec(ax.dir) * v.Dot(gp_Vec(ax.dir));
+    }
+    if (radial.Magnitude() < 1e-9) return 0.0;
+    gp_Dir x = plane_ref_x(ax.dir);
+    gp_Dir y = ax.dir.Crossed(x);
+    return std::atan2(radial.Dot(gp_Vec(y)), radial.Dot(gp_Vec(x)));
+}
+
+}  // namespace
+
+std::optional<double> instance_revolute_angle(const Document& doc,
+                                              const EntityId& instance) {
+    auto ax = instance_revolute_axis(doc, instance);
+    const Instance* inst = doc.instance(instance);
+    if (!ax || !inst) return std::nullopt;
+    return angle_about_axis(transform_of(*inst), *ax);
+}
+
+bool clamp_revolute_limits(Document& doc, const Mate& m) {
+    if (m.type != MateType::Concentric) return true;
+    if (!m.angle_min && !m.angle_max) return true;
+    if (m.instance_b.is_null() || !doc.instance(m.instance_b)) return false;
+    auto ax = instance_revolute_axis(doc, m.instance_b);
+    if (!ax) return false;
+    const Instance* inst = doc.instance(m.instance_b);
+    const double ang = angle_about_axis(transform_of(*inst), *ax);
+    const double min_r =
+        m.angle_min ? (*m.angle_min * M_PI / 180.0) : -std::numeric_limits<double>::infinity();
+    const double max_r =
+        m.angle_max ? (*m.angle_max * M_PI / 180.0) : std::numeric_limits<double>::infinity();
+    const double clamped = std::clamp(ang, min_r, max_r);
+    if (std::abs(clamped - ang) < 1e-9) return true;
+    gp_Trsf spin;
+    spin.SetRotation(gp_Ax1(ax->point, ax->dir), clamped - ang);
+    gp_Trsf t = spin * transform_of(*inst);
+    gp_Quaternion q = t.GetRotation();
+    gp_XYZ tr = t.TranslationPart();
+    return doc.set_instance_transform(m.instance_b, {tr.X(), tr.Y(), tr.Z()},
+                                      {q.X(), q.Y(), q.Z(), q.W()});
 }
 
 }  // namespace sx

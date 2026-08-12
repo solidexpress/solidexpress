@@ -51,7 +51,7 @@ const TABLE: Array[Dictionary] = [
 	{"keys": "Click", "context": "Model", "desc": "Select body (again for face / edge)"},
 	{"keys": "Empty click", "context": "Model", "desc": "Clear selection"},
 	{"keys": "Hover A then B", "context": "Model", "desc": "Measure: X on A, then diagonal + Δx/Δy/Δz to B’s nearest edge (one pair)"},
-	{"keys": "Esc (with measure X)", "context": "Model", "desc": "Clear the hover measure pair"},
+	{"keys": "Esc (with measure X)", "context": "Model", "desc": "Clear hover measure ✕ marks (up to two)"},
 	{"keys": "Shift+Click", "context": "Model", "desc": "Add / toggle multi-select (empty click keeps selection)"},
 	{"keys": "Ctrl+Click", "context": "Model", "desc": "Add / toggle multi-select"},
 	{"keys": "Shift+Left-drag (empty)", "context": "Model", "desc": "Window box select — only fully enclosed bodies / sketch pads"},

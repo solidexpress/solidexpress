@@ -49,6 +49,9 @@ struct Mate {
     // must enclose (hole around pin) with R_hole - R_pin >= offset.
     double offset = 0.0;
     bool flip = false;    // PlaneCoincident: align normals instead of opposing
+    // Concentric revolute limits (degrees). Unset = free spin about the axis.
+    std::optional<double> angle_min;
+    std::optional<double> angle_max;
     std::string name;
 };
 
@@ -88,5 +91,15 @@ bool solve_mates(Document& doc);
 // axis (axial slide may also be free). Empty when no concentric mate applies.
 std::optional<MateAxis> instance_revolute_axis(const Document& doc,
                                               const EntityId& instance);
+
+// Current revolute angle (radians) of `instance` about its concentric axis,
+// measured from a stable world reference in the plane ⊥ axis. Empty when the
+// instance has no concentric revolute DOF.
+std::optional<double> instance_revolute_angle(const Document& doc,
+                                              const EntityId& instance);
+
+// Clamp instance_b rotation into angle_min/angle_max on concentric mates.
+// No-op when limits are unset. Called from solve_mates after each apply.
+bool clamp_revolute_limits(Document& doc, const Mate& m);
 
 }  // namespace sx

@@ -69,6 +69,8 @@ public:
     godot::Dictionary solve();
     godot::Array analyze(double gap_tol = 1e-4) const;
     int fully_define();
+    // SolidWorks Selected Contours: number of outermost solid regions.
+    int contour_count() const;
 
     godot::String project_line_edge(const godot::Vector3& a, const godot::Vector3& b,
                                     const godot::String& edge_id);

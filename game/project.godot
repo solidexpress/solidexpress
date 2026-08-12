@@ -17,6 +17,8 @@ run/low_processor_mode_sleep_usec=16666
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
+# No window/stretch — UI chrome stays DPI-scaled (UiScale), independent of
+# window size; only the 3D viewport grows/shrinks on resize.
 
 [rendering]
 

@@ -13,7 +13,9 @@
 #include <gp_Ax1.hxx>
 #include <gp_Quaternion.hxx>
 #include <gp_Trsf.hxx>
+#include <nlohmann/json.hpp>
 
+#include "sx/commands_assembly.hpp"
 #include "sx/commands_boolean.hpp"
 #include "sx/document.hpp"
 #include "sx/instances.hpp"
@@ -110,6 +112,47 @@ TEST_CASE("plane coincident mate stacks a block onto a base", "[mates]") {
         world_bbox(doc, *doc.instance(inst), bb);
         CHECK(bb[2] == Approx(25.0).margin(1e-6));
     }
+}
+
+TEST_CASE("plane coincident flip alignment opposes vs coincides normals", "[mates][flip]") {
+    Document doc;
+    auto base = doc.add_body(shape::make_box(100, 100, 20), "Base");
+    auto block = doc.add_body(shape::make_box(30, 30, 30, {{200, 0, 0}}), "Block");
+    auto inst = doc.add_instance(block, {50, 50, 90}, {0, 0, 0, 1}, "Block-1");
+
+    // Top-of-base (+Z) to top-of-block (+Z). Default oppose vs Flip Alignment
+    // produce mirrored poses (SW Flip Mate Alignment richness).
+    auto base_top = planar_face_with_normal(doc, base, gp_Dir(0, 0, 1));
+    auto block_top = planar_face_with_normal(doc, block, gp_Dir(0, 0, 1));
+    REQUIRE(!base_top.is_null());
+    REQUIRE(!block_top.is_null());
+
+    Mate m;
+    m.type = MateType::PlaneCoincident;
+    m.face_a = base_top;
+    m.instance_b = inst;
+    m.face_b = block_top;
+    m.flip = false;
+    REQUIRE(!doc.add_mate(m).is_null());
+    REQUIRE(solve_mates(doc));
+    double bb_opp[6];
+    world_bbox(doc, *doc.instance(inst), bb_opp);
+
+    Mate flipped = doc.mates().front();
+    doc.remove_mate(flipped.id);
+    flipped.flip = true;
+    REQUIRE(doc.set_instance_transform(inst, {50, 50, 90}, {0, 0, 0, 1}));
+    REQUIRE(!doc.add_mate(flipped).is_null());
+    REQUIRE(solve_mates(doc));
+    double bb_flip[6];
+    world_bbox(doc, *doc.instance(inst), bb_flip);
+
+    // Flip must invert which side of the mate plane the block occupies.
+    CHECK(std::abs(bb_opp[2] - bb_flip[2]) > 1.0);
+    CHECK(std::abs(bb_opp[5] - bb_flip[5]) > 1.0);
+    // Both poses still contact the mate plane near z=20.
+    CHECK(std::min(std::abs(bb_opp[2] - 20.0), std::abs(bb_opp[5] - 20.0)) < 1e-4);
+    CHECK(std::min(std::abs(bb_flip[2] - 20.0), std::abs(bb_flip[5] - 20.0)) < 1e-4);
 }
 
 TEST_CASE("concentric mate drops a pin into a hole axis", "[mates]") {
@@ -272,6 +315,120 @@ TEST_CASE("mate validation and cascade", "[mates]") {
         REQUIRE(doc.remove_instance(inst));
         CHECK(doc.mates().empty());
     }
+}
+
+TEST_CASE("concentric revolute clamps to angle limits", "[mates][limits]") {
+    Document doc;
+    CommandStack stack;
+    auto block = bored_block(doc, stack, 5.0, 0, 0);
+    auto pin = doc.add_body(shape::make_cylinder(4, 25), "Pin");
+    auto inst = doc.add_instance(pin, {80, 0, 0}, {0, 0, 0, 1}, "Pin-1");
+    auto hole_face = cylindrical_face(doc, block, /*encloses=*/true);
+    auto pin_face = cylindrical_face(doc, pin, /*encloses=*/false);
+    REQUIRE(!hole_face.is_null());
+    REQUIRE(!pin_face.is_null());
+
+    Mate m;
+    m.type = MateType::Concentric;
+    m.face_a = hole_face;
+    m.instance_b = inst;
+    m.face_b = pin_face;
+    m.offset = 1.0;
+    REQUIRE(!doc.add_mate(m).is_null());
+    REQUIRE(solve_mates(doc));
+
+    auto ang0 = instance_revolute_angle(doc, inst);
+    REQUIRE(ang0.has_value());
+    const double a0_deg = *ang0 * 180.0 / M_PI;
+
+    // Re-seat the mate with ±20° limits around the solved rest angle.
+    REQUIRE(doc.remove_mate(doc.mates().front().id));
+    m.id = {};
+    m.angle_min = a0_deg - 20.0;
+    m.angle_max = a0_deg + 20.0;
+    REQUIRE(!doc.add_mate(m).is_null());
+    REQUIRE(solve_mates(doc));
+
+    auto axis = instance_revolute_axis(doc, inst);
+    REQUIRE(axis.has_value());
+    const Instance* before = doc.instance(inst);
+    REQUIRE(before);
+    gp_Trsf cur = transform_of(*before);
+    gp_Trsf spin;
+    spin.SetRotation(gp_Ax1(axis->point, axis->dir), 60.0 * M_PI / 180.0);
+    gp_Trsf next = spin * cur;
+    gp_Quaternion q = next.GetRotation();
+    gp_XYZ tr = next.TranslationPart();
+    REQUIRE(doc.set_instance_transform(inst, {tr.X(), tr.Y(), tr.Z()},
+                                       {q.X(), q.Y(), q.Z(), q.W()}));
+    REQUIRE(solve_mates(doc));
+
+    auto ang1 = instance_revolute_angle(doc, inst);
+    REQUIRE(ang1.has_value());
+    CHECK(*ang1 == Approx((a0_deg + 20.0) * M_PI / 180.0).margin(1e-3));
+}
+
+TEST_CASE("assembly undo restores mate flip and instance pose", "[mates][undo]") {
+    Document doc;
+    CommandStack stack;
+    auto base = doc.add_body(shape::make_box(100, 100, 20), "Base");
+    auto block = doc.add_body(shape::make_box(30, 30, 30, {{200, 0, 0}}), "Block");
+    auto inst = doc.add_instance(block, {50, 50, 90}, {0, 0, 0, 1}, "Block-1");
+    auto base_top = planar_face_with_normal(doc, base, gp_Dir(0, 0, 1));
+    auto block_top = planar_face_with_normal(doc, block, gp_Dir(0, 0, 1));
+    REQUIRE(!base_top.is_null());
+    REQUIRE(!block_top.is_null());
+
+    // Snapshot → mutate → push (same path as SxDocument::apply_assembly_edit).
+    auto push_edit = [&](const char* label, const auto& mutate) {
+        nlohmann::json before = assembly_to_json(doc);
+        mutate();
+        nlohmann::json after = assembly_to_json(doc);
+        REQUIRE(before != after);
+        stack.push_executed(
+            std::make_unique<AssemblySnapshotCommand>(label, std::move(before), std::move(after)));
+    };
+
+    push_edit("add flipped mate", [&] {
+        Mate m;
+        m.type = MateType::PlaneCoincident;
+        m.face_a = base_top;
+        m.instance_b = inst;
+        m.face_b = block_top;
+        m.flip = true;
+        m.name = "tops";
+        REQUIRE(!doc.add_mate(m).is_null());
+        REQUIRE(solve_mates(doc));
+    });
+    REQUIRE(doc.mates().size() == 1);
+    REQUIRE(doc.mates().front().flip);
+    const auto t_after_mate = doc.instance(inst)->translation;
+
+    push_edit("nudge instance + solve", [&] {
+        REQUIRE(doc.set_instance_transform(inst, {70, 50, 40}, {0, 0, 0, 1}));
+        REQUIRE(solve_mates(doc));
+    });
+    const auto t_after_nudge = doc.instance(inst)->translation;
+    REQUIRE(t_after_nudge != t_after_mate);
+
+    REQUIRE(stack.undo(doc));
+    REQUIRE(doc.mates().size() == 1);
+    REQUIRE(doc.mates().front().flip);
+    REQUIRE(doc.instance(inst)->translation == t_after_mate);
+
+    REQUIRE(stack.undo(doc));
+    REQUIRE(doc.mates().empty());
+    CHECK(doc.instance(inst)->translation[0] == Approx(50.0));
+    CHECK(doc.instance(inst)->translation[1] == Approx(50.0));
+    CHECK(doc.instance(inst)->translation[2] == Approx(90.0));
+
+    REQUIRE(stack.redo(doc));
+    REQUIRE(doc.mates().size() == 1);
+    REQUIRE(doc.mates().front().flip);
+    REQUIRE(doc.instance(inst)->translation == t_after_mate);
+
+    REQUIRE(stack.redo(doc));
+    REQUIRE(doc.instance(inst)->translation == t_after_nudge);
 }
 
 TEST_CASE("mates persist through .sxp round trip", "[mates]") {

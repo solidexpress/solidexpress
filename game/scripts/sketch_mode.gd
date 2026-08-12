@@ -461,9 +461,11 @@ func exit_sketch() -> String:
 ## cut/fuse require a target body (the one sketched on) and cut extrudes
 ## into the body (negated distance). end: "blind" | "through_all" | "midplane".
 ## thin_thickness > 0: wall from open/closed profile; thin_type one_side|midplane.
+## flip_side: thin offset OR open-profile cut Flip Side to Cut.
+## selected_contours: Selected Contours indices (empty = all solid regions).
 func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		thin_thickness: float = 0.0, thin_type: String = "one_side",
-		flip_side: bool = false) -> void:
+		flip_side: bool = false, selected_contours: Array = []) -> void:
 	if not active:
 		return
 	if op != "new" and target_fid == "":
@@ -477,10 +479,14 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		return
 	var ex_fid: String = view.doc.graph_add_extrude(
 		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
-		thin_thickness, thin_type, flip_side)
+		thin_thickness, thin_type, flip_side, selected_contours)
 	var fail_msg := "Extrude failed — is the profile closed?"
-	if thin_thickness <= 0.0 and not profile_is_closed(sketch):
-		fail_msg = "Extrude failed — open profile needs Thin wall > 0 (or close the profile)"
+	var open_prof := not profile_is_closed(sketch)
+	if thin_thickness <= 0.0 and open_prof:
+		if op == "cut" or op == "fuse":
+			fail_msg = "Open-profile cut failed — need a line chain (Flip Side toggles material)"
+		else:
+			fail_msg = "Extrude failed — open profile needs Thin wall > 0 (or close the profile)"
 	_finish_feature(sk_fid, ex_fid, op, fail_msg)
 
 

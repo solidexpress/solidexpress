@@ -2,6 +2,8 @@
 
 A long-running, agent-executable build plan for a parametric MCAD application, derived from the [feature survey](../survey/README.md). The scope target is the widest feature set in the [master feature list](../survey/master-feature-list.md), sequenced so the most common capabilities are built first and every phase is load-bearing foundation for the phases above it.
 
+**What’s next / priority order:** [ROADMAP.md](ROADMAP.md). This file is the long P0–P11 catalog and architecture bible — not the weekly priority list. Done/not-done: [STATUS.md](STATUS.md).
+
 This plan is written to be executed **autonomously for long stretches without user input, with parallel workstreams**, by AI agents. Sections "Execution protocol" and the per-phase workstream tables encode how.
 
 ---

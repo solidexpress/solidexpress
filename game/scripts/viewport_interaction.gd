@@ -102,6 +102,11 @@ var _revolute_axis_dir := Vector3.ZERO
 var _revolute_active := false
 var _revolute_start_angle := 0.0
 var _revolute_angle := 0.0
+## Absolute instance angle (rad) at press + optional mate limits (rad).
+var _revolute_abs0 := 0.0
+var _revolute_has_limits := false
+var _revolute_min := -INF
+var _revolute_max := INF
 ## Spacebar orientation / named-view popup (SW Spacebar / Onshape S lite).
 var _orient_popup: PopupPanel
 ## Click-a-dimension in-viewport editor (sketch SELECT tool).
@@ -273,6 +278,7 @@ func _build_transform_hud() -> void:
 func _build_context_menu() -> void:
 	_context_menu = PopupMenu.new()
 	_context_menu.name = "SelectionContext"
+	_context_menu.add_theme_font_size_override("font_size", UiScale.font(13))
 	add_child(_context_menu)
 	_context_menu.id_pressed.connect(_on_context_id)
 	UiScroll.soften_menu(_context_menu)
@@ -1303,19 +1309,20 @@ func _update_transport_measure(screen_pos: Vector2 = Vector2.INF) -> void:
 		if near_snap or not measure_overlay.has_anchor():
 			measure_overlay.relocate_anchor(body, snap)
 			view.set_hover(body, str(hit.get("face", "")), str(hit.get("edge", "")))
+			var dual := " · prior X kept" if measure_overlay.has_prev() else ""
 			if _place_kind != "":
-				status.emit("Measure X on target — move ghost to compare · click places")
+				status.emit("Measure X on target%s — move ghost to compare · click places" % dual)
 			elif _drag_mode == DragMode.MOVE_BODY:
-				status.emit("Measure X on target — drag to compare · release commits move")
+				status.emit("Measure X on target%s — drag to compare · release commits move" % dual)
 			else:
-				status.emit("Measure X on target — drag body to compare")
+				status.emit("Measure X on target%s — drag body to compare" % dual)
 			return
 		# X stays; dim to the perpendicular foot on the near body (earlier cue).
 		view.set_hover(body, str(hit.get("face", "")), str(hit.get("edge", "")))
 		var foot := view.closest_surface_point(
 				body, measure_overlay.anchor_point as Vector3)
 		measure_overlay.set_live_target(foot)
-		status.emit("Measure — perpendicular to near body · approach snap to move X")
+		status.emit("Measure — perpendicular to near body · approach snap to plant/move X")
 		return
 	view.clear_hover()
 	if not measure_overlay.has_anchor():
@@ -1650,7 +1657,9 @@ func _update_hover(screen_pos: Vector2) -> void:
 	_last_hover_key = key
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	if measure_overlay != null and measure_overlay.has_anchor() and not measure_overlay.following:
-		status.emit("Measure — Δ to perpendicular on near body · approach snap to move X · Esc clears")
+		var keep := " (keeps prior X)" if measure_overlay.has_prev() \
+				or measure_overlay.sticky_count() < MeasureOverlay.MAX_STICKY else ""
+		status.emit("Measure — Δ to perpendicular · approach snap to plant/move X%s · Esc clears" % keep)
 	elif edge != "":
 		status.emit("Edge — click to select · Ctrl/Shift+click adds")
 	elif face != "":
@@ -2060,6 +2069,9 @@ func _on_drag(pos: Vector2) -> void:
 		_drag_mode = DragMode.MOVE_INSTANCE
 		_revolute_active = false
 		_revolute_angle = 0.0
+		_revolute_has_limits = false
+		_revolute_min = -INF
+		_revolute_max = INF
 		var rax: Dictionary = view.doc.instance_revolute_axis(_drag_instance_id)
 		if bool(rax.get("ok", false)):
 			_revolute_active = true
@@ -2067,6 +2079,13 @@ func _on_drag(pos: Vector2) -> void:
 			_revolute_axis_dir = (rax["dir"] as Vector3).normalized()
 			_revolute_start_angle = _angle_about_axis(
 					_press_pos, _revolute_axis_dir, _revolute_axis_point)
+			_revolute_abs0 = deg_to_rad(float(rax.get("angle_deg", 0.0)))
+			if rax.has("angle_min") or rax.has("angle_max"):
+				_revolute_has_limits = true
+				if rax.has("angle_min"):
+					_revolute_min = deg_to_rad(float(rax["angle_min"]))
+				if rax.has("angle_max"):
+					_revolute_max = deg_to_rad(float(rax["angle_max"]))
 	# Empty-space drag: orbit (or pan when sketch orientation is locked).
 	# Shift/Ctrl+empty-drag: rubber-band box select (window when left).
 	if _drag_mode == DragMode.NONE and _press_empty and _place_kind == "":
@@ -2168,6 +2187,9 @@ func _on_drag(pos: Vector2) -> void:
 			if _revolute_active:
 				var ang := _angle_about_axis(pos, _revolute_axis_dir, _revolute_axis_point)
 				_revolute_angle = wrapf(ang - _revolute_start_angle, -PI, PI)
+				if _revolute_has_limits:
+					var target := clampf(_revolute_abs0 + _revolute_angle, _revolute_min, _revolute_max)
+					_revolute_angle = target - _revolute_abs0
 				inode.transform = Transform3D(
 						Basis(Quaternion(_revolute_axis_dir, _revolute_angle)) \
 								* _instance_start_xform.basis,
@@ -2225,14 +2247,14 @@ func _hide_measure_chrome() -> bool:
 	return false
 
 
-## Screen-space measure dims: fixed size (~1/40 viewport height), always on top.
+## Screen-space measure dims: DPI-stable font (not window size), always on top.
 ## Hidden during stretch/rotate/pull/orbit; kept during place and body move.
 func _draw_measure_overlay() -> void:
 	if measure_overlay == null or camera == null or model_space == null:
 		return
 	if _hide_measure_chrome():
 		return
-	var font_px := maxi(int(round(size.y * MeasureOverlay.SCREEN_FRAC)), 10)
+	var font_px := UiScale.font(MeasureOverlay.FONT_PX)
 	var mark_half := float(font_px) * 0.45
 	var tick := float(font_px) * 0.28
 	var line_w := maxf(font_px * 0.08, 1.25)
@@ -2485,19 +2507,15 @@ func _on_release(pos: Vector2) -> void:
 			var inode := view.instance_node(_drag_instance_id)
 			if not was_click and inode != null:
 				var rot := _instance_rotation_from_xform(inode.transform)
+				# resolve_mates=true folds solve into the same undo step.
 				if view.doc.set_instance_transform(_drag_instance_id,
-						inode.transform.origin, rot[0], rot[1]):
-					# Peer feel: drop the instance, then mates pull it home
-					# (concentric preserves revolute angle about the pin).
+						inode.transform.origin, rot[0], rot[1], true):
 					var had_mates: bool = view.doc.mate_list().size() > 0
-					var solved: bool = view.doc.solve_mates() if had_mates else true
 					view.refresh()
 					if _revolute_active and had_mates:
-						status.emit("Instance revolved — mates re-solved" if solved
-								else "Instance revolved — mate solve FAILED")
+						status.emit("Instance revolved — mates re-solved")
 					elif had_mates:
-						status.emit("Instance moved — mates re-solved" if solved
-								else "Instance moved — mate solve FAILED")
+						status.emit("Instance moved — mates re-solved")
 					else:
 						status.emit("Instance moved")
 				else:

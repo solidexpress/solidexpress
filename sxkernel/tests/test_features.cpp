@@ -361,3 +361,179 @@ TEST_CASE("feature graph: thin extrude flip_side changes COM", "[features][thin]
     REQUIRE(com_a[1] == Approx(-com_b[1]).margin(1e-3));
     REQUIRE(std::abs(com_a[1] - com_b[1]) > 1e-3);
 }
+
+TEST_CASE("feature graph: open-profile cut Flip Side to Cut", "[features][opencut]") {
+    // SW Cut Extrude video richness: open line divides the part; Flip Side
+    // chooses which half-space is removed (not a thin wall).
+    auto run = [](bool flip) {
+        Document doc;
+        FeatureGraph graph;
+
+        Feature box;
+        box.type = FeatureType::Primitive;
+        box.params = {{"kind", "box"}, {"a", 100.0}, {"b", 60.0}, {"c", 30.0}};
+        auto box_fid = graph.add(std::move(box));
+
+        Feature skf;
+        skf.type = FeatureType::Sketch;
+        SketchPlane pl;
+        pl.origin = {0, 0, 30};
+        pl.x_dir = {1, 0, 0};
+        pl.y_dir = {0, 1, 0};
+        skf.sketch = std::make_shared<Sketch>("OpenCut", pl);
+        // Vertical divider at x=20 across the 60 mm width.
+        skf.sketch->add_line(20, 0, 20, 60);
+        auto sketch_fid = graph.add(std::move(skf));
+
+        Feature ext;
+        ext.type = FeatureType::Extrude;
+        ext.params = {{"sketch", sketch_fid.str()},
+                      {"distance", -30.0},
+                      {"end", "through_all"},
+                      {"op", "cut"},
+                      {"target", box_fid.str()},
+                      {"flip_side", flip}};
+        graph.add(std::move(ext));
+
+        std::string err;
+        REQUIRE(graph.regenerate(doc, &err));
+        EntityId body_id = graph.feature(box_fid)->output_body;
+        REQUIRE(doc.body(body_id) != nullptr);
+        return shape::volume(doc.body(body_id)->shape);
+    };
+
+    double v0 = run(false);
+    double v1 = run(true);
+    // Full brick = 180000. One side ~20*60*30=36000, other ~80*60*30=144000.
+    REQUIRE(std::abs(v0 - v1) > 50'000.0);
+    REQUIRE((v0 + v1) == Approx(180'000.0).margin(1.0));
+}
+
+TEST_CASE("feature graph: selected contours fuse disjoint regions", "[features][contours]") {
+    // Two side-by-side squares must extrude as solid union — not outer+hole
+    // (that was the unacceptable shortcut vs SW Selected Contours).
+    Document doc;
+    FeatureGraph graph;
+
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("TwoPads");
+    // Square A: (0,0)-(10,10)
+    skf.sketch->add_line(0, 0, 10, 0);
+    skf.sketch->add_line(10, 0, 10, 10);
+    skf.sketch->add_line(10, 10, 0, 10);
+    skf.sketch->add_line(0, 10, 0, 0);
+    // Square B: (20,0)-(30,10)
+    skf.sketch->add_line(20, 0, 30, 0);
+    skf.sketch->add_line(30, 0, 30, 10);
+    skf.sketch->add_line(30, 10, 20, 10);
+    skf.sketch->add_line(20, 10, 20, 0);
+    auto sketch_fid = graph.add(std::move(skf));
+
+    std::string cerr;
+    auto contours = graph.feature(sketch_fid)->sketch->contour_faces(&cerr);
+    REQUIRE(contours.size() == 2);
+
+    Feature ext_all;
+    ext_all.type = FeatureType::Extrude;
+    ext_all.params = {{"sketch", sketch_fid.str()}, {"distance", 5.0}, {"op", "new"}};
+    auto ext_all_id = graph.add(std::move(ext_all));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    double vol_all =
+        shape::volume(doc.body(graph.feature(ext_all_id)->output_body)->shape);
+    REQUIRE(vol_all == Approx(2.0 * 10.0 * 10.0 * 5.0).epsilon(1e-6));
+
+    // Select only contour 0 → half the volume.
+    Document doc2;
+    FeatureGraph graph2;
+    Feature sk2;
+    sk2.type = FeatureType::Sketch;
+    sk2.sketch = std::make_shared<Sketch>("OnePad");
+    sk2.sketch->add_line(0, 0, 10, 0);
+    sk2.sketch->add_line(10, 0, 10, 10);
+    sk2.sketch->add_line(10, 10, 0, 10);
+    sk2.sketch->add_line(0, 10, 0, 0);
+    sk2.sketch->add_line(20, 0, 30, 0);
+    sk2.sketch->add_line(30, 0, 30, 10);
+    sk2.sketch->add_line(30, 10, 20, 10);
+    sk2.sketch->add_line(20, 10, 20, 0);
+    auto sk2_id = graph2.add(std::move(sk2));
+    Feature ext1;
+    ext1.type = FeatureType::Extrude;
+    ext1.params = {{"sketch", sk2_id.str()},
+                   {"distance", 5.0},
+                   {"op", "new"},
+                   {"selected_contours", {0}}};
+    auto ext1_id = graph2.add(std::move(ext1));
+    REQUIRE(graph2.regenerate(doc2, &err));
+    double vol1 = shape::volume(doc2.body(graph2.feature(ext1_id)->output_body)->shape);
+    REQUIRE(vol1 == Approx(10.0 * 10.0 * 5.0).epsilon(1e-6));
+}
+
+TEST_CASE("contour_faces splits a circle by a shared chord", "[sketch][contours]") {
+    // Video 2 topology: a closed circle plus a line that shares the arc.
+    // Two D-regions, not the full disk and not an open-loop failure.
+    Sketch sk("ChordedCircle");
+    sk.add_circle(0, 0, 10);
+    sk.add_line(-10, 0, 10, 0);
+    std::string err;
+    auto contours = sk.contour_faces(&err);
+    REQUIRE(contours.size() == 2);
+    const double half = 0.5 * 3.141592653589793 * 100.0;
+    CHECK(shape::area(contours[0]) == Approx(half).epsilon(1e-3));
+    CHECK(shape::area(contours[1]) == Approx(half).epsilon(1e-3));
+}
+
+TEST_CASE("contour_faces pliers head: circle plus exterior nose", "[sketch][contours]") {
+    // Video 2 Boss-Extrude1: disk + tapered nose that shares the circle's arc.
+    Sketch sk("PliersHead");
+    sk.add_circle(0, 0, 10);
+    // Points (-6,8) and (6,8) lie on the circle (36+64=100).
+    sk.add_line(-6, 8, -3, 22);
+    sk.add_line(-3, 22, 3, 22);
+    sk.add_line(3, 22, 6, 8);
+    std::string err;
+    auto contours = sk.contour_faces(&err);
+    REQUIRE(contours.size() == 2);
+    const double disk = 3.141592653589793 * 100.0;
+    // Exterior nose = trapezoid minus the circular cap (arc bows into the
+    // trapezoid). Segment height 2 on r=10: (r²/2)(θ − sin θ), θ = 2 acos(0.8).
+    const double theta = 2.0 * std::acos(0.8);
+    const double segment = 50.0 * (theta - std::sin(theta));
+    const double nose = 0.5 * (12.0 + 6.0) * 14.0 - segment;
+    CHECK(shape::area(contours[0]) == Approx(disk).epsilon(1e-3));
+    CHECK(shape::area(contours[1]) == Approx(nose).epsilon(1e-2));
+
+    Document doc;
+    FeatureGraph graph;
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("PliersHead");
+    skf.sketch->add_circle(0, 0, 10);
+    skf.sketch->add_line(-6, 8, -3, 22);
+    skf.sketch->add_line(-3, 22, 3, 22);
+    skf.sketch->add_line(3, 22, 6, 8);
+    auto sk_id = graph.add(std::move(skf));
+    Feature ext;
+    ext.type = FeatureType::Extrude;
+    ext.params = {{"sketch", sk_id.str()}, {"distance", 8.0}, {"op", "new"}};
+    auto ext_id = graph.add(std::move(ext));
+    REQUIRE(graph.regenerate(doc, &err));
+    double vol = shape::volume(doc.body(graph.feature(ext_id)->output_body)->shape);
+    CHECK(vol == Approx((disk + nose) * 8.0).epsilon(1e-3));
+}
+
+TEST_CASE("contour_faces keeps nested wire as a hole", "[sketch][contours]") {
+    Sketch sk("PlateHole");
+    sk.add_line(0, 0, 40, 0);
+    sk.add_line(40, 0, 40, 30);
+    sk.add_line(40, 30, 0, 30);
+    sk.add_line(0, 30, 0, 0);
+    sk.add_circle(20, 15, 5);
+    std::string err;
+    auto contours = sk.contour_faces(&err);
+    REQUIRE(contours.size() == 1);
+    // Solid area ≈ 40*30 - π*25.
+    REQUIRE(shape::area(contours[0]) == Approx(1200.0 - 3.141592653589793 * 25.0).epsilon(1e-3));
+}

@@ -12,6 +12,7 @@ var _instances_list: VBoxContainer
 var _mates_list: VBoxContainer
 var _type_option: OptionButton
 var _offset_spin: SpinBox
+var _flip_check: CheckButton
 var _refreshing := false
 
 ## Armed two-click mate flow: face A (ground or instance), then face B on an instance.
@@ -62,6 +63,12 @@ func _ready() -> void:
 	_offset_spin = _labeled_spin(vbox, "Offset", -1000.0, 1000.0, 0.5, 0.0)
 	_offset_spin.tooltip_text = (
 		"plane_coincident: face gap. concentric: required radial clearance (>0; hole must enclose pin)")
+	_flip_check = CheckButton.new()
+	_flip_check.text = "Flip alignment"
+	_flip_check.tooltip_text = (
+		"plane_coincident: align face normals instead of opposing (SolidWorks Flip Mate Alignment)")
+	_flip_check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(_flip_check)
 	_op_button(vbox, "Add mate", _arm_mate, "mate",
 		"Add a mate: click face A (ground or instance), then a face on the instance to move")
 	_op_button(vbox, "Solve mates", _solve_mates, "solve",
@@ -162,7 +169,9 @@ func _make_mate_row(mate: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	var name_lbl := Label.new()
 	var mname: String = str(mate.get("name", ""))
-	name_lbl.text = ("%s %s" % [mate["type"], mname]).strip_edges()
+	var flip_mark := " ⇄" if bool(mate.get("flip", false)) else ""
+	name_lbl.text = ("%s %s%s" % [mate["type"], mname, flip_mark]).strip_edges()
+	name_lbl.tooltip_text = "Flip alignment on" if flip_mark != "" else name_lbl.text
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_lbl.add_theme_font_size_override("font_size", 11)
 	row.add_child(name_lbl)
@@ -232,8 +241,9 @@ func _resolve_mate_b(body: String, face_b: String) -> void:
 		status.emit("Pick a different instance for the moving side")
 		return
 	var mtype: String = _type_option.get_item_text(_type_option.selected)
+	var flip := _flip_check != null and _flip_check.button_pressed
 	var mid: String = view.doc.add_mate(
-		mtype, _mate_instance_a, _mate_face_a, inst_b, face_b, _offset_spin.value, false, "")
+		mtype, _mate_instance_a, _mate_face_a, inst_b, face_b, _offset_spin.value, flip, "")
 	_mate_armed = false
 	_mate_face_a = ""
 	_mate_instance_a = ""
@@ -247,7 +257,9 @@ func _resolve_mate_b(body: String, face_b: String) -> void:
 	_mate_error = "" if solved else "Solve failed — check mate faces/offsets"
 	view.refresh()
 	refresh_lists()
-	status.emit("Mate added" if solved else "Mate added — solve FAILED")
+	var flip_note := " (flipped)" if flip else ""
+	status.emit(
+		("Mate added%s" % flip_note) if solved else "Mate added — solve FAILED")
 
 
 ## Instance that owns `face` when exactly one instance of that source is selected

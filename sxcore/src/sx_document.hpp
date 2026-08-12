@@ -169,13 +169,16 @@ public:
     // op: "new" | "fuse" | "cut"; target_fid required for fuse/cut.
     // end: "blind" | "through_all" | "midplane" (midplane also sets symmetric).
     // thin_thickness > 0: wall from open/closed profile; thin_type: "one_side"|"midplane".
+    // flip_side: thin offset side OR open-profile cut Flip Side to Cut.
+    // selected_contours: optional Selected Contours indices (empty = all).
     godot::String graph_add_extrude(const godot::String& sketch_fid, double distance,
                                     bool symmetric, const godot::String& op,
                                     const godot::String& target_fid,
                                     const godot::String& end = "blind",
                                     double thin_thickness = 0.0,
                                     const godot::String& thin_type = "one_side",
-                                    bool flip_side = false);
+                                    bool flip_side = false,
+                                    const godot::Array& selected_contours = godot::Array());
     // Axis in sketch 2D coordinates (point + direction on the sketch plane).
     godot::String graph_add_revolve(const godot::String& sketch_fid,
                                     const godot::Vector2& axis_point,
@@ -302,7 +305,7 @@ public:
     godot::Array datum_list() const;
     bool remove_datum(const godot::String& id);
 
-    // --- instances (assembly placements; direct doc mutation, not undoable v1) ---
+    // --- instances (assembly placements; undoable via AssemblySnapshotCommand) ---
     // rotation_axis + rotation_angle_deg are converted to a unit quaternion for
     // the kernel. Bump revision happens in the kernel.
     godot::String add_instance(const godot::String& source_body, const godot::Vector3& translation,
@@ -311,14 +314,16 @@ public:
     // Array of {id, source_body, name, translation, rotation_axis, rotation_angle_deg}.
     godot::Array instance_list() const;
     bool remove_instance(const godot::String& id);
+    // resolve_mates: fold solve_mates into the same undo step (instance drag release).
     bool set_instance_transform(const godot::String& id, const godot::Vector3& translation,
-                                const godot::Vector3& rotation_axis, double rotation_angle_deg);
+                                const godot::Vector3& rotation_axis, double rotation_angle_deg,
+                                bool resolve_mates = false);
 
     // --- assembly mates (closed-form placement; solve moves instance_b) ---
     // type: "fixed" | "plane_coincident" | "concentric". instance_a may be ""
     // for a grounded body reference. Concentric is a radial fit: offset must
     // be > 0 (clearance) and the faces must enclose (hole around pin).
-    // Returns the mate id or "".
+    // Returns the mate id or "". Add folds solve_mates into the same undo step.
     godot::String add_mate(const godot::String& type, const godot::String& instance_a,
                            const godot::String& face_a, const godot::String& instance_b,
                            const godot::String& face_b, double offset, bool flip,
@@ -327,6 +332,7 @@ public:
     godot::Array mate_list() const;
     bool remove_mate(const godot::String& id);
     // Applies all mates in order; true when every mate solved.
+    // Not undoable alone — use add_mate / set_instance_transform(..., resolve_mates).
     bool solve_mates();
     // {ok, point, dir} for the concentric revolute axis of an instance, or
     // {ok: false} when the instance has no concentric mate as instance_b.
@@ -343,6 +349,8 @@ private:
     godot::String add_primitive(sx::PrimitiveType type, double a, double b, double c,
                                 const godot::Vector3& origin);
     bool apply_graph_edit(const std::string& label, const std::function<bool()>& mutate);
+    // Assembly undo: snapshot instances+mates before mutate, push_executed after.
+    bool apply_assembly_edit(const std::string& label, const std::function<bool()>& mutate);
     godot::String graph_add_dressup(bool fillet, const godot::String& target_fid,
                                     const godot::PackedStringArray& edge_ids, double value);
 

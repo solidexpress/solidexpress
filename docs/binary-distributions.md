@@ -177,7 +177,7 @@ Copy `libplanegcs.dll` (and any other runtime DLLs `dumpbin /dependents` or `ldd
 
 ## Phase 4 — macOS (Developer ID + notarization)
 
-**Goal:** Notarized `.dmg` or `.zip` for direct download (best fit for CAD).
+**Goal:** Notarized drag-to-Applications `.dmg` for direct download (best fit for CAD). `packaging/macos/create-dmg.sh` stages `SolidExpress.app` + an `/Applications` symlink with Finder chrome (`dmg-background.png`, fixed icon positions). The `.zip` remains a secondary CI artifact.
 
 You have an **Apple Developer Program** membership.
 

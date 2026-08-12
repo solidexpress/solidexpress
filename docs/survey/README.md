@@ -2,9 +2,11 @@
 
 A survey of the seven major commercial parametric mechanical CAD (MCAD) applications, produced to drive the feature roadmap for the `solidexpress` project. It answers two questions: *what is the complete universe of features these products offer*, and *who supports what, at which price/tier*.
 
+**Priority owner:** [docs/plan/ROADMAP.md](../plan/ROADMAP.md) (SW beginner demo ladder + feasibility tiers). This survey is the competitor universe and workflow evidence — not the weekly priority list. Checkbox ledger: [STATUS.md](../plan/STATUS.md).
+
 ## Purpose
 
-`solidexpress` aims to be 3D modeling software in the SolidWorks mold. Before designing anything, we need a requirements catalog grounded in what the market actually ships. The [master feature list](master-feature-list.md) is written vendor-neutrally so it doubles as that catalog; the [matrix](feature-matrix.md) and [profiles](profiles/) show where each competitor is strong, weak, or charging extra — i.e., where the opportunities are.
+`solidexpress` aims to be 3D modeling software in the SolidWorks mold. Before designing anything, we need a requirements catalog grounded in what the market actually ships. The [master feature list](master-feature-list.md) is written vendor-neutrally so it doubles as that catalog; the [matrix](feature-matrix.md) and [profiles](profiles/) show where each competitor is strong, weak, or charging extra — i.e., where the opportunities are. Near-term script ladder (Nick Ler beginner series): [workflow-study-mounting-block.md](workflow-study-mounting-block.md) → [workflow-study-needle-nose-pliers.md](workflow-study-needle-nose-pliers.md).
 
 ## Documents
 

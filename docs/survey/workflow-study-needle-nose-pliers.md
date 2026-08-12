@@ -11,10 +11,10 @@ Companion micro-benchmark (through-hole clicks only): [workflow-study-mounting-b
 | Stage | SolidWorks | SolidExpress | Gap tier |
 |---|---|---|---|
 | Pin | Sketch circle → extrude | Yes | — |
-| Jaw body | Sketch → **Midplane** extrude; selected contours | Midplane / Through All / Blind ends | Selected contours still open |
-| Cuts | Circle cut **Through All**; reuse sketch; **open-profile cut + Flip side** | Through All + Blind; open/flip thin | Thin / open-cut next |
-| Symmetry / finish | Mirror cut/features; Fillet | Body mirror + constant fillet | **P2** (feature-mirror) |
-| Handle | Open sketch → **Thin Feature** extrude, merge | No thin extrude | Thin still open |
+| Jaw body | Sketch → **Midplane** extrude; selected contours | Midplane / Through All / Blind ends | Shared-edge contours **done** |
+| Cuts | Circle cut **Through All**; reuse sketch; **open-profile cut + Flip side** | Through All + Blind; thin + flip; open cut without thin | Open-profile cut (no thin) — [ROADMAP](../plan/ROADMAP.md) |
+| Symmetry / finish | Mirror cut/features; Fillet | Feature-level mirror + constant fillet | — |
+| Handle | Open sketch → **Thin Feature** extrude, merge | Thin extrude on open profile | — |
 | Assembly | Multi-part; **Concentric** + **Coincident** | Same-doc instances; `concentric` + `plane_coincident`; instance↔instance | Multi-doc insert **P2** |
 | Motion | Drag handle → **1 DOF rotate about pin** | Concentric leaves revolute DOF; instance drag rotates about axis | Undo for mates still open |
 
@@ -39,17 +39,19 @@ Aligns with implementation-plan **5.3–5.4** (revolute + DOF drag), implemented
 
 | Gap | Workaround | Add |
 |---|---|---|
-| Extrude **Through All** / **Midplane** | Depth ≥ thickness; mid sketch plane | Extrude end-condition enum |
-| **Thin Feature** (open profile) | Closed offset sketch | Extrude `thin` + wall thickness |
-| **Open-profile cut + Flip side** | Closed cut only | Open curve cut + material-side flag |
-| Selected contours | Separate sketches | Lower priority |
+| Extrude **Through All** / **Midplane** | — | **Done** |
+| **Thin Feature** (open profile) | Closed offset sketch | **Done** (`thin_thickness` + flip) |
+| **Open-profile cut + Flip side** (no thin) | Thin cut or closed cut | Ladder residual — [ROADMAP](../plan/ROADMAP.md) |
+| Selected contours | Separate sketches | **Done** (disjoint + shared-edge) |
 
 ## P2 — Convenience (not blocking motion)
 
-- Feature-level Mirror of a cut (vs body mirror)
+- Feature-level Mirror of a cut — **Done** (body mirror remains as alternate)
 - Multi-document components (same-doc instances OK for a demo)
 - Mate connectors / snap-to-mate
 - Joint limits (± open angle)
+
+Priority owner for leftovers: [ROADMAP.md](../plan/ROADMAP.md).
 
 ## Recommended add sequence
 
@@ -57,8 +59,9 @@ Aligns with implementation-plan **5.3–5.4** (revolute + DOF drag), implemented
 2. **P0a** — Kernel: `instance_revolute_axis`; concentric/plane apply preserves rotation about that axis. **Done.**
 3. **P0b** — UI: instance drag with active revolute DOF rotates about axis; assembly tests. **Done.**
 4. **P0c** — AssemblyPanel: mate instance↔instance. **Done.**
-5. **P1** — Extrude Through All + Midplane. **Done.** Thin / open-cut next.
+5. **P1** — Extrude Through All + Midplane + thin/flip. **Done.** Open-profile cut (no thin) next — see ROADMAP.
 6. **Golden** — Headless pliers MVP: two jaws + pin, drag changes angle. **Done** (`run_pliers_motion_tests.gd`).
+7. Feature-level Mirror. **Done.**
 
 ## Success criteria
 
@@ -72,3 +75,4 @@ Aligns with implementation-plan **5.3–5.4** (revolute + DOF drag), implemented
 - [howto/direct-edit.md](../howto/direct-edit.md) § assembly drag
 - `game/tests/run_assembly_tests.gd`, `run_pliers_motion_tests.gd`
 - [implementation-plan.md](../plan/implementation-plan.md) Phase 5.3–5.4
+- [ROADMAP.md](../plan/ROADMAP.md) — active demo ladder + feasibility

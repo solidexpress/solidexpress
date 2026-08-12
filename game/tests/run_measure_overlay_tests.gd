@@ -28,8 +28,9 @@ func _init() -> void:
 	await test_perp_before_relocate(main)
 	await test_selection_bound_labels(main)
 	test_hover_pair_pins_on_leave(main)
+	test_dual_sticky_marks(main)
 	test_esc_clears_pair(main)
-	test_screen_frac_constant()
+	test_screen_font_stable()
 	await test_place_ghost_nearest_corner(main)
 	await test_move_uses_transport_measure(main)
 
@@ -111,12 +112,23 @@ func test_perp_before_relocate(main) -> void:
 	var expected := view.closest_surface_point(b, pinned)
 	check(foot.distance_to(expected) < 1e-3, "B is perpendicular foot from X onto B")
 
-	# Approach the surface midpoint — X relocates.
+	# Approach the surface midpoint — second X plants on B; prior stays on A.
 	ix._update_measure_hover(b, face_mid)
-	check(mo.anchor_body == b, "near surface mid relocates X onto B")
-	check(mo.following, "following after relocate")
+	check(mo.anchor_body == b, "near surface mid plants active X onto B")
+	check(mo.following, "following after plant")
 	check((mo.anchor_point as Vector3).distance_to(face_mid) < 1e-3,
-			"X lands on surface midpoint")
+			"active X lands on surface midpoint")
+	check(mo.has_prev(), "prior X retained on A")
+	check(mo.prev_body == a, "prev body is A")
+	check((mo.prev_point as Vector3).distance_to(pinned) < 1e-3, "prev point unchanged")
+	check(mo.sticky_count() == 2, "two sticky marks")
+	# Active mark uses the stronger color while following.
+	var active_col: Color = Color.WHITE
+	for m in mo.marks:
+		if (m["p"] as Vector3).distance_to(face_mid) < 1e-3:
+			active_col = m["color"]
+	check(active_col.is_equal_approx(MeasureOverlay.COLOR_MARK_ACTIVE),
+			"active X is orange-red while driving")
 
 
 func test_selection_bound_labels(main) -> void:
@@ -192,6 +204,75 @@ func test_hover_pair_pins_on_leave(main) -> void:
 	ix._drag_mode = ViewportInteraction.DragMode.NONE
 
 
+func test_dual_sticky_marks(main) -> void:
+	print("- dual sticky X: retain prior, promote, relocate active only")
+	var view: DocumentView = main.view
+	var ix: ViewportInteraction = main.interaction
+	view.new_document()
+	var a: String = view.insert_primitive("box", Vector3(-200, 0, 0), Vector3(80, 80, 80))
+	var b: String = view.insert_primitive("box", Vector3(200, 0, 0), Vector3(80, 80, 80))
+	var c: String = view.insert_primitive("box", Vector3(0, 200, 0), Vector3(80, 80, 80))
+	var mo: MeasureOverlay = ix.measure_overlay
+	mo.clear_all()
+
+	var bb_a: Dictionary = view.doc.measure_bbox(a)
+	var pt_a: Vector3 = bb_a["max"]
+	mo.update_hover(a, pt_a)
+	mo.update_hover("", Vector3.ZERO)
+	check(mo.has_anchor() and not mo.has_prev(), "single pinned X on A")
+
+	var bb_b: Dictionary = view.doc.measure_bbox(b)
+	var mid_b := Vector3(
+			(bb_b["min"].x + bb_b["max"].x) * 0.5,
+			(bb_b["min"].y + bb_b["max"].y) * 0.5,
+			bb_b["max"].z)
+	mo.relocate_anchor(b, mid_b)
+	check(mo.sticky_count() == 2, "relocate plants second X")
+	check(mo.anchor_body == b and mo.prev_body == a, "active=B prev=A")
+	check((mo.anchor_point as Vector3).distance_to(mid_b) < 1e-3, "active on B mid")
+	check((mo.prev_point as Vector3).distance_to(pt_a) < 1e-3, "prev still A corner")
+
+	# Idle with two pins → dims between stickies; active colored.
+	mo.update_hover("", Vector3.ZERO)
+	check(mo._last_b == null, "no live B while idle")
+	check(mo.labels.size() >= 1, "inter-sticky dims while two pins idle")
+	var saw_active := false
+	var saw_prev := false
+	for m in mo.marks:
+		var p: Vector3 = m["p"]
+		var col: Color = m["color"]
+		if p.distance_to(mid_b) < 1e-3:
+			saw_active = col.is_equal_approx(MeasureOverlay.COLOR_MARK_ACTIVE)
+		if p.distance_to(pt_a) < 1e-3:
+			saw_prev = col.is_equal_approx(MeasureOverlay.COLOR_MARK)
+	check(saw_active, "active X orange-red during inter-sticky snap")
+	check(saw_prev, "prior X stays idle orange")
+
+	# Approach snap on prev body → promote A back to active.
+	mo.relocate_anchor(a, pt_a)
+	check(mo.anchor_body == a and mo.prev_body == b, "snap on prev promotes it")
+	check((mo.anchor_point as Vector3).distance_to(pt_a) < 1e-3, "promoted point on A")
+
+	# Third body with two stickies already → relocate active only; keep prev.
+	var bb_c: Dictionary = view.doc.measure_bbox(c)
+	var mid_c := Vector3(
+			(bb_c["min"].x + bb_c["max"].x) * 0.5,
+			(bb_c["min"].y + bb_c["max"].y) * 0.5,
+			bb_c["max"].z)
+	var kept_prev: Vector3 = mo.prev_point as Vector3
+	var kept_prev_body := mo.prev_body
+	mo.relocate_anchor(c, mid_c)
+	check(mo.sticky_count() == 2, "still two stickies after third snap")
+	check(mo.anchor_body == c, "active moved onto C")
+	check(mo.prev_body == kept_prev_body, "prev body unchanged")
+	check((mo.prev_point as Vector3).distance_to(kept_prev) < 1e-3, "prev point unchanged")
+	check((mo.anchor_point as Vector3).distance_to(mid_c) < 1e-3, "active on C mid")
+
+	# Esc clears both.
+	mo.clear_pair()
+	check(not mo.has_anchor() and not mo.has_prev(), "clear_pair drops both marks")
+
+
 func test_esc_clears_pair(main) -> void:
 	print("- Esc clears measure pair before selection")
 	var view: DocumentView = main.view
@@ -214,12 +295,14 @@ func test_esc_clears_pair(main) -> void:
 	check(view.selected_body == a, "Esc cleared measure before selection")
 
 
-func test_screen_frac_constant() -> void:
-	print("- screen size fraction is 1/40")
-	check(is_equal_approx(MeasureOverlay.SCREEN_FRAC, 1.0 / 40.0), "SCREEN_FRAC == 1/40")
-	var h := 900.0
-	var px := int(round(h * MeasureOverlay.SCREEN_FRAC))
-	check(px == 23 or px == 22, "900px viewport → ~22–23px labels (%d)" % px)
+func test_screen_font_stable() -> void:
+	print("- measure font is DPI-stable (not viewport-tied)")
+	check(MeasureOverlay.FONT_PX == 14, "FONT_PX == 14")
+	UiScale.refresh()
+	var a := UiScale.font(MeasureOverlay.FONT_PX)
+	var b := UiScale.font(MeasureOverlay.FONT_PX)
+	check(a == b, "font size stable across calls (%d)" % a)
+	check(a >= 11 and a <= 36, "font size in readable range (%d)" % a)
 
 
 func test_place_ghost_nearest_corner(main) -> void:
@@ -258,16 +341,18 @@ func test_place_ghost_nearest_corner(main) -> void:
 			bb_side["max"].z)
 	var side_screen: Vector2 = ix._model_to_screen(side_mid)
 	ix._update_ghost(side_screen)
-	check(mo.anchor_body == side, "place hover relocates X onto target body")
+	check(mo.anchor_body == side, "place hover plants active X onto target body")
 	check(mo.following, "following X on target while hovering it")
 	check((mo.anchor_point as Vector3).distance_to(side_mid) < 1e-2,
 			"X planted on target surface mid")
+	check(mo.has_prev() and mo.prev_body == a, "prior X on A retained during place")
 	# Move ghost to empty ground — pin X and dim to nearest corner again.
 	ix._update_ghost(ix._model_to_screen(Vector3(40, 0, 0)))
 	check(mo.anchor_body == side, "X stays on last target after leaving it")
 	check(mo.is_showing_pair(), "ghost corner dims resume after leave target")
 	ix._disarm_place(false)
 	check(mo.has_anchor(), "anchor survives disarm")
+	check(mo.has_prev(), "prior X survives disarm")
 	check(not mo.is_showing_pair(), "live dims cleared on disarm")
 
 
@@ -278,6 +363,7 @@ func test_move_uses_transport_measure(main) -> void:
 	view.new_document()
 	var a: String = view.insert_primitive("box", Vector3(-40, 0, 0))
 	var b: String = view.insert_primitive("box", Vector3(40, 0, 0))
+	var side: String = view.insert_primitive("box", Vector3(0, 80, 0))
 	var mo: MeasureOverlay = ix.measure_overlay
 	mo.clear_all()
 	# Plant X on B, select A (the body we'll move).
@@ -307,15 +393,21 @@ func test_move_uses_transport_measure(main) -> void:
 			"live B tracks moved corners")
 	check(live_b.x > idle_b.x + 1.0, "moved corner advanced in +X")
 
-	# Touch B again during move — X replants on B when near a surface mid.
+	# Plant a second mark on side (keeps B as prev), then touch B to promote.
 	var b_mid: Vector3 = Vector3(
 			(bb_b["min"].x + bb_b["max"].x) * 0.5,
 			(bb_b["min"].y + bb_b["max"].y) * 0.5,
 			bb_b["max"].z)
+	var bb_side: Dictionary = view.doc.measure_bbox(side)
+	mo.relocate_anchor(side, (bb_side["min"] as Vector3 + bb_side["max"] as Vector3) * 0.5)
+	mo.update_hover("", Vector3.ZERO)
+	check(mo.has_prev() and mo.prev_body == b, "prior X retained before move-touch")
 	ix._update_transport_measure(ix._model_to_screen(b_mid))
-	check(mo.anchor_body == b, "touch during move relocates X onto other body")
+	check(mo.anchor_body == b, "touch during move promotes/plants active X onto B")
 	check(mo.following, "following X on other body during move")
 	check((mo.anchor_point as Vector3).distance_to(b_mid) < 1e-2,
 			"X replanted on B surface mid")
+	check(mo.sticky_count() == 2 and mo.prev_body == side,
+			"side mark kept as prev after promoting B")
 	ix._drag_mode = ViewportInteraction.DragMode.NONE
 	view.refresh()

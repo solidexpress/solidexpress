@@ -125,7 +125,7 @@ Still at or under the SolidWorks Phase B+ remainder when starting from a placed 
 | Best SX gesture count | **~10** (Box + Place hole) |
 | SW efficient count | **~32** |
 | Ratio | SX ≈ **3× fewer** gestures on the preferred path |
-| SW-parity sketch→cut | **Yes**, ~12–17 from a placed box; no Through All dropdown |
+| SW-parity sketch→cut | **Yes**, ~12–17 from a placed box; Extrude ends include **Through All** / Midplane (use Blind depth ≥ stock if preferred) |
 
 ```
 Gestures (lower is better)
@@ -138,15 +138,15 @@ SX Place hole    ██████████                        10
 
 ## Limitations surfaced
 
-These do **not** block this part, but they are real gaps vs SolidWorks:
+These do **not** block this part. Several former gaps have landed; leftovers are for script fidelity elsewhere (pliers):
 
-| Gap | Impact on this part | Workaround |
+| Gap | Impact on this part | Status |
 |---|---|---|
-| No **Through All** extrude-cut end condition | Cut depth is a number | Set depth ≥ stock thickness (30+) |
-| No **Hole Wizard** / ANSI-ISO tap library | Simple/CB/CS only | Simple Ø + depth is enough here |
-| No auto “sketch fully defined” coach | Dimensions optional on SX path | Place hole carries Ø/depth as feature params |
-| Extrude **to-face / midplane / thin** missing | Not needed for this brick | — |
+| Extrude **Through All** / Midplane / thin + flip | Not required for this brick | **Shipped** — Blind depth ≥ stock still works |
+| **Hole Wizard** multi-point | Nice-to-have vs Place hole | **MVP shipped**; full ANSI-ISO tap library still thin |
+| Fully Define / Analyze coach | Dimensions optional on SX path | **Shipped** (sketch upgrades); Place hole still carries Ø/depth |
 | Face-center hole without Place hole | **Apply hole** drills face center in one click | Prefer when exact mid is fine |
+| Open-profile **cut** + Flip side (no thin) | Out of scope for this brick | Ladder residual — see [ROADMAP.md](../plan/ROADMAP.md) |
 
 ### What the processed video also showed (out of scope for this part)
 
@@ -156,15 +156,15 @@ The Cut Extrude video continues with:
 2. Open-profile cut + **Flip side to cut**
 3. Teaser for Mirror + Fillet on the pliers
 
-SolidExpress supports mirror, fillet, and sketch→cut. **Open-profile cut with Flip side** and **Through All from a mid-plane sketch** are thinner / missing — track under extrude end-conditions (implementation plan §3.3).
+SolidExpress supports Through All / Midplane, thin + flip, feature mirror, fillet, and sketch→cut. Remaining script gap for later jaw videos: **open-profile cut without thin** — [ROADMAP.md](../plan/ROADMAP.md) Hard near-term.
 
 ---
 
 ## Product takeaways
 
 1. **Place / Apply hole is the win** for this class of beginner tutorial — SW’s sketch→cut ritual is 13 gestures; SX’s pick-place is 4–5 after the body exists (centered: **`O`** / selection-strip **Hole**).
-2. Keep a **sketch→cut** path discoverable so SW-trained users are not blocked; gesture parity is already close once the body exists.
-3. Highest-value gap for matching SW video scripts verbatim: **Through All** (and friends) on Extrude/Cut — not more sketch tools.
+2. Keep a **sketch→cut** path discoverable so SW-trained users are not blocked; gesture parity is already close once the body exists; Through All is available when matching SW scripts verbatim.
+3. Highest-value remaining gap for later SW videos (pliers jaws): **open-profile cut + Flip side** without requiring a thin wall — tracked on the demo ladder in [ROADMAP.md](../plan/ROADMAP.md).
 4. Optional follow-up study: L-bracket + inner fillet (`workflow_bracket` ceiling 20 in SX) vs a full SW L-bracket video once captions are available.
 
 Verified howto (click vs keyboard): [howto/mounting-block.md](../howto/mounting-block.md).

@@ -32,7 +32,9 @@ enum class FeatureType {
                 //          end: "blind|through_all|midplane" (midplane ⇒ symmetric),
                 //          op: "new|fuse|cut", target: <feature uuid, for fuse/cut>,
                 //          optional thin_thickness: >0 wall from open/closed profile,
-                //          thin_type: "one_side"|"midplane", flip_side: bool}
+                //          thin_type: "one_side"|"midplane", flip_side: bool,
+                //          optional selected_contours: [int,...] Selected Contours indices,
+                //          open-profile cut uses flip_side as Flip Side to Cut when thin=0}
     Revolve,    // params: {sketch, axis_point: [u,v], axis_dir: [u,v], angle, op, target}
     Boolean,    // params: {op: "fuse|cut|common", target: <fid>, tool: <fid>}
     Fillet,     // params: {target: <fid>, radius, edges: [<edge uuid>|legacy 1-based index]}

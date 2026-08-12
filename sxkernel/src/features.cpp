@@ -880,14 +880,55 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 std::string perr;
                 TopoDS_Shape face;
                 double thin_thickness = num_param(params, "thin_thickness", 0.0, env);
+                bool flip_side = params.value("flip_side", false);
                 if (thin_thickness > 0.0) {
                     std::string thin_type = params.value("thin_type", "one_side");
                     bool thin_midplane = (thin_type == "midplane");
-                    bool flip_side = params.value("flip_side", false);
                     face = skf->sketch->thin_profile_face(thin_thickness, thin_midplane, flip_side,
                                                           &perr);
                 } else {
-                    face = skf->sketch->profile_face(&perr);
+                    std::vector<int> contour_idxs;
+                    if (params.contains("selected_contours") &&
+                        params["selected_contours"].is_array()) {
+                        for (const auto& v : params["selected_contours"]) {
+                            if (v.is_number_integer())
+                                contour_idxs.push_back(v.get<int>());
+                        }
+                    }
+                    if (!contour_idxs.empty()) {
+                        face = skf->sketch->profile_face_selected(contour_idxs, &perr);
+                    } else {
+                        face = skf->sketch->profile_face(&perr);
+                    }
+                    // Open-profile Extruded Cut (SW Flip Side to Cut): half-plane
+                    // tool — not a thin wall. Only for cut/fuse when closed
+                    // profile is absent.
+                    std::string op_early = params.value("op", "new");
+                    if (face.IsNull() && (op_early == "cut" || op_early == "fuse")) {
+                        double pad = 1.0e5;
+                        EntityId tid_pad;
+                        if (params.contains("target") && params["target"].is_string()) {
+                            tid_pad = find_feature_body("target");
+                            const Body* tb = doc.body(tid_pad);
+                            if (tb && !tb->shape.IsNull()) {
+                                Bnd_Box box;
+                                BRepBndLib::Add(tb->shape, box);
+                                if (!box.IsVoid()) {
+                                    double xmin, ymin, zmin, xmax, ymax, zmax;
+                                    box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+                                    double diag = std::hypot(xmax - xmin,
+                                                             std::hypot(ymax - ymin, zmax - zmin));
+                                    pad = std::max(diag * 4.0, 100.0);
+                                }
+                            }
+                        }
+                        std::string oerr;
+                        face = skf->sketch->open_cut_profile_face(flip_side, pad, &oerr);
+                        if (face.IsNull())
+                            perr = perr.empty() ? oerr : (perr + "; open-cut: " + oerr);
+                        else
+                            perr.clear();
+                    }
                 }
                 if (face.IsNull()) return fail("profile: " + perr);
 

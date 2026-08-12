@@ -9,6 +9,7 @@
 #include <miniz.h>
 #include <nlohmann/json.hpp>
 
+#include "sx/commands_assembly.hpp"
 #include "sx/document.hpp"
 #include "sx/instances.hpp"
 #include "sx/shape_utils.hpp"
@@ -142,6 +143,48 @@ TEST_CASE("add_instance rejects missing source", "[instances]") {
     auto id = doc.add_instance(missing, {0, 0, 0}, {0, 0, 0, 1}, "Nope");
     REQUIRE(id.is_null());
     REQUIRE(doc.instances().empty());
+}
+
+TEST_CASE("assembly undo restores place and remove instance", "[instances][undo]") {
+    Document doc;
+    CommandStack stack;
+    auto body_id = doc.add_body(shape::make_box(10, 10, 10), "Box");
+
+    auto push_edit = [&](const char* label, const auto& mutate) {
+        nlohmann::json before = assembly_to_json(doc);
+        mutate();
+        nlohmann::json after = assembly_to_json(doc);
+        REQUIRE(before != after);
+        stack.push_executed(
+            std::make_unique<AssemblySnapshotCommand>(label, std::move(before), std::move(after)));
+    };
+
+    EntityId inst_id;
+    push_edit("place instance", [&] {
+        inst_id = doc.add_instance(body_id, {5, 0, 0}, {0, 0, 0, 1}, "Inst A");
+        REQUIRE(!inst_id.is_null());
+    });
+    REQUIRE(doc.instances().size() == 1);
+
+    push_edit("move instance", [&] {
+        REQUIRE(doc.set_instance_transform(inst_id, {9, 2, 1}, {0, 0, 0, 1}));
+    });
+    REQUIRE(approx3(doc.instance(inst_id)->translation, {9, 2, 1}));
+
+    REQUIRE(stack.undo(doc));
+    REQUIRE(doc.instance(inst_id) != nullptr);
+    REQUIRE(approx3(doc.instance(inst_id)->translation, {5, 0, 0}));
+
+    REQUIRE(stack.undo(doc));
+    REQUIRE(doc.instances().empty());
+
+    REQUIRE(stack.redo(doc));
+    REQUIRE(doc.instances().size() == 1);
+    REQUIRE(doc.instance(inst_id) != nullptr);
+    REQUIRE(approx3(doc.instance(inst_id)->translation, {5, 0, 0}));
+
+    REQUIRE(stack.redo(doc));
+    REQUIRE(approx3(doc.instance(inst_id)->translation, {9, 2, 1}));
 }
 
 TEST_CASE("sxp round-trips instances", "[instances][sxp]") {

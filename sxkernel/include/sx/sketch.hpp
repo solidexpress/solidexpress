@@ -148,13 +148,32 @@ public:
     // --- geometry output ---
     // Builds a planar face from the closed profile formed by all
     // non-construction entities (single circle, or a loop of lines/arcs/splines).
+    // Multiple disjoint closed regions fuse as solid faces (Selected Contours
+    // default = all). Nested wires keep outer+holes semantics.
     // Returns a null shape if no closed profile exists.
     TopoDS_Shape profile_face(std::string* err = nullptr) const;
+
+    // Selectable solid regions for Selected Contours (SW). Empty on failure.
+    // Disjoint closed wires are separate solids; nested wires are holes.
+    // Edges that share arcs (circle split by a chord, pliers head + nose)
+    // are split into planar regions (BRepAlgoAPI_Splitter).
+    std::vector<TopoDS_Shape> contour_faces(std::string* err = nullptr) const;
+
+    // profile_face restricted to contour indices (empty = all). Indices match
+    // contour_faces() order.
+    TopoDS_Shape profile_face_selected(const std::vector<int>& indices,
+                                       std::string* err = nullptr) const;
 
     // Builds a planar face by in-plane offsetting an open (or closed)
     // non-construction polyline profile to the given wall thickness.
     TopoDS_Shape thin_profile_face(double thickness, bool midplane, bool flip_side,
                                    std::string* err = nullptr) const;
+
+    // SolidWorks Extruded Cut "Flip Side to Cut" for an open sketch: a large
+    // half-plane on one side of the open chain (not a thin wall). pad_extent
+    // must exceed the target body silhouette on that side.
+    TopoDS_Shape open_cut_profile_face(bool flip_side, double pad_extent,
+                                       std::string* err = nullptr) const;
 
     // Diagnostics for open profiles / gaps / zero-length.
     std::vector<SketchIssue> analyze(double gap_tol = 1e-4) const;
