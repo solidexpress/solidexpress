@@ -28,48 +28,24 @@ enum class FeatureType {
     Primitive,  // params: {kind: "box|cylinder|sphere|cone|torus", a, b, c,
                 //          origin: [x,y,z], optional z_dir/x_dir: [x,y,z]}
     Sketch,     // embedded sketch; no geometry output
-    Extrude,    // params: {sketch: <feature uuid>, distance, symmetric,
-                //          end: "blind|through_all|midplane" (midplane ⇒ symmetric),
-                //          op: "new|fuse|cut", target: <feature uuid, for fuse/cut>,
-                //          optional thin_thickness: >0 wall from open/closed profile,
-                //          thin_type: "one_side"|"midplane", flip_side: bool,
-                //          optional selected_contours: [int,...] Selected Contours indices,
-                //          open-profile cut uses flip_side as Flip Side to Cut when thin=0}
+    Extrude,    // params: {sketch, distance, symmetric, end: "blind|through_all|to_face|to_next|symmetric",
+                //          op: "new|fuse|cut", target, optional to_face: <face uuid>}
     Revolve,    // params: {sketch, axis_point: [u,v], axis_dir: [u,v], angle, op, target}
     Boolean,    // params: {op: "fuse|cut|common", target: <fid>, tool: <fid>}
-    Fillet,     // params: {target: <fid>, radius, edges: [<edge uuid>|legacy 1-based index]}
+    Fillet,     // params: {target, radius, optional radius2 (variable), edges: [1-based]}
     Chamfer,    // params: {target: <fid>, distance, edges: [...]}
     Hole,       // params: {target: <fid>, type: "simple|counterbore|countersink",
                 //          position: [x,y,z], direction: [x,y,z], diameter, depth
                 //          (<=0 = through-all), cb_diameter, cb_depth,
-                //          cs_diameter, cs_angle_deg,
-                //          optional positions: [[x,y,z], ...] — multi-point Hole Wizard.
-                //          Rule: if positions is present and non-empty, drill at every
-                //          point (same diameter/depth/type/direction); otherwise use
-                //          single position. When both are set and positions is non-empty,
-                //          positions wins (position is ignored).}
-    Mirror,     // Body mode: {target: <fid>, plane_point: [x,y,z], plane_normal: [x,y,z]}
-                // Feature mode: {source_feature_ids: [fid...], plane_point, plane_normal,
-                //                optional target: body/feature to modify for cut/fuse results}
-                // Body mode when source_feature_ids absent (mirrors target body → output_body).
-                // Feature mode rebuilds Extrude/Revolve tools, mirrors them, applies same op
-                // (cut/fuse into target, or new → output_body). Fillet/Chamfer in the list
-                // is not supported yet (regenerate fails with a clear message).
+                //          cs_diameter, cs_angle_deg}
+    Mirror,     // params: {target: <fid>, plane_point: [x,y,z], plane_normal: [x,y,z]}
     LinearPattern,   // params: {target, direction: [x,y,z], spacing, count}
     CircularPattern, // params: {target, axis_point, axis_dir, count, total_angle}
-    Shell,      // params: {target, faces: [<face uuid>|legacy 1-based index], thickness}
+    Shell,      // params: {target, faces: [1-based face indices], thickness}
     Offset,     // params: {target, offset}
-    PushPull,   // params: {target: <fid>, face: <face uuid>, distance}
-    Draft,      // params: {target: <fid>, faces: [<face uuid>...], angle_deg,
-                //          pull_dir: [x,y,z], neutral_point: [x,y,z],
-                //          neutral_normal: [x,y,z]}
-    Sweep,      // params: {sketch: <fid>, path: [[x,y,z], ...] OR path_feature: <fid>,
-                //          optional guides: [<fid>, ...],
-                //          optional op: "new"|"fuse"|"cut", target: <fid>,
-                //          optional thin_thickness: >0 hollow wall}
-    Loft,       // params: {sketches: [<fid>, ...], ruled: bool,
-                //          optional guides: [<fid>, ...]}
-    Path,       // params: {sketches: [<fid>, ...] (1+), mode: "join_endpoints|bridge_spline|composite",
+    Sweep,      // params: {sketch: <fid>, path: [[x,y,z], ...] OR path_feature: <fid>}
+    Loft,       // params: {sketches: [<fid>, ...], ruled: bool}
+    Path,       // params: {sketches: [<fid>, ...], mode: "join_endpoints|bridge_spline|composite",
                 //          path: [[x,y,z], ...] rebuilt on regenerate}
                 // No solid output — consumed by Sweep via path_feature.
     HelixSweep, // params: {profile_radius (default 1), axis_point: [x,y,z],
@@ -85,6 +61,21 @@ enum class FeatureType {
                 // BASE feature: file is re-read on regenerate (document dep).
     ImportStl,  // params: {path: string, scale: double (default 1.0)}
                 // BASE feature: mesh import as a single body; re-read on regen.
+    DirectEdit, // params: {target: <fid>, kind: "push_pull|move_face|offset_face|delete_face",
+                //          face: <face uuid> OR face_index: int,
+                //          distance, direction: [x,y,z]}
+    Rib,        // params: {target, thickness, height, origin, direction}
+    Thicken,    // params: {target, offset}
+    Wrap,       // params: {target, sketch, depth}
+    Flange,     // params: {target, length, thickness, k_factor, radius, angle_rad}
+    Knit,       // params: {targets: [fid, ...]} — fuse listed bodies
+    ReplaceFace,// params: {target, face_index, offset}
+    FrameMember,// params: {path: [[x,y,z],...], profile_w, profile_h}
+    InContext,  // params: {context: <id>, a, b} — height from the snapshot
+    ConvertSheet,// params: {target} — tag a thin solid as sheet metal
+    UserFeature,// params: {recipe, steps: [...], plus recipe args}
+    Weld,       // params: {edge, symbol, size} — cosmetic, no solid output
+    Sketch3D,   // params: {points: [[x,y,z],...]} — feeds Path / Sweep
 };
 
 const char* to_string(FeatureType t);

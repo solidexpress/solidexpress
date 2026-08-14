@@ -14,6 +14,7 @@
 // used — that is the "ground" side. `instance_b` must be a real instance:
 // it is the side that moves.
 
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
@@ -31,8 +32,30 @@ class Document;
 enum class MateType {
     Fixed,            // locks instance_b where it is (no-op on apply)
     PlaneCoincident,  // face planes opposed, signed gap = offset
-    Concentric,       // radial pin-in-hole: axes colinear (axial slide free)
+    PlaneParallel,    // face normals parallel; translation left free
+    Concentric,       // cylindrical face axes colinear (axial slide free)
+    Fastened,         // Onshape-style: implicit connectors, all 6 DOF
 };
+
+// Local frame inferred from a face (Onshape implicit mate connector).
+struct MateConnector {
+    EntityId id;
+    EntityId instance;  // null => ground / source body
+    EntityId face;
+    std::array<double, 3> origin{0, 0, 0};
+    std::array<double, 3> z_dir{0, 0, 1};
+    std::array<double, 3> x_dir{1, 0, 0};
+    std::string name;
+};
+
+void to_json(nlohmann::json& j, const MateConnector& c);
+void from_json(const nlohmann::json& j, MateConnector& c);
+
+// Implicit connector on a planar face (Z = outward normal, origin = mid)
+// or cylindrical face (Z = axis, origin = axis point).
+std::optional<MateConnector> implicit_connector(const Document& doc,
+                                                const EntityId& instance,
+                                                const EntityId& face);
 
 const char* to_string(MateType t);
 MateType mate_type_from_string(const std::string& s);
@@ -44,14 +67,8 @@ struct Mate {
     EntityId face_a;
     EntityId instance_b;  // the moved side; must be an instance
     EntityId face_b;
-    // PlaneCoincident: signed face gap along A's normal.
-    // Concentric: required minimum radial clearance (must be > 0); geometry
-    // must enclose (hole around pin) with R_hole - R_pin >= offset.
-    double offset = 0.0;
+    double offset = 0.0;  // PlaneCoincident: signed gap along A's normal
     bool flip = false;    // PlaneCoincident: align normals instead of opposing
-    // Concentric revolute limits (degrees). Unset = free spin about the axis.
-    std::optional<double> angle_min;
-    std::optional<double> angle_max;
     std::string name;
 };
 
@@ -65,10 +82,6 @@ struct MatePlane {
 struct MateAxis {
     gp_Pnt point;
     gp_Dir dir;
-    double radius = 0.0;
-    // True when the cylindrical face is a hole wall (material outside the
-    // cylinder, OCCT REVERSED) — it can enclose a smaller outer cylinder.
-    bool encloses = false;
 };
 
 // World-space plane / cylinder axis of a mate reference (face under the
@@ -85,21 +98,5 @@ bool apply_mate(Document& doc, const Mate& m);
 
 // Applies every mate stored on the document in insertion order.
 bool solve_mates(Document& doc);
-
-// World-space axis of the first concentric mate that moves `instance` as
-// instance_b. When present, the instance has a free rotational DOF about this
-// axis (axial slide may also be free). Empty when no concentric mate applies.
-std::optional<MateAxis> instance_revolute_axis(const Document& doc,
-                                              const EntityId& instance);
-
-// Current revolute angle (radians) of `instance` about its concentric axis,
-// measured from a stable world reference in the plane ⊥ axis. Empty when the
-// instance has no concentric revolute DOF.
-std::optional<double> instance_revolute_angle(const Document& doc,
-                                              const EntityId& instance);
-
-// Clamp instance_b rotation into angle_min/angle_max on concentric mates.
-// No-op when limits are unset. Called from solve_mates after each apply.
-bool clamp_revolute_limits(Document& doc, const Mate& m);
 
 }  // namespace sx

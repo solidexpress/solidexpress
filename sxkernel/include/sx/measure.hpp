@@ -55,4 +55,9 @@ double face_area(const Document& doc, const EntityId& face);
 std::optional<double> angle_between_faces(const Document& doc, const EntityId& f1,
                                           const EntityId& f2);
 
+// Volume of the solid intersection of two bodies. 0 when they only touch or
+// miss; nullopt if either id is not a solid body.
+std::optional<double> interference_volume(const Document& doc, const EntityId& a,
+                                          const EntityId& b);
+
 }  // namespace sx::measure

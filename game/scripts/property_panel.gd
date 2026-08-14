@@ -23,6 +23,8 @@ const SCHEMAS := {
 	],
 	"extrude": [
 		{"key": "distance", "label": "Distance", "kind": "float", "min": 0.01, "max": 10000.0, "step": 1.0},
+		{"key": "end", "label": "End", "kind": "enum",
+			"options": ["blind", "through_all", "to_face", "to_next", "symmetric"]},
 		{"key": "symmetric", "label": "Symmetric", "kind": "bool"},
 		{"key": "op", "label": "Result", "kind": "enum", "options": ["new", "fuse", "cut"]},
 		{"key": "thin_thickness", "label": "Thin wall", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
@@ -34,6 +36,12 @@ const SCHEMAS := {
 	],
 	"fillet": [
 		{"key": "radius", "label": "Radius", "kind": "float", "min": 0.01, "max": 1000.0, "step": 0.5},
+		{"key": "radius2", "label": "Radius 2", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
+	],
+	"direct_edit": [
+		{"key": "kind", "label": "Kind", "kind": "enum",
+			"options": ["push_pull", "move_face", "offset_face", "delete_face"]},
+		{"key": "distance", "label": "Distance", "kind": "float", "min": -10000.0, "max": 10000.0, "step": 0.5},
 	],
 	"chamfer": [
 		{"key": "distance", "label": "Distance", "kind": "float", "min": 0.01, "max": 1000.0, "step": 0.5},
@@ -96,6 +104,20 @@ const SCHEMAS := {
 	],
 	"boolean": [
 		{"key": "op", "label": "Operation", "kind": "enum", "options": ["fuse", "cut", "common"]},
+	],
+	"rib": [
+		{"key": "thickness", "label": "Thickness", "kind": "float", "min": 0.1, "max": 1000.0, "step": 0.5},
+		{"key": "height", "label": "Height", "kind": "float", "min": 0.1, "max": 10000.0, "step": 1.0},
+	],
+	"flange": [
+		{"key": "length", "label": "Length", "kind": "float", "min": 0.1, "max": 10000.0, "step": 1.0},
+		{"key": "thickness", "label": "Thickness", "kind": "float", "min": 0.1, "max": 50.0, "step": 0.1},
+		{"key": "k_factor", "label": "K-factor", "kind": "float", "min": 0.1, "max": 1.0, "step": 0.01},
+		{"key": "radius", "label": "Bend R", "kind": "float", "min": 0.1, "max": 100.0, "step": 0.1},
+	],
+	"frame_member": [
+		{"key": "profile_w", "label": "Profile W", "kind": "float", "min": 1.0, "max": 500.0, "step": 1.0},
+		{"key": "profile_h", "label": "Profile H", "kind": "float", "min": 1.0, "max": 500.0, "step": 1.0},
 	],
 }
 

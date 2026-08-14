@@ -1,0 +1,37 @@
+---
+description: Marketing site download buttons must always target the GitHub latest release only
+globs: website/**/*.{html,js,md} docs/index.html docs/features.html
+alwaysApply: false
+---
+
+# Website downloads = latest release only
+
+SolidExpress download links on the marketing site must **always** resolve to assets from the **current GitHub latest release** (`/repos/solidexpress/solidexpress/releases/latest`).
+
+## Hard rules
+
+1. **One release for every platform.** macOS, Windows, and Linux buttons must all hydrate from the same `releases/latest` payload. Never mix versions (e.g. macOS from `v0.0.1` while Linux/Windows are `v0.0.3`).
+2. **No cross-release fallback.** If the latest release is missing an asset (for example no `.dmg`), do **not** walk older releases to find one. Point that button at the latest release page / mark it unavailable instead.
+3. **No hardcoded versioned asset URLs** in HTML (`.../releases/download/v0.0.1/SolidExpress-0.0.1-macos.dmg`). Initial `href`s may be `https://github.com/solidexpress/solidexpress/releases/latest` until JS hydrates.
+4. **No ZIP alternate download buttons** on the public download row (DMG / Setup.exe / `.tar.gz` only).
+5. **No OS-detection “Detected macOS…” hint** and no “installer-ready builds…” tagline on the download section.
+
+## Correct pattern
+
+```js
+fetch("https://api.github.com/repos/solidexpress/solidexpress/releases/latest")
+  .then((r) => r.json())
+  .then((release) => {
+    // pick .dmg / setup.exe / .tar.gz from release.assets ONLY
+    // set #dl-version and “all assets” link from release.tag_name / release.html_url
+  });
+```
+
+## Wrong pattern
+
+```js
+// ❌ walks every release and returns the first matching asset from any tag
+firstAsset(allReleases, /\.dmg$/)
+```
+
+When editing `website/index.html` (canonical marketing source in this repo) or syncing to `solidexpress.github.io`, keep this rule intact.

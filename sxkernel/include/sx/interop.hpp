@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include <TopoDS_Shape.hxx>
+
 #include "sx/ids.hpp"
 
 namespace sx {
@@ -25,6 +27,14 @@ bool export_stl(const Document& doc,
 std::vector<EntityId> import_step(Document& doc, const std::string& path, std::string* err = nullptr);
 std::vector<EntityId> import_iges(Document& doc, const std::string& path, std::string* err = nullptr);
 std::vector<EntityId> import_stl(Document& doc, const std::string& path, std::string* err = nullptr);
+
+// Sew gaps and run ShapeFix. Returns a healed solid (or the input if already
+// valid). Sets *report with a short card-ready summary.
+TopoDS_Shape heal_shape(const TopoDS_Shape& shape, std::string* report = nullptr);
+
+// Mesh interchange (tessellated). Own writers — no extra deps.
+bool export_3mf(const Document& doc, const std::string& path, std::string* err = nullptr);
+bool export_gltf(const Document& doc, const std::string& path, std::string* err = nullptr);
 
 }  // namespace interop
 }  // namespace sx

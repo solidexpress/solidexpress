@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Build &amp; run — SolidExpress</title>
+<meta name="description" content="How to build SolidExpress from source and run the parametric CAD desktop app."/>
+<link rel="icon" href="assets/logo.png"/>
+<style>
+:root{--bg:#0f1419;--panel:#121a26;--text:#dde2ea;--muted:#8b9cb3;--accent:#6ab0f3;--accent2:#4fd1c5;--border:#243044}
+body{margin:0;font-family:system-ui,sans-serif;background:linear-gradient(180deg,#0a0e14,var(--bg));color:var(--text);line-height:1.55}
+a{color:var(--accent)}
+nav{display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;padding:0.75rem 1.5rem;border-bottom:1px solid var(--border);max-width:1100px;margin:0 auto}
+nav .brand{display:flex;align-items:center;gap:.65rem;color:var(--text);text-decoration:none;font-weight:600}
+nav .brand img{width:200px;height:200px}
+nav .links{display:flex;gap:1.25rem;flex-wrap:wrap;font-size:.95rem}
+header{text-align:center;padding:2.5rem 1.5rem 1.5rem}
+h1{font-size:2rem;margin:0 0 .5rem}
+.tagline{color:var(--muted);max-width:40rem;margin:0 auto}
+.pill{background:#1a2838;color:var(--accent2);padding:.2rem .6rem;border-radius:999px;font-size:.85rem;display:inline-block;margin-top:1rem}
+main{max-width:760px;margin:0 auto;padding:1rem 1.5rem 4rem}
+section{margin-bottom:2.5rem}
+h2{font-size:1.35rem;border-left:4px solid var(--accent);padding-left:.75rem;margin:0 0 .85rem}
+h3{font-size:1.05rem;margin:1.25rem 0 .5rem}
+.lead,.note{color:var(--muted)}
+.note{font-size:.95rem;margin-top:.75rem}
+ol.steps{padding-left:1.25rem;margin:.5rem 0 0}
+ol.steps>li{margin:.85rem 0}
+pre{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:1rem 1.1rem;overflow-x:auto;font-size:.9rem;line-height:1.45;margin:.6rem 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em}
+p code,li code{background:#1a2838;padding:.1rem .35rem;border-radius:4px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:1.15rem 1.25rem;margin-top:1rem}
+.panel ul{margin:.4rem 0 0;padding-left:1.2rem;color:var(--muted)}
+.panel li{margin:.3rem 0}
+.cta{margin-top:1.25rem;display:flex;gap:1rem;flex-wrap:wrap}
+.btn{padding:.65rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;display:inline-block}
+.btn-primary{background:var(--accent);color:#0a1020}
+.btn-secondary{border:1px solid var(--border);color:var(--text)}
+footer{text-align:center;color:var(--muted);padding:2rem;border-top:1px solid var(--border);line-height:1.7}
+</style>
+</head>
+<body>
+<nav>
+<a class="brand" href="index.html"><img src="assets/logo.png" alt=""/> SolidExpress</a>
+<div class="links">
+<a href="index.html#download">Download</a>
+<a href="features.html">Features</a>
+<a href="build.html">Build &amp; run</a>
+<a href="support.html">Support</a>
+<a href="privacy.html">Privacy</a>
+<a href="https://github.com/solidexpress/solidexpress">Source</a>
+</div>
+</nav>
+
+<header>
+<h1>Build &amp; run</h1>
+<p class="tagline">Want a desktop build first? Grab the macOS DMG, Windows Setup.exe, or Linux tarball from the home page. The steps below are for compiling from source.</p>
+<p><span class="pill">Linux (Ubuntu) path below</span> &nbsp; <a href="index.html#download">Ready-to-run downloads</a></p>
+</header>
+
+<main>
+
+<section>
+<h2>What you need</h2>
+<p class="lead">A Linux workstation (Ubuntu or similar), a C++20 toolchain, CMake 3.22+, Ninja, Open Cascade (OCCT) development packages, and <strong>Godot 4.7-stable</strong>.</p>
+<div class="cta">
+<a class="btn btn-primary" href="index.html#download">Download a build</a>
+<a class="btn btn-secondary" href="https://github.com/solidexpress/solidexpress">Clone on GitHub</a>
+<a class="btn btn-secondary" href="https://github.com/godotengine/godot-builds/releases">Godot 4.7 builds</a>
+</div>
+</section>
+
+<section>
+<h2>1. Get the source</h2>
+<pre><code>git clone https://github.com/solidexpress/solidexpress.git
+cd solidexpress</code></pre>
+</section>
+
+<section>
+<h2>2. Install system packages</h2>
+<p class="lead">On Ubuntu / Debian:</p>
+<pre><code>sudo apt-get install -y ninja-build zip \
+  libocct-foundation-dev libocct-modeling-data-dev \
+  libocct-modeling-algorithms-dev libocct-data-exchange-dev \
+  libocct-ocaf-dev libocct-visualization-dev \
+  libeigen3-dev libboost-dev</code></pre>
+<p class="note">You also need a C++20 compiler (e.g. GCC or Clang) and CMake 3.22 or newer — typically already available via <code>build-essential</code> and <code>cmake</code>.</p>
+</section>
+
+<section>
+<h2>3. Install Godot 4.7</h2>
+<ol class="steps">
+<li>Download the <strong>Godot 4.7-stable</strong> Linux x86_64 binary from the <a href="https://github.com/godotengine/godot-builds/releases">Godot builds releases</a>.</li>
+<li>Place the executable at <code>tools/godot/godot</code> inside the repo (create the folder if needed).</li>
+<li>Make it executable:</li>
+</ol>
+<pre><code>mkdir -p tools/godot
+# move/rename the downloaded binary to tools/godot/godot
+chmod +x tools/godot/godot</code></pre>
+<p class="note">That path is gitignored — each machine keeps its own editor binary.</p>
+</section>
+
+<section>
+<h2>4. Build and launch</h2>
+<pre><code>make build   # configure with Ninja and compile the modeling core
+make run     # import project assets, then open the app</code></pre>
+<p class="lead"><code>make run</code> prepares the Godot project cache once, then starts the SolidExpress desktop UI.</p>
+<div class="panel">
+<h3 style="margin-top:0">Useful commands</h3>
+<ul>
+<li><code>make test</code> — run kernel and headless UI test suites</li>
+<li><code>make release-linux</code> — produce a Linux desktop export under <code>dist/releases/</code> (when you want a shareable folder instead of a source tree)</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>After it opens</h2>
+<p class="lead">You are in the modeling viewport. Typical first moves:</p>
+<ul>
+<li>Drop or sketch a profile, dimension it, and extrude a solid</li>
+<li>Orbit / pan / zoom with mouse, trackpad, or touch</li>
+<li>Import STEP or STL from the File menu, or drag a file onto the window</li>
+<li>Export STEP, STL, SVG drawings, or AI context when you need to hand work off</li>
+</ul>
+<p class="note">Verified how-tos live in the repo under <a href="https://github.com/solidexpress/solidexpress/tree/main/docs/howto"><code>docs/howto/</code></a> — place a box, stack parts, extrude profiles, cut holes, and more. Start with the <a href="https://github.com/solidexpress/solidexpress/blob/main/docs/howto/mounting-block.md">mounting block</a> (Box + Apply hole / <code>O</code>) — through-hole click comparison vs SolidWorks’ <a href="https://youtu.be/RKIEQVR-qJw"><em>needle-nose pliers</em> Cut Extrude</a> is in the <a href="https://github.com/solidexpress/solidexpress/blob/main/docs/survey/workflow-study-mounting-block.md">mounting-block study</a>; series gaps (revolute drag, midplane) are in the <a href="https://github.com/solidexpress/solidexpress/blob/main/docs/survey/workflow-study-needle-nose-pliers.md">pliers study</a>.</p>
+</section>
+
+<section>
+<h2>Stuck?</h2>
+<p class="lead">Open an issue on the project tracker with your OS, compiler, and the failing command output. The source and build scripts are the same ones we use day to day — if something breaks for you, we want to know.</p>
+<div class="cta">
+<a class="btn btn-secondary" href="https://github.com/solidexpress/solidexpress/issues">GitHub Issues</a>
+<a class="btn btn-secondary" href="index.html">Back to home</a>
+</div>
+</section>
+
+</main>
+<footer>
+Built with ❤️ by the Express Consortium<br/>
+<a href="index.html">Home</a> · <a href="build.html">Build &amp; run</a> ·
+<a href="support.html">Support</a> · <a href="privacy.html">Privacy</a> ·
+<a href="https://github.com/solidexpress/solidexpress">github.com/solidexpress/solidexpress</a>
+</footer>
+</body>
+</html>

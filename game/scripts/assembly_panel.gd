@@ -6,19 +6,21 @@ extends PanelContainer
 signal status(text: String)
 signal instance_selected(id: String)
 
+## Joint types share the mate type list: one question ("how do these two faces
+## relate?"), one two-click flow. Joints leave one degree of freedom to drag.
+const JOINT_TYPES := ["revolute", "slider", "cylindrical", "planar", "ball", "pin_slot"]
+
 var view: DocumentView
 
 var _instances_list: VBoxContainer
 var _mates_list: VBoxContainer
 var _type_option: OptionButton
 var _offset_spin: SpinBox
-var _flip_check: CheckButton
 var _refreshing := false
 
-## Armed two-click mate flow: face A (ground or instance), then face B on an instance.
+## Armed two-click mate flow: wait for ground face A, then instanced face B.
 var _mate_armed := false
 var _mate_face_a := ""
-var _mate_instance_a := ""  # "" = grounded body face
 ## Sticky error from the last mate add / solve ("" when healthy). Shown as a
 ## red badge above the mates list instead of only a transient status line.
 var _mate_error := ""
@@ -42,6 +44,10 @@ func _ready() -> void:
 	vbox.add_child(_instances_list)
 	_op_button(vbox, "Place instance of selection", _place_instance, "instance",
 		"Place a linked copy of the selected body offset to the side")
+	_op_button(vbox, "Insert Components…", _insert_components, "instance",
+		"Insert bodies from another .sxp as component instances (multi-doc)")
+	_op_button(vbox, "Pattern around joint", _pattern_instance, "circular_pattern",
+		"Copy the selected component around its joint axis; every copy inherits the joint")
 
 	vbox.add_child(HSeparator.new())
 
@@ -53,26 +59,20 @@ func _ready() -> void:
 	vbox.add_child(_mates_list)
 
 	_type_option = OptionButton.new()
-	_type_option.tooltip_text = (
-		"plane_coincident / concentric (radial: needs enclosure + positive Offset) / fixed")
+	_type_option.name = "MateType"
+	_type_option.tooltip_text = "How the two faces relate: a mate locks degrees of freedom, a joint leaves one free to drag"
 	_type_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for t in ["plane_coincident", "concentric", "fixed"]:
+	for t in ["fastened", "plane_coincident", "plane_parallel", "concentric", "fixed"]:
+		_type_option.add_item(t)
+	for t in JOINT_TYPES:
 		_type_option.add_item(t)
 	vbox.add_child(_type_option)
 
 	_offset_spin = _labeled_spin(vbox, "Offset", -1000.0, 1000.0, 0.5, 0.0)
-	_offset_spin.tooltip_text = (
-		"plane_coincident: face gap. concentric: required radial clearance (>0; hole must enclose pin)")
-	_flip_check = CheckButton.new()
-	_flip_check.text = "Flip alignment"
-	_flip_check.tooltip_text = (
-		"plane_coincident: align face normals instead of opposing (SolidWorks Flip Mate Alignment)")
-	_flip_check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_child(_flip_check)
 	_op_button(vbox, "Add mate", _arm_mate, "mate",
-		"Add a mate: click face A (ground or instance), then a face on the instance to move")
+		"Add a mate or joint: click a ground face, then a face on an instance")
 	_op_button(vbox, "Solve mates", _solve_mates, "solve",
-		"Re-apply all mates in order, moving instances into position")
+		"Re-apply every mate and pose every joint, moving instances into position")
 
 	view.selection_changed.connect(_on_selection_changed)
 	view.document_changed.connect(refresh_lists)
@@ -143,21 +143,52 @@ func refresh_lists() -> void:
 	for mate in mates:
 		_mates_list.add_child(_make_mate_row(mate))
 
-	visible = not instances.is_empty() or not mates.is_empty() or _mate_armed
+	var joints: Array = view.doc.joint_list()
+	for joint in joints:
+		_mates_list.add_child(_make_joint_row(joint))
+
+	var connectors: Array = view.doc.connector_list() if view.doc.has_method("connector_list") else []
+	if not connectors.is_empty():
+		var ch := Label.new()
+		ch.text = "Connectors"
+		ch.add_theme_font_size_override("font_size", 11)
+		_mates_list.add_child(ch)
+		for c in connectors:
+			var cl := Label.new()
+			cl.text = str(c.get("name", "connector"))
+			cl.tooltip_text = "Implicit/explicit mate connector"
+			cl.add_theme_font_size_override("font_size", 11)
+			_mates_list.add_child(cl)
+
+	# Also show on a body selection: placing the *first* instance is the one
+	# assembly verb you need while the assembly is still empty.
+	var can_instance: bool = view != null and view.selected_body != ""
+	visible = can_instance or not instances.is_empty() or not mates.is_empty() or _mate_armed \
+			or not connectors.is_empty() or not joints.is_empty()
 	_refreshing = false
 
 
 func _make_instance_row(inst: Dictionary) -> Control:
 	var id: String = inst["id"]
+	var is_fixed: bool = bool(inst.get("fixed", false))
 	var row := HBoxContainer.new()
+	row.set_meta("instance_id", id)
 	var name_lbl := Label.new()
-	name_lbl.text = _truncate(str(inst.get("name", id)))
+	var prefix := "(f) " if is_fixed else ""
+	name_lbl.text = prefix + _truncate(str(inst.get("name", id)))
+	name_lbl.tooltip_text = str(inst.get("source_path", ""))
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_lbl.add_theme_font_size_override("font_size", 11)
 	row.add_child(name_lbl)
 	var sel := UIIcons.button("select", "", "Highlight this instance in the viewport")
 	sel.pressed.connect(func() -> void: instance_selected.emit(id))
 	row.add_child(sel)
+	var fix_icon := "unlock" if is_fixed else "lock"
+	var fix_tip := "Float this component (allow drag)" if is_fixed else "Fix this component (lock in place)"
+	var fix_btn := UIIcons.button(fix_icon, "", fix_tip)
+	fix_btn.name = "FixFloat"
+	fix_btn.pressed.connect(_toggle_fixed.bind(id, not is_fixed))
+	row.add_child(fix_btn)
 	var rm := UIIcons.button("delete", "", "Remove this instance (and its mates)")
 	rm.pressed.connect(_remove_instance.bind(id))
 	row.add_child(rm)
@@ -169,14 +200,34 @@ func _make_mate_row(mate: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	var name_lbl := Label.new()
 	var mname: String = str(mate.get("name", ""))
-	var flip_mark := " ⇄" if bool(mate.get("flip", false)) else ""
-	name_lbl.text = ("%s %s%s" % [mate["type"], mname, flip_mark]).strip_edges()
-	name_lbl.tooltip_text = "Flip alignment on" if flip_mark != "" else name_lbl.text
+	name_lbl.text = ("%s %s" % [mate["type"], mname]).strip_edges()
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_lbl.add_theme_font_size_override("font_size", 11)
 	row.add_child(name_lbl)
 	var rm := UIIcons.button("delete", "", "Delete this mate")
 	rm.pressed.connect(_remove_mate.bind(id))
+	row.add_child(rm)
+	return row
+
+
+## Joints read out their one free value; the value itself is driven by dragging
+## the part in the viewport, not by a spinbox in here.
+func _make_joint_row(joint: Dictionary) -> Control:
+	var id: String = str(joint.get("id", ""))
+	var row := HBoxContainer.new()
+	row.name = "JointRow"
+	row.set_meta("joint_id", id)
+	var lbl := Label.new()
+	var unit: String = str(joint.get("unit", "mm"))
+	var value: float = float(joint.get("value", 0.0))
+	var shown: float = rad_to_deg(value) if unit == "deg" else value
+	lbl.text = "%s  %.1f %s" % [str(joint.get("type", "joint")), shown, unit]
+	lbl.tooltip_text = "Drag the part in the viewport to drive this joint"
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.add_theme_font_size_override("font_size", 11)
+	row.add_child(lbl)
+	var rm := UIIcons.button("delete", "", "Delete this joint")
+	rm.pressed.connect(_remove_joint.bind(id))
 	row.add_child(rm)
 	return row
 
@@ -197,6 +248,53 @@ func _place_instance() -> void:
 		status.emit("Instance failed")
 
 
+## One joint definition, many bolts: the copies ride the seed's axis.
+func _pattern_instance() -> void:
+	var seed := view.selected_instance
+	if seed == "":
+		var insts: Array = view.doc.instance_list()
+		if insts.size() == 1:
+			seed = str(insts[0].get("id", ""))
+	if seed == "":
+		status.emit("Select a component instance to pattern")
+		return
+	var count := int(_offset_spin.value) if _offset_spin.value >= 2.0 else 8
+	var made: PackedStringArray = view.doc.pattern_instance(seed, count, TAU)
+	if made.is_empty():
+		status.emit("Pattern failed — needs an instance and count of two or more")
+		return
+	view.refresh()
+	refresh_lists()
+	status.emit("Patterned %d more around the joint axis" % made.size())
+
+
+func _insert_components() -> void:
+	# Prefer the main composition root's file dialog (Insert > Components…).
+	var main := _find_main()
+	if main != null and main.has_method("_on_insert_menu"):
+		main._on_insert_menu(10)
+		return
+	status.emit("Insert Components unavailable")
+
+
+func _find_main() -> Node:
+	var n: Node = self
+	while n != null:
+		if n.has_method("insert_components_from"):
+			return n
+		n = n.get_parent()
+	return null
+
+
+func _toggle_fixed(id: String, make_fixed: bool) -> void:
+	if view.doc.set_instance_fixed(id, make_fixed):
+		view.refresh()
+		refresh_lists()
+		status.emit(("Fixed " if make_fixed else "Floated ") + id.substr(0, 8))
+	else:
+		status.emit("Fix/Float failed")
+
+
 func _remove_instance(id: String) -> void:
 	if view.doc.remove_instance(id):
 		view.refresh()
@@ -209,47 +307,45 @@ func _remove_instance(id: String) -> void:
 func _arm_mate() -> void:
 	_mate_armed = true
 	_mate_face_a = ""
-	_mate_instance_a = ""
 	view.mate_anchor_face = ""
 	refresh_lists()
-	status.emit("Mate: click face A (ground or instance), then face B on the moving instance")
+	status.emit("Mate: click ground face, then instance face")
 
 
 func _on_selection_changed(_body: String, face: String) -> void:
 	if not _mate_armed:
+		refresh_lists()  # selection decides whether "Place instance" is reachable
 		return
 	if face == "":
 		return
 	if _mate_face_a == "":
 		_mate_face_a = face
-		# Prefer the selected instance when the face belongs to its source.
-		_mate_instance_a = _instance_for_face(face)
+		# Keep the anchor face tinted green while waiting for the second pick.
 		view.mate_anchor_face = face
-		status.emit("Mate: click face on the instance to move (anchor shown green)")
+		status.emit("Mate: click face on an instanced body (anchor shown green)")
 		return
 	_resolve_mate_b(view.selected_body, face)
 
 
 func _resolve_mate_b(body: String, face_b: String) -> void:
-	var inst_b := _instance_for_face(face_b)
-	if inst_b == "":
-		inst_b = _instance_for_source(body)
+	var inst_b := _instance_for_source(body)
 	if inst_b == "":
 		status.emit("Pick a face on an instanced body")
 		return
-	if inst_b == _mate_instance_a and _mate_instance_a != "":
-		status.emit("Pick a different instance for the moving side")
-		return
 	var mtype: String = _type_option.get_item_text(_type_option.selected)
-	var flip := _flip_check != null and _flip_check.button_pressed
-	var mid: String = view.doc.add_mate(
-		mtype, _mate_instance_a, _mate_face_a, inst_b, face_b, _offset_spin.value, flip, "")
+	var is_joint: bool = mtype in JOINT_TYPES
+	var mid: String
+	if is_joint:
+		mid = view.doc.add_joint(mtype, "", _mate_face_a, inst_b, face_b, "")
+	else:
+		mid = view.doc.add_mate(
+			mtype, "", _mate_face_a, inst_b, face_b, _offset_spin.value, false, "")
 	_mate_armed = false
 	_mate_face_a = ""
-	_mate_instance_a = ""
 	view.mate_anchor_face = ""
 	if mid == "":
-		_mate_error = "Mate rejected — %s needs matching face types" % mtype
+		_mate_error = "%s rejected — %s needs matching face types" % \
+				["Joint" if is_joint else "Mate", mtype]
 		refresh_lists()
 		status.emit("Mate failed")
 		return
@@ -257,32 +353,10 @@ func _resolve_mate_b(body: String, face_b: String) -> void:
 	_mate_error = "" if solved else "Solve failed — check mate faces/offsets"
 	view.refresh()
 	refresh_lists()
-	var flip_note := " (flipped)" if flip else ""
-	status.emit(
-		("Mate added%s" % flip_note) if solved else "Mate added — solve FAILED")
-
-
-## Instance that owns `face` when exactly one instance of that source is selected
-## or exists; prefers `view.selected_instance` when its source owns the face.
-func _instance_for_face(face: String) -> String:
-	if face == "" or view == null:
-		return ""
-	var owner := ""
-	for body_id in view.doc.body_ids():
-		for fid in view.doc.get_face_ids(body_id):
-			if fid == face:
-				owner = body_id
-				break
-		if owner != "":
-			break
-	if owner == "":
-		return ""
-	if view.selected_instance != "":
-		for inst in view.doc.instance_list():
-			if str(inst["id"]) == view.selected_instance \
-					and str(inst["source_body"]) == owner:
-				return view.selected_instance
-	return _instance_for_source(owner)
+	if is_joint:
+		status.emit("%s joint added — drag the part to drive it" % mtype)
+	else:
+		status.emit("Mate added" if solved else "Mate added — solve FAILED")
 
 
 func _instance_for_source(body: String) -> String:
@@ -294,9 +368,6 @@ func _instance_for_source(body: String) -> String:
 			matches.append(inst["id"])
 	if matches.size() == 1:
 		return matches[0]
-	# Multiple instances of the same source: use the selected one if it matches.
-	if view.selected_instance != "" and matches.has(view.selected_instance):
-		return view.selected_instance
 	return ""
 
 
@@ -311,7 +382,22 @@ func _remove_mate(id: String) -> void:
 
 func _solve_mates() -> void:
 	var ok: bool = view.doc.solve_mates()
+	var posed: int = view.doc.solve_joints()
 	_mate_error = "" if ok else "Solve failed — check mate faces/offsets"
 	view.refresh()
 	refresh_lists()
-	status.emit("Mates solved" if ok else "Solve mates failed")
+	if not ok:
+		status.emit("Solve mates failed")
+	elif posed > 0:
+		status.emit("Mates solved, %d joint(s) posed" % posed)
+	else:
+		status.emit("Mates solved")
+
+
+func _remove_joint(id: String) -> void:
+	if view.doc.remove_joint(id):
+		view.refresh()
+		refresh_lists()
+		status.emit("Joint removed")
+	else:
+		status.emit("Remove joint failed")

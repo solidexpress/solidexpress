@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SolidExpress — Features</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <style>
+      .search { margin: 12px 0 16px 0; }
+      .search input {
+        width: 100%;
+        max-width: 520px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #11141c;
+        color: var(--fg);
+      }
+      .card p { margin: 6px 10px 12px 10px; color: var(--muted); font-size: 14px; }
+      .small { font-size: 12px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">
+        <img src="branding/logo.png" alt="SolidExpress" width="40" height="40" />
+        <strong>SolidExpress</strong>
+      </a>
+      <nav>
+        <a href="./features.html">Features</a>
+        <a href="https://github.com/solidexpress/solidexpress">GitHub</a>
+        <a href="https://github.com/solidexpress/solidexpress/releases/latest">Download</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Feature films</h1>
+      <p class="muted">Short, click-driven demos rendered from the headless test suite. Each clip shows the feature and a tiny example of what it enables.</p>
+
+      <div class="search">
+        <input id="q" type="search" placeholder="Filter features (e.g. sheet metal, drawing, print, joint, sketch) …" />
+      </div>
+
+      <section id="grid" class="grid"></section>
+
+      <p class="small">Movies load from a public Release on the website repo; posters load from that site. Use <code>make movies</code> and <code>scripts/sx-publish-demo-movies</code> to refresh.</p>
+    </main>
+
+    <footer>
+      © SolidExpress — See <a class="muted" href="https://github.com/solidexpress/solidexpress">source on GitHub</a>.
+    </footer>
+
+    <script>
+      const MOVIE_BASE = "https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/";
+      const POSTER_BASE = "https://solidexpress.github.io/assets/screenshots/";
+      const grid = document.getElementById("grid");
+      const q = document.getElementById("q");
+
+      async function load() {
+        const resp = await fetch("./assets/ui_movie_manifest.json", { cache: "no-cache" });
+        const manifest = await resp.json();
+        render(manifest);
+        q.addEventListener("input", () => {
+          const term = q.value.trim().toLowerCase();
+          const filtered = term
+            ? manifest.filter(m => (m.title + " " + m.id).toLowerCase().includes(term))
+            : manifest;
+          render(filtered);
+        });
+      }
+
+      function render(list) {
+        grid.innerHTML = "";
+        for (const e of list) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const v = document.createElement("video");
+          v.controls = true;
+          v.preload = "none";
+          v.playsInline = true;
+          v.muted = true;
+          v.src = MOVIE_BASE + e.id + ".webm";
+          v.poster = POSTER_BASE + e.id + ".png";
+          const h3 = document.createElement("h3");
+          h3.textContent = e.title;
+          const p = document.createElement("p");
+          p.textContent = "Enables: " + e.title;
+          card.appendChild(v);
+          card.appendChild(h3);
+          card.appendChild(p);
+          grid.appendChild(card);
+        }
+      }
+
+      load().catch(err => {
+        grid.innerHTML = "<p class='muted'>Failed to load film manifest.</p>";
+        console.error(err);
+      });
+    </script>
+  </body>
+</html>

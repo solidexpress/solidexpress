@@ -162,6 +162,9 @@ void attach_selection_prompt(Intent& i, const SelectionContext* sel) {
         } else if (i.verb == "mirror") {
             if (n_bodies < 1)
                 i.prompt = "Select a body to mirror, then ask again";
+        } else if (i.verb == "fasten" || i.verb == "flush") {
+            if (n_faces < 2)
+                i.prompt = "Select two faces, then ask again";
         }
         if (i.verb == "delete") i.needs_confirm = true;
         return;
@@ -415,7 +418,12 @@ Intent interpret(const std::string& utterance, const SelectionContext* selection
         // already matched app/view/query/variable
     }
     // --- Constraints ---
-    else if (contains(tok, "horizontal") || phrase_has(norm, "make this horizontal") ||
+    else if (contains(tok, "flush") || contains(tok, "fasten") ||
+             phrase_has(norm, "mate these") || phrase_has(norm, "make these flush")) {
+        out = make(IntentKind::Model, "fasten");
+        out.value = 0.0;
+        out.unit = "mm";
+    } else if (contains(tok, "horizontal") || phrase_has(norm, "make this horizontal") ||
              phrase_has(norm, "make it horizontal")) {
         out = make(IntentKind::Constraint, "horizontal");
     } else if (contains(tok, "vertical") || phrase_has(norm, "make this vertical") ||

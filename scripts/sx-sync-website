@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# sx-sync-website — copy the in-repo marketing site to a solidexpress.github.io checkout.
+#
+# Canonical source lives in this app repo under website/.
+# The public Pages repo (solidexpress.github.io) is the deploy target.
+#
+#   scripts/sx-sync-website
+#   SX_SITE_ROOT=/path/to/solidexpress.github.io scripts/sx-sync-website
+#
+# Also refreshes website/assets/ui_movie_manifest.json from the app film manifest.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SRC="$ROOT/website"
+SITE="${SX_SITE_ROOT:-$ROOT/../solidexpress.github.io}"
+MANIFEST_SRC="$ROOT/game/tests/ui_movie_manifest.json"
+MANIFEST_DST="$SRC/assets/ui_movie_manifest.json"
+
+if [[ ! -d "$SRC" ]]; then
+  echo "sx-sync-website: missing $SRC" >&2
+  exit 1
+fi
+if [[ ! -f "$MANIFEST_SRC" ]]; then
+  echo "sx-sync-website: missing $MANIFEST_SRC" >&2
+  exit 1
+fi
+
+mkdir -p "$SRC/assets"
+cp -f "$MANIFEST_SRC" "$MANIFEST_DST"
+echo "manifest → $MANIFEST_DST"
+
+if [[ ! -d "$SITE" ]]; then
+  echo "sx-sync-website: site checkout not found at $SITE" >&2
+  echo "  set SX_SITE_ROOT, or clone solidexpress.github.io next to this repo." >&2
+  echo "  In-repo website/ is updated; deploy when you have push access to the Pages repo." >&2
+  exit 0
+fi
+
+rsync -a --delete \
+  --exclude '.git' \
+  --exclude '.github' \
+  "$SRC/" "$SITE/"
+
+echo "sx-sync-website: synced $SRC → $SITE"
+echo "  review, commit, and push in the Pages repo to publish solid.express"

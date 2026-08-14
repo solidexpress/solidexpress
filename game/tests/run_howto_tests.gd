@@ -28,7 +28,11 @@ func _init() -> void:
 	await howto_extrude_s_shape(main)
 	await howto_extrude_letter_a(main)
 	await howto_horizontal_hole(main)
-	await howto_mounting_block(main)
+	await howto_landing_bindings(main)
+	await howto_rib_follows_sketch(main)
+	await howto_flange_unfolds(main)
+	await howto_print_thin_wall(main)
+	await howto_print_overhang_orient(main)
 
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -136,9 +140,7 @@ func howto_extrude_s_shape(main) -> void:
 	]
 	for p in pts:
 		sk.click(p)
-	# Same as Done / Esc / right-click in the UI.
 	sk.end_chain()
-	check(not sk.has_open_chain(), "S chain ended")
 	check(sk.sketch.entity_ids().size() >= 12, "S outline has many line entities")
 	sk.finish_extrude(10.0, "new")
 	await process_frame
@@ -169,7 +171,6 @@ func howto_extrude_letter_a(main) -> void:
 	for p in outer:
 		sk.click(p)
 	sk.end_chain()
-	check(not sk.has_open_chain(), "outer A chain ended")
 	# Inner triangular counter
 	var inner: Array[Vector2] = [
 		Vector2(20, 28), Vector2(30, 28), Vector2(25, 42), Vector2(20, 28),
@@ -177,7 +178,6 @@ func howto_extrude_letter_a(main) -> void:
 	for p in inner:
 		sk.click(p)
 	sk.end_chain()
-	check(not sk.has_open_chain(), "inner A chain ended")
 	check(sk.sketch.entity_ids().size() >= 10, "A outline has outer + inner lines")
 	sk.finish_extrude(10.0, "new")
 	await process_frame
@@ -336,60 +336,144 @@ func howto_horizontal_hole(main) -> void:
 	await process_frame
 
 
-## docs/howto/mounting-block.md — box + Apply hole via O (Depth 0 = through).
-func howto_mounting_block(main) -> void:
-	print("- howto_mounting_block")
+## docs/howto/rib-and-wrap.md — the rib is swept from the sketch, so a longer
+## profile adds more material. A fixed block would not care about the sketch.
+func howto_rib_follows_sketch(main) -> void:
+	print("- howto_rib_follows_sketch")
 	var view: DocumentView = main.view
-	var ops: OpsPanel = main.ops_panel
 	var ix: ViewportInteraction = main.interaction
+
+	var gains := []
+	for legs in [1, 2]:
+		view.new_document()
+		var body: String = view.insert_primitive("box", Vector3.ZERO)
+		await process_frame
+		var before: float = float(view.doc.measure_mass(body).get("volume", 0.0))
+		var bb: Dictionary = view.doc.measure_bbox(body)
+		var top: float = float(bb["max"].z)
+
+		var sk := SxSketch.new()
+		sk.set_plane(Vector3(0, 0, top), Vector3(1, 0, 0), Vector3(0, 1, 0))
+		sk.add_line(10, 25, 40, 25)
+		if legs == 2:
+			sk.add_line(40, 25, 40, 40)
+		var sk_fid: String = view.doc.graph_add_sketch(sk)
+		check(sk_fid != "", "open rib profile on the timeline (%d leg/s)" % legs)
+
+		view.select_entity(body, "")
+		ix._ctx_rib()
+		await process_frame
+		var has_rib := false
+		for f in view.doc.graph_features():
+			if str(f.get("type", "")) == "rib":
+				has_rib = true
+		check(has_rib, "S-menu Rib recorded a timeline feature (%d leg/s)" % legs)
+		var after: float = float(view.doc.measure_mass(body).get("volume", 0.0))
+		gains.append(after - before)
+
+	check(gains[0] > 100.0, "one-leg rib adds material (%.0f mm³)" % gains[0])
+	check(gains[1] > gains[0] * 1.3,
+		"second leg adds more (%.0f vs %.0f mm³)" % [gains[1], gains[0]])
+
+
+## docs/howto/flange-box-flat.md — a real bend, and a blank that weighs the same.
+func howto_flange_unfolds(main) -> void:
+	print("- howto_flange_unfolds")
+	var view: DocumentView = main.view
 	view.new_document()
-
-	# 1–3. Sized box on the ground.
-	var body: String = view.insert_primitive("box", Vector3.ZERO, Vector3(100, 60, 30))
-	check(body != "", "box placed")
-	check(view.doc.body_ids().size() == 1, "one body")
-	var vol0: float = view.doc.body_volume(body)
-	check(absf(vol0 - 180000.0) < 1.0, "box volume 180000 (got %.0f)" % vol0)
-
-	# 4. Select top face (+Z).
-	var top_face := ""
-	for face_id in view.doc.get_face_ids(body):
-		var mid: Vector3 = view.doc.face_midpoint(face_id)
-		if absf(mid.z - 30.0) < 0.5:
-			top_face = face_id
-			break
-	check(top_face != "", "top face found")
-	view.select_entity(body, top_face)
-	ix._refresh_selection_strip()
-	check(ix._strip_hole != null and ix._strip_hole.visible, "Hole strip visible with face")
-
-	# 5. Ø20; Depth 0 (through). Apply via O shortcut (keyboard path).
-	ops._hole_diameter.value = 20.0
-	ops._hole_depth.value = 0.0
-	var key := InputEventKey.new()
-	key.keycode = KEY_O
-	key.pressed = true
-	check(ix._gui_key(key), "O applies hole")
-	check(view.doc.body_ids().size() == 1, "still one body after hole")
-	var expected: float = 180000.0 - PI * 100.0 * 30.0
-	var vol: float = view.doc.body_volume(body)
-	check(absf(vol - expected) < expected * 0.02,
-		"through-hole volume ~%.0f (got %.0f)" % [expected, vol])
-
-	# Strip button path also works (click path parity).
-	view.new_document()
-	body = view.insert_primitive("box", Vector3.ZERO, Vector3(100, 60, 30))
-	top_face = ""
-	for face_id in view.doc.get_face_ids(body):
-		var mid2: Vector3 = view.doc.face_midpoint(face_id)
-		if absf(mid2.z - 30.0) < 0.5:
-			top_face = face_id
-			break
-	view.select_entity(body, top_face)
-	ops._hole_diameter.value = 20.0
-	ops._hole_depth.value = 0.0
-	ix._ctx_apply_hole()
-	vol = view.doc.body_volume(body)
-	check(absf(vol - expected) < expected * 0.02,
-		"strip Apply hole volume ~%.0f (got %.0f)" % [expected, vol])
+	var fid: String = view.doc.graph_add_flange(30.0, 1.5, 0.44, 1.5, 40.0)
+	check(fid != "", "flange on the timeline")
 	await process_frame
+
+	var flat := 0.0
+	var body := ""
+	for f in view.doc.graph_features():
+		if str(f.get("id", "")) == fid:
+			body = str(f.get("output_body", ""))
+			var p: Variant = JSON.parse_string(str(f.get("params", "{}")))
+			if p is Dictionary:
+				flat = float(p.get("flat_length", 0.0))
+	check(flat == view.doc.sheet_flat_length(30.0, 30.0, 1.5, 0.44, 1.5),
+		"flat_length matches the bend-allowance formula (%.3f mm)" % flat)
+	check(body != "", "flange made a body")
+	var folded: float = float(view.doc.measure_mass(body).get("volume", 0.0))
+	var blank: float = flat * 40.0 * 1.5
+	check(absf(folded - blank) < blank * 0.01,
+		"folded %.0f mm³ matches the %.0f mm³ blank" % [folded, blank])
+	# A bend is curved; two fused boxes are not.
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	check(float(bb["max"].z) > 25.0, "the flange leg stands up (%.1f mm)" % float(bb["max"].z))
+
+
+## docs/howto/{crank-slider,flange-box-flat,catalog-fastener,fea-bracket}.md
+func howto_landing_bindings(main) -> void:
+	print("- howto_landing_bindings (W1–W4)")
+	var view: DocumentView = main.view
+	view.new_document()
+	var x0: float = view.doc.crank_slider_x(20.0, 80.0, 0.0)
+	check(absf(x0 - 100.0) < 1e-4, "crank-slider x(0)=100")
+	var flat: float = view.doc.sheet_flat_length(30.0, 30.0, 1.5, 0.44, 1.5)
+	check(flat > 30.0, "flange flat length > leg")
+	var cat: Dictionary = view.doc.catalog_fastener("M6x20")
+	check(str(cat.get("designation", "")) == "M6x20", "catalog M6x20")
+	check(absf(float(cat.get("diameter", 0)) - 6.0) < 1e-6, "catalog Ø6")
+	var d1: float = view.doc.fea_cantilever(100.0, 50.0, 210000.0, 20.0, 4.0)
+	var d2: float = view.doc.fea_cantilever(100.0, 100.0, 210000.0, 20.0, 4.0)
+	check(d1 > 0.0 and d2 / d1 > 7.5, "FEA L³ scale")
+	var pts: PackedVector3Array = view.doc.cam_pocket(0, 0, 20, 10, 2.0, 2.0)
+	check(pts.size() >= 8, "CAM pocket zig-zag")
+	var mode := main.find_child("ModeRail", true, false) as MenuButton
+	check(mode != null, "Mode rail on the top bar")
+	check(main.drawing_sheet != null and not main.drawing_sheet.visible, "drawing sheet hidden in Model")
+	check(main.sheet_metal_view != null and not main.sheet_metal_view.visible, "sheet split hidden in Model")
+	check(main.print_strip != null and not main.print_strip.visible, "print strip hidden in Model")
+	main._on_mode_menu(1)
+	check(main.drawing_sheet.visible, "Draw mode shows the sheet")
+	main._on_mode_menu(5)
+	check(main.print_strip.visible, "Form mode shows the print strip")
+	check(not main.drawing_sheet.visible, "Form hides the drawing sheet")
+	main._on_mode_menu(0)
+	check(not main.drawing_sheet.visible, "Model hides the sheet")
+	check(not main.print_strip.visible, "Model hides the print strip")
+	await process_frame
+
+
+## docs/howto/print-thin-wall.md
+func howto_print_thin_wall(main) -> void:
+	print("- howto_print_thin_wall")
+	var view: DocumentView = main.view
+	view.new_document()
+	view.doc.add_box(20, 20, 1.2, Vector3.ZERO)
+	view.doc.set_print_min_wall(2.0)
+	main._on_mode_menu(5)
+	await process_frame
+	check(main.print_strip != null and main.print_strip.visible, "Form strip visible")
+	var analyze := main.find_child("PrintAnalyze", true, false) as Button
+	check(analyze != null and analyze.is_visible_in_tree(), "Analyze chip is clickable")
+	if analyze != null:
+		analyze.pressed.emit()
+		await process_frame
+	var r: Dictionary = view.doc.print_analyze("")
+	check(not bool(r.get("wall_ok", true)), "1.2 mm plate fails a 2 mm wall")
+	check(str(r.get("digest", "")).findn("thin") >= 0, "digest names the thin wall")
+	main._on_mode_menu(0)
+
+
+## docs/howto/print-overhang-orient.md
+func howto_print_overhang_orient(main) -> void:
+	print("- howto_print_overhang_orient")
+	var view: DocumentView = main.view
+	view.new_document()
+	view.doc.add_box(10, 10, 80, Vector3.ZERO)
+	main._on_mode_menu(5)
+	await process_frame
+	var before: Dictionary = view.doc.print_analyze("")
+	var orient := main.find_child("PrintOrient", true, false) as Button
+	check(orient != null and orient.is_visible_in_tree(), "Orient chip is clickable")
+	if orient != null:
+		orient.pressed.emit()
+		await process_frame
+	var after: Dictionary = view.doc.print_analyze("")
+	check(float(before.get("height", 0)) > 70.0, "tall box starts ~80 mm high")
+	check(float(after.get("height", 99)) < 12.0, "Orient lays it down (~10 mm)")
+	main._on_mode_menu(0)

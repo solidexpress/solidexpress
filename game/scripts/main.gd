@@ -1,7 +1,9 @@
-# Application composition root: 3D world (camera, light, grid, DocumentView
+# Application composition root: 3D world (camera, light, grid, DocumentView)
 # inside a Z-up ModelSpace) plus the 2D UI shell (palette, card panel, status
 # bar). Phase 1 drag-and-drop experience.
 extends Node3D
+
+const _PrintStrip := preload("res://scripts/print_strip.gd")
 
 var model_space: Node3D
 var view: DocumentView
@@ -29,6 +31,9 @@ var variables_panel: VariablesPanel
 var ops_panel: OpsPanel
 var assembly_panel: AssemblyPanel
 var view_hud: ViewHud
+var drawing_sheet: DrawingSheet
+var sheet_metal_view: SheetMetalView
+var print_strip
 var palette: PanelContainer
 var dim_value: SpinBox
 var finish_op: OptionButton
@@ -38,10 +43,12 @@ var notes_edit: TextEdit
 var file_dialog: FileDialog
 var confirm_dialog: ConfirmationDialog
 var current_path := ""
-enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING }
+enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF }
 var _file_action: FileAction = FileAction.NONE
 var _pending_discard: Callable = Callable()
 var _file_popup: PopupMenu
+var _mode_popup: PopupMenu
+var _work_mode := "Model"
 var _edit_popup: PopupMenu
 var _recent_menu: PopupMenu
 var _paste_special_dialog: ConfirmationDialog
@@ -242,11 +249,16 @@ func _build_ui() -> void:
 	_file_popup.add_separator()
 	_file_popup.add_item("Import STEP...", 4)
 	_file_popup.add_item("Import STL...", 9)
+	_file_popup.add_item("Import DXF...", 10)
 	_file_popup.add_item("Export STEP...", 5)
 	_file_popup.add_item("Export STL...", 6)
+	_file_popup.add_item("Export 3MF...", 11)
+	_file_popup.add_item("Export glTF...", 12)
 	_file_popup.add_separator()
 	_file_popup.add_item("Export AI Context...", 7)
 	_file_popup.add_item("Export Drawing (SVG)...", 8)
+	_file_popup.add_item("Export Drawing (DXF)...", 13)
+	_file_popup.add_item("Export Drawing (PDF)...", 14)
 	_file_popup.add_separator()
 	_recent_menu = PopupMenu.new()
 	_recent_menu.name = "RecentMenu"
@@ -279,13 +291,16 @@ func _build_ui() -> void:
 	_edit_popup.about_to_popup.connect(_refresh_edit_menu)
 	_build_paste_special_dialog(ui)
 
-	# Insert menu: reference geometry.
+	# Insert menu: components (multi-doc .sxp) + reference geometry.
 	var insert_btn := MenuButton.new()
+	insert_btn.name = "InsertMenu"
 	insert_btn.text = "Insert"
 	insert_btn.flat = false
 	menu_row.add_child(insert_btn)
 	var insert_popup := insert_btn.get_popup()
 	_style_menu_button(insert_btn)
+	insert_popup.add_item("Components…", 10)
+	insert_popup.add_separator()
 	insert_popup.add_item("Datum Plane XY", 0)
 	insert_popup.add_item("Datum Plane XZ", 1)
 	insert_popup.add_item("Datum Plane YZ", 2)
@@ -295,9 +310,23 @@ func _build_ui() -> void:
 	insert_popup.add_item("Datum Axis Z", 5)
 	insert_popup.add_separator()
 	insert_popup.add_item("Datum Point at Origin", 6)
-	insert_popup.add_separator()
-	insert_popup.add_item("Helix Spring…", 7)
 	insert_popup.id_pressed.connect(_on_insert_menu)
+
+	var mode_btn := MenuButton.new()
+	mode_btn.name = "ModeRail"
+	mode_btn.text = "Mode"
+	mode_btn.flat = false
+	mode_btn.tooltip_text = "Draw / Sheet / Cam / Sim / Form — one rail, replaces Modify"
+	menu_row.add_child(mode_btn)
+	_mode_popup = mode_btn.get_popup()
+	_style_menu_button(mode_btn)
+	_mode_popup.add_item("Model", 0)
+	_mode_popup.add_item("Draw", 1)
+	_mode_popup.add_item("Sheet", 2)
+	_mode_popup.add_item("Cam", 3)
+	_mode_popup.add_item("Sim", 4)
+	_mode_popup.add_item("Form", 5)
+	_mode_popup.id_pressed.connect(_on_mode_menu)
 
 	# View menu: entry points for panels that auto-hide when they have no data,
 	# plus active-plane pick / reset.
@@ -321,6 +350,13 @@ func _build_ui() -> void:
 		elif id == 2:
 			interaction.reset_active_plane())
 
+	print_strip = _PrintStrip.new()
+	print_strip.name = "PrintStrip"
+	print_strip.visible = false
+	top_chrome.add_child(print_strip)
+	print_strip.analyze_requested.connect(_on_print_analyze)
+	print_strip.orient_requested.connect(_on_print_orient)
+
 	# Interaction overlay under chrome (full-rect input); snap bar joins TopChrome.
 	interaction = ViewportInteraction.new()
 	interaction.name = "Interaction"
@@ -331,6 +367,12 @@ func _build_ui() -> void:
 	interaction.top_chrome = top_chrome
 	ui.add_child(interaction)
 	ui.add_child(top_chrome)
+
+	# Mode overlays sit under chrome and stay hidden in Model (layout suite).
+	drawing_sheet = DrawingSheet.new()
+	ui.add_child(drawing_sheet)
+	sheet_metal_view = SheetMetalView.new()
+	ui.add_child(sheet_metal_view)
 
 	file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -467,13 +509,25 @@ func _build_ui() -> void:
 	view_hud.section_toggle_requested.connect(func() -> void:
 		interaction.toggle_section()
 		view_hud.sync_from_view(view))
+	view_hud.zebra_toggle_requested.connect(func(on: bool) -> void:
+		view.set_zebra(on)
+		view_hud.sync_from_view(view)
+		_on_status("Zebra on" if on else "Zebra off"))
+	view_hud.explode_toggle_requested.connect(func(on: bool) -> void:
+		var moved: int = view.doc.explode_assembly(0.8 if on else 0.0)
+		view.refresh()
+		view_hud.sync_from_view(view)
+		if moved == 0:
+			_on_status("Nothing to explode")
+		else:
+			_on_status("Exploded %d part(s)" % moved if on else "Collapsed to assembled"))
 	view_hud.fit_requested.connect(func() -> void:
 		camera.frame_selection_or_all(false)
 		_on_status("Framed selection" if view.selected_body != "" else "Framed all"))
 	view_hud.save_view_requested.connect(_on_save_named_view)
 	view_hud.view_restore_requested.connect(func(view_name: String) -> void:
-		if camera.restore_named_view(view_name, true):
-			_on_status("Restored view “%s” (orientation + zoom)" % view_name)
+		if camera.restore_named_view(view_name):
+			_on_status("Restored view “%s”" % view_name)
 		else:
 			_on_status("No saved view “%s”" % view_name))
 	view_hud.view_delete_requested.connect(func(view_name: String) -> void:
@@ -498,7 +552,6 @@ func _build_ui() -> void:
 	timeline.offset_top = -420
 	timeline.offset_bottom = -42
 	ui.add_child(timeline)
-	ops_panel.timeline_panel = timeline
 	timeline.status.connect(_on_status)
 	timeline.feature_selected.connect(_on_timeline_feature_selected)
 
@@ -522,7 +575,7 @@ func _build_ui() -> void:
 	status_bar.offset_top = -30
 	ui.add_child(status_bar)
 	status_label = Label.new()
-	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle pan · wheel zoom · WASD fly · arrows pan · F fit · 1/2/3/7 views · click select · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
+	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle / 3-finger pan · wheel zoom · F fit · 1/2/3/7 views · click select · drag to move · drag face to push/pull · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
 	status_label.add_theme_font_size_override("font_size", 12)
 	status_bar.add_child(status_label)
 
@@ -549,7 +602,7 @@ func _build_ui() -> void:
 	rows.add_child(HSeparator.new())
 	for entry in [
 			[SketchMode.Tool.SELECT, "select", "Select (S)"],
-			[SketchMode.Tool.LINE, "line", "Line chain (L) — Done / Esc to finish"],
+			[SketchMode.Tool.LINE, "line", "Line / centerline (L)"],
 			[SketchMode.Tool.ARC, "arc", "Arc tool (A)"],
 			[SketchMode.Tool.CIRCLE, "circle", "Circle (C)"],
 			[SketchMode.Tool.RECT, "rect", "Rectangle (R)"],
@@ -568,6 +621,13 @@ func _build_ui() -> void:
 		var b := UIIcons.button(entry[1], "", entry[2])
 		b.pressed.connect(sketch_mode.set_tool.bind(entry[0]))
 		rows.add_child(b)
+	# Icon-only like the rest of the rail — a text label widens the 44px
+	# column into the finish-bar dim blank (layout suite).
+	var auto_def := UIIcons.button("dimension", "",
+		"Auto-define — promote weak dims until DOF 0")
+	auto_def.name = "AutoDefine"
+	auto_def.pressed.connect(func() -> void: sketch_mode.auto_define())
+	rows.add_child(auto_def)
 	rows.add_child(HSeparator.new())
 	dof_label = Label.new()
 	dof_label.text = "—"
@@ -577,22 +637,16 @@ func _build_ui() -> void:
 	rows.add_child(dof_label)
 	var snap_toggle := CheckBox.new()
 	snap_toggle.text = ""
-	snap_toggle.tooltip_text = "Snap to endpoints / midpoints / H-V / perpendicular"
+	snap_toggle.tooltip_text = "Snap to grid / endpoints"
 	snap_toggle.button_pressed = sketch_mode.snap_enabled
 	snap_toggle.toggled.connect(sketch_mode.set_snap)
 	rows.add_child(snap_toggle)
 	var infer_toggle := CheckBox.new()
 	infer_toggle.text = ""
-	infer_toggle.tooltip_text = "Infer constraints while drawing (H / V / ⊥ / coincident)"
+	infer_toggle.tooltip_text = "Infer constraints while drawing"
 	infer_toggle.button_pressed = sketch_mode.infer_enabled
 	infer_toggle.toggled.connect(sketch_mode.set_infer)
 	rows.add_child(infer_toggle)
-	var autoclose_toggle := CheckBox.new()
-	autoclose_toggle.text = ""
-	autoclose_toggle.tooltip_text = "Auto-close line chain on finish (Done / Esc / right-click / double-click)"
-	autoclose_toggle.button_pressed = sketch_mode.auto_close_enabled
-	autoclose_toggle.toggled.connect(sketch_mode.set_auto_close)
-	rows.add_child(autoclose_toggle)
 	# Kept for tests / voice that still read these nodes.
 	dim_value = SpinBox.new()
 	dim_value.visible = false
@@ -633,7 +687,6 @@ func _build_ui() -> void:
 	interaction.sketch_requested.connect(_request_sketch)
 	interaction.sketch_host_picked.connect(_on_sketch_host_picked)
 	interaction.sketch_pad_clicked.connect(_on_sketch_pad_clicked)
-	interaction.sketch_pads_box_selected.connect(_on_sketch_pads_box_selected)
 	interaction.paste_special_requested.connect(edit_paste_special)
 	_update_panel_visibility()
 	interaction.status.connect(_on_status)
@@ -645,7 +698,6 @@ func _build_ui() -> void:
 
 	# Tone down wheel/trackpad jumps on docks and PopupMenus (~45% slower).
 	UiScroll.soften_tree(ui)
-
 
 ## Window theme: readable default font that does not track window size.
 func _apply_ui_theme() -> void:
@@ -677,19 +729,18 @@ func _on_viewport_resized() -> void:
 
 func _on_default_view(view_id: String) -> void:
 	# Immediate apply (no tween) so UI / tests see the pose right away.
-	# Standard views also zoom-extents so orientation + zoom land together.
 	match view_id:
 		"front":
-			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0), false)
+			camera.set_view(deg_to_rad(0.0), deg_to_rad(0.0), false)
 			_on_status("Front view")
 		"right":
-			camera.apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0), false)
+			camera.set_view(deg_to_rad(90.0), deg_to_rad(0.0), false)
 			_on_status("Right view")
 		"top":
-			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0), false)
+			camera.set_view(deg_to_rad(0.0), deg_to_rad(89.0), false)
 			_on_status("Top view")
 		"iso":
-			camera.apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
+			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
 			_on_status("Isometric view")
 		_:
 			_on_status("Unknown view “%s”" % view_id)
@@ -701,7 +752,7 @@ func _on_save_named_view(view_name: String) -> void:
 		return
 	camera.save_named_view(view_name)
 	view_hud.sync_named_views(camera.named_view_list())
-	_on_status("Saved view “%s” (orientation + zoom) — pick it under Views to restore" % view_name)
+	_on_status("Saved view “%s” — pick it under Views to restore" % view_name)
 
 
 func _on_sketch_solve(dofs: int, solve_status: String, conflicts: int) -> void:
@@ -716,6 +767,7 @@ func _on_sketch_solve(dofs: int, solve_status: String, conflicts: int) -> void:
 	else:
 		dof_label.text = "%d" % dofs
 		dof_label.add_theme_color_override("font_color", Color(0.55, 0.75, 1.0))
+	_on_sketch_selection_chips()
 
 
 func _apply_constraint(type: String, value: float) -> void:
@@ -801,16 +853,15 @@ func _on_sketch_host_picked(kind: String, face_id: String, body_id: String, pad_
 func _on_sketch_pad_clicked(fid: String, additive: bool = false) -> void:
 	if sketch_mode.active:
 		return
-	# Ctrl/Cmd/Shift+click accumulates pads for Merge / Loft workflows.
-	var multi := additive or Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META) \
-			or Input.is_key_pressed(KEY_SHIFT)
+	# Ctrl/Cmd+click accumulates pads for Merge sketches… (SW 3D-sketch substitute).
+	var multi := additive or Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META)
 	if multi:
 		if fid in selected_sketch_pads:
 			selected_sketch_pads.erase(fid)
 		else:
 			selected_sketch_pads.append(fid)
 		_refresh_merge_chrome()
-		_on_status("%d sketch pad(s) selected — Merge / Loft / Sweep…" % selected_sketch_pads.size())
+		_on_status("%d sketch pad(s) selected — Merge sketches…" % selected_sketch_pads.size())
 		return
 	selected_sketch_pads.clear()
 	if sketch_chrome != null:
@@ -818,23 +869,6 @@ func _on_sketch_pad_clicked(fid: String, additive: bool = false) -> void:
 	if sketch_mode.begin_edit(fid):
 		_on_sketch_session_started("Editing sketch")
 		view.refresh_sketch_pads(sketch_mode.editing_fid)
-
-
-## Rubber-band box result for yellow pads (Shift+left window / Shift+right crossing).
-func _on_sketch_pads_box_selected(fids: Array, additive: bool = false) -> void:
-	if sketch_mode.active:
-		return
-	if not additive:
-		selected_sketch_pads.clear()
-	for fid in fids:
-		var id := str(fid)
-		if id == "" or id in selected_sketch_pads:
-			continue
-		selected_sketch_pads.append(id)
-	_refresh_merge_chrome()
-	if selected_sketch_pads.is_empty():
-		return
-	_on_status("%d sketch pad(s) selected — Merge / Loft / Sweep…" % selected_sketch_pads.size())
 
 
 func _refresh_merge_chrome() -> void:
@@ -851,22 +885,22 @@ func _refresh_merge_chrome() -> void:
 
 
 ## Classify a committed sketch pad for multi-sketch → 3D workflows.
-## Closed profiles (loft / sweep section) vs open rails (path merge).
 func _sketch_pad_role(fid: String) -> String:
 	var sk: SxSketch = view.doc.graph_get_sketch(fid)
 	if sk == null:
 		return "unknown"
-	if SketchMode.profile_is_closed(sk):
-		return "profile"
-	var edge_count := 0
+	var has_circle := false
+	var line_count := 0
 	for id in sk.entity_ids():
-		if sk.is_construction(id):
-			continue
 		var info: Dictionary = sk.entity_info(id)
 		match str(info.get("type", "")):
-			"line", "arc", "spline":
-				edge_count += 1
-	if edge_count >= 1:
+			"circle":
+				has_circle = true
+			"line", "arc":
+				line_count += 1
+	if has_circle:
+		return "profile"
+	if line_count >= 1:
 		return "rail"
 	return "unknown"
 
@@ -892,21 +926,16 @@ func _sketch_to_3d_actions() -> Array:
 				profiles += 1
 			"rail":
 				rails += 1
-	# Open rails alone → Path (single rail or merge).
-	if profiles == 0 and rails >= 1:
-		if rails == 1:
-			actions.append("use_as_path")
-		else:
-			actions.append("merge_join")
-			actions.append("merge_spline")
-			actions.append("merge_composite")
-	# Loft: 2+ profiles; open rails in the same selection become guide curves.
-	if profiles >= 2:
+	if n >= 2 and rails >= 1:
+		actions.append("merge_join")
+		actions.append("merge_spline")
+		actions.append("merge_composite")
+	if n >= 2 and profiles >= 2 and rails == 0:
 		actions.append("loft_ruled")
 		actions.append("loft_smooth")
-	# Sweep: explicit Path on timeline, or one-shot profile + rail(s).
-	if profiles == 1:
-		if rails >= 1 or selected_path_fid != "":
+	if n == 1 and profiles == 1:
+		var path_fid := selected_path_fid if selected_path_fid != "" else _latest_path_fid()
+		if path_fid != "":
 			actions.append("sweep_path")
 	if actions.is_empty() and n >= 2:
 		# Mixed or unknown — offer everything.
@@ -928,77 +957,50 @@ func _on_timeline_feature_selected(fid: String, ftype: String) -> void:
 
 
 func _loft_selected_sketches(ruled: bool) -> void:
-	var profiles := PackedStringArray()
-	var guides := PackedStringArray()
-	for fid in selected_sketch_pads:
-		match _sketch_pad_role(fid):
-			"profile":
-				profiles.append(fid)
-			"rail":
-				guides.append(fid)
-	if profiles.size() < 2:
-		_on_status("Select 2+ closed profile pads (Ctrl+click) to loft; open rails become guides")
+	if selected_sketch_pads.size() < 2:
+		_on_status("Select 2+ closed profile pads (Ctrl+click) to loft")
 		return
-	var loft_fid: String = view.doc.graph_add_loft(profiles, ruled, guides)
+	var fids := PackedStringArray()
+	for fid in selected_sketch_pads:
+		fids.append(fid)
+	var loft_fid: String = view.doc.graph_add_loft(fids, ruled)
 	if loft_fid == "":
 		_on_status("Loft failed — need closed profiles on separate planes")
 		return
 	selected_sketch_pads.clear()
 	selected_path_fid = ""
 	_refresh_merge_chrome()
-	var guide_note := ""
-	if guides.size() > 0:
-		guide_note = " + %d guide(s)" % guides.size()
-	_on_status("Loft solid created (%s%s)" % [("ruled" if ruled else "smooth"), guide_note])
+	_on_status("Loft solid created (%s)" % ("ruled" if ruled else "smooth"))
 	view.refresh()
 	_on_document_changed()
 
 
 func _sweep_profile_along_path() -> void:
-	var profiles := PackedStringArray()
-	var rails := PackedStringArray()
-	for fid in selected_sketch_pads:
-		match _sketch_pad_role(fid):
-			"profile":
-				profiles.append(fid)
-			"rail":
-				rails.append(fid)
-	if profiles.size() != 1:
-		_on_status("Select exactly one closed profile pad for Sweep")
+	if selected_sketch_pads.size() != 1:
+		_on_status("Ctrl+click exactly one profile pad, then Sweep along path")
 		return
-	var prof_fid: String = profiles[0]
-	var path_fid := selected_path_fid
-	var guides := PackedStringArray()
-	if path_fid != "":
-		# Explicit Path on timeline — open rails in the selection are guides.
-		guides = rails
-	elif rails.size() >= 1:
-		# One-shot: build Path from selected rails, then sweep.
-		path_fid = view.doc.graph_add_path(rails, "join_endpoints")
-		if path_fid == "":
-			_on_status("Could not create Path from selected rail(s)")
-			return
-		selected_path_fid = path_fid
-	else:
-		_on_status("Select a Path on the timeline, or select profile + rail(s)")
+	var prof_fid: String = selected_sketch_pads[0]
+	if _sketch_pad_role(prof_fid) != "profile":
+		_on_status("Selected pad is not a closed profile (try a circle)")
 		return
-	var sw_fid: String = view.doc.graph_add_sweep_along_path(prof_fid, path_fid, guides)
+	var path_fid := selected_path_fid if selected_path_fid != "" else _latest_path_fid()
+	if path_fid == "":
+		_on_status("Create a Path first (merge open rails) or select a Path row on the timeline")
+		return
+	var sw_fid: String = view.doc.graph_add_sweep_along_path(prof_fid, path_fid)
 	if sw_fid == "":
 		_on_status("Sweep along path failed")
 		return
 	selected_sketch_pads.clear()
 	_refresh_merge_chrome()
-	var note := ""
-	if guides.size() > 0:
-		note = " + %d guide(s)" % guides.size()
-	_on_status("Sweep solid created along path%s" % note)
+	_on_status("Sweep solid created along path")
 	view.refresh()
 	_on_document_changed()
 
 
 func _merge_selected_sketches(mode: String) -> void:
-	if selected_sketch_pads.is_empty():
-		_on_status("Select open rail pad(s) to create a Path")
+	if selected_sketch_pads.size() < 2:
+		_on_status("Select 2+ sketch pads (Ctrl+click) to merge")
 		return
 	var fids := PackedStringArray()
 	for fid in selected_sketch_pads:
@@ -1017,9 +1019,6 @@ func _merge_selected_sketches(mode: String) -> void:
 
 func _on_sketch_action(action: String) -> void:
 	match action:
-		"use_as_path":
-			_merge_selected_sketches("join_endpoints")
-			return
 		"merge_join":
 			_merge_selected_sketches("join_endpoints")
 			return
@@ -1068,16 +1067,13 @@ func _on_sketch_action(action: String) -> void:
 			_apply_dimension_from_chrome()
 		"revolve":
 			sketch_mode.finish_revolve(TAU, _finish_op_name())
-		"done":
-			sketch_mode.end_chain()
-			_on_status("Chain ended")
 		"horizontal", "vertical", "parallel", "perpendicular", "equal", "coincident", \
-		"tangent", "midpoint", "symmetric", "concentric", "collinear", "fix", "diameter":
+		"tangent", "midpoint", "symmetric", "concentric", "collinear":
 			_apply_constraint(action, 0.0)
-		"fully_define":
-			sketch_mode.fully_define()
-		"analyze":
-			sketch_mode.analyze_sketch()
+		"parallel?", "perpendicular?", "equal?":
+			var verb := action.trim_suffix("?")
+			var cid := sketch_mode.promote_propose(verb)
+			_on_status("Proposed %s" % verb if cid != "" else "Nothing to propose")
 		_:
 			_on_status("Sketch action: %s" % action)
 
@@ -1162,10 +1158,16 @@ func _on_sketch_selection_chips() -> void:
 	if sketch_chrome == null or not sketch_mode.active:
 		return
 	var acts: Array = sketch_mode.selection_actions()
+	for verb in sketch_mode.propose_verbs():
+		if verb not in acts:
+			acts.append(verb)
 	if acts.is_empty():
 		sketch_chrome.hide_selection_actions()
 	else:
-		sketch_chrome.show_selection_actions(acts, get_viewport().get_mouse_position())
+		# Keep chips off the 44px icon rail and the finish bar at (60, 42).
+		var mouse := get_viewport().get_mouse_position()
+		var pos := mouse if mouse.x > 56.0 else Vector2(60, 80)
+		sketch_chrome.show_selection_actions(acts, pos)
 
 
 func _on_sketch_variant(kind: String, variant: String) -> void:
@@ -1203,16 +1205,13 @@ func _on_sketch_dim_submitted(value: float) -> void:
 	_apply_dimension()
 
 
-func _on_sketch_finish(op: String, distance: float, end: String = "blind",
-		thin_thickness: float = 0.0, thin_type: String = "one_side",
-		flip_side: bool = false, selected_contours: Array = []) -> void:
+func _on_sketch_finish(op: String, distance: float) -> void:
 	extrude_distance.value = distance
 	match op:
 		"cut": finish_op.selected = 1
 		"fuse": finish_op.selected = 2
 		_: finish_op.selected = 0
-	sketch_mode.finish_extrude(
-		distance, op, end, thin_thickness, thin_type, flip_side, selected_contours)
+	sketch_mode.finish_extrude(distance, op)
 
 
 func _selected_entity() -> String:
@@ -1264,6 +1263,49 @@ func _update_panel_visibility() -> void:
 	_schedule_card_dock()
 
 
+func _on_mode_menu(id: int) -> void:
+	var names := ["Model", "Draw", "Sheet", "Cam", "Sim", "Form"]
+	if id < 0 or id >= names.size():
+		return
+	_work_mode = names[id]
+	_on_status(_work_mode + " mode")
+	_update_left_rail()
+	_update_mode_overlays()
+
+
+func _print_target() -> String:
+	if view != null and view.selected_body != "":
+		return view.selected_body
+	if view != null and view.doc != null:
+		var ids: PackedStringArray = view.doc.body_ids()
+		if ids.size() > 0:
+			return ids[0]
+	return ""
+
+
+func _on_print_analyze() -> void:
+	if view == null or view.doc == null:
+		return
+	var r: Dictionary = view.doc.print_analyze(_print_target())
+	var digest := str(r.get("digest", ""))
+	if print_strip != null:
+		print_strip.set_digest(digest)
+	_on_status(digest if digest != "" else "Print check: nothing to analyze")
+	if view.selected_body != "":
+		card_panel.text = view.selection_card() + "\n\n" + digest
+
+
+func _on_print_orient() -> void:
+	if view == null or view.doc == null:
+		return
+	var r: Dictionary = view.doc.print_orient(_print_target())
+	var digest := str(r.get("digest", ""))
+	if print_strip != null:
+		print_strip.set_digest(digest)
+	_on_status("Oriented — " + digest)
+	view.refresh()
+
+
 func _update_left_rail() -> void:
 	if palette == null or ops_panel == null:
 		return
@@ -1281,12 +1323,33 @@ func _update_left_rail() -> void:
 	# Selected body → Modify tools occupy the left palette slot.
 	# Idle / place-armed → Primitives palette; OpsPanel stays on the right
 	# (and hides itself when there is no selection).
+	if _work_mode != "Model":
+		# Specialized rails replace Modify — they do not stack a second dock.
+		palette.visible = false
+		ops_panel.visible = false
+		return
 	if has_body and not placing:
 		palette.visible = false
 		_dock_ops_left()
 	else:
 		palette.visible = true
 		_dock_ops_right()
+
+
+func _update_mode_overlays() -> void:
+	if drawing_sheet != null:
+		if _work_mode == "Draw" and view != null and view.doc != null:
+			view.doc.ensure_drawing_sheet()
+			view.doc.refresh_drawing_dims()
+			drawing_sheet.set_preview(view.doc.drawing_preview())
+		drawing_sheet.show_sheet(_work_mode == "Draw")
+	if sheet_metal_view != null:
+		var flat := 0.0
+		if view != null and view.doc != null:
+			flat = view.doc.sheet_flat_length(30.0, 30.0, 1.5, 0.44, 1.5)
+		sheet_metal_view.show_split(_work_mode == "Sheet", flat, 0.44)
+	if print_strip != null:
+		print_strip.visible = _work_mode == "Form"
 
 
 ## Selection card sits under the visible left rail (palette / modify / sketch).
@@ -1561,6 +1624,16 @@ func _on_file_menu(id: int) -> void:
 			_show_file_dialog(FileAction.EXPORT_CONTEXT, FileDialog.FILE_MODE_SAVE_FILE, "*.md ; Markdown")
 		8:
 			_show_file_dialog(FileAction.EXPORT_DRAWING, FileDialog.FILE_MODE_SAVE_FILE, "*.svg ; SVG drawing")
+		10:
+			_show_file_dialog(FileAction.IMPORT_DXF, FileDialog.FILE_MODE_OPEN_FILE, "*.dxf ; DXF")
+		11:
+			_show_file_dialog(FileAction.EXPORT_3MF, FileDialog.FILE_MODE_SAVE_FILE, "*.3mf ; 3MF")
+		12:
+			_show_file_dialog(FileAction.EXPORT_GLTF, FileDialog.FILE_MODE_SAVE_FILE, "*.gltf ; glTF")
+		13:
+			_show_file_dialog(FileAction.EXPORT_DRAWING_DXF, FileDialog.FILE_MODE_SAVE_FILE, "*.dxf ; DXF drawing")
+		14:
+			_show_file_dialog(FileAction.EXPORT_DRAWING_PDF, FileDialog.FILE_MODE_SAVE_FILE, "*.pdf ; PDF drawing")
 
 
 func _do_new() -> void:
@@ -1666,6 +1739,10 @@ func _open_document(path: String) -> void:
 
 
 func _on_insert_menu(id: int) -> void:
+	if id == 10:
+		_show_file_dialog(FileAction.INSERT_SXP, FileDialog.FILE_MODE_OPEN_FILE,
+			"*.sxp ; SolidExpress")
+		return
 	var did := ""
 	match id:
 		0: did = view.doc.add_datum_plane(Vector3.ZERO, Vector3(0, 0, 1))
@@ -1675,21 +1752,28 @@ func _on_insert_menu(id: int) -> void:
 		4: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
 		5: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
 		6: did = view.doc.add_datum_point(Vector3.ZERO)
-		7:
-			# Default spring matching workflow tests (edit via property panel).
-			did = view.doc.graph_add_helix(2.0, 15.0, 8.0, 5.0, false,
-					Vector3.ZERO, Vector3(0, 0, 1))
-			if did != "":
-				view.graph_changed()
-				_on_status("Helix spring added (edit profile/pitch on timeline)")
-				return
-			_on_status("Helix creation failed")
-			return
 	if did != "":
 		view.graph_changed()
 		_on_status("Datum added")
 	else:
 		_on_status("Datum creation failed")
+
+
+## Insert Components (multi-doc .sxp): copy bodies + place instances; hide the
+## embedded source bodies so only the placed components show (SolidWorks-like).
+func insert_components_from(path: String, translation := Vector3.ZERO) -> bool:
+	var result: Dictionary = view.doc.insert_sxp(path, translation)
+	if not bool(result.get("ok", false)):
+		_on_status("Insert failed: " + str(result.get("error", path)))
+		return false
+	var bodies: PackedStringArray = result.get("body_ids", PackedStringArray())
+	for bid in bodies:
+		view.set_body_hidden(str(bid), true)
+	view.refresh()
+	view.graph_changed()
+	var n: int = result.get("instance_ids", PackedStringArray()).size()
+	_on_status("Inserted %d component(s) from %s" % [n, path.get_file()])
+	return true
 
 
 func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: String) -> void:
@@ -1747,6 +1831,27 @@ func _on_file_selected(path: String) -> void:
 				_on_status("Exported drawing: " + path)
 			else:
 				_on_status("Drawing export failed (empty document?)")
+		FileAction.INSERT_SXP:
+			insert_components_from(path)
+		FileAction.IMPORT_DXF:
+			var fid: String = view.doc.import_dxf(path)
+			if fid == "":
+				_on_status("DXF import failed")
+			else:
+				view.graph_changed()
+				_on_status("Imported DXF sketch")
+		FileAction.EXPORT_3MF:
+			_on_status("Exported 3MF" if view.doc.export_3mf(path) else "3MF export failed")
+		FileAction.EXPORT_GLTF:
+			_on_status("Exported glTF" if view.doc.export_gltf(path) else "glTF export failed")
+		FileAction.EXPORT_DRAWING_DXF:
+			if not path.ends_with(".dxf"):
+				path += ".dxf"
+			_on_status("Exported DXF" if view.doc.export_drawing_dxf(path) else "DXF export failed")
+		FileAction.EXPORT_DRAWING_PDF:
+			if not path.ends_with(".pdf"):
+				path += ".pdf"
+			_on_status("Exported PDF" if view.doc.export_drawing_pdf(path) else "PDF export failed")
 
 
 ## OS drag-and-drop onto the window (STL / SVG / STEP / .sxp).
@@ -1769,6 +1874,11 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 		elif lower.ends_with(".svg"):
 			if _import_svg_to_surface(path):
 				handled += 1
+		elif lower.ends_with(".dxf"):
+			if view.doc.import_dxf(path) != "":
+				view.graph_changed()
+				handled += 1
+				_on_status("Imported DXF")
 		else:
 			_on_status("Unsupported drop: " + path.get_file())
 	if handled == 0 and files.size() > 0:

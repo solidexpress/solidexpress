@@ -1,16 +1,14 @@
 #include "sx/mates.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <limits>
-
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepTools.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
-#include <gp_Ax1.hxx>
+#include <gp_Ax2.hxx>
 #include <gp_Quaternion.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
+#include <cmath>
 #include <stdexcept>
 
 #include "sx/document.hpp"
@@ -23,7 +21,9 @@ const char* to_string(MateType t) {
     switch (t) {
         case MateType::Fixed: return "fixed";
         case MateType::PlaneCoincident: return "plane_coincident";
+        case MateType::PlaneParallel: return "plane_parallel";
         case MateType::Concentric: return "concentric";
+        case MateType::Fastened: return "fastened";
     }
     return "unknown";
 }
@@ -31,7 +31,9 @@ const char* to_string(MateType t) {
 MateType mate_type_from_string(const std::string& s) {
     if (s == "fixed") return MateType::Fixed;
     if (s == "plane_coincident") return MateType::PlaneCoincident;
+    if (s == "plane_parallel") return MateType::PlaneParallel;
     if (s == "concentric") return MateType::Concentric;
+    if (s == "fastened") return MateType::Fastened;
     throw std::invalid_argument("unknown mate type: " + s);
 }
 
@@ -47,8 +49,6 @@ void to_json(nlohmann::json& j, const Mate& m) {
         {"flip", m.flip},
         {"name", m.name},
     };
-    if (m.angle_min) j["angle_min"] = *m.angle_min;
-    if (m.angle_max) j["angle_max"] = *m.angle_max;
 }
 
 static EntityId id_or_null(const std::string& s) {
@@ -65,12 +65,31 @@ void from_json(const nlohmann::json& j, Mate& m) {
     m.offset = j.value("offset", 0.0);
     m.flip = j.value("flip", false);
     m.name = j.value("name", "");
-    m.angle_min = std::nullopt;
-    m.angle_max = std::nullopt;
-    if (j.contains("angle_min") && !j["angle_min"].is_null())
-        m.angle_min = j["angle_min"].get<double>();
-    if (j.contains("angle_max") && !j["angle_max"].is_null())
-        m.angle_max = j["angle_max"].get<double>();
+}
+
+void to_json(nlohmann::json& j, const MateConnector& c) {
+    j = nlohmann::json{
+        {"uuid", c.id.str()},
+        {"instance", c.instance.is_null() ? "" : c.instance.str()},
+        {"face", c.face.is_null() ? "" : c.face.str()},
+        {"origin", c.origin},
+        {"z_dir", c.z_dir},
+        {"x_dir", c.x_dir},
+        {"name", c.name},
+    };
+}
+
+void from_json(const nlohmann::json& j, MateConnector& c) {
+    c.id = id_or_null(j.value("uuid", j.value("id", "")));
+    c.instance = id_or_null(j.value("instance", ""));
+    c.face = id_or_null(j.value("face", ""));
+    if (j.contains("origin") && j["origin"].is_array() && j["origin"].size() == 3)
+        for (int i = 0; i < 3; ++i) c.origin[i] = j["origin"][i].get<double>();
+    if (j.contains("z_dir") && j["z_dir"].is_array() && j["z_dir"].size() == 3)
+        for (int i = 0; i < 3; ++i) c.z_dir[i] = j["z_dir"][i].get<double>();
+    if (j.contains("x_dir") && j["x_dir"].is_array() && j["x_dir"].size() == 3)
+        for (int i = 0; i < 3; ++i) c.x_dir[i] = j["x_dir"][i].get<double>();
+    c.name = j.value("name", "");
 }
 
 namespace {
@@ -102,24 +121,58 @@ std::optional<MatePlane> mate_plane(const Document& doc, const EntityId& instanc
 
 std::optional<MateAxis> mate_axis(const Document& doc, const EntityId& instance,
                                   const EntityId& face) {
-    // Classify enclosure on the source face (orientation is placement-invariant);
-    // transform the axis into the reference frame afterward.
-    TopoDS_Shape raw = doc.resolve(face);
-    if (raw.IsNull() || raw.ShapeType() != TopAbs_FACE) return std::nullopt;
-    const TopoDS_Face& src = TopoDS::Face(raw);
-    BRepAdaptor_Surface src_surf(src);
-    if (src_surf.GetType() != GeomAbs_Cylinder) return std::nullopt;
-    const double radius = src_surf.Cylinder().Radius();
-    // REVERSED cylindrical faces are hole walls (material outside); FORWARD are
-    // outer bosses/pins. Verified against BRepPrimAPI_MakeCylinder / Cut.
-    const bool encloses = (src.Orientation() == TopAbs_REVERSED);
-
     TopoDS_Shape f = reference_face(doc, instance, face);
     if (f.IsNull()) return std::nullopt;
     BRepAdaptor_Surface surf(TopoDS::Face(f));
     if (surf.GetType() != GeomAbs_Cylinder) return std::nullopt;
     gp_Ax1 ax = surf.Cylinder().Axis();
-    return MateAxis{ax.Location(), ax.Direction(), radius, encloses};
+    return MateAxis{ax.Location(), ax.Direction()};
+}
+
+std::optional<MateConnector> implicit_connector(const Document& doc,
+                                                const EntityId& instance,
+                                                const EntityId& face) {
+    TopoDS_Shape f = reference_face(doc, instance, face);
+    if (f.IsNull() || f.ShapeType() != TopAbs_FACE) return std::nullopt;
+    TopoDS_Face tf = TopoDS::Face(f);
+    BRepAdaptor_Surface surf(tf);
+    Standard_Real umin = 0, umax = 0, vmin = 0, vmax = 0;
+    BRepTools::UVBounds(tf, umin, umax, vmin, vmax);
+    gp_Pnt mid = surf.Value(0.5 * (umin + umax), 0.5 * (vmin + vmax));
+
+    MateConnector c;
+    c.instance = instance;
+    c.face = face;
+    if (surf.GetType() == GeomAbs_Plane) {
+        auto pl = mate_plane(doc, instance, face);
+        if (!pl) return std::nullopt;
+        gp_Dir z = pl->normal;
+        gp_Dir xref = surf.Plane().XAxis().Direction();
+        if (std::abs(xref.Dot(z)) > 0.95) xref = surf.Plane().YAxis().Direction();
+        gp_Dir x = z.Crossed(xref.Crossed(z));
+        c.origin = {mid.X(), mid.Y(), mid.Z()};
+        c.z_dir = {z.X(), z.Y(), z.Z()};
+        c.x_dir = {x.X(), x.Y(), x.Z()};
+        c.name = "implicit plane";
+        return c;
+    }
+    if (surf.GetType() == GeomAbs_Cylinder) {
+        auto ax = mate_axis(doc, instance, face);
+        if (!ax) return std::nullopt;
+        gp_Vec v(ax->point, mid);
+        gp_Vec axial = gp_Vec(ax->dir) * v.Dot(gp_Vec(ax->dir));
+        gp_Pnt origin = ax->point.Translated(axial);
+        gp_Dir z = ax->dir;
+        gp_Vec radial(origin, mid);
+        gp_Dir x = radial.Magnitude() > 1e-9 ? gp_Dir(radial) : gp_Dir(1, 0, 0);
+        if (std::abs(x.Dot(z)) > 0.95) x = z.Crossed(gp_Dir(0, 1, 0));
+        c.origin = {origin.X(), origin.Y(), origin.Z()};
+        c.z_dir = {z.X(), z.Y(), z.Z()};
+        c.x_dir = {x.X(), x.Y(), x.Z()};
+        c.name = "implicit cylinder";
+        return c;
+    }
+    return std::nullopt;
 }
 
 namespace {
@@ -156,6 +209,8 @@ bool apply_mate(Document& doc, const Mate& m) {
         log::error("mate " + m.name + ": instance_b must be a component instance");
         return false;
     }
+    // Fix restraint: skip transforms (instance stays where it was placed).
+    if (doc.instance(m.instance_b)->fixed) return true;
     switch (m.type) {
         case MateType::PlaneCoincident: {
             auto a = mate_plane(doc, m.instance_a, m.face_a);
@@ -173,33 +228,26 @@ bool apply_mate(Document& doc, const Mate& m) {
             shift.SetTranslation(gp_Vec(a->normal) * (m.offset - gap));
             return move_instance(doc, m.instance_b, shift * corr);
         }
-        case MateType::Concentric: {
-            // Radial constraint: one face must enclose the other (hole around
-            // pin) with a declared positive clearance (offset) that the
-            // geometry satisfies. Axes-only mates without fit are rejected.
-            if (m.offset <= 0.0) {
-                log::error("mate " + m.name +
-                           ": concentric requires a positive radial tolerance");
+        case MateType::PlaneParallel: {
+            // Align normals (orientation only); leave translation free — the
+            // SolidWorks Parallel standard mate for planar faces.
+            auto a = mate_plane(doc, m.instance_a, m.face_a);
+            auto b = mate_plane(doc, m.instance_b, m.face_b);
+            if (!a || !b) {
+                log::error("mate " + m.name + ": planar faces required");
                 return false;
             }
+            gp_Dir target = a->normal;
+            if (gp_Vec(b->normal).Dot(gp_Vec(target)) < 0.0) target.Reverse();
+            if (m.flip) target.Reverse();
+            gp_Trsf corr = rotation_about(b->point, b->normal, target);
+            return move_instance(doc, m.instance_b, corr);
+        }
+        case MateType::Concentric: {
             auto a = mate_axis(doc, m.instance_a, m.face_a);
             auto b = mate_axis(doc, m.instance_b, m.face_b);
             if (!a || !b) {
                 log::error("mate " + m.name + ": cylindrical faces required");
-                return false;
-            }
-            if (a->encloses == b->encloses) {
-                log::error("mate " + m.name +
-                           ": concentric requires enclosure (hole around pin)");
-                return false;
-            }
-            const double r_hole = a->encloses ? a->radius : b->radius;
-            const double r_pin = a->encloses ? b->radius : a->radius;
-            const double clearance = r_hole - r_pin;
-            if (clearance + 1e-9 < m.offset) {
-                log::error("mate " + m.name +
-                           ": radial clearance " + std::to_string(clearance) +
-                           " is below tolerance " + std::to_string(m.offset));
                 return false;
             }
             gp_Dir target = a->dir;
@@ -213,6 +261,35 @@ bool apply_mate(Document& doc, const Mate& m) {
             shift.SetTranslation(v - axial);
             return move_instance(doc, m.instance_b, shift * corr);
         }
+        case MateType::Fastened: {
+            auto a = implicit_connector(doc, m.instance_a, m.face_a);
+            auto b = implicit_connector(doc, m.instance_b, m.face_b);
+            if (!a || !b) {
+                log::error("mate " + m.name + ": connectors require planar or cylindrical faces");
+                return false;
+            }
+            gp_Pnt oa(a->origin[0], a->origin[1], a->origin[2]);
+            gp_Pnt ob(b->origin[0], b->origin[1], b->origin[2]);
+            gp_Dir za(a->z_dir[0], a->z_dir[1], a->z_dir[2]);
+            gp_Dir zb(b->z_dir[0], b->z_dir[1], b->z_dir[2]);
+            gp_Dir xa(a->x_dir[0], a->x_dir[1], a->x_dir[2]);
+            gp_Dir xb(b->x_dir[0], b->x_dir[1], b->x_dir[2]);
+            gp_Dir z_target = m.flip ? za : za.Reversed();
+            gp_Trsf corr = rotation_about(ob, zb, z_target);
+            gp_Vec xb_rot = gp_Vec(xb).Transformed(corr);
+            gp_Vec xa_vec(xa);
+            gp_Vec z_t(z_target);
+            gp_Vec xb_in = xb_rot - z_t * xb_rot.Dot(z_t);
+            gp_Vec xa_in = xa_vec - z_t * xa_vec.Dot(z_t);
+            if (xb_in.Magnitude() > 1e-9 && xa_in.Magnitude() > 1e-9) {
+                gp_Trsf spin = rotation_about(ob, gp_Dir(xb_in), gp_Dir(xa_in));
+                corr = spin * corr;
+            }
+            gp_Pnt dest = oa.Translated(gp_Vec(za) * m.offset);
+            gp_Trsf shift;
+            shift.SetTranslation(gp_Vec(ob, dest));
+            return move_instance(doc, m.instance_b, shift * corr);
+        }
         case MateType::Fixed:
             break;
     }
@@ -221,84 +298,8 @@ bool apply_mate(Document& doc, const Mate& m) {
 
 bool solve_mates(Document& doc) {
     bool ok = true;
-    for (const auto& m : doc.mates()) {
-        ok = apply_mate(doc, m) && ok;
-        ok = clamp_revolute_limits(doc, m) && ok;
-    }
+    for (const auto& m : doc.mates()) ok = apply_mate(doc, m) && ok;
     return ok;
-}
-
-std::optional<MateAxis> instance_revolute_axis(const Document& doc,
-                                              const EntityId& instance) {
-    if (instance.is_null() || !doc.instance(instance)) return std::nullopt;
-    for (const auto& m : doc.mates()) {
-        if (m.type != MateType::Concentric) continue;
-        if (m.instance_b != instance) continue;
-        // Prefer the grounded / A-side axis (stable under B's motion).
-        auto ax = mate_axis(doc, m.instance_a, m.face_a);
-        if (ax) return ax;
-        return mate_axis(doc, m.instance_b, m.face_b);
-    }
-    return std::nullopt;
-}
-
-namespace {
-
-// Orthonormal X in the plane ⊥ `dir`, stable for a given axis direction.
-gp_Dir plane_ref_x(const gp_Dir& dir) {
-    gp_Dir seed = (std::abs(dir.Z()) < 0.9) ? gp_Dir(0, 0, 1) : gp_Dir(1, 0, 0);
-    gp_Vec x = gp_Vec(dir).Crossed(gp_Vec(seed));
-    if (x.Magnitude() < 1e-12) x = gp_Vec(dir).Crossed(gp_Vec(0, 1, 0));
-    return gp_Dir(x);
-}
-
-double angle_about_axis(const gp_Trsf& t, const MateAxis& ax) {
-    // Tip of local +X (fallback +Y) projected into the plane ⊥ axis.
-    gp_Pnt tip = gp_Pnt(1, 0, 0).Transformed(t);
-    gp_Vec v(ax.point, tip);
-    gp_Vec radial = v - gp_Vec(ax.dir) * v.Dot(gp_Vec(ax.dir));
-    if (radial.Magnitude() < 1e-9) {
-        tip = gp_Pnt(0, 1, 0).Transformed(t);
-        v = gp_Vec(ax.point, tip);
-        radial = v - gp_Vec(ax.dir) * v.Dot(gp_Vec(ax.dir));
-    }
-    if (radial.Magnitude() < 1e-9) return 0.0;
-    gp_Dir x = plane_ref_x(ax.dir);
-    gp_Dir y = ax.dir.Crossed(x);
-    return std::atan2(radial.Dot(gp_Vec(y)), radial.Dot(gp_Vec(x)));
-}
-
-}  // namespace
-
-std::optional<double> instance_revolute_angle(const Document& doc,
-                                              const EntityId& instance) {
-    auto ax = instance_revolute_axis(doc, instance);
-    const Instance* inst = doc.instance(instance);
-    if (!ax || !inst) return std::nullopt;
-    return angle_about_axis(transform_of(*inst), *ax);
-}
-
-bool clamp_revolute_limits(Document& doc, const Mate& m) {
-    if (m.type != MateType::Concentric) return true;
-    if (!m.angle_min && !m.angle_max) return true;
-    if (m.instance_b.is_null() || !doc.instance(m.instance_b)) return false;
-    auto ax = instance_revolute_axis(doc, m.instance_b);
-    if (!ax) return false;
-    const Instance* inst = doc.instance(m.instance_b);
-    const double ang = angle_about_axis(transform_of(*inst), *ax);
-    const double min_r =
-        m.angle_min ? (*m.angle_min * M_PI / 180.0) : -std::numeric_limits<double>::infinity();
-    const double max_r =
-        m.angle_max ? (*m.angle_max * M_PI / 180.0) : std::numeric_limits<double>::infinity();
-    const double clamped = std::clamp(ang, min_r, max_r);
-    if (std::abs(clamped - ang) < 1e-9) return true;
-    gp_Trsf spin;
-    spin.SetRotation(gp_Ax1(ax->point, ax->dir), clamped - ang);
-    gp_Trsf t = spin * transform_of(*inst);
-    gp_Quaternion q = t.GetRotation();
-    gp_XYZ tr = t.TranslationPart();
-    return doc.set_instance_transform(m.instance_b, {tr.X(), tr.Y(), tr.Z()},
-                                      {q.X(), q.Y(), q.Z(), q.W()});
 }
 
 }  // namespace sx

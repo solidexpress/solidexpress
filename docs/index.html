@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SolidExpress — Parametric CAD</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">
+        <img src="branding/logo.png" alt="SolidExpress" width="40" height="40" />
+        <strong>SolidExpress</strong>
+      </a>
+      <nav>
+        <a href="./features.html">Features</a>
+        <a href="https://github.com/solidexpress/solidexpress">GitHub</a>
+        <a href="https://github.com/solidexpress/solidexpress/releases/latest">Download</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <h1>Fast, friendly parametric CAD</h1>
+          <p>History-based modeling with OCCT geometry, a modern Godot UI, PlaneGCS sketches, and a film-backed demo suite.</p>
+          <div class="cta">
+            <a href="#download">Download</a>
+            <a href="./features.html">See all features</a>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <video controls preload="none" playsinline muted
+              src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/snap_bolt_drop.webm"></video>
+            <h3>Snap-to-mate on drop</h3>
+          </div>
+        </div>
+      </section>
+
+      <h2 class="section-title">Highlights</h2>
+      <section class="grid">
+        <div class="card">
+          <video controls preload="none" playsinline muted
+            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/triball_hole_circle.webm"></video>
+          <h3>TriBall rotate-copy → bolt circle</h3>
+        </div>
+        <div class="card">
+          <video controls preload="none" playsinline muted
+            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/drawing_follows_model.webm"></video>
+          <h3>Drawing dim follows a model edit</h3>
+        </div>
+        <div class="card">
+          <video controls preload="none" playsinline muted
+            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/flange_box_flat.webm"></video>
+          <h3>Sheet metal with K‑factor</h3>
+        </div>
+        <div class="card">
+          <video controls preload="none" playsinline muted
+            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/print_overhang_orient.webm"></video>
+          <h3>Print-first: orient to the bed</h3>
+        </div>
+        <div class="card">
+          <video controls preload="none" playsinline muted
+            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/pliers_motion.webm"></video>
+          <h3>Assemblies that move</h3>
+        </div>
+        <div class="card">
+          <video controls preload="none" playsinline muted
+            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/explode_gearbox.webm"></video>
+          <h3>Explode &amp; restore</h3>
+        </div>
+      </section>
+
+      <h2 class="section-title" id="download">Download <span id="dl-version">latest</span></h2>
+      <p class="muted">Desktop builds from the current GitHub Release. Every platform button is wired to that same latest tag — never an older fallback.</p>
+      <div class="downloads">
+        <a data-kind="macos-dmg" href="https://github.com/solidexpress/solidexpress/releases/latest">macOS (.dmg)</a>
+        <a data-kind="windows-exe" href="https://github.com/solidexpress/solidexpress/releases/latest">Windows (Setup.exe)</a>
+        <a data-kind="linux-tgz" href="https://github.com/solidexpress/solidexpress/releases/latest">Linux (.tar.gz)</a>
+      </div>
+      <p class="muted"><a id="dl-all" href="https://github.com/solidexpress/solidexpress/releases/latest">All assets &amp; checksums</a></p>
+    </main>
+
+    <footer>
+      © SolidExpress — See <a class="muted" href="https://github.com/solidexpress/solidexpress">source on GitHub</a>.
+    </footer>
+    <script>
+      (function () {
+        var LATEST = "https://api.github.com/repos/solidexpress/solidexpress/releases/latest";
+        var PAGE = "https://github.com/solidexpress/solidexpress/releases/latest";
+        function pick(assets, re) {
+          for (var i = 0; i < assets.length; i++) {
+            if (re.test(assets[i].name) && !/\.sha256$/.test(assets[i].name)) return assets[i];
+          }
+          return null;
+        }
+        function set(kind, asset, page) {
+          var el = document.querySelector("[data-kind='" + kind + "']");
+          if (!el) return;
+          if (asset) {
+            el.href = asset.browser_download_url;
+            el.title = asset.name;
+          } else {
+            el.href = page || PAGE;
+            el.title = "Not published on the latest release yet";
+          }
+        }
+        fetch(LATEST)
+          .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+          .then(function (release) {
+            var assets = release.assets || [];
+            var page = release.html_url || PAGE;
+            set("macos-dmg", pick(assets, /\.dmg$/i), page);
+            set("windows-exe", pick(assets, /setup\.exe$/i), page);
+            set("linux-tgz", pick(assets, /\.tar\.gz$/i), page);
+            var ver = document.getElementById("dl-version");
+            if (ver) ver.textContent = release.tag_name || "latest";
+            var all = document.getElementById("dl-all");
+            if (all) all.href = page;
+          })
+          .catch(function () {});
+      })();
+    </script>
+  </body>
+</html>

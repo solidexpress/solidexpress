@@ -59,6 +59,8 @@ const GLYPHS := {
 	"area": "<rect x='5' y='5' width='14' height='14'/><path d='M5 19 19 5M5 12l7 7M12 5l7 7' stroke-opacity='0.55'/>",
 	"mate": "<rect x='4' y='5' width='16' height='5'/><rect x='4' y='14' width='16' height='5' stroke-dasharray='2 2'/><path d='M12 10v4'/>",
 	"solve": "<path d='M6 13l4 4L18 7'/><circle cx='12' cy='12' r='9' stroke-opacity='0.45'/>",
+	"lock": "<rect x='7' y='11' width='10' height='8' rx='1'/><path d='M9 11V8a3 3 0 0 1 6 0v3'/>",
+	"unlock": "<rect x='7' y='11' width='10' height='8' rx='1'/><path d='M9 11V8a3 3 0 0 1 5.2-2'/>",
 	# --- small row actions ---
 	"add": "<path d='M12 5v14M5 12h14'/>",
 	"delete": "<path d='M6 8h12l-1 12H7zM4.5 8h15M9.5 8V5.5h5V8'/><path d='M10 11.5v5M14 11.5v5'/>",
