@@ -39,7 +39,22 @@ if [[ ! -f game/bin/libplanegcs.dylib ]]; then
   exit 1
 fi
 
+# Godot 4.7.1 refuses universal/arm64 export unless ETC2/ASTC is on.
+# Headless --import on macOS can drop the project.godot flag, so pin it
+# in override.cfg (loaded after project.godot, not rewritten by --import).
+pin_vram_formats() {
+  cat > "$ROOT/game/override.cfg" <<'EOF'
+[rendering]
+
+textures/vram_compression/import_etc2_astc=true
+textures/vram_compression/import_s3tc_bptc=true
+EOF
+}
+
+pin_vram_formats
 "$GODOT" --headless --path game --import >/dev/null 2>&1 || true
+pin_vram_formats
+
 rm -rf "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 mkdir -p "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 
@@ -65,6 +80,7 @@ BUNDLE_DIR="$(dirname "$OUT_APP")"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$BUNDLE_DIR/THIRD_PARTY.md"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$BUNDLE_DIR/LICENSE"
 mkdir -p "$OUT_APP/Contents/Resources"
+[[ -f "$ROOT/NOTICE" ]] && cp -f "$OUT_APP/Contents/Resources/NOTICE" 2>/dev/null || true
 [[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$OUT_APP/Contents/Resources/NOTICE"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_APP/Contents/Resources/THIRD_PARTY.md"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_APP/Contents/Resources/LICENSE"
