@@ -38,8 +38,16 @@ git push origin v0.1.0
 Workflow `.github/workflows/release.yml`:
 
 1. Kernel tests on Ubuntu
-2. `export-linux.sh`
-3. GitHub Release with `.tar.gz` + checksum
+2. `export-linux.sh` / `export-windows.sh` / `export-macos.sh`
+3. macOS: Developer ID sign, `notarytool`, staple (`packaging/macos/sign-and-notarize.sh`)
+4. GitHub Release with Linux/Windows/macOS artifacts + checksums
+
+macOS signing secrets (repo Actions secrets):
+
+- `APPLE_CERTIFICATE` — base64 Developer ID Application `.p12`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_TEAM_ID`
+- `APPLE_API_KEY_ID` / `APPLE_API_ISSUER_ID` / `APPLE_API_KEY` — App Store Connect API key (`.p8` contents)
 
 ## Demo movies (marketing site)
 
@@ -78,6 +86,3 @@ make release-linux    # same as export-linux.sh (after fetch-godot-templates)
 
 ## Next CI steps
 - Windows vcpkg binary cache key: bump the cache key in .github/workflows/release.yml together with EXPECTED_VCPKG_WIN_CACHE_KEY in scripts/release/test_windows_vcpkg_cache_key.py (CI pin test).
-
-
-- `windows` / `macos` jobs in `release.yml` (currently disabled): vcpkg/homebrew OCCT, cache godot-cpp, attach artifacts to the same GitHub Release.
