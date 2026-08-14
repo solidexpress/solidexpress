@@ -39,50 +39,14 @@ if [[ ! -f game/bin/libplanegcs.dylib ]]; then
   exit 1
 fi
 
-# Godot 4.7.1 refuses universal/arm64 export unless ETC2/ASTC is on.
-# The editor (--import / --export-release) calls ProjectSettings::setup with
-# ignore_override=true, so override.cfg is never read during export.
-# A separate --import can also rewrite project.godot and drop the flag.
-# Pin the setting in project.godot itself and skip a standalone --import;
-# --export-release already runs first_scan.
-pin_vram_formats() {
-  python3 - "$ROOT/game/project.godot" <<'PY'
-import sys
-from pathlib import Path
-p = Path(sys.argv[1])
-text = p.read_text()
-out = []
-for line in text.splitlines(True):
-    s = line.strip()
-    if s.startswith("textures/vram_compression/import_etc2_astc=") or s.startswith(
-        "textures/vram_compression/import_s3tc_bptc="
-    ):
-        continue
-    out.append(line)
-text = "".join(out)
-if "[rendering]" not in text:
-    if not text.endswith("\n"):
-        text += "\n"
-    text += "\n[rendering]\n"
-idx = text.find("[rendering]")
-nl = text.find("\n", idx)
-insert = (
-    "\ntextures/vram_compression/import_etc2_astc=true\n"
-    "textures/vram_compression/import_s3tc_bptc=true\n"
-)
-text = text[: nl + 1] + insert + text[nl + 1 :]
-p.write_text(text)
-print("pinned VRAM formats in", p)
-PY
-  cat > "$ROOT/game/override.cfg" <<'EOF'
-[rendering]
+# arm64 export requires Import ETC2 ASTC. v0.0.1 succeeded with --import then
+# --export-release against project.godot. A separate Godot script then saves the
+# setting through ProjectSettings so the export process sees GLOBAL_GET=true.
+echo "==> Godot import"
+"$GODOT" --headless --path game --import >/dev/null 2>&1 || true
 
-textures/vram_compression/import_etc2_astc=true
-textures/vram_compression/import_s3tc_bptc=true
-EOF
-}
-
-pin_vram_formats
+echo "==> pin ETC2 via ProjectSettings"
+"$GODOT" --headless --path game -s "$ROOT/scripts/release/pin_vram.gd"
 rm -f "$ROOT/game/project.binary"
 echo "==> project.godot VRAM flags before export:"
 grep -n "vram_compression" "$ROOT/game/project.godot" || true
@@ -90,14 +54,13 @@ grep -n "vram_compression" "$ROOT/game/project.godot" || true
 rm -rf "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 mkdir -p "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 
-echo "==> Godot export-release preset=${PRESET}"
+echo "==> Godot export-release preset=${PRESET} (arm64)"
 "$GODOT" --headless --path game --export-release "$PRESET" "$OUT_APP"
 if [[ ! -d "$OUT_APP" ]]; then echo "Export failed: $OUT_APP" >&2; exit 1; fi
 
 # Ensure PlaneGCS is present before bundling (Godot may not copy non-gdextension dylibs).
 mkdir -p "$OUT_APP/Contents/MacOS" "$OUT_APP/Contents/Frameworks"
 cp -f game/bin/libplanegcs.dylib "$OUT_APP/Contents/MacOS/"
-# If Godot omitted libsxcore from Frameworks, place it ourselves.
 if [[ ! -f "$OUT_APP/Contents/Frameworks/libsxcore.dylib" ]]; then
   cp -f game/bin/libsxcore.dylib "$OUT_APP/Contents/Frameworks/"
 fi
@@ -106,7 +69,6 @@ echo "==> bundle Homebrew OCCT / transitive dylibs into Frameworks"
 chmod +x "$ROOT/packaging/macos/bundle-dylibs.sh"
 "$ROOT/packaging/macos/bundle-dylibs.sh" "$OUT_APP"
 
-# Legal notices next to the .app (and inside Resources for Finder discovery).
 BUNDLE_DIR="$(dirname "$OUT_APP")"
 [[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$BUNDLE_DIR/NOTICE"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$BUNDLE_DIR/THIRD_PARTY.md"
@@ -117,7 +79,6 @@ mkdir -p "$OUT_APP/Contents/Resources"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_APP/Contents/Resources/LICENSE"
 
 rm -f "$ARCHIVE"
-# Zip the whole release folder so NOTICE / LICENSE sit beside the .app.
 ditto -c -k --sequesterRsrc --keepParent "$BUNDLE_DIR" "$ARCHIVE"
 shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
 echo "OK: $ARCHIVE"
