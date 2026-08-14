@@ -43,7 +43,7 @@ var notes_edit: TextEdit
 var file_dialog: FileDialog
 var confirm_dialog: ConfirmationDialog
 var current_path := ""
-enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF }
+enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF, OPEN_IN_SLICER }
 var _file_action: FileAction = FileAction.NONE
 var _pending_discard: Callable = Callable()
 var _file_popup: PopupMenu
@@ -254,6 +254,7 @@ func _build_ui() -> void:
 	_file_popup.add_item("Export STL...", 6)
 	_file_popup.add_item("Export 3MF...", 11)
 	_file_popup.add_item("Export glTF...", 12)
+	_file_popup.add_item("Open in Slicer...", 15)
 	_file_popup.add_separator()
 	_file_popup.add_item("Export AI Context...", 7)
 	_file_popup.add_item("Export Drawing (SVG)...", 8)
@@ -1665,6 +1666,12 @@ func _on_file_menu(id: int) -> void:
 			_show_file_dialog(FileAction.EXPORT_3MF, FileDialog.FILE_MODE_SAVE_FILE, "*.3mf ; 3MF")
 		12:
 			_show_file_dialog(FileAction.EXPORT_GLTF, FileDialog.FILE_MODE_SAVE_FILE, "*.gltf ; glTF")
+		15:
+			var res := OpenInSlicer.open_in_slicer(view.doc, OS.has_feature("headless"))
+			if res.get("files", PackedStringArray()).size() > 0:
+				_on_status("Open in Slicer prepared %d file(s)" % res["files"].size())
+			else:
+				_on_status("Open in Slicer failed (no files)")
 		13:
 			_show_file_dialog(FileAction.EXPORT_DRAWING_DXF, FileDialog.FILE_MODE_SAVE_FILE, "*.dxf ; DXF drawing")
 		14:
