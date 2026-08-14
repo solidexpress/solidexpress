@@ -446,6 +446,22 @@ SolveResult PlaneGCSBackendImpl::solve(Sketch& sketch) {
     };
     for (int t : conflicting) result.conflicting.push_back(tag_to_id(t));
     for (int t : redundant) result.redundant.push_back(tag_to_id(t));
+
+    // Creo-style weak dims yield: if the solve failed, drop any conflicting
+    // weak constraint and re-solve (Inventor Relax / conflict yield).
+    if (result.status == SolveStatus::Failed) {
+        bool dropped = false;
+        for (const auto& id : result.conflicting) {
+            for (const auto& c : sketch.constraints()) {
+                if (c.id == id && c.weak) {
+                    sketch.remove_constraint(id);
+                    dropped = true;
+                    break;
+                }
+            }
+        }
+        if (dropped) return solve(sketch);
+    }
     return result;
 }
 
