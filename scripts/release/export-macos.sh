@@ -80,7 +80,6 @@ BUNDLE_DIR="$(dirname "$OUT_APP")"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$BUNDLE_DIR/THIRD_PARTY.md"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$BUNDLE_DIR/LICENSE"
 mkdir -p "$OUT_APP/Contents/Resources"
-[[ -f "$ROOT/NOTICE" ]] && cp -f "$OUT_APP/Contents/Resources/NOTICE" 2>/dev/null || true
 [[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$OUT_APP/Contents/Resources/NOTICE"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_APP/Contents/Resources/THIRD_PARTY.md"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_APP/Contents/Resources/LICENSE"
