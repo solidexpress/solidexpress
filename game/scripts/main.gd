@@ -1031,8 +1031,8 @@ func _sweep_profile_along_path() -> void:
 
 
 func _merge_selected_sketches(mode: String) -> void:
-	if selected_sketch_pads.size() < 2:
-		_on_status("Select 2+ sketch pads (Ctrl+click) to merge")
+	if selected_sketch_pads.is_empty():
+		_on_status("Select open rail pad(s) to create a Path")
 		return
 	var fids := PackedStringArray()
 	for fid in selected_sketch_pads:
