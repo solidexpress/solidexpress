@@ -80,11 +80,18 @@ var _last_saved_revision := 0
 
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
+	# Ensure window/display scale is finalized (macOS Retina may report 1.0
+	# on the very first frame). Defer one frame before computing UiScale.
+	await get_tree().process_frame
+	UiScale.refresh()
+	_apply_ui_theme()
 	_build_world()
 	_build_ui()
 	_build_autosave()
 	# OS file drops (STL / SVG / STEP / .sxp) onto the viewport.
 	get_window().files_dropped.connect(_on_files_dropped)
+	# Scale is DPI-based — keep it put on plain resize; only reflow docks.
+	get_viewport().size_changed.connect(_on_viewport_resized)
 	# Keyboard cheat sheet on F1, above everything else.
 	help_overlay = HelpOverlay.new()
 	add_child(help_overlay)
@@ -234,6 +241,7 @@ func _build_ui() -> void:
 	menu_bar.add_child(menu_row)
 	menu_row.add_child(file_btn)
 	_file_popup = file_btn.get_popup()
+	_style_menu_button(file_btn)
 	_file_popup.add_item("New", 0)
 	_file_popup.add_item("Open...", 1)
 	_file_popup.add_item("Save", 2)
@@ -254,6 +262,7 @@ func _build_ui() -> void:
 	_file_popup.add_separator()
 	_recent_menu = PopupMenu.new()
 	_recent_menu.name = "RecentMenu"
+	_style_popup_menu(_recent_menu)
 	_file_popup.add_child(_recent_menu)
 	_file_popup.add_submenu_node_item("Recent", _recent_menu)
 	_recent_menu.id_pressed.connect(_on_recent_menu)
@@ -267,6 +276,7 @@ func _build_ui() -> void:
 	edit_btn.flat = false
 	menu_row.add_child(edit_btn)
 	_edit_popup = edit_btn.get_popup()
+	_style_menu_button(edit_btn)
 	_edit_popup.add_item("Undo", 0)
 	_edit_popup.add_item("Redo", 1)
 	_edit_popup.add_separator()
@@ -288,6 +298,7 @@ func _build_ui() -> void:
 	insert_btn.flat = false
 	menu_row.add_child(insert_btn)
 	var insert_popup := insert_btn.get_popup()
+	_style_menu_button(insert_btn)
 	insert_popup.add_item("Components…", 10)
 	insert_popup.add_separator()
 	insert_popup.add_item("Datum Plane XY", 0)
@@ -308,6 +319,7 @@ func _build_ui() -> void:
 	mode_btn.tooltip_text = "Draw / Sheet / Cam / Sim / Form — one rail, replaces Modify"
 	menu_row.add_child(mode_btn)
 	_mode_popup = mode_btn.get_popup()
+	_style_menu_button(mode_btn)
 	_mode_popup.add_item("Model", 0)
 	_mode_popup.add_item("Draw", 1)
 	_mode_popup.add_item("Sheet", 2)
@@ -323,6 +335,7 @@ func _build_ui() -> void:
 	view_btn.flat = false
 	menu_row.add_child(view_btn)
 	var view_popup := view_btn.get_popup()
+	_style_menu_button(view_btn)
 	view_popup.add_check_item("Variables Panel", 0)
 	view_popup.add_separator()
 	view_popup.add_item("Set Active Plane…", 1)
@@ -685,6 +698,33 @@ func _build_ui() -> void:
 
 	# Tone down wheel/trackpad jumps on docks and PopupMenus (~45% slower).
 	UiScroll.soften_tree(ui)
+
+## Window theme: readable default font that does not track window size.
+func _apply_ui_theme() -> void:
+	var theme := Theme.new()
+	theme.default_font_size = UiScale.font(13)
+	get_window().theme = theme
+
+
+func _style_menu_button(btn: MenuButton) -> void:
+	var fs := UiScale.font(13)
+	btn.add_theme_font_size_override("font_size", fs)
+	_style_popup_menu(btn.get_popup())
+
+
+func _style_popup_menu(popup: PopupMenu) -> void:
+	if popup == null:
+		return
+	popup.add_theme_font_size_override("font_size", UiScale.font(13))
+
+
+## Resize expands the 3D viewport only — menu/chrome scale stays DPI-fixed.
+## Redock so fixed-pixel panels don't clip when the window shrinks.
+func _on_viewport_resized() -> void:
+	if ops_panel == null:
+		return
+	_update_left_rail()
+	_dock_card_below_rail()
 
 
 func _on_default_view(view_id: String) -> void:
