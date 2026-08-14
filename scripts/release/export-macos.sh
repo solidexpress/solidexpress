@@ -39,7 +39,22 @@ if [[ ! -f game/bin/libplanegcs.dylib ]]; then
   exit 1
 fi
 
+# Godot 4.7.1 refuses universal/arm64 export unless ETC2/ASTC is on.
+# Headless --import on macOS can drop the project.godot flag, so pin it
+# in override.cfg (loaded after project.godot, not rewritten by --import).
+pin_vram_formats() {
+  cat > "$ROOT/game/override.cfg" <<'EOF'
+[rendering]
+
+textures/vram_compression/import_etc2_astc=true
+textures/vram_compression/import_s3tc_bptc=true
+EOF
+}
+
+pin_vram_formats
 "$GODOT" --headless --path game --import >/dev/null 2>&1 || true
+pin_vram_formats
+
 rm -rf "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 mkdir -p "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 
