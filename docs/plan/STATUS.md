@@ -191,55 +191,6 @@ Round 19 test state: kernel 210 cases / 7043 assertions; Godot voice 29 + help 1
 - [x] Video 8 — Reference geometry after insert: existing Insert → Datum Plane/Axis/Point flow verified alongside inserted components (UI test).
 
 ## Later phases
-<<<<<<< HEAD
-See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched voice.
-
-## Phase 21 — Precision placement (friendliness)
-- [x] 21.1 Pickable hole placement: **Place hole…** arms a pick; nearby magnets snap
-  (corner → edge **Inset**, mid / face mid as-is); far clicks place freely. **Inset** defaults from
-  Hole Ø + face thickness + material softness (TPU/thick > steel/thin). **Apply hole** remains face-center
-- [x] 21.2 Property panel angles in degrees: revolve `angle` and circular `total_angle` display °,
-  convert ↔ kernel radians (JSON storage unchanged)
-- [x] 21.3 Pickable pattern / mirror: **Linear…** / **Circular…** / **Mirror…** arm edge/face picks;
-  one-click Linear/Circular/Mirror keep +X / +Z / +X-face defaults
-- [x] 21.4 Expose helix + thread: `graph_add_helix` / `graph_add_thread` bindings;
-  Insert → Helix Spring…; Modify → Thread… on selected body
-- [x] 21.5 Graph undo hygiene: `CommandStack::push_executed` so graph edits do not double-regenerate;
-  push/pull stores face_point/normal fallback; modifying features no-op when target is suppressed
-
-## Architecture hardening (2026-07-24)
-- [x] ADR ledger: [decisions.md](decisions.md) (FeatureGraph SoR, UUID topology refs, non-throwing Godot boundary, opt-in async regen)
-- [x] Interactive modeling routes through `graph_add_*` (mirror/pattern/shell/offset/push-pull/draft/dress-up); free-body direct commands remain fallbacks
-- [x] Feature apply handlers split under `sxkernel/src/features/`; UI `CommandRegistry` + `SelectionService`; `SxMeasure` / `SxInterop` facades
-- [x] CI: `.github/workflows/ci.yml` runs kernel Catch2 on Ubuntu; Godot job stubbed until `tools/godot` is provisioned
-- [x] `SxDocument.set_async_regen` / `graph_regenerate_async` / `graph_async_regen_poll` spike (default off)
-
-## Needle-nose pliers gaps (2026-07-28)
-- [x] Survey: [workflow-study-needle-nose-pliers.md](../survey/workflow-study-needle-nose-pliers.md)
-- [x] P0: `instance_revolute_axis` + MOVE_INSTANCE revolute drag; AssemblyPanel instance↔instance mates
-- [x] P1: Extrude end conditions `blind` / `through_all` / `midplane`; thin wall + flip in sketch finish chrome → `finish_extrude`
-- [x] Golden: `game/tests/run_pliers_motion_tests.gd` (jaws+pin, concentric+coincident, drag angle) — gated in `test-godot`
-
-## Major 1c — Hole Wizard MVP (2026-07-29)
-- [x] Kernel Hole `positions: [[x,y,z],...]` (prefer over single `position` when non-empty); sequential cuts
-- [x] Catch2 `[feathole][holewizard]`; GDExtension `graph_add_holes` (additive)
-- [x] Ops: **Hole Wizard…** multi-click → **Apply holes** / Enter; Esc cancel; single Apply/Place unchanged
-- [x] Godot `run_hole_wizard_tests.gd` in `test-godot`
-
-## Sketch leftover audit (2026-07-29)
-- [x] Audit: do NOT reopen full sketch overhaul (suites green)
-- [x] Thin wall + flip wired into sketch finish chrome → finish_extrude
-- [x] run_pliers_motion_tests.gd added to test-godot
-- Stale: STATUS 2.6 "constraint toolbar still TODO" is obsolete
-
-## Ladder residual (see ROADMAP)
-- [x] Open-profile **cut** (material-side / Flip Side, no thin wall) — half-plane tool + Flip chrome; films `open_profile_cut`
-- [x] Flip Mate Alignment UI (kernel `Mate.flip` was already there) — Assembly checkbox + film `flip_mate_alignment`
-- [x] Selected Contours — disjoint regions fuse as solids; **shared-edge** (circle+nose / chord) via planar split; film `selected_contours` matches SW Video 2 pliers head
-- [x] Mate / instance undo via CommandStack (`AssemblySnapshotCommand`); film `assembly_undo`
-- [x] Revolute joint limits (`Mate.angle_min` / `angle_max` deg) — clamp on solve + drag
-- [ ] Multi-doc component insert (assembly depth — top open ladder item)
-=======
 See [plan README](README.md) (where to park later ideas), [roadmap](roadmap.md) (Waves 0–4, picks A1–A20), and [landing-protocol](landing-protocol.md) (chrome + film ids). Friendliness plan (phases 21-27) + AI-first solver upgrade for unmatched voice.
 
 **Assembly data-model note:** face-pair mates still load. Wave 0.1 adds `MateType::Fastened` plus implicit connectors (`implicit_connector`); do not add gear/cam/width onto the face-pair struct (Wave 4.10 uses connectors).
@@ -341,7 +292,54 @@ See [print-first.md](../survey/print-first.md). Form rail = print prep.
 - [x] 5.1 Wall thickness + digest; film `print_thin_wall`
 - [x] 5.2 Overhang + orient-to-bed; film `print_overhang_orient`
 - [x] 5.3 3MF `sx:bed` metadata + `print.json` in `.sxp`
->>>>>>> feature-src/main
+
+See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched voice.
+
+## Phase 21 — Precision placement (friendliness)
+- [x] 21.1 Pickable hole placement: **Place hole…** arms a pick; nearby magnets snap
+  (corner → edge **Inset**, mid / face mid as-is); far clicks place freely. **Inset** defaults from
+  Hole Ø + face thickness + material softness (TPU/thick > steel/thin). **Apply hole** remains face-center
+- [x] 21.2 Property panel angles in degrees: revolve `angle` and circular `total_angle` display °,
+  convert ↔ kernel radians (JSON storage unchanged)
+- [x] 21.3 Pickable pattern / mirror: **Linear…** / **Circular…** / **Mirror…** arm edge/face picks;
+  one-click Linear/Circular/Mirror keep +X / +Z / +X-face defaults
+- [x] 21.4 Expose helix + thread: `graph_add_helix` / `graph_add_thread` bindings;
+  Insert → Helix Spring…; Modify → Thread… on selected body
+- [x] 21.5 Graph undo hygiene: `CommandStack::push_executed` so graph edits do not double-regenerate;
+  push/pull stores face_point/normal fallback; modifying features no-op when target is suppressed
+
+## Architecture hardening (2026-07-24)
+- [x] ADR ledger: [decisions.md](decisions.md) (FeatureGraph SoR, UUID topology refs, non-throwing Godot boundary, opt-in async regen)
+- [x] Interactive modeling routes through `graph_add_*` (mirror/pattern/shell/offset/push-pull/draft/dress-up); free-body direct commands remain fallbacks
+- [x] Feature apply handlers split under `sxkernel/src/features/`; UI `CommandRegistry` + `SelectionService`; `SxMeasure` / `SxInterop` facades
+- [x] CI: `.github/workflows/ci.yml` runs kernel Catch2 on Ubuntu; Godot job stubbed until `tools/godot` is provisioned
+- [x] `SxDocument.set_async_regen` / `graph_regenerate_async` / `graph_async_regen_poll` spike (default off)
+
+## Needle-nose pliers gaps (2026-07-28)
+- [x] Survey: [workflow-study-needle-nose-pliers.md](../survey/workflow-study-needle-nose-pliers.md)
+- [x] P0: `instance_revolute_axis` + MOVE_INSTANCE revolute drag; AssemblyPanel instance↔instance mates
+- [x] P1: Extrude end conditions `blind` / `through_all` / `midplane`; thin wall + flip in sketch finish chrome → `finish_extrude`
+- [x] Golden: `game/tests/run_pliers_motion_tests.gd` (jaws+pin, concentric+coincident, drag angle) — gated in `test-godot`
+
+## Major 1c — Hole Wizard MVP (2026-07-29)
+- [x] Kernel Hole `positions: [[x,y,z],...]` (prefer over single `position` when non-empty); sequential cuts
+- [x] Catch2 `[feathole][holewizard]`; GDExtension `graph_add_holes` (additive)
+- [x] Ops: **Hole Wizard…** multi-click → **Apply holes** / Enter; Esc cancel; single Apply/Place unchanged
+- [x] Godot `run_hole_wizard_tests.gd` in `test-godot`
+
+## Sketch leftover audit (2026-07-29)
+- [x] Audit: do NOT reopen full sketch overhaul (suites green)
+- [x] Thin wall + flip wired into sketch finish chrome → finish_extrude
+- [x] run_pliers_motion_tests.gd added to test-godot
+- Stale: STATUS 2.6 "constraint toolbar still TODO" is obsolete
+
+## Ladder residual (see ROADMAP)
+- [x] Open-profile **cut** (material-side / Flip Side, no thin wall) — half-plane tool + Flip chrome; films `open_profile_cut`
+- [x] Flip Mate Alignment UI (kernel `Mate.flip` was already there) — Assembly checkbox + film `flip_mate_alignment`
+- [x] Selected Contours — disjoint regions fuse as solids; **shared-edge** (circle+nose / chord) via planar split; film `selected_contours` matches SW Video 2 pliers head
+- [x] Mate / instance undo via CommandStack (`AssemblySnapshotCommand`); film `assembly_undo`
+- [x] Revolute joint limits (`Mate.angle_min` / `angle_max` deg) — clamp on solve + drag
+- [x] Multi-doc component insert (assembly depth — landed)
 
 ## Environment notes
 - System deps installed via apt: ninja-build, zip, libocct-*-dev (7.9.2), libeigen3-dev, libboost-dev

@@ -2,11 +2,9 @@
 
 A long-running, agent-executable build plan for a parametric MCAD application, derived from the [feature survey](../survey/README.md). The scope target is the widest feature set in the [master feature list](../survey/master-feature-list.md), sequenced so the most common capabilities are built first and every phase is load-bearing foundation for the phases above it.
 
-<<<<<<< HEAD
-**What’s next / priority order:** [ROADMAP.md](ROADMAP.md). This file is the long P0–P11 catalog and architecture bible — not the weekly priority list. Done/not-done: [STATUS.md](STATUS.md).
-=======
 **Product sequence and tool-design picks** live in [roadmap.md](roadmap.md) and [../survey/tool-approaches.md](../survey/tool-approaches.md). **How each feature lands** (chrome, films, L1–L5) is [landing-protocol.md](landing-protocol.md). Index: [README.md](README.md). Those documents name a winner per capability (Onshape connectors, Creo/Inventor sketch relax, Plasticity fillet feel, IronCAD TriBall, FreeCAD TNP, …). When they disagree with the "majority of the seven" default below, **the roadmap wins on how the tool works**. This plan still wins on architecture, licensing, cards, and the `SolverBackend` seam.
->>>>>>> feature-src/main
+
+**What’s next / priority order:** [ROADMAP.md](ROADMAP.md). This file is the long P0–P11 catalog and architecture bible — not the weekly priority list. Done/not-done: [STATUS.md](STATUS.md).
 
 This plan is written to be executed **autonomously for long stretches without user input, with parallel workstreams**, by AI agents. Sections "Execution protocol" and the per-phase workstream tables encode how.
 
