@@ -2035,16 +2035,44 @@ func _infer_rect(l1: String, l2: String, l3: String, l4: String) -> void:
 
 ## Change the value of a recorded dimensional constraint (by index into
 ## `dimensions`) and re-solve. Returns the solve status ("" on bad index).
-func set_dimension_value(index: int, value: float) -> String:
+func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	if index < 0 or index >= dimensions.size():
 		return ""
 	var dim: Dictionary = dimensions[index]
 	var cid: String = dim.get("cid", "")
 	if cid == "":
 		return ""
-	if not sketch.set_constraint_value(cid, value):
-		return ""
-	dim["value"] = value
+	if typeof(value_or_expr) == TYPE_STRING:
+		var expr := str(value_or_expr).strip_edges()
+		if expr.begins_with("=") or (not expr.is_valid_float() and expr.length() > 0):
+			if not expr.begins_with("="):
+				expr = "=" + expr
+			sketch.set_constraint_expr(cid, expr)
+			dim["expr"] = expr
+		else:
+			var value := float(expr)
+			if not sketch.set_constraint_value(cid, value):
+				return ""
+			dim["value"] = value
+			dim.erase("expr")
+	else:
+		var value := float(value_or_expr)
+		if not sketch.set_constraint_value(cid, value):
+			return ""
+		dim["value"] = value
+		dim.erase("expr")
+	# Resolve expressions from document variables before solve.
+	if view != null and view.doc != null:
+		var env2 := {}
+		for entry in view.doc.list_variables():
+			if typeof(entry) == TYPE_DICTIONARY and entry.has("value"):
+				var vv = entry["value"]
+				if typeof(vv) == TYPE_FLOAT or typeof(vv) == TYPE_INT:
+					env2[str(entry.get("name", ""))] = float(vv)
+		if not env2.is_empty():
+			sketch.resolve_expressions(env2)
+	if dim.has("expr"):
+		dim["value"] = sketch.constraint_info(cid).get("value", dim.get("value", 0.0))
 	dimensions[index] = dim
 	var res := run_solve()
 	_redraw()

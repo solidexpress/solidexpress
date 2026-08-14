@@ -953,6 +953,51 @@ func body_screen_aabb(body_id: String, camera: Camera3D, _model_space: Node3D = 
 	return Rect2(mn, mx - mn)
 
 
+## Feature similarity key for Select Similar (primitive kind or feature type).
+func body_similarity_key(body_id: String) -> String:
+	var info := feature_info(body_id)
+	if info.is_empty():
+		return ""
+	var t := str(info.get("type", ""))
+	if t == "primitive":
+		return "primitive:%s" % str(feature_params(body_id).get("kind", ""))
+	return t
+
+
+## Expand selection to every visible body sharing a similarity key with the
+## current selection (or primary body). Returns how many bodies were added.
+func select_similar() -> int:
+	var seeds: Array[String] = []
+	for b in selected_bodies:
+		seeds.append(b)
+	if seeds.is_empty() and selected_body != "":
+		seeds.append(selected_body)
+	if seeds.is_empty():
+		return 0
+	var keys := {}
+	for b in seeds:
+		var k := body_similarity_key(b)
+		if k != "":
+			keys[k] = true
+	if keys.is_empty():
+		return 0
+	var added := 0
+	for id in _body_nodes:
+		if hidden_bodies.has(id) or selected_bodies.has(id):
+			continue
+		if keys.has(body_similarity_key(id)):
+			selected_bodies.append(id)
+			added += 1
+	if added > 0:
+		selected_faces.clear()
+		selected_edges.clear()
+		_sync_primary_from_sets()
+		_apply_selection_materials()
+		_highlight_edge()
+		selection_changed.emit(selected_body, selected_face)
+	return added
+
+
 # --- visibility (hide / isolate) ---
 
 func set_body_hidden(id: String, hidden: bool) -> void:
