@@ -8,6 +8,8 @@ A survey of the seven major commercial parametric mechanical CAD (MCAD) applicat
 
 `solidexpress` aims to be 3D modeling software in the SolidWorks mold. Before designing anything, we need a requirements catalog grounded in what the market actually ships. The [master feature list](master-feature-list.md) is written vendor-neutrally so it doubles as that catalog; the [matrix](feature-matrix.md) and [profiles](profiles/) show where each competitor is strong, weak, or charging extra — i.e., where the opportunities are. Near-term script ladder (Nick Ler beginner series): [workflow-study-mounting-block.md](workflow-study-mounting-block.md) → [workflow-study-needle-nose-pliers.md](workflow-study-needle-nose-pliers.md).
 
+**What to build, and whose tool to copy:** the [tool-approaches](tool-approaches.md) survey picks a winner per capability (including products outside the original seven). The sequenced product plan that implements those picks is [../plan/roadmap.md](../plan/roadmap.md).
+
 ## Documents
 
 | Document | Contents |
@@ -15,8 +17,15 @@ A survey of the seven major commercial parametric mechanical CAD (MCAD) applicat
 | [master-feature-list.md](master-feature-list.md) | ~230 features across 16 categories, each with a canonical name and a vendor-neutral description of what it does and why it matters. The core deliverable. |
 | [feature-matrix.md](feature-matrix.md) | Products-by-features support matrix (Full / Partial / Add-on / Not supported) with ~190 footnotes covering per-product terminology and tier nuances. |
 | [interaction-patterns.md](interaction-patterns.md) | How peers make actions visually discoverable (hover, gizmos, context chrome) and how SolidExpress maps those patterns. |
+<<<<<<< HEAD
 | [workflow-study-mounting-block.md](workflow-study-mounting-block.md) | Click-count study: SolidWorks “brick + through-hole” (processed Cut Extrude video + beginner recipes) vs SolidExpress Place hole / sketch→cut. |
 | [workflow-study-needle-nose-pliers.md](workflow-study-needle-nose-pliers.md) | Gap map for the SolidWorks needle-nose pliers series (midplane/thin/through-all + revolute DOF drag). |
+=======
+| [tool-approaches.md](tool-approaches.md) | How the best *tools* work — including Shapr3D, Plasticity, IronCAD, Solid Edge, FreeCAD — and the binding SolidExpress picks (A1–A20). |
+| [print-first.md](print-first.md) | How a part becomes a print (P1–P6): wall/overhang/orient/3MF. Form rail, not a slicer. |
+| [../plan/roadmap.md](../plan/roadmap.md) | Sequenced feature waves that implement those picks against current STATUS. |
+| [../plan/landing-protocol.md](../plan/landing-protocol.md) | How each wave row lands: chrome budget, L1–L5, film ids, slices. |
+>>>>>>> feature-src/main
 | [profiles/](profiles/) | One deep-dive per product: positioning, architecture (kernel, formats, deployment), standout features, weaknesses, licensing/pricing, ecosystem. |
 
 ## Products and versions surveyed
@@ -31,7 +40,9 @@ A survey of the seven major commercial parametric mechanical CAD (MCAD) applicat
 | NX / Designcenter | Siemens | June 2026 release (2606) | [profiles/nx.md](profiles/nx.md) |
 | CATIA | Dassault Systèmes | V5-6R2026 and 3DEXPERIENCE R2026x | [profiles/catia.md](profiles/catia.md) |
 
-Scope decision: the survey covers commercial parametric MCAD applications only. Open-source CAD (FreeCAD, SolveSpace), geometry kernels/libraries (Parasolid, OpenCASCADE), and adjacent tools (Rhino, Blender, OpenSCAD) were excluded per project direction.
+Scope decision for the **feature catalog and matrix**: commercial parametric MCAD applications only. Open-source CAD (FreeCAD, SolveSpace), geometry kernels/libraries (Parasolid, OpenCASCADE), and adjacent tools (Rhino, Blender, OpenSCAD) were excluded from those two documents per original project direction.
+
+The **tool-approaches** survey deliberately re-opens that door. Shapr3D, Plasticity, IronCAD, Solid Edge, FreeCAD, Rhino/Grasshopper, and SolveSpace are included there because several of them have a better *tool* for a job SolidExpress still has to do — even when they are not full MCAD suites. See [tool-approaches.md](tool-approaches.md).
 
 ## Methodology
 

@@ -74,6 +74,10 @@ add_subdirectory(sxkernel)
 # and thirdparty/whisper.cpp is present — see sxvoice/CMakeLists.txt.
 add_subdirectory(sxvoice)
 
+# Headless CLI — links sxkernel only (Wave 3.8).
+add_executable(sxcli sxcli/main.cpp)
+target_link_libraries(sxcli PRIVATE sxkernel)
+
 if(SX_BUILD_GDEXTENSION)
     # Pin the API to the exact 4.7-stable binary in tools/godot (dumped via
     # --dump-extension-api). The interface JSON comes bundled with godot-cpp.

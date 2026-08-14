@@ -184,7 +184,14 @@ Round 19 test state: kernel 210 cases / 7043 assertions; Godot voice 29 + help 1
 - [x] Kernel `[featimport]` STL case; UI `test_graph_import_stl` (269 UI checks)
 - [x] Edit menu: Undo/Redo/Cut/Copy/Paste/Paste Special/Select All/Delete; Ctrl+X cut (materialized clipboard); Ctrl+Shift+V paste special; sketch entity clipboard; context-menu clipboard
 
+## Assembly ladder (SolidWorks Insert Components series)
+- [x] Video 5 — multi-doc `.sxp` Insert Components: `sx::insert_sxp` deep-copies bodies from an external `.sxp`, places instances (first Fixed), records `source_path`; Insert → Components… menu + AssemblyPanel button; source bodies auto-hidden. Kernel `[insert_sxp]` + `run_insert_component_tests.gd`.
+- [x] Video 6 — Fix/Float restraints: `Instance.fixed` + `set_instance_fixed` (upserts/removes Fixed mate); drag refused while Fixed; AssemblyPanel lock/unlock toggle.
+- [x] Video 7 — Standard mate gap: `plane_parallel` (orientation-only; translation free) alongside existing coincident/concentric/fixed.
+- [x] Video 8 — Reference geometry after insert: existing Insert → Datum Plane/Axis/Point flow verified alongside inserted components (UI test).
+
 ## Later phases
+<<<<<<< HEAD
 See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched voice.
 
 ## Phase 21 — Precision placement (friendliness)
@@ -232,6 +239,109 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 - [x] Mate / instance undo via CommandStack (`AssemblySnapshotCommand`); film `assembly_undo`
 - [x] Revolute joint limits (`Mate.angle_min` / `angle_max` deg) — clamp on solve + drag
 - [ ] Multi-doc component insert (assembly depth — top open ladder item)
+=======
+See [plan README](README.md) (where to park later ideas), [roadmap](roadmap.md) (Waves 0–4, picks A1–A20), and [landing-protocol](landing-protocol.md) (chrome + film ids). Friendliness plan (phases 21-27) + AI-first solver upgrade for unmatched voice.
+
+**Assembly data-model note:** face-pair mates still load. Wave 0.1 adds `MateType::Fastened` plus implicit connectors (`implicit_connector`); do not add gear/cam/width onto the face-pair struct (Wave 4.10 uses connectors).
+
+## Wave 0 — Daily-driver close (landing protocol)
+- [x] 0.1 Mate connectors + Fastened (`sx/mates.hpp`, AssemblyPanel, `connector_overlay.gd`, film `fasten_bolt`)
+- [x] 0.2 Extrude end conditions (`blind|through_all|to_face|to_next|symmetric`) + PropertyPanel End enum; film `extrude_through_all`
+- [x] 0.3 `FeatureType::DirectEdit` history; import pull commits a timeline row; film `direct_edit_import`
+- [x] 0.4 TriBall gizmo (`triball_gizmo.gd`); film `triball_hole_circle`
+- [x] 0.5/0.6 Concentric/Symmetric/Midpoint/Fix/Collinear + weak dims / Relax; film `sketch_mounting_plate`
+- [x] 0.7 Hole `positions[]` + strip Hole (M6); film `hole_wizard_m6`
+- [x] 0.8 Variable fillet `radius2`; film `fillet_chain_pocket`
+- [x] 0.9 Marking menu + overlapping pick (`marking_menu.gd`, S); film `marking_menu_pick`
+- [x] 0.10 Own DXF R12 + 3MF/glTF export; film `dxf_trace_extrude`
+- [x] 0.11/0.12 Import heal report + interference volume; film `heal_and_clash`
+
+## Tier 0 — honest kernel (audit of earlier stand-ins)
+Six feature cases passed their tests while standing in for the real operation
+(fused boxes, whole-body offsets). Replaced with real OCCT ops in
+`sx/surface_ops.hpp` + `sx/sheet_metal.hpp`, each with a `[tier0]` Catch2 case
+only the real thing passes:
+- [x] `Flange` sweeps a bend section with a cylindrical face; `build_flange`
+  returns folded **and** flat, and they agree on material to within K vs 0.5
+- [x] `Knit` sews with `BRepBuilderAPI_Sewing` (six sheets → one solid) and
+  consumes the sewn bodies
+- [x] `ReplaceFace` trims to a tool surface with `BRepAlgoAPI_Splitter`, honours
+  the picked face, and fails by name when the tool misses
+- [x] `Rib` is swept from an open sketch profile (a second leg adds material)
+- [x] `Wrap` engraves along the surface (`surface_stamp`), silhouette unchanged
+- [x] `Thicken` turns a surface into a solid and refuses a solid
+- [x] Connector hover glyphs are fed from `_update_hover` (the overlay was
+  mounted but `set_hover` was never called); AssemblyPanel shows on a body
+  selection so the *first* instance is placeable
+
+## Wave 1 — Joints + drawings (landing protocol)
+- [x] 1.1 Connector joints + analytic crank-slider (`sx/joints.hpp`, film `crank_slider`)
+- [x] 1.1b Joints are a product feature, not a kernel stub: `joints.json` in the
+  `.sxp` (posed value included), `add_joint` / `joint_list` / `set_joint_value` /
+  `solve_joints` bindings, joint types in the *same* AssemblyPanel type list as
+  mates, joint rows reading the live value, and dragging a jointed part drives
+  its one free DOF (screen-space projection of the axis). `apply_joint` is now
+  absolute, so driving a value is repeatable and zero returns the part home.
+- [x] 1.2 Snap-to-mate on drop: the connector under the cursor lights up mid-drag
+  and the release creates the fastened mate on the part's own nearest connector;
+  film `snap_bolt_drop`
+- [x] 1.3 Exploded views: ViewHud toggle, assembled translation remembered, `.sxp` round-trip; film `explode_gearbox`
+- [x] 1.4 Pattern of instance around the seed joint; film `bolt_circle_pattern`
+- [x] 1.5 In-context snapshots (`sx/xref.hpp`): neighbor edits do not flow until **Update Context** on the consumer timeline row; film `context_update`
+- [x] 1.6/1.7 Drawing document in `.sxp` (sheets, views, scale, title block) + live HLR in Draw mode; associative dims by naming UUIDs; film `drawing_follows_model`
+- [x] 1.8 BOM table + balloons from `Document::instances()`; film `drawing_bom`
+- [x] 1.6 Section / detail hatch; film `drawing_section`
+- [x] 1.9 Own DXF writer + vector PDF, File menu; no new dependency
+- [x] 1.10 Associative convert stores edge UUIDs; film `convert_survives_edit`
+- [x] 1.11 3D sketch as a separate curve set feeding Path; film `sweep_3d_polyline`
+- [x] 1.12 Rib feature + marking-menu verb; film `rib_and_wrap`
+
+## Wave 2 — Sheet metal, frames, surfaces
+- [x] 2.1 Sheet mode + K-factor flange; film `flange_box_flat`
+- [x] 2.2 Split folded|flat overlay (`sheet_metal_view.gd`); film `flat_edits_folded`
+- [x] 2.3 Convert thin solid → sheet metal; film `convert_thin_box`
+- [x] 2.4 Flat on drawing SVG; film `flat_on_drawing`
+- [x] 2.5 Frame members + cut_length; film `frame_cutlist`
+- [x] 2.6 Cosmetic welds + drawing symbol; film `weld_on_sheet`
+- [x] 2.7 Knit-to-solid; film `knit_to_box`
+- [x] 2.8 Zebra ViewHud toggle (section shader path); film `zebra_cylinder`
+- [x] 2.9 Face-local replace; film `replace_face`
+
+## Wave 3 — Queries, cards, rules
+- [x] 3.1 `type=` `created-by=` queries; film `query_hole_walls`
+- [x] 3.2 Card digest sentence; film `card_digest`
+- [x] 3.1 `adjacent-to=` shared-edge walk; adjacency on face cards
+- [x] 3.2 Card digest sentence on the selection card
+- [x] 3.3 User-feature language (`user_csink` recipe); film `user_csink`
+- [x] 3.4 Intent → fastened mate (“make these flush”); film `intent_flush`
+- [x] 3.5 What's Wrong popover from the FailBadge; film `whats_wrong_fillet`
+- [x] 3.6 Auto-dimension chip; film `auto_define_plate`
+- [x] 3.7 `if width > 100 then suppress rib`; film `rules_three_configs`
+- [x] 3.8 `sxcli` links sxkernel only; `cli_bracket_step`
+- [x] 3.9 Propose-on-select chips; film `propose_parallel`
+- [x] Exit film `nl_four_holes`
+
+## Wave 4 — Specialized (spike → film)
+- [x] 4.3 2.5-axis pocket + own post; Cam rail; film `cam_pocket`
+- [x] 4.4 Cantilever deflection scales with L cubed; Sim rail; film `fea_bracket`
+- [x] 4.12 In-base catalog M6x20; film `catalog_fastener`
+- [x] 4.1 Config-aware BOM; film `config_drawing`
+- [x] 4.2 C2 / two-radius fillet; film `fillet_c2`
+- [x] 4.5 SubD spike (fillet-all); film `subd_to_solid`
+- [x] 4.6 PDM-lite version notes (`pdm.json`); film `branch_merge_sxp`
+- [x] 4.7 Tube along a 3D path; film `route_tube`
+- [x] 4.8 Mold core/cavity split; film `core_cavity`
+- [x] 4.9 Mesh boolean volume; film `mesh_boolean`
+- [x] 4.10 Gear ratio on connectors; film `gear_mate`
+- [x] 4.11 PMI as a model-space dim; film `pmi_survives_regen`
+- [x] 4.13 IDF board outline; film `board_in_box`
+
+## Wave 5 — Print-first
+See [print-first.md](../survey/print-first.md). Form rail = print prep.
+- [x] 5.1 Wall thickness + digest; film `print_thin_wall`
+- [x] 5.2 Overhang + orient-to-bed; film `print_overhang_orient`
+- [x] 5.3 3MF `sx:bed` metadata + `print.json` in `.sxp`
+>>>>>>> feature-src/main
 
 ## Environment notes
 - System deps installed via apt: ninja-build, zip, libocct-*-dev (7.9.2), libeigen3-dev, libboost-dev

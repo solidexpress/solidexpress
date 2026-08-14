@@ -7,9 +7,6 @@ extends Node3D
 
 signal document_changed
 signal selection_changed(body_id: String, face_id: String)
-## Exact B-rep hit from the latest select_ray (even when selection is unchanged).
-## Used by armed ops (hole place, pattern direction) that need the pick point.
-signal picked(body_id: String, face_id: String, point: Vector3)
 ## Emitted when section clipping is enabled or cleared (world bg, HUD, etc.).
 signal section_changed(enabled: bool)
 
@@ -30,9 +27,6 @@ const DATUM_POINT_COLOR := Color(0.2, 0.7, 0.45)
 enum DisplayMode { SHADED, SHADED_EDGES, WIREFRAME }
 
 var doc: SxDocument = SxDocument.new()
-## Selection-set helpers (toggle / clear / query). DocumentView keeps owning
-## the arrays below for public API stability.
-var _selection := SelectionService.new()
 ## Primary (most recent) selection — single-select API, kept for panels/tests.
 var selected_body := ""
 var selected_face := ""
@@ -44,10 +38,6 @@ var selected_faces: Array[String] = []
 var selected_edges: Array[String] = []
 ## Selected component instance (viewport click on an instance mesh).
 var selected_instance := ""
-## Last successful select_ray hit (model space). Empty body means no pick yet.
-var last_pick_body := ""
-var last_pick_face := ""
-var last_pick_point := Vector3.ZERO
 ## Pre-selection hover (distinct from selected materials).
 var hovered_body := ""
 var hovered_face := ""
@@ -56,6 +46,7 @@ var display_mode := DisplayMode.SHADED_EDGES
 ## True while a section (clipping) plane is active on body meshes.
 ## Edge overlay lines are not clipped in v1.
 var section_enabled := false
+var zebra_enabled := false
 ## Body ids currently hidden from view / picking (id -> true).
 var hidden_bodies := {}
 ## Body ids remembered by Copy/Cut for Paste (cut clones may be hidden).
@@ -220,16 +211,20 @@ uniform float metallic : hint_range(0.0, 1.0) = 0.92;
 uniform float roughness : hint_range(0.0, 1.0) = 0.35;
 uniform vec4 emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 uniform float emission_energy : hint_range(0.0, 2.0) = 0.0;
+uniform bool zebra_on = false;
+uniform bool section_on = false;
 
 varying vec3 world_position;
+varying vec3 world_normal;
 
 void vertex() {
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 }
 
 void fragment() {
 	// Discard the half-space in front of the section plane.
-	if (dot(world_position - section_point, section_normal) > 0.0) {
+	if (section_on && dot(world_position - section_point, section_normal) > 0.0) {
 		discard;
 	}
 	// Wireframe mode hides solid faces via transparent albedo.
@@ -237,7 +232,13 @@ void fragment() {
 		discard;
 	}
 	bool back = !FRONT_FACING;
-	ALBEDO = albedo_color.rgb * (back ? 0.55 : 1.0);
+	vec3 base = albedo_color.rgb * (back ? 0.55 : 1.0);
+	if (zebra_on) {
+		vec3 n = normalize(world_normal);
+		float bands = sin(dot(n, vec3(8.0, 0.4, 2.0)) * 6.0) * 0.5 + 0.5;
+		base = mix(vec3(0.08, 0.08, 0.09), vec3(0.92, 0.92, 0.90), bands);
+	}
+	ALBEDO = base;
 	METALLIC = metallic;
 	ROUGHNESS = roughness;
 	EMISSION = emission_color.rgb * emission_energy;
@@ -256,7 +257,14 @@ func _make_section_material(albedo: Color, emission: Color = Color(0, 0, 0), emi
 	m.set_shader_parameter("roughness", BODY_ROUGHNESS)
 	m.set_shader_parameter("emission_color", emission)
 	m.set_shader_parameter("emission_energy", emission_energy)
+	m.set_shader_parameter("zebra_on", zebra_enabled)
+	m.set_shader_parameter("section_on", section_enabled)
 	return m
+
+
+func set_zebra(on: bool) -> void:
+	zebra_enabled = on
+	refresh()
 
 
 ## Enable section-view clipping. Fragments with
@@ -613,14 +621,11 @@ func select_ray(origin: Vector3, direction: Vector3, additive := false) -> bool:
 		if not additive:
 			clear_selection()
 		return false
-	_record_pick(hit["body"], hit["face"], hit["point"])
 	if additive:
 		_toggle_hit(hit)
 		return true
 	# First click on a body selects the body; clicking again refines to an
 	# edge (when the hit point is within tolerance of one) or the hit face.
-	# A third click on the same face collapses back to the body. Armed ops
-	# (hole place, etc.) already received `picked` above with the hit point.
 	if selected_body == hit["body"]:
 		var edge := _edge_near_point(hit["body"], hit["point"])
 		if edge != "" and edge != selected_edge:
@@ -631,13 +636,6 @@ func select_ray(origin: Vector3, direction: Vector3, additive := false) -> bool:
 			return true
 	select_entity(hit["body"], "")
 	return true
-
-
-func _record_pick(body_id: String, face_id: String, point: Vector3) -> void:
-	last_pick_body = body_id
-	last_pick_face = face_id
-	last_pick_point = point
-	picked.emit(body_id, face_id, point)
 
 
 ## Kernel pick that advances past hidden bodies so the next solid can be hit.
@@ -657,7 +655,7 @@ func _pick_visible(origin: Vector3, direction: Vector3) -> Dictionary:
 
 func _toggle_hit(hit: Dictionary) -> void:
 	var body: String = hit["body"]
-	var body_selected := _selection.body_selected(selected_body, selected_bodies, body)
+	var body_selected := body == selected_body or selected_bodies.has(body)
 	# In a multi-body set, ctrl+click on a member deselects it (SolidWorks
 	# behavior); refinement to faces/edges applies to single-body selections.
 	if selected_bodies.size() > 1 and selected_bodies.has(body):
@@ -666,9 +664,9 @@ func _toggle_hit(hit: Dictionary) -> void:
 		# Refine within an already-selected body: edge first, then face.
 		var edge := _edge_near_point(body, hit["point"])
 		if edge != "":
-			_selection.toggle_in(selected_edges, edge)
+			_toggle_in(selected_edges, edge)
 		else:
-			_selection.toggle_in(selected_faces, hit["face"])
+			_toggle_in(selected_faces, hit["face"])
 		# Keep the body's whole-body tint only if it has no sub-selection left.
 		if selected_faces.is_empty() and selected_edges.is_empty():
 			if not selected_bodies.has(body):
@@ -676,11 +674,18 @@ func _toggle_hit(hit: Dictionary) -> void:
 		else:
 			selected_bodies.erase(body)
 	else:
-		_selection.toggle_in(selected_bodies, body)
+		_toggle_in(selected_bodies, body)
 	_sync_primary_from_sets()
 	_apply_selection_materials()
 	_highlight_edge()
 	selection_changed.emit(selected_body, selected_face)
+
+
+func _toggle_in(arr: Array[String], id: String) -> void:
+	if arr.has(id):
+		arr.erase(id)
+	else:
+		arr.append(id)
 
 
 ## Primary selection mirrors the most recently added set entry so existing
@@ -719,8 +724,10 @@ func _owner_body_of(subshape_id: String) -> String:
 
 ## Number of selected entities across all sets (0 when nothing selected).
 func selection_size() -> int:
-	return _selection.selection_count(
-		selected_bodies, selected_faces, selected_edges, selected_body)
+	var n := selected_bodies.size() + selected_faces.size() + selected_edges.size()
+	if n == 0 and selected_body != "":
+		n = 1
+	return n
 
 
 ## Closest edge of `body_id` to a model-space point, "" when none in tolerance.
@@ -885,23 +892,19 @@ func pick_info(origin: Vector3, direction: Vector3) -> Dictionary:
 	return _pick_visible(origin, direction)
 
 
-## Select every visible body whose screen AABB matches `rect`.
-## `crossing=false` (window): AABB must be fully inside the rect.
-## `crossing=true`: AABB intersects the rect (partial capture counts).
+## Select every visible body whose center unprojects inside `rect` (screen space).
 ## With `additive` false, replaces the selection; with true, unions into
 ## `selected_bodies`. Primary selection syncs to the last body in the set.
-func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D,
-		additive := false, crossing := false) -> void:
-	var band := rect.abs()
+func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D, additive := false) -> void:
 	var hits: Array[String] = []
 	for id in _body_nodes:
 		if hidden_bodies.has(id):
 			continue
-		var scr: Rect2 = body_screen_aabb(id, camera, model_space)
-		if scr.size == Vector2.ZERO:
+		var world: Vector3 = model_space.to_global(body_center(id))
+		if camera.is_position_behind(world):
 			continue
-		var ok := band.encloses(scr) if not crossing else band.intersects(scr)
-		if ok:
+		var screen: Vector2 = camera.unproject_position(world)
+		if rect.has_point(screen):
 			hits.append(id)
 	if not additive:
 		selected_bodies.assign(hits)
@@ -915,74 +918,6 @@ func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D,
 	_apply_selection_materials()
 	_highlight_edge()
 	selection_changed.emit(selected_body, selected_face)
-
-
-## Axis-aligned screen rect covering the body's mesh AABB, or zero-size if behind.
-## `model_space` is unused (kept for call-site symmetry with pad picks).
-func body_screen_aabb(body_id: String, camera: Camera3D, _model_space: Node3D = null) -> Rect2:
-	var node: MeshInstance3D = _body_nodes.get(body_id)
-	if node == null or node.mesh == null or camera == null:
-		return Rect2()
-	var aabb := node.get_aabb()
-	var mn := Vector2(INF, INF)
-	var mx := Vector2(-INF, -INF)
-	var any := false
-	for i in range(8):
-		var world: Vector3 = node.to_global(aabb.get_endpoint(i))
-		if camera.is_position_behind(world):
-			continue
-		var s: Vector2 = camera.unproject_position(world)
-		mn = mn.min(s)
-		mx = mx.max(s)
-		any = true
-	if not any:
-		return Rect2()
-	return Rect2(mn, mx - mn)
-
-
-## Feature similarity key for Select Similar (primitive kind or feature type).
-func body_similarity_key(body_id: String) -> String:
-	var info := feature_info(body_id)
-	if info.is_empty():
-		return ""
-	var t := str(info.get("type", ""))
-	if t == "primitive":
-		return "primitive:%s" % str(feature_params(body_id).get("kind", ""))
-	return t
-
-
-## Expand selection to every visible body sharing a similarity key with the
-## current selection (or primary body). Returns how many bodies were added.
-func select_similar() -> int:
-	var seeds: Array[String] = []
-	for b in selected_bodies:
-		seeds.append(b)
-	if seeds.is_empty() and selected_body != "":
-		seeds.append(selected_body)
-	if seeds.is_empty():
-		return 0
-	var keys := {}
-	for b in seeds:
-		var k := body_similarity_key(b)
-		if k != "":
-			keys[k] = true
-	if keys.is_empty():
-		return 0
-	var added := 0
-	for id in _body_nodes:
-		if hidden_bodies.has(id) or selected_bodies.has(id):
-			continue
-		if keys.has(body_similarity_key(id)):
-			selected_bodies.append(id)
-			added += 1
-	if added > 0:
-		selected_faces.clear()
-		selected_edges.clear()
-		_sync_primary_from_sets()
-		_apply_selection_materials()
-		_highlight_edge()
-		selection_changed.emit(selected_body, selected_face)
-	return added
 
 
 # --- visibility (hide / isolate) ---
@@ -1194,7 +1129,6 @@ static func _ray_aabb_t(origin: Vector3, dir: Vector3, aabb: AABB) -> float:
 
 
 func clear_selection() -> void:
-	_selection.clear_sets(selected_bodies, selected_faces, selected_edges)
 	select_entity("", "")
 
 
@@ -1231,35 +1165,6 @@ func selection_card() -> String:
 ## Outward normal (model space) of the selected face, from its tessellation.
 func selected_face_normal() -> Vector3:
 	return face_normal(selected_body, selected_face)
-
-
-## Unit direction along an edge polyline (first→last). ZERO if missing/degenerate.
-func edge_direction(body_id: String, edge_id: String) -> Vector3:
-	if body_id == "" or edge_id == "":
-		return Vector3.ZERO
-	var lines: Dictionary = doc.get_edge_lines(body_id)
-	if not lines.has(edge_id):
-		return Vector3.ZERO
-	var pts: PackedVector3Array = lines[edge_id]
-	if pts.size() < 2:
-		return Vector3.ZERO
-	var d: Vector3 = pts[pts.size() - 1] - pts[0]
-	if d.length_squared() < 1e-12:
-		return Vector3.ZERO
-	return d.normalized()
-
-
-## Midpoint of an edge polyline, or ZERO if missing.
-func edge_midpoint(body_id: String, edge_id: String) -> Vector3:
-	if body_id == "" or edge_id == "":
-		return Vector3.ZERO
-	var lines: Dictionary = doc.get_edge_lines(body_id)
-	if not lines.has(edge_id):
-		return Vector3.ZERO
-	var pts: PackedVector3Array = lines[edge_id]
-	if pts.is_empty():
-		return Vector3.ZERO
-	return _polyline_midpoint(pts)
 
 
 func body_center(body_id: String) -> Vector3:
@@ -1358,21 +1263,7 @@ func _nudge_feature_placement(fid: String, delta: Vector3) -> void:
 		params["origin"] = _vec3_to_param(_param_vec3(params, "origin", Vector3.ZERO) + delta)
 	if params.has("position"):
 		params["position"] = _vec3_to_param(_param_vec3(params, "position", Vector3.ZERO) + delta)
-	if params.has("positions") and params["positions"] is Array:
-		var moved: Array = []
-		for entry in params["positions"]:
-			var p := _param_vec3_from_any(entry)
-			moved.append(_vec3_to_param(p + delta))
-		params["positions"] = moved
 	_write_feature_params_quiet(fid, params)
-
-
-func _param_vec3_from_any(entry) -> Vector3:
-	if entry is Array and entry.size() >= 3:
-		return Vector3(float(entry[0]), float(entry[1]), float(entry[2]))
-	if entry is Dictionary:
-		return Vector3(float(entry.get("x", 0)), float(entry.get("y", 0)), float(entry.get("z", 0)))
-	return Vector3.ZERO
 
 
 func _transform_feature_placement(fid: String, axis_point: Vector3, R: Basis) -> void:
@@ -1386,12 +1277,6 @@ func _transform_feature_placement(fid: String, axis_point: Vector3, R: Basis) ->
 	if params.has("position"):
 		var p := _param_vec3(params, "position", Vector3.ZERO)
 		params["position"] = _vec3_to_param(axis_point + R * (p - axis_point))
-	if params.has("positions") and params["positions"] is Array:
-		var moved: Array = []
-		for entry in params["positions"]:
-			var p := _param_vec3_from_any(entry)
-			moved.append(_vec3_to_param(axis_point + R * (p - axis_point)))
-		params["positions"] = moved
 	# Primitives always keep an axis frame so later stretch/regen stay oriented.
 	var is_prim := str(rec.get("type", "")) == "primitive"
 	if is_prim or params.has("z_dir") or params.has("x_dir"):
@@ -1421,16 +1306,18 @@ func push_pull_selected(distance: float) -> bool:
 		return false
 	var face := selected_face
 	var body := selected_body
-	var fid := feature_of_body(body)
-	var ok: bool
-	if fid != "":
-		ok = doc.graph_add_push_pull(fid, face, distance) != ""
-	else:
-		ok = doc.push_pull(face, distance)
-	if ok and is_primitive_body(body) and fid == "":
+	var info := feature_info(body)
+	if not info.is_empty() and str(info.get("type", "")).begins_with("import"):
+		var conn: Dictionary = doc.implicit_connector("", face)
+		var dir: Vector3 = conn.get("z_dir", Vector3.UP) if not conn.is_empty() else Vector3.UP
+		var de := doc.graph_add_direct_edit(str(info["id"]), "push_pull", face, distance, dir)
+		if de != "":
+			_after_mutation()
+			select_entity(body, "")
+			return true
+	var ok := doc.push_pull(face, distance)
+	if ok and is_primitive_body(body):
 		# Bake pull into cylinder/cone params without rebuilding (keeps length).
-		# Graph push-pull already records the edit on the timeline.
-		var info := feature_info(body)
 		var params := feature_params(body)
 		if not info.is_empty() and not params.is_empty():
 			_sync_cyl_cone_params_from_body(body, params)
@@ -2028,13 +1915,14 @@ func _apply_selection_materials() -> void:
 			var body_hovered: bool = body_id == hovered_body and hovered_face == "" \
 				and hovered_edge == "" and not whole_body_selected and not face_selected
 			var mat: Material
+			var clip := section_enabled or zebra_enabled
 			if display_mode == DisplayMode.WIREFRAME:
-				if section_enabled:
+				if clip:
 					mat = _make_section_material(Color(0, 0, 0, 0))
 				else:
 					mat = _wireframe_hidden_material
 			elif face_selected:
-				if section_enabled:
+				if clip:
 					mat = _make_section_material(
 						SELECTED_FACE_COLOR, SELECTED_FACE_COLOR, 0.35
 					)
@@ -2043,22 +1931,22 @@ func _apply_selection_materials() -> void:
 			elif face_here != "" and face_here == mate_anchor_face:
 				mat = _mate_anchor_material
 			elif whole_body_selected:
-				if section_enabled:
+				if clip:
 					mat = _make_section_material(SELECTED_BODY_COLOR)
 				else:
 					mat = _selected_body_material
 			elif face_hovered:
-				if section_enabled:
+				if clip:
 					mat = _make_section_material(HOVER_FACE_COLOR)
 				else:
 					mat = _hover_face_material
 			elif body_hovered:
-				if section_enabled:
+				if clip:
 					mat = _make_section_material(HOVER_BODY_COLOR)
 				else:
 					mat = _hover_body_material
 			else:
-				if section_enabled:
+				if clip:
 					var c: Color = base.get_shader_parameter("albedo_color")
 					mat = _make_section_material(c)
 				else:

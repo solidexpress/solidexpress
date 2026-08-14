@@ -339,6 +339,7 @@ func show_selection_actions(actions: Array, screen_pos: Vector2) -> void:
 		var label: String = str(a)
 		var b := Button.new()
 		b.text = label.capitalize().replace("_", " ")
+		b.tooltip_text = label
 		b.custom_minimum_size = Vector2(0, CHIP_H)
 		b.pressed.connect(func() -> void: action_chosen.emit(label))
 		_action_bar.add_child(b)

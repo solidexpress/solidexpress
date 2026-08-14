@@ -211,8 +211,24 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 		badge.mouse_filter = Control.MOUSE_FILTER_STOP
 		badge.add_theme_color_override("font_color", Color(0.95, 0.3, 0.25))
 		badge.add_theme_font_size_override("font_size", 16)
+		badge.gui_input.connect(func(ev: InputEvent) -> void:
+			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+				_show_whats_wrong(fid)
+		)
 		row.add_child(badge)
 		name_btn.modulate = Color(1.0, 0.55, 0.5)
+
+	if f.get("context_stale", false):
+		var upd := Button.new()
+		upd.name = "UpdateContext"
+		upd.text = "Update Context"
+		upd.tooltip_text = "Neighbor changed — click to recapture and regenerate this feature"
+		upd.pressed.connect(func() -> void:
+			view.doc.update_context(str(f.get("context_id", "")))
+			view.graph_changed()
+			status.emit("Context updated")
+		)
+		row.add_child(upd)
 
 	# Drag reorder: rows are both drag sources (feature) and drop targets
 	# (feature reorder, or the rollback bar landing before this feature).
@@ -355,3 +371,29 @@ func _delete_feature(fid: String) -> void:
 		status.emit("Feature deleted")
 	else:
 		status.emit("Cannot delete: later features depend on it")
+
+
+func _show_whats_wrong(fid: String) -> void:
+	var diag: Dictionary = view.doc.diagnose_feature(fid)
+	var pop := PopupPanel.new()
+	pop.name = "WhatsWrong"
+	var col := VBoxContainer.new()
+	pop.add_child(col)
+	var title := Label.new()
+	title.text = "What's wrong — " + str(diag.get("name", fid))
+	col.add_child(title)
+	var err := Label.new()
+	err.text = str(diag.get("error", ""))
+	err.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(err)
+	for r in diag.get("repairs", []):
+		var chip := Button.new()
+		chip.text = str(r)
+		chip.pressed.connect(func() -> void:
+			status.emit(str(r))
+			pop.hide()
+			pop.queue_free()
+		)
+		col.add_child(chip)
+	add_child(pop)
+	pop.popup_centered(Vector2(320, 160))

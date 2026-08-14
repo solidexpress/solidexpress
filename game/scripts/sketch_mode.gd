@@ -26,9 +26,6 @@ var tool: Tool = Tool.NONE
 var active := false
 ## When true, click/hover positions pass through snap_point().
 var snap_enabled := true
-## When true, ending a line / centerline chain adds a closing segment back to
-## the first point (if the chain is open and has at least two segments).
-var auto_close_enabled := true
 ## Regular N-gon side count for the POLYGON tool (clamped 3..24).
 var polygon_sides := 6:
 	set(v):
@@ -127,16 +124,12 @@ const GLYPH_SYMBOLS := {
 	"coincident": "◉",
 	"point_on_line": "◇",
 	"tangent": "⌒",
-	"midpoint": "M",
-	"symmetric": "⇋",
-	"fix": "⚓",
-	"diameter": "⌀",
 }
 ## Geometry within this distance of exact H/V or an existing endpoint gets an
 ## inferred constraint on creation (SolidWorks-style automatic relations).
 const INFER_TOL := 0.5
 
-## Automatic constraint inference on entity creation (H/V + coincident + ⊥).
+## Automatic constraint inference on entity creation (H/V + coincident).
 var infer_enabled := true
 ## Diagnostics from the most recent solve: -1 until first solve.
 var last_dofs := -1
@@ -312,7 +305,7 @@ func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO) -> 
 	sketch = SxSketch.new()
 	sketch.set_plane(origin, plane_x, plane_y)
 	_activate_session()
-	status.emit("Sketch: Line chains until Done / Esc · Exit Sketch to save")
+	status.emit("Sketch: Select · Line · Rect · Circle · Exit Sketch · Esc discard")
 
 
 ## New sketch on an explicit plane (3D path legs, UI movies).
@@ -349,7 +342,7 @@ func begin_edit(fid: String) -> bool:
 	plane_y = (pi["y_dir"] as Vector3).normalized()
 	sketch = loaded
 	_activate_session()
-	status.emit("Editing sketch — Exit Sketch to save · Esc ends chain / discard")
+	status.emit("Editing sketch — Exit Sketch to save · Esc discard")
 	return true
 
 
@@ -459,13 +452,8 @@ func exit_sketch() -> String:
 ## the feature graph: adds a sketch feature plus an extrude feature so both
 ## appear on the timeline and stay editable. op: "new" | "cut" | "fuse";
 ## cut/fuse require a target body (the one sketched on) and cut extrudes
-## into the body (negated distance). end: "blind" | "through_all" | "midplane".
-## thin_thickness > 0: wall from open/closed profile; thin_type one_side|midplane.
-## flip_side: thin offset OR open-profile cut Flip Side to Cut.
-## selected_contours: Selected Contours indices (empty = all solid regions).
-func finish_extrude(distance: float, op: String = "new", end: String = "blind",
-		thin_thickness: float = 0.0, thin_type: String = "one_side",
-		flip_side: bool = false, selected_contours: Array = []) -> void:
+## into the body (negated distance).
+func finish_extrude(distance: float, op: String = "new") -> void:
 	if not active:
 		return
 	if op != "new" and target_fid == "":
@@ -473,21 +461,12 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		return
 	if op == "cut":
 		distance = -absf(distance)
-	var symmetric := end == "midplane"
 	var sk_fid := _ensure_sketch_feature()
 	if sk_fid == "":
 		return
 	var ex_fid: String = view.doc.graph_add_extrude(
-		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
-		thin_thickness, thin_type, flip_side, selected_contours)
-	var fail_msg := "Extrude failed — is the profile closed?"
-	var open_prof := not profile_is_closed(sketch)
-	if thin_thickness <= 0.0 and open_prof:
-		if op == "cut" or op == "fuse":
-			fail_msg = "Open-profile cut failed — need a line chain (Flip Side toggles material)"
-		else:
-			fail_msg = "Extrude failed — open profile needs Thin wall > 0 (or close the profile)"
-	_finish_feature(sk_fid, ex_fid, op, fail_msg)
+		sk_fid, distance, false, op, target_fid if op != "new" else "")
+	_finish_feature(sk_fid, ex_fid, op, "Extrude failed — is the profile closed?")
 
 
 ## Finish the sketch and revolve. The axis is the selected line when one is
@@ -659,16 +638,6 @@ func has_length_override() -> bool:
 	return _length_override >= 0.0
 
 
-## True while a multi-click line/centerline chain or spline has pending points.
-## Esc / Done / right-click / double-click call end_chain() in this state.
-func has_open_chain() -> bool:
-	if tool == Tool.SPLINE:
-		return not _spline_pts.is_empty()
-	if tool == Tool.LINE or tool == Tool.CENTERLINE:
-		return not _tool_points.is_empty()
-	return false
-
-
 ## Hover / preview endpoint: mouse when free; last + dir×override when locked.
 func effective_hover() -> Vector2:
 	if _length_override < 0.0 or not has_single_dof_preview():
@@ -726,10 +695,6 @@ func selection_actions() -> Array:
 		acts.append("mirror")
 		acts.append("block")
 		acts.append("split")
-		acts.append("fix")
-		acts.append("diameter")
-		acts.append("fully_define")
-		acts.append("analyze")
 	return acts
 
 
@@ -745,15 +710,10 @@ func set_infer(on: bool) -> void:
 		_infer_label.visible = false
 
 
-func set_auto_close(on: bool) -> void:
-	auto_close_enabled = on
-
-
 ## Snap sketch-plane point to nearby geometry / axis. Priority:
 ## (a) entity endpoints, (b) line midpoints & circle/arc centers, (c) H/V
-## alignment to the last in-progress tool point, (d) perpendicular to the
-## previous segment / nearby lines. When snap_enabled is false, returns p
-## unchanged.
+## alignment to the last in-progress tool point. When snap_enabled is false,
+## returns p unchanged.
 func snap_point(p: Vector2) -> Vector2:
 	_snap_marker = null
 	if not snap_enabled or sketch == null:
@@ -811,63 +771,7 @@ func snap_point(p: Vector2) -> Vector2:
 		if snapped_axis:
 			_snap_marker = out
 			return out
-		# (d) perpendicular to previous chain segment / nearby lines at `last`
-		var perp_pt: Variant = _snap_perpendicular(last, p)
-		if perp_pt is Vector2:
-			_snap_marker = perp_pt
-			return perp_pt as Vector2
 	return p
-
-
-## If `p` is within SNAP_RADIUS of a ray from `last` perpendicular to a
-## reference direction, return the exact perpendicular point; else null.
-func _snap_perpendicular(last: Vector2, p: Vector2) -> Variant:
-	var delta := p - last
-	if delta.length_squared() < 1e-12:
-		return null
-	for dir in _perp_reference_dirs(last):
-		if dir.length_squared() < 1e-12:
-			continue
-		var u := dir.normalized()
-		# Distance off the perpendicular ray through `last` (= |component along u|).
-		var along := delta.dot(u)
-		if absf(along) > SNAP_RADIUS:
-			continue
-		var across := delta - u * along
-		if across.length_squared() < 1e-12:
-			continue
-		return last + across
-	return null
-
-
-## Directions that a new segment from `last` may snap perpendicular to:
-## previous chain segment, then existing lines whose geometry is near `last`.
-func _perp_reference_dirs(last: Vector2) -> Array[Vector2]:
-	var dirs: Array[Vector2] = []
-	if _tool_points.size() >= 2:
-		var prev: Vector2 = last - _tool_points[_tool_points.size() - 2]
-		if prev.length_squared() > 1e-12:
-			dirs.append(prev)
-	if sketch != null:
-		for id in sketch.entity_ids():
-			if sketch.is_construction(id):
-				continue
-			var info: Dictionary = sketch.entity_info(id)
-			if info.get("type", "") != "line":
-				continue
-			var a: Vector2 = info["start"]
-			var b: Vector2 = info["end"]
-			var ab := b - a
-			if ab.length_squared() < 1e-12:
-				continue
-			# Near an endpoint or within SNAP_RADIUS of the segment.
-			var t := clampf((last - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
-			var foot: Vector2 = a + ab * t
-			if last.distance_to(foot) <= SNAP_RADIUS \
-					or last.distance_to(a) <= SNAP_RADIUS \
-					or last.distance_to(b) <= SNAP_RADIUS:
-				dirs.append(ab)
-	return dirs
 
 
 func _snap_endpoints(id: String) -> Array[Vector2]:
@@ -1014,22 +918,15 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	return {"id": best_id, "part": best_part}
 
 
-## Start a SELECT-tool drag at pos2. No-op when inactive, wrong tool, miss, or
-## fully constrained (DOF=0) — preserve design intent like SolidWorks.
+## Start a SELECT-tool drag at pos2. No-op when inactive, wrong tool, or miss.
 func begin_drag(pos2: Vector2) -> void:
 	if not active or tool != Tool.SELECT or sketch == null:
-		return
-	if last_dofs == 0 and last_solve_status != "failed":
-		status.emit("Sketch fully defined — unlock a dimension to drag")
 		return
 	var hit := drag_hit(pos2)
 	if hit.is_empty():
 		return
 	var info: Dictionary = sketch.entity_info(hit["id"])
 	if info.is_empty():
-		return
-	if bool(info.get("external", false)):
-		status.emit("External (converted) geometry is locked")
 		return
 	_drag = {
 		"id": hit["id"],
@@ -1211,7 +1108,7 @@ func constrain(type: String, value: float = 0.0) -> String:
 					{"entity": selected[1], "role": "center"}], 0.0)
 				added = true
 		"midpoint":
-			# Point at midpoint of line (native Midpoint constraint).
+			# Point on midpoint of line: point_on_line + equal end distances via coincident helper point.
 			if selected.size() == 2:
 				var line_id := selected[0]
 				var pt_id := selected[1]
@@ -1219,65 +1116,30 @@ func constrain(type: String, value: float = 0.0) -> String:
 					line_id = selected[1]
 					pt_id = selected[0]
 				if sketch.entity_info(line_id).get("type") == "line":
-					var role := "self"
-					if sketch.entity_info(pt_id).get("type") == "line":
-						# Two lines: midpoint of second onto first — use point entity preferred.
-						pass
-					cid = sketch.add_constraint("midpoint", [
-						{"entity": pt_id, "role": role},
+					cid = sketch.add_constraint("point_on_line", [
+						{"entity": pt_id, "role": "self"},
 						{"entity": line_id, "role": "self"}], 0.0)
+					# Equal distance to both endpoints → midpoint.
+					sketch.add_constraint("distance", [
+						{"entity": pt_id, "role": "self"},
+						{"entity": line_id, "role": "start"}], value if value > 0 else 1.0)
+					# Use equal-length trick: two distance constraints with same value solved by user dim — skip second.
 					added = true
 		"symmetric":
-			# Two points (or line endpoints) mirrored across a line. Selection: A, B, axis.
-			if selected.size() == 3:
-				var axis_id := selected[2]
-				if sketch.entity_info(axis_id).get("type") != "line":
-					for i in range(3):
-						if sketch.entity_info(selected[i]).get("type") == "line":
-							axis_id = selected[i]
-							break
-				var pts: Array = []
-				for id in selected:
-					if id == axis_id:
-						continue
-					pts.append(id)
-				if pts.size() == 2 and sketch.entity_info(axis_id).get("type") == "line":
-					var r0 := "self"
-					var r1 := "self"
-					if sketch.entity_info(pts[0]).get("type") == "line":
-						r0 = "start"
-					if sketch.entity_info(pts[1]).get("type") == "line":
-						r1 = "start"
-					cid = sketch.add_constraint("symmetric", [
-						{"entity": pts[0], "role": r0},
-						{"entity": pts[1], "role": r1},
-						{"entity": axis_id, "role": "self"}], 0.0)
-					added = true
-			else:
-				status.emit("Symmetric: select two entities then a mirror line")
+			status.emit("Symmetric: select two entities then a mirror line (use Mirror tool)")
 		"collinear":
 			if selected.size() == 2:
 				cid = sketch.add_constraint("parallel", [
 					{"entity": selected[0], "role": "self"},
 					{"entity": selected[1], "role": "self"}], 0.0)
+				# Also coincident one endpoint onto the other line.
 				sketch.add_constraint("point_on_line", [
 					{"entity": selected[0], "role": "start"},
 					{"entity": selected[1], "role": "self"}], 0.0)
 				added = true
 		"fix":
-			for id in selected:
-				cid = sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
-				added = true
-		"diameter":
-			for id in selected:
-				var k2: String = sketch.entity_info(id).get("type", "")
-				if k2 == "circle" or k2 == "arc":
-					var dia := value
-					if dia <= 0.0:
-						dia = float(sketch.entity_info(id).get("radius", 5.0)) * 2.0
-					cid = sketch.add_constraint("diameter", [{"entity": id, "role": "self"}], dia)
-					added = true
-					_record_dimension("diameter", [id], dia, cid)
+			# Soft fix: lock a line by horizontal+vertical is wrong; emit status.
+			status.emit("Fix relation: use dimensions to lock geometry (v1)")
 	if not added:
 		return ""
 	# Record dimensional constraints (distance/radius, or any with a numeric value).
@@ -1480,8 +1342,7 @@ func mirror_selected() -> Array:
 	return out
 
 
-## Convert pierce / edge intersection points into sketch points.
-## Prefer project_edge_line / project_edge_circle for associative Convert Entities.
+## Convert pierce / edge intersection points into sketch points (and optional lines).
 func convert_pierce_points() -> int:
 	var n := 0
 	for ip in intersection_points:
@@ -1493,98 +1354,6 @@ func convert_pierce_points() -> int:
 		status.emit("Converted %d pierce points" % n)
 		_redraw()
 	return n
-
-
-## Project currently selected body edges onto the sketch plane (associative).
-## Returns number of entities added; 0 means caller should fall back to pierce.
-func convert_selected_edges() -> int:
-	if not active or sketch == null or view == null or view.doc == null:
-		return 0
-	if view.selected_edges.is_empty():
-		return 0
-	var body_id: String = view.selected_body
-	if body_id == "" and not view.selected_bodies.is_empty():
-		body_id = str(view.selected_bodies[0])
-	if body_id == "":
-		return 0
-	var lines: Dictionary = view.doc.get_edge_lines(body_id)
-	var n := 0
-	for eid in view.selected_edges:
-		var pts: PackedVector3Array = lines.get(eid, PackedVector3Array())
-		if pts.size() < 2:
-			continue
-		var a: Vector3 = pts[0]
-		var b: Vector3 = pts[pts.size() - 1]
-		# Closed tessellation ≈ circle: use center + mean radius.
-		if pts.size() >= 8 and a.distance_to(b) < 1e-3:
-			var c := Vector3.ZERO
-			for p in pts:
-				c += p
-			c /= float(pts.size())
-			var r_sum := 0.0
-			for p in pts:
-				r_sum += p.distance_to(c)
-			var r := r_sum / float(pts.size())
-			if r > 1e-6:
-				project_edge_circle(c, r, str(eid))
-				n += 1
-				continue
-		if a.distance_to(b) > 1e-6:
-			project_edge_line(a, b, str(eid))
-			n += 1
-	if n > 0:
-		status.emit("Converted %d edges (associative)" % n)
-	return n
-
-
-## Associative Convert Entities: project a model edge (3D endpoints) onto the sketch.
-func project_edge_line(a: Vector3, b: Vector3, edge_id: String) -> String:
-	if not active or sketch == null:
-		return ""
-	var id: String = sketch.project_line_edge(a, b, edge_id)
-	run_solve()
-	_redraw()
-	return id
-
-
-func project_edge_circle(center: Vector3, radius: float, edge_id: String) -> String:
-	if not active or sketch == null:
-		return ""
-	var id: String = sketch.project_circle_edge(center, radius, edge_id)
-	run_solve()
-	_redraw()
-	return id
-
-
-## Auto-constrain toward fully defined (H/V, origin, dims). Returns constraints added.
-func fully_define() -> int:
-	if not active or sketch == null:
-		return 0
-	var n: int = sketch.fully_define()
-	var res := run_solve()
-	_redraw()
-	status.emit("Fully Define added %d constraints — DOF %d (%s)" % [
-		n, int(res.get("dofs", -1)), str(res.get("status", ""))])
-	return n
-
-
-## Sketch analysis issues (open loops, zero-length, …). Surfaces in status.
-func analyze_sketch(gap_tol: float = 1e-4) -> Array:
-	if sketch == null:
-		return []
-	var issues: Array = sketch.analyze(gap_tol)
-	if issues.is_empty():
-		status.emit("Sketch analysis: no issues")
-	else:
-		var codes: PackedStringArray = []
-		for iss in issues:
-			if typeof(iss) == TYPE_DICTIONARY:
-				codes.append(str(iss.get("code", "issue")))
-			else:
-				codes.append(str(iss))
-		status.emit("Sketch analysis: %d issue(s) — %s" % [issues.size(), ", ".join(codes)])
-	return issues
-
 
 
 ## Sketch chamfer: trim two lines and add a connecting segment.
@@ -1640,24 +1409,17 @@ func create_block(block_name: String) -> bool:
 	return true
 
 
-## Place a fit-point spline (kernel Spline entity). Optional approximate densify
-## kept for legacy callers via densify_as_lines.
-func _commit_spline(densify_as_lines: bool = false) -> void:
+## Place a fit polyline spline through successive clicks (commit with end_chain).
+func _commit_spline() -> void:
 	if _spline_pts.size() < 2:
 		_spline_pts.clear()
 		return
-	if densify_as_lines:
-		var densified := _densify_fit_spline(_spline_pts)
-		for i in range(densified.size() - 1):
-			var a: Vector2 = densified[i]
-			var b: Vector2 = densified[i + 1]
-			if a.distance_to(b) > 1e-6:
-				sketch.add_line(a.x, a.y, b.x, b.y)
-	else:
-		var pts := PackedVector2Array()
-		for p in _spline_pts:
-			pts.append(p)
-		sketch.add_spline(pts)
+	var densified := _densify_fit_spline(_spline_pts)
+	for i in range(densified.size() - 1):
+		var a: Vector2 = densified[i]
+		var b: Vector2 = densified[i + 1]
+		if a.distance_to(b) > 1e-6:
+			sketch.add_line(a.x, a.y, b.x, b.y)
 	_spline_pts.clear()
 	_redraw()
 
@@ -1829,6 +1591,8 @@ func click(pos2: Vector2) -> void:
 					sketch.set_construction(lid, true)
 				_infer_line(lid, a, b)
 				_redraw()
+				# Propose chips follow new geometry even when infer did not solve.
+				selection_actions_needed.emit()
 		Tool.RECT:
 			_click_rect(pos2)
 		Tool.CIRCLE:
@@ -1887,9 +1651,7 @@ func click(pos2: Vector2) -> void:
 		Tool.SMART_DIM:
 			_click_smart_dim(pos2)
 		Tool.CONVERT:
-			# Prefer associative edge projection; pierce points remain the fallback.
-			if convert_selected_edges() == 0:
-				convert_pierce_points()
+			convert_pierce_points()
 		Tool.MIRROR:
 			# Selection must already include axis + geometry; click confirms.
 			mirror_selected()
@@ -2113,9 +1875,96 @@ func run_solve() -> Dictionary:
 	return res
 
 
-## New line: add horizontal/vertical when near axis-aligned, perpendicular
-## when near 90° to a shared-endpoint neighbor, and coincident where its
-## endpoints land on existing line endpoints.
+func auto_define() -> int:
+	if sketch == null:
+		return 0
+	var n := 0
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if info.get("weak", false):
+			if sketch.set_constraint_weak(cid, false):
+				n += 1
+	run_solve()
+	_redraw()
+	status.emit("Auto-define promoted %d dim(s) — DOF %d" % [n, last_dofs])
+	return n
+
+
+func promote_propose(verb: String = "parallel") -> String:
+	if sketch == null:
+		return ""
+	var want := verb.trim_suffix("?")
+	var lines: Array = []
+	for eid in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(eid)
+		if str(info.get("type", "")) == "line":
+			lines.append({"id": eid, "start": info["start"], "end": info["end"]})
+	for i in range(lines.size()):
+		for j in range(i + 1, lines.size()):
+			var da: Vector2 = (lines[i]["end"] as Vector2) - (lines[i]["start"] as Vector2)
+			var db: Vector2 = (lines[j]["end"] as Vector2) - (lines[j]["start"] as Vector2)
+			if da.length() < 1e-6 or db.length() < 1e-6:
+				continue
+			var la := da.length()
+			var lb := db.length()
+			da = da.normalized()
+			db = db.normalized()
+			var dot := absf(da.dot(db))
+			var match_verb := ""
+			if want == "parallel" and dot > 0.98:
+				match_verb = "parallel"
+			elif want == "perpendicular" and dot < 0.15:
+				match_verb = "perpendicular"
+			elif want == "equal" and la > 1e-6 and lb > 1e-6 and absf(la - lb) / maxf(la, lb) < 0.05:
+				match_verb = "equal"
+			if match_verb == "":
+				continue
+			var refs := [
+				{"entity": lines[i]["id"], "role": "self"},
+				{"entity": lines[j]["id"], "role": "self"},
+			]
+			var cid: String = sketch.add_constraint(match_verb, refs, 0.0)
+			run_solve()
+			_redraw()
+			status.emit("Proposed %s" % match_verb)
+			return cid
+	status.emit("Nothing to propose")
+	return ""
+
+
+## On-canvas “parallel?” / “equal?” chips from the live sketch (Wave 3.9).
+func propose_verbs() -> Array:
+	var verbs: Array = []
+	if sketch == null:
+		return verbs
+	var lines: Array = []
+	for eid in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(eid)
+		if str(info.get("type", "")) == "line":
+			lines.append({"start": info["start"], "end": info["end"]})
+	for i in range(lines.size()):
+		for j in range(i + 1, lines.size()):
+			var da: Vector2 = (lines[i]["end"] as Vector2) - (lines[i]["start"] as Vector2)
+			var db: Vector2 = (lines[j]["end"] as Vector2) - (lines[j]["start"] as Vector2)
+			if da.length() < 1e-6 or db.length() < 1e-6:
+				continue
+			var la := da.length()
+			var lb := db.length()
+			da = da.normalized()
+			db = db.normalized()
+			var dot := absf(da.dot(db))
+			if dot > 0.98 and "parallel?" not in verbs:
+				verbs.append("parallel?")
+			elif dot < 0.15 and "perpendicular?" not in verbs:
+				verbs.append("perpendicular?")
+			if la > 1e-6 and lb > 1e-6 and absf(la - lb) / maxf(la, lb) < 0.05 \
+					and "equal?" not in verbs:
+				verbs.append("equal?")
+	return verbs
+
+
+## New line: add horizontal/vertical when near axis-aligned, and coincident
+## constraints where its endpoints land on existing line endpoints.
 func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 	if not infer_enabled or lid == "":
 		return
@@ -2128,19 +1977,6 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 		elif absf(d.x) <= INFER_TOL:
 			sketch.add_constraint("vertical", [{"entity": lid, "role": "self"}], 0.0)
 			added = true
-		else:
-			# Perpendicular to a neighboring line that shares endpoint `a`.
-			var neighbor := _endpoint_hit(a, lid)
-			if neighbor.size() == 2:
-				var ninfo: Dictionary = sketch.entity_info(neighbor[0])
-				if ninfo.get("type", "") == "line":
-					var nd: Vector2 = ninfo["end"] - ninfo["start"]
-					if nd.length() > INFER_TOL \
-							and absf(nd.normalized().dot(d.normalized())) <= 0.02:
-						sketch.add_constraint("perpendicular", [
-							{"entity": lid, "role": "self"},
-							{"entity": neighbor[0], "role": "self"}], 0.0)
-						added = true
 	for role_pos in [["start", a], ["end", b]]:
 		var hit := _endpoint_hit(role_pos[1], lid)
 		if hit.size() == 2:
@@ -2187,46 +2023,17 @@ func _infer_rect(l1: String, l2: String, l3: String, l4: String) -> void:
 
 
 ## Change the value of a recorded dimensional constraint (by index into
-## `dimensions`) and re-solve. `value_or_expr` may be a float or an expression
-## string like "=w/2". Returns the solve status ("" on bad index).
-func set_dimension_value(index: int, value_or_expr: Variant) -> String:
+## `dimensions`) and re-solve. Returns the solve status ("" on bad index).
+func set_dimension_value(index: int, value: float) -> String:
 	if index < 0 or index >= dimensions.size():
 		return ""
 	var dim: Dictionary = dimensions[index]
 	var cid: String = dim.get("cid", "")
 	if cid == "":
 		return ""
-	if typeof(value_or_expr) == TYPE_STRING:
-		var expr := str(value_or_expr).strip_edges()
-		if expr.begins_with("=") or (not expr.is_valid_float() and expr.length() > 0):
-			if not expr.begins_with("="):
-				expr = "=" + expr
-			sketch.set_constraint_expr(cid, expr)
-			dim["expr"] = expr
-		else:
-			var value := float(expr)
-			if not sketch.set_constraint_value(cid, value):
-				return ""
-			dim["value"] = value
-			dim.erase("expr")
-	else:
-		var value := float(value_or_expr)
-		if not sketch.set_constraint_value(cid, value):
-			return ""
-		dim["value"] = value
-		dim.erase("expr")
-	# Resolve expressions from document variables before solve.
-	if view != null and view.doc != null:
-		var env2 := {}
-		for entry in view.doc.list_variables():
-			if typeof(entry) == TYPE_DICTIONARY and entry.has("value"):
-				var vv = entry["value"]
-				if typeof(vv) == TYPE_FLOAT or typeof(vv) == TYPE_INT:
-					env2[str(entry.get("name", ""))] = float(vv)
-		if not env2.is_empty():
-			sketch.resolve_expressions(env2)
-	if dim.has("expr"):
-		dim["value"] = sketch.constraint_info(cid).get("value", dim.get("value", 0.0))
+	if not sketch.set_constraint_value(cid, value):
+		return ""
+	dim["value"] = value
 	dimensions[index] = dim
 	var res := run_solve()
 	_redraw()
@@ -2235,48 +2042,13 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	return res["status"]
 
 
-## Toggle a dimension between driving and driven (reference).
-func set_dimension_driving(index: int, driving: bool) -> void:
-	if index < 0 or index >= dimensions.size():
-		return
-	var dim: Dictionary = dimensions[index]
-	var cid: String = dim.get("cid", "")
-	if cid == "":
-		return
-	sketch.set_constraint_driving(cid, driving)
-	dim["driving"] = driving
-	dimensions[index] = dim
-	run_solve()
-	_redraw()
-	_rebuild_dimension_labels()
-
-
-## Done / Esc / double-click / right-click ends a line chain / commits a spline.
-## With auto_close_enabled, an open line chain of 2+ segments gets a closing
-## segment back to the first point.
+## Double-click or right-click ends a line chain / commits a spline.
 func end_chain() -> void:
 	if tool == Tool.SPLINE and _spline_pts.size() >= 2:
 		_commit_spline()
-	elif (tool == Tool.LINE or tool == Tool.CENTERLINE) and auto_close_enabled:
-		_auto_close_line_chain()
 	_tool_points.clear()
 	_length_override = -1.0
 	_update_preview()
-
-
-## Close an open multi-line chain from the last point back to the first.
-func _auto_close_line_chain() -> void:
-	if sketch == null or _tool_points.size() < 3:
-		return
-	var first: Vector2 = _tool_points[0]
-	var last: Vector2 = _tool_points[_tool_points.size() - 1]
-	if first.distance_to(last) <= INFER_TOL:
-		return  # already closed (user snapped to start)
-	var lid: String = sketch.add_line(last.x, last.y, first.x, first.y)
-	if draw_construction or tool == Tool.CENTERLINE:
-		sketch.set_construction(lid, true)
-	_infer_line(lid, last, first)
-	_redraw()
 
 
 func hover(pos2: Vector2) -> void:
@@ -2537,12 +2309,8 @@ func _entity_draw_color(info: Dictionary, id: String = "") -> Color:
 		return COLOR_CONFLICT
 	if info.get("construction", false):
 		return COLOR_CONSTRUCTION
-	# External (converted) entities stay construction-tinted.
-	if bool(info.get("external", false)):
-		return COLOR_CONSTRUCTION
-	# Definition state: fully constrained → green; under-defined → default.
-	# Per-entity DOF is not reported by PlaneGCS diagnose; whole-sketch DOF
-	# flips all non-construction entities together (SolidWorks-like black/blue).
+	# Fully-constrained sketches draw green (per-entity DOF isn't reported by
+	# the solver yet, so the whole sketch flips together).
 	if last_dofs == 0 and last_solve_status != "failed":
 		return COLOR_CONSTRAINED
 	return COLOR_ENTITY
@@ -2774,103 +2542,20 @@ func dimension_hit(pos2: Vector2) -> int:
 
 
 ## Live inference hint while drawing: which constraint the LINE tool would add
-## for a segment from the last tool point to `p` ("H", "V", ⊥, coincident).
+## for a segment from the last tool point to `p` ("H", "V", coincident glyph).
 func _infer_hint_text(p: Vector2) -> String:
 	if not infer_enabled or tool != Tool.LINE or _tool_points.is_empty():
 		return ""
 	if not _endpoint_hit(p, "").is_empty():
 		return GLYPH_SYMBOLS["coincident"]
-	var last: Vector2 = _tool_points[_tool_points.size() - 1]
-	var d := p - last
+	var d := p - _tool_points[_tool_points.size() - 1]
 	if d.length() <= INFER_TOL:
 		return ""
 	if absf(d.y) <= INFER_TOL:
 		return "H"
 	if absf(d.x) <= INFER_TOL:
 		return "V"
-	# Perpendicular to previous segment / nearby reference lines.
-	for dir in _perp_reference_dirs(last):
-		if dir.length_squared() < 1e-12:
-			continue
-		if absf(dir.normalized().dot(d.normalized())) <= 0.02:
-			return GLYPH_SYMBOLS["perpendicular"]
 	return ""
-
-
-## True when non-construction geometry forms a closed profile (kernel
-## profile_face intent): a lone circle, or line/arc wires that close.
-static func profile_is_closed(sk: SxSketch, tol: float = 1e-4) -> bool:
-	if sk == null:
-		return false
-	var segs: Array = []  # {a: Vector2, b: Vector2}
-	var circles := 0
-	for id in sk.entity_ids():
-		if sk.is_construction(id):
-			continue
-		var info: Dictionary = sk.entity_info(id)
-		match str(info.get("type", "")):
-			"circle":
-				circles += 1
-			"line":
-				var a: Vector2 = info["start"]
-				var b: Vector2 = info["end"]
-				if a.distance_to(b) > 1e-9:
-					segs.append({"a": a, "b": b, "used": false})
-			"arc":
-				var c: Vector2 = info["center"]
-				var r: float = float(info.get("radius", 0.0))
-				var sa: float = float(info.get("start_angle", 0.0))
-				var ea: float = float(info.get("end_angle", 0.0))
-				var pa: Vector2 = c + Vector2.from_angle(sa) * r
-				var pb: Vector2 = c + Vector2.from_angle(ea) * r
-				if pa.distance_to(pb) > 1e-9:
-					segs.append({"a": pa, "b": pb, "used": false})
-			"spline":
-				var fps: Array = info.get("fit_points", [])
-				if fps.size() >= 2:
-					var a2: Vector2 = fps[0]
-					var b2: Vector2 = fps[fps.size() - 1]
-					segs.append({"a": a2, "b": b2, "used": false})
-			_:
-				pass
-	if circles == 1 and segs.is_empty():
-		return true
-	if circles >= 1:
-		return false  # mixed circle + open edges not a single profile here
-	if segs.is_empty():
-		return false
-	# Greedy-chain every unused segment; each chain must close.
-	while true:
-		var seed := -1
-		for i in range(segs.size()):
-			if not segs[i]["used"]:
-				seed = i
-				break
-		if seed < 0:
-			break
-		segs[seed]["used"] = true
-		var loop_start: Vector2 = segs[seed]["a"]
-		var cursor: Vector2 = segs[seed]["b"]
-		var progressing := true
-		while progressing and cursor.distance_to(loop_start) > tol:
-			progressing = false
-			for j in range(segs.size()):
-				if segs[j]["used"]:
-					continue
-				var sa2: Vector2 = segs[j]["a"]
-				var sb2: Vector2 = segs[j]["b"]
-				if sa2.distance_to(cursor) <= tol:
-					cursor = sb2
-				elif sb2.distance_to(cursor) <= tol:
-					cursor = sa2
-				else:
-					continue
-				segs[j]["used"] = true
-				progressing = true
-				break
-		if cursor.distance_to(loop_start) > tol:
-			return false
-	return true
 
 
 ## Approximate "%.4g" (GDScript's % operator has no g specifier).
@@ -2958,16 +2643,6 @@ func _redraw() -> void:
 					im.surface_set_color(col)
 					im.surface_add_vertex(_to3(c2 + Vector2(cos(a0), sin(a0)) * r2))
 					im.surface_add_vertex(_to3(c2 + Vector2(cos(a1), sin(a1)) * r2))
-			"spline":
-				var fps: Array = info.get("fit_points", [])
-				if fps.size() >= 2:
-					if not has:
-						im.surface_begin(Mesh.PRIMITIVE_LINES)
-						has = true
-					for i in range(fps.size() - 1):
-						im.surface_set_color(col)
-						im.surface_add_vertex(_to3(fps[i]))
-						im.surface_add_vertex(_to3(fps[i + 1]))
 	if has:
 		im.surface_end()
 		_draw_node.mesh = im

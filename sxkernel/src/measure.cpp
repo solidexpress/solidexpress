@@ -1,6 +1,7 @@
 #include "sx/measure.hpp"
 
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepAlgoAPI_Common.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -136,6 +137,21 @@ std::optional<double> angle_between_faces(const Document& doc, const EntityId& f
     auto n2 = planar_outward_normal(doc.resolve(f2));
     if (!n1 || !n2) return std::nullopt;
     return n1->Angle(*n2);
+}
+
+std::optional<double> interference_volume(const Document& doc, const EntityId& a,
+                                          const EntityId& b) {
+    const Body* ba = doc.body(a);
+    const Body* bb = doc.body(b);
+    if (!ba || !bb || ba->shape.IsNull() || bb->shape.IsNull()) return std::nullopt;
+    BRepAlgoAPI_Common common(ba->shape, bb->shape);
+    if (!common.IsDone()) return std::nullopt;
+    TopoDS_Shape overlap = common.Shape();
+    if (overlap.IsNull()) return 0.0;
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(overlap, props);
+    const double v = props.Mass();
+    return v < 1e-9 ? 0.0 : v;
 }
 
 }  // namespace sx::measure

@@ -20,7 +20,6 @@ var sketch_chrome: SketchContextChrome  # finish-bar dim blank while sketching
 var world_gizmos: WorldGizmos
 var measure_overlay: MeasureOverlay
 var transform_hud: TransformHud
-var scale_bar: ScaleBarHud
 var ops_panel: OpsPanel
 
 enum DragMode { NONE, MOVE_BODY, ROTATE_BODY, PUSH_PULL, BOX_SELECT, ORBIT_VIEW, RESIZE_BODY, MOVE_INSTANCE }
@@ -54,14 +53,10 @@ var _press_empty := false
 var _press_travel := 0.0
 ## Screen-space rubber-band rect while in BOX_SELECT (drawn via _draw).
 var _box_rect := Rect2()
-## Shift/Ctrl held on press: empty-drag becomes rubber-band box select.
+## Ctrl held on the last LMB press: empty-drag becomes rubber-band box select.
 var _box_drag := false
-## True = crossing/inclusive (partial capture); false = window/exclusive.
-var _box_crossing := false
 ## Shift or Ctrl held on press: additive select; empty click will not clear.
 var _additive_click := false
-## Shift+RMB empty-drag armed crossing box select (instead of orbit).
-var _rmb_box_select := false
 ## SELECT-tool drag-to-edit in sketch mode (begin/update/end_drag).
 var _sketch_dragging := false
 var _sketch_drag_moved := false
@@ -75,14 +70,17 @@ var _strip_fillet: Button
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
-var _strip_hole: Button
 var _strip_look: Button
 var _strip_plane: Button
 var _strip_fuse: Button
 var _strip_cut: Button
 var _strip_common: Button
-var _strip_group: Button
-var _strip_similar: Button
+var _strip_hole: Button
+var _strip_clash: Button
+var _strip_triball: Button
+var connector_overlay: ConnectorOverlay
+var triball: TriBallGizmo
+var marking_menu: MarkingMenu
 ## RMB: click = context menu, drag = orbit (peer FreeCAD / SW-like).
 var _rmb_pressed := false
 var _rmb_press_pos := Vector2.ZERO
@@ -96,17 +94,10 @@ var _pending_instance_move := false
 var _drag_instance_id := ""
 var _instance_start_xform := Transform3D.IDENTITY
 var _instance_grab_point := Vector3.ZERO
-## When set, MOVE_INSTANCE rotates about this concentric mate axis (revolute DOF).
-var _revolute_axis_point := Vector3.ZERO
-var _revolute_axis_dir := Vector3.ZERO
-var _revolute_active := false
-var _revolute_start_angle := 0.0
-var _revolute_angle := 0.0
-## Absolute instance angle (rad) at press + optional mate limits (rad).
-var _revolute_abs0 := 0.0
-var _revolute_has_limits := false
-var _revolute_min := -INF
-var _revolute_max := INF
+## Snap-on-drop: the connector face under the cursor mid-drag (magnet target),
+## and the face of the dragged part that will seat onto it.
+var _snap_target_face := ""
+var _snap_source_face := ""
 ## Spacebar orientation / named-view popup (SW Spacebar / Onshape S lite).
 var _orient_popup: PopupPanel
 ## Click-a-dimension in-viewport editor (sketch SELECT tool).
@@ -150,8 +141,6 @@ var _picking_sketch_host := false
 signal sketch_host_picked(kind: String, face_id: String, body_id: String, pad_fid: String)
 ## `additive` is true for Ctrl/Cmd+click multi-select (from the pointer event).
 signal sketch_pad_clicked(fid: String, additive: bool)
-## Box-select result for yellow sketch pads (window / crossing).
-signal sketch_pads_box_selected(fids: Array, additive: bool)
 
 ## Resize-drag state (AABB corner / face-center handles).
 var _resize_min := Vector3.ZERO
@@ -207,7 +196,7 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	_mount_world_gizmos()
 	_mount_measure_overlay()
-	_mount_scale_bar()
+	_mount_wave0_chrome()
 	_build_place_snap_ui()
 	_build_transform_hud()
 	_build_context_menu()
@@ -224,9 +213,7 @@ func _ready() -> void:
 		view.document_changed.connect(_on_view_document_changed)
 	if camera != null:
 		camera.view_changed.connect(_on_camera_view_changed)
-	resized.connect(_on_interaction_resized)
-	# Initial LOD once the viewport has a size (and after camera pose settles).
-	call_deferred("_refresh_grid_lod")
+	resized.connect(queue_redraw)
 
 
 func is_placing() -> bool:
@@ -240,29 +227,9 @@ func refresh_selection_chrome() -> void:
 
 
 func _on_camera_view_changed() -> void:
-	_refresh_grid_lod()
 	# Gizmo screen projections only need a redraw when the camera moves.
 	if view != null and view.selected_body != "" and _place_kind == "":
 		queue_redraw()
-
-
-func _on_interaction_resized() -> void:
-	_refresh_grid_lod()
-	queue_redraw()
-
-
-## Keep the work grid from going sub-pixel (plaid) and sync the mm scale bar.
-func _refresh_grid_lod() -> void:
-	if camera == null:
-		return
-	var ppm := camera.pixels_per_mm_at_pivot()
-	if world_gizmos != null:
-		world_gizmos.refresh_lod(ppm)
-		if scale_bar != null:
-			scale_bar.visible = world_gizmos.gizmos_visible and world_gizmos.grid_visible
-			scale_bar.set_mm_scale(world_gizmos.grid_major_mm, ppm)
-	elif scale_bar != null:
-		scale_bar.set_mm_scale(WorldGizmos.GRID_MAJOR, ppm)
 
 
 func _build_transform_hud() -> void:
@@ -278,7 +245,6 @@ func _build_transform_hud() -> void:
 func _build_context_menu() -> void:
 	_context_menu = PopupMenu.new()
 	_context_menu.name = "SelectionContext"
-	_context_menu.add_theme_font_size_override("font_size", UiScale.font(13))
 	add_child(_context_menu)
 	_context_menu.id_pressed.connect(_on_context_id)
 	UiScroll.soften_menu(_context_menu)
@@ -290,8 +256,8 @@ func _build_selection_strip() -> void:
 	_selection_strip.visible = false
 	_selection_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_selection_strip.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_selection_strip.offset_left = -520
-	_selection_strip.offset_right = 520
+	_selection_strip.offset_left = -420
+	_selection_strip.offset_right = 420
 	_selection_strip.offset_top = 8
 	_selection_strip.offset_bottom = 44
 	add_child(_selection_strip)
@@ -308,12 +274,24 @@ func _build_selection_strip() -> void:
 	_strip_common = UIIcons.button("common", "Intersect", "Keep only the common volume of the selection")
 	_strip_common.pressed.connect(func() -> void: _ctx_boolean("common"))
 	row.add_child(_strip_common)
-	_strip_group = UIIcons.button("instance", "Group", "Isolate the selection (hide everything else)")
-	_strip_group.pressed.connect(func() -> void: _ctx_isolate())
-	row.add_child(_strip_group)
-	_strip_similar = UIIcons.button("pattern", "Similar", "Add bodies of the same feature kind to the selection")
-	_strip_similar.pressed.connect(func() -> void: _ctx_select_similar())
-	row.add_child(_strip_similar)
+	_strip_hole = Button.new()
+	_strip_hole.name = "StripHole"
+	_strip_hole.text = "Hole"
+	_strip_hole.tooltip_text = "M6 through-all on the selected face / sketch points"
+	_strip_hole.pressed.connect(_ctx_hole_m6)
+	row.add_child(_strip_hole)
+	_strip_clash = Button.new()
+	_strip_clash.name = "StripClash"
+	_strip_clash.text = "Clash"
+	_strip_clash.tooltip_text = "Interference volume of two selected bodies"
+	_strip_clash.pressed.connect(_ctx_clash)
+	row.add_child(_strip_clash)
+	_strip_triball = Button.new()
+	_strip_triball.name = "StripTriBall"
+	_strip_triball.text = "TriBall"
+	_strip_triball.tooltip_text = "Rotate-copy about a ring (primary handle)"
+	_strip_triball.pressed.connect(_ctx_triball)
+	row.add_child(_strip_triball)
 	_strip_fillet = Button.new()
 	_strip_fillet.text = "Fillet"
 	_strip_fillet.pressed.connect(func() -> void: _ctx_fillet())
@@ -323,12 +301,6 @@ func _build_selection_strip() -> void:
 	_strip_sketch.tooltip_text = "Sketch on the selected face (then Extrude from the sketch bar)"
 	_strip_sketch.pressed.connect(func() -> void: sketch_requested.emit())
 	row.add_child(_strip_sketch)
-	_strip_hole = Button.new()
-	_strip_hole.text = "Hole"
-	_strip_hole.tooltip_text = (
-		"Apply hole at face center (O). Shift+O Place hole… · Ctrl+Shift+O Hole Wizard…")
-	_strip_hole.pressed.connect(func() -> void: _ctx_apply_hole())
-	row.add_child(_strip_hole)
 	_strip_look = Button.new()
 	_strip_look.text = "Look at"
 	_strip_look.tooltip_text = "Orient the camera normal to the selected face"
@@ -374,7 +346,7 @@ func _rebuild_orient_popup() -> void:
 	col.add_child(title)
 	for entry in [
 		["Front", 1], ["Right", 2], ["Top", 3], ["Isometric", 7],
-		["Zoom extents", 20], ["Zoom all", 21], ["Ortho/Persp", 5],
+		["Frame selection", 20], ["Frame all", 21], ["Ortho/Persp", 5],
 	]:
 		var b := Button.new()
 		b.text = str(entry[0])
@@ -396,8 +368,8 @@ func _rebuild_orient_popup() -> void:
 				nb.text = "Restore “%s”" % view_name
 				var n := str(view_name)
 				nb.pressed.connect(func() -> void:
-					if camera.restore_named_view(n, true):
-						status.emit("Restored view “%s” (orientation + zoom)" % n)
+					if camera.restore_named_view(n):
+						status.emit("Restored view “%s”" % n)
 					_orient_popup.hide())
 				col.add_child(nb)
 
@@ -420,7 +392,6 @@ func _build_dim_edit_popup() -> void:
 
 ## Open the in-viewport dimension editor for dimensions[index] (SELECT click
 ## on the label). Enter commits + re-solves; Esc / clicking away cancels.
-## Prefill shows an expression when present (`=w/2`); Alt+click toggles driven.
 func _show_dim_edit(index: int) -> void:
 	if sketch_mode == null or _dim_edit_popup == null:
 		return
@@ -428,15 +399,7 @@ func _show_dim_edit(index: int) -> void:
 		return
 	_dim_edit_index = index
 	var dim: Dictionary = sketch_mode.dimensions[index]
-	if Input.is_key_pressed(KEY_ALT):
-		var driving: bool = dim.get("driving", true)
-		sketch_mode.set_dimension_driving(index, not driving)
-		status.emit("Dimension is now " + ("driving" if not driving else "driven (reference)"))
-		return
-	if dim.has("expr") and str(dim["expr"]).strip_edges() != "":
-		_dim_edit_line.text = str(dim["expr"])
-	else:
-		_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
+	_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
 	var at := Vector2i(get_viewport().get_mouse_position()) + Vector2i(8, 8)
 	_dim_edit_popup.popup(Rect2i(at, Vector2i(150, 40)))
 	_dim_edit_line.grab_focus()
@@ -446,22 +409,11 @@ func _apply_dim_edit(text: String) -> void:
 	_dim_edit_popup.hide()
 	if sketch_mode == null or _dim_edit_index < 0:
 		return
-	var raw := text.strip_edges()
-	if raw.is_empty():
-		_dim_edit_index = -1
+	var v := text.to_float()
+	if v <= 0.0:
+		status.emit("Dimension must be a positive number")
 		return
-	# Expressions (`=w/2`) or plain positive numbers.
-	if not raw.begins_with("="):
-		var v := raw.to_float()
-		if v <= 0.0 and not raw.is_valid_float():
-			status.emit("Dimension must be a positive number or =expression")
-			_dim_edit_index = -1
-			return
-		if v <= 0.0 and raw.is_valid_float():
-			status.emit("Dimension must be a positive number or =expression")
-			_dim_edit_index = -1
-			return
-	var result: String = sketch_mode.set_dimension_value(_dim_edit_index, raw)
+	var result: String = sketch_mode.set_dimension_value(_dim_edit_index, v)
 	_dim_edit_index = -1
 	if result == "failed":
 		status.emit("Dimension rejected — constraints could not be satisfied")
@@ -846,6 +798,202 @@ func _mount_world_gizmos() -> void:
 	model_space.add_child(world_gizmos)
 
 
+func _mount_wave0_chrome() -> void:
+	if model_space != null and model_space.get_node_or_null("ConnectorOverlay") == null:
+		connector_overlay = ConnectorOverlay.new()
+		connector_overlay.name = "ConnectorOverlay"
+		connector_overlay.view = view
+		model_space.add_child(connector_overlay)
+	elif model_space != null:
+		connector_overlay = model_space.get_node("ConnectorOverlay") as ConnectorOverlay
+		if connector_overlay != null:
+			connector_overlay.view = view
+	if model_space != null and model_space.get_node_or_null("TriBallGizmo") == null:
+		triball = TriBallGizmo.new()
+		triball.name = "TriBallGizmo"
+		triball.view = view
+		triball.status.connect(func(t: String) -> void: status.emit(t))
+		triball.copy_committed.connect(_on_triball_copy)
+		model_space.add_child(triball)
+	elif model_space != null:
+		triball = model_space.get_node("TriBallGizmo") as TriBallGizmo
+	if get_node_or_null("MarkingMenu") == null:
+		marking_menu = MarkingMenu.new()
+		marking_menu.name = "MarkingMenu"
+		add_child(marking_menu)
+		marking_menu.verb_picked.connect(_on_marking_verb)
+		marking_menu.pick_chosen.connect(_on_marking_pick)
+	else:
+		marking_menu = get_node("MarkingMenu") as MarkingMenu
+
+
+func _ctx_hole_m6() -> void:
+	if view == null or view.selected_body == "":
+		status.emit("Hole: select a body")
+		return
+	var info: Dictionary = view.feature_info(view.selected_body)
+	var target := str(info.get("id", ""))
+	if target == "":
+		status.emit("Hole: body is not on the timeline")
+		return
+	var pos := Vector3(20, 20, 8)
+	if view.selected_face != "":
+		var mid: Variant = view.doc.face_midpoint(view.selected_face)
+		if mid is Vector3:
+			pos = mid
+	var positions := PackedVector3Array()
+	positions.append(pos)
+	var hid := view.doc.graph_add_holes(target, "simple", positions, Vector3(0, 0, -1), 6.0, 0.0)
+	status.emit("M6 hole" if hid != "" else "Hole failed")
+	view._after_mutation()
+
+
+func _ctx_clash() -> void:
+	if view == null or view.selected_bodies.size() < 2:
+		status.emit("Clash: select two bodies")
+		return
+	var v: float = view.doc.interference_volume(view.selected_bodies[0], view.selected_bodies[1])
+	if v < 0.0:
+		status.emit("Clash: not solids")
+		return
+	status.emit("Interference %.1f mm³" % v)
+
+
+func _ctx_triball() -> void:
+	if view == null or view.selected_body == "" or triball == null:
+		status.emit("TriBall: select a body")
+		return
+	var bb: Dictionary = view.doc.measure_bbox(view.selected_body)
+	var mn: Vector3 = bb.get("min", Vector3.ZERO)
+	var mx: Vector3 = bb.get("max", Vector3.ONE)
+	var mid := (mn + mx) * 0.5
+	triball.begin(mid, Vector3.UP, 6)
+	status.emit("TriBall — drag the ring, then click TriBall again to commit")
+
+
+## A rib follows a sketch profile, so it needs one: the most recent sketch on
+## the timeline, which is the sketch the user just drew and left.
+func _ctx_rib() -> void:
+	if view == null or view.selected_body == "":
+		status.emit("Rib: select a body")
+		return
+	var info: Dictionary = view.feature_info(view.selected_body)
+	var target := str(info.get("id", ""))
+	if target == "":
+		status.emit("Rib: body is not on the timeline")
+		return
+	var sketch := ""
+	for f in view.doc.graph_features():
+		if str(f.get("type", "")) == "sketch":
+			sketch = str(f.get("id", ""))
+	if sketch == "":
+		status.emit("Rib: draw an open profile with Sketch first")
+		return
+	var hid := view.doc.graph_add_rib(target, sketch, 2.0, 8.0)
+	status.emit("Rib along the sketch" if hid != "" else "Rib failed")
+	view._after_mutation()
+
+
+func _ctx_in_context() -> void:
+	if view == null or view.selected_body == "":
+		status.emit("In-context: select the neighbor body")
+		return
+	var ctx: String = view.doc.capture_context(view.selected_body, "Neighbor")
+	if ctx == "":
+		status.emit("In-context: capture failed")
+		return
+	var fid: String = view.doc.graph_add_in_context(ctx, 20.0, 20.0)
+	status.emit("In-context pad from the neighbor" if fid != "" else "In-context pad failed")
+	view._after_mutation()
+
+
+func _ctx_convert_sheet() -> void:
+	if view == null or view.selected_body == "":
+		status.emit("Convert sheet: select a thin solid")
+		return
+	var info: Dictionary = view.feature_info(view.selected_body)
+	var target := str(info.get("id", ""))
+	if target == "":
+		status.emit("Convert sheet: body is not on the timeline")
+		return
+	var fid: String = view.doc.graph_add_convert_sheet(target)
+	status.emit("Converted to sheet metal" if fid != "" else "Convert sheet failed — not thin enough")
+	view._after_mutation()
+
+
+func _ctx_weld() -> void:
+	if view == null or view.selected_edge == "":
+		status.emit("Weld: select an edge")
+		return
+	var id: String = view.doc.add_weld(view.selected_edge, "fillet", 3.0)
+	status.emit("Weld symbol on the sheet" if id != "" else "Weld failed")
+	view._after_mutation()
+
+
+func _on_triball_copy(count: int, angle_rad: float) -> void:
+	if view == null or view.selected_body == "" or count < 2:
+		return
+	var info: Dictionary = view.feature_info(view.selected_body)
+	var target := str(info.get("id", ""))
+	if target == "":
+		return
+	var bb: Dictionary = view.doc.measure_bbox(view.selected_body)
+	var mn: Vector3 = bb.get("min", Vector3.ZERO)
+	var mx: Vector3 = bb.get("max", Vector3.ONE)
+	var mid := (mn + mx) * 0.5
+	var total := angle_rad if absf(angle_rad) > 1e-3 else TAU
+	if view.doc.has_method("circular_pattern"):
+		view.doc.circular_pattern(view.selected_body, mid, Vector3.UP, count, total)
+	status.emit("TriBall copied %d" % count)
+	view._after_mutation()
+
+
+func _on_marking_verb(verb: String) -> void:
+	match verb:
+		"Fillet":
+			_ctx_fillet()
+		"Hole":
+			_ctx_hole_m6()
+		"Clash":
+			_ctx_clash()
+		"TriBall":
+			_ctx_triball()
+		"Rib":
+			_ctx_rib()
+		"In-context pad":
+			_ctx_in_context()
+		"Convert sheet":
+			_ctx_convert_sheet()
+		"Weld":
+			_ctx_weld()
+		"Look at":
+			_ctx_look_at()
+		"Print check":
+			_ctx_print_check()
+		_:
+			status.emit(verb)
+
+
+func _on_marking_pick(entity_id: String) -> void:
+	if view == null or entity_id == "":
+		return
+	view.select_entity(entity_id, "")
+	status.emit("Picked " + entity_id.substr(0, 8))
+
+
+func _open_marking_menu(screen_pos: Vector2) -> void:
+	if marking_menu == null:
+		return
+	var verbs := PackedStringArray(["Fillet", "Hole", "TriBall", "Rib", "In-context pad", "Convert sheet", "Weld", "Print check", "Look at"])
+	if view != null and view.selected_bodies.size() >= 2:
+		verbs.append("Clash")
+	var picks: Array = []
+	if view != null and view.selected_face != "" and view.selected_body != "":
+		picks.append({"id": view.selected_face, "label": "Face " + view.selected_face.substr(0, 8)})
+		picks.append({"id": view.selected_body, "label": "Body " + view.selected_body.substr(0, 8)})
+	marking_menu.show_for(screen_pos, verbs, picks)
+
+
 func _mount_measure_overlay() -> void:
 	# Lives on this Control (not ModelSpace) — drawn in screen space on top.
 	if get_node_or_null("MeasureOverlay") != null:
@@ -859,15 +1007,6 @@ func _mount_measure_overlay() -> void:
 	if not measure_overlay.changed.is_connected(_on_measure_overlay_changed):
 		measure_overlay.changed.connect(_on_measure_overlay_changed)
 	measure_overlay.refresh_bounds()
-
-
-func _mount_scale_bar() -> void:
-	if get_node_or_null("ScaleBarHud") != null:
-		scale_bar = get_node("ScaleBarHud") as ScaleBarHud
-	else:
-		scale_bar = ScaleBarHud.new()
-		scale_bar.name = "ScaleBarHud"
-		add_child(scale_bar)
 
 
 func _on_measure_overlay_changed() -> void:
@@ -1309,20 +1448,19 @@ func _update_transport_measure(screen_pos: Vector2 = Vector2.INF) -> void:
 		if near_snap or not measure_overlay.has_anchor():
 			measure_overlay.relocate_anchor(body, snap)
 			view.set_hover(body, str(hit.get("face", "")), str(hit.get("edge", "")))
-			var dual := " · prior X kept" if measure_overlay.has_prev() else ""
 			if _place_kind != "":
-				status.emit("Measure X on target%s — move ghost to compare · click places" % dual)
+				status.emit("Measure X on target — move ghost to compare · click places")
 			elif _drag_mode == DragMode.MOVE_BODY:
-				status.emit("Measure X on target%s — drag to compare · release commits move" % dual)
+				status.emit("Measure X on target — drag to compare · release commits move")
 			else:
-				status.emit("Measure X on target%s — drag body to compare" % dual)
+				status.emit("Measure X on target — drag body to compare")
 			return
 		# X stays; dim to the perpendicular foot on the near body (earlier cue).
 		view.set_hover(body, str(hit.get("face", "")), str(hit.get("edge", "")))
 		var foot := view.closest_surface_point(
 				body, measure_overlay.anchor_point as Vector3)
 		measure_overlay.set_live_target(foot)
-		status.emit("Measure — perpendicular to near body · approach snap to plant/move X")
+		status.emit("Measure — perpendicular to near body · approach snap to move X")
 		return
 	view.clear_hover()
 	if not measure_overlay.has_anchor():
@@ -1435,17 +1573,10 @@ func _gui_input(event: InputEvent) -> void:
 	# hovered target). Keep `_gui_input` as a fallback for headless tests and
 	# for sketch which historically used Control-local events.
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
-	if event is InputEventScreenTouch and camera != null:
-		if camera.note_screen_touch(event as InputEventScreenTouch):
-			accept_event()
-			return
 	if camera != null and camera.is_nav_event(event, allow_scroll):
-		if event is InputEventKey and _nav_keys_blocked(event as InputEventKey):
-			pass
-		else:
-			if camera.handle_input(event, allow_scroll):
-				accept_event()
-			return
+		if camera.handle_input(event, allow_scroll):
+			accept_event()
+		return
 	# Place is owned entirely by `_input` — do not swallow `_gui_input` here.
 	if _place_kind != "" or _picking_active_plane:
 		return
@@ -1454,16 +1585,6 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if _handle_model_pointer(event):
 		accept_event()
-
-
-## True when camera keyboard nav must yield (text fields, or sketch digits).
-func _nav_keys_blocked(ke: InputEventKey) -> bool:
-	if _sketch_keys_blocked():
-		return true
-	# Number-row view snaps must not steal sketch length typing (1–9 / period).
-	if sketch_mode != null and sketch_mode.active and _is_length_type_key(ke):
-		return true
-	return false
 
 
 ## True when a LineEdit / TextEdit / SpinBox editor has focus — sketch hotkeys
@@ -1516,40 +1637,22 @@ func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
 func _handle_model_pointer(event: InputEvent) -> bool:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		# RMB: Shift+empty-drag = crossing box select; plain drag = orbit;
-		# click alone opens the context menu.
+		# RMB click = context menu; RMB drag = orbit (FreeCAD / peer-friendly).
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			if mb.pressed:
 				_rmb_pressed = true
 				_rmb_press_pos = mb.position
 				_rmb_orbiting = false
-				_rmb_box_select = false
 				_last_drag_pos = mb.position
-				_box_crossing = mb.shift_pressed
-				_additive_click = mb.shift_pressed or mb.ctrl_pressed
-				_box_drag = mb.shift_pressed
-				_box_rect = Rect2()
-				# Seed press-empty so Shift+RMB can arm box select on drag.
-				if mb.shift_pressed:
-					var ray := _model_ray(mb.position)
-					_press_empty = view.pick_info(ray[0], ray[1]).is_empty()
-					_pressed = true
-					_press_pos = mb.position
-					_press_travel = 0.0
 			else:
-				if _rmb_box_select or _drag_mode == DragMode.BOX_SELECT:
-					_on_release(mb.position)
-				elif _rmb_pressed and not _rmb_orbiting:
+				if _rmb_pressed and not _rmb_orbiting:
 					_open_context_menu(_rmb_press_pos)
 				_rmb_pressed = false
 				_rmb_orbiting = false
-				_rmb_box_select = false
 			return true
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				# Shift+empty-drag → window box (exclusive); Ctrl kept as alias.
-				_box_drag = mb.shift_pressed or mb.ctrl_pressed
-				_box_crossing = false
+				_box_drag = mb.ctrl_pressed
 				_additive_click = mb.shift_pressed or mb.ctrl_pressed
 				_on_press(mb.position)
 			else:
@@ -1565,17 +1668,6 @@ func _handle_model_pointer(event: InputEvent) -> bool:
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		if _rmb_pressed:
-			if _box_drag and _press_empty and not _rmb_box_select \
-					and mm.position.distance_to(_rmb_press_pos) >= CLICK_SLOP:
-				_rmb_box_select = true
-				_rmb_orbiting = false
-				_drag_mode = DragMode.BOX_SELECT
-				_box_crossing = true
-				_last_drag_pos = _rmb_press_pos
-				status.emit("Crossing box select (Shift+right-drag) — partial capture")
-			if _rmb_box_select or _drag_mode == DragMode.BOX_SELECT:
-				_on_drag(mm.position)
-				return true
 			if not _rmb_orbiting and mm.position.distance_to(_rmb_press_pos) >= CLICK_SLOP:
 				_rmb_orbiting = true
 				_last_drag_pos = _rmb_press_pos
@@ -1628,6 +1720,7 @@ func _update_hover(screen_pos: Vector2) -> void:
 		_last_hover_key = ""
 		mouse_default_cursor_shape = Control.CURSOR_ARROW
 		_measure_hover_miss()
+		_update_connector_hover("")
 		return
 	# Selected body (about to move): same marks as place — touch others to
 	# plant X; otherwise dim to the selection's nearest corner.
@@ -1641,6 +1734,7 @@ func _update_hover(screen_pos: Vector2) -> void:
 	if hit.is_empty():
 		view.clear_hover()
 		_measure_hover_miss()
+		_update_connector_hover("")
 		if _last_hover_key != "":
 			_last_hover_key = ""
 			mouse_default_cursor_shape = Control.CURSOR_ARROW
@@ -1651,21 +1745,143 @@ func _update_hover(screen_pos: Vector2) -> void:
 	var hit_pt: Vector3 = hit.get("point", Vector3.ZERO)
 	view.set_hover(body, face, edge)
 	_update_measure_hover(body, hit_pt)
+	_update_connector_hover(face)
 	var key := "%s|%s|%s|%.3f,%.3f,%.3f" % [body, face, edge, hit_pt.x, hit_pt.y, hit_pt.z]
 	if key == _last_hover_key:
 		return
 	_last_hover_key = key
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	if measure_overlay != null and measure_overlay.has_anchor() and not measure_overlay.following:
-		var keep := " (keeps prior X)" if measure_overlay.has_prev() \
-				or measure_overlay.sticky_count() < MeasureOverlay.MAX_STICKY else ""
-		status.emit("Measure — Δ to perpendicular · approach snap to plant/move X%s · Esc clears" % keep)
+		status.emit("Measure — Δ to perpendicular on near body · approach snap to move X · Esc clears")
 	elif edge != "":
 		status.emit("Edge — click to select · Ctrl/Shift+click adds")
 	elif face != "":
 		status.emit("Face — click selects body first, click again for face · then Pull arrow")
 	else:
 		status.emit("Body — click to select · drag empty space / Alt / two-finger to orbit")
+
+
+## Face of the dragged part that will seat on the drop target: the connector
+## face nearest where the user grabbed it.
+func _grabbed_connector_face(instance_id: String, grab_point: Vector3) -> String:
+	if view == null:
+		return ""
+	var source := ""
+	for inst in view.doc.instance_list():
+		if str(inst.get("id", "")) == instance_id:
+			source = str(inst.get("source_body", ""))
+	if source == "":
+		return ""
+	var best := ""
+	var best_d := 1e30
+	for f in view.doc.get_face_ids(source):
+		var c: Dictionary = view.doc.implicit_connector(instance_id, f)
+		if c.is_empty():
+			continue
+		var d: float = (c.get("origin", Vector3.ZERO) as Vector3).distance_to(grab_point)
+		if d < best_d:
+			best_d = d
+			best = f
+	return best
+
+
+## Light the connector under the cursor while dragging a part over it.
+func _update_snap_target(pos: Vector2) -> void:
+	_snap_target_face = ""
+	if view == null or _snap_source_face == "":
+		_update_connector_hover("")
+		return
+	var ray := _model_ray(pos)
+	var hit: Dictionary = view.pick_info(ray[0], ray[1])
+	var face := str(hit.get("face", ""))
+	if face == "" or face == _snap_source_face:
+		_update_connector_hover("")
+		return
+	if view.doc.implicit_connector("", face).is_empty():
+		_update_connector_hover("")
+		return
+	_snap_target_face = face
+	_update_connector_hover(face)
+
+
+## Release over a connector: fasten the dragged part to it, the way dropping a
+## bolt into a hole should behave. Returns false when there was no target.
+func _snap_on_drop() -> bool:
+	if _snap_target_face == "" or _snap_source_face == "" or _drag_instance_id == "":
+		return false
+	var mid: String = view.doc.add_mate("fastened", "", _snap_target_face, _drag_instance_id,
+			_snap_source_face, 0.0, false, "Snap")
+	_snap_target_face = ""
+	_update_connector_hover("")
+	if mid == "":
+		return false
+	var solved: bool = view.doc.solve_mates()
+	view.refresh()
+	status.emit("Snapped — fastened to the connector" if solved
+			else "Snapped — solve FAILED")
+	return true
+
+
+## The joint driving `instance_id`, or {} when the part is free.
+func _joint_for_instance(instance_id: String) -> Dictionary:
+	if view == null or instance_id == "":
+		return {}
+	for j in view.doc.joint_list():
+		if str(j.get("instance_b", "")) == instance_id:
+			return j
+	return {}
+
+
+## Convert an instance drag into the joint's one free value: mm along the axis
+## for sliders, degrees about it for revolutes. Returns false when the part has
+## no joint, so the caller falls back to a free move.
+func _drive_joint_from_drag(pos: Vector2) -> bool:
+	var joint := _joint_for_instance(_drag_instance_id)
+	if joint.is_empty():
+		return false
+	var frame: Dictionary = view.doc.implicit_connector("", str(joint.get("face_a", "")))
+	if frame.is_empty():
+		return false
+	var origin: Vector3 = frame.get("origin", Vector3.ZERO)
+	var axis: Vector3 = (frame.get("z_dir", Vector3.UP) as Vector3).normalized()
+	# Measure the gesture against the axis as drawn on screen, so a vertical
+	# slider reads a vertical drag and a hinge reads a sweep around its pin.
+	var pivot := _model_to_screen(origin)
+	var axis_screen := _model_to_screen(origin + axis) - pivot
+	var unit := str(joint.get("unit", "mm"))
+	var value := float(joint.get("value", 0.0))
+	if unit == "mm":
+		if axis_screen.length() < 0.5:
+			return false  # axis points at the camera: nothing to drag along
+		var mm_per_px := 1.0 / axis_screen.length()
+		value += (pos - _press_pos).dot(axis_screen.normalized()) * mm_per_px
+	else:
+		var from := _press_pos - pivot
+		var to := pos - pivot
+		if from.length() < 4.0 or to.length() < 4.0:
+			return false  # too close to the pin to read an angle
+		var swept := from.angle_to(to)
+		# Screen Y grows downward, and a receding axis sweeps the other way.
+		if axis.dot(-camera.global_transform.basis.z) > 0.0:
+			swept = -swept
+		value += swept
+	if not view.doc.set_joint_value(str(joint.get("id", "")), value):
+		return false
+	view.refresh()
+	var shown := rad_to_deg(value) if unit == "deg" else value
+	status.emit("%s %.1f %s" % [str(joint.get("name", "Joint")), shown, unit])
+	return true
+
+
+## Onshape-style: the mate frame appears on the face under the cursor, so mates
+## and joints are picked from geometry rather than from a list of frames.
+func _update_connector_hover(face_id: String, instance_id := "") -> void:
+	if connector_overlay == null:
+		return
+	if face_id == "":
+		connector_overlay.clear_hover()
+		return
+	connector_overlay.set_hover(instance_id, face_id)
 
 
 func _update_measure_hover(body: String, hit_point: Vector3) -> void:
@@ -1750,9 +1966,6 @@ func _sketch_input(event: InputEvent) -> void:
 						and not sketch_mode.drag_hit(p2).is_empty():
 					sketch_mode.begin_drag(p2)
 					_sketch_dragging = true
-				elif mb.double_click and sketch_mode.has_open_chain():
-					# First click of the double already placed the last point.
-					sketch_mode.end_chain()
 				else:
 					sketch_mode.click(p2)
 			accept_event()
@@ -1837,9 +2050,6 @@ func _sketch_input(event: InputEvent) -> void:
 				elif sketch_mode.has_length_override():
 					sketch_mode.clear_length_override()
 					status.emit("Length unlock")
-				elif sketch_mode.has_open_chain():
-					sketch_mode.end_chain()
-					status.emit("Chain ended")
 				else:
 					sketch_mode.cancel()
 		accept_event()
@@ -1925,7 +2135,7 @@ func _on_press(pos: Vector2) -> void:
 	_press_empty = hit.is_empty()
 
 	# Shift/Ctrl+click is additive selection only — never arms a move/push drag.
-	# Shift/Ctrl+empty-drag becomes a rubber-band box select in _on_drag.
+	# Ctrl+empty-drag becomes a rubber-band box select in _on_drag.
 	if _additive_click:
 		return
 
@@ -1937,11 +2147,20 @@ func _on_press(pos: Vector2) -> void:
 		var iid: String = ihit["id"]
 		if view.selected_instance != iid:
 			view.select_instance(iid)
-		_pending_instance_move = true
-		_drag_instance_id = iid
-		_instance_grab_point = ihit["point"]
-		var inode := view.instance_node(iid)
-		_instance_start_xform = inode.transform if inode != null else Transform3D.IDENTITY
+		# Fixed restraint (SolidWorks Fix): select but do not arm a drag.
+		var inst_fixed := false
+		for inst in view.doc.instance_list():
+			if str(inst.get("id", "")) == iid:
+				inst_fixed = bool(inst.get("fixed", false))
+				break
+		if not inst_fixed:
+			_pending_instance_move = true
+			_drag_instance_id = iid
+			_instance_grab_point = ihit["point"]
+			_snap_source_face = _grabbed_connector_face(iid, ihit["point"])
+			_snap_target_face = ""
+			var inode := view.instance_node(iid)
+			_instance_start_xform = inode.transform if inode != null else Transform3D.IDENTITY
 		_press_empty = false
 		return
 
@@ -2067,36 +2286,12 @@ func _on_drag(pos: Vector2) -> void:
 	if _pending_instance_move and _drag_mode == DragMode.NONE:
 		_pending_instance_move = false
 		_drag_mode = DragMode.MOVE_INSTANCE
-		_revolute_active = false
-		_revolute_angle = 0.0
-		_revolute_has_limits = false
-		_revolute_min = -INF
-		_revolute_max = INF
-		var rax: Dictionary = view.doc.instance_revolute_axis(_drag_instance_id)
-		if bool(rax.get("ok", false)):
-			_revolute_active = true
-			_revolute_axis_point = rax["point"]
-			_revolute_axis_dir = (rax["dir"] as Vector3).normalized()
-			_revolute_start_angle = _angle_about_axis(
-					_press_pos, _revolute_axis_dir, _revolute_axis_point)
-			_revolute_abs0 = deg_to_rad(float(rax.get("angle_deg", 0.0)))
-			if rax.has("angle_min") or rax.has("angle_max"):
-				_revolute_has_limits = true
-				if rax.has("angle_min"):
-					_revolute_min = deg_to_rad(float(rax["angle_min"]))
-				if rax.has("angle_max"):
-					_revolute_max = deg_to_rad(float(rax["angle_max"]))
 	# Empty-space drag: orbit (or pan when sketch orientation is locked).
-	# Shift/Ctrl+empty-drag: rubber-band box select (window when left).
+	# Ctrl+empty-drag: rubber-band box select.
 	if _drag_mode == DragMode.NONE and _press_empty and _place_kind == "":
 		_drag_mode = DragMode.BOX_SELECT if _box_drag else DragMode.ORBIT_VIEW
 		# Orbit from the press origin so the first post-slop frame applies real delta.
 		_last_drag_pos = _press_pos
-		if _drag_mode == DragMode.BOX_SELECT:
-			if _box_crossing:
-				status.emit("Crossing box select — partial capture counts")
-			else:
-				status.emit("Window box select (Shift+left-drag) — fully inside only")
 	match _drag_mode:
 		DragMode.ORBIT_VIEW:
 			var rel := pos - _last_drag_pos
@@ -2181,49 +2376,30 @@ func _on_drag(pos: Vector2) -> void:
 			_update_resize_drag(pos)
 			queue_redraw()
 		DragMode.MOVE_INSTANCE:
-			var inode := view.instance_node(_drag_instance_id)
-			if inode == null:
+			# Live preview on the grabbed instance's horizontal plane.
+			var plane_z := _instance_grab_point.z
+			var gp = _horizontal_plane_point(pos, plane_z)
+			var gp0 = _horizontal_plane_point(_press_pos, plane_z)
+			if gp == null or gp0 == null:
 				return
-			if _revolute_active:
-				var ang := _angle_about_axis(pos, _revolute_axis_dir, _revolute_axis_point)
-				_revolute_angle = wrapf(ang - _revolute_start_angle, -PI, PI)
-				if _revolute_has_limits:
-					var target := clampf(_revolute_abs0 + _revolute_angle, _revolute_min, _revolute_max)
-					_revolute_angle = target - _revolute_abs0
-				inode.transform = Transform3D(
-						Basis(Quaternion(_revolute_axis_dir, _revolute_angle)) \
-								* _instance_start_xform.basis,
-						_rotate_point_about_axis(_instance_start_xform.origin,
-								_revolute_axis_point, _revolute_axis_dir, _revolute_angle))
-				status.emit("Revolve instance: %.1f° — release re-solves mates"
-						% rad_to_deg(_revolute_angle))
-			else:
-				# Live preview on the grabbed instance's horizontal plane.
-				var plane_z := _instance_grab_point.z
-				var gp = _horizontal_plane_point(pos, plane_z)
-				var gp0 = _horizontal_plane_point(_press_pos, plane_z)
-				if gp == null or gp0 == null:
-					return
-				var delta: Vector3 = gp - gp0
+			var delta: Vector3 = gp - gp0
+			var inode := view.instance_node(_drag_instance_id)
+			if inode != null:
 				inode.transform = Transform3D(_instance_start_xform.basis,
 						_instance_start_xform.origin + delta)
+			# Magnet: a connector under the cursor lights up and claims the drop.
+			_update_snap_target(pos)
+			if _snap_target_face != "":
+				status.emit("Release to fasten onto the highlighted connector")
+			else:
 				status.emit("Move instance Δ (%.1f, %.1f) — release re-solves mates"
 						% [delta.x, delta.y])
 
 
-func _rotate_point_about_axis(p: Vector3, origin: Vector3, axis: Vector3, angle: float) -> Vector3:
-	return origin + Quaternion(axis.normalized(), angle) * (p - origin)
-
-
 func _draw() -> void:
 	if _drag_mode == DragMode.BOX_SELECT and _box_rect.size != Vector2.ZERO:
-		# Window (exclusive) = cool blue; crossing (inclusive) = warm amber.
-		var fill := Color(0.95, 0.55, 0.15, 0.16) if _box_crossing \
-				else Color(0.35, 0.6, 0.95, 0.18)
-		var edge := Color(0.95, 0.55, 0.15, 0.9) if _box_crossing \
-				else Color(0.35, 0.6, 0.95, 0.85)
-		draw_rect(_box_rect, fill, true)
-		draw_rect(_box_rect, edge, false, 1.0)
+		draw_rect(_box_rect, Color(0.35, 0.6, 0.95, 0.18), true)
+		draw_rect(_box_rect, Color(0.35, 0.6, 0.95, 0.85), false, 1.0)
 	_draw_selection_gizmos()
 	if _drag_mode == DragMode.PUSH_PULL and absf(_pp_preview_dist) > 1e-3:
 		_draw_push_pull_preview()
@@ -2247,14 +2423,14 @@ func _hide_measure_chrome() -> bool:
 	return false
 
 
-## Screen-space measure dims: DPI-stable font (not window size), always on top.
+## Screen-space measure dims: fixed size (~1/40 viewport height), always on top.
 ## Hidden during stretch/rotate/pull/orbit; kept during place and body move.
 func _draw_measure_overlay() -> void:
 	if measure_overlay == null or camera == null or model_space == null:
 		return
 	if _hide_measure_chrome():
 		return
-	var font_px := UiScale.font(MeasureOverlay.FONT_PX)
+	var font_px := maxi(int(round(size.y * MeasureOverlay.SCREEN_FRAC)), 10)
 	var mark_half := float(font_px) * 0.45
 	var tick := float(font_px) * 0.28
 	var line_w := maxf(font_px * 0.08, 1.25)
@@ -2340,16 +2516,6 @@ func _instance_rotation(instance_id: String) -> Array:
 	return [Vector3(0, 0, 1), 0.0]
 
 
-## Axis-angle from a live Transform3D basis (for committing revolute previews).
-func _instance_rotation_from_xform(xf: Transform3D) -> Array:
-	var q := xf.basis.get_rotation_quaternion()
-	var axis := Vector3(q.x, q.y, q.z)
-	var angle := 2.0 * atan2(axis.length(), q.w)
-	if axis.length_squared() < 1e-16:
-		return [Vector3(0, 0, 1), 0.0]
-	return [axis.normalized(), rad_to_deg(angle)]
-
-
 func _push_pull_distance(pos: Vector2) -> float:
 	# Distance along the face normal: closest approach between the screen ray
 	# and the line (start_point, normal).
@@ -2387,33 +2553,16 @@ func _on_release(pos: Vector2) -> void:
 			return
 		DragMode.BOX_SELECT:
 			_box_rect = Rect2(_press_pos, pos - _press_pos).abs()
-			view.select_in_rect(_box_rect, camera, model_space, _additive_click, _box_crossing)
-			var pad_hits: Array = []
-			if view.sketch_pads != null and (sketch_mode == null or not sketch_mode.active):
-				pad_hits = view.sketch_pads.pads_in_rect(
-						_box_rect, camera, model_space, _box_crossing)
-				if not pad_hits.is_empty() or not _additive_click:
-					sketch_pads_box_selected.emit(pad_hits, _additive_click)
-			var n := view.selection_size()
-			var np: int = pad_hits.size()
-			if n > 1 or np > 1:
-				var parts: PackedStringArray = []
-				if n > 0:
-					parts.append("%d body%s" % [n, "" if n == 1 else "s"])
-				if np > 0:
-					parts.append("%d sketch pad%s" % [np, "" if np == 1 else "s"])
-				status.emit("Selected " + ", ".join(parts))
-			elif n == 1:
+			view.select_in_rect(_box_rect, camera, model_space, _additive_click)
+			if view.selection_size() > 1:
+				status.emit("%d selected" % view.selection_size())
+			elif view.selection_size() == 1:
 				status.emit("Selected " + view.selected_body.left(8))
-			elif np == 1:
-				status.emit("Selected sketch pad")
 			else:
 				status.emit("")
 			_clear_box_band()
 			_box_drag = false
-			_box_crossing = false
 			_additive_click = false
-			_rmb_box_select = false
 			_press_travel = 0.0
 			return
 		DragMode.MOVE_BODY:
@@ -2480,20 +2629,14 @@ func _on_release(pos: Vector2) -> void:
 						_show_precision_after_drag(dist, "Δ push")
 					else:
 						status.emit("Push/pull failed (planar faces only for now)")
-				_pp_preview_dist = 0.0
-				_drag_mode = DragMode.NONE
-				_box_drag = false
-				_additive_click = false
-				_refresh_transform_hud()
-				queue_redraw()
-				_press_travel = 0.0
-				return
-			# Click without drag: do not consume the event as push/pull.
-			# Fall through so select_ray emits `picked` (Place hole… / pattern
-			# axis picks) and same-face re-click can collapse to the body.
 			_pp_preview_dist = 0.0
 			_drag_mode = DragMode.NONE
+			_box_drag = false
+			_additive_click = false
+			_refresh_transform_hud()
 			queue_redraw()
+			_press_travel = 0.0
+			return
 		DragMode.RESIZE_BODY:
 			if not was_click and absf(_resize_distance) > 1e-3:
 				_commit_resize()
@@ -2505,17 +2648,33 @@ func _on_release(pos: Vector2) -> void:
 			return
 		DragMode.MOVE_INSTANCE:
 			var inode := view.instance_node(_drag_instance_id)
+			# Dropped on a connector: fasten there instead of leaving it loose.
+			if not was_click and inode != null and _snap_on_drop():
+				_drag_mode = DragMode.NONE
+				_drag_instance_id = ""
+				_box_drag = false
+				_additive_click = false
+				_press_travel = 0.0
+				return
+			# A jointed part has one degree of freedom; the drag drives it.
+			if not was_click and inode != null and _drive_joint_from_drag(pos):
+				_drag_mode = DragMode.NONE
+				_drag_instance_id = ""
+				_box_drag = false
+				_additive_click = false
+				_press_travel = 0.0
+				return
 			if not was_click and inode != null:
-				var rot := _instance_rotation_from_xform(inode.transform)
-				# resolve_mates=true folds solve into the same undo step.
+				var rot := _instance_rotation(_drag_instance_id)
 				if view.doc.set_instance_transform(_drag_instance_id,
-						inode.transform.origin, rot[0], rot[1], true):
+						inode.transform.origin, rot[0], rot[1]):
+					# Peer feel: drop the instance, then mates pull it home.
 					var had_mates: bool = view.doc.mate_list().size() > 0
+					var solved: bool = view.doc.solve_mates() if had_mates else true
 					view.refresh()
-					if _revolute_active and had_mates:
-						status.emit("Instance revolved — mates re-solved")
-					elif had_mates:
-						status.emit("Instance moved — mates re-solved")
+					if had_mates:
+						status.emit("Instance moved — mates re-solved" if solved
+								else "Instance moved — mate solve FAILED")
 					else:
 						status.emit("Instance moved")
 				else:
@@ -2523,7 +2682,6 @@ func _on_release(pos: Vector2) -> void:
 					status.emit("Move instance failed")
 			_drag_mode = DragMode.NONE
 			_drag_instance_id = ""
-			_revolute_active = false
 			_box_drag = false
 			_additive_click = false
 			_press_travel = 0.0
@@ -2596,8 +2754,6 @@ func _gui_key(event: InputEventKey) -> bool:
 			if _place_kind != "":
 				_disarm_place(true)
 				return true
-			if ops_panel != null and ops_panel.cancel_pending_pick():
-				return true
 			if _picking_active_plane:
 				cancel_pick_active_plane()
 				return true
@@ -2608,13 +2764,6 @@ func _gui_key(event: InputEventKey) -> bool:
 			view.clear_selection()
 			status.emit("")
 			return true
-		KEY_ENTER, KEY_KP_ENTER:
-			if sketch_mode != null and sketch_mode.active:
-				return false
-			if ops_panel != null and ops_panel.is_hole_wizard_armed():
-				if not ops_panel._apply_hole_wizard():
-					status.emit("Hole Wizard: need at least one point")
-				return true
 		KEY_DELETE, KEY_BACKSPACE:
 			return _delete_selection()
 		KEY_C:
@@ -2665,7 +2814,7 @@ func _gui_key(event: InputEventKey) -> bool:
 				status.emit("Redo")
 				return true
 		KEY_W:
-			if not event.ctrl_pressed and event.shift_pressed:
+			if not event.ctrl_pressed:
 				var mode: int = view.cycle_display_mode()
 				status.emit("Display: " + ["Shaded", "Shaded + Edges", "Wireframe"][mode])
 				return true
@@ -2676,8 +2825,6 @@ func _gui_key(event: InputEventKey) -> bool:
 		KEY_G:
 			if not event.ctrl_pressed and world_gizmos != null:
 				world_gizmos.set_gizmos_visible(not world_gizmos.gizmos_visible)
-				if scale_bar != null:
-					scale_bar.visible = world_gizmos.gizmos_visible and world_gizmos.grid_visible
 				status.emit("Gizmos " + ("on" if world_gizmos.gizmos_visible else "off"))
 				return true
 		KEY_H:
@@ -2697,19 +2844,11 @@ func _gui_key(event: InputEventKey) -> bool:
 				view.isolate(ids)
 				status.emit("All shown" if ids.is_empty() else "Isolated")
 				return true
-		KEY_O:
-			if sketch_mode != null and sketch_mode.active:
-				return false
-			if event.ctrl_pressed and event.shift_pressed:
-				_ctx_arm_hole_wizard()
+		KEY_S:
+			if not event.ctrl_pressed and _place_kind == "" \
+					and (sketch_mode == null or not sketch_mode.active):
+				_open_marking_menu(get_global_mouse_position())
 				return true
-			if event.ctrl_pressed:
-				return false  # File > Open (Ctrl+O) in main
-			if event.shift_pressed:
-				_ctx_arm_hole()
-			else:
-				_ctx_apply_hole()
-			return true
 		KEY_SPACE:
 			# SolidWorks Spacebar / Onshape S-lite: orientation + named views.
 			if not event.ctrl_pressed and _place_kind == "" \
@@ -3220,22 +3359,14 @@ func _input(event: InputEvent) -> void:
 	# before place so Alt+drag / two-finger pan don't commit a solid.
 	# Never steal wheel / two-finger pan from ScrollContainers; pinch always zooms.
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
-	# Track every finger so two-finger pan/pinch can see the first contact.
-	if event is InputEventScreenTouch and camera != null:
-		if camera.note_screen_touch(event as InputEventScreenTouch):
-			get_viewport().set_input_as_handled()
-			return
 	# Magnify must never fall through place/sketch even if scroll gating diffs.
 	if event is InputEventMagnifyGesture and camera != null:
 		if camera.handle_input(event, true):
 			get_viewport().set_input_as_handled()
 			return
 	if camera != null and camera.is_nav_event(event, allow_scroll):
-		if event is InputEventKey and _nav_keys_blocked(event as InputEventKey):
-			pass  # fall through — text field or sketch length entry owns the key
-		else:
-			if camera.handle_input(event, allow_scroll):
-				get_viewport().set_input_as_handled()
+		if camera.handle_input(event, allow_scroll):
+			get_viewport().set_input_as_handled()
 			return
 	# Place mode uses viewport mouse coords so ghost/commit work even when the
 	# cursor is "over" a sibling Control or Interaction fails hit-tests.
@@ -3435,12 +3566,11 @@ func _refresh_selection_strip() -> void:
 	_strip_fuse.visible = multi_body
 	_strip_cut.visible = multi_body
 	_strip_common.visible = multi_body
-	_strip_group.visible = multi_body
-	_strip_similar.visible = multi_body or (not has_instance and view.selected_body != "" \
-			and view.selected_face == "")
 	_strip_fillet.visible = not has_instance
+	_strip_hole.visible = not has_instance
+	_strip_clash.visible = multi_body
+	_strip_triball.visible = not has_instance
 	_strip_sketch.visible = not has_instance and view.selected_face != ""
-	_strip_hole.visible = not has_instance and view.selected_face != ""
 	_strip_look.visible = not has_instance and view.selected_face != ""
 	_strip_plane.visible = not has_instance and view.selected_face != ""
 	_strip_hide.visible = not has_instance
@@ -3456,9 +3586,6 @@ func _open_context_menu(screen_pos: Vector2) -> void:
 		_context_menu.add_item("Fillet", 1)
 		if view.selected_face != "":
 			_context_menu.add_item("Sketch on face…", 2)
-			_context_menu.add_item("Apply hole (center)", 16)
-			_context_menu.add_item("Place hole…", 17)
-			_context_menu.add_item("Hole Wizard…", 18)
 			_context_menu.add_item("Set as active plane", 8)
 			_context_menu.add_item("Look at face", 6)
 			_context_menu.add_item("Push/Pull (drag orange arrow)", 7)
@@ -3499,9 +3626,6 @@ func _on_context_id(id: int) -> void:
 		7:
 			status.emit("Drag the orange Pull arrow on the face to push/pull")
 		8: _ctx_set_active_plane()
-		16: _ctx_apply_hole()
-		17: _ctx_arm_hole()
-		18: _ctx_arm_hole_wizard()
 		10:
 			if camera != null:
 				camera.frame_contents()
@@ -3580,23 +3704,19 @@ func _ctx_hide() -> void:
 
 func _ctx_isolate() -> void:
 	view.isolate(_selected_body_ids())
-	status.emit("Isolated (grouped)")
-
-
-func _ctx_select_similar() -> void:
-	if view == null:
-		return
-	var added := view.select_similar()
-	_refresh_selection_strip()
-	if added > 0:
-		status.emit("Similar: +%d body%s (%d total)" % [
-				added, "" if added == 1 else "s", view.selection_size()])
-	else:
-		status.emit("No similar bodies found")
+	status.emit("Isolated")
 
 
 func _ctx_delete() -> void:
 	_delete_selection()
+
+
+func _ctx_print_check() -> void:
+	if view == null or view.doc == null:
+		status.emit("Print check: no document")
+		return
+	var r: Dictionary = view.doc.print_analyze(view.selected_body)
+	status.emit(str(r.get("digest", "Print check")))
 
 
 func _ctx_look_at() -> void:
@@ -3606,37 +3726,6 @@ func _ctx_look_at() -> void:
 	var n := view.selected_face_normal()
 	camera.look_along_model_normal(n)
 	status.emit("Look at face")
-
-
-func _ctx_apply_hole() -> void:
-	if ops_panel == null:
-		status.emit("Hole: open Modify panel")
-		return
-	if view == null or view.selected_face == "":
-		status.emit("Select a face first")
-		return
-	if not ops_panel._apply_hole():
-		status.emit("Hole failed")
-
-
-func _ctx_arm_hole() -> void:
-	if ops_panel == null:
-		status.emit("Hole: open Modify panel")
-		return
-	if view == null or view.selected_face == "":
-		status.emit("Select a face first")
-		return
-	ops_panel._arm_hole()
-
-
-func _ctx_arm_hole_wizard() -> void:
-	if ops_panel == null:
-		status.emit("Hole Wizard: open Modify panel")
-		return
-	if view == null or view.selected_face == "":
-		status.emit("Select a face first")
-		return
-	ops_panel._arm_hole_wizard()
 
 
 func _show_orient_popup() -> void:
@@ -3652,26 +3741,22 @@ func _on_orient_id(id: int) -> void:
 		return
 	match id:
 		1:
-			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0), true)
-			status.emit("Front view")
+			camera.set_view(deg_to_rad(0.0), deg_to_rad(0.0), true)
 		2:
-			camera.apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
-			status.emit("Right view")
+			camera.set_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
 		3:
-			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
-			status.emit("Top view")
+			camera.set_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
 		7:
-			camera.apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
-			status.emit("Isometric view")
+			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
 		5:
 			camera.toggle_projection()
 			status.emit("Projection toggled")
 		20:
 			camera.frame_selection_or_all(false)
-			status.emit("Zoom extents")
+			status.emit("Framed selection")
 		21:
 			camera.frame_contents()
-			status.emit("Zoom all")
+			status.emit("Framed all")
 
 
 # --- on-canvas gizmos ---

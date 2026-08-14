@@ -5,6 +5,8 @@ extends PanelContainer
 
 signal display_cycle_requested
 signal section_toggle_requested
+signal explode_toggle_requested(on: bool)
+signal zebra_toggle_requested(on: bool)
 signal fit_requested
 signal save_view_requested(view_name: String)
 signal view_restore_requested(view_name: String)
@@ -21,6 +23,9 @@ const DEFAULT_VIEWS := [
 
 var _display_btn: Button
 var _section_btn: Button
+## Exploded view lives here beside Section: both are ways of seeing, not docks.
+var _explode_btn: Button
+var _zebra_btn: Button
 var _fit_btn: Button
 var _save_view_btn: Button
 var _views_drop_btn: Button
@@ -60,6 +65,21 @@ func _ready() -> void:
 	_section_btn.tooltip_text = "Toggle section view (K)"
 	_section_btn.toggled.connect(func(_on: bool) -> void: section_toggle_requested.emit())
 	btn_col.add_child(_section_btn)
+	_explode_btn = Button.new()
+	_explode_btn.name = "ExplodeToggle"
+	_explode_btn.text = "Explode"
+	_explode_btn.toggle_mode = true
+	_explode_btn.visible = false  # only meaningful once the document has parts
+	_explode_btn.tooltip_text = "Separate components along their joints, and collapse them back"
+	_explode_btn.toggled.connect(func(on: bool) -> void: explode_toggle_requested.emit(on))
+	btn_col.add_child(_explode_btn)
+	_zebra_btn = Button.new()
+	_zebra_btn.name = "ZebraToggle"
+	_zebra_btn.text = "Zebra"
+	_zebra_btn.toggle_mode = true
+	_zebra_btn.tooltip_text = "Zebra stripes — continuity across a knit or a cylinder"
+	_zebra_btn.toggled.connect(func(on: bool) -> void: zebra_toggle_requested.emit(on))
+	btn_col.add_child(_zebra_btn)
 	_fit_btn = Button.new()
 	_fit_btn.text = "Frame"
 	_fit_btn.tooltip_text = (
@@ -143,6 +163,10 @@ func sync_from_view(view: DocumentView) -> void:
 	var i: int = clampi(int(view.display_mode), 0, 2)
 	_display_btn.text = labels[i]
 	_section_btn.set_pressed_no_signal(view.section_enabled)
+	# Explode only appears when there is an assembly to explode.
+	_explode_btn.visible = view.doc.instance_list().size() > 0
+	_explode_btn.set_pressed_no_signal(view.doc.is_exploded())
+	_zebra_btn.set_pressed_no_signal(view.zebra_enabled)
 
 
 ## Flatten button chrome so icon / ▼ sit tight next to the View label.

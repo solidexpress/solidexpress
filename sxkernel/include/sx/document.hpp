@@ -17,10 +17,15 @@
 #include <vector>
 
 #include "sx/datum.hpp"
+#include "sx/drawing_doc.hpp"
 #include "sx/entity.hpp"
 #include "sx/ids.hpp"
 #include "sx/instances.hpp"
+#include "sx/joints.hpp"
 #include "sx/mates.hpp"
+#include "sx/print.hpp"
+#include "sx/sketch3d.hpp"
+#include "sx/xref.hpp"
 
 namespace sx {
 
@@ -128,7 +133,12 @@ public:
     bool set_instance_transform(const EntityId& id,
                                 const std::array<double, 3>& translation,
                                 const std::array<double, 4>& rotation_quat);
+    // Fix/Float restraint (SolidWorks Video 6). When fixing, also upserts a
+    // Fixed mate so solve_mates keeps the instance put; floating removes it.
+    bool set_instance_fixed(const EntityId& id, bool fixed);
+    bool set_instance_source_path(const EntityId& id, const std::string& path);
     const Instance* instance(const EntityId& id) const;
+    Instance* instance_mut(const EntityId& id);
     const std::vector<Instance>& instances() const { return instances_; }
     // Used by the .sxp loader to restore persisted instances exactly.
     void restore_instance(Instance&& inst);
@@ -140,6 +150,24 @@ public:
     const std::vector<Mate>& mates() const { return mates_; }
     // Used by the .sxp loader to restore persisted mates exactly.
     void restore_mate(Mate&& m);
+
+    // Explicit mate connectors (Onshape-style). Implicit connectors are
+    // inferred from faces at apply time; these persist user-named frames.
+    EntityId add_connector(MateConnector c);
+    bool remove_connector(const EntityId& id);
+    const std::vector<MateConnector>& connectors() const { return connectors_; }
+    void restore_connector(MateConnector&& c);
+
+    // --- DOF joints on connectors (see sx/joints.hpp) ---
+    // Returns the joint id, or a null id when the joint's B connector does not
+    // name an instance. `value` is the joint's current position (radians for
+    // revolute / ball, mm for slider), so a mechanism can be posed and saved.
+    EntityId add_joint(Joint j);
+    bool remove_joint(const EntityId& id);
+    bool set_joint_value(const EntityId& id, double value);
+    const std::vector<Joint>& joints() const { return joints_; }
+    const Joint* joint(const EntityId& id) const;
+    void restore_joint(Joint&& j);
 
     // --- configurations (named snapshots of the variable table) ---
     // Saving captures the graph's current variable expressions under `name`
@@ -156,6 +184,49 @@ public:
     const std::string& active_configuration() const { return active_configuration_; }
     // Used by the .sxp loader to restore persisted configurations exactly.
     void restore_configuration(Configuration&& c, bool active);
+
+    // --- in-context snapshots (see sx/xref.hpp) ---
+    EntityId add_context(ContextSnapshot snap);
+    bool remove_context(const EntityId& id);
+    const ContextSnapshot* context(const EntityId& id) const;
+    ContextSnapshot* context_mut(const EntityId& id);
+    const std::vector<ContextSnapshot>& contexts() const { return contexts_; }
+    void restore_context(ContextSnapshot&& c);
+
+    // --- drawing document ---
+    EntityId add_drawing_sheet(DrawingSheetDoc sheet);
+    bool remove_drawing_sheet(const EntityId& id);
+    const DrawingSheetDoc* drawing_sheet(const EntityId& id) const;
+    DrawingSheetDoc* drawing_sheet_mut(const EntityId& id);
+    const std::vector<DrawingSheetDoc>& drawing_sheets() const { return drawing_sheets_; }
+    std::vector<DrawingSheetDoc>& drawing_sheets_mut() { return drawing_sheets_; }
+    void restore_drawing_sheet(DrawingSheetDoc&& s);
+
+    // --- cosmetic welds ---
+    EntityId add_weld(CosmeticWeld w);
+    bool remove_weld(const EntityId& id);
+    const std::vector<CosmeticWeld>& welds() const { return welds_; }
+    void restore_weld(CosmeticWeld&& w);
+
+    // --- 3D sketches (curve set, not the 2D solver) ---
+    EntityId add_sketch3d(Sketch3D s);
+    bool remove_sketch3d(const EntityId& id);
+    const Sketch3D* sketch3d(const EntityId& id) const;
+    const std::vector<Sketch3D>& sketches3d() const { return sketches3d_; }
+    void restore_sketch3d(Sketch3D&& s);
+
+    // Ids released by the last replace_body_shape (What's Wrong rematch).
+    const std::vector<EntityId>& last_released_ids() const { return last_released_; }
+
+    // PDM-lite version notes (Wave 4.6). Persisted as pdm.json.
+    void add_pdm_entry(const std::string& message);
+    const std::vector<std::pair<std::string, uint64_t>>& pdm_entries() const { return pdm_; }
+    void restore_pdm(std::vector<std::pair<std::string, uint64_t>> entries);
+
+    // Print-first setup (bed, thresholds, export rotation). Persisted as print.json.
+    const PrintSetup& print_setup() const { return print_setup_; }
+    void set_print_setup(PrintSetup s);
+    void restore_print_setup(PrintSetup s);
 
 private:
     void register_subshapes(Body& b, bool fresh_ids);
@@ -175,8 +246,17 @@ private:
     std::vector<Instance> instances_;
     std::unordered_map<EntityId, size_t> instance_index_;
     std::vector<Mate> mates_;
+    std::vector<MateConnector> connectors_;
+    std::vector<Joint> joints_;
     std::vector<Configuration> configurations_;
     std::string active_configuration_;
+    std::vector<ContextSnapshot> contexts_;
+    std::vector<DrawingSheetDoc> drawing_sheets_;
+    std::vector<CosmeticWeld> welds_;
+    std::vector<Sketch3D> sketches3d_;
+    std::vector<EntityId> last_released_;
+    std::vector<std::pair<std::string, uint64_t>> pdm_;
+    PrintSetup print_setup_;
     std::unique_ptr<CardRegistry> cards_;
     std::unique_ptr<FeatureGraph> graph_;
     uint64_t revision_ = 0;

@@ -2,7 +2,11 @@
 
 A long-running, agent-executable build plan for a parametric MCAD application, derived from the [feature survey](../survey/README.md). The scope target is the widest feature set in the [master feature list](../survey/master-feature-list.md), sequenced so the most common capabilities are built first and every phase is load-bearing foundation for the phases above it.
 
+<<<<<<< HEAD
 **What’s next / priority order:** [ROADMAP.md](ROADMAP.md). This file is the long P0–P11 catalog and architecture bible — not the weekly priority list. Done/not-done: [STATUS.md](STATUS.md).
+=======
+**Product sequence and tool-design picks** live in [roadmap.md](roadmap.md) and [../survey/tool-approaches.md](../survey/tool-approaches.md). **How each feature lands** (chrome, films, L1–L5) is [landing-protocol.md](landing-protocol.md). Index: [README.md](README.md). Those documents name a winner per capability (Onshape connectors, Creo/Inventor sketch relax, Plasticity fillet feel, IronCAD TriBall, FreeCAD TNP, …). When they disagree with the "majority of the seven" default below, **the roadmap wins on how the tool works**. This plan still wins on architecture, licensing, cards, and the `SolverBackend` seam.
+>>>>>>> feature-src/main
 
 This plan is written to be executed **autonomously for long stretches without user input, with parallel workstreams**, by AI agents. Sections "Execution protocol" and the per-phase workstream tables encode how.
 
@@ -21,7 +25,7 @@ This plan is written to be executed **autonomously for long stretches without us
 | First UX | **Drag-and-drop direct manipulation**: drag primitives from a palette into the viewport, push/pull faces, drag joints together | Instant-gratification onboarding before the full sketch-constrain-feature workflow exists. |
 | Document format | Zip container (`.sxp`): `manifest.json`, feature graph JSON, OCCT BREP blobs, thumbnails, and per-entity **semantic cards** (`cards/*.md`) | Zip-container single file is the common approach (3MF/docx pattern); cards are first-class from day one (see §3). |
 | Units | mm internal, unit-aware parameter/expression engine | Industry default. |
-| Default when in doubt | Do what the majority of the 7 surveyed products do | Standing instruction. |
+| Default when in doubt | Do what [tool-approaches.md](../survey/tool-approaches.md) picks; if no pick, do what the majority of the 7 surveyed products do | Roadmap / picks override majority on tool design. |
 
 ### Licensing policy (hard rule: never integrate GPL/AGPL)
 

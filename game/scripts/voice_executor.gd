@@ -209,6 +209,30 @@ func _do_model(intent: Dictionary) -> void:
 	var value = intent.get("value", null)
 	var v := float(value) if value != null else 1.0
 	match verb:
+		"fasten", "flush":
+			var faces: PackedStringArray = PackedStringArray()
+			for f in view.selected_faces:
+				faces.append(f)
+			if view.selected_face != "" and not faces.has(view.selected_face):
+				faces.append(view.selected_face)
+			if faces.size() < 2:
+				status.emit("Select two faces, then ask again")
+				return
+			var inst := ""
+			for row in view.doc.instance_list():
+				inst = str(row.get("id", ""))
+				if inst != "":
+					break
+			if inst == "":
+				status.emit("Place an instance first, then make them flush")
+				return
+			var mid: String = view.doc.add_mate("fastened", "", faces[0], inst, faces[1], 0.0, false, "Flush")
+			if mid != "":
+				view.doc.solve_mates()
+				view.refresh()
+				status.emit("Fastened — offset 0")
+			else:
+				status.emit("Could not fasten those faces")
 		"fillet":
 			var edges: PackedStringArray = _edge_targets()
 			if edges.is_empty():
