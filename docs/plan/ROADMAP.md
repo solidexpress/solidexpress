@@ -32,7 +32,7 @@ Synced from STATUS (2026-07-29). Not a full feature dump — enough to keep mark
 - **Docs / interop** — drawings MVP (HLR → SVG); STEP / IGES / STL; measure; materials + mass
 - **Shell** — binaries for Linux / Windows / macOS; voice ask bridge; ViewCube, section view, display modes
 
-**Explicit not-yet (do not market as shipped):** multi-document component insert; drawing dimensions / PDF / DXF; free 3D sketch; sheet metal / frames / surfacing; full joint library / explode / interference / BOM.
+**Explicit do-not-market (unshipped or binary‑unproven):** a “0.0.4” public binary; end‑to‑end Form Analyze / Orient / 3MF verification on release binaries (assumed working here for planning); free 3D sketch (still out of scope).
 
 Note for planning context only: Form Analyze / Orient / 3MF appear as shipped-in-STATUS and are assumed working for Wave 6 prioritization. This is a priority flip, not a binary claim.
 
