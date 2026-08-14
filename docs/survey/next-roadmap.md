@@ -17,17 +17,23 @@ Slicers already win on supports, Arachne, printer profiles, and paint-on support
 | Plasticity / Shapr | Faster capture; iterate worse on AF sizes | Great modeling feel; weak param/config iteration for AF ladders |
 | nTop | Lattices/metal AM | Later (parked — not an FDM wrench job) |
 
-## Binding next bets (W6.1–W6.4)
+## Binding next bets (W6.1–W6.6)
 
-1. W6.1 — Clearance language
+W6.0a–e (suite stabilization, CI gate) are owned by the stabilization agent — see [STATUS](../plan/STATUS.md) Wave 6; they are not renumbered here.
+
+1. W6.1 — Construction chrome
+   - Number fields keep keystrokes while focused (view keys never steal them mid-typing); box placement gets W/H/D fields; the Form rail gets a create path instead of assuming a pre-built solid; docked panels stack without overlap.
+2. W6.2 — Clearance language
    - Built-in print params (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) that Hole Wizard / hex / slot consume.
    - Configs make 10/12/14 mm one model (AF ladder without rebuild). Fusion’s actual win, made native.
-2. W6.2 — See the print
+3. W6.3 — See the print
    - Color-by-thickness and overhang paint on Form (reuse the zebra shader path reserved in [print-first](print-first.md) §5). Bed ghost. Digest stays, but is not the product.
-3. W6.3 — Open in slicer
+4. W6.4 — Open in slicer
    - User-registered Prusa/Orca/Bambu; one body per file when opening externally; “File → Export 3MF” unchanged. No GPL slicer engine. Units = mm in 3MF.
-4. W6.4 — Tool catalog
+5. W6.5 — Tool catalog
    - Drop-in open-end, hex socket, driver bit, nozzle sizes (IronCAD catalog feel; see [tool-approaches](tool-approaches.md) A1). Not a full Toolbox — just mechanic-tool sizes.
+6. W6.6 — Build the wrench
+   - Integration exit: film `print_a_wrench` clicks W6.2–W6.5 end to end (catalog blank, clearance-compensated jaw, painted check, millimeter 3MF on the bed).
 
 ## Do not do next
 

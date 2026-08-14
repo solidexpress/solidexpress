@@ -251,27 +251,31 @@ Chrome delta: Form rail already exists. No ViewHud button. No new dock.
 
 ## Wave 6 — print a tool this afternoon
 
-Depends on: Wave 5 films green (`print_thin_wall`, `print_overhang_orient` — **currently red**, see STATUS Wave 6.0), Wave 0.10 3MF, 4.12 catalog. Picks: [next-roadmap.md](../survey/next-roadmap.md) W6.1–W6.4, [print-first.md](../survey/print-first.md) P1–P6, A1, A12, A17. Priority owner: [ROADMAP.md §4](ROADMAP.md).
+Depends on: Wave 5 films green (`print_thin_wall`, `print_overhang_orient` — **currently red**, see STATUS Wave 6.0), Wave 0.10 3MF, 4.12 catalog. Picks: [next-roadmap.md](../survey/next-roadmap.md) W6.1–W6.6, [print-first.md](../survey/print-first.md) P1–P6, A1, A12, A17. Priority owner: [ROADMAP.md §4](ROADMAP.md).
 
-**6.0 gate:** do not start 6.1+ while `run_workflow_tests`, `run_ui_tests`, or `run_print_tests` are red (STATUS "Verified baseline audit"). Wave 0's exit suite is the floor this wave stands on.
+**6.0 gate:** do not start 6.2+ while `run_workflow_tests`, `run_ui_tests`, or `run_print_tests` are red (STATUS "Verified baseline audit"). Wave 0's exit suite is the floor this wave stands on. **6.0a–e belong to the stabilization agent — do not double-fix or touch its files.**
 
 | # | Feature | Chrome | Files | Film |
 |---|---|---|---|---|
-| 6.1 | Clearance language | Variables panel seeds a *Print params* fold (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) on new documents; Hole Wizard size chip shows the compensated Ø; existing config switcher drives the AF ladder | `sx/variables.hpp` seeded builtins, hole feature params, `variables_panel.gd` | `clearance_ladder` — one model spins 10/12/14 AF configs; holes grow by `hole_compensation` without editing the sketch |
-| 6.2 | See the print | Form strip grows **Thickness** / **Overhang** paint toggles (reuse the zebra shader path); bed ghost drawn in Form mode only. Digest label stays | `print_strip.gd`, viewport shader, per-face data from `sx/print.hpp` | `see_the_print` — 1.2 mm wall and a 60° hang paint red; the part sits on the ghost bed |
-| 6.3 | Open in slicer | File → **Open in Slicer** with user-registered Prusa/Orca/Bambu path; one body per file when handing off; File → Export 3MF unchanged (mm) | export split + registered-app setting; no GPL slicer engine | `open_in_slicer` — headless asserts per-body millimeter 3MF + the registered command line; a display run opens the slicer |
-| 6.4 | Tool catalog | Palette catalog page (4.12) grows mechanic tools: open-end, hex socket, driver bit, nozzle sizes | `sx/catalog.hpp` + palette page | `catalog_hex_driver` — drop a hex driver blank; AF comes from `jaw_af` |
+| 6.1 | Construction chrome | Number fields swallow keystrokes while focused (view keys 1/2/3/5/7/W never fire mid-typing); box placement offers W/H/D fields; Form rail offers a create path (primitive or sketch) instead of assuming a pre-built solid; docked panels stack without overlap (layout suite is the gate) | `viewport_interaction.gd` helpers, `ops_panel.gd`, `print_strip.gd`, `run_layout_tests.gd` | `construction_chrome` — type 100×60×30 into a box without the view snapping away; panels never overlap |
+| 6.2 | Clearance language | Variables panel seeds a *Print params* fold (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) on new documents; Hole Wizard size chip shows the compensated Ø; existing config switcher drives the AF ladder | `sx/variables.hpp` seeded builtins, hole feature params, `variables_panel.gd` | `clearance_ladder` — one model spins 10/12/14 AF configs; holes grow by `hole_compensation` without editing the sketch |
+| 6.3 | See the print | Form strip grows **Thickness** / **Overhang** paint toggles (reuse the zebra shader path); bed ghost drawn in Form mode only. Digest label stays | `print_strip.gd`, viewport shader, per-face data from `sx/print.hpp` | `see_the_print` — 1.2 mm wall and a 60° hang paint red; the part sits on the ghost bed |
+| 6.4 | Open in slicer | File → **Open in Slicer** with user-registered Prusa/Orca/Bambu path; one body per file when handing off; File → Export 3MF unchanged (mm) | export split + registered-app setting; no GPL slicer engine | `open_in_slicer` — headless asserts per-body millimeter 3MF + the registered command line; a display run opens the slicer |
+| 6.5 | Tool catalog | Palette catalog page (4.12) grows mechanic tools: open-end, hex socket, driver bit, nozzle sizes | `sx/catalog.hpp` + palette page | `catalog_hex_driver` — drop a hex driver blank; AF comes from `jaw_af` |
+| 6.6 | Build the wrench | No new chrome — the integration exit of 6.2–6.5 clicked end to end | uses catalog + params + paint + hand-off | `print_a_wrench` — catalog open-end blank, clearance-compensated jaw, painted check, millimeter 3MF on the bed |
 
-**Exit** ([next-roadmap.md](../survey/next-roadmap.md)): a stranger models an open-end or hex wrench with named clearance, sees thin walls and overhangs painted with a bed ghost, opens or exports a millimeter 3MF that lands on the bed, and spins a 10/12/14 config without rebuilding.
+**Exit** ([next-roadmap.md](../survey/next-roadmap.md)): `print_a_wrench` (6.6) — a stranger models an open-end or hex wrench with named clearance, sees thin walls and overhangs painted with a bed ghost, opens or exports a millimeter 3MF that lands on the bed, and spins a 10/12/14 config without rebuilding.
 
 | Slice | Owns | Avoids |
 |---|---|---|
-| T Stabilize (6.0) | regression clusters in STATUS audit, CI godot-smoke | New features while gates are red |
-| U Params (6.1) | seeded builtins, Hole Wizard consumption, `clearance_ladder` | A print-settings dock |
-| V Paint (6.2) | shader toggles, bed ghost, `see_the_print` | A second analysis gizmo family |
-| W Hand-off (6.3 + 6.4) | slicer registration, per-body 3MF, catalog tools, two films | Embedding a slicer engine (GPL) |
+| T Stabilize (6.0a–e) | **stabilization agent** — regression clusters in STATUS audit, CI godot-smoke | Anyone else touching its files |
+| U Chrome (6.1) | number-field focus, box W/H/D, Form create path, panel stacking, `construction_chrome` | New docks |
+| V Params (6.2) | seeded builtins, Hole Wizard consumption, `clearance_ladder` | A print-settings dock |
+| W Paint (6.3) | shader toggles, bed ghost, `see_the_print` | A second analysis gizmo family |
+| X Hand-off (6.4 + 6.5) | slicer registration, per-body 3MF, catalog tools, two films | Embedding a slicer engine (GPL) |
+| Y Wrench (6.6) | exit film `print_a_wrench` | New features smuggled into the exit |
 
-Order: T first and alone; then U; V and W in parallel after U's kernel seam exists.
+Order: T first (stabilization agent, alone in its files); U is independent and may run in parallel; then V; W and X in parallel after V's kernel seam exists; Y last.
 
 ### Deferred (do not schedule; do not lose)
 

@@ -368,7 +368,7 @@ Green suites for the record: assembly, camera, convert-entities, display, drag, 
 
 ## Wave 6 — print a tool this afternoon (active)
 
-Priority owner: [ROADMAP.md §4](ROADMAP.md); chrome + films: [landing-protocol.md Wave 6](landing-protocol.md#wave-6--print-a-tool-this-afternoon). Code audit 2026-08-14: **none of W6.1–W6.4 exists yet** — no built-in print params in `VariableTable`, no thickness/overhang paint or bed ghost (Wave 5 shipped the text digest + orient only), no slicer hand-off, and `sx::catalog` holds fasteners only.
+Priority owner: [ROADMAP.md §4](ROADMAP.md); chrome + films: [landing-protocol.md Wave 6](landing-protocol.md#wave-6--print-a-tool-this-afternoon). Code audit 2026-08-14: **none of W6.1–W6.6 exists yet** — no built-in print params in `VariableTable`, no thickness/overhang paint or bed ghost (Wave 5 shipped the text digest + orient only), no slicer hand-off, and `sx::catalog` holds fasteners only. 6.0a–e are owned by the stabilization agent; do not double-fix them.
 
 Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids building later waves on top:
 
@@ -377,10 +377,12 @@ Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids
 - [ ] 6.0c Fix `run_print_tests` Orient (Wave 5 gate) and reconcile the film manifest (restore or drop the 5 missing films; repair the 9 failing ones)
 - [ ] 6.0d Enable `godot-smoke` in CI (cache the Godot 4.7-stable binary; gate at least workflow/ui/sketch/print suites) so red suites can't land silently again
 - [ ] 6.0e Chronic small failures (audit item 5) — nav_preset default vs tests is a *decision*: pick FUSION or SOLIDEXPRESS and align the tests to it
-- [ ] 6.1 Clearance language: seeded print params (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) consumed by Hole Wizard / hex / slot; 10/12/14 AF ladder as configs; film `clearance_ladder`
-- [ ] 6.2 See the print: color-by-thickness + overhang paint on Form (zebra shader path) + bed ghost; film `see_the_print`
-- [ ] 6.3 Open in slicer: user-registered Prusa/Orca/Bambu, one body per file, mm 3MF unchanged; film `open_in_slicer`
-- [ ] 6.4 Tool catalog: open-end, hex socket, driver bit, nozzle sizes in `sx::catalog` + palette page; film `catalog_hex_driver`
+- [ ] 6.1 Construction chrome: number fields capture keystrokes (view keys never fire while typing), box placement gets W/H/D fields, Form rail gets a create path (not solid-first only), docked panels stack without overlap; film `construction_chrome`
+- [ ] 6.2 Clearance language: seeded print params (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) consumed by Hole Wizard / hex / slot; 10/12/14 AF ladder as configs; film `clearance_ladder`
+- [ ] 6.3 See the print: color-by-thickness + overhang paint on Form (zebra shader path) + bed ghost; film `see_the_print`
+- [ ] 6.4 Open in slicer: user-registered Prusa/Orca/Bambu, one body per file, mm 3MF unchanged; film `open_in_slicer`
+- [ ] 6.5 Tool catalog: open-end, hex socket, driver bit, nozzle sizes in `sx::catalog` + palette page; film `catalog_hex_driver`
+- [ ] 6.6 Build the wrench: end-to-end exit — catalog blank + clearance params + paint + slicer hand-off produce a printable open-end wrench; film `print_a_wrench`
 
 ## Architecture Track A re-verify (2026-07-29)
 - [x] Track A already complete: ADR-001/002 + STATUS 3.2/3.4; interactive ops use `graph_add_*` with free-body Command fallbacks
