@@ -17,32 +17,32 @@ Slicers already win on supports, Arachne, printer profiles, and paint-on support
 | Plasticity / Shapr | Faster capture; iterate worse on AF sizes | Great modeling feel; weak param/config iteration for AF ladders |
 | nTop | Lattices/metal AM | Later (parked — not an FDM wrench job) |
 
-## Binding next bets (W6.0f + W6.1–W6.5)
+## Binding next bets (W6.1–W6.6)
 
 W6.0a–e (suite stabilization, CI gate) are owned by the stabilization agent — see [STATUS](../plan/STATUS.md) Wave 6; they are not renumbered here. The acceptance bar for everything below is the **2026-08-14 hands-on critique of the published 0.0.4 Linux binary** (shop-tools-construction-basis rubric): fastener-sized opening, named clearance, AF family 10/12/14, cut survives thickness (through-all / Up To Surface), head-shaft fillet, modeled thread, nozzle-multiple walls, hex as a real AF polygon.
 
-0. W6.0f — Construction chrome (part of the 6.0 gate; green before W6.1+)
+1. W6.1 — Construction chrome (part of the 6.0 gate; green before W6.2+)
    - Focused numeric fields consume digits; view keys 1/2/3/7 never fire while a spinbox/line-edit is focused (0.0.4 ate H=1.2).
    - Box place strip and post-place property panel show W/H/D — not Radius/Spacing/Count.
    - Form keeps a one-click way back to create without losing the Analyze/Orient strip (palette may hide).
    - Selection/Timeline/Variables/Assembly/context bars never stack undismissably.
-1. W6.1 — Clearance language
+2. W6.2 — Clearance language
    - New documents seed `VariableTable` builtins `clearance=0.3`, `hole_compensation=0.2`, `layer=0.2`, `nozzle=0.4`, `jaw_af=10` (mm) — editable, not a dock.
    - Sketch dimensions accept `=jaw_af+clearance` and live-regenerate (depends on the 6.0b expr-dim fix).
    - Hole Wizard / hole Ø = nominal + `hole_compensation`; hex and slot openings = `jaw_af+clearance` (or explicit AF).
    - Configs named 10 / 12 / 14 switch `jaw_af` only — one model, no rebuild. Fusion’s actual win, made native.
    - Exit: change `clearance` 0.3→0.5 and every consumed opening updates; film `clearance_ladder`. Leave: a print-settings dock; printer SDK.
-2. W6.2 — See the print
+3. W6.3 — See the print
    - Thickness + Overhang paint toggles on Form (zebra shader path reserved in [print-first](print-first.md) §5). Bed ghost (default 220×220) in Form only. Digest stays, but is not the product.
-   - Threshold from `PrintSetup` / `min_wall` (already 1.2 in the 0.0.4 3MF metadata); must succeed on a 1.2 mm plate (needs W6.0f so 1.2 can be typed).
+   - Threshold from `PrintSetup` / `min_wall` (already 1.2 in the 0.0.4 3MF metadata); must succeed on a 1.2 mm plate (needs W6.1 so 1.2 can be typed).
    - Exit: film `see_the_print`. Leave: support generation; becoming a slicer.
-3. W6.3 — Open in slicer
+4. W6.4 — Open in slicer
    - File → Open in Slicer; user-registered Prusa / Orca / Bambu executable; one body per file; “File → Export 3MF” unchanged (mm + `sx:bed` verified on 0.0.4).
    - Exit: film `open_in_slicer` — per-body mm 3MF + registered command line. Leave: GPL slicer engine; printer profiles.
-4. W6.4 — Tool catalog
+5. W6.5 — Tool catalog
    - Drop-in open-end, hex socket, driver bit, nozzle sizes (IronCAD catalog feel; see [tool-approaches](tool-approaches.md) A1); AF from `jaw_af`. Not a full Toolbox — just mechanic-tool sizes.
    - Exit: film `catalog_hex_driver` — opening tracks `jaw_af`. Leave: McMaster-style hardware library.
-5. W6.5 — Build the wrench (after W6.1’s param seam; can parallel W6.2–W6.4)
+6. W6.6 — Build the wrench (after W6.2’s param seam; can parallel W6.3–W6.5)
    - Jaw/through cuts default to through-all / Up To Surface (Blind is the amateur trap).
    - Modeled Thread reachable in chrome (Insert or Modify → Thread); in Form, Modeled is the default and cosmetic-only is a checkbox. STATUS claims thread; the 0.0.4 menus did not show it.
    - Sketch polygon gets an across-flats (`jaw_af`) mode — no Fusion `size/2` radius workaround.
@@ -51,7 +51,7 @@ W6.0a–e (suite stabilization, CI gate) are owned by the stabilization agent �
 
 ## Will we win the 2026-08-14 critique?
 
-Honest answer: **6.0a–e plus 6.1–6.4 as previously titled would not have.** The critique failed on construction basics (typing 1.2, W/H/D fields, Form create path, reachable Thread and Hole Wizard, AF polygon, through-all defaults) that no amount of paint or 3MF metadata fixes. W6.0f + the specified W6.1–W6.4 + W6.5 is the minimum set that can win it, and `print_a_wrench` is the replay that proves it. Verified on the Linux 0.0.4 hands-on only — no claim about a working 0.0.4 DMG.
+Honest answer: **6.0a–e plus the old titled 6.1–6.4 would not have won.** The critique failed on construction basics (typing 1.2, W/H/D fields, Form create path, reachable Thread and Hole Wizard, AF polygon, through-all defaults) that no amount of paint or 3MF metadata fixes. W6.1 chrome + the specified W6.2–W6.5 + W6.6 is the minimum set that can win it, and `print_a_wrench` is the replay that proves it. Verified on the Linux 0.0.4 hands-on only — no claim about a working 0.0.4 DMG.
 
 ## Do not do next
 
