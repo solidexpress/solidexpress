@@ -23,6 +23,8 @@ const BOUND_OFFSET_FRAC := 0.08
 const BOUND_OFFSET_MIN := 2.5
 ## Label / mark base size in screen px (UiScale applies DPI; not window size).
 const FONT_PX := 14
+# DPI-stable overlay font: fraction of viewport height (≈ FONT_PX at 560 px).
+const SCREEN_FRAC := 1.0 / 40.0
 
 var view: DocumentView
 ## Optional sketch session for 2D measure mode (Δu/Δv along plane axes).

@@ -301,7 +301,9 @@ public:
                                         const godot::Vector3& direction);
     godot::String graph_add_holes(const godot::String& target_fid, const godot::String& type,
                                   const godot::PackedVector3Array& positions,
-                                  const godot::Vector3& direction, float diameter, float depth);
+                                  const godot::Vector3& direction, float diameter, float depth,
+                                  float cb_diameter, float cb_depth, float cs_diameter,
+                                  float cs_angle_deg);
     double interference_volume(const godot::String& body_a, const godot::String& body_b) const;
     godot::String import_dxf(const godot::String& path);
     bool export_3mf(const godot::String& path);

@@ -1643,6 +1643,22 @@ func refresh_path_overlay() -> void:
 		path_overlay.call("refresh", doc)
 
 
+## Unit direction of an edge (first→last polyline point), or ZERO if unknown.
+func edge_direction(body_id: String, edge_id: String) -> Vector3:
+	if body_id == "" or edge_id == "":
+		return Vector3.ZERO
+	var lines: Dictionary = doc.get_edge_lines(body_id)
+	if not lines.has(edge_id):
+		return Vector3.ZERO
+	var pts: PackedVector3Array = lines[edge_id]
+	if pts.size() < 2:
+		return Vector3.ZERO
+	var d: Vector3 = pts[pts.size() - 1] - pts[0]
+	if d.length_squared() < 1e-12:
+		return Vector3.ZERO
+	return d.normalized()
+
+
 ## Face normal from tessellation (model space), or ZERO if unknown.
 func face_normal(body_id: String, face_id: String) -> Vector3:
 	if body_id == "" or face_id == "":

@@ -1476,24 +1476,32 @@ String SxDocument::graph_add_direct_edit(const String& target_fid, const String&
 
 String SxDocument::graph_add_holes(const String& target_fid, const String& type,
                                    const PackedVector3Array& positions, const Vector3& direction,
-                                   float diameter, float depth) {
+                                   float diameter, float depth, float cb_diameter, float cb_depth,
+                                   float cs_diameter, float cs_angle_deg) {
     if (diameter <= 0.0f || positions.is_empty()) return {};
-    nlohmann::json pos = nlohmann::json::array();
+    if (direction.length_squared() < 1e-12f) return {};
+    std::string htype = to_std(type);
+    if (htype != "simple" && htype != "counterbore" && htype != "countersink") return {};
+    nlohmann::json pos_json = nlohmann::json::array();
     for (int i = 0; i < positions.size(); ++i) {
         const Vector3& p = positions[i];
-        pos.push_back({p.x, p.y, p.z});
+        pos_json.push_back({p.x, p.y, p.z});
     }
     sx::EntityId fid;
-    bool ok = apply_graph_edit("hole", [&] {
+    bool ok = apply_graph_edit("holes", [&] {
         sx::Feature f;
         f.type = sx::FeatureType::Hole;
         f.params = {{"target", to_std(target_fid)},
-                    {"type", to_std(type)},
+                    {"type", htype},
+                    {"positions", pos_json},
                     {"position", {positions[0].x, positions[0].y, positions[0].z}},
-                    {"positions", pos},
                     {"direction", {direction.x, direction.y, direction.z}},
                     {"diameter", static_cast<double>(diameter)},
-                    {"depth", static_cast<double>(depth)}};
+                    {"depth", static_cast<double>(depth)},
+                    {"cb_diameter", static_cast<double>(cb_diameter)},
+                    {"cb_depth", static_cast<double>(cb_depth)},
+                    {"cs_diameter", static_cast<double>(cs_diameter)},
+                    {"cs_angle_deg", static_cast<double>(cs_angle_deg)}};
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -2106,8 +2114,10 @@ void SxDocument::_bind_methods() {
                                   "distance", "direction"),
                          &SxDocument::graph_add_direct_edit);
     ClassDB::bind_method(D_METHOD("graph_add_holes", "target_fid", "type", "positions", "direction",
-                                  "diameter", "depth"),
-                         &SxDocument::graph_add_holes);
+                                  "diameter", "depth", "cb_diameter", "cb_depth", "cs_diameter",
+                                  "cs_angle_deg"),
+                         &SxDocument::graph_add_holes, DEFVAL(0.0f), DEFVAL(0.0f), DEFVAL(0.0f),
+                         DEFVAL(90.0f));
     ClassDB::bind_method(D_METHOD("interference_volume", "body_a", "body_b"),
                          &SxDocument::interference_volume);
     ClassDB::bind_method(D_METHOD("import_dxf", "path"), &SxDocument::import_dxf);

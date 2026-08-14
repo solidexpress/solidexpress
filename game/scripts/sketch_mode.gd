@@ -2751,3 +2751,79 @@ func _update_preview() -> void:
 		_preview_node.mesh = im
 	else:
 		_preview_node.mesh = null
+
+
+## True when the sketch's non-construction geometry forms one or more closed
+## profiles (single circle, or line/arc/spline chains that each return to start).
+static func profile_is_closed(sk: SxSketch, tol: float = 1e-4) -> bool:
+	if sk == null:
+		return false
+	var segs: Array = []  # {a: Vector2, b: Vector2}
+	var circles := 0
+	for id in sk.entity_ids():
+		if sk.is_construction(id):
+			continue
+		var info: Dictionary = sk.entity_info(id)
+		match str(info.get("type", "")):
+			"circle":
+				circles += 1
+			"line":
+				var a: Vector2 = info["start"]
+				var b: Vector2 = info["end"]
+				if a.distance_to(b) > 1e-9:
+					segs.append({"a": a, "b": b, "used": false})
+			"arc":
+				var c: Vector2 = info["center"]
+				var r: float = float(info.get("radius", 0.0))
+				var sa: float = float(info.get("start_angle", 0.0))
+				var ea: float = float(info.get("end_angle", 0.0))
+				var pa: Vector2 = c + Vector2.from_angle(sa) * r
+				var pb: Vector2 = c + Vector2.from_angle(ea) * r
+				if pa.distance_to(pb) > 1e-9:
+					segs.append({"a": pa, "b": pb, "used": false})
+			"spline":
+				var fps: Array = info.get("fit_points", [])
+				if fps.size() >= 2:
+					var a2: Vector2 = fps[0]
+					var b2: Vector2 = fps[fps.size() - 1]
+					segs.append({"a": a2, "b": b2, "used": false})
+			_:
+				pass
+	if circles == 1 and segs.is_empty():
+		return true
+	if circles >= 1:
+		return false  # mixed circle + open edges not a single profile here
+	if segs.is_empty():
+		return false
+	# Greedy-chain every unused segment; each chain must close.
+	while true:
+		var seed := -1
+		for i in range(segs.size()):
+			if not segs[i]["used"]:
+				seed = i
+				break
+		if seed < 0:
+			break
+		segs[seed]["used"] = true
+		var loop_start: Vector2 = segs[seed]["a"]
+		var cursor: Vector2 = segs[seed]["b"]
+		var progressing := true
+		while progressing and cursor.distance_to(loop_start) > tol:
+			progressing = false
+			for j in range(segs.size()):
+				if segs[j]["used"]:
+					continue
+				var sa2: Vector2 = segs[j]["a"]
+				var sb2: Vector2 = segs[j]["b"]
+				if sa2.distance_to(cursor) <= tol:
+					cursor = sb2
+				elif sb2.distance_to(cursor) <= tol:
+					cursor = sa2
+				else:
+					continue
+				segs[j]["used"] = true
+				progressing = true
+				break
+		if cursor.distance_to(loop_start) > tol:
+			return false
+	return true
