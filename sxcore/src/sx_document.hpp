@@ -304,6 +304,11 @@ public:
                                   const godot::Vector3& direction, float diameter, float depth,
                                   float cb_diameter, float cb_depth, float cs_diameter,
                                   float cs_angle_deg);
+    godot::String graph_add_shell(const godot::String& target_fid,
+                                  const godot::PackedStringArray& face_ids, double thickness);
+    godot::String graph_add_helix(float profile_radius, float helix_radius, float pitch,
+                                  float turns, bool left_handed, const godot::Vector3& axis_point,
+                                  const godot::Vector3& axis_dir);
     double interference_volume(const godot::String& body_a, const godot::String& body_b) const;
     godot::String import_dxf(const godot::String& path);
     bool export_3mf(const godot::String& path);

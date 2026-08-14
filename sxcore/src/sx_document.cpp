@@ -1474,6 +1474,52 @@ String SxDocument::graph_add_direct_edit(const String& target_fid, const String&
     return ok ? to_gd(fid.str()) : String();
 }
 
+String SxDocument::graph_add_shell(const String& target_fid, const PackedStringArray& face_ids,
+                                   double thickness) {
+    nlohmann::json faces = nlohmann::json::array();
+    for (int i = 0; i < face_ids.size(); ++i) {
+        auto ref = doc_->find_subshape(parse_id(face_ids[i]));
+        if (!ref || ref->kind != sx::EntityKind::Face) {
+            sx::log::error("graph_add_shell: not a face id");
+            return {};
+        }
+        faces.push_back(to_std(face_ids[i]));
+    }
+    if (faces.empty()) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("shell", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Shell;
+        f.params = {{"target", to_std(target_fid)}, {"faces", faces}, {"thickness", thickness}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_helix(float profile_radius, float helix_radius, float pitch,
+                                   float turns, bool left_handed, const Vector3& axis_point,
+                                   const Vector3& axis_dir) {
+    if (profile_radius <= 0.0f || helix_radius <= 0.0f || pitch <= 0.0f || turns <= 0.0f)
+        return {};
+    if (axis_dir.length_squared() < 1e-12f) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("helix", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::HelixSweep;
+        f.params = {{"profile_radius", static_cast<double>(profile_radius)},
+                    {"radius", static_cast<double>(helix_radius)},
+                    {"pitch", static_cast<double>(pitch)},
+                    {"turns", static_cast<double>(turns)},
+                    {"left_handed", left_handed},
+                    {"axis_point", {axis_point.x, axis_point.y, axis_point.z}},
+                    {"axis_dir", {axis_dir.x, axis_dir.y, axis_dir.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
 String SxDocument::graph_add_holes(const String& target_fid, const String& type,
                                    const PackedVector3Array& positions, const Vector3& direction,
                                    float diameter, float depth, float cb_diameter, float cb_depth,
@@ -2118,6 +2164,11 @@ void SxDocument::_bind_methods() {
                                   "cs_angle_deg"),
                          &SxDocument::graph_add_holes, DEFVAL(0.0f), DEFVAL(0.0f), DEFVAL(0.0f),
                          DEFVAL(90.0f));
+    ClassDB::bind_method(D_METHOD("graph_add_shell", "target_fid", "face_ids", "thickness"),
+                         &SxDocument::graph_add_shell);
+    ClassDB::bind_method(D_METHOD("graph_add_helix", "profile_radius", "helix_radius", "pitch",
+                                  "turns", "left_handed", "axis_point", "axis_dir"),
+                         &SxDocument::graph_add_helix);
     ClassDB::bind_method(D_METHOD("interference_volume", "body_a", "body_b"),
                          &SxDocument::interference_volume);
     ClassDB::bind_method(D_METHOD("import_dxf", "path"), &SxDocument::import_dxf);

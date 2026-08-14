@@ -9,6 +9,8 @@ signal document_changed
 signal selection_changed(body_id: String, face_id: String)
 ## Emitted when section clipping is enabled or cleared (world bg, HUD, etc.).
 signal section_changed(enabled: bool)
+## Emitted on every viewport pick (armed ops read the hit point from here).
+signal picked(body_id: String, face_id: String, point: Vector3)
 
 const BODY_COLOR := Color(0.72, 0.74, 0.78)
 ## Cold brushed-metal defaults so canyon HDRI reflections read on bodies.
@@ -38,6 +40,8 @@ var selected_faces: Array[String] = []
 var selected_edges: Array[String] = []
 ## Selected component instance (viewport click on an instance mesh).
 var selected_instance := ""
+# World-space point of the most recent viewport pick (armed hole/ops flows).
+var last_pick_point := Vector3.ZERO
 ## Pre-selection hover (distinct from selected materials).
 var hovered_body := ""
 var hovered_face := ""
@@ -621,6 +625,10 @@ func select_ray(origin: Vector3, direction: Vector3, additive := false) -> bool:
 		if not additive:
 			clear_selection()
 		return false
+	# Record the pick before selection logic so armed ops (hole place, etc.)
+	# receive the hit point via the `picked` signal / last_pick_point.
+	last_pick_point = hit["point"]
+	picked.emit(hit["body"], hit["face"], hit["point"])
 	if additive:
 		_toggle_hit(hit)
 		return true
