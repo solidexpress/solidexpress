@@ -57,10 +57,12 @@ Inspiration: Nick Ler beginner series + survey master list. Verdicts are against
 
 ### Hard — near-term engineering (active ladder)
 
+Both former rows here have since shipped per STATUS (multi-doc insert in the assembly ladder; drawing dims/PDF/DXF in Wave 1.7/1.9) — keep them as regression films, not open gaps. The open near-term gap is **stability, not capability**: the Waves 0–5 merge left 16 of 41 Godot suites red with no CI gate (STATUS "Verified baseline audit"), including Wave 0's exit suite `run_workflow_tests`.
+
 | Gap | Why it matters |
 |---|---|
-| **Multi-doc** component insert | SW-style part files → assembly; same-doc still demos |
-| Drawing **dims → PDF/DXF** | Shop prints on top of SVG MVP |
+| **Suite stabilization (W6.0)** | Feature-param + sketch regressions break shell/pattern/fillet-edit/extrude-cut in the shipped UI |
+| **Godot CI gate** | `godot-smoke` is `if: false`; red suites land silently |
 
 ### Hard — mid horizon
 
@@ -104,8 +106,9 @@ flowchart TB
 
 ## 4. Active program — Wave 6: print a tool this afternoon
 
-**This wave owns priority.** W6.1–W6.4, in order (details in [../survey/next-roadmap.md](../survey/next-roadmap.md)):
+**This wave owns priority.** W6.0 then W6.1–W6.4, in order (details in [../survey/next-roadmap.md](../survey/next-roadmap.md); chrome + films in [landing-protocol.md](landing-protocol.md#wave-6--print-a-tool-this-afternoon); checkboxes in [STATUS.md](STATUS.md)):
 
+0. W6.0 — **Stabilize the Waves 0–5 merge**: fix the feature-param and sketch regression clusters until `run_workflow_tests` / `run_ui_tests` / `run_print_tests` are green, reconcile the film manifest, and enable the `godot-smoke` CI gate. Verified audit and repro pointers: STATUS "Verified baseline audit (2026-08-14)".
 1. W6.1 — **Clearance language**: built-in print params (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) that Hole Wizard / hex / slot consume; configs so 10/12/14 mm is one model.
 2. W6.2 — **See the print**: color-by-thickness + overhang paint on Form (reuse zebra shader path); bed ghost. Digest stays but is not the product.
 3. W6.3 — **Open in slicer**: user-registered Prusa/Orca/Bambu; one-body-per-file; File → Export 3MF unchanged (mm). No GPL slicer engine.

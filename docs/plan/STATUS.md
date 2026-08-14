@@ -290,7 +290,7 @@ only the real thing passes:
 ## Wave 5 — Print-first
 See [print-first.md](../survey/print-first.md). Form rail = print prep.
 - [x] 5.1 Wall thickness + digest; film `print_thin_wall`
-- [x] 5.2 Overhang + orient-to-bed; film `print_overhang_orient`
+- [x] 5.2 Overhang + orient-to-bed; film `print_overhang_orient` — **regressed**: `run_print_tests` orient check red as of 2026-08-14 (see "Verified baseline audit"; Wave 6.0c)
 - [x] 5.3 3MF `sx:bed` metadata + `print.json` in `.sxp`
 
 See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched voice.
@@ -347,6 +347,40 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 - Build: `make build` (CMake+Ninja superbuild, ~5 min cold for godot-cpp)
 - PlaneGCS builds as `libplanegcs.so` (LGPL dynamic-link compliance); not yet consumed by sxkernel (Phase 2)
 - Voice STT: default stub (`SX_BUILD_VOICE=OFF`). Enable with vendored `thirdparty/whisper.cpp` + `ggml-tiny.en.bin` under `tools/whisper/` (gitignored)
+
+## Verified baseline audit (2026-08-14, fresh clone)
+
+Fresh Ubuntu 24.04 clone, apt OCCT 7.6.3, Godot 4.7-stable, `make build`:
+
+- Kernel Catch2: **305 cases / 7708 assertions — all green** (matches CI, which gates only the kernel).
+- Godot headless suites: **25 of 41 green; 16 red** (~35 failing checks). CI never runs these (`godot-smoke` is `if: false`), so the Waves 0–5 merge landed with them red — the merge even broke the kernel build on main until PR #12.
+- [x] Fresh-checkout fix: `make build` now emits `game/bin/libplanegcs.so` beside `libsxcore.so` (RUNPATH=`$ORIGIN`). Before this, a clean clone failed *every* Godot suite with "Can't open dynamic library: libplanegcs.so", and `packaging/linux/bundle-shared-libs.sh` expected the file at exactly that path.
+
+Failure clusters (each is a Wave 6.0 work item below):
+
+1. **Feature-param regression** — `run_ui_tests` (7), `run_workflow_tests` (3), `run_select_tests` (1), `run_ui_button_coverage_tests` (7), `run_visual_ux_tests` (1): OpsPanel shell throws `json.exception.type_error.302 — type must be number, but is string` during regen; linear pattern, fillet radius edit, extrude cut/fuse, and Apply hole are silent no-ops. Deterministic repro: `run_ui_tests` check "shell hollowed the body". Seam to inspect: JSON feature params between `sxcore/src/sx_document.cpp` bindings and `sxkernel/src/features/` apply handlers (`num_param` accepts numbers or `=expr` strings only).
+2. **Sketch regressions** — `run_sketch_tests` (closed rect loses profile role), `run_sketch_parity_tests` (spline tool commits no kernel spline), `run_sketch_expr_dim_tests` (variable edit does not regenerate, 4000 → 4000). Same merge; PR #12 fixed the build, not these.
+3. **Wave 5 gate red** — `run_print_tests`: Orient does not drop the 10×10×80 box to height ≈ 10 (film `print_overhang_orient` claim).
+4. **Film slate drift** — `run_film_manifest_smoke`: 5 manifest films have no script (`extrude_s_shape`, `place_and_orbit`, `loft_profiles`, `sketch_extend`, `sketch_spline_tools`); 9 more load but fail their beats (`context_update`, `explode_gearbox`, `heal_and_clash`, `rib_and_wrap`, `rules_three_configs`, `weld_on_sheet`, `convert_thin_box`, `auto_define_plate`, `propose_parallel`).
+5. **Chronic small failures** (predate the merge): Alt-orbit nav_preset default (`run_howto_tests`, `run_place_tests`), DOF chip (`run_infer_tests`), icon-less "Apply holes" button (`run_icon_tests`), Esc chain help text (`run_help_tests`), pliers instance order (`run_pliers_motion_tests`), box-select arming (`run_visibility_tests`), ghost height precision (`run_place_tests`).
+
+Green suites for the record: assembly, camera, convert-entities, display, drag, film-caption, hole-wizard, insert-component, layout, mate, measure-overlay, menu, mirror-feature, move-snap, property, sketch-fully-defined, sketch-to-3d-ui, sketch-tools, sweep-loft-solid, tests (integration), timeline-ux, ui-scroll, viewcube, voice.
+
+## Wave 6 — print a tool this afternoon (active)
+
+Priority owner: [ROADMAP.md §4](ROADMAP.md); chrome + films: [landing-protocol.md Wave 6](landing-protocol.md#wave-6--print-a-tool-this-afternoon). Code audit 2026-08-14: **none of W6.1–W6.4 exists yet** — no built-in print params in `VariableTable`, no thickness/overhang paint or bed ghost (Wave 5 shipped the text digest + orient only), no slicer hand-off, and `sx::catalog` holds fasteners only.
+
+Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids building later waves on top:
+
+- [x] 6.0a `make build` emits `game/bin/libplanegcs.so` (fresh clones can run the app and Godot suites again)
+- [ ] 6.0b Fix the feature-param + sketch regression clusters (audit items 1–2) until `run_workflow_tests` and `run_ui_tests` are green — `run_workflow_tests` is Wave 0's exit gate
+- [ ] 6.0c Fix `run_print_tests` Orient (Wave 5 gate) and reconcile the film manifest (restore or drop the 5 missing films; repair the 9 failing ones)
+- [ ] 6.0d Enable `godot-smoke` in CI (cache the Godot 4.7-stable binary; gate at least workflow/ui/sketch/print suites) so red suites can't land silently again
+- [ ] 6.0e Chronic small failures (audit item 5) — nav_preset default vs tests is a *decision*: pick FUSION or SOLIDEXPRESS and align the tests to it
+- [ ] 6.1 Clearance language: seeded print params (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) consumed by Hole Wizard / hex / slot; 10/12/14 AF ladder as configs; film `clearance_ladder`
+- [ ] 6.2 See the print: color-by-thickness + overhang paint on Form (zebra shader path) + bed ghost; film `see_the_print`
+- [ ] 6.3 Open in slicer: user-registered Prusa/Orca/Bambu, one body per file, mm 3MF unchanged; film `open_in_slicer`
+- [ ] 6.4 Tool catalog: open-end, hex socket, driver bit, nozzle sizes in `sx::catalog` + palette page; film `catalog_hex_driver`
 
 ## Architecture Track A re-verify (2026-07-29)
 - [x] Track A already complete: ADR-001/002 + STATUS 3.2/3.4; interactive ops use `graph_add_*` with free-body Command fallbacks
