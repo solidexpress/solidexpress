@@ -84,11 +84,47 @@ jobs:
           [[ "$ok" -eq 1 ]] || exit 1
 
   # Godot headless suites need a local Godot binary (tools/godot/godot).
-  # Enable when the CI image caches that binary; until then kernel is the gate.
   godot-smoke:
-    if: false
     runs-on: ubuntu-24.04
     needs: kernel
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Godot CI reserved — enable when tools/godot is provisioned"
+        with:
+          submodules: recursive
+
+      - name: Install build/runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ unzip curl ca-certificates \
+            libocct-foundation-dev libocct-modeling-data-dev \
+            libocct-modeling-algorithms-dev libocct-ocaf-dev \
+            libocct-data-exchange-dev libocct-visualization-dev \
+            libocct-draw-dev \
+            libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
+            mesa-vulkan-drivers
+
+      - name: Cache Godot 4.7-stable binary
+        uses: actions/cache@v4
+        with:
+          path: tools/godot/godot
+          key: godot-${{ runner.os }}-4.7-stable-linux-x86_64
+          restore-keys: |
+            godot-${{ runner.os }}-4.7-stable-
+            godot-
+
+      - name: Fetch pinned Godot editor (4.7-stable)
+        run: |
+          chmod +x packaging/ci/fetch_godot.sh
+          GODOT_VERSION=4.7-stable packaging/ci/fetch_godot.sh
+          tools/godot/godot --version
+
+      - name: Configure + build (GDExtension + kernel)
+        run: make build
+
+      # Gate a minimal set of Godot suites. If a suite starts timing out the whole job,
+      # isolate just that suite with continue-on-error and link the regression to 6.0b/c.
+      - name: Run headless Godot gated suites
+        run: |
+          chmod +x packaging/ci/run_godot_suites.sh
+          packaging/ci/run_godot_suites.sh

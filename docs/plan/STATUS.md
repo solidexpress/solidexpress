@@ -343,7 +343,7 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 
 ## Environment notes
 - System deps installed via apt: ninja-build, zip, libocct-*-dev (7.9.2), libeigen3-dev, libboost-dev
-- Godot 4.7-stable binary at `tools/godot/godot` (gitignored; re-download from godot-builds if missing)
+- Godot 4.7-stable binary at `tools/godot/godot` (gitignored; in CI fetched by `packaging/ci/fetch_godot.sh` from `godotengine/godot` 4.7-stable and cached via `actions/cache`)
 - Build: `make build` (CMake+Ninja superbuild, ~5 min cold for godot-cpp)
 - PlaneGCS builds as `libplanegcs.so` (LGPL dynamic-link compliance); not yet consumed by sxkernel (Phase 2)
 - Voice STT: default stub (`SX_BUILD_VOICE=OFF`). Enable with vendored `thirdparty/whisper.cpp` + `ggml-tiny.en.bin` under `tools/whisper/` (gitignored)
