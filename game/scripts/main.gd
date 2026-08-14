@@ -310,6 +310,10 @@ func _build_ui() -> void:
 	insert_popup.add_item("Datum Axis Z", 5)
 	insert_popup.add_separator()
 	insert_popup.add_item("Datum Point at Origin", 6)
+	insert_popup.add_separator()
+	# Surface Thread alongside Insert for reachability (also available in Ops).
+	# Hook: default to Modeled when Mode rail is “Form” once API exists.
+	insert_popup.add_item("Thread…", 20)
 	insert_popup.id_pressed.connect(_on_insert_menu)
 
 	var mode_btn := MenuButton.new()
@@ -1240,13 +1244,15 @@ func _on_sketch_dim_submitted(value: float) -> void:
 	_apply_dimension()
 
 
-func _on_sketch_finish(op: String, distance: float) -> void:
+func _on_sketch_finish(op: String, distance: float, end: String = "blind",
+		thin_thickness: float = 0.0, thin_type: String = "one_side",
+		flip_side: bool = false, selected_contours: Array = []) -> void:
 	extrude_distance.value = distance
 	match op:
 		"cut": finish_op.selected = 1
 		"fuse": finish_op.selected = 2
 		_: finish_op.selected = 0
-	sketch_mode.finish_extrude(distance, op)
+	sketch_mode.finish_extrude(distance, op, end, thin_thickness, thin_type, flip_side, selected_contours)
 
 
 func _selected_entity() -> String:
@@ -1777,6 +1783,10 @@ func _on_insert_menu(id: int) -> void:
 	if id == 10:
 		_show_file_dialog(FileAction.INSERT_SXP, FileDialog.FILE_MODE_OPEN_FILE,
 			"*.sxp ; SolidExpress")
+		return
+	if id == 20:
+		if ops_panel != null:
+			ops_panel._apply_thread()
 		return
 	var did := ""
 	match id:

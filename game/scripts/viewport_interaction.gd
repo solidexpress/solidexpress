@@ -76,6 +76,7 @@ var _strip_fuse: Button
 var _strip_cut: Button
 var _strip_common: Button
 var _strip_hole: Button
+var _strip_hole_wizard: Button
 var _strip_clash: Button
 var _strip_triball: Button
 var connector_overlay: ConnectorOverlay
@@ -280,6 +281,14 @@ func _build_selection_strip() -> void:
 	_strip_hole.tooltip_text = "M6 through-all on the selected face / sketch points"
 	_strip_hole.pressed.connect(_ctx_hole_m6)
 	row.add_child(_strip_hole)
+	_strip_hole_wizard = Button.new()
+	_strip_hole_wizard.name = "StripHoleWizard"
+	_strip_hole_wizard.text = "Hole Wizard…"
+	_strip_hole_wizard.tooltip_text = "Arm Hole Wizard to multi-place holes on a face"
+	_strip_hole_wizard.pressed.connect(func() -> void:
+		if ops_panel != null:
+			ops_panel._arm_hole_wizard())
+	row.add_child(_strip_hole_wizard)
 	_strip_clash = Button.new()
 	_strip_clash.name = "StripClash"
 	_strip_clash.text = "Clash"
@@ -3568,6 +3577,7 @@ func _refresh_selection_strip() -> void:
 	_strip_common.visible = multi_body
 	_strip_fillet.visible = not has_instance
 	_strip_hole.visible = not has_instance
+	_strip_hole_wizard.visible = not has_instance
 	_strip_clash.visible = multi_body
 	_strip_triball.visible = not has_instance
 	_strip_sketch.visible = not has_instance and view.selected_face != ""
