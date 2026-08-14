@@ -76,6 +76,21 @@ func _ready() -> void:
 	cfg_save.pressed.connect(_on_config_save)
 	save_row.add_child(cfg_save)
 
+	# Wave 6.2: Quick configs for jaw_af 10 / 12 / 14.
+	var quick_row := HBoxContainer.new()
+	vbox.add_child(quick_row)
+	var qlbl := Label.new()
+	qlbl.text = "Jaw AF"
+	qlbl.add_theme_font_size_override("font_size", 11)
+	quick_row.add_child(qlbl)
+	for size in [10, 12, 14]:
+		var btn := Button.new()
+		btn.text = str(size)
+		btn.custom_minimum_size = Vector2(36, 0)
+		btn.tooltip_text = "Set jaw_af and activate config " + str(size)
+		btn.pressed.connect(func() -> void: _on_quick_jaw(size))
+		quick_row.add_child(btn)
+
 	view.document_changed.connect(refresh)
 	refresh()
 
@@ -117,6 +132,22 @@ func _on_config_selected(index: int) -> void:
 		status.emit("Configuration: " + config_name)
 	else:
 		status.emit("Failed to activate " + config_name)
+
+
+func _on_quick_jaw(size: int) -> void:
+	# Set jaw_af, snapshot/activate a config named by the size.
+	if not view.doc.set_variable("jaw_af", str(size)):
+		status.emit("Failed to set jaw_af")
+		return
+	if not view.doc.save_configuration(str(size)):
+		status.emit("Failed to save configuration " + str(size))
+		return
+	if not view.doc.activate_configuration(str(size)):
+		status.emit("Failed to activate configuration " + str(size))
+		return
+	view.refresh()
+	view.document_changed.emit()
+	status.emit("jaw_af = %d (config %d)" % [size, size])
 
 
 func _on_config_delete() -> void:

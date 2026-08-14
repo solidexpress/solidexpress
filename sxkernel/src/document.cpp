@@ -55,7 +55,24 @@ std::string format_vec3(const std::array<double, 3>& v) {
 
 Document::Document()
     : cards_(std::make_unique<CardRegistry>()),
-      graph_(std::make_unique<FeatureGraph>()) {}
+      graph_(std::make_unique<FeatureGraph>()) {
+    // Wave 6.2: seed built-in print/config variables for new documents (mm).
+    // These are user-editable and serialize with the graph.
+    // Do this only for fresh documents; loaders use restore paths that replace the graph.
+    try {
+        // Only seed when empty to avoid clobbering programmatic construction in tests
+        // that immediately set variables before regeneration.
+        if (graph_->variables().entries().empty()) {
+            graph_->variables().set("clearance", "0.3");
+            graph_->variables().set("hole_compensation", "0.2");
+            graph_->variables().set("layer", "0.2");
+            graph_->variables().set("nozzle", "0.4");
+            graph_->variables().set("jaw_af", "10");
+        }
+    } catch (...) {
+        // Never throw from constructor — variables are best-effort seeds.
+    }
+}
 Document::~Document() = default;
 
 void Document::set_graph(FeatureGraph g) {

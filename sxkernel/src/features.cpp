@@ -1102,7 +1102,17 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 EntityId target = find_feature_body("target");
                 const Body* tb = doc.body(target);
                 if (!tb) return fail("missing target body");
-                double diameter = num_param(params, "diameter", 0.0, env);
+                // Wave 6.2: support nominal + hole_compensation (+ clearance) when provided.
+                double diameter = 0.0;
+                if (params.contains("nominal")) {
+                    const double nominal = num_param(params, "nominal", 0.0, env);
+                    double comp = 0.0, clr = 0.0;
+                    if (auto it = env.find("hole_compensation"); it != env.end()) comp = it->second;
+                    if (auto it2 = env.find("clearance"); it2 != env.end()) clr = it2->second;
+                    diameter = nominal + comp + clr;
+                } else {
+                    diameter = num_param(params, "diameter", 0.0, env);
+                }
                 if (diameter <= 0.0) return fail("invalid diameter");
                 double depth_param = num_param(params, "depth", 0.0, env);
                 double depth = depth_param > 0.0 ? depth_param : k_hole_through;

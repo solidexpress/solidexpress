@@ -38,7 +38,9 @@ TEST_CASE("context export of empty document", "[context]") {
     Document doc;
     std::string md = export_context_markdown(doc);
     REQUIRE(md.find("_empty_") != std::string::npos);
-    REQUIRE(md.find("## Variables") == std::string::npos);
+    // Wave 6.2: new documents seed built-in variables; section should be present.
+    REQUIRE(md.find("## Variables") != std::string::npos);
+    REQUIRE(md.find("`clearance` = `0.3`") != std::string::npos);
     REQUIRE(md.find("## Datums") == std::string::npos);
     REQUIRE(md.find("## Instances") == std::string::npos);
 }
