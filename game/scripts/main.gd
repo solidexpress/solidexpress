@@ -11,6 +11,7 @@ var camera: OrbitCamera
 var interaction: ViewportInteraction
 ## Canyon HDRI world env; section mode swaps to a flat clear color.
 var _world_env: WorldEnvironment
+var bed_ghost: PrintBedGhost
 var card_panel: RichTextLabel
 var card_box: PanelContainer
 var status_label: Label
@@ -141,6 +142,10 @@ func _build_world() -> void:
 	view.name = "DocumentView"
 	view.section_changed.connect(_on_section_changed)
 	model_space.add_child(view)
+	# Bed ghost overlay (hidden by default; Form only).
+	bed_ghost = PrintBedGhost.new()
+	bed_ghost.name = "PrintBedGhost"
+	model_space.add_child(bed_ghost)
 
 	sketch_mode = SketchMode.new()
 	sketch_mode.name = "SketchMode"
@@ -354,6 +359,8 @@ func _build_ui() -> void:
 	print_strip.name = "PrintStrip"
 	print_strip.visible = false
 	top_chrome.add_child(print_strip)
+	print_strip.view = view
+	print_strip.bed_ghost = bed_ghost
 	print_strip.analyze_requested.connect(_on_print_analyze)
 	print_strip.orient_requested.connect(_on_print_orient)
 
@@ -1322,6 +1329,9 @@ func _on_print_analyze() -> void:
 	if view == null or view.doc == null:
 		return
 	var r: Dictionary = view.doc.print_analyze(_print_target())
+	# Seed paint maps for Wave 6.3
+	if view.has_method("set_paint_data"):
+		view.call("set_paint_data", r)
 	var digest := str(r.get("digest", ""))
 	if print_strip != null:
 		print_strip.set_digest(digest)
@@ -1334,6 +1344,9 @@ func _on_print_orient() -> void:
 	if view == null or view.doc == null:
 		return
 	var r: Dictionary = view.doc.print_orient(_print_target())
+	# Seed paint maps after orient as well.
+	if view.has_method("set_paint_data"):
+		view.call("set_paint_data", r)
 	var digest := str(r.get("digest", ""))
 	if print_strip != null:
 		print_strip.set_digest(digest)
@@ -1385,6 +1398,12 @@ func _update_mode_overlays() -> void:
 		sheet_metal_view.show_split(_work_mode == "Sheet", flat, 0.44)
 	if print_strip != null:
 		print_strip.visible = _work_mode == "Form"
+	# Bed ghost visible in Form only (gate the toggle).
+	if bed_ghost != null:
+		var on := false
+		if print_strip != null and is_instance_valid(print_strip._bed_toggle):
+			on = print_strip._bed_toggle.button_pressed
+		bed_ghost.visible = (_work_mode == "Form") and on
 
 
 ## Selection card sits under the visible left rail (palette / modify / sketch).
