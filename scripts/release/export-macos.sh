@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # macOS desktop export + zip + sha256. Run from repo root on macOS.
+# Godot 4.7.1 templates only ship godot_macos_release.universal, so we export
+# universal then lipo -thin arm64. The DMG is Apple Silicon only.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -39,9 +41,6 @@ if [[ ! -f game/bin/libplanegcs.dylib ]]; then
   exit 1
 fi
 
-# arm64 export requires Import ETC2 ASTC. v0.0.1 succeeded with --import then
-# --export-release against project.godot. A separate Godot script then saves the
-# setting through ProjectSettings so the export process sees GLOBAL_GET=true.
 echo "==> Godot import"
 "$GODOT" --headless --path game --import >/dev/null 2>&1 || true
 
@@ -54,11 +53,10 @@ grep -n "vram_compression" "$ROOT/game/project.godot" || true
 rm -rf "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 mkdir -p "$ROOT/dist/releases/SolidExpress-${VERSION}-macos"
 
-echo "==> Godot export-release preset=${PRESET} (arm64)"
+echo "==> Godot export-release preset=${PRESET} (universal template, then thin to arm64)"
 "$GODOT" --headless --path game --export-release "$PRESET" "$OUT_APP"
 if [[ ! -d "$OUT_APP" ]]; then echo "Export failed: $OUT_APP" >&2; exit 1; fi
 
-# Ensure PlaneGCS is present before bundling (Godot may not copy non-gdextension dylibs).
 mkdir -p "$OUT_APP/Contents/MacOS" "$OUT_APP/Contents/Frameworks"
 cp -f game/bin/libplanegcs.dylib "$OUT_APP/Contents/MacOS/"
 if [[ ! -f "$OUT_APP/Contents/Frameworks/libsxcore.dylib" ]]; then
@@ -68,6 +66,27 @@ fi
 echo "==> bundle Homebrew OCCT / transitive dylibs into Frameworks"
 chmod +x "$ROOT/packaging/macos/bundle-dylibs.sh"
 "$ROOT/packaging/macos/bundle-dylibs.sh" "$OUT_APP"
+
+thin_to_arm64() {
+  local f="$1"
+  local info
+  info="$(lipo -info "$f" 2>/dev/null || true)"
+  if echo "$info" | grep -q "Architectures in the fat file" && echo "$info" | grep -q arm64; then
+    echo "thin $f"
+    lipo -thin arm64 "$f" -output "$f.arm64"
+    mv "$f.arm64" "$f"
+  fi
+}
+
+echo "==> thin Mach-O binaries to arm64 (Apple Silicon only)"
+while IFS= read -r f; do
+  thin_to_arm64 "$f"
+done < <(find "$OUT_APP" -type f \( -perm -111 -o -name '*.dylib' -o -name '*.so' -o -name '*.framework' \) 2>/dev/null)
+if [[ -f "$OUT_APP/Contents/MacOS/SolidExpress" ]]; then
+  thin_to_arm64 "$OUT_APP/Contents/MacOS/SolidExpress"
+  chmod +x "$OUT_APP/Contents/MacOS/SolidExpress"
+  lipo -info "$OUT_APP/Contents/MacOS/SolidExpress" || true
+fi
 
 BUNDLE_DIR="$(dirname "$OUT_APP")"
 [[ -f "$ROOT/NOTICE" ]] && cp -f "$ROOT/NOTICE" "$BUNDLE_DIR/NOTICE"
