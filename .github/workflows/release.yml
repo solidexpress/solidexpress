@@ -196,6 +196,13 @@ jobs:
 
   macos:
     runs-on: macos-14
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -228,11 +235,21 @@ jobs:
           chmod +x scripts/release/export-macos.sh
           ./scripts/release/export-macos.sh
 
+      - name: Sign app (Developer ID)
+        run: |
+          chmod +x packaging/macos/sign-and-notarize.sh
+          ./packaging/macos/sign-and-notarize.sh app \
+            "dist/releases/SolidExpress-${{ steps.ver.outputs.version }}-macos/SolidExpress.app"
 
       - name: Build DMG
         run: |
           chmod +x packaging/macos/create-dmg.sh
           ./packaging/macos/create-dmg.sh
+
+      - name: Sign, notarize, and staple DMG
+        run: |
+          ./packaging/macos/sign-and-notarize.sh dmg \
+            "dist/releases/SolidExpress-${{ steps.ver.outputs.version }}-macos.dmg"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
