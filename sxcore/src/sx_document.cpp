@@ -857,7 +857,7 @@ String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const St
 }
 
 String SxDocument::graph_add_path(const PackedStringArray& sketch_fids, const String& mode) {
-    if (sketch_fids.size() < 2) return {};
+    if (sketch_fids.size() < 1) return {};
     nlohmann::json sketches = nlohmann::json::array();
     for (int i = 0; i < sketch_fids.size(); ++i) sketches.push_back(to_std(sketch_fids[i]));
     std::string m = to_std(mode);
@@ -874,16 +874,20 @@ String SxDocument::graph_add_path(const PackedStringArray& sketch_fids, const St
     return ok ? to_gd(fid.str()) : String();
 }
 
-String SxDocument::graph_add_loft(const PackedStringArray& sketch_fids, bool ruled) {
+String SxDocument::graph_add_loft(const PackedStringArray& sketch_fids, bool ruled,
+                                  const PackedStringArray& guide_fids) {
     if (sketch_fids.size() < 2) return {};
     nlohmann::json sketches = nlohmann::json::array();
     for (int i = 0; i < sketch_fids.size(); ++i) sketches.push_back(to_std(sketch_fids[i]));
+    nlohmann::json guides = nlohmann::json::array();
+    for (int i = 0; i < guide_fids.size(); ++i) guides.push_back(to_std(guide_fids[i]));
     sx::EntityId fid;
     bool ok = apply_graph_edit("loft", [&] {
         sx::Feature f;
         f.type = sx::FeatureType::Loft;
         f.params["sketches"] = sketches;
         f.params["ruled"] = ruled;
+        if (!guides.empty()) f.params["guides"] = guides;
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -2108,7 +2112,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid"),
                          &SxDocument::graph_add_sweep_along_path);
     ClassDB::bind_method(D_METHOD("graph_add_path", "sketch_fids", "mode"), &SxDocument::graph_add_path);
-    ClassDB::bind_method(D_METHOD("graph_add_loft", "sketch_fids", "ruled"), &SxDocument::graph_add_loft);
+    ClassDB::bind_method(D_METHOD("graph_add_loft", "sketch_fids", "ruled", "guide_fids"),
+                         &SxDocument::graph_add_loft, DEFVAL(PackedStringArray()));
     ClassDB::bind_method(D_METHOD("graph_add_fillet", "target_fid", "edge_ids", "radius"), &SxDocument::graph_add_fillet);
     ClassDB::bind_method(D_METHOD("graph_add_chamfer", "target_fid", "edge_ids", "distance"), &SxDocument::graph_add_chamfer);
     ClassDB::bind_method(D_METHOD("graph_add_hole", "target_fid", "type", "position", "direction",
