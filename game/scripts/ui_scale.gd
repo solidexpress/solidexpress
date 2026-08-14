@@ -28,7 +28,7 @@ static func refresh() -> void:
 		# Fall back to DPI heuristic in that case.
 		if is_equal_approx(s, 1.0):
 			var dpi := DisplayServer.screen_get_dpi(screen_id)
-			if dpi > 144:
+			if dpi >= 144:
 				s = float(dpi) / 96.0
 	_factor = clampf(s, 1.0, 2.5)
 

@@ -73,6 +73,9 @@ var _last_saved_revision := 0
 
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
+	# Ensure window/display scale is finalized (macOS Retina may report 1.0
+	# on the very first frame). Defer one frame before computing UiScale.
+	await get_tree().process_frame
 	UiScale.refresh()
 	_apply_ui_theme()
 	_build_world()
