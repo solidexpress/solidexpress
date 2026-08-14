@@ -3,6 +3,9 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 
+#include <algorithm>
+#include <map>
+
 #include "sx/sketch_tools.hpp"
 
 using namespace godot;
@@ -29,15 +32,7 @@ static sx::PointRole parse_role(const String& s) {
 }
 
 static std::optional<sx::ConstraintType> parse_constraint_type(const String& s) {
-    std::string t = to_std(s);
-    using CT = sx::ConstraintType;
-    for (CT ct : {CT::Coincident, CT::Horizontal, CT::Vertical, CT::Parallel,
-                  CT::Perpendicular, CT::PointOnLine, CT::Tangent, CT::Equal,
-                  CT::Distance, CT::Radius, CT::Angle, CT::Concentric, CT::Symmetric,
-                  CT::Midpoint, CT::Fix, CT::Collinear}) {
-        if (t == sx::to_string(ct)) return ct;
-    }
-    return std::nullopt;
+    return sx::constraint_type_from_string(to_std(s));
 }
 
 SxSketch::SxSketch()
@@ -82,6 +77,16 @@ String SxSketch::add_circle(double cx, double cy, double r) {
 String SxSketch::add_arc(double cx, double cy, double r, double a0, double a1) {
     return to_gd(sketch_->add_arc(cx, cy, r, a0, a1).str());
 }
+String SxSketch::add_spline(const PackedVector2Array& fit_points) {
+    std::vector<std::array<double, 2>> pts;
+    pts.reserve(fit_points.size());
+    for (int i = 0; i < fit_points.size(); ++i) {
+        Vector2 v = fit_points[i];
+        pts.push_back({v.x, v.y});
+    }
+    auto id = sketch_->add_spline(pts);
+    return id.is_null() ? String() : to_gd(id.str());
+}
 
 bool SxSketch::remove_entity(const String& id) {
     return sketch_->remove_entity(parse_id(id));
@@ -93,6 +98,14 @@ void SxSketch::set_construction(const String& id, bool construction) {
 
 bool SxSketch::is_construction(const String& id) const {
     return sketch_->is_construction(parse_id(id));
+}
+
+void SxSketch::set_external(const String& id, bool external, const String& projected_from) {
+    sketch_->set_external(parse_id(id), external, to_std(projected_from));
+}
+
+bool SxSketch::is_external(const String& id) const {
+    return sketch_->is_external(parse_id(id));
 }
 
 PackedStringArray SxSketch::entity_ids() const {
@@ -143,6 +156,8 @@ Dictionary SxSketch::entity_info(const String& id) const {
     if (!e) return out;
     auto p = [&](size_t i) { return sketch_->param(e->params[i]); };
     out["construction"] = e->construction;
+    out["external"] = e->external;
+    out["projected_from"] = to_gd(e->projected_from);
     switch (e->type) {
         case sx::SketchEntityType::Point:
             out["type"] = "point";
@@ -167,6 +182,14 @@ Dictionary SxSketch::entity_info(const String& id) const {
             out["start"] = Vector2(p(5), p(6));
             out["end"] = Vector2(p(7), p(8));
             break;
+        case sx::SketchEntityType::Spline: {
+            out["type"] = "spline";
+            Array pts;
+            for (const auto& fp : sketch_->spline_fit_points(e->id))
+                pts.push_back(Vector2(fp[0], fp[1]));
+            out["fit_points"] = pts;
+            break;
+        }
     }
     return out;
 }
@@ -204,11 +227,24 @@ bool SxSketch::set_entity_geometry(const String& id, const Dictionary& geo) {
             set_vec("start", 5, 6);
             set_vec("end", 7, 8);
             break;
+        case sx::SketchEntityType::Spline:
+            if (geo.has("fit_points")) {
+                Array pts = geo["fit_points"];
+                int n = static_cast<int>(sketch_->param(e->params[0]));
+                int m = std::min(n, static_cast<int>(pts.size()));
+                for (int i = 0; i < m; ++i) {
+                    Vector2 v = pts[i];
+                    set(static_cast<size_t>(1 + 2 * i), v.x);
+                    set(static_cast<size_t>(2 + 2 * i), v.y);
+                }
+            }
+            break;
     }
     return true;
 }
 
-String SxSketch::add_constraint(const String& type, const Array& refs, double value) {
+String SxSketch::add_constraint(const String& type, const Array& refs, double value,
+                                bool driving) {
     auto ct = parse_constraint_type(type);
     if (!ct) return {};
     std::vector<sx::PointRef> prefs;
@@ -220,7 +256,7 @@ String SxSketch::add_constraint(const String& type, const Array& refs, double va
         if (pr.entity.is_null()) return {};
         prefs.push_back(pr);
     }
-    return to_gd(sketch_->add_constraint(*ct, std::move(prefs), value).str());
+    return to_gd(sketch_->add_constraint(*ct, std::move(prefs), value, driving).str());
 }
 
 bool SxSketch::remove_constraint(const String& id) {
@@ -231,12 +267,30 @@ bool SxSketch::set_constraint_value(const String& id, double value) {
     return sketch_->set_constraint_value(parse_id(id), value);
 }
 
+bool SxSketch::set_constraint_expr(const String& id, const String& expr) {
+    return sketch_->set_constraint_expr(parse_id(id), to_std(expr));
+}
+
+bool SxSketch::set_constraint_driving(const String& id, bool driving) {
+    return sketch_->set_constraint_driving(parse_id(id), driving);
+}
+
 bool SxSketch::set_constraint_weak(const String& id, bool weak) {
     return sketch_->set_constraint_weak(parse_id(id), weak);
 }
 
 int SxSketch::drop_weak_constraints() {
     return sketch_->drop_weak_constraints();
+}
+
+bool SxSketch::resolve_expressions(const Dictionary& env) {
+    std::map<std::string, double> m;
+    Array keys = env.keys();
+    for (int i = 0; i < keys.size(); ++i) {
+        String k = keys[i];
+        m[to_std(k)] = static_cast<double>(env[k]);
+    }
+    return sketch_->resolve_expressions(m);
 }
 
 PackedStringArray SxSketch::constraint_ids() const {
@@ -262,7 +316,9 @@ Dictionary SxSketch::constraint_info(const String& id) const {
         if (c.id != cid) continue;
         out["type"] = to_gd(sx::to_string(c.type));
         out["value"] = c.value;
+        out["driving"] = c.driving;
         out["weak"] = c.weak;
+        out["expr"] = to_gd(c.expr);
         Array refs;
         for (const auto& r : c.refs) {
             Dictionary ref;
@@ -293,38 +349,113 @@ Dictionary SxSketch::solve() {
     return out;
 }
 
+Array SxSketch::analyze(double gap_tol) const {
+    Array out;
+    for (const auto& issue : sketch_->analyze(gap_tol)) {
+        Dictionary d;
+        d["code"] = to_gd(issue.code);
+        d["message"] = to_gd(issue.message);
+        PackedStringArray ents;
+        for (const auto& id : issue.entities) ents.push_back(to_gd(id.str()));
+        d["entities"] = ents;
+        out.push_back(d);
+    }
+    return out;
+}
+
+int SxSketch::fully_define() {
+    return sketch_->fully_define();
+}
+
+int SxSketch::contour_count() const {
+    std::string err;
+    return static_cast<int>(sketch_->contour_faces(&err).size());
+}
+
+String SxSketch::project_line_edge(const Vector3& a, const Vector3& b, const String& edge_id) {
+    auto id = sketch_->project_line_edge({a.x, a.y, a.z}, {b.x, b.y, b.z}, to_std(edge_id));
+    return to_gd(id.str());
+}
+
+String SxSketch::project_circle_edge(const Vector3& center, double radius,
+                                     const String& edge_id) {
+    auto id = sketch_->project_circle_edge({center.x, center.y, center.z}, radius,
+                                           to_std(edge_id));
+    return to_gd(id.str());
+}
+
+bool SxSketch::update_projected_line(const String& id, const Vector3& a, const Vector3& b) {
+    return sketch_->update_projected_line(parse_id(id), {a.x, a.y, a.z}, {b.x, b.y, b.z});
+}
+
+bool SxSketch::update_projected_circle(const String& id, const Vector3& center, double radius) {
+    return sketch_->update_projected_circle(parse_id(id), {center.x, center.y, center.z},
+                                            radius);
+}
+
+int SxSketch::mark_dangling_external(const PackedStringArray& live_edge_ids) {
+    std::vector<std::string> live;
+    for (int i = 0; i < live_edge_ids.size(); ++i) live.push_back(to_std(live_edge_ids[i]));
+    return sketch_->mark_dangling_external(live);
+}
+
 void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_plane", "origin", "x_dir", "y_dir"), &SxSketch::set_plane);
     ClassDB::bind_method(D_METHOD("plane_info"), &SxSketch::plane_info);
     ClassDB::bind_method(D_METHOD("add_point", "x", "y"), &SxSketch::add_point);
     ClassDB::bind_method(D_METHOD("add_line", "x1", "y1", "x2", "y2"), &SxSketch::add_line);
     ClassDB::bind_method(D_METHOD("add_circle", "cx", "cy", "r"), &SxSketch::add_circle);
-    ClassDB::bind_method(D_METHOD("add_arc", "cx", "cy", "r", "start_angle", "end_angle"), &SxSketch::add_arc);
+    ClassDB::bind_method(D_METHOD("add_arc", "cx", "cy", "r", "start_angle", "end_angle"),
+                         &SxSketch::add_arc);
+    ClassDB::bind_method(D_METHOD("add_spline", "fit_points"), &SxSketch::add_spline);
     ClassDB::bind_method(D_METHOD("remove_entity", "id"), &SxSketch::remove_entity);
-    ClassDB::bind_method(D_METHOD("set_construction", "id", "construction"), &SxSketch::set_construction);
+    ClassDB::bind_method(D_METHOD("set_construction", "id", "construction"),
+                         &SxSketch::set_construction);
     ClassDB::bind_method(D_METHOD("is_construction", "id"), &SxSketch::is_construction);
+    ClassDB::bind_method(D_METHOD("set_external", "id", "external", "projected_from"),
+                         &SxSketch::set_external);
+    ClassDB::bind_method(D_METHOD("is_external", "id"), &SxSketch::is_external);
     ClassDB::bind_method(D_METHOD("entity_ids"), &SxSketch::entity_ids);
     ClassDB::bind_method(D_METHOD("fillet_corner", "line_a_id", "line_b_id", "radius"),
                          &SxSketch::fillet_corner);
     ClassDB::bind_method(D_METHOD("offset_entities", "ids", "distance"),
                          &SxSketch::offset_entities);
-    ClassDB::bind_method(D_METHOD("trim_entity", "id", "px", "py"),
-                         &SxSketch::trim_entity);
-    ClassDB::bind_method(D_METHOD("extend_entity", "id", "px", "py"),
-                         &SxSketch::extend_entity);
+    ClassDB::bind_method(D_METHOD("trim_entity", "id", "px", "py"), &SxSketch::trim_entity);
+    ClassDB::bind_method(D_METHOD("extend_entity", "id", "px", "py"), &SxSketch::extend_entity);
     ClassDB::bind_method(D_METHOD("pattern_entities", "ids", "dx", "dy", "count"),
                          &SxSketch::pattern_entities);
     ClassDB::bind_method(D_METHOD("entity_info", "id"), &SxSketch::entity_info);
     ClassDB::bind_method(D_METHOD("set_entity_geometry", "id", "geo"),
                          &SxSketch::set_entity_geometry);
-    ClassDB::bind_method(D_METHOD("add_constraint", "type", "refs", "value"), &SxSketch::add_constraint);
+    ClassDB::bind_method(D_METHOD("add_constraint", "type", "refs", "value", "driving"),
+                         &SxSketch::add_constraint, DEFVAL(true));
     ClassDB::bind_method(D_METHOD("remove_constraint", "id"), &SxSketch::remove_constraint);
-    ClassDB::bind_method(D_METHOD("set_constraint_value", "id", "value"), &SxSketch::set_constraint_value);
-    ClassDB::bind_method(D_METHOD("set_constraint_weak", "id", "weak"), &SxSketch::set_constraint_weak);
+    ClassDB::bind_method(D_METHOD("set_constraint_value", "id", "value"),
+                         &SxSketch::set_constraint_value);
+    ClassDB::bind_method(D_METHOD("set_constraint_expr", "id", "expr"),
+                         &SxSketch::set_constraint_expr);
+    ClassDB::bind_method(D_METHOD("set_constraint_driving", "id", "driving"),
+                         &SxSketch::set_constraint_driving);
+    ClassDB::bind_method(D_METHOD("set_constraint_weak", "id", "weak"),
+                         &SxSketch::set_constraint_weak);
     ClassDB::bind_method(D_METHOD("drop_weak_constraints"), &SxSketch::drop_weak_constraints);
+    ClassDB::bind_method(D_METHOD("resolve_expressions", "env"), &SxSketch::resolve_expressions);
     ClassDB::bind_method(D_METHOD("constraint_ids"), &SxSketch::constraint_ids);
     ClassDB::bind_method(D_METHOD("constraint_info", "id"), &SxSketch::constraint_info);
     ClassDB::bind_method(D_METHOD("solve"), &SxSketch::solve);
+    ClassDB::bind_method(D_METHOD("analyze", "gap_tol"), &SxSketch::analyze, DEFVAL(1e-4));
+    ClassDB::bind_method(D_METHOD("fully_define"), &SxSketch::fully_define);
+    ClassDB::bind_method(D_METHOD("contour_count"), &SxSketch::contour_count);
+    ClassDB::bind_method(D_METHOD("project_line_edge", "a", "b", "edge_id"),
+                         &SxSketch::project_line_edge);
+    ClassDB::bind_method(D_METHOD("project_circle_edge", "center", "radius", "edge_id"),
+                         &SxSketch::project_circle_edge);
+    ClassDB::bind_method(D_METHOD("update_projected_line", "id", "a", "b"),
+                         &SxSketch::update_projected_line);
+    ClassDB::bind_method(D_METHOD("update_projected_circle", "id", "center", "radius"),
+                         &SxSketch::update_projected_circle);
+    ClassDB::bind_method(D_METHOD("mark_dangling_external", "live_edge_ids"),
+                         &SxSketch::mark_dangling_external);
 }
 
 }  // namespace sx_godot

@@ -161,7 +161,12 @@ public:
     // op: "new" | "fuse" | "cut"; target_fid required for fuse/cut.
     godot::String graph_add_extrude(const godot::String& sketch_fid, double distance,
                                     bool symmetric, const godot::String& op,
-                                    const godot::String& target_fid);
+                                    const godot::String& target_fid,
+                                    const godot::String& end = godot::String("blind"),
+                                    double thin_thickness = 0.0,
+                                    const godot::String& thin_type = godot::String("one_side"),
+                                    bool flip_side = false,
+                                    const godot::Array& selected_contours = godot::Array());
     // Axis in sketch 2D coordinates (point + direction on the sketch plane).
     godot::String graph_add_revolve(const godot::String& sketch_fid,
                                     const godot::Vector2& axis_point,
@@ -172,13 +177,15 @@ public:
                                   const godot::PackedVector3Array& path);
     // Sweep along a Path feature (params rebuilt associatively from source sketches).
     godot::String graph_add_sweep_along_path(const godot::String& sketch_fid,
-                                             const godot::String& path_fid);
+                                             const godot::String& path_fid,
+                                             const godot::PackedStringArray& guide_fids = {});
     // Composite 3D path from two or more planar sketches (SW 3D-sketch substitute).
     // mode: "join_endpoints" | "bridge_spline" | "composite"
     godot::String graph_add_path(const godot::PackedStringArray& sketch_fids,
                                  const godot::String& mode);
     // Loft through two or more sketch profiles (each on its own plane).
-    godot::String graph_add_loft(const godot::PackedStringArray& sketch_fids, bool ruled);
+    godot::String graph_add_loft(const godot::PackedStringArray& sketch_fids, bool ruled,
+                                 const godot::PackedStringArray& guide_fids = {});
     // Dress-up features on a timeline body. Edge ids are converted to the
     // 1-based edge-map indices the graph stores.
     godot::String graph_add_fillet(const godot::String& target_fid,
@@ -301,7 +308,32 @@ public:
                                         const godot::Vector3& direction);
     godot::String graph_add_holes(const godot::String& target_fid, const godot::String& type,
                                   const godot::PackedVector3Array& positions,
-                                  const godot::Vector3& direction, float diameter, float depth);
+                                  const godot::Vector3& direction, float diameter, float depth,
+                                  float cb_diameter, float cb_depth, float cs_diameter,
+                                  float cs_angle_deg);
+    godot::String graph_add_shell(const godot::String& target_fid,
+                                  const godot::PackedStringArray& face_ids, double thickness);
+    godot::String graph_add_offset(const godot::String& target_fid, double offset);
+    godot::String graph_add_push_pull(const godot::String& target_fid,
+                                      const godot::String& face_id, double distance);
+    godot::String graph_add_mirror(const godot::String& target_fid,
+                                   const godot::Vector3& plane_point,
+                                   const godot::Vector3& plane_normal,
+                                   const godot::PackedStringArray& source_feature_ids = {});
+    godot::String graph_add_linear_pattern(const godot::String& target_fid,
+                                           const godot::Vector3& direction, double spacing,
+                                           int count);
+    godot::String graph_add_circular_pattern(const godot::String& target_fid,
+                                              const godot::Vector3& axis_point,
+                                              const godot::Vector3& axis_dir, int count,
+                                              double total_angle);
+    godot::String graph_add_thread(const godot::String& target_fid, float major_radius,
+                                   float pitch, float turns, float depth, float profile_angle_deg,
+                                   const godot::Vector3& axis_point,
+                                   const godot::Vector3& axis_dir);
+    godot::String graph_add_helix(float profile_radius, float helix_radius, float pitch,
+                                  float turns, bool left_handed, const godot::Vector3& axis_point,
+                                  const godot::Vector3& axis_dir);
     double interference_volume(const godot::String& body_a, const godot::String& body_b) const;
     godot::String import_dxf(const godot::String& path);
     bool export_3mf(const godot::String& path);

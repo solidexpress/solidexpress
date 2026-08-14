@@ -453,7 +453,9 @@ func exit_sketch() -> String:
 ## appear on the timeline and stay editable. op: "new" | "cut" | "fuse";
 ## cut/fuse require a target body (the one sketched on) and cut extrudes
 ## into the body (negated distance).
-func finish_extrude(distance: float, op: String = "new") -> void:
+func finish_extrude(distance: float, op: String = "new", end: String = "blind",
+		thin_thickness: float = 0.0, thin_type: String = "one_side",
+		flip_side: bool = false, selected_contours: Array = []) -> void:
 	if not active:
 		return
 	if op != "new" and target_fid == "":
@@ -461,12 +463,21 @@ func finish_extrude(distance: float, op: String = "new") -> void:
 		return
 	if op == "cut":
 		distance = -absf(distance)
+	var symmetric := end == "midplane"
 	var sk_fid := _ensure_sketch_feature()
 	if sk_fid == "":
 		return
 	var ex_fid: String = view.doc.graph_add_extrude(
-		sk_fid, distance, false, op, target_fid if op != "new" else "")
-	_finish_feature(sk_fid, ex_fid, op, "Extrude failed — is the profile closed?")
+		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
+		thin_thickness, thin_type, flip_side, selected_contours)
+	var fail_msg := "Extrude failed — is the profile closed?"
+	var open_prof := not profile_is_closed(sketch)
+	if thin_thickness <= 0.0 and open_prof:
+		if op == "cut" or op == "fuse":
+			fail_msg = "Open-profile cut failed — need a line chain (Flip Side toggles material)"
+		else:
+			fail_msg = "Extrude failed — open profile needs Thin wall > 0 (or close the profile)"
+	_finish_feature(sk_fid, ex_fid, op, fail_msg)
 
 
 ## Finish the sketch and revolve. The axis is the selected line when one is
@@ -2024,16 +2035,44 @@ func _infer_rect(l1: String, l2: String, l3: String, l4: String) -> void:
 
 ## Change the value of a recorded dimensional constraint (by index into
 ## `dimensions`) and re-solve. Returns the solve status ("" on bad index).
-func set_dimension_value(index: int, value: float) -> String:
+func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	if index < 0 or index >= dimensions.size():
 		return ""
 	var dim: Dictionary = dimensions[index]
 	var cid: String = dim.get("cid", "")
 	if cid == "":
 		return ""
-	if not sketch.set_constraint_value(cid, value):
-		return ""
-	dim["value"] = value
+	if typeof(value_or_expr) == TYPE_STRING:
+		var expr := str(value_or_expr).strip_edges()
+		if expr.begins_with("=") or (not expr.is_valid_float() and expr.length() > 0):
+			if not expr.begins_with("="):
+				expr = "=" + expr
+			sketch.set_constraint_expr(cid, expr)
+			dim["expr"] = expr
+		else:
+			var value := float(expr)
+			if not sketch.set_constraint_value(cid, value):
+				return ""
+			dim["value"] = value
+			dim.erase("expr")
+	else:
+		var value := float(value_or_expr)
+		if not sketch.set_constraint_value(cid, value):
+			return ""
+		dim["value"] = value
+		dim.erase("expr")
+	# Resolve expressions from document variables before solve.
+	if view != null and view.doc != null:
+		var env2 := {}
+		for entry in view.doc.list_variables():
+			if typeof(entry) == TYPE_DICTIONARY and entry.has("value"):
+				var vv = entry["value"]
+				if typeof(vv) == TYPE_FLOAT or typeof(vv) == TYPE_INT:
+					env2[str(entry.get("name", ""))] = float(vv)
+		if not env2.is_empty():
+			sketch.resolve_expressions(env2)
+	if dim.has("expr"):
+		dim["value"] = sketch.constraint_info(cid).get("value", dim.get("value", 0.0))
 	dimensions[index] = dim
 	var res := run_solve()
 	_redraw()
@@ -2751,3 +2790,79 @@ func _update_preview() -> void:
 		_preview_node.mesh = im
 	else:
 		_preview_node.mesh = null
+
+
+## True when the sketch's non-construction geometry forms one or more closed
+## profiles (single circle, or line/arc/spline chains that each return to start).
+static func profile_is_closed(sk: SxSketch, tol: float = 1e-4) -> bool:
+	if sk == null:
+		return false
+	var segs: Array = []  # {a: Vector2, b: Vector2}
+	var circles := 0
+	for id in sk.entity_ids():
+		if sk.is_construction(id):
+			continue
+		var info: Dictionary = sk.entity_info(id)
+		match str(info.get("type", "")):
+			"circle":
+				circles += 1
+			"line":
+				var a: Vector2 = info["start"]
+				var b: Vector2 = info["end"]
+				if a.distance_to(b) > 1e-9:
+					segs.append({"a": a, "b": b, "used": false})
+			"arc":
+				var c: Vector2 = info["center"]
+				var r: float = float(info.get("radius", 0.0))
+				var sa: float = float(info.get("start_angle", 0.0))
+				var ea: float = float(info.get("end_angle", 0.0))
+				var pa: Vector2 = c + Vector2.from_angle(sa) * r
+				var pb: Vector2 = c + Vector2.from_angle(ea) * r
+				if pa.distance_to(pb) > 1e-9:
+					segs.append({"a": pa, "b": pb, "used": false})
+			"spline":
+				var fps: Array = info.get("fit_points", [])
+				if fps.size() >= 2:
+					var a2: Vector2 = fps[0]
+					var b2: Vector2 = fps[fps.size() - 1]
+					segs.append({"a": a2, "b": b2, "used": false})
+			_:
+				pass
+	if circles == 1 and segs.is_empty():
+		return true
+	if circles >= 1:
+		return false  # mixed circle + open edges not a single profile here
+	if segs.is_empty():
+		return false
+	# Greedy-chain every unused segment; each chain must close.
+	while true:
+		var seed := -1
+		for i in range(segs.size()):
+			if not segs[i]["used"]:
+				seed = i
+				break
+		if seed < 0:
+			break
+		segs[seed]["used"] = true
+		var loop_start: Vector2 = segs[seed]["a"]
+		var cursor: Vector2 = segs[seed]["b"]
+		var progressing := true
+		while progressing and cursor.distance_to(loop_start) > tol:
+			progressing = false
+			for j in range(segs.size()):
+				if segs[j]["used"]:
+					continue
+				var sa2: Vector2 = segs[j]["a"]
+				var sb2: Vector2 = segs[j]["b"]
+				if sa2.distance_to(cursor) <= tol:
+					cursor = sb2
+				elif sb2.distance_to(cursor) <= tol:
+					cursor = sa2
+				else:
+					continue
+				segs[j]["used"] = true
+				progressing = true
+				break
+		if cursor.distance_to(loop_start) > tol:
+			return false
+	return true

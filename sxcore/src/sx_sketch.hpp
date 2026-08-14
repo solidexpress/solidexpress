@@ -5,8 +5,10 @@
 // sx::to_string(ConstraintType).
 
 #include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
+#include <godot_cpp/variant/packed_vector2_array.hpp>
 
 #include <memory>
 
@@ -22,26 +24,24 @@ public:
     SxSketch();
     ~SxSketch() override = default;
 
-    // Adopt an existing kernel sketch (e.g. from the feature graph).
     void adopt(std::shared_ptr<sx::Sketch> sketch);
 
     void set_plane(const godot::Vector3& origin, const godot::Vector3& x_dir,
                    const godot::Vector3& y_dir);
-
-    // Sketch plane frame in model space (empty dict if unset).
     godot::Dictionary plane_info() const;
 
-    // --- entities (sketch 2D coordinates) ---
     godot::String add_point(double x, double y);
     godot::String add_line(double x1, double y1, double x2, double y2);
     godot::String add_circle(double cx, double cy, double r);
     godot::String add_arc(double cx, double cy, double r, double start_angle, double end_angle);
+    godot::String add_spline(const godot::PackedVector2Array& fit_points);
     bool remove_entity(const godot::String& id);
     void set_construction(const godot::String& id, bool construction);
     bool is_construction(const godot::String& id) const;
+    void set_external(const godot::String& id, bool external, const godot::String& projected_from);
+    bool is_external(const godot::String& id) const;
     godot::PackedStringArray entity_ids() const;
 
-    // --- geometry tools ---
     godot::String fillet_corner(const godot::String& line_a_id,
                                 const godot::String& line_b_id, double radius);
     godot::PackedStringArray offset_entities(const godot::PackedStringArray& ids,
@@ -51,32 +51,39 @@ public:
     godot::PackedStringArray pattern_entities(const godot::PackedStringArray& ids,
                                               double dx, double dy, int count);
 
-    // Geometry snapshot for rendering:
-    // {type: "line", start: Vector2, end: Vector2, construction: bool} etc.
     godot::Dictionary entity_info(const godot::String& id) const;
-    // Writes geometry params from a dict shaped like entity_info's output
-    // (any subset of keys). Callers re-solve afterwards.
     bool set_entity_geometry(const godot::String& id, const godot::Dictionary& geo);
 
-    // --- constraints ---
     // refs: Array of Dictionaries {entity: String, role: String}.
+    // Optional 4th arg driving (default true).
     godot::String add_constraint(const godot::String& type, const godot::Array& refs,
-                                 double value);
+                                 double value, bool driving = true);
     bool remove_constraint(const godot::String& id);
     bool set_constraint_value(const godot::String& id, double value);
+    bool set_constraint_expr(const godot::String& id, const godot::String& expr);
+    bool set_constraint_driving(const godot::String& id, bool driving);
     bool set_constraint_weak(const godot::String& id, bool weak);
     int drop_weak_constraints();
+    bool resolve_expressions(const godot::Dictionary& env);
     godot::PackedStringArray constraint_ids() const;
-    // Snapshot for UI glyphs: {type: String, value: float,
-    //   refs: Array of {entity: String, role: String}}. Empty if unknown id.
     godot::Dictionary constraint_info(const godot::String& id) const;
 
-    // --- solving ---
-    // Returns {status: "success"|"converged"|"failed", dofs: int,
-    //          conflicting: PackedStringArray, redundant: PackedStringArray}.
     godot::Dictionary solve();
+    godot::Array analyze(double gap_tol = 1e-4) const;
+    int fully_define();
+    // SolidWorks Selected Contours: number of outermost solid regions.
+    int contour_count() const;
 
-    // Shared access for SxDocument::extrude_sketch / revolve_sketch.
+    godot::String project_line_edge(const godot::Vector3& a, const godot::Vector3& b,
+                                    const godot::String& edge_id);
+    godot::String project_circle_edge(const godot::Vector3& center, double radius,
+                                      const godot::String& edge_id);
+    bool update_projected_line(const godot::String& id, const godot::Vector3& a,
+                               const godot::Vector3& b);
+    bool update_projected_circle(const godot::String& id, const godot::Vector3& center,
+                                 double radius);
+    int mark_dangling_external(const godot::PackedStringArray& live_edge_ids);
+
     std::shared_ptr<sx::Sketch> sketch() const { return sketch_; }
 
 protected:

@@ -926,16 +926,21 @@ func _sketch_to_3d_actions() -> Array:
 				profiles += 1
 			"rail":
 				rails += 1
-	if n >= 2 and rails >= 1:
-		actions.append("merge_join")
-		actions.append("merge_spline")
-		actions.append("merge_composite")
-	if n >= 2 and profiles >= 2 and rails == 0:
+	# Open rails alone → Path (single rail or merge).
+	if profiles == 0 and rails >= 1:
+		if rails == 1:
+			actions.append("use_as_path")
+		else:
+			actions.append("merge_join")
+			actions.append("merge_spline")
+			actions.append("merge_composite")
+	# Loft: 2+ profiles; open rails in the same selection become guide curves.
+	if profiles >= 2:
 		actions.append("loft_ruled")
 		actions.append("loft_smooth")
-	if n == 1 and profiles == 1:
-		var path_fid := selected_path_fid if selected_path_fid != "" else _latest_path_fid()
-		if path_fid != "":
+	# Sweep: explicit Path on timeline, or one-shot profile + rail(s).
+	if profiles == 1:
+		if rails >= 1 or selected_path_fid != "":
 			actions.append("sweep_path")
 	if actions.is_empty() and n >= 2:
 		# Mixed or unknown — offer everything.
@@ -957,50 +962,77 @@ func _on_timeline_feature_selected(fid: String, ftype: String) -> void:
 
 
 func _loft_selected_sketches(ruled: bool) -> void:
-	if selected_sketch_pads.size() < 2:
-		_on_status("Select 2+ closed profile pads (Ctrl+click) to loft")
-		return
-	var fids := PackedStringArray()
+	var profiles := PackedStringArray()
+	var guides := PackedStringArray()
 	for fid in selected_sketch_pads:
-		fids.append(fid)
-	var loft_fid: String = view.doc.graph_add_loft(fids, ruled)
+		match _sketch_pad_role(fid):
+			"profile":
+				profiles.append(fid)
+			"rail":
+				guides.append(fid)
+	if profiles.size() < 2:
+		_on_status("Select 2+ closed profile pads (Ctrl+click) to loft; open rails become guides")
+		return
+	var loft_fid: String = view.doc.graph_add_loft(profiles, ruled, guides)
 	if loft_fid == "":
 		_on_status("Loft failed — need closed profiles on separate planes")
 		return
 	selected_sketch_pads.clear()
 	selected_path_fid = ""
 	_refresh_merge_chrome()
-	_on_status("Loft solid created (%s)" % ("ruled" if ruled else "smooth"))
+	var guide_note := ""
+	if guides.size() > 0:
+		guide_note = " + %d guide(s)" % guides.size()
+	_on_status("Loft solid created (%s%s)" % [("ruled" if ruled else "smooth"), guide_note])
 	view.refresh()
 	_on_document_changed()
 
 
 func _sweep_profile_along_path() -> void:
-	if selected_sketch_pads.size() != 1:
-		_on_status("Ctrl+click exactly one profile pad, then Sweep along path")
+	var profiles := PackedStringArray()
+	var rails := PackedStringArray()
+	for fid in selected_sketch_pads:
+		match _sketch_pad_role(fid):
+			"profile":
+				profiles.append(fid)
+			"rail":
+				rails.append(fid)
+	if profiles.size() != 1:
+		_on_status("Select exactly one closed profile pad for Sweep")
 		return
-	var prof_fid: String = selected_sketch_pads[0]
-	if _sketch_pad_role(prof_fid) != "profile":
-		_on_status("Selected pad is not a closed profile (try a circle)")
+	var prof_fid: String = profiles[0]
+	var path_fid := selected_path_fid
+	var guides := PackedStringArray()
+	if path_fid != "":
+		# Explicit Path on timeline — open rails in the selection are guides.
+		guides = rails
+	elif rails.size() >= 1:
+		# One-shot: build Path from selected rails, then sweep.
+		path_fid = view.doc.graph_add_path(rails, "join_endpoints")
+		if path_fid == "":
+			_on_status("Could not create Path from selected rail(s)")
+			return
+		selected_path_fid = path_fid
+	else:
+		_on_status("Select a Path on the timeline, or select profile + rail(s)")
 		return
-	var path_fid := selected_path_fid if selected_path_fid != "" else _latest_path_fid()
-	if path_fid == "":
-		_on_status("Create a Path first (merge open rails) or select a Path row on the timeline")
-		return
-	var sw_fid: String = view.doc.graph_add_sweep_along_path(prof_fid, path_fid)
+	var sw_fid: String = view.doc.graph_add_sweep_along_path(prof_fid, path_fid, guides)
 	if sw_fid == "":
 		_on_status("Sweep along path failed")
 		return
 	selected_sketch_pads.clear()
 	_refresh_merge_chrome()
-	_on_status("Sweep solid created along path")
+	var note := ""
+	if guides.size() > 0:
+		note = " + %d guide(s)" % guides.size()
+	_on_status("Sweep solid created along path%s" % note)
 	view.refresh()
 	_on_document_changed()
 
 
 func _merge_selected_sketches(mode: String) -> void:
-	if selected_sketch_pads.size() < 2:
-		_on_status("Select 2+ sketch pads (Ctrl+click) to merge")
+	if selected_sketch_pads.is_empty():
+		_on_status("Select open rail pad(s) to create a Path")
 		return
 	var fids := PackedStringArray()
 	for fid in selected_sketch_pads:
@@ -1019,6 +1051,9 @@ func _merge_selected_sketches(mode: String) -> void:
 
 func _on_sketch_action(action: String) -> void:
 	match action:
+		"use_as_path":
+			_merge_selected_sketches("join_endpoints")
+			return
 		"merge_join":
 			_merge_selected_sketches("join_endpoints")
 			return

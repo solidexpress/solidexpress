@@ -1,5 +1,7 @@
 #include "sx/features.hpp"
 
+#include "features/ops.hpp"
+
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -10,7 +12,18 @@
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepGProp.hxx>
+#include <BRep_Tool.hxx>
+#include <GProp_GProps.hxx>
+#include <GeomAPI_PointsToBSpline.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS_Iterator.hxx>
+#include <TopoDS_Vertex.hxx>
+#include <gp_Lin.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepBuilderAPI_TransitionMode.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
@@ -135,11 +148,15 @@ FeatureType feature_type_from_string(const std::string& s) {
 
 static bool creates_body(const Feature& f) {
     if (f.type == FeatureType::Primitive || f.type == FeatureType::ImportStep ||
-        f.type == FeatureType::ImportStl || f.type == FeatureType::Mirror ||
-        f.type == FeatureType::Sweep || f.type == FeatureType::Loft ||
+        f.type == FeatureType::ImportStl || f.type == FeatureType::Loft ||
         f.type == FeatureType::HelixSweep || f.type == FeatureType::FrameMember)
         return true;
-    if (f.type == FeatureType::Extrude || f.type == FeatureType::Revolve)
+    // Body-mode Mirror creates a mirrored body; feature-mode Mirror
+    // (source_feature_ids) modifies its target in place (cut/fuse).
+    if (f.type == FeatureType::Mirror)
+        return !f.params.contains("source_feature_ids");
+    if (f.type == FeatureType::Extrude || f.type == FeatureType::Revolve ||
+        f.type == FeatureType::Sweep)
         return f.params.value("op", "new") == "new";
     if (f.type == FeatureType::Flange)
         return !f.params.contains("target");
@@ -186,15 +203,18 @@ bool FeatureGraph::set_params(const EntityId& id, json params) {
 
 namespace {
 
-// Collect feature ids referenced by params keys sketch/target/tool/sketches.
+// Collect feature ids referenced by params keys
+// sketch/target/tool/path_feature and arrays sketches/guides/source_feature_ids.
 void collect_deps(const Feature& f, std::vector<std::string>& out) {
     for (const char* key : {"sketch", "target", "tool", "path_feature"}) {
         if (f.params.contains(key) && f.params[key].is_string())
             out.push_back(f.params[key].get<std::string>());
     }
-    if (f.params.contains("sketches") && f.params["sketches"].is_array()) {
-        for (const auto& s : f.params["sketches"]) {
-            if (s.is_string()) out.push_back(s.get<std::string>());
+    for (const char* arr_key : {"sketches", "guides", "source_feature_ids"}) {
+        if (f.params.contains(arr_key) && f.params[arr_key].is_array()) {
+            for (const auto& s : f.params[arr_key]) {
+                if (s.is_string()) out.push_back(s.get<std::string>());
+            }
         }
     }
 }
@@ -273,13 +293,16 @@ bool FeatureGraph::has_dependents(const EntityId& id) const {
             continue;
         }
         if (!found_self) continue;
-        for (const char* key : {"sketch", "target", "tool"}) {
-            if (f.params.contains(key) && f.params[key].get<std::string>() == needle)
+        for (const char* key : {"sketch", "target", "tool", "path_feature"}) {
+            if (f.params.contains(key) && f.params[key].is_string() &&
+                f.params[key].get<std::string>() == needle)
                 return true;
         }
-        if (f.params.contains("sketches") && f.params["sketches"].is_array()) {
-            for (const auto& s : f.params["sketches"]) {
-                if (s.is_string() && s.get<std::string>() == needle) return true;
+        for (const char* arr_key : {"sketches", "guides", "source_feature_ids"}) {
+            if (f.params.contains(arr_key) && f.params[arr_key].is_array()) {
+                for (const auto& s : f.params[arr_key]) {
+                    if (s.is_string() && s.get<std::string>() == needle) return true;
+                }
             }
         }
     }
@@ -497,27 +520,42 @@ json simplify_path_for_sweep(const json& path) {
     return p;
 }
 
-TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path) {
+TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
+                                  const json* guide_path = nullptr,
+                                  double thin_thickness = 0.0) {
     json simplified = simplify_path_for_sweep(path);
     TopoDS_Wire spine = make_polyline_wire(simplified);
-    TopTools_IndexedMapOfShape edges;
-    TopExp::MapShapes(spine, TopAbs_EDGE, edges);
-    if (edges.Extent() <= 1) {
-        BRepOffsetAPI_MakePipe pipe(spine, face);
-        if (!pipe.IsDone()) throw std::runtime_error("MakePipe failed");
-        return pipe.Shape();
-    }
     TopoDS_Wire profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
     if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
+
+    // Prefer MakePipeShell for all cases: MakePipe often yields an empty/invalid
+    // solid when the profile plane contains the spine tangent (common for ground
+    // sketches swept along an in-plane rail).
     BRepOffsetAPI_MakePipeShell shell(spine);
-    shell.SetMode();
+    if (guide_path && guide_path->is_array() && guide_path->size() >= 2) {
+        json gsimp = simplify_path_for_sweep(*guide_path);
+        TopoDS_Wire aux = make_polyline_wire(gsimp);
+        // Auxiliary spine steers profile orientation / scale along the path.
+        shell.SetMode(aux, /*CurvilinearEquivalence=*/Standard_False);
+    } else {
+        shell.SetMode();
+    }
     shell.SetTransitionMode(BRepBuilderAPI_RightCorner);
     shell.Add(profile_wire, /*withContact=*/Standard_False,
               /*withCorrection=*/Standard_True);
     shell.Build();
     if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");
     if (!shell.MakeSolid()) throw std::runtime_error("MakePipeShell could not make solid");
-    return shell.Shape();
+    TopoDS_Shape result = shell.Shape();
+    if (thin_thickness > 0.0) {
+        // Closed hollow: offset the swept solid inward (no open faces removed).
+        BRepOffsetAPI_MakeThickSolid mk;
+        TopTools_ListOfShape closing;
+        mk.MakeThickSolidByJoin(result, closing, -thin_thickness, 1e-3);
+        if (!mk.IsDone()) throw std::runtime_error("thin wall shell failed");
+        result = mk.Shape();
+    }
+    return result;
 }
 
 // Pipe a circular profile along a helix spine (spring / thread groundwork).
@@ -638,17 +676,13 @@ json sketch_ordered_polyline(const Sketch& sk) {
     const auto& pl = sk.plane();
     gp_Pnt last;
     bool have_last = false;
-    for (const auto& e : sk.entities()) {
-        if (e.construction) continue;
-        if (e.type != SketchEntityType::Line || e.params.size() < 4) continue;
-        gp_Pnt a = sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1]));
-        gp_Pnt b = sketch_uv_to_3d(pl, sk.param(e.params[2]), sk.param(e.params[3]));
+    auto append_seg = [&](gp_Pnt a, gp_Pnt b) {
         if (!have_last) {
             path.push_back(pnt_to_json(a));
             if (a.Distance(b) >= eps) path.push_back(pnt_to_json(b));
             last = b;
             have_last = true;
-            continue;
+            return;
         }
         if (last.Distance(a) < eps) {
             if (last.Distance(b) >= eps) path.push_back(pnt_to_json(b));
@@ -660,6 +694,73 @@ json sketch_ordered_polyline(const Sketch& sk) {
             path.push_back(pnt_to_json(a));
             if (a.Distance(b) >= eps) path.push_back(pnt_to_json(b));
             last = b;
+        }
+    };
+    for (const auto& e : sk.entities()) {
+        if (e.construction) continue;
+        if (e.type == SketchEntityType::Line && e.params.size() >= 4) {
+            gp_Pnt a = sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1]));
+            gp_Pnt b = sketch_uv_to_3d(pl, sk.param(e.params[2]), sk.param(e.params[3]));
+            append_seg(a, b);
+        } else if (e.type == SketchEntityType::Arc && e.params.size() >= 5) {
+            const double cx = sk.param(e.params[0]);
+            const double cy = sk.param(e.params[1]);
+            const double r = sk.param(e.params[2]);
+            double a0 = sk.param(e.params[3]);
+            double a1 = sk.param(e.params[4]);
+            if (r < eps) continue;
+            // Sweep CCW from start to end (same convention as Sketch::add_arc).
+            while (a1 <= a0) a1 += 2.0 * M_PI;
+            const double span = a1 - a0;
+            const int samples = std::max(8, static_cast<int>(std::ceil(span / (M_PI / 12.0))));
+            gp_Pnt prev = sketch_uv_to_3d(pl, cx + r * std::cos(a0), cy + r * std::sin(a0));
+            for (int s = 1; s <= samples; ++s) {
+                double t = a0 + span * (static_cast<double>(s) / samples);
+                gp_Pnt cur = sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t));
+                append_seg(prev, cur);
+                prev = cur;
+            }
+        } else if (e.type == SketchEntityType::Circle && e.params.size() >= 3) {
+            const double cx = sk.param(e.params[0]);
+            const double cy = sk.param(e.params[1]);
+            const double r = sk.param(e.params[2]);
+            if (r < eps) continue;
+            const int samples = 32;
+            gp_Pnt prev = sketch_uv_to_3d(pl, cx + r, cy);
+            for (int s = 1; s <= samples; ++s) {
+                double t = 2.0 * M_PI * (static_cast<double>(s) / samples);
+                gp_Pnt cur = sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t));
+                append_seg(prev, cur);
+                prev = cur;
+            }
+        } else if (e.type == SketchEntityType::Spline) {
+            // Sample the interpolating B-spline (not just fit-point chords).
+            auto fits = sk.spline_fit_points(e.id);
+            if (fits.size() < 2) continue;
+            TColgp_Array1OfPnt poles(1, static_cast<int>(fits.size()));
+            for (int i = 0; i < static_cast<int>(fits.size()); ++i)
+                poles.SetValue(i + 1, sketch_uv_to_3d(pl, fits[static_cast<size_t>(i)][0],
+                                                      fits[static_cast<size_t>(i)][1]));
+            GeomAPI_PointsToBSpline mk(poles);
+            if (!mk.IsDone()) {
+                for (size_t i = 1; i < fits.size(); ++i) {
+                    gp_Pnt a = sketch_uv_to_3d(pl, fits[i - 1][0], fits[i - 1][1]);
+                    gp_Pnt b = sketch_uv_to_3d(pl, fits[i][0], fits[i][1]);
+                    append_seg(a, b);
+                }
+                continue;
+            }
+            Handle(Geom_BSplineCurve) curve = mk.Curve();
+            const int samples = std::max(8, static_cast<int>(fits.size()) * 8);
+            double u0 = curve->FirstParameter();
+            double u1 = curve->LastParameter();
+            gp_Pnt prev = curve->Value(u0);
+            for (int s = 1; s <= samples; ++s) {
+                double u = u0 + (u1 - u0) * (static_cast<double>(s) / samples);
+                gp_Pnt cur = curve->Value(u);
+                append_seg(prev, cur);
+                prev = cur;
+            }
         }
     }
     return path;
@@ -794,7 +895,55 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 const Feature* skf = feature(sketch_fid);
                 if (!skf || !skf->sketch) return fail("missing sketch feature");
                 std::string perr;
-                TopoDS_Shape face = skf->sketch->profile_face(&perr);
+                TopoDS_Shape face;
+                double thin_thickness = num_param(params, "thin_thickness", 0.0, env);
+                bool flip_side = params.value("flip_side", false);
+                if (thin_thickness > 0.0) {
+                    std::string thin_type = params.value("thin_type", "one_side");
+                    bool thin_midplane = (thin_type == "midplane");
+                    face = skf->sketch->thin_profile_face(thin_thickness, thin_midplane, flip_side,
+                                                          &perr);
+                } else {
+                    std::vector<int> contour_idxs;
+                    if (params.contains("selected_contours") &&
+                        params["selected_contours"].is_array()) {
+                        for (const auto& v : params["selected_contours"]) {
+                            if (v.is_number_integer()) contour_idxs.push_back(v.get<int>());
+                        }
+                    }
+                    if (!contour_idxs.empty()) {
+                        face = skf->sketch->profile_face_selected(contour_idxs, &perr);
+                    } else {
+                        face = skf->sketch->profile_face(&perr);
+                    }
+                    // Open-profile Extruded Cut (SW Flip Side to Cut): half-plane
+                    // tool — not a thin wall. Only for cut/fuse when a closed
+                    // profile is absent.
+                    std::string op_early = params.value("op", "new");
+                    if (face.IsNull() && (op_early == "cut" || op_early == "fuse")) {
+                        double pad = 1.0e5;
+                        if (params.contains("target") && params["target"].is_string()) {
+                            const Body* tb = doc.body(find_feature_body("target"));
+                            if (tb && !tb->shape.IsNull()) {
+                                Bnd_Box box;
+                                BRepBndLib::Add(tb->shape, box);
+                                if (!box.IsVoid()) {
+                                    double xmin, ymin, zmin, xmax, ymax, zmax;
+                                    box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+                                    double diag = std::hypot(xmax - xmin,
+                                                             std::hypot(ymax - ymin, zmax - zmin));
+                                    pad = std::max(diag * 4.0, 100.0);
+                                }
+                            }
+                        }
+                        std::string oerr;
+                        face = skf->sketch->open_cut_profile_face(flip_side, pad, &oerr);
+                        if (face.IsNull())
+                            perr = perr.empty() ? oerr : (perr + "; open-cut: " + oerr);
+                        else
+                            perr.clear();
+                    }
+                }
                 if (face.IsNull()) return fail("profile: " + perr);
 
                 TopoDS_Shape result;
@@ -819,7 +968,10 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                                 double xmin, ymin, zmin, xmax, ymax, zmax;
                                 box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
                                 gp_Vec ext(xmax - xmin, ymax - ymin, zmax - zmin);
-                                dist = ext.Magnitude() + 4.0;
+                                // Peer Through All: long enough to exit the target,
+                                // preserving the requested extrude direction (sign).
+                                double sign = dist < 0.0 ? -1.0 : 1.0;
+                                dist = sign * (ext.Magnitude() + 4.0);
                             }
                             if (end == "to_face" && params.contains("to_face") &&
                                 params["to_face"].is_string()) {
@@ -901,12 +1053,12 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 EntityId target = find_feature_body("target");
                 const Body* tb = doc.body(target);
                 if (!tb) return fail("missing target body");
-                TopTools_IndexedMapOfShape edges;
-                TopExp::MapShapes(tb->shape, TopAbs_EDGE, edges);
                 double v = num_param(params,
                                      f.type == FeatureType::Fillet ? "radius" : "distance", 1.0,
                                      env);
 
+                // Edges may be referenced by durable subshape UUID (survives
+                // source edits) or by 1-based index; resolve_topo_shape handles both.
                 TopoDS_Shape result;
                 if (f.type == FeatureType::Fillet) {
                     BRepFilletAPI_MakeFillet mk(tb->shape);
@@ -914,12 +1066,15 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                                           ? num_param(params, "radius2", v, env)
                                           : v;
                     for (const auto& je : params.at("edges")) {
-                        int idx = je.get<int>();
-                        if (idx < 1 || idx > edges.Extent()) return fail("edge index out of range");
+                        TopoDS_Shape es;
+                        std::string why;
+                        if (!feature_ops::resolve_topo_shape(doc, *tb, EntityKind::Edge, je, es,
+                                                             &why))
+                            return fail("fillet edge: " + why);
                         if (std::abs(r2 - v) > 1e-12)
-                            mk.Add(v, r2, TopoDS::Edge(edges(idx)));
+                            mk.Add(v, r2, TopoDS::Edge(es));
                         else
-                            mk.Add(v, TopoDS::Edge(edges(idx)));
+                            mk.Add(v, TopoDS::Edge(es));
                     }
                     mk.Build();
                     if (!mk.IsDone()) return fail("fillet failed");
@@ -927,9 +1082,12 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 } else {
                     BRepFilletAPI_MakeChamfer mk(tb->shape);
                     for (const auto& je : params.at("edges")) {
-                        int idx = je.get<int>();
-                        if (idx < 1 || idx > edges.Extent()) return fail("edge index out of range");
-                        mk.Add(v, TopoDS::Edge(edges(idx)));
+                        TopoDS_Shape es;
+                        std::string why;
+                        if (!feature_ops::resolve_topo_shape(doc, *tb, EntityKind::Edge, je, es,
+                                                             &why))
+                            return fail("chamfer edge: " + why);
+                        mk.Add(v, TopoDS::Edge(es));
                     }
                     mk.Build();
                     if (!mk.IsDone()) return fail("chamfer failed");
@@ -985,18 +1143,8 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
             }
 
             case FeatureType::Mirror: {
-                EntityId target = find_feature_body("target");
-                const Body* tb = doc.body(target);
-                if (!tb) return fail("missing target body");
-                gp_Trsf t;
-                t.SetMirror(gp_Ax2(pnt_from(params.at("plane_point")),
-                                   dir_from(params.at("plane_normal"))));
-                TopoDS_Shape mirrored =
-                    BRepBuilderAPI_Transform(tb->shape, t, /*copy=*/true).Shape();
-                if (mirrored.IsNull() || !shape::is_valid(mirrored))
-                    return fail("mirror failed");
-                put_body(doc, f.output_body, mirrored, "Mirror of " + tb->name);
-                return true;
+                feature_ops::ApplyCtx ctx{*this, doc, f, params, env, err};
+                return feature_ops::apply_mirror(ctx);
             }
 
             case FeatureType::LinearPattern: {
@@ -1084,8 +1232,8 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
 
             case FeatureType::Path: {
                 if (!params.contains("sketches") || !params["sketches"].is_array() ||
-                    params["sketches"].size() < 2)
-                    return fail("path needs at least two sketch features");
+                    params["sketches"].empty())
+                    return fail("path needs at least one sketch feature");
                 std::string mode = params.value("mode", "join_endpoints");
                 json path = json::array();
                 std::vector<json> sketch_polys;
@@ -1150,9 +1298,25 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 }
                 if (!path.is_array() || path.size() < 2)
                     return fail("sweep needs a path with at least two points");
+
+                // Optional guide: first guide sketch becomes MakePipeShell auxiliary spine.
+                json guide_path;
+                const json* guide_ptr = nullptr;
+                if (params.contains("guides") && params["guides"].is_array() &&
+                    !params["guides"].empty()) {
+                    EntityId gid = EntityId::from_string(params["guides"][0].get<std::string>());
+                    const Feature* gf = feature(gid);
+                    if (!gf || !gf->sketch) return fail("missing guide sketch");
+                    guide_path = sketch_ordered_polyline(*gf->sketch);
+                    if (!guide_path.is_array() || guide_path.size() < 2)
+                        return fail("guide needs >=2 points");
+                    guide_ptr = &guide_path;
+                }
+                const double thin = num_param(params, "thin_thickness", 0.0, env);
+
                 TopoDS_Shape result;
                 try {
-                    result = sweep_along_polyline(face, path);
+                    result = sweep_along_polyline(face, path, guide_ptr, thin);
                 } catch (const Standard_Failure& e) {
                     return fail(std::string("sweep failed: ") + e.GetMessageString());
                 } catch (const std::runtime_error& e) {
@@ -1161,7 +1325,21 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 if (result.IsNull() || !shape::is_valid(result))
                     return fail("sweep result invalid");
                 if (shape::count(result).solids < 1) return fail("sweep result is not a solid");
-                put_body(doc, f.output_body, result, f.name);
+
+                std::string op = params.value("op", "new");
+                if (op == "new") {
+                    put_body(doc, f.output_body, result, f.name);
+                } else {
+                    EntityId target = find_feature_body("target");
+                    const Body* tb = doc.body(target);
+                    if (!tb) return fail("missing target body");
+                    TopoDS_Shape merged =
+                        (op == "cut")
+                            ? TopoDS_Shape(BRepAlgoAPI_Cut(tb->shape, result).Shape())
+                            : TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, result).Shape());
+                    if (merged.IsNull()) return fail("boolean failed");
+                    doc.replace_body_shape(target, merged);
+                }
                 return true;
             }
 
@@ -1170,7 +1348,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     params["sketches"].size() < 2)
                     return fail("need at least two sketch features");
                 bool ruled = params.value("ruled", false);
-                BRepOffsetAPI_ThruSections loft(/*isSolid=*/Standard_True, ruled);
+                std::vector<TopoDS_Wire> sections;
                 size_t i = 0;
                 for (const auto& js : params["sketches"]) {
                     EntityId sketch_fid = EntityId::from_string(js.get<std::string>());
@@ -1184,9 +1362,108 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     TopoDS_Wire wire = BRepTools::OuterWire(TopoDS::Face(face_shape));
                     if (wire.IsNull())
                         return fail("profile " + std::to_string(i) + ": no outer wire");
-                    loft.AddWire(wire);
+                    sections.push_back(wire);
                     ++i;
                 }
+                // Optional guide curves (OCCT ThruSections has no AddGuide): sample each
+                // guide and insert intermediate circular sections so the loft waist
+                // follows the guide — volume differs from an unguided loft.
+                if (params.contains("guides") && params["guides"].is_array() &&
+                    !params["guides"].empty() && sections.size() >= 2) {
+                    auto wire_center = [](const TopoDS_Wire& w) -> gp_Pnt {
+                        BRepBuilderAPI_MakeFace mkf(w, /*OnlyPlane=*/Standard_True);
+                        if (mkf.IsDone()) {
+                            GProp_GProps props;
+                            BRepGProp::SurfaceProperties(mkf.Face(), props);
+                            return props.CentreOfMass();
+                        }
+                        TopoDS_Iterator it(w);
+                        if (it.More()) {
+                            TopoDS_Vertex v = TopExp::FirstVertex(TopoDS::Edge(it.Value()));
+                            return BRep_Tool::Pnt(v);
+                        }
+                        return gp_Pnt(0, 0, 0);
+                    };
+                    auto sample_poly = [](const std::vector<gp_Pnt>& pts, double t) -> gp_Pnt {
+                        if (pts.empty()) return gp_Pnt();
+                        if (pts.size() == 1) return pts[0];
+                        double total = 0;
+                        for (size_t k = 1; k < pts.size(); ++k)
+                            total += pts[k - 1].Distance(pts[k]);
+                        if (total < 1e-12) return pts[0];
+                        double target = std::clamp(t, 0.0, 1.0) * total;
+                        double acc = 0;
+                        for (size_t k = 1; k < pts.size(); ++k) {
+                            double seg = pts[k - 1].Distance(pts[k]);
+                            if (acc + seg >= target - 1e-12) {
+                                double u = seg > 1e-12 ? (target - acc) / seg : 0;
+                                return pts[k - 1].Translated(gp_Vec(pts[k - 1], pts[k]) * u);
+                            }
+                            acc += seg;
+                        }
+                        return pts.back();
+                    };
+                    gp_Pnt c0 = wire_center(sections.front());
+                    gp_Pnt c1 = wire_center(sections.back());
+                    gp_Vec axis_vec(c0, c1);
+                    if (axis_vec.Magnitude() < 1e-9) return fail("loft sections coincide");
+                    gp_Dir axis_dir(axis_vec);
+                    auto wire_radius = [](const TopoDS_Wire& w, const gp_Pnt& c) -> double {
+                        double rmax = 0;
+                        for (TopExp_Explorer ex(w, TopAbs_VERTEX); ex.More(); ex.Next()) {
+                            gp_Pnt p = BRep_Tool::Pnt(TopoDS::Vertex(ex.Current()));
+                            rmax = std::max(rmax, c.Distance(p));
+                        }
+                        return std::max(rmax, 1e-3);
+                    };
+                    const double r0 = wire_radius(sections.front(), c0);
+                    const double r1 = wire_radius(sections.back(), c1);
+                    const double r_lo = std::min(r0, r1) * 0.35;
+                    const double r_hi = std::max(r0, r1) * 2.5;
+                    std::vector<TopoDS_Wire> mids;
+                    for (const auto& jg : params["guides"]) {
+                        EntityId gid = EntityId::from_string(jg.get<std::string>());
+                        const Feature* gf = feature(gid);
+                        if (!gf || !gf->sketch) return fail("missing guide sketch");
+                        json pl = sketch_ordered_polyline(*gf->sketch);
+                        if (!pl.is_array() || pl.size() < 2) return fail("guide needs >=2 points");
+                        std::vector<gp_Pnt> gpts;
+                        for (const auto& jp : pl) gpts.push_back(pnt_from(jp));
+                        for (double t : {0.35, 0.65}) {
+                            gp_Pnt gp = sample_poly(gpts, t);
+                            gp_Lin axis_line(c0, axis_dir);
+                            double along = gp_Vec(axis_line.Location(), gp).Dot(axis_dir);
+                            along = std::clamp(along, 0.0, axis_vec.Magnitude());
+                            gp_Pnt foot = axis_line.Location().Translated(gp_Vec(axis_dir) * along);
+                            double r_blend =
+                                r0 + (r1 - r0) * (along / std::max(axis_vec.Magnitude(), 1e-9));
+                            double r_off = foot.Distance(gp);
+                            double r = std::clamp(0.5 * (r_blend + r_off), r_lo, r_hi);
+                            if (r < 1e-6) r = 1e-3;
+                            gp_Vec lateral(foot, gp);
+                            lateral -= gp_Vec(axis_dir) * lateral.Dot(axis_dir);
+                            gp_Pnt center = foot;
+                            if (lateral.Magnitude() > 1e-9) {
+                                double nudge = std::min(lateral.Magnitude(), r * 0.35);
+                                center = foot.Translated(lateral.Normalized() * nudge);
+                            }
+                            gp_Circ circ(gp_Ax2(center, axis_dir), r);
+                            TopoDS_Wire mw =
+                                BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(circ).Edge()).Wire();
+                            mids.push_back(mw);
+                        }
+                    }
+                    std::vector<TopoDS_Wire> ordered;
+                    ordered.push_back(sections.front());
+                    for (auto& m : mids) ordered.push_back(m);
+                    ordered.push_back(sections.back());
+                    for (size_t si = 1; si + 1 < sections.size(); ++si)
+                        ordered.insert(ordered.end() - 1, sections[si]);
+                    sections = std::move(ordered);
+                    ruled = false;  // smoothed loft through guide sections
+                }
+                BRepOffsetAPI_ThruSections loft(/*isSolid=*/Standard_True, ruled);
+                for (const auto& w : sections) loft.AddWire(w);
                 TopoDS_Shape result;
                 try {
                     loft.Build();

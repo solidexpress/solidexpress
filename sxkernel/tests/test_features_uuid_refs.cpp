@@ -119,8 +119,11 @@ TEST_CASE("featops: push_pull feature grows a box face", "[featops][pushpull]") 
     REQUIRE(!top_face.is_null());
 
     Feature pp;
-    pp.type = FeatureType::PushPull;
-    pp.params = {{"target", box_fid.str()}, {"face", top_face.str()}, {"distance", 5.0}};
+    pp.type = FeatureType::DirectEdit;
+    pp.params = {{"target", box_fid.str()},
+                 {"kind", "push_pull"},
+                 {"face", top_face.str()},
+                 {"distance", 5.0}};
     graph.add(std::move(pp));
 
     REQUIRE(graph.regenerate(doc, &err));
