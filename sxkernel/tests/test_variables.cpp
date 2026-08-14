@@ -68,6 +68,14 @@ TEST_CASE("num_param resolves =expressions", "[variables]") {
     REQUIRE(num_param(p, "depth", 0.0, env) == Approx(15.0));
 }
 
+TEST_CASE("num_param accepts plain numeric strings", "[variables]") {
+    std::map<std::string, double> env{};
+    json p = {{"a", "10"}, {"b", "  20.5  "}, {"c", "-3.25"}};
+    REQUIRE(num_param(p, "a", 0.0, env) == Approx(10.0));
+    REQUIRE(num_param(p, "b", 0.0, env) == Approx(20.5));
+    REQUIRE(num_param(p, "c", 0.0, env) == Approx(-3.25));
+}
+
 TEST_CASE("feature graph: expression-driven box tracks variable", "[variables]") {
     Document doc;
     FeatureGraph graph;

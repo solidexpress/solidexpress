@@ -226,8 +226,22 @@ double num_param(const json& params, const char* key, double def,
     if (v.is_string()) {
         const std::string& s = v.get_ref<const std::string&>();
         if (!s.empty() && s[0] == '=') return eval_expression(s.substr(1), env);
+        // Accept plain numeric strings (e.g. "12.5") as numbers.
+        // We require full consumption (ignoring trailing whitespace).
+        try {
+            size_t pos = 0;
+            double val = std::stod(s, &pos);
+            // Skip any trailing whitespace
+            while (pos < s.size() &&
+                   std::isspace(static_cast<unsigned char>(s[pos]))) {
+                ++pos;
+            }
+            if (pos == s.size()) return val;
+        } catch (...) {
+            // fallthrough to error below
+        }
         throw std::runtime_error(std::string("param '") + key +
-                                 "' string must start with '=' for expression");
+                                 "' string must be a number or start with '=' for expression");
     }
     throw std::runtime_error(std::string("param '") + key + "' is not numeric");
 }

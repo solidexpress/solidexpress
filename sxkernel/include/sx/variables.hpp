@@ -44,8 +44,10 @@ private:
 double eval_expression(const std::string& expr,
                        const std::map<std::string, double>& env);
 
-// Read a numeric feature param: plain JSON number, or string starting with
-// '=' evaluated as an expression against `env`.
+// Read a numeric feature param. Accepted forms:
+// - plain JSON number
+// - string starting with '=' evaluated as an expression against `env`
+// - plain numeric string (e.g. "12.5", with optional surrounding whitespace)
 double num_param(const nlohmann::json& params, const char* key, double def,
                  const std::map<std::string, double>& env);
 
