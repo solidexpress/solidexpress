@@ -338,6 +338,8 @@ public:
     godot::String import_dxf(const godot::String& path);
     bool export_3mf(const godot::String& path);
     bool export_gltf(const godot::String& path);
+    // Export only the specified body id to a 3MF at `path`.
+    bool export_3mf_for_body(const godot::String& body_id, const godot::String& path);
     godot::String heal_report(const godot::String& fid) const;
 
     godot::String graph_add_rib(const godot::String& target_fid, const godot::String& sketch_fid,
