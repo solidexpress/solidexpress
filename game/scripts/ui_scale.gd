@@ -18,10 +18,16 @@ static func factor() -> float:
 static func refresh() -> void:
 	var s := 1.0
 	if DisplayServer.get_name() != "headless":
-		s = DisplayServer.screen_get_scale()
-		# Some Linux setups report scale 1.0 while DPI is clearly HiDPI.
+		# Use the scale of the screen that actually hosts our main window.
+		# Defaulting to screen 0 can be wrong on multi-display setups
+		# (e.g. non-Retina external + Retina internal on macOS).
+		var win_id := DisplayServer.MAIN_WINDOW_ID
+		var screen_id := DisplayServer.window_get_current_screen(win_id)
+		s = DisplayServer.screen_get_scale(screen_id)
+		# Some platforms/setups may still report 1.0 while physically HiDPI.
+		# Fall back to DPI heuristic in that case.
 		if is_equal_approx(s, 1.0):
-			var dpi := DisplayServer.screen_get_dpi()
+			var dpi := DisplayServer.screen_get_dpi(screen_id)
 			if dpi > 144:
 				s = float(dpi) / 96.0
 	_factor = clampf(s, 1.0, 2.5)
