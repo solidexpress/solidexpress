@@ -25,7 +25,7 @@
           <h1>Fast, friendly parametric CAD</h1>
           <p>History-based modeling with OCCT geometry, a modern Godot UI, PlaneGCS sketches, and a film-backed demo suite.</p>
           <div class="cta">
-            <a href="https://github.com/solidexpress/solidexpress/releases/latest">Download</a>
+            <a href="#download">Download</a>
             <a href="./features.html">See all features</a>
           </div>
         </div>
@@ -62,28 +62,65 @@
         </div>
         <div class="card">
           <video controls preload="none" playsinline muted
-            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/fasten_bolt.webm"></video>
-          <h3>Fastened connectors</h3>
+            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/pliers_motion.webm"></video>
+          <h3>Assemblies that move</h3>
         </div>
         <div class="card">
           <video controls preload="none" playsinline muted
-            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/query_hole_walls.webm"></video>
-          <h3>Queries and card digests</h3>
+            src="https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/explode_gearbox.webm"></video>
+          <h3>Explode &amp; restore</h3>
         </div>
       </section>
 
-      <h2 class="section-title">Download</h2>
-      <p class="muted">Get the latest builds from the Releases page. Pick the artifact for your platform.</p>
+      <h2 class="section-title" id="download">Download <span id="dl-version">latest</span></h2>
+      <p class="muted">Desktop builds from the current GitHub Release. Every platform button is wired to that same latest tag — never an older fallback.</p>
       <div class="downloads">
-        <a href="https://github.com/solidexpress/solidexpress/releases/latest">Linux (.tar.gz)</a>
-        <a href="https://github.com/solidexpress/solidexpress/releases/latest">Windows (x64 Setup .exe)</a>
-        <a href="https://github.com/solidexpress/solidexpress/releases/latest">macOS (notarized .dmg)</a>
+        <a data-kind="macos-dmg" href="https://github.com/solidexpress/solidexpress/releases/latest">macOS (.dmg)</a>
+        <a data-kind="windows-exe" href="https://github.com/solidexpress/solidexpress/releases/latest">Windows (Setup.exe)</a>
+        <a data-kind="linux-tgz" href="https://github.com/solidexpress/solidexpress/releases/latest">Linux (.tar.gz)</a>
       </div>
-      <p class="muted">No auto-detection, no ZIP alternates, no extra taglines — straight to the point.</p>
+      <p class="muted"><a id="dl-all" href="https://github.com/solidexpress/solidexpress/releases/latest">All assets &amp; checksums</a></p>
     </main>
 
     <footer>
       © SolidExpress — See <a class="muted" href="https://github.com/solidexpress/solidexpress">source on GitHub</a>.
     </footer>
+    <script>
+      (function () {
+        var LATEST = "https://api.github.com/repos/solidexpress/solidexpress/releases/latest";
+        var PAGE = "https://github.com/solidexpress/solidexpress/releases/latest";
+        function pick(assets, re) {
+          for (var i = 0; i < assets.length; i++) {
+            if (re.test(assets[i].name) && !/\.sha256$/.test(assets[i].name)) return assets[i];
+          }
+          return null;
+        }
+        function set(kind, asset, page) {
+          var el = document.querySelector("[data-kind='" + kind + "']");
+          if (!el) return;
+          if (asset) {
+            el.href = asset.browser_download_url;
+            el.title = asset.name;
+          } else {
+            el.href = page || PAGE;
+            el.title = "Not published on the latest release yet";
+          }
+        }
+        fetch(LATEST)
+          .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+          .then(function (release) {
+            var assets = release.assets || [];
+            var page = release.html_url || PAGE;
+            set("macos-dmg", pick(assets, /\.dmg$/i), page);
+            set("windows-exe", pick(assets, /setup\.exe$/i), page);
+            set("linux-tgz", pick(assets, /\.tar\.gz$/i), page);
+            var ver = document.getElementById("dl-version");
+            if (ver) ver.textContent = release.tag_name || "latest";
+            var all = document.getElementById("dl-all");
+            if (all) all.href = page;
+          })
+          .catch(function () {});
+      })();
+    </script>
   </body>
-  </html>
+</html>

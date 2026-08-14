@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Features — SolidExpress</title>
+<meta name="description" content="Feature films: short demos of SolidExpress capabilities, each with an example of what the feature enables."/>
+<link rel="icon" href="assets/logo.png"/>
+<style>
+:root{--bg:#0f1419;--panel:#121a26;--text:#dde2ea;--muted:#8b9cb3;--accent:#6ab0f3;--accent2:#4fd1c5;--border:#243044}
+body{margin:0;font-family:system-ui,sans-serif;background:linear-gradient(180deg,#0a0e14,var(--bg));color:var(--text);line-height:1.55}
+a{color:var(--accent)}
+nav{display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;padding:0.75rem 1.5rem;border-bottom:1px solid var(--border);max-width:1100px;margin:0 auto}
+nav .brand{display:flex;align-items:center;gap:.65rem;color:var(--text);text-decoration:none;font-weight:600;font-size:1.05rem}
+nav .brand img{width:200px;height:200px}
+nav .links{display:flex;gap:1.25rem;flex-wrap:wrap;font-size:.95rem;align-items:center}
+main{max-width:1100px;margin:0 auto;padding:1.25rem 1.5rem 4rem}
+h1{font-size:1.85rem;margin:0 0 .5rem}
+.lead{color:var(--muted);max-width:48rem}
+.search{margin:1rem 0 1.25rem}
+.search input{width:100%;max-width:520px;padding:.7rem .9rem;border-radius:10px;border:1px solid var(--border);background:#121a26;color:var(--text);font:inherit}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem}
+.feature-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.feature-card .demo-open{position:relative;display:block;width:100%;padding:0;border:0;background:#000;cursor:pointer;aspect-ratio:16/10}
+.feature-card .demo-open img{width:100%;height:100%;object-fit:cover;display:block}
+.feature-card .demo-open::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,transparent 28%,rgba(0,0,0,.28) 100%);pointer-events:none}
+.feature-card .demo-open .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:3rem;height:3rem;border-radius:999px;background:rgba(15,20,25,.72);border:2px solid rgba(221,226,234,.85);display:grid;place-items:center;pointer-events:none}
+.feature-card .demo-open .play::before{content:"";display:block;margin-left:.15rem;border-style:solid;border-width:.55rem 0 .55rem .9rem;border-color:transparent transparent transparent #dde2ea}
+.feature-card h3{margin:.75rem 1rem .25rem;font-size:1.05rem}
+.feature-card p{margin:0 1rem 1rem;color:var(--muted);font-size:.95rem}
+.demo-lightbox{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;padding:1.25rem;background:rgba(5,8,12,.82);backdrop-filter:blur(4px)}
+.demo-lightbox.open{display:flex}
+.demo-lightbox .sheet{width:min(1100px,100%);background:#0a0e14;border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 18px 60px rgba(0,0,0,.45)}
+.demo-lightbox .bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.65rem 1rem;border-bottom:1px solid var(--border);color:var(--muted);font-size:.95rem}
+.demo-lightbox .bar .actions{display:flex;gap:.5rem;align-items:center}
+.demo-lightbox .bar a,.demo-lightbox .bar button{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.35rem .7rem;cursor:pointer;font:inherit;text-decoration:none}
+.demo-lightbox video{width:100%;aspect-ratio:16/9;background:#000;display:block;max-height:min(78vh,720px)}
+.note{color:var(--muted);font-size:.92rem;margin-top:1.25rem}
+footer{text-align:center;color:var(--muted);padding:2rem;border-top:1px solid var(--border);line-height:1.7}
+</style>
+</head>
+<body>
+<nav>
+<a class="brand" href="index.html"><img src="assets/logo.png" alt=""/> SolidExpress</a>
+<div class="links">
+<a href="index.html#download">Download</a>
+<a href="features.html">Features</a>
+<a href="build.html">Build &amp; run</a>
+<a href="support.html">Support</a>
+<a href="privacy.html">Privacy</a>
+<a href="https://github.com/solidexpress/solidexpress">Source</a>
+</div>
+</nav>
+<main>
+<h1>Features</h1>
+<p class="lead">Every enabled UI film from the app test suite. Each clip is a short example of what that feature enables.</p>
+<div class="search">
+<input id="q" type="search" placeholder="Filter (sheet metal, drawing, print, joint, sketch…)" />
+</div>
+<div class="grid" id="feature-grid"></div>
+<p class="note">Movies load from the <code>demo-movies</code> Release. Refresh with <code>make movies && scripts/sx-publish-demo-movies</code> in the app repo, then sync posters into this site.</p>
+</main>
+
+<div class="demo-lightbox" id="demo-lightbox" hidden>
+<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="demo-lightbox-title">
+<div class="bar">
+<span id="demo-lightbox-title">Demo</span>
+<div class="actions">
+<a id="demo-lightbox-open" href="#" target="_blank" rel="noopener">Open WebM</a>
+<button type="button" id="demo-lightbox-close">Close</button>
+</div>
+</div>
+<video id="demo-lightbox-video" controls playsinline preload="metadata"></video>
+</div>
+</div>
+
+<footer>
+Built with ❤️ by the Express Consortium<br/>
+<a href="index.html">Home</a> · <a href="features.html">Features</a> · <a href="build.html">Build &amp; run</a> ·
+<a href="support.html">Support</a> · <a href="privacy.html">Privacy</a> ·
+<a href="https://github.com/solidexpress/solidexpress">github.com/solidexpress/solidexpress</a>
+</footer>
+<script>
+(function () {
+  var DEMO_BASE = "https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/";
+  var POSTER_BASE = "assets/screenshots/";
+  // Manifest is copied from game/tests/ui_movie_manifest.json by scripts/sx-sync-website.
+  var MANIFEST_URL = "assets/ui_movie_manifest.json";
+  var grid = document.getElementById("feature-grid");
+  var q = document.getElementById("q");
+  var lightbox = document.getElementById("demo-lightbox");
+  var video = document.getElementById("demo-lightbox-video");
+  var titleEl = document.getElementById("demo-lightbox-title");
+  var closeBtn = document.getElementById("demo-lightbox-close");
+  var openLink = document.getElementById("demo-lightbox-open");
+  var lastFocus = null;
+  var films = [];
+
+  function enablesBlurb(entry) {
+    return "Enables: " + (entry.title || entry.id);
+  }
+
+  function closeDemo() {
+    if (!lightbox || !video) return;
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    lightbox.classList.remove("open");
+    lightbox.hidden = true;
+    document.body.style.overflow = "";
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  function openDemo(btn) {
+    var id = btn.getAttribute("data-demo");
+    if (!id || !lightbox || !video) return;
+    var src = DEMO_BASE + id + ".webm";
+    lastFocus = btn;
+    titleEl.textContent = (btn.getAttribute("aria-label") || "Demo").replace(/^Play demo:\s*/i, "");
+    if (openLink) openLink.href = src;
+    video.src = src;
+    lightbox.hidden = false;
+    lightbox.classList.add("open");
+    document.body.style.overflow = "hidden";
+    video.play().catch(function () {});
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function render(list) {
+    grid.innerHTML = "";
+    list.forEach(function (e) {
+      if (e.enabled === false) return;
+      var card = document.createElement("article");
+      card.className = "feature-card";
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "demo-open";
+      btn.setAttribute("data-demo", e.id);
+      btn.setAttribute("aria-label", "Play demo: " + (e.title || e.id));
+      var img = document.createElement("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.width = 1600;
+      img.height = 900;
+      img.src = POSTER_BASE + e.id + ".png";
+      img.onerror = function () { img.style.display = "none"; };
+      var play = document.createElement("span");
+      play.className = "play";
+      play.setAttribute("aria-hidden", "true");
+      btn.appendChild(img);
+      btn.appendChild(play);
+      btn.addEventListener("click", function () { openDemo(btn); });
+      var h3 = document.createElement("h3");
+      h3.textContent = e.title || e.id;
+      var p = document.createElement("p");
+      p.textContent = enablesBlurb(e);
+      card.appendChild(btn);
+      card.appendChild(h3);
+      card.appendChild(p);
+      grid.appendChild(card);
+    });
+  }
+
+  fetch(MANIFEST_URL, { cache: "no-cache" })
+    .then(function (r) { return r.json(); })
+    .then(function (manifest) {
+      films = Array.isArray(manifest) ? manifest : [];
+      render(films);
+      q.addEventListener("input", function () {
+        var term = q.value.trim().toLowerCase();
+        render(!term ? films : films.filter(function (m) {
+          return ((m.title || "") + " " + (m.id || "")).toLowerCase().indexOf(term) !== -1;
+        }));
+      });
+    })
+    .catch(function () {
+      grid.innerHTML = "<p class='lead'>Could not load the film manifest.</p>";
+    });
+
+  if (closeBtn) closeBtn.addEventListener("click", closeDemo);
+  if (lightbox) lightbox.addEventListener("click", function (e) { if (e.target === lightbox) closeDemo(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && lightbox && lightbox.classList.contains("open")) closeDemo();
+  });
+})();
+</script>
+</body>
+</html>

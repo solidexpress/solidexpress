@@ -1,0 +1,269 @@
+[
+  {
+    "id": "path_merge_sweep",
+    "title": "Merge sketches → path → sweep solid",
+    "script": "res://tests/films/film_path_merge_sweep.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "extrude_cylinder",
+    "title": "Circle profile + dim + extrude",
+    "script": "res://tests/films/film_extrude_cylinder.gd",
+    "enabled": true,
+    "quit_after": 1200
+  },
+  {
+    "id": "sketch_spline_tools",
+    "title": "Block + fit spline sketch",
+    "script": "res://tests/films/film_sketch_spline.gd",
+    "enabled": true,
+    "quit_after": 1200
+  },
+  {
+    "id": "sketch_extend",
+    "title": "Extend tool",
+    "script": "res://tests/films/film_sketch_extend.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "loft_profiles",
+    "title": "Loft two circular profiles into a solid",
+    "script": "res://tests/films/film_loft_profiles.gd",
+    "enabled": true,
+    "quit_after": 1200
+  },
+  {
+    "id": "extrude_s_shape",
+    "title": "Closed S profile + extrude",
+    "script": "res://tests/films/film_extrude_s_shape.gd",
+    "enabled": true,
+    "quit_after": 1500
+  },
+  {
+    "id": "revolve_washer",
+    "title": "Revolve washer profile 360°",
+    "script": "res://tests/films/film_revolve_washer.gd",
+    "enabled": true,
+    "quit_after": 1000
+  },
+  {
+    "id": "place_and_orbit",
+    "title": "Place a box and orbit",
+    "script": "res://tests/films/film_place_and_orbit.gd",
+    "enabled": true,
+    "quit_after": 600
+  },
+  {
+    "id": "sketch_edit_in_out",
+    "title": "Exit sketch pad and reopen to edit",
+    "script": "res://tests/films/film_sketch_edit_in_out.gd",
+    "enabled": true,
+    "quit_after": 1300
+  },
+  {
+    "id": "fasten_bolt",
+    "title": "One fastened mate seats a bolt in a hole",
+    "script": "res://tests/films/film_fasten_bolt.gd",
+    "enabled": true,
+    "quit_after": 1200
+  },
+  {
+    "id": "extrude_through_all",
+    "title": "Through-all plate cut, thickness unchanged",
+    "script": "res://tests/films/film_extrude_through_all.gd",
+    "enabled": true,
+    "quit_after": 1500
+  },
+  {
+    "id": "direct_edit_import",
+    "title": "Pull imported face; DirectEdit survives regen",
+    "script": "res://tests/films/film_direct_edit_import.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "triball_hole_circle",
+    "title": "TriBall rotate-copy into a bolt circle",
+    "script": "res://tests/films/film_triball_hole_circle.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "sketch_mounting_plate",
+    "title": "Concentric + weak dim on a mounting plate",
+    "script": "res://tests/films/film_sketch_mounting_plate.gd",
+    "enabled": true,
+    "quit_after": 1200
+  },
+  {
+    "id": "hole_wizard_m6",
+    "title": "Four M6 holes; mass = steel × volume",
+    "script": "res://tests/films/film_hole_wizard_m6.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "fillet_chain_pocket",
+    "title": "Variable fillet on a pocket chain",
+    "script": "res://tests/films/film_fillet_chain_pocket.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "marking_menu_pick",
+    "title": "Marking menu names overlapping picks",
+    "script": "res://tests/films/film_marking_menu_pick.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "dxf_trace_extrude",
+    "title": "DXF rectangle → extrude",
+    "script": "res://tests/films/film_dxf_trace_extrude.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "heal_and_clash",
+    "title": "Heal report + interference volume",
+    "script": "res://tests/films/film_heal_and_clash.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "crank_slider",
+    "title": "Crank-slider analytic positions",
+    "script": "res://tests/films/film_crank_slider.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "snap_bolt_drop",
+    "title": "Drop a bolt on a connector; it fastens itself",
+    "script": "res://tests/films/film_snap_bolt_drop.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "drawing_follows_model",
+    "title": "Drawing dim follows a parameter edit",
+    "script": "res://tests/films/film_drawing_follows_model.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "drawing_bom",
+    "title": "BOM balloons match instance counts",
+    "script": "res://tests/films/film_drawing_bom.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "rib_and_wrap",
+    "title": "Rib joins faces and grows volume",
+    "script": "res://tests/films/film_rib_and_wrap.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "flange_box_flat",
+    "title": "Flange flat length from K-factor",
+    "script": "res://tests/films/film_flange_box_flat.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "flat_edits_folded",
+    "title": "Flat dim updates folded flange",
+    "script": "res://tests/films/film_flat_edits_folded.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "flat_on_drawing",
+    "title": "Flat pattern on the drawing sheet",
+    "script": "res://tests/films/film_flat_on_drawing.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "frame_cutlist",
+    "title": "Four frame members, cut lengths from path",
+    "script": "res://tests/films/film_frame_cutlist.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "query_hole_walls",
+    "title": "Query lights faces created by a feature",
+    "script": "res://tests/films/film_query_hole_walls.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "card_digest",
+    "title": "Card digest names feature and placement",
+    "script": "res://tests/films/film_card_digest.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "rules_three_configs",
+    "title": "Rule suppresses rib when width > 100",
+    "script": "res://tests/films/film_rules_three_configs.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "cam_pocket",
+    "title": "2.5-axis pocket toolpath + post",
+    "script": "res://tests/films/film_cam_pocket.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "fea_bracket",
+    "title": "Cantilever tip deflection scales with L³",
+    "script": "res://tests/films/film_fea_bracket.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "catalog_fastener",
+    "title": "In-base M6x20 catalog fastener",
+    "script": "res://tests/films/film_catalog_fastener.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {"id": "explode_gearbox", "title": "Explode separates and restores", "script": "res://tests/films/film_explode_gearbox.gd", "enabled": true, "quit_after": 900},
+  {"id": "bolt_circle_pattern", "title": "Pattern around a joint", "script": "res://tests/films/film_bolt_circle_pattern.gd", "enabled": true, "quit_after": 900},
+  {"id": "context_update", "title": "Neighbor grows, consumer waits", "script": "res://tests/films/film_context_update.gd", "enabled": true, "quit_after": 1000},
+  {"id": "drawing_section", "title": "Section hatch on the sheet", "script": "res://tests/films/film_drawing_section.gd", "enabled": true, "quit_after": 800},
+  {"id": "convert_thin_box", "title": "Thin solid becomes sheet metal", "script": "res://tests/films/film_convert_thin_box.gd", "enabled": true, "quit_after": 800},
+  {"id": "weld_on_sheet", "title": "Weld symbol on the drawing", "script": "res://tests/films/film_weld_on_sheet.gd", "enabled": true, "quit_after": 800},
+  {"id": "knit_to_box", "title": "Knit six planes to a solid", "script": "res://tests/films/film_knit_to_box.gd", "enabled": true, "quit_after": 700},
+  {"id": "zebra_cylinder", "title": "Zebra stripes on a cylinder", "script": "res://tests/films/film_zebra_cylinder.gd", "enabled": true, "quit_after": 700},
+  {"id": "replace_face", "title": "Replace one face, solid valid", "script": "res://tests/films/film_replace_face.gd", "enabled": true, "quit_after": 700},
+  {"id": "whats_wrong_fillet", "title": "What's Wrong offers a rematch", "script": "res://tests/films/film_whats_wrong_fillet.gd", "enabled": true, "quit_after": 700},
+  {"id": "intent_flush", "title": "Make these flush → fastened", "script": "res://tests/films/film_intent_flush.gd", "enabled": true, "quit_after": 800},
+  {"id": "auto_define_plate", "title": "Auto-define to DOF 0", "script": "res://tests/films/film_auto_define_plate.gd", "enabled": true, "quit_after": 1000},
+  {"id": "propose_parallel", "title": "Propose parallel on two lines", "script": "res://tests/films/film_propose_parallel.gd", "enabled": true, "quit_after": 900},
+  {"id": "nl_four_holes", "title": "Four M6 holes from query + intent", "script": "res://tests/films/film_nl_four_holes.gd", "enabled": true, "quit_after": 800},
+  {"id": "user_csink", "title": "User feature countersink regenerates", "script": "res://tests/films/film_user_csink.gd", "enabled": true, "quit_after": 800},
+  {"id": "sweep_3d_polyline", "title": "3D polyline feeds a sweep path", "script": "res://tests/films/film_sweep_3d_polyline.gd", "enabled": true, "quit_after": 700},
+  {"id": "convert_survives_edit", "title": "Converted edges keep UUIDs", "script": "res://tests/films/film_convert_survives_edit.gd", "enabled": true, "quit_after": 900},
+  {"id": "config_drawing", "title": "Config-aware BOM", "script": "res://tests/films/film_config_drawing.gd", "enabled": true, "quit_after": 700},
+  {"id": "fillet_c2", "title": "C2 fillet continuity", "script": "res://tests/films/film_fillet_c2.gd", "enabled": true, "quit_after": 700},
+  {"id": "subd_to_solid", "title": "SubD spike to a solid", "script": "res://tests/films/film_subd_to_solid.gd", "enabled": true, "quit_after": 700},
+  {"id": "branch_merge_sxp", "title": "PDM-lite version note", "script": "res://tests/films/film_branch_merge_sxp.gd", "enabled": true, "quit_after": 700},
+  {"id": "route_tube", "title": "Tube along a 3D path", "script": "res://tests/films/film_route_tube.gd", "enabled": true, "quit_after": 700},
+  {"id": "core_cavity", "title": "Mold core / cavity split", "script": "res://tests/films/film_core_cavity.gd", "enabled": true, "quit_after": 700},
+  {"id": "mesh_boolean", "title": "Boolean vs a mesh body", "script": "res://tests/films/film_mesh_boolean.gd", "enabled": true, "quit_after": 700},
+  {"id": "gear_mate", "title": "Gear ratio on a joint", "script": "res://tests/films/film_gear_mate.gd", "enabled": true, "quit_after": 700},
+  {"id": "pmi_survives_regen", "title": "3D dim survives regen", "script": "res://tests/films/film_pmi_survives_regen.gd", "enabled": true, "quit_after": 700},
+  {"id": "board_in_box", "title": "IDF board in an enclosure", "script": "res://tests/films/film_board_in_box.gd", "enabled": true, "quit_after": 700},
+  {"id": "print_thin_wall", "title": "Print check flags a thin plate", "script": "res://tests/films/film_print_thin_wall.gd", "enabled": true, "quit_after": 800},
+  {"id": "print_overhang_orient", "title": "Orient lays a tall box on the bed", "script": "res://tests/films/film_print_overhang_orient.gd", "enabled": true, "quit_after": 800}
+]

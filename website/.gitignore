@@ -1,0 +1,3 @@
+# Demo WebMs are hosted on this repo's GitHub Release tag demo-movies, not in git.
+# Refresh with: cd ../solidexpress && make movies && make publish-demo-movies
+assets/movies/
