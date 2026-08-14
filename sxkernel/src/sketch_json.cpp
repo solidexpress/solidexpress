@@ -28,8 +28,11 @@ struct SketchSerde {
             if (t == "point") e.type = SketchEntityType::Point;
             else if (t == "line") e.type = SketchEntityType::Line;
             else if (t == "circle") e.type = SketchEntityType::Circle;
+            else if (t == "spline") e.type = SketchEntityType::Spline;
             else e.type = SketchEntityType::Arc;
             e.construction = je.value("construction", false);
+            e.external = je.value("external", false);
+            e.projected_from = je.value("projected_from", "");
             for (const auto& idx : je.at("params")) e.params.push_back(idx.get<size_t>());
             sk.entities_.push_back(std::move(e));
         }
@@ -39,16 +42,13 @@ struct SketchSerde {
             SketchConstraint c;
             c.id = EntityId::from_string(jc.at("id").get<std::string>());
             std::string t = jc.at("type").get<std::string>();
-            using CT = ConstraintType;
-            for (CT ct : {CT::Coincident, CT::Horizontal, CT::Vertical, CT::Parallel,
-                          CT::Perpendicular, CT::PointOnLine, CT::Tangent, CT::Equal,
-                          CT::Distance, CT::Radius, CT::Angle, CT::Concentric,
-                          CT::Symmetric, CT::Midpoint, CT::Fix, CT::Collinear}) {
-                if (t == to_string(ct)) c.type = ct;
-            }
+            if (auto ct = constraint_type_from_string(t)) c.type = *ct;
             c.value = jc.value("value", 0.0);
             c.driving = jc.value("driving", true);
-            c.weak = jc.value("weak", false);
+            c.expr = jc.value("expr", "");
+            if (jc.contains("locked") && jc["locked"].is_array()) {
+                for (const auto& v : jc["locked"]) c.locked.push_back(v.get<double>());
+            }
             for (const auto& jr : jc.at("refs")) {
                 PointRef r;
                 r.entity = EntityId::from_string(jr.at("entity").get<std::string>());
@@ -97,8 +97,11 @@ json sketch_to_json(const Sketch& sk) {
             case SketchEntityType::Line: je["type"] = "line"; break;
             case SketchEntityType::Circle: je["type"] = "circle"; break;
             case SketchEntityType::Arc: je["type"] = "arc"; break;
+            case SketchEntityType::Spline: je["type"] = "spline"; break;
         }
         je["construction"] = e.construction;
+        je["external"] = e.external;
+        je["projected_from"] = e.projected_from;
         je["params"] = e.params;
         entities.push_back(je);
     }
@@ -111,7 +114,8 @@ json sketch_to_json(const Sketch& sk) {
         jc["type"] = to_string(c.type);
         jc["value"] = c.value;
         jc["driving"] = c.driving;
-        jc["weak"] = c.weak;
+        if (!c.expr.empty()) jc["expr"] = c.expr;
+        if (!c.locked.empty()) jc["locked"] = c.locked;
         json refs = json::array();
         for (const auto& r : c.refs)
             refs.push_back({{"entity", r.entity.str()}, {"role", role_name(r.role)}});
