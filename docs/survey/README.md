@@ -19,6 +19,7 @@ A survey of the seven major commercial parametric mechanical CAD (MCAD) applicat
 | [interaction-patterns.md](interaction-patterns.md) | How peers make actions visually discoverable (hover, gizmos, context chrome) and how SolidExpress maps those patterns. |
 | [tool-approaches.md](tool-approaches.md) | How the best *tools* work — including Shapr3D, Plasticity, IronCAD, Solid Edge, FreeCAD — and the binding SolidExpress picks (A1–A20). |
 | [print-first.md](print-first.md) | How a part becomes a print (P1–P6): wall/overhang/orient/3MF. Form rail, not a slicer. |
+| [next-roadmap.md](next-roadmap.md) | After Waves 0–5, weekly priority is the print‑tool loop (this file), not the SW beginner ladder. |
 | [../plan/roadmap.md](../plan/roadmap.md) | Sequenced feature waves that implement those picks against current STATUS. |
 | [../plan/landing-protocol.md](../plan/landing-protocol.md) | How each wave row lands: chrome budget, L1–L5, film ids, slices. |
 | [workflow-study-mounting-block.md](workflow-study-mounting-block.md) | Click-count study: SolidWorks “brick + through-hole” (processed Cut Extrude video + beginner recipes) vs SolidExpress Place hole / sketch→cut. |
