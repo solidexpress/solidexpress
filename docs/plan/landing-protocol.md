@@ -251,31 +251,34 @@ Chrome delta: Form rail already exists. No ViewHud button. No new dock.
 
 ## Wave 6 — print a tool this afternoon
 
-Depends on: Wave 5 films green (`print_thin_wall`, `print_overhang_orient` — **currently red**, see STATUS Wave 6.0), Wave 0.10 3MF, 4.12 catalog. Picks: [next-roadmap.md](../survey/next-roadmap.md) W6.1–W6.6, [print-first.md](../survey/print-first.md) P1–P6, A1, A12, A17. Priority owner: [ROADMAP.md §4](ROADMAP.md).
+Depends on: Wave 5 films green (`print_thin_wall`, `print_overhang_orient` — **currently red**, see STATUS Wave 6.0), Wave 0.10 3MF, 4.12 catalog. Picks: [next-roadmap.md](../survey/next-roadmap.md) W6.1–W6.5, [print-first.md](../survey/print-first.md) P1–P6, A1, A12, A17. Priority owner: [ROADMAP.md §4](ROADMAP.md).
 
-**6.0 gate:** do not start 6.2+ while `run_workflow_tests`, `run_ui_tests`, or `run_print_tests` are red (STATUS "Verified baseline audit"). Wave 0's exit suite is the floor this wave stands on. **6.0a–e belong to the stabilization agent — do not double-fix or touch its files.**
+**Acceptance bar:** the 2026-08-14 hands-on critique of the published **0.0.4 Linux binary** (shop-tools-construction-basis rubric). What worked there stays worked (Analyze digest, 3MF `unit="millimeter"` + `sx:bed`/`sx:layer`/`sx:min_wall` metadata). What failed is this wave: digits typed into a focused box-H field were eaten by view keys 1/2/3/7; the post-place panel showed Radius/Spacing/Count instead of W/H/D; Form hid the palette with no way back to create; Variables/Config were empty of print params; Thread and Hole Wizard were unreachable in the menus we used; export was digest-only with no paint and no slicer hand-off. Rubric to score against: fastener-sized opening, named clearance, AF family 10/12/14, cut survives thickness (through-all / Up To Surface), head-shaft fillet, modeled thread, nozzle-multiple walls, hex as a real AF polygon.
 
-| # | Feature | Chrome | Files | Film |
+**6.0 gate:** do not start 6.1+ while `run_workflow_tests`, `run_ui_tests`, or `run_print_tests` are red (STATUS "Verified baseline audit") — and 6.0f below is part of that gate. Wave 0's exit suite is the floor this wave stands on. **6.0a–e belong to the stabilization agent — do not double-fix or touch its files.**
+
+| # | Feature | Chrome | Files | Film / gate |
 |---|---|---|---|---|
-| 6.1 | Construction chrome | Number fields swallow keystrokes while focused (view keys 1/2/3/5/7/W never fire mid-typing); box placement offers W/H/D fields; Form rail offers a create path (primitive or sketch) instead of assuming a pre-built solid; docked panels stack without overlap (layout suite is the gate) | `viewport_interaction.gd` helpers, `ops_panel.gd`, `print_strip.gd`, `run_layout_tests.gd` | `construction_chrome` — type 100×60×30 into a box without the view snapping away; panels never overlap |
-| 6.2 | Clearance language | Variables panel seeds a *Print params* fold (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) on new documents; Hole Wizard size chip shows the compensated Ø; existing config switcher drives the AF ladder | `sx/variables.hpp` seeded builtins, hole feature params, `variables_panel.gd` | `clearance_ladder` — one model spins 10/12/14 AF configs; holes grow by `hole_compensation` without editing the sketch |
-| 6.3 | See the print | Form strip grows **Thickness** / **Overhang** paint toggles (reuse the zebra shader path); bed ghost drawn in Form mode only. Digest label stays | `print_strip.gd`, viewport shader, per-face data from `sx/print.hpp` | `see_the_print` — 1.2 mm wall and a 60° hang paint red; the part sits on the ghost bed |
-| 6.4 | Open in slicer | File → **Open in Slicer** with user-registered Prusa/Orca/Bambu path; one body per file when handing off; File → Export 3MF unchanged (mm) | export split + registered-app setting; no GPL slicer engine | `open_in_slicer` — headless asserts per-body millimeter 3MF + the registered command line; a display run opens the slicer |
-| 6.5 | Tool catalog | Palette catalog page (4.12) grows mechanic tools: open-end, hex socket, driver bit, nozzle sizes | `sx/catalog.hpp` + palette page | `catalog_hex_driver` — drop a hex driver blank; AF comes from `jaw_af` |
-| 6.6 | Build the wrench | No new chrome — the integration exit of 6.2–6.5 clicked end to end | uses catalog + params + paint + hand-off | `print_a_wrench` — catalog open-end blank, clearance-compensated jaw, painted check, millimeter 3MF on the bed |
+| 6.0f | Construction chrome (from the live 0.0.4 test) | Focused numeric fields consume digits — view keys 1/2/3/7 never fire while a spinbox/line-edit has focus; box place strip **and** post-place property panel show W/H/D (not Radius/Spacing/Count); Form keeps a one-click way back to create without losing the Analyze/Orient strip (palette may hide); Selection/Timeline/Variables/Assembly/context bars never stack undismissably | `viewport_interaction.gd`, `ops_panel.gd` / `property_panel.gd` SCHEMAS, `print_strip.gd`, layout suite | extend `run_place_tests` / `run_property_tests` — type H=1.2 on a box and it sticks |
+| 6.1 | Clearance language | New documents seed `VariableTable` builtins `clearance=0.3`, `hole_compensation=0.2`, `layer=0.2`, `nozzle=0.4`, `jaw_af=10` (mm) — editable in the existing Variables panel, not a dock. Sketch dims accept `=jaw_af+clearance` and live-regenerate (needs the 6.0b expr-dim fix). Hole Wizard / hole Ø = nominal + `hole_compensation`; hex and slot openings = `jaw_af+clearance` (or explicit AF). Configs named 10 / 12 / 14 switch `jaw_af` only — one model, no rebuild | `sx/variables.hpp` seeded builtins, hole/hex/slot params, `variables_panel.gd` | `clearance_ladder` — change `clearance` 0.3→0.5 and every consumed opening updates; 10/12/14 configs spin one model |
+| 6.2 | See the print | Form strip grows **Thickness** / **Overhang** paint toggles (zebra shader path); bed ghost (default 220×220) in Form only; digest stays. Threshold from `PrintSetup` `min_wall` (already 1.2 in the 0.0.4 3MF metadata). Must succeed on a 1.2 mm plate — which needs 6.0f so 1.2 can be typed at all | `print_strip.gd`, viewport shader, per-face data from `sx/print.hpp` | `see_the_print` — 1.2 mm wall and a 60° hang paint; the part sits on the ghost bed |
+| 6.3 | Open in slicer | File → **Open in Slicer** with a user-registered Prusa / Orca / Bambu executable; one body per file when handing off; File → Export 3MF unchanged (mm + `sx:bed` already verified on 0.0.4) | export split + registered-app setting; no GPL slicer engine | `open_in_slicer` — headless asserts per-body millimeter 3MF + the registered command line |
+| 6.4 | Tool catalog | Palette catalog page (4.12) grows mechanic tools: open-end, hex socket, driver bit, nozzle sizes; AF from `jaw_af`. Not a full Toolbox | `sx/catalog.hpp` + palette page | `catalog_hex_driver` — drop a hex-driver blank; opening tracks `jaw_af` |
+| 6.5 | Build the wrench | The construction moves the videos actually won on: jaw/through cuts default to **through-all / Up To Surface** (Blind is the amateur trap); modeled **Thread** reachable in chrome (Insert or Modify → Thread; in Form, Modeled is the default and cosmetic-only is a checkbox — STATUS claims thread, the 0.0.4 menus did not show it); sketch polygon gets an **across-flats** (`jaw_af`) mode — no Fusion `size/2` radius workaround; **Hole Wizard** reachable from the place/context chrome we actually used, not only a buried ops path | thread/hole chrome, polygon AF mode, extrude end-condition defaults | `print_a_wrench` — the critique replay: a stranger builds an open-end or hex wrench with `jaw_af+clearance`, through-all jaw cut, optional modeled thread, Analyze paint, Open in Slicer or 3MF, and spins 10/12/14 |
 
-**Exit** ([next-roadmap.md](../survey/next-roadmap.md)): `print_a_wrench` (6.6) — a stranger models an open-end or hex wrench with named clearance, sees thin walls and overhangs painted with a bed ghost, opens or exports a millimeter 3MF that lands on the bed, and spins a 10/12/14 config without rebuilding.
+**Exit** ([next-roadmap.md](../survey/next-roadmap.md)): `print_a_wrench` (6.5). 6.5 starts after 6.1's param seam exists and may run parallel to 6.2–6.4.
+
+Leave (whole wave): a print-settings dock, printer SDKs and profiles, GPL slicer engines, support generation, a McMaster-style hardware library.
 
 | Slice | Owns | Avoids |
 |---|---|---|
-| T Stabilize (6.0a–e) | **stabilization agent** — regression clusters in STATUS audit, CI godot-smoke | Anyone else touching its files |
-| U Chrome (6.1) | number-field focus, box W/H/D, Form create path, panel stacking, `construction_chrome` | New docks |
-| V Params (6.2) | seeded builtins, Hole Wizard consumption, `clearance_ladder` | A print-settings dock |
-| W Paint (6.3) | shader toggles, bed ghost, `see_the_print` | A second analysis gizmo family |
-| X Hand-off (6.4 + 6.5) | slicer registration, per-body 3MF, catalog tools, two films | Embedding a slicer engine (GPL) |
-| Y Wrench (6.6) | exit film `print_a_wrench` | New features smuggled into the exit |
+| T Stabilize (6.0a–f) | 6.0a–e: **stabilization agent** — regression clusters in STATUS audit, CI godot-smoke. 6.0f: construction chrome above, gated by the extended place/property suites | Anyone else touching the stabilization agent's files; new docks |
+| U Params (6.1) | seeded builtins, expr-dim consumers, config ladder, `clearance_ladder` | A print-settings dock |
+| V Paint (6.2) | shader toggles, bed ghost, `see_the_print` | A second analysis gizmo family |
+| W Hand-off (6.3 + 6.4) | slicer registration, per-body 3MF, catalog tools, two films | Embedding a slicer engine (GPL) |
+| X Wrench construction (6.5) | through-all defaults, Thread chrome, polygon AF, Hole Wizard reachability, `print_a_wrench` | New features smuggled into the exit film |
 
-Order: T first (stabilization agent, alone in its files); U is independent and may run in parallel; then V; W and X in parallel after V's kernel seam exists; Y last.
+Order: T first (6.0a–e alone in the stabilization agent's files; 6.0f alongside); then U; V, W, and X in parallel after U's param seam exists; `print_a_wrench` closes the wave.
 
 ### Deferred (do not schedule; do not lose)
 

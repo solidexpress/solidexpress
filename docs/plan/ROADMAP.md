@@ -106,15 +106,14 @@ flowchart TB
 
 ## 4. Active program — Wave 6: print a tool this afternoon
 
-**This wave owns priority.** W6.0 then W6.1–W6.6, in order (details in [../survey/next-roadmap.md](../survey/next-roadmap.md); chrome + films in [landing-protocol.md](landing-protocol.md#wave-6--print-a-tool-this-afternoon); checkboxes in [STATUS.md](STATUS.md)):
+**This wave owns priority.** W6.0 then W6.1–W6.5, in order (details in [../survey/next-roadmap.md](../survey/next-roadmap.md); chrome + films in [landing-protocol.md](landing-protocol.md#wave-6--print-a-tool-this-afternoon); checkboxes in [STATUS.md](STATUS.md)). Acceptance bar: the 2026-08-14 hands-on critique of the published 0.0.4 Linux binary.
 
-0. W6.0 (a–e) — **Stabilize the Waves 0–5 merge** — *owned by the stabilization agent; do not double-fix*: feature-param and sketch regression clusters until `run_workflow_tests` / `run_ui_tests` / `run_print_tests` are green, film-manifest reconcile, `godot-smoke` CI gate. Verified audit and repro pointers: STATUS "Verified baseline audit (2026-08-14)".
-1. W6.1 — **Construction chrome**: number fields keep keystrokes while focused (view keys never fire mid-typing); box W/H/D fields; Form rail create path; docked panels stack without overlap.
-2. W6.2 — **Clearance language**: built-in print params (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) that Hole Wizard / hex / slot consume; configs so 10/12/14 mm is one model.
-3. W6.3 — **See the print**: color-by-thickness + overhang paint on Form (reuse zebra shader path); bed ghost. Digest stays but is not the product.
-4. W6.4 — **Open in slicer**: user-registered Prusa/Orca/Bambu; one-body-per-file; File → Export 3MF unchanged (mm). No GPL slicer engine.
-5. W6.5 — **Tool catalog**: drop-in open-end, hex socket, driver bit, nozzle sizes (IronCAD catalog feel; A1).
-6. W6.6 — **Build the wrench**: integration exit; film `print_a_wrench` clicks W6.2–W6.5 end to end.
+0. W6.0 (a–f) — **Stabilize + construction chrome**. a–e are *owned by the stabilization agent; do not double-fix*: feature-param and sketch regression clusters until `run_workflow_tests` / `run_ui_tests` / `run_print_tests` are green, film-manifest reconcile, `godot-smoke` CI gate (verified audit and repro pointers: STATUS "Verified baseline audit (2026-08-14)"). f is **construction chrome** from the live 0.0.4 test: focused number fields keep digits (view keys 1/2/3/7 never fire mid-typing), box W/H/D on strip + property panel, Form keeps a way back to create, panels never stack undismissably.
+1. W6.1 — **Clearance language**: seeded builtins (`clearance=0.3`, `hole_compensation=0.2`, `layer=0.2`, `nozzle=0.4`, `jaw_af=10`); `=jaw_af+clearance` sketch dims live-regenerate; hole Ø = nominal + `hole_compensation`; hex/slot = `jaw_af+clearance`; configs 10/12/14 switch `jaw_af` only.
+2. W6.2 — **See the print**: thickness + overhang paint on Form (zebra shader path); bed ghost. Digest stays but is not the product. Must succeed on a 1.2 mm plate.
+3. W6.3 — **Open in slicer**: user-registered Prusa/Orca/Bambu; one-body-per-file; File → Export 3MF unchanged (mm + `sx:bed` verified on 0.0.4). No GPL slicer engine.
+4. W6.4 — **Tool catalog**: drop-in open-end, hex socket, driver bit, nozzle sizes (IronCAD catalog feel; A1); AF from `jaw_af`.
+5. W6.5 — **Build the wrench** (after W6.1; can parallel W6.2–W6.4): through-all / Up To Surface cut defaults, modeled Thread reachable in chrome, polygon across-flats mode, Hole Wizard reachable from place/context chrome; exit film `print_a_wrench` replays the critique.
 
 Regression / films (STATUS-complete): the Nick Ler SW beginner ladder. Keep multi-doc insert and drawing dims/PDF as done leftovers and regression checks — not the weekly owner.
 
