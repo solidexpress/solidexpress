@@ -770,14 +770,34 @@ bool SxDocument::graph_update_sketch(const String& fid, const Ref<SxSketch>& ske
 
 String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
                                      bool symmetric, const String& op,
-                                     const String& target_fid) {
+                                     const String& target_fid, const String& end,
+                                     double thin_thickness, const String& thin_type,
+                                     bool flip_side, const Array& selected_contours) {
     sx::EntityId fid;
     bool ok = apply_graph_edit("extrude", [&] {
         sx::Feature f;
         f.type = sx::FeatureType::Extrude;
+        std::string end_s = to_std(end);
+        if (end_s.empty()) end_s = "blind";
+        bool sym = symmetric || end_s == "midplane";
         f.params = {{"sketch", to_std(sketch_fid)}, {"distance", distance},
-                    {"symmetric", symmetric}, {"op", to_std(op)}};
+                    {"symmetric", sym}, {"op", to_std(op)}, {"end", end_s}};
         if (!target_fid.is_empty()) f.params["target"] = to_std(target_fid);
+        if (thin_thickness > 0.0) {
+            f.params["thin_thickness"] = thin_thickness;
+            std::string tt = to_std(thin_type);
+            if (tt.empty()) tt = "one_side";
+            f.params["thin_type"] = tt;
+        }
+        // Flip Side applies to thin wall OR open-profile cut (SW Flip Side to Cut).
+        if (flip_side) f.params["flip_side"] = true;
+        if (selected_contours.size() > 0) {
+            nlohmann::json arr = nlohmann::json::array();
+            for (int i = 0; i < selected_contours.size(); ++i) {
+                arr.push_back(static_cast<int>(selected_contours[i]));
+            }
+            f.params["selected_contours"] = arr;
+        }
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -2078,7 +2098,11 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_get_sketch", "fid"), &SxDocument::graph_get_sketch);
     ClassDB::bind_method(D_METHOD("graph_update_sketch", "fid", "sketch"),
                          &SxDocument::graph_update_sketch);
-    ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op", "target_fid"), &SxDocument::graph_add_extrude);
+    ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op",
+                                  "target_fid", "end", "thin_thickness", "thin_type", "flip_side",
+                                  "selected_contours"),
+                         &SxDocument::graph_add_extrude, DEFVAL(String("blind")), DEFVAL(0.0),
+                         DEFVAL(String("one_side")), DEFVAL(false), DEFVAL(Array()));
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid"),

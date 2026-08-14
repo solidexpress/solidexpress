@@ -161,7 +161,12 @@ public:
     // op: "new" | "fuse" | "cut"; target_fid required for fuse/cut.
     godot::String graph_add_extrude(const godot::String& sketch_fid, double distance,
                                     bool symmetric, const godot::String& op,
-                                    const godot::String& target_fid);
+                                    const godot::String& target_fid,
+                                    const godot::String& end = godot::String("blind"),
+                                    double thin_thickness = 0.0,
+                                    const godot::String& thin_type = godot::String("one_side"),
+                                    bool flip_side = false,
+                                    const godot::Array& selected_contours = godot::Array());
     // Axis in sketch 2D coordinates (point + direction on the sketch plane).
     godot::String graph_add_revolve(const godot::String& sketch_fid,
                                     const godot::Vector2& axis_point,

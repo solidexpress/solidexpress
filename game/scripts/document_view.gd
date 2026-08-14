@@ -903,16 +903,18 @@ func pick_info(origin: Vector3, direction: Vector3) -> Dictionary:
 ## Select every visible body whose center unprojects inside `rect` (screen space).
 ## With `additive` false, replaces the selection; with true, unions into
 ## `selected_bodies`. Primary selection syncs to the last body in the set.
-func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D, additive := false) -> void:
+func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D,
+		additive := false, crossing := false) -> void:
+	var band := rect.abs()
 	var hits: Array[String] = []
 	for id in _body_nodes:
 		if hidden_bodies.has(id):
 			continue
-		var world: Vector3 = model_space.to_global(body_center(id))
-		if camera.is_position_behind(world):
+		var scr: Rect2 = body_screen_aabb(id, camera, model_space)
+		if scr.size == Vector2.ZERO:
 			continue
-		var screen: Vector2 = camera.unproject_position(world)
-		if rect.has_point(screen):
+		var ok := band.encloses(scr) if not crossing else band.intersects(scr)
+		if ok:
 			hits.append(id)
 	if not additive:
 		selected_bodies.assign(hits)
@@ -926,6 +928,29 @@ func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D, additive
 	_apply_selection_materials()
 	_highlight_edge()
 	selection_changed.emit(selected_body, selected_face)
+
+
+## Axis-aligned screen rect covering the body's mesh AABB, or zero-size if behind.
+## `model_space` is unused (kept for call-site symmetry with pad picks).
+func body_screen_aabb(body_id: String, camera: Camera3D, _model_space: Node3D = null) -> Rect2:
+	var node: MeshInstance3D = _body_nodes.get(body_id)
+	if node == null or node.mesh == null or camera == null:
+		return Rect2()
+	var aabb := node.get_aabb()
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	var any := false
+	for i in range(8):
+		var world: Vector3 = node.to_global(aabb.get_endpoint(i))
+		if camera.is_position_behind(world):
+			continue
+		var s: Vector2 = camera.unproject_position(world)
+		mn = mn.min(s)
+		mx = mx.max(s)
+		any = true
+	if not any:
+		return Rect2()
+	return Rect2(mn, mx - mn)
 
 
 # --- visibility (hide / isolate) ---
