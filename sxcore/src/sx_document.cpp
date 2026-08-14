@@ -11,6 +11,9 @@
 #include "sx/commands_transform.hpp"
 #include <cmath>
 #include <limits>
+#include <BRepAdaptor_Surface.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Face.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
@@ -1504,6 +1507,143 @@ String SxDocument::graph_add_direct_edit(const String& target_fid, const String&
     return ok ? to_gd(fid.str()) : String();
 }
 
+String SxDocument::graph_add_offset(const String& target_fid, double offset) {
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("offset", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Offset;
+        f.params = {{"target", to_std(target_fid)}, {"offset", offset}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_push_pull(const String& target_fid, const String& face_id,
+                                       double distance) {
+    auto ref = doc_->find_subshape(parse_id(face_id));
+    if (!ref || ref->kind != sx::EntityKind::Face) {
+        sx::log::error("graph_add_push_pull: not a face id");
+        return {};
+    }
+    // Geometric cue so regen after a free-body move can re-find the face when
+    // the UUID no longer resolves. main dispatches push/pull via DirectEdit.
+    auto mid = sx::measure::face_midpoint(*doc_, parse_id(face_id));
+    TopoDS_Shape fs = doc_->resolve(parse_id(face_id));
+    gp_Dir normal(0, 0, 1);
+    if (!fs.IsNull() && fs.ShapeType() == TopAbs_FACE) {
+        TopoDS_Face face = TopoDS::Face(fs);
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() == GeomAbs_Plane) {
+            normal = surf.Plane().Axis().Direction();
+            if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
+        }
+    }
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("push/pull", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::DirectEdit;
+        f.params = {{"target", to_std(target_fid)},
+                    {"kind", "push_pull"},
+                    {"face", to_std(face_id)},
+                    {"distance", distance}};
+        if (mid) {
+            f.params["face_point"] = {(*mid)[0], (*mid)[1], (*mid)[2]};
+            f.params["face_normal"] = {normal.X(), normal.Y(), normal.Z()};
+        }
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_mirror(const String& target_fid, const Vector3& plane_point,
+                                    const Vector3& plane_normal,
+                                    const PackedStringArray& source_feature_ids) {
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("mirror", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Mirror;
+        f.params = {{"plane_point", {plane_point.x, plane_point.y, plane_point.z}},
+                    {"plane_normal", {plane_normal.x, plane_normal.y, plane_normal.z}}};
+        if (source_feature_ids.size() > 0) {
+            nlohmann::json sources = nlohmann::json::array();
+            for (int i = 0; i < source_feature_ids.size(); ++i)
+                sources.push_back(to_std(source_feature_ids[i]));
+            f.params["source_feature_ids"] = sources;
+            if (!target_fid.is_empty()) f.params["target"] = to_std(target_fid);
+        } else {
+            if (target_fid.is_empty()) return false;
+            f.params["target"] = to_std(target_fid);
+        }
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_linear_pattern(const String& target_fid, const Vector3& direction,
+                                            double spacing, int count) {
+    if (count < 2) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("linear pattern", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::LinearPattern;
+        f.params = {{"target", to_std(target_fid)},
+                    {"direction", {direction.x, direction.y, direction.z}},
+                    {"spacing", spacing},
+                    {"count", count}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_circular_pattern(const String& target_fid, const Vector3& axis_point,
+                                              const Vector3& axis_dir, int count,
+                                              double total_angle) {
+    if (count < 2) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("circular pattern", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::CircularPattern;
+        f.params = {{"target", to_std(target_fid)},
+                    {"axis_point", {axis_point.x, axis_point.y, axis_point.z}},
+                    {"axis_dir", {axis_dir.x, axis_dir.y, axis_dir.z}},
+                    {"count", count},
+                    {"total_angle", total_angle}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_thread(const String& target_fid, float major_radius, float pitch,
+                                    float turns, float depth, float profile_angle_deg,
+                                    const Vector3& axis_point, const Vector3& axis_dir) {
+    if (target_fid.is_empty() || major_radius <= 0.0f || pitch <= 0.0f || turns <= 0.0f)
+        return {};
+    if (axis_dir.length_squared() < 1e-12f) return {};
+    if (depth <= 0.0f) depth = pitch * 0.6f;
+    if (profile_angle_deg <= 0.0f) profile_angle_deg = 60.0f;
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("thread", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Thread;
+        f.params = {{"target", to_std(target_fid)},
+                    {"major_radius", static_cast<double>(major_radius)},
+                    {"pitch", static_cast<double>(pitch)},
+                    {"turns", static_cast<double>(turns)},
+                    {"depth", static_cast<double>(depth)},
+                    {"profile_angle_deg", static_cast<double>(profile_angle_deg)},
+                    {"axis_point", {axis_point.x, axis_point.y, axis_point.z}},
+                    {"axis_dir", {axis_dir.x, axis_dir.y, axis_dir.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
 String SxDocument::graph_add_shell(const String& target_fid, const PackedStringArray& face_ids,
                                    double thickness) {
     nlohmann::json faces = nlohmann::json::array();
@@ -2202,6 +2342,22 @@ void SxDocument::_bind_methods() {
                          DEFVAL(90.0f));
     ClassDB::bind_method(D_METHOD("graph_add_shell", "target_fid", "face_ids", "thickness"),
                          &SxDocument::graph_add_shell);
+    ClassDB::bind_method(D_METHOD("graph_add_offset", "target_fid", "offset"),
+                         &SxDocument::graph_add_offset);
+    ClassDB::bind_method(D_METHOD("graph_add_push_pull", "target_fid", "face_id", "distance"),
+                         &SxDocument::graph_add_push_pull);
+    ClassDB::bind_method(D_METHOD("graph_add_mirror", "target_fid", "plane_point", "plane_normal",
+                                  "source_feature_ids"),
+                         &SxDocument::graph_add_mirror, DEFVAL(PackedStringArray()));
+    ClassDB::bind_method(D_METHOD("graph_add_linear_pattern", "target_fid", "direction", "spacing",
+                                  "count"),
+                         &SxDocument::graph_add_linear_pattern);
+    ClassDB::bind_method(D_METHOD("graph_add_circular_pattern", "target_fid", "axis_point",
+                                  "axis_dir", "count", "total_angle"),
+                         &SxDocument::graph_add_circular_pattern);
+    ClassDB::bind_method(D_METHOD("graph_add_thread", "target_fid", "major_radius", "pitch", "turns",
+                                  "depth", "profile_angle_deg", "axis_point", "axis_dir"),
+                         &SxDocument::graph_add_thread);
     ClassDB::bind_method(D_METHOD("graph_add_helix", "profile_radius", "helix_radius", "pitch",
                                   "turns", "left_handed", "axis_point", "axis_dir"),
                          &SxDocument::graph_add_helix);

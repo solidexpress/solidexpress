@@ -313,6 +313,24 @@ public:
                                   float cs_angle_deg);
     godot::String graph_add_shell(const godot::String& target_fid,
                                   const godot::PackedStringArray& face_ids, double thickness);
+    godot::String graph_add_offset(const godot::String& target_fid, double offset);
+    godot::String graph_add_push_pull(const godot::String& target_fid,
+                                      const godot::String& face_id, double distance);
+    godot::String graph_add_mirror(const godot::String& target_fid,
+                                   const godot::Vector3& plane_point,
+                                   const godot::Vector3& plane_normal,
+                                   const godot::PackedStringArray& source_feature_ids = {});
+    godot::String graph_add_linear_pattern(const godot::String& target_fid,
+                                           const godot::Vector3& direction, double spacing,
+                                           int count);
+    godot::String graph_add_circular_pattern(const godot::String& target_fid,
+                                              const godot::Vector3& axis_point,
+                                              const godot::Vector3& axis_dir, int count,
+                                              double total_angle);
+    godot::String graph_add_thread(const godot::String& target_fid, float major_radius,
+                                   float pitch, float turns, float depth, float profile_angle_deg,
+                                   const godot::Vector3& axis_point,
+                                   const godot::Vector3& axis_dir);
     godot::String graph_add_helix(float profile_radius, float helix_radius, float pitch,
                                   float turns, bool left_handed, const godot::Vector3& axis_point,
                                   const godot::Vector3& axis_dir);
