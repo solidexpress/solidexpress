@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -263,23 +264,36 @@ jobs:
 
   publish:
     needs: [linux, windows, macos]
+    if: always() && !cancelled() && (needs.linux.result == 'success' || needs.windows.result == 'success' || needs.macos.result == 'success')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ ^v(.+)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download Linux artifact
+        if: needs.linux.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: SolidExpress-linux-x86_64
           path: dist/releases
 
       - name: Download Windows artifact
+        if: needs.windows.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: SolidExpress-windows-x86_64
           path: dist/releases
 
       - name: Download macOS artifact
+        if: needs.macos.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: SolidExpress-macos
@@ -288,7 +302,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
           files: dist/releases/*
           generate_release_notes: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
