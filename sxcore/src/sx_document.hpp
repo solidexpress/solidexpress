@@ -177,7 +177,8 @@ public:
                                   const godot::PackedVector3Array& path);
     // Sweep along a Path feature (params rebuilt associatively from source sketches).
     godot::String graph_add_sweep_along_path(const godot::String& sketch_fid,
-                                             const godot::String& path_fid);
+                                             const godot::String& path_fid,
+                                             const godot::PackedStringArray& guide_fids = {});
     // Composite 3D path from two or more planar sketches (SW 3D-sketch substitute).
     // mode: "join_endpoints" | "bridge_spline" | "composite"
     godot::String graph_add_path(const godot::PackedStringArray& sketch_fids,
