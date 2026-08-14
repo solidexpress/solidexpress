@@ -16,6 +16,8 @@ Single source for **what’s next**. Checkbox ledger lives in [STATUS.md](STATUS
 
 SolidWorks-shaped parametric MCAD: history-based solids, sketch constraints, feature timeline, assemblies with mates — **Linux-first**, OCCT B-rep, PlaneGCS sketcher, Godot shell. Near-term script ladder: Nick Ler [SOLIDWORKS Beginner’s Guide](https://youtube.com/playlist?list=PLiKqXuECiKNLzF6aDC3z-H1BZ94ITZIQk) (mounting block → L-bracket → needle-nose pliers parts + motion), as mapped in [workflow-study-mounting-block.md](../survey/workflow-study-mounting-block.md) and [workflow-study-needle-nose-pliers.md](../survey/workflow-study-needle-nose-pliers.md).
 
+Use that owns near-term priority: **print-first custom mechanic tools** — see [../survey/next-roadmap.md](../survey/next-roadmap.md) and [../survey/print-first.md](../survey/print-first.md). Keep the SW ladder as regression films.
+
 Standing choices: FeatureGraph as source of truth ([ADR-001](decisions.md)); UUID topology refs ([ADR-002](decisions.md)); Path merge instead of free 3D sketch; mate connectors + DOF joints as the assembly model.
 
 ---
@@ -31,6 +33,8 @@ Synced from STATUS (2026-07-29). Not a full feature dump — enough to keep mark
 - **Shell** — binaries for Linux / Windows / macOS; voice ask bridge; ViewCube, section view, display modes
 
 **Explicit not-yet (do not market as shipped):** multi-document component insert; drawing dimensions / PDF / DXF; free 3D sketch; sheet metal / frames / surfacing; full joint library / explode / interference / BOM.
+
+Note for planning context only: Form Analyze / Orient / 3MF appear as shipped-in-STATUS and are assumed working for Wave 6 prioritization. This is a priority flip, not a binary claim.
 
 ---
 
@@ -98,17 +102,16 @@ flowchart TB
 
 ---
 
-## 4. Active program — SW Beginner Demo Ladder
+## 4. Active program — Wave 6: print a tool this afternoon
 
-**This ladder owns priority.** Close remaining hard items in order:
+**This wave owns priority.** W6.1–W6.4, in order (details in [../survey/next-roadmap.md](../survey/next-roadmap.md)):
 
-1. **Assembly depth** — multi-doc `.sxp` insert (mate/instance undo + joint limits ship)
-2. **Drawings that ship** — dimensions on views, then PDF/DXF
-3. **Interchange leftovers** — AP242 structure/colors, 3MF/glTF, DXF→sketch (only what’s still missing)
+1. W6.1 — **Clearance language**: built-in print params (`clearance`, `hole_compensation`, `layer`, `nozzle`, `jaw_af`) that Hole Wizard / hex / slot consume; configs so 10/12/14 mm is one model.
+2. W6.2 — **See the print**: color-by-thickness + overhang paint on Form (reuse zebra shader path); bed ghost. Digest stays but is not the product.
+3. W6.3 — **Open in slicer**: user-registered Prusa/Orca/Bambu; one-body-per-file; File → Export 3MF unchanged (mm). No GPL slicer engine.
+4. W6.4 — **Tool catalog**: drop-in open-end, hex socket, driver bit, nozzle sizes (IronCAD catalog feel; A1).
 
-**Demoted until the ladder closes:** sheet metal, surfacing, frames, MBD. Architecture Track B/C and friendliness phases 22–27 only in parallel when they do not fight ladder file ownership.
-
-Exit criteria: Nick Ler pliers parts + assembly motion without workarounds that diverge from the SW feature tree (thin/open/mirror/open-cut/undo/limits/shared-edge contours already on the path; multi-doc for training-series UX).
+Regression / films (STATUS-complete): the Nick Ler SW beginner ladder. Keep multi-doc insert and drawing dims/PDF as done leftovers and regression checks — not the weekly owner.
 
 ---
 
@@ -152,11 +155,12 @@ Canonical public story: [solidexpress.github.io](https://github.com/solidexpress
 
 **Near-term cards (ordered):**
 
-1. Assembly depth — multi-doc component insert (mate undo + joint limits + Flip Mate Alignment already ship)
-2. Drawings that ship — dimensions on views, PDF/DXF on SVG MVP
-3. Richer interchange — AP242 structure/colors, 3MF/glTF, DXF→sketch
+1. Clearance language (named print params; configs for AF sizes)
+2. See the print (color-by-thickness + overhang paint on Form; bed ghost)
+3. Open in slicer (registered Prusa/Orca/Bambu; 3MF in mm; one body per file)
+4. Tool catalog (open-end, hex socket, driver bit, nozzle sizes)
 
-**Later (one card):** automation / plugins; MBD / PMI; sheet metal & frames & surfacing — after the solid/assembly ladder.
+**Later (one card):** drawings/AP242 leftovers; automation / plugins; MBD / PMI; sheet metal & frames & surfacing — after Wave 6.
 
 **Remove / never claim as future:** Ready-to-run builds (binaries already on Download); near-term sheet metal as a primary card.
 
