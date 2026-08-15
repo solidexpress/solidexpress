@@ -37,7 +37,7 @@ var _hole_inset: SpinBox
 var _size_w: SpinBox
 var _size_h: SpinBox
 var _size_d: SpinBox
-var _size_row: HBoxContainer
+var _size_row: VBoxContainer
 var _size_syncing := false
 var _apply_holes_btn: Button
 ## True after the user edits Inset; auto-inferred defaults stop overwriting.
