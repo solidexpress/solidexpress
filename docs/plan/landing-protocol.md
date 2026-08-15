@@ -46,6 +46,14 @@ Each film answers: *what could I not do yesterday, and why does that matter?* Fo
 
 Headless CI runs the film script. `make movies` is the human artifact, not the gate.
 
+**Website demos.** solid.express may only show a play button for a film whose
+`.webm` is on the Pages-repo Release `demo-movies` *and* whose id is in
+`website/assets/published-demos.json`. Featured homepage cards come from
+`website/assets/demo-catalog.json` ∩ that set — never hardcoded Wave film ids.
+`make check-website-demos` (CI) HEADs every published WebM. Refresh with
+`make movies && make publish-demo-movies`, then sync the site. Do not advertise
+unshipped films (sheet metal, explode, …) just because a `film_*.gd` exists.
+
 ### Code quality
 
 - Features: JSON + `FeatureGraph`. Sketch: `SolverBackend`. Assemblies: connectors — do not add gear/width onto the face-pair struct (Wave 4.10).

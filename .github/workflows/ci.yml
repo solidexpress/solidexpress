@@ -6,6 +6,15 @@ on:
   pull_request:
 
 jobs:
+  website-demos:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse unpublished frontpage / features demos
+        run: |
+          chmod +x scripts/sx-check-website-demos
+          ./scripts/sx-check-website-demos
+
   kernel:
     runs-on: ubuntu-24.04
     steps:

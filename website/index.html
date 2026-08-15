@@ -102,72 +102,7 @@ footer{text-align:center;color:var(--muted);padding:2rem;border-top:1px solid va
 <section>
 <h2>What you can make today</h2>
 <p class="lead">A short set of demos that show SolidExpress at its best. Click a preview to watch; the <a href="features.html">Features</a> page has the full film library.</p>
-<div class="grid" id="demo-grid">
-<article class="feature-card">
-<button type="button" class="demo-open" data-demo="snap_bolt_drop" aria-label="Play demo: snap-to-mate bolt drop">
-<img src="assets/screenshots/snap_bolt_drop.png" alt="" loading="lazy" width="1600" height="900" onerror="this.style.display='none'"/>
-<span class="play" aria-hidden="true"></span>
-</button>
-<h3>Snap-to-mate on drop</h3>
-<p>Drop a bolt on a connector and it fasten itself — magnetic assembly placement.</p>
-</article>
-<article class="feature-card">
-<button type="button" class="demo-open" data-demo="triball_hole_circle" aria-label="Play demo: TriBall bolt circle">
-<img src="assets/screenshots/triball_hole_circle.png" alt="" loading="lazy" width="1600" height="900" onerror="this.style.display='none'"/>
-<span class="play" aria-hidden="true"></span>
-</button>
-<h3>TriBall rotate-copy</h3>
-<p>One hole becomes a bolt circle with a single rotate-copy gesture.</p>
-</article>
-<article class="feature-card">
-<button type="button" class="demo-open" data-demo="drawing_follows_model" aria-label="Play demo: drawing follows model">
-<img src="assets/screenshots/drawing_follows_model.png" alt="" loading="lazy" width="1600" height="900" onerror="this.style.display='none'"/>
-<span class="play" aria-hidden="true"></span>
-</button>
-<h3>Drawings that follow</h3>
-<p>Edit a parameter and the associative drawing dimension updates with the model.</p>
-</article>
-<article class="feature-card">
-<button type="button" class="demo-open" data-demo="flange_box_flat" aria-label="Play demo: sheet metal flange and flat">
-<img src="assets/screenshots/flange_box_flat.png" alt="" loading="lazy" width="1600" height="900" onerror="this.style.display='none'"/>
-<span class="play" aria-hidden="true"></span>
-</button>
-<h3>Sheet metal + K-factor</h3>
-<p>Flange a box and unfold a flat whose length comes from the material K-factor.</p>
-</article>
-<article class="feature-card">
-<button type="button" class="demo-open" data-demo="print_overhang_orient" aria-label="Play demo: print orient to bed">
-<img src="assets/screenshots/print_overhang_orient.png" alt="" loading="lazy" width="1600" height="900" onerror="this.style.display='none'"/>
-<span class="play" aria-hidden="true"></span>
-</button>
-<h3>Print-first orient</h3>
-<p>Find a bed orientation that drops overhangs — print prep on the Form rail.</p>
-</article>
-<article class="feature-card">
-<button type="button" class="demo-open" data-demo="pliers_motion" aria-label="Play demo: needle-nose pliers jaws rotating about a pin">
-<img src="assets/screenshots/pliers_motion.png" alt="" loading="lazy" width="1600" height="900"/>
-<span class="play" aria-hidden="true"></span>
-</button>
-<h3>Assemblies that move</h3>
-<p>Mate jaws to a pin — leftover revolute DOF lets you drag the pliers open and closed.</p>
-</article>
-<article class="feature-card">
-<button type="button" class="demo-open" data-demo="extrude_cylinder" aria-label="Play demo: dimensioned circle extruded into a cylinder">
-<img src="assets/screenshots/extrude_cylinder.png" alt="" loading="lazy" width="1600" height="900"/>
-<span class="play" aria-hidden="true"></span>
-</button>
-<h3>Sketch → dimension → extrude</h3>
-<p>Draw closed profiles, drive them with dimensions, and extrude solid bodies.</p>
-</article>
-<article class="feature-card">
-<button type="button" class="demo-open" data-demo="explode_gearbox" aria-label="Play demo: explode gearbox">
-<img src="assets/screenshots/explode_gearbox.png" alt="" loading="lazy" width="1600" height="900" onerror="this.style.display='none'"/>
-<span class="play" aria-hidden="true"></span>
-</button>
-<h3>Explode &amp; restore</h3>
-<p>Separate an assembly for review, then collapse it back to the assembled state.</p>
-</article>
-</div>
+<div class="grid" id="demo-grid"></div>
 <div class="demo-lightbox" id="demo-lightbox" hidden>
 <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="demo-lightbox-title">
 <div class="bar">
@@ -371,55 +306,9 @@ Built with ❤️ by the Express Consortium<br/>
   }
 
   hydrateDownloads();
-
-  // Full demo WebMs live on a mutable GitHub Release (not in Pages git).
-  var DEMO_BASE = "https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/";
-  var lightbox = document.getElementById("demo-lightbox");
-  var video = document.getElementById("demo-lightbox-video");
-  var titleEl = document.getElementById("demo-lightbox-title");
-  var closeBtn = document.getElementById("demo-lightbox-close");
-  var openLink = document.getElementById("demo-lightbox-open");
-  var lastFocus = null;
-
-  function closeDemo() {
-    if (!lightbox || !video) return;
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
-    lightbox.classList.remove("open");
-    lightbox.hidden = true;
-    document.body.style.overflow = "";
-    if (lastFocus && lastFocus.focus) lastFocus.focus();
-  }
-
-  function openDemo(btn) {
-    var id = btn.getAttribute("data-demo");
-    if (!id || !lightbox || !video) return;
-    var src = DEMO_BASE + id + ".webm";
-    lastFocus = btn;
-    titleEl.textContent = (btn.getAttribute("aria-label") || "Demo").replace(/^Play demo:\s*/i, "");
-    if (openLink) openLink.href = src;
-    video.src = src;
-    lightbox.hidden = false;
-    lightbox.classList.add("open");
-    document.body.style.overflow = "hidden";
-    video.play().catch(function () {});
-    if (closeBtn) closeBtn.focus();
-  }
-
-  document.querySelectorAll(".demo-open[data-demo]").forEach(function (btn) {
-    btn.addEventListener("click", function () { openDemo(btn); });
-  });
-  if (closeBtn) closeBtn.addEventListener("click", closeDemo);
-  if (lightbox) {
-    lightbox.addEventListener("click", function (e) {
-      if (e.target === lightbox) closeDemo();
-    });
-  }
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && lightbox && lightbox.classList.contains("open")) closeDemo();
-  });
 })();
 </script>
+<script src="assets/demo.js"></script>
+<script>SxDemos.hydrateFeatured("demo-grid");</script>
 </body>
 </html>

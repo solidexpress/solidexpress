@@ -171,6 +171,13 @@ Canonical public story: [solidexpress.github.io](https://github.com/solidexpress
 
 **Also:** `build.html` must point to homepage downloads, not “packages on the roadmap.”
 
+**Demo movies (never-broken):** homepage / Features play buttons are hydrated
+from the live `demo-movies` Release (`website/assets/demo.js`). A missing WebM
+must not appear as a card. Featured ids live in `website/assets/demo-catalog.json`
+and must be a subset of `website/assets/published-demos.json`. Gate:
+`make check-website-demos` (also a CI job). Do not hardcode Wave film ids that
+were never recorded (`snap_bolt_drop`, `explode_gearbox`, sheet-metal films, …).
+
 Optional follow-up: add a SolidExpress column (F/P/–) to [feature-matrix.md](../survey/feature-matrix.md).
 
 ---

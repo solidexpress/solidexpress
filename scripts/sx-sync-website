@@ -29,6 +29,10 @@ mkdir -p "$SRC/assets"
 cp -f "$MANIFEST_SRC" "$MANIFEST_DST"
 echo "manifest → $MANIFEST_DST"
 
+if [[ -x "$ROOT/scripts/sx-check-website-demos" ]]; then
+  "$ROOT/scripts/sx-check-website-demos" --offline
+fi
+
 if [[ ! -d "$SITE" ]]; then
   echo "sx-sync-website: site checkout not found at $SITE" >&2
   echo "  set SX_SITE_ROOT, or clone solidexpress.github.io next to this repo." >&2
