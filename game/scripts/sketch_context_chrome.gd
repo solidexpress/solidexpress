@@ -99,6 +99,10 @@ func _build_finish_bar() -> void:
 	for n in ["New", "Cut", "Fuse"]:
 		_finish_op.add_item(n)
 	_finish_op.custom_minimum_size = Vector2(64, CHIP_H)
+	# Default for cuts: make through cuts go Through All unless the user overrides.
+	_finish_op.item_selected.connect(func(_idx: int) -> void:
+		if _finish_end != null and _finish_op.selected == 1:  # Cut
+			set_finish_end("through_all"))
 	_finish_bar.add_child(_finish_op)
 	_thin_spin = SpinBox.new()
 	_thin_spin.min_value = 0
@@ -231,6 +235,14 @@ func set_finish_end(end: String) -> void:
 	var map := {"blind": 0, "through_all": 1, "midplane": 2}
 	if map.has(end):
 		_finish_end.select(map[end])
+
+
+func get_finish_end() -> String:
+	if _finish_end == null:
+		return "blind"
+	var opts := ["blind", "through_all", "midplane"]
+	var i := clampi(_finish_end.selected, 0, opts.size() - 1)
+	return opts[i]
 
 
 func set_flip_side(on: bool) -> void:
