@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# macOS desktop export + zip + sha256. Run from repo root on macOS.
+# macOS desktop export .app for signing + DMG. Run from repo root on macOS.
 # Godot 4.7.1 templates only ship godot_macos_release.universal, so we export
 # a universal (Intel + Apple Silicon) app. That is the native Godot path.
+# Produces dist/releases/SolidExpress-<ver>-macos/SolidExpress.app (create-dmg / sign).
+# Does not create a zip — the shipped artifact is the notarized .dmg from CI.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -10,7 +12,6 @@ VERSION="$(tr -d '[:space:]' < VERSION)"
 GODOT="${GODOT:-tools/godot/godot}"
 PRESET="${EXPORT_PRESET:-macOS}"
 OUT_APP="$ROOT/dist/releases/SolidExpress-${VERSION}-macos/SolidExpress.app"
-ARCHIVE="$ROOT/dist/releases/SolidExpress-${VERSION}-macos.zip"
 
 if [[ ! -x "$GODOT" ]]; then
   echo "Missing Godot at $GODOT — run: ./scripts/release/fetch-godot-templates.sh" >&2
@@ -76,8 +77,4 @@ mkdir -p "$OUT_APP/Contents/Resources"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_APP/Contents/Resources/THIRD_PARTY.md"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_APP/Contents/Resources/LICENSE"
 
-rm -f "$ARCHIVE"
-ditto -c -k --sequesterRsrc --keepParent "$BUNDLE_DIR" "$ARCHIVE"
-shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
-echo "OK: $ARCHIVE"
-cat "${ARCHIVE}.sha256"
+echo "OK: $OUT_APP (DMG source; no zip)"

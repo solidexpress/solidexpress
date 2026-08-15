@@ -185,14 +185,19 @@ jobs:
           # MySourceDir defaults in SolidExpress.iss from MyAppVersion.
           MSYS_NO_PATHCONV=1 "$ISCC" "/DMyAppVersion=$VER" packaging/windows/SolidExpress.iss
 
+      - name: Checksum Windows installer
+        shell: bash
+        run: |
+          SETUP=$(ls dist/releases/SolidExpress-*-x64-setup.exe | head -1)
+          sha256sum "$SETUP" > "${SETUP}.sha256"
+          cat "${SETUP}.sha256"
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: SolidExpress-windows-x86_64
           path: |
-            dist/releases/SolidExpress-*-windows-x86_64.zip
             dist/releases/SolidExpress-*-x64-setup.exe
-            dist/releases/SolidExpress-*-windows-x86_64.zip
             dist/releases/SolidExpress-*-x64-setup.exe.sha256
 
   macos:
@@ -257,9 +262,7 @@ jobs:
         with:
           name: SolidExpress-macos
           path: |
-            dist/releases/SolidExpress-*-macos.zip
             dist/releases/SolidExpress-*-macos.dmg
-            dist/releases/SolidExpress-*-macos.zip
             dist/releases/SolidExpress-*-macos.dmg.sha256
 
   publish:

@@ -28,6 +28,19 @@ Outputs:
 
 The script copies `libplanegcs.so` next to the exported binary (LGPL dynamic link).
 
+### Windows / macOS (same scripts CI uses)
+
+```bash
+./scripts/release/export-windows.sh   # → SolidExpress-<ver>-windows-x86_64/ for Inno
+./scripts/release/export-macos.sh     # → SolidExpress-<ver>-macos/SolidExpress.app for DMG
+```
+
+Published desktop artifacts (no Windows/macOS zip):
+
+- Windows: `SolidExpress-<version>-x64-setup.exe` (+ `.sha256`) via Inno (`packaging/windows/SolidExpress.iss`)
+- macOS: `SolidExpress-<version>-macos.dmg` (+ `.sha256`) via `create-dmg.sh` + `sign-and-notarize.sh`
+- Linux: `.tar.gz` (+ `.sha256`) as above
+
 ## CI release (recommended)
 
 ```bash

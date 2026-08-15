@@ -135,7 +135,7 @@ Flatpak is **not** in CI yet. Add under `packaging/flatpak/` (suggested):
 
 ## Phase 3 — Windows
 
-**Goal:** Signed `SolidExpress.exe` (zip or installer) on GitHub Releases.
+**Goal:** Signed `SolidExpress-<version>-x64-setup.exe` (Inno Setup) on GitHub Releases.
 
 CI job `windows` in `release.yml` is **`if: false`** until you provision OCCT + godot-cpp on `windows-latest`.
 
@@ -156,15 +156,22 @@ godot --headless --path game --export-release "Windows Desktop" dist\releases\So
 
 Copy `libplanegcs.dll` (and any other runtime DLLs `dumpbin /dependents` or `ldd` equivalent requires) next to the exe.
 
+Prefer the release script (builds sxcore, exports, bundles DLLs into the Inno source folder):
+
+```bash
+./scripts/release/export-windows.sh
+# → dist/releases/SolidExpress-<ver>-windows-x86_64/  (Inno MySourceDir; not published as a zip)
+```
+
 ### Package
 
-- [ ] Zip folder **or** build **Inno Setup** / WiX installer (recommended for users).
+- [ ] Build **Inno Setup** installer from that folder (`packaging/windows/SolidExpress.iss` / CI `ISCC`).
 - [ ] **Sign** exe and installer: `signtool sign /fd SHA256 ...`
 
 ### CI (when ready)
 
 - [ ] Enable `windows` job: vcpkg or cached OCCT, build sxkernel/sxcore, Godot export, sign with secrets `WINDOWS_CERT_PFX`, `WINDOWS_CERT_PASSWORD`.
-- [ ] Attach `.zip` or `.exe` installer to the **same** GitHub Release as Linux.
+- [ ] Attach `.exe` installer (+ `.sha256`) to the **same** GitHub Release as Linux.
 
 ### Microsoft Store (optional, later)
 
@@ -177,7 +184,7 @@ Copy `libplanegcs.dll` (and any other runtime DLLs `dumpbin /dependents` or `ldd
 
 ## Phase 4 — macOS (Developer ID + notarization)
 
-**Goal:** Notarized drag-to-Applications `.dmg` for direct download (best fit for CAD). `packaging/macos/create-dmg.sh` stages `SolidExpress.app` + an `/Applications` symlink with Finder chrome (`dmg-background.png`, fixed icon positions). The `.zip` remains a secondary CI artifact.
+**Goal:** Notarized drag-to-Applications `.dmg` for direct download (best fit for CAD). `packaging/macos/create-dmg.sh` stages `SolidExpress.app` + an `/Applications` symlink with Finder chrome (`dmg-background.png`, fixed icon positions). The published desktop artifact is the stapled `.dmg` only (no macOS zip).
 
 You have an **Apple Developer Program** membership.
 
@@ -206,7 +213,7 @@ Prefer the release script (builds sxcore, exports, **bundles Homebrew OCCT into 
 1. Run `bundle-dylibs.sh` first (rewrites install names; ad-hoc signs).
 2. Sign all binaries inside `.app` (Frameworks, MacOS, dylibs) with Developer ID.
 3. Sign the `.app` bundle: `codesign --force --deep --options runtime --sign "Developer ID Application: ..." SolidExpress.app`
-4. Submit: `xcrun notarytool submit SolidExpress.zip --apple-id ... --team-id ... --password ... --wait`
+4. Submit the DMG (or a zip of the `.app`) to notarytool — CI uses `packaging/macos/sign-and-notarize.sh dmg …` on the built `.dmg`.
 5. Staple: `xcrun stapler staple SolidExpress.app` (or staple the dmg).
 
 Checklist:
