@@ -404,7 +404,8 @@ Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids
 - [x] 6.0b Fix the feature-param + sketch regression clusters (audit items 1–2) until `run_workflow_tests` and `run_ui_tests` are green — `run_workflow_tests` is Wave 0's exit gate *(2026-08-15 dead-chrome repair: ops dispatch + pattern orphan + dressup UUID edges; ui/workflow green)*
 - [ ] 6.0c Fix `run_print_tests` Orient (Wave 5 gate) and reconcile the film manifest (restore or drop the 5 missing films; repair the 9 failing ones)
 - [x] 6.0d Enable `godot-smoke` in CI (cache the Godot 4.7-stable binary; gate at least workflow/ui/sketch/print suites) so red suites can't land silently again *(parse-sweep + integration + layout + green suites)*
-- [ ] 6.0e Chronic small failures (audit item 5) — nav_preset default vs tests is a *decision*: pick FUSION or SOLIDEXPRESS and align the tests to it
+- [x] 6.0e Chronic small failures (audit item 5) — nav_preset default vs tests is a *decision*: pick FUSION or SOLIDEXPRESS and align the tests to it
+  — **Decision (2026-08-15): FUSION is the product default** (`orbit_camera.gd`). Tests must set `nav_preset` explicitly when asserting SX/SW Alt-drag behaviour; howto/place suites already document Fusion Alt+left = pan. Remaining chronic items (DOF chip, icon tests, etc.) are separate.
 - [x] 6.1 Construction chrome (from the live 0.0.4 test; part of the 6.0 gate — green before 6.2+): focused numeric fields consume digits (view keys 1/2/3/7 never fire while a spinbox/line-edit is focused); … *(SxUi.configure_spin + focus guard; layout clamp)*
 - [ ] 6.2 Clearance language: …
 - [x] 6.3 See the print: Thickness + Overhang paint toggles on Form … + bed ghost … *(Form strip Nozzle/Hang/Bed params + set_print_setup; see_the_print green)*

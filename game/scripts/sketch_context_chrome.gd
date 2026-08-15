@@ -90,12 +90,14 @@ func _build_finish_bar() -> void:
 	_extrude_spin.tooltip_text = "Blind distance (ignored for Through All cuts)"
 	_finish_bar.add_child(_extrude_spin)
 	_finish_end = OptionButton.new()
+	_finish_end.name = "FinishEnd"
 	_finish_end.tooltip_text = "Extrude end: Blind / Through All / Midplane"
 	for n in ["Blind", "Through All", "Midplane"]:
 		_finish_end.add_item(n)
 	_finish_end.custom_minimum_size = Vector2(100, CHIP_H)
 	_finish_bar.add_child(_finish_end)
 	_finish_op = OptionButton.new()
+	_finish_op.name = "FinishOp"
 	for n in ["New", "Cut", "Fuse"]:
 		_finish_op.add_item(n)
 	_finish_op.custom_minimum_size = Vector2(64, CHIP_H)

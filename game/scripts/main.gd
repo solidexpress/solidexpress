@@ -581,13 +581,17 @@ func _build_ui() -> void:
 	assembly_panel = AssemblyPanel.new()
 	assembly_panel.name = "AssemblyPanel"
 	assembly_panel.view = view
-	assembly_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	assembly_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	assembly_panel.anchor_left = 1.0
 	assembly_panel.anchor_right = 1.0
+	assembly_panel.anchor_top = 1.0
+	assembly_panel.anchor_bottom = 1.0
 	assembly_panel.offset_left = -652
 	assembly_panel.offset_right = -332
-	assembly_panel.offset_top = 480
+	assembly_panel.offset_top = -420
+	assembly_panel.offset_bottom = -42
 	assembly_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	assembly_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	ui.add_child(assembly_panel)
 	assembly_panel.status.connect(_on_status)
 	assembly_panel.instance_selected.connect(func(id: String) -> void:

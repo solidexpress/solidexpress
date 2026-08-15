@@ -76,6 +76,8 @@ var _strip_plane: Button
 var _strip_fuse: Button
 var _strip_cut: Button
 var _strip_common: Button
+var _strip_group: Button
+var _strip_similar: Button
 var _strip_hole: Button
 var _strip_hole_wizard: Button
 var _strip_clash: Button
@@ -276,6 +278,18 @@ func _build_selection_strip() -> void:
 	_strip_common = UIIcons.button("common", "Intersect", "Keep only the common volume of the selection")
 	_strip_common.pressed.connect(func() -> void: _ctx_boolean("common"))
 	row.add_child(_strip_common)
+	_strip_group = Button.new()
+	_strip_group.name = "StripGroup"
+	_strip_group.text = "Group"
+	_strip_group.tooltip_text = "Isolate the selection (hide everything else)"
+	_strip_group.pressed.connect(_ctx_group)
+	row.add_child(_strip_group)
+	_strip_similar = Button.new()
+	_strip_similar.name = "StripSimilar"
+	_strip_similar.text = "Similar"
+	_strip_similar.tooltip_text = "Add bodies with the same feature kind to the selection"
+	_strip_similar.pressed.connect(_ctx_similar)
+	row.add_child(_strip_similar)
 	_strip_hole = Button.new()
 	_strip_hole.name = "StripHole"
 	_strip_hole.text = "Hole"
@@ -3659,6 +3673,8 @@ func _refresh_selection_strip() -> void:
 	_strip_fuse.visible = multi_body
 	_strip_cut.visible = multi_body
 	_strip_common.visible = multi_body
+	_strip_group.visible = not has_instance and view.selection_size() > 0
+	_strip_similar.visible = not has_instance and view.selected_body != ""
 	_strip_fillet.visible = not has_instance
 	_strip_hole.visible = not has_instance
 	_strip_hole_wizard.visible = not has_instance
@@ -3761,6 +3777,23 @@ func _ctx_fillet() -> void:
 		ops_panel.arm_or_apply_fillet()
 	else:
 		status.emit("Fillet: open Modify panel")
+
+
+func _ctx_group() -> void:
+	var ids := _selected_body_ids()
+	if ids.is_empty():
+		status.emit("Group: select one or more bodies")
+		return
+	view.isolate(ids)
+	status.emit("Isolated %d body(s)" % ids.size())
+	_refresh_selection_strip()
+
+
+func _ctx_similar() -> void:
+	var n: int = view.select_similar()
+	status.emit("Similar: %d body(s) selected" % n if n > 0 else "Similar: nothing matched")
+	_refresh_transform_hud()
+	_refresh_selection_strip()
 
 
 ## Instant pairwise boolean: primary keeps the result; other selected bodies

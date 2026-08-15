@@ -254,6 +254,11 @@ func _build_face_ops() -> void:
 	_face_ops.add_child(hole_row)
 	_op_button(hole_row, "Apply hole", _apply_hole, "hole",
 		"Drill at the center of this face")
+	# Name the primary Apply-hole control for tests / FilmUI (icon-only otherwise).
+	if hole_row.get_child_count() > 0:
+		var ah := hole_row.get_child(0) as Button
+		if ah != null:
+			ah.name = "ApplyHole"
 	_op_button(hole_row, "Place hole…", _arm_hole, "hole",
 		"Arm: click a point on a face (near corner → inset; near mid → snap; else free)")
 	var wizard_row := HBoxContainer.new()
@@ -286,6 +291,12 @@ func _on_selection_changed(body: String, face: String) -> void:
 		_hole_inset_manual = false
 		_sync_hole_inset_default()
 	_clamp_height()
+	# Face tools live below body tools in the scroll — jump to them when a face
+	# is selected so Apply hole / Shell are clickable without hunting.
+	if face != "" and _scroll != null and _face_ops != null:
+		await get_tree().process_frame
+		if is_instance_valid(_scroll) and is_instance_valid(_face_ops):
+			_scroll.ensure_control_visible(_face_ops)
 
 
 func _on_picked(body: String, face: String, point: Vector3) -> void:
