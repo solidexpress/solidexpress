@@ -111,11 +111,11 @@ func _clamp_height() -> void:
 	offset_top = -custom_minimum_size.y - 12.0
 	offset_bottom = -42.0
 	reset_size()
-	if property_panel != null and property_panel.visible and _scroll != null:
-		# Keep the property panel in view when it opens.
-		await get_tree().process_frame
-		if is_instance_valid(property_panel) and is_instance_valid(_scroll):
-			_scroll.ensure_control_visible(property_panel)
+	if property_panel != null and property_panel.visible:
+		# Property panel sits beside the feature list — no ensure_control_visible
+		# (it is not a descendant of the feature ScrollContainer).
+		pass
+	reset_size()
 
 
 func refresh() -> void:
