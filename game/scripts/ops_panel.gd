@@ -9,10 +9,12 @@ extends PanelContainer
 
 signal status(text: String)
 
-enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, LINEAR, CIRCULAR, MIRROR }
+enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, LINEAR, CIRCULAR, MIRROR, FILLET_EDGES, CHAMFER_EDGES }
 
 var view: DocumentView
 var timeline_panel: TimelinePanel
+## Optional: ViewportInteraction for hole markers / fillet arm feedback.
+var interaction: ViewportInteraction
 
 var _body_ops: VBoxContainer
 var _face_ops: VBoxContainer
@@ -414,6 +416,39 @@ func _chamfer_all() -> void:
 	_apply_dressup(false)
 
 
+## Strip / marking-menu entry: prefer selected edges; else arm edge picking.
+func arm_or_apply_fillet() -> void:
+	_start_or_apply_dressup(true)
+
+
+func arm_or_apply_chamfer() -> void:
+	_start_or_apply_dressup(false)
+
+
+## If edges are already selected, commit immediately; otherwise arm edge picking.
+func _start_or_apply_dressup(fillet: bool) -> void:
+	if view.selected_body == "":
+		return
+	if not view.selected_edges.is_empty() or view.selected_edge != "":
+		_apply_dressup(fillet)
+		return
+	_pending = Pending.FILLET_EDGES if fillet else Pending.CHAMFER_EDGES
+	_pending_body = view.selected_body
+	_pending_fid = view.feature_of_body(view.selected_body)
+	status.emit(("%s: click edges (Ctrl adds), then Enter — or Esc cancel" % \
+			("Fillet" if fillet else "Chamfer")))
+
+
+func _commit_armed_dressup() -> bool:
+	var fillet := _pending == Pending.FILLET_EDGES
+	_pending = Pending.NONE
+	if view.selected_edges.is_empty() and view.selected_edge == "":
+		status.emit("No edges selected — cancelled")
+		return false
+	_apply_dressup(fillet)
+	return true
+
+
 func _apply_dressup(fillet: bool) -> void:
 	if view.selected_body == "":
 		return
@@ -790,6 +825,7 @@ func _arm_hole_wizard() -> void:
 	_hole_wizard_positions = PackedVector3Array()
 	_hole_wizard_direction = Vector3.ZERO
 	_sync_apply_holes_btn()
+	_sync_hole_markers()
 	status.emit("Hole Wizard: click points on face, then Apply holes / Enter")
 
 
@@ -797,6 +833,17 @@ func _clear_hole_wizard() -> void:
 	_hole_wizard_positions = PackedVector3Array()
 	_hole_wizard_direction = Vector3.ZERO
 	_sync_apply_holes_btn()
+	_sync_hole_markers()
+
+
+func _sync_hole_markers() -> void:
+	if interaction == null:
+		return
+	if _hole_wizard_positions.is_empty() and _pending != Pending.HOLE_WIZARD \
+			and _pending != Pending.HOLE:
+		interaction.clear_hole_markers()
+		return
+	interaction.set_hole_markers(_hole_wizard_positions, _hole_diameter.value)
 
 
 func _sync_apply_holes_btn() -> void:
@@ -817,9 +864,15 @@ func cancel_pending_pick() -> bool:
 	if _pending == Pending.NONE:
 		return false
 	var was_wizard := _pending == Pending.HOLE_WIZARD
+	var was_dress := _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES
 	_pending = Pending.NONE
 	_clear_hole_wizard()
-	status.emit("Hole Wizard cancelled" if was_wizard else "Cancelled")
+	if was_wizard:
+		status.emit("Hole Wizard cancelled")
+	elif was_dress:
+		status.emit("Edge pick cancelled")
+	else:
+		status.emit("Cancelled")
 	return true
 
 
@@ -842,6 +895,7 @@ func _accumulate_hole_wizard_pick(body: String, face: String, point: Vector3) ->
 			_hole_wizard_direction = Vector3(0, 0, -1)
 	_hole_wizard_positions.append(position)
 	_sync_apply_holes_btn()
+	_sync_hole_markers()
 	status.emit("Hole Wizard: %d point(s) — click more, Apply holes / Enter, Esc cancel" %
 			_hole_wizard_positions.size())
 
@@ -859,6 +913,15 @@ func _apply_hole_wizard() -> bool:
 	_pending = Pending.NONE
 	_clear_hole_wizard()
 	return ok
+
+
+## Enter commits Hole Wizard when armed; returns true if handled.
+func try_commit_pending() -> bool:
+	if _pending == Pending.HOLE_WIZARD:
+		return _apply_hole_wizard()
+	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
+		return _commit_armed_dressup()
+	return false
 
 
 func _commit_holes(body: String, face: String, positions: PackedVector3Array,

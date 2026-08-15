@@ -34,9 +34,64 @@ func _init() -> void:
 	await test_timeline_appears_with_features(main)
 	await test_variables_panel_visibility(main)
 	await test_no_text_collisions(main)
+	await test_busy_state_on_screen(main, vp, Vector2i(1600, 900))
+	await test_busy_state_on_screen(main, vp, Vector2i(1280, 720))
 
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
+
+
+## Busy chrome (body + timeline + hole PropertyPanel + assembly) must stay on-screen.
+func test_busy_state_on_screen(main, vp: SubViewport, size: Vector2i) -> void:
+	print("- busy chrome on-screen at %dx%d" % [size.x, size.y])
+	vp.size = size
+	for i in range(3):
+		await process_frame
+	main.view.new_document()
+	main.view.doc.graph_add_primitive("box", 40, 40, 40, Vector3(-20, -20, 0))
+	main.view.graph_changed()
+	await process_frame
+	var bid: String = str(main.view.doc.body_ids()[0])
+	main.view.select_entity(bid, "")
+	main._update_panel_visibility()
+	for i in range(4):
+		await process_frame
+	# Open a hole feature's property panel so the timeline grows.
+	var top := ""
+	for fid in main.view.doc.get_face_ids(bid):
+		var bb: Dictionary = main.view.doc.measure_bbox(fid)
+		if bb.is_empty():
+			continue
+		if absf(float(bb["min"].z) - 40.0) < 1e-3:
+			top = fid
+	if top != "":
+		main.view.select_entity(bid, top)
+		main._update_panel_visibility()
+		await process_frame
+		main.ops_panel._apply_hole()
+		await process_frame
+		for f in main.view.doc.graph_features():
+			if str(f.get("type", "")) == "hole":
+				main.open_feature_params(str(f.get("id", "")))
+				break
+	for i in range(4):
+		await process_frame
+	if main.timeline != null and main.timeline.has_method("_clamp_height"):
+		main.timeline._clamp_height()
+	if main.assembly_panel != null and main.assembly_panel.has_method("_clamp_height"):
+		main.assembly_panel._clamp_height()
+	for i in range(3):
+		await process_frame
+	var limit_y := float(size.y) - 30.0  # status bar
+	for panel in [main.timeline, main.ops_panel, main.assembly_panel, main.card_box]:
+		if panel == null or not panel.visible:
+			continue
+		var r: Rect2 = panel.get_global_rect()
+		check(r.position.y + r.size.y <= limit_y + 2.0,
+				"%s bottom on-screen at %dx%d (%.0f <= %.0f)" % [
+					panel.name, size.x, size.y, r.position.y + r.size.y, limit_y])
+		check(r.position.x >= -1.0 and r.position.x + r.size.x <= float(size.x) + 1.0,
+				"%s horizontally on-screen at %dx%d" % [panel.name, size.x, size.y])
 
 
 func test_empty_document_hides_context(main) -> void:

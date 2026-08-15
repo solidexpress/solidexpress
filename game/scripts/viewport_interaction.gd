@@ -18,6 +18,7 @@ var model_space: Node3D  # kernel Z-up frame
 var sketch_mode: SketchMode  # optional; when active, input goes to sketching
 var sketch_chrome: SketchContextChrome  # finish-bar dim blank while sketching
 var world_gizmos: WorldGizmos
+var hole_preview: HolePreviewOverlay
 var measure_overlay: MeasureOverlay
 var transform_hud: TransformHud
 var ops_panel: OpsPanel
@@ -843,6 +844,12 @@ func _mount_wave0_chrome() -> void:
 		model_space.add_child(triball)
 	elif model_space != null:
 		triball = model_space.get_node("TriBallGizmo") as TriBallGizmo
+	if model_space != null and model_space.get_node_or_null("HolePreviewOverlay") == null:
+		hole_preview = HolePreviewOverlay.new()
+		hole_preview.name = "HolePreviewOverlay"
+		model_space.add_child(hole_preview)
+	elif model_space != null:
+		hole_preview = model_space.get_node("HolePreviewOverlay") as HolePreviewOverlay
 	if get_node_or_null("MarkingMenu") == null:
 		marking_menu = MarkingMenu.new()
 		marking_menu.name = "MarkingMenu"
@@ -851,6 +858,18 @@ func _mount_wave0_chrome() -> void:
 		marking_menu.pick_chosen.connect(_on_marking_pick)
 	else:
 		marking_menu = get_node("MarkingMenu") as MarkingMenu
+
+
+func set_hole_markers(points: PackedVector3Array, radius_mm: float) -> void:
+	if hole_preview == null:
+		return
+	hole_preview.set_radius(maxf(0.5, radius_mm * 0.5))
+	hole_preview.set_points(points)
+
+
+func clear_hole_markers() -> void:
+	if hole_preview != null:
+		hole_preview.clear()
 
 
 func _ctx_hole_m6() -> void:
@@ -2774,10 +2793,16 @@ func _gui_key(event: InputEventKey) -> bool:
 			KEY_K, KEY_G, KEY_S, KEY_I, KEY_SPACE:
 				return false
 	match event.keycode:
+		KEY_ENTER, KEY_KP_ENTER:
+			if ops_panel != null and ops_panel.try_commit_pending():
+				return true
 		KEY_ESCAPE:
 			# Sketch Esc is handled in _sketch_input; do not steal it.
 			if sketch_mode != null and sketch_mode.active:
 				return false
+			if ops_panel != null and ops_panel.cancel_pending_pick():
+				clear_hole_markers()
+				return true
 			# Dismiss overlapping panels/popups first to avoid undismissable stacks.
 			if transform_hud != null and transform_hud.visible:
 				transform_hud.dismiss()
@@ -3733,7 +3758,7 @@ func _ctx_set_active_plane() -> void:
 
 func _ctx_fillet() -> void:
 	if ops_panel != null:
-		ops_panel._fillet_all()
+		ops_panel.arm_or_apply_fillet()
 	else:
 		status.emit("Fillet: open Modify panel")
 

@@ -40,7 +40,14 @@ var print_strip
 var cam_rail
 var sim_rail
 var palette: PanelContainer
+var _rail_extrude: Button
+var _rail_revolve: Button
+var _rail_sweep: Button
+var _rail_loft: Button
 var dim_value: SpinBox
+var _datum_offset: SpinBox
+var _datum_dialog: ConfirmationDialog
+var _pending_datum_id := -1
 var finish_op: OptionButton
 var dof_label: Label
 var alias_edit: LineEdit
@@ -435,6 +442,7 @@ func _build_ui() -> void:
 	_build_slicer_dialog(ui)
 	_build_drawing_options_dialog(ui)
 	_build_insert_components_dialog(ui)
+	_build_datum_offset_dialog(ui)
 
 	file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -466,6 +474,24 @@ func _build_ui() -> void:
 		"Sketch: select a face or existing sketch to enter sketch mode")
 	sketch_btn.pressed.connect(_request_sketch)
 	vbox.add_child(sketch_btn)
+	# Finish verbs for selected sketch pads (SW/Fusion left-rail reachability).
+	vbox.add_child(HSeparator.new())
+	_rail_extrude = UIIcons.button("extrude", "",
+		"Extrude: select a closed sketch pad, then Extrude")
+	_rail_extrude.pressed.connect(_rail_finish_extrude)
+	vbox.add_child(_rail_extrude)
+	_rail_revolve = UIIcons.button("revolve", "",
+		"Revolve: select a closed sketch pad with an axis, then Revolve")
+	_rail_revolve.pressed.connect(_rail_finish_revolve)
+	vbox.add_child(_rail_revolve)
+	_rail_sweep = UIIcons.button("arc", "",
+		"Sweep: Ctrl+click profile + rail pads, then Sweep")
+	_rail_sweep.pressed.connect(_rail_finish_sweep)
+	vbox.add_child(_rail_sweep)
+	_rail_loft = UIIcons.button("area", "",
+		"Loft: Ctrl+click 2+ profile pads, then Loft")
+	_rail_loft.pressed.connect(_rail_finish_loft)
+	vbox.add_child(_rail_loft)
 	# Wave 6.5: simple mechanic-tool catalog (shop tooling).
 	vbox.add_child(HSeparator.new())
 	for entry in [
@@ -549,6 +575,7 @@ func _build_ui() -> void:
 	ui.add_child(ops_panel)
 	ops_panel.status.connect(_on_status)
 	interaction.ops_panel = ops_panel
+	ops_panel.interaction = interaction
 
 	# Right, second column: assembly browser (auto-hides when no instances).
 	assembly_panel = AssemblyPanel.new()
@@ -1553,6 +1580,79 @@ func open_feature_params(fid: String) -> void:
 		_on_status("Feature created — edit Params (JSON) if needed")
 
 
+func _rail_finish_extrude() -> void:
+	if selected_sketch_pads.size() == 1:
+		if sketch_mode.begin_edit(selected_sketch_pads[0]):
+			_on_sketch_session_started("Extrude sketch")
+			_on_sketch_finish("new", 20.0)
+			return
+	if sketch_mode != null and sketch_mode.active:
+		_on_sketch_finish("new", 20.0)
+		return
+	_on_status("Extrude: select a closed sketch pad (or enter Sketch and draw a profile)")
+
+
+func _rail_finish_revolve() -> void:
+	if selected_sketch_pads.size() == 1:
+		if sketch_mode.begin_edit(selected_sketch_pads[0]):
+			_on_sketch_session_started("Revolve sketch")
+			sketch_mode.finish_revolve(TAU, "new")
+			return
+	if sketch_mode != null and sketch_mode.active:
+		sketch_mode.finish_revolve(TAU, "new")
+		return
+	_on_status("Revolve: select a closed sketch pad first")
+
+
+func _rail_finish_sweep() -> void:
+	_sweep_profile_along_path()
+
+
+func _rail_finish_loft() -> void:
+	_loft_selected_sketches(false)
+
+
+func _build_datum_offset_dialog(parent: Node) -> void:
+	_datum_dialog = ConfirmationDialog.new()
+	_datum_dialog.title = "Datum offset"
+	_datum_dialog.ok_button_text = "Add"
+	_datum_dialog.dialog_hide_on_ok = true
+	var body := VBoxContainer.new()
+	_datum_dialog.add_child(body)
+	var row := HBoxContainer.new()
+	body.add_child(row)
+	var lbl := Label.new()
+	lbl.text = "Offset"
+	row.add_child(lbl)
+	_datum_offset = SpinBox.new()
+	SxUi.configure_spin(_datum_offset, -10000.0, 10000.0, 1.0, 10.0)
+	_datum_offset.suffix = "mm"
+	row.add_child(_datum_offset)
+	var hint := Label.new()
+	hint.text = "Offset along the plane normal (0 = through origin)"
+	hint.add_theme_font_size_override("font_size", 11)
+	body.add_child(hint)
+	_datum_dialog.confirmed.connect(_on_datum_offset_confirmed)
+	parent.add_child(_datum_dialog)
+
+
+func _on_datum_offset_confirmed() -> void:
+	var off := _datum_offset.value
+	var did := ""
+	match _pending_datum_id:
+		0: did = view.doc.add_datum_plane(Vector3(0, 0, off), Vector3(0, 0, 1))
+		1: did = view.doc.add_datum_plane(Vector3(0, off, 0), Vector3(0, 1, 0))
+		2: did = view.doc.add_datum_plane(Vector3(off, 0, 0), Vector3(1, 0, 0))
+		_:
+			pass
+	_pending_datum_id = -1
+	if did != "":
+		view.graph_changed()
+		_on_status("Datum plane added at offset %.1f mm — listed under Insert / datums" % off)
+	else:
+		_on_status("Datum creation failed")
+
+
 func _dock_ops_left() -> void:
 	ops_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	ops_panel.anchor_left = 0.0
@@ -2103,18 +2203,23 @@ func _on_insert_menu(id: int) -> void:
 			if tid != "":
 				open_feature_params(tid)
 		return
+	# Planes offer an offset (reference + distance).
+	if id >= 0 and id <= 2:
+		_pending_datum_id = id
+		if _datum_offset != null:
+			_datum_offset.value = 0.0
+		if _datum_dialog != null:
+			_datum_dialog.popup_centered()
+		return
 	var did := ""
 	match id:
-		0: did = view.doc.add_datum_plane(Vector3.ZERO, Vector3(0, 0, 1))
-		1: did = view.doc.add_datum_plane(Vector3.ZERO, Vector3(0, 1, 0))
-		2: did = view.doc.add_datum_plane(Vector3.ZERO, Vector3(1, 0, 0))
 		3: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(1, 0, 0))
 		4: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
 		5: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
 		6: did = view.doc.add_datum_point(Vector3.ZERO)
 	if did != "":
 		view.graph_changed()
-		_on_status("Datum added — offset it from the Insert menu or Variables")
+		_on_status("Datum added")
 	else:
 		_on_status("Datum creation failed")
 

@@ -52,6 +52,10 @@ func _init() -> void:
 	check(is_equal_approx(main.ops_panel._hole_diameter.value, 6.0),
 			"Hole Ø 6.0 sticks (got %.3f)" % main.ops_panel._hole_diameter.value)
 
+	# Fresh doc before mode chrome (drawing HLR on a threaded solid is slow).
+	main.view.new_document()
+	await process_frame
+
 	main._on_mode_menu(3)
 	await process_frame
 	check(main.cam_rail != null and main.cam_rail.visible, "Cam rail visible")
@@ -71,6 +75,7 @@ func _init() -> void:
 	check(main.print_strip.visible, "Form print strip visible")
 	check(main.print_strip.find_child("PrintParams", true, false) != null, "Form print params present")
 	main._on_mode_menu(0)
+	await process_frame
 
 	check(main._slicer_dialog != null, "Slicer dialog built")
 	check(main._drawing_options != null, "Drawing options dialog built")
@@ -82,6 +87,11 @@ func _init() -> void:
 	check(main.view.doc.has_method("sxp_component_info"), "sxp_component_info bound")
 	check(main._insert_dialog != null, "Insert Components dialog built")
 	check(main._paste_as_instance != null, "Paste Special has instance option")
+	check(main._rail_extrude != null and main._rail_revolve != null, "left-rail Extrude/Revolve present")
+	check(main._rail_sweep != null and main._rail_loft != null, "left-rail Sweep/Loft present")
+	check(main._datum_dialog != null, "Datum offset dialog built")
+	check(main.interaction != null and main.interaction.hole_preview != null,
+			"Hole Wizard preview overlay mounted")
 
 	# Thread refuses a box.
 	main.view.new_document()
