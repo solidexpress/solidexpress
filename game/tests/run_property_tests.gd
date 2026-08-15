@@ -55,8 +55,8 @@ func test_open_and_fields(main) -> void:
 	var panel := _panel(main)
 	main.timeline._select_feature(fid)
 	check(panel.visible, "panel opens for primitive")
-	check(_spin_for(panel, "Size A") != null, "Size A field built")
-	check(_spin_for(panel, "Size A").value == 40.0, "field shows current value")
+	check(_spin_for(panel, "W") != null, "W field built")
+	check(_spin_for(panel, "W").value == 40.0, "field shows current value")
 	check(PropertyPanel.has_schema("extrude"), "extrude has schema")
 	check(not PropertyPanel.has_schema("sketch"), "sketch has no schema")
 
@@ -70,7 +70,7 @@ func test_live_preview_and_ok(main) -> void:
 	var body := view.body_of_feature(fid)
 	var panel := _panel(main)
 	main.timeline._select_feature(fid)
-	var spin := _spin_for(panel, "Size A")
+	var spin := _spin_for(panel, "W")
 	spin.value = 80.0  # value_changed fires -> live regen
 	check(absf(view.doc.body_volume(body) - 48000.0) < 1.0,
 		"live preview regenerated (80x30x20)")
@@ -115,7 +115,7 @@ func test_expression_field(main) -> void:
 	var found_expr := false
 	for row in panel._fields.get_children():
 		var lbl := row.get_child(0) as Label
-		if lbl != null and lbl.text.begins_with("Size A") and row.get_child(1) is LineEdit:
+		if lbl != null and lbl.text.begins_with("W") and row.get_child(1) is LineEdit:
 			found_expr = true
 			var edit: LineEdit = row.get_child(1)
 			check(edit.text == "=w", "expression text preserved")

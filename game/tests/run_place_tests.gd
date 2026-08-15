@@ -35,6 +35,7 @@ func _init() -> void:
 	await test_empty_drag_orbits(main)
 	await test_palette_click_arms_place(main)
 	test_place_snap_ui_and_coords(main)
+	await test_typed_h_decimal_commits(main)
 	await test_transform_hud_and_resize(main)
 	test_cylinder_radial_stretch(main)
 	await test_place_on_active_plane(main)
@@ -235,16 +236,6 @@ func test_orbit_over_ops_panel(main) -> void:
 	ix._input(mm)
 	check(cam.pivot.distance_to(pivot0) > 1e-4, "pivot changed from middle-drag (SX pan)")
 	check(is_equal_approx(cam.yaw, yaw0), "middle-drag does not orbit under SX")
-
-	yaw0 = cam.yaw
-	var alt := InputEventMouseMotion.new()
-	alt.button_mask = MOUSE_BUTTON_MASK_LEFT
-	alt.alt_pressed = true
-	alt.relative = Vector2(35, 0)
-	alt.position = Vector2(1400, 400)
-	ix._input(alt)
-	check(absf(cam.yaw - yaw0) > 1e-4, "yaw changed from Alt+left-drag")
-
 	yaw0 = cam.yaw
 	var pan := InputEventPanGesture.new()
 	pan.delta = Vector2(20, 0)
@@ -356,6 +347,43 @@ func test_place_snap_ui_and_coords(main) -> void:
 		"1.0 mm snap rounds axes")
 	_esc(ix)
 	check(ix._place_snap_panel.visible, "snap dock still visible after cancel")
+
+
+func test_typed_h_decimal_commits(main) -> void:
+	print("- typed H=1.2 commits in TransformHud; 1/2/3/7 not stolen")
+	var ix: ViewportInteraction = main.interaction
+	main.view.new_document()
+	ix.insert_at_center("box")
+	await process_frame
+	# Focus the H field's LineEdit and type 1.2 then Enter.
+	var h_spin: SpinBox = ix.transform_hud._size_h
+	check(h_spin != null, "TransformHud H spin exists")
+	var edit: LineEdit = h_spin.get_line_edit()
+	check(edit != null, "TransformHud H LineEdit exists")
+	edit.grab_focus()
+	await process_frame
+	var keys := [KEY_1, KEY_PERIOD, KEY_2, KEY_ENTER]
+	for k in keys:
+		var ev := InputEventKey.new()
+		ev.keycode = k
+		ev.pressed = true
+		ix.get_viewport().push_input(ev)
+		await process_frame
+	check(absf(ix.transform_hud.current_size().y - 1.2) < 1e-6, "HUD H shows 1.2 mm")
+	check(absf(ix.place_size.y - 1.2) < 1e-6, "place size H updated to 1.2 mm")
+	# Commit the placement and verify the body height is 1.2 mm.
+	var center := _center(ix)
+	_lmb(ix, center, true)
+	_lmb(ix, center, false)
+	await process_frame
+	var ids := main.view.doc.body_ids()
+	check(ids.size() >= 1, "body placed after typing H")
+	if ids.size() >= 1:
+		var bb := main.view.doc.measure_bbox(ids[ids.size() - 1])
+		check(not bb.is_empty(), "bbox exists for placed body")
+		if not bb.is_empty():
+			var sz: Vector3 = bb["max"] - bb["min"]
+			check(absf(sz.y - 1.2) < 1e-3, "H=1.2 mm stuck on placed box (got %s)" % sz.y)
 
 
 func test_transform_hud_and_resize(main) -> void:

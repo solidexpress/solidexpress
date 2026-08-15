@@ -65,6 +65,7 @@
 #include "sx/sheet_metal.hpp"
 #include "sx/sketch_json.hpp"
 #include "sx/surface_ops.hpp"
+#include "sx/solver.hpp"
 
 using nlohmann::json;
 
@@ -894,6 +895,13 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 EntityId sketch_fid = EntityId::from_string(params.at("sketch").get<std::string>());
                 const Feature* skf = feature(sketch_fid);
                 if (!skf || !skf->sketch) return fail("missing sketch feature");
+                // Resolve "=expr" dimensions from VariableTable and solve before use.
+                {
+                    std::string xerr;
+                    skf->sketch->resolve_expressions(env, &xerr);
+                    auto solver = make_planegcs_backend();
+                    solver->solve(*skf->sketch);
+                }
                 std::string perr;
                 TopoDS_Shape face;
                 double thin_thickness = num_param(params, "thin_thickness", 0.0, env);
@@ -1102,7 +1110,17 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 EntityId target = find_feature_body("target");
                 const Body* tb = doc.body(target);
                 if (!tb) return fail("missing target body");
-                double diameter = num_param(params, "diameter", 0.0, env);
+                // Wave 6.2: support nominal + hole_compensation (+ clearance) when provided.
+                double diameter = 0.0;
+                if (params.contains("nominal")) {
+                    const double nominal = num_param(params, "nominal", 0.0, env);
+                    double comp = 0.0, clr = 0.0;
+                    if (auto it = env.find("hole_compensation"); it != env.end()) comp = it->second;
+                    if (auto it2 = env.find("clearance"); it2 != env.end()) clr = it2->second;
+                    diameter = nominal + comp + clr;
+                } else {
+                    diameter = num_param(params, "diameter", 0.0, env);
+                }
                 if (diameter <= 0.0) return fail("invalid diameter");
                 double depth_param = num_param(params, "depth", 0.0, env);
                 double depth = depth_param > 0.0 ? depth_param : k_hole_through;
@@ -1284,6 +1302,12 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     EntityId::from_string(params.at("sketch").get<std::string>());
                 const Feature* skf = feature(sketch_fid);
                 if (!skf || !skf->sketch) return fail("missing sketch feature");
+                {
+                    std::string xerr;
+                    skf->sketch->resolve_expressions(env, &xerr);
+                    auto solver = make_planegcs_backend();
+                    solver->solve(*skf->sketch);
+                }
                 std::string perr;
                 TopoDS_Shape face = skf->sketch->profile_face(&perr);
                 if (face.IsNull()) return fail("profile: " + perr);
@@ -1355,6 +1379,12 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     const Feature* skf = feature(sketch_fid);
                     if (!skf || !skf->sketch)
                         return fail("missing sketch feature " + std::to_string(i));
+                    {
+                        std::string xerr;
+                        skf->sketch->resolve_expressions(env, &xerr);
+                        auto solver = make_planegcs_backend();
+                        solver->solve(*skf->sketch);
+                    }
                     std::string perr;
                     TopoDS_Shape face_shape = skf->sketch->profile_face(&perr);
                     if (face_shape.IsNull())
@@ -1655,6 +1685,12 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                                                params["sketch"].get<std::string>()))
                                          : nullptr;
                 if (!skf || !skf->sketch) return fail("rib needs a sketch profile");
+                {
+                    std::string xerr;
+                    skf->sketch->resolve_expressions(env, &xerr);
+                    auto solver = make_planegcs_backend();
+                    solver->solve(*skf->sketch);
+                }
                 std::vector<gp_Pnt> profile;
                 for (const auto& jp : sketch_ordered_polyline(*skf->sketch))
                     profile.push_back(pnt_from(jp));
@@ -1693,6 +1729,12 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                                                params["sketch"].get<std::string>()))
                                          : nullptr;
                 if (!skf || !skf->sketch) return fail("wrap needs a sketch profile");
+                {
+                    std::string xerr;
+                    skf->sketch->resolve_expressions(env, &xerr);
+                    auto solver = make_planegcs_backend();
+                    solver->solve(*skf->sketch);
+                }
                 std::string perr;
                 TopoDS_Shape profile = skf->sketch->profile_face(&perr);
                 if (profile.IsNull()) return fail("wrap profile: " + perr);

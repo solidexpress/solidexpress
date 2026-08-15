@@ -1425,12 +1425,13 @@ func _commit_spline() -> void:
 	if _spline_pts.size() < 2:
 		_spline_pts.clear()
 		return
-	var densified := _densify_fit_spline(_spline_pts)
-	for i in range(densified.size() - 1):
-		var a: Vector2 = densified[i]
-		var b: Vector2 = densified[i + 1]
-		if a.distance_to(b) > 1e-6:
-			sketch.add_line(a.x, a.y, b.x, b.y)
+	# Commit as a kernel spline entity (fit points), not an approximated polyline.
+	# Preview continues to use a densified Catmull-Rom for on-canvas feedback.
+	var fit: PackedVector2Array = []
+	for p in _spline_pts:
+		fit.push_back(p)
+	if fit.size() >= 2:
+		sketch.add_spline(fit)
 	_spline_pts.clear()
 	_redraw()
 

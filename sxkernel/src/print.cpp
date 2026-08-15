@@ -11,9 +11,11 @@
 #include <GeomLProp_SLProps.hxx>
 #include <Geom_Surface.hxx>
 #include <IntCurvesFace_ShapeIntersector.hxx>
+#include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Pnt.hxx>
@@ -159,17 +161,31 @@ PrintReport analyze_with(const Document& doc, const EntityId& body, const PrintS
     const double sin_th = std::sin(setup.overhang_deg * 3.14159265358979323846 / 180.0);
     double min_t = 1e9;
     double over_a = 0.0;
-    for (TopExp_Explorer ex(b->shape, TopAbs_FACE); ex.More(); ex.Next()) {
-        const TopoDS_Face f = TopoDS::Face(ex.Current());
+    // Map faces to a stable OCCT order that matches Body::subshape_ids.
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(b->shape, TopAbs_FACE, faces);
+    const auto& face_ids = b->subshape_ids.at(EntityKind::Face);
+    r.thin_faces.clear();
+    r.overhang_face_areas.clear();
+    for (int fi = 1; fi <= faces.Extent(); ++fi) {
+        const TopoDS_Face f = TopoDS::Face(faces(fi));
         const gp_Pnt mid = face_mid(f);
         const gp_Dir n = face_normal(f);
         const double t = ray_thickness(b->shape, mid, n);
         if (t > 1e-6 && t < min_t) min_t = t;
+        // Paint: flag thin faces.
+        if (t > 1e-6 && t + 1e-6 < setup.min_wall) {
+            r.thin_faces.push_back(face_ids[static_cast<size_t>(fi - 1)]);
+        }
 
         const auto n_p = mul(setup.rot, {n.X(), n.Y(), n.Z()});
         const auto m_p = mul(setup.rot, {mid.X(), mid.Y(), mid.Z()});
         const bool on_bed = std::abs(m_p[2] - pz0) < 1e-3;
-        if (!on_bed && n_p[2] < -sin_th) over_a += face_area(f);
+        if (!on_bed && n_p[2] < -sin_th) {
+            const double a = face_area(f);
+            over_a += a;
+            r.overhang_face_areas.emplace_back(face_ids[static_cast<size_t>(fi - 1)], a);
+        }
     }
     r.min_wall = min_t > 1e8 ? 0.0 : min_t;
     r.overhang_area = over_a;

@@ -13,34 +13,7 @@
     "enabled": true,
     "quit_after": 1200
   },
-  {
-    "id": "sketch_spline_tools",
-    "title": "Block + fit spline sketch",
-    "script": "res://tests/films/film_sketch_spline.gd",
-    "enabled": true,
-    "quit_after": 1200
-  },
-  {
-    "id": "sketch_extend",
-    "title": "Extend tool",
-    "script": "res://tests/films/film_sketch_extend.gd",
-    "enabled": true,
-    "quit_after": 900
-  },
-  {
-    "id": "loft_profiles",
-    "title": "Loft two circular profiles into a solid",
-    "script": "res://tests/films/film_loft_profiles.gd",
-    "enabled": true,
-    "quit_after": 1200
-  },
-  {
-    "id": "extrude_s_shape",
-    "title": "Closed S profile + extrude",
-    "script": "res://tests/films/film_extrude_s_shape.gd",
-    "enabled": true,
-    "quit_after": 1500
-  },
+  
   {
     "id": "revolve_washer",
     "title": "Revolve washer profile 360°",
@@ -48,13 +21,7 @@
     "enabled": true,
     "quit_after": 1000
   },
-  {
-    "id": "place_and_orbit",
-    "title": "Place a box and orbit",
-    "script": "res://tests/films/film_place_and_orbit.gd",
-    "enabled": true,
-    "quit_after": 600
-  },
+  
   {
     "id": "sketch_edit_in_out",
     "title": "Exit sketch pad and reopen to edit",

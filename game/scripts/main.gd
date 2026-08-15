@@ -11,6 +11,7 @@ var camera: OrbitCamera
 var interaction: ViewportInteraction
 ## Canyon HDRI world env; section mode swaps to a flat clear color.
 var _world_env: WorldEnvironment
+var bed_ghost: PrintBedGhost
 var card_panel: RichTextLabel
 var card_box: PanelContainer
 var status_label: Label
@@ -43,7 +44,7 @@ var notes_edit: TextEdit
 var file_dialog: FileDialog
 var confirm_dialog: ConfirmationDialog
 var current_path := ""
-enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF }
+enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF, OPEN_IN_SLICER }
 var _file_action: FileAction = FileAction.NONE
 var _pending_discard: Callable = Callable()
 var _file_popup: PopupMenu
@@ -141,6 +142,10 @@ func _build_world() -> void:
 	view.name = "DocumentView"
 	view.section_changed.connect(_on_section_changed)
 	model_space.add_child(view)
+	# Bed ghost overlay (hidden by default; Form only).
+	bed_ghost = PrintBedGhost.new()
+	bed_ghost.name = "PrintBedGhost"
+	model_space.add_child(bed_ghost)
 
 	sketch_mode = SketchMode.new()
 	sketch_mode.name = "SketchMode"
@@ -254,6 +259,7 @@ func _build_ui() -> void:
 	_file_popup.add_item("Export STL...", 6)
 	_file_popup.add_item("Export 3MF...", 11)
 	_file_popup.add_item("Export glTF...", 12)
+	_file_popup.add_item("Open in Slicer...", 15)
 	_file_popup.add_separator()
 	_file_popup.add_item("Export AI Context...", 7)
 	_file_popup.add_item("Export Drawing (SVG)...", 8)
@@ -310,6 +316,10 @@ func _build_ui() -> void:
 	insert_popup.add_item("Datum Axis Z", 5)
 	insert_popup.add_separator()
 	insert_popup.add_item("Datum Point at Origin", 6)
+	insert_popup.add_separator()
+	# Surface Thread alongside Insert for reachability (also available in Ops).
+	# Hook: default to Modeled when Mode rail is “Form” once API exists.
+	insert_popup.add_item("Thread…", 20)
 	insert_popup.id_pressed.connect(_on_insert_menu)
 
 	var mode_btn := MenuButton.new()
@@ -354,6 +364,8 @@ func _build_ui() -> void:
 	print_strip.name = "PrintStrip"
 	print_strip.visible = false
 	top_chrome.add_child(print_strip)
+	print_strip.view = view
+	print_strip.bed_ghost = bed_ghost
 	print_strip.analyze_requested.connect(_on_print_analyze)
 	print_strip.orient_requested.connect(_on_print_orient)
 
@@ -404,6 +416,30 @@ func _build_ui() -> void:
 		"Sketch: select a face or existing sketch to enter sketch mode")
 	sketch_btn.pressed.connect(_request_sketch)
 	vbox.add_child(sketch_btn)
+	# Wave 6.5: simple mechanic-tool catalog (shop tooling).
+	vbox.add_child(HSeparator.new())
+	for entry in [
+			["driver_bit", "Hex driver blank (AF from jaw_af or 10 mm)"],
+			["hex_socket", "Hex socket blank (internal hex)"],
+			["wrench_open", "Open-end wrench head (blank)"],
+			["nozzle", "Nozzle hex (blank)"],
+		]:
+		var b := UIIcons.button(entry[0], "", entry[1])
+		match entry[0]:
+			"driver_bit":
+				b.pressed.connect(func() -> void:
+					var _id := view.insert_hex_driver_blank())
+			"hex_socket":
+				b.pressed.connect(func() -> void:
+					var _id := view.insert_hex_socket_blank())
+			"wrench_open":
+				b.pressed.connect(func() -> void:
+					var _id := view.insert_open_end_blank())
+			"nozzle":
+				b.pressed.connect(func() -> void:
+					# Represent nozzle hex as a short driver blank for now.
+					var _id := view.insert_hex_driver_blank(7.0, 6.0))
+		vbox.add_child(b)
 
 	# Selection properties card — docks under the left rail when shown.
 	card_box = PanelContainer.new()
@@ -1240,13 +1276,15 @@ func _on_sketch_dim_submitted(value: float) -> void:
 	_apply_dimension()
 
 
-func _on_sketch_finish(op: String, distance: float) -> void:
+func _on_sketch_finish(op: String, distance: float, end: String = "blind",
+		thin_thickness: float = 0.0, thin_type: String = "one_side",
+		flip_side: bool = false, selected_contours: Array = []) -> void:
 	extrude_distance.value = distance
 	match op:
 		"cut": finish_op.selected = 1
 		"fuse": finish_op.selected = 2
 		_: finish_op.selected = 0
-	sketch_mode.finish_extrude(distance, op)
+	sketch_mode.finish_extrude(distance, op, end, thin_thickness, thin_type, flip_side, selected_contours)
 
 
 func _selected_entity() -> String:
@@ -1322,6 +1360,9 @@ func _on_print_analyze() -> void:
 	if view == null or view.doc == null:
 		return
 	var r: Dictionary = view.doc.print_analyze(_print_target())
+	# Seed paint maps for Wave 6.3
+	if view.has_method("set_paint_data"):
+		view.call("set_paint_data", r)
 	var digest := str(r.get("digest", ""))
 	if print_strip != null:
 		print_strip.set_digest(digest)
@@ -1334,6 +1375,9 @@ func _on_print_orient() -> void:
 	if view == null or view.doc == null:
 		return
 	var r: Dictionary = view.doc.print_orient(_print_target())
+	# Seed paint maps after orient as well.
+	if view.has_method("set_paint_data"):
+		view.call("set_paint_data", r)
 	var digest := str(r.get("digest", ""))
 	if print_strip != null:
 		print_strip.set_digest(digest)
@@ -1385,6 +1429,12 @@ func _update_mode_overlays() -> void:
 		sheet_metal_view.show_split(_work_mode == "Sheet", flat, 0.44)
 	if print_strip != null:
 		print_strip.visible = _work_mode == "Form"
+	# Bed ghost visible in Form only (gate the toggle).
+	if bed_ghost != null:
+		var on := false
+		if print_strip != null and is_instance_valid(print_strip._bed_toggle):
+			on = print_strip._bed_toggle.button_pressed
+		bed_ghost.visible = (_work_mode == "Form") and on
 
 
 ## Selection card sits under the visible left rail (palette / modify / sketch).
@@ -1665,6 +1715,12 @@ func _on_file_menu(id: int) -> void:
 			_show_file_dialog(FileAction.EXPORT_3MF, FileDialog.FILE_MODE_SAVE_FILE, "*.3mf ; 3MF")
 		12:
 			_show_file_dialog(FileAction.EXPORT_GLTF, FileDialog.FILE_MODE_SAVE_FILE, "*.gltf ; glTF")
+		15:
+			var res := OpenInSlicer.open_in_slicer(view.doc, OS.has_feature("headless"))
+			if res.get("files", PackedStringArray()).size() > 0:
+				_on_status("Open in Slicer prepared %d file(s)" % res["files"].size())
+			else:
+				_on_status("Open in Slicer failed (no files)")
 		13:
 			_show_file_dialog(FileAction.EXPORT_DRAWING_DXF, FileDialog.FILE_MODE_SAVE_FILE, "*.dxf ; DXF drawing")
 		14:
@@ -1777,6 +1833,10 @@ func _on_insert_menu(id: int) -> void:
 	if id == 10:
 		_show_file_dialog(FileAction.INSERT_SXP, FileDialog.FILE_MODE_OPEN_FILE,
 			"*.sxp ; SolidExpress")
+		return
+	if id == 20:
+		if ops_panel != null:
+			ops_panel._apply_thread()
 		return
 	var did := ""
 	match id:

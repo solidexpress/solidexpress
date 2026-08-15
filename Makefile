@@ -53,8 +53,10 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_insert_component_tests.gd
 	$(GODOT) --headless --path game --script tests/run_drag_tests.gd
 	$(GODOT) --headless --path game --script tests/run_voice_tests.gd
+	$(GODOT) --headless --path game --script tests/run_catalog_tool_tests.gd
 	$(GODOT) --headless --path game --script tests/run_howto_tests.gd
 	$(GODOT) --headless --path game --script tests/run_print_tests.gd
+	$(GODOT) --headless --path game --script tests/run_see_the_print_tests.gd
 	$(GODOT) --headless --path game --script tests/run_sketch_to_3d_ui_tests.gd
 	$(GODOT) --headless --path game --script tests/run_ui_button_coverage_tests.gd
 	$(GODOT) --headless --path game --script tests/run_film_manifest_smoke.gd

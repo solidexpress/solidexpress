@@ -56,6 +56,12 @@ if(MSVC)
 else()
   target_compile_options(planegcs PRIVATE -w)  # vendored code: silence warnings
 endif()
+# libsxcore resolves PlaneGCS via RUNPATH=$ORIGIN, so the shared library must
+# sit beside it in game/bin (fresh checkouts previously left it in build/,
+# breaking every Godot suite and the packaged Linux bundle).
+set_target_properties(planegcs PROPERTIES
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game/bin"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/game/bin")
 # Sibling lookup for packaged releases (game/bin or next to the Godot binary).
 if(APPLE)
   set_target_properties(planegcs PROPERTIES

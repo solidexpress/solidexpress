@@ -71,6 +71,11 @@ const GLYPHS := {
 	"cancel": "<path d='M6 6l12 12M18 6 6 18'/>",
 	"ok": "<path d='M5 13l4.5 4.5L19 7'/>",
 	"mic": "<path d='M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z'/><path d='M7.5 11.5a4.5 4.5 0 0 0 9 0M12 16v3.5M9.5 19.5h5'/>",
+	# --- mechanic tools (Wave 6.5) ---
+	"wrench_open": "<path d='M6 8a4 4 0 0 1 6-3l-2 2 2 2a4 4 0 0 1-6 3'/><path d='M8 14l7 7'/>",
+	"hex_socket": "<circle cx='12' cy='12' r='7'/><path d='M12 6l4 2.3v4.4L12 15l-4-2.3V8.3z'/>",
+	"driver_bit": "<path d='M7 7h10v10H7z'/><path d='M9 5h6v2H9zM9 17h6v2H9z'/>",
+	"nozzle": "<path d='M6 9h12l-3 8H9z'/><path d='M9 9l1.5-3h3L15 9'/>"
 }
 
 static var _cache := {}

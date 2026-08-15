@@ -106,7 +106,9 @@ func _ready() -> void:
 	# No font_size override — matches Shade / Section / Frame button text.
 	strip_row.add_child(view_lbl)
 	_views_drop_btn = Button.new()
-	_views_drop_btn.text = "▼"
+	# Use an icon for the dropdown rather than a cryptic text glyph.
+	_views_drop_btn.text = ""
+	_views_drop_btn.icon = UIIcons.get_icon("down", 14)
 	_views_drop_btn.tooltip_text = "Show default and saved views"
 	_views_drop_btn.custom_minimum_size = Vector2(22, 0)
 	_compact_icon_btn(_views_drop_btn)

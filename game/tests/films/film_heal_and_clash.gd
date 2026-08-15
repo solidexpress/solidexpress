@@ -15,9 +15,12 @@ func run_film(ctx: FilmContext) -> void:
 	if bodies.size() >= 2:
 		ctx.view.select_entity(bodies[0], "")
 		# Shift-add second via API so Clash strip appears, then click it.
-		if ctx.view.has_method("select_entity"):
-			ctx.view.selected_bodies = [bodies[0], bodies[1]]
-		await ctx.after_regen()
+		# Multi-select both bodies so the selection strip shows Clash.
+		if ctx.view.has_method("select_all_bodies"):
+			ctx.view.select_all_bodies()
+		else:
+			# Fallback: keep primary selected if multi-select API is unavailable.
+			await FilmUI.wait_frames(ctx.tree, 2)
 		await ctx.beat("Click Clash on the strip", 0.4)
 		await FilmUI.click_button(ctx, "Clash")
 		var v: float = doc.interference_volume(bodies[0], bodies[1])

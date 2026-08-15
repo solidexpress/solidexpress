@@ -71,8 +71,8 @@ const TABLE: Array[Dictionary] = [
 	{"keys": "Del", "context": "Sketch", "desc": "Delete the selected constraint badge"},
 	{"keys": "Click dimension", "context": "Sketch", "desc": "Edit the value in place (Enter commits)"},
 	{"keys": "Digits / finish-bar mm", "context": "Sketch", "desc": "While rubber-banding (1 DOF): type length/radius; Enter places; Esc unlocks"},
-	{"keys": "Right-click", "context": "Sketch", "desc": "End line chain"},
-	{"keys": "Esc", "context": "Sketch", "desc": "Clear measure ✕, then discard sketch"},
+	{"keys": "Right-click / Done", "context": "Sketch", "desc": "End line / spline chain (Auto-close may close the loop)"},
+	{"keys": "Esc", "context": "Sketch", "desc": "Clear measure ✕, unlock length, end chain, or discard sketch"},
 	{"keys": "Exit Sketch", "context": "Sketch", "desc": "Commit sketch (yellow pad) and restore camera"},
 	# Timeline (timeline_panel.gd)
 	{"keys": "Drag row", "context": "Timeline", "desc": "Reorder features (blocked drops flash red)"},
@@ -99,6 +99,12 @@ static func by_context() -> Dictionary:
 
 static func describe(keys: String) -> String:
 	for entry in TABLE:
-		if entry["keys"] == keys:
+		var k: String = entry["keys"]
+		if k == keys:
 			return entry["desc"]
+		# Slash-separated alternatives ("F / Home") also match each token.
+		if " / " in k:
+			for part in k.split(" / "):
+				if part == keys:
+					return entry["desc"]
 	return ""

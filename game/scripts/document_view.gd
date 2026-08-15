@@ -51,6 +51,11 @@ var display_mode := DisplayMode.SHADED_EDGES
 ## Edge overlay lines are not clipped in v1.
 var section_enabled := false
 var zebra_enabled := false
+# Wave 6.3 paint toggles and per-face maps
+var thickness_paint_enabled := false
+var overhang_paint_enabled := false
+var _thin_faces := {}        # face_id -> true
+var _overhang_faces := {}    # face_id -> true
 ## Body ids currently hidden from view / picking (id -> true).
 var hidden_bodies := {}
 ## Body ids remembered by Copy/Cut for Paste (cut clones may be hidden).
@@ -271,6 +276,31 @@ func set_zebra(on: bool) -> void:
 	refresh()
 
 
+# --- Wave 6.3: analysis paint API ---
+func set_thickness_paint(on: bool) -> void:
+	thickness_paint_enabled = on
+	refresh()
+
+
+func set_overhang_paint(on: bool) -> void:
+	overhang_paint_enabled = on
+	refresh()
+
+
+## Called with the result of print_analyze / print_orient to seed paint maps.
+func set_paint_data(report: Dictionary) -> void:
+	_thin_faces.clear()
+	_overhang_faces.clear()
+	if report.has("thin_faces"):
+		for f in report["thin_faces"]:
+			_thin_faces[str(f)] = true
+	if report.has("overhang_face_area"):
+		for f in report["overhang_face_area"].keys():
+			if float(report["overhang_face_area"][f]) > 0.0:
+				_overhang_faces[str(f)] = true
+	_apply_selection_materials()
+
+
 ## Enable section-view clipping. Fragments with
 ## `dot(world_pos - point, normal) > 0` are discarded on body meshes.
 ## Edge overlay lines are left unclipped in v1.
@@ -394,6 +424,88 @@ func insert_primitive(kind: String, world_point: Vector3, size := Vector3.ZERO,
 	if id != "":
 		select_entity(id, "")
 	return id
+
+
+# --- Wave 6.5: mechanic-tool inserts (built from sketch + extrude / booleans) ---
+
+## Read `jaw_af` from variables when present; default 10.0 mm when missing.
+func _default_jaw_af() -> float:
+	for v in doc.list_variables():
+		var name := str(v.get("name", "")).strip_edges()
+		if name == "jaw_af":
+			var val := v.get("value", NAN)
+			if typeof(val) == TYPE_FLOAT and not is_nan(val):
+				return float(val)
+			var expr := str(v.get("expr", ""))
+			var parsed := expr.to_float()
+			if parsed > 0.0:
+				return parsed
+	return 10.0
+
+
+## Build a hexagonal prism aligned Z-up with across-flats `af_mm` and height `length_mm`.
+## Uses a 30°-rotated hex so the AABB X-span equals AF exactly.
+func insert_hex_driver_blank(af_mm := 0.0, length_mm := 20.0, origin := Vector3.ZERO) -> String:
+	var af := af_mm if af_mm > 0.0 else _default_jaw_af()
+	var R := af / sqrt(3.0)
+	var sk := SxSketch.new()
+	sk.set_plane(origin, Vector3(1, 0, 0), Vector3(0, 1, 0))
+	var pts: PackedVector2Array = []
+	for i in range(6):
+		var th := deg_to_rad(30.0 + float(i) * 60.0)
+		pts.append(Vector2(R * cos(th), R * sin(th)))
+	for i in range(6):
+		var a := pts[i]
+		var b := pts[(i + 1) % 6]
+		sk.add_line(a.x, a.y, b.x, b.y)
+	var sk_fid: String = doc.graph_add_sketch(sk)
+	if sk_fid == "":
+		return ""
+	var ex_fid: String = doc.graph_add_extrude(sk_fid, length_mm, false, "new", "")
+	if ex_fid == "":
+		return ""
+	var id := body_of_feature(ex_fid)
+	_after_mutation()
+	if id != "":
+		select_entity(id, "")
+	return id
+
+
+## Cylinder with a through hex cut (internal hex socket). Returns the body id.
+func insert_hex_socket_blank(af_mm := 0.0, height_mm := 20.0, outer_d_mm := 0.0, origin := Vector3.ZERO) -> String:
+	var af := af_mm if af_mm > 0.0 else _default_jaw_af()
+	var od := outer_d_mm if outer_d_mm > 0.0 else maxf(af * 1.8, af + 6.0)
+	var cyl: String = doc.add_cylinder(od * 0.5, height_mm, origin)
+	if cyl == "":
+		return ""
+	# Make a slightly taller hex and cut it through.
+	var hex: String = insert_hex_driver_blank(af, height_mm + 2.0, origin - Vector3(0, 0, 1.0))
+	if hex == "":
+		return cyl
+	boolean_bodies(cyl, hex, "cut")
+	_after_mutation()
+	select_entity(cyl, "")
+	return cyl
+
+
+## Open-end wrench head blank: rectangular pad with a side-open hex notch.
+## Geometry is approximate; AF tracks `jaw_af` (or 10 mm fallback).
+func insert_open_end_blank(af_mm := 0.0, thickness_mm := 8.0, origin := Vector3.ZERO) -> String:
+	var af := af_mm if af_mm > 0.0 else _default_jaw_af()
+	var width := af * 2.0
+	var length := af * 3.0
+	# Base block centered at origin on XY; height along +Z.
+	var base: String = doc.add_box(length, width, thickness_mm, origin - Vector3(length * 0.5, width * 0.5, 0.0))
+	if base == "":
+		return ""
+	# Hex notch near one end, open to the side (positive Y).
+	var notch_center := origin + Vector3(-length * 0.25, width * 0.5 - af * 0.35, 0.0)
+	var hex: String = insert_hex_driver_blank(af, thickness_mm + 2.0, notch_center - Vector3(0, 0, 1.0))
+	if hex != "":
+		boolean_bodies(base, hex, "cut")
+	_after_mutation()
+	select_entity(base, "")
+	return base
 
 
 # --- feature graph helpers ---
@@ -2009,7 +2121,7 @@ func _apply_selection_materials() -> void:
 			var body_hovered: bool = body_id == hovered_body and hovered_face == "" \
 				and hovered_edge == "" and not whole_body_selected and not face_selected
 			var mat: Material
-			var clip := section_enabled or zebra_enabled
+			var clip := section_enabled or zebra_enabled or thickness_paint_enabled or overhang_paint_enabled
 			if display_mode == DisplayMode.WIREFRAME:
 				if clip:
 					mat = _make_section_material(Color(0, 0, 0, 0))
@@ -2041,7 +2153,14 @@ func _apply_selection_materials() -> void:
 					mat = _hover_body_material
 			else:
 				if clip:
+					# Base albedo, with optional analysis paint highlight per face.
 					var c: Color = base.get_shader_parameter("albedo_color")
+					if thickness_paint_enabled and face_here != "" and _thin_faces.has(face_here):
+						# Thin faces: warm red/orange
+						c = Color(0.95, 0.35, 0.30)
+					elif overhang_paint_enabled and face_here != "" and _overhang_faces.has(face_here):
+						# Overhang faces: amber
+						c = Color(0.98, 0.70, 0.25)
 					mat = _make_section_material(c)
 				else:
 					mat = base

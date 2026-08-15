@@ -76,6 +76,7 @@ var _strip_fuse: Button
 var _strip_cut: Button
 var _strip_common: Button
 var _strip_hole: Button
+var _strip_hole_wizard: Button
 var _strip_clash: Button
 var _strip_triball: Button
 var connector_overlay: ConnectorOverlay
@@ -280,6 +281,14 @@ func _build_selection_strip() -> void:
 	_strip_hole.tooltip_text = "M6 through-all on the selected face / sketch points"
 	_strip_hole.pressed.connect(_ctx_hole_m6)
 	row.add_child(_strip_hole)
+	_strip_hole_wizard = Button.new()
+	_strip_hole_wizard.name = "StripHoleWizard"
+	_strip_hole_wizard.text = "Hole Wizard…"
+	_strip_hole_wizard.tooltip_text = "Arm Hole Wizard to multi-place holes on a face"
+	_strip_hole_wizard.pressed.connect(func() -> void:
+		if ops_panel != null:
+			ops_panel._arm_hole_wizard())
+	row.add_child(_strip_hole_wizard)
 	_strip_clash = Button.new()
 	_strip_clash.name = "StripClash"
 	_strip_clash.text = "Clash"
@@ -372,6 +381,23 @@ func _rebuild_orient_popup() -> void:
 						status.emit("Restored view “%s”" % n)
 					_orient_popup.hide())
 				col.add_child(nb)
+	# Offer a one-click path to create while palettes may be hidden (e.g. Form).
+	col.add_child(HSeparator.new())
+	var create_lbl := Label.new()
+	create_lbl.text = "Create"
+	create_lbl.add_theme_font_size_override("font_size", 11)
+	col.add_child(create_lbl)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	col.add_child(row)
+	for entry in ["box", "cylinder", "sphere", "cone", "torus"]:
+		var b := Button.new()
+		b.text = entry.capitalize()
+		var kind := String(entry)
+		b.pressed.connect(func() -> void:
+			_arm_place(kind)
+			_orient_popup.hide())
+		row.add_child(b)
 
 
 func _build_dim_edit_popup() -> void:
@@ -2743,6 +2769,13 @@ func _gui_key(event: InputEventKey) -> bool:
 			# Sketch Esc is handled in _sketch_input; do not steal it.
 			if sketch_mode != null and sketch_mode.active:
 				return false
+			# Dismiss overlapping panels/popups first to avoid undismissable stacks.
+			if transform_hud != null and transform_hud.visible:
+				transform_hud.dismiss()
+				return true
+			if _orient_popup != null and _orient_popup.visible:
+				_orient_popup.hide()
+				return true
 			if _drag_mode == DragMode.BOX_SELECT or (_pressed and _press_empty and _box_rect.size != Vector2.ZERO):
 				_pressed = false
 				_clear_box_band()
@@ -3364,10 +3397,16 @@ func _input(event: InputEvent) -> void:
 		if camera.handle_input(event, true):
 			get_viewport().set_input_as_handled()
 			return
-	if camera != null and camera.is_nav_event(event, allow_scroll):
-		if camera.handle_input(event, allow_scroll):
-			get_viewport().set_input_as_handled()
-			return
+	# Suppress camera nav keys while a text edit control owns focus so digits
+	# (1/2/3/7) type into numeric fields (e.g. TransformHud / PropertyPanel).
+	if camera != null:
+		var block_nav := false
+		if event is InputEventKey:
+			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
+		if not block_nav and camera.is_nav_event(event, allow_scroll):
+			if camera.handle_input(event, allow_scroll):
+				get_viewport().set_input_as_handled()
+				return
 	# Place mode uses viewport mouse coords so ghost/commit work even when the
 	# cursor is "over" a sibling Control or Interaction fails hit-tests.
 	if _place_kind != "" and sketch_mode != null and sketch_mode.active:
@@ -3568,6 +3607,7 @@ func _refresh_selection_strip() -> void:
 	_strip_common.visible = multi_body
 	_strip_fillet.visible = not has_instance
 	_strip_hole.visible = not has_instance
+	_strip_hole_wizard.visible = not has_instance
 	_strip_clash.visible = multi_body
 	_strip_triball.visible = not has_instance
 	_strip_sketch.visible = not has_instance and view.selected_face != ""
