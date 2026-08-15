@@ -2764,6 +2764,15 @@ func _on_release(pos: Vector2) -> void:
 func _gui_key(event: InputEventKey) -> bool:
 	if not event.pressed:
 		return false
+	# Digits / view keys must not fire while a spinbox or line edit has focus
+	# (Wave 6.1 — typing H=1.2 must stick).
+	if SxUi.numeric_field_focused(get_viewport()) \
+			and not event.ctrl_pressed and not event.meta_pressed:
+		match event.keycode:
+			KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, \
+			KEY_PERIOD, KEY_MINUS, KEY_W, KEY_H, KEY_D, KEY_F, KEY_X, KEY_Y, KEY_Z, \
+			KEY_K, KEY_G, KEY_S, KEY_I, KEY_SPACE:
+				return false
 	match event.keycode:
 		KEY_ESCAPE:
 			# Sketch Esc is handled in _sketch_input; do not steal it.

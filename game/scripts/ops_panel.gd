@@ -86,21 +86,7 @@ func _ready() -> void:
 
 func _labeled_spin(parent: Container, text: String, min_v: float, max_v: float,
 		step: float, value: float) -> SpinBox:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.custom_minimum_size = Vector2(80, 0)
-	lbl.add_theme_font_size_override("font_size", 11)
-	row.add_child(lbl)
-	var spin := SpinBox.new()
-	spin.min_value = min_v
-	spin.max_value = max_v
-	spin.step = step
-	spin.value = value
-	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(spin)
-	return spin
+	return SxUi.labeled_spin(parent, text, min_v, max_v, step, value, step >= 1.0 and is_equal_approx(step, roundf(step)))
 
 
 func _op_button(parent: Container, text: String, handler: Callable,
@@ -454,8 +440,30 @@ func _apply_dressup(fillet: bool) -> void:
 	if ok:
 		view.graph_changed()
 		status.emit("%s %s %.1f applied" % [name, scope, value])
+		_open_last_feature("fillet" if fillet else "chamfer")
 	else:
 		status.emit("%s failed (value too large?)" % name)
+
+
+func _open_last_feature(ftype: String) -> void:
+	var main := _find_main()
+	if main == null or not main.has_method("open_feature_params"):
+		return
+	var fid := ""
+	for f in view.doc.graph_features():
+		if str(f.get("type", "")) == ftype:
+			fid = str(f.get("id", ""))
+	if fid != "":
+		main.open_feature_params(fid)
+
+
+func _find_main() -> Node:
+	var n: Node = self
+	while n != null:
+		if n.has_method("open_feature_params"):
+			return n
+		n = n.get_parent()
+	return null
 
 
 func _mirror() -> void:
@@ -606,6 +614,7 @@ func _apply_thread() -> void:
 	if tid != "":
 		view.graph_changed()
 		status.emit("Thread Ø%.1f pitch %.2f (%d turns)" % [2.0 * major_r, pitch, int(turns)])
+		_open_last_feature("thread")
 	else:
 		status.emit("Thread failed")
 
@@ -836,6 +845,7 @@ func _commit_holes(body: String, face: String, positions: PackedVector3Array,
 	if hole_fid != "":
 		view.graph_changed()
 		status.emit("Hole Wizard: %d × Ø%.1f" % [positions.size(), d])
+		_open_last_feature("hole")
 		return true
 	status.emit("Hole Wizard failed")
 	return false
@@ -869,6 +879,7 @@ func _commit_hole(body: String, face: String, position: Vector3) -> bool:
 	if hole_fid != "":
 		view.graph_changed()
 		status.emit("Hole Ø%.1f at (%.1f, %.1f, %.1f)" % [d, position.x, position.y, position.z])
+		_open_last_feature("hole")
 		return true
 	status.emit("Hole failed")
 	return false

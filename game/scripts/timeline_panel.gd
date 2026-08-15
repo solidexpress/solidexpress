@@ -41,30 +41,34 @@ const TYPE_ICONS := {
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(260, 0)
-	var vbox := VBoxContainer.new()
-	add_child(vbox)
+	grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var outer := VBoxContainer.new()
+	outer.name = "TimelineOuter"
+	add_child(outer)
 	var title := Label.new()
 	title.text = "Timeline"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(250, 180)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_child(scroll)
+	outer.add_child(title)
+	_scroll = ScrollContainer.new()
+	_scroll.name = "TimelineScroll"
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scroll.custom_minimum_size = Vector2(250, 120)
+	outer.add_child(_scroll)
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_list)
+	_scroll.add_child(_list)
 
 	# Structured property editor (typed fields, live preview). The raw JSON
 	# editor below stays available behind an "advanced" toggle.
 	property_panel = PropertyPanel.new()
 	property_panel.view = view
 	property_panel.status.connect(func(t: String) -> void: status.emit(t))
-	vbox.add_child(property_panel)
+	outer.add_child(property_panel)
 
 	_editor_box = VBoxContainer.new()
 	_editor_box.visible = false
-	vbox.add_child(_editor_box)
+	outer.add_child(_editor_box)
 	_json_toggle = CheckButton.new()
 	_json_toggle.text = "Params (JSON, advanced)"
 	_json_toggle.add_theme_font_size_override("font_size", 11)
@@ -84,7 +88,34 @@ func _ready() -> void:
 	_editor_box.add_child(apply_btn)
 
 	view.document_changed.connect(refresh)
+	if get_viewport() != null:
+		get_viewport().size_changed.connect(_clamp_height)
 	refresh()
+	_clamp_height()
+
+
+var _scroll: ScrollContainer
+
+
+func _clamp_height() -> void:
+	await get_tree().process_frame
+	if not is_instance_valid(self):
+		return
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var budget := vp.get_visible_rect().size.y - 42.0 - 12.0  # status bar + pad
+	# Stay above the status bar; grow upward from the bottom-left anchor.
+	var want := get_combined_minimum_size().y
+	custom_minimum_size = Vector2(260, minf(want, maxf(160.0, budget * 0.55)))
+	offset_top = -custom_minimum_size.y - 12.0
+	offset_bottom = -42.0
+	reset_size()
+	if property_panel != null and property_panel.visible and _scroll != null:
+		# Keep the property panel in view when it opens.
+		await get_tree().process_frame
+		if is_instance_valid(property_panel) and is_instance_valid(_scroll):
+			_scroll.ensure_control_visible(property_panel)
 
 
 func refresh() -> void:
@@ -250,6 +281,11 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	edit_btn.pressed.connect(func() -> void: _begin_rename(fid, row, name_btn))
 	row.add_child(edit_btn)
 
+	if PropertyPanel.has_schema(str(f["type"])):
+		var params_btn := UIIcons.button("dimension", "", "Edit this feature's parameters")
+		params_btn.pressed.connect(func() -> void: _select_feature(fid))
+		row.add_child(params_btn)
+
 	var up := UIIcons.button("up", "", "Move up the timeline")
 	up.disabled = index <= 0
 	up.pressed.connect(func() -> void: _move_feature(fid, index - 1))
@@ -334,6 +370,7 @@ func _select_feature(fid: String) -> void:
 		# editor stays available behind the advanced toggle either way.
 		if PropertyPanel.has_schema(f["type"]):
 			property_panel.open(fid)
+			_clamp_height()
 		else:
 			property_panel.visible = false
 		var body: String = f["output_body"]

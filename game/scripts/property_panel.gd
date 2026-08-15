@@ -59,6 +59,9 @@ const SCHEMAS := {
 	"shell": [
 		{"key": "thickness", "label": "Thickness", "kind": "float", "min": 0.01, "max": 1000.0, "step": 0.5},
 	],
+	"draft": [
+		{"key": "angle_deg", "label": "Angle (°)", "kind": "float", "min": 0.1, "max": 45.0, "step": 0.5},
+	],
 	"offset": [
 		{"key": "offset", "label": "Offset", "kind": "float", "min": -1000.0, "max": 1000.0, "step": 0.5},
 	],

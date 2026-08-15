@@ -590,6 +590,7 @@ func _build_ui() -> void:
 	ui.add_child(timeline)
 	timeline.status.connect(_on_status)
 	timeline.feature_selected.connect(_on_timeline_feature_selected)
+	ops_panel.timeline_panel = timeline
 
 	variables_panel = VariablesPanel.new()
 	variables_panel.name = "Variables"
@@ -1329,8 +1330,11 @@ func _update_panel_visibility() -> void:
 	card_box.visible = _selected_entity() != "" and not sketching
 	timeline.visible = view.doc.graph_features().size() > 0 and not sketching
 	variables_panel.visible = (show_variables or view.doc.list_variables().size() > 0) and not sketching
-	# Keep the variables table flush against whatever is to its left.
-	variables_panel.offset_left = 280 if timeline.visible else 12
+	# Keep the variables table clear of the left rail and flush against the timeline.
+	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
+	if palette != null and palette.visible:
+		rail_right = maxf(rail_right, palette.position.x + maxf(palette.size.x, 48.0) + 8.0)
+	variables_panel.offset_left = 280 if timeline.visible else rail_right
 	variables_panel.offset_right = variables_panel.offset_left + 260
 	_update_left_rail()
 	_schedule_card_dock()
@@ -1429,6 +1433,8 @@ func _update_mode_overlays() -> void:
 		sheet_metal_view.show_split(_work_mode == "Sheet", flat, 0.44)
 	if print_strip != null:
 		print_strip.visible = _work_mode == "Form"
+		if _work_mode == "Form" and print_strip.has_method("sync_from_doc"):
+			print_strip.sync_from_doc()
 	# Bed ghost visible in Form only (gate the toggle).
 	if bed_ghost != null:
 		var on := false
@@ -1462,7 +1468,14 @@ func _dock_card_below_rail() -> void:
 		var h := maxf(rail.size.y, rail.get_combined_minimum_size().y)
 		top = rail.position.y + h + 6.0
 		width = maxf(_CARD_W, rail.get_combined_minimum_size().x)
-	var card_h := minf(_CARD_H, maxf(100.0, _LEFT_STACK_LIMIT - top))
+	# Stay clear of the timeline (bottom-left) and the status bar.
+	var limit := _LEFT_STACK_LIMIT
+	if timeline != null and timeline.visible:
+		limit = minf(limit, timeline.get_global_rect().position.y - 6.0)
+	else:
+		var vp_h := get_viewport().get_visible_rect().size.y if get_viewport() else 900.0
+		limit = minf(limit, vp_h - 42.0)
+	var card_h := minf(_CARD_H, maxf(80.0, limit - top))
 	card_box.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	card_box.anchor_left = 0.0
 	card_box.anchor_right = 0.0
@@ -1471,6 +1484,19 @@ func _dock_card_below_rail() -> void:
 	card_box.offset_top = top
 	card_box.offset_bottom = top + card_h
 	card_box.grow_horizontal = Control.GROW_DIRECTION_END
+
+
+## After creating a feature: select it on the timeline and open PropertyPanel.
+func open_feature_params(fid: String) -> void:
+	if fid == "" or timeline == null:
+		return
+	_update_panel_visibility()
+	timeline.refresh()
+	timeline._select_feature(fid)
+	if timeline.property_panel != null and timeline.property_panel.visible:
+		_on_status("Feature created — adjust parameters, then OK")
+	else:
+		_on_status("Feature created — edit Params (JSON) if needed")
 
 
 func _dock_ops_left() -> void:
@@ -1836,7 +1862,14 @@ func _on_insert_menu(id: int) -> void:
 		return
 	if id == 20:
 		if ops_panel != null:
+			var tid: String = ""
+			# Prefer returning the created feature id from apply; fall back to last thread.
 			ops_panel._apply_thread()
+			for f in view.doc.graph_features():
+				if str(f.get("type", "")) == "thread":
+					tid = str(f.get("id", ""))
+			if tid != "":
+				open_feature_params(tid)
 		return
 	var did := ""
 	match id:
@@ -1849,7 +1882,7 @@ func _on_insert_menu(id: int) -> void:
 		6: did = view.doc.add_datum_point(Vector3.ZERO)
 	if did != "":
 		view.graph_changed()
-		_on_status("Datum added")
+		_on_status("Datum added — offset it from the Insert menu or Variables")
 	else:
 		_on_status("Datum creation failed")
 

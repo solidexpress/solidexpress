@@ -777,9 +777,6 @@ func test_assembly_mate_solve(ctx: FilmContext, main) -> void:
 	await ctx.after_regen()
 	var panel: AssemblyPanel = main.assembly_panel
 	if panel != null:
-		# Default dock sits partly below a 720p test viewport — lift so buttons are clickable.
-		panel.offset_top = 40.0
-		panel.offset_bottom = 420.0
 		panel.refresh_lists()
 	await ctx.tree.process_frame
 	var inst_n := doc.instance_list().size()

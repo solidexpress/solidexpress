@@ -28,8 +28,15 @@ var _mate_error := ""
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(230, 0)
+	grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.custom_minimum_size = Vector2(230, 120)
+	add_child(_scroll)
 	var vbox := VBoxContainer.new()
-	add_child(vbox)
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.add_child(vbox)
+	_content = vbox
 
 	var title := Label.new()
 	title.text = "Assembly"
@@ -46,6 +53,8 @@ func _ready() -> void:
 		"Place a linked copy of the selected body offset to the side")
 	_op_button(vbox, "Insert Components…", _insert_components, "instance",
 		"Insert bodies from another .sxp as component instances (multi-doc)")
+	_pattern_count = SxUi.labeled_spin(vbox, "Copies", 2, 64, 1, 8, true)
+	_pattern_count.tooltip_text = "How many instances around the joint axis (including the seed)"
 	_op_button(vbox, "Pattern around joint", _pattern_instance, "circular_pattern",
 		"Copy the selected component around its joint axis; every copy inherits the joint")
 
@@ -76,26 +85,36 @@ func _ready() -> void:
 
 	view.selection_changed.connect(_on_selection_changed)
 	view.document_changed.connect(refresh_lists)
+	if get_viewport() != null:
+		get_viewport().size_changed.connect(_clamp_height)
 	refresh_lists()
+	_clamp_height()
+
+
+var _scroll: ScrollContainer
+var _content: VBoxContainer
+var _pattern_count: SpinBox
+
+
+func _clamp_height() -> void:
+	await get_tree().process_frame
+	if not is_instance_valid(self) or _scroll == null or _content == null:
+		return
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var budget := vp.get_visible_rect().size.y - 42.0 - 12.0
+	var want := _content.get_combined_minimum_size().y
+	_scroll.custom_minimum_size = Vector2(240, minf(want, maxf(140.0, budget * 0.5)))
+	# Bottom-right dock: grow upward, stay above the status bar.
+	offset_bottom = -42.0
+	offset_top = -(_scroll.custom_minimum_size.y + 24.0)
+	reset_size()
 
 
 func _labeled_spin(parent: Container, text: String, min_v: float, max_v: float,
 		step: float, value: float) -> SpinBox:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.custom_minimum_size = Vector2(80, 0)
-	lbl.add_theme_font_size_override("font_size", 11)
-	row.add_child(lbl)
-	var spin := SpinBox.new()
-	spin.min_value = min_v
-	spin.max_value = max_v
-	spin.step = step
-	spin.value = value
-	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(spin)
-	return spin
+	return SxUi.labeled_spin(parent, text, min_v, max_v, step, value, step >= 1.0 and is_equal_approx(step, roundf(step)))
 
 
 func _op_button(parent: Container, text: String, handler: Callable,
@@ -258,7 +277,9 @@ func _pattern_instance() -> void:
 	if seed == "":
 		status.emit("Select a component instance to pattern")
 		return
-	var count := int(_offset_spin.value) if _offset_spin.value >= 2.0 else 8
+	var count := int(_pattern_count.value) if _pattern_count != null else 8
+	if count < 2:
+		count = 8
 	var made: PackedStringArray = view.doc.pattern_instance(seed, count, TAU)
 	if made.is_empty():
 		status.emit("Pattern failed — needs an instance and count of two or more")
