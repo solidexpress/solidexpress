@@ -59,9 +59,10 @@ make publish-demo-movies    # posters → ../solidexpress.github.io; WebMs → w
 ```
 
 Then commit/push poster (and any HTML) changes in `solidexpress.github.io`, and
-commit `website/assets/published-demos.json` + posters in this repo. Run
-`make check-website-demos` — it must stay green. The site will not show a play
-button for a film that is not on that Release.
+commit `website/assets/published-demos.json` + posters in this repo. **Do not
+commit `.webm` / `.mp4` / `.vtt` to either git repo** — those stay on the
+Pages Release only. Run `make check-website-demos` — it must stay green. The
+site will not show a play button for a film that is not on that Release.
 
 Godot presets are in `game/export_presets.cfg` (`Windows Desktop`, `macOS`). Steps:
 

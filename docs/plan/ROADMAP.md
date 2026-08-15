@@ -177,6 +177,7 @@ must not appear as a card. Featured ids live in `website/assets/demo-catalog.jso
 and must be a subset of `website/assets/published-demos.json`. Gate:
 `make check-website-demos` (also a CI job). Do not hardcode Wave film ids that
 were never recorded (`snap_bolt_drop`, `explode_gearbox`, sheet-metal films, …).
+**Never commit `.webm` / `.mp4` to either git repo** — only the Pages Release.
 
 Optional follow-up: add a SolidExpress column (F/P/–) to [feature-matrix.md](../survey/feature-matrix.md).
 

@@ -40,9 +40,16 @@ if [[ ! -d "$SITE" ]]; then
   exit 0
 fi
 
+# WebMs live on the Pages Release only — never copy movie blobs into git.
 rsync -a --delete \
   --exclude '.git' \
   --exclude '.github' \
+  --exclude 'assets/movies/' \
+  --exclude '*.webm' \
+  --exclude '*.mp4' \
+  --exclude '*.avi' \
+  --exclude '*.mov' \
+  --exclude '*.vtt' \
   "$SRC/" "$SITE/"
 
 echo "sx-sync-website: synced $SRC → $SITE"

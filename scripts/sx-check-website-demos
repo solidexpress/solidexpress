@@ -82,6 +82,17 @@ def main() -> int:
     if not PUBLISHED_PATH.is_file():
         return fail([f"missing {PUBLISHED_PATH}"])
 
+    stray_exts = {".webm", ".mp4", ".avi", ".mov", ".vtt"}
+    for tree in (SITE, ROOT / "docs"):
+        if not tree.is_dir():
+            continue
+        for p in tree.rglob("*"):
+            if p.is_file() and p.suffix.lower() in stray_exts:
+                errors.append(
+                    f"video/caption file in git tree {p.relative_to(ROOT)} — "
+                    "WebMs live only on the Pages-repo demo-movies Release"
+                )
+
     catalog = load_json(CATALOG_PATH)
     published = load_json(PUBLISHED_PATH)
     if not isinstance(published, list) or not published:

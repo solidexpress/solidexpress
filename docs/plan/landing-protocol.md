@@ -50,9 +50,11 @@ Headless CI runs the film script. `make movies` is the human artifact, not the g
 `.webm` is on the Pages-repo Release `demo-movies` *and* whose id is in
 `website/assets/published-demos.json`. Featured homepage cards come from
 `website/assets/demo-catalog.json` ∩ that set — never hardcoded Wave film ids.
-`make check-website-demos` (CI) HEADs every published WebM. Refresh with
-`make movies && make publish-demo-movies`, then sync the site. Do not advertise
-unshipped films (sheet metal, explode, …) just because a `film_*.gd` exists.
+**Never commit video files** to the app repo or the Pages git repo; WebMs exist
+only as that Release’s assets. `make check-website-demos` (CI) HEADs every
+published WebM. Refresh with `make movies && make publish-demo-movies`, then
+sync the site. Do not advertise unshipped films (sheet metal, explode, …) just
+because a `film_*.gd` exists.
 
 ### Code quality
 

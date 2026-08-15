@@ -399,5 +399,6 @@ Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`
 - [x] Restored published films to the game manifest so they can be rebuilt: `pliers_motion`, `loft_guide_rail`, `precision_plate`, `sketch_tools`
 - [x] `make check-website-demos` HEADs every published WebM; CI job `website-demos` gates it
+- [x] WebMs are never committed — app repo and Pages git hold posters/HTML only; movies live on the Pages Release `demo-movies`
 - [ ] Re-record + `make publish-demo-movies` when a display/GPU machine can run `make movies` (existing 8 WebMs stay live)
 

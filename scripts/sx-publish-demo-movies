@@ -117,8 +117,9 @@ echo
 echo "sx-publish-demo-movies: done"
 echo "  posters → $SHOTS and $CANON_SHOTS"
 echo "  webms   → $base/<id>.webm"
-echo "Commit and push poster PNG changes in $SITE (do not re-add .webm files)."
+echo "Commit and push poster PNG changes in $SITE."
 echo "Also commit website/assets/published-demos.json + posters in the app repo."
+echo "Do not commit .webm / .mp4 / .vtt to either git repo — Release $TAG only."
 if [[ -x "$ROOT/scripts/sx-check-website-demos" ]]; then
   "$ROOT/scripts/sx-check-website-demos"
 fi
