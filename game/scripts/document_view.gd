@@ -433,7 +433,7 @@ func _default_jaw_af() -> float:
 	for v in doc.list_variables():
 		var name := str(v.get("name", "")).strip_edges()
 		if name == "jaw_af":
-			var val := v.get("value", NAN)
+			var val = v.get("value", NAN)
 			if typeof(val) == TYPE_FLOAT and not is_nan(val):
 				return float(val)
 			var expr := str(v.get("expr", ""))

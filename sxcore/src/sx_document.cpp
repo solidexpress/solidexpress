@@ -1653,7 +1653,8 @@ String SxDocument::graph_add_shell(const String& target_fid, const PackedStringA
             sx::log::error("graph_add_shell: not a face id");
             return {};
         }
-        faces.push_back(to_std(face_ids[i]));
+        // Feature graph expects face indices (1-based, OCCT TopExp::MapShapes order)
+        faces.push_back(ref->index);
     }
     if (faces.empty()) return {};
     sx::EntityId fid;
