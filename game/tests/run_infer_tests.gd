@@ -141,8 +141,10 @@ func test_dof_chip_and_hint(main) -> void:
 	sk.set_tool(SketchMode.Tool.LINE)
 	sk.click(Vector2(0, 0))
 	sk.click(Vector2(40, 0.3))
-	check(main.dof_label.text.contains("DOF") or main.dof_label.text.contains("constrained"),
-		"DOF chip updated after solve (%s)" % main.dof_label.text)
+	var chip: String = main.dof_label.text
+	var numeric: bool = chip.is_valid_int()
+	check(chip == "OK" or chip == "!" or numeric,
+		"DOF chip updated after solve (%s)" % chip)
 	# Live hint: hovering nearly-horizontal from the chain point shows "H".
 	sk.hover(Vector2(80, 0.2))
 	check(sk._infer_label.visible and sk._infer_label.text == "H", "H hint while drawing")
