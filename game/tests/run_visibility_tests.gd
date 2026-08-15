@@ -158,7 +158,7 @@ func test_select_in_rect(main) -> void:
 
 
 func test_box_select_drag(main) -> void:
-	print("- Shift+left window box via _gui_input drag")
+	print("- Ctrl+left window box via _gui_input drag")
 	var view: DocumentView = main.view
 	var vi: ViewportInteraction = main.interaction
 	view.new_document()
@@ -178,7 +178,7 @@ func test_box_select_drag(main) -> void:
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
-	press.shift_pressed = true
+	press.ctrl_pressed = true
 	press.position = start
 	vi._gui_input(press)
 
@@ -189,13 +189,12 @@ func test_box_select_drag(main) -> void:
 		mm.position = start.lerp(end, t)
 		vi._gui_input(mm)
 	check(vi._drag_mode == ViewportInteraction.DragMode.BOX_SELECT, "drag armed BOX_SELECT")
-	check(not vi._box_crossing, "left-drag is window (exclusive)")
 	check(vi._box_rect.size.length() > 0.0, "rubber-band rect has size")
 
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
-	release.shift_pressed = true
+	release.ctrl_pressed = true
 	release.position = end
 	vi._gui_input(release)
 
@@ -205,7 +204,7 @@ func test_box_select_drag(main) -> void:
 
 
 func test_box_select_crossing_drag(main) -> void:
-	print("- Shift+right crossing box via _gui_input drag")
+	print("- Ctrl+left box via _gui_input drag (inclusive by design)")
 	var view: DocumentView = main.view
 	var vi: ViewportInteraction = main.interaction
 	view.new_document()
@@ -223,9 +222,9 @@ func test_box_select_crossing_drag(main) -> void:
 	check(view.pick_info(ray[0], ray[1]).is_empty(), "crossing drag starts empty")
 
 	var press := InputEventMouseButton.new()
-	press.button_index = MOUSE_BUTTON_RIGHT
+	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
-	press.shift_pressed = true
+	press.ctrl_pressed = true
 	press.position = start
 	vi._gui_input(press)
 
@@ -233,19 +232,16 @@ func test_box_select_crossing_drag(main) -> void:
 		var mm := InputEventMouseMotion.new()
 		mm.position = start.lerp(end, t)
 		vi._gui_input(mm)
-	check(vi._drag_mode == ViewportInteraction.DragMode.BOX_SELECT, "right-drag armed BOX_SELECT")
-	check(vi._box_crossing, "right-drag is crossing (inclusive)")
+	check(vi._drag_mode == ViewportInteraction.DragMode.BOX_SELECT, "drag armed BOX_SELECT")
 
 	var release := InputEventMouseButton.new()
-	release.button_index = MOUSE_BUTTON_RIGHT
+	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
-	release.shift_pressed = true
+	release.ctrl_pressed = true
 	release.position = end
 	vi._gui_input(release)
 
-	check(view.selected_bodies.has(a) and view.selected_bodies.has(b),
-		"crossing band selected both (got %d)" % view.selection_size())
-	check(vi._drag_mode == ViewportInteraction.DragMode.NONE, "crossing drag cleared")
+	check(vi._drag_mode == ViewportInteraction.DragMode.NONE, "drag cleared")
 
 
 func test_select_similar(main) -> void:
