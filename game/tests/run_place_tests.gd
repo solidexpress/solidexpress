@@ -376,10 +376,10 @@ func test_typed_h_decimal_commits(main) -> void:
 	_lmb(ix, center, true)
 	_lmb(ix, center, false)
 	await process_frame
-	var ids := main.view.doc.body_ids()
+	var ids: PackedStringArray = main.view.doc.body_ids()
 	check(ids.size() >= 1, "body placed after typing H")
 	if ids.size() >= 1:
-		var bb := main.view.doc.measure_bbox(ids[ids.size() - 1])
+		var bb: Dictionary = main.view.doc.measure_bbox(ids[ids.size() - 1])
 		check(not bb.is_empty(), "bbox exists for placed body")
 		if not bb.is_empty():
 			var sz: Vector3 = bb["max"] - bb["min"]

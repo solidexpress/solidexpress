@@ -83,12 +83,58 @@ jobs:
           done
           [[ "$ok" -eq 1 ]] || exit 1
 
-  # Godot headless suites need a local Godot binary (tools/godot/godot).
-  # Enable when the CI image caches that binary; until then kernel is the gate.
+  # Godot headless suites. Narrow gate first: parse-sweep (catches uncompiled
+  # GDScript), integration, and layout. Widen after Wave 6.0 suites go green.
   godot-smoke:
-    if: false
     runs-on: ubuntu-24.04
     needs: kernel
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Godot CI reserved — enable when tools/godot is provisioned"
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ zip \
+            libocct-foundation-dev libocct-modeling-data-dev \
+            libocct-modeling-algorithms-dev libocct-ocaf-dev \
+            libocct-data-exchange-dev libocct-visualization-dev \
+            libocct-draw-dev \
+            libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
+            mesa-vulkan-drivers libgl1-mesa-dri
+
+      - name: Cache Godot 4.7-stable
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: tools/godot/godot
+          key: godot-4.7-stable-linux-x86_64
+
+      - name: Fetch Godot 4.7-stable
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p tools/godot /tmp/godotdl
+          curl -fsSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot-builds/releases/download/4.7-stable/Godot_v4.7-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d /tmp/godotdl
+          cp /tmp/godotdl/Godot_v4.7-stable_linux.x86_64 tools/godot/godot
+          chmod +x tools/godot/godot
+
+      - name: Build
+        run: make build
+
+      - name: Parse sweep + integration + layout
+        run: |
+          make import
+          tools/godot/godot --headless --path game --script tests/run_parse_sweep_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_layout_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_open_in_slicer_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_print_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_property_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_menu_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_hole_wizard_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_clearance_tests.gd
+

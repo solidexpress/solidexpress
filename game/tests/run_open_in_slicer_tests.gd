@@ -42,7 +42,7 @@ func test_open_in_slicer_per_body_and_mm() -> void:
 	check(files.size() == 2, "one 3MF per body")
 	if files.size() > 0:
 		check(_mm_in_3mf(files[0]), "3MF uses millimeter units")
-	var rec_path := res.get("record_path", "")
+	var rec_path: String = str(res.get("record_path", ""))
 	check(rec_path != "", "record path returned")
 	if rec_path != "":
 		var r := FileAccess.open(rec_path, FileAccess.READ)

@@ -249,6 +249,15 @@ func _make_row(entry: Dictionary) -> Control:
 
 
 func _fmt_value(v: float) -> String:
+	if is_nan(v) or is_inf(v):
+		return ""
 	if absf(v - roundf(v)) < 1e-9:
 		return str(int(roundf(v)))
-	return "%.4g" % v
+	# GDScript's % operator has no 'g' conversion — trim trailing zeros instead.
+	var s := String.num(v, 4)
+	if s.contains("."):
+		while s.ends_with("0"):
+			s = s.substr(0, s.length() - 1)
+		if s.ends_with("."):
+			s = s.substr(0, s.length() - 1)
+	return s
