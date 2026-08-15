@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Windows desktop export + zip + sha256. Run from repo root (Git Bash on windows-latest).
+# Windows desktop export folder for Inno Setup. Run from repo root (Git Bash on windows-latest).
+# Produces dist/releases/SolidExpress-<ver>-windows-x86_64/ (MySourceDir for SolidExpress.iss).
+# Does not create a zip — the shipped artifact is the Inno setup.exe from CI.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -8,7 +10,6 @@ VERSION="$(tr -d '[:space:]' < VERSION)"
 GODOT="${GODOT:-tools/godot/godot.exe}"
 PRESET="${EXPORT_PRESET:-Windows Desktop}"
 OUT_DIR="$ROOT/dist/releases/SolidExpress-${VERSION}-windows-x86_64"
-ARCHIVE="$ROOT/dist/releases/SolidExpress-${VERSION}-windows-x86_64.zip"
 
 if [[ ! -x "$GODOT" && ! -f "$GODOT" ]]; then
   if [[ -x tools/godot/godot.exe ]]; then GODOT=tools/godot/godot.exe; fi
@@ -93,24 +94,4 @@ chmod +x "$ROOT/packaging/windows/bundle-dlls.sh"
 [[ -f "$ROOT/THIRD_PARTY.md" ]] && cp -f "$ROOT/THIRD_PARTY.md" "$OUT_DIR/THIRD_PARTY.md"
 [[ -f "$ROOT/LICENSE" ]] && cp -f "$ROOT/LICENSE" "$OUT_DIR/LICENSE"
 
-rm -f "$ARCHIVE"
-# PowerShell needs Windows paths; Git Bash $ROOT is /d/a/... which Compress-Archive rejects.
-to_win_path() {
-  if command -v cygpath >/dev/null 2>&1; then
-    cygpath -w "$1"
-  else
-    local p="$1"
-    if [[ "$p" =~ ^/([a-zA-Z])/(.*)$ ]]; then
-      local drive="${BASH_REMATCH[1]}"
-      local rest="${BASH_REMATCH[2]//\//\\}"
-      echo "${drive^^}:\\${rest}"
-    else
-      echo "$p"
-    fi
-  fi
-}
-OUT_WIN="$(to_win_path "$OUT_DIR")"
-ARCHIVE_WIN="$(to_win_path "$ARCHIVE")"
-powershell.exe -NoProfile -Command "Compress-Archive -Path '$OUT_WIN\\*' -DestinationPath '$ARCHIVE_WIN' -Force"
-sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256" 2>/dev/null || certutil -hashfile "$ARCHIVE" SHA256 > "${ARCHIVE}.sha256"
-echo "OK: $ARCHIVE"
+echo "OK: $OUT_DIR (Inno source folder; no zip)"
