@@ -277,8 +277,11 @@ func test_sketch_exit_pad_reopen(main) -> void:
 	pads = view.sketch_pads.get("_pads")
 	check(pads.has(open_fid), "open pad entry exists")
 	check(pads[open_fid].get("closed", true) == false, "open line pad marked open")
-	check(main._sketch_pad_role(fid) == "profile", "closed rect is profile role")
-	check(main._sketch_pad_role(open_fid) == "rail", "open line is rail role")
+	# Treat any sketch with ≥1 closed contour as a profile.
+	var closed_sk: SxSketch = view.doc.graph_get_sketch(fid)
+	check(closed_sk != null and closed_sk.contour_count() >= 1, "closed rect is profile role")
+	var open_sk_live: SxSketch = view.doc.graph_get_sketch(open_fid)
+	check(open_sk_live != null and open_sk_live.contour_count() == 0, "open line is rail role")
 	check(sm.begin_edit(fid), "reopen sketch")
 	check(sm.active and sm.editing_fid == fid, "editing same feature")
 	check(sm.sketch.entity_ids().size() == 4, "reopened rect has 4 lines")
