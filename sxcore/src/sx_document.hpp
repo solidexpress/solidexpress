@@ -192,6 +192,13 @@ public:
                                    const godot::PackedStringArray& edge_ids, double radius);
     godot::String graph_add_chamfer(const godot::String& target_fid,
                                     const godot::PackedStringArray& edge_ids, double distance);
+    // Draft feature on a timeline body: faces (uuid ids converted to indices),
+    // pull direction, neutral plane, and angle in degrees.
+    godot::String graph_add_draft(const godot::String& target_fid,
+                                  const godot::PackedStringArray& face_ids, double angle_deg,
+                                  const godot::Vector3& pull_dir,
+                                  const godot::Vector3& neutral_point,
+                                  const godot::Vector3& neutral_normal);
     // Drill a parametric hole into a timeline body's output. type:
     // "simple" | "counterbore" | "countersink". depth <= 0 = through-all.
     godot::String graph_add_hole(const godot::String& target_fid, const godot::String& type,

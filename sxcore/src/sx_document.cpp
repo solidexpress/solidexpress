@@ -1618,6 +1618,36 @@ String SxDocument::graph_add_circular_pattern(const String& target_fid, const Ve
     return ok ? to_gd(fid.str()) : String();
 }
 
+String SxDocument::graph_add_draft(const String& target_fid, const PackedStringArray& face_ids,
+                                   double angle_deg, const Vector3& pull_dir,
+                                   const Vector3& neutral_point, const Vector3& neutral_normal) {
+    // Convert stable face ids to 1-based indices.
+    std::vector<int> indices;
+    for (int i = 0; i < face_ids.size(); ++i) {
+        auto ref = doc_->find_subshape(parse_id(face_ids[i]));
+        if (!ref || ref->kind != sx::EntityKind::Face) {
+            sx::log::error("graph_add_draft: not a face id");
+            return {};
+        }
+        indices.push_back(ref->index);
+    }
+    if (indices.empty()) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("draft", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Draft;
+        f.params = {{"target", to_std(target_fid)},
+                    {"faces", indices},
+                    {"angle_deg", angle_deg},
+                    {"pull_dir", {pull_dir.x, pull_dir.y, pull_dir.z}},
+                    {"neutral_point", {neutral_point.x, neutral_point.y, neutral_point.z}},
+                    {"neutral_normal", {neutral_normal.x, neutral_normal.y, neutral_normal.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
 String SxDocument::graph_add_thread(const String& target_fid, float major_radius, float pitch,
                                     float turns, float depth, float profile_angle_deg,
                                     const Vector3& axis_point, const Vector3& axis_dir) {
@@ -1653,7 +1683,8 @@ String SxDocument::graph_add_shell(const String& target_fid, const PackedStringA
             sx::log::error("graph_add_shell: not a face id");
             return {};
         }
-        faces.push_back(to_std(face_ids[i]));
+        // Feature graph expects face indices (1-based, OCCT TopExp::MapShapes order)
+        faces.push_back(ref->index);
     }
     if (faces.empty()) return {};
     sx::EntityId fid;
@@ -2279,6 +2310,8 @@ void SxDocument::_bind_methods() {
                          &SxDocument::graph_add_loft, DEFVAL(PackedStringArray()));
     ClassDB::bind_method(D_METHOD("graph_add_fillet", "target_fid", "edge_ids", "radius"), &SxDocument::graph_add_fillet);
     ClassDB::bind_method(D_METHOD("graph_add_chamfer", "target_fid", "edge_ids", "distance"), &SxDocument::graph_add_chamfer);
+    ClassDB::bind_method(D_METHOD("graph_add_draft", "target_fid", "face_ids", "angle_deg", "pull_dir", "neutral_point", "neutral_normal"),
+                         &SxDocument::graph_add_draft);
     ClassDB::bind_method(D_METHOD("graph_add_hole", "target_fid", "type", "position", "direction",
                                   "diameter", "depth", "cb_diameter", "cb_depth", "cs_diameter",
                                   "cs_angle_deg"),

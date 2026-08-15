@@ -2846,6 +2846,17 @@ func _gui_key(event: InputEventKey) -> bool:
 				view.redo()
 				status.emit("Redo")
 				return true
+		KEY_O:
+			if ops_panel != null:
+				# Ctrl+Shift+O: Hole Wizard (multi-point), Shift+O: arm Place hole…, O: apply hole at face center.
+				if event.ctrl_pressed and event.shift_pressed:
+					ops_panel._arm_hole_wizard()
+					return true
+				if not event.ctrl_pressed and event.shift_pressed:
+					ops_panel._arm_hole()
+					return true
+				if not event.ctrl_pressed:
+					return ops_panel._apply_hole()
 		KEY_W:
 			if not event.ctrl_pressed:
 				var mode: int = view.cycle_display_mode()

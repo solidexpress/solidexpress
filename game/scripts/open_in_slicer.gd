@@ -11,7 +11,8 @@ static func _sanitize_filename(name: String) -> String:
 	var out := ""
 	for i in s.length():
 		var c := s[i]
-		if c.is_valid_identifier() or c.is_ascii_digit() or c == "-" or c == "_":
+		# Godot 4.7: String has no is_ascii_digit(); use is_valid_int() for single-char digit.
+		if c.is_valid_identifier() or c.is_valid_int() or c == "-" or c == "_":
 			out += c
 		else:
 			out += "_"
@@ -57,6 +58,7 @@ static func open_in_slicer(doc: SxDocument, dry_run: bool = false) -> Dictionary
 		f.close()
 	if not dry_run and exec_path != "":
 		# Best-effort spawn; ignore exit code here.
-		OS.execute(exec_path, full_args, false)
+		var _output := []
+		OS.execute(exec_path, full_args, _output, false)
 	return {"exec": exec_path, "args": full_args, "files": files, "record_path": LAST_CMD_PATH}
 
