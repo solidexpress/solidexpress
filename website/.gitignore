@@ -1,3 +1,9 @@
-# Demo WebMs are hosted on this repo's GitHub Release tag demo-movies, not in git.
-# Refresh with: cd ../solidexpress && make movies && make publish-demo-movies
+# Demo WebMs / captions are NEVER in git — not this tree, not the Pages repo.
+# They live only on the Pages-repo GitHub Release tag `demo-movies`.
+# Refresh: make movies && make publish-demo-movies
 assets/movies/
+*.webm
+*.mp4
+*.avi
+*.mov
+*.vtt

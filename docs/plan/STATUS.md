@@ -394,3 +394,11 @@ Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids
 ## Wave 6.0c stabilization (2026-08-14)
 - Film slate: dropped missing scripts from `game/tests/ui_movie_manifest.json` (scripts not present): `extrude_s_shape`, `place_and_orbit`, `loft_profiles`, `sketch_extend`, `sketch_spline_tools`.
 
+## Website demo movies (2026-08-15)
+- [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
+- [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`
+- [x] Restored published films to the game manifest so they can be rebuilt: `pliers_motion`, `loft_guide_rail`, `precision_plate`, `sketch_tools`
+- [x] `make check-website-demos` HEADs every published WebM; CI job `website-demos` gates it
+- [x] WebMs are never committed — app repo and Pages git hold posters/HTML only; movies live on the Pages Release `demo-movies`
+- [ ] Re-record + `make publish-demo-movies` when a display/GPU machine can run `make movies` (existing 8 WebMs stay live)
+

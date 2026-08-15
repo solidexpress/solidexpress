@@ -9,13 +9,18 @@ scripts/sx-sync-website
 # then commit + push inside ../solidexpress.github.io
 ```
 
-Demo preview posters live in `assets/screenshots/`. Full demo WebMs are on the
+Demo preview posters live in `assets/screenshots/`. Full demo WebMs live **only**
+on the Pages-repo GitHub Release
 [`demo-movies`](https://github.com/solidexpress/solidexpress.github.io/releases/tag/demo-movies)
-Release on the Pages repo. Refresh from the app repo:
+— never in this git tree, and never in `solidexpress.github.io` git. **Never put
+a play button on a film that is not on that Release** — `assets/demo.js` hydrates
+cards from the live asset list (fallback: `assets/published-demos.json`).
+Featured titles live in `assets/demo-catalog.json`.
 
 ```bash
 make movies && scripts/sx-publish-demo-movies
-scripts/sx-sync-website   # also copies ui_movie_manifest.json
+make check-website-demos          # HEAD every published WebM; CI runs this
+scripts/sx-sync-website           # also copies ui_movie_manifest.json
 ```
 
 ## Download links (hard rule)
