@@ -94,16 +94,6 @@ case "$MODE" in
     sign_macho "$APP"
     codesign --verify --deep --strict --verbose=2 "$APP"
     echo "OK signed $APP"
-
-    BUNDLE_DIR="$(dirname "$APP")"
-    VER="$(tr -d '[:space:]' < "$ROOT/VERSION")"
-    ARCHIVE="$ROOT/dist/releases/SolidExpress-${VER}-macos.zip"
-    if [[ -d "$BUNDLE_DIR" ]]; then
-      rm -f "$ARCHIVE"
-      ditto -c -k --sequesterRsrc --keepParent "$BUNDLE_DIR" "$ARCHIVE"
-      shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
-      echo "OK refreshed $ARCHIVE"
-    fi
     ;;
   dmg)
     DMG="$TARGET"

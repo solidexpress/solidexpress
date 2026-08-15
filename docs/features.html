@@ -57,14 +57,18 @@
       const q = document.getElementById("q");
 
       async function load() {
-        const resp = await fetch("./assets/ui_movie_manifest.json", { cache: "no-cache" });
-        const manifest = await resp.json();
-        render(manifest);
+        const [manifest, published] = await Promise.all([
+          fetch("./assets/ui_movie_manifest.json", { cache: "no-cache" }).then(r => r.json()),
+          fetch("./assets/published-demos.json", { cache: "no-cache" }).then(r => r.json()).catch(() => [])
+        ]);
+        const allow = new Set(published);
+        const films = (Array.isArray(manifest) ? manifest : []).filter(m => allow.has(m.id));
+        render(films);
         q.addEventListener("input", () => {
           const term = q.value.trim().toLowerCase();
           const filtered = term
-            ? manifest.filter(m => (m.title + " " + m.id).toLowerCase().includes(term))
-            : manifest;
+            ? films.filter(m => (m.title + " " + m.id).toLowerCase().includes(term))
+            : films;
           render(filtered);
         });
       }

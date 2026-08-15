@@ -1,0 +1,34 @@
+---
+description: Marketing site demo videos must exist on the demo-movies Release
+globs: website/**/*.{html,js,json,md} docs/index.html docs/features.html
+alwaysApply: false
+---
+
+# Website demos = published WebMs only
+
+solid.express play buttons must **never** point at a missing film. The frontpage
+used to hardcode Wave films (`snap_bolt_drop`, `explode_gearbox`, sheet metal, …)
+that were never uploaded to the `demo-movies` Release — those cards 404'd.
+
+## Hard rules
+
+1. **Never commit video files** (`.webm` / `.mp4` / `.avi` / `.mov` / `.vtt`) to
+   the app repo or to `solidexpress.github.io` git. Movies exist only as assets
+   on the Pages-repo Release tag `demo-movies`. Git holds posters + HTML/JSON.
+2. **No hardcoded `data-demo` / `<video src="…/demo-movies/<id>.webm">` for unpublished ids.**
+   Featured cards are rendered by `website/assets/demo.js` from
+   `demo-catalog.json` ∩ live Release assets (fallback: `published-demos.json`).
+3. **A film is public only after** `make movies && make publish-demo-movies`
+   uploads `<id>.webm` and writes a poster + `published-demos.json` entry.
+4. **`make check-website-demos` must stay green.** CI runs it. It HEADs every
+   published WebM and refuses featured ids that are not on the Release.
+5. **Do not market unshipped Wave films** (sheet metal, explode, …) on the
+   homepage just because a `film_*.gd` exists. ROADMAP §2 / §7.
+
+## Refresh
+
+```bash
+make movies && make publish-demo-movies
+make check-website-demos
+scripts/sx-sync-website
+```

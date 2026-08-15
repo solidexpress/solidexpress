@@ -2,7 +2,7 @@ BUILD_DIR := build
 GODOT := tools/godot/godot
 JOBS := $(shell nproc)
 
-.PHONY: all configure build test test-kernel test-godot clean import movies publish-demo-movies sync-website release-linux fetch-godot-templates
+.PHONY: all configure build test test-kernel test-godot clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 
@@ -57,6 +57,9 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_catalog_tool_tests.gd
 	$(GODOT) --headless --path game --script tests/run_howto_tests.gd
 	$(GODOT) --headless --path game --script tests/run_print_tests.gd
+	$(GODOT) --headless --path game --script tests/run_construction_tests.gd
+	$(GODOT) --headless --path game --script tests/run_wrench_chrome_tests.gd
+	$(GODOT) --headless --path game --script tests/run_clearance_tests.gd
 	$(GODOT) --headless --path game --script tests/run_see_the_print_tests.gd
 	$(GODOT) --headless --path game --script tests/run_sketch_to_3d_ui_tests.gd
 	$(GODOT) --headless --path game --script tests/run_ui_button_coverage_tests.gd
@@ -96,6 +99,11 @@ publish-demo-movies:
 sync-website:
 	chmod +x scripts/sx-sync-website
 	./scripts/sx-sync-website
+
+# Fail if the marketing site would show a demo whose WebM/poster is missing.
+check-website-demos:
+	chmod +x scripts/sx-check-website-demos
+	./scripts/sx-check-website-demos
 
 fetch-godot-templates:
 	chmod +x scripts/release/fetch-godot-templates.sh

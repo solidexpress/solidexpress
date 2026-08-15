@@ -4,7 +4,7 @@ CI builds **installers**; **store listing** requires your accounts and one-time 
 
 | Channel | Artifact from CI | Your account / action |
 |---------|------------------|------------------------|
-| **GitHub Releases** | tar.gz, zip, setup.exe, dmg, flatpak, snap | None |
+| **GitHub Releases** | tar.gz, setup.exe, dmg, flatpak, snap | None |
 | **Flathub** | Use `packaging/flatpak/` manifest | GitHub PR to [flathub/flathub](https://github.com/flathub/flathub); Flathub builds after merge |
 | **Snap Store** | `solidexpress_*.snap` from snapcraft | [Snapcraft](https://snapcraft.io/) account; `snapcraft upload` + `release` |
 | **Microsoft Store** | Start from MSIX (see `packaging/windows/store-msix.md`) | [Partner Center](https://partner.microsoft.com/); MSIX + signing |

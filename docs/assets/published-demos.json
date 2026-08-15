@@ -1,0 +1,10 @@
+[
+  "extrude_cylinder",
+  "loft_guide_rail",
+  "path_merge_sweep",
+  "pliers_motion",
+  "precision_plate",
+  "revolve_washer",
+  "sketch_edit_in_out",
+  "sketch_tools"
+]

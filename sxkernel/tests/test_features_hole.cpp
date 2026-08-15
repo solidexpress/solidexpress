@@ -159,3 +159,64 @@ TEST_CASE("holewizard: single position still works (regression)", "[feathole][ho
     const double expected_drop = M_PI * 9.0 * 10.0;
     REQUIRE(vol0 - shape::volume(doc.body(body_id)->shape) == Approx(expected_drop).epsilon(0.01));
 }
+
+TEST_CASE("feathole: hex opening volume tracks across-flats", "[feathole][hex]") {
+    Document doc;
+    FeatureGraph graph;
+
+    Feature box;
+    box.type = FeatureType::Primitive;
+    box.params = {{"kind", "box"}, {"a", 30.0}, {"b", 30.0}, {"c", 10.0}};
+    auto box_fid = graph.add(std::move(box));
+
+    Feature hole;
+    hole.type = FeatureType::Hole;
+    hole.params = {{"target", box_fid.str()},
+                   {"type", "hex"},
+                   {"position", json::array({15.0, 15.0, 10.0})},
+                   {"direction", json::array({0.0, 0.0, -1.0})},
+                   {"diameter", 10.0},
+                   {"depth", 0.0}};
+    graph.add(std::move(hole));
+
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    EntityId body_id = graph.feature(box_fid)->output_body;
+    REQUIRE(doc.body(body_id) != nullptr);
+    const double vol0 = 30.0 * 30.0 * 10.0;
+    // Regular hex area = (√3 / 2) * AF²
+    const double hex_area = (std::sqrt(3.0) / 2.0) * 100.0;
+    const double expected_drop = hex_area * 10.0;
+    const double drop = vol0 - shape::volume(doc.body(body_id)->shape);
+    REQUIRE(drop == Approx(expected_drop).epsilon(0.03));
+}
+
+TEST_CASE("feathole: nominal plus hole_compensation, not clearance", "[feathole][clearance]") {
+    Document doc;
+    FeatureGraph& graph = doc.graph();
+    graph.variables().set("hole_compensation", "0.2");
+    graph.variables().set("clearance", "5.0");
+
+    Feature box;
+    box.type = FeatureType::Primitive;
+    box.params = {{"kind", "box"}, {"a", 20.0}, {"b", 20.0}, {"c", 10.0}};
+    auto box_fid = graph.add(std::move(box));
+
+    Feature hole;
+    hole.type = FeatureType::Hole;
+    hole.params = {{"target", box_fid.str()},
+                   {"type", "simple"},
+                   {"position", json::array({10.0, 10.0, 10.0})},
+                   {"direction", json::array({0.0, 0.0, -1.0})},
+                   {"nominal", 6.0},
+                   {"depth", 0.0}};
+    graph.add(std::move(hole));
+
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    EntityId body_id = graph.feature(box_fid)->output_body;
+    const double vol0 = 20.0 * 20.0 * 10.0;
+    const double d = 6.2;  // nominal + compensation; clearance must not apply
+    const double expected_drop = M_PI * 0.25 * d * d * 10.0;
+    REQUIRE(vol0 - shape::volume(doc.body(body_id)->shape) == Approx(expected_drop).epsilon(0.02));
+}

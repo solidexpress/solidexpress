@@ -343,38 +343,10 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 
 ## Environment notes
 - System deps installed via apt: ninja-build, zip, libocct-*-dev (7.9.2), libeigen3-dev, libboost-dev
-- Godot 4.7-stable binary at `tools/godot/godot` (gitignored; re-download from godot-builds if missing)
+- Godot 4.7-stable binary at `tools/godot/godot` (gitignored; in CI fetched by `packaging/ci/fetch_godot.sh` from `godotengine/godot` 4.7-stable and cached via `actions/cache`)
 - Build: `make build` (CMake+Ninja superbuild, ~5 min cold for godot-cpp)
 - PlaneGCS builds as `libplanegcs.so` (LGPL dynamic-link compliance); not yet consumed by sxkernel (Phase 2)
 - Voice STT: default stub (`SX_BUILD_VOICE=OFF`). Enable with vendored `thirdparty/whisper.cpp` + `ggml-tiny.en.bin` under `tools/whisper/` (gitignored)
-
-## Verified baseline audit (2026-08-15) — dead-chrome repair
-
-Hands-on + headless repro on apt OCCT 7.6.3 + Godot 4.7-stable. Root causes
-and the repair PR that closes them:
-
-1. **App did not compile** — three Wave 6.4/6.5 GDScript parse errors nullified
-   `DocumentView` (every `view.*` click was a silent no-op). Fixed; `godot-smoke`
-   CI enabled with `run_parse_sweep_tests`.
-2. **Stale `features.cpp` switch** — Shell/Offset/Boolean/Fillet/Patterns still
-   ran inline cases while `features/ops_*.cpp` sat unused. Shell threw
-   `json type_error.302` on UUID faces. Dispatched to extracted handlers;
-   `FeatureType::Draft` + `graph_add_draft` bound.
-3. **Pattern orphans** — `apply_graph_edit` re-executed via `CommandStack::push`
-   after regenerate (count=3 → 5 bodies). Now snapshots after regen +
-   `push_executed`; GraphSnapshot restore tracks `output_bodies`.
-4. **Offscreen panels** — Timeline+PropertyPanel and Assembly Mates rendered
-   below the window; OpsPanel crammed 823 px into a 240 px budget. Clamped +
-   scrolled; create-then-edit opens PropertyPanel after Fillet/Hole/Thread.
-5. **SpinBox snapping** — Ø6 → 6.1, r2 → 2.1 (`min+k*step`). `SxUi.configure_spin`.
-6. **Open in Slicer / Export Drawing** — dialogs for slicer path and
-   sheet/scale/views; `user://` globalized before C++ export.
-7. **Cam / Sim / Draw / Sheet** — Cam/Sim rails on existing kernel spikes;
-   Draw/Sheet first-slice tool strips; Form Nozzle/Hang/Bed params.
-
-Gate suites green after repair: `run_ui_tests`, `run_workflow_tests` (Wave 0
-exit), `run_layout_tests`, `run_see_the_print_tests`, `run_open_in_slicer_tests`,
-`run_dead_chrome_tests`, kernel 317 cases.
 
 ## Verified baseline audit (2026-08-14, fresh clone)
 
@@ -401,18 +373,16 @@ Priority owner: [ROADMAP.md §4](ROADMAP.md); chrome + films: [landing-protocol.
 Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids building later waves on top:
 
 - [x] 6.0a `make build` emits `game/bin/libplanegcs.so` (fresh clones can run the app and Godot suites again)
-- [x] 6.0b Fix the feature-param + sketch regression clusters (audit items 1–2) until `run_workflow_tests` and `run_ui_tests` are green — `run_workflow_tests` is Wave 0's exit gate *(2026-08-15 dead-chrome repair: ops dispatch + pattern orphan + dressup UUID edges; ui/workflow green)*
-- [x] 6.0c Fix `run_print_tests` Orient (Wave 5 gate) and reconcile the film manifest (restore or drop the 5 missing films; repair the 9 failing ones)
-  — **2026-08-15:** `run_print_tests` Orient green (80→~10 mm); `run_film_manifest_smoke` **61 films / 0 failures**; missing scripts already dropped (2026-08-14 note below); new repair films `open_in_slicer` / `thread_standard` / `datum_offset` added.
-- [x] 6.0d Enable `godot-smoke` in CI (cache the Godot 4.7-stable binary; gate at least workflow/ui/sketch/print suites) so red suites can't land silently again *(parse-sweep + integration + layout + green suites)*
-- [x] 6.0e Chronic small failures (audit item 5) — nav_preset default vs tests is a *decision*: pick FUSION or SOLIDEXPRESS and align the tests to it
-  — **Decision (2026-08-15): FUSION is the product default** (`orbit_camera.gd`). Tests must set `nav_preset` explicitly when asserting SX/SW Alt-drag behaviour; howto/place suites already document Fusion Alt+left = pan. Remaining chronic items (DOF chip, icon tests, etc.) are separate.
-- [x] 6.1 Construction chrome (from the live 0.0.4 test; part of the 6.0 gate — green before 6.2+): focused numeric fields consume digits (view keys 1/2/3/7 never fire while a spinbox/line-edit is focused); … *(SxUi.configure_spin + focus guard; layout clamp)*
-- [ ] 6.2 Clearance language: …
-- [x] 6.3 See the print: Thickness + Overhang paint toggles on Form … + bed ghost … *(Form strip Nozzle/Hang/Bed params + set_print_setup; see_the_print green)*
-- [x] 6.4 Open in slicer: user-registered Prusa/Orca/Bambu executable, one body per file … *(dialog + user:// globalization; open_in_slicer green)*
-- [ ] 6.5 Tool catalog: …
-- [ ] 6.6 Build the wrench: …
+- [ ] 6.0b Fix the feature-param + sketch regression clusters (audit items 1–2) until `run_workflow_tests` and `run_ui_tests` are green — `run_workflow_tests` is Wave 0's exit gate
+- [ ] 6.0c Fix `run_print_tests` Orient (Wave 5 gate) and reconcile the film manifest (restore or drop the 5 missing films; repair the 9 failing ones)
+- [x] 6.0d Enable `godot-smoke` in CI (cache the Godot 4.7-stable binary; gate at least workflow/ui/sketch/print suites) so red suites can't land silently again
+- [ ] 6.0e Chronic small failures (audit item 5) — nav_preset default vs tests is a *decision*: pick FUSION or SOLIDEXPRESS and align the tests to it
+- [x] 6.1 Construction chrome (from the live 0.0.4 test; part of the 6.0 gate — green before 6.2+): focused numeric fields consume digits (view keys 1/2/3/7 never fire while a spinbox/line-edit is focused); box place strip + post-place property panel show W/H/D, not Radius/Spacing/Count; Form keeps a one-click way back to create without losing the Analyze/Orient strip; Selection/Timeline/Variables/Assembly/context bars never stack undismissably; gate = extended `run_place_tests` / `run_property_tests` (type H=1.2 on a box, it sticks)
+- [x] 6.2 Clearance language: new documents seed `clearance=0.3`, `hole_compensation=0.2`, `layer=0.2`, `nozzle=0.4`, `jaw_af=10` (mm, editable, no dock); sketch dims accept `=jaw_af+clearance` and live-regenerate (needs 6.0b); hole Ø = nominal + `hole_compensation`; hex/slot = `jaw_af+clearance`; configs 10/12/14 switch `jaw_af` only; film `clearance_ladder` (change `clearance` 0.3→0.5, every consumer updates)
+- [x] 6.3 See the print: Thickness + Overhang paint toggles on Form (zebra shader path) + bed ghost (220×220 default); threshold from `PrintSetup.min_wall`; must succeed on a 1.2 mm plate (needs 6.1); film `see_the_print` — paint auto-seeds from Analyze; Orient applies print-space preview so the part lays down
+- [ ] 6.4 Open in slicer: user-registered Prusa/Orca/Bambu executable, one body per file, mm 3MF + `sx:bed` unchanged (verified on 0.0.4); film `open_in_slicer`
+- [ ] 6.5 Tool catalog: open-end, hex socket, driver bit, nozzle sizes in `sx::catalog` + palette page, AF from `jaw_af`; film `catalog_hex_driver`
+- [x] 6.6 Build the wrench: through cuts default through-all / Up To Surface; modeled Thread reachable in chrome (Insert or Modify → Thread; cosmetic-only is a checkbox); sketch polygon across-flats (`jaw_af`) mode; Hole Wizard reachable from place/context chrome; exit film `print_a_wrench` replays the critique (after 6.2; can parallel 6.3–6.5) — Sketch + Torus on the left rail; hex opening consumes `jaw_af+clearance`
 
 ## Architecture Track A re-verify (2026-07-29)
 - [x] Track A already complete: ADR-001/002 + STATUS 3.2/3.4; interactive ops use `graph_add_*` with free-body Command fallbacks
@@ -421,7 +391,14 @@ Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids
 - Residual vs full SW jaw scripts: open-profile cut without thin — see Ladder residual + [ROADMAP.md](ROADMAP.md)
 - Next architecture work is Track B (modularize) / Track C (CI hardening) — demoted vs demo ladder
 
-## Wave 6.0c stabilization (2026-08-14 → 2026-08-15)
+## Wave 6.0c stabilization (2026-08-14)
 - Film slate: dropped missing scripts from `game/tests/ui_movie_manifest.json` (scripts not present): `extrude_s_shape`, `place_and_orbit`, `loft_profiles`, `sketch_extend`, `sketch_spline_tools`.
-- **2026-08-15 verify:** `run_film_manifest_smoke` 61/0; `run_print_tests` Orient green; repair films `open_in_slicer`, `thread_standard`, `datum_offset` registered.
+
+## Website demo movies (2026-08-15)
+- [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
+- [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`
+- [x] Restored published films to the game manifest so they can be rebuilt: `pliers_motion`, `loft_guide_rail`, `precision_plate`, `sketch_tools`
+- [x] `make check-website-demos` HEADs every published WebM; CI job `website-demos` gates it
+- [x] WebMs are never committed — app repo and Pages git hold posters/HTML only; movies live on the Pages Release `demo-movies`
+- [ ] Re-record + `make publish-demo-movies` when a display/GPU machine can run `make movies` (existing 8 WebMs stay live)
 

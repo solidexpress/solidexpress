@@ -13,7 +13,34 @@
     "enabled": true,
     "quit_after": 1200
   },
-  
+  {
+    "id": "loft_guide_rail",
+    "title": "Loft two profiles with a guide rail",
+    "script": "res://tests/films/film_loft_guide_rail.gd",
+    "enabled": true,
+    "quit_after": 1500
+  },
+  {
+    "id": "pliers_motion",
+    "title": "Mate jaws to a pin, then drag to open",
+    "script": "res://tests/films/film_pliers_motion.gd",
+    "enabled": true,
+    "quit_after": 1500
+  },
+  {
+    "id": "precision_plate",
+    "title": "Precision plate — corner snaps inset holes",
+    "script": "res://tests/films/film_precision_plate.gd",
+    "enabled": true,
+    "quit_after": 1200
+  },
+  {
+    "id": "sketch_tools",
+    "title": "Block + fit spline, then extend",
+    "script": "res://tests/films/film_sketch_tools.gd",
+    "enabled": true,
+    "quit_after": 1200
+  },
   {
     "id": "revolve_washer",
     "title": "Revolve washer profile 360°",

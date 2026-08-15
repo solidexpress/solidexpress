@@ -60,8 +60,8 @@ func _ready() -> void:
 				position_committed.emit(current_position()))
 	for s in [_size_w, _size_h, _size_d]:
 		s.value_changed.connect(_on_size_changed)
-		s.get_line_edit().text_submitted.connect(func(_t: String) -> void:
-			s.apply()
+		s.get_line_edit().text_submitted.connect(func(t: String) -> void:
+			_apply_typed_spin(s, t)
 			if not _syncing and _size_editable:
 				size_committed.emit(current_size()))
 
@@ -113,6 +113,18 @@ func _ready() -> void:
 	_precision_row.add_child(hint)
 
 
+## Parse typed text before Range.apply() so "1.2" is not lost to step snap.
+func _apply_typed_spin(spin: SpinBox, typed: String) -> void:
+	var t := typed.strip_edges()
+	if t.is_valid_float():
+		var was := _syncing
+		_syncing = true
+		spin.value = clampf(float(t), spin.min_value, spin.max_value)
+		_syncing = was
+	else:
+		spin.apply()
+
+
 func _spin(parent: Container, label: String, mn: float, mx: float, step: float,
 		value: float) -> SpinBox:
 	var box := HBoxContainer.new()
@@ -125,7 +137,10 @@ func _spin(parent: Container, label: String, mn: float, mx: float, step: float,
 	var spin := SpinBox.new()
 	spin.min_value = mn
 	spin.max_value = mx
-	spin.step = step
+	# Fine step so typed values (1.2) are not snapped to 1.1 by Range.
+	# Arrows still move by the ergonomic `step` passed in.
+	spin.step = 0.001
+	spin.custom_arrow_step = step
 	spin.value = value
 	spin.custom_minimum_size = Vector2(72, 0)
 	spin.select_all_on_focus = true
@@ -290,9 +305,8 @@ func _gui_input(event: InputEvent) -> void:
 			elif _move_row.visible:
 				hide_move_delta()
 				accept_event()
-			elif _dims_row.visible:
-				hide_dims()
-				accept_event()
+			# Persistent W/H/D: do not consume Esc — Interaction cancels
+			# place or clears the selection (which hides this row).
 		elif k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER:
 			if _precision_row.visible:
 				_commit_precision_ui(true)
@@ -304,4 +318,14 @@ func _gui_input(event: InputEvent) -> void:
 				if not _syncing:
 					move_delta_committed.emit(current_move_delta())
 				hide_move_delta()
+				accept_event()
+			elif _dims_row.visible:
+				_apply_typed_spin(_size_w, _size_w.get_line_edit().text)
+				_apply_typed_spin(_size_h, _size_h.get_line_edit().text)
+				_apply_typed_spin(_size_d, _size_d.get_line_edit().text)
+				_apply_typed_spin(_pos_x, _pos_x.get_line_edit().text)
+				_apply_typed_spin(_pos_y, _pos_y.get_line_edit().text)
+				_apply_typed_spin(_pos_z, _pos_z.get_line_edit().text)
+				if not _syncing and _size_editable:
+					size_committed.emit(current_size())
 				accept_event()

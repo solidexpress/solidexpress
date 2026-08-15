@@ -28,6 +28,19 @@ Outputs:
 
 The script copies `libplanegcs.so` next to the exported binary (LGPL dynamic link).
 
+### Windows / macOS (same scripts CI uses)
+
+```bash
+./scripts/release/export-windows.sh   # → SolidExpress-<ver>-windows-x86_64/ for Inno
+./scripts/release/export-macos.sh     # → SolidExpress-<ver>-macos/SolidExpress.app for DMG
+```
+
+Published desktop artifacts (no Windows/macOS zip):
+
+- Windows: `SolidExpress-<version>-x64-setup.exe` (+ `.sha256`) via Inno (`packaging/windows/SolidExpress.iss`)
+- macOS: `SolidExpress-<version>-macos.dmg` (+ `.sha256`) via `create-dmg.sh` + `sign-and-notarize.sh`
+- Linux: `.tar.gz` (+ `.sha256`) as above
+
 ## CI release (recommended)
 
 ```bash
@@ -58,7 +71,11 @@ make movies                 # → dist/movies/*.webm
 make publish-demo-movies    # posters → ../solidexpress.github.io; WebMs → website Release tag demo-movies
 ```
 
-Then commit/push poster (and any HTML) changes in `solidexpress.github.io`. Do this each app release so solid.express demos match the shipped build.
+Then commit/push poster (and any HTML) changes in `solidexpress.github.io`, and
+commit `website/assets/published-demos.json` + posters in this repo. **Do not
+commit `.webm` / `.mp4` / `.vtt` to either git repo** — those stay on the
+Pages Release only. Run `make check-website-demos` — it must stay green. The
+site will not show a play button for a film that is not on that Release.
 
 Godot presets are in `game/export_presets.cfg` (`Windows Desktop`, `macOS`). Steps:
 

@@ -1,0 +1,50 @@
+{
+  "demo_release": {
+    "repo": "solidexpress/solidexpress.github.io",
+    "tag": "demo-movies",
+    "api": "https://api.github.com/repos/solidexpress/solidexpress.github.io/releases/tags/demo-movies",
+    "base": "https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/"
+  },
+  "featured": [
+    {
+      "id": "pliers_motion",
+      "title": "Assemblies that move",
+      "blurb": "Mate jaws to a pin — leftover revolute DOF lets you drag the pliers open and closed."
+    },
+    {
+      "id": "extrude_cylinder",
+      "title": "Sketch → dimension → extrude",
+      "blurb": "Draw closed profiles, drive them with dimensions, and extrude solid bodies."
+    },
+    {
+      "id": "path_merge_sweep",
+      "title": "Path merge → sweep",
+      "blurb": "Merge open sketch pads into a path, then sweep a profile into a solid."
+    },
+    {
+      "id": "loft_guide_rail",
+      "title": "Loft with a guide rail",
+      "blurb": "Two circular profiles plus an open rail that steers the waist of the loft."
+    },
+    {
+      "id": "precision_plate",
+      "title": "Precision plate",
+      "blurb": "Place a plate and snap holes inset from the corners — dimensions you can trust."
+    },
+    {
+      "id": "revolve_washer",
+      "title": "Revolve a washer",
+      "blurb": "Sketch a profile offset from an axis and revolve it 360° into a washer."
+    },
+    {
+      "id": "sketch_edit_in_out",
+      "title": "Edit a sketch pad",
+      "blurb": "Exit a sketch to a yellow pad, reopen it, and keep editing the same profile."
+    },
+    {
+      "id": "sketch_tools",
+      "title": "Sketch tools",
+      "blurb": "Block and fit a spline, then extend — the everyday sketch toolset."
+    }
+  ]
+}

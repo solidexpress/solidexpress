@@ -52,12 +52,12 @@ footer{text-align:center;color:var(--muted);padding:2rem;border-top:1px solid va
 </nav>
 <main>
 <h1>Features</h1>
-<p class="lead">Every enabled UI film from the app test suite. Each clip is a short example of what that feature enables.</p>
+<p class="lead">Published UI films — only clips whose WebM is on the demo-movies Release. Each one is a short example of what that feature enables.</p>
 <div class="search">
 <input id="q" type="search" placeholder="Filter (sheet metal, drawing, print, joint, sketch…)" />
 </div>
 <div class="grid" id="feature-grid"></div>
-<p class="note">Movies load from the <code>demo-movies</code> Release. Refresh with <code>make movies && scripts/sx-publish-demo-movies</code> in the app repo, then sync posters into this site.</p>
+<p class="note">Only films that exist on the <code>demo-movies</code> Release are listed — a missing WebM never becomes a play button. Refresh with <code>make movies && scripts/sx-publish-demo-movies</code>, then <code>make check-website-demos</code>.</p>
 </main>
 
 <div class="demo-lightbox" id="demo-lightbox" hidden>
@@ -79,109 +79,7 @@ Built with ❤️ by the Express Consortium<br/>
 <a href="support.html">Support</a> · <a href="privacy.html">Privacy</a> ·
 <a href="https://github.com/solidexpress/solidexpress">github.com/solidexpress/solidexpress</a>
 </footer>
-<script>
-(function () {
-  var DEMO_BASE = "https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/";
-  var POSTER_BASE = "assets/screenshots/";
-  // Manifest is copied from game/tests/ui_movie_manifest.json by scripts/sx-sync-website.
-  var MANIFEST_URL = "assets/ui_movie_manifest.json";
-  var grid = document.getElementById("feature-grid");
-  var q = document.getElementById("q");
-  var lightbox = document.getElementById("demo-lightbox");
-  var video = document.getElementById("demo-lightbox-video");
-  var titleEl = document.getElementById("demo-lightbox-title");
-  var closeBtn = document.getElementById("demo-lightbox-close");
-  var openLink = document.getElementById("demo-lightbox-open");
-  var lastFocus = null;
-  var films = [];
-
-  function enablesBlurb(entry) {
-    return "Enables: " + (entry.title || entry.id);
-  }
-
-  function closeDemo() {
-    if (!lightbox || !video) return;
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
-    lightbox.classList.remove("open");
-    lightbox.hidden = true;
-    document.body.style.overflow = "";
-    if (lastFocus && lastFocus.focus) lastFocus.focus();
-  }
-
-  function openDemo(btn) {
-    var id = btn.getAttribute("data-demo");
-    if (!id || !lightbox || !video) return;
-    var src = DEMO_BASE + id + ".webm";
-    lastFocus = btn;
-    titleEl.textContent = (btn.getAttribute("aria-label") || "Demo").replace(/^Play demo:\s*/i, "");
-    if (openLink) openLink.href = src;
-    video.src = src;
-    lightbox.hidden = false;
-    lightbox.classList.add("open");
-    document.body.style.overflow = "hidden";
-    video.play().catch(function () {});
-    if (closeBtn) closeBtn.focus();
-  }
-
-  function render(list) {
-    grid.innerHTML = "";
-    list.forEach(function (e) {
-      if (e.enabled === false) return;
-      var card = document.createElement("article");
-      card.className = "feature-card";
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "demo-open";
-      btn.setAttribute("data-demo", e.id);
-      btn.setAttribute("aria-label", "Play demo: " + (e.title || e.id));
-      var img = document.createElement("img");
-      img.loading = "lazy";
-      img.alt = "";
-      img.width = 1600;
-      img.height = 900;
-      img.src = POSTER_BASE + e.id + ".png";
-      img.onerror = function () { img.style.display = "none"; };
-      var play = document.createElement("span");
-      play.className = "play";
-      play.setAttribute("aria-hidden", "true");
-      btn.appendChild(img);
-      btn.appendChild(play);
-      btn.addEventListener("click", function () { openDemo(btn); });
-      var h3 = document.createElement("h3");
-      h3.textContent = e.title || e.id;
-      var p = document.createElement("p");
-      p.textContent = enablesBlurb(e);
-      card.appendChild(btn);
-      card.appendChild(h3);
-      card.appendChild(p);
-      grid.appendChild(card);
-    });
-  }
-
-  fetch(MANIFEST_URL, { cache: "no-cache" })
-    .then(function (r) { return r.json(); })
-    .then(function (manifest) {
-      films = Array.isArray(manifest) ? manifest : [];
-      render(films);
-      q.addEventListener("input", function () {
-        var term = q.value.trim().toLowerCase();
-        render(!term ? films : films.filter(function (m) {
-          return ((m.title || "") + " " + (m.id || "")).toLowerCase().indexOf(term) !== -1;
-        }));
-      });
-    })
-    .catch(function () {
-      grid.innerHTML = "<p class='lead'>Could not load the film manifest.</p>";
-    });
-
-  if (closeBtn) closeBtn.addEventListener("click", closeDemo);
-  if (lightbox) lightbox.addEventListener("click", function (e) { if (e.target === lightbox) closeDemo(); });
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && lightbox && lightbox.classList.contains("open")) closeDemo();
-  });
-})();
-</script>
+<script src="assets/demo.js"></script>
+<script>SxDemos.hydrateLibrary("feature-grid", "q");</script>
 </body>
 </html>

@@ -35,6 +35,7 @@ func _init() -> void:
 
 	await test_analyze_thin_plate(ctx, main)
 	await test_orient_tall_box(ctx, main)
+	await test_hole_changes_digest(ctx, main)
 
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -69,4 +70,23 @@ func test_orient_tall_box(ctx: FilmContext, main) -> void:
 	var after: Dictionary = main.view.doc.print_analyze("")
 	check(float(before.get("height", 0)) > 70.0, "starts ~80 mm high")
 	check(float(after.get("height", 99)) < 12.0, "height drops to ~10 mm")
+	check(main.view.print_preview_enabled, "Form preview applies print rotation")
+	main._on_mode_menu(0)
+
+
+func test_hole_changes_digest(ctx: FilmContext, main) -> void:
+	print("- Analyze digest changes after a real hole")
+	main.view.new_document()
+	var id: String = main.view.insert_primitive("box", Vector3.ZERO, Vector3(20, 20, 10))
+	main.view.select_entity(id, "")
+	await ctx.after_regen()
+	main._on_mode_menu(5)
+	await FilmUI.wait_frames(self, 2)
+	var before: Dictionary = main.view.doc.print_analyze(id)
+	main.ops_panel._hole_diameter.value = 6.0
+	main.ops_panel._hole_depth.value = 0.0
+	check(main.ops_panel._apply_hole(), "hole applied")
+	var after: Dictionary = main.view.doc.print_analyze(id)
+	check(str(after.get("digest", "")) != str(before.get("digest", "")),
+		"digest is not byte-identical after the hole")
 	main._on_mode_menu(0)

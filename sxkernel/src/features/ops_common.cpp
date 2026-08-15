@@ -53,11 +53,12 @@ bool resolve_topo_shape(Document& doc, const Body& body, EntityKind kind,
         out = doc.resolve(id);
         return !out.IsNull();
     }
-    if (ref.is_number_integer()) {
+    if (ref.is_number_integer() || ref.is_number_float()) {
         TopTools_IndexedMapOfShape map;
         TopAbs_ShapeEnum occt_kind = kind == EntityKind::Edge ? TopAbs_EDGE : TopAbs_FACE;
         TopExp::MapShapes(body.shape, occt_kind, map);
-        int idx = ref.get<int>();
+        int idx = ref.is_number_integer() ? ref.get<int>()
+                                          : static_cast<int>(std::lround(ref.get<double>()));
         if (idx < 1 || idx > map.Extent()) {
             if (why) *why = "topology index out of range";
             return false;

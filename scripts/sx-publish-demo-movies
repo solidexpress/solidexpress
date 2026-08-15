@@ -98,9 +98,28 @@ fi
 echo "uploading ${#assets[@]} assets to $REPO@$TAG"
 gh release upload "$TAG" -R "$REPO" --clobber "${assets[@]}"
 
+# Canonical site in this repo also gets posters + the published-id list so
+# the marketing pages can never advertise a film that was not uploaded.
+CANON_SHOTS="$ROOT/website/assets/screenshots"
+mkdir -p "$CANON_SHOTS"
+published_json="$ROOT/website/assets/published-demos.json"
+python3 -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); ids=sys.argv[2:]; p.write_text(json.dumps(ids, indent=2)+"\n"); print(f"published-demos → {p} ({len(ids)} ids)")' \
+  "$published_json" "${IDS[@]}"
+for id in "${IDS[@]}"; do
+  src="$SHOTS/${id}.png"
+  if [[ -f "$src" ]]; then
+    cp -f "$src" "$CANON_SHOTS/${id}.png"
+  fi
+done
+
 base="https://github.com/${REPO}/releases/download/${TAG}"
 echo
 echo "sx-publish-demo-movies: done"
-echo "  posters → $SHOTS"
+echo "  posters → $SHOTS and $CANON_SHOTS"
 echo "  webms   → $base/<id>.webm"
-echo "Commit and push poster PNG changes in $SITE (do not re-add .webm files)."
+echo "Commit and push poster PNG changes in $SITE."
+echo "Also commit website/assets/published-demos.json + posters in the app repo."
+echo "Do not commit .webm / .mp4 / .vtt to either git repo — Release $TAG only."
+if [[ -x "$ROOT/scripts/sx-check-website-demos" ]]; then
+  "$ROOT/scripts/sx-check-website-demos"
+fi
