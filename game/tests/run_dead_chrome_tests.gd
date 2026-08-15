@@ -32,7 +32,8 @@ func _init() -> void:
 	check(id != "" and int(main.view.doc.body_ids().size()) == bodies0 + 1, "hex driver catalog insert")
 
 	main.view.new_document()
-	main.view.doc.graph_add_primitive("box", 40, 40, 40, Vector3(-20, -20, 0))
+	# Tall cylinder (r=5, h=40) so Thread accepts it as shaft-like.
+	main.view.doc.graph_add_primitive("cylinder", 5, 40, 0, Vector3.ZERO)
 	main.view.graph_changed()
 	await process_frame
 	var bid: String = str(main.view.doc.body_ids()[0])
@@ -45,7 +46,7 @@ func _init() -> void:
 	for f in main.view.doc.graph_features():
 		if str(f.get("type", "")) == "thread":
 			has_thread = true
-	check(has_thread, "Thread feature created")
+	check(has_thread, "Thread feature created on cylinder")
 
 	main.ops_panel._hole_diameter.value = 6.0
 	check(is_equal_approx(main.ops_panel._hole_diameter.value, 6.0),
