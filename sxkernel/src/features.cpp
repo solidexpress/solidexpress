@@ -86,6 +86,7 @@ const char* to_string(FeatureType t) {
         case FeatureType::CircularPattern: return "circular_pattern";
         case FeatureType::Shell: return "shell";
         case FeatureType::Offset: return "offset";
+        case FeatureType::Draft: return "draft";
         case FeatureType::Sweep: return "sweep";
         case FeatureType::Loft: return "loft";
         case FeatureType::Path: return "path";
@@ -124,6 +125,7 @@ FeatureType feature_type_from_string(const std::string& s) {
     if (s == "circular_pattern") return FeatureType::CircularPattern;
     if (s == "shell") return FeatureType::Shell;
     if (s == "offset") return FeatureType::Offset;
+    if (s == "draft") return FeatureType::Draft;
     if (s == "sweep") return FeatureType::Sweep;
     if (s == "loft") return FeatureType::Loft;
     if (s == "path") return FeatureType::Path;
@@ -1040,70 +1042,14 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
             }
 
             case FeatureType::Boolean: {
-                EntityId target = find_feature_body("target");
-                EntityId tool = find_feature_body("tool");
-                const Body* tb = doc.body(target);
-                const Body* ob = doc.body(tool);
-                if (!tb || !ob) return fail("missing boolean operand body");
-                std::string op = params.value("op", "fuse");
-                TopoDS_Shape result;
-                if (op == "fuse") result = BRepAlgoAPI_Fuse(tb->shape, ob->shape).Shape();
-                else if (op == "cut") result = BRepAlgoAPI_Cut(tb->shape, ob->shape).Shape();
-                else result = BRepAlgoAPI_Common(tb->shape, ob->shape).Shape();
-                if (result.IsNull()) return fail("boolean failed");
-                doc.replace_body_shape(target, result);
-                doc.remove_body(tool);
-                return true;
+                feature_ops::ApplyCtx ctx{*this, doc, f, params, env, err};
+                return feature_ops::apply_boolean(ctx);
             }
 
             case FeatureType::Fillet:
             case FeatureType::Chamfer: {
-                EntityId target = find_feature_body("target");
-                const Body* tb = doc.body(target);
-                if (!tb) return fail("missing target body");
-                double v = num_param(params,
-                                     f.type == FeatureType::Fillet ? "radius" : "distance", 1.0,
-                                     env);
-
-                // Edges may be referenced by durable subshape UUID (survives
-                // source edits) or by 1-based index; resolve_topo_shape handles both.
-                TopoDS_Shape result;
-                if (f.type == FeatureType::Fillet) {
-                    BRepFilletAPI_MakeFillet mk(tb->shape);
-                    const double r2 = params.contains("radius2")
-                                          ? num_param(params, "radius2", v, env)
-                                          : v;
-                    for (const auto& je : params.at("edges")) {
-                        TopoDS_Shape es;
-                        std::string why;
-                        if (!feature_ops::resolve_topo_shape(doc, *tb, EntityKind::Edge, je, es,
-                                                             &why))
-                            return fail("fillet edge: " + why);
-                        if (std::abs(r2 - v) > 1e-12)
-                            mk.Add(v, r2, TopoDS::Edge(es));
-                        else
-                            mk.Add(v, TopoDS::Edge(es));
-                    }
-                    mk.Build();
-                    if (!mk.IsDone()) return fail("fillet failed");
-                    result = mk.Shape();
-                } else {
-                    BRepFilletAPI_MakeChamfer mk(tb->shape);
-                    for (const auto& je : params.at("edges")) {
-                        TopoDS_Shape es;
-                        std::string why;
-                        if (!feature_ops::resolve_topo_shape(doc, *tb, EntityKind::Edge, je, es,
-                                                             &why))
-                            return fail("chamfer edge: " + why);
-                        mk.Add(v, TopoDS::Edge(es));
-                    }
-                    mk.Build();
-                    if (!mk.IsDone()) return fail("chamfer failed");
-                    result = mk.Shape();
-                }
-                if (!shape::is_valid(result)) return fail("result invalid");
-                doc.replace_body_shape(target, result);
-                return true;
+                feature_ops::ApplyCtx ctx{*this, doc, f, params, env, err};
+                return feature_ops::apply_fillet_chamfer(ctx);
             }
 
             case FeatureType::Hole: {
@@ -1166,86 +1112,28 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
             }
 
             case FeatureType::LinearPattern: {
-                EntityId target = find_feature_body("target");
-                const Body* tb = doc.body(target);
-                if (!tb) return fail("missing target body");
-                int count = params.value("count", 0);
-                double spacing = num_param(params, "spacing", 0.0, env);
-                ensure_pattern_slots(f, count, doc);
-                gp_Dir dir = dir_from(params.at("direction"));
-                for (int i = 1; i < count; ++i) {
-                    gp_Trsf t;
-                    t.SetTranslation(gp_Vec(dir.XYZ() * (spacing * i)));
-                    TopoDS_Shape copy =
-                        BRepBuilderAPI_Transform(tb->shape, t, /*copy=*/true).Shape();
-                    if (copy.IsNull() || !shape::is_valid(copy))
-                        return fail("linear pattern failed");
-                    const std::string name = tb->name + " [" + std::to_string(i + 1) + "]";
-                    put_body(doc, f.output_bodies[static_cast<size_t>(i - 1)], copy, name);
-                }
-                return true;
+                feature_ops::ApplyCtx ctx{*this, doc, f, params, env, err};
+                return feature_ops::apply_linear_pattern(ctx);
             }
 
             case FeatureType::CircularPattern: {
-                EntityId target = find_feature_body("target");
-                const Body* tb = doc.body(target);
-                if (!tb) return fail("missing target body");
-                int count = params.value("count", 0);
-                ensure_pattern_slots(f, count, doc);
-                gp_Ax1 axis(pnt_from(params.at("axis_point")),
-                           dir_from(params.at("axis_dir")));
-                double total = num_param(params, "total_angle", 2.0 * M_PI, env);
-                double step = total / static_cast<double>(count);
-                for (int i = 1; i < count; ++i) {
-                    gp_Trsf t;
-                    t.SetRotation(axis, step * i);
-                    TopoDS_Shape copy =
-                        BRepBuilderAPI_Transform(tb->shape, t, /*copy=*/true).Shape();
-                    if (copy.IsNull() || !shape::is_valid(copy))
-                        return fail("circular pattern failed");
-                    const std::string name = tb->name + " [" + std::to_string(i + 1) + "]";
-                    put_body(doc, f.output_bodies[static_cast<size_t>(i - 1)], copy, name);
-                }
-                return true;
+                feature_ops::ApplyCtx ctx{*this, doc, f, params, env, err};
+                return feature_ops::apply_circular_pattern(ctx);
             }
 
             case FeatureType::Shell: {
-                EntityId target = find_feature_body("target");
-                const Body* tb = doc.body(target);
-                if (!tb) return fail("missing target body");
-                TopTools_IndexedMapOfShape faces;
-                TopExp::MapShapes(tb->shape, TopAbs_FACE, faces);
-                TopTools_ListOfShape remove_faces;
-                for (const auto& jf : params.at("faces")) {
-                    int idx = jf.get<int>();
-                    if (idx < 1 || idx > faces.Extent()) return fail("face index out of range");
-                    remove_faces.Append(faces(idx));
-                }
-                if (remove_faces.IsEmpty()) return fail("no faces to remove");
-                double thickness = num_param(params, "thickness", 1.0, env);
-                BRepOffsetAPI_MakeThickSolid mk;
-                mk.MakeThickSolidByJoin(tb->shape, remove_faces, -thickness, 1e-3);
-                if (!mk.IsDone()) return fail("shell failed");
-                TopoDS_Shape result = mk.Shape();
-                if (result.IsNull() || !shape::is_valid(result))
-                    return fail("shell result invalid");
-                doc.replace_body_shape(target, result);
-                return true;
+                feature_ops::ApplyCtx ctx{*this, doc, f, params, env, err};
+                return feature_ops::apply_shell(ctx);
             }
 
             case FeatureType::Offset: {
-                EntityId target = find_feature_body("target");
-                const Body* tb = doc.body(target);
-                if (!tb) return fail("missing target body");
-                double offset = num_param(params, "offset", 0.0, env);
-                BRepOffsetAPI_MakeOffsetShape mk;
-                mk.PerformByJoin(tb->shape, offset, 1e-3);
-                if (!mk.IsDone()) return fail("offset failed");
-                TopoDS_Shape result = mk.Shape();
-                if (result.IsNull() || !shape::is_valid(result))
-                    return fail("offset result invalid");
-                doc.replace_body_shape(target, result);
-                return true;
+                feature_ops::ApplyCtx ctx{*this, doc, f, params, env, err};
+                return feature_ops::apply_offset(ctx);
+            }
+
+            case FeatureType::Draft: {
+                feature_ops::ApplyCtx ctx{*this, doc, f, params, env, err};
+                return feature_ops::apply_draft(ctx);
             }
 
             case FeatureType::Path: {

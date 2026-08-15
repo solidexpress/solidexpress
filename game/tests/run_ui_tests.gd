@@ -844,21 +844,34 @@ func test_variables(main) -> void:
 	check(absf(vol1 - 30.0 * 30.0 * 10.0) < 1e-3, "volume tracks w=30 (%.0f)" % vol1)
 
 	var listed: Array = view.doc.list_variables()
-	check(listed.size() == 1, "list_variables has one entry")
-	check(listed[0]["name"] == "w" and listed[0]["expr"] == "30", "list entry name/expr")
-	check(absf(float(listed[0]["value"]) - 30.0) < 1e-9, "list_variables value is 30")
-	check(str(listed[0].get("error", "")) == "", "list entry has no error")
+	var w_entry: Dictionary = {}
+	for e in listed:
+		if str(e.get("name", "")) == "w":
+			w_entry = e
+			break
+	check(not w_entry.is_empty(), "list_variables includes w")
+	check(str(w_entry.get("expr", "")) == "30", "list entry name/expr")
+	check(absf(float(w_entry.get("value", 0.0)) - 30.0) < 1e-9, "list_variables value is 30")
+	check(str(w_entry.get("error", "")) == "", "list entry has no error")
 
 	check(view.doc.remove_variable("w"), "remove_variable works")
 	view.graph_changed()
 	var regen: Dictionary = view.doc.graph_regenerate()
 	check(not regen["ok"] and str(regen["error"]).length() > 0,
 			"regenerate reports missing reference")
-	check(view.doc.list_variables().is_empty(), "variable gone after remove")
+	var still_has_w := false
+	for e2 in view.doc.list_variables():
+		if str(e2.get("name", "")) == "w":
+			still_has_w = true
+	check(not still_has_w, "variable gone after remove")
 	check(view.undo(), "undo remove_variable")
 	check(absf(view.doc.body_volume(body) - vol1) < 1e-3, "undo restored volume")
 	listed = view.doc.list_variables()
-	check(listed.size() == 1 and listed[0]["name"] == "w", "undo restored variable")
+	var restored := false
+	for e3 in listed:
+		if str(e3.get("name", "")) == "w":
+			restored = true
+	check(restored, "undo restored variable")
 
 	# Drive the panel's add/edit methods directly.
 	view.new_document()

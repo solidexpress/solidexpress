@@ -235,6 +235,8 @@ void to_json(nlohmann::json& j, const PrintSetup& s) {
                        {"layer_height", s.layer_height},
                        {"min_wall", s.min_wall},
                        {"overhang_deg", s.overhang_deg},
+                       {"nozzle_mm", s.nozzle_mm},
+                       {"material", s.material},
                        {"rot", s.rot}};
 }
 
@@ -245,6 +247,9 @@ void from_json(const nlohmann::json& j, PrintSetup& s) {
     if (j.contains("layer_height")) s.layer_height = j["layer_height"].get<double>();
     if (j.contains("min_wall")) s.min_wall = j["min_wall"].get<double>();
     if (j.contains("overhang_deg")) s.overhang_deg = j["overhang_deg"].get<double>();
+    if (j.contains("nozzle_mm")) s.nozzle_mm = j["nozzle_mm"].get<double>();
+    if (j.contains("material") && j["material"].is_string())
+        s.material = j["material"].get<std::string>();
     if (j.contains("rot") && j["rot"].is_array() && j["rot"].size() == 9)
         s.rot = j["rot"].get<std::array<double, 9>>();
 }

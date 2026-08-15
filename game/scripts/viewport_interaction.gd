@@ -2888,6 +2888,26 @@ func _gui_key(event: InputEventKey) -> bool:
 					and (sketch_mode == null or not sketch_mode.active):
 				_show_orient_popup()
 				return true
+		KEY_O:
+			# Hole shortcuts (command_registry). Ctrl+O is File→Open on main;
+			# Ctrl+Shift+O arms Hole Wizard.
+			if sketch_mode != null and sketch_mode.active:
+				return false
+			if ops_panel == null:
+				return false
+			if event.ctrl_pressed and event.shift_pressed:
+				ops_panel._arm_hole_wizard()
+				return true
+			if event.ctrl_pressed:
+				return false
+			if event.shift_pressed:
+				ops_panel._arm_hole()
+				return true
+			if view.selected_face != "":
+				ops_panel._apply_hole()
+				return true
+			status.emit("Hole: select a face first")
+			return true
 	return false
 
 

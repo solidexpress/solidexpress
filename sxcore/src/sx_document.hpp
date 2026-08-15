@@ -313,6 +313,11 @@ public:
                                   float cs_angle_deg);
     godot::String graph_add_shell(const godot::String& target_fid,
                                   const godot::PackedStringArray& face_ids, double thickness);
+    godot::String graph_add_draft(const godot::String& target_fid,
+                                  const godot::PackedStringArray& face_ids, double angle_deg,
+                                  const godot::Vector3& pull_dir,
+                                  const godot::Vector3& neutral_point,
+                                  const godot::Vector3& neutral_normal);
     godot::String graph_add_offset(const godot::String& target_fid, double offset);
     godot::String graph_add_push_pull(const godot::String& target_fid,
                                       const godot::String& face_id, double distance);
@@ -400,7 +405,10 @@ public:
     godot::Dictionary print_analyze(const godot::String& body_id);
     godot::Dictionary print_orient(const godot::String& body_id);
     godot::Dictionary print_setup() const;
+    void set_print_setup(const godot::Dictionary& setup);
     void set_print_min_wall(double mm);
+    godot::Array thread_table() const;
+    godot::Dictionary thread_spec(const godot::String& designation) const;
 
 protected:
     static void _bind_methods();

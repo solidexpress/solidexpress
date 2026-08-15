@@ -292,7 +292,8 @@ bool apply_linear_pattern(ApplyCtx& ctx) {
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
-    int count = ctx.params.value("count", 0);
+    // Count may arrive as int (C++ binding) or float (PropertyPanel JSON).
+    int count = static_cast<int>(std::lround(num_param(ctx.params, "count", 0.0, ctx.env)));
     double spacing = num_param(ctx.params, "spacing", 0.0, ctx.env);
     ensure_pattern_slots(ctx.feature, count, ctx.doc);
     gp_Dir dir = dir_from(ctx.params.at("direction"));
@@ -314,7 +315,7 @@ bool apply_circular_pattern(ApplyCtx& ctx) {
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
-    int count = ctx.params.value("count", 0);
+    int count = static_cast<int>(std::lround(num_param(ctx.params, "count", 0.0, ctx.env)));
     ensure_pattern_slots(ctx.feature, count, ctx.doc);
     gp_Ax1 axis(pnt_from(ctx.params.at("axis_point")),
                dir_from(ctx.params.at("axis_dir")));

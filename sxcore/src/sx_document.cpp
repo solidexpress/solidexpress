@@ -38,6 +38,7 @@
 #include "sx/sheet_metal.hpp"
 #include "sx/sketch3d.hpp"
 #include "sx/specialized.hpp"
+#include "sx/thread_standards.hpp"
 #include "sx/user_feature.hpp"
 #include "sx/xref.hpp"
 #include "sx/materials.hpp"
@@ -701,7 +702,6 @@ bool SxDocument::apply_graph_edit(const std::string& label,
                                   const std::function<bool()>& mutate) {
     nlohmann::json before = doc_->graph().to_json();
     if (!mutate()) return false;
-    nlohmann::json after = doc_->graph().to_json();
     std::string err;
     if (!doc_->graph().regenerate(*doc_, &err)) {
         sx::log::error(label + ": " + err);
@@ -716,8 +716,12 @@ bool SxDocument::apply_graph_edit(const std::string& label,
     }
     last_failed_fid_.clear();
     last_graph_error_.clear();
-    stack_.push(*doc_, std::make_unique<sx::GraphSnapshotCommand>(label, std::move(before),
-                                                                  std::move(after)));
+    // Snapshot AFTER regenerate so minted pattern output_bodies / heal reports
+    // round-trip. push_executed: regenerate already ran — do not re-execute
+    // (that would mint a second set of pattern body ids and orphan the first).
+    nlohmann::json after = doc_->graph().to_json();
+    stack_.push_executed(std::make_unique<sx::GraphSnapshotCommand>(
+            label, std::move(before), std::move(after)));
     return true;
 }
 
@@ -905,23 +909,25 @@ String SxDocument::graph_add_loft(const PackedStringArray& sketch_fids, bool rul
 
 String SxDocument::graph_add_dressup(bool fillet, const String& target_fid,
                                      const PackedStringArray& edge_ids, double value) {
-    // Convert stable edge ids to the 1-based map indices stored in params.
-    std::vector<int> indices;
+    // Store durable edge UUIDs (ADR-002). Legacy integer indices still load via
+    // resolve_topo_shape; Godot JSON round-trips would turn ints into floats.
+    nlohmann::json edges = nlohmann::json::array();
     for (int i = 0; i < edge_ids.size(); ++i) {
         auto ref = doc_->find_subshape(parse_id(edge_ids[i]));
         if (!ref || ref->kind != sx::EntityKind::Edge) {
             sx::log::error("graph_add_dressup: not an edge id");
             return {};
         }
-        indices.push_back(ref->index);
+        edges.push_back(to_std(edge_ids[i]));
     }
+    if (edges.empty()) return {};
     sx::EntityId fid;
     bool ok = apply_graph_edit(fillet ? "fillet" : "chamfer", [&] {
         sx::Feature f;
         f.type = fillet ? sx::FeatureType::Fillet : sx::FeatureType::Chamfer;
         f.params = {{"target", to_std(target_fid)},
                     {fillet ? "radius" : "distance", value},
-                    {"edges", indices}};
+                    {"edges", edges}};
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -1667,6 +1673,37 @@ String SxDocument::graph_add_shell(const String& target_fid, const PackedStringA
     return ok ? to_gd(fid.str()) : String();
 }
 
+String SxDocument::graph_add_draft(const String& target_fid, const PackedStringArray& face_ids,
+                                   double angle_deg, const Vector3& pull_dir,
+                                   const Vector3& neutral_point, const Vector3& neutral_normal) {
+    nlohmann::json faces = nlohmann::json::array();
+    for (int i = 0; i < face_ids.size(); ++i) {
+        auto ref = doc_->find_subshape(parse_id(face_ids[i]));
+        if (!ref || ref->kind != sx::EntityKind::Face) {
+            sx::log::error("graph_add_draft: not a face id");
+            return {};
+        }
+        faces.push_back(to_std(face_ids[i]));
+    }
+    if (faces.empty()) return {};
+    if (pull_dir.length_squared() < 1e-12f) return {};
+    if (neutral_normal.length_squared() < 1e-12f) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("draft", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Draft;
+        f.params = {{"target", to_std(target_fid)},
+                    {"faces", faces},
+                    {"angle_deg", angle_deg},
+                    {"pull_dir", {pull_dir.x, pull_dir.y, pull_dir.z}},
+                    {"neutral_point", {neutral_point.x, neutral_point.y, neutral_point.z}},
+                    {"neutral_normal", {neutral_normal.x, neutral_normal.y, neutral_normal.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
 String SxDocument::graph_add_helix(float profile_radius, float helix_radius, float pitch,
                                    float turns, bool left_handed, const Vector3& axis_point,
                                    const Vector3& axis_dir) {
@@ -1778,6 +1815,23 @@ void SxDocument::set_print_min_wall(double mm) {
     doc_->set_print_setup(s);
 }
 
+void SxDocument::set_print_setup(const Dictionary& setup) {
+    sx::PrintSetup s = doc_->print_setup();
+    if (setup.has("bed_x")) s.bed_x = double(setup["bed_x"]);
+    if (setup.has("bed_y")) s.bed_y = double(setup["bed_y"]);
+    if (setup.has("bed_z")) s.bed_z = double(setup["bed_z"]);
+    if (setup.has("layer_height")) s.layer_height = double(setup["layer_height"]);
+    if (setup.has("min_wall")) s.min_wall = double(setup["min_wall"]);
+    if (setup.has("overhang_deg")) s.overhang_deg = double(setup["overhang_deg"]);
+    if (setup.has("nozzle_mm")) {
+        s.nozzle_mm = double(setup["nozzle_mm"]);
+        // Default min wall tracks 3× nozzle unless the caller also set min_wall.
+        if (!setup.has("min_wall") && s.nozzle_mm > 0.0) s.min_wall = 3.0 * s.nozzle_mm;
+    }
+    if (setup.has("material")) s.material = to_std(String(setup["material"]));
+    doc_->set_print_setup(s);
+}
+
 Dictionary SxDocument::print_setup() const {
     const sx::PrintSetup& s = doc_->print_setup();
     Dictionary d;
@@ -1787,6 +1841,34 @@ Dictionary SxDocument::print_setup() const {
     d["layer_height"] = s.layer_height;
     d["min_wall"] = s.min_wall;
     d["overhang_deg"] = s.overhang_deg;
+    d["nozzle_mm"] = s.nozzle_mm;
+    d["material"] = to_gd(s.material);
+    return d;
+}
+
+Array SxDocument::thread_table() const {
+    Array out;
+    for (const auto& t : sx::thread_table()) {
+        Dictionary d;
+        d["designation"] = to_gd(t.designation);
+        d["major_diameter_mm"] = t.major_diameter_mm;
+        d["pitch_mm"] = t.pitch_mm;
+        d["minor_diameter_mm"] = t.minor_diameter_mm();
+        d["thread_depth_mm"] = t.thread_depth_mm();
+        out.push_back(d);
+    }
+    return out;
+}
+
+Dictionary SxDocument::thread_spec(const String& designation) const {
+    Dictionary d;
+    auto spec = sx::find_thread(to_std(designation));
+    if (!spec) return d;
+    d["designation"] = to_gd(spec->designation);
+    d["major_diameter_mm"] = spec->major_diameter_mm;
+    d["pitch_mm"] = spec->pitch_mm;
+    d["minor_diameter_mm"] = spec->minor_diameter_mm();
+    d["thread_depth_mm"] = spec->thread_depth_mm();
     return d;
 }
 
@@ -2360,6 +2442,9 @@ void SxDocument::_bind_methods() {
                          DEFVAL(90.0f));
     ClassDB::bind_method(D_METHOD("graph_add_shell", "target_fid", "face_ids", "thickness"),
                          &SxDocument::graph_add_shell);
+    ClassDB::bind_method(D_METHOD("graph_add_draft", "target_fid", "face_ids", "angle_deg",
+                                  "pull_dir", "neutral_point", "neutral_normal"),
+                         &SxDocument::graph_add_draft);
     ClassDB::bind_method(D_METHOD("graph_add_offset", "target_fid", "offset"),
                          &SxDocument::graph_add_offset);
     ClassDB::bind_method(D_METHOD("graph_add_push_pull", "target_fid", "face_id", "distance"),
@@ -2445,7 +2530,10 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("print_orient", "body_id"), &SxDocument::print_orient,
                          DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("print_setup"), &SxDocument::print_setup);
+    ClassDB::bind_method(D_METHOD("set_print_setup", "setup"), &SxDocument::set_print_setup);
     ClassDB::bind_method(D_METHOD("set_print_min_wall", "mm"), &SxDocument::set_print_min_wall);
+    ClassDB::bind_method(D_METHOD("thread_table"), &SxDocument::thread_table);
+    ClassDB::bind_method(D_METHOD("thread_spec", "designation"), &SxDocument::thread_spec);
 }
 
 }  // namespace sx_godot
