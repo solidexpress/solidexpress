@@ -11,6 +11,7 @@ func run_film(ctx: FilmContext) -> void:
 	await ctx.beat("Place a plate", 0.4)
 	await FilmUI.place_primitive(ctx, "box")
 	await ctx.after_regen()
+	await ctx.camera.frame_all_smooth(0.0)
 	var fid := FilmUI.last_feature_id(doc, "primitive")
 	var body := ""
 	for f in doc.graph_features():
@@ -23,7 +24,7 @@ func run_film(ctx: FilmContext) -> void:
 	await ctx.beat("Draw the rib as an open two-leg profile", 0.5)
 	await FilmUI.enter_sketch(ctx)
 	await FilmUI.draw_polyline(ctx, sm, PackedVector2Array([
-		Vector2(10, 25), Vector2(40, 25), Vector2(40, 40),
+		Vector2(6, 12), Vector2(24, 12), Vector2(24, 20),
 	]))
 	await FilmUI.exit_sketch(ctx)
 	await ctx.after_regen()
@@ -31,7 +32,22 @@ func run_film(ctx: FilmContext) -> void:
 	await ctx.beat("Select the plate, then Rib from the S menu", 0.45)
 	if body != "":
 		ctx.view.select_entity(body, "")
-	await FilmUI.marking_verb(ctx, "Rib")
+		await FilmUI.wait_frames(ctx.tree, 2)
+	var ix = ctx.main.interaction
+	if ix != null and ix.has_method("_open_marking_menu"):
+		ix._open_marking_menu(ix._screen_center() if ix.has_method("_screen_center") else Vector2(400, 300))
+		await FilmUI.wait_frames(ctx.tree, 3)
+		var menu: MarkingMenu = ix.marking_menu
+		if menu != null and menu.visible:
+			var b := FilmUI.find_button(menu, "Rib")
+			if b != null:
+				await FilmUI.click_control(ctx, b, FilmUI.FilmUICues.alert("S", "Rib from the marking menu"))
+			else:
+				await FilmUI.marking_verb(ctx, "Rib")
+		else:
+			await FilmUI.marking_verb(ctx, "Rib")
+	else:
+		await FilmUI.marking_verb(ctx, "Rib")
 	await ctx.after_regen()
 	var v1 := v0
 	if body != "":

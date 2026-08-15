@@ -30,6 +30,8 @@ func _init() -> void:
 	ctx.view = main.view
 	ctx.tree = self
 	ctx.clock = FilmClock.new()
+	# Ensure a real-sized viewport so FilmUI clicks are on-screen in headless runs.
+	FilmUI.ensure_test_viewport(ctx)
 
 	await test_analyze_thin_plate(ctx, main)
 	await test_orient_tall_box(ctx, main)
