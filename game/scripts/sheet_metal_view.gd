@@ -3,19 +3,34 @@ extends Control
 ## Sheet mode: folded | flat split of the *same* viewport. Bend table is a
 ## thin strip on the flat side — not a second document.
 
+signal tool_status(text: String)
+
 var flat_length_mm := 0.0
 var k_factor := 0.44
+var _tools: HBoxContainer
 
 
 func _ready() -> void:
 	name = "SheetMetalView"
 	visible = false
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	offset_left = 8
 	offset_top = 48
 	offset_right = -8
 	offset_bottom = -8
+	_tools = HBoxContainer.new()
+	_tools.name = "SheetTools"
+	_tools.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_tools.position = Vector2(12, 8)
+	_tools.add_theme_constant_override("separation", 6)
+	add_child(_tools)
+	for label in ["Convert", "Edge flange", "Unfold", "Flat DXF"]:
+		var b := Button.new()
+		b.text = label
+		var name_l: String = label
+		b.pressed.connect(func() -> void: _on_tool(name_l))
+		_tools.add_child(b)
 
 
 func show_split(on: bool, flat_mm: float = 0.0, k: float = 0.44) -> void:
@@ -23,6 +38,18 @@ func show_split(on: bool, flat_mm: float = 0.0, k: float = 0.44) -> void:
 	flat_length_mm = flat_mm
 	k_factor = k
 	queue_redraw()
+
+
+func _on_tool(label: String) -> void:
+	match label:
+		"Convert":
+			tool_status.emit("Sheet: Convert thin solid — select a body and use timeline ConvertSheet")
+		"Edge flange":
+			tool_status.emit("Sheet: Edge flange — use graph_add_flange from a selected face")
+		"Unfold":
+			tool_status.emit("Flat length %.1f mm (K=%.2f)" % [flat_length_mm, k_factor])
+		"Flat DXF":
+			tool_status.emit("Sheet: File → Export Drawing (DXF) for the flat")
 
 
 func _draw() -> void:

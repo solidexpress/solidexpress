@@ -18,6 +18,7 @@ var model_space: Node3D  # kernel Z-up frame
 var sketch_mode: SketchMode  # optional; when active, input goes to sketching
 var sketch_chrome: SketchContextChrome  # finish-bar dim blank while sketching
 var world_gizmos: WorldGizmos
+var hole_preview: HolePreviewOverlay
 var measure_overlay: MeasureOverlay
 var transform_hud: TransformHud
 var ops_panel: OpsPanel
@@ -75,6 +76,8 @@ var _strip_plane: Button
 var _strip_fuse: Button
 var _strip_cut: Button
 var _strip_common: Button
+var _strip_group: Button
+var _strip_similar: Button
 var _strip_hole: Button
 var _strip_hole_wizard: Button
 var _strip_clash: Button
@@ -225,7 +228,6 @@ func is_placing() -> bool:
 ## has no start signal of its own).
 func refresh_selection_chrome() -> void:
 	_refresh_selection_strip()
-	_refresh_transform_hud()
 
 
 func _on_camera_view_changed() -> void:
@@ -276,11 +278,23 @@ func _build_selection_strip() -> void:
 	_strip_common = UIIcons.button("common", "Intersect", "Keep only the common volume of the selection")
 	_strip_common.pressed.connect(func() -> void: _ctx_boolean("common"))
 	row.add_child(_strip_common)
+	_strip_group = Button.new()
+	_strip_group.name = "StripGroup"
+	_strip_group.text = "Group"
+	_strip_group.tooltip_text = "Isolate the selection (hide everything else)"
+	_strip_group.pressed.connect(_ctx_group)
+	row.add_child(_strip_group)
+	_strip_similar = Button.new()
+	_strip_similar.name = "StripSimilar"
+	_strip_similar.text = "Similar"
+	_strip_similar.tooltip_text = "Add bodies with the same feature kind to the selection"
+	_strip_similar.pressed.connect(_ctx_similar)
+	row.add_child(_strip_similar)
 	_strip_hole = Button.new()
 	_strip_hole.name = "StripHole"
 	_strip_hole.text = "Hole"
-	_strip_hole.tooltip_text = "Hole… size / depth / through-all on the selected body"
-	_strip_hole.pressed.connect(_ctx_hole)
+	_strip_hole.tooltip_text = "M6 through-all on the selected face / sketch points"
+	_strip_hole.pressed.connect(_ctx_hole_m6)
 	row.add_child(_strip_hole)
 	_strip_hole_wizard = Button.new()
 	_strip_hole_wizard.name = "StripHoleWizard"
@@ -844,6 +858,12 @@ func _mount_wave0_chrome() -> void:
 		model_space.add_child(triball)
 	elif model_space != null:
 		triball = model_space.get_node("TriBallGizmo") as TriBallGizmo
+	if model_space != null and model_space.get_node_or_null("HolePreviewOverlay") == null:
+		hole_preview = HolePreviewOverlay.new()
+		hole_preview.name = "HolePreviewOverlay"
+		model_space.add_child(hole_preview)
+	elif model_space != null:
+		hole_preview = model_space.get_node("HolePreviewOverlay") as HolePreviewOverlay
 	if get_node_or_null("MarkingMenu") == null:
 		marking_menu = MarkingMenu.new()
 		marking_menu.name = "MarkingMenu"
@@ -854,11 +874,37 @@ func _mount_wave0_chrome() -> void:
 		marking_menu = get_node("MarkingMenu") as MarkingMenu
 
 
-func _ctx_hole() -> void:
-	if ops_panel != null:
-		ops_panel._prompt_hole()
+func set_hole_markers(points: PackedVector3Array, radius_mm: float) -> void:
+	if hole_preview == null:
 		return
-	status.emit("Hole: select a body")
+	hole_preview.set_radius(maxf(0.5, radius_mm * 0.5))
+	hole_preview.set_points(points)
+
+
+func clear_hole_markers() -> void:
+	if hole_preview != null:
+		hole_preview.clear()
+
+
+func _ctx_hole_m6() -> void:
+	if view == null or view.selected_body == "":
+		status.emit("Hole: select a body")
+		return
+	var info: Dictionary = view.feature_info(view.selected_body)
+	var target := str(info.get("id", ""))
+	if target == "":
+		status.emit("Hole: body is not on the timeline")
+		return
+	var pos := Vector3(20, 20, 8)
+	if view.selected_face != "":
+		var mid: Variant = view.doc.face_midpoint(view.selected_face)
+		if mid is Vector3:
+			pos = mid
+	var positions := PackedVector3Array()
+	positions.append(pos)
+	var hid := view.doc.graph_add_holes(target, "simple", positions, Vector3(0, 0, -1), 6.0, 0.0)
+	status.emit("M6 hole" if hid != "" else "Hole failed")
+	view._after_mutation()
 
 
 func _ctx_clash() -> void:
@@ -966,7 +1012,7 @@ func _on_marking_verb(verb: String) -> void:
 		"Fillet":
 			_ctx_fillet()
 		"Hole":
-			_ctx_hole()
+			_ctx_hole_m6()
 		"Clash":
 			_ctx_clash()
 		"TriBall":
@@ -2751,20 +2797,30 @@ func _on_release(pos: Vector2) -> void:
 func _gui_key(event: InputEventKey) -> bool:
 	if not event.pressed:
 		return false
+	# Digits / view keys must not fire while a spinbox or line edit has focus
+	# (Wave 6.1 — typing H=1.2 must stick).
+	if SxUi.numeric_field_focused(get_viewport()) \
+			and not event.ctrl_pressed and not event.meta_pressed:
+		match event.keycode:
+			KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, \
+			KEY_PERIOD, KEY_MINUS, KEY_W, KEY_H, KEY_D, KEY_F, KEY_X, KEY_Y, KEY_Z, \
+			KEY_K, KEY_G, KEY_S, KEY_I, KEY_SPACE:
+				return false
 	match event.keycode:
+		KEY_ENTER, KEY_KP_ENTER:
+			if ops_panel != null and ops_panel.try_commit_pending():
+				return true
 		KEY_ESCAPE:
 			# Sketch Esc is handled in _sketch_input; do not steal it.
 			if sketch_mode != null and sketch_mode.active:
 				return false
-			# Temporary HUD overlays only. Persistent W/H/D stays until
-			# selection clears (or place cancels via `_input`).
+			if ops_panel != null and ops_panel.cancel_pending_pick():
+				clear_hole_markers()
+				return true
+			# Dismiss overlapping panels/popups first to avoid undismissable stacks.
 			if transform_hud != null and transform_hud.visible:
-				if transform_hud._precision_row.visible:
-					transform_hud.hide_precision()
-					return true
-				if transform_hud._move_row.visible:
-					transform_hud.hide_move_delta()
-					return true
+				transform_hud.dismiss()
+				return true
 			if _orient_popup != null and _orient_popup.visible:
 				_orient_popup.hide()
 				return true
@@ -2838,17 +2894,6 @@ func _gui_key(event: InputEventKey) -> bool:
 				view.redo()
 				status.emit("Redo")
 				return true
-		KEY_O:
-			if ops_panel != null:
-				# Ctrl+Shift+O: Hole Wizard (multi-point), Shift+O: arm Place hole…, O: apply hole at face center.
-				if event.ctrl_pressed and event.shift_pressed:
-					ops_panel._arm_hole_wizard()
-					return true
-				if not event.ctrl_pressed and event.shift_pressed:
-					ops_panel._arm_hole()
-					return true
-				if not event.ctrl_pressed:
-					return ops_panel._apply_hole()
 		KEY_W:
 			if not event.ctrl_pressed:
 				var mode: int = view.cycle_display_mode()
@@ -2891,6 +2936,26 @@ func _gui_key(event: InputEventKey) -> bool:
 					and (sketch_mode == null or not sketch_mode.active):
 				_show_orient_popup()
 				return true
+		KEY_O:
+			# Hole shortcuts (command_registry). Ctrl+O is File→Open on main;
+			# Ctrl+Shift+O arms Hole Wizard.
+			if sketch_mode != null and sketch_mode.active:
+				return false
+			if ops_panel == null:
+				return false
+			if event.ctrl_pressed and event.shift_pressed:
+				ops_panel._arm_hole_wizard()
+				return true
+			if event.ctrl_pressed:
+				return false
+			if event.shift_pressed:
+				ops_panel._arm_hole()
+				return true
+			if view.selected_face != "":
+				ops_panel._apply_hole()
+				return true
+			status.emit("Hole: select a face first")
+			return true
 	return false
 
 
@@ -2977,19 +3042,14 @@ func _apply_live_rotate(angle: float) -> void:
 func _refresh_transform_hud() -> void:
 	if transform_hud == null:
 		return
-	if sketch_mode != null and sketch_mode.active:
-		transform_hud.hide_dims()
-		transform_hud.hide_precision()
-		transform_hud.hide_move_delta()
-		return
 	if _place_kind != "":
 		var center := _screen_center()
 		var target := _place_target(center)
 		# Place keeps absolute X/Y/Z + W×H×D blanks for typed fine-tune.
 		transform_hud.show_dims(target["point"], place_size, true)
 		return
-	# Idle selection: keep W×H×D for primitives / imports so a placed box
-	# stays editable. Move/stretch blanks stay up on their own.
+	# Idle selection: clear the bottom band. Move/stretch blanks stay up on their own.
+	# Import bodies keep W×H×D visible so scale is one typed edit away after drop.
 	if view.selected_body == "" or view.selection_size() != 1:
 		transform_hud.hide_dims()
 		transform_hud.hide_precision()
@@ -2999,11 +3059,11 @@ func _refresh_transform_hud() -> void:
 	if bb.is_empty():
 		transform_hud.hide_dims()
 		return
-	if view.is_scalable_body(view.selected_body):
+	if view.is_import_body(view.selected_body):
 		transform_hud.show_dims(bb["center"], bb["size"], true)
 		return
 	transform_hud.hide_dims()
-	transform_hud.set_values(bb["center"], bb["size"], false)
+	transform_hud.set_values(bb["center"], bb["size"], view.is_primitive_body(view.selected_body))
 
 
 func _on_hud_position(pos: Vector3) -> void:
@@ -3552,12 +3612,14 @@ func _input(event: InputEvent) -> void:
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		var ke := event as InputEventKey
-		# Shortcuts (O hole, W display, Del, …) must work without Interaction
-		# focus — after place, focus usually sits on a dock. Never steal from
-		# live text fields.
-		if _text_field_has_focus() or _sketch_keys_blocked():
-			return
-		if _gui_key(ke):
+		# Del/Backspace must work without Interaction focus (focus often sits on
+		# docks after placing). Never steal keystrokes from live text fields.
+		if (ke.keycode == KEY_DELETE or ke.keycode == KEY_BACKSPACE) \
+				and not _text_field_has_focus():
+			if _gui_key(ke):
+				get_viewport().set_input_as_handled()
+				return
+		if has_focus() and _gui_key(ke):
 			get_viewport().set_input_as_handled()
 
 
@@ -3611,12 +3673,14 @@ func _refresh_selection_strip() -> void:
 	_strip_fuse.visible = multi_body
 	_strip_cut.visible = multi_body
 	_strip_common.visible = multi_body
+	_strip_group.visible = not has_instance and view.selection_size() > 0
+	_strip_similar.visible = not has_instance and view.selected_body != ""
 	_strip_fillet.visible = not has_instance
 	_strip_hole.visible = not has_instance
 	_strip_hole_wizard.visible = not has_instance
 	_strip_clash.visible = multi_body
 	_strip_triball.visible = not has_instance
-	_strip_sketch.visible = not has_instance
+	_strip_sketch.visible = not has_instance and view.selected_face != ""
 	_strip_look.visible = not has_instance and view.selected_face != ""
 	_strip_plane.visible = not has_instance and view.selected_face != ""
 	_strip_hide.visible = not has_instance
@@ -3710,9 +3774,26 @@ func _ctx_set_active_plane() -> void:
 
 func _ctx_fillet() -> void:
 	if ops_panel != null:
-		ops_panel._fillet_all()
+		ops_panel.arm_or_apply_fillet()
 	else:
 		status.emit("Fillet: open Modify panel")
+
+
+func _ctx_group() -> void:
+	var ids := _selected_body_ids()
+	if ids.is_empty():
+		status.emit("Group: select one or more bodies")
+		return
+	view.isolate(ids)
+	status.emit("Isolated %d body(s)" % ids.size())
+	_refresh_selection_strip()
+
+
+func _ctx_similar() -> void:
+	var n: int = view.select_similar()
+	status.emit("Similar: %d body(s) selected" % n if n > 0 else "Similar: nothing matched")
+	_refresh_transform_hud()
+	_refresh_selection_strip()
 
 
 ## Instant pairwise boolean: primary keeps the result; other selected bodies

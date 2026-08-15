@@ -8,12 +8,13 @@ extends PanelContainer
 ## DocumentView.picked so a re-click on the same face still lands a point.
 
 signal status(text: String)
-signal sketch_requested
 
-enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, LINEAR, CIRCULAR, MIRROR }
+enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, LINEAR, CIRCULAR, MIRROR, FILLET_EDGES, CHAMFER_EDGES }
 
 var view: DocumentView
 var timeline_panel: TimelinePanel
+## Optional: ViewportInteraction for hole markers / fillet arm feedback.
+var interaction: ViewportInteraction
 
 var _body_ops: VBoxContainer
 var _face_ops: VBoxContainer
@@ -30,15 +31,9 @@ var _thickness_spin: SpinBox
 var _draft_angle_spin: SpinBox
 var _hole_type: OptionButton
 var _material_option: OptionButton
-var _hole_size: OptionButton
 var _hole_diameter: SpinBox
 var _hole_depth: SpinBox
 var _hole_inset: SpinBox
-var _size_w: SpinBox
-var _size_h: SpinBox
-var _size_d: SpinBox
-var _size_row: VBoxContainer
-var _size_syncing := false
 var _apply_holes_btn: Button
 ## True after the user edits Inset; auto-inferred defaults stop overwriting.
 var _hole_inset_manual := false
@@ -93,22 +88,7 @@ func _ready() -> void:
 
 func _labeled_spin(parent: Container, text: String, min_v: float, max_v: float,
 		step: float, value: float) -> SpinBox:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.custom_minimum_size = Vector2(80, 0)
-	lbl.add_theme_font_size_override("font_size", 11)
-	row.add_child(lbl)
-	var spin := SpinBox.new()
-	spin.min_value = min_v
-	spin.max_value = max_v
-	spin.step = 0.001
-	spin.custom_arrow_step = step
-	spin.value = value
-	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(spin)
-	return spin
+	return SxUi.labeled_spin(parent, text, min_v, max_v, step, value, step >= 1.0 and is_equal_approx(step, roundf(step)))
 
 
 func _op_button(parent: Container, text: String, handler: Callable,
@@ -169,32 +149,6 @@ func _build_body_ops() -> void:
 		_material_option.set_item_metadata(_material_option.item_count - 1, m["name"])
 	_material_option.item_selected.connect(_on_material_selected)
 	mat_row.add_child(_material_option)
-
-	_size_row = VBoxContainer.new()
-	_size_row.name = "PrimitiveSizeRow"
-	_body_ops.add_child(_size_row)
-	_size_w = _labeled_spin(_size_row, "W", 0.1, 10000.0, 0.1, 5.0)
-	_size_h = _labeled_spin(_size_row, "H", 0.1, 10000.0, 0.1, 5.0)
-	_size_d = _labeled_spin(_size_row, "D", 0.1, 10000.0, 0.1, 5.0)
-	_size_w.value_changed.connect(_on_primitive_size_changed)
-	_size_h.value_changed.connect(_on_primitive_size_changed)
-	_size_d.value_changed.connect(_on_primitive_size_changed)
-
-	_body_ops.add_child(HSeparator.new())
-	var sketch_row := HBoxContainer.new()
-	_body_ops.add_child(sketch_row)
-	_op_button(sketch_row, "Sketch", func() -> void:
-			sketch_requested.emit(),
-		"sketch", "Sketch on a face or the ground plane")
-	_body_ops.add_child(HSeparator.new())
-	var hole_body_row := HBoxContainer.new()
-	_body_ops.add_child(hole_body_row)
-	_op_button(hole_body_row, "Hole…", _prompt_hole, "hole",
-		"Size / depth / through-all hole on this body")
-	_op_button(hole_body_row, "Hole Wizard…", _arm_hole_wizard, "hole",
-		"Multi-place holes: click points, then Apply holes / Enter")
-	_op_button(hole_body_row, "Hex opening", _apply_hex_opening, "polygon",
-		"Through hex cut sized to jaw_af + clearance")
 
 	_body_ops.add_child(HSeparator.new())
 	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.1, 100.0, 0.5, 2.0)
@@ -288,26 +242,8 @@ func _build_face_ops() -> void:
 	_hole_type.add_item("Simple", 0)
 	_hole_type.add_item("Counterbore", 1)
 	_hole_type.add_item("Countersink", 2)
-	_hole_type.add_item("Hex", 3)
 	hole_type_row.add_child(_hole_type)
-	var size_row := HBoxContainer.new()
-	_face_ops.add_child(size_row)
-	var size_lbl := Label.new()
-	size_lbl.text = "Size"
-	size_lbl.custom_minimum_size = Vector2(80, 0)
-	size_lbl.add_theme_font_size_override("font_size", 11)
-	size_row.add_child(size_lbl)
-	_hole_size = OptionButton.new()
-	_hole_size.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_hole_size.tooltip_text = "Nominal fastener size; Ø = nominal + hole_compensation"
-	for spec in [["M3", 3.0], ["M4", 4.0], ["M5", 5.0], ["M6", 6.0],
-			["M8", 8.0], ["M10", 10.0], ["Custom", 0.0]]:
-		_hole_size.add_item(str(spec[0]))
-		_hole_size.set_item_metadata(_hole_size.item_count - 1, spec[1])
-	_hole_size.selected = 3
-	_hole_size.item_selected.connect(_on_hole_size_selected)
-	size_row.add_child(_hole_size)
-	_hole_diameter = _labeled_spin(_face_ops, "Hole Ø", 0.1, 200.0, 0.1, 6.0)
+	_hole_diameter = _labeled_spin(_face_ops, "Hole Ø", 0.1, 200.0, 0.5, 6.0)
 	_hole_depth = _labeled_spin(_face_ops, "Depth (0=thru)", 0.0, 1000.0, 1.0, 0.0)
 	_hole_depth.tooltip_text = "Blind depth in mm; 0 = through-all"
 	_hole_inset = _labeled_spin(_face_ops, "Inset", 0.5, 500.0, 0.5, 8.0)
@@ -318,6 +254,11 @@ func _build_face_ops() -> void:
 	_face_ops.add_child(hole_row)
 	_op_button(hole_row, "Apply hole", _apply_hole, "hole",
 		"Drill at the center of this face")
+	# Name the primary Apply-hole control for tests / FilmUI (icon-only otherwise).
+	if hole_row.get_child_count() > 0:
+		var ah := hole_row.get_child(0) as Button
+		if ah != null:
+			ah.name = "ApplyHole"
 	_op_button(hole_row, "Place hole…", _arm_hole, "hole",
 		"Arm: click a point on a face (near corner → inset; near mid → snap; else free)")
 	var wizard_row := HBoxContainer.new()
@@ -327,8 +268,6 @@ func _build_face_ops() -> void:
 	_apply_holes_btn = _op_button(wizard_row, "Apply holes", _apply_hole_wizard, "hole",
 		"Commit accumulated Hole Wizard points as one feature (Enter)")
 	_apply_holes_btn.disabled = true
-	_op_button(_face_ops, "Hex opening", _apply_hex_opening, "polygon",
-		"Through hex cut on this face, AF = jaw_af + clearance")
 	_op_button(_face_ops, "Face area", func() -> void:
 		status.emit("Area: %.2f mm^2" % view.doc.measure_face_area(view.selected_face)),
 		"area", "Show the area of this face")
@@ -347,12 +286,17 @@ func _on_selection_changed(body: String, face: String) -> void:
 		_name_edit.text = view.doc.body_name(body)
 		_color_picker.color = view.doc.get_body_color(body)
 		_sync_material_option(body)
-		_sync_primitive_size(body)
 	if face != "":
 		# New face: re-infer inset unless the user typed one this session.
 		_hole_inset_manual = false
 		_sync_hole_inset_default()
 	_clamp_height()
+	# Face tools live below body tools in the scroll — jump to them when a face
+	# is selected so Apply hole / Shell are clickable without hunting.
+	if face != "" and _scroll != null and _face_ops != null:
+		await get_tree().process_frame
+		if is_instance_valid(_scroll) and is_instance_valid(_face_ops):
+			_scroll.ensure_control_visible(_face_ops)
 
 
 func _on_picked(body: String, face: String, point: Vector3) -> void:
@@ -383,49 +327,6 @@ func _on_material_selected(index: int) -> void:
 		# Softer / denser stock changes the inferred corner inset.
 		if not _hole_inset_manual:
 			_sync_hole_inset_default()
-
-
-func _sync_primitive_size(body: String) -> void:
-	if _size_row == null or view == null:
-		return
-	var prim := view.is_primitive_body(body)
-	_size_row.visible = prim
-	if not prim:
-		return
-	var bb: Dictionary = view.doc.measure_bbox(body)
-	if bb.is_empty():
-		return
-	var sz: Vector3 = bb["max"] - bb["min"]
-	_size_syncing = true
-	_size_w.value = sz.x
-	_size_h.value = sz.y
-	_size_d.value = sz.z
-	_size_syncing = false
-
-
-func _on_primitive_size_changed(_v: float) -> void:
-	if _size_syncing or view == null or view.selected_body == "":
-		return
-	if not view.is_primitive_body(view.selected_body):
-		return
-	var bb: Dictionary = view.selection_bbox()
-	if bb.is_empty():
-		return
-	var size := Vector3(_size_w.value, _size_h.value, _size_d.value)
-	var center: Vector3 = bb["center"]
-	var half := size * 0.5
-	if view.resize_primitive_aabb(view.selected_body, center - half, center + half):
-		status.emit("Size → %.3f × %.3f × %.3f" % [size.x, size.y, size.z])
-
-
-func _on_hole_size_selected(index: int) -> void:
-	if _hole_size == null or _hole_diameter == null:
-		return
-	var nom := float(_hole_size.get_item_metadata(index))
-	if nom > 0.0:
-		_hole_diameter.value = nom
-	if not _hole_inset_manual:
-		_sync_hole_inset_default()
 
 
 func _on_hole_diameter_changed(_v: float) -> void:
@@ -526,6 +427,39 @@ func _chamfer_all() -> void:
 	_apply_dressup(false)
 
 
+## Strip / marking-menu entry: prefer selected edges; else arm edge picking.
+func arm_or_apply_fillet() -> void:
+	_start_or_apply_dressup(true)
+
+
+func arm_or_apply_chamfer() -> void:
+	_start_or_apply_dressup(false)
+
+
+## If edges are already selected, commit immediately; otherwise arm edge picking.
+func _start_or_apply_dressup(fillet: bool) -> void:
+	if view.selected_body == "":
+		return
+	if not view.selected_edges.is_empty() or view.selected_edge != "":
+		_apply_dressup(fillet)
+		return
+	_pending = Pending.FILLET_EDGES if fillet else Pending.CHAMFER_EDGES
+	_pending_body = view.selected_body
+	_pending_fid = view.feature_of_body(view.selected_body)
+	status.emit(("%s: click edges (Ctrl adds), then Enter — or Esc cancel" % \
+			("Fillet" if fillet else "Chamfer")))
+
+
+func _commit_armed_dressup() -> bool:
+	var fillet := _pending == Pending.FILLET_EDGES
+	_pending = Pending.NONE
+	if view.selected_edges.is_empty() and view.selected_edge == "":
+		status.emit("No edges selected — cancelled")
+		return false
+	_apply_dressup(fillet)
+	return true
+
+
 func _apply_dressup(fillet: bool) -> void:
 	if view.selected_body == "":
 		return
@@ -552,8 +486,30 @@ func _apply_dressup(fillet: bool) -> void:
 	if ok:
 		view.graph_changed()
 		status.emit("%s %s %.1f applied" % [name, scope, value])
+		_open_last_feature("fillet" if fillet else "chamfer")
 	else:
 		status.emit("%s failed (value too large?)" % name)
+
+
+func _open_last_feature(ftype: String) -> void:
+	var main := _find_main()
+	if main == null or not main.has_method("open_feature_params"):
+		return
+	var fid := ""
+	for f in view.doc.graph_features():
+		if str(f.get("type", "")) == ftype:
+			fid = str(f.get("id", ""))
+	if fid != "":
+		main.open_feature_params(fid)
+
+
+func _find_main() -> Node:
+	var n: Node = self
+	while n != null:
+		if n.has_method("open_feature_params"):
+			return n
+		n = n.get_parent()
+	return null
 
 
 func _mirror() -> void:
@@ -642,10 +598,16 @@ func _do_linear(body: String, direction: Vector3) -> void:
 	if direction.length_squared() < 1e-12:
 		status.emit("Pattern failed (zero direction)")
 		return
+	var fid := view.feature_of_body(body)
 	var made: PackedStringArray = PackedStringArray()
-	# Body-mode pattern makes count-1 copies (UI expectation in ops panel tests).
-	made = view.doc.linear_pattern(
-		body, direction.normalized(), _pattern_spacing.value, int(_pattern_count.value))
+	if fid != "":
+		var pfid: String = view.doc.graph_add_linear_pattern(
+			fid, direction.normalized(), _pattern_spacing.value, int(_pattern_count.value))
+		if pfid != "":
+			made = PackedStringArray([pfid])
+	else:
+		made = view.doc.linear_pattern(
+			body, direction.normalized(), _pattern_spacing.value, int(_pattern_count.value))
 	view.graph_changed()
 	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
 
@@ -654,77 +616,90 @@ func _do_circular(body: String, axis_point: Vector3, axis_dir: Vector3) -> void:
 	if axis_dir.length_squared() < 1e-12:
 		status.emit("Pattern failed (zero axis)")
 		return
+	var fid := view.feature_of_body(body)
 	var made: PackedStringArray = PackedStringArray()
-	# Body-mode circular pattern produces separate copies.
-	made = view.doc.circular_pattern(
-		body, axis_point, axis_dir.normalized(), int(_pattern_count.value), TAU)
+	if fid != "":
+		var pfid: String = view.doc.graph_add_circular_pattern(
+			fid, axis_point, axis_dir.normalized(), int(_pattern_count.value), TAU)
+		if pfid != "":
+			made = PackedStringArray([pfid])
+	else:
+		made = view.doc.circular_pattern(
+			body, axis_point, axis_dir.normalized(), int(_pattern_count.value), TAU)
 	view.graph_changed()
 	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
 
 
 func _apply_thread() -> void:
-	_show_thread_dialog()
-
-
-func _show_thread_dialog() -> void:
-	if view == null or view.selected_body == "":
-		status.emit("Thread: select a body")
+	var body := view.selected_body
+	if body == "":
 		return
-	var bb: Dictionary = view.doc.measure_bbox(view.selected_body)
+	var fid := view.feature_of_body(body)
+	if fid == "":
+		status.emit("Thread needs a timeline body")
+		return
+	var bb: Dictionary = view.doc.measure_bbox(body)
 	if bb.is_empty():
 		status.emit("Thread failed (no bbox)")
 		return
 	var mn: Vector3 = bb["min"]
 	var mx: Vector3 = bb["max"]
 	var size := mx - mn
-	var major_r: float = 0.5 * minf(size.x, size.y)
-	var height: float = maxf(size.z, 1.0)
-	var dlg := AcceptDialog.new()
-	dlg.title = "Thread"
-	dlg.ok_button_text = "Apply"
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 6)
-	dlg.add_child(col)
-	var hint := Label.new()
-	hint.text = "Modeled triangular thread along +Z through the body."
-	hint.add_theme_font_size_override("font_size", 11)
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	col.add_child(hint)
-	var rspin := _labeled_spin(col, "Major r", 0.2, 200.0, 0.1, maxf(major_r, 0.5))
-	var pspin := _labeled_spin(col, "Pitch", 0.2, 20.0, 0.05, clampf(major_r * 0.2, 0.4, 2.0))
-	var cosmetic := CheckBox.new()
-	cosmetic.text = "Cosmetic only (no cut)"
-	col.add_child(cosmetic)
-	add_child(dlg)
-	dlg.confirmed.connect(func() -> void:
-		_commit_thread(rspin.value, pspin.value, height, mn, mx, cosmetic.button_pressed)
-		dlg.queue_free())
-	dlg.canceled.connect(func() -> void: dlg.queue_free())
-	dlg.close_requested.connect(func() -> void: dlg.queue_free())
-	dlg.popup_centered(Vector2i(340, 240))
-
-
-func _commit_thread(major_r: float, pitch: float, height: float, mn: Vector3, mx: Vector3,
-		cosmetic: bool) -> void:
-	var body := view.selected_body
-	var fid := view.feature_of_body(body)
-	if fid == "":
-		status.emit("Thread needs a timeline body")
-		return
-	if cosmetic:
-		status.emit("Cosmetic thread Ø%.1f (not modeled)" % (2.0 * major_r))
-		return
-	if major_r < 0.2 or height < 0.5:
+	# Cylinder-like shaft: two horizontal extents nearly equal, and not a cube.
+	var xy_a := minf(size.x, size.y)
+	var xy_b := maxf(size.x, size.y)
+	var major_r: float = 0.5 * xy_a
+	var height: float = size.z
+	if major_r < 0.5 or height < 1.0:
 		status.emit("Thread failed (body too small)")
 		return
-	var turns: float = maxf(1.0, height / maxf(pitch, 0.2) - 0.5)
+	if xy_b > xy_a * 1.35:
+		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
+		return
+	# Reject near-cubes / near-plates (all extents similar, or squat).
+	var extents := [size.x, size.y, size.z]
+	extents.sort()
+	if extents[2] < extents[0] * 1.4:
+		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
+		return
+	if height < major_r * 2.5:
+		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
+		return
+	# Prefer nearest ISO/UNC designation from the table when available.
+	var pitch: float = clampf(major_r * 0.2, 0.5, 4.0)
+	var designation := ""
+	if view.doc.has_method("thread_table"):
+		var best_err := 1e9
+		for t in view.doc.thread_table():
+			var d: Dictionary = t
+			var r := float(d.get("major_diameter_mm", 0.0)) * 0.5
+			var err := absf(r - major_r)
+			if err < best_err and err < major_r * 0.15:
+				best_err = err
+				major_r = r
+				pitch = float(d.get("pitch_mm", pitch))
+				designation = str(d.get("designation", ""))
+	var turns: float = maxf(1.0, height / pitch - 1.0)
 	var depth: float = pitch * 0.5
 	var axis_point := Vector3((mn.x + mx.x) * 0.5, (mn.y + mx.y) * 0.5, mn.z)
 	var tid: String = view.doc.graph_add_thread(
 		fid, major_r, pitch, turns, depth, 60.0, axis_point, Vector3(0, 0, 1))
 	if tid != "":
+		# Persist designation when we matched a standard so PropertyPanel can show it.
+		if designation != "":
+			var raw := ""
+			for f in view.doc.graph_features():
+				if str(f.get("id", "")) == tid:
+					raw = str(f.get("params", "{}"))
+					break
+			var p: Variant = JSON.parse_string(raw)
+			if p is Dictionary:
+				p["designation"] = designation
+				view.doc.graph_set_params(tid, JSON.stringify(p))
 		view.graph_changed()
-		status.emit("Thread Ø%.1f pitch %.2f (%d turns)" % [2.0 * major_r, pitch, int(turns)])
+		var label := designation if designation != "" else ("Ø%.1f" % (2.0 * major_r))
+		status.emit("Thread %s pitch %.2f (%d turns)" % [label, pitch, int(turns)])
+		_open_last_feature("thread")
 	else:
 		status.emit("Thread failed")
 
@@ -798,9 +773,12 @@ func _draft() -> bool:
 	var angle: float = _draft_angle_spin.value
 	var fid := view.feature_of_body(body)
 	var ok: bool
-	# Use body-mode draft to ensure consistent behavior across app versions.
-	ok = view.doc.draft_faces(PackedStringArray([face]), angle, Vector3(0, 0, 1),
-			neutral_point, Vector3(0, 0, 1))
+	if fid != "":
+		ok = view.doc.graph_add_draft(fid, PackedStringArray([face]), angle, Vector3(0, 0, 1),
+				neutral_point, Vector3(0, 0, 1)) != ""
+	else:
+		ok = view.doc.draft_faces(PackedStringArray([face]), angle, Vector3(0, 0, 1),
+				neutral_point, Vector3(0, 0, 1))
 	if ok:
 		view.graph_changed()
 		status.emit("Draft %.1f° applied" % angle)
@@ -810,98 +788,23 @@ func _draft() -> bool:
 
 
 func _apply_hole() -> bool:
-	var body := view.selected_body if view.selected_body != "" else _pending_body
-	if body == "":
-		status.emit("Hole: select a body")
+	var face := view.selected_face
+	var body := view.selected_body
+	if face == "" or body == "":
 		return false
-	var face := view.selected_face if view.selected_face != "" else _pending_face
-	var bb: Dictionary = view.doc.measure_bbox(body)
-	if not bb.is_empty():
-		var sz: Vector3 = bb["max"] - bb["min"]
-		var min_e := minf(sz.x, minf(sz.y, sz.z))
-		if _hole_type == null or _hole_type.selected != 3:
-			if _hole_diameter.value >= min_e - 0.05:
-				status.emit("Hole Ø%.1f is larger than the part (%.1f mm)" % [
-					_hole_diameter.value, min_e])
-				_show_hole_dialog(false)
-				return false
-	return _commit_hole(body, face, _default_hole_position(body, face))
-
-
-func _prompt_hole() -> void:
-	_show_hole_dialog(false)
-
-
-func _show_hole_dialog(hex_mode: bool) -> void:
-	var dlg := AcceptDialog.new()
-	dlg.title = "Hex opening" if hex_mode else "Hole"
-	dlg.ok_button_text = "Apply"
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 6)
-	dlg.add_child(col)
-	var hint := Label.new()
-	hint.text = "AF = jaw_af + clearance · Depth 0 = through-all" if hex_mode \
-			else "Ø = nominal + hole_compensation · Depth 0 = through-all"
-	hint.add_theme_font_size_override("font_size", 11)
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	col.add_child(hint)
-	var dspin := _labeled_spin(col, "AF" if hex_mode else "Ø", 0.1, 200.0, 0.1,
-			_hex_af() if hex_mode else _hole_diameter.value)
-	var zspin := _labeled_spin(col, "Depth (0=thru)", 0.0, 1000.0, 1.0, _hole_depth.value)
-	add_child(dlg)
-	dlg.confirmed.connect(func() -> void:
-		_hole_diameter.value = dspin.value
-		_hole_depth.value = zspin.value
-		if hex_mode:
-			_apply_hex_opening()
-		else:
-			_apply_hole()
-		dlg.queue_free())
-	dlg.canceled.connect(func() -> void: dlg.queue_free())
-	dlg.close_requested.connect(func() -> void: dlg.queue_free())
-	dlg.popup_centered(Vector2i(340, 220))
-
-
-func _default_hole_position(body: String, face: String) -> Vector3:
-	if face != "" and view != null:
-		var mid: Variant = view.doc.face_midpoint(face)
-		if mid is Vector3:
-			return mid
-		var face_bb: Dictionary = view.doc.measure_bbox(face)
-		if not face_bb.is_empty():
-			return (face_bb["min"] + face_bb["max"]) * 0.5
-	if body != "" and view != null:
-		var bb: Dictionary = view.doc.measure_bbox(body)
-		if not bb.is_empty():
-			var mn: Vector3 = bb["min"]
-			var mx: Vector3 = bb["max"]
-			return Vector3((mn.x + mx.x) * 0.5, (mn.y + mx.y) * 0.5, mx.z)
-	return Vector3.ZERO
-
-
-func _hex_af() -> float:
-	return view._default_jaw_af() + _variable_number("clearance", 0.3) if view != null \
-			else 10.3
-
-
-func _variable_number(name: String, fallback: float) -> float:
-	if view == null:
-		return fallback
-	for v in view.doc.list_variables():
-		if str(v.get("name", "")).strip_edges() == name:
-			var val = v.get("value", NAN)
-			if typeof(val) == TYPE_FLOAT and not is_nan(val):
-				return float(val)
-			var parsed := str(v.get("expr", "")).to_float()
-			if parsed != 0.0 or str(v.get("expr", "")).begins_with("0"):
-				return parsed
-	return fallback
+	var face_bb: Dictionary = view.doc.measure_bbox(face)
+	if face_bb.is_empty():
+		status.emit("Hole failed (no face bbox)")
+		return false
+	var fmn: Vector3 = face_bb["min"]
+	var fmx: Vector3 = face_bb["max"]
+	return _commit_hole(body, face, (fmn + fmx) * 0.5)
 
 
 func _arm_hole() -> void:
+	var face := view.selected_face
 	var body := view.selected_body
-	if body == "":
-		status.emit("Hole: select a body")
+	if face == "" or body == "":
 		return
 	var fid := view.feature_of_body(body)
 	if fid == "":
@@ -910,16 +813,16 @@ func _arm_hole() -> void:
 	_clear_hole_wizard()
 	_pending = Pending.HOLE
 	_pending_body = body
-	_pending_face = view.selected_face
+	_pending_face = face
 	_pending_fid = fid
-	_pending_first = _pending_face
-	status.emit("Hole: click a face (near corner → inset %.1f mm)" % _hole_inset.value)
+	_pending_first = face
+	status.emit("Hole: click face (near corner → inset %.1f mm)" % _hole_inset.value)
 
 
 func _arm_hole_wizard() -> void:
+	var face := view.selected_face
 	var body := view.selected_body
-	if body == "":
-		status.emit("Hole Wizard: select a body")
+	if face == "" or body == "":
 		return
 	var fid := view.feature_of_body(body)
 	if fid == "":
@@ -927,19 +830,31 @@ func _arm_hole_wizard() -> void:
 		return
 	_pending = Pending.HOLE_WIZARD
 	_pending_body = body
-	_pending_face = view.selected_face
+	_pending_face = face
 	_pending_fid = fid
-	_pending_first = _pending_face
+	_pending_first = face
 	_hole_wizard_positions = PackedVector3Array()
 	_hole_wizard_direction = Vector3.ZERO
 	_sync_apply_holes_btn()
-	status.emit("Hole Wizard: click points on a face, then Apply holes / Enter")
+	_sync_hole_markers()
+	status.emit("Hole Wizard: click points on face, then Apply holes / Enter")
 
 
 func _clear_hole_wizard() -> void:
 	_hole_wizard_positions = PackedVector3Array()
 	_hole_wizard_direction = Vector3.ZERO
 	_sync_apply_holes_btn()
+	_sync_hole_markers()
+
+
+func _sync_hole_markers() -> void:
+	if interaction == null:
+		return
+	if _hole_wizard_positions.is_empty() and _pending != Pending.HOLE_WIZARD \
+			and _pending != Pending.HOLE:
+		interaction.clear_hole_markers()
+		return
+	interaction.set_hole_markers(_hole_wizard_positions, _hole_diameter.value)
 
 
 func _sync_apply_holes_btn() -> void:
@@ -960,9 +875,15 @@ func cancel_pending_pick() -> bool:
 	if _pending == Pending.NONE:
 		return false
 	var was_wizard := _pending == Pending.HOLE_WIZARD
+	var was_dress := _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES
 	_pending = Pending.NONE
 	_clear_hole_wizard()
-	status.emit("Hole Wizard cancelled" if was_wizard else "Cancelled")
+	if was_wizard:
+		status.emit("Hole Wizard cancelled")
+	elif was_dress:
+		status.emit("Edge pick cancelled")
+	else:
+		status.emit("Cancelled")
 	return true
 
 
@@ -985,6 +906,7 @@ func _accumulate_hole_wizard_pick(body: String, face: String, point: Vector3) ->
 			_hole_wizard_direction = Vector3(0, 0, -1)
 	_hole_wizard_positions.append(position)
 	_sync_apply_holes_btn()
+	_sync_hole_markers()
 	status.emit("Hole Wizard: %d point(s) — click more, Apply holes / Enter, Esc cancel" %
 			_hole_wizard_positions.size())
 
@@ -1004,6 +926,15 @@ func _apply_hole_wizard() -> bool:
 	return ok
 
 
+## Enter commits Hole Wizard when armed; returns true if handled.
+func try_commit_pending() -> bool:
+	if _pending == Pending.HOLE_WIZARD:
+		return _apply_hole_wizard()
+	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
+		return _commit_armed_dressup()
+	return false
+
+
 func _commit_holes(body: String, face: String, positions: PackedVector3Array,
 		direction: Vector3) -> bool:
 	var target_fid := view.feature_of_body(body)
@@ -1019,16 +950,15 @@ func _commit_holes(body: String, face: String, positions: PackedVector3Array,
 			dir = Vector3(0, 0, -1)
 	var d: float = _hole_diameter.value
 	var depth: float = _hole_depth.value
-	var type_names := ["simple", "counterbore", "countersink", "hex"]
-	var idx: int = _hole_type.selected if _hole_type != null else 0
-	var htype: String = type_names[clampi(idx, 0, type_names.size() - 1)]
+	var type_names := ["simple", "counterbore", "countersink"]
+	var htype: String = type_names[_hole_type.selected]
 	var hole_fid: String = view.doc.graph_add_holes(
 		target_fid, htype, positions, dir, d, depth,
 		1.6 * d, 0.5 * d, 2.0 * d, 90.0)
 	if hole_fid != "":
-		_stamp_hole_expressions(hole_fid, htype, d)
 		view.graph_changed()
 		status.emit("Hole Wizard: %d × Ø%.1f" % [positions.size(), d])
+		_open_last_feature("hole")
 		return true
 	status.emit("Hole Wizard failed")
 	return false
@@ -1054,49 +984,18 @@ func _commit_hole(body: String, face: String, position: Vector3) -> bool:
 		direction = (body_center - position).normalized()
 	var d: float = _hole_diameter.value
 	var depth: float = _hole_depth.value
-	var type_names := ["simple", "counterbore", "countersink", "hex"]
-	var idx: int = _hole_type.selected if _hole_type != null else 0
-	var htype: String = type_names[clampi(idx, 0, type_names.size() - 1)]
+	var type_names := ["simple", "counterbore", "countersink"]
+	var htype: String = type_names[_hole_type.selected]
 	var hole_fid: String = view.doc.graph_add_hole(
 		target_fid, htype, position, direction, d, depth,
 		1.6 * d, 0.5 * d, 2.0 * d, 90.0)
 	if hole_fid != "":
-		_stamp_hole_expressions(hole_fid, htype, d)
 		view.graph_changed()
 		status.emit("Hole Ø%.1f at (%.1f, %.1f, %.1f)" % [d, position.x, position.y, position.z])
+		_open_last_feature("hole")
 		return true
 	status.emit("Hole failed")
 	return false
-
-
-func _stamp_hole_expressions(hole_fid: String, htype: String, nominal: float) -> void:
-	var raw: String = ""
-	for f in view.doc.graph_features():
-		if f["id"] == hole_fid:
-			raw = f["params"]
-			break
-	var params = JSON.parse_string(raw) if raw != "" else null
-	if typeof(params) != TYPE_DICTIONARY:
-		return
-	if htype == "hex":
-		params["diameter"] = "=jaw_af+clearance"
-	else:
-		params["nominal"] = nominal
-	view.doc.graph_set_params(hole_fid, JSON.stringify(params))
-
-
-func _apply_hex_opening() -> bool:
-	if view == null or view.selected_body == "":
-		status.emit("Hex opening: select a body")
-		return false
-	if _hole_type != null:
-		_hole_type.selected = 3
-	_hole_diameter.value = _hex_af()
-	_hole_depth.value = 0.0
-	var ok := _apply_hole()
-	if ok:
-		status.emit("Hex opening AF = jaw_af+clearance")
-	return ok
 
 
 # --- two-target / precision-pick ops: arm, then click ---

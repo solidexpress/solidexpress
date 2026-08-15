@@ -259,5 +259,8 @@
   {"id": "pmi_survives_regen", "title": "3D dim survives regen", "script": "res://tests/films/film_pmi_survives_regen.gd", "enabled": true, "quit_after": 700},
   {"id": "board_in_box", "title": "IDF board in an enclosure", "script": "res://tests/films/film_board_in_box.gd", "enabled": true, "quit_after": 700},
   {"id": "print_thin_wall", "title": "Print check flags a thin plate", "script": "res://tests/films/film_print_thin_wall.gd", "enabled": true, "quit_after": 800},
-  {"id": "print_overhang_orient", "title": "Orient lays a tall box on the bed", "script": "res://tests/films/film_print_overhang_orient.gd", "enabled": true, "quit_after": 800}
+  {"id": "print_overhang_orient", "title": "Orient lays a tall box on the bed", "script": "res://tests/films/film_print_overhang_orient.gd", "enabled": true, "quit_after": 800},
+  {"id": "open_in_slicer", "title": "Open in Slicer prepares per-body 3MF", "script": "res://tests/films/film_open_in_slicer.gd", "enabled": true, "quit_after": 900},
+  {"id": "thread_standard", "title": "Thread from ISO/UNC on a shaft", "script": "res://tests/films/film_thread_standard.gd", "enabled": true, "quit_after": 900},
+  {"id": "datum_offset", "title": "Datum plane with offset on the timeline", "script": "res://tests/films/film_datum_offset.gd", "enabled": true, "quit_after": 800}
 ]

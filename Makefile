@@ -23,6 +23,7 @@ import: build
 	$(GODOT) --headless --path game --import > /dev/null 2>&1 || true
 
 test-godot: build import
+	$(GODOT) --headless --path game --script tests/run_parse_sweep_tests.gd
 	$(GODOT) --headless --path game --script tests/run_tests.gd
 	$(GODOT) --headless --path game --script tests/run_ui_tests.gd
 	$(GODOT) --headless --path game --script tests/run_sketch_tests.gd
@@ -67,6 +68,9 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_move_snap_tests.gd
 	$(GODOT) --headless --path game --script tests/run_timeline_ux_tests.gd
 	$(GODOT) --headless --path game --script tests/run_measure_overlay_tests.gd
+	$(GODOT) --headless --path game --script tests/run_open_in_slicer_tests.gd
+	$(GODOT) --headless --path game --script tests/run_clearance_tests.gd
+	$(GODOT) --headless --path game --script tests/run_dead_chrome_tests.gd
 
 test: test-kernel test-godot
 	@echo "ALL TESTS PASSED"

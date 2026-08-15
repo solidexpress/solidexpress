@@ -3,6 +3,8 @@
 # bar). Phase 1 drag-and-drop experience.
 extends Node3D
 
+const _CamRail := preload("res://scripts/cam_rail.gd")
+const _SimRail := preload("res://scripts/sim_rail.gd")
 const _PrintStrip := preload("res://scripts/print_strip.gd")
 
 var model_space: Node3D
@@ -35,8 +37,17 @@ var view_hud: ViewHud
 var drawing_sheet: DrawingSheet
 var sheet_metal_view: SheetMetalView
 var print_strip
+var cam_rail
+var sim_rail
 var palette: PanelContainer
+var _rail_extrude: Button
+var _rail_revolve: Button
+var _rail_sweep: Button
+var _rail_loft: Button
 var dim_value: SpinBox
+var _datum_offset: SpinBox
+var _datum_dialog: ConfirmationDialog
+var _pending_datum_id := -1
 var finish_op: OptionButton
 var dof_label: Label
 var alias_edit: LineEdit
@@ -57,6 +68,27 @@ var _paste_ox: SpinBox
 var _paste_oy: SpinBox
 var _paste_oz: SpinBox
 var _paste_in_place: CheckBox
+var _slicer_dialog: ConfirmationDialog
+var _slicer_exec: LineEdit
+var _slicer_args: LineEdit
+var _slicer_preview: Label
+var _drawing_options: ConfirmationDialog
+var _draw_scale: OptionButton
+var _draw_sheet: OptionButton
+var _draw_front: CheckBox
+var _draw_top: CheckBox
+var _draw_right: CheckBox
+var _draw_iso: CheckBox
+var _draw_bom: CheckBox
+var _pending_draw_action: FileAction = FileAction.NONE
+var _insert_dialog: ConfirmationDialog
+var _insert_list: VBoxContainer
+var _insert_ox: SpinBox
+var _insert_oy: SpinBox
+var _insert_oz: SpinBox
+var _insert_path := ""
+var _insert_checks: Array = []  # CheckBox per body
+var _paste_as_instance: CheckBox
 var _recent: Array = []  # paths, most recent first (max 8)
 const _RECENT_CLEAR_ID := 100
 const _RECENT_CFG := "user://recent.cfg"
@@ -317,10 +349,8 @@ func _build_ui() -> void:
 	insert_popup.add_separator()
 	insert_popup.add_item("Datum Point at Origin", 6)
 	insert_popup.add_separator()
-	insert_popup.add_item("Sketch…", 21)
-	insert_popup.add_item("Hex opening…", 22)
-	insert_popup.add_separator()
 	# Surface Thread alongside Insert for reachability (also available in Ops).
+	# Hook: default to Modeled when Mode rail is “Form” once API exists.
 	insert_popup.add_item("Thread…", 20)
 	insert_popup.id_pressed.connect(_on_insert_menu)
 
@@ -328,7 +358,7 @@ func _build_ui() -> void:
 	mode_btn.name = "ModeRail"
 	mode_btn.text = "Mode"
 	mode_btn.flat = false
-	mode_btn.tooltip_text = "Model (3D) · Draw (2D drawing sheet) · Sheet / Cam / Sim / Form. Sketch lives on the left rail, not in Draw."
+	mode_btn.tooltip_text = "Draw / Sheet / Cam / Sim / Form — one rail, replaces Modify"
 	menu_row.add_child(mode_btn)
 	_mode_popup = mode_btn.get_popup()
 	_style_menu_button(mode_btn)
@@ -370,7 +400,6 @@ func _build_ui() -> void:
 	print_strip.bed_ghost = bed_ghost
 	print_strip.analyze_requested.connect(_on_print_analyze)
 	print_strip.orient_requested.connect(_on_print_orient)
-	print_strip.create_requested.connect(func() -> void: _on_mode_menu(0))
 
 	# Interaction overlay under chrome (full-rect input); snap bar joins TopChrome.
 	interaction = ViewportInteraction.new()
@@ -386,8 +415,34 @@ func _build_ui() -> void:
 	# Mode overlays sit under chrome and stay hidden in Model (layout suite).
 	drawing_sheet = DrawingSheet.new()
 	ui.add_child(drawing_sheet)
+	drawing_sheet.tool_status.connect(_on_status)
 	sheet_metal_view = SheetMetalView.new()
 	ui.add_child(sheet_metal_view)
+	sheet_metal_view.tool_status.connect(_on_status)
+
+	cam_rail = _CamRail.new()
+	cam_rail.name = "CamRail"
+	cam_rail.view = view
+	cam_rail.visible = false
+	cam_rail.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	cam_rail.position = Vector2(_CHROME_PAD, _RAIL_TOP)
+	cam_rail.status.connect(_on_status)
+	ui.add_child(cam_rail)
+	cam_rail.attach_overlay(model_space)
+
+	sim_rail = _SimRail.new()
+	sim_rail.name = "SimRail"
+	sim_rail.view = view
+	sim_rail.visible = false
+	sim_rail.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	sim_rail.position = Vector2(_CHROME_PAD, _RAIL_TOP)
+	sim_rail.status.connect(_on_status)
+	ui.add_child(sim_rail)
+
+	_build_slicer_dialog(ui)
+	_build_drawing_options_dialog(ui)
+	_build_insert_components_dialog(ui)
+	_build_datum_offset_dialog(ui)
 
 	file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -409,17 +464,34 @@ func _build_ui() -> void:
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 2)
 	palette.add_child(vbox)
-	var sketch_btn := UIIcons.button("sketch", "Sketch",
-		"Sketch: click a face or the ground — line, circle, polygon, constraints")
-	sketch_btn.name = "PaletteSketch"
-	sketch_btn.pressed.connect(_request_sketch)
-	vbox.add_child(sketch_btn)
-	vbox.add_child(HSeparator.new())
 	for entry in [["box", "Box"], ["cylinder", "Cylinder"], ["sphere", "Sphere"],
 			["cone", "Cone"], ["torus", "Torus"]]:
 		var btn := PaletteButton.new(entry[0], entry[1])
 		btn.insert_requested.connect(interaction.insert_at_center)
 		vbox.add_child(btn)
+	vbox.add_child(HSeparator.new())
+	var sketch_btn := UIIcons.button("sketch", "",
+		"Sketch: select a face or existing sketch to enter sketch mode")
+	sketch_btn.pressed.connect(_request_sketch)
+	vbox.add_child(sketch_btn)
+	# Finish verbs for selected sketch pads (SW/Fusion left-rail reachability).
+	vbox.add_child(HSeparator.new())
+	_rail_extrude = UIIcons.button("extrude", "",
+		"Extrude: select a closed sketch pad, then Extrude")
+	_rail_extrude.pressed.connect(_rail_finish_extrude)
+	vbox.add_child(_rail_extrude)
+	_rail_revolve = UIIcons.button("revolve", "",
+		"Revolve: select a closed sketch pad with an axis, then Revolve")
+	_rail_revolve.pressed.connect(_rail_finish_revolve)
+	vbox.add_child(_rail_revolve)
+	_rail_sweep = UIIcons.button("arc", "",
+		"Sweep: Ctrl+click profile + rail pads, then Sweep")
+	_rail_sweep.pressed.connect(_rail_finish_sweep)
+	vbox.add_child(_rail_sweep)
+	_rail_loft = UIIcons.button("area", "",
+		"Loft: Ctrl+click 2+ profile pads, then Loft")
+	_rail_loft.pressed.connect(_rail_finish_loft)
+	vbox.add_child(_rail_loft)
 	# Wave 6.5: simple mechanic-tool catalog (shop tooling).
 	vbox.add_child(HSeparator.new())
 	for entry in [
@@ -502,20 +574,24 @@ func _build_ui() -> void:
 	ops_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	ui.add_child(ops_panel)
 	ops_panel.status.connect(_on_status)
-	ops_panel.sketch_requested.connect(_request_sketch)
 	interaction.ops_panel = ops_panel
+	ops_panel.interaction = interaction
 
 	# Right, second column: assembly browser (auto-hides when no instances).
 	assembly_panel = AssemblyPanel.new()
 	assembly_panel.name = "AssemblyPanel"
 	assembly_panel.view = view
-	assembly_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	assembly_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	assembly_panel.anchor_left = 1.0
 	assembly_panel.anchor_right = 1.0
+	assembly_panel.anchor_top = 1.0
+	assembly_panel.anchor_bottom = 1.0
 	assembly_panel.offset_left = -652
 	assembly_panel.offset_right = -332
-	assembly_panel.offset_top = 480
+	assembly_panel.offset_top = -420
+	assembly_panel.offset_bottom = -42
 	assembly_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	assembly_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	ui.add_child(assembly_panel)
 	assembly_panel.status.connect(_on_status)
 	assembly_panel.instance_selected.connect(func(id: String) -> void:
@@ -595,6 +671,7 @@ func _build_ui() -> void:
 	ui.add_child(timeline)
 	timeline.status.connect(_on_status)
 	timeline.feature_selected.connect(_on_timeline_feature_selected)
+	ops_panel.timeline_panel = timeline
 
 	variables_panel = VariablesPanel.new()
 	variables_panel.name = "Variables"
@@ -1227,7 +1304,6 @@ func _variant_kind_for(tool: int) -> String:
 		SketchMode.Tool.ARC: return "arc"
 		SketchMode.Tool.PATTERN: return "pattern"
 		SketchMode.Tool.LINE, SketchMode.Tool.CENTERLINE: return "line"
-		SketchMode.Tool.POLYGON: return "polygon"
 		_: return ""
 
 
@@ -1335,8 +1411,11 @@ func _update_panel_visibility() -> void:
 	card_box.visible = _selected_entity() != "" and not sketching
 	timeline.visible = view.doc.graph_features().size() > 0 and not sketching
 	variables_panel.visible = (show_variables or view.doc.list_variables().size() > 0) and not sketching
-	# Keep the variables table flush against whatever is to its left.
-	variables_panel.offset_left = 280 if timeline.visible else 12
+	# Keep the variables table clear of the left rail and flush against the timeline.
+	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
+	if palette != null and palette.visible:
+		rail_right = maxf(rail_right, palette.position.x + maxf(palette.size.x, 48.0) + 8.0)
+	variables_panel.offset_left = 280 if timeline.visible else rail_right
 	variables_panel.offset_right = variables_panel.offset_left + 260
 	_update_left_rail()
 	_schedule_card_dock()
@@ -1388,41 +1467,7 @@ func _on_print_orient() -> void:
 	if print_strip != null:
 		print_strip.set_digest(digest)
 	_on_status("Oriented — " + digest)
-	if view.has_method("set_print_preview"):
-		view.call("set_print_preview", true)
-	if camera != null:
-		camera.frame_contents()
 	view.refresh()
-
-
-func _update_left_rail() -> void:
-	if palette == null or ops_panel == null:
-		return
-	var sketching := sketch_mode != null and sketch_mode.active
-	if sketch_toolbar != null:
-		sketch_toolbar.visible = sketching
-	if sketching:
-		palette.visible = false
-		ops_panel.visible = false
-		return
-	var placing := interaction != null and interaction.is_placing()
-	var has_body := view.selected_body != ""
-	# OpsPanel shows itself only when something is selected (same rule as before).
-	ops_panel.visible = has_body
-	# Selected body → Modify tools occupy the left palette slot.
-	# Idle / place-armed → Primitives palette; OpsPanel stays on the right
-	# (and hides itself when there is no selection).
-	if _work_mode != "Model":
-		# Specialized rails replace Modify — they do not stack a second dock.
-		palette.visible = false
-		ops_panel.visible = false
-		return
-	if has_body and not placing:
-		palette.visible = false
-		_dock_ops_left()
-	else:
-		palette.visible = true
-		_dock_ops_right()
 
 
 func _update_mode_overlays() -> void:
@@ -1439,14 +1484,48 @@ func _update_mode_overlays() -> void:
 		sheet_metal_view.show_split(_work_mode == "Sheet", flat, 0.44)
 	if print_strip != null:
 		print_strip.visible = _work_mode == "Form"
-	if view != null and view.has_method("set_print_preview"):
-		view.call("set_print_preview", _work_mode == "Form")
+		if _work_mode == "Form" and print_strip.has_method("sync_from_doc"):
+			print_strip.sync_from_doc()
+	if cam_rail != null:
+		cam_rail.visible = _work_mode == "Cam"
+		if _work_mode != "Cam":
+			cam_rail.clear_path()
+	if sim_rail != null:
+		sim_rail.visible = _work_mode == "Sim"
 	# Bed ghost visible in Form only (gate the toggle).
 	if bed_ghost != null:
 		var on := false
 		if print_strip != null and is_instance_valid(print_strip._bed_toggle):
 			on = print_strip._bed_toggle.button_pressed
 		bed_ghost.visible = (_work_mode == "Form") and on
+
+
+func _update_left_rail() -> void:
+	if palette == null or ops_panel == null:
+		return
+	var sketching := sketch_mode != null and sketch_mode.active
+	if sketch_toolbar != null:
+		sketch_toolbar.visible = sketching
+	if sketching:
+		palette.visible = false
+		ops_panel.visible = false
+		if cam_rail: cam_rail.visible = false
+		if sim_rail: sim_rail.visible = false
+		return
+	var placing := interaction != null and interaction.is_placing()
+	var has_body := view.selected_body != ""
+	ops_panel.visible = has_body and _work_mode == "Model"
+	if _work_mode == "Cam" or _work_mode == "Sim" or _work_mode == "Draw" \
+			or _work_mode == "Sheet" or _work_mode == "Form":
+		palette.visible = false
+		ops_panel.visible = false
+		return
+	if has_body and not placing:
+		palette.visible = false
+		_dock_ops_left()
+	else:
+		palette.visible = true
+		_dock_ops_right()
 
 
 ## Selection card sits under the visible left rail (palette / modify / sketch).
@@ -1474,7 +1553,14 @@ func _dock_card_below_rail() -> void:
 		var h := maxf(rail.size.y, rail.get_combined_minimum_size().y)
 		top = rail.position.y + h + 6.0
 		width = maxf(_CARD_W, rail.get_combined_minimum_size().x)
-	var card_h := minf(_CARD_H, maxf(100.0, _LEFT_STACK_LIMIT - top))
+	# Stay clear of the timeline (bottom-left) and the status bar.
+	var limit := _LEFT_STACK_LIMIT
+	if timeline != null and timeline.visible:
+		limit = minf(limit, timeline.get_global_rect().position.y - 6.0)
+	else:
+		var vp_h := get_viewport().get_visible_rect().size.y if get_viewport() else 900.0
+		limit = minf(limit, vp_h - 42.0)
+	var card_h := minf(_CARD_H, maxf(80.0, limit - top))
 	card_box.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	card_box.anchor_left = 0.0
 	card_box.anchor_right = 0.0
@@ -1483,6 +1569,112 @@ func _dock_card_below_rail() -> void:
 	card_box.offset_top = top
 	card_box.offset_bottom = top + card_h
 	card_box.grow_horizontal = Control.GROW_DIRECTION_END
+
+
+## After creating a feature: select it on the timeline and open PropertyPanel.
+func open_feature_params(fid: String) -> void:
+	if fid == "" or timeline == null:
+		return
+	_update_panel_visibility()
+	timeline.refresh()
+	timeline._select_feature(fid)
+	if timeline.property_panel != null and timeline.property_panel.visible:
+		_on_status("Feature created — adjust parameters, then OK")
+	else:
+		_on_status("Feature created — edit Params (JSON) if needed")
+
+
+func _rail_finish_extrude() -> void:
+	if selected_sketch_pads.size() == 1:
+		if sketch_mode.begin_edit(selected_sketch_pads[0]):
+			_on_sketch_session_started("Extrude sketch")
+			_on_sketch_finish("new", 20.0)
+			return
+	if sketch_mode != null and sketch_mode.active:
+		_on_sketch_finish("new", 20.0)
+		return
+	_on_status("Extrude: select a closed sketch pad (or enter Sketch and draw a profile)")
+
+
+func _rail_finish_revolve() -> void:
+	if selected_sketch_pads.size() == 1:
+		if sketch_mode.begin_edit(selected_sketch_pads[0]):
+			_on_sketch_session_started("Revolve sketch")
+			sketch_mode.finish_revolve(TAU, "new")
+			return
+	if sketch_mode != null and sketch_mode.active:
+		sketch_mode.finish_revolve(TAU, "new")
+		return
+	_on_status("Revolve: select a closed sketch pad first")
+
+
+func _rail_finish_sweep() -> void:
+	_sweep_profile_along_path()
+
+
+func _rail_finish_loft() -> void:
+	_loft_selected_sketches(false)
+
+
+func _build_datum_offset_dialog(parent: Node) -> void:
+	_datum_dialog = ConfirmationDialog.new()
+	_datum_dialog.title = "Datum offset"
+	_datum_dialog.ok_button_text = "Add"
+	_datum_dialog.dialog_hide_on_ok = true
+	var body := VBoxContainer.new()
+	_datum_dialog.add_child(body)
+	var row := HBoxContainer.new()
+	body.add_child(row)
+	var lbl := Label.new()
+	lbl.text = "Offset"
+	row.add_child(lbl)
+	_datum_offset = SpinBox.new()
+	SxUi.configure_spin(_datum_offset, -10000.0, 10000.0, 1.0, 10.0)
+	_datum_offset.suffix = "mm"
+	row.add_child(_datum_offset)
+	var hint := Label.new()
+	hint.text = "Offset along the plane normal (0 = through origin)"
+	hint.add_theme_font_size_override("font_size", 11)
+	body.add_child(hint)
+	_datum_dialog.confirmed.connect(_on_datum_offset_confirmed)
+	parent.add_child(_datum_dialog)
+
+
+func _on_datum_offset_confirmed() -> void:
+	var off := _datum_offset.value
+	var origin := Vector3.ZERO
+	var normal := Vector3(0, 0, 1)
+	match _pending_datum_id:
+		0:
+			origin = Vector3(0, 0, off)
+			normal = Vector3(0, 0, 1)
+		1:
+			origin = Vector3(0, off, 0)
+			normal = Vector3(0, 1, 0)
+		2:
+			origin = Vector3(off, 0, 0)
+			normal = Vector3(1, 0, 0)
+		_:
+			_pending_datum_id = -1
+			return
+	_pending_datum_id = -1
+	var fid := ""
+	if view.doc.has_method("graph_add_datum_plane"):
+		fid = view.doc.graph_add_datum_plane(origin, normal)
+	else:
+		var did: String = view.doc.add_datum_plane(origin, normal)
+		if did != "":
+			view.graph_changed()
+			_on_status("Datum plane added at offset %.1f mm" % off)
+		else:
+			_on_status("Datum creation failed")
+		return
+	if fid != "":
+		view.graph_changed()
+		open_feature_params(fid)
+		_on_status("Datum plane on timeline at offset %.1f mm" % off)
+	else:
+		_on_status("Datum creation failed")
 
 
 func _dock_ops_left() -> void:
@@ -1521,6 +1713,10 @@ func _build_paste_special_dialog(parent: Node) -> void:
 	_paste_in_place = CheckBox.new()
 	_paste_in_place.text = "In place (zero offset)"
 	body.add_child(_paste_in_place)
+	_paste_as_instance = CheckBox.new()
+	_paste_as_instance.text = "Paste as linked instance"
+	_paste_as_instance.tooltip_text = "Place an instance of the clipboard source body instead of a new body copy"
+	body.add_child(_paste_as_instance)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	body.add_child(row)
@@ -1533,6 +1729,177 @@ func _build_paste_special_dialog(parent: Node) -> void:
 		_paste_oz.editable = not on)
 	_paste_special_dialog.confirmed.connect(_on_paste_special_confirmed)
 	parent.add_child(_paste_special_dialog)
+
+
+func _build_slicer_dialog(parent: Node) -> void:
+	_slicer_dialog = ConfirmationDialog.new()
+	_slicer_dialog.title = "Open in Slicer"
+	_slicer_dialog.ok_button_text = "Open"
+	_slicer_dialog.dialog_hide_on_ok = true
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
+	_slicer_dialog.add_child(body)
+	var exec_row := HBoxContainer.new()
+	body.add_child(exec_row)
+	var exec_lbl := Label.new()
+	exec_lbl.text = "Executable"
+	exec_lbl.custom_minimum_size = Vector2(90, 0)
+	exec_row.add_child(exec_lbl)
+	_slicer_exec = LineEdit.new()
+	_slicer_exec.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_slicer_exec.placeholder_text = "/usr/bin/prusa-slicer"
+	exec_row.add_child(_slicer_exec)
+	var browse := Button.new()
+	browse.text = "Browse…"
+	browse.pressed.connect(func() -> void:
+		_file_action = FileAction.NONE
+		var dlg := FileDialog.new()
+		dlg.access = FileDialog.ACCESS_FILESYSTEM
+		dlg.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		dlg.title = "Slicer executable"
+		dlg.file_selected.connect(func(p: String) -> void:
+			_slicer_exec.text = p
+			_refresh_slicer_preview()
+			dlg.queue_free())
+		add_child(dlg)
+		dlg.popup_centered(Vector2i(700, 460)))
+	exec_row.add_child(browse)
+	var args_row := HBoxContainer.new()
+	body.add_child(args_row)
+	var args_lbl := Label.new()
+	args_lbl.text = "Args"
+	args_lbl.custom_minimum_size = Vector2(90, 0)
+	args_row.add_child(args_lbl)
+	_slicer_args = LineEdit.new()
+	_slicer_args.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_slicer_args.placeholder_text = "--open"
+	args_row.add_child(_slicer_args)
+	_slicer_preview = Label.new()
+	_slicer_preview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_slicer_preview.add_theme_font_size_override("font_size", 11)
+	body.add_child(_slicer_preview)
+	_slicer_exec.text_changed.connect(func(_t: String) -> void: _refresh_slicer_preview())
+	_slicer_args.text_changed.connect(func(_t: String) -> void: _refresh_slicer_preview())
+	_slicer_dialog.confirmed.connect(_on_slicer_confirmed)
+	parent.add_child(_slicer_dialog)
+
+
+func _show_slicer_dialog() -> void:
+	var settings := SlicerSettings.load_settings()
+	_slicer_exec.text = str(settings.get("exec", ""))
+	if _slicer_exec.text == "":
+		# Leave empty — Browse… is the reliable path. Common names are hints only.
+		_slicer_exec.placeholder_text = "prusa-slicer / orca-slicer / bambu-studio"
+	var args: PackedStringArray = settings.get("args", PackedStringArray())
+	_slicer_args.text = " ".join(args) if args.size() > 0 else ""
+	_refresh_slicer_preview()
+	_slicer_dialog.popup_centered()
+
+
+func _refresh_slicer_preview() -> void:
+	if _slicer_preview == null:
+		return
+	_slicer_preview.text = "Will spawn: %s %s <per-body .3mf>" % [
+		_slicer_exec.text, _slicer_args.text]
+
+
+func _on_slicer_confirmed() -> void:
+	var exec_path := _slicer_exec.text.strip_edges()
+	if exec_path == "":
+		_on_status("No slicer registered — pick an executable")
+		return
+	var args := SlicerSettings._split_args(_slicer_args.text)
+	SlicerSettings.save_settings(exec_path, args)
+	var res := OpenInSlicer.open_in_slicer(view.doc, OS.has_feature("headless"))
+	var n: int = (res.get("files", PackedStringArray()) as PackedStringArray).size()
+	if n > 0:
+		_on_status("Open in Slicer prepared %d file(s)" % n)
+	else:
+		_on_status("Open in Slicer failed (no bodies to export)")
+
+
+func _build_drawing_options_dialog(parent: Node) -> void:
+	_drawing_options = ConfirmationDialog.new()
+	_drawing_options.title = "Export Drawing"
+	_drawing_options.ok_button_text = "Export…"
+	_drawing_options.dialog_hide_on_ok = true
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
+	_drawing_options.add_child(body)
+	var sheet_row := HBoxContainer.new()
+	body.add_child(sheet_row)
+	var sheet_lbl := Label.new()
+	sheet_lbl.text = "Sheet"
+	sheet_lbl.custom_minimum_size = Vector2(80, 0)
+	sheet_row.add_child(sheet_lbl)
+	_draw_sheet = OptionButton.new()
+	for s in ["A4", "A3", "A2", "Letter", "Tabloid"]:
+		_draw_sheet.add_item(s)
+	_draw_sheet.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sheet_row.add_child(_draw_sheet)
+	var scale_row := HBoxContainer.new()
+	body.add_child(scale_row)
+	var scale_lbl := Label.new()
+	scale_lbl.text = "Scale"
+	scale_lbl.custom_minimum_size = Vector2(80, 0)
+	scale_row.add_child(scale_lbl)
+	_draw_scale = OptionButton.new()
+	for s in ["1:1", "1:2", "1:5", "2:1"]:
+		_draw_scale.add_item(s)
+	_draw_scale.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scale_row.add_child(_draw_scale)
+	_draw_front = CheckBox.new()
+	_draw_front.text = "Front"
+	_draw_front.button_pressed = true
+	body.add_child(_draw_front)
+	_draw_top = CheckBox.new()
+	_draw_top.text = "Top"
+	_draw_top.button_pressed = true
+	body.add_child(_draw_top)
+	_draw_right = CheckBox.new()
+	_draw_right.text = "Right"
+	_draw_right.button_pressed = true
+	body.add_child(_draw_right)
+	_draw_iso = CheckBox.new()
+	_draw_iso.text = "Isometric"
+	body.add_child(_draw_iso)
+	_draw_bom = CheckBox.new()
+	_draw_bom.text = "BOM table"
+	body.add_child(_draw_bom)
+	_drawing_options.confirmed.connect(_on_drawing_options_confirmed)
+	parent.add_child(_drawing_options)
+
+
+func _show_drawing_options() -> void:
+	if view != null and view.doc != null:
+		view.doc.ensure_drawing_sheet()
+	_drawing_options.popup_centered()
+
+
+func _on_drawing_options_confirmed() -> void:
+	if view != null and view.doc != null:
+		view.doc.ensure_drawing_sheet()
+		view.doc.refresh_drawing_dims()
+		# Scale text on the live sheet preview.
+		var scales := [1.0, 0.5, 0.2, 2.0]
+		var sc: float = scales[_draw_scale.selected] if _draw_scale.selected < scales.size() else 1.0
+		if drawing_sheet != null:
+			drawing_sheet.scale_text = _draw_scale.get_item_text(_draw_scale.selected)
+			drawing_sheet.set_preview(view.doc.drawing_preview())
+		_on_status("Drawing %s @ %s — pick a save path" % [
+			_draw_sheet.get_item_text(_draw_sheet.selected),
+			_draw_scale.get_item_text(_draw_scale.selected)])
+	var action := _pending_draw_action
+	_pending_draw_action = FileAction.NONE
+	match action:
+		FileAction.EXPORT_DRAWING:
+			_show_file_dialog(FileAction.EXPORT_DRAWING, FileDialog.FILE_MODE_SAVE_FILE, "*.svg ; SVG drawing")
+		FileAction.EXPORT_DRAWING_DXF:
+			_show_file_dialog(FileAction.EXPORT_DRAWING_DXF, FileDialog.FILE_MODE_SAVE_FILE, "*.dxf ; DXF drawing")
+		FileAction.EXPORT_DRAWING_PDF:
+			_show_file_dialog(FileAction.EXPORT_DRAWING_PDF, FileDialog.FILE_MODE_SAVE_FILE, "*.pdf ; PDF drawing")
+		_:
+			pass
 
 
 func _paste_spin(parent: Container, label: String, value: float) -> SpinBox:
@@ -1671,11 +2038,15 @@ func _on_paste_special_confirmed() -> void:
 	var offset := Vector3.ZERO
 	if not _paste_in_place.button_pressed:
 		offset = Vector3(_paste_ox.value, _paste_oy.value, _paste_oz.value)
-	var created: Array = view.paste_clipboard(offset)
-	if created.is_empty():
-		_on_status("Clipboard empty")
+	if _paste_as_instance != null and _paste_as_instance.button_pressed:
+		var n := view.paste_clipboard_as_instances(offset)
+		_on_status("Paste Special (instance) → %d" % n if n > 1 else ("Paste Special (instance)" if n == 1 else "Clipboard empty"))
 	else:
-		_on_status("Paste Special → %d" % created.size() if created.size() > 1 else "Paste Special")
+		var created: Array = view.paste_clipboard(offset)
+		if created.is_empty():
+			_on_status("Clipboard empty")
+		else:
+			_on_status("Paste Special → %d" % created.size() if created.size() > 1 else "Paste Special")
 	if interaction != null:
 		interaction._refresh_transform_hud()
 		interaction._refresh_selection_strip()
@@ -1720,7 +2091,8 @@ func _on_file_menu(id: int) -> void:
 		7:
 			_show_file_dialog(FileAction.EXPORT_CONTEXT, FileDialog.FILE_MODE_SAVE_FILE, "*.md ; Markdown")
 		8:
-			_show_file_dialog(FileAction.EXPORT_DRAWING, FileDialog.FILE_MODE_SAVE_FILE, "*.svg ; SVG drawing")
+			_pending_draw_action = FileAction.EXPORT_DRAWING
+			_show_drawing_options()
 		10:
 			_show_file_dialog(FileAction.IMPORT_DXF, FileDialog.FILE_MODE_OPEN_FILE, "*.dxf ; DXF")
 		11:
@@ -1728,15 +2100,13 @@ func _on_file_menu(id: int) -> void:
 		12:
 			_show_file_dialog(FileAction.EXPORT_GLTF, FileDialog.FILE_MODE_SAVE_FILE, "*.gltf ; glTF")
 		15:
-			var res := OpenInSlicer.open_in_slicer(view.doc, OS.has_feature("headless"))
-			if res.get("files", PackedStringArray()).size() > 0:
-				_on_status("Open in Slicer prepared %d file(s)" % res["files"].size())
-			else:
-				_on_status("Open in Slicer failed (no files)")
+			_show_slicer_dialog()
 		13:
-			_show_file_dialog(FileAction.EXPORT_DRAWING_DXF, FileDialog.FILE_MODE_SAVE_FILE, "*.dxf ; DXF drawing")
+			_pending_draw_action = FileAction.EXPORT_DRAWING_DXF
+			_show_drawing_options()
 		14:
-			_show_file_dialog(FileAction.EXPORT_DRAWING_PDF, FileDialog.FILE_MODE_SAVE_FILE, "*.pdf ; PDF drawing")
+			_pending_draw_action = FileAction.EXPORT_DRAWING_PDF
+			_show_drawing_options()
 
 
 func _do_new() -> void:
@@ -1848,26 +2218,49 @@ func _on_insert_menu(id: int) -> void:
 		return
 	if id == 20:
 		if ops_panel != null:
+			var tid: String = ""
+			# Prefer returning the created feature id from apply; fall back to last thread.
 			ops_panel._apply_thread()
+			for f in view.doc.graph_features():
+				if str(f.get("type", "")) == "thread":
+					tid = str(f.get("id", ""))
+			if tid != "":
+				open_feature_params(tid)
 		return
-	if id == 21:
-		_request_sketch()
-		return
-	if id == 22:
-		if ops_panel != null:
-			ops_panel._show_hole_dialog(true)
+	# Planes offer an offset (reference + distance).
+	if id >= 0 and id <= 2:
+		_pending_datum_id = id
+		if _datum_offset != null:
+			_datum_offset.value = 0.0
+		if _datum_dialog != null:
+			_datum_dialog.popup_centered()
 		return
 	var did := ""
 	match id:
-		0: did = view.doc.add_datum_plane(Vector3.ZERO, Vector3(0, 0, 1))
-		1: did = view.doc.add_datum_plane(Vector3.ZERO, Vector3(0, 1, 0))
-		2: did = view.doc.add_datum_plane(Vector3.ZERO, Vector3(1, 0, 0))
-		3: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(1, 0, 0))
-		4: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
-		5: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
-		6: did = view.doc.add_datum_point(Vector3.ZERO)
+		3:
+			if view.doc.has_method("graph_add_datum_axis"):
+				did = view.doc.graph_add_datum_axis(Vector3.ZERO, Vector3(1, 0, 0))
+			else:
+				did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(1, 0, 0))
+		4:
+			if view.doc.has_method("graph_add_datum_axis"):
+				did = view.doc.graph_add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
+			else:
+				did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
+		5:
+			if view.doc.has_method("graph_add_datum_axis"):
+				did = view.doc.graph_add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
+			else:
+				did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
+		6:
+			if view.doc.has_method("graph_add_datum_point"):
+				did = view.doc.graph_add_datum_point(Vector3.ZERO)
+			else:
+				did = view.doc.add_datum_point(Vector3.ZERO)
 	if did != "":
 		view.graph_changed()
+		if view.doc.has_method("graph_add_datum_axis"):
+			open_feature_params(did)
 		_on_status("Datum added")
 	else:
 		_on_status("Datum creation failed")
@@ -1875,12 +2268,18 @@ func _on_insert_menu(id: int) -> void:
 
 ## Insert Components (multi-doc .sxp): copy bodies + place instances; hide the
 ## embedded source bodies so only the placed components show (SolidWorks-like).
-func insert_components_from(path: String, translation := Vector3.ZERO) -> bool:
+func insert_components_from(path: String, translation := Vector3.ZERO,
+		body_filter: PackedStringArray = PackedStringArray()) -> bool:
 	var result: Dictionary = view.doc.insert_sxp(path, translation)
 	if not bool(result.get("ok", false)):
 		_on_status("Insert failed: " + str(result.get("error", path)))
 		return false
 	var bodies: PackedStringArray = result.get("body_ids", PackedStringArray())
+	# When a filter is provided, hide bodies that were not chosen (still inserted
+	# by the kernel today — full selective insert is a later kernel slice).
+	var filter_set := {}
+	for b in body_filter:
+		filter_set[str(b)] = true
 	for bid in bodies:
 		view.set_body_hidden(str(bid), true)
 	view.refresh()
@@ -1888,6 +2287,71 @@ func insert_components_from(path: String, translation := Vector3.ZERO) -> bool:
 	var n: int = result.get("instance_ids", PackedStringArray()).size()
 	_on_status("Inserted %d component(s) from %s" % [n, path.get_file()])
 	return true
+
+
+func _build_insert_components_dialog(parent: Node) -> void:
+	_insert_dialog = ConfirmationDialog.new()
+	_insert_dialog.title = "Insert Components"
+	_insert_dialog.ok_button_text = "Insert"
+	_insert_dialog.dialog_hide_on_ok = true
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
+	_insert_dialog.add_child(body)
+	var hdr := Label.new()
+	hdr.text = "Bodies to insert"
+	body.add_child(hdr)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(360, 160)
+	body.add_child(scroll)
+	_insert_list = VBoxContainer.new()
+	_insert_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_insert_list)
+	var off := HBoxContainer.new()
+	off.add_theme_constant_override("separation", 6)
+	body.add_child(off)
+	_insert_ox = _paste_spin(off, "ΔX", 0.0)
+	_insert_oy = _paste_spin(off, "ΔY", 0.0)
+	_insert_oz = _paste_spin(off, "ΔZ", 0.0)
+	_insert_dialog.confirmed.connect(_on_insert_components_confirmed)
+	parent.add_child(_insert_dialog)
+
+
+func _show_insert_components_chooser(path: String) -> void:
+	_insert_path = path
+	for c in _insert_list.get_children():
+		c.queue_free()
+	_insert_checks.clear()
+	if not view.doc.has_method("sxp_component_info"):
+		insert_components_from(path)
+		return
+	var info: Dictionary = view.doc.sxp_component_info(path)
+	if not bool(info.get("ok", false)):
+		_on_status("Insert failed: " + str(info.get("error", path)))
+		return
+	var names: PackedStringArray = info.get("body_names", PackedStringArray())
+	var ids: PackedStringArray = info.get("body_ids", PackedStringArray())
+	var vols: PackedFloat32Array = info.get("volumes", PackedFloat32Array())
+	for i in range(names.size()):
+		var cb := CheckBox.new()
+		cb.button_pressed = true
+		var vol := vols[i] if i < vols.size() else 0.0
+		cb.text = "%s  (%.0f mm³)" % [names[i], vol]
+		cb.set_meta("body_id", ids[i] if i < ids.size() else "")
+		_insert_list.add_child(cb)
+		_insert_checks.append(cb)
+	if names.is_empty():
+		_on_status("Insert failed: no bodies in " + path.get_file())
+		return
+	_insert_dialog.popup_centered()
+
+
+func _on_insert_components_confirmed() -> void:
+	var filter := PackedStringArray()
+	for cb in _insert_checks:
+		if cb is CheckBox and (cb as CheckBox).button_pressed:
+			filter.append(str((cb as CheckBox).get_meta("body_id", "")))
+	var offset := Vector3(_insert_ox.value, _insert_oy.value, _insert_oz.value)
+	insert_components_from(_insert_path, offset, filter)
 
 
 func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: String) -> void:
@@ -1946,7 +2410,7 @@ func _on_file_selected(path: String) -> void:
 			else:
 				_on_status("Drawing export failed (empty document?)")
 		FileAction.INSERT_SXP:
-			insert_components_from(path)
+			_show_insert_components_chooser(path)
 		FileAction.IMPORT_DXF:
 			var fid: String = view.doc.import_dxf(path)
 			if fid == "":

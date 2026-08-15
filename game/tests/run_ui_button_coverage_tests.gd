@@ -374,10 +374,10 @@ func test_extrude_cut(ctx: FilmContext, main) -> void:
 		record("Extrude Cut", false, "sketch chrome missing")
 		await FilmUI.exit_sketch(ctx)
 		return
-	# Prefer Cut via OptionButton before Extrude.
+	# Prefer Cut via the New/Cut/Fuse OptionButton (not Blind/Through All/Midplane).
 	var op: OptionButton = null
 	for c in chrome.find_children("*", "OptionButton", true, false):
-		if c is OptionButton and (c as OptionButton).item_count >= 3:
+		if c is OptionButton and (c as OptionButton).get_item_text(0) == "New":
 			op = c as OptionButton
 			break
 	if op == null:
@@ -496,7 +496,7 @@ func test_extrude_fuse(ctx: FilmContext, main) -> void:
 		return
 	var op: OptionButton = null
 	for c in chrome.find_children("*", "OptionButton", true, false):
-		if c is OptionButton and (c as OptionButton).item_count >= 3:
+		if c is OptionButton and (c as OptionButton).get_item_text(0) == "New":
 			op = c as OptionButton
 			break
 	if op == null or sm.target_fid == "":
@@ -653,7 +653,9 @@ func test_ops_shell_draft_hole(ctx: FilmContext, main) -> void:
 	ops._hole_depth.value = 0.0
 	vol0 = absf(doc.body_volume(body))
 	var feats0 := doc.graph_features().size()
-	var hole_btn := FilmUI.find_button(ops, "Drill the hole")
+	var hole_btn: Button = ops.find_child("ApplyHole", true, false) as Button
+	if hole_btn == null:
+		hole_btn = FilmUI.find_button(ops, "Drill at the center")
 	if hole_btn == null or not hole_btn.is_visible_in_tree():
 		record("Ops Hole", false, "button missing/hidden")
 		return
@@ -777,9 +779,6 @@ func test_assembly_mate_solve(ctx: FilmContext, main) -> void:
 	await ctx.after_regen()
 	var panel: AssemblyPanel = main.assembly_panel
 	if panel != null:
-		# Default dock sits partly below a 720p test viewport — lift so buttons are clickable.
-		panel.offset_top = 40.0
-		panel.offset_bottom = 420.0
 		panel.refresh_lists()
 	await ctx.tree.process_frame
 	var inst_n := doc.instance_list().size()

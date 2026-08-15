@@ -477,4 +477,23 @@ bool insert_sxp(Document& dest, const std::string& path,
     return true;
 }
 
+SxpComponentInfo sxp_component_info(const std::string& path) {
+    SxpComponentInfo info;
+    Document tmp;
+    std::string err;
+    if (!load_sxp(tmp, path, &err)) {
+        info.error = err.empty() ? "load failed" : err;
+        return info;
+    }
+    info.ok = true;
+    for (const auto& id : tmp.body_ids()) {
+        const Body* b = tmp.body(id);
+        if (!b) continue;
+        info.body_ids.push_back(id.str());
+        info.body_names.push_back(b->name.empty() ? "Body" : b->name);
+        info.volumes.push_back(shape::volume(b->shape));
+    }
+    return info;
+}
+
 }  // namespace sx

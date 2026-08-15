@@ -239,11 +239,15 @@ public:
     // place an instance of each. Returns {ok, error, body_ids, instance_ids}.
     // First instance into an empty assembly is Fixed (SolidWorks default).
     godot::Dictionary insert_sxp(const godot::String& path, const godot::Vector3& translation);
+    godot::Dictionary sxp_component_info(const godot::String& path) const;
 
     // --- datums (reference geometry) ---
     godot::String add_datum_plane(const godot::Vector3& point, const godot::Vector3& normal);
     godot::String add_datum_axis(const godot::Vector3& point, const godot::Vector3& dir);
     godot::String add_datum_point(const godot::Vector3& p);
+    godot::String graph_add_datum_plane(const godot::Vector3& origin, const godot::Vector3& normal);
+    godot::String graph_add_datum_axis(const godot::Vector3& point, const godot::Vector3& direction);
+    godot::String graph_add_datum_point(const godot::Vector3& position);
     godot::Array datum_list() const;
     bool remove_datum(const godot::String& id);
 
@@ -313,6 +317,11 @@ public:
                                   float cs_angle_deg);
     godot::String graph_add_shell(const godot::String& target_fid,
                                   const godot::PackedStringArray& face_ids, double thickness);
+    godot::String graph_add_draft(const godot::String& target_fid,
+                                  const godot::PackedStringArray& face_ids, double angle_deg,
+                                  const godot::Vector3& pull_dir,
+                                  const godot::Vector3& neutral_point,
+                                  const godot::Vector3& neutral_normal);
     godot::String graph_add_offset(const godot::String& target_fid, double offset);
     godot::String graph_add_push_pull(const godot::String& target_fid,
                                       const godot::String& face_id, double distance);
@@ -356,6 +365,7 @@ public:
                              double radius) const;
     godot::PackedVector3Array cam_pocket(double x0, double y0, double x1, double y1, double depth,
                                          double stepover) const;
+    godot::String cam_post_gcode(const godot::PackedVector3Array& points, double feed) const;
     double fea_cantilever(double force_n, double length_mm, double e_mpa, double width_mm,
                           double thickness_mm) const;
     godot::Dictionary catalog_fastener(const godot::String& designation) const;
@@ -400,7 +410,10 @@ public:
     godot::Dictionary print_analyze(const godot::String& body_id);
     godot::Dictionary print_orient(const godot::String& body_id);
     godot::Dictionary print_setup() const;
+    void set_print_setup(const godot::Dictionary& setup);
     void set_print_min_wall(double mm);
+    godot::Array thread_table() const;
+    godot::Dictionary thread_spec(const godot::String& designation) const;
 
 protected:
     static void _bind_methods();

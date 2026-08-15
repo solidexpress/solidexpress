@@ -1,16 +1,18 @@
 # Open in Slicer
 
-SolidExpress can launch your preferred external slicer (PrusaSlicer, OrcaSlicer, Bambu Studio, or a custom executable) with a 3MF of the current document.
+Goal: hand each body to your registered slicer as its own millimeter 3MF.
 
-What happens:
+## Steps
 
-- File → Open in Slicer exports one 3MF per body in the document (units = millimeter; 3MF metadata carries `sx:bed`, layer height, and `sx:min_wall`).
-- The configured slicer executable is invoked with all exported `.3mf` file paths appended to the configured argument list.
-- In headless runs and tests, no external process is required: the command that would be spawned is recorded to `user://slicer_last_command.txt`.
+1. Build one or more solids.
+2. **File → Open in Slicer…** — pick (or Browse to) PrusaSlicer / Orca / Bambu / a custom executable; optional args.
+3. Confirm. SolidExpress writes one `.3mf` per body under a temp folder and launches the command (or dry-runs in headless tests).
 
-Configuration (user registry):
+Headless / CI records the command under `user://slicer_last_command.txt`.
 
-Edit `user://slicer.cfg` to register your slicer command. The simplest way is to let the app write it; you can also author the file manually:
+## Registry
+
+Settings persist in `user://slicer.cfg` (also written by the dialog):
 
 ```ini
 [slicer]
@@ -19,14 +21,11 @@ args=["--some-flag"]
 ```
 
 - `executable`: absolute path to the slicer binary.
-- `args`: optional JSON array of string arguments. The exported `.3mf` files are appended automatically.
+- `args`: optional string arguments; exported `.3mf` paths are appended automatically.
 
-Multi‑body documents:
+## Notes
 
-- Each solid body is exported as its own `.3mf` alongside its body name (sanitized for filenames). The slicer is launched once with all per‑body files as arguments. This keeps body separation explicit in the slicer while preserving the existing single‑file 3MF export for File → Export 3MF.
+- File → Export 3MF is unchanged (whole document, `unit="millimeter"`, `sx:bed` metadata).
+- No slicer engine is embedded — the external app remains the destination for supports and G-code.
 
-Notes:
-
-- File → Export 3MF is unchanged and continues to export the whole document to one `.3mf` with `unit="millimeter"` and `sx:bed` metadata.
-- No slicer engine or printer profiles are embedded; the external slicer remains the destination for slicing, supports, and G‑code.
-
+Film: `open_in_slicer`.

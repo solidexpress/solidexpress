@@ -233,17 +233,20 @@ func test_done_ends_line_chain(main) -> void:
 	main._start_sketch()
 	await process_frame
 	sm.set_snap(false)
+	sm.set_auto_close(true)
 	sm.set_tool(SketchMode.Tool.LINE)
 	sm.click(Vector2(0, 0))
 	sm.click(Vector2(10, 0))
 	sm.click(Vector2(10, 8))
+	check(sm.has_open_chain(), "chain open before Done")
 	check(sm.sketch.entity_ids().size() == 2, "two segments before Done")
 	var done := chrome.done_button()
 	check(done != null and done.is_visible_in_tree(), "Done chip visible")
 	done.pressed.emit()
 	await process_frame
 	check(sm.active, "Done kept sketch session")
-	check(sm.sketch.entity_ids().size() >= 2, "Done closed the chain")
+	check(not sm.has_open_chain(), "Done cleared open chain")
+	check(sm.sketch.entity_ids().size() == 3, "Done auto-closed the chain")
 	sm.cancel()
 
 
@@ -841,13 +844,14 @@ func test_variables(main) -> void:
 	check(absf(vol1 - 30.0 * 30.0 * 10.0) < 1e-3, "volume tracks w=30 (%.0f)" % vol1)
 
 	var listed: Array = view.doc.list_variables()
-	var w_entry := {}
+	var w_entry: Dictionary = {}
 	for e in listed:
-		if e["name"] == "w":
+		if str(e.get("name", "")) == "w":
 			w_entry = e
-	check(not w_entry.is_empty(), "variable w present in list_variables")
-	check(w_entry["expr"] == "30", "list entry name/expr")
-	check(absf(float(w_entry["value"]) - 30.0) < 1e-9, "list_variables value is 30")
+			break
+	check(not w_entry.is_empty(), "list_variables includes w")
+	check(str(w_entry.get("expr", "")) == "30", "list entry name/expr")
+	check(absf(float(w_entry.get("value", 0.0)) - 30.0) < 1e-9, "list_variables value is 30")
 	check(str(w_entry.get("error", "")) == "", "list entry has no error")
 
 	check(view.doc.remove_variable("w"), "remove_variable works")
@@ -855,20 +859,19 @@ func test_variables(main) -> void:
 	var regen: Dictionary = view.doc.graph_regenerate()
 	check(not regen["ok"] and str(regen["error"]).length() > 0,
 			"regenerate reports missing reference")
-	var after_rm := view.doc.list_variables()
-	var found_w := false
-	for e in after_rm:
-		if e["name"] == "w":
-			found_w = true
-	check(not found_w, "variable gone after remove")
+	var still_has_w := false
+	for e2 in view.doc.list_variables():
+		if str(e2.get("name", "")) == "w":
+			still_has_w = true
+	check(not still_has_w, "variable gone after remove")
 	check(view.undo(), "undo remove_variable")
 	check(absf(view.doc.body_volume(body) - vol1) < 1e-3, "undo restored volume")
 	listed = view.doc.list_variables()
-	var found_w2 := false
-	for e in listed:
-		if e["name"] == "w":
-			found_w2 = true
-	check(found_w2, "undo restored variable")
+	var restored := false
+	for e3 in listed:
+		if str(e3.get("name", "")) == "w":
+			restored = true
+	check(restored, "undo restored variable")
 
 	# Drive the panel's add/edit methods directly.
 	view.new_document()

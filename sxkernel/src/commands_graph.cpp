@@ -13,13 +13,19 @@ void GraphSnapshotCommand::restore(Document& doc, const nlohmann::json& snapshot
     // graph has no memory of them.
     FeatureGraph incoming = FeatureGraph::from_json(snapshot);
     auto incoming_owns = [&](const EntityId& id) {
-        for (const auto& f : incoming.timeline())
+        for (const auto& f : incoming.timeline()) {
             if (f.output_body == id) return true;
+            for (const auto& ob : f.output_bodies)
+                if (ob == id) return true;
+        }
         return false;
     };
     for (const auto& f : doc.graph().timeline()) {
         if (!f.output_body.is_null() && !incoming_owns(f.output_body) && doc.body(f.output_body))
             doc.remove_body(f.output_body);
+        for (const auto& ob : f.output_bodies) {
+            if (!incoming_owns(ob) && doc.body(ob)) doc.remove_body(ob);
+        }
     }
     doc.set_graph(std::move(incoming));
     std::string err;

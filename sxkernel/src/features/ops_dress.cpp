@@ -37,12 +37,18 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
     TopoDS_Shape result;
     if (ctx.feature.type == FeatureType::Fillet) {
         BRepFilletAPI_MakeFillet mk(tb->shape);
+        const double r2 = ctx.params.contains("radius2")
+                              ? num_param(ctx.params, "radius2", v, ctx.env)
+                              : v;
         for (const auto& je : ctx.params.at("edges")) {
             TopoDS_Shape es;
             std::string why;
             if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Edge, je, es, &why))
                 return ctx.fail(why);
-            mk.Add(v, TopoDS::Edge(es));
+            if (std::abs(r2 - v) > 1e-12)
+                mk.Add(v, r2, TopoDS::Edge(es));
+            else
+                mk.Add(v, TopoDS::Edge(es));
         }
         mk.Build();
         if (!mk.IsDone()) return ctx.fail("fillet failed");

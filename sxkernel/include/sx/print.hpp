@@ -22,6 +22,8 @@ struct PrintSetup {
     double layer_height = 0.2;
     double min_wall = 1.2;
     double overhang_deg = 45.0;
+    double nozzle_mm = 0.4;
+    std::string material = "PLA";
     // Body → print-space rotation, row-major 3×3. Identity = design +Z is up.
     std::array<double, 9> rot{1, 0, 0, 0, 1, 0, 0, 0, 1};
 };

@@ -66,6 +66,24 @@ bool resolve_topo_shape(Document& doc, const Body& body, EntityKind kind,
         out = map(idx);
         return true;
     }
+    // Godot JSON.stringify turns ints into floats (3 → 3.0). Accept whole floats.
+    if (ref.is_number_float()) {
+        const double v = ref.get<double>();
+        const int idx = static_cast<int>(std::lround(v));
+        if (std::abs(v - static_cast<double>(idx)) > 1e-9) {
+            if (why) *why = "topology ref must be uuid string or integer index";
+            return false;
+        }
+        TopTools_IndexedMapOfShape map;
+        TopAbs_ShapeEnum occt_kind = kind == EntityKind::Edge ? TopAbs_EDGE : TopAbs_FACE;
+        TopExp::MapShapes(body.shape, occt_kind, map);
+        if (idx < 1 || idx > map.Extent()) {
+            if (why) *why = "topology index out of range";
+            return false;
+        }
+        out = map(idx);
+        return true;
+    }
     if (why) *why = "topology ref must be uuid string or integer index";
     return false;
 }

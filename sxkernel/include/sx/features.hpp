@@ -43,6 +43,7 @@ enum class FeatureType {
     CircularPattern, // params: {target, axis_point, axis_dir, count, total_angle}
     Shell,      // params: {target, faces: [1-based face indices], thickness}
     Offset,     // params: {target, offset}
+    Draft,      // params: {target, faces: [uuid|index], angle_deg, pull_dir, neutral_point, neutral_normal}
     Sweep,      // params: {sketch: <fid>, path: [[x,y,z], ...] OR path_feature: <fid>}
     Loft,       // params: {sketches: [<fid>, ...], ruled: bool}
     Path,       // params: {sketches: [<fid>, ...], mode: "join_endpoints|bridge_spline|composite",
@@ -76,6 +77,7 @@ enum class FeatureType {
     UserFeature,// params: {recipe, steps: [...], plus recipe args}
     Weld,       // params: {edge, symbol, size} — cosmetic, no solid output
     Sketch3D,   // params: {points: [[x,y,z],...]} — feeds Path / Sweep
+    Datum,      // params: {kind: "plane|axis|point", datum_id, origin/normal or point/direction or position}
 };
 
 const char* to_string(FeatureType t);
