@@ -79,14 +79,17 @@ func howto_place_and_orbit(main) -> void:
 	var bb: Dictionary = view.doc.measure_bbox(id)
 	check(absf(float(bb["min"].z)) < 1e-2, "box sits on ground (z=0)")
 	# 3. Alt+left-drag orbits (touchpad-friendly; works over docks)
+	# Fusion preset (product default): Alt+left pans (orbit is Shift+middle; Alt+wheel yaws).
 	var yaw0: float = cam.yaw
+	var pivot0: Vector3 = cam.pivot
 	var mm := InputEventMouseMotion.new()
 	mm.button_mask = MOUSE_BUTTON_MASK_LEFT
 	mm.alt_pressed = true
 	mm.relative = Vector2(55, 0)
 	mm.position = Vector2(1400, 420)
 	ix._input(mm)
-	check(absf(cam.yaw - yaw0) > 1e-4, "camera yaw changed after Alt-orbit")
+	check(cam.pivot.distance_to(pivot0) > 1e-4 and absf(cam.yaw - yaw0) < 1e-6,
+		"Alt+left pans under Fusion (pivot moved; yaw unchanged)")
 
 
 ## docs/howto/stack-three-blocks.md

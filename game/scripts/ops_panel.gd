@@ -272,7 +272,7 @@ func _build_face_ops() -> void:
 	_face_ops.add_child(wizard_row)
 	_op_button(wizard_row, "Hole Wizard…", _arm_hole_wizard, "hole",
 		"Multi-place: click several face points, then Apply holes / Enter (one Hole feature)")
-	_apply_holes_btn = _op_button(wizard_row, "Apply holes", _apply_hole_wizard, "",
+	_apply_holes_btn = _op_button(wizard_row, "Apply holes", _apply_hole_wizard, "hole",
 		"Commit accumulated Hole Wizard points as one feature (Enter)")
 	_apply_holes_btn.disabled = true
 	_op_button(_face_ops, "Face area", func() -> void:
