@@ -107,6 +107,7 @@ const char* to_string(FeatureType t) {
         case FeatureType::UserFeature: return "user_feature";
         case FeatureType::Weld: return "weld";
         case FeatureType::Sketch3D: return "sketch3d";
+        case FeatureType::Datum: return "datum";
     }
     return "unknown";
 }
@@ -146,6 +147,7 @@ FeatureType feature_type_from_string(const std::string& s) {
     if (s == "user_feature") return FeatureType::UserFeature;
     if (s == "weld") return FeatureType::Weld;
     if (s == "sketch3d") return FeatureType::Sketch3D;
+    if (s == "datum") return FeatureType::Datum;
     throw std::invalid_argument("unknown feature type: " + s);
 }
 
@@ -1855,6 +1857,32 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
             case FeatureType::Weld:
             case FeatureType::Sketch3D:
                 return true;
+
+            case FeatureType::Datum: {
+                const std::string kind = params.value("kind", "plane");
+                EntityId did;
+                if (params.contains("datum_id") && params["datum_id"].is_string()) {
+                    did = EntityId::from_string(params["datum_id"].get<std::string>());
+                } else {
+                    did = EntityId::generate();
+                    f.params["datum_id"] = did.str();
+                }
+                // Regenerating replaces the same UUID so cards/aliases survive.
+                doc.remove_datum(did);
+                if (kind == "axis") {
+                    gp_Pnt p = pnt_from(params.at("point"));
+                    gp_Dir d = dir_from(params.at("direction"));
+                    doc.add_datum_axis({p.X(), p.Y(), p.Z()}, {d.X(), d.Y(), d.Z()}, did);
+                } else if (kind == "point") {
+                    gp_Pnt p = pnt_from(params.at("position"));
+                    doc.add_datum_point({p.X(), p.Y(), p.Z()}, did);
+                } else {
+                    gp_Pnt o = pnt_from(params.at("origin"));
+                    gp_Dir n = dir_from(params.at("normal"));
+                    doc.add_datum_plane({o.X(), o.Y(), o.Z()}, {n.X(), n.Y(), n.Z()}, did);
+                }
+                return true;
+            }
         }
     } catch (const Standard_Failure& e) {
         return fail(e.GetMessageString() ? e.GetMessageString() : "OCCT failure");

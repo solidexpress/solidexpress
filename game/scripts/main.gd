@@ -1642,17 +1642,37 @@ func _build_datum_offset_dialog(parent: Node) -> void:
 
 func _on_datum_offset_confirmed() -> void:
 	var off := _datum_offset.value
-	var did := ""
+	var origin := Vector3.ZERO
+	var normal := Vector3(0, 0, 1)
 	match _pending_datum_id:
-		0: did = view.doc.add_datum_plane(Vector3(0, 0, off), Vector3(0, 0, 1))
-		1: did = view.doc.add_datum_plane(Vector3(0, off, 0), Vector3(0, 1, 0))
-		2: did = view.doc.add_datum_plane(Vector3(off, 0, 0), Vector3(1, 0, 0))
+		0:
+			origin = Vector3(0, 0, off)
+			normal = Vector3(0, 0, 1)
+		1:
+			origin = Vector3(0, off, 0)
+			normal = Vector3(0, 1, 0)
+		2:
+			origin = Vector3(off, 0, 0)
+			normal = Vector3(1, 0, 0)
 		_:
-			pass
+			_pending_datum_id = -1
+			return
 	_pending_datum_id = -1
-	if did != "":
+	var fid := ""
+	if view.doc.has_method("graph_add_datum_plane"):
+		fid = view.doc.graph_add_datum_plane(origin, normal)
+	else:
+		var did: String = view.doc.add_datum_plane(origin, normal)
+		if did != "":
+			view.graph_changed()
+			_on_status("Datum plane added at offset %.1f mm" % off)
+		else:
+			_on_status("Datum creation failed")
+		return
+	if fid != "":
 		view.graph_changed()
-		_on_status("Datum plane added at offset %.1f mm — listed under Insert / datums" % off)
+		open_feature_params(fid)
+		_on_status("Datum plane on timeline at offset %.1f mm" % off)
 	else:
 		_on_status("Datum creation failed")
 
@@ -2217,12 +2237,30 @@ func _on_insert_menu(id: int) -> void:
 		return
 	var did := ""
 	match id:
-		3: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(1, 0, 0))
-		4: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
-		5: did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
-		6: did = view.doc.add_datum_point(Vector3.ZERO)
+		3:
+			if view.doc.has_method("graph_add_datum_axis"):
+				did = view.doc.graph_add_datum_axis(Vector3.ZERO, Vector3(1, 0, 0))
+			else:
+				did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(1, 0, 0))
+		4:
+			if view.doc.has_method("graph_add_datum_axis"):
+				did = view.doc.graph_add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
+			else:
+				did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 1, 0))
+		5:
+			if view.doc.has_method("graph_add_datum_axis"):
+				did = view.doc.graph_add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
+			else:
+				did = view.doc.add_datum_axis(Vector3.ZERO, Vector3(0, 0, 1))
+		6:
+			if view.doc.has_method("graph_add_datum_point"):
+				did = view.doc.graph_add_datum_point(Vector3.ZERO)
+			else:
+				did = view.doc.add_datum_point(Vector3.ZERO)
 	if did != "":
 		view.graph_changed()
+		if view.doc.has_method("graph_add_datum_axis"):
+			open_feature_params(did)
 		_on_status("Datum added")
 	else:
 		_on_status("Datum creation failed")

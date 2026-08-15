@@ -68,6 +68,8 @@ Headless CI runs the film script. `make movies` is the human artifact, not the g
 | PropertyPanel + timeline | Params after the feature exists | Hidden-only editors |
 | New docks | Wave 0: none. Later: **at most one new mode rail** with auto-hide | Extra columns, workbenches |
 
+**Create-then-edit (standing rule for verbs that need options):** create the feature with a good default → immediately `open_feature_params(fid)` on its timeline row (live preview, OK/Cancel) → arm a viewport pick for geometry (edges, axis, plane, points). Do **not** invent a modal dialog for viewport verbs. File-menu items (Open in Slicer, Export Drawing, Insert Components) remain the allowed place for dialogs.
+
 **Visibility**
 
 - Empty document: palette + ViewHud/ViewCube only.

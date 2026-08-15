@@ -84,6 +84,7 @@ func _init() -> void:
 	check(main.view.doc.has_method("thread_table"), "thread_table bound")
 	check(main.view.doc.has_method("cam_post_gcode"), "cam_post_gcode bound")
 	check(main.view.doc.has_method("graph_add_draft"), "graph_add_draft bound")
+	check(main.view.doc.has_method("graph_add_datum_plane"), "graph_add_datum_plane bound")
 	check(main.view.doc.has_method("sxp_component_info"), "sxp_component_info bound")
 	check(main._insert_dialog != null, "Insert Components dialog built")
 	check(main._paste_as_instance != null, "Paste Special has instance option")

@@ -90,6 +90,9 @@ const SCHEMAS := {
 		{"key": "depth", "label": "Depth", "kind": "float", "min": 0.01, "max": 100.0, "step": 0.1},
 		{"key": "profile_angle_deg", "label": "Profile angle", "kind": "float", "min": 30.0, "max": 90.0, "step": 5.0},
 	],
+	"datum": [
+		{"key": "kind", "label": "Kind", "kind": "enum", "options": ["plane", "axis", "point"]},
+	],
 	"import_step": [
 		{"key": "scale", "label": "Scale", "kind": "float", "min": 0.001, "max": 1000.0, "step": 0.1},
 	],

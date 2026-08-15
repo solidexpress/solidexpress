@@ -245,6 +245,9 @@ public:
     godot::String add_datum_plane(const godot::Vector3& point, const godot::Vector3& normal);
     godot::String add_datum_axis(const godot::Vector3& point, const godot::Vector3& dir);
     godot::String add_datum_point(const godot::Vector3& p);
+    godot::String graph_add_datum_plane(const godot::Vector3& origin, const godot::Vector3& normal);
+    godot::String graph_add_datum_axis(const godot::Vector3& point, const godot::Vector3& direction);
+    godot::String graph_add_datum_point(const godot::Vector3& position);
     godot::Array datum_list() const;
     bool remove_datum(const godot::String& id);
 

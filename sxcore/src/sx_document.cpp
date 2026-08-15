@@ -1210,6 +1210,49 @@ String SxDocument::add_datum_point(const Vector3& p) {
     return to_gd(id.str());
 }
 
+String SxDocument::graph_add_datum_plane(const Vector3& origin, const Vector3& normal) {
+    if (normal.length_squared() < 1e-12f) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("datum plane", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Datum;
+        f.params = {{"kind", "plane"},
+                    {"origin", {origin.x, origin.y, origin.z}},
+                    {"normal", {normal.x, normal.y, normal.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_datum_axis(const Vector3& point, const Vector3& direction) {
+    if (direction.length_squared() < 1e-12f) return {};
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("datum axis", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Datum;
+        f.params = {{"kind", "axis"},
+                    {"point", {point.x, point.y, point.z}},
+                    {"direction", {direction.x, direction.y, direction.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
+String SxDocument::graph_add_datum_point(const Vector3& position) {
+    sx::EntityId fid;
+    bool ok = apply_graph_edit("datum point", [&] {
+        sx::Feature f;
+        f.type = sx::FeatureType::Datum;
+        f.params = {{"kind", "point"},
+                    {"position", {position.x, position.y, position.z}}};
+        fid = doc_->graph().add(std::move(f));
+        return true;
+    });
+    return ok ? to_gd(fid.str()) : String();
+}
+
 Array SxDocument::datum_list() const {
     Array out;
     for (const auto& d : doc_->datums()) {
@@ -2424,6 +2467,12 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("add_datum_axis", "point", "dir"),
                          &SxDocument::add_datum_axis);
     ClassDB::bind_method(D_METHOD("add_datum_point", "p"), &SxDocument::add_datum_point);
+    ClassDB::bind_method(D_METHOD("graph_add_datum_plane", "origin", "normal"),
+                         &SxDocument::graph_add_datum_plane);
+    ClassDB::bind_method(D_METHOD("graph_add_datum_axis", "point", "direction"),
+                         &SxDocument::graph_add_datum_axis);
+    ClassDB::bind_method(D_METHOD("graph_add_datum_point", "position"),
+                         &SxDocument::graph_add_datum_point);
     ClassDB::bind_method(D_METHOD("datum_list"), &SxDocument::datum_list);
     ClassDB::bind_method(D_METHOD("remove_datum", "id"), &SxDocument::remove_datum);
     ClassDB::bind_method(D_METHOD("add_instance", "source_body", "translation", "rotation_axis",

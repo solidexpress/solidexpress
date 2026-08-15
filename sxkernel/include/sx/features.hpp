@@ -77,6 +77,7 @@ enum class FeatureType {
     UserFeature,// params: {recipe, steps: [...], plus recipe args}
     Weld,       // params: {edge, symbol, size} — cosmetic, no solid output
     Sketch3D,   // params: {points: [[x,y,z],...]} — feeds Path / Sweep
+    Datum,      // params: {kind: "plane|axis|point", datum_id, origin/normal or point/direction or position}
 };
 
 const char* to_string(FeatureType t);
