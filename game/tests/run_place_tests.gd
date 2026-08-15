@@ -395,7 +395,8 @@ func test_transform_hud_and_resize(main) -> void:
 	await process_frame
 	view.select_entity(id, "")
 	main._update_panel_visibility()
-	check(not ix.transform_hud.visible, "transform HUD idle-hidden when body selected")
+	check(ix.transform_hud.visible, "transform HUD shows W/H/D after place")
+	check(ix.transform_hud._dims_row.visible, "W/H/D row visible on selected primitive")
 	check(not main.palette.visible, "palette hidden when body selected")
 	check(main.ops_panel.offset_left == 8.0, "modify tools docked left")
 	var bb0: Dictionary = view.selection_bbox()

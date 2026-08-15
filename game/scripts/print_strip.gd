@@ -4,6 +4,7 @@ extends PanelContainer
 
 signal analyze_requested
 signal orient_requested
+signal create_requested
 
 var _digest: Label
 var _analyze: Button
@@ -23,6 +24,10 @@ func _ready() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	add_child(row)
+	var create_btn := UIIcons.button("box", "Create", "Back to Model — place / sketch without leaving print prep")
+	create_btn.name = "PrintCreate"
+	create_btn.pressed.connect(func() -> void: create_requested.emit())
+	row.add_child(create_btn)
 	_analyze = UIIcons.button("measure", "Analyze", "Print check — min wall, overhang, bed fit")
 	_analyze.name = "PrintAnalyze"
 	_analyze.pressed.connect(func() -> void: analyze_requested.emit())
@@ -64,12 +69,16 @@ func set_digest(text: String) -> void:
 
 func _on_thickness_toggled(on: bool) -> void:
 	if view != null:
+		if on and view.has_method("seed_print_paint"):
+			view.call("seed_print_paint")
 		if view.has_method("set_thickness_paint"):
 			view.call("set_thickness_paint", on)
 
 
 func _on_overhang_toggled(on: bool) -> void:
 	if view != null:
+		if on and view.has_method("seed_print_paint"):
+			view.call("seed_print_paint")
 		if view.has_method("set_overhang_paint"):
 			view.call("set_overhang_paint", on)
 

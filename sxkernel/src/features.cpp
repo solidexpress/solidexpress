@@ -13,6 +13,7 @@
 #include <Bnd_Box.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepGProp.hxx>
 #include <BRep_Tool.hxx>
@@ -376,6 +377,31 @@ TopoDS_Shape build_feature_hole_tool(const gp_Pnt& position, const gp_Dir& direc
     const gp_Pnt origin = position.Translated(gp_Vec(direction) * (-k_hole_nudge));
     const double cyl_h = depth + k_hole_nudge;
     const auto place = hole_ax_placement(origin, direction);
+
+    if (type == "hex") {
+        // Across-flats = diameter. Circumradius R = AF / √3 so flats sit on AF.
+        const double af = diameter;
+        const double R = af / std::sqrt(3.0);
+        gp_Dir z(place.z_dir[0], place.z_dir[1], place.z_dir[2]);
+        gp_Dir x(place.x_dir[0], place.x_dir[1], place.x_dir[2]);
+        if (x.XYZ().Modulus() < 1e-12) return {};
+        gp_Dir y = z.Crossed(x);
+        gp_Pnt o(place.origin[0], place.origin[1], place.origin[2]);
+        BRepBuilderAPI_MakePolygon poly;
+        for (int i = 0; i < 6; ++i) {
+            const double th = (30.0 + 60.0 * i) * M_PI / 180.0;
+            gp_Pnt p = o.Translated(gp_Vec(x) * (R * std::cos(th)) +
+                                    gp_Vec(y) * (R * std::sin(th)));
+            poly.Add(p);
+        }
+        poly.Close();
+        if (!poly.IsDone()) return {};
+        BRepBuilderAPI_MakeFace face(poly.Wire());
+        if (!face.IsDone()) return {};
+        BRepPrimAPI_MakePrism prism(face.Face(), gp_Vec(z) * cyl_h);
+        if (!prism.IsDone()) return {};
+        return prism.Shape();
+    }
 
     TopoDS_Shape tool = shape::make_cylinder(radius, cyl_h, place);
     if (tool.IsNull()) return {};
@@ -1110,21 +1136,23 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 EntityId target = find_feature_body("target");
                 const Body* tb = doc.body(target);
                 if (!tb) return fail("missing target body");
-                // Wave 6.2: support nominal + hole_compensation (+ clearance) when provided.
+                // Wave 6.2: hole Ø = nominal + hole_compensation; hex AF is
+                // diameter (often "=jaw_af+clearance"). Do not add clearance
+                // onto circular holes — that belongs on hex/slot only.
+                std::string htype = params.value("type", "simple");
                 double diameter = 0.0;
                 if (params.contains("nominal")) {
                     const double nominal = num_param(params, "nominal", 0.0, env);
-                    double comp = 0.0, clr = 0.0;
-                    if (auto it = env.find("hole_compensation"); it != env.end()) comp = it->second;
-                    if (auto it2 = env.find("clearance"); it2 != env.end()) clr = it2->second;
-                    diameter = nominal + comp + clr;
+                    double comp = 0.0;
+                    if (auto it = env.find("hole_compensation"); it != env.end())
+                        comp = it->second;
+                    diameter = nominal + comp;
                 } else {
                     diameter = num_param(params, "diameter", 0.0, env);
                 }
                 if (diameter <= 0.0) return fail("invalid diameter");
                 double depth_param = num_param(params, "depth", 0.0, env);
                 double depth = depth_param > 0.0 ? depth_param : k_hole_through;
-                std::string htype = params.value("type", "simple");
                 std::vector<gp_Pnt> positions;
                 if (params.contains("positions") && params["positions"].is_array() &&
                     !params["positions"].empty()) {

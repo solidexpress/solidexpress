@@ -125,7 +125,10 @@ func _spin(parent: Container, label: String, mn: float, mx: float, step: float,
 	var spin := SpinBox.new()
 	spin.min_value = mn
 	spin.max_value = mx
-	spin.step = step
+	# Fine step so typed values (1.2) are not snapped to 1.1 by Range.
+	# Arrows still move by the ergonomic `step` passed in.
+	spin.step = 0.001
+	spin.custom_arrow_step = step
 	spin.value = value
 	spin.custom_minimum_size = Vector2(72, 0)
 	spin.select_all_on_focus = true
@@ -304,4 +307,14 @@ func _gui_input(event: InputEvent) -> void:
 				if not _syncing:
 					move_delta_committed.emit(current_move_delta())
 				hide_move_delta()
+				accept_event()
+			elif _dims_row.visible:
+				_size_w.apply()
+				_size_h.apply()
+				_size_d.apply()
+				_pos_x.apply()
+				_pos_y.apply()
+				_pos_z.apply()
+				if not _syncing and _size_editable:
+					size_committed.emit(current_size())
 				accept_event()

@@ -682,6 +682,8 @@ func variants_for_tool(t: Tool = tool) -> Array:
 			return ["linear", "circular"]
 		Tool.LINE, Tool.CENTERLINE:
 			return ["line", "centerline"]
+		Tool.POLYGON:
+			return ["vertex", "across_flats"]
 		_:
 			return []
 
@@ -1617,9 +1619,14 @@ func click(pos2: Vector2) -> void:
 				var c := _tool_points[0]
 				var vertex := _tool_points[1]
 				var r := c.distance_to(vertex)
+				# Across-flats: drag distance is AF; circumradius R = AF / √3.
+				var start_angle := (vertex - c).angle()
+				if tool_variant == "across_flats":
+					r = r / sqrt(3.0)
+					start_angle = deg_to_rad(30.0)
+					polygon_sides = 6
 				if r > 1e-6:
 					var n := polygon_sides
-					var start_angle := (vertex - c).angle()
 					var verts: Array[Vector2] = []
 					for i in range(n):
 						var ang := start_angle + TAU * float(i) / float(n)
@@ -2759,6 +2766,10 @@ func _update_preview() -> void:
 				var r := c.distance_to(tip)
 				var n := polygon_sides
 				var start_angle := (tip - c).angle()
+				if tool_variant == "across_flats":
+					r = r / sqrt(3.0)
+					start_angle = deg_to_rad(30.0)
+					n = 6
 				var steps := 48
 				for i in range(steps):
 					var a0 := TAU * i / steps
