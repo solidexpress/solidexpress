@@ -409,6 +409,30 @@ func _build_ui() -> void:
 		"Sketch: select a face or existing sketch to enter sketch mode")
 	sketch_btn.pressed.connect(_request_sketch)
 	vbox.add_child(sketch_btn)
+	# Wave 6.5: simple mechanic-tool catalog (shop tooling).
+	vbox.add_child(HSeparator.new())
+	for entry in [
+			["driver_bit", "Hex driver blank (AF from jaw_af or 10 mm)"],
+			["hex_socket", "Hex socket blank (internal hex)"],
+			["wrench_open", "Open-end wrench head (blank)"],
+			["nozzle", "Nozzle hex (blank)"],
+		]:
+		var b := UIIcons.button(entry[0], "", entry[1])
+		match entry[0]:
+			"driver_bit":
+				b.pressed.connect(func() -> void:
+					var _id := view.insert_hex_driver_blank())
+			"hex_socket":
+				b.pressed.connect(func() -> void:
+					var _id := view.insert_hex_socket_blank())
+			"wrench_open":
+				b.pressed.connect(func() -> void:
+					var _id := view.insert_open_end_blank())
+			"nozzle":
+				b.pressed.connect(func() -> void:
+					# Represent nozzle hex as a short driver blank for now.
+					var _id := view.insert_hex_driver_blank(7.0, 6.0))
+		vbox.add_child(b)
 
 	# Selection properties card — docks under the left rail when shown.
 	card_box = PanelContainer.new()

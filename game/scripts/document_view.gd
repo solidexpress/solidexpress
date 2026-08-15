@@ -396,6 +396,88 @@ func insert_primitive(kind: String, world_point: Vector3, size := Vector3.ZERO,
 	return id
 
 
+# --- Wave 6.5: mechanic-tool inserts (built from sketch + extrude / booleans) ---
+
+## Read `jaw_af` from variables when present; default 10.0 mm when missing.
+func _default_jaw_af() -> float:
+	for v in doc.list_variables():
+		var name := str(v.get("name", "")).strip_edges()
+		if name == "jaw_af":
+			var val := v.get("value", NAN)
+			if typeof(val) == TYPE_FLOAT and not is_nan(val):
+				return float(val)
+			var expr := str(v.get("expr", ""))
+			var parsed := expr.to_float()
+			if parsed > 0.0:
+				return parsed
+	return 10.0
+
+
+## Build a hexagonal prism aligned Z-up with across-flats `af_mm` and height `length_mm`.
+## Uses a 30°-rotated hex so the AABB X-span equals AF exactly.
+func insert_hex_driver_blank(af_mm := 0.0, length_mm := 20.0, origin := Vector3.ZERO) -> String:
+	var af := af_mm if af_mm > 0.0 else _default_jaw_af()
+	var R := af / sqrt(3.0)
+	var sk := SxSketch.new()
+	sk.set_plane(origin, Vector3(1, 0, 0), Vector3(0, 1, 0))
+	var pts: PackedVector2Array = []
+	for i in range(6):
+		var th := deg_to_rad(30.0 + float(i) * 60.0)
+		pts.append(Vector2(R * cos(th), R * sin(th)))
+	for i in range(6):
+		var a := pts[i]
+		var b := pts[(i + 1) % 6]
+		sk.add_line(a.x, a.y, b.x, b.y)
+	var sk_fid: String = doc.graph_add_sketch(sk)
+	if sk_fid == "":
+		return ""
+	var ex_fid: String = doc.graph_add_extrude(sk_fid, length_mm, false, "new", "")
+	if ex_fid == "":
+		return ""
+	var id := body_of_feature(ex_fid)
+	_after_mutation()
+	if id != "":
+		select_entity(id, "")
+	return id
+
+
+## Cylinder with a through hex cut (internal hex socket). Returns the body id.
+func insert_hex_socket_blank(af_mm := 0.0, height_mm := 20.0, outer_d_mm := 0.0, origin := Vector3.ZERO) -> String:
+	var af := af_mm if af_mm > 0.0 else _default_jaw_af()
+	var od := outer_d_mm if outer_d_mm > 0.0 else maxf(af * 1.8, af + 6.0)
+	var cyl: String = doc.add_cylinder(od * 0.5, height_mm, origin)
+	if cyl == "":
+		return ""
+	# Make a slightly taller hex and cut it through.
+	var hex: String = insert_hex_driver_blank(af, height_mm + 2.0, origin - Vector3(0, 0, 1.0))
+	if hex == "":
+		return cyl
+	boolean_bodies(cyl, hex, "cut")
+	_after_mutation()
+	select_entity(cyl, "")
+	return cyl
+
+
+## Open-end wrench head blank: rectangular pad with a side-open hex notch.
+## Geometry is approximate; AF tracks `jaw_af` (or 10 mm fallback).
+func insert_open_end_blank(af_mm := 0.0, thickness_mm := 8.0, origin := Vector3.ZERO) -> String:
+	var af := af_mm if af_mm > 0.0 else _default_jaw_af()
+	var width := af * 2.0
+	var length := af * 3.0
+	# Base block centered at origin on XY; height along +Z.
+	var base: String = doc.add_box(length, width, thickness_mm, origin - Vector3(length * 0.5, width * 0.5, 0.0))
+	if base == "":
+		return ""
+	# Hex notch near one end, open to the side (positive Y).
+	var notch_center := origin + Vector3(-length * 0.25, width * 0.5 - af * 0.35, 0.0)
+	var hex: String = insert_hex_driver_blank(af, thickness_mm + 2.0, notch_center - Vector3(0, 0, 1.0))
+	if hex != "":
+		boolean_bodies(base, hex, "cut")
+	_after_mutation()
+	select_entity(base, "")
+	return base
+
+
 # --- feature graph helpers ---
 
 func body_of_feature(fid: String) -> String:
