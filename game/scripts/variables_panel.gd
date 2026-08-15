@@ -251,4 +251,10 @@ func _make_row(entry: Dictionary) -> Control:
 func _fmt_value(v: float) -> String:
 	if absf(v - roundf(v)) < 1e-9:
 		return str(int(roundf(v)))
-	return "%.4g" % v
+	var s := String.num(v, 4)
+	# Trim trailing zeros and decimal point for a compact display similar to %.4g
+	while s.ends_with("0"):
+		s = s.left(s.length() - 1)
+	if s.ends_with("."):
+		s = s.left(s.length() - 1)
+	return s

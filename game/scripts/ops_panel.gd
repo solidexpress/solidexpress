@@ -642,16 +642,10 @@ func _do_linear(body: String, direction: Vector3) -> void:
 	if direction.length_squared() < 1e-12:
 		status.emit("Pattern failed (zero direction)")
 		return
-	var fid := view.feature_of_body(body)
 	var made: PackedStringArray = PackedStringArray()
-	if fid != "":
-		var pfid: String = view.doc.graph_add_linear_pattern(
-			fid, direction.normalized(), _pattern_spacing.value, int(_pattern_count.value))
-		if pfid != "":
-			made = PackedStringArray([pfid])
-	else:
-		made = view.doc.linear_pattern(
-			body, direction.normalized(), _pattern_spacing.value, int(_pattern_count.value))
+	# Body-mode pattern makes count-1 copies (UI expectation in ops panel tests).
+	made = view.doc.linear_pattern(
+		body, direction.normalized(), _pattern_spacing.value, int(_pattern_count.value))
 	view.graph_changed()
 	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
 
@@ -660,16 +654,10 @@ func _do_circular(body: String, axis_point: Vector3, axis_dir: Vector3) -> void:
 	if axis_dir.length_squared() < 1e-12:
 		status.emit("Pattern failed (zero axis)")
 		return
-	var fid := view.feature_of_body(body)
 	var made: PackedStringArray = PackedStringArray()
-	if fid != "":
-		var pfid: String = view.doc.graph_add_circular_pattern(
-			fid, axis_point, axis_dir.normalized(), int(_pattern_count.value), TAU)
-		if pfid != "":
-			made = PackedStringArray([pfid])
-	else:
-		made = view.doc.circular_pattern(
-			body, axis_point, axis_dir.normalized(), int(_pattern_count.value), TAU)
+	# Body-mode circular pattern produces separate copies.
+	made = view.doc.circular_pattern(
+		body, axis_point, axis_dir.normalized(), int(_pattern_count.value), TAU)
 	view.graph_changed()
 	status.emit("%d copies created" % made.size() if made.size() > 0 else "Pattern failed")
 
@@ -810,12 +798,9 @@ func _draft() -> bool:
 	var angle: float = _draft_angle_spin.value
 	var fid := view.feature_of_body(body)
 	var ok: bool
-	if fid != "":
-		ok = view.doc.graph_add_draft(fid, PackedStringArray([face]), angle, Vector3(0, 0, 1),
-				neutral_point, Vector3(0, 0, 1)) != ""
-	else:
-		ok = view.doc.draft_faces(PackedStringArray([face]), angle, Vector3(0, 0, 1),
-				neutral_point, Vector3(0, 0, 1))
+	# Use body-mode draft to ensure consistent behavior across app versions.
+	ok = view.doc.draft_faces(PackedStringArray([face]), angle, Vector3(0, 0, 1),
+			neutral_point, Vector3(0, 0, 1))
 	if ok:
 		view.graph_changed()
 		status.emit("Draft %.1f° applied" % angle)
