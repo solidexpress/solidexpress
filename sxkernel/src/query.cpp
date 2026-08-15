@@ -90,7 +90,30 @@ std::string card_digest(const Feature& f) {
     if (f.params.contains("kind")) ss << " " << f.params["kind"].get<std::string>();
     if (f.params.contains("op")) ss << " " << f.params["op"].get<std::string>();
     if (f.params.contains("end")) ss << " end=" << f.params["end"].get<std::string>();
-    if (f.params.contains("diameter")) ss << " Ø" << f.params["diameter"].get<double>();
+    if (f.params.contains("diameter")) {
+        const auto& d = f.params["diameter"];
+        if (d.is_number()) {
+            ss << " Ø" << d.get<double>();
+        } else if (d.is_string()) {
+            const std::string& s = d.get_ref<const std::string&>();
+            // Try to parse numeric strings; otherwise, print the raw string (e.g. "=D")
+            try {
+                size_t pos = 0;
+                double val = std::stod(s, &pos);
+                while (pos < s.size() &&
+                       std::isspace(static_cast<unsigned char>(s[pos]))) {
+                    ++pos;
+                }
+                if (pos == s.size()) {
+                    ss << " Ø" << val;
+                } else {
+                    ss << " Ø" << s;
+                }
+            } catch (...) {
+                ss << " Ø" << s;
+            }
+        }
+    }
     if (f.params.contains("context")) ss << " in-context";
     if (f.params.contains("recipe")) ss << " recipe=" << f.params["recipe"].get<std::string>();
     return ss.str();
