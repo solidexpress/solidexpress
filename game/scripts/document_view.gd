@@ -51,6 +51,11 @@ var display_mode := DisplayMode.SHADED_EDGES
 ## Edge overlay lines are not clipped in v1.
 var section_enabled := false
 var zebra_enabled := false
+# Wave 6.3 paint toggles and per-face maps
+var thickness_paint_enabled := false
+var overhang_paint_enabled := false
+var _thin_faces := {}        # face_id -> true
+var _overhang_faces := {}    # face_id -> true
 ## Body ids currently hidden from view / picking (id -> true).
 var hidden_bodies := {}
 ## Body ids remembered by Copy/Cut for Paste (cut clones may be hidden).
@@ -269,6 +274,31 @@ func _make_section_material(albedo: Color, emission: Color = Color(0, 0, 0), emi
 func set_zebra(on: bool) -> void:
 	zebra_enabled = on
 	refresh()
+
+
+# --- Wave 6.3: analysis paint API ---
+func set_thickness_paint(on: bool) -> void:
+	thickness_paint_enabled = on
+	refresh()
+
+
+func set_overhang_paint(on: bool) -> void:
+	overhang_paint_enabled = on
+	refresh()
+
+
+## Called with the result of print_analyze / print_orient to seed paint maps.
+func set_paint_data(report: Dictionary) -> void:
+	_thin_faces.clear()
+	_overhang_faces.clear()
+	if report.has("thin_faces"):
+		for f in report["thin_faces"]:
+			_thin_faces[str(f)] = true
+	if report.has("overhang_face_area"):
+		for f in report["overhang_face_area"].keys():
+			if float(report["overhang_face_area"][f]) > 0.0:
+				_overhang_faces[str(f)] = true
+	_apply_selection_materials()
 
 
 ## Enable section-view clipping. Fragments with
@@ -2091,7 +2121,7 @@ func _apply_selection_materials() -> void:
 			var body_hovered: bool = body_id == hovered_body and hovered_face == "" \
 				and hovered_edge == "" and not whole_body_selected and not face_selected
 			var mat: Material
-			var clip := section_enabled or zebra_enabled
+			var clip := section_enabled or zebra_enabled or thickness_paint_enabled or overhang_paint_enabled
 			if display_mode == DisplayMode.WIREFRAME:
 				if clip:
 					mat = _make_section_material(Color(0, 0, 0, 0))
@@ -2123,7 +2153,14 @@ func _apply_selection_materials() -> void:
 					mat = _hover_body_material
 			else:
 				if clip:
+					# Base albedo, with optional analysis paint highlight per face.
 					var c: Color = base.get_shader_parameter("albedo_color")
+					if thickness_paint_enabled and face_here != "" and _thin_faces.has(face_here):
+						# Thin faces: warm red/orange
+						c = Color(0.95, 0.35, 0.30)
+					elif overhang_paint_enabled and face_here != "" and _overhang_faces.has(face_here):
+						# Overhang faces: amber
+						c = Color(0.98, 0.70, 0.25)
 					mat = _make_section_material(c)
 				else:
 					mat = base

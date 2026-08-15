@@ -1746,6 +1746,17 @@ static Dictionary report_to_dict(const sx::PrintReport& r) {
     d["wall_ok"] = r.wall_ok;
     d["overhang_ok"] = r.overhang_ok;
     d["digest"] = to_gd(r.digest);
+    // Wave 6.3 paint data
+    {
+        PackedStringArray thin;
+        for (const auto& id : r.thin_faces) thin.push_back(to_gd(id.str()));
+        d["thin_faces"] = thin;
+        Dictionary over_by_face;
+        for (const auto& p : r.overhang_face_areas) {
+            over_by_face[to_gd(p.first.str())] = p.second;
+        }
+        d["overhang_face_area"] = over_by_face;
+    }
     return d;
 }
 

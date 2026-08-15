@@ -4,6 +4,8 @@
 
 #include <array>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -34,6 +36,14 @@ struct PrintReport {
     bool wall_ok = true;
     bool overhang_ok = true;
     std::string digest;
+    // --- Wave 6.3 paint data ---
+    // Faces whose local thickness is below PrintSetup::min_wall (ids in
+    // TopExp::MapShapes order for the owning body).
+    std::vector<EntityId> thin_faces;
+    // Per-face overhang area (mm^2) for faces that exceed the overhang
+    // threshold (face normal steeper than overhang_deg away from up), keyed
+    // by face id. Faces not present have zero overhang area.
+    std::vector<std::pair<EntityId, double>> overhang_face_areas;
 };
 
 PrintReport print_analyze(const Document& doc, const EntityId& body);
