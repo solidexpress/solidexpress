@@ -125,16 +125,21 @@ jobs:
       - name: Build
         run: make build
 
-      - name: Parse sweep + integration + layout
+      - name: Parse sweep + Wave 0/6 gate suites
         run: |
           make import
           tools/godot/godot --headless --path game --script tests/run_parse_sweep_tests.gd
           tools/godot/godot --headless --path game --script tests/run_tests.gd
           tools/godot/godot --headless --path game --script tests/run_layout_tests.gd
-          tools/godot/godot --headless --path game --script tests/run_open_in_slicer_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_ui_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_workflow_tests.gd
           tools/godot/godot --headless --path game --script tests/run_print_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_open_in_slicer_tests.gd
           tools/godot/godot --headless --path game --script tests/run_property_tests.gd
           tools/godot/godot --headless --path game --script tests/run_menu_tests.gd
           tools/godot/godot --headless --path game --script tests/run_hole_wizard_tests.gd
           tools/godot/godot --headless --path game --script tests/run_clearance_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_dead_chrome_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_ui_button_coverage_tests.gd
+          tools/godot/godot --headless --path game --script tests/run_see_the_print_tests.gd
 
