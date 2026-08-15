@@ -88,7 +88,7 @@ func test_cancel_restores(main) -> void:
 	var body := view.body_of_feature(fid)
 	var panel := _panel(main)
 	main.timeline._select_feature(fid)
-	var spin := _spin_for(panel, "Size A")
+	var spin := _spin_for(panel, "W")
 	spin.value = 100.0
 	spin.value = 120.0
 	check(absf(view.doc.body_volume(body) - 72000.0) < 1.0, "two previews applied")

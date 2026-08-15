@@ -317,8 +317,10 @@ func _build_ui() -> void:
 	insert_popup.add_separator()
 	insert_popup.add_item("Datum Point at Origin", 6)
 	insert_popup.add_separator()
+	insert_popup.add_item("Sketch…", 21)
+	insert_popup.add_item("Hex opening…", 22)
+	insert_popup.add_separator()
 	# Surface Thread alongside Insert for reachability (also available in Ops).
-	# Hook: default to Modeled when Mode rail is “Form” once API exists.
 	insert_popup.add_item("Thread…", 20)
 	insert_popup.id_pressed.connect(_on_insert_menu)
 
@@ -326,7 +328,7 @@ func _build_ui() -> void:
 	mode_btn.name = "ModeRail"
 	mode_btn.text = "Mode"
 	mode_btn.flat = false
-	mode_btn.tooltip_text = "Draw / Sheet / Cam / Sim / Form — one rail, replaces Modify"
+	mode_btn.tooltip_text = "Model (3D) · Draw (2D drawing sheet) · Sheet / Cam / Sim / Form. Sketch lives on the left rail, not in Draw."
 	menu_row.add_child(mode_btn)
 	_mode_popup = mode_btn.get_popup()
 	_style_menu_button(mode_btn)
@@ -368,6 +370,7 @@ func _build_ui() -> void:
 	print_strip.bed_ghost = bed_ghost
 	print_strip.analyze_requested.connect(_on_print_analyze)
 	print_strip.orient_requested.connect(_on_print_orient)
+	print_strip.create_requested.connect(func() -> void: _on_mode_menu(0))
 
 	# Interaction overlay under chrome (full-rect input); snap bar joins TopChrome.
 	interaction = ViewportInteraction.new()
@@ -406,16 +409,17 @@ func _build_ui() -> void:
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 2)
 	palette.add_child(vbox)
+	var sketch_btn := UIIcons.button("sketch", "Sketch",
+		"Sketch: click a face or the ground — line, circle, polygon, constraints")
+	sketch_btn.name = "PaletteSketch"
+	sketch_btn.pressed.connect(_request_sketch)
+	vbox.add_child(sketch_btn)
+	vbox.add_child(HSeparator.new())
 	for entry in [["box", "Box"], ["cylinder", "Cylinder"], ["sphere", "Sphere"],
 			["cone", "Cone"], ["torus", "Torus"]]:
 		var btn := PaletteButton.new(entry[0], entry[1])
 		btn.insert_requested.connect(interaction.insert_at_center)
 		vbox.add_child(btn)
-	vbox.add_child(HSeparator.new())
-	var sketch_btn := UIIcons.button("sketch", "",
-		"Sketch: select a face or existing sketch to enter sketch mode")
-	sketch_btn.pressed.connect(_request_sketch)
-	vbox.add_child(sketch_btn)
 	# Wave 6.5: simple mechanic-tool catalog (shop tooling).
 	vbox.add_child(HSeparator.new())
 	for entry in [
@@ -498,6 +502,7 @@ func _build_ui() -> void:
 	ops_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	ui.add_child(ops_panel)
 	ops_panel.status.connect(_on_status)
+	ops_panel.sketch_requested.connect(_request_sketch)
 	interaction.ops_panel = ops_panel
 
 	# Right, second column: assembly browser (auto-hides when no instances).
@@ -1222,6 +1227,7 @@ func _variant_kind_for(tool: int) -> String:
 		SketchMode.Tool.ARC: return "arc"
 		SketchMode.Tool.PATTERN: return "pattern"
 		SketchMode.Tool.LINE, SketchMode.Tool.CENTERLINE: return "line"
+		SketchMode.Tool.POLYGON: return "polygon"
 		_: return ""
 
 
@@ -1382,6 +1388,10 @@ func _on_print_orient() -> void:
 	if print_strip != null:
 		print_strip.set_digest(digest)
 	_on_status("Oriented — " + digest)
+	if view.has_method("set_print_preview"):
+		view.call("set_print_preview", true)
+	if camera != null:
+		camera.frame_contents()
 	view.refresh()
 
 
@@ -1429,6 +1439,8 @@ func _update_mode_overlays() -> void:
 		sheet_metal_view.show_split(_work_mode == "Sheet", flat, 0.44)
 	if print_strip != null:
 		print_strip.visible = _work_mode == "Form"
+	if view != null and view.has_method("set_print_preview"):
+		view.call("set_print_preview", _work_mode == "Form")
 	# Bed ghost visible in Form only (gate the toggle).
 	if bed_ghost != null:
 		var on := false
@@ -1837,6 +1849,13 @@ func _on_insert_menu(id: int) -> void:
 	if id == 20:
 		if ops_panel != null:
 			ops_panel._apply_thread()
+		return
+	if id == 21:
+		_request_sketch()
+		return
+	if id == 22:
+		if ops_panel != null:
+			ops_panel._show_hole_dialog(true)
 		return
 	var did := ""
 	match id:

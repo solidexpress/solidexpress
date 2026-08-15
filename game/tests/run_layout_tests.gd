@@ -44,7 +44,7 @@ func test_empty_document_hides_context(main) -> void:
 	check(not main.card_box.visible, "selection card hidden")
 	check(not main.ops_panel.visible, "ops panel hidden")
 	check(not main.timeline.visible, "timeline hidden")
-	check(not main.variables_panel.visible, "variables hidden")
+	check(main.variables_panel.visible, "variables visible (seeded builtins)")
 	check(not main.sketch_toolbar.visible, "sketch toolbar hidden")
 	check(main.print_strip == null or not main.print_strip.visible, "print strip hidden")
 
@@ -81,13 +81,16 @@ func test_timeline_appears_with_features(main) -> void:
 
 func test_variables_panel_visibility(main) -> void:
 	print("- variables panel: View menu override and data-driven show")
-	check(not main.variables_panel.visible, "hidden with no variables")
+	# Wave 6.2 seeds clearance / jaw_af / … on every new document, so the
+	# panel is data-driven visible even without a View-menu override.
+	check(main.view.doc.list_variables().size() > 0, "new docs seed print/clearance vars")
+	check(main.variables_panel.visible, "visible with seeded variables")
 	main.show_variables = true
 	main._update_panel_visibility()
 	check(main.variables_panel.visible, "View menu override shows it")
 	main.show_variables = false
 	main._update_panel_visibility()
-	check(not main.variables_panel.visible, "hidden again when override off")
+	check(main.variables_panel.visible, "still visible with seeded variables when override off")
 	main.view.doc.set_variable("w", "40")
 	main.view.graph_changed()
 	await process_frame
