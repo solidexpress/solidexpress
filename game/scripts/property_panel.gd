@@ -17,9 +17,9 @@ var view: DocumentView
 ## Extend freely; unknown feature types simply show no fields.
 const SCHEMAS := {
 	"primitive": [
-		{"key": "a", "label": "Size A", "kind": "float", "min": 0.1, "max": 10000.0, "step": 1.0},
-		{"key": "b", "label": "Size B", "kind": "float", "min": 0.0, "max": 10000.0, "step": 1.0},
-		{"key": "c", "label": "Size C", "kind": "float", "min": 0.0, "max": 10000.0, "step": 1.0},
+		{"key": "a", "label": "W", "kind": "float", "min": 0.1, "max": 10000.0, "step": 1.0},
+		{"key": "b", "label": "H", "kind": "float", "min": 0.0, "max": 10000.0, "step": 1.0},
+		{"key": "c", "label": "D", "kind": "float", "min": 0.0, "max": 10000.0, "step": 1.0},
 	],
 	"extrude": [
 		{"key": "distance", "label": "Distance", "kind": "float", "min": 0.01, "max": 10000.0, "step": 1.0},

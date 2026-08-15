@@ -372,6 +372,23 @@ func _rebuild_orient_popup() -> void:
 						status.emit("Restored view “%s”" % n)
 					_orient_popup.hide())
 				col.add_child(nb)
+	# Offer a one-click path to create while palettes may be hidden (e.g. Form).
+	col.add_child(HSeparator.new())
+	var create_lbl := Label.new()
+	create_lbl.text = "Create"
+	create_lbl.add_theme_font_size_override("font_size", 11)
+	col.add_child(create_lbl)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	col.add_child(row)
+	for entry in ["box", "cylinder", "sphere", "cone", "torus"]:
+		var b := Button.new()
+		b.text = entry.capitalize()
+		var kind := String(entry)
+		b.pressed.connect(func() -> void:
+			_arm_place(kind)
+			_orient_popup.hide())
+		row.add_child(b)
 
 
 func _build_dim_edit_popup() -> void:
@@ -2743,6 +2760,13 @@ func _gui_key(event: InputEventKey) -> bool:
 			# Sketch Esc is handled in _sketch_input; do not steal it.
 			if sketch_mode != null and sketch_mode.active:
 				return false
+			# Dismiss overlapping panels/popups first to avoid undismissable stacks.
+			if transform_hud != null and transform_hud.visible:
+				transform_hud.dismiss()
+				return true
+			if _orient_popup != null and _orient_popup.visible:
+				_orient_popup.hide()
+				return true
 			if _drag_mode == DragMode.BOX_SELECT or (_pressed and _press_empty and _box_rect.size != Vector2.ZERO):
 				_pressed = false
 				_clear_box_band()
@@ -3364,10 +3388,16 @@ func _input(event: InputEvent) -> void:
 		if camera.handle_input(event, true):
 			get_viewport().set_input_as_handled()
 			return
-	if camera != null and camera.is_nav_event(event, allow_scroll):
-		if camera.handle_input(event, allow_scroll):
-			get_viewport().set_input_as_handled()
-			return
+	# Suppress camera nav keys while a text edit control owns focus so digits
+	# (1/2/3/7) type into numeric fields (e.g. TransformHud / PropertyPanel).
+	if camera != null:
+		var block_nav := false
+		if event is InputEventKey:
+			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
+		if not block_nav and camera.is_nav_event(event, allow_scroll):
+			if camera.handle_input(event, allow_scroll):
+				get_viewport().set_input_as_handled()
+				return
 	# Place mode uses viewport mouse coords so ghost/commit work even when the
 	# cursor is "over" a sibling Control or Interaction fails hit-tests.
 	if _place_kind != "" and sketch_mode != null and sketch_mode.active:
