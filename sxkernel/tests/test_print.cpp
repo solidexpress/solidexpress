@@ -109,3 +109,24 @@ TEST_CASE("print 3MF carries bed metadata and sxp round-trips setup", "[print]")
     CHECK(loaded.print_setup().bed_x == Approx(180.0));
     CHECK(loaded.print_setup().min_wall == Approx(1.6));
 }
+
+TEST_CASE("per-body 3MF export writes mm model per body", "[print]") {
+    Document doc;
+    const EntityId a = doc.add_body(shape::make_box(10, 10, 10), "a");
+    const EntityId b = doc.add_body(shape::make_box(5, 5, 5, shape::Placement{{20,0,0}}), "b");
+    std::string err;
+    Tmp fa("a.3mf");
+    Tmp fb("b.3mf");
+    REQUIRE(interop::export_3mf_for_body(doc, a, fa.path, &err));
+    REQUIRE(interop::export_3mf_for_body(doc, b, fb.path, &err));
+    // Check the first file carries unit=millimeter.
+    mz_zip_archive zip{};
+    REQUIRE(mz_zip_reader_init_file(&zip, fa.path.c_str(), 0));
+    size_t sz = 0;
+    void* p = mz_zip_reader_extract_file_to_heap(&zip, "3D/3dmodel.model", &sz, 0);
+    REQUIRE(p != nullptr);
+    const std::string xml(static_cast<char*>(p), sz);
+    mz_free(p);
+    mz_zip_reader_end(&zip);
+    CHECK(xml.find("unit=\"millimeter\"") != std::string::npos);
+}

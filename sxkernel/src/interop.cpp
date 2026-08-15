@@ -313,6 +313,17 @@ TriMesh collect_mesh(const Document& doc) {
     return m;
 }
 
+TriMesh collect_mesh_for_body(const Document& doc, const EntityId& body) {
+    TriMesh m;
+    BodyMesh bm = tessellate_body(doc, body);
+    for (const auto& face : bm.faces) {
+        const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
+        m.positions.insert(m.positions.end(), face.positions.begin(), face.positions.end());
+        for (uint32_t idx : face.indices) m.indices.push_back(base + idx);
+    }
+    return m;
+}
+
 std::string b64(const std::string& raw) {
     static const char* tbl =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -345,6 +356,78 @@ std::string b64(const std::string& raw) {
 bool export_3mf(const Document& doc, const std::string& path, std::string* err) {
     try {
         TriMesh mesh = collect_mesh(doc);
+        if (mesh.indices.empty()) {
+            set_err(err, "no tessellated triangles to export");
+            return false;
+        }
+        const PrintSetup& ps = doc.print_setup();
+        auto xform = [&](float x, float y, float z) {
+            return std::array<double, 3>{
+                ps.rot[0] * x + ps.rot[1] * y + ps.rot[2] * z,
+                ps.rot[3] * x + ps.rot[4] * y + ps.rot[5] * z,
+                ps.rot[6] * x + ps.rot[7] * y + ps.rot[8] * z};
+        };
+        std::ostringstream model;
+        model << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+              << "<model unit=\"millimeter\" "
+              << "xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n"
+              << "  <metadata name=\"sx:bed\">" << ps.bed_x << "x" << ps.bed_y << "x"
+              << ps.bed_z << "</metadata>\n"
+              << "  <metadata name=\"sx:layer\">" << ps.layer_height << "</metadata>\n"
+              << "  <metadata name=\"sx:min_wall\">" << ps.min_wall << "</metadata>\n"
+              << "  <resources>\n    <object id=\"1\" type=\"model\">\n      <mesh>\n"
+              << "        <vertices>\n";
+        for (size_t i = 0; i + 2 < mesh.positions.size(); i += 3) {
+            const auto p = xform(mesh.positions[i], mesh.positions[i + 1], mesh.positions[i + 2]);
+            model << "          <vertex x=\"" << p[0] << "\" y=\"" << p[1] << "\" z=\""
+                  << p[2] << "\"/>\n";
+        }
+        model << "        </vertices>\n        <triangles>\n";
+        for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+            model << "          <triangle v1=\"" << mesh.indices[i] << "\" v2=\""
+                  << mesh.indices[i + 1] << "\" v3=\"" << mesh.indices[i + 2] << "\"/>\n";
+        }
+        model << "        </triangles>\n      </mesh>\n    </object>\n  </resources>\n"
+              << "  <build><item objectid=\"1\"/></build>\n</model>\n";
+        const std::string xml = model.str();
+        const std::string ctypes =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+            "<Default Extension=\"rels\" "
+            "ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+            "<Default Extension=\"model\" "
+            "ContentType=\"application/vnd.ms-package.3dmanufacturing-3dmodel+xml\"/>"
+            "</Types>";
+        const std::string rels =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+            "<Relationship Target=\"/3D/3dmodel.model\" Id=\"rel0\" "
+            "Type=\"http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel\"/>"
+            "</Relationships>";
+        mz_zip_archive zip{};
+        if (!mz_zip_writer_init_file(&zip, path.c_str(), 0)) {
+            set_err(err, "cannot create " + path);
+            return false;
+        }
+        auto add = [&](const char* name, const std::string& data) {
+            return mz_zip_writer_add_mem(&zip, name, data.data(), data.size(),
+                                         MZ_DEFAULT_COMPRESSION) == MZ_TRUE;
+        };
+        bool ok = add("[Content_Types].xml", ctypes) && add("_rels/.rels", rels) &&
+                  add("3D/3dmodel.model", xml);
+        ok = ok && mz_zip_writer_finalize_archive(&zip) == MZ_TRUE;
+        mz_zip_writer_end(&zip);
+        if (!ok) set_err(err, "3MF zip write failed");
+        return ok;
+    } catch (const std::exception& e) {
+        set_err(err, std::string("3MF export: ") + e.what());
+        return false;
+    }
+}
+
+bool export_3mf_for_body(const Document& doc, const EntityId& body, const std::string& path, std::string* err) {
+    try {
+        TriMesh mesh = collect_mesh_for_body(doc, body);
         if (mesh.indices.empty()) {
             set_err(err, "no tessellated triangles to export");
             return false;

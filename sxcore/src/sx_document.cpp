@@ -1784,6 +1784,11 @@ bool SxDocument::export_3mf(const String& path) {
     return sx::interop::export_3mf(*doc_, to_std(path), &err);
 }
 
+bool SxDocument::export_3mf_for_body(const String& body_id, const String& path) {
+    std::string err;
+    return sx::interop::export_3mf_for_body(*doc_, parse_id(body_id), to_std(path), &err);
+}
+
 bool SxDocument::export_gltf(const String& path) {
     std::string err;
     return sx::interop::export_gltf(*doc_, to_std(path), &err);
@@ -2271,6 +2276,8 @@ void SxDocument::_bind_methods() {
                          &SxDocument::graph_add_import_step);
     ClassDB::bind_method(D_METHOD("graph_add_import_stl", "path", "scale"),
                          &SxDocument::graph_add_import_stl);
+    ClassDB::bind_method(D_METHOD("export_3mf_for_body", "body_id", "path"),
+                         &SxDocument::export_3mf_for_body);
     ClassDB::bind_method(D_METHOD("graph_add_boolean", "op", "target_fid", "tool_fid"),
                          &SxDocument::graph_add_boolean);
     ClassDB::bind_method(D_METHOD("graph_set_params", "fid", "params_json"), &SxDocument::graph_set_params);

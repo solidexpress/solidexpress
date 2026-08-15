@@ -34,6 +34,12 @@ TopoDS_Shape heal_shape(const TopoDS_Shape& shape, std::string* report = nullptr
 
 // Mesh interchange (tessellated). Own writers — no extra deps.
 bool export_3mf(const Document& doc, const std::string& path, std::string* err = nullptr);
+// Export only one specified body to 3MF at `path`. Keeps existing single-body
+// writer semantics (unit=millimeter, sx:bed metadata).
+bool export_3mf_for_body(const Document& doc,
+                         const EntityId& body,
+                         const std::string& path,
+                         std::string* err = nullptr);
 bool export_gltf(const Document& doc, const std::string& path, std::string* err = nullptr);
 
 }  // namespace interop
