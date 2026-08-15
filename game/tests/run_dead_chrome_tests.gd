@@ -78,6 +78,26 @@ func _init() -> void:
 	check(main.view.doc.has_method("thread_table"), "thread_table bound")
 	check(main.view.doc.has_method("cam_post_gcode"), "cam_post_gcode bound")
 	check(main.view.doc.has_method("graph_add_draft"), "graph_add_draft bound")
+	check(main.view.doc.has_method("sxp_component_info"), "sxp_component_info bound")
+	check(main._insert_dialog != null, "Insert Components dialog built")
+	check(main._paste_as_instance != null, "Paste Special has instance option")
+
+	# Thread refuses a box.
+	main.view.new_document()
+	main.view.doc.graph_add_primitive("box", 40, 40, 40, Vector3(-20, -20, 0))
+	main.view.graph_changed()
+	await process_frame
+	var box_id: String = str(main.view.doc.body_ids()[0])
+	main.view.select_entity(box_id, "")
+	main._update_panel_visibility()
+	await process_frame
+	main.ops_panel._apply_thread()
+	await process_frame
+	var threaded_box := false
+	for f in main.view.doc.graph_features():
+		if str(f.get("type", "")) == "thread":
+			threaded_box = true
+	check(not threaded_box, "Thread refuses a box")
 
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)

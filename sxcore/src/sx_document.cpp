@@ -1174,6 +1174,25 @@ Dictionary SxDocument::insert_sxp(const String& path, const Vector3& translation
     return out;
 }
 
+Dictionary SxDocument::sxp_component_info(const String& path) const {
+    Dictionary out;
+    auto info = sx::sxp_component_info(to_std(path));
+    out["ok"] = info.ok;
+    out["error"] = to_gd(info.error);
+    PackedStringArray ids;
+    PackedStringArray names;
+    PackedFloat32Array vols;
+    for (size_t i = 0; i < info.body_ids.size(); ++i) {
+        ids.push_back(to_gd(info.body_ids[i]));
+        names.push_back(to_gd(info.body_names[i]));
+        vols.push_back(info.volumes[i]);
+    }
+    out["body_ids"] = ids;
+    out["body_names"] = names;
+    out["volumes"] = vols;
+    return out;
+}
+
 String SxDocument::add_datum_plane(const Vector3& point, const Vector3& normal) {
     auto id = doc_->add_datum_plane({point.x, point.y, point.z},
                                     {normal.x, normal.y, normal.z});
@@ -2399,6 +2418,7 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("save", "path"), &SxDocument::save);
     ClassDB::bind_method(D_METHOD("load", "path"), &SxDocument::load);
     ClassDB::bind_method(D_METHOD("insert_sxp", "path", "translation"), &SxDocument::insert_sxp);
+    ClassDB::bind_method(D_METHOD("sxp_component_info", "path"), &SxDocument::sxp_component_info);
     ClassDB::bind_method(D_METHOD("add_datum_plane", "point", "normal"),
                          &SxDocument::add_datum_plane);
     ClassDB::bind_method(D_METHOD("add_datum_axis", "point", "dir"),

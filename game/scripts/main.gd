@@ -74,6 +74,14 @@ var _draw_right: CheckBox
 var _draw_iso: CheckBox
 var _draw_bom: CheckBox
 var _pending_draw_action: FileAction = FileAction.NONE
+var _insert_dialog: ConfirmationDialog
+var _insert_list: VBoxContainer
+var _insert_ox: SpinBox
+var _insert_oy: SpinBox
+var _insert_oz: SpinBox
+var _insert_path := ""
+var _insert_checks: Array = []  # CheckBox per body
+var _paste_as_instance: CheckBox
 var _recent: Array = []  # paths, most recent first (max 8)
 const _RECENT_CLEAR_ID := 100
 const _RECENT_CFG := "user://recent.cfg"
@@ -426,6 +434,7 @@ func _build_ui() -> void:
 
 	_build_slicer_dialog(ui)
 	_build_drawing_options_dialog(ui)
+	_build_insert_components_dialog(ui)
 
 	file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -1580,6 +1589,10 @@ func _build_paste_special_dialog(parent: Node) -> void:
 	_paste_in_place = CheckBox.new()
 	_paste_in_place.text = "In place (zero offset)"
 	body.add_child(_paste_in_place)
+	_paste_as_instance = CheckBox.new()
+	_paste_as_instance.text = "Paste as linked instance"
+	_paste_as_instance.tooltip_text = "Place an instance of the clipboard source body instead of a new body copy"
+	body.add_child(_paste_as_instance)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	body.add_child(row)
@@ -1901,11 +1914,15 @@ func _on_paste_special_confirmed() -> void:
 	var offset := Vector3.ZERO
 	if not _paste_in_place.button_pressed:
 		offset = Vector3(_paste_ox.value, _paste_oy.value, _paste_oz.value)
-	var created: Array = view.paste_clipboard(offset)
-	if created.is_empty():
-		_on_status("Clipboard empty")
+	if _paste_as_instance != null and _paste_as_instance.button_pressed:
+		var n := view.paste_clipboard_as_instances(offset)
+		_on_status("Paste Special (instance) → %d" % n if n > 1 else ("Paste Special (instance)" if n == 1 else "Clipboard empty"))
 	else:
-		_on_status("Paste Special → %d" % created.size() if created.size() > 1 else "Paste Special")
+		var created: Array = view.paste_clipboard(offset)
+		if created.is_empty():
+			_on_status("Clipboard empty")
+		else:
+			_on_status("Paste Special → %d" % created.size() if created.size() > 1 else "Paste Special")
 	if interaction != null:
 		interaction._refresh_transform_hud()
 		interaction._refresh_selection_strip()
@@ -2104,12 +2121,18 @@ func _on_insert_menu(id: int) -> void:
 
 ## Insert Components (multi-doc .sxp): copy bodies + place instances; hide the
 ## embedded source bodies so only the placed components show (SolidWorks-like).
-func insert_components_from(path: String, translation := Vector3.ZERO) -> bool:
+func insert_components_from(path: String, translation := Vector3.ZERO,
+		body_filter: PackedStringArray = PackedStringArray()) -> bool:
 	var result: Dictionary = view.doc.insert_sxp(path, translation)
 	if not bool(result.get("ok", false)):
 		_on_status("Insert failed: " + str(result.get("error", path)))
 		return false
 	var bodies: PackedStringArray = result.get("body_ids", PackedStringArray())
+	# When a filter is provided, hide bodies that were not chosen (still inserted
+	# by the kernel today — full selective insert is a later kernel slice).
+	var filter_set := {}
+	for b in body_filter:
+		filter_set[str(b)] = true
 	for bid in bodies:
 		view.set_body_hidden(str(bid), true)
 	view.refresh()
@@ -2117,6 +2140,71 @@ func insert_components_from(path: String, translation := Vector3.ZERO) -> bool:
 	var n: int = result.get("instance_ids", PackedStringArray()).size()
 	_on_status("Inserted %d component(s) from %s" % [n, path.get_file()])
 	return true
+
+
+func _build_insert_components_dialog(parent: Node) -> void:
+	_insert_dialog = ConfirmationDialog.new()
+	_insert_dialog.title = "Insert Components"
+	_insert_dialog.ok_button_text = "Insert"
+	_insert_dialog.dialog_hide_on_ok = true
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
+	_insert_dialog.add_child(body)
+	var hdr := Label.new()
+	hdr.text = "Bodies to insert"
+	body.add_child(hdr)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(360, 160)
+	body.add_child(scroll)
+	_insert_list = VBoxContainer.new()
+	_insert_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_insert_list)
+	var off := HBoxContainer.new()
+	off.add_theme_constant_override("separation", 6)
+	body.add_child(off)
+	_insert_ox = _paste_spin(off, "ΔX", 0.0)
+	_insert_oy = _paste_spin(off, "ΔY", 0.0)
+	_insert_oz = _paste_spin(off, "ΔZ", 0.0)
+	_insert_dialog.confirmed.connect(_on_insert_components_confirmed)
+	parent.add_child(_insert_dialog)
+
+
+func _show_insert_components_chooser(path: String) -> void:
+	_insert_path = path
+	for c in _insert_list.get_children():
+		c.queue_free()
+	_insert_checks.clear()
+	if not view.doc.has_method("sxp_component_info"):
+		insert_components_from(path)
+		return
+	var info: Dictionary = view.doc.sxp_component_info(path)
+	if not bool(info.get("ok", false)):
+		_on_status("Insert failed: " + str(info.get("error", path)))
+		return
+	var names: PackedStringArray = info.get("body_names", PackedStringArray())
+	var ids: PackedStringArray = info.get("body_ids", PackedStringArray())
+	var vols: PackedFloat32Array = info.get("volumes", PackedFloat32Array())
+	for i in range(names.size()):
+		var cb := CheckBox.new()
+		cb.button_pressed = true
+		var vol := vols[i] if i < vols.size() else 0.0
+		cb.text = "%s  (%.0f mm³)" % [names[i], vol]
+		cb.set_meta("body_id", ids[i] if i < ids.size() else "")
+		_insert_list.add_child(cb)
+		_insert_checks.append(cb)
+	if names.is_empty():
+		_on_status("Insert failed: no bodies in " + path.get_file())
+		return
+	_insert_dialog.popup_centered()
+
+
+func _on_insert_components_confirmed() -> void:
+	var filter := PackedStringArray()
+	for cb in _insert_checks:
+		if cb is CheckBox and (cb as CheckBox).button_pressed:
+			filter.append(str((cb as CheckBox).get_meta("body_id", "")))
+	var offset := Vector3(_insert_ox.value, _insert_oy.value, _insert_oz.value)
+	insert_components_from(_insert_path, offset, filter)
 
 
 func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: String) -> void:
@@ -2175,7 +2263,7 @@ func _on_file_selected(path: String) -> void:
 			else:
 				_on_status("Drawing export failed (empty document?)")
 		FileAction.INSERT_SXP:
-			insert_components_from(path)
+			_show_insert_components_chooser(path)
 		FileAction.IMPORT_DXF:
 			var fid: String = view.doc.import_dxf(path)
 			if fid == "":

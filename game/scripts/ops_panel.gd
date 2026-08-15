@@ -599,21 +599,60 @@ func _apply_thread() -> void:
 	var mn: Vector3 = bb["min"]
 	var mx: Vector3 = bb["max"]
 	var size := mx - mn
-	# Assume cylinder-like: major radius = half the smaller XY extent; height = Z.
-	var major_r: float = 0.5 * minf(size.x, size.y)
+	# Cylinder-like shaft: two horizontal extents nearly equal, and not a cube.
+	var xy_a := minf(size.x, size.y)
+	var xy_b := maxf(size.x, size.y)
+	var major_r: float = 0.5 * xy_a
 	var height: float = size.z
 	if major_r < 0.5 or height < 1.0:
 		status.emit("Thread failed (body too small)")
 		return
+	if xy_b > xy_a * 1.35:
+		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
+		return
+	# Reject near-cubes / near-plates (all extents similar, or squat).
+	var extents := [size.x, size.y, size.z]
+	extents.sort()
+	if extents[2] < extents[0] * 1.4:
+		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
+		return
+	if height < major_r * 2.5:
+		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
+		return
+	# Prefer nearest ISO/UNC designation from the table when available.
 	var pitch: float = clampf(major_r * 0.2, 0.5, 4.0)
+	var designation := ""
+	if view.doc.has_method("thread_table"):
+		var best_err := 1e9
+		for t in view.doc.thread_table():
+			var d: Dictionary = t
+			var r := float(d.get("major_diameter_mm", 0.0)) * 0.5
+			var err := absf(r - major_r)
+			if err < best_err and err < major_r * 0.15:
+				best_err = err
+				major_r = r
+				pitch = float(d.get("pitch_mm", pitch))
+				designation = str(d.get("designation", ""))
 	var turns: float = maxf(1.0, height / pitch - 1.0)
 	var depth: float = pitch * 0.5
 	var axis_point := Vector3((mn.x + mx.x) * 0.5, (mn.y + mx.y) * 0.5, mn.z)
 	var tid: String = view.doc.graph_add_thread(
 		fid, major_r, pitch, turns, depth, 60.0, axis_point, Vector3(0, 0, 1))
 	if tid != "":
+		# Persist designation when we matched a standard so PropertyPanel can show it.
+		if designation != "":
+			var raw := ""
+			for f in view.doc.graph_features():
+				if str(f.get("id", "")) == tid:
+					raw = str(f.get("params", "{}"))
+					break
+			var p: Variant = JSON.parse_string(raw)
+			if p is Dictionary:
+				p["designation"] = designation
+				view.doc.graph_set_params(tid, JSON.stringify(p))
 		view.graph_changed()
-		status.emit("Thread Ø%.1f pitch %.2f (%d turns)" % [2.0 * major_r, pitch, int(turns)])
+		var label := designation if designation != "" else ("Ø%.1f" % (2.0 * major_r))
+		status.emit("Thread %s pitch %.2f (%d turns)" % [label, pitch, int(turns)])
 		_open_last_feature("thread")
 	else:
 		status.emit("Thread failed")

@@ -1746,6 +1746,22 @@ func paste_clipboard(offset := Vector3(NAN, NAN, NAN)) -> Array[String]:
 	return created
 
 
+## Paste Special: place linked instances of clipboard bodies at `offset`.
+func paste_clipboard_as_instances(offset := Vector3.ZERO) -> int:
+	_prune_clipboard()
+	if _clipboard_bodies.is_empty():
+		return 0
+	var n := 0
+	for id in _clipboard_bodies:
+		var iname: String = doc.body_name(id) + " (inst)"
+		var iid: String = doc.add_instance(id, offset, Vector3(0, 0, 1), 0.0, iname)
+		if iid != "":
+			n += 1
+	if n > 0:
+		_after_mutation()
+	return n
+
+
 func set_selection_alias(text: String) -> void:
 	var target := selected_face if selected_face != "" else selected_body
 	if target != "":

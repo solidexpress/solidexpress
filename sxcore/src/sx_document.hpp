@@ -239,6 +239,7 @@ public:
     // place an instance of each. Returns {ok, error, body_ids, instance_ids}.
     // First instance into an empty assembly is Fixed (SolidWorks default).
     godot::Dictionary insert_sxp(const godot::String& path, const godot::Vector3& translation);
+    godot::Dictionary sxp_component_info(const godot::String& path) const;
 
     // --- datums (reference geometry) ---
     godot::String add_datum_plane(const godot::Vector3& point, const godot::Vector3& normal);

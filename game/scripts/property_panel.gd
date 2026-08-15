@@ -48,13 +48,14 @@ const SCHEMAS := {
 	],
 	"hole": [
 		{"key": "type", "label": "Type", "kind": "enum", "options": ["simple", "counterbore", "countersink"]},
+		{"key": "fit", "label": "Fit", "kind": "enum", "options": ["normal", "close", "loose"],
+			"optional": true},
 		{"key": "diameter", "label": "Diameter", "kind": "float", "min": 0.1, "max": 1000.0, "step": 0.5},
 		{"key": "depth", "label": "Depth (0=thru)", "kind": "float", "min": 0.0, "max": 10000.0, "step": 1.0},
 		{"key": "cb_diameter", "label": "C'bore Ø", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
 		{"key": "cb_depth", "label": "C'bore depth", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
 		{"key": "cs_diameter", "label": "C'sink Ø", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
 		{"key": "cs_angle_deg", "label": "C'sink angle", "kind": "float", "min": 10.0, "max": 170.0, "step": 5.0},
-		# positions: [[x,y,z],...] — Hole Wizard multi-point; edit via timeline Params JSON.
 	],
 	"shell": [
 		{"key": "thickness", "label": "Thickness", "kind": "float", "min": 0.01, "max": 1000.0, "step": 0.5},
@@ -82,6 +83,7 @@ const SCHEMAS := {
 		{"key": "left_handed", "label": "Left-handed", "kind": "bool"},
 	],
 	"thread": [
+		{"key": "designation", "label": "Standard", "kind": "thread_standard", "optional": true},
 		{"key": "major_radius", "label": "Major r", "kind": "float", "min": 0.01, "max": 1000.0, "step": 0.25},
 		{"key": "pitch", "label": "Pitch", "kind": "float", "min": 0.01, "max": 100.0, "step": 0.25},
 		{"key": "turns", "label": "Turns", "kind": "float", "min": 0.1, "max": 1000.0, "step": 0.5},
@@ -185,28 +187,77 @@ func _build_fields(type: String) -> void:
 		child.queue_free()
 	for field in SCHEMAS[type]:
 		var key: String = field["key"]
-		if not _params.has(key):
+		var optional: bool = bool(field.get("optional", false))
+		if not _params.has(key) and not optional and field["kind"] != "thread_standard":
 			continue
-		var value = _params[key]
+		var value = _params[key] if _params.has(key) else null
 		# Expression-driven params ("=w*2") edit as text to keep the equation.
 		if value is String and value.begins_with("="):
 			_add_expression_row(field, value)
 			continue
 		match field["kind"]:
 			"float", "int":
+				if value == null:
+					continue
 				_add_spin_row(field, value)
 			"bool":
+				if value == null:
+					continue
 				_add_check_row(field, value)
 			"enum":
+				if value == null and optional:
+					value = field["options"][0]
+					_params[key] = value
+				if value == null:
+					continue
 				_add_enum_row(field, value)
+			"thread_standard":
+				_add_thread_standard_row(field)
 	if type == "hole" and _params.has("positions") and _params["positions"] is Array:
 		var note := Label.new()
 		var n: int = (_params["positions"] as Array).size()
-		note.text = "positions: %d point(s) — edit array in Params JSON" % n
+		note.text = "positions: %d point(s) — Place more… via Hole Wizard" % n
 		note.add_theme_font_size_override("font_size", 11)
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_fields.add_child(note)
 	_building = false
+
+
+func _add_thread_standard_row(field: Dictionary) -> void:
+	var row := _row(field["label"])
+	var opt := OptionButton.new()
+	opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opt.fit_to_longest_item = false
+	opt.add_item("(custom)")
+	var table: Array = []
+	if view != null and view.doc != null and view.doc.has_method("thread_table"):
+		table = view.doc.thread_table()
+	var current := str(_params.get("designation", ""))
+	var select_i := 0
+	for i in range(table.size()):
+		var d: Dictionary = table[i]
+		var des := str(d.get("designation", ""))
+		opt.add_item(des)
+		opt.set_item_metadata(opt.item_count - 1, d)
+		if des == current:
+			select_i = opt.item_count - 1
+	opt.select(select_i)
+	opt.item_selected.connect(func(i: int) -> void:
+		if i <= 0:
+			return
+		var d: Dictionary = opt.get_item_metadata(i)
+		_params["designation"] = str(d.get("designation", ""))
+		var major := float(d.get("major_diameter_mm", 0.0)) * 0.5
+		var pitch := float(d.get("pitch_mm", 0.0))
+		_set_param("major_radius", major)
+		_set_param("pitch", pitch)
+		if _params.has("depth"):
+			_set_param("depth", pitch * 0.5)
+		# Rebuild so spins show the new values.
+		_build_fields("thread")
+		status.emit("Thread standard %s" % str(d.get("designation", "")))
+	)
+	row.add_child(opt)
 
 
 func _row(label_text: String) -> HBoxContainer:

@@ -28,4 +28,15 @@ bool insert_sxp(Document& dest, const std::string& path,
                 const std::array<double, 3>& base_translation = {0, 0, 0},
                 InsertSxpResult* out = nullptr, std::string* err = nullptr);
 
+// Peek an .sxp without mutating the destination document — body names + volumes
+// for the Insert Components chooser.
+struct SxpComponentInfo {
+    bool ok = false;
+    std::string error;
+    std::vector<std::string> body_ids;
+    std::vector<std::string> body_names;
+    std::vector<double> volumes;
+};
+SxpComponentInfo sxp_component_info(const std::string& path);
+
 }  // namespace sx
