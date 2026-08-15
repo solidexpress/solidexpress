@@ -27,9 +27,9 @@ func _init() -> void:
 	# Locate the strip and toggles
 	var strip = main.print_strip
 	check(strip != null and strip.visible, "Print strip visible in Form")
-	var thick = strip.get_node_or_null("ThicknessPaint") as CheckBox
-	var over = strip.get_node_or_null("OverhangPaint") as CheckBox
-	var bed = strip.get_node_or_null("BedGhost") as CheckBox
+	var thick = strip.find_child("ThicknessPaint", true, false) as CheckBox
+	var over = strip.find_child("OverhangPaint", true, false) as CheckBox
+	var bed = strip.find_child("BedGhost", true, false) as CheckBox
 	check(thick != null, "Thickness paint toggle exists")
 	check(over != null, "Overhang paint toggle exists")
 	check(bed != null, "Bed ghost toggle exists")

@@ -92,11 +92,11 @@ func test_ghost_follows(main) -> void:
 	_move(ix, center)
 	var ghost := _ghost(main)
 	check(ghost != null and ghost.visible, "ghost visible at viewport center")
-	var gp = ix.ground_point(center)
-	check(gp != null, "ground point at center is valid")
-	if gp != null:
+	var target0: Dictionary = ix._place_target(center)
+	check(not target0.is_empty(), "ground point at center is valid")
+	if not target0.is_empty():
 		var half_z := DocumentView.DEFAULT_PRIMITIVE_MM * 0.5
-		var expect: Vector3 = gp + Vector3(0, 0, half_z)
+		var expect: Vector3 = target0["point"] + Vector3(0, 0, half_z)
 		check(ghost.position.distance_to(expect) < 1e-2,
 			"ghost center is half-height above floor (got %s want %s)" % [ghost.position, expect])
 	check(ix.has_focus(), "Interaction grabbed focus on arm (Esc works)")
@@ -362,12 +362,28 @@ func test_typed_h_decimal_commits(main) -> void:
 	check(edit != null, "TransformHud H LineEdit exists")
 	edit.grab_focus()
 	await process_frame
-	var keys := [KEY_1, KEY_PERIOD, KEY_2, KEY_ENTER]
-	for k in keys:
+	check(ix.get_viewport().gui_get_focus_owner() == edit, "H LineEdit has focus")
+	# Unicode is required for LineEdit insertion; keycode-only events
+	# would otherwise be ignored (and 1/2/3/7 must still not steal).
+	var typed := [
+		[KEY_1, 49],
+		[KEY_PERIOD, 46],
+		[KEY_2, 50],
+		[KEY_ENTER, 0],
+	]
+	for pair in typed:
 		var ev := InputEventKey.new()
-		ev.keycode = k
+		ev.keycode = pair[0]
+		ev.physical_keycode = pair[0]
+		ev.unicode = pair[1]
 		ev.pressed = true
 		ix.get_viewport().push_input(ev)
+		await process_frame
+		var rel := InputEventKey.new()
+		rel.keycode = pair[0]
+		rel.physical_keycode = pair[0]
+		rel.pressed = false
+		ix.get_viewport().push_input(rel)
 		await process_frame
 	check(absf(ix.transform_hud.current_size().y - 1.2) < 1e-6, "HUD H shows 1.2 mm")
 	check(absf(ix.place_size.y - 1.2) < 1e-6, "place size H updated to 1.2 mm")
@@ -376,10 +392,10 @@ func test_typed_h_decimal_commits(main) -> void:
 	_lmb(ix, center, true)
 	_lmb(ix, center, false)
 	await process_frame
-	var ids := main.view.doc.body_ids()
+	var ids: PackedStringArray = main.view.doc.body_ids()
 	check(ids.size() >= 1, "body placed after typing H")
 	if ids.size() >= 1:
-		var bb := main.view.doc.measure_bbox(ids[ids.size() - 1])
+		var bb: Dictionary = main.view.doc.measure_bbox(ids[ids.size() - 1])
 		check(not bb.is_empty(), "bbox exists for placed body")
 		if not bb.is_empty():
 			var sz: Vector3 = bb["max"] - bb["min"]

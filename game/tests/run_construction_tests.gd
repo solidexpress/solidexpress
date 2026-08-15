@@ -86,6 +86,10 @@ func test_typed_12_sticks(main) -> void:
 	h.apply()
 	check(absf(h.value - 1.2) < 1e-6, "spin value is 1.2 (got %s)" % h.value)
 	check(absf(ix.place_size.y - 1.2) < 1e-6, "place_size H is 1.2")
+	# Same path as a user: LineEdit Enter must keep 1.2 (no 0.1 Range snap).
+	h.get_line_edit().text = "1.2"
+	h.get_line_edit().text_submitted.emit("1.2")
+	check(absf(h.value - 1.2) < 1e-6, "LineEdit Enter keeps 1.2 (got %s)" % h.value)
 
 
 func test_hole_cuts_and_analyze_changes(main) -> void:

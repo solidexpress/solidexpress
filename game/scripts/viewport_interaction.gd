@@ -2755,10 +2755,15 @@ func _gui_key(event: InputEventKey) -> bool:
 			# Sketch Esc is handled in _sketch_input; do not steal it.
 			if sketch_mode != null and sketch_mode.active:
 				return false
-			# Dismiss overlapping panels/popups first to avoid undismissable stacks.
+			# Temporary HUD overlays only. Persistent W/H/D stays until
+			# selection clears (or place cancels via `_input`).
 			if transform_hud != null and transform_hud.visible:
-				transform_hud.dismiss()
-				return true
+				if transform_hud._precision_row.visible:
+					transform_hud.hide_precision()
+					return true
+				if transform_hud._move_row.visible:
+					transform_hud.hide_move_delta()
+					return true
 			if _orient_popup != null and _orient_popup.visible:
 				_orient_popup.hide()
 				return true
@@ -2970,6 +2975,11 @@ func _apply_live_rotate(angle: float) -> void:
 
 func _refresh_transform_hud() -> void:
 	if transform_hud == null:
+		return
+	if sketch_mode != null and sketch_mode.active:
+		transform_hud.hide_dims()
+		transform_hud.hide_precision()
+		transform_hud.hide_move_delta()
 		return
 	if _place_kind != "":
 		var center := _screen_center()
