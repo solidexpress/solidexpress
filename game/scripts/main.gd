@@ -3,6 +3,8 @@
 # bar). Phase 1 drag-and-drop experience.
 extends Node3D
 
+const _CamRail := preload("res://scripts/cam_rail.gd")
+const _SimRail := preload("res://scripts/sim_rail.gd")
 const _PrintStrip := preload("res://scripts/print_strip.gd")
 
 var model_space: Node3D
@@ -35,6 +37,8 @@ var view_hud: ViewHud
 var drawing_sheet: DrawingSheet
 var sheet_metal_view: SheetMetalView
 var print_strip
+var cam_rail
+var sim_rail
 var palette: PanelContainer
 var dim_value: SpinBox
 var finish_op: OptionButton
@@ -57,6 +61,19 @@ var _paste_ox: SpinBox
 var _paste_oy: SpinBox
 var _paste_oz: SpinBox
 var _paste_in_place: CheckBox
+var _slicer_dialog: ConfirmationDialog
+var _slicer_exec: LineEdit
+var _slicer_args: LineEdit
+var _slicer_preview: Label
+var _drawing_options: ConfirmationDialog
+var _draw_scale: OptionButton
+var _draw_sheet: OptionButton
+var _draw_front: CheckBox
+var _draw_top: CheckBox
+var _draw_right: CheckBox
+var _draw_iso: CheckBox
+var _draw_bom: CheckBox
+var _pending_draw_action: FileAction = FileAction.NONE
 var _recent: Array = []  # paths, most recent first (max 8)
 const _RECENT_CLEAR_ID := 100
 const _RECENT_CFG := "user://recent.cfg"
@@ -383,8 +400,32 @@ func _build_ui() -> void:
 	# Mode overlays sit under chrome and stay hidden in Model (layout suite).
 	drawing_sheet = DrawingSheet.new()
 	ui.add_child(drawing_sheet)
+	drawing_sheet.tool_status.connect(_on_status)
 	sheet_metal_view = SheetMetalView.new()
 	ui.add_child(sheet_metal_view)
+	sheet_metal_view.tool_status.connect(_on_status)
+
+	cam_rail = _CamRail.new()
+	cam_rail.name = "CamRail"
+	cam_rail.view = view
+	cam_rail.visible = false
+	cam_rail.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	cam_rail.position = Vector2(_CHROME_PAD, _RAIL_TOP)
+	cam_rail.status.connect(_on_status)
+	ui.add_child(cam_rail)
+	cam_rail.attach_overlay(model_space)
+
+	sim_rail = _SimRail.new()
+	sim_rail.name = "SimRail"
+	sim_rail.view = view
+	sim_rail.visible = false
+	sim_rail.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	sim_rail.position = Vector2(_CHROME_PAD, _RAIL_TOP)
+	sim_rail.status.connect(_on_status)
+	ui.add_child(sim_rail)
+
+	_build_slicer_dialog(ui)
+	_build_drawing_options_dialog(ui)
 
 	file_dialog = FileDialog.new()
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -1389,36 +1430,6 @@ func _on_print_orient() -> void:
 	view.refresh()
 
 
-func _update_left_rail() -> void:
-	if palette == null or ops_panel == null:
-		return
-	var sketching := sketch_mode != null and sketch_mode.active
-	if sketch_toolbar != null:
-		sketch_toolbar.visible = sketching
-	if sketching:
-		palette.visible = false
-		ops_panel.visible = false
-		return
-	var placing := interaction != null and interaction.is_placing()
-	var has_body := view.selected_body != ""
-	# OpsPanel shows itself only when something is selected (same rule as before).
-	ops_panel.visible = has_body
-	# Selected body → Modify tools occupy the left palette slot.
-	# Idle / place-armed → Primitives palette; OpsPanel stays on the right
-	# (and hides itself when there is no selection).
-	if _work_mode != "Model":
-		# Specialized rails replace Modify — they do not stack a second dock.
-		palette.visible = false
-		ops_panel.visible = false
-		return
-	if has_body and not placing:
-		palette.visible = false
-		_dock_ops_left()
-	else:
-		palette.visible = true
-		_dock_ops_right()
-
-
 func _update_mode_overlays() -> void:
 	if drawing_sheet != null:
 		if _work_mode == "Draw" and view != null and view.doc != null:
@@ -1435,12 +1446,46 @@ func _update_mode_overlays() -> void:
 		print_strip.visible = _work_mode == "Form"
 		if _work_mode == "Form" and print_strip.has_method("sync_from_doc"):
 			print_strip.sync_from_doc()
+	if cam_rail != null:
+		cam_rail.visible = _work_mode == "Cam"
+		if _work_mode != "Cam":
+			cam_rail.clear_path()
+	if sim_rail != null:
+		sim_rail.visible = _work_mode == "Sim"
 	# Bed ghost visible in Form only (gate the toggle).
 	if bed_ghost != null:
 		var on := false
 		if print_strip != null and is_instance_valid(print_strip._bed_toggle):
 			on = print_strip._bed_toggle.button_pressed
 		bed_ghost.visible = (_work_mode == "Form") and on
+
+
+func _update_left_rail() -> void:
+	if palette == null or ops_panel == null:
+		return
+	var sketching := sketch_mode != null and sketch_mode.active
+	if sketch_toolbar != null:
+		sketch_toolbar.visible = sketching
+	if sketching:
+		palette.visible = false
+		ops_panel.visible = false
+		if cam_rail: cam_rail.visible = false
+		if sim_rail: sim_rail.visible = false
+		return
+	var placing := interaction != null and interaction.is_placing()
+	var has_body := view.selected_body != ""
+	ops_panel.visible = has_body and _work_mode == "Model"
+	if _work_mode == "Cam" or _work_mode == "Sim" or _work_mode == "Draw" \
+			or _work_mode == "Sheet" or _work_mode == "Form":
+		palette.visible = false
+		ops_panel.visible = false
+		return
+	if has_body and not placing:
+		palette.visible = false
+		_dock_ops_left()
+	else:
+		palette.visible = true
+		_dock_ops_right()
 
 
 ## Selection card sits under the visible left rail (palette / modify / sketch).
@@ -1547,6 +1592,177 @@ func _build_paste_special_dialog(parent: Node) -> void:
 		_paste_oz.editable = not on)
 	_paste_special_dialog.confirmed.connect(_on_paste_special_confirmed)
 	parent.add_child(_paste_special_dialog)
+
+
+func _build_slicer_dialog(parent: Node) -> void:
+	_slicer_dialog = ConfirmationDialog.new()
+	_slicer_dialog.title = "Open in Slicer"
+	_slicer_dialog.ok_button_text = "Open"
+	_slicer_dialog.dialog_hide_on_ok = true
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
+	_slicer_dialog.add_child(body)
+	var exec_row := HBoxContainer.new()
+	body.add_child(exec_row)
+	var exec_lbl := Label.new()
+	exec_lbl.text = "Executable"
+	exec_lbl.custom_minimum_size = Vector2(90, 0)
+	exec_row.add_child(exec_lbl)
+	_slicer_exec = LineEdit.new()
+	_slicer_exec.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_slicer_exec.placeholder_text = "/usr/bin/prusa-slicer"
+	exec_row.add_child(_slicer_exec)
+	var browse := Button.new()
+	browse.text = "Browse…"
+	browse.pressed.connect(func() -> void:
+		_file_action = FileAction.NONE
+		var dlg := FileDialog.new()
+		dlg.access = FileDialog.ACCESS_FILESYSTEM
+		dlg.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		dlg.title = "Slicer executable"
+		dlg.file_selected.connect(func(p: String) -> void:
+			_slicer_exec.text = p
+			_refresh_slicer_preview()
+			dlg.queue_free())
+		add_child(dlg)
+		dlg.popup_centered(Vector2i(700, 460)))
+	exec_row.add_child(browse)
+	var args_row := HBoxContainer.new()
+	body.add_child(args_row)
+	var args_lbl := Label.new()
+	args_lbl.text = "Args"
+	args_lbl.custom_minimum_size = Vector2(90, 0)
+	args_row.add_child(args_lbl)
+	_slicer_args = LineEdit.new()
+	_slicer_args.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_slicer_args.placeholder_text = "--open"
+	args_row.add_child(_slicer_args)
+	_slicer_preview = Label.new()
+	_slicer_preview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_slicer_preview.add_theme_font_size_override("font_size", 11)
+	body.add_child(_slicer_preview)
+	_slicer_exec.text_changed.connect(func(_t: String) -> void: _refresh_slicer_preview())
+	_slicer_args.text_changed.connect(func(_t: String) -> void: _refresh_slicer_preview())
+	_slicer_dialog.confirmed.connect(_on_slicer_confirmed)
+	parent.add_child(_slicer_dialog)
+
+
+func _show_slicer_dialog() -> void:
+	var settings := SlicerSettings.load_settings()
+	_slicer_exec.text = str(settings.get("exec", ""))
+	if _slicer_exec.text == "":
+		# Leave empty — Browse… is the reliable path. Common names are hints only.
+		_slicer_exec.placeholder_text = "prusa-slicer / orca-slicer / bambu-studio"
+	var args: PackedStringArray = settings.get("args", PackedStringArray())
+	_slicer_args.text = " ".join(args) if args.size() > 0 else ""
+	_refresh_slicer_preview()
+	_slicer_dialog.popup_centered()
+
+
+func _refresh_slicer_preview() -> void:
+	if _slicer_preview == null:
+		return
+	_slicer_preview.text = "Will spawn: %s %s <per-body .3mf>" % [
+		_slicer_exec.text, _slicer_args.text]
+
+
+func _on_slicer_confirmed() -> void:
+	var exec_path := _slicer_exec.text.strip_edges()
+	if exec_path == "":
+		_on_status("No slicer registered — pick an executable")
+		return
+	var args := SlicerSettings._split_args(_slicer_args.text)
+	SlicerSettings.save_settings(exec_path, args)
+	var res := OpenInSlicer.open_in_slicer(view.doc, OS.has_feature("headless"))
+	var n: int = (res.get("files", PackedStringArray()) as PackedStringArray).size()
+	if n > 0:
+		_on_status("Open in Slicer prepared %d file(s)" % n)
+	else:
+		_on_status("Open in Slicer failed (no bodies to export)")
+
+
+func _build_drawing_options_dialog(parent: Node) -> void:
+	_drawing_options = ConfirmationDialog.new()
+	_drawing_options.title = "Export Drawing"
+	_drawing_options.ok_button_text = "Export…"
+	_drawing_options.dialog_hide_on_ok = true
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
+	_drawing_options.add_child(body)
+	var sheet_row := HBoxContainer.new()
+	body.add_child(sheet_row)
+	var sheet_lbl := Label.new()
+	sheet_lbl.text = "Sheet"
+	sheet_lbl.custom_minimum_size = Vector2(80, 0)
+	sheet_row.add_child(sheet_lbl)
+	_draw_sheet = OptionButton.new()
+	for s in ["A4", "A3", "A2", "Letter", "Tabloid"]:
+		_draw_sheet.add_item(s)
+	_draw_sheet.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sheet_row.add_child(_draw_sheet)
+	var scale_row := HBoxContainer.new()
+	body.add_child(scale_row)
+	var scale_lbl := Label.new()
+	scale_lbl.text = "Scale"
+	scale_lbl.custom_minimum_size = Vector2(80, 0)
+	scale_row.add_child(scale_lbl)
+	_draw_scale = OptionButton.new()
+	for s in ["1:1", "1:2", "1:5", "2:1"]:
+		_draw_scale.add_item(s)
+	_draw_scale.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scale_row.add_child(_draw_scale)
+	_draw_front = CheckBox.new()
+	_draw_front.text = "Front"
+	_draw_front.button_pressed = true
+	body.add_child(_draw_front)
+	_draw_top = CheckBox.new()
+	_draw_top.text = "Top"
+	_draw_top.button_pressed = true
+	body.add_child(_draw_top)
+	_draw_right = CheckBox.new()
+	_draw_right.text = "Right"
+	_draw_right.button_pressed = true
+	body.add_child(_draw_right)
+	_draw_iso = CheckBox.new()
+	_draw_iso.text = "Isometric"
+	body.add_child(_draw_iso)
+	_draw_bom = CheckBox.new()
+	_draw_bom.text = "BOM table"
+	body.add_child(_draw_bom)
+	_drawing_options.confirmed.connect(_on_drawing_options_confirmed)
+	parent.add_child(_drawing_options)
+
+
+func _show_drawing_options() -> void:
+	if view != null and view.doc != null:
+		view.doc.ensure_drawing_sheet()
+	_drawing_options.popup_centered()
+
+
+func _on_drawing_options_confirmed() -> void:
+	if view != null and view.doc != null:
+		view.doc.ensure_drawing_sheet()
+		view.doc.refresh_drawing_dims()
+		# Scale text on the live sheet preview.
+		var scales := [1.0, 0.5, 0.2, 2.0]
+		var sc: float = scales[_draw_scale.selected] if _draw_scale.selected < scales.size() else 1.0
+		if drawing_sheet != null:
+			drawing_sheet.scale_text = _draw_scale.get_item_text(_draw_scale.selected)
+			drawing_sheet.set_preview(view.doc.drawing_preview())
+		_on_status("Drawing %s @ %s — pick a save path" % [
+			_draw_sheet.get_item_text(_draw_sheet.selected),
+			_draw_scale.get_item_text(_draw_scale.selected)])
+	var action := _pending_draw_action
+	_pending_draw_action = FileAction.NONE
+	match action:
+		FileAction.EXPORT_DRAWING:
+			_show_file_dialog(FileAction.EXPORT_DRAWING, FileDialog.FILE_MODE_SAVE_FILE, "*.svg ; SVG drawing")
+		FileAction.EXPORT_DRAWING_DXF:
+			_show_file_dialog(FileAction.EXPORT_DRAWING_DXF, FileDialog.FILE_MODE_SAVE_FILE, "*.dxf ; DXF drawing")
+		FileAction.EXPORT_DRAWING_PDF:
+			_show_file_dialog(FileAction.EXPORT_DRAWING_PDF, FileDialog.FILE_MODE_SAVE_FILE, "*.pdf ; PDF drawing")
+		_:
+			pass
 
 
 func _paste_spin(parent: Container, label: String, value: float) -> SpinBox:
@@ -1734,7 +1950,8 @@ func _on_file_menu(id: int) -> void:
 		7:
 			_show_file_dialog(FileAction.EXPORT_CONTEXT, FileDialog.FILE_MODE_SAVE_FILE, "*.md ; Markdown")
 		8:
-			_show_file_dialog(FileAction.EXPORT_DRAWING, FileDialog.FILE_MODE_SAVE_FILE, "*.svg ; SVG drawing")
+			_pending_draw_action = FileAction.EXPORT_DRAWING
+			_show_drawing_options()
 		10:
 			_show_file_dialog(FileAction.IMPORT_DXF, FileDialog.FILE_MODE_OPEN_FILE, "*.dxf ; DXF")
 		11:
@@ -1742,15 +1959,13 @@ func _on_file_menu(id: int) -> void:
 		12:
 			_show_file_dialog(FileAction.EXPORT_GLTF, FileDialog.FILE_MODE_SAVE_FILE, "*.gltf ; glTF")
 		15:
-			var res := OpenInSlicer.open_in_slicer(view.doc, OS.has_feature("headless"))
-			if res.get("files", PackedStringArray()).size() > 0:
-				_on_status("Open in Slicer prepared %d file(s)" % res["files"].size())
-			else:
-				_on_status("Open in Slicer failed (no files)")
+			_show_slicer_dialog()
 		13:
-			_show_file_dialog(FileAction.EXPORT_DRAWING_DXF, FileDialog.FILE_MODE_SAVE_FILE, "*.dxf ; DXF drawing")
+			_pending_draw_action = FileAction.EXPORT_DRAWING_DXF
+			_show_drawing_options()
 		14:
-			_show_file_dialog(FileAction.EXPORT_DRAWING_PDF, FileDialog.FILE_MODE_SAVE_FILE, "*.pdf ; PDF drawing")
+			_pending_draw_action = FileAction.EXPORT_DRAWING_PDF
+			_show_drawing_options()
 
 
 func _do_new() -> void:

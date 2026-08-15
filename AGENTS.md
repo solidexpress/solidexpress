@@ -25,18 +25,33 @@ commands live in the root `Makefile` and `README.md`; prefer those and the
 notes below rather than re-deriving commands.
 
 ### Environment already provided by the VM snapshot
-These are baked into the image (do not add them to the update script):
-- **OCCT 7.9.0 built from source, installed to `/usr/local`.** The repo requires
-  OCCT 7.9+ (it links the 7.7+ toolkit names `TKDESTEP`/`TKDEIGES`/`TKDESTL`),
-  but Ubuntu 24.04 apt only ships OCCT 7.6.3. Both are present; `find_package`
-  resolves `/usr/local` (7.9) first, which is what you want. Do not "fix" the
-  build by pointing it at the apt 7.6 packages.
+These are typically baked into the image (do not add them to the update script
+when they are already present):
+- **OCCT:** Prefer a source build of **7.9+** at `/usr/local` when available
+  (toolkit names `TKDESTEP`/`TKDEIGES`/`TKDESTL`). Ubuntu 24.04 apt ships
+  **7.6.3** (`TKSTEP`/`TKIGES`/`TKSTL`). `sxkernel/CMakeLists.txt` probes for
+  `TKDESTEP` and falls back to the 7.6 names automatically — **apt 7.6.3 is a
+  supported build path**. When both are installed, `find_package` resolves
+  `/usr/local` first.
 - System toolchain deps: `ninja-build`, `libstdc++-14-dev` (Clang 18 is the
   default `c++` and targets the gcc-14 toolchain), `libtbb-dev` (OCCT runtime),
   `libeigen3-dev`, `libboost-dev`, `zip`, and `mesa-vulkan-drivers` (lavapipe,
   for GUI rendering without a GPU).
 - **Godot 4.7-stable** at `tools/godot/godot` (gitignored). The GDExtension API
-  is pinned to this exact build, so keep 4.7-stable (not 4.7.1).
+  is pinned to this exact build, so keep 4.7-stable (not 4.7.1). If the binary
+  is missing, fetch it:
+
+```bash
+mkdir -p tools/godot /tmp/godotdl
+gh release download 4.7-stable --repo godotengine/godot-builds \
+  -p 'Godot_v4.7-stable_linux.x86_64.zip' -O /tmp/godot.zip
+unzip -o -q /tmp/godot.zip -d /tmp/godotdl
+cp /tmp/godotdl/Godot_v4.7-stable_linux.x86_64 tools/godot/godot
+chmod +x tools/godot/godot
+```
+
+**Standing rule:** never pass `user://` or `res://` paths into GDExtension C++
+(`SxDocument` / kernel I/O). Always `ProjectSettings.globalize_path(...)` first.
 
 ### Building and testing (no display needed)
 - `make build` then `make test` (kernel Catch2 + all headless Godot suites).

@@ -361,6 +361,7 @@ public:
                              double radius) const;
     godot::PackedVector3Array cam_pocket(double x0, double y0, double x1, double y1, double depth,
                                          double stepover) const;
+    godot::String cam_post_gcode(const godot::PackedVector3Array& points, double feed) const;
     double fea_cantilever(double force_n, double length_mm, double e_mpa, double width_mm,
                           double thickness_mm) const;
     godot::Dictionary catalog_fastener(const godot::String& designation) const;

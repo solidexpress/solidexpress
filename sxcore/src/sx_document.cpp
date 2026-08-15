@@ -1977,6 +1977,16 @@ PackedVector3Array SxDocument::cam_pocket(double x0, double y0, double x1, doubl
     return out;
 }
 
+String SxDocument::cam_post_gcode(const PackedVector3Array& points, double feed) const {
+    sx::cam::Toolpath tp;
+    tp.points.reserve(points.size());
+    for (int i = 0; i < points.size(); ++i) {
+        const Vector3& p = points[i];
+        tp.points.push_back({p.x, p.y, p.z});
+    }
+    return to_gd(sx::cam::post_gcode(tp, feed));
+}
+
 double SxDocument::fea_cantilever(double force_n, double length_mm, double e_mpa, double width_mm,
                                   double thickness_mm) const {
     return sx::fea::cantilever_deflection(force_n, length_mm, e_mpa,
@@ -2488,6 +2498,7 @@ void SxDocument::_bind_methods() {
                          &SxDocument::sheet_flat_length);
     ClassDB::bind_method(D_METHOD("cam_pocket", "x0", "y0", "x1", "y1", "depth", "stepover"),
                          &SxDocument::cam_pocket);
+    ClassDB::bind_method(D_METHOD("cam_post_gcode", "points", "feed"), &SxDocument::cam_post_gcode);
     ClassDB::bind_method(D_METHOD("fea_cantilever", "force_n", "length_mm", "e_mpa", "width_mm",
                                   "thickness_mm"),
                          &SxDocument::fea_cantilever);

@@ -4,20 +4,37 @@ extends Control
 ## BOM table and weld symbols come from the drawing document — not a stateless
 ## SVG export. Hidden in Model (layout suite stays green).
 
+signal tool_status(text: String)
+
 var title := "SOLIDEXPRESS"
 var scale_text := "1:1"
 var preview: Dictionary = {}
+var _tools: HBoxContainer
 
 
 func _ready() -> void:
 	name = "DrawingSheet"
 	visible = false
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	offset_left = 80
 	offset_top = 48
 	offset_right = -80
 	offset_bottom = -48
+	_tools = HBoxContainer.new()
+	_tools.name = "DrawTools"
+	_tools.add_theme_constant_override("separation", 6)
+	_tools.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_tools.position = Vector2(12, 8)
+	add_child(_tools)
+	for entry in [["Refresh", "refresh views"], ["Scale 1:1", "1:1"], ["Scale 1:2", "1:2"],
+			["BOM", "toggle bom"]]:
+		var b := Button.new()
+		b.text = entry[0]
+		b.tooltip_text = entry[1]
+		var label: String = entry[0]
+		b.pressed.connect(func() -> void: _on_tool(label))
+		_tools.add_child(b)
 
 
 func show_sheet(on: bool) -> void:
@@ -30,6 +47,23 @@ func set_preview(data: Dictionary) -> void:
 	if data.has("title"):
 		title = str(data["title"])
 	queue_redraw()
+
+
+func _on_tool(label: String) -> void:
+	match label:
+		"Refresh":
+			tool_status.emit("Drawing refreshed")
+			queue_redraw()
+		"Scale 1:1":
+			scale_text = "1:1"
+			queue_redraw()
+			tool_status.emit("Drawing scale 1:1")
+		"Scale 1:2":
+			scale_text = "1:2"
+			queue_redraw()
+			tool_status.emit("Drawing scale 1:2")
+		"BOM":
+			tool_status.emit("BOM is driven by the document — toggle via export options")
 
 
 func _draw() -> void:
