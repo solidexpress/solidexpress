@@ -225,6 +225,7 @@ func is_placing() -> bool:
 ## has no start signal of its own).
 func refresh_selection_chrome() -> void:
 	_refresh_selection_strip()
+	_refresh_transform_hud()
 
 
 func _on_camera_view_changed() -> void:

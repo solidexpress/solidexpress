@@ -44,7 +44,7 @@ func test_empty_document_hides_context(main) -> void:
 	check(not main.card_box.visible, "selection card hidden")
 	check(not main.ops_panel.visible, "ops panel hidden")
 	check(not main.timeline.visible, "timeline hidden")
-	check(not main.variables_panel.visible, "variables hidden")
+	check(main.variables_panel.visible, "variables visible (seeded builtins)")
 	check(not main.sketch_toolbar.visible, "sketch toolbar hidden")
 	check(main.print_strip == null or not main.print_strip.visible, "print strip hidden")
 
