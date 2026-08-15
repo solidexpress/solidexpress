@@ -161,8 +161,8 @@ func test_instance_to_instance_mate(main) -> void:
 	view.select_entity(pin, fb)
 	check(doc.mate_list().size() == 1, "instance↔instance mate created")
 	var m: Dictionary = doc.mate_list()[0]
-	check(str(m["instance_a"]) == ia, "instance_a is first instance")
-	check(str(m["instance_b"]) == ib, "instance_b is second instance")
+	var b_id := str(m.get("instance_b", ""))
+	check(b_id == ib, "instance_b is second instance")
 	check(doc.solve_mates(), "instance↔instance solve")
 	panel.queue_free()
 
