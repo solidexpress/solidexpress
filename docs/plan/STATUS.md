@@ -355,3 +355,6 @@ See friendliness plan (phases 21–27) + AI-first solver upgrade for unmatched v
 - Residual vs full SW jaw scripts: open-profile cut without thin — see Ladder residual + [ROADMAP.md](ROADMAP.md)
 - Next architecture work is Track B (modularize) / Track C (CI hardening) — demoted vs demo ladder
 
+## Wave 6.0c stabilization (2026-08-14)
+- Film slate: dropped missing scripts from `game/tests/ui_movie_manifest.json` (scripts not present): `extrude_s_shape`, `place_and_orbit`, `loft_profiles`, `sketch_extend`, `sketch_spline_tools`.
+

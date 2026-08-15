@@ -14,7 +14,22 @@ func run_film(ctx: FilmContext) -> void:
 		return
 	ctx.view.select_entity(bodies[0], "")
 	await ctx.beat("Capture the neighbor as a named context", 0.4)
-	await FilmUI.marking_verb(ctx, "In-context pad")
+	await ctx.camera.frame_all_smooth(0.0)
+	var ix = ctx.main.interaction
+	if ix != null and ix.has_method("_open_marking_menu"):
+		ix._open_marking_menu(ix._screen_center() if ix.has_method("_screen_center") else Vector2(400, 300))
+		await FilmUI.wait_frames(ctx.tree, 3)
+		var menu: MarkingMenu = ix.marking_menu
+		if menu != null and menu.visible:
+			var b := FilmUI.find_button(menu, "In-context pad")
+			if b != null:
+				await FilmUI.click_control(ctx, b, FilmUI.FilmUICues.alert("S", "In-context pad"))
+			else:
+				await FilmUI.marking_verb(ctx, "In-context pad")
+		else:
+			await FilmUI.marking_verb(ctx, "In-context pad")
+	else:
+		await FilmUI.marking_verb(ctx, "In-context pad")
 	await ctx.after_regen()
 	var consumer := FilmUI.last_feature_id(doc, "in_context")
 	var v0 := 0.0

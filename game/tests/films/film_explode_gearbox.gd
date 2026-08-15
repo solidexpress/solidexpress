@@ -15,6 +15,7 @@ func run_film(ctx: FilmContext) -> void:
 	await FilmUI.wait_frames(ctx.tree, 2)
 	ctx.view.select_entity(shaft, "")
 	await FilmUI.click_button(ctx, "Place instance of selection")
+	await ctx.after_regen()
 
 	await ctx.beat("Explode — parts travel along their joints", 0.45)
 	var home: Vector3 = doc.instance_list()[0]["translation"]
@@ -27,6 +28,7 @@ func run_film(ctx: FilmContext) -> void:
 		await ctx.beat("Explode needs a component instance", 0.6)
 
 	await ctx.beat("Collapse restores the assembled placement", 0.4)
+	await FilmUI.wait_frames(ctx.tree, 2)
 	await FilmUI.click_button(ctx, "Explode")
 	var back: Vector3 = doc.instance_list()[0]["translation"]
 	if back.distance_to(home) < 0.05:
