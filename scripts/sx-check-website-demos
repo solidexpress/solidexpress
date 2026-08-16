@@ -66,6 +66,28 @@ def head_ok(url: str, timeout: float) -> bool:
         return False
 
 
+def release_asset_names(api_url: str, timeout: float) -> set[str] | None:
+    """Return asset filenames from the demo-movies Release, or None on failure.
+
+    Prefer the Releases API over HEAD on download CDN URLs — CI runners often
+    see flaky 404/redirect failures on releases/download even when assets exist.
+    """
+    req = urllib.request.Request(
+        api_url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "sx-check-website-demos",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+        return None
+    assets = data.get("assets") or []
+    return {str(a.get("name", "")) for a in assets if isinstance(a, dict)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -160,11 +182,27 @@ def main() -> int:
 
     demo = catalog.get("demo_release") or {}
     base = str(demo.get("base") or DEFAULT_BASE)
+    api = str(
+        demo.get("api")
+        or "https://api.github.com/repos/solidexpress/solidexpress.github.io/releases/tags/demo-movies"
+    )
     if not args.offline:
-        for pid in published_ids:
-            url = base + pid + ".webm"
-            if not head_ok(url, args.timeout):
-                errors.append(f"Release WebM missing or unreachable: {url}")
+        names = release_asset_names(api, args.timeout)
+        if names is not None:
+            for pid in published_ids:
+                asset = pid + ".webm"
+                if asset not in names:
+                    errors.append(
+                        f"Release WebM missing on demo-movies tag: {asset} "
+                        f"(listed {len(names)} assets via API)"
+                    )
+        else:
+            # API unreachable — fall back to per-file probes with one retry.
+            for pid in published_ids:
+                url = base + pid + ".webm"
+                ok = head_ok(url, args.timeout) or head_ok(url, args.timeout)
+                if not ok:
+                    errors.append(f"Release WebM missing or unreachable: {url}")
 
     if errors:
         return fail(errors)
