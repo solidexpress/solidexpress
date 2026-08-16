@@ -40,6 +40,8 @@ var print_strip
 var cam_rail
 var sim_rail
 var palette: PanelContainer
+var top_chrome: Control
+var left_stack: VBoxContainer
 var _rail_extrude: Button
 var _rail_revolve: Button
 var _rail_sweep: Button
@@ -92,17 +94,14 @@ var _paste_as_instance: CheckBox
 var _recent: Array = []  # paths, most recent first (max 8)
 const _RECENT_CLEAR_ID := 100
 const _RECENT_CFG := "user://recent.cfg"
-## Top + left chrome margins (tight dock under File/Insert/View + snap).
+## Top + left chrome margins. LeftStack sits below measured TopChrome.
 const _CHROME_PAD := 8.0
-const _RAIL_TOP := 42.0
+const _STACK_GAP := 6.0
 const _RAIL_ICON_W := 44.0
 const _CARD_W := 280.0
 const _CARD_H := 180.0
 ## Keep the left stack (rail + card) clear of the bottom timeline.
 const _LEFT_STACK_LIMIT := 470.0
-## Ops panel docks into the left palette slot while a body is selected.
-const _OPS_LEFT := {"offset_left": 8.0, "offset_right": 248.0, "offset_top": 42.0}
-const _OPS_RIGHT := {"offset_left": -320.0, "offset_right": -12.0, "offset_top": 480.0}
 
 
 func _finish_op_name() -> String:
@@ -262,7 +261,7 @@ func _build_ui() -> void:
 	add_child(ui)
 
 	# Top-left dock row: File/Insert/View, then PlaceSnapBar (from Interaction).
-	var top_chrome := HBoxContainer.new()
+	top_chrome = HBoxContainer.new()
 	top_chrome.name = "TopChrome"
 	top_chrome.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	top_chrome.position = Vector2(_CHROME_PAD, _CHROME_PAD)
@@ -412,6 +411,14 @@ func _build_ui() -> void:
 	ui.add_child(interaction)
 	ui.add_child(top_chrome)
 
+	# Tall-block temp / context menus stack here so they never share File's Y band.
+	left_stack = VBoxContainer.new()
+	left_stack.name = "LeftStack"
+	left_stack.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	left_stack.position = Vector2(_CHROME_PAD, 48.0)
+	left_stack.add_theme_constant_override("separation", int(_STACK_GAP))
+	ui.add_child(left_stack)
+
 	# Mode overlays sit under chrome and stay hidden in Model (layout suite).
 	drawing_sheet = DrawingSheet.new()
 	ui.add_child(drawing_sheet)
@@ -424,20 +431,18 @@ func _build_ui() -> void:
 	cam_rail.name = "CamRail"
 	cam_rail.view = view
 	cam_rail.visible = false
-	cam_rail.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	cam_rail.position = Vector2(_CHROME_PAD, _RAIL_TOP)
+	cam_rail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cam_rail.status.connect(_on_status)
-	ui.add_child(cam_rail)
+	left_stack.add_child(cam_rail)
 	cam_rail.attach_overlay(model_space)
 
 	sim_rail = _SimRail.new()
 	sim_rail.name = "SimRail"
 	sim_rail.view = view
 	sim_rail.visible = false
-	sim_rail.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	sim_rail.position = Vector2(_CHROME_PAD, _RAIL_TOP)
+	sim_rail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sim_rail.status.connect(_on_status)
-	ui.add_child(sim_rail)
+	left_stack.add_child(sim_rail)
 
 	_build_slicer_dialog(ui)
 	_build_drawing_options_dialog(ui)
@@ -458,9 +463,8 @@ func _build_ui() -> void:
 	# Left icon rail: primitives (swaps for Modify / Sketch tools).
 	palette = PanelContainer.new()
 	palette.name = "Palette"
-	palette.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	palette.position = Vector2(_CHROME_PAD, _RAIL_TOP)
-	ui.add_child(palette)
+	palette.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	left_stack.add_child(palette)
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 2)
 	palette.add_child(vbox)
@@ -520,13 +524,9 @@ func _build_ui() -> void:
 	# Selection properties card — docks under the left rail when shown.
 	card_box = PanelContainer.new()
 	card_box.name = "CardPanel"
-	card_box.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	card_box.offset_left = _CHROME_PAD
-	card_box.offset_right = _CHROME_PAD + _CARD_W
-	card_box.offset_top = _RAIL_TOP + 200.0
-	card_box.offset_bottom = _RAIL_TOP + 200.0 + _CARD_H
-	card_box.grow_horizontal = Control.GROW_DIRECTION_END
-	ui.add_child(card_box)
+	card_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card_box.custom_minimum_size = Vector2(_CARD_W, _CARD_H)
+	left_stack.add_child(card_box)
 	var card_vbox := VBoxContainer.new()
 	card_box.add_child(card_vbox)
 	var card_title := Label.new()
@@ -536,13 +536,13 @@ func _build_ui() -> void:
 	card_panel.fit_content = false
 	card_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	card_panel.custom_minimum_size = Vector2(260, 80)
-	card_panel.add_theme_font_size_override("normal_font_size", 12)
+	card_panel.add_theme_font_size_override("normal_font_size", UiScale.body())
 	card_vbox.add_child(card_panel)
 
 	# Editable semantic-card free text: aliases (one line) and notes.
 	var alias_label := Label.new()
 	alias_label.text = "Aliases (what you'd call this)"
-	alias_label.add_theme_font_size_override("font_size", 11)
+	alias_label.add_theme_font_size_override("font_size", UiScale.body())
 	card_vbox.add_child(alias_label)
 	alias_edit = LineEdit.new()
 	alias_edit.placeholder_text = "e.g. the mounting face"
@@ -550,11 +550,11 @@ func _build_ui() -> void:
 	card_vbox.add_child(alias_edit)
 	var notes_label := Label.new()
 	notes_label.text = "Notes (intent, constraints, context)"
-	notes_label.add_theme_font_size_override("font_size", 11)
+	notes_label.add_theme_font_size_override("font_size", UiScale.body())
 	card_vbox.add_child(notes_label)
 	notes_edit = TextEdit.new()
 	notes_edit.custom_minimum_size = Vector2(260, 40)
-	notes_edit.add_theme_font_size_override("font_size", 11)
+	notes_edit.add_theme_font_size_override("font_size", UiScale.body())
 	card_vbox.add_child(notes_edit)
 	var save_card := UIIcons.button("save", "Save card text",
 		"Save the aliases and notes onto the selection's semantic card")
@@ -565,14 +565,8 @@ func _build_ui() -> void:
 	ops_panel = OpsPanel.new()
 	ops_panel.name = "OpsPanel"
 	ops_panel.view = view
-	ops_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	ops_panel.anchor_left = 1.0
-	ops_panel.anchor_right = 1.0
-	ops_panel.offset_left = -320
-	ops_panel.offset_right = -12
-	ops_panel.offset_top = 480
-	ops_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	ui.add_child(ops_panel)
+	ops_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_stack.add_child(ops_panel)
 	ops_panel.status.connect(_on_status)
 	interaction.ops_panel = ops_panel
 	ops_panel.interaction = interaction
@@ -694,17 +688,16 @@ func _build_ui() -> void:
 	ui.add_child(status_bar)
 	status_label = Label.new()
 	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle / 3-finger pan · wheel zoom · F fit · 1/2/3/7 views · click select · drag to move · drag face to push/pull · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
-	status_label.add_theme_font_size_override("font_size", 12)
+	status_label.add_theme_font_size_override("font_size", UiScale.body())
 	status_bar.add_child(status_label)
 
 	# Compact left-rail sketch primaries (icons only); variants live on-canvas.
 	sketch_toolbar = PanelContainer.new()
 	sketch_toolbar.name = "SketchTools"
-	sketch_toolbar.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	sketch_toolbar.position = Vector2(_CHROME_PAD, _RAIL_TOP)
+	sketch_toolbar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	sketch_toolbar.custom_minimum_size = Vector2(_RAIL_ICON_W, 0)
 	sketch_toolbar.visible = false
-	ui.add_child(sketch_toolbar)
+	left_stack.add_child(sketch_toolbar)
 	var sk_scroll := ScrollContainer.new()
 	sk_scroll.custom_minimum_size = Vector2(_RAIL_ICON_W, 560)
 	sk_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -751,7 +744,7 @@ func _build_ui() -> void:
 	dof_label.text = "—"
 	dof_label.tooltip_text = "Sketch degrees of freedom (0 = fully constrained)"
 	dof_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	dof_label.add_theme_font_size_override("font_size", 10)
+	dof_label.add_theme_font_size_override("font_size", UiScale.caption())
 	rows.add_child(dof_label)
 	var snap_toggle := CheckBox.new()
 	snap_toggle.text = ""
@@ -816,16 +809,24 @@ func _build_ui() -> void:
 
 	# Tone down wheel/trackpad jumps on docks and PopupMenus (~45% slower).
 	UiScroll.soften_tree(ui)
+	_attach_move_delta_to_stack()
+	_order_left_stack()
+	_reflow_left_stack()
 
 ## Window theme: readable default font that does not track window size.
 func _apply_ui_theme() -> void:
 	var theme := Theme.new()
-	theme.default_font_size = UiScale.font(13)
+	var body := UiScale.body()
+	theme.default_font_size = body
+	for t in ["Label", "Button", "CheckBox", "CheckButton", "MenuButton",
+			"LineEdit", "TextEdit", "OptionButton", "PopupMenu"]:
+		theme.set_font_size("font_size", t, body)
+	theme.set_font_size("normal_font_size", "RichTextLabel", body)
 	get_window().theme = theme
 
 
 func _style_menu_button(btn: MenuButton) -> void:
-	var fs := UiScale.font(13)
+	var fs := UiScale.body()
 	btn.add_theme_font_size_override("font_size", fs)
 	_style_popup_menu(btn.get_popup())
 
@@ -833,16 +834,16 @@ func _style_menu_button(btn: MenuButton) -> void:
 func _style_popup_menu(popup: PopupMenu) -> void:
 	if popup == null:
 		return
-	popup.add_theme_font_size_override("font_size", UiScale.font(13))
+	popup.add_theme_font_size_override("font_size", UiScale.body())
 
 
 ## Resize expands the 3D viewport only — menu/chrome scale stays DPI-fixed.
 ## Redock so fixed-pixel panels don't clip when the window shrinks.
 func _on_viewport_resized() -> void:
-	if ops_panel == null:
+	if left_stack == null:
 		return
 	_update_left_rail()
-	_dock_card_below_rail()
+	_reflow_left_stack()
 
 
 func _on_default_view(view_id: String) -> void:
@@ -1413,8 +1414,8 @@ func _update_panel_visibility() -> void:
 	variables_panel.visible = (show_variables or view.doc.list_variables().size() > 0) and not sketching
 	# Keep the variables table clear of the left rail and flush against the timeline.
 	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
-	if palette != null and palette.visible:
-		rail_right = maxf(rail_right, palette.position.x + maxf(palette.size.x, 48.0) + 8.0)
+	if left_stack != null:
+		rail_right = maxf(rail_right, left_stack.position.x + maxf(left_stack.size.x, 48.0) + 8.0)
 	variables_panel.offset_left = 280 if timeline.visible else rail_right
 	variables_panel.offset_right = variables_panel.offset_left + 260
 	_update_left_rail()
@@ -1522,53 +1523,80 @@ func _update_left_rail() -> void:
 		return
 	if has_body and not placing:
 		palette.visible = false
-		_dock_ops_left()
 	else:
 		palette.visible = true
-		_dock_ops_right()
+	_reflow_left_stack()
 
 
 ## Selection card sits under the visible left rail (palette / modify / sketch).
 func _schedule_card_dock() -> void:
-	# OpsPanel clamps height one frame after dock; wait so we measure the final rail.
+	# OpsPanel clamps height one frame after dock; wait so we measure TopChrome.
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_dock_card_below_rail()
+	_reflow_left_stack()
 
 
-func _dock_card_below_rail() -> void:
-	if card_box == null or not is_instance_valid(card_box):
+func _attach_move_delta_to_stack() -> void:
+	if interaction == null or interaction.transform_hud == null or left_stack == null:
 		return
-	var rail: Control = null
-	if sketch_toolbar != null and sketch_toolbar.visible:
-		rail = sketch_toolbar
-	elif ops_panel != null and ops_panel.visible and ops_panel.anchor_left < 0.5:
-		rail = ops_panel
-	elif palette != null and palette.visible:
-		rail = palette
-	var top := _RAIL_TOP
-	var width := _CARD_W
-	if rail != null:
-		rail.reset_size()
-		var h := maxf(rail.size.y, rail.get_combined_minimum_size().y)
-		top = rail.position.y + h + 6.0
-		width = maxf(_CARD_W, rail.get_combined_minimum_size().x)
-	# Stay clear of the timeline (bottom-left) and the status bar.
+	var panel: Control = interaction.transform_hud.move_delta_panel()
+	if panel == null:
+		return
+	var parent := panel.get_parent()
+	if parent == left_stack:
+		return
+	if parent != null:
+		parent.remove_child(panel)
+	left_stack.add_child(panel)
+
+
+func _order_left_stack() -> void:
+	if left_stack == null:
+		return
+	var order: Array = [palette, ops_panel, sketch_toolbar, cam_rail, sim_rail]
+	if interaction != null and interaction.transform_hud != null:
+		order.append(interaction.transform_hud.move_delta_panel())
+	order.append(card_box)
+	var idx := 0
+	for node in order:
+		if node == null or node.get_parent() != left_stack:
+			continue
+		left_stack.move_child(node, idx)
+		idx += 1
+
+
+func _left_stack_top() -> float:
+	if top_chrome == null:
+		return _CHROME_PAD + 36.0
+	top_chrome.reset_size()
+	var h := maxf(top_chrome.size.y, top_chrome.get_combined_minimum_size().y)
+	# Before the first layout pass the File row can still report 0.
+	if h < 24.0:
+		h = 32.0
+	return _CHROME_PAD + h + _STACK_GAP
+
+
+func _reflow_left_stack() -> void:
+	if left_stack == null or not is_instance_valid(left_stack):
+		return
+	var top := _left_stack_top()
+	left_stack.position = Vector2(_CHROME_PAD, top)
 	var limit := _LEFT_STACK_LIMIT
 	if timeline != null and timeline.visible:
-		limit = minf(limit, timeline.get_global_rect().position.y - 6.0)
+		limit = minf(limit, timeline.get_global_rect().position.y - _STACK_GAP)
 	else:
 		var vp_h := get_viewport().get_visible_rect().size.y if get_viewport() else 900.0
 		limit = minf(limit, vp_h - 42.0)
-	var card_h := minf(_CARD_H, maxf(80.0, limit - top))
-	card_box.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	card_box.anchor_left = 0.0
-	card_box.anchor_right = 0.0
-	card_box.offset_left = _CHROME_PAD
-	card_box.offset_right = _CHROME_PAD + width
-	card_box.offset_top = top
-	card_box.offset_bottom = top + card_h
-	card_box.grow_horizontal = Control.GROW_DIRECTION_END
+	var max_h := maxf(80.0, limit - top)
+	if card_box != null and card_box.get_parent() == left_stack:
+		var used := 0.0
+		for c in left_stack.get_children():
+			if c == card_box or not (c is Control) or not (c as Control).visible:
+				continue
+			var cc := c as Control
+			used += maxf(cc.size.y, cc.get_combined_minimum_size().y) + _STACK_GAP
+		var card_h := minf(_CARD_H, maxf(80.0, max_h - used))
+		card_box.custom_minimum_size = Vector2(_CARD_W, card_h)
 
 
 ## After creating a feature: select it on the timeline and open PropertyPanel.
@@ -1634,7 +1662,7 @@ func _build_datum_offset_dialog(parent: Node) -> void:
 	row.add_child(_datum_offset)
 	var hint := Label.new()
 	hint.text = "Offset along the plane normal (0 = through origin)"
-	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_font_size_override("font_size", UiScale.caption())
 	body.add_child(hint)
 	_datum_dialog.confirmed.connect(_on_datum_offset_confirmed)
 	parent.add_child(_datum_dialog)
@@ -1675,26 +1703,6 @@ func _on_datum_offset_confirmed() -> void:
 		_on_status("Datum plane on timeline at offset %.1f mm" % off)
 	else:
 		_on_status("Datum creation failed")
-
-
-func _dock_ops_left() -> void:
-	ops_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	ops_panel.anchor_left = 0.0
-	ops_panel.anchor_right = 0.0
-	ops_panel.offset_left = _OPS_LEFT.offset_left
-	ops_panel.offset_right = _OPS_LEFT.offset_right
-	ops_panel.offset_top = _OPS_LEFT.offset_top
-	ops_panel.grow_horizontal = Control.GROW_DIRECTION_END
-
-
-func _dock_ops_right() -> void:
-	ops_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	ops_panel.anchor_left = 1.0
-	ops_panel.anchor_right = 1.0
-	ops_panel.offset_left = _OPS_RIGHT.offset_left
-	ops_panel.offset_right = _OPS_RIGHT.offset_right
-	ops_panel.offset_top = _OPS_RIGHT.offset_top
-	ops_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 
 
 func _on_status(text: String) -> void:
@@ -1776,7 +1784,7 @@ func _build_slicer_dialog(parent: Node) -> void:
 	args_row.add_child(_slicer_args)
 	_slicer_preview = Label.new()
 	_slicer_preview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_slicer_preview.add_theme_font_size_override("font_size", 11)
+	_slicer_preview.add_theme_font_size_override("font_size", UiScale.caption())
 	body.add_child(_slicer_preview)
 	_slicer_exec.text_changed.connect(func(_t: String) -> void: _refresh_slicer_preview())
 	_slicer_args.text_changed.connect(func(_t: String) -> void: _refresh_slicer_preview())

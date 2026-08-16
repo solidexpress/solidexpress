@@ -55,7 +55,7 @@ func _ready() -> void:
 	vbox.add_child(cfg_row)
 	var cfg_lbl := Label.new()
 	cfg_lbl.text = "Config"
-	cfg_lbl.add_theme_font_size_override("font_size", 11)
+	cfg_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	cfg_row.add_child(cfg_lbl)
 	_config_option = OptionButton.new()
 	_config_option.tooltip_text = "Switch configuration (regenerates the model)"
@@ -81,7 +81,7 @@ func _ready() -> void:
 	vbox.add_child(quick_row)
 	var qlbl := Label.new()
 	qlbl.text = "Jaw AF"
-	qlbl.add_theme_font_size_override("font_size", 11)
+	qlbl.add_theme_font_size_override("font_size", UiScale.body())
 	quick_row.add_child(qlbl)
 	for size in [10, 12, 14]:
 		var btn := Button.new()
@@ -217,13 +217,13 @@ func _make_row(entry: Dictionary) -> Control:
 	var name_lbl := Label.new()
 	name_lbl.text = name
 	name_lbl.custom_minimum_size = Vector2(70, 0)
-	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(name_lbl)
 
 	var expr_edit := LineEdit.new()
 	expr_edit.text = str(entry["expr"])
 	expr_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	expr_edit.add_theme_font_size_override("font_size", 12)
+	expr_edit.add_theme_font_size_override("font_size", UiScale.body())
 	expr_edit.text_submitted.connect(func(t: String) -> void: edit_variable(name, t))
 	row.add_child(expr_edit)
 
@@ -239,7 +239,7 @@ func _make_row(entry: Dictionary) -> Control:
 		val_lbl.text = _fmt_value(float(val))
 	val_lbl.custom_minimum_size = Vector2(48, 0)
 	val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	val_lbl.add_theme_font_size_override("font_size", 12)
+	val_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(val_lbl)
 
 	var del := UIIcons.button("delete", "", "Delete variable " + name)

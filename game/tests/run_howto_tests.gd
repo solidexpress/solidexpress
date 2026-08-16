@@ -73,7 +73,8 @@ func howto_place_and_orbit(main) -> void:
 	check(view.selected_body != "", "body stays selected")
 	main._update_panel_visibility()
 	check(not main.palette.visible, "primitives hidden after select")
-	check(main.ops_panel.offset_left == 8.0, "modify tools in left rail")
+	check(is_equal_approx(main.ops_panel.get_global_rect().position.x, 8.0),
+			"modify tools in left rail")
 	check(not ix.transform_hud.visible, "transform HUD idle-hidden after place")
 	var id: String = view.doc.body_ids()[0]
 	var bb: Dictionary = view.doc.measure_bbox(id)

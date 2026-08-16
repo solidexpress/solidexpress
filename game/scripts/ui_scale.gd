@@ -37,5 +37,15 @@ static func font(base: int = REF_FONT) -> int:
 	return maxi(11, int(round(float(base) * factor())))
 
 
+## Body text — same size as the File menu (desktop-app default).
+static func body() -> int:
+	return font(REF_FONT)
+
+
+## Caption / hint text. Never below a readable 12×scale.
+static func caption() -> int:
+	return font(12)
+
+
 static func px(base: float) -> float:
 	return base * factor()

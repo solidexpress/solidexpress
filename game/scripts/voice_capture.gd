@@ -154,7 +154,7 @@ func _build_overlay() -> void:
 	_label = Label.new()
 	_label.text = "Listening…"
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_label.add_theme_font_size_override("font_size", 14)
+	_label.add_theme_font_size_override("font_size", UiScale.font(14))
 	_label.add_theme_color_override("font_color", Color(0.88, 0.90, 0.94))
 	root.add_child(_label)
 

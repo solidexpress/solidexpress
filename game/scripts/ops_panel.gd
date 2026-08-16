@@ -112,7 +112,7 @@ func _build_body_ops() -> void:
 	var name_lbl := Label.new()
 	name_lbl.text = "Name"
 	name_lbl.custom_minimum_size = Vector2(80, 0)
-	name_lbl.add_theme_font_size_override("font_size", 11)
+	name_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	name_row.add_child(name_lbl)
 	_name_edit = LineEdit.new()
 	_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -124,7 +124,7 @@ func _build_body_ops() -> void:
 	var color_lbl := Label.new()
 	color_lbl.text = "Color"
 	color_lbl.custom_minimum_size = Vector2(80, 0)
-	color_lbl.add_theme_font_size_override("font_size", 11)
+	color_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	color_row.add_child(color_lbl)
 	_color_picker = ColorPickerButton.new()
 	_color_picker.tooltip_text = "Change this body's display color"
@@ -138,7 +138,7 @@ func _build_body_ops() -> void:
 	var mat_lbl := Label.new()
 	mat_lbl.text = "Material"
 	mat_lbl.custom_minimum_size = Vector2(80, 0)
-	mat_lbl.add_theme_font_size_override("font_size", 11)
+	mat_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	mat_row.add_child(mat_lbl)
 	_material_option = OptionButton.new()
 	_material_option.tooltip_text = "Material (density in g/cm³) — drives mass"
@@ -184,7 +184,7 @@ func _build_body_ops() -> void:
 	_body_ops.add_child(HSeparator.new())
 	var inst_lbl := Label.new()
 	inst_lbl.text = "Instance"
-	inst_lbl.add_theme_font_size_override("font_size", 11)
+	inst_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	_body_ops.add_child(inst_lbl)
 	_inst_ox = _labeled_spin(_body_ops, "Offset X", -10000.0, 10000.0, 1.0, 30.0)
 	_inst_oy = _labeled_spin(_body_ops, "Offset Y", -10000.0, 10000.0, 1.0, 0.0)
@@ -235,7 +235,7 @@ func _build_face_ops() -> void:
 	var hole_type_lbl := Label.new()
 	hole_type_lbl.text = "Hole type"
 	hole_type_lbl.custom_minimum_size = Vector2(80, 0)
-	hole_type_lbl.add_theme_font_size_override("font_size", 11)
+	hole_type_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	hole_type_row.add_child(hole_type_lbl)
 	_hole_type = OptionButton.new()
 	_hole_type.size_flags_horizontal = Control.SIZE_EXPAND_FILL

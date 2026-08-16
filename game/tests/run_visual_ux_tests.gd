@@ -187,15 +187,39 @@ func test_move_delta_hud(main) -> void:
 	ix._handle_model_pointer(drag)
 	check(ix._drag_mode == ViewportInteraction.DragMode.MOVE_BODY, "travel past slop = MOVE_BODY")
 	check(ix._drag_accum.length() > 1e-3, "move accum after drag")
-	check(ix.transform_hud._move_row.visible, "Δ move row visible while dragging")
+	check(ix.transform_hud.is_move_delta_visible(), "Δ move row visible while dragging")
+	var first_delta: Vector3 = ix._drag_accum
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT
 	release.pressed = false
 	release.position = screen + Vector2(50, 0)
 	ix._handle_model_pointer(release)
+	check(ix.transform_hud.is_move_delta_visible(), "Δ move row stays after first commit")
 	var sz: Vector3 = view.doc.measure_bbox(id)["max"] - view.doc.measure_bbox(id)["min"]
 	var ds := DocumentView.DEFAULT_PRIMITIVE_MM
 	check(sz.is_equal_approx(Vector3(ds, ds, ds)), "move preserves size (got %s)" % sz)
+	# Second drag must show a fresh Δ (not swallow the pick / hide the row).
+	var center2: Vector3 = view.selection_bbox()["center"]
+	var screen2: Vector2 = ix._model_to_screen(center2)
+	var press2 := InputEventMouseButton.new()
+	press2.button_index = MOUSE_BUTTON_LEFT
+	press2.pressed = true
+	press2.position = screen2
+	ix._handle_model_pointer(press2)
+	var drag2 := InputEventMouseMotion.new()
+	drag2.position = screen2 + Vector2(0, 40)
+	ix._handle_model_pointer(drag2)
+	check(ix._drag_mode == ViewportInteraction.DragMode.MOVE_BODY, "second drag is MOVE_BODY")
+	check(ix.transform_hud.is_move_delta_visible(), "Δ move row visible on second drag")
+	var second_delta: Vector3 = ix._drag_accum
+	check(second_delta.distance_to(first_delta) > 1e-3,
+			"second gesture Δ is not stuck on the first")
+	var release2 := InputEventMouseButton.new()
+	release2.button_index = MOUSE_BUTTON_LEFT
+	release2.pressed = false
+	release2.position = screen2 + Vector2(0, 40)
+	ix._handle_model_pointer(release2)
+	check(ix.transform_hud.is_move_delta_visible(), "Δ move row stays after second commit")
 	# Typed ΔZ hops off plane after commit refine.
 	ix._on_hud_move_delta(Vector3(ix._move_delta_base.x, ix._move_delta_base.y, 12.0))
 	var bb2: Dictionary = view.doc.measure_bbox(id)
