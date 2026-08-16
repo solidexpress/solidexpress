@@ -589,8 +589,8 @@ func set_tool(t: Tool) -> void:
 			tool_variant = "linear"
 		_:
 			pass
-	if t != Tool.SELECT:
-		_set_selected([])
+	# Do not clear selection on tool switch — completed geometry must stay
+	# visible/selectable (polygon/circle vanishing after another tool was a bug).
 	_update_preview()
 	tool_changed.emit(int(t))
 

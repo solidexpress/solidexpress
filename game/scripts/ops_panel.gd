@@ -182,6 +182,12 @@ func _build_body_ops() -> void:
 		"Multi-place holes: click points, then Apply holes / Enter")
 	_op_button(hole_body_row, "Hex opening", _apply_hex_opening, "polygon",
 		"Through hex cut sized to jaw_af + clearance")
+	# Keep Apply holes reachable on the body card while the wizard is armed
+	# (face tools are hidden until a face is selected).
+	_apply_holes_btn = _op_button(_body_ops, "Apply holes", _apply_hole_wizard, "hole",
+		"Commit accumulated Hole Wizard points as one feature (Enter)")
+	_apply_holes_btn.name = "ApplyHoles"
+	_apply_holes_btn.disabled = true
 
 	_body_ops.add_child(HSeparator.new())
 	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.1, 100.0, 0.5, 2.0)
@@ -316,9 +322,12 @@ func _build_face_ops() -> void:
 	_face_ops.add_child(wizard_row)
 	_op_button(wizard_row, "Hole Wizard…", _arm_hole_wizard, "hole",
 		"Multi-place: click several face points, then Apply holes / Enter (one Hole feature)")
-	_apply_holes_btn = _op_button(wizard_row, "Apply holes", _apply_hole_wizard, "hole",
+	var face_apply := _op_button(wizard_row, "Apply holes", _apply_hole_wizard, "hole",
 		"Commit accumulated Hole Wizard points as one feature (Enter)")
-	_apply_holes_btn.disabled = true
+	face_apply.disabled = true
+	# Keep body-card Apply holes as the canonical control; mirror disable state.
+	if _apply_holes_btn != null:
+		_apply_holes_btn.disabled = true
 	_op_button(_face_ops, "Hex opening", _apply_hex_opening, "polygon",
 		"Through hex cut on this face, AF = jaw_af + clearance")
 	_op_button(_face_ops, "Face area", func() -> void:
@@ -520,6 +529,7 @@ func _round_targets() -> PackedStringArray:
 
 
 func _fillet_all() -> void:
+	# Card Fillet = all edges (or current edge selection). Strip uses arm_or_apply.
 	_apply_dressup(true)
 
 
@@ -588,7 +598,11 @@ func _apply_dressup(fillet: bool) -> void:
 		status.emit("%s %s %.1f applied" % [name, scope, value])
 		_open_last_feature("fillet" if fillet else "chamfer")
 	else:
-		status.emit("%s failed (value too large?)" % name)
+		# All-edges often fails on thin plates — fall back to edge pick.
+		status.emit("%s failed (value too large?) — click edges, then Enter" % name)
+		_pending = Pending.FILLET_EDGES if fillet else Pending.CHAMFER_EDGES
+		_pending_body = view.selected_body
+		_pending_fid = view.feature_of_body(view.selected_body)
 
 
 func _open_last_feature(ftype: String) -> void:
@@ -731,8 +745,9 @@ func _do_circular(body: String, axis_point: Vector3, axis_dir: Vector3) -> void:
 
 
 func _apply_thread() -> void:
-	# Direct apply (no dialog) so Insert / strip / tests create a feature
-	# immediately; refuse non-cylindrical bodies.
+	# Open the size dialog for any timeline body that could take a thread.
+	# Heuristic refusal of obviously non-cylindrical boxes stays; squat
+	# cylinders (default 5×5×5 blank) are allowed — pitch/turns handle height.
 	if view == null or view.selected_body == "":
 		status.emit("Thread: select a body")
 		return
@@ -750,45 +765,14 @@ func _apply_thread() -> void:
 	var size := mx - mn
 	var xy_a := minf(size.x, size.y)
 	var xy_b := maxf(size.x, size.y)
-	var major_r: float = 0.5 * xy_a
-	var height: float = size.z
-	if major_r < 0.5 or height < 1.0:
-		status.emit("Thread failed (body too small)")
-		return
+	# Reject clear boxes / plates (XY aspect far from round).
 	if xy_b > xy_a * 1.35:
 		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
 		return
-	var extents := [size.x, size.y, size.z]
-	extents.sort()
-	if extents[2] < extents[0] * 1.4 or height < major_r * 2.5:
-		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
+	if xy_a < 1.0:
+		status.emit("Thread failed (body too small)")
 		return
-	var pitch: float = clampf(major_r * 0.2, 0.4, 2.0)
-	var designation := ""
-	if view.doc.has_method("thread_table"):
-		var best_err := 1e9
-		for t in view.doc.thread_table():
-			var d: Dictionary = t
-			var r := float(d.get("major_diameter_mm", 0.0)) * 0.5
-			var err := absf(r - major_r)
-			if err < best_err and err < major_r * 0.15:
-				best_err = err
-				major_r = r
-				pitch = float(d.get("pitch_mm", pitch))
-				designation = str(d.get("designation", ""))
-	_commit_thread(major_r, pitch, height, mn, mx, false)
-	if designation != "":
-		# Persist designation when matched.
-		for f in view.doc.graph_features():
-			if str(f.get("type", "")) != "thread":
-				continue
-			var tid := str(f.get("id", ""))
-			var raw := str(f.get("params", ""))
-			var params = JSON.parse_string(raw) if raw != "" else null
-			if typeof(params) == TYPE_DICTIONARY:
-				params["designation"] = designation
-				view.doc.graph_set_params_no_regen(tid, JSON.stringify(params))
-			break
+	_show_thread_dialog()
 
 
 func _show_thread_dialog() -> void:
@@ -802,35 +786,24 @@ func _show_thread_dialog() -> void:
 	var mn: Vector3 = bb["min"]
 	var mx: Vector3 = bb["max"]
 	var size := mx - mn
-	# Cylinder-like shaft: two horizontal extents nearly equal, and not a cube.
 	var xy_a := minf(size.x, size.y)
 	var xy_b := maxf(size.x, size.y)
 	var major_r: float = 0.5 * xy_a
-	var height: float = size.z
-	if major_r < 0.5 or height < 1.0:
-		status.emit("Thread failed (body too small)")
-		return
+	# Use the longest extent as thread length so squat cylinders still work.
+	var height: float = maxf(size.z, maxf(size.x, size.y))
 	if xy_b > xy_a * 1.35:
 		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
 		return
-	# Reject near-cubes / near-plates (all extents similar, or squat).
-	var extents := [size.x, size.y, size.z]
-	extents.sort()
-	if extents[2] < extents[0] * 1.4:
-		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
-		return
-	if height < major_r * 2.5:
-		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
-		return
-	var dlg := AcceptDialog.new()
+	var dlg := ConfirmationDialog.new()
 	dlg.title = "Thread"
 	dlg.ok_button_text = "Apply"
+	dlg.dialog_hide_on_ok = true
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 6)
 	dlg.add_child(col)
 	var hint := Label.new()
 	hint.text = "Modeled triangular thread along +Z through the body."
-	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_font_size_override("font_size", 12)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(hint)
 	var rspin := _labeled_spin(col, "Major r", 0.2, 200.0, 0.1, maxf(major_r, 0.5))
@@ -844,7 +817,7 @@ func _show_thread_dialog() -> void:
 		dlg.queue_free())
 	dlg.canceled.connect(func() -> void: dlg.queue_free())
 	dlg.close_requested.connect(func() -> void: dlg.queue_free())
-	dlg.popup_centered(Vector2i(340, 240))
+	dlg.popup_centered(Vector2i(360, 220))
 
 
 func _commit_thread(major_r: float, pitch: float, height: float, mn: Vector3, mx: Vector3,
@@ -958,17 +931,32 @@ func _apply_hole() -> bool:
 		status.emit("Hole: select a body")
 		return false
 	var face := view.selected_face if view.selected_face != "" else _pending_face
-	var bb: Dictionary = view.doc.measure_bbox(body)
-	if not bb.is_empty():
-		var sz: Vector3 = bb["max"] - bb["min"]
-		var min_e := minf(sz.x, minf(sz.y, sz.z))
-		if _hole_type == null or _hole_type.selected != 3:
-			if _hole_diameter.value >= min_e - 0.05:
-				status.emit("Hole Ø%.1f is larger than the part (%.1f mm)" % [
-					_hole_diameter.value, min_e])
-				_show_hole_dialog(false)
-				return false
+	if _hole_diameter_too_large(body, _hole_diameter.value):
+		status.emit("Hole Ø%.1f is larger than the face (%.1f mm in-plane)" % [
+			_hole_diameter.value, _hole_inplane_limit(body)])
+		return false
 	return _commit_hole(body, face, _default_hole_position(body, face))
+
+
+func _hole_inplane_limit(body: String) -> float:
+	# Mid extent after sorting — thickness is the smallest; in-plane span is mid/max.
+	# Through-holes in thin plates are valid when Ø < that in-plane span.
+	if view == null or body == "":
+		return 0.0
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if bb.is_empty():
+		return 0.0
+	var sz: Vector3 = bb["max"] - bb["min"]
+	var e := [sz.x, sz.y, sz.z]
+	e.sort()
+	return float(e[1])
+
+
+func _hole_diameter_too_large(body: String, diameter: float) -> bool:
+	if _hole_type != null and _hole_type.selected == 3:
+		return false  # hex AF can be large relative to thickness
+	var lim := _hole_inplane_limit(body)
+	return lim > 0.0 and diameter >= lim - 0.05
 
 
 func _prompt_hole() -> void:
@@ -976,16 +964,19 @@ func _prompt_hole() -> void:
 
 
 func _show_hole_dialog(hex_mode: bool) -> void:
-	var dlg := AcceptDialog.new()
+	var dlg := ConfirmationDialog.new()
 	dlg.title = "Hex opening" if hex_mode else "Hole"
 	dlg.ok_button_text = "Apply"
+	dlg.dialog_hide_on_ok = true
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 6)
+	# Godot 4: put custom content under a named child so the Apply button stays
+	# visible at the bottom (do not rely on AcceptDialog's ambiguous layout).
 	dlg.add_child(col)
 	var hint := Label.new()
 	hint.text = "AF = jaw_af + clearance · Depth 0 = through-all" if hex_mode \
 			else "Ø = nominal + hole_compensation · Depth 0 = through-all"
-	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_font_size_override("font_size", UiScale.body() if Engine.get_main_loop() else 12)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(hint)
 	var dspin := _labeled_spin(col, "AF" if hex_mode else "Ø", 0.1, 200.0, 0.1,
@@ -995,14 +986,20 @@ func _show_hole_dialog(hex_mode: bool) -> void:
 	dlg.confirmed.connect(func() -> void:
 		_hole_diameter.value = dspin.value
 		_hole_depth.value = zspin.value
+		var body := view.selected_body if view != null else ""
 		if hex_mode:
 			_apply_hex_opening()
+		elif body != "" and _hole_diameter_too_large(body, _hole_diameter.value):
+			status.emit("Hole Ø%.1f is larger than the face (%.1f mm in-plane)" % [
+				_hole_diameter.value, _hole_inplane_limit(body)])
 		else:
-			_apply_hole()
+			# Commit directly — do not call _apply_hole (avoids re-opening dialog).
+			var face := view.selected_face if view != null else ""
+			_commit_hole(body, face, _default_hole_position(body, face))
 		dlg.queue_free())
 	dlg.canceled.connect(func() -> void: dlg.queue_free())
 	dlg.close_requested.connect(func() -> void: dlg.queue_free())
-	dlg.popup_centered(Vector2i(340, 220))
+	dlg.popup_centered(Vector2i(360, 200))
 
 
 func _default_hole_position(body: String, face: String) -> Vector3:
@@ -1108,6 +1105,31 @@ func is_hole_wizard_armed() -> bool:
 
 func hole_wizard_point_count() -> int:
 	return _hole_wizard_positions.size()
+
+
+## True when a viewport click should be consumed for an armed geometry pick
+## (Hole Wizard / Place hole / Fillet edges / …) instead of normal select_ray
+## face-refine — which would clear accumulated edges.
+func consumes_viewport_pick() -> bool:
+	return _pending == Pending.HOLE_WIZARD or _pending == Pending.HOLE \
+			or _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES \
+			or _pending == Pending.LINEAR or _pending == Pending.CIRCULAR \
+			or _pending == Pending.MIRROR
+
+
+## Handle a consumed viewport pick. Returns true if the click was used.
+func handle_viewport_pick(body: String, face: String, point: Vector3) -> bool:
+	if _pending == Pending.HOLE_WIZARD:
+		_accumulate_hole_wizard_pick(body, face, point)
+		return true
+	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
+		_accumulate_dressup_edge(body, point)
+		return true
+	if _pending == Pending.HOLE or _pending == Pending.LINEAR \
+			or _pending == Pending.CIRCULAR or _pending == Pending.MIRROR:
+		_resolve_pending(body, face, point)
+		return true
+	return false
 
 
 ## Cancel Hole Wizard (or any armed pending pick). Returns true if something was armed.
@@ -1287,21 +1309,28 @@ func _accumulate_dressup_edge(body: String, point: Vector3) -> void:
 	if _pending_body != "" and body != _pending_body:
 		status.emit("Fillet/Chamfer: pick edges on the same body")
 		return
-	var edge := view._edge_near_point(body, point)
+	# Widen tolerance while armed — silhouette corners are hard to hit exactly.
+	var edge := view.edge_near_point(body, point, 6.0)
 	if edge == "":
 		status.emit("No edge near click — zoom in or click closer to an edge")
 		return
-	# Prefer additive edge selection while armed.
-	if view.selected_body != body:
-		view.select_entity(body, "")
-	if not view.selected_edges.has(edge):
-		view.selected_edges.append(edge)
+	# Additive edge selection while armed (do not go through select_ray —
+	# face refine would clear the edge set).
+	if view.selected_edges.has(edge):
+		pass
+	elif view.selected_edges.is_empty() and view.selected_edge == "":
+		view.select_edge(body, edge)
+	else:
+		if not view.selected_edges.has(edge):
+			view.selected_edges.append(edge)
 		view.selected_edge = edge
+		view.selected_body = body
+		view.selected_face = ""
 		view._highlight_edge()
 		view.selection_changed.emit(view.selected_body, view.selected_face)
 	var n := view.selected_edges.size()
 	var kind := "Fillet" if _pending == Pending.FILLET_EDGES else "Chamfer"
-	status.emit("%s: %d edge(s) — click more (Ctrl), Enter to apply, Esc cancel" % [kind, n])
+	status.emit("%s: %d edge(s) — click more, Enter to apply, Esc cancel" % [kind, maxi(n, 1)])
 
 
 func _arm_boolean(op: String) -> void:

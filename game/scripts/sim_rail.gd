@@ -64,5 +64,5 @@ func _solve() -> void:
 				break
 	var delta: float = view.doc.fea_cantilever(
 			_force.value, length, _e_mpa.value, _width.value, _thickness.value)
-	_result.text = "δ = %.4g mm  (L=%.1f)" % [delta, length]
-	status.emit("Sim cantilever tip deflection %.4g mm" % delta)
+	_result.text = "δ = %.3f mm  (L=%.1f)" % [delta, length]
+	status.emit("Sim cantilever tip deflection %.3f mm" % delta)
