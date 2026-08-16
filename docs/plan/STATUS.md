@@ -384,6 +384,12 @@ Stabilize first — Wave 0/5 exit gates are red and the landing protocol forbids
 - [ ] 6.5 Tool catalog: open-end, hex socket, driver bit, nozzle sizes in `sx::catalog` + palette page, AF from `jaw_af`; film `catalog_hex_driver`
 - [x] 6.6 Build the wrench: through cuts default through-all / Up To Surface; modeled Thread reachable in chrome (Insert or Modify → Thread; cosmetic-only is a checkbox); sketch polygon across-flats (`jaw_af`) mode; Hole Wizard reachable from place/context chrome; exit film `print_a_wrench` replays the critique (after 6.2; can parallel 6.3–6.5) — Sketch + Torus on the left rail; hex opening consumes `jaw_af+clearance`
 
+## Construction restore (2026-08-15)
+PR #28’s merge onto main dropped PR #27 construction chrome (body-only Hole Wizard,
+post-place W/H/D, hex/`nominal` stamps, Form print preview). Restored on this
+branch without regressing dead-chrome Cam/Sim / SxUi / `feature_ops::` work.
+Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow green.
+
 ## Architecture Track A re-verify (2026-07-29)
 - [x] Track A already complete: ADR-001/002 + STATUS 3.2/3.4; interactive ops use `graph_add_*` with free-body Command fallbacks
 - [x] Re-checked after pliers Major 1–2: ops/voice dress-up + boolean + push-pull prefer graph when `feature_of_body` is set

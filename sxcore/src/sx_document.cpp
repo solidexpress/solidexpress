@@ -950,7 +950,9 @@ String SxDocument::graph_add_hole(const String& target_fid, const String& type,
                                   float cs_diameter, float cs_angle_deg) {
     if (diameter <= 0.0f) return {};
     std::string htype = to_std(type);
-    if (htype != "simple" && htype != "counterbore" && htype != "countersink") return {};
+    if (htype != "simple" && htype != "counterbore" && htype != "countersink" &&
+        htype != "hex")
+        return {};
     sx::EntityId fid;
     bool ok = apply_graph_edit("hole", [&] {
         sx::Feature f;
@@ -1796,7 +1798,9 @@ String SxDocument::graph_add_holes(const String& target_fid, const String& type,
     if (diameter <= 0.0f || positions.is_empty()) return {};
     if (direction.length_squared() < 1e-12f) return {};
     std::string htype = to_std(type);
-    if (htype != "simple" && htype != "counterbore" && htype != "countersink") return {};
+    if (htype != "simple" && htype != "counterbore" && htype != "countersink" &&
+        htype != "hex")
+        return {};
     nlohmann::json pos_json = nlohmann::json::array();
     for (int i = 0; i < positions.size(); ++i) {
         const Vector3& p = positions[i];
@@ -1905,6 +1909,10 @@ Dictionary SxDocument::print_setup() const {
     d["overhang_deg"] = s.overhang_deg;
     d["nozzle_mm"] = s.nozzle_mm;
     d["material"] = to_gd(s.material);
+    PackedFloat64Array rot;
+    rot.resize(9);
+    for (int i = 0; i < 9; ++i) rot[i] = s.rot[static_cast<size_t>(i)];
+    d["rot"] = rot;
     return d;
 }
 

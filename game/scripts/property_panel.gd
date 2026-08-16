@@ -47,7 +47,7 @@ const SCHEMAS := {
 		{"key": "distance", "label": "Distance", "kind": "float", "min": 0.01, "max": 1000.0, "step": 0.5},
 	],
 	"hole": [
-		{"key": "type", "label": "Type", "kind": "enum", "options": ["simple", "counterbore", "countersink"]},
+		{"key": "type", "label": "Type", "kind": "enum", "options": ["simple", "counterbore", "countersink", "hex"]},
 		{"key": "fit", "label": "Fit", "kind": "enum", "options": ["normal", "close", "loose"],
 			"optional": true},
 		{"key": "diameter", "label": "Diameter", "kind": "float", "min": 0.1, "max": 1000.0, "step": 0.5},

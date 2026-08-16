@@ -54,6 +54,8 @@ var zebra_enabled := false
 # Wave 6.3 paint toggles and per-face maps
 var thickness_paint_enabled := false
 var overhang_paint_enabled := false
+var print_preview_enabled := false
+var _print_basis := Basis.IDENTITY
 var _thin_faces := {}        # face_id -> true
 var _overhang_faces := {}    # face_id -> true
 ## Body ids currently hidden from view / picking (id -> true).
@@ -285,6 +287,39 @@ func set_thickness_paint(on: bool) -> void:
 func set_overhang_paint(on: bool) -> void:
 	overhang_paint_enabled = on
 	refresh()
+
+
+func set_print_preview(on: bool) -> void:
+	print_preview_enabled = on
+	_sync_print_basis()
+	refresh()
+
+
+func _sync_print_basis() -> void:
+	_print_basis = Basis.IDENTITY
+	if doc == null or not print_preview_enabled:
+		return
+	var s: Dictionary = doc.print_setup()
+	var r = s.get("rot", [])
+	if r is PackedFloat64Array or r is Array:
+		if r.size() >= 9:
+			_print_basis = Basis(
+				Vector3(float(r[0]), float(r[3]), float(r[6])),
+				Vector3(float(r[1]), float(r[4]), float(r[7])),
+				Vector3(float(r[2]), float(r[5]), float(r[8])))
+
+
+func seed_print_paint() -> void:
+	if doc == null:
+		return
+	var target := selected_body
+	if target == "":
+		var ids: PackedStringArray = doc.body_ids()
+		if ids.size() > 0:
+			target = ids[0]
+	if target == "":
+		return
+	set_paint_data(doc.print_analyze(target))
 
 
 ## Called with the result of print_analyze / print_orient to seed paint maps.
@@ -759,14 +794,34 @@ func select_ray(origin: Vector3, direction: Vector3, additive := false) -> bool:
 
 
 ## Kernel pick that advances past hidden bodies so the next solid can be hit.
+func _to_model(p: Vector3) -> Vector3:
+	if not print_preview_enabled or _print_basis == Basis.IDENTITY:
+		return p
+	return _print_basis.inverse() * p
+
+
+func _to_print(p: Vector3) -> Vector3:
+	if not print_preview_enabled or _print_basis == Basis.IDENTITY:
+		return p
+	return _print_basis * p
+
+
 func _pick_visible(origin: Vector3, direction: Vector3) -> Dictionary:
 	var d := direction.normalized() if direction.length_squared() > 1e-12 else direction
 	var o := origin
+	if print_preview_enabled and _print_basis != Basis.IDENTITY:
+		var o2 := _to_model(o)
+		d = (_to_model(o + d) - o2)
+		if d.length_squared() > 1e-12:
+			d = d.normalized()
+		o = o2
 	for _i in range(32):
 		var hit: Dictionary = doc.pick(o, d)
 		if hit.is_empty():
 			return {}
 		if not hidden_bodies.has(hit["body"]):
+			if hit.has("point") and hit["point"] is Vector3:
+				hit["point"] = _to_print(hit["point"])
 			return hit
 		var pt: Vector3 = hit["point"]
 		o = pt + d * 0.05
@@ -2043,7 +2098,8 @@ func _rebuild_body(body_id: String) -> void:
 		var edges := MeshInstance3D.new()
 		edges.name = "Edges"
 		node.add_child(edges)
-	node.transform = Transform3D.IDENTITY
+	node.transform = Transform3D(_print_basis, Vector3.ZERO) if print_preview_enabled \
+			else Transform3D.IDENTITY
 	node.mesh = doc.get_mesh(body_id)
 	_face_ids[body_id] = doc.get_face_ids(body_id)
 	_body_materials[body_id] = _make_material(doc.get_body_color(body_id))
