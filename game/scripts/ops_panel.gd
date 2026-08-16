@@ -794,16 +794,24 @@ func _show_thread_dialog() -> void:
 	if xy_b > xy_a * 1.35:
 		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
 		return
-	var dlg := ConfirmationDialog.new()
+	var dlg := Window.new()
 	dlg.title = "Thread"
-	dlg.ok_button_text = "Apply"
-	dlg.dialog_hide_on_ok = true
+	dlg.size = Vector2i(380, 220)
+	dlg.min_size = Vector2i(320, 200)
+	dlg.transient = true
+	dlg.exclusive = true
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	dlg.add_child(margin)
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 6)
-	dlg.add_child(col)
+	col.add_theme_constant_override("separation", 8)
+	margin.add_child(col)
 	var hint := Label.new()
 	hint.text = "Modeled triangular thread along +Z through the body."
-	hint.add_theme_font_size_override("font_size", 12)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(hint)
 	var rspin := _labeled_spin(col, "Major r", 0.2, 200.0, 0.1, maxf(major_r, 0.5))
@@ -811,13 +819,26 @@ func _show_thread_dialog() -> void:
 	var cosmetic := CheckBox.new()
 	cosmetic.text = "Cosmetic only (no cut)"
 	col.add_child(cosmetic)
-	add_child(dlg)
-	dlg.confirmed.connect(func() -> void:
+	col.add_child(HSeparator.new())
+	var btns := HBoxContainer.new()
+	btns.alignment = BoxContainer.ALIGNMENT_END
+	btns.add_theme_constant_override("separation", 8)
+	col.add_child(btns)
+	var cancel := Button.new()
+	cancel.text = "Cancel"
+	cancel.pressed.connect(func() -> void: dlg.queue_free())
+	btns.add_child(cancel)
+	var apply := Button.new()
+	apply.name = "ThreadApply"
+	apply.text = "Apply"
+	apply.pressed.connect(func() -> void:
 		_commit_thread(rspin.value, pspin.value, height, mn, mx, cosmetic.button_pressed)
 		dlg.queue_free())
-	dlg.canceled.connect(func() -> void: dlg.queue_free())
+	btns.add_child(apply)
+	add_child(dlg)
 	dlg.close_requested.connect(func() -> void: dlg.queue_free())
-	dlg.popup_centered(Vector2i(360, 220))
+	dlg.popup_centered()
+	apply.grab_focus()
 
 
 func _commit_thread(major_r: float, pitch: float, height: float, mn: Vector3, mx: Vector3,
@@ -964,42 +985,65 @@ func _prompt_hole() -> void:
 
 
 func _show_hole_dialog(hex_mode: bool) -> void:
-	var dlg := ConfirmationDialog.new()
-	dlg.title = "Hex opening" if hex_mode else "Hole"
-	dlg.ok_button_text = "Apply"
-	dlg.dialog_hide_on_ok = true
+	# Explicit Window + Apply button — ConfirmationDialog's OK row was invisible
+	# in the published builds (empty grey lower panel, Enter did nothing).
+	var win := Window.new()
+	win.title = "Hex opening" if hex_mode else "Hole"
+	win.size = Vector2i(380, 200)
+	win.min_size = Vector2i(320, 180)
+	win.transient = true
+	win.exclusive = true
+	win.unresizable = false
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	win.add_child(margin)
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 6)
-	# Godot 4: put custom content under a named child so the Apply button stays
-	# visible at the bottom (do not rely on AcceptDialog's ambiguous layout).
-	dlg.add_child(col)
+	col.add_theme_constant_override("separation", 8)
+	margin.add_child(col)
 	var hint := Label.new()
 	hint.text = "AF = jaw_af + clearance · Depth 0 = through-all" if hex_mode \
 			else "Ø = nominal + hole_compensation · Depth 0 = through-all"
-	hint.add_theme_font_size_override("font_size", UiScale.body() if Engine.get_main_loop() else 12)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(hint)
 	var dspin := _labeled_spin(col, "AF" if hex_mode else "Ø", 0.1, 200.0, 0.1,
 			_hex_af() if hex_mode else _hole_diameter.value)
 	var zspin := _labeled_spin(col, "Depth (0=thru)", 0.0, 1000.0, 1.0, _hole_depth.value)
-	add_child(dlg)
-	dlg.confirmed.connect(func() -> void:
+	col.add_child(HSeparator.new())
+	var btns := HBoxContainer.new()
+	btns.alignment = BoxContainer.ALIGNMENT_END
+	btns.add_theme_constant_override("separation", 8)
+	col.add_child(btns)
+	var cancel := Button.new()
+	cancel.text = "Cancel"
+	cancel.pressed.connect(func() -> void: win.queue_free())
+	btns.add_child(cancel)
+	var apply := Button.new()
+	apply.name = "HoleApply"
+	apply.text = "Apply"
+	apply.pressed.connect(func() -> void:
 		_hole_diameter.value = dspin.value
 		_hole_depth.value = zspin.value
 		var body := view.selected_body if view != null else ""
 		if hex_mode:
 			_apply_hex_opening()
-		elif body != "" and _hole_diameter_too_large(body, _hole_diameter.value):
+		elif body == "":
+			status.emit("Hole: select a body")
+		elif _hole_diameter_too_large(body, _hole_diameter.value):
 			status.emit("Hole Ø%.1f is larger than the face (%.1f mm in-plane)" % [
 				_hole_diameter.value, _hole_inplane_limit(body)])
 		else:
-			# Commit directly — do not call _apply_hole (avoids re-opening dialog).
 			var face := view.selected_face if view != null else ""
 			_commit_hole(body, face, _default_hole_position(body, face))
-		dlg.queue_free())
-	dlg.canceled.connect(func() -> void: dlg.queue_free())
-	dlg.close_requested.connect(func() -> void: dlg.queue_free())
-	dlg.popup_centered(Vector2i(360, 200))
+		win.queue_free())
+	btns.add_child(apply)
+	add_child(win)
+	win.close_requested.connect(func() -> void: win.queue_free())
+	win.popup_centered()
+	apply.grab_focus()
 
 
 func _default_hole_position(body: String, face: String) -> Vector3:

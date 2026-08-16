@@ -2025,6 +2025,9 @@ func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			# Dismiss tool-variant chips so they never steal the draw click.
+			if sketch_chrome != null:
+				sketch_chrome.hide_variants()
 			var ray := _model_ray(mb.position)
 			var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 			if p2 != null:

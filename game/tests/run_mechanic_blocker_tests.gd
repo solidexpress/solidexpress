@@ -43,10 +43,27 @@ func test_thin_plate_hole(main) -> void:
 	await process_frame
 	var ops: OpsPanel = main.ops_panel
 	check(not ops._hole_diameter_too_large(id, 6.0), "Ø6 not rejected on 5 mm plate")
+	# Dialog must expose an Apply button (not a blank ConfirmationDialog).
+	ops._prompt_hole()
+	await process_frame
+	var win: Window = null
+	for c in ops.get_children():
+		if c is Window and str(c.title) == "Hole":
+			win = c
+			break
+	check(win != null, "Hole Window opened")
+	var apply_btn: Button = null
+	if win != null:
+		apply_btn = win.find_child("HoleApply", true, false) as Button
+	check(apply_btn != null, "Hole Window has Apply button")
 	ops._hole_diameter.value = 6.0
 	ops._hole_depth.value = 0.0
 	var vol0: float = view.doc.body_volume(id)
-	check(ops._apply_hole(), "Apply hole on thin plate")
+	if apply_btn != null:
+		apply_btn.pressed.emit()
+		await process_frame
+	else:
+		check(ops._apply_hole(), "Apply hole on thin plate (fallback)")
 	var vol1: float = view.doc.body_volume(id)
 	check(vol1 < vol0 - 50.0, "hole cut volume (%.1f → %.1f)" % [vol0, vol1])
 	var r: Dictionary = view.doc.print_analyze(id)

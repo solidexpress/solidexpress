@@ -1308,8 +1308,12 @@ func _on_sketch_tool_changed(tool: int) -> void:
 	if variants.is_empty():
 		sketch_chrome.hide_variants()
 	else:
-		var mouse := get_viewport().get_mouse_position()
-		sketch_chrome.show_variants(_variant_kind_for(tool), variants, mouse)
+		# Dock beside the left sketch rail — NOT under the cursor. Putting the
+		# chip bar on the mouse swallowed the first Line/Circle/Polygon click.
+		var rail_x := 56.0
+		if sketch_toolbar != null and sketch_toolbar.visible:
+			rail_x = sketch_toolbar.global_position.x + sketch_toolbar.size.x + 8.0
+		sketch_chrome.show_variants(_variant_kind_for(tool), variants, Vector2(rail_x, 80.0))
 
 
 func _variant_kind_for(tool: int) -> String:
@@ -1460,9 +1464,14 @@ func _on_print_analyze() -> void:
 	if view == null or view.doc == null:
 		return
 	var r: Dictionary = view.doc.print_analyze(_print_target())
-	# Seed paint maps for Wave 6.3
+	# Seed paint maps for Wave 6.3 — and turn Thickness on so the mechanic sees it.
 	if view.has_method("set_paint_data"):
 		view.call("set_paint_data", r)
+	if print_strip != null and is_instance_valid(print_strip._thickness_toggle):
+		if not print_strip._thickness_toggle.button_pressed:
+			print_strip._thickness_toggle.set_pressed_no_signal(true)
+		if view.has_method("set_thickness_paint"):
+			view.call("set_thickness_paint", true)
 	var digest := str(r.get("digest", ""))
 	if print_strip != null:
 		print_strip.set_digest(digest)

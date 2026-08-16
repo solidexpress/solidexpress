@@ -71,6 +71,7 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_open_in_slicer_tests.gd
 	$(GODOT) --headless --path game --script tests/run_clearance_tests.gd
 	$(GODOT) --headless --path game --script tests/run_dead_chrome_tests.gd
+	$(GODOT) --headless --path game --script tests/run_mechanic_blocker_tests.gd
 
 test: test-kernel test-godot
 	@echo "ALL TESTS PASSED"
