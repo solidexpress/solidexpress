@@ -45,7 +45,7 @@ func _ready() -> void:
 
 	var inst_hdr := Label.new()
 	inst_hdr.text = "Instances"
-	inst_hdr.add_theme_font_size_override("font_size", 11)
+	inst_hdr.add_theme_font_size_override("font_size", UiScale.body())
 	vbox.add_child(inst_hdr)
 	_instances_list = VBoxContainer.new()
 	vbox.add_child(_instances_list)
@@ -62,7 +62,7 @@ func _ready() -> void:
 
 	var mate_hdr := Label.new()
 	mate_hdr.text = "Mates"
-	mate_hdr.add_theme_font_size_override("font_size", 11)
+	mate_hdr.add_theme_font_size_override("font_size", UiScale.body())
 	vbox.add_child(mate_hdr)
 	_mates_list = VBoxContainer.new()
 	vbox.add_child(_mates_list)
@@ -155,7 +155,7 @@ func refresh_lists() -> void:
 		badge.tooltip_text = _mate_error
 		badge.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		badge.add_theme_color_override("font_color", Color(0.95, 0.3, 0.25))
-		badge.add_theme_font_size_override("font_size", 11)
+		badge.add_theme_font_size_override("font_size", UiScale.body())
 		_mates_list.add_child(badge)
 
 	var mates: Array = view.doc.mate_list()
@@ -170,13 +170,13 @@ func refresh_lists() -> void:
 	if not connectors.is_empty():
 		var ch := Label.new()
 		ch.text = "Connectors"
-		ch.add_theme_font_size_override("font_size", 11)
+		ch.add_theme_font_size_override("font_size", UiScale.body())
 		_mates_list.add_child(ch)
 		for c in connectors:
 			var cl := Label.new()
 			cl.text = str(c.get("name", "connector"))
 			cl.tooltip_text = "Implicit/explicit mate connector"
-			cl.add_theme_font_size_override("font_size", 11)
+			cl.add_theme_font_size_override("font_size", UiScale.body())
 			_mates_list.add_child(cl)
 
 	# Also show on a body selection: placing the *first* instance is the one
@@ -197,7 +197,7 @@ func _make_instance_row(inst: Dictionary) -> Control:
 	name_lbl.text = prefix + _truncate(str(inst.get("name", id)))
 	name_lbl.tooltip_text = str(inst.get("source_path", ""))
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_lbl.add_theme_font_size_override("font_size", 11)
+	name_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(name_lbl)
 	var sel := UIIcons.button("select", "", "Highlight this instance in the viewport")
 	sel.pressed.connect(func() -> void: instance_selected.emit(id))
@@ -221,7 +221,7 @@ func _make_mate_row(mate: Dictionary) -> Control:
 	var mname: String = str(mate.get("name", ""))
 	name_lbl.text = ("%s %s" % [mate["type"], mname]).strip_edges()
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_lbl.add_theme_font_size_override("font_size", 11)
+	name_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(name_lbl)
 	var rm := UIIcons.button("delete", "", "Delete this mate")
 	rm.pressed.connect(_remove_mate.bind(id))
@@ -243,7 +243,7 @@ func _make_joint_row(joint: Dictionary) -> Control:
 	lbl.text = "%s  %.1f %s" % [str(joint.get("type", "joint")), shown, unit]
 	lbl.tooltip_text = "Drag the part in the viewport to drive this joint"
 	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(lbl)
 	var rm := UIIcons.button("delete", "", "Delete this joint")
 	rm.pressed.connect(_remove_joint.bind(id))

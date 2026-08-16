@@ -244,7 +244,7 @@ func _rebuild_views_popup() -> void:
 		c.queue_free()
 	var def_lbl := Label.new()
 	def_lbl.text = "Default"
-	def_lbl.add_theme_font_size_override("font_size", 10)
+	def_lbl.add_theme_font_size_override("font_size", UiScale.caption())
 	def_lbl.modulate = Color(1, 1, 1, 0.6)
 	_views_list.add_child(def_lbl)
 	for entry in DEFAULT_VIEWS:
@@ -260,13 +260,13 @@ func _rebuild_views_popup() -> void:
 	_views_list.add_child(HSeparator.new())
 	var user_lbl := Label.new()
 	user_lbl.text = "Saved"
-	user_lbl.add_theme_font_size_override("font_size", 10)
+	user_lbl.add_theme_font_size_override("font_size", UiScale.caption())
 	user_lbl.modulate = Color(1, 1, 1, 0.6)
 	_views_list.add_child(user_lbl)
 	if _user_view_names.is_empty():
 		var empty := Label.new()
 		empty.text = "(none yet — use Save)"
-		empty.add_theme_font_size_override("font_size", 10)
+		empty.add_theme_font_size_override("font_size", UiScale.caption())
 		empty.modulate = Color(1, 1, 1, 0.5)
 		_views_list.add_child(empty)
 		return
@@ -279,7 +279,7 @@ func _rebuild_views_popup() -> void:
 		go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		go.tooltip_text = "Restore “%s” — orientation + zoom" % view_name
 		go.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		go.add_theme_font_size_override("font_size", 11)
+		go.add_theme_font_size_override("font_size", UiScale.body())
 		var n := str(view_name)
 		go.pressed.connect(func() -> void:
 			view_restore_requested.emit(n)

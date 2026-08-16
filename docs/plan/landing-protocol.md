@@ -74,6 +74,7 @@ because a `film_*.gd` exists.
 | `SelectionStrip` | 1–2 selection-aware icon verbs | Spinboxes, wizard dialogs |
 | RMB / S-key marking menu (0.9) | Overflow for the current pick | A ribbon of the whole wave |
 | Left rail | Mode swap (create / modify / sketch / Draw / Sheet). On-canvas chips for variants | Always-on extra palettes |
+| Left stack | Tall-block temp/context panels (`LeftStack` VBox) below **measured** TopChrome: palette, Modify/Name, sketch tools, mode rails, move Δ, selection card. New menus add a child | Self-positioned panels in the File Y band; overlapping File + Name |
 | OpsPanel | `MAX_HEIGHT` 240; prefer PropertyPanel | Another spinbox row per feature |
 | PropertyPanel + timeline | Params after the feature exists | Hidden-only editors |
 | New docks | Wave 0: none. Later: **at most one new mode rail** with auto-hide | Extra columns, workbenches |
@@ -84,6 +85,8 @@ because a `film_*.gd` exists.
 
 - Empty document: palette + ViewHud/ViewCube only.
 - On select: strip + left Modify + card. Primitives hide.
+- Typography: chrome body text is `UiScale.font(13)` (File menu size). Do not pin 10–12 px.
+- Body move: every MOVE_BODY gesture shows a fresh ΔX/ΔY/ΔZ block in LeftStack (zero at drag start). Do not grab focus on release.
 - Drag: number travels with the handle.
 - Solver state is on the geometry (gray weak dims, yellow inference, blue/black/red entities).
 - Connector glyphs on hover, not frames on every body.

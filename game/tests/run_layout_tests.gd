@@ -33,6 +33,7 @@ func _init() -> void:
 	await test_selection_toggles_card(main)
 	await test_timeline_appears_with_features(main)
 	await test_variables_panel_visibility(main)
+	await test_place_file_vs_name_no_overlap(main)
 	await test_no_text_collisions(main)
 	await test_busy_state_on_screen(main, vp, Vector2i(1600, 900))
 	await test_busy_state_on_screen(main, vp, Vector2i(1280, 720))
@@ -116,7 +117,8 @@ func test_selection_toggles_card(main) -> void:
 	check(main.card_box.visible, "card visible with selection")
 	check(main.ops_panel.visible, "ops panel visible with selection")
 	check(not main.palette.visible, "primitives palette hidden while selected")
-	check(main.ops_panel.offset_left == 8.0, "ops panel docked left while selected")
+	check(is_equal_approx(main.ops_panel.get_global_rect().position.x, 8.0),
+			"ops panel docked left while selected")
 	main.view.clear_selection()
 	main._update_panel_visibility()
 	check(not main.card_box.visible, "card hidden after deselect")
@@ -155,6 +157,30 @@ func test_variables_panel_visibility(main) -> void:
 	await process_frame
 	check(main.timeline.visible, "timeline appears with feature")
 	check(main.variables_panel.visible, "variables still visible beside timeline")
+
+
+func test_place_file_vs_name_no_overlap(main) -> void:
+	print("- File menu and Name/ops do not overlap after placing a box")
+	main.view.new_document()
+	var body: String = main.view.insert_primitive("box", Vector3.ZERO)
+	main.view.select_entity(body, "")
+	main._update_panel_visibility()
+	for i in range(4):
+		await process_frame
+	check(main.ops_panel.visible, "ops/Name visible after place")
+	check(main.top_chrome != null and main.top_chrome.visible, "TopChrome visible")
+	var file_menu: Control = main.top_chrome.get_node("FileMenu")
+	var fr: Rect2 = file_menu.get_global_rect()
+	var orr: Rect2 = main.ops_panel.get_global_rect()
+	var inter := fr.intersection(orr)
+	check(inter.size.x <= 1.0 or inter.size.y <= 1.0,
+			"File menu ∩ Ops/Name empty (got %s)" % inter)
+	check(main.left_stack.position.y >= main.top_chrome.position.y
+			+ main.top_chrome.size.y - 0.5,
+			"LeftStack starts below TopChrome")
+	var th: Theme = main.get_window().theme if main.get_window() else null
+	check(th != null and th.default_font_size == UiScale.body(),
+			"theme body font is UiScale.body")
 
 
 func test_no_text_collisions(main) -> void:

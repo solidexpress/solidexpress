@@ -26,7 +26,7 @@ func _ready() -> void:
 	_thickness = SxUi.labeled_spin(vbox, "Thick", 0.1, 500.0, 0.5, 5.0)
 	var hint := Label.new()
 	hint.text = "Uses body bbox length as the beam span"
-	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_font_size_override("font_size", UiScale.body())
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(hint)
 	var solve := UIIcons.button("solve", "Solve", "Tip deflection δ = F L³ / (3 E I)")
@@ -35,7 +35,7 @@ func _ready() -> void:
 	_result = Label.new()
 	_result.name = "SimResult"
 	_result.text = "δ = —"
-	_result.add_theme_font_size_override("font_size", 13)
+	_result.add_theme_font_size_override("font_size", UiScale.body())
 	vbox.add_child(_result)
 
 

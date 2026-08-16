@@ -414,7 +414,8 @@ func test_transform_hud_and_resize(main) -> void:
 	check(ix.transform_hud.visible, "transform HUD shows W/H/D after place")
 	check(ix.transform_hud._dims_row.visible, "W/H/D row visible on selected primitive")
 	check(not main.palette.visible, "palette hidden when body selected")
-	check(main.ops_panel.offset_left == 8.0, "modify tools docked left")
+	check(is_equal_approx(main.ops_panel.get_global_rect().position.x, 8.0),
+			"modify tools docked left")
 	var bb0: Dictionary = view.selection_bbox()
 	check(not bb0.is_empty(), "selection bbox available")
 	# Resize max-X face by +10 mm via kernel helper (mirror of drag commit).

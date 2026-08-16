@@ -22,7 +22,7 @@ static func labeled_spin(parent: Container, text: String, min_v: float, max_v: f
 	var lbl := Label.new()
 	lbl.text = text
 	lbl.custom_minimum_size = Vector2(80, 0)
-	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(lbl)
 	var spin := SpinBox.new()
 	configure_spin(spin, min_v, max_v, arrow_step, value, as_int)

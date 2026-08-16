@@ -20,6 +20,7 @@ var _size_d: SpinBox
 var _precision_row: HBoxContainer
 var _precision_spin: SpinBox
 var _precision_label: Label
+var _move_panel: PanelContainer
 var _move_row: HBoxContainer
 var _delta_x: SpinBox
 var _delta_y: SpinBox
@@ -65,13 +66,19 @@ func _ready() -> void:
 			if not _syncing and _size_editable:
 				size_committed.emit(current_size()))
 
+	# Own panel so Main can dock it in LeftStack (does not cover the viewport).
+	_move_panel = PanelContainer.new()
+	_move_panel.name = "MoveDelta"
+	_move_panel.visible = false
+	_move_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_move_row = HBoxContainer.new()
-	_move_row.visible = false
 	_move_row.add_theme_constant_override("separation", 6)
-	root.add_child(_move_row)
+	_move_panel.add_child(_move_row)
+	add_child(_move_panel)
+	_move_panel.gui_input.connect(_gui_input)
 	var move_lbl := Label.new()
 	move_lbl.text = "Δ move"
-	move_lbl.add_theme_font_size_override("font_size", 11)
+	move_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	_move_row.add_child(move_lbl)
 	_delta_x = _spin(_move_row, "ΔX", -1e6, 1e6, 0.1, 0.0)
 	_delta_y = _spin(_move_row, "ΔY", -1e6, 1e6, 0.1, 0.0)
@@ -84,7 +91,7 @@ func _ready() -> void:
 				move_delta_committed.emit(current_move_delta()))
 	var z_hint := Label.new()
 	z_hint.text = "ΔZ typed only (drag stays on plane)"
-	z_hint.add_theme_font_size_override("font_size", 10)
+	z_hint.add_theme_font_size_override("font_size", UiScale.caption())
 	z_hint.modulate = Color(1, 1, 1, 0.55)
 	_move_row.add_child(z_hint)
 
@@ -94,7 +101,7 @@ func _ready() -> void:
 	root.add_child(_precision_row)
 	_precision_label = Label.new()
 	_precision_label.text = "Δ"
-	_precision_label.add_theme_font_size_override("font_size", 11)
+	_precision_label.add_theme_font_size_override("font_size", UiScale.body())
 	_precision_row.add_child(_precision_label)
 	_precision_spin = SpinBox.new()
 	_precision_spin.min_value = -1e6
@@ -108,7 +115,7 @@ func _ready() -> void:
 		func(_t: String) -> void: _commit_precision_ui(true))
 	var hint := Label.new()
 	hint.text = "Enter confirms · Esc dismisses"
-	hint.add_theme_font_size_override("font_size", 10)
+	hint.add_theme_font_size_override("font_size", UiScale.caption())
 	hint.modulate = Color(1, 1, 1, 0.55)
 	_precision_row.add_child(hint)
 
@@ -132,7 +139,7 @@ func _spin(parent: Container, label: String, mn: float, mx: float, step: float,
 	parent.add_child(box)
 	var lbl := Label.new()
 	lbl.text = label
-	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_font_size_override("font_size", UiScale.body())
 	box.add_child(lbl)
 	var spin := SpinBox.new()
 	spin.min_value = mn
@@ -188,8 +195,18 @@ func current_move_delta() -> Vector3:
 	return Vector3(_delta_x.value, _delta_y.value, _delta_z.value)
 
 
+func move_delta_panel() -> Control:
+	return _move_panel
+
+
+func is_move_delta_visible() -> bool:
+	return _move_panel != null and _move_panel.visible
+
+
 ## Live update during planar move (does not steal focus).
 func set_move_delta(delta: Vector3) -> void:
+	if _move_panel != null:
+		_move_panel.visible = true
 	_move_row.visible = true
 	_syncing = true
 	_delta_x.value = delta.x
@@ -199,20 +216,14 @@ func set_move_delta(delta: Vector3) -> void:
 	_refresh_panel()
 
 
-func show_move_delta(delta: Vector3, focus_axis := "x") -> void:
+## Show this gesture's Δ. Do not grab focus — that steals the next body pick.
+func show_move_delta(delta: Vector3, _focus_axis := "x") -> void:
 	set_move_delta(delta)
-	await get_tree().process_frame
-	var spin := _delta_x
-	match focus_axis:
-		"y":
-			spin = _delta_y
-		"z":
-			spin = _delta_z
-	spin.get_line_edit().grab_focus()
-	spin.get_line_edit().select_all()
 
 
 func hide_move_delta() -> void:
+	if _move_panel != null:
+		_move_panel.visible = false
 	_move_row.visible = false
 	_refresh_panel()
 
@@ -242,22 +253,26 @@ func hide_precision() -> void:
 
 func dismiss() -> void:
 	_dims_row.visible = false
-	_move_row.visible = false
+	hide_move_delta()
 	_precision_row.visible = false
 	_refresh_panel()
 
 
 func is_pointer_over(global_pos: Vector2) -> bool:
+	if _move_panel != null and _move_panel.visible \
+			and _move_panel.get_global_rect().has_point(global_pos):
+		return true
 	return visible and get_global_rect().has_point(global_pos)
 
 
 func _refresh_panel() -> void:
-	var any := _dims_row.visible or _move_row.visible or _precision_row.visible
+	# Move Δ lives in LeftStack; this panel is only place dims / precision.
+	var any := _dims_row.visible or _precision_row.visible
 	visible = any
 	mouse_filter = Control.MOUSE_FILTER_STOP if any else Control.MOUSE_FILTER_IGNORE
 	offset_top = -56
 	offset_bottom = -16
-	if int(_dims_row.visible) + int(_move_row.visible) + int(_precision_row.visible) > 1:
+	if int(_dims_row.visible) + int(_precision_row.visible) > 1:
 		offset_top = -96
 
 

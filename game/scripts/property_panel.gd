@@ -220,7 +220,7 @@ func _build_fields(type: String) -> void:
 		var note := Label.new()
 		var n: int = (_params["positions"] as Array).size()
 		note.text = "positions: %d point(s) — Place more… via Hole Wizard" % n
-		note.add_theme_font_size_override("font_size", 11)
+		note.add_theme_font_size_override("font_size", UiScale.body())
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_fields.add_child(note)
 	_building = false
@@ -269,7 +269,7 @@ func _row(label_text: String) -> HBoxContainer:
 	var lbl := Label.new()
 	lbl.text = label_text
 	lbl.custom_minimum_size = Vector2(96, 0)
-	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(lbl)
 	return row
 

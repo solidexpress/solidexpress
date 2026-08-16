@@ -25,7 +25,7 @@ func _ready() -> void:
 
 	var title := Label.new()
 	title.text = "Keyboard shortcuts"
-	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_font_size_override("font_size", UiScale.font(16))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(title)
 
@@ -43,7 +43,7 @@ func _ready() -> void:
 		var section := Label.new()
 		section.text = ctx
 		var section_settings := LabelSettings.new()
-		section_settings.font_size = 13
+		section_settings.font_size = UiScale.body()
 		section_settings.font_color = Color(0.95, 0.96, 0.98)
 		var bold_font := SystemFont.new()
 		bold_font.font_weight = 700
@@ -60,13 +60,13 @@ func _ready() -> void:
 		for entry in grouped[ctx]:
 			var keys_lbl := Label.new()
 			keys_lbl.text = entry["keys"]
-			keys_lbl.add_theme_font_size_override("font_size", 12)
+			keys_lbl.add_theme_font_size_override("font_size", UiScale.body())
 			keys_lbl.add_theme_color_override("font_color", Color(0.75, 0.82, 0.95))
 			grid.add_child(keys_lbl)
 
 			var desc_lbl := Label.new()
 			desc_lbl.text = entry["desc"]
-			desc_lbl.add_theme_font_size_override("font_size", 12)
+			desc_lbl.add_theme_font_size_override("font_size", UiScale.body())
 			desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			desc_lbl.custom_minimum_size = Vector2(320, 0)
 			grid.add_child(desc_lbl)

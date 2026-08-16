@@ -14,6 +14,10 @@ signal dim_submitted(value: float)
 const CHIP_H := 28
 const CHIP_PAD := 6
 
+
+func _chip_h() -> int:
+	return int(round(UiScale.px(CHIP_H)))
+
 var sketch_mode: SketchMode
 var _variant_bar: HBoxContainer
 var _action_bar: HBoxContainer
@@ -63,7 +67,7 @@ func _build_finish_bar() -> void:
 	_dim_spin.value = 10
 	_dim_spin.suffix = "mm"
 	_dim_spin.select_all_on_focus = true
-	_dim_spin.custom_minimum_size = Vector2(88, CHIP_H)
+	_dim_spin.custom_minimum_size = Vector2(88, _chip_h())
 	_dim_spin.tooltip_text = "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
 	_finish_bar.add_child(_dim_spin)
 	var dim_edit := _dim_spin.get_line_edit()
@@ -76,7 +80,7 @@ func _build_finish_bar() -> void:
 	_dim_spin.value_changed.connect(_on_dim_value_changed)
 	var dim_btn := Button.new()
 	dim_btn.text = "Dim"
-	dim_btn.custom_minimum_size = Vector2(44, CHIP_H)
+	dim_btn.custom_minimum_size = Vector2(44, _chip_h())
 	dim_btn.tooltip_text = "Apply driving dimension to the selection"
 	dim_btn.pressed.connect(func() -> void: action_chosen.emit("dimension"))
 	_finish_bar.add_child(dim_btn)
@@ -86,7 +90,7 @@ func _build_finish_bar() -> void:
 	_extrude_spin.step = 1
 	_extrude_spin.value = 20
 	_extrude_spin.suffix = "mm"
-	_extrude_spin.custom_minimum_size = Vector2(88, CHIP_H)
+	_extrude_spin.custom_minimum_size = Vector2(88, _chip_h())
 	_extrude_spin.tooltip_text = "Blind distance (ignored for Through All cuts)"
 	_finish_bar.add_child(_extrude_spin)
 	_finish_end = OptionButton.new()
@@ -94,13 +98,13 @@ func _build_finish_bar() -> void:
 	_finish_end.tooltip_text = "Extrude end: Blind / Through All / Midplane"
 	for n in ["Blind", "Through All", "Midplane"]:
 		_finish_end.add_item(n)
-	_finish_end.custom_minimum_size = Vector2(100, CHIP_H)
+	_finish_end.custom_minimum_size = Vector2(100, _chip_h())
 	_finish_bar.add_child(_finish_end)
 	_finish_op = OptionButton.new()
 	_finish_op.name = "FinishOp"
 	for n in ["New", "Cut", "Fuse"]:
 		_finish_op.add_item(n)
-	_finish_op.custom_minimum_size = Vector2(64, CHIP_H)
+	_finish_op.custom_minimum_size = Vector2(64, _chip_h())
 	# Default for cuts: make through cuts go Through All unless the user overrides.
 	_finish_op.item_selected.connect(func(_idx: int) -> void:
 		if _finish_end != null and _finish_op.selected == 1:  # Cut
@@ -112,24 +116,24 @@ func _build_finish_bar() -> void:
 	_thin_spin.step = 0.5
 	_thin_spin.value = 0
 	_thin_spin.suffix = "mm"
-	_thin_spin.custom_minimum_size = Vector2(72, CHIP_H)
+	_thin_spin.custom_minimum_size = Vector2(72, _chip_h())
 	_thin_spin.tooltip_text = "Thin wall (0 = solid closed profile)"
 	_finish_bar.add_child(_thin_spin)
 	_thin_type = OptionButton.new()
 	_thin_type.tooltip_text = "Thin wall offset: One Side / Midplane"
 	for n in ["One Side", "Midplane"]:
 		_thin_type.add_item(n)
-	_thin_type.custom_minimum_size = Vector2(88, CHIP_H)
+	_thin_type.custom_minimum_size = Vector2(88, _chip_h())
 	_finish_bar.add_child(_thin_type)
 	_flip_side = CheckButton.new()
 	_flip_side.text = "Flip"
-	_flip_side.custom_minimum_size = Vector2(56, CHIP_H)
+	_flip_side.custom_minimum_size = Vector2(56, _chip_h())
 	_flip_side.tooltip_text = (
 		"Thin wall side, or Extruded Cut Flip Side to Cut on an open profile")
 	_finish_bar.add_child(_flip_side)
 	var ex := Button.new()
 	ex.text = "Extrude"
-	ex.custom_minimum_size = Vector2(72, CHIP_H)
+	ex.custom_minimum_size = Vector2(72, _chip_h())
 	ex.pressed.connect(func() -> void:
 		finish_requested.emit(
 			["new", "cut", "fuse"][_finish_op.selected],
@@ -142,12 +146,12 @@ func _build_finish_bar() -> void:
 	_finish_bar.add_child(ex)
 	var rv := Button.new()
 	rv.text = "Revolve"
-	rv.custom_minimum_size = Vector2(72, CHIP_H)
+	rv.custom_minimum_size = Vector2(72, _chip_h())
 	rv.pressed.connect(func() -> void: action_chosen.emit("revolve"))
 	_finish_bar.add_child(rv)
 	var done := Button.new()
 	done.text = "Done"
-	done.custom_minimum_size = Vector2(56, CHIP_H)
+	done.custom_minimum_size = Vector2(56, _chip_h())
 	done.tooltip_text = "End line / spline chain (Esc · right-click · double-click)"
 	done.pressed.connect(func() -> void: action_chosen.emit("done"))
 	_finish_bar.add_child(done)
@@ -269,14 +273,14 @@ func refresh_contours(sketch: SxSketch) -> void:
 		return
 	var lbl := Label.new()
 	lbl.text = "Contours"
-	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_font_size_override("font_size", UiScale.body())
 	_contour_bar.add_child(lbl)
 	for i in n:
 		_selected_contours.append(i)
 		var b := CheckButton.new()
 		b.text = str(i + 1)
 		b.button_pressed = true
-		b.custom_minimum_size = Vector2(40, CHIP_H)
+		b.custom_minimum_size = Vector2(40, _chip_h())
 		b.tooltip_text = "Selected Contours — include region %d" % (i + 1)
 		var idx := i
 		b.toggled.connect(func(on: bool) -> void:
@@ -289,7 +293,7 @@ func refresh_contours(sketch: SxSketch) -> void:
 		)
 		_contour_bar.add_child(b)
 	_contour_bar.visible = true
-	_place_bar(_contour_bar, Vector2(60, 42 + CHIP_H + 4))
+	_place_bar(_contour_bar, Vector2(60, 42 + _chip_h() + 4))
 
 
 func extrude_button() -> Button:
@@ -335,11 +339,11 @@ func show_variants(kind: String, variants: Array, screen_pos: Vector2) -> void:
 		var label: String = str(v)
 		var b := Button.new()
 		b.text = label.capitalize().replace("_", " ")
-		b.custom_minimum_size = Vector2(0, CHIP_H)
+		b.custom_minimum_size = Vector2(0, _chip_h())
 		b.pressed.connect(func() -> void: variant_chosen.emit(kind, label))
 		_variant_bar.add_child(b)
 	_variant_bar.visible = not variants.is_empty()
-	_place_bar(_variant_bar, screen_pos + Vector2(12, -CHIP_H - CHIP_PAD))
+	_place_bar(_variant_bar, screen_pos + Vector2(12, -_chip_h() - CHIP_PAD))
 
 
 func hide_variants() -> void:
@@ -354,7 +358,7 @@ func show_selection_actions(actions: Array, screen_pos: Vector2) -> void:
 		var b := Button.new()
 		b.text = label.capitalize().replace("_", " ")
 		b.tooltip_text = label
-		b.custom_minimum_size = Vector2(0, CHIP_H)
+		b.custom_minimum_size = Vector2(0, _chip_h())
 		b.pressed.connect(func() -> void: action_chosen.emit(label))
 		_action_bar.add_child(b)
 	_action_bar.visible = not actions.is_empty()

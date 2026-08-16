@@ -386,7 +386,7 @@ func _rebuild_orient_popup() -> void:
 			col.add_child(HSeparator.new())
 			var saved_lbl := Label.new()
 			saved_lbl.text = "Saved views"
-			saved_lbl.add_theme_font_size_override("font_size", 11)
+			saved_lbl.add_theme_font_size_override("font_size", UiScale.body())
 			col.add_child(saved_lbl)
 			for view_name in named:
 				var nb := Button.new()
@@ -401,7 +401,7 @@ func _rebuild_orient_popup() -> void:
 	col.add_child(HSeparator.new())
 	var create_lbl := Label.new()
 	create_lbl.text = "Create"
-	create_lbl.add_theme_font_size_override("font_size", 11)
+	create_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	col.add_child(create_lbl)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
@@ -482,7 +482,7 @@ func _build_place_snap_ui() -> void:
 	_place_snap_check = CheckBox.new()
 	_place_snap_check.text = "Snap"
 	_place_snap_check.tooltip_text = "Snap place / move to grid"
-	_place_snap_check.add_theme_font_size_override("font_size", 11)
+	_place_snap_check.add_theme_font_size_override("font_size", UiScale.body())
 	_place_snap_check.button_pressed = place_snap_enabled
 	_place_snap_check.toggled.connect(func(on: bool) -> void:
 		place_snap_enabled = on)
@@ -1554,7 +1554,12 @@ func _hud_editing() -> bool:
 	if transform_hud == null:
 		return false
 	var focused := get_viewport().gui_get_focus_owner()
-	return focused != null and transform_hud.is_ancestor_of(focused)
+	if focused == null:
+		return false
+	if transform_hud.is_ancestor_of(focused):
+		return true
+	var mp: Control = transform_hud.move_delta_panel()
+	return mp != null and (mp == focused or mp.is_ancestor_of(focused))
 
 
 func _free_ghost() -> void:
@@ -1743,7 +1748,8 @@ func _over_chrome(global_mouse: Vector2) -> bool:
 		var s := vp.get_visible_rect().size
 		vp_area = maxf(s.x * s.y, 1.0)
 	var max_area := vp_area * 0.25
-	for ctrl in [_place_snap_panel, transform_hud, _selection_strip]:
+	var move_delta: Control = transform_hud.move_delta_panel() if transform_hud != null else null
+	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip]:
 		if ctrl == null or not ctrl.visible:
 			continue
 		if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE:
@@ -2805,12 +2811,13 @@ func _gui_key(event: InputEventKey) -> bool:
 				clear_hole_markers()
 				return true
 			# Temporary HUD overlays only. Persistent W/H/D stays until
-			# selection clears (or place cancels via `_input`).
-			if transform_hud != null and transform_hud.visible:
+			# selection clears (or place cancels via `_input`). PR #31 moved
+			# Δ-move into its own panel — dismiss that / precision, not dims.
+			if transform_hud != null:
 				if transform_hud._precision_row.visible:
 					transform_hud.hide_precision()
 					return true
-				if transform_hud._move_row.visible:
+				if transform_hud.is_move_delta_visible() or transform_hud._move_row.visible:
 					transform_hud.hide_move_delta()
 					return true
 			if _orient_popup != null and _orient_popup.visible:
@@ -4114,9 +4121,9 @@ func _draw_move_feedback() -> void:
 		_draw_center_mark(old_s, Color(0.85, 0.85, 0.9, 0.95))
 		_draw_center_mark(new_s, Color(1.0, 0.75, 0.15, 0.95))
 		draw_string(ThemeDB.fallback_font, old_s + Vector2(8, -8), "old",
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.85, 0.85, 0.9))
+				HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), Color(0.85, 0.85, 0.9))
 		draw_string(ThemeDB.fallback_font, new_s + Vector2(8, -8), "new",
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.75, 0.15))
+				HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), Color(1.0, 0.75, 0.15))
 	if not _move_snap_active.is_empty():
 		_draw_move_snap_guide()
 	if _move_axis_lock >= 0:
@@ -4131,7 +4138,7 @@ func _draw_pull_handle() -> void:
 	var t: Vector2 = _model_to_screen(pull["point"])
 	var col2 := Color(1.0, 0.62, 0.15, 0.95)
 	_draw_stretch_arrow(a, t, col2)
-	draw_string(ThemeDB.fallback_font, t + Vector2(8, -8), "Pull", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col2)
+	draw_string(ThemeDB.fallback_font, t + Vector2(8, -8), "Pull", HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), col2)
 
 
 ## Stretch / pull: single chevron pointing away from the face.
@@ -4174,7 +4181,7 @@ func _draw_lift_grip(base: Vector2, tip: Vector2) -> void:
 	draw_line(mid - perp * plate, mid + perp * plate, Color(0.95, 0.95, 0.98, 0.95), 2.5)
 	draw_rect(Rect2(mid - Vector2(4, 4), Vector2(8, 8)), col, false, 1.5)
 	draw_string(ThemeDB.fallback_font, tip + perp * 8.0 + Vector2(2, -4), "lift",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
+			HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), col)
 
 
 ## Screen-space outline of the active move plane near the selection.
@@ -4238,12 +4245,12 @@ func _draw_move_snap_guide() -> void:
 		draw_dashed_line(ga, gb, gap_col, 1.25, 4.0, true)
 		var mid := ga.lerp(gb, 0.5)
 		draw_string(ThemeDB.fallback_font, mid + Vector2(6, -6),
-				"%.2f mm" % gap_mm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, gap_col)
+				"%.2f mm" % gap_mm, HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), gap_col)
 	elif str(_move_snap_active.get("kind", "")) != "grid":
 		var mid2 := a.lerp(b, 0.5)
 		var label := "0 mm" if gap_mm <= 1e-3 else ("%.2f mm" % gap_mm)
 		draw_string(ThemeDB.fallback_font, mid2 + Vector2(6, -6), label,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
+				HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), col)
 
 
 ## Highlight the locked principal axis (or active-plane normal for lift) through
@@ -4305,4 +4312,4 @@ func _draw_push_pull_preview() -> void:
 	var label := "%.1f mm" % _pp_preview_dist
 	var pos := _pp_badge_screen + Vector2(10, -18)
 	draw_rect(Rect2(pos - Vector2(4, 2), Vector2(70, 18)), Color(0.12, 0.14, 0.18, 0.85), true)
-	draw_string(ThemeDB.fallback_font, pos + Vector2(2, 12), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 0.9, 0.6))
+	draw_string(ThemeDB.fallback_font, pos + Vector2(2, 12), label, HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), Color(1, 0.9, 0.6))

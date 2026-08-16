@@ -66,7 +66,7 @@ func _ready() -> void:
 	_digest = Label.new()
 	_digest.name = "PrintDigest"
 	_digest.text = "Form — print prep"
-	_digest.add_theme_font_size_override("font_size", 11)
+	_digest.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(_digest)
 
 	var params := HBoxContainer.new()
@@ -89,7 +89,7 @@ func _mini_spin(parent: Container, label: String, lo: float, hi: float, step: fl
 	parent.add_child(box)
 	var lbl := Label.new()
 	lbl.text = label
-	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_font_size_override("font_size", UiScale.body())
 	box.add_child(lbl)
 	var spin := SpinBox.new()
 	SxUi.configure_spin(spin, lo, hi, step, value)
