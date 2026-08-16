@@ -351,6 +351,8 @@ func _build_ui() -> void:
 	# Surface Thread alongside Insert for reachability (also available in Ops).
 	# Hook: default to Modeled when Mode rail is “Form” once API exists.
 	insert_popup.add_item("Thread…", 20)
+	insert_popup.add_item("Sketch…", 21)
+	insert_popup.add_item("Hex opening…", 22)
 	insert_popup.id_pressed.connect(_on_insert_menu)
 
 	var mode_btn := MenuButton.new()
@@ -399,6 +401,8 @@ func _build_ui() -> void:
 	print_strip.bed_ghost = bed_ghost
 	print_strip.analyze_requested.connect(_on_print_analyze)
 	print_strip.orient_requested.connect(_on_print_orient)
+	if print_strip.has_signal("create_requested"):
+		print_strip.create_requested.connect(func() -> void: _on_mode_menu(0))
 
 	# Interaction overlay under chrome (full-rect input); snap bar joins TopChrome.
 	interaction = ViewportInteraction.new()
@@ -468,16 +472,17 @@ func _build_ui() -> void:
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 2)
 	palette.add_child(vbox)
+	var sketch_btn := UIIcons.button("sketch", "Sketch",
+		"Sketch: click a face or the ground — line, circle, polygon, constraints")
+	sketch_btn.name = "PaletteSketch"
+	sketch_btn.pressed.connect(_request_sketch)
+	vbox.add_child(sketch_btn)
+	vbox.add_child(HSeparator.new())
 	for entry in [["box", "Box"], ["cylinder", "Cylinder"], ["sphere", "Sphere"],
 			["cone", "Cone"], ["torus", "Torus"]]:
 		var btn := PaletteButton.new(entry[0], entry[1])
 		btn.insert_requested.connect(interaction.insert_at_center)
 		vbox.add_child(btn)
-	vbox.add_child(HSeparator.new())
-	var sketch_btn := UIIcons.button("sketch", "",
-		"Sketch: select a face or existing sketch to enter sketch mode")
-	sketch_btn.pressed.connect(_request_sketch)
-	vbox.add_child(sketch_btn)
 	# Finish verbs for selected sketch pads (SW/Fusion left-rail reachability).
 	vbox.add_child(HSeparator.new())
 	_rail_extrude = UIIcons.button("extrude", "",
@@ -570,6 +575,8 @@ func _build_ui() -> void:
 	ops_panel.status.connect(_on_status)
 	interaction.ops_panel = ops_panel
 	ops_panel.interaction = interaction
+	if ops_panel.has_signal("sketch_requested"):
+		ops_panel.sketch_requested.connect(_request_sketch)
 
 	# Right, second column: assembly browser (auto-hides when no instances).
 	assembly_panel = AssemblyPanel.new()
@@ -1468,6 +1475,8 @@ func _on_print_orient() -> void:
 	if print_strip != null:
 		print_strip.set_digest(digest)
 	_on_status("Oriented — " + digest)
+	if view.has_method("set_print_preview"):
+		view.call("set_print_preview", true)
 	view.refresh()
 
 
@@ -1487,6 +1496,8 @@ func _update_mode_overlays() -> void:
 		print_strip.visible = _work_mode == "Form"
 		if _work_mode == "Form" and print_strip.has_method("sync_from_doc"):
 			print_strip.sync_from_doc()
+	if view != null and view.has_method("set_print_preview"):
+		view.call("set_print_preview", _work_mode == "Form")
 	if cam_rail != null:
 		cam_rail.visible = _work_mode == "Cam"
 		if _work_mode != "Cam":
@@ -2234,6 +2245,13 @@ func _on_insert_menu(id: int) -> void:
 					tid = str(f.get("id", ""))
 			if tid != "":
 				open_feature_params(tid)
+		return
+	if id == 21:
+		_request_sketch()
+		return
+	if id == 22:
+		if ops_panel != null:
+			ops_panel._apply_hex_opening()
 		return
 	# Planes offer an offset (reference + distance).
 	if id >= 0 and id <= 2:

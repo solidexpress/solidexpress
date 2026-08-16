@@ -144,7 +144,9 @@ func workflow_chamfered_plate() -> void:
 	for pos in hole_positions:
 		check(ops._commit_hole(body, top_face, pos), "hole at %s" % str(pos))
 		gesture(2)  # Place hole… + click
-	var expected_drop := 4.0 * PI * 9.0 * 10.0  # 4 x pi r^2 t
+	# Wave 6.2: hole Ø = nominal + hole_compensation (default 0.2) → Ø6.2
+	var d := 6.0 + 0.2
+	var expected_drop := 4.0 * PI * (0.5 * d) * (0.5 * d) * 10.0
 	var drop := vol_chamfer - _volume(body)
 	check(absf(drop - expected_drop) < expected_drop * 0.05,
 		"holes removed ~%.0f mm^3 (got %.0f)" % [expected_drop, drop])
