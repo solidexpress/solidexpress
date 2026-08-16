@@ -98,7 +98,7 @@ func test_button_language(main) -> void:
 
 func test_key_buttons_have_icons(main) -> void:
 	print("- action hotspots use icon buttons")
-	var palette: Node = main.get_node("UI/Palette")
+	var palette: Node = main.get_node("UI/LeftStack/Palette")
 	var palette_buttons: Array = []
 	_collect_buttons(palette, palette_buttons)
 	var no_icon := 0

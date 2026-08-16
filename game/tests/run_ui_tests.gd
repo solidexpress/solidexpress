@@ -63,8 +63,8 @@ func test_scene_structure(main) -> void:
 	check(main.interaction is Control, "interaction overlay exists")
 	var up: Vector3 = main.model_space.basis * Vector3(0, 0, 1)
 	check(up.distance_to(Vector3(0, 1, 0)) < 0.01, "model space maps kernel +Z to world +Y")
-	check(main.get_node("UI/Palette") != null, "palette panel exists")
-	check(main.get_node("UI/CardPanel") != null, "card panel exists")
+	check(main.get_node("UI/LeftStack/Palette") != null, "palette panel exists")
+	check(main.get_node("UI/LeftStack/CardPanel") != null, "card panel exists")
 
 
 func test_insert_and_render(main) -> void:

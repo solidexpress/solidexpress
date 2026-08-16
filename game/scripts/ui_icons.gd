@@ -112,7 +112,7 @@ static func button(icon_name: String, label: String, tooltip: String) -> Button:
 	b.tooltip_text = tooltip
 	if label == "":
 		b.expand_icon = false
-		b.custom_minimum_size = Vector2(30, 28)
+		b.custom_minimum_size = Vector2(UiScale.px(30), UiScale.px(28))
 		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return b
 

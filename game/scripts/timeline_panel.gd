@@ -72,14 +72,14 @@ func _ready() -> void:
 	outer.add_child(_editor_box)
 	_json_toggle = CheckButton.new()
 	_json_toggle.text = "Params (JSON, advanced)"
-	_json_toggle.add_theme_font_size_override("font_size", 11)
+	_json_toggle.add_theme_font_size_override("font_size", UiScale.body())
 	_json_toggle.toggled.connect(func(on: bool) -> void:
 		_params_edit.visible = on
 		_params_edit.get_parent().get_node("ApplyJson").visible = on)
 	_editor_box.add_child(_json_toggle)
 	_params_edit = TextEdit.new()
 	_params_edit.custom_minimum_size = Vector2(250, 70)
-	_params_edit.add_theme_font_size_override("font_size", 11)
+	_params_edit.add_theme_font_size_override("font_size", UiScale.body())
 	_params_edit.visible = false
 	_editor_box.add_child(_params_edit)
 	var apply_btn := UIIcons.button("ok", "Apply", "Apply the edited JSON parameters")
@@ -153,7 +153,7 @@ func _add_rollback_bar() -> void:
 	rollback_bar = Button.new()
 	rollback_bar.text = "═══ rollback ═══"
 	rollback_bar.flat = true
-	rollback_bar.add_theme_font_size_override("font_size", 10)
+	rollback_bar.add_theme_font_size_override("font_size", UiScale.caption())
 	rollback_bar.modulate = Color(0.55, 0.75, 1.0)
 	rollback_bar.tooltip_text = "Rollback bar — drag onto a feature to roll back; double-click to roll to end"
 	rollback_bar.mouse_default_cursor_shape = Control.CURSOR_VSIZE
@@ -242,7 +242,7 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 		badge.tooltip_text = str(f.get("error", "Regeneration failed"))
 		badge.mouse_filter = Control.MOUSE_FILTER_STOP
 		badge.add_theme_color_override("font_color", Color(0.95, 0.3, 0.25))
-		badge.add_theme_font_size_override("font_size", 16)
+		badge.add_theme_font_size_override("font_size", UiScale.font(16))
 		badge.gui_input.connect(func(ev: InputEvent) -> void:
 			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
 				_show_whats_wrong(fid)

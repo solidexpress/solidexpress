@@ -68,7 +68,7 @@ func _format_mm(mm: float) -> String:
 
 func _label_width() -> float:
 	return get_theme_default_font().get_string_size(
-		_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		_label, HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body()).x
 
 
 func _draw() -> void:
@@ -80,4 +80,4 @@ func _draw() -> void:
 	draw_line(Vector2(x0, y - TICK_H), Vector2(x0, y + 1.0), COLOR_BAR, LINE_W, true)
 	draw_line(Vector2(x1, y - TICK_H), Vector2(x1, y + 1.0), COLOR_BAR, LINE_W, true)
 	var font := get_theme_default_font()
-	draw_string(font, Vector2(x1 + 8.0, y - 1.0), _label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, COLOR_LABEL)
+	draw_string(font, Vector2(x1 + 8.0, y - 1.0), _label, HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), COLOR_LABEL)
