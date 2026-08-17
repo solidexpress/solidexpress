@@ -673,7 +673,8 @@ func _build_ui() -> void:
 	timeline.view = view
 	timeline.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	timeline.anchor_top = 1.0
-	timeline.offset_left = 12
+	# Start clear of the ~44px left rail (reflowed in _update_panel_visibility).
+	timeline.offset_left = _CHROME_PAD + _RAIL_ICON_W + 8.0
 	timeline.offset_top = -420
 	timeline.offset_bottom = -42
 	ui.add_child(timeline)
@@ -1430,11 +1431,14 @@ func _update_panel_visibility() -> void:
 	card_box.visible = _selected_entity() != "" and not sketching
 	timeline.visible = view.doc.graph_features().size() > 0 and not sketching
 	variables_panel.visible = show_variables and not sketching
-	# Keep the variables table clear of the left rail and flush against the timeline.
+	# Keep Timeline / Variables clear of the left rail (icons were unclickable).
 	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
 	if left_stack != null:
 		rail_right = maxf(rail_right, left_stack.position.x + maxf(left_stack.size.x, 48.0) + 8.0)
-	variables_panel.offset_left = 280 if timeline.visible else rail_right
+	timeline.offset_left = rail_right
+	# Timeline width ~260; variables sit to its right with a gap.
+	var timeline_w := 260.0
+	variables_panel.offset_left = rail_right + (timeline_w + 8.0 if timeline.visible else 0.0)
 	variables_panel.offset_right = variables_panel.offset_left + 260
 	_update_left_rail()
 	_schedule_card_dock()
@@ -1640,13 +1644,18 @@ func open_feature_params(fid: String) -> void:
 
 
 func _rail_finish_extrude() -> void:
+	var dist := 20.0
+	if sketch_chrome != null and sketch_chrome.has_method("extrude_distance"):
+		dist = sketch_chrome.extrude_distance()
+	elif sketch_chrome != null and sketch_chrome._extrude_spin != null:
+		dist = sketch_chrome._extrude_spin.value
 	if selected_sketch_pads.size() == 1:
 		if sketch_mode.begin_edit(selected_sketch_pads[0]):
 			_on_sketch_session_started("Extrude sketch")
-			_on_sketch_finish("new", 20.0)
+			_on_sketch_finish("new", dist)
 			return
 	if sketch_mode != null and sketch_mode.active:
-		_on_sketch_finish("new", 20.0)
+		_on_sketch_finish("new", dist)
 		return
 	_on_status("Extrude: select a closed sketch pad (or enter Sketch and draw a profile)")
 
