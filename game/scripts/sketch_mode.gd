@@ -24,6 +24,14 @@ var sketch: SxSketch
 var view: DocumentView
 var tool: Tool = Tool.NONE
 var active := false
+## Minimum sketch working scale. Framing on a 5 mm blank made screen drags
+## land as sub-millimetre segments; floor the ortho view so 1 px ≈ 0.05 mm.
+const MIN_SKETCH_VIEW_RADIUS_MM := 15.0
+const MIN_SKETCH_VIEW_MM := 20.0
+## Shortest committed segment — below this the click is treated as a mis-drag
+## instead of silently adding junk geometry that can never close a profile.
+const MIN_SEGMENT_MM := 0.05
+var _sketch_view_radius := 25.0
 ## When true, click/hover positions pass through snap_point().
 var snap_enabled := true
 ## Regular N-gon side count for the POLYGON tool (clamped 3..24).
@@ -381,7 +389,40 @@ func _enter_camera() -> void:
 	if not ext.is_empty():
 		center = ext["center"]
 		radius = float(ext["radius"])
+	# Floor the working scale: a sketch framed on a 5 mm blank made screen
+	# drags land as sub-millimetre segments (0.15 mm "lines").
+	radius = maxf(radius, MIN_SKETCH_VIEW_RADIUS_MM)
 	camera.enter_sketch_view(plane_normal(), center, radius, plane_y)
+	_sketch_view_radius = radius
+	# Re-assert after layout/resize handlers settle so nothing zooms us into
+	# the 0.1 mm grid behind our back.
+	call_deferred("_reassert_camera")
+
+
+func _reassert_camera() -> void:
+	if not active or camera == null:
+		return
+	if camera.projection != Camera3D.PROJECTION_ORTHOGONAL or camera.size < MIN_SKETCH_VIEW_MM:
+		var ext := sketch_extents(0.2)
+		var center: Vector3 = ext["center"] if not ext.is_empty() else plane_origin
+		var radius: float = float(ext["radius"]) if not ext.is_empty() else 25.0
+		camera.enter_sketch_view(plane_normal(), center,
+				maxf(radius, MIN_SKETCH_VIEW_RADIUS_MM), plane_y)
+
+
+## Frame the sketch plane at a workable scale (mechanic "fit sketch").
+func fit_view() -> void:
+	if not active:
+		return
+	_enter_camera()
+	status.emit("Sketch view fit")
+
+
+## Approximate model-space width of the sketch view (mm) for status text.
+func _view_span_mm() -> float:
+	if camera != null and camera.projection == Camera3D.PROJECTION_ORTHOGONAL:
+		return maxf(camera.size, 1.0)
+	return _sketch_view_radius * 2.0
 
 
 func _leave_camera() -> void:
@@ -592,8 +633,6 @@ func set_tool(t: Tool) -> void:
 			tool_variant = "center"
 		Tool.ARC:
 			tool_variant = "center"
-		Tool.POLYGON:
-			tool_variant = "across_flats"  # wrench jaw / hex — AF is the shop default
 		Tool.PATTERN:
 			tool_variant = "linear"
 		_:
@@ -1658,6 +1697,11 @@ func click(pos2: Vector2) -> void:
 		Tool.EXTEND:
 			extend_at(pos2)
 		Tool.LINE, Tool.CENTERLINE:
+			if not _tool_points.is_empty():
+				var prev: Vector2 = _tool_points[_tool_points.size() - 1]
+				if prev.distance_to(pos2) < MIN_SEGMENT_MM:
+					status.emit("Too short — drag further (view is %.0f mm across)" % _view_span_mm())
+					return
 			_tool_points.append(pos2)
 			if _tool_points.size() >= 2:
 				var a := _tool_points[_tool_points.size() - 2]
@@ -1676,6 +1720,10 @@ func click(pos2: Vector2) -> void:
 		Tool.ARC:
 			_click_arc(pos2)
 		Tool.POLYGON:
+			if not _tool_points.is_empty() \
+					and _tool_points[0].distance_to(pos2) < MIN_SEGMENT_MM:
+				status.emit("Too small — drag further (view is %.0f mm across)" % _view_span_mm())
+				return
 			_tool_points.append(pos2)
 			if _tool_points.size() == 2:
 				var c := _tool_points[0]
