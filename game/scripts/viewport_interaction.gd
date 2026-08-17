@@ -61,6 +61,7 @@ var _additive_click := false
 ## SELECT-tool drag-to-edit in sketch mode (begin/update/end_drag).
 var _sketch_dragging := false
 var _sketch_drag_moved := false
+var _sketch_press_pos := Vector2.ZERO
 ## Push/pull preview distance (wire badge while dragging).
 var _pp_preview_dist := 0.0
 var _pp_badge_screen := Vector2.ZERO
@@ -2028,6 +2029,7 @@ func _sketch_input(event: InputEvent) -> void:
 			# Dismiss tool-variant chips so they never steal the draw click.
 			if sketch_chrome != null:
 				sketch_chrome.hide_variants()
+			_sketch_press_pos = mb.position
 			var ray := _model_ray(mb.position)
 			var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 			if p2 != null:
@@ -2055,6 +2057,16 @@ func _sketch_input(event: InputEvent) -> void:
 				sketch_mode.end_drag()
 			_sketch_dragging = false
 			_sketch_drag_moved = false
+			accept_event()
+		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and not _sketch_dragging:
+			# Drag-draw completion only when the pointer moved — pure click-click
+			# must not double-fire the same anchor (zero-length segment).
+			if sketch_mode.has_pending_draw_point() \
+					and mb.position.distance_to(_sketch_press_pos) >= CLICK_SLOP:
+				var ray_up2 := _model_ray(mb.position)
+				var p2_up2 = sketch_mode.ray_to_sketch(ray_up2[0], ray_up2[1])
+				if p2_up2 != null:
+					sketch_mode.click(p2_up2)
 			accept_event()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
 			sketch_mode.end_chain()
@@ -2214,6 +2226,13 @@ func _on_press(pos: Vector2) -> void:
 				else _plane_hit(ray[0], ray[1], triball.origin, triball.axis)
 		triball.begin_drag(tpt)
 		_press_empty = false
+		return
+
+	# Armed Hole Wizard / fillet / chamfer picks: do NOT start push-pull or
+	# body-move. Those gestures ate face/edge clicks so the wizard never counted
+	# points and chamfer pick never accumulated edges.
+	if ops_panel != null and ops_panel.consumes_viewport_pick():
+		_press_empty = hit.is_empty()
 		return
 
 	# Shift/Ctrl+click is additive selection only — never arms a move/push drag.

@@ -1118,6 +1118,12 @@ func _arm_hole_wizard() -> void:
 	_hole_wizard_direction = Vector3.ZERO
 	_sync_apply_holes_btn()
 	_sync_hole_markers()
+	# Keep body ops visible so Apply holes stays on-screen.
+	visible = true
+	_body_ops.visible = true
+	if _apply_holes_btn != null:
+		_apply_holes_btn.visible = true
+		_scroll.ensure_control_visible(_apply_holes_btn)
 	status.emit("Hole Wizard: click points on a face, then Apply holes / Enter")
 
 
@@ -1354,7 +1360,7 @@ func _accumulate_dressup_edge(body: String, point: Vector3) -> void:
 		status.emit("Fillet/Chamfer: pick edges on the same body")
 		return
 	# Widen tolerance while armed — silhouette corners are hard to hit exactly.
-	var edge := view.edge_near_point(body, point, 6.0)
+	var edge := view.edge_near_point(body, point, 12.0)
 	if edge == "":
 		status.emit("No edge near click — zoom in or click closer to an edge")
 		return
@@ -1372,9 +1378,9 @@ func _accumulate_dressup_edge(body: String, point: Vector3) -> void:
 		view.selected_face = ""
 		view._highlight_edge()
 		view.selection_changed.emit(view.selected_body, view.selected_face)
-	var n := view.selected_edges.size()
+	var n := maxi(view.selected_edges.size(), 1 if view.selected_edge != "" else 0)
 	var kind := "Fillet" if _pending == Pending.FILLET_EDGES else "Chamfer"
-	status.emit("%s: %d edge(s) — click more, Enter to apply, Esc cancel" % [kind, maxi(n, 1)])
+	status.emit("%s: %d edge(s) — click more, Enter to apply, Esc cancel" % [kind, n])
 
 
 func _arm_boolean(op: String) -> void:
