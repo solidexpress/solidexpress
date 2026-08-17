@@ -69,6 +69,7 @@ var _pp_badge_screen := Vector2.ZERO
 var _context_menu: PopupMenu
 var _selection_strip: PanelContainer
 var _strip_fillet: Button
+var _strip_chamfer: Button
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
@@ -319,9 +320,17 @@ func _build_selection_strip() -> void:
 	_strip_triball.pressed.connect(_ctx_triball)
 	row.add_child(_strip_triball)
 	_strip_fillet = Button.new()
+	_strip_fillet.name = "StripFillet"
 	_strip_fillet.text = "Fillet"
+	_strip_fillet.tooltip_text = "Round edges — click edges, then Enter"
 	_strip_fillet.pressed.connect(func() -> void: _ctx_fillet())
 	row.add_child(_strip_fillet)
+	_strip_chamfer = Button.new()
+	_strip_chamfer.name = "StripChamfer"
+	_strip_chamfer.text = "Chamfer"
+	_strip_chamfer.tooltip_text = "Break edges — click edges, then Enter (Radius box sets the distance)"
+	_strip_chamfer.pressed.connect(func() -> void: _ctx_chamfer())
+	row.add_child(_strip_chamfer)
 	_strip_sketch = Button.new()
 	_strip_sketch.text = "Sketch"
 	_strip_sketch.tooltip_text = "Sketch on the selected face (then Extrude from the sketch bar)"
@@ -3754,6 +3763,7 @@ func _refresh_selection_strip() -> void:
 	_strip_group.visible = not has_instance and view.selection_size() > 0
 	_strip_similar.visible = not has_instance and view.selected_body != ""
 	_strip_fillet.visible = not has_instance
+	_strip_chamfer.visible = not has_instance
 	_strip_hole.visible = not has_instance
 	_strip_hole_wizard.visible = not has_instance
 	_strip_clash.visible = multi_body
@@ -3772,6 +3782,7 @@ func _open_context_menu(screen_pos: Vector2) -> void:
 	var has := view != null and view.selected_body != ""
 	if has:
 		_context_menu.add_item("Fillet", 1)
+		_context_menu.add_item("Chamfer", 16)
 		if view.selected_face != "":
 			_context_menu.add_item("Sketch on face…", 2)
 			_context_menu.add_item("Set as active plane", 8)
@@ -3806,6 +3817,7 @@ func _open_context_menu(screen_pos: Vector2) -> void:
 func _on_context_id(id: int) -> void:
 	match id:
 		1: _ctx_fillet()
+		16: _ctx_chamfer()
 		2: sketch_requested.emit()
 		3: _ctx_hide()
 		4: _ctx_isolate()
@@ -3855,6 +3867,13 @@ func _ctx_fillet() -> void:
 		ops_panel.arm_or_apply_fillet()
 	else:
 		status.emit("Fillet: open Modify panel")
+
+
+func _ctx_chamfer() -> void:
+	if ops_panel != null:
+		ops_panel.arm_or_apply_chamfer()
+	else:
+		status.emit("Chamfer: open Modify panel")
 
 
 func _ctx_group() -> void:

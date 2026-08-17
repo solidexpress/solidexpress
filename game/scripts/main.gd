@@ -1432,9 +1432,13 @@ func _update_panel_visibility() -> void:
 	timeline.visible = view.doc.graph_features().size() > 0 and not sketching
 	variables_panel.visible = show_variables and not sketching
 	# Keep Timeline / Variables clear of the left rail (icons were unclickable).
+	# Measure the real rail width — before first layout size.x is 0, so fall
+	# back to the combined minimum size rather than a guessed 48 px.
 	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
 	if left_stack != null:
-		rail_right = maxf(rail_right, left_stack.position.x + maxf(left_stack.size.x, 48.0) + 8.0)
+		var stack_w := maxf(left_stack.size.x, left_stack.get_combined_minimum_size().x)
+		stack_w = maxf(stack_w, _RAIL_ICON_W)
+		rail_right = maxf(rail_right, left_stack.position.x + stack_w + 8.0)
 	timeline.offset_left = rail_right
 	# Timeline width ~260; variables sit to its right with a gap.
 	var timeline_w := 260.0
@@ -1628,6 +1632,21 @@ func _reflow_left_stack() -> void:
 			used += maxf(cc.size.y, cc.get_combined_minimum_size().y) + _STACK_GAP
 		var card_h := minf(_CARD_H, maxf(80.0, max_h - used))
 		card_box.custom_minimum_size = Vector2(_CARD_W, card_h)
+	# Rail width may have changed (Modify ↔ Palette ↔ Sketch): re-dock the
+	# bottom panels so they never land on top of the icons.
+	_sync_bottom_docks()
+
+
+## Push Timeline / Variables to the right of the measured left rail.
+func _sync_bottom_docks() -> void:
+	if left_stack == null or timeline == null or variables_panel == null:
+		return
+	var stack_w := maxf(left_stack.size.x, left_stack.get_combined_minimum_size().x)
+	stack_w = maxf(stack_w, _RAIL_ICON_W)
+	var rail_right := left_stack.position.x + stack_w + 8.0
+	timeline.offset_left = rail_right
+	variables_panel.offset_left = rail_right + (268.0 if timeline.visible else 0.0)
+	variables_panel.offset_right = variables_panel.offset_left + 260
 
 
 ## After creating a feature: select it on the timeline and open PropertyPanel.
