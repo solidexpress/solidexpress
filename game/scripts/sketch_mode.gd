@@ -458,6 +458,10 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		flip_side: bool = false, selected_contours: Array = []) -> void:
 	if not active:
 		return
+	# Auto-commit an in-progress Polygon/Circle/Rect tip so Extrude doesn't
+	# see only a preview ghost and report "open profile".
+	if has_pending_draw_point() and _hover != null:
+		click(_hover)
 	if op != "new" and target_fid == "":
 		status.emit("No target body — sketch on a face to cut/fuse")
 		return
@@ -601,6 +605,16 @@ func set_tool_variant(v: String) -> void:
 	_length_override = -1.0
 	_update_preview()
 	status.emit("Variant: %s" % v.replace("_", " "))
+
+
+## True when a draw tool has the first anchor and is waiting for the tip.
+func has_pending_draw_point() -> bool:
+	match tool:
+		Tool.LINE, Tool.CENTERLINE, Tool.CIRCLE, Tool.RECT, Tool.POLYGON, \
+				Tool.SLOT, Tool.ELLIPSE, Tool.ARC:
+			return _tool_points.size() == 1
+		_:
+			return false
 
 
 ## True when the current tool step has exactly one free length/radius DOF
@@ -1631,10 +1645,20 @@ func click(pos2: Vector2) -> void:
 					for i in range(n):
 						var ang := start_angle + TAU * float(i) / float(n)
 						verts.append(c + Vector2(cos(ang), sin(ang)) * r)
+					var lids: Array[String] = []
 					for i in range(n):
-						var va := verts[i]
-						var vb := verts[(i + 1) % n]
-						sketch.add_line(va.x, va.y, vb.x, vb.y)
+						var va: Vector2 = verts[i]
+						var vb: Vector2 = verts[(i + 1) % n]
+						var lid: String = sketch.add_line(va.x, va.y, vb.x, vb.y)
+						lids.append(lid)
+					# Explicit coincident corners so Extrude's profile chain closes.
+					for i in range(n):
+						var a_id: String = lids[i]
+						var b_id: String = lids[(i + 1) % n]
+						sketch.add_constraint("coincident", [
+							{"entity": a_id, "role": "end"},
+							{"entity": b_id, "role": "start"}], 0.0)
+					run_solve()
 				_tool_points.clear()
 				_redraw()
 		Tool.POINT:
