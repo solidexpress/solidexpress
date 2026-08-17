@@ -161,6 +161,10 @@ func dim_value() -> float:
 	return _dim_spin.value if _dim_spin else 10.0
 
 
+func extrude_distance() -> float:
+	return _extrude_spin.value if _extrude_spin else 20.0
+
+
 ## Sync from mouse rubber-band. Skipped while the user is typing in the blank.
 func set_dim_value(v: float) -> void:
 	if _dim_spin == null or _dim_editing:

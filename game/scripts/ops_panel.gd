@@ -191,6 +191,12 @@ func _build_body_ops() -> void:
 
 	_body_ops.add_child(HSeparator.new())
 	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.1, 100.0, 0.5, 2.0)
+	# Enter in the Radius field commits an armed fillet/chamfer pick (otherwise
+	# SpinBox eats Enter and the mechanic thinks the pick did nothing).
+	_radius_spin.get_line_edit().text_submitted.connect(func(_t: String) -> void:
+		_radius_spin.apply()
+		if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
+			try_commit_pending())
 	var round_row := HBoxContainer.new()
 	_body_ops.add_child(round_row)
 	_op_button(round_row, "Fillet", _fillet_all, "fillet",
@@ -562,12 +568,30 @@ func _start_or_apply_dressup(fillet: bool) -> void:
 
 func _commit_armed_dressup() -> bool:
 	var fillet := _pending == Pending.FILLET_EDGES
-	_pending = Pending.NONE
 	if view.selected_edges.is_empty() and view.selected_edge == "":
+		_pending = Pending.NONE
 		status.emit("No edges selected — cancelled")
 		return false
+	# Keep pending until apply succeeds so a failed OCCT call can retry.
+	var before := _pending
 	_apply_dressup(fillet)
-	return true
+	# _apply_dressup re-arms on failure; clear only on success.
+	if _pending == before:
+		# Applied path clears via graph_changed selection clear; treat as done
+		# if a matching feature now exists.
+		var want := "fillet" if fillet else "chamfer"
+		var found := false
+		for f in view.doc.graph_features():
+			if str(f.get("type", "")) == want and not bool(f.get("failed", false)):
+				found = true
+				break
+		if found:
+			_pending = Pending.NONE
+			return true
+		return false
+	if _pending == Pending.NONE:
+		return true
+	return false
 
 
 func _apply_dressup(fillet: bool) -> void:
@@ -575,31 +599,42 @@ func _apply_dressup(fillet: bool) -> void:
 		return
 	var name := "Fillet" if fillet else "Chamfer"
 	var targets := _round_targets()
+	if targets.is_empty():
+		status.emit("%s: no edges to apply" % name)
+		return
 	var scope := "all edges"
 	if view.selected_edges.size() > 1:
 		scope = "%d edges" % view.selected_edges.size()
 	elif view.selected_edge != "":
 		scope = "edge"
 	var value: float = _radius_spin.value
-	# Timeline bodies get a parametric feature; free bodies use the direct command.
 	var fid := view.feature_of_body(view.selected_body)
 	var ok: bool
+	var new_fid := ""
 	if fid != "":
 		if fillet:
-			ok = view.doc.graph_add_fillet(fid, targets, value) != ""
+			new_fid = view.doc.graph_add_fillet(fid, targets, value)
 		else:
-			ok = view.doc.graph_add_chamfer(fid, targets, value) != ""
+			new_fid = view.doc.graph_add_chamfer(fid, targets, value)
+		ok = new_fid != ""
+		# Graph path can refuse stale UUIDs after a failed all-edges attempt —
+		# fall back to the direct command so a single picked edge still works.
+		if not ok:
+			ok = view.doc.fillet_edges(targets, value) if fillet \
+					else view.doc.chamfer_edges(targets, value)
 	elif fillet:
 		ok = view.doc.fillet_edges(targets, value)
 	else:
 		ok = view.doc.chamfer_edges(targets, value)
 	if ok:
 		view.graph_changed()
-		status.emit("%s %s %.1f applied" % [name, scope, value])
-		_open_last_feature("fillet" if fillet else "chamfer")
+		status.emit("%s %s %.2f applied" % [name, scope, value])
+		_pending = Pending.NONE
+		if new_fid != "":
+			_open_last_feature("fillet" if fillet else "chamfer")
 	else:
-		# All-edges often fails on thin plates — fall back to edge pick.
-		status.emit("%s failed (value too large?) — click edges, then Enter" % name)
+		var why := "value too large or edge rejected"
+		status.emit("%s failed (%s) — click edges, then Enter" % [name, why])
 		_pending = Pending.FILLET_EDGES if fillet else Pending.CHAMFER_EDGES
 		_pending_body = view.selected_body
 		_pending_fid = view.feature_of_body(view.selected_body)

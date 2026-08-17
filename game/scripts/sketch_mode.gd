@@ -460,8 +460,17 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		return
 	# Auto-commit an in-progress Polygon/Circle/Rect tip so Extrude doesn't
 	# see only a preview ghost and report "open profile".
-	if has_pending_draw_point() and _hover != null:
+	if has_pending_draw_point():
 		click(_hover)
+	_try_close_open_chain()
+	var open_prof := not profile_is_closed(sketch)
+	if thin_thickness <= 0.0 and open_prof:
+		if op == "cut" or op == "fuse":
+			status.emit("Open-profile cut needs a line chain (Flip Side toggles material)")
+		else:
+			status.emit("Extrude failed — open profile. Close it (or set Thin wall > 0)")
+		# Keep the sketch session alive so the mechanic can finish the outline.
+		return
 	if op != "new" and target_fid == "":
 		status.emit("No target body — sketch on a face to cut/fuse")
 		return
@@ -475,12 +484,6 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
 		thin_thickness, thin_type, flip_side, selected_contours)
 	var fail_msg := "Extrude failed — is the profile closed?"
-	var open_prof := not profile_is_closed(sketch)
-	if thin_thickness <= 0.0 and open_prof:
-		if op == "cut" or op == "fuse":
-			fail_msg = "Open-profile cut failed — need a line chain (Flip Side toggles material)"
-		else:
-			fail_msg = "Extrude failed — open profile needs Thin wall > 0 (or close the profile)"
 	_finish_feature(sk_fid, ex_fid, op, fail_msg)
 
 
@@ -589,6 +592,8 @@ func set_tool(t: Tool) -> void:
 			tool_variant = "center"
 		Tool.ARC:
 			tool_variant = "center"
+		Tool.POLYGON:
+			tool_variant = "across_flats"  # wrench jaw / hex — AF is the shop default
 		Tool.PATTERN:
 			tool_variant = "linear"
 		_:
@@ -615,6 +620,49 @@ func has_pending_draw_point() -> bool:
 			return _tool_points.size() == 1
 		_:
 			return false
+
+
+## If the sketch is a single open polyline whose ends nearly meet, add a
+## closing segment so Extrude can build a solid (wrench outline, etc.).
+func _try_close_open_chain(tol: float = 0.5) -> void:
+	if sketch == null or profile_is_closed(sketch, tol):
+		return
+	var ends: Array = []  # unmatched endpoints
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var a: Vector2 = info["start"]
+		var b: Vector2 = info["end"]
+		if a.distance_to(b) <= 1e-9:
+			continue
+		ends.append(a)
+		ends.append(b)
+	# Pair endpoints that coincide; leftovers are open ends.
+	var used := {}
+	var open_pts: Array[Vector2] = []
+	for i in range(ends.size()):
+		if used.has(i):
+			continue
+		var matched := false
+		for j in range(i + 1, ends.size()):
+			if used.has(j):
+				continue
+			if ends[i].distance_to(ends[j]) <= tol:
+				used[i] = true
+				used[j] = true
+				matched = true
+				break
+		if not matched:
+			open_pts.append(ends[i])
+	if open_pts.size() == 2 and open_pts[0].distance_to(open_pts[1]) <= maxf(tol * 8.0, 5.0):
+		var lid: String = sketch.add_line(open_pts[0].x, open_pts[0].y,
+				open_pts[1].x, open_pts[1].y)
+		_infer_line(lid, open_pts[0], open_pts[1])
+		_redraw()
+		status.emit("Closed open profile for Extrude")
 
 
 ## True when the current tool step has exactly one free length/radius DOF
