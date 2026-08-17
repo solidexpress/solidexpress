@@ -909,12 +909,31 @@ func _ctx_triball() -> void:
 	if view == null or view.selected_body == "" or triball == null:
 		status.emit("TriBall: select a body")
 		return
+	if triball.active:
+		# Second click commits the current angle as a circular pattern.
+		var n := triball._copies
+		var ang := triball.current_angle()
+		if absf(ang) < 1e-4:
+			ang = TAU
+		_on_triball_copy(n, ang)
+		triball.cancel()
+		return
 	var bb: Dictionary = view.doc.measure_bbox(view.selected_body)
 	var mn: Vector3 = bb.get("min", Vector3.ZERO)
 	var mx: Vector3 = bb.get("max", Vector3.ONE)
 	var mid := (mn + mx) * 0.5
 	triball.begin(mid, Vector3.UP, 6)
 	status.emit("TriBall — drag the ring, then click TriBall again to commit")
+
+
+func _plane_hit(origin: Vector3, direction: Vector3, point: Vector3, normal: Vector3) -> Vector3:
+	var n := normal.normalized() if normal.length_squared() > 1e-12 else Vector3.UP
+	var d := direction.normalized() if direction.length_squared() > 1e-12 else Vector3(0, 0, -1)
+	var denom := d.dot(n)
+	if absf(denom) < 1e-9:
+		return point
+	var t := (point - origin).dot(n) / denom
+	return origin + d * t
 
 
 ## A rib follows a sketch profile, so it needs one: the most recent sketch on
@@ -2006,6 +2025,9 @@ func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			# Dismiss tool-variant chips so they never steal the draw click.
+			if sketch_chrome != null:
+				sketch_chrome.hide_variants()
 			var ray := _model_ray(mb.position)
 			var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 			if p2 != null:
@@ -2186,6 +2208,14 @@ func _on_press(pos: Vector2) -> void:
 	var hit: Dictionary = view.pick_info(ray[0], ray[1])
 	_press_empty = hit.is_empty()
 
+	# TriBall: when armed, any press on/near the solid starts a ring drag.
+	if triball != null and triball.active:
+		var tpt: Vector3 = hit["point"] if not hit.is_empty() \
+				else _plane_hit(ray[0], ray[1], triball.origin, triball.axis)
+		triball.begin_drag(tpt)
+		_press_empty = false
+		return
+
 	# Shift/Ctrl+click is additive selection only — never arms a move/push drag.
 	# Ctrl+empty-drag becomes a rubber-band box select in _on_drag.
 	if _additive_click:
@@ -2329,6 +2359,13 @@ func _begin_resize(handle: Dictionary, pos: Vector2) -> void:
 
 func _on_drag(pos: Vector2) -> void:
 	_press_travel = maxf(_press_travel, pos.distance_to(_press_pos))
+	if triball != null and triball.active and triball._dragging:
+		var ray := _model_ray(pos)
+		var hit: Dictionary = view.pick_info(ray[0], ray[1])
+		var tpt: Vector3 = hit["point"] if not hit.is_empty() \
+				else _plane_hit(ray[0], ray[1], triball.origin, triball.axis)
+		triball.update_drag(tpt)
+		return
 	if pos.distance_to(_press_pos) < CLICK_SLOP:
 		return
 	# Deferred body move after travel threshold.
@@ -2586,6 +2623,13 @@ func _push_pull_distance(pos: Vector2) -> float:
 func _on_release(pos: Vector2) -> void:
 	_pressed = false
 	_press_travel = maxf(_press_travel, pos.distance_to(_press_pos))
+	if triball != null and triball.active and triball._dragging:
+		triball.end_drag()
+		_box_drag = false
+		_additive_click = false
+		_press_empty = false
+		_press_travel = 0.0
+		return
 	# Trackpads often jitter past a few pixels during a "click". Treat small travel
 	# as a click for select / deselect; real empty-orbit needs more motion.
 	var was_click := _press_travel < CLICK_SLOP
@@ -2774,6 +2818,21 @@ func _on_release(pos: Vector2) -> void:
 			return
 	# Prefer the press ray so a tiny slide off the body still selects it.
 	var ray := _model_ray(_press_pos)
+	# Armed geometry picks (Hole Wizard / Fillet edges / …) must NOT go through
+	# select_ray face-refine — that clears accumulated edges mid-pick.
+	if ops_panel != null and ops_panel.consumes_viewport_pick():
+		var hit: Dictionary = view.pick_info(ray[0], ray[1])
+		if not hit.is_empty():
+			ops_panel.handle_viewport_pick(
+				str(hit.get("body", "")), str(hit.get("face", "")),
+				hit.get("point", Vector3.ZERO) as Vector3)
+		else:
+			status.emit("Missed the solid — click a face or edge")
+		_box_drag = false
+		_additive_click = false
+		_press_empty = false
+		_press_travel = 0.0
+		return
 	if view.select_ray(ray[0], ray[1], _additive_click):
 		if view.selection_size() > 1:
 			status.emit("%d selected" % view.selection_size())
@@ -3824,9 +3883,28 @@ func _ctx_boolean(op: String) -> void:
 
 func _ctx_hide() -> void:
 	var ids := _selected_body_ids()
+	if ids.is_empty():
+		# After a hide the selection is cleared — second Hide restores.
+		if view != null and not view.hidden_bodies.is_empty():
+			view.unhide_all()
+			status.emit("All shown")
+		else:
+			status.emit("Hide: select a body")
+		return
+	# Toggle: if every selected body is already hidden, unhide them.
+	var all_hidden := true
 	for id in ids:
-		view.set_body_hidden(id, true)
-	status.emit("%d hidden" % ids.size())
+		if not view.hidden_bodies.has(id):
+			all_hidden = false
+			break
+	if all_hidden:
+		for id in ids:
+			view.set_body_hidden(id, false)
+		status.emit("%d shown" % ids.size())
+	else:
+		for id in ids:
+			view.set_body_hidden(id, true)
+		status.emit("%d hidden — Hide again or View ▸ Unhide all to restore" % ids.size())
 
 
 func _ctx_isolate() -> void:

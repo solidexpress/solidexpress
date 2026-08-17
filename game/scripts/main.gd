@@ -17,7 +17,7 @@ var bed_ghost: PrintBedGhost
 var card_panel: RichTextLabel
 var card_box: PanelContainer
 var status_label: Label
-var show_variables := false  # View-menu override while the table is empty
+var show_variables := true  # View-menu toggle (defaults on — Wave 6.2 seeds builtins)
 var autosave_timer: Timer
 var sketch_mode: SketchMode
 var sketch_toolbar: PanelContainer
@@ -383,15 +383,22 @@ func _build_ui() -> void:
 	view_popup.add_separator()
 	view_popup.add_item("Set Active Plane…", 1)
 	view_popup.add_item("Reset Active Plane (ground)", 2)
+	view_popup.add_item("Unhide all", 3)
 	view_popup.id_pressed.connect(func(id: int) -> void:
 		if id == 0:
 			show_variables = not show_variables
+			# Force-hide even when Wave 6.2 builtins keep the panel data-driven.
+			variables_panel.visible = show_variables
 			view_popup.set_item_checked(view_popup.get_item_index(0), show_variables)
 			_update_panel_visibility()
 		elif id == 1:
 			interaction.arm_pick_active_plane()
 		elif id == 2:
-			interaction.reset_active_plane())
+			interaction.reset_active_plane()
+		elif id == 3:
+			if view != null:
+				view.unhide_all()
+				_on_status("All shown"))
 
 	print_strip = _PrintStrip.new()
 	print_strip.name = "PrintStrip"
@@ -1301,8 +1308,12 @@ func _on_sketch_tool_changed(tool: int) -> void:
 	if variants.is_empty():
 		sketch_chrome.hide_variants()
 	else:
-		var mouse := get_viewport().get_mouse_position()
-		sketch_chrome.show_variants(_variant_kind_for(tool), variants, mouse)
+		# Dock beside the left sketch rail — NOT under the cursor. Putting the
+		# chip bar on the mouse swallowed the first Line/Circle/Polygon click.
+		var rail_x := 56.0
+		if sketch_toolbar != null and sketch_toolbar.visible:
+			rail_x = sketch_toolbar.global_position.x + sketch_toolbar.size.x + 8.0
+		sketch_chrome.show_variants(_variant_kind_for(tool), variants, Vector2(rail_x, 80.0))
 
 
 func _variant_kind_for(tool: int) -> String:
@@ -1418,7 +1429,7 @@ func _update_panel_visibility() -> void:
 	var sketching := sketch_mode != null and sketch_mode.active
 	card_box.visible = _selected_entity() != "" and not sketching
 	timeline.visible = view.doc.graph_features().size() > 0 and not sketching
-	variables_panel.visible = (show_variables or view.doc.list_variables().size() > 0) and not sketching
+	variables_panel.visible = show_variables and not sketching
 	# Keep the variables table clear of the left rail and flush against the timeline.
 	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
 	if left_stack != null:
@@ -1453,9 +1464,14 @@ func _on_print_analyze() -> void:
 	if view == null or view.doc == null:
 		return
 	var r: Dictionary = view.doc.print_analyze(_print_target())
-	# Seed paint maps for Wave 6.3
+	# Seed paint maps for Wave 6.3 — and turn Thickness on so the mechanic sees it.
 	if view.has_method("set_paint_data"):
 		view.call("set_paint_data", r)
+	if print_strip != null and is_instance_valid(print_strip._thickness_toggle):
+		if not print_strip._thickness_toggle.button_pressed:
+			print_strip._thickness_toggle.set_pressed_no_signal(true)
+		if view.has_method("set_thickness_paint"):
+			view.call("set_thickness_paint", true)
 	var digest := str(r.get("digest", ""))
 	if print_strip != null:
 		print_strip.set_digest(digest)

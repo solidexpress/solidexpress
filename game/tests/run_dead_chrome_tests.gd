@@ -40,7 +40,11 @@ func _init() -> void:
 	main.view.select_entity(bid, "")
 	main._update_panel_visibility()
 	await process_frame
-	main.ops_panel._apply_thread()
+	# Apply thread without the modal (tests cannot click Apply).
+	var bb: Dictionary = main.view.doc.measure_bbox(bid)
+	var mn: Vector3 = bb["min"]
+	var mx: Vector3 = bb["max"]
+	main.ops_panel._commit_thread(2.5, 1.0, 40.0, mn, mx, false)
 	await process_frame
 	var has_thread := false
 	for f in main.view.doc.graph_features():

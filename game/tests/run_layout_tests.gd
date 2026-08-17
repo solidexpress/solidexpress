@@ -149,7 +149,10 @@ func test_variables_panel_visibility(main) -> void:
 	check(main.variables_panel.visible, "View menu override shows it")
 	main.show_variables = false
 	main._update_panel_visibility()
-	check(main.variables_panel.visible, "still visible via seeded builtins")
+	check(not main.variables_panel.visible, "View menu can hide variables")
+	main.show_variables = true
+	main._update_panel_visibility()
+	check(main.variables_panel.visible, "View menu shows variables again")
 	# With no timeline, the variables panel sits beside the left rail (not on it).
 	# Absolute left-edge flush is Phase 2; for now assert it is on screen.
 	check(main.variables_panel.offset_left >= 0.0, "variables on-screen")

@@ -187,7 +187,15 @@ PrintReport analyze_with(const Document& doc, const EntityId& body, const PrintS
             r.overhang_face_areas.emplace_back(face_ids[static_cast<size_t>(fi - 1)], a);
         }
     }
-    r.min_wall = min_t > 1e8 ? 0.0 : min_t;
+    const double aabb_min = std::min(r.bbox_x, std::min(r.bbox_y, r.height));
+    // Face midpoints can sit in a hole; ray thickness then reports a long
+    // chord across the remaining rim. Cap by the AABB thin axis so a 5 mm
+    // plate never digests as "min wall 16 mm".
+    if (min_t > 1e8)
+        min_t = aabb_min;
+    else
+        min_t = std::min(min_t, aabb_min);
+    r.min_wall = min_t;
     r.overhang_area = over_a;
     r.wall_ok = r.min_wall + 1e-6 >= setup.min_wall;
     r.overhang_ok = over_a < 1e-3;
@@ -199,6 +207,7 @@ PrintReport analyze_with(const Document& doc, const EntityId& body, const PrintS
     if (!r.wall_ok) ss << " (thin)";
     ss << " · overhang " << r.overhang_area << " mm²";
     ss << (r.fits_bed ? " · fits bed" : " · off bed");
+    ss << " · nozzle " << setup.nozzle_mm << " mm";
     r.digest = ss.str();
     return r;
 }

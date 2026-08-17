@@ -907,9 +907,14 @@ func selection_size() -> int:
 
 ## Closest edge of `body_id` to a model-space point, "" when none in tolerance.
 func _edge_near_point(body_id: String, point: Vector3) -> String:
+	return edge_near_point(body_id, point, EDGE_PICK_TOLERANCE)
+
+
+## Public edge pick with optional wider tolerance (armed fillet / chamfer).
+func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE_PICK_TOLERANCE) -> String:
 	var lines: Dictionary = doc.get_edge_lines(body_id)
 	var best_id := ""
-	var best_d := EDGE_PICK_TOLERANCE
+	var best_d := tolerance_mm
 	for edge_id in lines:
 		var pts: PackedVector3Array = lines[edge_id]
 		for i in range(pts.size() - 1):
