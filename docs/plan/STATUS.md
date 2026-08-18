@@ -401,6 +401,12 @@ Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow g
 ## Wave 6.0c stabilization (2026-08-14)
 - Film slate: dropped missing scripts from `game/tests/ui_movie_manifest.json` (scripts not present): `extrude_s_shape`, `place_and_orbit`, `loft_profiles`, `sketch_extend`, `sketch_spline_tools`.
 
+## Configurable fillet + dock stacking (2026-08-18)
+- [x] Strip Fillet always arms edge pick (never silent apply at hidden r=2); selection-strip **R** SpinBox while armed; Enter commits; oversized r re-arms and keeps the chip
+- [x] Timeline fixed 260 px (`_get_minimum_size` + horizontal scroll SHOW_NEVER) so Variables sits beside it, not on the model
+- [x] Degenerate sketch segments (`MIN_SEGMENT_MM` 0.5) refuse with status naming the view span
+- Gate: `run_wrench_blockers_tests` (32) + `run_mechanic_blocker_tests` (24)
+
 ## Website demo movies (2026-08-15)
 - [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`

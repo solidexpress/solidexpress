@@ -582,6 +582,7 @@ func _build_ui() -> void:
 	ops_panel.status.connect(_on_status)
 	interaction.ops_panel = ops_panel
 	ops_panel.interaction = interaction
+	ops_panel.dressup_armed_changed.connect(interaction._on_dressup_armed_changed)
 	if ops_panel.has_signal("sketch_requested"):
 		ops_panel.sketch_requested.connect(_request_sketch)
 
@@ -1440,8 +1441,10 @@ func _update_panel_visibility() -> void:
 		stack_w = maxf(stack_w, _RAIL_ICON_W)
 		rail_right = maxf(rail_right, left_stack.position.x + stack_w + 8.0)
 	timeline.offset_left = rail_right
-	# Timeline width ~260; variables sit to its right with a gap.
+	# Fixed timeline width so it cannot grow under Variables / the model.
 	var timeline_w := 260.0
+	timeline.offset_right = rail_right + timeline_w
+	timeline.custom_minimum_size.x = timeline_w
 	variables_panel.offset_left = rail_right + (timeline_w + 8.0 if timeline.visible else 0.0)
 	variables_panel.offset_right = variables_panel.offset_left + 260
 	_update_left_rail()
@@ -1644,8 +1647,11 @@ func _sync_bottom_docks() -> void:
 	var stack_w := maxf(left_stack.size.x, left_stack.get_combined_minimum_size().x)
 	stack_w = maxf(stack_w, _RAIL_ICON_W)
 	var rail_right := left_stack.position.x + stack_w + 8.0
+	var timeline_w := 260.0
 	timeline.offset_left = rail_right
-	variables_panel.offset_left = rail_right + (268.0 if timeline.visible else 0.0)
+	timeline.offset_right = rail_right + timeline_w
+	timeline.custom_minimum_size.x = timeline_w
+	variables_panel.offset_left = rail_right + (timeline_w + 8.0 if timeline.visible else 0.0)
 	variables_panel.offset_right = variables_panel.offset_left + 260
 
 

@@ -8,6 +8,8 @@ extends PanelContainer
 ## DocumentView.picked so a re-click on the same face still lands a point.
 
 signal status(text: String)
+## Fired when fillet/chamfer edge-pick arms or clears (strip Radius chip).
+signal dressup_armed_changed(armed: bool, is_fillet: bool)
 signal sketch_requested
 
 enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, LINEAR, CIRCULAR, MIRROR, FILLET_EDGES, CHAMFER_EDGES }
@@ -543,55 +545,87 @@ func _chamfer_all() -> void:
 	_apply_dressup(false)
 
 
-## Strip / marking-menu entry: prefer selected edges; else arm edge picking.
+## Strip / marking-menu: always arm edge picking so Radius stays configurable.
+## Instant-apply with a hidden default r=2.0 was the "no radius field" regression.
 func arm_or_apply_fillet() -> void:
-	_start_or_apply_dressup(true)
+	_arm_dressup(true)
 
 
 func arm_or_apply_chamfer() -> void:
-	_start_or_apply_dressup(false)
+	_arm_dressup(false)
+
+
+## Arm fillet/chamfer edge picking and surface the Radius control.
+func _arm_dressup(fillet: bool) -> void:
+	if view == null or view.selected_body == "":
+		status.emit(("Fillet" if fillet else "Chamfer") + ": select a body")
+		return
+	_pending = Pending.FILLET_EDGES if fillet else Pending.CHAMFER_EDGES
+	_pending_body = view.selected_body
+	_pending_fid = view.feature_of_body(view.selected_body)
+	dressup_armed_changed.emit(true, fillet)
+	_reveal_radius(fillet)
+	var kind := "Fillet" if fillet else "Chamfer"
+	var n := view.selected_edges.size()
+	if n == 0 and view.selected_edge != "":
+		n = 1
+	if n > 0:
+		status.emit("%s r=%.2f — %d edge(s) selected. Edit Radius, Enter to apply" % [
+			kind, _radius_spin.value, n])
+	else:
+		status.emit("%s r=%.2f — edit Radius, click edges, Enter" % [kind, _radius_spin.value])
+
+
+## Scroll/focus the Radius spin and keep body ops visible while armed.
+func _reveal_radius(fillet: bool) -> void:
+	visible = true
+	_body_ops.visible = true
+	if _radius_spin == null:
+		return
+	_radius_spin.name = "DressupRadius"
+	_radius_spin.tooltip_text = ("Fillet radius (mm)" if fillet else "Chamfer distance (mm)") \
+			+ " — edit, then Enter to apply"
+	if _scroll != null:
+		await get_tree().process_frame
+		if is_instance_valid(_scroll) and is_instance_valid(_radius_spin):
+			_scroll.ensure_control_visible(_radius_spin)
+	var le := _radius_spin.get_line_edit()
+	if le != null:
+		le.grab_focus()
+		le.select_all()
+
+
+## Current fillet/chamfer size (shared with the strip Radius chip).
+func dressup_radius() -> float:
+	return _radius_spin.value if _radius_spin != null else 2.0
+
+
+func set_dressup_radius(v: float) -> void:
+	if _radius_spin != null:
+		_radius_spin.value = clampf(v, _radius_spin.min_value, _radius_spin.max_value)
 
 
 ## If edges are already selected, commit immediately; otherwise arm edge picking.
+## Used by the Modify-card Fillet/Chamfer buttons (power path).
 func _start_or_apply_dressup(fillet: bool) -> void:
 	if view.selected_body == "":
 		return
 	if not view.selected_edges.is_empty() or view.selected_edge != "":
 		_apply_dressup(fillet)
 		return
-	_pending = Pending.FILLET_EDGES if fillet else Pending.CHAMFER_EDGES
-	_pending_body = view.selected_body
-	_pending_fid = view.feature_of_body(view.selected_body)
-	status.emit(("%s: click edges (Ctrl adds), then Enter — or Esc cancel" % \
-			("Fillet" if fillet else "Chamfer")))
+	_arm_dressup(fillet)
 
 
 func _commit_armed_dressup() -> bool:
 	var fillet := _pending == Pending.FILLET_EDGES
 	if view.selected_edges.is_empty() and view.selected_edge == "":
 		_pending = Pending.NONE
+		dressup_armed_changed.emit(false, fillet)
 		status.emit("No edges selected — cancelled")
 		return false
-	# Keep pending until apply succeeds so a failed OCCT call can retry.
-	var before := _pending
 	_apply_dressup(fillet)
-	# _apply_dressup re-arms on failure; clear only on success.
-	if _pending == before:
-		# Applied path clears via graph_changed selection clear; treat as done
-		# if a matching feature now exists.
-		var want := "fillet" if fillet else "chamfer"
-		var found := false
-		for f in view.doc.graph_features():
-			if str(f.get("type", "")) == want and not bool(f.get("failed", false)):
-				found = true
-				break
-		if found:
-			_pending = Pending.NONE
-			return true
-		return false
-	if _pending == Pending.NONE:
-		return true
-	return false
+	# Success clears _pending; failure re-arms the same pick.
+	return _pending == Pending.NONE
 
 
 func _apply_dressup(fillet: bool) -> void:
@@ -630,14 +664,18 @@ func _apply_dressup(fillet: bool) -> void:
 		view.graph_changed()
 		status.emit("%s %s %.2f applied" % [name, scope, value])
 		_pending = Pending.NONE
+		dressup_armed_changed.emit(false, fillet)
 		if new_fid != "":
 			_open_last_feature("fillet" if fillet else "chamfer")
 	else:
-		var why := "value too large or edge rejected"
-		status.emit("%s failed (%s) — click edges, then Enter" % [name, why])
+		status.emit(
+			"%s r=%.2f too large for selected edge(s) — reduce Radius, Enter again" % [
+				name, value])
 		_pending = Pending.FILLET_EDGES if fillet else Pending.CHAMFER_EDGES
 		_pending_body = view.selected_body
 		_pending_fid = view.feature_of_body(view.selected_body)
+		dressup_armed_changed.emit(true, fillet)
+		_reveal_radius(fillet)
 
 
 func _open_last_feature(ftype: String) -> void:
@@ -1222,9 +1260,12 @@ func cancel_pending_pick() -> bool:
 	if _pending == Pending.NONE:
 		return false
 	var was_wizard := _pending == Pending.HOLE_WIZARD
-	var was_dress := _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES
+	var was_fillet := _pending == Pending.FILLET_EDGES
+	var was_dress := was_fillet or _pending == Pending.CHAMFER_EDGES
 	_pending = Pending.NONE
 	_clear_hole_wizard()
+	if was_dress:
+		dressup_armed_changed.emit(false, was_fillet)
 	if was_wizard:
 		status.emit("Hole Wizard cancelled")
 	elif was_dress:

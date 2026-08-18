@@ -42,9 +42,12 @@ const TYPE_ICONS := {
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(260, 0)
+	clip_contents = true
+	grow_horizontal = Control.GROW_DIRECTION_END
 	grow_vertical = Control.GROW_DIRECTION_BEGIN
 	var outer := VBoxContainer.new()
 	outer.name = "TimelineOuter"
+	outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(outer)
 	var title := Label.new()
 	title.text = "Timeline"
@@ -52,9 +55,12 @@ func _ready() -> void:
 	outer.add_child(title)
 	_scroll = ScrollContainer.new()
 	_scroll.name = "TimelineScroll"
-	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# SHOW_NEVER so row chrome can be wider than the panel without expanding it.
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_scroll.custom_minimum_size = Vector2(250, 120)
+	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.custom_minimum_size = Vector2(240, 120)
 	outer.add_child(_scroll)
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -78,7 +84,7 @@ func _ready() -> void:
 		_params_edit.get_parent().get_node("ApplyJson").visible = on)
 	_editor_box.add_child(_json_toggle)
 	_params_edit = TextEdit.new()
-	_params_edit.custom_minimum_size = Vector2(250, 70)
+	_params_edit.custom_minimum_size = Vector2(220, 70)
 	_params_edit.add_theme_font_size_override("font_size", UiScale.body())
 	_params_edit.visible = false
 	_editor_box.add_child(_params_edit)
@@ -97,6 +103,22 @@ func _ready() -> void:
 
 var _scroll: ScrollContainer
 
+const PANEL_WIDTH := 260.0
+
+
+## Cap reported minimum so row icon chrome cannot stretch the dock.
+func _get_minimum_size() -> Vector2:
+	var h := custom_minimum_size.y
+	if h <= 0.0:
+		h = 160.0
+	return Vector2(PANEL_WIDTH, h)
+
+
+func _pin_width() -> void:
+	custom_minimum_size.x = PANEL_WIDTH
+	size.x = PANEL_WIDTH
+	offset_right = offset_left + PANEL_WIDTH
+
 
 func _clamp_height() -> void:
 	await get_tree().process_frame
@@ -106,17 +128,16 @@ func _clamp_height() -> void:
 	if vp == null:
 		return
 	var budget := vp.get_visible_rect().size.y - 42.0 - 12.0  # status bar + pad
-	# Stay above the status bar; grow upward from the bottom-left anchor.
-	var want := get_combined_minimum_size().y
-	custom_minimum_size = Vector2(260, minf(want, maxf(160.0, budget * 0.55)))
+	# Content height without asking PanelContainer (that would re-include row width).
+	var want := 160.0
+	if _list != null:
+		want = maxf(want, _list.get_combined_minimum_size().y + 56.0)
+	custom_minimum_size = Vector2(PANEL_WIDTH, minf(want, maxf(160.0, budget * 0.55)))
 	offset_top = -custom_minimum_size.y - 12.0
 	offset_bottom = -42.0
+	_pin_width()
 	reset_size()
-	if property_panel != null and property_panel.visible:
-		# Property panel sits beside the feature list — no ensure_control_visible
-		# (it is not a descendant of the feature ScrollContainer).
-		pass
-	reset_size()
+	_pin_width()
 
 
 func refresh() -> void:
@@ -209,6 +230,8 @@ static func _row_icon(f: Dictionary) -> String:
 func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	var fid: String = f["id"]
 	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)
+	row.clip_contents = true
 	_rows[fid] = row
 
 	var suppress := CheckBox.new()
