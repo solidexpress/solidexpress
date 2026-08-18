@@ -70,6 +70,8 @@ var _context_menu: PopupMenu
 var _selection_strip: PanelContainer
 var _strip_fillet: Button
 var _strip_chamfer: Button
+var _strip_radius_box: HBoxContainer
+var _strip_radius: SpinBox
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
@@ -331,6 +333,30 @@ func _build_selection_strip() -> void:
 	_strip_chamfer.tooltip_text = "Break edges — click edges, then Enter (Radius box sets the distance)"
 	_strip_chamfer.pressed.connect(func() -> void: _ctx_chamfer())
 	row.add_child(_strip_chamfer)
+	# Configurable fillet/chamfer size — visible while edge pick is armed.
+	_strip_radius_box = HBoxContainer.new()
+	_strip_radius_box.name = "StripDressupRadius"
+	_strip_radius_box.visible = false
+	_strip_radius_box.add_theme_constant_override("separation", 4)
+	row.add_child(_strip_radius_box)
+	var r_lbl := Label.new()
+	r_lbl.text = "R"
+	r_lbl.add_theme_font_size_override("font_size", UiScale.body())
+	_strip_radius_box.add_child(r_lbl)
+	_strip_radius = SpinBox.new()
+	_strip_radius.name = "StripRadius"
+	SxUi.configure_spin(_strip_radius, 0.05, 100.0, 0.1, 0.5)
+	_strip_radius.suffix = "mm"
+	_strip_radius.custom_minimum_size = Vector2(88, 0)
+	_strip_radius.tooltip_text = "Fillet radius / Chamfer distance — edit, then Enter"
+	_strip_radius.value_changed.connect(func(v: float) -> void:
+		if ops_panel != null and ops_panel.has_method("set_dressup_radius"):
+			ops_panel.set_dressup_radius(v))
+	_strip_radius.get_line_edit().text_submitted.connect(func(_t: String) -> void:
+		_strip_radius.apply()
+		if ops_panel != null:
+			ops_panel.try_commit_pending())
+	_strip_radius_box.add_child(_strip_radius)
 	_strip_sketch = Button.new()
 	_strip_sketch.text = "Sketch"
 	_strip_sketch.tooltip_text = "Sketch on the selected face (then Extrude from the sketch bar)"
@@ -3764,6 +3790,7 @@ func _refresh_selection_strip() -> void:
 	_strip_similar.visible = not has_instance and view.selected_body != ""
 	_strip_fillet.visible = not has_instance
 	_strip_chamfer.visible = not has_instance
+	_sync_strip_dressup_radius()
 	_strip_hole.visible = not has_instance
 	_strip_hole_wizard.visible = not has_instance
 	_strip_clash.visible = multi_body
@@ -3865,6 +3892,7 @@ func _ctx_set_active_plane() -> void:
 func _ctx_fillet() -> void:
 	if ops_panel != null:
 		ops_panel.arm_or_apply_fillet()
+		_sync_strip_dressup_radius()
 	else:
 		status.emit("Fillet: open Modify panel")
 
@@ -3872,8 +3900,30 @@ func _ctx_fillet() -> void:
 func _ctx_chamfer() -> void:
 	if ops_panel != null:
 		ops_panel.arm_or_apply_chamfer()
+		_sync_strip_dressup_radius()
 	else:
 		status.emit("Chamfer: open Modify panel")
+
+
+func _on_dressup_armed_changed(armed: bool, _is_fillet: bool) -> void:
+	_sync_strip_dressup_radius()
+	if armed and _strip_radius != null:
+		var le := _strip_radius.get_line_edit()
+		if le != null:
+			le.grab_focus()
+			le.select_all()
+
+
+func _sync_strip_dressup_radius() -> void:
+	if _strip_radius_box == null:
+		return
+	var armed := false
+	if ops_panel != null:
+		armed = ops_panel._pending == OpsPanel.Pending.FILLET_EDGES \
+				or ops_panel._pending == OpsPanel.Pending.CHAMFER_EDGES
+	_strip_radius_box.visible = armed
+	if armed and ops_panel != null and ops_panel.has_method("dressup_radius"):
+		_strip_radius.set_value_no_signal(ops_panel.dressup_radius())
 
 
 func _ctx_group() -> void:

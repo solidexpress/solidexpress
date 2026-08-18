@@ -30,7 +30,7 @@ const MIN_SKETCH_VIEW_RADIUS_MM := 15.0
 const MIN_SKETCH_VIEW_MM := 20.0
 ## Shortest committed segment — below this the click is treated as a mis-drag
 ## instead of silently adding junk geometry that can never close a profile.
-const MIN_SEGMENT_MM := 0.05
+const MIN_SEGMENT_MM := 0.5
 var _sketch_view_radius := 25.0
 ## When true, click/hover positions pass through snap_point().
 var snap_enabled := true
