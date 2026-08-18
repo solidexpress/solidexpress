@@ -1095,10 +1095,29 @@ int SxDocument::graph_rollback() const {
 
 bool SxDocument::set_variable(const String& name, const String& expr) {
     if (name.is_empty()) return false;
-    return apply_graph_edit("set variable", [&] {
-        doc_->graph().variables().set(to_std(name), to_std(expr));
-        return true;
-    });
+    // Keep the write even when regenerate fails (same policy as remove_variable).
+    // Jaw AF chips must not report "Failed to set jaw_af" just because a
+    // dependent hex/feature rejects the new value — badge the feature instead.
+    nlohmann::json before = doc_->graph().to_json();
+    doc_->graph().variables().set(to_std(name), to_std(expr));
+    nlohmann::json after = doc_->graph().to_json();
+    std::string err;
+    if (!doc_->graph().regenerate(*doc_, &err)) {
+        const sx::EntityId failed = doc_->graph().last_failed_feature();
+        last_failed_fid_ = failed.is_null() ? std::string() : failed.str();
+        last_graph_error_ = err;
+        if (!err.empty()) sx::log::error(std::string("set variable: ") + err);
+    } else {
+        last_failed_fid_.clear();
+        last_graph_error_.clear();
+    }
+    stack_.push(*doc_, std::make_unique<sx::GraphSnapshotCommand>(
+        "set variable", std::move(before), std::move(after)));
+    return true;
+}
+
+String SxDocument::last_graph_error() const {
+    return to_gd(last_graph_error_);
 }
 
 bool SxDocument::remove_variable(const String& name) {
@@ -2465,6 +2484,7 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_regenerate"), &SxDocument::graph_regenerate);
     ClassDB::bind_method(D_METHOD("set_variable", "name", "expr"), &SxDocument::set_variable);
     ClassDB::bind_method(D_METHOD("remove_variable", "name"), &SxDocument::remove_variable);
+    ClassDB::bind_method(D_METHOD("last_graph_error"), &SxDocument::last_graph_error);
     ClassDB::bind_method(D_METHOD("list_variables"), &SxDocument::list_variables);
     ClassDB::bind_method(D_METHOD("save", "path"), &SxDocument::save);
     ClassDB::bind_method(D_METHOD("load", "path"), &SxDocument::load);

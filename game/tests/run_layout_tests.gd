@@ -3,6 +3,8 @@
 # Run: tools/godot/godot --headless --path game --script tests/run_layout_tests.gd
 extends SceneTree
 
+const ChromeDock := preload("res://scripts/chrome_dock.gd")
+
 var failures := 0
 var checks := 0
 
@@ -82,6 +84,21 @@ func test_busy_state_on_screen(main, vp: SubViewport, size: Vector2i) -> void:
 	if main.assembly_panel != null and main.assembly_panel.has_method("_clamp_height"):
 		main.assembly_panel._clamp_height()
 	for i in range(3):
+		await process_frame
+	# Re-apply ChromeDock against the SubViewport size after clamp.
+	if main.has_method("_apply_chrome_docks"):
+		ChromeDock.rail_right = 56.0
+		var sz := Vector2(float(size.x), float(size.y))
+		ChromeDock.apply(main.timeline, "timeline", sz)
+		if main.timeline != null and main.timeline.has_method("_clamp_height"):
+			# Synchronous pin after apply (skip the await frame).
+			var t = main.timeline
+			var max_b := float(size.y) - 42.0
+			if t.offset_top + t.size.y > max_b:
+				t.offset_top = maxf(48.0, max_b - t.size.y)
+				t.position.y = t.offset_top
+				t.offset_bottom = t.offset_top + t.size.y
+	for i in range(2):
 		await process_frame
 	var limit_y := float(size.y) - 30.0  # status bar
 	for panel in [main.timeline, main.ops_panel, main.assembly_panel, main.card_box]:

@@ -1189,6 +1189,11 @@ func _arm_hole_wizard() -> void:
 	_pending_first = _pending_face
 	_hole_wizard_positions = PackedVector3Array()
 	_hole_wizard_direction = Vector3.ZERO
+	# Bolt circles are simple holes — don't inherit Hex from a prior Hex opening.
+	if _hole_type != null and _hole_type.selected == 3:
+		_hole_type.selected = 0
+	if _hole_diameter != null and _hole_diameter.value <= 0.0:
+		_hole_diameter.value = 6.0
 	_sync_apply_holes_btn()
 	_sync_hole_markers()
 	# Keep body ops visible so Apply holes stays on-screen.
@@ -1306,11 +1311,22 @@ func _apply_hole_wizard() -> bool:
 	if _hole_wizard_positions.is_empty():
 		status.emit("Hole Wizard: click at least one point")
 		return false
+	# Re-resolve body/fid after dress-ups — stale pending_fid breaks commit.
 	var body := _pending_body if _pending_body != "" else view.selected_body
+	if body == "" and view != null:
+		body = view.selected_body
 	var face := _pending_face if _pending_face != "" else view.selected_face
+	_pending_body = body
+	_pending_face = face
+	_pending_fid = view.feature_of_body(body) if view != null else ""
 	var ok := _commit_holes(body, face, _hole_wizard_positions, _hole_wizard_direction)
-	_pending = Pending.NONE
-	_clear_hole_wizard()
+	if ok:
+		_pending = Pending.NONE
+		_clear_hole_wizard()
+	else:
+		# Keep points + armed state so Enter can retry after fixing Ø / type.
+		_pending = Pending.HOLE_WIZARD
+		_sync_apply_holes_btn()
 	return ok
 
 
@@ -1325,6 +1341,9 @@ func try_commit_pending() -> bool:
 
 func _commit_holes(body: String, face: String, positions: PackedVector3Array,
 		direction: Vector3) -> bool:
+	if view == null or body == "":
+		status.emit("Hole Wizard needs a timeline body and points")
+		return false
 	var target_fid := view.feature_of_body(body)
 	if target_fid == "" or positions.is_empty():
 		status.emit("Hole Wizard needs a timeline body and points")
@@ -1336,10 +1355,13 @@ func _commit_holes(body: String, face: String, positions: PackedVector3Array,
 			dir = -outward.normalized()
 		else:
 			dir = Vector3(0, 0, -1)
-	var d: float = _hole_diameter.value
-	var depth: float = _hole_depth.value
+	var d: float = _hole_diameter.value if _hole_diameter != null else 6.0
+	if d <= 0.0:
+		d = 6.0
+	var depth: float = _hole_depth.value if _hole_depth != null else 0.0
 	var type_names := ["simple", "counterbore", "countersink", "hex"]
 	var idx: int = _hole_type.selected if _hole_type != null else 0
+	# Bolt-circle wizard defaults to simple round holes unless the user picked Hex.
 	var htype: String = type_names[clampi(idx, 0, type_names.size() - 1)]
 	var hole_fid: String = view.doc.graph_add_holes(
 		target_fid, htype, positions, dir, d, depth,
@@ -1350,7 +1372,12 @@ func _commit_holes(body: String, face: String, positions: PackedVector3Array,
 		status.emit("Hole Wizard: %d × Ø%.1f" % [positions.size(), d])
 		_open_last_feature("hole")
 		return true
-	status.emit("Hole Wizard failed")
+	var why := ""
+	if view.doc.has_method("last_graph_error"):
+		why = str(view.doc.last_graph_error())
+	if why == "":
+		why = "cut rejected (Ø too large or bad points?)"
+	status.emit("Hole Wizard failed — %s" % why)
 	return false
 
 

@@ -511,6 +511,7 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		else:
 			status.emit("Extrude failed — open profile. Close it (or set Thin wall > 0)")
 		# Keep the sketch session alive so the mechanic can finish the outline.
+		_reassert_camera()
 		return
 	if op != "new" and target_fid == "":
 		status.emit("No target body — sketch on a face to cut/fuse")
@@ -659,6 +660,21 @@ func has_pending_draw_point() -> bool:
 			return _tool_points.size() == 1
 		_:
 			return false
+
+
+## Tiny drag/release under MIN_SEGMENT — refuse with a view-span status so the
+## mechanic knows to drag further (CLICK_SLOP used to swallow these silently).
+func reject_tiny_draw(pos2: Vector2) -> void:
+	if _tool_points.is_empty():
+		return
+	var prev: Vector2 = _tool_points[_tool_points.size() - 1]
+	var dist := prev.distance_to(pos2)
+	if dist < MIN_SEGMENT_MM:
+		status.emit("Too short — drag further (view is %.0f mm across)" % _view_span_mm())
+		_tool_points.clear()
+		_update_preview()
+	else:
+		click(pos2)
 
 
 ## If the sketch is a single open polyline whose ends nearly meet, add a

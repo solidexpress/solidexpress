@@ -25,12 +25,86 @@ func _init() -> void:
 
 	await test_thin_plate_hole(main)
 	await test_hole_wizard_picks(main)
+	await test_wizard_after_dressups(main)
+	await test_jaw_af_chip(main)
 	await test_fillet_edge_arm(main)
 	await test_sim_format(main)
 	await test_hide_toggle(main)
 
 	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	quit(1 if failures else 0)
+
+
+func test_wizard_after_dressups(main) -> void:
+	print("- Hole Wizard after hole+fillet+chamfer still commits")
+	var view: DocumentView = main.view
+	view.new_document()
+	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
+	var fid: String = view.feature_of_body(id)
+	view.doc.graph_add_hole(fid, "simple", Vector3(0, 0, 5), Vector3(0, 0, -1), 6.0, 0.0, 0.0, 0.0, 0.0, 90.0)
+	view.graph_changed()
+	var edges = view.doc.get_edge_ids(id)
+	if edges.size() > 0:
+		view.doc.graph_add_fillet(fid, PackedStringArray([str(edges[0])]), 0.5)
+		view.graph_changed()
+	edges = view.doc.get_edge_ids(id)
+	if edges.size() > 1:
+		view.doc.graph_add_chamfer(fid, PackedStringArray([str(edges[1])]), 0.5)
+		view.graph_changed()
+	view.select_entity(id, "")
+	main._update_panel_visibility()
+	await process_frame
+	var ops: OpsPanel = main.ops_panel
+	# Simulate leftover Hex type from a prior opening.
+	if ops._hole_type != null:
+		ops._hole_type.selected = 3
+		ops._hole_diameter.value = 10.3
+	ops._arm_hole_wizard()
+	check(ops._hole_type == null or ops._hole_type.selected == 0, "wizard resets Hex → Simple")
+	var top := ""
+	for face_id in view.doc.get_face_ids(id):
+		var mid: Vector3 = view.doc.face_midpoint(face_id)
+		if absf(mid.z - 5.0) < 1.0:
+			top = face_id
+			break
+	check(top != "", "top face after dressups")
+	ops._pending_face = top
+	ops.handle_viewport_pick(id, top, Vector3(15, 15, 5))
+	ops.handle_viewport_pick(id, top, Vector3(-15, 12, 5))
+	check(ops.hole_wizard_point_count() == 2, "2 wizard points after dressups")
+	var n0 := 0
+	for f in view.doc.graph_features():
+		if str(f.get("type", "")) == "hole":
+			n0 += 1
+	var vol0: float = view.doc.body_volume(id)
+	check(ops.try_commit_pending(), "Enter commits wizard after dressups")
+	var n1 := 0
+	for f in view.doc.graph_features():
+		if str(f.get("type", "")) == "hole" and not bool(f.get("failed", false)):
+			n1 += 1
+	check(n1 > n0, "extra hole feature(s) after wizard")
+	check(view.doc.body_volume(id) < vol0 - 10.0, "wizard cut volume after dressups")
+
+
+func test_jaw_af_chip(main) -> void:
+	print("- Jaw AF 14 sets jaw_af and grows hex")
+	var view: DocumentView = main.view
+	view.new_document()
+	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
+	view.select_entity(id, "")
+	main._update_panel_visibility()
+	await process_frame
+	check(main.ops_panel._apply_hex_opening(), "hex opening")
+	var vol10: float = view.doc.body_volume(id)
+	main.variables_panel._on_quick_jaw(14)
+	await process_frame
+	var jaw := 0.0
+	for v in view.doc.list_variables():
+		if str(v.get("name")) == "jaw_af":
+			jaw = float(v.get("value", 0.0))
+	check(is_equal_approx(jaw, 14.0), "jaw_af value is 14 (got %.1f)" % jaw)
+	check(view.doc.body_volume(id) < vol10 - 20.0,
+			"hex grows after Jaw AF 14 (%.1f → %.1f)" % [vol10, view.doc.body_volume(id)])
 
 
 func test_thin_plate_hole(main) -> void:

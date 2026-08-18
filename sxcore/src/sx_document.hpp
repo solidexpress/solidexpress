@@ -223,12 +223,13 @@ public:
     godot::Dictionary graph_regenerate();
 
     // --- variables (equations table) ---
-    // Upsert / remove a named expression. Both go through apply_graph_edit so
-    // they regenerate and are undoable (the table serializes with the graph).
-    // remove_variable keeps the removal even if regenerate fails (features may
-    // still reference the name); inspect via graph_regenerate / undo.
+    // Upsert / remove a named expression. Both are undoable. set_variable and
+    // remove_variable keep the edit even if regenerate fails (features may
+    // reject the new value); inspect via last_graph_error / timeline badges.
     bool set_variable(const godot::String& name, const godot::String& expr);
     bool remove_variable(const godot::String& name);
+    // Last regenerate error from apply_graph_edit / set_variable (empty if ok).
+    godot::String last_graph_error() const;
     // Array of {name, expr, value (float; NAN on error), error: String}.
     godot::Array list_variables() const;
 
