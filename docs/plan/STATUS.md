@@ -422,6 +422,14 @@ Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow g
 - [x] Merge gate: `run_critic_walk_tests` (A→L, 33 checks)
 - Gate: critic walk 33 + mechanic 33 + wrench 36 + layout 37
 
+## Critic #38 shop surface (2026-08-19)
+- [x] File → New seeds **50×50×5 Box**; flat background default (View → Scenic optional)
+- [x] Timeline **never** auto-shows on feature create — only View → Timeline
+- [x] Docks pinned to icon-rail left column; Assembly only when instances exist
+- [x] Esc cancels PropertyPanel (`cancel_property_panel` + unhandled key); card text auto-saves (no floppy)
+- [x] Wizard arms without body-first; Hex/Thread take body from face; View → Analyze print…
+- Gate: `run_critic_walk_tests` (41)
+
 ## Website demo movies (2026-08-15)
 - [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`

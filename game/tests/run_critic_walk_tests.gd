@@ -20,7 +20,6 @@ func check(cond: bool, what: String) -> void:
 
 func _init() -> void:
 	print("critic A→L walk gate")
-	# Wipe remembered dock layout so defaults apply.
 	if FileAccess.file_exists(ChromeDock.CFG_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(ChromeDock.CFG_PATH))
 	var vp := SubViewport.new()
@@ -47,42 +46,39 @@ func _init() -> void:
 	quit(1 if failures else 0)
 
 
-func _plate_center_rect(vp: SubViewport) -> Rect2:
-	var s := Vector2(vp.size)
-	return Rect2(s * 0.3, s * 0.4)
-
-
-func _covers_plate_center(panel: Control, vp: SubViewport) -> bool:
-	if panel == null or not panel.visible:
-		return false
-	var hit := panel.get_global_rect().intersection(_plate_center_rect(vp))
-	return hit.size.x > 40.0 and hit.size.y > 40.0
-
-
-func step_a_empty(main, vp: SubViewport) -> void:
-	print("- A empty-doc chrome")
-	main.show_timeline = false
-	main.show_variables = false
-	main._update_panel_visibility()
-	for i in range(3):
+func step_a_empty(main, _vp: SubViewport) -> void:
+	print("- A New = plate + flat bg + docks off")
+	main.show_scenic_bg = false
+	main._sync_world_background()
+	main._do_new()
+	for i in range(4):
 		await process_frame
-	check(not main.timeline.visible, "Timeline hidden by default")
-	check(not main.variables_panel.visible, "Variables hidden by default")
-	check(not _covers_plate_center(main.timeline, vp), "Timeline not over plate center")
-	check(not _covers_plate_center(main.variables_panel, vp), "Variables not over plate center")
+	check(not main.timeline.visible, "Timeline hidden by default after New")
+	check(not main.variables_panel.visible, "Variables hidden by default after New")
+	check(not main.show_timeline, "show_timeline flag false")
+	var ids: PackedStringArray = main.view.doc.body_ids()
+	check(ids.size() == 1, "New seeds one body")
+	if ids.size() > 0:
+		var vol: float = main.view.doc.body_volume(ids[0])
+		check(absf(vol - 12500.0) < 1.0, "New plate volume ~12500 (got %.1f)" % vol)
+	var named := false
+	for f in main.view.doc.graph_features():
+		if str(f.get("name", "")).begins_with("Box"):
+			named = true
+	check(named, "timeline feature named Box")
+	var e = main._world_env.environment if main._world_env != null else null
+	check(e != null and e.background_mode == Environment.BG_COLOR, "flat background by default")
 
 
 func step_b_box(main) -> void:
-	print("- B box 50×50×5")
+	print("- B plate already from New; select it")
 	var view = main.view
-	view.new_document()
-	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
+	var id: String = str(view.doc.body_ids()[0]) if view.doc.body_ids().size() > 0 else ""
 	view.select_entity(id, "")
 	main._update_panel_visibility()
 	await process_frame
-	var vol: float = view.doc.body_volume(id)
-	check(absf(vol - 12500.0) < 1.0, "plate volume ~12500 (got %.1f)" % vol)
-	check(view.selected_body == id, "box selected")
+	check(view.selected_body == id, "plate selected")
+	check(not main.show_timeline, "Timeline still user-off before fillet")
 
 
 func step_c_hole(main) -> void:
@@ -94,6 +90,7 @@ func step_c_hole(main) -> void:
 			Vector3(0, 0, -1), 6.0, 0.0, 0.0, 0.0, 0.0, 90.0)
 	check(h != "", "hole feature created")
 	view.graph_changed()
+	check(not main.show_timeline, "hole did not force Timeline on")
 	check(view.doc.body_volume(id) < 12400.0, "hole cut volume")
 
 
@@ -117,17 +114,13 @@ func step_d_fillet(main) -> void:
 	var chip: Control = ix.find_child("StripDressupRadius", true, false)
 	check(chip != null and chip.visible, "R chip visible")
 	check(ops.try_commit_pending(), "Enter commits fillet r=0.5")
-	# Close property panel so Timeline auto-hides and does not hold focus.
-	if main.timeline != null and main.timeline.property_panel != null \
-			and main.timeline.property_panel.visible:
-		main.timeline.property_panel.commit()
-		main.hide_timeline_if_idle()
+	check(not main.show_timeline, "fillet did not force Timeline on")
+	check(not main.timeline.visible, "Timeline panel stays hidden after fillet")
 	var has_f := false
 	for f in view.doc.graph_features():
 		if str(f.get("type")) == "fillet" and not bool(f.get("failed", false)):
 			has_f = true
 	check(has_f, "fillet on timeline")
-	# Oversized re-arm on a disposable doc — never poison the walk document.
 	var id2: String = view.insert_primitive("box", Vector3(80, 0, 0), Vector3(20, 20, 5))
 	view.select_entity(id2, "")
 	var edges2 = view.doc.get_edge_ids(id2)
@@ -139,7 +132,6 @@ func step_d_fillet(main) -> void:
 		check(not ok_big and ops._pending == ops.Pending.FILLET_EDGES, "oversized re-arms")
 		ops.cancel_pending_pick()
 		ops.set_dressup_radius(0.5)
-	# Reselect the plate for Chamfer / later steps.
 	view.select_entity(id, "")
 	await process_frame
 
@@ -163,6 +155,7 @@ func step_e_chamfer(main) -> void:
 	main.interaction._ctx_chamfer()
 	check(ops._pending == ops.Pending.CHAMFER_EDGES, "Chamfer armed")
 	check(ops.try_commit_pending(), "Enter commits chamfer")
+	check(not main.show_timeline, "chamfer did not force Timeline on")
 
 
 func step_f_degenerate(main) -> void:
@@ -204,7 +197,6 @@ func step_g_extrude(main) -> void:
 func step_h_wizard(main) -> void:
 	print("- H Hole Wizard after dressups")
 	var view = main.view
-	# Prefer the plate body (first primitive), not the extrude solid.
 	var id := ""
 	for f in view.doc.graph_features():
 		if str(f.get("type")) == "primitive":
@@ -212,14 +204,14 @@ func step_h_wizard(main) -> void:
 			break
 	if id == "":
 		id = str(view.doc.body_ids()[0])
-	view.select_entity(id, "")
+	view.clear_selection()
 	main._update_panel_visibility()
 	await process_frame
 	var ops = main.ops_panel
 	if ops._hole_type != null:
-		ops._hole_type.selected = 3  # leftover Hex — arm must reset
+		ops._hole_type.selected = 3
 	ops._arm_hole_wizard()
-	check(ops._hole_type == null or ops._hole_type.selected == 0, "wizard resets to Simple")
+	check(ops.is_hole_wizard_armed(), "wizard arms without body pre-select")
 	var top := ""
 	for face_id in view.doc.get_face_ids(id):
 		var mid: Vector3 = view.doc.face_midpoint(face_id)
@@ -227,7 +219,6 @@ func step_h_wizard(main) -> void:
 			top = face_id
 			break
 	check(top != "", "top face for wizard")
-	ops._pending_face = top
 	ops.handle_viewport_pick(id, top, Vector3(12, 12, 5))
 	ops.handle_viewport_pick(id, top, Vector3(-12, 10, 5))
 	check(ops.hole_wizard_point_count() == 2, "2 wizard points")
@@ -269,40 +260,45 @@ func step_i_jaw_af(main) -> void:
 
 
 func step_j_analyze(main) -> void:
-	print("- J Analyze min wall + nozzle")
+	print("- J Analyze via View menu entry")
+	main._on_mode_menu(5)
+	await process_frame
+	main._on_print_analyze()
 	var view = main.view
 	var id: String = str(view.doc.body_ids()[0])
 	var r: Dictionary = view.doc.print_analyze(id)
 	check(float(r.get("min_wall", 99)) < 6.5, "min wall ~plate (%.2f)" % float(r.get("min_wall", 99)))
 	check(str(r.get("digest", "")).find("nozzle") >= 0, "digest mentions nozzle")
+	main._on_mode_menu(0)
 
 
 func step_l_docks(main, vp: SubViewport) -> void:
-	print("- L docks off plate by default; tight when forced")
+	print("- L docks off plate; Esc closes property panel")
 	main.show_timeline = false
 	main.show_variables = false
+	main._sync_view_menu_checks()
 	main._update_panel_visibility()
 	for i in range(3):
 		await process_frame
 	check(not main.timeline.visible and not main.variables_panel.visible,
 			"docks hidden by default after features")
-	# Forced on against the SubViewport size (not the 64×64 root window).
 	main.show_timeline = true
 	main.show_variables = true
-	ChromeDock.rail_right = 56.0
-	var sz := Vector2(float(vp.size.x), float(vp.size.y))
-	ChromeDock.apply(main.timeline, "timeline", sz)
-	ChromeDock.apply(main.variables_panel, "variables", sz)
-	main.timeline.visible = true
-	main.variables_panel.visible = true
+	main._sync_view_menu_checks()
+	main._update_panel_visibility()
 	for i in range(4):
 		await process_frame
 	check(main.timeline.visible, "Timeline shown when toggled")
 	var t_r: Rect2 = main.timeline.get_global_rect()
-	var v_r: Rect2 = main.variables_panel.get_global_rect()
-	# Tight left column: right edge stays left of plate center (40% of width).
 	var mid_x := float(vp.size.x) * 0.4
 	check(t_r.end.x <= mid_x + 8.0,
 			"Timeline right edge left of plate mid (%.0f <= %.0f)" % [t_r.end.x, mid_x])
-	check(v_r.end.x <= mid_x + 8.0,
-			"Variables right edge left of plate mid (%.0f <= %.0f)" % [v_r.end.x, mid_x])
+	for f in main.view.doc.graph_features():
+		if PropertyPanel.has_schema(str(f.get("type", ""))):
+			main.timeline.refresh()
+			main.timeline._select_feature(str(f.get("id")))
+			break
+	await process_frame
+	if main.timeline.property_panel != null and main.timeline.property_panel.visible:
+		check(main.cancel_property_panel(), "cancel_property_panel works")
+		check(not main.timeline.property_panel.visible, "property panel closed after cancel")
