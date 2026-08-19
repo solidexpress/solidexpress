@@ -26,8 +26,8 @@ func _ready() -> void:
 	add_child(vbox)
 	var title := Label.new()
 	title.name = "VariablesTitle"
-	title.text = "Variables  (drag)"
-	title.tooltip_text = "Drag to move — position is remembered across resizes"
+	title.text = "Variables"
+	title.tooltip_text = "Drag to move — position remembered across resizes"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	vbox.add_child(title)
@@ -75,13 +75,11 @@ func _ready() -> void:
 	var save_row := HBoxContainer.new()
 	vbox.add_child(save_row)
 	_config_name = LineEdit.new()
-	_config_name.placeholder_text = "config name"
+	_config_name.placeholder_text = "config name — Enter to save"
 	_config_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_config_name.tooltip_text = "Type a name and press Enter to snapshot variables"
 	_config_name.text_submitted.connect(func(_t: String) -> void: _on_config_save())
 	save_row.add_child(_config_name)
-	var cfg_save := UIIcons.button("save", "", "Snapshot current variables under this name")
-	cfg_save.pressed.connect(_on_config_save)
-	save_row.add_child(cfg_save)
 
 	# Wave 6.2: Quick configs for jaw_af 10 / 12 / 14.
 	var quick_row := HBoxContainer.new()

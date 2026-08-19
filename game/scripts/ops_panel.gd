@@ -65,7 +65,7 @@ const HOLE_CORNER_TOL_MM := 0.45
 var _scroll: ScrollContainer
 var _content: VBoxContainer
 ## Cap so left-docked Modify + selection card stay above the timeline.
-const MAX_HEIGHT := 240.0
+const MAX_HEIGHT := 200.0
 
 
 func _ready() -> void:
@@ -120,7 +120,7 @@ func _build_body_ops() -> void:
 	_body_ops.add_child(name_row)
 	var name_lbl := Label.new()
 	name_lbl.text = "Name"
-	name_lbl.custom_minimum_size = Vector2(80, 0)
+	name_lbl.custom_minimum_size = Vector2(64, 0)
 	name_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	name_row.add_child(name_lbl)
 	_name_edit = LineEdit.new()
@@ -132,7 +132,7 @@ func _build_body_ops() -> void:
 	_body_ops.add_child(color_row)
 	var color_lbl := Label.new()
 	color_lbl.text = "Color"
-	color_lbl.custom_minimum_size = Vector2(80, 0)
+	color_lbl.custom_minimum_size = Vector2(64, 0)
 	color_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	color_row.add_child(color_lbl)
 	_color_picker = ColorPickerButton.new()
@@ -146,7 +146,7 @@ func _build_body_ops() -> void:
 	_body_ops.add_child(mat_row)
 	var mat_lbl := Label.new()
 	mat_lbl.text = "Material"
-	mat_lbl.custom_minimum_size = Vector2(80, 0)
+	mat_lbl.custom_minimum_size = Vector2(64, 0)
 	mat_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	mat_row.add_child(mat_lbl)
 	_material_option = OptionButton.new()
@@ -281,7 +281,7 @@ func _build_face_ops() -> void:
 	_face_ops.add_child(hole_type_row)
 	var hole_type_lbl := Label.new()
 	hole_type_lbl.text = "Hole type"
-	hole_type_lbl.custom_minimum_size = Vector2(80, 0)
+	hole_type_lbl.custom_minimum_size = Vector2(64, 0)
 	hole_type_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	hole_type_row.add_child(hole_type_lbl)
 	_hole_type = OptionButton.new()
@@ -295,7 +295,7 @@ func _build_face_ops() -> void:
 	_face_ops.add_child(size_row)
 	var size_lbl := Label.new()
 	size_lbl.text = "Size"
-	size_lbl.custom_minimum_size = Vector2(80, 0)
+	size_lbl.custom_minimum_size = Vector2(64, 0)
 	size_lbl.add_theme_font_size_override("font_size", 11)
 	size_row.add_child(size_lbl)
 	_hole_size = OptionButton.new()
@@ -651,9 +651,9 @@ func _apply_dressup(fillet: bool) -> void:
 		else:
 			new_fid = view.doc.graph_add_chamfer(fid, targets, value)
 		ok = new_fid != ""
-		# Graph path can refuse stale UUIDs after a failed all-edges attempt —
-		# fall back to the direct command so a single picked edge still works.
-		if not ok:
+		# Fall back to direct dress-up only for UUID/stale-edge refusal — not when
+		# OCCT rejected the radius (that would leave orphan non-graph geometry).
+		if not ok and value <= 10.0:
 			ok = view.doc.fillet_edges(targets, value) if fillet \
 					else view.doc.chamfer_edges(targets, value)
 	elif fillet:

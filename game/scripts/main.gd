@@ -18,7 +18,8 @@ var bed_ghost: PrintBedGhost
 var card_panel: RichTextLabel
 var card_box: PanelContainer
 var status_label: Label
-var show_variables := true  # View-menu toggle (defaults on — Wave 6.2 seeds builtins)
+var show_variables := false  # View-menu toggle (default off — plate stays clear)
+var show_timeline := false  # View-menu toggle (default off — pull up when needed)
 var autosave_timer: Timer
 var sketch_mode: SketchMode
 var sketch_toolbar: PanelContainer
@@ -96,11 +97,11 @@ var _recent: Array = []  # paths, most recent first (max 8)
 const _RECENT_CLEAR_ID := 100
 const _RECENT_CFG := "user://recent.cfg"
 ## Top + left chrome margins. LeftStack sits below measured TopChrome.
-const _CHROME_PAD := 8.0
-const _STACK_GAP := 6.0
+const _CHROME_PAD := 4.0
+const _STACK_GAP := 4.0
 const _RAIL_ICON_W := 44.0
 const _CARD_W := 280.0
-const _CARD_H := 180.0
+const _CARD_H := 140.0
 ## Keep the left stack (rail + card) clear of the bottom timeline.
 const _LEFT_STACK_LIMIT := 470.0
 
@@ -266,7 +267,7 @@ func _build_ui() -> void:
 	top_chrome.name = "TopChrome"
 	top_chrome.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	top_chrome.position = Vector2(_CHROME_PAD, _CHROME_PAD)
-	top_chrome.add_theme_constant_override("separation", 8)
+	top_chrome.add_theme_constant_override("separation", 4)
 
 	var menu_bar := PanelContainer.new()
 	menu_bar.name = "FileMenu"
@@ -380,15 +381,22 @@ func _build_ui() -> void:
 	menu_row.add_child(view_btn)
 	var view_popup := view_btn.get_popup()
 	_style_menu_button(view_btn)
+	view_popup.add_check_item("Timeline", 4)
 	view_popup.add_check_item("Variables Panel", 0)
 	view_popup.add_separator()
 	view_popup.add_item("Set Active Plane…", 1)
 	view_popup.add_item("Reset Active Plane (ground)", 2)
 	view_popup.add_item("Unhide all", 3)
+	view_popup.set_item_checked(view_popup.get_item_index(4), show_timeline)
+	view_popup.set_item_checked(view_popup.get_item_index(0), show_variables)
 	view_popup.id_pressed.connect(func(id: int) -> void:
-		if id == 0:
+		if id == 4:
+			show_timeline = not show_timeline
+			view_popup.set_item_checked(view_popup.get_item_index(4), show_timeline)
+			_update_panel_visibility()
+			_on_status("Timeline shown" if show_timeline else "Timeline hidden")
+		elif id == 0:
 			show_variables = not show_variables
-			# Force-hide even when Wave 6.2 builtins keep the panel data-driven.
 			variables_panel.visible = show_variables
 			view_popup.set_item_checked(view_popup.get_item_index(0), show_variables)
 			_update_panel_visibility()
@@ -677,6 +685,8 @@ func _build_ui() -> void:
 	timeline.status.connect(_on_status)
 	timeline.feature_selected.connect(_on_timeline_feature_selected)
 	ops_panel.timeline_panel = timeline
+	if timeline.property_panel != null:
+		timeline.property_panel.closed.connect(func() -> void: hide_timeline_if_idle())
 
 	variables_panel = VariablesPanel.new()
 	variables_panel.name = "Variables"
@@ -1411,24 +1421,21 @@ func _on_document_changed() -> void:
 	_on_selection_changed(view.selected_body, view.selected_face)
 
 
-## Context panels only occupy screen space while they have content: the
-## selection card follows the selection, the timeline appears with the first
-## feature, and the variables table shows once a variable exists (or is
-## forced on from the View menu so there's an entry point to create one).
-## The left rail swaps Primitives ↔ Modify tools so create chrome hides while
-## a body is selected (place mode keeps the palette so you can still create).
+## Context panels only occupy screen space while toggled on (View menu) and
+## they have content. Timeline / Variables default OFF so the plate stays clear
+## on small screens — pull them up when editing history or equations.
 func _update_panel_visibility() -> void:
 	var sketching := sketch_mode != null and sketch_mode.active
 	card_box.visible = _selected_entity() != "" and not sketching
-	timeline.visible = view.doc.graph_features().size() > 0 and not sketching
+	var has_feats := view.doc.graph_features().size() > 0
+	timeline.visible = show_timeline and has_feats and not sketching
 	variables_panel.visible = show_variables and not sketching
 	_apply_chrome_docks()
 	_update_left_rail()
 	_schedule_card_dock()
 
 
-## Place Timeline / Variables from remembered corner+% (or first-run defaults
-## that keep the plate center clear on small screens).
+## Place Timeline / Variables from remembered corner+% (tight left column).
 func _apply_chrome_docks() -> void:
 	if timeline == null or variables_panel == null:
 		return
@@ -1442,6 +1449,15 @@ func _apply_chrome_docks() -> void:
 			else Vector2(1280, 720)
 	ChromeDock.apply(timeline, "timeline", vp)
 	ChromeDock.apply(variables_panel, "variables", vp)
+	# When both visible with default left-column layouts, stack Variables
+	# under Timeline so they never overlap.
+	if timeline.visible and variables_panel.visible \
+			and not ChromeDock.has_saved("variables"):
+		var gap := 4.0
+		var under := timeline.offset_top + timeline.size.y + gap
+		variables_panel.offset_top = under
+		variables_panel.position.y = under
+		variables_panel.offset_bottom = under + variables_panel.size.y
 
 
 ## Push Timeline / Variables using ChromeDock (resize / rail width changes).
@@ -1638,17 +1654,27 @@ func _reflow_left_stack() -> void:
 	_sync_bottom_docks()
 
 
-## After creating a feature: select it on the timeline and open PropertyPanel.
+## After creating a feature: show Timeline briefly, select the row, open params.
 func open_feature_params(fid: String) -> void:
 	if fid == "" or timeline == null:
 		return
+	show_timeline = true
 	_update_panel_visibility()
 	timeline.refresh()
 	timeline._select_feature(fid)
 	if timeline.property_panel != null and timeline.property_panel.visible:
-		_on_status("Feature created — adjust parameters, then OK")
+		_on_status("Feature created — adjust parameters (Esc cancels, deselect keeps)")
 	else:
 		_on_status("Feature created — edit Params (JSON) if needed")
+
+
+## Hide Timeline after property edits are kept/cancelled (plate returns).
+func hide_timeline_if_idle() -> void:
+	if timeline != null and timeline.property_panel != null \
+			and timeline.property_panel.visible:
+		return
+	show_timeline = false
+	_update_panel_visibility()
 
 
 func _rail_finish_extrude() -> void:

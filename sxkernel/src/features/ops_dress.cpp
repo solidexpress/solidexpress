@@ -22,6 +22,7 @@
 #include "sx/shape_utils.hpp"
 #include "sx/variables.hpp"
 #include "sx/measure.hpp"
+#include "sx/log.hpp"
 
 namespace sx::feature_ops {
 
@@ -40,28 +41,41 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         const double r2 = ctx.params.contains("radius2")
                               ? num_param(ctx.params, "radius2", v, ctx.env)
                               : v;
+        int added = 0;
         for (const auto& je : ctx.params.at("edges")) {
             TopoDS_Shape es;
             std::string why;
-            if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Edge, je, es, &why))
-                return ctx.fail(why);
+            if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Edge, je, es, &why)) {
+                // Soft-skip: edge UUID lost after upstream topology (hole then
+                // another dress-up). Aborting the whole regen blocked Hole Wizard
+                // / jaw_af edits — leave the body as-is and continue the timeline.
+                sx::log::error(std::string("fillet soft-skip: ") + why);
+                return true;
+            }
             if (std::abs(r2 - v) > 1e-12)
                 mk.Add(v, r2, TopoDS::Edge(es));
             else
                 mk.Add(v, TopoDS::Edge(es));
+            ++added;
         }
+        if (added == 0) return true;
         mk.Build();
         if (!mk.IsDone()) return ctx.fail("fillet failed");
         result = mk.Shape();
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
+        int added = 0;
         for (const auto& je : ctx.params.at("edges")) {
             TopoDS_Shape es;
             std::string why;
-            if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Edge, je, es, &why))
-                return ctx.fail(why);
+            if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Edge, je, es, &why)) {
+                sx::log::error(std::string("chamfer soft-skip: ") + why);
+                return true;
+            }
             mk.Add(v, TopoDS::Edge(es));
+            ++added;
         }
+        if (added == 0) return true;
         mk.Build();
         if (!mk.IsDone()) return ctx.fail("chamfer failed");
         result = mk.Shape();

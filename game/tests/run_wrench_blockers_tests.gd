@@ -159,33 +159,36 @@ func test_rail_never_covered() -> void:
 	# Wipe any prior user layout from other tests.
 	if FileAccess.file_exists(ChromeDock.CFG_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(ChromeDock.CFG_PATH))
+	# Defaults: both hidden — plate clear.
+	main.show_timeline = false
+	main.show_variables = false
 	main._update_panel_visibility()
 	for i in range(4):
 		await process_frame
-	check(main.variables_panel.visible, "variables visible on empty doc")
-	check(not _overlaps(main.variables_panel, main.left_stack),
-			"variables clear of left rail (empty doc)")
+	check(not main.variables_panel.visible, "variables hidden by default")
+	check(not main.timeline.visible, "timeline hidden by default")
 	main.view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
+	# Force docks on to verify tight left placement vs rail.
+	main.show_timeline = true
+	main.show_variables = true
 	main._update_panel_visibility()
 	for i in range(4):
 		await process_frame
-	check(main.timeline.visible, "timeline visible")
+	check(main.timeline.visible, "timeline visible when toggled")
 	check(not _overlaps(main.timeline, main.left_stack), "timeline clear of left rail")
 	check(not _overlaps(main.variables_panel, main.left_stack), "variables clear of rail")
 	check(not _overlaps(main.timeline, main.variables_panel),
 			"variables clear of timeline (not stacked)")
 	check(main.timeline.size.x <= 270.0,
 			"timeline rendered width <= 270 (got %.0f)" % main.timeline.size.x)
-	# Defaults: timeline bottom-left, variables bottom-right — plate center free.
-	var vp: Vector2 = main.get_viewport().get_visible_rect().size
-	var plate_cx: float = vp.x * 0.5
-	var t_r: Rect2 = main.timeline.get_global_rect()
-	var v_r: Rect2 = main.variables_panel.get_global_rect()
-	check(t_r.end.x < plate_cx + 40.0 or v_r.position.x > plate_cx - 40.0,
-			"at least one dock stays off plate center")
+	var vp: Vector2 = Vector2(1280, 720)
+	ChromeDock.rail_right = 56.0
+	ChromeDock.apply(main.timeline, "timeline", vp)
+	ChromeDock.apply(main.variables_panel, "variables", vp)
+	check(main.timeline.get_global_rect().end.x <= vp.x * 0.4 + 8.0,
+			"timeline stays in left band")
 	# Corner persistence: move variables, resize, re-apply.
 	ChromeDock.save_section("variables", "tr", 0.05, 0.05, 260.0, 240.0)
-	ChromeDock.rail_right = 56.0
 	ChromeDock.apply(main.variables_panel, "variables", Vector2(1024, 600))
 	var p1: Vector2 = main.variables_panel.position
 	ChromeDock.apply(main.variables_panel, "variables", Vector2(1600, 900))
