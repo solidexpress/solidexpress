@@ -36,11 +36,11 @@ static func has_saved(section: String) -> bool:
 
 
 static func default_for(section: String) -> Dictionary:
-	# First-run: keep the plate center clear on small screens.
+	# Tight left column — immediately right of the icon rail, not over the plate.
 	if section == "timeline":
-		return {"corner": "bl", "fx": 0.0, "fy": 0.0, "w": 260.0, "h": 200.0}
-	# Variables default to bottom-right so it does not stack on the model.
-	return {"corner": "br", "fx": 0.0, "fy": 0.0, "w": 260.0, "h": 260.0}
+		return {"corner": "tl", "fx": 0.0, "fy": 0.0, "w": 240.0, "h": 180.0}
+	# Variables stacks under timeline in the same left band when both shown.
+	return {"corner": "tl", "fx": 0.0, "fy": 0.35, "w": 240.0, "h": 200.0}
 
 
 static func read_layout(section: String) -> Dictionary:

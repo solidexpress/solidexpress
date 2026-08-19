@@ -53,8 +53,8 @@ func _ready() -> void:
 	add_child(outer)
 	var title := Label.new()
 	title.name = "TimelineTitle"
-	title.text = "Timeline  (drag)"
-	title.tooltip_text = "Drag to move — position is remembered across resizes"
+	title.text = "Timeline"
+	title.tooltip_text = "Drag to move — position remembered across resizes"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	outer.add_child(title)

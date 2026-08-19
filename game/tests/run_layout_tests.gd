@@ -117,9 +117,8 @@ func test_empty_document_hides_context(main) -> void:
 	check(not main.card_box.visible, "selection card hidden")
 	check(not main.ops_panel.visible, "ops panel hidden")
 	check(not main.timeline.visible, "timeline hidden")
-	# Wave 6.2 seeds clearance / hole_compensation / layer / nozzle / jaw_af, so
-	# the variables panel is visible on an empty document by design.
-	check(main.variables_panel.visible, "variables visible (seeded builtins)")
+	# Timeline/Variables default OFF so the plate stays clear (View menu to show).
+	check(not main.variables_panel.visible, "variables hidden by default")
 	check(main.view.doc.list_variables().size() >= 5, "seeded print builtins present")
 	check(not main.sketch_toolbar.visible, "sketch toolbar hidden")
 	check(main.print_strip == null or not main.print_strip.visible, "print strip hidden")
@@ -134,7 +133,8 @@ func test_selection_toggles_card(main) -> void:
 	check(main.card_box.visible, "card visible with selection")
 	check(main.ops_panel.visible, "ops panel visible with selection")
 	check(not main.palette.visible, "primitives palette hidden while selected")
-	check(is_equal_approx(main.ops_panel.get_global_rect().position.x, 8.0),
+	check(is_equal_approx(main.ops_panel.get_global_rect().position.x, 4.0) \
+			or is_equal_approx(main.ops_panel.get_global_rect().position.x, 8.0),
 			"ops panel docked left while selected")
 	main.view.clear_selection()
 	main._update_panel_visibility()
@@ -144,9 +144,13 @@ func test_selection_toggles_card(main) -> void:
 
 
 func test_timeline_appears_with_features(main) -> void:
-	print("- timeline appears with first feature")
+	print("- timeline appears when View-toggled with features")
 	# insert_primitive from the previous test already created a graph feature.
-	check(main.timeline.visible, "timeline visible once a feature exists")
+	check(not main.timeline.visible, "timeline hidden until View toggle")
+	main.show_timeline = true
+	main._update_panel_visibility()
+	await process_frame
+	check(main.timeline.visible, "timeline visible once toggled with features")
 	var fids: Array = main.view.doc.graph_features()
 	check(fids.size() > 0, "graph has features")
 	for f in fids:
@@ -154,13 +158,12 @@ func test_timeline_appears_with_features(main) -> void:
 	main.view.graph_changed()
 	await process_frame
 	check(not main.timeline.visible, "timeline hidden after last feature removed")
+	main.show_timeline = false
 
 
 func test_variables_panel_visibility(main) -> void:
-	print("- variables panel: seeded builtins + View menu override")
-	# Builtins keep the panel visible; View-menu override is still the entry
-	# point when every variable is deleted.
-	check(main.variables_panel.visible, "visible with seeded builtins")
+	print("- variables panel: View menu toggle")
+	check(not main.variables_panel.visible, "hidden by default")
 	main.show_variables = true
 	main._update_panel_visibility()
 	check(main.variables_panel.visible, "View menu override shows it")
@@ -168,15 +171,17 @@ func test_variables_panel_visibility(main) -> void:
 	main._update_panel_visibility()
 	check(not main.variables_panel.visible, "View menu can hide variables")
 	main.show_variables = true
+	main.show_timeline = true
 	main._update_panel_visibility()
 	check(main.variables_panel.visible, "View menu shows variables again")
-	# With no timeline, the variables panel sits beside the left rail (not on it).
-	# Absolute left-edge flush is Phase 2; for now assert it is on screen.
 	check(main.variables_panel.offset_left >= 0.0, "variables on-screen")
 	main.view.insert_primitive("box", Vector3(50, 0, 0))
 	await process_frame
-	check(main.timeline.visible, "timeline appears with feature")
-	check(main.variables_panel.visible, "variables still visible beside timeline")
+	main._update_panel_visibility()
+	check(main.timeline.visible, "timeline visible when toggled with feature")
+	check(main.variables_panel.visible, "variables still visible when toggled")
+	main.show_timeline = false
+	main.show_variables = false
 
 
 func test_place_file_vs_name_no_overlap(main) -> void:

@@ -72,6 +72,7 @@ var _strip_fillet: Button
 var _strip_chamfer: Button
 var _strip_radius_box: HBoxContainer
 var _strip_radius: SpinBox
+var _strip_jaw_box: HBoxContainer
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
@@ -357,6 +358,24 @@ func _build_selection_strip() -> void:
 		if ops_panel != null:
 			ops_panel.try_commit_pending())
 	_strip_radius_box.add_child(_strip_radius)
+	# Jaw AF quick configs — wrench path without opening Variables dock.
+	_strip_jaw_box = HBoxContainer.new()
+	_strip_jaw_box.name = "StripJawAF"
+	_strip_jaw_box.visible = false
+	_strip_jaw_box.add_theme_constant_override("separation", 2)
+	row.add_child(_strip_jaw_box)
+	var jaw_lbl := Label.new()
+	jaw_lbl.text = "AF"
+	jaw_lbl.add_theme_font_size_override("font_size", UiScale.body())
+	_strip_jaw_box.add_child(jaw_lbl)
+	for af_size in [10, 12, 14]:
+		var jb := Button.new()
+		jb.name = "StripJaw%d" % af_size
+		jb.text = str(af_size)
+		jb.custom_minimum_size = Vector2(32, 0)
+		jb.tooltip_text = "Set jaw_af = %d (config %d)" % [af_size, af_size]
+		jb.pressed.connect(_ctx_jaw_af.bind(af_size))
+		_strip_jaw_box.add_child(jb)
 	_strip_sketch = Button.new()
 	_strip_sketch.text = "Sketch"
 	_strip_sketch.tooltip_text = "Sketch on the selected face (then Extrude from the sketch bar)"
@@ -2901,11 +2920,24 @@ func _on_release(pos: Vector2) -> void:
 		else:
 			status.emit("Selected " + (view.selected_face if view.selected_face != "" else view.selected_body).left(8))
 	elif not _additive_click:
+		# Deselect keeps PropertyPanel live-preview edits (no OK button).
+		_commit_property_panel_on_deselect()
 		status.emit("")
 	_box_drag = false
 	_additive_click = false
 	_press_empty = false
 	_press_travel = 0.0
+
+
+func _commit_property_panel_on_deselect() -> void:
+	var main_n := _find_main()
+	if main_n == null or main_n.timeline == null:
+		return
+	var pp = main_n.timeline.property_panel
+	if pp != null and pp.visible:
+		pp.commit()
+		if main_n.has_method("hide_timeline_if_idle"):
+			main_n.hide_timeline_if_idle()
 
 
 func _gui_key(event: InputEventKey) -> bool:
@@ -2931,20 +2963,28 @@ func _gui_key(event: InputEventKey) -> bool:
 			if ops_panel != null and ops_panel.cancel_pending_pick():
 				clear_hole_markers()
 				return true
-			# Dismiss Variables when visible (View toggle still works).
-			var main := get_tree().get_first_node_in_group("sx_main") if get_tree() != null else null
-			if main == null:
-				main = get_parent()
-				while main != null and not main.has_method("_update_panel_visibility"):
-					main = main.get_parent()
-			if main != null and main.get("show_variables") == true \
-					and main.get("variables_panel") != null \
-					and main.variables_panel.visible:
-				main.show_variables = false
-				main.variables_panel.visible = false
-				main._update_panel_visibility()
-				status.emit("Variables hidden (View ▸ Variables Panel to show)")
+			# PropertyPanel: Esc cancels live-preview edits.
+			var main_n := _find_main()
+			if main_n != null and main_n.timeline != null \
+					and main_n.timeline.property_panel != null \
+					and main_n.timeline.property_panel.visible:
+				main_n.timeline.property_panel.cancel_edits()
+				if main_n.has_method("hide_timeline_if_idle"):
+					main_n.hide_timeline_if_idle()
 				return true
+			# Dismiss Timeline / Variables when visible.
+			if main_n != null:
+				var hid := false
+				if main_n.get("show_timeline") == true:
+					main_n.show_timeline = false
+					hid = true
+				if main_n.get("show_variables") == true:
+					main_n.show_variables = false
+					hid = true
+				if hid:
+					main_n._update_panel_visibility()
+					status.emit("Panels hidden (View ▸ Timeline / Variables to show)")
+					return true
 			# Temporary HUD overlays only. Persistent W/H/D stays until
 			# selection clears (or place cancels via `_input`). PR #31 moved
 			# Δ-move into its own panel — dismiss that / precision, not dims.
@@ -3813,6 +3853,7 @@ func _refresh_selection_strip() -> void:
 	_strip_fillet.visible = not has_instance
 	_strip_chamfer.visible = not has_instance
 	_sync_strip_dressup_radius()
+	_sync_strip_jaw_af()
 	_strip_hole.visible = not has_instance
 	_strip_hole_wizard.visible = not has_instance
 	_strip_clash.visible = multi_body
@@ -3946,6 +3987,38 @@ func _sync_strip_dressup_radius() -> void:
 	_strip_radius_box.visible = armed
 	if armed and ops_panel != null and ops_panel.has_method("dressup_radius"):
 		_strip_radius.set_value_no_signal(ops_panel.dressup_radius())
+
+
+func _sync_strip_jaw_af() -> void:
+	if _strip_jaw_box == null:
+		return
+	# Show AF chips when a hex hole is selected or any body is selected after
+	# hex work — always available with a body so Jaw AF does not need Variables.
+	_strip_jaw_box.visible = view != null and view.selected_body != "" \
+			and view.selected_instance == ""
+
+
+func _ctx_jaw_af(size: int) -> void:
+	if view == null or view.doc == null:
+		status.emit("Failed to set jaw_af")
+		return
+	if not view.doc.set_variable("jaw_af", str(size)):
+		status.emit("Failed to set jaw_af")
+		return
+	view.doc.save_configuration(str(size))
+	view.doc.activate_configuration(str(size))
+	view.refresh()
+	view.document_changed.emit()
+	status.emit("jaw_af = %d (config %d)" % [size, size])
+
+
+func _find_main() -> Node:
+	var n: Node = self
+	while n != null:
+		if n.has_method("_update_panel_visibility") and n.get("timeline") != null:
+			return n
+		n = n.get_parent()
+	return null
 
 
 func _ctx_group() -> void:

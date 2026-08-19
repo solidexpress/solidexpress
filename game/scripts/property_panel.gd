@@ -148,14 +148,19 @@ func _ready() -> void:
 	_fields = VBoxContainer.new()
 	vbox.add_child(_fields)
 	var buttons := HBoxContainer.new()
+	buttons.name = "PropertyButtons"
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(buttons)
-	var ok := UIIcons.button("ok", "OK", "Keep these parameter changes")
-	ok.pressed.connect(commit)
-	buttons.add_child(ok)
-	var cancel := UIIcons.button("cancel", "Cancel", "Undo all changes made in this panel")
+	# Live preview already wrote changes — Esc cancels; deselect keeps.
+	# No OK button (redundant with deselect). Cancel stays for discoverability.
+	var cancel := UIIcons.button("cancel", "Cancel", "Undo all changes (Esc)")
 	cancel.pressed.connect(cancel_edits)
 	buttons.add_child(cancel)
+	var hint := Label.new()
+	hint.text = "Deselect keeps · Esc cancels"
+	hint.add_theme_font_size_override("font_size", UiScale.caption())
+	hint.modulate = Color(0.7, 0.7, 0.75)
+	buttons.add_child(hint)
 
 
 ## True when the feature type has at least one editable field.

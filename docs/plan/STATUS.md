@@ -414,6 +414,14 @@ Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow g
 - [x] Tiny Line release → `reject_tiny_draw` names view span; closed polygon Extrude still names a solid
 - Gate: `run_mechanic_blocker_tests` (33) + `run_wrench_blockers_tests` (36)
 
+## Critic A→L gate + dense chrome (2026-08-19)
+- [x] Timeline / Variables **default off** (View → Timeline / Variables); create-then-edit flashes Timeline then hides
+- [x] Tight left-column docks; Jaw AF 10/12/14 on selection strip; PropertyPanel deselect=commit (no OK); config Save via Enter
+- [x] Pad tighten (`_CHROME_PAD`/`_STACK_GAP` 4); fonts unchanged
+- [x] Dress-up soft-skip on lost edge UUID so Wizard / jaw_af / Extrude still regen after fillet+chamfer
+- [x] Merge gate: `run_critic_walk_tests` (A→L, 33 checks)
+- Gate: critic walk 33 + mechanic 33 + wrench 36 + layout 37
+
 ## Website demo movies (2026-08-15)
 - [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`

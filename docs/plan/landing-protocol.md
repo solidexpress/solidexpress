@@ -76,16 +76,16 @@ because a `film_*.gd` exists.
 | Left rail | Mode swap (create / modify / sketch / Draw / Sheet). On-canvas chips for variants | Always-on extra palettes |
 | Left stack | Tall-block temp/context panels (`LeftStack` VBox) below **measured** TopChrome: palette, Modify/Name, sketch tools, mode rails, move Δ, selection card. New menus add a child | Self-positioned panels in the File Y band; overlapping File + Name |
 | OpsPanel | `MAX_HEIGHT` 240; prefer PropertyPanel | Another spinbox row per feature |
-| PropertyPanel + timeline | Params after the feature exists | Hidden-only editors |
+| PropertyPanel + timeline | Params after the feature exists; Timeline/Variables are **View-toggled (default off)** so the plate stays clear; create-then-edit may flash Timeline. Deselect keeps live-preview edits (no OK button); Esc cancels. | Hidden-only editors; always-on Timeline covering the model |
 | New docks | Wave 0: none. Later: **at most one new mode rail** with auto-hide | Extra columns, workbenches |
 
-**Create-then-edit (standing rule for verbs that need options):** create the feature with a good default → immediately `open_feature_params(fid)` on its timeline row (live preview, OK/Cancel) → arm a viewport pick for geometry (edges, axis, plane, points). Do **not** invent a modal dialog for viewport verbs. File-menu items (Open in Slicer, Export Drawing, Insert Components) remain the allowed place for dialogs.
+**Create-then-edit (standing rule for verbs that need options):** create the feature with a good default → briefly show Timeline + `open_feature_params(fid)` (live preview; **deselect keeps**, Esc cancels) → arm a viewport pick for geometry (edges, axis, plane, points). Do **not** invent a modal dialog for viewport verbs. File-menu items (Open in Slicer, Export Drawing, Insert Components) remain the allowed place for dialogs.
 
 **Visibility**
 
-- Empty document: palette + ViewHud/ViewCube only.
-- On select: strip + left Modify + card. Primitives hide.
-- Typography: chrome body text is `UiScale.font(13)` (File menu size). Do not pin 10–12 px.
+- Empty document: palette + ViewHud/ViewCube only. **No Timeline / Variables** until View menu toggles them.
+- On select: strip + left Modify + card. Primitives hide. Jaw AF 10/12/14 chips live on the strip (wrench path without Variables dock).
+- Typography: chrome body text is `UiScale.font(13)` (File menu size). Do not pin 10–12 px. Density via padding only (`_CHROME_PAD` / stack gap), never font shrink.
 - Body move: every MOVE_BODY gesture shows a fresh ΔX/ΔY/ΔZ block in LeftStack (zero at drag start). Do not grab focus on release.
 - Drag: number travels with the handle.
 - Solver state is on the geometry (gray weak dims, yellow inference, blue/black/red entities).
