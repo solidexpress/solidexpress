@@ -7,6 +7,8 @@ extends PanelContainer
 ## and opens a universal JSON param editor (v0 — structured data by design,
 ## so the same editor works for every feature type and for AI round-trips).
 
+const ChromeDock := preload("res://scripts/chrome_dock.gd")
+
 signal status(text: String)
 signal feature_selected(fid: String, ftype: String)
 
@@ -50,9 +52,13 @@ func _ready() -> void:
 	outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(outer)
 	var title := Label.new()
-	title.text = "Timeline"
+	title.name = "TimelineTitle"
+	title.text = "Timeline  (drag)"
+	title.tooltip_text = "Drag to move — position is remembered across resizes"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	outer.add_child(title)
+	ChromeDock.enable_drag(self, title, "timeline")
 	_scroll = ScrollContainer.new()
 	_scroll.name = "TimelineScroll"
 	# SHOW_NEVER so row chrome can be wider than the panel without expanding it.
@@ -127,17 +133,34 @@ func _clamp_height() -> void:
 	var vp := get_viewport()
 	if vp == null:
 		return
-	var budget := vp.get_visible_rect().size.y - 42.0 - 12.0  # status bar + pad
-	# Content height without asking PanelContainer (that would re-include row width).
+	var vp_size := vp.get_visible_rect().size
+	if vp_size.y < 300.0:
+		vp_size = Vector2(1280, 720)
+	var budget := vp_size.y - ChromeDock.top_inset - ChromeDock.bottom_inset
 	var want := 160.0
 	if _list != null:
 		want = maxf(want, _list.get_combined_minimum_size().y + 56.0)
-	custom_minimum_size = Vector2(PANEL_WIDTH, minf(want, maxf(160.0, budget * 0.55)))
-	offset_top = -custom_minimum_size.y - 12.0
-	offset_bottom = -42.0
-	_pin_width()
-	reset_size()
-	_pin_width()
+	if property_panel != null and property_panel.visible:
+		want = maxf(want, property_panel.get_combined_minimum_size().y + 120.0)
+	var h := minf(want, maxf(120.0, budget * 0.5))
+	h = minf(h, budget)
+	var left := offset_left
+	if left < 1.0 and position.x > 1.0:
+		left = position.x
+	var top := offset_top
+	if top < 1.0 and position.y > 1.0:
+		top = position.y
+	# Grow upward from the bottom inset so the panel never leaves the screen.
+	var max_bottom := vp_size.y - ChromeDock.bottom_inset
+	if top + h > max_bottom:
+		top = maxf(ChromeDock.top_inset, max_bottom - h)
+	custom_minimum_size = Vector2(PANEL_WIDTH, h)
+	size = Vector2(PANEL_WIDTH, h)
+	position = Vector2(left, top)
+	offset_left = left
+	offset_top = top
+	offset_right = left + PANEL_WIDTH
+	offset_bottom = top + h
 
 
 func refresh() -> void:

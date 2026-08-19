@@ -2096,12 +2096,20 @@ func _sketch_input(event: InputEvent) -> void:
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and not _sketch_dragging:
 			# Drag-draw completion only when the pointer moved — pure click-click
 			# must not double-fire the same anchor (zero-length segment).
-			if sketch_mode.has_pending_draw_point() \
-					and mb.position.distance_to(_sketch_press_pos) >= CLICK_SLOP:
+			if sketch_mode.has_pending_draw_point():
+				var travel := mb.position.distance_to(_sketch_press_pos)
 				var ray_up2 := _model_ray(mb.position)
 				var p2_up2 = sketch_mode.ray_to_sketch(ray_up2[0], ray_up2[1])
 				if p2_up2 != null:
-					sketch_mode.click(p2_up2)
+					if travel >= CLICK_SLOP:
+						sketch_mode.click(p2_up2)
+					elif sketch_mode.tool == SketchMode.Tool.LINE \
+							or sketch_mode.tool == SketchMode.Tool.CENTERLINE \
+							or sketch_mode.tool == SketchMode.Tool.POLYGON \
+							or sketch_mode.tool == SketchMode.Tool.RECT \
+							or sketch_mode.tool == SketchMode.Tool.CIRCLE:
+						# Tiny release never reached MIN_SEGMENT — name the view span.
+						sketch_mode.reject_tiny_draw(p2_up2)
 			accept_event()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
 			sketch_mode.end_chain()
@@ -2922,6 +2930,20 @@ func _gui_key(event: InputEventKey) -> bool:
 				return false
 			if ops_panel != null and ops_panel.cancel_pending_pick():
 				clear_hole_markers()
+				return true
+			# Dismiss Variables when visible (View toggle still works).
+			var main := get_tree().get_first_node_in_group("sx_main") if get_tree() != null else null
+			if main == null:
+				main = get_parent()
+				while main != null and not main.has_method("_update_panel_visibility"):
+					main = main.get_parent()
+			if main != null and main.get("show_variables") == true \
+					and main.get("variables_panel") != null \
+					and main.variables_panel.visible:
+				main.show_variables = false
+				main.variables_panel.visible = false
+				main._update_panel_visibility()
+				status.emit("Variables hidden (View ▸ Variables Panel to show)")
 				return true
 			# Temporary HUD overlays only. Persistent W/H/D stays until
 			# selection clears (or place cancels via `_input`). PR #31 moved

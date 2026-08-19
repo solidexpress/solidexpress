@@ -4,6 +4,8 @@ extends PanelContainer
 ## computed value, delete. Add row at the bottom. Refresh on document revision
 ## (same document_changed hook the timeline uses).
 
+const ChromeDock := preload("res://scripts/chrome_dock.gd")
+
 signal status(text: String)
 
 var view: DocumentView
@@ -19,12 +21,17 @@ var _refreshing := false
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(260, 0)
+	clip_contents = true
 	var vbox := VBoxContainer.new()
 	add_child(vbox)
 	var title := Label.new()
-	title.text = "Variables"
+	title.name = "VariablesTitle"
+	title.text = "Variables  (drag)"
+	title.tooltip_text = "Drag to move — position is remembered across resizes"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_STOP
 	vbox.add_child(title)
+	ChromeDock.enable_drag(self, title, "variables")
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(250, 120)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -136,18 +143,31 @@ func _on_config_selected(index: int) -> void:
 
 func _on_quick_jaw(size: int) -> void:
 	# Set jaw_af, snapshot/activate a config named by the size.
+	if view == null or view.doc == null:
+		status.emit("Failed to set jaw_af")
+		return
 	if not view.doc.set_variable("jaw_af", str(size)):
 		status.emit("Failed to set jaw_af")
 		return
+	var regen_err := ""
+	if view.doc.has_method("last_graph_error"):
+		regen_err = str(view.doc.last_graph_error())
 	if not view.doc.save_configuration(str(size)):
-		status.emit("Failed to save configuration " + str(size))
+		status.emit("jaw_af = %d — failed to save configuration" % size)
+		view.refresh()
+		view.document_changed.emit()
 		return
 	if not view.doc.activate_configuration(str(size)):
-		status.emit("Failed to activate configuration " + str(size))
+		status.emit("jaw_af = %d — failed to activate configuration" % size)
+		view.refresh()
+		view.document_changed.emit()
 		return
 	view.refresh()
 	view.document_changed.emit()
-	status.emit("jaw_af = %d (config %d)" % [size, size])
+	if regen_err != "":
+		status.emit("jaw_af = %d (config %d) — regenerate: %s" % [size, size, regen_err])
+	else:
+		status.emit("jaw_af = %d (config %d)" % [size, size])
 
 
 func _on_config_delete() -> void:

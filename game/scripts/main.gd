@@ -6,6 +6,7 @@ extends Node3D
 const _CamRail := preload("res://scripts/cam_rail.gd")
 const _SimRail := preload("res://scripts/sim_rail.gd")
 const _PrintStrip := preload("res://scripts/print_strip.gd")
+const ChromeDock := preload("res://scripts/chrome_dock.gd")
 
 var model_space: Node3D
 var view: DocumentView
@@ -668,16 +669,10 @@ func _build_ui() -> void:
 	view_hud.sync_from_view(view)
 	view_hud.sync_named_views(camera.named_view_list())
 
-	# Left, below palette: feature timeline + variables.
+	# Floating Timeline / Variables — movable, corner+% remembered.
 	timeline = TimelinePanel.new()
 	timeline.name = "Timeline"
 	timeline.view = view
-	timeline.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	timeline.anchor_top = 1.0
-	# Start clear of the ~44px left rail (reflowed in _update_panel_visibility).
-	timeline.offset_left = _CHROME_PAD + _RAIL_ICON_W + 8.0
-	timeline.offset_top = -420
-	timeline.offset_bottom = -42
 	ui.add_child(timeline)
 	timeline.status.connect(_on_status)
 	timeline.feature_selected.connect(_on_timeline_feature_selected)
@@ -686,15 +681,9 @@ func _build_ui() -> void:
 	variables_panel = VariablesPanel.new()
 	variables_panel.name = "Variables"
 	variables_panel.view = view
-	variables_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	variables_panel.anchor_top = 1.0
-	variables_panel.offset_left = 280
-	variables_panel.offset_right = 540
-	variables_panel.offset_top = -420
-	# Ends above the bottom status bar (+ occasional transform fine-tune blanks).
-	variables_panel.offset_bottom = -140
 	ui.add_child(variables_panel)
 	variables_panel.status.connect(_on_status)
+	_apply_chrome_docks()
 
 	# Bottom: status bar.
 	var status_bar := PanelContainer.new()
@@ -860,6 +849,7 @@ func _on_viewport_resized() -> void:
 		return
 	_update_left_rail()
 	_reflow_left_stack()
+	_apply_chrome_docks()
 
 
 func _on_default_view(view_id: String) -> void:
@@ -1432,23 +1422,31 @@ func _update_panel_visibility() -> void:
 	card_box.visible = _selected_entity() != "" and not sketching
 	timeline.visible = view.doc.graph_features().size() > 0 and not sketching
 	variables_panel.visible = show_variables and not sketching
-	# Keep Timeline / Variables clear of the left rail (icons were unclickable).
-	# Measure the real rail width — before first layout size.x is 0, so fall
-	# back to the combined minimum size rather than a guessed 48 px.
+	_apply_chrome_docks()
+	_update_left_rail()
+	_schedule_card_dock()
+
+
+## Place Timeline / Variables from remembered corner+% (or first-run defaults
+## that keep the plate center clear on small screens).
+func _apply_chrome_docks() -> void:
+	if timeline == null or variables_panel == null:
+		return
 	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
 	if left_stack != null:
 		var stack_w := maxf(left_stack.size.x, left_stack.get_combined_minimum_size().x)
 		stack_w = maxf(stack_w, _RAIL_ICON_W)
 		rail_right = maxf(rail_right, left_stack.position.x + stack_w + 8.0)
-	timeline.offset_left = rail_right
-	# Fixed timeline width so it cannot grow under Variables / the model.
-	var timeline_w := 260.0
-	timeline.offset_right = rail_right + timeline_w
-	timeline.custom_minimum_size.x = timeline_w
-	variables_panel.offset_left = rail_right + (timeline_w + 8.0 if timeline.visible else 0.0)
-	variables_panel.offset_right = variables_panel.offset_left + 260
-	_update_left_rail()
-	_schedule_card_dock()
+	ChromeDock.rail_right = rail_right
+	var vp := get_viewport().get_visible_rect().size if get_viewport() != null \
+			else Vector2(1280, 720)
+	ChromeDock.apply(timeline, "timeline", vp)
+	ChromeDock.apply(variables_panel, "variables", vp)
+
+
+## Push Timeline / Variables using ChromeDock (resize / rail width changes).
+func _sync_bottom_docks() -> void:
+	_apply_chrome_docks()
 
 
 func _on_mode_menu(id: int) -> void:
@@ -1636,23 +1634,8 @@ func _reflow_left_stack() -> void:
 		var card_h := minf(_CARD_H, maxf(80.0, max_h - used))
 		card_box.custom_minimum_size = Vector2(_CARD_W, card_h)
 	# Rail width may have changed (Modify ↔ Palette ↔ Sketch): re-dock the
-	# bottom panels so they never land on top of the icons.
+	# floating panels so they never land on top of the icons.
 	_sync_bottom_docks()
-
-
-## Push Timeline / Variables to the right of the measured left rail.
-func _sync_bottom_docks() -> void:
-	if left_stack == null or timeline == null or variables_panel == null:
-		return
-	var stack_w := maxf(left_stack.size.x, left_stack.get_combined_minimum_size().x)
-	stack_w = maxf(stack_w, _RAIL_ICON_W)
-	var rail_right := left_stack.position.x + stack_w + 8.0
-	var timeline_w := 260.0
-	timeline.offset_left = rail_right
-	timeline.offset_right = rail_right + timeline_w
-	timeline.custom_minimum_size.x = timeline_w
-	variables_panel.offset_left = rail_right + (timeline_w + 8.0 if timeline.visible else 0.0)
-	variables_panel.offset_right = variables_panel.offset_left + 260
 
 
 ## After creating a feature: select it on the timeline and open PropertyPanel.

@@ -1,6 +1,8 @@
 # Wrench blockers: Chamfer reachable, sketch at real scale, rail never covered.
 extends SceneTree
 
+const ChromeDock := preload("res://scripts/chrome_dock.gd")
+
 var failures := 0
 var checks := 0
 
@@ -149,20 +151,21 @@ func test_sketch_scale_and_guard() -> void:
 
 
 func test_rail_never_covered() -> void:
-	print("- Variables / Timeline never overlap the left rail")
+	print("- Variables / Timeline clear of rail; ChromeDock defaults clear plate")
 	var main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	# Empty document (Variables visible from seeded builtins).
+	# Wipe any prior user layout from other tests.
+	if FileAccess.file_exists(ChromeDock.CFG_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(ChromeDock.CFG_PATH))
 	main._update_panel_visibility()
 	for i in range(4):
 		await process_frame
 	check(main.variables_panel.visible, "variables visible on empty doc")
 	check(not _overlaps(main.variables_panel, main.left_stack),
 			"variables clear of left rail (empty doc)")
-	# With features: timeline + variables both clear.
-	main.view.insert_primitive("box", Vector3.ZERO)
+	main.view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	main._update_panel_visibility()
 	for i in range(4):
 		await process_frame
@@ -171,13 +174,46 @@ func test_rail_never_covered() -> void:
 	check(not _overlaps(main.variables_panel, main.left_stack), "variables clear of rail")
 	check(not _overlaps(main.timeline, main.variables_panel),
 			"variables clear of timeline (not stacked)")
-	var tw: float = main.timeline.offset_right - main.timeline.offset_left
-	check(tw > 200.0 and tw < 320.0, "timeline has fixed width ~260 (got %.0f)" % tw)
 	check(main.timeline.size.x <= 270.0,
 			"timeline rendered width <= 270 (got %.0f)" % main.timeline.size.x)
-	check(main.variables_panel.get_global_rect().position.x \
-			>= main.timeline.get_global_rect().end.x - 1.0,
-			"variables sits to the right of timeline")
+	# Defaults: timeline bottom-left, variables bottom-right — plate center free.
+	var vp: Vector2 = main.get_viewport().get_visible_rect().size
+	var plate_cx: float = vp.x * 0.5
+	var t_r: Rect2 = main.timeline.get_global_rect()
+	var v_r: Rect2 = main.variables_panel.get_global_rect()
+	check(t_r.end.x < plate_cx + 40.0 or v_r.position.x > plate_cx - 40.0,
+			"at least one dock stays off plate center")
+	# Corner persistence: move variables, resize, re-apply.
+	ChromeDock.save_section("variables", "tr", 0.05, 0.05, 260.0, 240.0)
+	ChromeDock.rail_right = 56.0
+	ChromeDock.apply(main.variables_panel, "variables", Vector2(1024, 600))
+	var p1: Vector2 = main.variables_panel.position
+	ChromeDock.apply(main.variables_panel, "variables", Vector2(1600, 900))
+	var p2: Vector2 = main.variables_panel.position
+	check(p2.x > p1.x - 1.0, "variables stays near top-right after wider resize")
+	check(p2.y < 200.0, "variables near top after tr layout (y=%.0f)" % p2.y)
+	# reject_tiny_draw path
+	main._start_sketch_on_ground()
+	await process_frame
+	var sm = main.sketch_mode
+	sm.set_tool(SketchMode.Tool.LINE)
+	var last := [""]
+	sm.status.connect(func(t: String) -> void: last[0] = t)
+	sm.click(Vector2(0, 0))
+	sm.reject_tiny_draw(Vector2(0.1, 0))
+	check(str(last[0]).contains("view is"), "reject_tiny_draw names view span")
+	# Closed polygon Extrude names a solid
+	sm.set_tool(SketchMode.Tool.POLYGON)
+	sm.set_tool_variant("across_flats")
+	sm.click(Vector2(0, 0))
+	sm.click(Vector2(20, 0))
+	check(sm.profile_is_closed(sm.sketch), "polygon profile closed")
+	sm.finish_extrude(20.0, "new", "blind")
+	var has_ex := false
+	for f in main.view.doc.graph_features():
+		if str(f.get("type", "")) == "extrude" and not bool(f.get("failed", false)):
+			has_ex = true
+	check(has_ex, "Extrude creates named solid")
 	main.queue_free()
 	await process_frame
 

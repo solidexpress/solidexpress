@@ -407,6 +407,13 @@ Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow g
 - [x] Degenerate sketch segments (`MIN_SEGMENT_MM` 0.5) refuse with status naming the view span
 - Gate: `run_wrench_blockers_tests` (32) + `run_mechanic_blocker_tests` (24)
 
+## Critic #36 clear + movable docks (2026-08-18)
+- [x] Hole Wizard: keep points on fail; surface `last_graph_error`; reset Hex→Simple on arm; commit after fillet/chamfer
+- [x] `set_variable` keeps write on regen failure (Jaw AF 14 no longer `Failed to set jaw_af`); chip grows hex
+- [x] Timeline / Variables: `ChromeDock` movable title-bar drag; persist nearest corner + fx/fy; defaults bl/br clear plate center
+- [x] Tiny Line release → `reject_tiny_draw` names view span; closed polygon Extrude still names a solid
+- Gate: `run_mechanic_blocker_tests` (33) + `run_wrench_blockers_tests` (36)
+
 ## Website demo movies (2026-08-15)
 - [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`
