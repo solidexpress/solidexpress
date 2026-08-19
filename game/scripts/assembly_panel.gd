@@ -179,10 +179,9 @@ func refresh_lists() -> void:
 			cl.add_theme_font_size_override("font_size", UiScale.body())
 			_mates_list.add_child(cl)
 
-	# Also show on a body selection: placing the *first* instance is the one
-	# assembly verb you need while the assembly is still empty.
-	var can_instance: bool = view != null and view.selected_body != ""
-	visible = can_instance or not instances.is_empty() or not mates.is_empty() or _mate_armed \
+	# Show when there is assembly content — not merely because a body is
+	# selected (that parked the panel on the plate for every shop session).
+	visible = not instances.is_empty() or not mates.is_empty() or _mate_armed \
 			or not connectors.is_empty() or not joints.is_empty()
 	_refreshing = false
 

@@ -19,7 +19,9 @@ var card_panel: RichTextLabel
 var card_box: PanelContainer
 var status_label: Label
 var show_variables := false  # View-menu toggle (default off — plate stays clear)
-var show_timeline := false  # View-menu toggle (default off — pull up when needed)
+var show_timeline := false  # View-menu toggle ONLY — never auto-show on feature create
+var show_scenic_bg := false  # Canyon HDRI; default flat for readable cuts
+var _view_popup: PopupMenu
 var autosave_timer: Timer
 var sketch_mode: SketchMode
 var sketch_toolbar: PanelContainer
@@ -198,13 +200,14 @@ func _on_section_changed(_enabled: bool) -> void:
 	_sync_world_background()
 
 
-## Flat clear color while sectioning or sketching; canyon HDRI otherwise.
-## IBL/ambient keep using the sky — only the visible background swaps.
+## Flat clear color by default (readable cuts). Canyon HDRI only when
+## View → Scenic background is on. Flat also while sectioning or sketching.
 func _sync_world_background() -> void:
 	if _world_env == null or _world_env.environment == null:
 		return
 	var e := _world_env.environment
-	var flat := (view != null and view.section_enabled) \
+	var flat := not show_scenic_bg \
+			or (view != null and view.section_enabled) \
 			or (sketch_mode != null and sketch_mode.active)
 	if flat:
 		e.background_mode = Environment.BG_COLOR
@@ -379,27 +382,39 @@ func _build_ui() -> void:
 	view_btn.text = "View"
 	view_btn.flat = false
 	menu_row.add_child(view_btn)
-	var view_popup := view_btn.get_popup()
+	_view_popup = view_btn.get_popup()
 	_style_menu_button(view_btn)
-	view_popup.add_check_item("Timeline", 4)
-	view_popup.add_check_item("Variables Panel", 0)
-	view_popup.add_separator()
-	view_popup.add_item("Set Active Plane…", 1)
-	view_popup.add_item("Reset Active Plane (ground)", 2)
-	view_popup.add_item("Unhide all", 3)
-	view_popup.set_item_checked(view_popup.get_item_index(4), show_timeline)
-	view_popup.set_item_checked(view_popup.get_item_index(0), show_variables)
-	view_popup.id_pressed.connect(func(id: int) -> void:
+	_view_popup.add_check_item("Timeline", 4)
+	_view_popup.add_check_item("Variables Panel", 0)
+	_view_popup.add_check_item("Scenic background", 5)
+	_view_popup.add_separator()
+	_view_popup.add_item("Analyze print…", 6)
+	_view_popup.add_item("Reset panel layout", 7)
+	_view_popup.add_separator()
+	_view_popup.add_item("Set Active Plane…", 1)
+	_view_popup.add_item("Reset Active Plane (ground)", 2)
+	_view_popup.add_item("Unhide all", 3)
+	_sync_view_menu_checks()
+	_view_popup.id_pressed.connect(func(id: int) -> void:
 		if id == 4:
 			show_timeline = not show_timeline
-			view_popup.set_item_checked(view_popup.get_item_index(4), show_timeline)
+			_sync_view_menu_checks()
 			_update_panel_visibility()
 			_on_status("Timeline shown" if show_timeline else "Timeline hidden")
 		elif id == 0:
 			show_variables = not show_variables
-			variables_panel.visible = show_variables
-			view_popup.set_item_checked(view_popup.get_item_index(0), show_variables)
+			_sync_view_menu_checks()
 			_update_panel_visibility()
+		elif id == 5:
+			show_scenic_bg = not show_scenic_bg
+			_sync_view_menu_checks()
+			_sync_world_background()
+			_on_status("Scenic background on" if show_scenic_bg else "Flat background")
+		elif id == 6:
+			_on_mode_menu(5)  # Form
+			_on_print_analyze()
+		elif id == 7:
+			_reset_panel_layout()
 		elif id == 1:
 			interaction.arm_pick_active_plane()
 		elif id == 2:
@@ -576,11 +591,11 @@ func _build_ui() -> void:
 	notes_edit = TextEdit.new()
 	notes_edit.custom_minimum_size = Vector2(260, 40)
 	notes_edit.add_theme_font_size_override("font_size", UiScale.body())
+	notes_edit.focus_exited.connect(func() -> void:
+		_save_card_text(alias_edit.text, notes_edit.text))
 	card_vbox.add_child(notes_edit)
-	var save_card := UIIcons.button("save", "Save card text",
-		"Save the aliases and notes onto the selection's semantic card")
-	save_card.pressed.connect(func() -> void: _save_card_text(alias_edit.text, notes_edit.text))
-	card_vbox.add_child(save_card)
+	alias_edit.focus_exited.connect(func() -> void:
+		_save_card_text(alias_edit.text, notes_edit.text))
 
 	# Right, below card panel: context operations for the selection.
 	ops_panel = OpsPanel.new()
@@ -686,7 +701,9 @@ func _build_ui() -> void:
 	timeline.feature_selected.connect(_on_timeline_feature_selected)
 	ops_panel.timeline_panel = timeline
 	if timeline.property_panel != null:
-		timeline.property_panel.closed.connect(func() -> void: hide_timeline_if_idle())
+		timeline.property_panel.closed.connect(func() -> void:
+			_sync_view_menu_checks()
+			_update_panel_visibility())
 
 	variables_panel = VariablesPanel.new()
 	variables_panel.name = "Variables"
@@ -1435,7 +1452,7 @@ func _update_panel_visibility() -> void:
 	_schedule_card_dock()
 
 
-## Place Timeline / Variables from remembered corner+% (tight left column).
+## Place Timeline / Variables in a tight left column (never over plate center).
 func _apply_chrome_docks() -> void:
 	if timeline == null or variables_panel == null:
 		return
@@ -1447,17 +1464,49 @@ func _apply_chrome_docks() -> void:
 	ChromeDock.rail_right = rail_right
 	var vp := get_viewport().get_visible_rect().size if get_viewport() != null \
 			else Vector2(1280, 720)
-	ChromeDock.apply(timeline, "timeline", vp)
-	ChromeDock.apply(variables_panel, "variables", vp)
-	# When both visible with default left-column layouts, stack Variables
-	# under Timeline so they never overlap.
-	if timeline.visible and variables_panel.visible \
-			and not ChromeDock.has_saved("variables"):
-		var gap := 4.0
-		var under := timeline.offset_top + timeline.size.y + gap
-		variables_panel.offset_top = under
-		variables_panel.position.y = under
-		variables_panel.offset_bottom = under + variables_panel.size.y
+	if vp.x < 400.0:
+		vp = Vector2(1280, 720)
+	# Pin docks to the ICON rail only — not the full LeftStack (Modify card) —
+	# so Timeline never sits on the plate center.
+	var dock_left := _CHROME_PAD + _RAIL_ICON_W + 8.0
+	var max_w := minf(220.0, vp.x * 0.28)
+	var top := ChromeDock.top_inset
+	var max_h := maxf(120.0, vp.y - top - ChromeDock.bottom_inset - 8.0)
+	if timeline.visible:
+		timeline.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		timeline.custom_minimum_size = Vector2(max_w, 120)
+		timeline.size = Vector2(max_w, minf(200.0, max_h * 0.45))
+		timeline.position = Vector2(dock_left, top)
+		timeline.offset_left = dock_left
+		timeline.offset_top = top
+		timeline.offset_right = dock_left + max_w
+		timeline.offset_bottom = top + timeline.size.y
+	if variables_panel.visible:
+		var vtop := top
+		if timeline.visible:
+			vtop = timeline.offset_bottom + 4.0
+		variables_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		variables_panel.custom_minimum_size = Vector2(max_w, 120)
+		var vh := minf(220.0, maxf(120.0, vp.y - vtop - ChromeDock.bottom_inset))
+		variables_panel.size = Vector2(max_w, vh)
+		variables_panel.position = Vector2(dock_left, vtop)
+		variables_panel.offset_left = dock_left
+		variables_panel.offset_top = vtop
+		variables_panel.offset_right = dock_left + max_w
+		variables_panel.offset_bottom = vtop + vh
+	# Assembly: only when instances exist; park above ViewHud on the right.
+	if assembly_panel != null:
+		var has_inst: bool = false
+		if view != null and view.doc != null:
+			has_inst = view.doc.instance_list().size() > 0
+		assembly_panel.visible = has_inst and not (sketch_mode != null and sketch_mode.active)
+		if assembly_panel.visible:
+			var aw := minf(260.0, vp.x * 0.22)
+			assembly_panel.offset_left = -aw - _CHROME_PAD
+			assembly_panel.offset_right = -_CHROME_PAD
+			# Sit above ViewHud (~80px) so Edges/Section are not covered.
+			assembly_panel.offset_top = -minf(220.0, vp.y * 0.32) - 100.0
+			assembly_panel.offset_bottom = -100.0
 
 
 ## Push Timeline / Variables using ChromeDock (resize / rail width changes).
@@ -1654,11 +1703,14 @@ func _reflow_left_stack() -> void:
 	_sync_bottom_docks()
 
 
-## After creating a feature: show Timeline briefly, select the row, open params.
+## After creating a feature: open params ONLY if Timeline is already user-shown.
+## Never force Timeline on — that broke "hidden until requested."
 func open_feature_params(fid: String) -> void:
 	if fid == "" or timeline == null:
 		return
-	show_timeline = true
+	if not show_timeline:
+		_on_status("Feature created — View ▸ Timeline to edit parameters")
+		return
 	_update_panel_visibility()
 	timeline.refresh()
 	timeline._select_feature(fid)
@@ -1668,13 +1720,48 @@ func open_feature_params(fid: String) -> void:
 		_on_status("Feature created — edit Params (JSON) if needed")
 
 
-## Hide Timeline after property edits are kept/cancelled (plate returns).
+## Keep View menu checkboxes honest with show_* flags.
+func _sync_view_menu_checks() -> void:
+	if _view_popup == null:
+		return
+	var ti := _view_popup.get_item_index(4)
+	var vi := _view_popup.get_item_index(0)
+	var si := _view_popup.get_item_index(5)
+	if ti >= 0:
+		_view_popup.set_item_checked(ti, show_timeline)
+	if vi >= 0:
+		_view_popup.set_item_checked(vi, show_variables)
+	if si >= 0:
+		_view_popup.set_item_checked(si, show_scenic_bg)
+
+
 func hide_timeline_if_idle() -> void:
+	# Only auto-hide if the user did not explicitly open Timeline.
+	# Property panel close no longer implies Timeline was forced on.
 	if timeline != null and timeline.property_panel != null \
 			and timeline.property_panel.visible:
-		return
-	show_timeline = false
+		timeline.property_panel.visible = false
+	_sync_view_menu_checks()
 	_update_panel_visibility()
+
+
+func _reset_panel_layout() -> void:
+	if FileAccess.file_exists(ChromeDock.CFG_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(ChromeDock.CFG_PATH))
+	_apply_chrome_docks()
+	_on_status("Panel layout reset")
+
+
+## Esc / Cancel: close PropertyPanel if open.
+func cancel_property_panel() -> bool:
+	if timeline == null or timeline.property_panel == null:
+		return false
+	if not timeline.property_panel.visible:
+		return false
+	timeline.property_panel.cancel_edits()
+	_sync_view_menu_checks()
+	_update_panel_visibility()
+	return true
 
 
 func _rail_finish_extrude() -> void:
@@ -2190,8 +2277,21 @@ func _on_file_menu(id: int) -> void:
 func _do_new() -> void:
 	view.new_document()
 	current_path = ""
+	# Shop default: a thin plate ready for holes / hex / fillet — not an empty grid.
+	var bid: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
+	var fid: String = view.feature_of_body(bid)
+	if fid != "" and view.doc.has_method("graph_rename"):
+		view.doc.graph_rename(fid, "Box")
+	view.graph_changed()
+	view.select_entity(bid, "")
+	if camera != null:
+		camera.frame_contents()
 	_last_saved_revision = view.doc.revision()
-	_on_status("New document")
+	show_timeline = false
+	show_variables = false
+	_sync_view_menu_checks()
+	_update_panel_visibility()
+	_on_status("New — 50×50×5 plate")
 
 
 func _do_open_dialog() -> void:
@@ -2676,12 +2776,38 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and event.ctrl_pressed:
-		match event.keycode:
-			KEY_S:
-				_save_current()
-			KEY_O:
-				_confirm_discard(_do_open_dialog)
-	elif event is InputEventKey and event.pressed and event.keycode == KEY_F1:
-		help_overlay.toggle()
-		get_viewport().set_input_as_handled()
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE:
+			if cancel_property_panel():
+				_on_status("Edits cancelled")
+				get_viewport().set_input_as_handled()
+				return
+			var hid := false
+			if show_timeline:
+				show_timeline = false
+				hid = true
+			if show_variables:
+				show_variables = false
+				hid = true
+			if hid:
+				_sync_view_menu_checks()
+				_update_panel_visibility()
+				_on_status("Panels hidden (View ▸ Timeline / Variables to show)")
+				get_viewport().set_input_as_handled()
+				return
+		if event.ctrl_pressed:
+			match event.keycode:
+				KEY_S:
+					_save_current()
+					get_viewport().set_input_as_handled()
+				KEY_O:
+					_confirm_discard(_do_open_dialog)
+					get_viewport().set_input_as_handled()
+				KEY_Z:
+					if view != null and view.doc.can_undo():
+						view.undo()
+						_on_status("Undo")
+						get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_F1:
+			help_overlay.toggle()
+			get_viewport().set_input_as_handled()

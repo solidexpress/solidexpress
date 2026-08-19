@@ -2963,16 +2963,13 @@ func _gui_key(event: InputEventKey) -> bool:
 			if ops_panel != null and ops_panel.cancel_pending_pick():
 				clear_hole_markers()
 				return true
-			# PropertyPanel: Esc cancels live-preview edits.
 			var main_n := _find_main()
-			if main_n != null and main_n.timeline != null \
-					and main_n.timeline.property_panel != null \
-					and main_n.timeline.property_panel.visible:
-				main_n.timeline.property_panel.cancel_edits()
-				if main_n.has_method("hide_timeline_if_idle"):
-					main_n.hide_timeline_if_idle()
+			# PropertyPanel: Esc cancels — also via main.cancel_property_panel.
+			if main_n != null and main_n.has_method("cancel_property_panel") \
+					and main_n.cancel_property_panel():
+				status.emit("Edits cancelled")
 				return true
-			# Dismiss Timeline / Variables when visible.
+			# Dismiss Timeline / Variables when visible (user-toggled).
 			if main_n != null:
 				var hid := false
 				if main_n.get("show_timeline") == true:
@@ -2982,6 +2979,8 @@ func _gui_key(event: InputEventKey) -> bool:
 					main_n.show_variables = false
 					hid = true
 				if hid:
+					if main_n.has_method("_sync_view_menu_checks"):
+						main_n._sync_view_menu_checks()
 					main_n._update_panel_visibility()
 					status.emit("Panels hidden (View ▸ Timeline / Variables to show)")
 					return true

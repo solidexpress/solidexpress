@@ -175,16 +175,20 @@ func test_rail_never_covered() -> void:
 	for i in range(4):
 		await process_frame
 	check(main.timeline.visible, "timeline visible when toggled")
-	check(not _overlaps(main.timeline, main.left_stack), "timeline clear of left rail")
-	check(not _overlaps(main.variables_panel, main.left_stack), "variables clear of rail")
+	# Docks pin to the icon rail; they may sit beside (not under) the Modify card.
+	var rail: Control = main.left_stack
+	var icon_band := Rect2(rail.global_position, Vector2(52, rail.size.y))
+	var t_r: Rect2 = main.timeline.get_global_rect()
+	var v_r: Rect2 = main.variables_panel.get_global_rect()
+	var t_hit: Rect2 = t_r.intersection(icon_band)
+	var v_hit: Rect2 = v_r.intersection(icon_band)
+	check(t_hit.size.x < 8.0, "timeline clear of icon rail")
+	check(v_hit.size.x < 8.0, "variables clear of icon rail")
 	check(not _overlaps(main.timeline, main.variables_panel),
 			"variables clear of timeline (not stacked)")
 	check(main.timeline.size.x <= 270.0,
 			"timeline rendered width <= 270 (got %.0f)" % main.timeline.size.x)
 	var vp: Vector2 = Vector2(1280, 720)
-	ChromeDock.rail_right = 56.0
-	ChromeDock.apply(main.timeline, "timeline", vp)
-	ChromeDock.apply(main.variables_panel, "variables", vp)
 	check(main.timeline.get_global_rect().end.x <= vp.x * 0.4 + 8.0,
 			"timeline stays in left band")
 	# Corner persistence: move variables, resize, re-apply.

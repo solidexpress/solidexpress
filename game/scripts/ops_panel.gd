@@ -818,32 +818,25 @@ func _do_circular(body: String, axis_point: Vector3, axis_dir: Vector3) -> void:
 
 
 func _apply_thread() -> void:
-	# Open the size dialog for any timeline body that could take a thread.
-	# Heuristic refusal of obviously non-cylindrical boxes stays; squat
-	# cylinders (default 5×5×5 blank) are allowed — pitch/turns handle height.
-	if view == null or view.selected_body == "":
+	# Prefer a selected cylindrical face; otherwise open dialog on any body so a
+	# bore in a plate can still be threaded (user sets Major r).
+	if view == null:
 		status.emit("Thread: select a body")
 		return
-	var body := view.selected_body
-	var fid := view.feature_of_body(body)
+	if view.selected_body == "" and view.selected_face != "":
+		var ob: String = view._owner_body_of(view.selected_face)
+		if ob != "":
+			view.select_entity(ob, view.selected_face)
+	if view.selected_body == "":
+		status.emit("Thread: select a body or cylindrical face")
+		return
+	var fid := view.feature_of_body(view.selected_body)
 	if fid == "":
 		status.emit("Thread needs a timeline body")
 		return
-	var bb: Dictionary = view.doc.measure_bbox(body)
+	var bb: Dictionary = view.doc.measure_bbox(view.selected_body)
 	if bb.is_empty():
 		status.emit("Thread failed (no bbox)")
-		return
-	var mn: Vector3 = bb["min"]
-	var mx: Vector3 = bb["max"]
-	var size := mx - mn
-	var xy_a := minf(size.x, size.y)
-	var xy_b := maxf(size.x, size.y)
-	# Reject clear boxes / plates (XY aspect far from round).
-	if xy_b > xy_a * 1.35:
-		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
-		return
-	if xy_a < 1.0:
-		status.emit("Thread failed (body too small)")
 		return
 	_show_thread_dialog()
 
@@ -860,13 +853,13 @@ func _show_thread_dialog() -> void:
 	var mx: Vector3 = bb["max"]
 	var size := mx - mn
 	var xy_a := minf(size.x, size.y)
-	var xy_b := maxf(size.x, size.y)
+	# Default major radius: round-ish bodies use half min XY; plates use 3 mm
+	# (typical M6 bore) so Thread still opens after a hole on a box.
 	var major_r: float = 0.5 * xy_a
-	# Use the longest extent as thread length so squat cylinders still work.
-	var height: float = maxf(size.z, maxf(size.x, size.y))
+	var xy_b := maxf(size.x, size.y)
 	if xy_b > xy_a * 1.35:
-		status.emit("Thread needs a cylindrical face — select a shaft or bore (not a box)")
-		return
+		major_r = 3.0
+	var height: float = maxf(size.z, maxf(size.x, size.y))
 	var dlg := Window.new()
 	dlg.title = "Thread"
 	dlg.size = Vector2i(380, 220)
@@ -1175,8 +1168,18 @@ func _arm_hole() -> void:
 
 func _arm_hole_wizard() -> void:
 	var body := view.selected_body
+	# Face-only selection still arms — first face click binds the body.
+	if body == "" and view.selected_face != "":
+		body = view._owner_body_of(view.selected_face) if view.has_method("_owner_body_of") else ""
 	if body == "":
-		status.emit("Hole Wizard: select a body")
+		_pending = Pending.HOLE_WIZARD
+		_pending_body = ""
+		_pending_face = ""
+		_pending_fid = ""
+		_hole_wizard_positions = PackedVector3Array()
+		_hole_wizard_direction = Vector3.ZERO
+		_sync_apply_holes_btn()
+		status.emit("Hole Wizard: click a face (body is taken from the face)")
 		return
 	var fid := view.feature_of_body(body)
 	if fid == "":
@@ -1189,14 +1192,12 @@ func _arm_hole_wizard() -> void:
 	_pending_first = _pending_face
 	_hole_wizard_positions = PackedVector3Array()
 	_hole_wizard_direction = Vector3.ZERO
-	# Bolt circles are simple holes — don't inherit Hex from a prior Hex opening.
 	if _hole_type != null and _hole_type.selected == 3:
 		_hole_type.selected = 0
 	if _hole_diameter != null and _hole_diameter.value <= 0.0:
 		_hole_diameter.value = 6.0
 	_sync_apply_holes_btn()
 	_sync_hole_markers()
-	# Keep body ops visible so Apply holes stays on-screen.
 	visible = true
 	_body_ops.visible = true
 	if _apply_holes_btn != null:
@@ -1281,8 +1282,17 @@ func cancel_pending_pick() -> bool:
 
 
 func _accumulate_hole_wizard_pick(body: String, face: String, point: Vector3) -> void:
+	# First face click may bind the body when Wizard was armed with empty selection.
+	if _pending_body == "" and body != "":
+		_pending_body = body
+		_pending_fid = view.feature_of_body(body)
+		if view.selected_body == "":
+			view.select_entity(body, face)
 	var target_body := _pending_body
 	var target_face := face if face != "" else _pending_face
+	if target_body == "":
+		status.emit("Hole Wizard: click a face on a body")
+		return
 	if body != "" and body != target_body:
 		status.emit("Hole Wizard: pick the same body (or Apply holes / Esc)")
 		return
@@ -1440,8 +1450,15 @@ func _stamp_hole_expressions(hole_fid: String, htype: String, nominal: float) ->
 
 
 func _apply_hex_opening() -> bool:
-	if view == null or view.selected_body == "":
+	if view == null:
 		status.emit("Hex opening: select a body")
+		return false
+	if view.selected_body == "" and view.selected_face != "":
+		var ob: String = view._owner_body_of(view.selected_face)
+		if ob != "":
+			view.select_entity(ob, view.selected_face)
+	if view.selected_body == "":
+		status.emit("Hex opening: select a body or face")
 		return false
 	if _hole_type != null:
 		_hole_type.selected = 3
