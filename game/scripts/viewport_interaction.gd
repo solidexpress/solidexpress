@@ -2969,6 +2969,18 @@ func _gui_key(event: InputEventKey) -> bool:
 					and main_n.cancel_property_panel():
 				status.emit("Edits cancelled")
 				return true
+			# Drop TriBall arm.
+			if triball != null and triball.visible:
+				triball.visible = false
+				status.emit("TriBall cancelled")
+				return true
+			# Clear selection card by clearing selection.
+			if view != null and (view.selected_body != "" or view.selection_size() > 0):
+				view.clear_selection()
+				if main_n != null:
+					main_n._update_panel_visibility()
+				status.emit("Selection cleared")
+				return true
 			# Dismiss Timeline / Variables when visible (user-toggled).
 			if main_n != null:
 				var hid := false

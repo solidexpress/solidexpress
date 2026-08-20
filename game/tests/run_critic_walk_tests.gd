@@ -244,10 +244,18 @@ func step_i_jaw_af(main) -> void:
 			break
 	if id == "":
 		id = str(view.doc.body_ids()[0])
-	view.select_entity(id, "")
+	var top := ""
+	for face_id in view.doc.get_face_ids(id):
+		var mid: Vector3 = view.doc.face_midpoint(face_id)
+		if absf(mid.z - 5.0) < 1.5:
+			top = face_id
+			break
+	view.select_entity(id, top)
 	main._update_panel_visibility()
 	await process_frame
-	check(main.ops_panel._apply_hex_opening(), "hex opening")
+	check(main.ops_panel._apply_hex_opening(), "hex opening armed")
+	if top != "":
+		main.ops_panel.handle_viewport_pick(id, top, Vector3(12, 0, 5))
 	var vol0: float = view.doc.body_volume(id)
 	main.interaction._ctx_jaw_af(14)
 	await process_frame

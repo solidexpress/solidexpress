@@ -91,10 +91,17 @@ func test_jaw_af_chip(main) -> void:
 	var view: DocumentView = main.view
 	view.new_document()
 	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
-	view.select_entity(id, "")
+	var top := ""
+	for face_id in view.doc.get_face_ids(id):
+		var mid: Vector3 = view.doc.face_midpoint(face_id)
+		if absf(mid.z - 5.0) < 0.5:
+			top = face_id
+			break
+	view.select_entity(id, top)
 	main._update_panel_visibility()
 	await process_frame
-	check(main.ops_panel._apply_hex_opening(), "hex opening")
+	check(main.ops_panel._apply_hex_opening(), "hex opening armed")
+	main.ops_panel.handle_viewport_pick(id, top, Vector3(0, 0, 5))
 	var vol10: float = view.doc.body_volume(id)
 	main.variables_panel._on_quick_jaw(14)
 	await process_frame
@@ -112,12 +119,17 @@ func test_thin_plate_hole(main) -> void:
 	var view: DocumentView = main.view
 	view.new_document()
 	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
-	view.select_entity(id, "")
+	var top := ""
+	for face_id in view.doc.get_face_ids(id):
+		var mid: Vector3 = view.doc.face_midpoint(face_id)
+		if absf(mid.z - 5.0) < 0.5:
+			top = face_id
+			break
+	view.select_entity(id, top)
 	main._update_panel_visibility()
 	await process_frame
 	var ops: OpsPanel = main.ops_panel
 	check(not ops._hole_diameter_too_large(id, 6.0), "Ø6 not rejected on 5 mm plate")
-	# Dialog must expose an Apply button (not a blank ConfirmationDialog).
 	ops._prompt_hole()
 	await process_frame
 	var win: Window = null

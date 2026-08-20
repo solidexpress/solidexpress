@@ -12,7 +12,8 @@ signal status(text: String)
 signal dressup_armed_changed(armed: bool, is_fillet: bool)
 signal sketch_requested
 
-enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, LINEAR, CIRCULAR, MIRROR, FILLET_EDGES, CHAMFER_EDGES }
+enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, HEX_PLACE, HOLE_MOVE,
+		LINEAR, CIRCULAR, MIRROR, FILLET_EDGES, CHAMFER_EDGES }
 
 var view: DocumentView
 var timeline_panel: TimelinePanel
@@ -57,6 +58,9 @@ var _pending_fid := ""
 ## Accumulated drill points for Hole Wizard (one Hole feature on Apply).
 var _hole_wizard_positions: PackedVector3Array = PackedVector3Array()
 var _hole_wizard_direction := Vector3.ZERO
+## Feature id being dragged for HOLE_MOVE (empty when not moving).
+var _hole_move_fid := ""
+var _hole_move_start := Vector3.ZERO
 ## World-space magnet hold for Place hole… (mm). Farther clicks stay free.
 const HOLE_SNAP_MM := 8.0
 const HOLE_CORNER_TOL_MM := 0.45
@@ -374,6 +378,12 @@ func _on_picked(body: String, face: String, point: Vector3) -> void:
 	if _pending == Pending.HOLE_WIZARD:
 		_accumulate_hole_wizard_pick(body, face, point)
 		return
+	if _pending == Pending.HEX_PLACE:
+		_resolve_hex_place(body, face, point)
+		return
+	if _pending == Pending.HOLE_MOVE:
+		_finish_hole_move(body, face, point)
+		return
 	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
 		_accumulate_dressup_edge(body, point)
 		return
@@ -433,7 +443,7 @@ func _on_primitive_size_changed(_v: float) -> void:
 	var center: Vector3 = bb["center"]
 	var half := size * 0.5
 	if view.resize_primitive_aabb(view.selected_body, center - half, center + half):
-		status.emit("Size → %.3f × %.3f × %.3f" % [size.x, size.y, size.z])
+		status.emit("Size → %.3f × %.3f × %.3f (holes remapped)" % [size.x, size.y, size.z])
 
 
 func _on_hole_size_selected(index: int) -> void:
@@ -1029,7 +1039,50 @@ func _apply_hole() -> bool:
 		status.emit("Hole Ø%.1f is larger than the face (%.1f mm in-plane)" % [
 			_hole_diameter.value, _hole_inplane_limit(body)])
 		return false
+	# Face selected → place at face center (one click). No face → body-center
+	# fallback (legacy hotkeys / tests) OR arm place for Hex.
 	return _commit_hole(body, face, _default_hole_position(body, face))
+
+
+## Arm click-to-place for Hole or Hex on the current face (or next face click).
+func _arm_hole_place(hex_mode: bool) -> void:
+	if view == null:
+		return
+	var body := view.selected_body
+	var face := view.selected_face
+	if body == "" and face != "":
+		body = view._owner_body_of(face)
+	if hex_mode and _hole_type != null:
+		_hole_type.selected = 3
+		_hole_diameter.value = _hex_af()
+		_hole_depth.value = 0.0
+	_pending = Pending.HEX_PLACE if hex_mode else Pending.HOLE
+	_pending_body = body
+	_pending_face = face
+	_pending_fid = view.feature_of_body(body) if body != "" else ""
+	var kind := "Hex" if hex_mode else "Hole"
+	if face != "":
+		status.emit("%s: click a point on the face (snap on) · Esc cancel" % kind)
+	elif body != "":
+		status.emit("%s: click a face, then a point · Esc cancel" % kind)
+	else:
+		status.emit("%s: click a face, then a point · Esc cancel" % kind)
+
+
+func _apply_hex_opening() -> bool:
+	if view == null:
+		status.emit("Hex opening: select a body or face")
+		return false
+	if view.selected_body == "" and view.selected_face != "":
+		var ob: String = view._owner_body_of(view.selected_face)
+		if ob != "":
+			view.select_entity(ob, view.selected_face)
+	if _hole_type != null:
+		_hole_type.selected = 3
+	_hole_diameter.value = _hex_af()
+	_hole_depth.value = 0.0
+	_arm_hole_place(true)
+	return true
 
 
 func _hole_inplane_limit(body: String) -> float:
@@ -1100,17 +1153,15 @@ func _show_hole_dialog(hex_mode: bool) -> void:
 	apply.pressed.connect(func() -> void:
 		_hole_diameter.value = dspin.value
 		_hole_depth.value = zspin.value
-		var body := view.selected_body if view != null else ""
 		if hex_mode:
 			_apply_hex_opening()
-		elif body == "":
-			status.emit("Hole: select a body")
-		elif _hole_diameter_too_large(body, _hole_diameter.value):
-			status.emit("Hole Ø%.1f is larger than the face (%.1f mm in-plane)" % [
-				_hole_diameter.value, _hole_inplane_limit(body)])
 		else:
+			var body := view.selected_body if view != null else ""
 			var face := view.selected_face if view != null else ""
-			_commit_hole(body, face, _default_hole_position(body, face))
+			if body != "" and face != "" and not _hole_diameter_too_large(body, _hole_diameter.value):
+				_commit_hole(body, face, _default_hole_position(body, face))
+			else:
+				_arm_hole_place(false)
 		win.queue_free())
 	btns.add_child(apply)
 	add_child(win)
@@ -1248,6 +1299,7 @@ func hole_wizard_point_count() -> int:
 ## face-refine — which would clear accumulated edges.
 func consumes_viewport_pick() -> bool:
 	return _pending == Pending.HOLE_WIZARD or _pending == Pending.HOLE \
+			or _pending == Pending.HEX_PLACE or _pending == Pending.HOLE_MOVE \
 			or _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES \
 			or _pending == Pending.LINEAR or _pending == Pending.CIRCULAR \
 			or _pending == Pending.MIRROR
@@ -1257,6 +1309,12 @@ func consumes_viewport_pick() -> bool:
 func handle_viewport_pick(body: String, face: String, point: Vector3) -> bool:
 	if _pending == Pending.HOLE_WIZARD:
 		_accumulate_hole_wizard_pick(body, face, point)
+		return true
+	if _pending == Pending.HEX_PLACE:
+		_resolve_hex_place(body, face, point)
+		return true
+	if _pending == Pending.HOLE_MOVE:
+		_finish_hole_move(body, face, point)
 		return true
 	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
 		_accumulate_dressup_edge(body, point)
@@ -1268,6 +1326,103 @@ func handle_viewport_pick(body: String, face: String, point: Vector3) -> bool:
 	return false
 
 
+func _resolve_hex_place(body: String, face: String, point: Vector3) -> void:
+	if body == "" and face == "":
+		status.emit("Missed the solid — click a face")
+		return
+	if _pending_body == "" and body != "":
+		_pending_body = body
+		_pending_fid = view.feature_of_body(body)
+	if face != "":
+		_pending_face = face
+		if body != "":
+			_pending_body = body
+			_pending_fid = view.feature_of_body(body)
+	var target_body := _pending_body if _pending_body != "" else body
+	var target_face := _pending_face if _pending_face != "" else face
+	if target_face == "":
+		status.emit("Hex: click a face, then a point")
+		return
+	if target_body == "":
+		status.emit("Hex: need a body")
+		return
+	if _hole_type != null:
+		_hole_type.selected = 3
+	var position := _hole_place_position(target_body, target_face, point)
+	_pending = Pending.NONE
+	if _commit_hole(target_body, target_face, position):
+		status.emit("Hex opening AF = jaw_af+clearance — click near center + drag to move")
+		_arm_last_hole_move()
+
+
+func _arm_last_hole_move() -> void:
+	var last_hole := ""
+	for f in view.doc.graph_features():
+		if str(f.get("type", "")) == "hole":
+			last_hole = str(f.get("id", ""))
+	if last_hole == "":
+		return
+	_hole_move_fid = last_hole
+	_pending = Pending.HOLE_MOVE
+	var raw := ""
+	for f in view.doc.graph_features():
+		if str(f.get("id")) == last_hole:
+			raw = str(f.get("params", "{}"))
+			break
+	var p = JSON.parse_string(raw)
+	if p is Dictionary and p.has("position"):
+		var arr = p["position"]
+		if typeof(arr) == TYPE_ARRAY and arr.size() >= 3:
+			_hole_move_start = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+			if interaction != null:
+				interaction.set_hole_markers(PackedVector3Array([_hole_move_start]),
+						_hole_diameter.value)
+
+
+func _finish_hole_move(body: String, face: String, point: Vector3) -> void:
+	if _hole_move_fid == "":
+		_pending = Pending.NONE
+		return
+	var target_body := body if body != "" else _pending_body
+	var target_face := face if face != "" else _pending_face
+	if target_body == "":
+		status.emit("Hole move cancelled")
+		_pending = Pending.NONE
+		_hole_move_fid = ""
+		return
+	if target_face == "":
+		# Keep face from hole direction if possible — project onto body top.
+		target_face = _pending_face
+	var position := _hole_place_position(target_body, target_face if target_face != "" else "", point)
+	if target_face == "":
+		# Fallback: snap in XY on body bbox top.
+		var bb: Dictionary = view.doc.measure_bbox(target_body)
+		if not bb.is_empty():
+			position.z = float(bb["max"].z)
+	_set_hole_position(_hole_move_fid, position)
+	_pending = Pending.NONE
+	_hole_move_fid = ""
+	status.emit("Hole moved to (%.1f, %.1f, %.1f)" % [position.x, position.y, position.z])
+
+
+func _set_hole_position(hole_fid: String, position: Vector3) -> bool:
+	var raw := ""
+	for f in view.doc.graph_features():
+		if str(f.get("id")) == hole_fid:
+			raw = str(f.get("params", "{}"))
+			break
+	var p = JSON.parse_string(raw)
+	if typeof(p) != TYPE_DICTIONARY:
+		return false
+	p["position"] = [position.x, position.y, position.z]
+	if view.doc.graph_set_params(hole_fid, JSON.stringify(p)):
+		view.graph_changed()
+		if interaction != null:
+			interaction.set_hole_markers(PackedVector3Array([position]), _hole_diameter.value)
+		return true
+	return false
+
+
 ## Cancel Hole Wizard (or any armed pending pick). Returns true if something was armed.
 func cancel_pending_pick() -> bool:
 	if _pending == Pending.NONE:
@@ -1275,7 +1430,10 @@ func cancel_pending_pick() -> bool:
 	var was_wizard := _pending == Pending.HOLE_WIZARD
 	var was_fillet := _pending == Pending.FILLET_EDGES
 	var was_dress := was_fillet or _pending == Pending.CHAMFER_EDGES
+	var was_place := _pending == Pending.HEX_PLACE or _pending == Pending.HOLE \
+			or _pending == Pending.HOLE_MOVE
 	_pending = Pending.NONE
+	_hole_move_fid = ""
 	_clear_hole_wizard()
 	if was_dress:
 		dressup_armed_changed.emit(false, was_fillet)
@@ -1283,6 +1441,8 @@ func cancel_pending_pick() -> bool:
 		status.emit("Hole Wizard cancelled")
 	elif was_dress:
 		status.emit("Edge pick cancelled")
+	elif was_place:
+		status.emit("Place cancelled")
 	else:
 		status.emit("Cancelled")
 	return true
@@ -1456,27 +1616,6 @@ func _stamp_hole_expressions(hole_fid: String, htype: String, nominal: float) ->
 		view.doc.graph_set_params(hole_fid, JSON.stringify(params))
 
 
-func _apply_hex_opening() -> bool:
-	if view == null:
-		status.emit("Hex opening: select a body")
-		return false
-	if view.selected_body == "" and view.selected_face != "":
-		var ob: String = view._owner_body_of(view.selected_face)
-		if ob != "":
-			view.select_entity(ob, view.selected_face)
-	if view.selected_body == "":
-		status.emit("Hex opening: select a body or face")
-		return false
-	if _hole_type != null:
-		_hole_type.selected = 3
-	_hole_diameter.value = _hex_af()
-	_hole_depth.value = 0.0
-	var ok := _apply_hole()
-	if ok:
-		status.emit("Hex opening AF = jaw_af+clearance")
-	return ok
-
-
 # --- two-target / precision-pick ops: arm, then click ---
 
 
@@ -1597,15 +1736,18 @@ func _resolve_pending(body: String, face: String, point: Vector3) -> void:
 func _resolve_hole_pick(body: String, face: String, point: Vector3) -> void:
 	var target_body := _pending_body
 	var target_face := face if face != "" else _pending_face
-	if body != "" and body != target_body:
+	if body != "" and body != target_body and target_body != "":
 		# Allow drilling into another face of the same body only.
 		status.emit("Hole cancelled (pick the same body)")
 		return
+	if target_body == "" and body != "":
+		target_body = body
 	if target_face == "":
 		status.emit("Hole cancelled (need a face)")
 		return
 	var position := _hole_place_position(target_body, target_face, point)
-	_commit_hole(target_body, target_face, position)
+	if _commit_hole(target_body, target_face, position):
+		_arm_last_hole_move()
 
 
 ## Resolve click → drill point: nearby magnets snap; corners inset by Inset.
