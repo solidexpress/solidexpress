@@ -179,11 +179,19 @@ func refresh_lists() -> void:
 			cl.add_theme_font_size_override("font_size", UiScale.body())
 			_mates_list.add_child(cl)
 
-	# Show when there is assembly content — not merely because a body is
-	# selected (that parked the panel on the plate for every shop session).
+	# Instances / mates / joints only — NOT connectors (those exist on every
+	# body and used to force this panel open atop the plate).
 	visible = not instances.is_empty() or not mates.is_empty() or _mate_armed \
-			or not connectors.is_empty() or not joints.is_empty()
+			or not joints.is_empty()
 	_refreshing = false
+	# Ask main to pin us to the right edge whenever we become visible.
+	var main := get_tree().get_first_node_in_group("sx_main") if get_tree() != null else null
+	if main == null:
+		main = get_parent()
+		while main != null and not main.has_method("_dock_assembly_right"):
+			main = main.get_parent()
+	if visible and main != null and main.has_method("_dock_assembly_right"):
+		main._dock_assembly_right()
 
 
 func _make_instance_row(inst: Dictionary) -> Control:

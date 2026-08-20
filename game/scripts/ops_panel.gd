@@ -545,13 +545,20 @@ func _chamfer_all() -> void:
 	_apply_dressup(false)
 
 
-## Strip / marking-menu: always arm edge picking so Radius stays configurable.
-## Instant-apply with a hidden default r=2.0 was the "no radius field" regression.
+## Strip / marking-menu: arm edge picking; second press commits when edges exist.
 func arm_or_apply_fillet() -> void:
+	if _pending == Pending.FILLET_EDGES:
+		if view != null and (not view.selected_edges.is_empty() or view.selected_edge != ""):
+			try_commit_pending()
+			return
 	_arm_dressup(true)
 
 
 func arm_or_apply_chamfer() -> void:
+	if _pending == Pending.CHAMFER_EDGES:
+		if view != null and (not view.selected_edges.is_empty() or view.selected_edge != ""):
+			try_commit_pending()
+			return
 	_arm_dressup(false)
 
 

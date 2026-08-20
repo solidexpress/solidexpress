@@ -330,8 +330,27 @@ func _add_expression_row(field: Dictionary, value: String) -> void:
 	edit.text = value
 	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	edit.tooltip_text = "Expression; keep the leading = to reference variables"
-	edit.text_submitted.connect(func(t: String) -> void: _set_param(field["key"], t))
+	edit.text_submitted.connect(func(t: String) -> void:
+		var s := t.strip_edges()
+		# Mechanic often types jaw_af+clearance without '='; accept it.
+		if s != "" and not s.begins_with("=") and _looks_like_expr(s):
+			s = "=" + s
+		_set_param(field["key"], s))
 	row.add_child(edit)
+
+
+func _looks_like_expr(s: String) -> bool:
+	# Letters / operators → treat as equation, not a bare number.
+	for i in s.length():
+		var ch := s.unicode_at(i)
+		if (ch >= 65 and ch <= 90) or (ch >= 97 and ch <= 122) or ch == 43 or ch == 42 \
+				or ch == 47 or ch == 45 or ch == 40 or ch == 41:
+			# Has a letter or + * / ( ) or mid-minus after start
+			if ch >= 65 or ch == 43 or ch == 42 or ch == 47 or ch == 40 or ch == 41:
+				return true
+			if ch == 45 and i > 0:
+				return true
+	return false
 
 
 ## Live preview: write the param and regenerate immediately. Each write is one
@@ -345,7 +364,10 @@ func _set_param(key: String, value) -> void:
 		view.graph_changed()
 		status.emit("Preview: %s = %s" % [key, str(value)])
 	else:
-		status.emit("Value rejected (regenerate failed) — reverting")
+		var why := ""
+		if view.doc.has_method("last_graph_error"):
+			why = str(view.doc.last_graph_error())
+		status.emit("Value rejected%s" % ((" — " + why) if why != "" else " (regenerate failed)"))
 		_params = JSON.parse_string(_original_json) if _edits == 0 else _params
 
 

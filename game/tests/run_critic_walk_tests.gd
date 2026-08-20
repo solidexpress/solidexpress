@@ -273,7 +273,7 @@ func step_j_analyze(main) -> void:
 
 
 func step_l_docks(main, vp: SubViewport) -> void:
-	print("- L docks off plate; Esc closes property panel")
+	print("- L docks off plate; Assembly on right; Esc closes params")
 	main.show_timeline = false
 	main.show_variables = false
 	main._sync_view_menu_checks()
@@ -282,23 +282,38 @@ func step_l_docks(main, vp: SubViewport) -> void:
 		await process_frame
 	check(not main.timeline.visible and not main.variables_panel.visible,
 			"docks hidden by default after features")
+	check(not main.assembly_panel.visible, "Assembly hidden without instances")
+	# Place instance → Assembly docks to the RIGHT of center.
+	var id: String = str(main.view.doc.body_ids()[0])
+	main.view.select_entity(id, "")
+	main.ops_panel._place_instance()
+	main._update_panel_visibility()
+	for i in range(3):
+		await process_frame
+	check(main.assembly_panel.visible, "Assembly visible with an instance")
+	var ar: Rect2 = main.assembly_panel.get_global_rect()
+	var mid_x := float(vp.size.x) * 0.5
+	check(ar.position.x >= mid_x - 1.0,
+			"Assembly left edge on right half (%.0f >= %.0f)" % [ar.position.x, mid_x])
 	main.show_timeline = true
-	main.show_variables = true
 	main._sync_view_menu_checks()
 	main._update_panel_visibility()
-	for i in range(4):
+	for i in range(3):
 		await process_frame
 	check(main.timeline.visible, "Timeline shown when toggled")
 	var t_r: Rect2 = main.timeline.get_global_rect()
-	var mid_x := float(vp.size.x) * 0.4
-	check(t_r.end.x <= mid_x + 8.0,
-			"Timeline right edge left of plate mid (%.0f <= %.0f)" % [t_r.end.x, mid_x])
-	for f in main.view.doc.graph_features():
-		if PropertyPanel.has_schema(str(f.get("type", ""))):
-			main.timeline.refresh()
-			main.timeline._select_feature(str(f.get("id")))
-			break
-	await process_frame
-	if main.timeline.property_panel != null and main.timeline.property_panel.visible:
-		check(main.cancel_property_panel(), "cancel_property_panel works")
-		check(not main.timeline.property_panel.visible, "property panel closed after cancel")
+	check(t_r.end.x <= float(vp.size.x) * 0.4 + 8.0,
+			"Timeline right edge left of plate mid (%.0f)" % t_r.end.x)
+	# Fillet second strip press commits.
+	main.show_timeline = false
+	main._update_panel_visibility()
+	main.view.select_entity(id, "")
+	var edges = main.view.doc.get_edge_ids(id)
+	if edges.size() > 0:
+		main.view.select_edge(id, str(edges[0]))
+		main.ops_panel.set_dressup_radius(1.0)
+		main.ops_panel.arm_or_apply_fillet()
+		main.ops_panel.arm_or_apply_fillet()
+		check(main.ops_panel._pending == main.ops_panel.Pending.NONE,
+				"second Fillet press commits")
+	check(not main.show_timeline, "Fillet still did not force Timeline")

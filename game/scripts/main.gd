@@ -115,6 +115,7 @@ var _last_saved_revision := 0
 
 
 func _ready() -> void:
+	add_to_group("sx_main")
 	get_tree().set_auto_accept_quit(false)
 	# Ensure window/display scale is finalized (macOS Retina may report 1.0
 	# on the very first frame). Defer one frame before computing UiScale.
@@ -614,17 +615,20 @@ func _build_ui() -> void:
 	assembly_panel = AssemblyPanel.new()
 	assembly_panel.name = "AssemblyPanel"
 	assembly_panel.view = view
+	# Dock to the RIGHT edge — never span the plate center.
+	# (Old offset_left=-652 put the left edge near mid-screen on 1280px.)
 	assembly_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	assembly_panel.anchor_left = 1.0
 	assembly_panel.anchor_right = 1.0
 	assembly_panel.anchor_top = 1.0
 	assembly_panel.anchor_bottom = 1.0
-	assembly_panel.offset_left = -652
-	assembly_panel.offset_right = -332
-	assembly_panel.offset_top = -420
-	assembly_panel.offset_bottom = -42
+	assembly_panel.offset_left = -264.0
+	assembly_panel.offset_right = -_CHROME_PAD
+	assembly_panel.offset_top = -280.0
+	assembly_panel.offset_bottom = -100.0
 	assembly_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	assembly_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	assembly_panel.visible = false
 	ui.add_child(assembly_panel)
 	assembly_panel.status.connect(_on_status)
 	assembly_panel.instance_selected.connect(func(id: String) -> void:
@@ -1445,7 +1449,10 @@ func _update_panel_visibility() -> void:
 	var sketching := sketch_mode != null and sketch_mode.active
 	card_box.visible = _selected_entity() != "" and not sketching
 	var has_feats := view.doc.graph_features().size() > 0
+	# Hard gate: Timeline only when the user asked (View ▸ Timeline).
 	timeline.visible = show_timeline and has_feats and not sketching
+	if not timeline.visible and timeline.property_panel != null:
+		timeline.property_panel.visible = false
 	variables_panel.visible = show_variables and not sketching
 	_apply_chrome_docks()
 	_update_left_rail()
@@ -1494,19 +1501,38 @@ func _apply_chrome_docks() -> void:
 		variables_panel.offset_top = vtop
 		variables_panel.offset_right = dock_left + max_w
 		variables_panel.offset_bottom = vtop + vh
-	# Assembly: only when instances exist; park above ViewHud on the right.
+	# Assembly: only with real assembly content; always docked to the RIGHT edge.
 	if assembly_panel != null:
 		var has_inst: bool = false
 		if view != null and view.doc != null:
 			has_inst = view.doc.instance_list().size() > 0
-		assembly_panel.visible = has_inst and not (sketch_mode != null and sketch_mode.active)
-		if assembly_panel.visible:
-			var aw := minf(260.0, vp.x * 0.22)
-			assembly_panel.offset_left = -aw - _CHROME_PAD
-			assembly_panel.offset_right = -_CHROME_PAD
-			# Sit above ViewHud (~80px) so Edges/Section are not covered.
-			assembly_panel.offset_top = -minf(220.0, vp.y * 0.32) - 100.0
-			assembly_panel.offset_bottom = -100.0
+		var sketching_now := sketch_mode != null and sketch_mode.active
+		# Own visibility here so assembly_panel.refresh cannot park a wide panel
+		# on the plate (connectors alone must not open it).
+		var want_asm := has_inst and not sketching_now
+		assembly_panel.visible = want_asm
+		if want_asm:
+			_dock_assembly_right(vp)
+
+
+func _dock_assembly_right(vp: Vector2 = Vector2.ZERO) -> void:
+	if assembly_panel == null:
+		return
+	if vp.x < 1.0:
+		vp = get_viewport().get_visible_rect().size if get_viewport() != null \
+				else Vector2(1280, 720)
+	var aw := minf(260.0, maxf(200.0, vp.x * 0.20))
+	assembly_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	assembly_panel.anchor_left = 1.0
+	assembly_panel.anchor_right = 1.0
+	assembly_panel.anchor_top = 1.0
+	assembly_panel.anchor_bottom = 1.0
+	assembly_panel.offset_left = -aw - _CHROME_PAD
+	assembly_panel.offset_right = -_CHROME_PAD
+	assembly_panel.offset_top = -minf(280.0, vp.y * 0.40) - 100.0
+	assembly_panel.offset_bottom = -100.0
+	assembly_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	assembly_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 
 
 ## Push Timeline / Variables using ChromeDock (resize / rail width changes).
