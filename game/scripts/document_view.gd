@@ -643,6 +643,43 @@ func resize_primitive_aabb(body_id: String, new_min: Vector3, new_max: Vector3) 
 	var size := new_max - new_min
 	if size.x < 0.1 or size.y < 0.1 or size.z < 0.1:
 		return false
+	var old_bb: Dictionary = doc.measure_bbox(body_id)
+	var old_min: Vector3 = old_bb["min"] if not old_bb.is_empty() else new_min
+	var old_max: Vector3 = old_bb["max"] if not old_bb.is_empty() else new_max
+	var old_size := old_max - old_min
+	# Remap hole/hex positions into the new AABB so W/H/D edit keeps openings.
+	var hole_updates: Array = []  # {fid, params}
+	var prim_fid: String = str(info.get("id", ""))
+	for f in doc.graph_features():
+		if str(f.get("type", "")) != "hole":
+			continue
+		var raw: String = str(f.get("params", "{}"))
+		var hp = JSON.parse_string(raw)
+		if typeof(hp) != TYPE_DICTIONARY:
+			continue
+		if str(hp.get("target", "")) != prim_fid:
+			continue
+		if not hp.has("position"):
+			continue
+		var arr = hp["position"]
+		if typeof(arr) != TYPE_ARRAY or arr.size() < 3:
+			continue
+		var pos := Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+		var fx := 0.5
+		var fy := 0.5
+		var fz := 1.0
+		if old_size.x > 1e-6:
+			fx = clampf((pos.x - old_min.x) / old_size.x, 0.0, 1.0)
+		if old_size.y > 1e-6:
+			fy = clampf((pos.y - old_min.y) / old_size.y, 0.0, 1.0)
+		if old_size.z > 1e-6:
+			fz = clampf((pos.z - old_min.z) / old_size.z, 0.0, 1.0)
+		var npos := Vector3(
+			new_min.x + fx * size.x,
+			new_min.y + fy * size.y,
+			new_min.z + fz * size.z)
+		hp["position"] = [npos.x, npos.y, npos.z]
+		hole_updates.append({"fid": str(f.get("id")), "params": hp})
 	var kind := str(params.get("kind", "box"))
 	match kind:
 		"box":
@@ -665,11 +702,20 @@ func resize_primitive_aabb(body_id: String, new_min: Vector3, new_max: Vector3) 
 					new_min.z + size.z * 0.5]
 		_:
 			return false
+	# Write remapped holes first (no regen), then primitive (one regen).
+	for u in hole_updates:
+		if doc.has_method("graph_set_params_no_regen"):
+			doc.graph_set_params_no_regen(str(u["fid"]), JSON.stringify(u["params"]))
+		else:
+			doc.graph_set_params(str(u["fid"]), JSON.stringify(u["params"]))
 	var keep := body_id
 	if not doc.graph_set_params(info["id"], JSON.stringify(params)):
 		return false
 	_after_mutation()
 	select_entity(keep, "")
+	if hole_updates.size() > 0:
+		# Soft toast via document_changed consumers; ops panel may also note.
+		pass
 	return true
 
 

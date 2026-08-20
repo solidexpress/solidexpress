@@ -121,9 +121,17 @@ func test_hex_opening_tracks_jaw_af(main) -> void:
 	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(40, 40, 10))
 	view.select_entity(id, "")
 	await process_frame
+	var top := ""
+	for face_id in view.doc.get_face_ids(id):
+		var mid: Vector3 = view.doc.face_midpoint(face_id)
+		if absf(mid.z - 10.0) < 0.5:
+			top = face_id
+			break
+	view.select_entity(id, top)
 	var vol0: float = view.doc.body_volume(id)
 	var ops: OpsPanel = main.ops_panel
-	check(ops._apply_hex_opening(), "hex opening applied")
+	check(ops._apply_hex_opening(), "hex opening armed")
+	ops.handle_viewport_pick(id, top, Vector3(0, 0, 10))
 	var vol10: float = view.doc.body_volume(id)
 	check(vol10 < vol0 - 100.0, "hex cut removed volume at AF 10")
 	check(view.doc.set_variable("jaw_af", "14"), "jaw_af → 14")

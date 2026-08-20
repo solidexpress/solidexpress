@@ -167,6 +167,7 @@ func _build_world() -> void:
 	_world_env.name = "WorldEnvironment"
 	_world_env.environment = _make_canyon_environment()
 	add_child(_world_env)
+	_sync_world_background()  # flat shop default (scenic is View-opt-in)
 
 	# Kernel is Z-up; Godot is Y-up. ModelSpace maps kernel +Z to world +Y.
 	model_space = Node3D.new()
@@ -249,10 +250,13 @@ func _make_canyon_environment() -> Environment:
 	sky.process_mode = Sky.PROCESS_MODE_QUALITY
 
 	var e := Environment.new()
-	e.background_mode = Environment.BG_SKY
+	# Shop default is flat; sky assets stay loaded for View → Scenic.
+	e.background_mode = Environment.BG_COLOR
+	e.background_color = Color(0.16, 0.17, 0.20)
 	e.sky = sky
 	e.background_energy_multiplier = 1.0
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	e.ambient_light_color = Color(0.55, 0.57, 0.62)
 	e.ambient_light_energy = 0.75
 	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	e.tonemap_mode = Environment.TONE_MAPPER_ACES
@@ -359,6 +363,7 @@ func _build_ui() -> void:
 	insert_popup.add_item("Thread…", 20)
 	insert_popup.add_item("Sketch…", 21)
 	insert_popup.add_item("Hex opening…", 22)
+	insert_popup.add_item("Hole Wizard…", 23)
 	insert_popup.id_pressed.connect(_on_insert_menu)
 
 	var mode_btn := MenuButton.new()
@@ -2315,7 +2320,9 @@ func _do_new() -> void:
 	_last_saved_revision = view.doc.revision()
 	show_timeline = false
 	show_variables = false
+	show_scenic_bg = false
 	_sync_view_menu_checks()
+	_sync_world_background()
 	_update_panel_visibility()
 	_on_status("New — 50×50×5 plate")
 
@@ -2437,6 +2444,10 @@ func _on_insert_menu(id: int) -> void:
 	if id == 22:
 		if ops_panel != null:
 			ops_panel._apply_hex_opening()
+		return
+	if id == 23:
+		if ops_panel != null:
+			ops_panel._arm_hole_wizard()
 		return
 	# Planes offer an offset (reference + distance).
 	if id >= 0 and id <= 2:
