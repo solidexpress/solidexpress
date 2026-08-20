@@ -437,6 +437,13 @@ Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow g
 - [x] PropertyPanel auto-prefixes `=` on `jaw_af+clearance`-style expressions; rejection shows `last_graph_error`
 - Gate: critic walk 44
 
+## Hex place + hole drag + resize remap (2026-08-20)
+- [x] Hex opening arms face+point place (snap); not body-center-only; click-to-move after place
+- [x] Primitive W/H/D resize remaps hole/hex positions in the AABB
+- [x] File → New forces flat background (`_sync_world_background`); scenic is View-opt-in
+- [x] Insert → Hole Wizard…; Esc clears TriBall + selection card
+- Gate: `run_wrench_placement_tests` (14) + critic walk 44
+
 ## Website demo movies (2026-08-15)
 - [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`
