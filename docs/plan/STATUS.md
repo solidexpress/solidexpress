@@ -430,6 +430,13 @@ Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow g
 - [x] Wizard arms without body-first; Hex/Thread take body from face; View → Analyze print…
 - Gate: `run_critic_walk_tests` (41)
 
+## Critique blockers: Assembly / Fillet / expr (2026-08-20)
+- [x] Assembly docks to **right edge** (never `offset_left=-652` mid-plate); hidden until instances; connectors alone do not open it
+- [x] Timeline hard-hidden unless `show_timeline`; property panel closed with it
+- [x] Strip Fillet/Chamfer: second press commits when edges selected
+- [x] PropertyPanel auto-prefixes `=` on `jaw_af+clearance`-style expressions; rejection shows `last_graph_error`
+- Gate: critic walk 44
+
 ## Website demo movies (2026-08-15)
 - [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`
