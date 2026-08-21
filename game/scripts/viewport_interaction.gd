@@ -2969,9 +2969,9 @@ func _gui_key(event: InputEventKey) -> bool:
 					and main_n.cancel_property_panel():
 				status.emit("Edits cancelled")
 				return true
-			# Drop TriBall arm.
-			if triball != null and triball.visible:
-				triball.visible = false
+			# Drop TriBall arm (must clear `active`, not only hide the mesh).
+			if triball != null and (triball.active or triball.visible):
+				triball.cancel()
 				status.emit("TriBall cancelled")
 				return true
 			# Clear selection card by clearing selection.

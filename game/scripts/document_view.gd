@@ -11,11 +11,16 @@ signal selection_changed(body_id: String, face_id: String)
 signal section_changed(enabled: bool)
 ## Emitted on every viewport pick (armed ops read the hit point from here).
 signal picked(body_id: String, face_id: String, point: Vector3)
+## Emitted when a pick lands on a hole/hex feature pocket.
+signal hole_feature_picked(fid: String)
 
 const BODY_COLOR := Color(0.72, 0.74, 0.78)
 ## Cold brushed-metal defaults so canyon HDRI reflections read on bodies.
+## When Scenic is off, drop metallic so flat ambient does not look cloudy.
 const BODY_METALLIC := 0.92
 const BODY_ROUGHNESS := 0.35
+const BODY_METALLIC_FLAT := 0.15
+const BODY_ROUGHNESS_FLAT := 0.55
 const SELECTED_BODY_COLOR := Color(0.55, 0.68, 0.9)
 const SELECTED_FACE_COLOR := Color(1.0, 0.62, 0.15)
 const HOVER_BODY_COLOR := Color(0.78, 0.84, 0.92)
@@ -47,6 +52,7 @@ var hovered_body := ""
 var hovered_face := ""
 var hovered_edge := ""
 var display_mode := DisplayMode.SHADED_EDGES
+var _scenic_reflections := false
 ## True while a section (clipping) plane is active on body meshes.
 ## Edge overlay lines are not clipped in v1.
 var section_enabled := false
@@ -203,10 +209,36 @@ func _make_material(color: Color, emission_energy: float = 0.0) -> ShaderMateria
 	var m := ShaderMaterial.new()
 	m.shader = _body_shader
 	m.set_shader_parameter("albedo_color", color)
-	m.set_shader_parameter("metallic", BODY_METALLIC)
-	m.set_shader_parameter("roughness", BODY_ROUGHNESS)
+	m.set_shader_parameter("metallic", _body_metal())
+	m.set_shader_parameter("roughness", _body_rough())
 	m.set_shader_parameter("emission_energy", emission_energy)
 	return m
+
+
+func set_scenic_reflections(on: bool) -> void:
+	_scenic_reflections = on
+	_refresh_body_material_params()
+	refresh()
+
+
+func _body_metal() -> float:
+	return BODY_METALLIC if _scenic_reflections else BODY_METALLIC_FLAT
+
+
+func _body_rough() -> float:
+	return BODY_ROUGHNESS if _scenic_reflections else BODY_ROUGHNESS_FLAT
+
+
+func _refresh_body_material_params() -> void:
+	for mid in _body_materials.keys():
+		var m: ShaderMaterial = _body_materials[mid]
+		if m != null:
+			m.set_shader_parameter("metallic", _body_metal())
+			m.set_shader_parameter("roughness", _body_rough())
+	for m in [_selected_body_material, _hover_body_material, _base_material]:
+		if m != null:
+			m.set_shader_parameter("metallic", _body_metal())
+			m.set_shader_parameter("roughness", _body_rough())
 
 
 func _make_section_shader() -> Shader:
@@ -264,8 +296,8 @@ func _make_section_material(albedo: Color, emission: Color = Color(0, 0, 0), emi
 	m.set_shader_parameter("albedo_color", albedo)
 	m.set_shader_parameter("section_point", _section_point)
 	m.set_shader_parameter("section_normal", _section_normal)
-	m.set_shader_parameter("metallic", BODY_METALLIC)
-	m.set_shader_parameter("roughness", BODY_ROUGHNESS)
+	m.set_shader_parameter("metallic", _body_metal())
+	m.set_shader_parameter("roughness", _body_rough())
 	m.set_shader_parameter("emission_color", emission)
 	m.set_shader_parameter("emission_energy", emission_energy)
 	m.set_shader_parameter("zebra_on", zebra_enabled)
@@ -560,9 +592,42 @@ func body_of_feature(fid: String) -> String:
 
 func feature_of_body(body_id: String) -> String:
 	for f in doc.graph_features():
-		if f["output_body"] == body_id:
-			return f["id"]
+		if str(f.get("output_body", "")) == body_id:
+			return str(f.get("id", ""))
 	return ""
+
+
+## Nearest hole/hex feature whose axis is within the tool radius of `point`.
+func hole_feature_near_point(body_id: String, point: Vector3) -> String:
+	var prim: String = feature_of_body(body_id)
+	var best := ""
+	var best_d := 1e9
+	for f in doc.graph_features():
+		if str(f.get("type", "")) != "hole":
+			continue
+		var raw: String = str(f.get("params", "{}"))
+		var hp = JSON.parse_string(raw)
+		if typeof(hp) != TYPE_DICTIONARY:
+			continue
+		if prim != "" and str(hp.get("target", "")) != prim:
+			continue
+		if not hp.has("position"):
+			continue
+		var arr = hp["position"]
+		if typeof(arr) != TYPE_ARRAY or arr.size() < 3:
+			continue
+		var pos := Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+		var diam := 6.0
+		if typeof(hp.get("diameter")) == TYPE_STRING:
+			diam = 20.0
+		elif typeof(hp.get("diameter")) == TYPE_FLOAT or typeof(hp.get("diameter")) == TYPE_INT:
+			diam = float(hp.get("diameter"))
+		var r := maxf(diam * 0.55, 3.0)
+		var d := point.distance_to(pos)
+		if d <= r and d < best_d:
+			best_d = d
+			best = str(f.get("id", ""))
+	return best
 
 
 ## Feature dict for the body, or {} when it is not a timeline feature.
@@ -828,6 +893,12 @@ func select_ray(origin: Vector3, direction: Vector3, additive := false) -> bool:
 	picked.emit(hit["body"], hit["face"], hit["point"])
 	if additive:
 		_toggle_hit(hit)
+		return true
+	# Prefer selecting a hole/hex feature when the click is on its pocket.
+	var hole_fid: String = hole_feature_near_point(str(hit["body"]), hit["point"] as Vector3)
+	if hole_fid != "":
+		select_entity(str(hit["body"]), "")
+		hole_feature_picked.emit(hole_fid)
 		return true
 	# First click on a body selects the body; clicking again refines to an
 	# edge (when the hit point is within tolerance of one) or the hit face.
