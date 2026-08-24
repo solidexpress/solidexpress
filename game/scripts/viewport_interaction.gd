@@ -2198,6 +2198,11 @@ func _sketch_input(event: InputEvent) -> void:
 				elif sketch_mode.has_length_override():
 					sketch_mode.clear_length_override()
 					status.emit("Length unlock")
+				elif sketch_mode.has_open_chain():
+					# Esc ends the open line chain (auto-close if enabled) —
+					# keep the sketch session so Extrude stays available.
+					sketch_mode.end_chain()
+					status.emit("Chain ended")
 				else:
 					sketch_mode.cancel()
 		accept_event()

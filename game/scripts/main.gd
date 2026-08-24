@@ -1263,6 +1263,10 @@ func _on_sketch_action(action: String) -> void:
 			sketch_mode.create_block("Block%d" % (sketch_mode.blocks.size() + 1))
 		"dimension":
 			_apply_dimension_from_chrome()
+		"done":
+			# Finish-bar Done ends the open line chain but keeps the sketch session.
+			if sketch_mode != null and sketch_mode.active:
+				sketch_mode.end_chain()
 		"revolve":
 			sketch_mode.finish_revolve(TAU, _finish_op_name())
 		"horizontal", "vertical", "parallel", "perpendicular", "equal", "coincident", \
@@ -2312,9 +2316,7 @@ func _do_new() -> void:
 	current_path = ""
 	# Shop default: a thin plate ready for holes / hex / fillet — not an empty grid.
 	var bid: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
-	var fid: String = view.feature_of_body(bid)
-	if fid != "" and view.doc.has_method("graph_rename"):
-		view.doc.graph_rename(fid, "Box")
+	# insert_primitive already names the feature "Box" in the add undo step.
 	view.graph_changed()
 	# Select for W/H/D, but never leave TriBall armed from a prior session.
 	view.select_entity(bid, "")

@@ -444,6 +444,13 @@ Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow g
 - [x] Insert → Hole Wizard…; Esc clears TriBall + selection card
 - Gate: `run_wrench_placement_tests` (14) + critic walk 44
 
+## CI gate: New plate + undo + auto-close (2026-08-24)
+- [x] `graph_add_primitive` stamps pretty name in the same undo step (sphere undo is one step)
+- [x] `run_ui_tests`: New seeds one plate; name edit accepts feature "Box"
+- [x] SketchMode `set_auto_close` / `has_open_chain`; Done + Esc end chain with force-close (≥2 segments)
+- [x] `graph_rename_no_undo` for hex stamp rename
+- Gate: ui 275 + workflow 82 + sketch 83 + print 9 (+ sketch_tools 141)
+
 ## Website demo movies (2026-08-15)
 - [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`

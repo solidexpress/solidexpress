@@ -1679,13 +1679,19 @@ func _stamp_hole_expressions(hole_fid: String, htype: String, nominal: float) ->
 		view.doc.graph_set_params_no_regen(hole_fid, JSON.stringify(params))
 	else:
 		view.doc.graph_set_params(hole_fid, JSON.stringify(params))
-	if htype == "hex" and view.doc.has_method("graph_rename"):
-		# Timeline should say hex N, not hole N.
+	if htype == "hex" and view.doc.has_method("graph_rename_no_undo"):
+		# Timeline should say hex N, not hole N — same undo as the hole add.
 		var n := 0
 		for f in view.doc.graph_features():
 			if str(f.get("type", "")) == "hole":
 				n += 1
-		view.doc.graph_rename(hole_fid, "hex %d" % maxi(n, 1))
+		view.doc.graph_rename_no_undo(hole_fid, "hex %d" % maxi(n, 1))
+	elif htype == "hex" and view.doc.has_method("graph_rename"):
+		var n2 := 0
+		for f in view.doc.graph_features():
+			if str(f.get("type", "")) == "hole":
+				n2 += 1
+		view.doc.graph_rename(hole_fid, "hex %d" % maxi(n2, 1))
 
 
 # --- two-target / precision-pick ops: arm, then click ---

@@ -2,6 +2,7 @@
 
 #include <godot_cpp/core/class_db.hpp>
 
+#include <cctype>
 #include "sx/commands_boolean.hpp"
 #include "sx/commands_draft.hpp"
 #include "sx/commands_dress.hpp"
@@ -731,6 +732,12 @@ String SxDocument::graph_add_primitive(const String& kind, double a, double b, d
     bool ok = apply_graph_edit("add " + to_std(kind), [&] {
         sx::Feature f;
         f.type = sx::FeatureType::Primitive;
+        // Pretty timeline name in the same undo step as the add (not a second rename).
+        std::string k = to_std(kind);
+        if (!k.empty()) {
+            k[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(k[0])));
+            f.name = k;
+        }
         f.params = {{"kind", to_std(kind)}, {"a", a}, {"b", b}, {"c", c},
                     {"origin", {origin.x, origin.y, origin.z}}};
         fid = doc_->graph().add(std::move(f));
@@ -1064,6 +1071,10 @@ bool SxDocument::graph_rename(const String& fid, const String& name) {
     return apply_graph_edit("rename feature", [&] {
         return doc_->graph().rename(parse_id(fid), to_std(name));
     });
+}
+
+bool SxDocument::graph_rename_no_undo(const String& fid, const String& name) {
+    return doc_->graph().rename(parse_id(fid), to_std(name));
 }
 
 Dictionary SxDocument::graph_regenerate() {
@@ -2479,6 +2490,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_remove", "fid"), &SxDocument::graph_remove);
     ClassDB::bind_method(D_METHOD("graph_move", "fid", "new_index"), &SxDocument::graph_move);
     ClassDB::bind_method(D_METHOD("graph_rename", "fid", "name"), &SxDocument::graph_rename);
+    ClassDB::bind_method(D_METHOD("graph_rename_no_undo", "fid", "name"),
+                         &SxDocument::graph_rename_no_undo);
     ClassDB::bind_method(D_METHOD("graph_set_rollback", "index"), &SxDocument::graph_set_rollback);
     ClassDB::bind_method(D_METHOD("graph_rollback"), &SxDocument::graph_rollback);
     ClassDB::bind_method(D_METHOD("graph_regenerate"), &SxDocument::graph_regenerate);
