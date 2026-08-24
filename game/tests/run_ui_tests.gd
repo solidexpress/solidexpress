@@ -283,7 +283,16 @@ func test_body_props(main) -> void:
 	view.new_document()
 	var id: String = view.insert_primitive("box", Vector3(-800, -800, 0))
 	view.select_entity(id, "")
-	check(ops._name_edit.text == view.doc.body_name(id), "name edit prefilled")
+	# Prefers feature display name ("Box") over raw body id when present.
+	var expected_name := "Box"
+	var ffid: String = view.feature_of_body(id)
+	if ffid != "":
+		for f in view.doc.graph_features():
+			if str(f.get("id")) == ffid and str(f.get("name", "")) != "":
+				expected_name = str(f.get("name"))
+				break
+	check(ops._name_edit.text == expected_name or ops._name_edit.text == view.doc.body_name(id),
+			"name edit prefilled")
 
 	ops._on_name_submitted("Bracket")
 	check(view.doc.body_name(id) == "Bracket", "rename updates body_name")
@@ -354,7 +363,8 @@ func test_file_actions(main) -> void:
 	check(FileAccess.file_exists("/tmp/sx_ui_file_test.sxp"), "file written")
 
 	main._on_file_menu(0)  # New
-	check(view.doc.body_ids().size() == 0, "new document is empty")
+	# File → New seeds a shop-default 50×50×5 plate (not an empty grid).
+	check(view.doc.body_ids().size() == 1, "new document seeds one plate")
 	check(main.current_path == "", "new clears path")
 
 	main._file_action = main.FileAction.OPEN

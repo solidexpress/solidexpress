@@ -215,6 +215,8 @@ public:
     bool graph_remove(const godot::String& fid);
     bool graph_move(const godot::String& fid, int new_index);
     bool graph_rename(const godot::String& fid, const godot::String& name);
+    /// Rename without pushing an undo step (stamp after add / hole commit).
+    bool graph_rename_no_undo(const godot::String& fid, const godot::String& name);
     // Rollback bar: features at timeline position >= index are skipped during
     // regenerate. index = -1 (or the timeline size) rolls to end. Undoable.
     bool graph_set_rollback(int index);

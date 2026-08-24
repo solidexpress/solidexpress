@@ -487,10 +487,7 @@ func insert_primitive(kind: String, world_point: Vector3, size := Vector3.ZERO,
 			params["x_dir"] = _vec3_to_param(x)
 			doc.graph_set_params(fid, JSON.stringify(params))
 	var id := body_of_feature(fid)
-	# Timeline shows "Box" / "Cylinder" … not "primitive N".
-	if fid != "" and doc.has_method("graph_rename"):
-		var pretty := kind.capitalize()
-		doc.graph_rename(fid, pretty)
+	# Pretty name ("Box") is stamped in graph_add_primitive — same undo step.
 	_after_mutation()
 	if id != "":
 		select_entity(id, "")

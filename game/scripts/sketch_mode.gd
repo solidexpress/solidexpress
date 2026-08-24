@@ -34,6 +34,8 @@ const MIN_SEGMENT_MM := 0.5
 var _sketch_view_radius := 25.0
 ## When true, click/hover positions pass through snap_point().
 var snap_enabled := true
+## When true, end_chain / Done / Esc auto-adds a closing segment if ends are near.
+var _auto_close := true
 ## Regular N-gon side count for the POLYGON tool (clamped 3..24).
 var polygon_sides := 6:
 	set(v):
@@ -679,10 +681,13 @@ func reject_tiny_draw(pos2: Vector2) -> void:
 
 ## If the sketch is a single open polyline whose ends nearly meet, add a
 ## closing segment so Extrude can build a solid (wrench outline, etc.).
-func _try_close_open_chain(tol: float = 0.5) -> void:
+## When `force`, connect the two open ends regardless of distance (Done/Esc).
+## Never "closes" a lone segment (that would only duplicate the same edge).
+func _try_close_open_chain(tol: float = 0.5, force: bool = false) -> void:
 	if sketch == null or profile_is_closed(sketch, tol):
 		return
 	var ends: Array = []  # unmatched endpoints
+	var line_count := 0
 	for id in sketch.entity_ids():
 		if sketch.is_construction(id):
 			continue
@@ -693,8 +698,11 @@ func _try_close_open_chain(tol: float = 0.5) -> void:
 		var b: Vector2 = info["end"]
 		if a.distance_to(b) <= 1e-9:
 			continue
+		line_count += 1
 		ends.append(a)
 		ends.append(b)
+	if line_count < 2:
+		return
 	# Pair endpoints that coincide; leftovers are open ends.
 	var used := {}
 	var open_pts: Array[Vector2] = []
@@ -712,7 +720,8 @@ func _try_close_open_chain(tol: float = 0.5) -> void:
 				break
 		if not matched:
 			open_pts.append(ends[i])
-	if open_pts.size() == 2 and open_pts[0].distance_to(open_pts[1]) <= maxf(tol * 8.0, 5.0):
+	if open_pts.size() == 2 and (force \
+			or open_pts[0].distance_to(open_pts[1]) <= maxf(tol * 8.0, 5.0)):
 		var lid: String = sketch.add_line(open_pts[0].x, open_pts[0].y,
 				open_pts[1].x, open_pts[1].y)
 		_infer_line(lid, open_pts[0], open_pts[1])
@@ -2229,9 +2238,20 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 func end_chain() -> void:
 	if tool == Tool.SPLINE and _spline_pts.size() >= 2:
 		_commit_spline()
+	elif _auto_close and (tool == Tool.LINE or tool == Tool.CENTERLINE):
+		# Explicit end: close open polyline even when ends are far apart.
+		_try_close_open_chain(0.5, true)
 	_tool_points.clear()
 	_length_override = -1.0
 	_update_preview()
+
+
+func set_auto_close(on: bool) -> void:
+	_auto_close = on
+
+
+func has_open_chain() -> bool:
+	return (tool == Tool.LINE or tool == Tool.CENTERLINE) and _tool_points.size() >= 1
 
 
 func hover(pos2: Vector2) -> void:
