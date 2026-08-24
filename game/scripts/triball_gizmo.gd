@@ -68,10 +68,10 @@ func end_drag() -> int:
 	if not _dragging:
 		return 0
 	_dragging = false
-	var n := _copies
-	copy_committed.emit(n, _angle)
-	status.emit("TriBall — %d copies about the ring" % n)
-	return n
+	# Preview only — commit is the second TriBall strip press, not drag-release.
+	_rebuild()
+	status.emit("TriBall — %.0f° · click TriBall again to commit" % rad_to_deg(_angle))
+	return 0
 
 
 func current_angle() -> float:

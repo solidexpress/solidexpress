@@ -96,6 +96,8 @@ func _ready() -> void:
 
 	view.selection_changed.connect(_on_selection_changed)
 	view.picked.connect(_on_picked)
+	if view.has_signal("hole_feature_picked"):
+		view.hole_feature_picked.connect(_on_hole_feature_picked)
 	_on_selection_changed(view.selected_body, view.selected_face)
 
 
@@ -347,6 +349,61 @@ func _build_face_ops() -> void:
 		"area", "Show the area of this face")
 
 
+func _on_hole_feature_picked(fid: String) -> void:
+	show_hole_feature(fid)
+
+
+## Sync hole Type / Diameter from a timeline hole feature (hex shows expression).
+func show_hole_feature(fid: String) -> void:
+	if fid == "" or view == null:
+		return
+	var raw := ""
+	var fname := ""
+	for f in view.doc.graph_features():
+		if str(f.get("id")) == fid:
+			raw = str(f.get("params", "{}"))
+			fname = str(f.get("name", ""))
+			break
+	var p = JSON.parse_string(raw)
+	if typeof(p) != TYPE_DICTIONARY:
+		return
+	visible = true
+	_body_ops.visible = true
+	_face_ops.visible = true
+	var htype := str(p.get("type", "simple"))
+	if _hole_type != null:
+		var idx: int = 0
+		if htype == "counterbore":
+			idx = 1
+		elif htype == "countersink":
+			idx = 2
+		elif htype == "hex":
+			idx = 3
+		_hole_type.selected = idx
+	var diam = p.get("diameter", _hole_diameter.value)
+	if typeof(diam) == TYPE_STRING:
+		# Keep expression visible via status + arm move; spin shows evaluated AF.
+		_hole_diameter.value = _hex_af() if htype == "hex" else _hole_diameter.value
+		status.emit("%s Diameter %s — AF chips / edit when Timeline is open" % [
+			fname if fname != "" else "Hole", diam])
+	elif typeof(diam) == TYPE_FLOAT or typeof(diam) == TYPE_INT:
+		_hole_diameter.value = float(diam)
+		status.emit("%s Ø%.2f — click near center to move" % [
+			fname if fname != "" else "Hole", float(diam)])
+	_hole_depth.value = float(p.get("depth", 0.0))
+	_hole_move_fid = fid
+	_pending = Pending.HOLE_MOVE
+	if p.has("position"):
+		var arr = p["position"]
+		if typeof(arr) == TYPE_ARRAY and arr.size() >= 3:
+			_hole_move_start = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+			if interaction != null:
+				interaction.set_hole_markers(PackedVector3Array([_hole_move_start]),
+						_hole_diameter.value)
+	if _scroll != null and _face_ops != null:
+		_scroll.ensure_control_visible(_face_ops)
+
+
 func _on_selection_changed(body: String, face: String) -> void:
 	# Boolean / measure still resolve on selection change (different entity).
 	# Hole / pattern / mirror resolve via picked so same-face re-clicks work.
@@ -357,7 +414,15 @@ func _on_selection_changed(body: String, face: String) -> void:
 	_body_ops.visible = body != "" and face == ""
 	_face_ops.visible = face != ""
 	if body != "" and face == "":
-		_name_edit.text = view.doc.body_name(body)
+		# Prefer feature display name (Box) over raw body id label.
+		var feat_name := ""
+		var ffid := view.feature_of_body(body)
+		if ffid != "":
+			for f in view.doc.graph_features():
+				if str(f.get("id")) == ffid:
+					feat_name = str(f.get("name", ""))
+					break
+		_name_edit.text = feat_name if feat_name != "" else view.doc.body_name(body)
 		_color_picker.color = view.doc.get_body_color(body)
 		_sync_material_option(body)
 		_sync_primitive_size(body)
@@ -1614,6 +1679,13 @@ func _stamp_hole_expressions(hole_fid: String, htype: String, nominal: float) ->
 		view.doc.graph_set_params_no_regen(hole_fid, JSON.stringify(params))
 	else:
 		view.doc.graph_set_params(hole_fid, JSON.stringify(params))
+	if htype == "hex" and view.doc.has_method("graph_rename"):
+		# Timeline should say hex N, not hole N.
+		var n := 0
+		for f in view.doc.graph_features():
+			if str(f.get("type", "")) == "hole":
+				n += 1
+		view.doc.graph_rename(hole_fid, "hex %d" % maxi(n, 1))
 
 
 # --- two-target / precision-pick ops: arm, then click ---
@@ -1750,12 +1822,21 @@ func _resolve_hole_pick(body: String, face: String, point: Vector3) -> void:
 		_arm_last_hole_move()
 
 
-## Resolve click → drill point: nearby magnets snap; corners inset by Inset.
+## Resolve click → drill point. Hex clamps so the opening stays fully on-face.
 func _hole_place_position(body: String, face: String, point: Vector3) -> Vector3:
-	var snap: Vector3 = view.closest_measure_snap(body, point)
-	var snap_tol := maxf(HOLE_SNAP_MM, maxf(_hole_diameter.value * 0.75, _hole_inset.value * 0.5))
 	var raw_on_face: Dictionary = view.doc.closest_point_on(face, point)
 	var raw: Vector3 = raw_on_face["point_b"] if not raw_on_face.is_empty() else point
+	var hex_mode := _pending == Pending.HEX_PLACE \
+			or (_hole_type != null and _hole_type.selected == 3)
+	# Hex: prefer the clicked point; only soft-snap when well inside the face.
+	# Aggressive edge/corner magnets were pulling AF-sized hexes into notches.
+	if hex_mode:
+		var af: float = _hole_diameter.value
+		var R: float = af / sqrt(3.0)
+		var margin: float = R + 0.5
+		return _clamp_point_on_face(body, face, raw, margin)
+	var snap: Vector3 = view.closest_measure_snap(body, point)
+	var snap_tol := maxf(HOLE_SNAP_MM, maxf(_hole_diameter.value * 0.75, _hole_inset.value * 0.5))
 	if point.distance_to(snap) > snap_tol:
 		return raw
 	if _is_corner_snap(body, snap):
@@ -1764,6 +1845,56 @@ func _hole_place_position(body: String, face: String, point: Vector3) -> Vector3
 		return on_face["point_b"] if not on_face.is_empty() else inset_pt
 	var mid_on_face: Dictionary = view.doc.closest_point_on(face, snap)
 	return mid_on_face["point_b"] if not mid_on_face.is_empty() else snap
+
+
+## Keep `point` on `face` and at least `margin` mm from the face AABB rim
+## (in the face plane). Prevents hex/hole tools from straddling a plate edge.
+func _clamp_point_on_face(body: String, face: String, point: Vector3, margin: float) -> Vector3:
+	var on: Dictionary = view.doc.closest_point_on(face, point)
+	var p: Vector3 = on["point_b"] if not on.is_empty() else point
+	var n: Vector3 = view.face_normal(body, face)
+	if n.length_squared() < 1e-12:
+		return p
+	n = n.normalized()
+	var bb: Dictionary = view.doc.measure_bbox(face) if face != "" else {}
+	if bb.is_empty():
+		bb = view.doc.measure_bbox(body)
+	if bb.is_empty():
+		return p
+	var mn: Vector3 = bb["min"]
+	var mx: Vector3 = bb["max"]
+	# Build an in-plane orthonormal frame; clamp u/v into inset AABB.
+	var ref := Vector3.RIGHT if absf(n.dot(Vector3.RIGHT)) < 0.9 else Vector3.FORWARD
+	var u := n.cross(ref).normalized()
+	var v := n.cross(u).normalized()
+	var mid: Vector3 = (mn + mx) * 0.5
+	# Project AABB corners into uv to get face-plane bounds.
+	var u_min := INF
+	var u_max := -INF
+	var v_min := INF
+	var v_max := -INF
+	for x in [mn.x, mx.x]:
+		for y in [mn.y, mx.y]:
+			for z in [mn.z, mx.z]:
+				var c := Vector3(x, y, z) - mid
+				c -= n * c.dot(n)
+				var uu := c.dot(u)
+				var vv := c.dot(v)
+				u_min = minf(u_min, uu)
+				u_max = maxf(u_max, uu)
+				v_min = minf(v_min, vv)
+				v_max = maxf(v_max, vv)
+	var rel := p - mid
+	rel -= n * rel.dot(n)
+	var pu := clampf(rel.dot(u), u_min + margin, u_max - margin)
+	var pv := clampf(rel.dot(v), v_min + margin, v_max - margin)
+	# If the face is too small for the margin, fall back to face center.
+	if u_max - u_min < 2.0 * margin or v_max - v_min < 2.0 * margin:
+		var fm: Variant = view.doc.face_midpoint(face) if face != "" else null
+		return fm if fm is Vector3 else mid
+	var out := mid + u * pu + v * pv
+	var back: Dictionary = view.doc.closest_point_on(face, out)
+	return back["point_b"] if not back.is_empty() else out
 
 
 ## Body extent along the face normal (plate thickness for a top face).

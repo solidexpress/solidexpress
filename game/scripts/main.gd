@@ -415,6 +415,8 @@ func _build_ui() -> void:
 			show_scenic_bg = not show_scenic_bg
 			_sync_view_menu_checks()
 			_sync_world_background()
+			if view != null and view.has_method("set_scenic_reflections"):
+				view.set_scenic_reflections(show_scenic_bg)
 			_on_status("Scenic background on" if show_scenic_bg else "Flat background")
 		elif id == 6:
 			_on_mode_menu(5)  # Form
@@ -1453,7 +1455,7 @@ func _on_document_changed() -> void:
 func _update_panel_visibility() -> void:
 	var sketching := sketch_mode != null and sketch_mode.active
 	card_box.visible = _selected_entity() != "" and not sketching
-	var has_feats := view.doc.graph_features().size() > 0
+	var has_feats: bool = view.doc.graph_features().size() > 0
 	# Hard gate: Timeline only when the user asked (View ▸ Timeline).
 	timeline.visible = show_timeline and has_feats and not sketching
 	if not timeline.visible and timeline.property_panel != null:
@@ -2314,7 +2316,10 @@ func _do_new() -> void:
 	if fid != "" and view.doc.has_method("graph_rename"):
 		view.doc.graph_rename(fid, "Box")
 	view.graph_changed()
+	# Select for W/H/D, but never leave TriBall armed from a prior session.
 	view.select_entity(bid, "")
+	if interaction != null and interaction.triball != null:
+		interaction.triball.cancel()
 	if camera != null:
 		camera.frame_contents()
 	_last_saved_revision = view.doc.revision()
@@ -2323,6 +2328,8 @@ func _do_new() -> void:
 	show_scenic_bg = false
 	_sync_view_menu_checks()
 	_sync_world_background()
+	if view != null and view.has_method("set_scenic_reflections"):
+		view.set_scenic_reflections(false)
 	_update_panel_visibility()
 	_on_status("New — 50×50×5 plate")
 
@@ -2815,8 +2822,20 @@ func _notification(what: int) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
+			if interaction != null and interaction.triball != null \
+					and (interaction.triball.active or interaction.triball.visible):
+				interaction.triball.cancel()
+				_on_status("TriBall cancelled")
+				get_viewport().set_input_as_handled()
+				return
 			if cancel_property_panel():
 				_on_status("Edits cancelled")
+				get_viewport().set_input_as_handled()
+				return
+			if view != null and (view.selected_body != "" or view.selection_size() > 0):
+				view.clear_selection()
+				_update_panel_visibility()
+				_on_status("Selection cleared")
 				get_viewport().set_input_as_handled()
 				return
 			var hid := false
