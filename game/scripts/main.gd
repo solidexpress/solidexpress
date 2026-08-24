@@ -2322,6 +2322,10 @@ func _do_new() -> void:
 	view.select_entity(bid, "")
 	if interaction != null and interaction.triball != null:
 		interaction.triball.cancel()
+	# Selection handlers may run deferred — cancel TriBall again next frame.
+	await get_tree().process_frame
+	if interaction != null and interaction.triball != null:
+		interaction.triball.cancel()
 	if camera != null:
 		camera.frame_contents()
 	_last_saved_revision = view.doc.revision()

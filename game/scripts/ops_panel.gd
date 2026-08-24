@@ -61,6 +61,12 @@ var _hole_wizard_direction := Vector3.ZERO
 ## Feature id being dragged for HOLE_MOVE (empty when not moving).
 var _hole_move_fid := ""
 var _hole_move_start := Vector3.ZERO
+## Hole/hex feature currently shown in the face tools (select, not auto-move).
+var _selected_hole_fid := ""
+## Entry face id stamped at place time (move projects onto this plane).
+var _hole_place_face := ""
+## Optional expression editor for hex Diameter (=jaw_af+clearance).
+var _hole_diam_expr: LineEdit
 ## World-space magnet hold for Place hole… (mm). Farther clicks stay free.
 const HOLE_SNAP_MM := 8.0
 const HOLE_CORNER_TOL_MM := 0.45
@@ -317,6 +323,20 @@ func _build_face_ops() -> void:
 	_hole_diameter = _labeled_spin(_face_ops, "Hole Ø", 0.1, 200.0, 0.1, 6.0)
 	_hole_depth = _labeled_spin(_face_ops, "Depth (0=thru)", 0.0, 1000.0, 1.0, 0.0)
 	_hole_depth.tooltip_text = "Blind depth in mm; 0 = through-all"
+	var expr_row := HBoxContainer.new()
+	_face_ops.add_child(expr_row)
+	var expr_lbl := Label.new()
+	expr_lbl.text = "Diameter"
+	expr_lbl.custom_minimum_size = Vector2(64, 0)
+	expr_lbl.add_theme_font_size_override("font_size", UiScale.body())
+	expr_row.add_child(expr_lbl)
+	_hole_diam_expr = LineEdit.new()
+	_hole_diam_expr.name = "HoleDiameterExpr"
+	_hole_diam_expr.placeholder_text = "=jaw_af+clearance"
+	_hole_diam_expr.tooltip_text = "Expression for hex / hole Ø (Enter to apply)"
+	_hole_diam_expr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_hole_diam_expr.text_submitted.connect(_on_hole_diam_expr_submitted)
+	expr_row.add_child(_hole_diam_expr)
 	_hole_inset = _labeled_spin(_face_ops, "Inset", 0.5, 500.0, 0.5, 8.0)
 	_hole_inset.tooltip_text = "Corner edge distance (auto from Ø, thickness, material softness)"
 	_hole_diameter.value_changed.connect(_on_hole_diameter_changed)
@@ -332,6 +352,8 @@ func _build_face_ops() -> void:
 			ah.name = "ApplyHole"
 	_op_button(hole_row, "Place hole…", _arm_hole, "hole",
 		"Arm: click a point on a face (near corner → inset; near mid → snap; else free)")
+	_op_button(hole_row, "Move", _arm_selected_hole_move, "",
+		"Move the selected hole/hex — click a new point on the placement face")
 	var wizard_row := HBoxContainer.new()
 	_face_ops.add_child(wizard_row)
 	_op_button(wizard_row, "Hole Wizard…", _arm_hole_wizard, "hole",
@@ -353,7 +375,8 @@ func _on_hole_feature_picked(fid: String) -> void:
 	show_hole_feature(fid)
 
 
-## Sync hole Type / Diameter from a timeline hole feature (hex shows expression).
+## Sync hole Type / Diameter / Depth from a timeline hole feature.
+## Does NOT auto-arm move — click Move or click again on the face to relocate.
 func show_hole_feature(fid: String) -> void:
 	if fid == "" or view == null:
 		return
@@ -367,6 +390,8 @@ func show_hole_feature(fid: String) -> void:
 	var p = JSON.parse_string(raw)
 	if typeof(p) != TYPE_DICTIONARY:
 		return
+	_selected_hole_fid = fid
+	_hole_place_face = str(p.get("face", ""))
 	visible = true
 	_body_ops.visible = true
 	_face_ops.visible = true
@@ -382,17 +407,21 @@ func show_hole_feature(fid: String) -> void:
 		_hole_type.selected = idx
 	var diam = p.get("diameter", _hole_diameter.value)
 	if typeof(diam) == TYPE_STRING:
-		# Keep expression visible via status + arm move; spin shows evaluated AF.
 		_hole_diameter.value = _hex_af() if htype == "hex" else _hole_diameter.value
-		status.emit("%s Diameter %s — AF chips / edit when Timeline is open" % [
-			fname if fname != "" else "Hole", diam])
+		if _hole_diam_expr != null:
+			_hole_diam_expr.text = str(diam)
+		status.emit("%s — Type %s · Diameter %s · Depth %.1f — Move or click face to relocate" % [
+			fname if fname != "" else "Hole", htype, diam, float(p.get("depth", 0.0))])
 	elif typeof(diam) == TYPE_FLOAT or typeof(diam) == TYPE_INT:
 		_hole_diameter.value = float(diam)
-		status.emit("%s Ø%.2f — click near center to move" % [
-			fname if fname != "" else "Hole", float(diam)])
+		if _hole_diam_expr != null:
+			_hole_diam_expr.text = str(diam)
+		status.emit("%s — Type %s · Ø%.2f · Depth %.1f — Move or click face to relocate" % [
+			fname if fname != "" else "Hole", htype, float(diam), float(p.get("depth", 0.0))])
 	_hole_depth.value = float(p.get("depth", 0.0))
-	_hole_move_fid = fid
-	_pending = Pending.HOLE_MOVE
+	# Prefer feature display name on the Name field while hex/hole is selected.
+	if fname != "" and _name_edit != null:
+		_name_edit.text = fname
 	if p.has("position"):
 		var arr = p["position"]
 		if typeof(arr) == TYPE_ARRAY and arr.size() >= 3:
@@ -404,11 +433,63 @@ func show_hole_feature(fid: String) -> void:
 		_scroll.ensure_control_visible(_face_ops)
 
 
+func _on_hole_diam_expr_submitted(text: String) -> void:
+	if _selected_hole_fid == "":
+		return
+	var expr := text.strip_edges()
+	if expr == "":
+		return
+	if not expr.begins_with("=") and _looks_like_hole_expr(expr):
+		expr = "=" + expr
+	var raw := ""
+	for f in view.doc.graph_features():
+		if str(f.get("id")) == _selected_hole_fid:
+			raw = str(f.get("params", "{}"))
+			break
+	var p = JSON.parse_string(raw)
+	if typeof(p) != TYPE_DICTIONARY:
+		return
+	p["diameter"] = expr
+	if view.doc.graph_set_params(_selected_hole_fid, JSON.stringify(p)):
+		view.graph_changed()
+		status.emit("Diameter %s" % expr)
+	else:
+		var err := ""
+		if view.doc.has_method("last_graph_error"):
+			err = str(view.doc.last_graph_error())
+		status.emit("Diameter rejected%s" % ((" — " + err) if err != "" else ""))
+
+
+func _looks_like_hole_expr(s: String) -> bool:
+	return s.contains("+") or s.contains("-") or s.contains("*") or s.contains("/") \
+			or s.contains("jaw_af") or s.contains("clearance")
+
+
+func _arm_selected_hole_move() -> void:
+	if _selected_hole_fid == "":
+		status.emit("Select a hole/hex first (click the pocket)")
+		return
+	_hole_move_fid = _selected_hole_fid
+	_pending = Pending.HOLE_MOVE
+	status.emit("Move: click a new point on the placement face (Esc cancel)")
+
+
 func _on_selection_changed(body: String, face: String) -> void:
 	# Boolean / measure still resolve on selection change (different entity).
 	# Hole / pattern / mirror resolve via picked so same-face re-clicks work.
 	if _pending == Pending.BOOLEAN or _pending == Pending.MEASURE:
 		_resolve_pending(body, face, view.last_pick_point)
+		return
+	if body == "":
+		_selected_hole_fid = ""
+		_hole_move_fid = ""
+	# Keep hole/hex editor visible while a hole feature is selected, even if
+	# the strip primary selection is the owning body.
+	if _selected_hole_fid != "" and body != "":
+		visible = true
+		_body_ops.visible = true
+		_face_ops.visible = true
+		_clamp_height()
 		return
 	visible = body != ""
 	_body_ops.visible = body != "" and face == ""
@@ -447,6 +528,11 @@ func _on_picked(body: String, face: String, point: Vector3) -> void:
 		_resolve_hex_place(body, face, point)
 		return
 	if _pending == Pending.HOLE_MOVE:
+		_finish_hole_move(body, face, point)
+		return
+	# Selected hole/hex: a subsequent face click relocates on the placement plane.
+	if _selected_hole_fid != "" and _pending == Pending.NONE and body != "":
+		_hole_move_fid = _selected_hole_fid
 		_finish_hole_move(body, face, point)
 		return
 	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
@@ -1416,8 +1502,10 @@ func _resolve_hex_place(body: String, face: String, point: Vector3) -> void:
 	var position := _hole_place_position(target_body, target_face, point)
 	_pending = Pending.NONE
 	if _commit_hole(target_body, target_face, position):
-		status.emit("Hex opening AF = jaw_af+clearance — click near center + drag to move")
-		_arm_last_hole_move()
+		_hole_place_face = target_face
+		status.emit("Hex opening AF = jaw_af+clearance — click pocket to edit, then face to move")
+		# Do not auto-arm HOLE_MOVE — that stole the next pocket click and
+		# dropped the axis to mid-thickness (blind 1.5 mm pocket).
 
 
 func _arm_last_hole_move() -> void:
@@ -1427,6 +1515,7 @@ func _arm_last_hole_move() -> void:
 			last_hole = str(f.get("id", ""))
 	if last_hole == "":
 		return
+	_selected_hole_fid = last_hole
 	_hole_move_fid = last_hole
 	_pending = Pending.HOLE_MOVE
 	var raw := ""
@@ -1435,13 +1524,101 @@ func _arm_last_hole_move() -> void:
 			raw = str(f.get("params", "{}"))
 			break
 	var p = JSON.parse_string(raw)
-	if p is Dictionary and p.has("position"):
+	if p is Dictionary:
+		_hole_place_face = str(p.get("face", _hole_place_face))
+		if p.has("position"):
+			var arr = p["position"]
+			if typeof(arr) == TYPE_ARRAY and arr.size() >= 3:
+				_hole_move_start = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+				if interaction != null:
+					interaction.set_hole_markers(PackedVector3Array([_hole_move_start]),
+							_hole_diameter.value)
+
+
+## Project `point` onto the hole's entry plane and clamp in-plane (never mid-thickness).
+func _hole_move_position(hole_fid: String, body: String, point: Vector3) -> Vector3:
+	var raw := ""
+	for f in view.doc.graph_features():
+		if str(f.get("id")) == hole_fid:
+			raw = str(f.get("params", "{}"))
+			break
+	var p = JSON.parse_string(raw)
+	if typeof(p) != TYPE_DICTIONARY:
+		return point
+	var pos := point
+	if p.has("position"):
 		var arr = p["position"]
 		if typeof(arr) == TYPE_ARRAY and arr.size() >= 3:
-			_hole_move_start = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
-			if interaction != null:
-				interaction.set_hole_markers(PackedVector3Array([_hole_move_start]),
-						_hole_diameter.value)
+			pos = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+	var dir := Vector3(0, 0, -1)
+	if p.has("direction"):
+		var darr = p["direction"]
+		if typeof(darr) == TYPE_ARRAY and darr.size() >= 3:
+			dir = Vector3(float(darr[0]), float(darr[1]), float(darr[2]))
+	if dir.length_squared() < 1e-12:
+		dir = Vector3(0, 0, -1)
+	dir = dir.normalized()
+	# Entry plane normal is opposite the drill direction (outward).
+	var n := -dir
+	var face := str(p.get("face", ""))
+	if face == "" and _hole_place_face != "":
+		face = _hole_place_face
+	# Prefer stamped face midpoint as plane origin; else current hole position.
+	var plane_origin := pos
+	if face != "" and view != null:
+		var fm: Variant = view.doc.face_midpoint(face)
+		if fm is Vector3:
+			plane_origin = fm as Vector3
+		var fn: Vector3 = view.face_normal(body, face)
+		if fn.length_squared() > 1e-12:
+			n = fn.normalized()
+	# Project click onto entry plane.
+	var rel := point - plane_origin
+	var on_plane: Vector3 = point - n * rel.dot(n)
+	var htype := str(p.get("type", "simple"))
+	var af: float = _hole_diameter.value
+	var diam_v = p.get("diameter", af)
+	if typeof(diam_v) == TYPE_FLOAT or typeof(diam_v) == TYPE_INT:
+		af = float(diam_v)
+	elif htype == "hex":
+		af = _hex_af()
+	var margin := 0.5
+	if htype == "hex":
+		margin = af / sqrt(3.0) + 0.5
+	else:
+		margin = af * 0.5 + 0.5
+	if face != "":
+		return _clamp_point_on_face(body, face, on_plane, margin)
+	# No face id — clamp in body AABB on the entry plane (axis coord from plane_origin).
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if bb.is_empty():
+		return on_plane
+	var mn: Vector3 = bb["min"]
+	var mx: Vector3 = bb["max"]
+	var mid: Vector3 = (mn + mx) * 0.5
+	var ref := Vector3.RIGHT if absf(n.dot(Vector3.RIGHT)) < 0.9 else Vector3.FORWARD
+	var u := n.cross(ref).normalized()
+	var v := n.cross(u).normalized()
+	var u_min := INF
+	var u_max := -INF
+	var v_min := INF
+	var v_max := -INF
+	for x in [mn.x, mx.x]:
+		for y in [mn.y, mx.y]:
+			for z in [mn.z, mx.z]:
+				var c := Vector3(x, y, z) - mid
+				c -= n * c.dot(n)
+				u_min = minf(u_min, c.dot(u))
+				u_max = maxf(u_max, c.dot(u))
+				v_min = minf(v_min, c.dot(v))
+				v_max = maxf(v_max, c.dot(v))
+	var r := on_plane - mid
+	r -= n * r.dot(n)
+	var pu := clampf(r.dot(u), u_min + margin, u_max - margin)
+	var pv := clampf(r.dot(v), v_min + margin, v_max - margin)
+	# Lock axis coordinate to the entry plane (not body mid).
+	var axis_d := (plane_origin - mid).dot(n)
+	return mid + u * pu + v * pv + n * axis_d
 
 
 func _finish_hole_move(body: String, face: String, point: Vector3) -> void:
@@ -1449,25 +1626,28 @@ func _finish_hole_move(body: String, face: String, point: Vector3) -> void:
 		_pending = Pending.NONE
 		return
 	var target_body := body if body != "" else _pending_body
-	var target_face := face if face != "" else _pending_face
+	if target_body == "":
+		# Infer body from hole target feature.
+		for f in view.doc.graph_features():
+			if str(f.get("id")) == _hole_move_fid:
+				var hp = JSON.parse_string(str(f.get("params", "{}")))
+				if hp is Dictionary:
+					var tf := str(hp.get("target", ""))
+					target_body = view.body_of_feature(tf)
+				break
 	if target_body == "":
 		status.emit("Hole move cancelled")
 		_pending = Pending.NONE
 		_hole_move_fid = ""
 		return
-	if target_face == "":
-		# Keep face from hole direction if possible — project onto body top.
-		target_face = _pending_face
-	var position := _hole_place_position(target_body, target_face if target_face != "" else "", point)
-	if target_face == "":
-		# Fallback: snap in XY on body bbox top.
-		var bb: Dictionary = view.doc.measure_bbox(target_body)
-		if not bb.is_empty():
-			position.z = float(bb["max"].z)
-	_set_hole_position(_hole_move_fid, position)
+	var position := _hole_move_position(_hole_move_fid, target_body, point)
+	var moved_fid := _hole_move_fid
+	_set_hole_position(moved_fid, position)
 	_pending = Pending.NONE
 	_hole_move_fid = ""
 	status.emit("Hole moved to (%.1f, %.1f, %.1f)" % [position.x, position.y, position.z])
+	# Keep the hex/hole editor up; allow another relocate click.
+	show_hole_feature(moved_fid)
 
 
 func _set_hole_position(hole_fid: String, position: Vector3) -> bool:
@@ -1490,15 +1670,17 @@ func _set_hole_position(hole_fid: String, position: Vector3) -> bool:
 
 ## Cancel Hole Wizard (or any armed pending pick). Returns true if something was armed.
 func cancel_pending_pick() -> bool:
-	if _pending == Pending.NONE:
+	if _pending == Pending.NONE and _selected_hole_fid == "":
 		return false
 	var was_wizard := _pending == Pending.HOLE_WIZARD
 	var was_fillet := _pending == Pending.FILLET_EDGES
 	var was_dress := was_fillet or _pending == Pending.CHAMFER_EDGES
 	var was_place := _pending == Pending.HEX_PLACE or _pending == Pending.HOLE \
 			or _pending == Pending.HOLE_MOVE
+	var had_hole := _selected_hole_fid != ""
 	_pending = Pending.NONE
 	_hole_move_fid = ""
+	_selected_hole_fid = ""
 	_clear_hole_wizard()
 	if was_dress:
 		dressup_armed_changed.emit(false, was_fillet)
@@ -1508,6 +1690,8 @@ func cancel_pending_pick() -> bool:
 		status.emit("Edge pick cancelled")
 	elif was_place:
 		status.emit("Place cancelled")
+	elif had_hole:
+		status.emit("Hole edit cleared")
 	else:
 		status.emit("Cancelled")
 	return true
@@ -1609,7 +1793,7 @@ func _commit_holes(body: String, face: String, positions: PackedVector3Array,
 		target_fid, htype, positions, dir, d, depth,
 		1.6 * d, 0.5 * d, 2.0 * d, 90.0)
 	if hole_fid != "":
-		_stamp_hole_expressions(hole_fid, htype, d)
+		_stamp_hole_expressions(hole_fid, htype, d, _pending_face)
 		view.graph_changed()
 		status.emit("Hole Wizard: %d × Ø%.1f" % [positions.size(), d])
 		_open_last_feature("hole")
@@ -1650,7 +1834,8 @@ func _commit_hole(body: String, face: String, position: Vector3) -> bool:
 		target_fid, htype, position, direction, d, depth,
 		1.6 * d, 0.5 * d, 2.0 * d, 90.0)
 	if hole_fid != "":
-		_stamp_hole_expressions(hole_fid, htype, d)
+		_hole_place_face = face
+		_stamp_hole_expressions(hole_fid, htype, d, face)
 		view.graph_changed()
 		status.emit("Hole Ø%.1f at (%.1f, %.1f, %.1f)" % [d, position.x, position.y, position.z])
 		_open_last_feature("hole")
@@ -1659,7 +1844,8 @@ func _commit_hole(body: String, face: String, position: Vector3) -> bool:
 	return false
 
 
-func _stamp_hole_expressions(hole_fid: String, htype: String, nominal: float) -> void:
+func _stamp_hole_expressions(hole_fid: String, htype: String, nominal: float,
+		face: String = "") -> void:
 	var raw: String = ""
 	for f in view.doc.graph_features():
 		if f["id"] == hole_fid:
@@ -1668,6 +1854,10 @@ func _stamp_hole_expressions(hole_fid: String, htype: String, nominal: float) ->
 	var params = JSON.parse_string(raw) if raw != "" else null
 	if typeof(params) != TYPE_DICTIONARY:
 		return
+	if face != "":
+		params["face"] = face
+	elif _hole_place_face != "":
+		params["face"] = _hole_place_face
 	if htype == "hex":
 		params["diameter"] = "=jaw_af+clearance"
 	else:
@@ -1825,7 +2015,8 @@ func _resolve_hole_pick(body: String, face: String, point: Vector3) -> void:
 		return
 	var position := _hole_place_position(target_body, target_face, point)
 	if _commit_hole(target_body, target_face, position):
-		_arm_last_hole_move()
+		_hole_place_face = target_face
+		# No auto-arm move — click pocket to edit / relocate deliberately.
 
 
 ## Resolve click → drill point. Hex clamps so the opening stays fully on-face.

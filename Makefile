@@ -78,6 +78,7 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_critic_walk_tests.gd
 	$(GODOT) --headless --path game --script tests/run_wrench_placement_tests.gd
 	$(GODOT) --headless --path game --script tests/run_triball_hex_polish_tests.gd
+	$(GODOT) --headless --path game --script tests/run_wrench_through_tests.gd
 
 test: test-kernel test-godot
 	@echo "ALL TESTS PASSED"

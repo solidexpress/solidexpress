@@ -4023,9 +4023,16 @@ func _ctx_jaw_af(size: int) -> void:
 		return
 	view.doc.save_configuration(str(size))
 	view.doc.activate_configuration(str(size))
+	view.graph_changed()
 	view.refresh()
 	view.document_changed.emit()
-	status.emit("jaw_af = %d (config %d)" % [size, size])
+	var err := ""
+	if view.doc.has_method("last_graph_error"):
+		err = str(view.doc.last_graph_error())
+	if err != "":
+		status.emit("jaw_af = %d (config %d) — regenerate: %s" % [size, size, err])
+	else:
+		status.emit("jaw_af = %d (config %d)" % [size, size])
 
 
 func _find_main() -> Node:
