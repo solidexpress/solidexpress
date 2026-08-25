@@ -451,6 +451,13 @@ Gate: `run_construction_tests` + place/print/clearance/dead_chrome/ui/workflow g
 - [x] `graph_rename_no_undo` for hex stamp rename
 - Gate: ui 275 + workflow 82 + sketch 83 + print 9 (+ sketch_tools 141)
 
+## Wrench through-cut + hex select/move (2026-08-24)
+- [x] Hex/hole place does **not** auto-arm move (pocket click selects Type/Diameter/Depth)
+- [x] Move projects onto stamped entry face / hole plane — never mid-thickness (restores through-cut 3MF)
+- [x] Diameter expression LineEdit; AF strip regenerates + surfaces `last_graph_error`
+- [x] Flat New: metallic 0 / roughness 0.78; TriBall cancelled after select
+- Gate: `run_wrench_through_tests` (19) + polish 16 + placement 17 + critic 44 + ui 275
+
 ## Website demo movies (2026-08-15)
 - [x] solid.express frontpage no longer hardcodes unpublished Wave films (`snap_bolt_drop`, `triball_hole_circle`, `drawing_follows_model`, `flange_box_flat`, `print_overhang_orient`, `explode_gearbox`) — those WebMs were never on the `demo-movies` Release
 - [x] Cards hydrate from the live Release ∩ `website/assets/published-demos.json` (`website/assets/demo.js`); featured copy in `demo-catalog.json`

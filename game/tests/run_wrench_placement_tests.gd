@@ -150,8 +150,15 @@ func test_hole_move() -> void:
 	ops._arm_hole_place(false)
 	ops._hole_diameter.value = 6.0
 	ops.handle_viewport_pick(id, top, Vector3(-10, -10, 5))
-	check(ops._pending == ops.Pending.HOLE_MOVE or ops._hole_move_fid != "",
-			"move armed after place")
+	check(ops._pending == ops.Pending.NONE, "place does not auto-arm move")
+	var hid: String = ""
+	for f in view.doc.graph_features():
+		if str(f.get("type")) == "hole":
+			hid = str(f.get("id"))
+	check(hid != "", "hole feature created")
+	ops.show_hole_feature(hid)
+	ops._arm_selected_hole_move()
+	check(ops._pending == ops.Pending.HOLE_MOVE, "Move arms relocate")
 	ops.handle_viewport_pick(id, top, Vector3(15, 15, 5))
 	var pos := Vector3.ZERO
 	for f in view.doc.graph_features():
@@ -162,5 +169,6 @@ func test_hole_move() -> void:
 			var a = p["position"]
 			pos = Vector3(float(a[0]), float(a[1]), float(a[2]))
 	check(pos.x > 5.0 and pos.y > 5.0, "hole moved toward click (%.1f,%.1f)" % [pos.x, pos.y])
+	check(absf(pos.z - 5.0) < 0.15, "move kept Z on face")
 	main.queue_free()
 	await process_frame

@@ -130,7 +130,8 @@ func test_hex_feature_pick() -> void:
 	check(hid != "", "hole_feature_near_point finds hex")
 	ops.show_hole_feature(hid)
 	check(ops._hole_type != null and ops._hole_type.selected == 3, "Type = hex")
-	check(ops._pending == ops.Pending.HOLE_MOVE, "move armed after hex pick")
+	check(ops._pending == ops.Pending.NONE, "select does not auto-arm move")
+	check(ops._selected_hole_fid == hid, "selected hole fid set")
 	# Timeline name
 	var hex_named := false
 	for f in view.doc.graph_features():

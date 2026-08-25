@@ -19,8 +19,8 @@ const BODY_COLOR := Color(0.72, 0.74, 0.78)
 ## When Scenic is off, drop metallic so flat ambient does not look cloudy.
 const BODY_METALLIC := 0.92
 const BODY_ROUGHNESS := 0.35
-const BODY_METALLIC_FLAT := 0.15
-const BODY_ROUGHNESS_FLAT := 0.55
+const BODY_METALLIC_FLAT := 0.0
+const BODY_ROUGHNESS_FLAT := 0.78
 const SELECTED_BODY_COLOR := Color(0.55, 0.68, 0.9)
 const SELECTED_FACE_COLOR := Color(1.0, 0.62, 0.15)
 const HOVER_BODY_COLOR := Color(0.78, 0.84, 0.92)
@@ -594,7 +594,9 @@ func feature_of_body(body_id: String) -> String:
 	return ""
 
 
-## Nearest hole/hex feature whose axis is within the tool radius of `point`.
+## Nearest hole/hex feature whose axis is within the tool radius of `point`
+## (distance measured in the plane perpendicular to the hole direction so
+## pocket-floor clicks still resolve).
 func hole_feature_near_point(body_id: String, point: Vector3) -> String:
 	var prim: String = feature_of_body(body_id)
 	var best := ""
@@ -614,13 +616,23 @@ func hole_feature_near_point(body_id: String, point: Vector3) -> String:
 		if typeof(arr) != TYPE_ARRAY or arr.size() < 3:
 			continue
 		var pos := Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+		var dir := Vector3(0, 0, 1)
+		if hp.has("direction"):
+			var darr = hp["direction"]
+			if typeof(darr) == TYPE_ARRAY and darr.size() >= 3:
+				dir = Vector3(float(darr[0]), float(darr[1]), float(darr[2]))
+		if dir.length_squared() < 1e-12:
+			dir = Vector3(0, 0, 1)
+		dir = dir.normalized()
 		var diam := 6.0
 		if typeof(hp.get("diameter")) == TYPE_STRING:
 			diam = 20.0
 		elif typeof(hp.get("diameter")) == TYPE_FLOAT or typeof(hp.get("diameter")) == TYPE_INT:
 			diam = float(hp.get("diameter"))
 		var r := maxf(diam * 0.55, 3.0)
-		var d := point.distance_to(pos)
+		var delta := point - pos
+		delta -= dir * delta.dot(dir)  # in-plane only
+		var d := delta.length()
 		if d <= r and d < best_d:
 			best_d = d
 			best = str(f.get("id", ""))
