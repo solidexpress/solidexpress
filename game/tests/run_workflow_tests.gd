@@ -501,9 +501,15 @@ func workflow_bolt_blank() -> void:
 	view.select_entity(head, "")
 	gesture(1)
 	check(view.doc.body_ids().size() == 1, "fuse consumed the hex head")
-	# hex area = 3*sqrt(3)/2 * R^2 with R=8; overlap = shaft through head height.
-	var hex_area := 3.0 * sqrt(3.0) / 2.0 * 64.0
-	var expected := PI * 25.0 * 30.0 + hex_area * 6.0 - PI * 25.0 * 6.0
+	# Polygon defaults to across_flats, so the drag of 8 is AF, not circumradius.
+	# R = AF/√3 ≈ 4.62, inside the Ø10 shaft, so the head adds no fused volume.
+	var af := 8.0
+	var r_hex := af / sqrt(3.0)
+	var hex_area := 3.0 * sqrt(3.0) / 2.0 * r_hex * r_hex
+	var head_vol := hex_area * 6.0
+	var shaft_vol := PI * 25.0 * 30.0
+	var overlap := head_vol
+	var expected := shaft_vol + head_vol - overlap
 	check(absf(_volume(shaft) - expected) < expected * 0.03,
 		"bolt fused volume ~%.0f (got %.0f)" % [expected, _volume(shaft)])
 	end_workflow("bolt blank", 16)

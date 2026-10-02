@@ -275,10 +275,19 @@ func test_thin_wall_status(ctx: FilmContext) -> void:
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	chrome._finish_end.select(0)
 	chrome._finish_end.item_selected.emit(0)
-	# WP1 hides this spin behind Thin feature. Until that lands, the replan's
-	# test double sets the value so Extrude sends thin_thickness > 0.
+	var thin_feature: CheckButton = chrome.find_child("ThinFeature", true, false)
+	check(thin_feature != null and not thin_feature.button_pressed, "Thin feature defaults off")
+	if thin_feature == null:
+		return
+	thin_feature.button_pressed = true
+	await process_frame
+	check(chrome._thin_spin.is_visible_in_tree(), "thin spin shows with Thin feature on")
 	chrome._thin_spin.value = 1.0
 	check(chrome._thin_spin.value > 0.5, "thin spin is on (got %.3f)" % chrome._thin_spin.value)
+	# Thin feature reveals the spin, type, and Flip, which push Extrude past
+	# the 1280-wide test window.
+	ctx.tree.root.size = Vector2i(1760, 720)
+	await process_frame
 	var before := _count_type(ctx, "extrude")
 	await FilmUI.click_control(ctx, chrome.extrude_button(),
 			FilmUICues.alert("Extrude", "Extrude circle with thin on"))
