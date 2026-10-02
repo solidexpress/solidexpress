@@ -66,10 +66,9 @@ jobs:
           export LD_LIBRARY_PATH="/opt/occt-${OCCT_VERSION}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           ./build/sxkernel/sxkernel_tests
 
-  # Populate the Windows vcpkg binary cache on main so tag releases can restore it.
-  # Release runs only on tags; without a main-scoped cache, each release rebuilds from scratch.
+  # Populate the Windows vcpkg binary cache (main + PRs) so tag releases can
+  # restore it. Also exercises the exact vcpkg OCCT pin used by export.
   windows-vcpkg:
-    if: github.event_name == 'push'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -116,8 +115,9 @@ jobs:
           done
           [[ "$ok" -eq 1 ]] || exit 1
 
-  # PR/push compile check: Windows kernel against pinned OCCT 8.0.1 (vcpkg).
-  windows-kernel:
+  # Windows: vcpkg OCCT 8.0.1 → kernel tests → Godot export (same path as
+  # release.yml "Export Windows release"). No tags, no GitHub Release, no publish.
+  windows-export:
     runs-on: windows-latest
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-binary-cache,readwrite"
@@ -139,6 +139,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/vcpkg-binary-cache"
+          choco install ninja cmake -y --no-progress
           git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
           git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_COMMIT"
           "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"
@@ -162,6 +163,12 @@ jobs:
           done
           [[ "$ok" -eq 1 ]] || exit 1
 
+      - name: Fetch Godot editor + export templates
+        shell: bash
+        run: |
+          chmod +x scripts/release/fetch-godot-templates.sh
+          ./scripts/release/fetch-godot-templates.sh
+
       - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Restore project vcpkg root
@@ -169,9 +176,10 @@ jobs:
         run: |
           if [[ -n "${SX_VCPKG_ROOT:-}" ]]; then
             echo "VCPKG_ROOT=$SX_VCPKG_ROOT" >> "$GITHUB_ENV"
+            echo "Restored VCPKG_ROOT=$SX_VCPKG_ROOT"
           fi
 
-      - name: Configure + build kernel tests
+      - name: Configure + build + run kernel tests
         shell: bash
         run: |
           cmake -S . -B build -G Ninja \
@@ -179,10 +187,22 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
             -DSX_BUILD_GDEXTENSION=OFF -DSX_BUILD_VOICE=OFF
           cmake --build build -j "$(nproc)" --target sxkernel_tests
+          ./build/sxkernel/sxkernel_tests
 
-      - name: Run kernel tests
+      - name: Export Windows release (no publish)
         shell: bash
-        run: ./build/sxkernel/sxkernel_tests
+        run: |
+          # Reconfigure with GDExtension for sxcore; export-windows.sh builds sxcore itself.
+          chmod +x scripts/release/export-windows.sh
+          ./scripts/release/export-windows.sh
+
+      - name: Upload Windows export folder (PR evidence; not a Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SolidExpress-windows-x86_64-pr
+          path: dist/releases/SolidExpress-*-windows-x86_64/
+          if-no-files-found: error
+          retention-days: 7
 
   # PR/push compile check: macOS kernel against source-built OCCT 8.0.1.
   macos-kernel:

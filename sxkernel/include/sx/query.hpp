@@ -9,6 +9,7 @@
 namespace sx {
 
 class Document;
+struct Feature;
 
 struct QueryHit {
     EntityId id;
@@ -19,7 +20,9 @@ struct QueryHit {
 std::vector<QueryHit> run_query(const Document& doc, const std::string& query);
 
 // One-sentence card digest from feature type + params.
-std::string card_digest(const class Feature& f);
+// Feature is a struct (see features.hpp); keep the forward-decl kind matched so
+// MSVC name mangling agrees between declaration and definition.
+std::string card_digest(const Feature& f);
 
 // Boundary edges of a face, in TopExp order, without duplicates.
 // Empty when `face` is missing or is not a face.
