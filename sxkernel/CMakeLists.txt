@@ -44,6 +44,16 @@ if(SX_BUILD_TESTS)
     add_executable(sxkernel_tests ${SXKERNEL_TEST_SOURCES})
     target_include_directories(sxkernel_tests PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/catch2)
     target_link_libraries(sxkernel_tests PRIVATE sxkernel)
+    # planegcs RUNTIME_OUTPUT_DIRECTORY is game/bin (Godot load path). On Windows
+    # the loader only searches the exe directory first — without this copy,
+    # sxkernel_tests.exe fails to start (Git Bash exit 127, no output).
+    if(WIN32)
+        add_custom_command(TARGET sxkernel_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:planegcs>
+                $<TARGET_FILE_DIR:sxkernel_tests>
+            COMMENT "Stage planegcs.dll beside sxkernel_tests.exe")
+    endif()
     enable_testing()
     add_test(NAME sxkernel_tests COMMAND sxkernel_tests)
 endif()

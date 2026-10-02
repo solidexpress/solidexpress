@@ -187,7 +187,11 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
             -DSX_BUILD_GDEXTENSION=OFF -DSX_BUILD_VOICE=OFF
           cmake --build build -j "$(nproc)" --target sxkernel_tests
-          ./build/sxkernel/sxkernel_tests
+          # planegcs.dll is emitted to game/bin; stage it (+ OCCT/TBB) beside the
+          # test exe before running — bare ./sxkernel_tests exits 127 in Git Bash
+          # when a DLL is missing.
+          chmod +x packaging/ci/run_windows_kernel_tests.sh
+          packaging/ci/run_windows_kernel_tests.sh
 
       - name: Export Windows release (no publish)
         shell: bash
