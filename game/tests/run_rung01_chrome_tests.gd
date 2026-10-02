@@ -197,8 +197,8 @@ func test_pocket_clicks_open_hex() -> void:
 	check(not str(main.status_label.text).contains("Selection cleared"),
 			"void click status is not Selection cleared (%s)" % main.status_label.text)
 	check(ops._selected_hole_fid != "", "void click selects the hole, not only Box")
-	var af := main.view.evaluated_param_number(hp.get("diameter", 10.0), 10.0)
-	var r := af / sqrt(3.0)
+	var af: float = main.view.evaluated_param_number(hp.get("diameter", 10.0), 10.0)
+	var r: float = af / sqrt(3.0)
 	var rim := pos + Vector3(r * 1.08, 0, 0)
 	await FilmUI.viewport_click(ctx, FilmUI.model_to_screen(ctx, rim),
 			{"keys": "Click", "desc": "hex rim"})
@@ -273,7 +273,7 @@ func test_af14_near_edge_and_resize() -> void:
 	await process_frame
 	var hp := _hex_params(main.view)
 	var pos := _hex_pos(hp)
-	var af := main.view.evaluated_param_number(hp.get("diameter", 14.0), 14.0)
+	var af: float = main.view.evaluated_param_number(hp.get("diameter", 14.0), 14.0)
 	var bb: Dictionary = main.view.doc.measure_bbox(id)
 	var err := str(main.view.doc.last_graph_error())
 	var on_face := _vertices_on_plate(pos, af, bb)
