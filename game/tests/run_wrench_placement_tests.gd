@@ -32,6 +32,8 @@ func test_flat_new_and_box_name() -> void:
 	var e = main._world_env.environment
 	check(e != null and e.background_mode == Environment.BG_COLOR, "New uses flat background")
 	check(not main.show_scenic_bg, "scenic flag off after New")
+	check(main.view.doc.body_ids().is_empty(), "New leaves an empty part")
+	main.view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	var named := false
 	for f in main.view.doc.graph_features():
 		if str(f.get("name", "")).begins_with("Box"):
@@ -50,6 +52,7 @@ func test_hex_place_off_center() -> void:
 	main._do_new()
 	await process_frame
 	var view = main.view
+	view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	var id: String = str(view.doc.body_ids()[0])
 	view.select_entity(id, "")
 	# Grow to a bar so "end" is meaningful.
@@ -99,6 +102,7 @@ func test_resize_keeps_holes() -> void:
 	main._do_new()
 	await process_frame
 	var view = main.view
+	view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	var id: String = str(view.doc.body_ids()[0])
 	var fid: String = view.feature_of_body(id)
 	view.doc.graph_add_hole(fid, "simple", Vector3(10, 10, 5), Vector3(0, 0, -1), 6.0, 0.0, 0, 0, 0, 90)
@@ -138,6 +142,7 @@ func test_hole_move() -> void:
 	main._do_new()
 	await process_frame
 	var view = main.view
+	view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	var id: String = str(view.doc.body_ids()[0])
 	var top := ""
 	for face_id in view.doc.get_face_ids(id):
