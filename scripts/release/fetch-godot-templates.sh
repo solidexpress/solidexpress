@@ -2,7 +2,9 @@
 # Download Godot 4.7 editor + export templates (all platforms in template pack).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-GODOT_BUILD="${GODOT_BUILD:-4.7.1}"
+# Pin to 4.7-stable (not 4.7.1): GDExtension API JSON in thirdparty/godot-api
+# is dumped from that exact build (see AGENTS.md / THIRD_PARTY.md).
+GODOT_BUILD="${GODOT_BUILD:-4.7}"
 GODOT_VERSION="${GODOT_VERSION:-${GODOT_BUILD}.stable}"
 BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_BUILD}-stable"
 TOOLS="$ROOT/tools/godot"
