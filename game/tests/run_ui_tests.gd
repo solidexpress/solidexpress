@@ -470,6 +470,8 @@ func test_revolve_and_cut(main) -> void:
 
 	# Extrude-cut: sketch a circle on a box top face, cut 20 deep
 	# (explicit 50 mm box so the Ø20 circle fits and the cut has depth).
+	# Face sketches use part-origin UV (sketch 0,0 is the origin projected
+	# onto the plane), so the circle is placed at the box centre, not (0,0).
 	var box: String = view.insert_primitive("box", Vector3(800, 800, 0), Vector3(50, 50, 50))
 	var vol0: float = view.doc.body_volume(box)
 	view.select_entity(box, "")
@@ -478,8 +480,9 @@ func test_revolve_and_cut(main) -> void:
 	main._start_sketch()
 	check(sm.target_fid != "", "cut target feature recorded")
 	sm.set_tool(SketchMode.Tool.CIRCLE)
-	sm.click(Vector2(0, 0))
-	sm.click(Vector2(10, 0))
+	var centre := Vector2(800, 800)
+	sm.click(centre)
+	sm.click(centre + Vector2(10, 0))
 	sm.finish_extrude(20.0, "cut")
 	var vol1: float = view.doc.body_volume(box)
 	check(absf((vol0 - vol1) - PI * 100.0 * 20.0) < 50.0,

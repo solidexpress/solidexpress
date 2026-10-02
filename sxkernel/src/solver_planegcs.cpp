@@ -271,6 +271,22 @@ struct Xlate {
                 return false;
             }
             case ConstraintType::Distance: {
+                // Point-to-line when exactly one ref is a line used as itself
+                // (centre → hex flat). Two points stay point-to-point.
+                if (c.refs.size() >= 2) {
+                    auto l0 = lines.find(c.refs[0].entity);
+                    auto l1 = lines.find(c.refs[1].entity);
+                    bool line0 = l0 != lines.end() && c.refs[0].role == PointRole::Self;
+                    bool line1 = l1 != lines.end() && c.refs[1].role == PointRole::Self;
+                    if (line0 != line1) {
+                        GCS::Point p = point_of(line0 ? c.refs[1] : c.refs[0], ok1);
+                        if (!ok1) return false;
+                        dim_values.push_back(c.value);
+                        GCS::Line& ln = line0 ? l0->second : l1->second;
+                        sys.addConstraintP2LDistance(p, ln, &dim_values.back(), true, tag, drv);
+                        return true;
+                    }
+                }
                 GCS::Point a = point_of(c.refs.at(0), ok1), b = point_of(c.refs.at(1), ok2);
                 if (!ok1 || !ok2) return false;
                 dim_values.push_back(c.value);
