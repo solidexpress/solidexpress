@@ -144,6 +144,11 @@ var active_plane_normal := Vector3(0, 0, 1)
 var _active_plane_custom := false
 ## One-shot: next face click sets the active plane (View → Set Active Plane…).
 var _picking_active_plane := false
+## Set after a face-pick press so the matching release is not a sketch click.
+var _up_to_face_swallow_release := false
+## When the finish bar forgets to disarm, ignore further picks until
+## `wants_face_pick()` goes false (a real re-arm).
+var _up_to_face_pick_consumed := false
 ## One-shot: next face / pad / ground click starts or reopens a sketch.
 var _picking_sketch_host := false
 
@@ -481,8 +486,10 @@ func _build_dim_edit_popup() -> void:
 	lbl.text = "Dim:"
 	row.add_child(lbl)
 	_dim_edit_line = LineEdit.new()
-	_dim_edit_line.custom_minimum_size = Vector2(90, 0)
+	# Wide enough for "45.0" (and a short suffix) without scrolling the tail.
+	_dim_edit_line.custom_minimum_size = Vector2(160, 0)
 	_dim_edit_line.select_all_on_focus = true
+	_dim_edit_line.gui_input.connect(_on_dim_edit_line_gui_input)
 	_dim_edit_line.text_submitted.connect(_apply_dim_edit)
 	row.add_child(_dim_edit_line)
 
@@ -498,8 +505,18 @@ func _show_dim_edit(index: int) -> void:
 	var dim: Dictionary = sketch_mode.dimensions[index]
 	_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
 	var at := Vector2i(get_viewport().get_mouse_position()) + Vector2i(8, 8)
-	_dim_edit_popup.popup(Rect2i(at, Vector2i(150, 40)))
+	_dim_edit_popup.popup(Rect2i(at, Vector2i(240, 40)))
 	_dim_edit_line.grab_focus()
+	_dim_edit_line.select_all()
+
+
+func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
+	# select_all_on_focus only runs when focus is gained. A second click in the
+	# already-focused field would otherwise park the caret at the end.
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			_dim_edit_line.call_deferred("select_all")
 
 
 func _apply_dim_edit(text: String) -> void:
@@ -1215,6 +1232,119 @@ func cancel_pick_sketch_host() -> void:
 		return
 	_picking_sketch_host = false
 	status.emit("Sketch pick cancelled")
+
+
+func _chrome_wants_face_pick() -> bool:
+	return sketch_chrome != null \
+			and sketch_chrome.has_method("wants_face_pick") \
+			and bool(sketch_chrome.wants_face_pick())
+
+
+## True while the finish bar is waiting for the Up To Surface face.
+func _up_to_face_pick_armed() -> bool:
+	if not _chrome_wants_face_pick():
+		_up_to_face_pick_consumed = false
+		return false
+	return not _up_to_face_pick_consumed
+
+
+func _disarm_up_to_face_pick() -> void:
+	if sketch_chrome != null and sketch_chrome.has_method("clear_up_to_face"):
+		sketch_chrome.clear_up_to_face()
+	_finish_up_to_face_gesture()
+
+
+func _finish_up_to_face_gesture() -> void:
+	# One-shot. If the chrome disarmed, the latch clears so a later
+	# arm_face_pick is live. If it stayed armed, further clicks are ignored.
+	_up_to_face_pick_consumed = true
+	if not _chrome_wants_face_pick():
+		_up_to_face_pick_consumed = false
+
+
+func _commit_up_to_face_pick(screen_pos: Vector2) -> void:
+	if view == null or sketch_chrome == null:
+		return
+	var ray := _model_ray(screen_pos)
+	var hit: Dictionary = view.pick_info(ray[0], ray[1])
+	if hit.is_empty() or str(hit.get("face", "")) == "":
+		status.emit("Click a model face for Up To Surface")
+		return
+	var face_id := str(hit["face"])
+	var body_id := str(hit.get("body", ""))
+	# Highlight the picked face. Stay in the sketch; do not place a point.
+	view.select_entity(body_id, face_id)
+	if sketch_chrome.has_method("set_up_to_face"):
+		sketch_chrome.set_up_to_face(face_id)
+	_finish_up_to_face_gesture()
+
+
+## Same shape as the active-plane one-shot: left click commits, right click
+## or Esc cancels, and the gesture runs during an active sketch.
+## Returns true when this event was consumed.
+func _input_up_to_face_pick(event: InputEvent) -> bool:
+	if event is InputEventMouseButton and not (event as InputEventMouseButton).pressed \
+			and _up_to_face_swallow_release:
+		_up_to_face_swallow_release = false
+		get_viewport().set_input_as_handled()
+		return true
+	if not _up_to_face_pick_armed():
+		return false
+	if event is InputEventMouse:
+		var mouse_pos := (event as InputEventMouse).position
+		if _over_chrome(mouse_pos) or not _viewport_owns_pointer(mouse_pos):
+			return false
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if not mb.pressed:
+			get_viewport().set_input_as_handled()
+			return true
+		if mb.button_index == MOUSE_BUTTON_LEFT and not mb.alt_pressed:
+			_up_to_face_swallow_release = true
+			_commit_up_to_face_pick(mb.position)
+			get_viewport().set_input_as_handled()
+			return true
+		if mb.button_index == MOUSE_BUTTON_RIGHT:
+			_up_to_face_swallow_release = true
+			_disarm_up_to_face_pick()
+			status.emit("Up To Surface face pick cancelled")
+			get_viewport().set_input_as_handled()
+			return true
+		return false
+	if event is InputEventKey and event.pressed and not event.echo:
+		if (event as InputEventKey).keycode == KEY_ESCAPE:
+			_disarm_up_to_face_pick()
+			status.emit("Up To Surface face pick cancelled")
+			get_viewport().set_input_as_handled()
+			return true
+	return false
+
+
+## One Esc outside a sketch: release a focused LineEdit, drop TriBall when
+## the gizmo is active or visible, and clear the selection. Returns true
+## when at least one of those did something. Sketch Esc does not call this.
+func cancel_stack() -> bool:
+	var acted := false
+	var vp := get_viewport()
+	if vp != null:
+		var focus := vp.gui_get_focus_owner()
+		if focus is LineEdit and focus.has_focus():
+			focus.release_focus()
+			acted = true
+	if triball != null and (triball.active or triball.visible):
+		triball.cancel()
+		status.emit("TriBall cancelled")
+		acted = true
+	var had_sel := view != null and (view.selected_body != "" \
+			or view.selection_size() > 0 or view.selected_instance != "")
+	if had_sel:
+		view.clear_selection()
+		var main_n := _find_main()
+		if main_n != null and main_n.has_method("_update_panel_visibility"):
+			main_n._update_panel_visibility()
+		status.emit("Selection cleared")
+		acted = true
+	return acted
 
 
 func _commit_pick_sketch_host(screen_pos: Vector2) -> void:
@@ -2080,8 +2210,10 @@ func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			# Dismiss tool-variant chips so they never steal the draw click.
+			# Drop the dim blank before the canvas consumes the click, so the
+			# next key is a sketch hotkey and not another digit in the field.
 			if sketch_chrome != null:
+				sketch_chrome.release_dim_focus()
 				sketch_chrome.hide_variants()
 			_sketch_press_pos = mb.position
 			var ray := _model_ray(mb.position)
@@ -2145,6 +2277,8 @@ func _sketch_input(event: InputEvent) -> void:
 			if measure_overlay != null:
 				measure_overlay.update_sketch_hover("", Vector3.ZERO)
 	elif event is InputEventKey and event.pressed and event.ctrl_pressed:
+		if SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus():
+			return
 		var ke := event as InputEventKey
 		match ke.keycode:
 			KEY_A:
@@ -2982,20 +3116,8 @@ func _gui_key(event: InputEventKey) -> bool:
 				measure_overlay.clear_pair()
 				status.emit("")
 				return true
-			# One Esc drops an armed TriBall and the selection together.
-			var dropped := false
-			if triball != null and (triball.active or triball.visible):
-				triball.cancel()
-				status.emit("TriBall cancelled")
-				dropped = true
-			if view != null and (view.selected_body != "" or view.selection_size() > 0 \
-					or view.selected_instance != ""):
-				view.clear_selection()
-				if main_n != null:
-					main_n._update_panel_visibility()
-				status.emit("Selection cleared")
-				dropped = true
-			if dropped:
+			# One Esc drops a focused field, an armed TriBall, and the selection.
+			if cancel_stack():
 				get_viewport().set_input_as_handled()
 				return true
 			# Dismiss Timeline / Variables when visible (user-toggled).
@@ -3062,7 +3184,10 @@ func _gui_key(event: InputEventKey) -> bool:
 				_refresh_selection_strip()
 				return true
 		KEY_A:
-			if event.ctrl_pressed:
+			if event.ctrl_pressed or event.meta_pressed:
+				# A focused spin / line edit owns Ctrl+A (select its text).
+				if SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus():
+					return false
 				return _select_all()
 		KEY_V:
 			if event.ctrl_pressed:
@@ -3726,6 +3851,8 @@ func _input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 		return
+	if _input_up_to_face_pick(event):
+		return
 	if _place_kind != "":
 		# Don't steal clicks aimed at the snap / transform chrome.
 		if event is InputEventMouseButton or event is InputEventMouseMotion:
@@ -3809,6 +3936,19 @@ func _input(event: InputEvent) -> void:
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		var ke := event as InputEventKey
+		var sketching := sketch_mode != null and sketch_mode.active
+		# Outside a sketch, Esc clears the focused field, TriBall, and the
+		# selection together — even when focus sits on a strip button or spin.
+		# Sketch Esc stays in `_sketch_input` (this branch is not reached).
+		if ke.keycode == KEY_ESCAPE and not sketching:
+			cancel_stack()
+			get_viewport().set_input_as_handled()
+			return
+		# Ctrl+A in a numeric field selects that field's text, not the scene.
+		if ke.keycode == KEY_A and (ke.ctrl_pressed or ke.meta_pressed) \
+				and not ke.alt_pressed \
+				and (SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus()):
+			return
 		# Del/Backspace must work without Interaction focus (focus often sits on
 		# docks after placing). Never steal keystrokes from live text fields.
 		if (ke.keycode == KEY_DELETE or ke.keycode == KEY_BACKSPACE) \
