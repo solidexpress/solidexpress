@@ -28,11 +28,15 @@
 #include <Standard_Failure.hxx>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <fstream>
+#include <map>
 #include <sstream>
+#include <utility>
 
 namespace sx::interop {
 namespace {
@@ -351,6 +355,61 @@ std::string b64(const std::string& raw) {
     return out;
 }
 
+// Weld like tools/check_rung01.py manifold_report: np.round(V, 6) then count
+// undirected edges. A closed solid uses every edge exactly twice.
+struct WeldKey {
+    long long x = 0, y = 0, z = 0;
+    bool operator<(const WeldKey& o) const {
+        if (x != o.x) return x < o.x;
+        if (y != o.y) return y < o.y;
+        return z < o.z;
+    }
+};
+
+long long weld_q(double v) { return std::llround(v * 1e6); }
+
+template <typename Xform>
+bool mesh_edges_closed(const TriMesh& mesh, Xform xform, std::string* err) {
+    const size_t nvert = mesh.positions.size() / 3;
+    std::map<WeldKey, uint32_t> weld;
+    std::vector<uint32_t> remap(nvert);
+    uint32_t next = 0;
+    for (size_t i = 0; i < nvert; ++i) {
+        const auto p = xform(mesh.positions[i * 3], mesh.positions[i * 3 + 1],
+                             mesh.positions[i * 3 + 2]);
+        WeldKey key{weld_q(p[0]), weld_q(p[1]), weld_q(p[2])};
+        auto [it, inserted] = weld.emplace(key, next);
+        if (inserted) ++next;
+        remap[i] = it->second;
+    }
+    std::map<std::pair<uint32_t, uint32_t>, int> edges;
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+        const uint32_t ia = mesh.indices[i];
+        const uint32_t ib = mesh.indices[i + 1];
+        const uint32_t ic = mesh.indices[i + 2];
+        if (ia >= nvert || ib >= nvert || ic >= nvert) continue;
+        uint32_t a = remap[ia], b = remap[ib], c = remap[ic];
+        if (a == b || b == c || a == c) continue;
+        auto add = [&](uint32_t u, uint32_t v) {
+            if (u > v) std::swap(u, v);
+            edges[{u, v}] += 1;
+        };
+        add(a, b);
+        add(b, c);
+        add(c, a);
+    }
+    int bad = 0;
+    for (const auto& e : edges) {
+        if (e.second != 2) ++bad;
+    }
+    if (bad != 0) {
+        set_err(err, "3MF mesh is open (" + std::to_string(bad) + "/" +
+                         std::to_string(edges.size()) + " edges not shared twice)");
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
 
 bool export_3mf(const Document& doc, const std::string& path, std::string* err) {
@@ -367,6 +426,10 @@ bool export_3mf(const Document& doc, const std::string& path, std::string* err) 
                 ps.rot[3] * x + ps.rot[4] * y + ps.rot[5] * z,
                 ps.rot[6] * x + ps.rot[7] * y + ps.rot[8] * z};
         };
+        if (!mesh_edges_closed(mesh, xform, err)) {
+            std::remove(path.c_str());
+            return false;
+        }
         std::ostringstream model;
         model << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
               << "<model unit=\"millimeter\" "
@@ -417,8 +480,13 @@ bool export_3mf(const Document& doc, const std::string& path, std::string* err) 
                   add("3D/3dmodel.model", xml);
         ok = ok && mz_zip_writer_finalize_archive(&zip) == MZ_TRUE;
         mz_zip_writer_end(&zip);
-        if (!ok) set_err(err, "3MF zip write failed");
-        return ok;
+        if (!ok) {
+            set_err(err, "3MF zip write failed");
+            std::remove(path.c_str());
+            return false;
+        }
+        if (err) err->clear();
+        return true;
     } catch (const std::exception& e) {
         set_err(err, std::string("3MF export: ") + e.what());
         return false;
@@ -439,6 +507,10 @@ bool export_3mf_for_body(const Document& doc, const EntityId& body, const std::s
                 ps.rot[3] * x + ps.rot[4] * y + ps.rot[5] * z,
                 ps.rot[6] * x + ps.rot[7] * y + ps.rot[8] * z};
         };
+        if (!mesh_edges_closed(mesh, xform, err)) {
+            std::remove(path.c_str());
+            return false;
+        }
         std::ostringstream model;
         model << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
               << "<model unit=\"millimeter\" "
@@ -489,8 +561,13 @@ bool export_3mf_for_body(const Document& doc, const EntityId& body, const std::s
                   add("3D/3dmodel.model", xml);
         ok = ok && mz_zip_writer_finalize_archive(&zip) == MZ_TRUE;
         mz_zip_writer_end(&zip);
-        if (!ok) set_err(err, "3MF zip write failed");
-        return ok;
+        if (!ok) {
+            set_err(err, "3MF zip write failed");
+            std::remove(path.c_str());
+            return false;
+        }
+        if (err) err->clear();
+        return true;
     } catch (const std::exception& e) {
         set_err(err, std::string("3MF export: ") + e.what());
         return false;
