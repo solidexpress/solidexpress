@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cstdio>
 
 #include "sx/document.hpp"
@@ -81,7 +83,7 @@ TEST_CASE("configurations survive sxp round-trip", "[configurations][sxp]") {
     doc.graph().variables().set("w", "40");
     REQUIRE(doc.save_configuration("Large"));
 
-    std::string path = "/tmp/sx_config_roundtrip.sxp";
+    std::string path = sx::test::temp_path("sx_config_roundtrip.sxp");
     std::string err;
     REQUIRE(save_sxp(doc, path, &err));
 

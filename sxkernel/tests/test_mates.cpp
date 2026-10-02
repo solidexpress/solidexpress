@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -24,14 +26,9 @@
 #include "sx/sxp.hpp"
 
 using namespace sx;
+using sx::test::TmpFile;
 
 namespace {
-
-struct TmpFile {
-    std::string path;
-    explicit TmpFile(const char* name) : path(std::string("/tmp/sx_test_") + name) {}
-    ~TmpFile() { std::remove(path.c_str()); }
-};
 
 // First planar face of `body` whose outward normal matches `want` (world
 // space, body at rest). Null id when none.

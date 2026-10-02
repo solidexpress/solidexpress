@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -23,14 +25,9 @@
 #include "sx/thread_standards.hpp"
 
 using namespace sx;
+using sx::test::TmpFile;
 
 namespace {
-
-struct TmpFile {
-    std::string path;
-    explicit TmpFile(const char* name) : path(std::string("/tmp/sx_w0_") + name) {}
-    ~TmpFile() { std::remove(path.c_str()); }
-};
 
 std::shared_ptr<Sketch> rect_on_xy(double w, double h) {
     auto sk = std::make_shared<Sketch>("Rect");

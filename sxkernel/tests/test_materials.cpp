@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cstdio>
 
 #include "sx/document.hpp"
@@ -44,7 +46,7 @@ TEST_CASE("material survives sxp round-trip", "[materials][sxp]") {
     auto id = doc.add_body(shape::make_box(10, 10, 10), "Box");
     REQUIRE(doc.set_body_material(id, "TPU"));
 
-    std::string path = "/tmp/sx_material_roundtrip.sxp";
+    std::string path = sx::test::temp_path("sx_material_roundtrip.sxp");
     std::string err;
     REQUIRE(save_sxp(doc, path, &err));
 

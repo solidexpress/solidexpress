@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cstdio>
 #include <string>
 
@@ -10,16 +12,7 @@
 #include "sx/sxp.hpp"
 
 using namespace sx;
-
-namespace {
-
-struct TmpFile {
-    std::string path;
-    explicit TmpFile(const char* name) : path(std::string("/tmp/sx_test_") + name) {}
-    ~TmpFile() { std::remove(path.c_str()); }
-};
-
-}  // namespace
+using sx::test::TmpFile;
 
 TEST_CASE("insert_sxp copies bodies and places instances", "[insert_sxp]") {
     TmpFile part("jaw_part.sxp");
@@ -107,6 +100,6 @@ TEST_CASE("insert_sxp round-trips through host .sxp", "[insert_sxp]") {
 TEST_CASE("insert_sxp fails on missing file", "[insert_sxp]") {
     Document doc;
     std::string err;
-    CHECK_FALSE(insert_sxp(doc, "/tmp/sx_no_such_file.sxp", {0, 0, 0}, nullptr, &err));
+    CHECK_FALSE(insert_sxp(doc, sx::test::temp_path("sx_no_such_file.sxp"), {0, 0, 0}, nullptr, &err));
     CHECK_FALSE(err.empty());
 }

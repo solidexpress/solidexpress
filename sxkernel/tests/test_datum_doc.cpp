@@ -1,4 +1,6 @@
 #include <catch.hpp>
+
+#include "test_temp.hpp"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -9,14 +11,9 @@
 #include "sx/sxp.hpp"
 
 using namespace sx;
+using sx::test::TmpFile;
 
 namespace {
-struct TmpFile {
-    std::string path;
-    explicit TmpFile(const char* name) : path(std::string("/tmp/sx_test_") + name) {}
-    ~TmpFile() { std::remove(path.c_str()); }
-};
-
 bool approx3(const std::array<double, 3>& a, const std::array<double, 3>& b,
              double eps = 1e-9) {
     return std::abs(a[0] - b[0]) < eps && std::abs(a[1] - b[1]) < eps &&

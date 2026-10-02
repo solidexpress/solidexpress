@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -15,8 +17,8 @@ using nlohmann::json;
 
 TEST_CASE("featimport: STEP base feature volume, scale, suppress, failure, json",
           "[featimport]") {
-    const char* path = "/tmp/sx_featimport_box.step";
-    std::remove(path);
+    const std::string path = sx::test::temp_path("sx_featimport_box.step");
+    std::remove(path.c_str());
 
     Document src;
     src.add_body(shape::make_box(10, 20, 30), "Box");
@@ -65,7 +67,7 @@ TEST_CASE("featimport: STEP base feature volume, scale, suppress, failure, json"
     FeatureGraph bad;
     Feature bad_f;
     bad_f.type = FeatureType::ImportStep;
-    bad_f.params = {{"path", "/tmp/sx_featimport_missing_nope.step"}, {"index", 0}};
+    bad_f.params = {{"path", sx::test::temp_path("sx_featimport_missing_nope.step")}, {"index", 0}};
     bad.add(std::move(bad_f));
     Document bad_doc;
     err.clear();
@@ -100,12 +102,12 @@ TEST_CASE("featimport: STEP base feature volume, scale, suppress, failure, json"
     REQUIRE(std::string(to_string(FeatureType::ImportStep)) == "import_step");
     REQUIRE(feature_type_from_string("import_step") == FeatureType::ImportStep);
 
-    std::remove(path);
+    std::remove(path.c_str());
 }
 
 TEST_CASE("featimport: STL base feature volume, scale, json", "[featimport]") {
-    const char* path = "/tmp/sx_featimport_box.stl";
-    std::remove(path);
+    const std::string path = sx::test::temp_path("sx_featimport_box.stl");
+    std::remove(path.c_str());
 
     Document src;
     src.add_body(shape::make_box(10, 20, 30), "Box");
@@ -157,5 +159,5 @@ TEST_CASE("featimport: STL base feature volume, scale, json", "[featimport]") {
     REQUIRE(std::string(to_string(FeatureType::ImportStl)) == "import_stl");
     REQUIRE(feature_type_from_string("import_stl") == FeatureType::ImportStl);
 
-    std::remove(path);
+    std::remove(path.c_str());
 }
