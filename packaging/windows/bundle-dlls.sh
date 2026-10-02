@@ -76,23 +76,35 @@ resolve_vcpkg_root() {
 
 VCPKG_ROOT_U="$(resolve_vcpkg_root || true)"
 INSTALLED_BIN=""
+# Manifest-mode CMake installs into build/vcpkg_installed; classic mode uses
+# $VCPKG_ROOT/installed. Prefer the tree that actually feeds the linked binary.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 if [[ -n "$VCPKG_ROOT_U" ]]; then
   for cand in \
+    "$ROOT/build/vcpkg_installed/x64-windows/bin" \
     "$VCPKG_ROOT_U/installed/x64-windows/bin" \
     "$VCPKG_ROOT_U/installed/x64-windows-release/bin"; do
-    if [[ -d "$cand" ]]; then INSTALLED_BIN="$cand"; break; fi
+    if [[ -d "$cand" && -f "$cand/TKernel.dll" ]]; then
+      INSTALLED_BIN="$cand"
+      break
+    fi
   done
 fi
 if [[ -z "$INSTALLED_BIN" ]]; then
   # Last-ditch: locate TKernel.dll under any vcpkg installed tree we can see.
   for cand in \
+    "$ROOT/build/vcpkg_installed/x64-windows/bin" \
     "$(to_unix_path "${SX_VCPKG_ROOT:-}")/installed/x64-windows/bin" \
     "$(to_unix_path "${RUNNER_TEMP:-}")/vcpkg/installed/x64-windows/bin" \
     /d/a/_temp/vcpkg/installed/x64-windows/bin; do
     if [[ -d "$cand" && -f "$cand/TKernel.dll" ]]; then
       INSTALLED_BIN="$cand"
-      # bin → x64-windows → installed → <vcpkg root>
-      VCPKG_ROOT_U="$(cd "$cand/../../.." && pwd)"
+      # Prefer walking up from classic installed/; for build/vcpkg_installed keep ROOT.
+      if [[ "$cand" == */build/vcpkg_installed/* ]]; then
+        VCPKG_ROOT_U="${VCPKG_ROOT_U:-$(to_unix_path "${SX_VCPKG_ROOT:-${VCPKG_ROOT:-}}")}"
+      else
+        VCPKG_ROOT_U="$(cd "$cand/../../.." && pwd)"
+      fi
       break
     fi
   done
@@ -159,8 +171,11 @@ if [[ -n "$INSTALLED_BIN" ]]; then
     "$INSTALLED_BIN"/TK*.dll \
     "$INSTALLED_BIN"/tbb*.dll \
     "$INSTALLED_BIN"/tbbmalloc*.dll \
+    "$INSTALLED_BIN"/hwloc*.dll \
     "$INSTALLED_BIN"/freetype*.dll \
     "$INSTALLED_BIN"/freeimage*.dll \
+    "$INSTALLED_BIN"/openvr*.dll \
+    "$INSTALLED_BIN"/z.dll \
     "$INSTALLED_BIN"/zlib*.dll \
     "$INSTALLED_BIN"/bz2*.dll \
     "$INSTALLED_BIN"/libpng*.dll \

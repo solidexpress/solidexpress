@@ -4,6 +4,9 @@ version: '0.0.1'
 summary: Open parametric solid modeling
 description: |
   SolidExpress — sketch, extrude, revolve, loft, sweep on OCCT B-rep solids.
+  Snap wraps the Linux release tarball. OCCT is bundled beside libsxcore
+  (packaging/linux/bundle-shared-libs.sh); pin is packaging/occt.version
+  (8.0.1). This snap does not compile OCCT.
 grade: devel
 confinement: strict
 base: core24

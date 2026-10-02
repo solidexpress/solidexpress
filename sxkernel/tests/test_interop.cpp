@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -24,8 +26,8 @@ bool file_exists_nonzero(const std::string& path, size_t min_bytes) {
 }  // namespace
 
 TEST_CASE("STEP round trip preserves body count and volumes", "[interop]") {
-    const char* path = "/tmp/sx_interop_test.step";
-    std::remove(path);
+    const std::string path = sx::test::temp_path("sx_interop_test.step");
+    std::remove(path.c_str());
 
     Document src;
     auto box_id = src.add_body(shape::make_box(10, 20, 30), "Box");
@@ -60,12 +62,12 @@ TEST_CASE("STEP round trip preserves body count and volumes", "[interop]") {
         (near(vols[0], cyl_vol) && near(vols[1], box_vol));
     REQUIRE(matched);
 
-    std::remove(path);
+    std::remove(path.c_str());
 }
 
 TEST_CASE("IGES round trip imports geometry", "[interop]") {
-    const char* path = "/tmp/sx_interop_test.iges";
-    std::remove(path);
+    const std::string path = sx::test::temp_path("sx_interop_test.iges");
+    std::remove(path.c_str());
 
     Document src;
     src.add_body(shape::make_box(10, 20, 30), "Box");
@@ -89,12 +91,12 @@ TEST_CASE("IGES round trip imports geometry", "[interop]") {
         REQUIRE(shape::count(b->shape).faces > 0);
     }
 
-    std::remove(path);
+    std::remove(path.c_str());
 }
 
 TEST_CASE("STL export and import", "[interop]") {
-    const char* path = "/tmp/sx_interop_test.stl";
-    std::remove(path);
+    const std::string path = sx::test::temp_path("sx_interop_test.stl");
+    std::remove(path.c_str());
 
     Document src;
     src.add_body(shape::make_box(10, 20, 30), "Box");
@@ -111,7 +113,7 @@ TEST_CASE("STL export and import", "[interop]") {
     REQUIRE(b->name == "Mesh 1");
     REQUIRE(shape::count(b->shape).faces > 0);
 
-    std::remove(path);
+    std::remove(path.c_str());
 }
 
 TEST_CASE("interop failure paths set err", "[interop]") {
@@ -119,7 +121,7 @@ TEST_CASE("interop failure paths set err", "[interop]") {
     doc.add_body(shape::make_box(1, 1, 1), "Box");
 
     std::string err;
-    auto ids = interop::import_step(doc, "/tmp/sx_interop_missing_nope.step", &err);
+    auto ids = interop::import_step(doc, sx::test::temp_path("sx_interop_missing_nope.step"), &err);
     REQUIRE(ids.empty());
     REQUIRE(!err.empty());
 

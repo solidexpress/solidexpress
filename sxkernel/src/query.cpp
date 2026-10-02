@@ -5,7 +5,7 @@
 
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 
 #include "sx/cards.hpp"
@@ -135,7 +135,7 @@ std::vector<EntityId> edges_of_face(const Document& doc, const EntityId& face) {
     if (face_shape.IsNull() || face_shape.ShapeType() != TopAbs_FACE) return out;
     auto it = body->subshape_ids.find(EntityKind::Edge);
     if (it == body->subshape_ids.end()) return out;
-    TopTools_IndexedMapOfShape edges;
+    sx::occt::ShapeIndexedMap edges;
     TopExp::MapShapes(body->shape, TopAbs_EDGE, edges);
     std::vector<int> seen;
     for (TopExp_Explorer ex(face_shape, TopAbs_EDGE); ex.More(); ex.Next()) {

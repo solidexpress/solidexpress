@@ -3,7 +3,7 @@
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <TopoDS.hxx>
-#include <TopTools_ListOfShape.hxx>
+#include "sx/occt_types.hpp"
 
 #include <stdexcept>
 
@@ -49,7 +49,7 @@ void ShellCommand::execute(Document& doc) {
 
     saved_before_ = snapshot(*b);
 
-    TopTools_ListOfShape remove_faces;
+    sx::occt::ShapeList remove_faces;
     for (const auto& fid : faces_) {
         TopoDS_Shape s = doc.resolve(fid);
         if (s.IsNull()) throw std::invalid_argument("ShellCommand: face not found");

@@ -9,7 +9,8 @@ VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 all: build
 
 configure:
-	cmake -S . -B $(BUILD_DIR) -G Ninja
+	cmake -S . -B $(BUILD_DIR) -G Ninja \
+		$(if $(CMAKE_PREFIX_PATH),-DCMAKE_PREFIX_PATH="$(CMAKE_PREFIX_PATH)")
 
 build: configure
 	cmake --build $(BUILD_DIR) -j $(JOBS)

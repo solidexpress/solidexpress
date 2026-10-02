@@ -9,7 +9,7 @@
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_Curve.hxx>
 #include <Geom_CylindricalSurface.hxx>
-#include <TColgp_Array1OfPnt.hxx>
+#include "sx/occt_types.hpp"
 #include <gp_Ax3.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt2d.hxx>
@@ -50,7 +50,7 @@ TopoDS_Wire spiral(const gp_Ax2& axis, double start_radius, double end_radius, d
 
     constexpr int k_samples_per_turn = 32;
     const int n = std::max(2, static_cast<int>(std::ceil(turns * k_samples_per_turn)) + 1);
-    TColgp_Array1OfPnt poles(1, n);
+    sx::occt::Array1OfPnt poles(1, n);
 
     const gp_Pnt origin = axis.Location();
     const gp_Dir x = axis.XDirection();

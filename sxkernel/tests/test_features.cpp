@@ -1,4 +1,6 @@
 #include <catch.hpp>
+
+#include "test_temp.hpp"
 #include <cmath>
 
 #include <cstdio>
@@ -210,7 +212,7 @@ TEST_CASE("feature graph: dependency protection and json round trip", "[features
 }
 
 TEST_CASE("feature graph persists through .sxp save/load", "[features][sxp]") {
-    const std::string path = "/tmp/sx_features_roundtrip.sxp";
+    const std::string path = sx::test::temp_path("sx_features_roundtrip.sxp");
 
     Document doc;
     Feature skf;

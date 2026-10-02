@@ -15,7 +15,7 @@
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <gp_Dir.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Pnt.hxx>
@@ -46,7 +46,7 @@ gp_Dir face_normal(const TopoDS_Face& f) {
         if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
         return n;
     }
-    Standard_Real umin = 0, umax = 0, vmin = 0, vmax = 0;
+    double umin = 0, umax = 0, vmin = 0, vmax = 0;
     BRepTools::UVBounds(f, umin, umax, vmin, vmax);
     Handle(Geom_Surface) surf = BRep_Tool::Surface(f);
     GeomLProp_SLProps props(surf, 0.5 * (umin + umax), 0.5 * (vmin + vmax), 1, 1e-6);
@@ -58,7 +58,7 @@ gp_Dir face_normal(const TopoDS_Face& f) {
 
 gp_Pnt face_mid(const TopoDS_Face& f) {
     Handle(Geom_Surface) surf = BRep_Tool::Surface(f);
-    Standard_Real umin = 0, umax = 0, vmin = 0, vmax = 0;
+    double umin = 0, umax = 0, vmin = 0, vmax = 0;
     BRepTools::UVBounds(f, umin, umax, vmin, vmax);
     return surf->Value(0.5 * (umin + umax), 0.5 * (vmin + vmax));
 }
@@ -135,8 +135,8 @@ PrintReport analyze_with(const Document& doc, const EntityId& body, const PrintS
     }
 
     Bnd_Box box;
-    BRepBndLib::AddOptimal(b->shape, box, Standard_False);
-    Standard_Real xmin, ymin, zmin, xmax, ymax, zmax;
+    BRepBndLib::AddOptimal(b->shape, box, false);
+    double xmin, ymin, zmin, xmax, ymax, zmax;
     box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
     const std::array<double, 3> corners[8] = {
         {xmin, ymin, zmin}, {xmax, ymin, zmin}, {xmin, ymax, zmin}, {xmax, ymax, zmin},
@@ -162,7 +162,7 @@ PrintReport analyze_with(const Document& doc, const EntityId& body, const PrintS
     double min_t = 1e9;
     double over_a = 0.0;
     // Map faces to a stable OCCT order that matches Body::subshape_ids.
-    TopTools_IndexedMapOfShape faces;
+    sx::occt::ShapeIndexedMap faces;
     TopExp::MapShapes(b->shape, TopAbs_FACE, faces);
     const auto& face_ids = b->subshape_ids.at(EntityKind::Face);
     r.thin_faces.clear();

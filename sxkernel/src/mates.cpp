@@ -136,7 +136,7 @@ std::optional<MateConnector> implicit_connector(const Document& doc,
     if (f.IsNull() || f.ShapeType() != TopAbs_FACE) return std::nullopt;
     TopoDS_Face tf = TopoDS::Face(f);
     BRepAdaptor_Surface surf(tf);
-    Standard_Real umin = 0, umax = 0, vmin = 0, vmax = 0;
+    double umin = 0, umax = 0, vmin = 0, vmax = 0;
     BRepTools::UVBounds(tf, umin, umax, vmin, vmax);
     gp_Pnt mid = surf.Value(0.5 * (umin + umax), 0.5 * (vmin + vmax));
 

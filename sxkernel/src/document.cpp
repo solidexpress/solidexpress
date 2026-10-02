@@ -1,9 +1,7 @@
 #include "sx/document.hpp"
 
 #include <TopExp.hxx>
-#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
-#include <TopTools_ListOfShape.hxx>
+#include "sx/occt_types.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -201,7 +199,7 @@ TopoDS_Shape Document::resolve(const EntityId& id) const {
     TopAbs_ShapeEnum occt_kind = TopAbs_FACE;
     for (const auto& [kind, abs] : kSubKinds)
         if (kind == ref->kind) occt_kind = abs;
-    TopTools_IndexedMapOfShape map;
+    sx::occt::ShapeIndexedMap map;
     TopExp::MapShapes(b->shape, occt_kind, map);
     if (ref->index < 1 || ref->index > map.Extent()) return {};
     return map(ref->index);
@@ -225,7 +223,7 @@ EntityId Document::subshape_id(const EntityId& body_id, EntityKind kind, int ind
 
 void Document::register_subshapes(Body& b, bool fresh_ids) {
     for (const auto& [kind, abs] : kSubKinds) {
-        TopTools_IndexedMapOfShape map;
+        sx::occt::ShapeIndexedMap map;
         TopExp::MapShapes(b.shape, abs, map);
         auto& ids = b.subshape_ids[kind];
         if (fresh_ids || static_cast<int>(ids.size()) != map.Extent()) {
@@ -262,7 +260,7 @@ void Document::regenerate_cards_for_body(const Body& b) {
 
     // Face cards (edges/vertices get cards lazily later; faces are the primary
     // selectable for the drag-and-drop phase).
-    TopTools_IndexedMapOfShape faces;
+    sx::occt::ShapeIndexedMap faces;
     TopExp::MapShapes(b.shape, TopAbs_FACE, faces);
     const auto& face_ids = b.subshape_ids.at(EntityKind::Face);
     for (int i = 1; i <= faces.Extent(); ++i) {
@@ -277,17 +275,17 @@ void Document::regenerate_cards_for_body(const Body& b) {
 
     // Adjacency: faces that share an edge become card relations (and feed
     // adjacent-to= queries / the selection-card digest).
-    TopTools_IndexedDataMapOfShapeListOfShape edge_faces;
+    sx::occt::ShapeIndexedDataMapOfList edge_faces;
     TopExp::MapShapesAndAncestors(b.shape, TopAbs_EDGE, TopAbs_FACE, edge_faces);
     for (int i = 1; i <= faces.Extent(); ++i) {
         const EntityId face_id = face_ids[static_cast<size_t>(i - 1)];
         Card* fc = cards_->find_mut(face_id);
         if (!fc) continue;
-        TopTools_IndexedMapOfShape my_edges;
+        sx::occt::ShapeIndexedMap my_edges;
         TopExp::MapShapes(faces(i), TopAbs_EDGE, my_edges);
         for (int e = 1; e <= my_edges.Extent(); ++e) {
             if (!edge_faces.Contains(my_edges(e))) continue;
-            const TopTools_ListOfShape& nbrs = edge_faces.FindFromKey(my_edges(e));
+            const sx::occt::ShapeList& nbrs = edge_faces.FindFromKey(my_edges(e));
             for (const TopoDS_Shape& n : nbrs) {
                 const int fi = faces.FindIndex(n);
                 if (fi < 1 || fi == i) continue;

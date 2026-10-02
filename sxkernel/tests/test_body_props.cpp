@@ -1,4 +1,6 @@
 #include <catch.hpp>
+
+#include "test_temp.hpp"
 #include <cstdio>
 #include <string>
 
@@ -8,14 +10,7 @@
 #include "sx/sxp.hpp"
 
 using namespace sx;
-
-namespace {
-struct TmpFile {
-    std::string path;
-    explicit TmpFile(const char* name) : path(std::string("/tmp/sx_test_") + name) {}
-    ~TmpFile() { std::remove(path.c_str()); }
-};
-}  // namespace
+using sx::test::TmpFile;
 
 TEST_CASE("body name and color round-trip through .sxp", "[bodyprops]") {
     TmpFile f("bodyprops.sxp");

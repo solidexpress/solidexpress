@@ -1,4 +1,6 @@
 #include <catch.hpp>
+
+#include "test_temp.hpp"
 #include <cstdio>
 #include <string>
 
@@ -8,14 +10,7 @@
 #include "sx/sxp.hpp"
 
 using namespace sx;
-
-namespace {
-struct TmpFile {
-    std::string path;
-    explicit TmpFile(const char* name) : path(std::string("/tmp/sx_test_") + name) {}
-    ~TmpFile() { std::remove(path.c_str()); }
-};
-}  // namespace
+using sx::test::TmpFile;
 
 TEST_CASE("sxp save/load round trip preserves bodies, ids and cards", "[sxp]") {
     TmpFile f("roundtrip.sxp");
@@ -58,7 +53,7 @@ TEST_CASE("sxp save/load round trip preserves bodies, ids and cards", "[sxp]") {
 TEST_CASE("load_sxp fails cleanly on nonsense", "[sxp]") {
     Document doc;
     std::string err;
-    REQUIRE(!load_sxp(doc, "/tmp/does_not_exist_sx.sxp", &err));
+    REQUIRE(!load_sxp(doc, sx::test::temp_path("does_not_exist_sx.sxp"), &err));
     REQUIRE(!err.empty());
 
     TmpFile f("garbage.sxp");

@@ -22,7 +22,7 @@
 #include <Bnd_Box.hxx>
 #include <ShapeFix_Solid.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_ListOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
@@ -132,7 +132,7 @@ TopoDS_Shape replace_face(const TopoDS_Shape& solid, const TopoDS_Shape& face,
     if (solid.IsNull() || face.IsNull() || tool.IsNull()) return bail("missing solid, face or tool");
 
     BRepAlgoAPI_Splitter split;
-    TopTools_ListOfShape args, tools;
+    sx::occt::ShapeList args, tools;
     args.Append(solid);
     tools.Append(tool);
     split.SetArguments(args);

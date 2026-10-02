@@ -1,0 +1,6 @@
+# Canonical Open CASCADE Technology version for every SolidExpress platform
+# build (Linux/macOS source installs, Windows vcpkg, bundled Flatpak/Snap).
+# Keep in sync with packaging/ci/install_occt.sh, vcpkg.json, and CI workflows.
+OCCT_VERSION=8.0.1
+OCCT_TAG=V8_0_1
+OCCT_TARBALL_SHA256=0d6913eae4bcc09a3653ceced6dda1aec11c35a1513d4c06762c9b002092c68a

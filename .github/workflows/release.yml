@@ -10,6 +10,11 @@ permissions:
   contents: write
   actions: write
 
+env:
+  # Keep in sync with packaging/occt.version and vcpkg.json overrides.
+  OCCT_VERSION: "8.0.1"
+  VCPKG_COMMIT: "3aea538b2bb21a586502c67b00eb474fdd2e3098"
+
 jobs:
   linux:
     runs-on: ubuntu-24.04
@@ -23,11 +28,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build g++ curl unzip patchelf file \
-            libocct-foundation-dev libocct-modeling-data-dev \
-            libocct-modeling-algorithms-dev libocct-ocaf-dev \
-            libocct-data-exchange-dev libocct-visualization-dev \
-            libocct-draw-dev \
-            libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev
+            libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
+            libfreetype-dev libfontconfig-dev rapidjson-dev \
+            libx11-dev libxi-dev libxext-dev libxmu-dev libgl1-mesa-dev
+
+      - name: Cache OCCT ${{ env.OCCT_VERSION }}
+        uses: actions/cache@v4
+        with:
+          path: /opt/occt-${{ env.OCCT_VERSION }}
+          key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
+
+      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
+        run: |
+          chmod +x packaging/ci/install_occt.sh
+          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
+          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
+          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
 
       - name: Resolve version
         id: ver
@@ -48,12 +64,17 @@ jobs:
 
       - name: Run kernel tests
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          export CMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          export LD_LIBRARY_PATH="/opt/occt-${OCCT_VERSION}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}"
           cmake --build build -j "$(nproc)" --target sxkernel_tests
           ./build/sxkernel/sxkernel_tests
 
       - name: Export Linux release
         run: |
+          export CMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          export LD_LIBRARY_PATH="/opt/occt-${OCCT_VERSION}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           chmod +x scripts/release/export-linux.sh
           ./scripts/release/export-linux.sh
 
@@ -97,8 +118,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/vcpkg-binary-cache
-          key: vcpkg-win-x64-opencascade-eigen3-tbb-boost-system-filesystem-graph
+          key: vcpkg-win-x64-occt-8.0.1-eigen3-tbb-boost-system-filesystem-graph
           restore-keys: |
+            vcpkg-win-x64-occt-8.0.1-
             vcpkg-win-x64-
 
       - name: Install build dependencies
@@ -106,7 +128,8 @@ jobs:
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/vcpkg-binary-cache"
           choco install ninja cmake -y
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_COMMIT"
           "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"
           # SX_VCPKG_ROOT survives ilammy/msvc-dev-cmd, which overwrites VCPKG_ROOT
           # with Visual Studio's bundled vcpkg (no OpenCASCADE packages).
@@ -122,11 +145,13 @@ jobs:
               -o "$RUNNER_TEMP/vcpkg/downloads/boost-1.91.0-LICENSE_1_0.txt" \
               "https://raw.githubusercontent.com/boostorg/boost/boost-1.91.0/LICENSE_1_0.txt" \
             || true
+          # Manifest (vcpkg.json) pins opencascade to OCCT_VERSION via overrides.
           # Retry whole install: vcpkg treats SSL errors as non-transient and will not retry itself.
           ok=0
           for attempt in 1 2 3; do
             echo "==> vcpkg install attempt ${attempt}/3"
-            if "$RUNNER_TEMP/vcpkg/vcpkg.exe" install opencascade eigen3 tbb boost-system boost-filesystem boost-graph --triplet x64-windows; then
+            if "$RUNNER_TEMP/vcpkg/vcpkg.exe" install --triplet x64-windows \
+                --x-manifest-root="${GITHUB_WORKSPACE}"; then
               ok=1
               break
             fi
@@ -217,7 +242,20 @@ jobs:
       - name: Install build dependencies
         env:
           HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
-        run: brew install cmake ninja opencascade eigen boost tbb
+        run: brew install cmake ninja eigen boost tbb freetype rapidjson
+
+      - name: Cache OCCT ${{ env.OCCT_VERSION }}
+        uses: actions/cache@v4
+        with:
+          path: /opt/occt-${{ env.OCCT_VERSION }}
+          key: occt-${{ env.OCCT_VERSION }}-macos-arm64-shared-tbb-freetype-rapidjson-v1
+
+      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
+        run: |
+          chmod +x packaging/ci/install_occt.sh
+          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
+          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
+          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
 
       - name: Resolve version
         id: ver
@@ -238,6 +276,8 @@ jobs:
 
       - name: Export macOS release
         run: |
+          export CMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          export DYLD_LIBRARY_PATH="/opt/occt-${OCCT_VERSION}/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
           chmod +x scripts/release/export-macos.sh
           ./scripts/release/export-macos.sh
 

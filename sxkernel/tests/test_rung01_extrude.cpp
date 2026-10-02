@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
@@ -13,9 +15,15 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <tuple>
+
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
 
 #include <gp_Vec.hxx>
 
@@ -284,7 +292,7 @@ TEST_CASE("sketch extrude from z=0 exports with min z at 0", "[rung01][export]")
     graph.add(std::move(ext));
     std::string err;
     REQUIRE(graph.regenerate(doc, &err));
-    const std::string path = "/tmp/sx_rung01_plate.3mf";
+    const std::string path = sx::test::temp_path("sx_rung01_plate.3mf");
     REQUIRE(interop::export_3mf(doc, path, &err));
     const double zmin = min_z_in_3mf(path);
     std::remove(path.c_str());

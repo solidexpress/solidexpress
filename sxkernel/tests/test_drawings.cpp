@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -12,15 +14,10 @@
 #include "sx/shape_utils.hpp"
 
 using namespace sx;
+using sx::test::TmpFile;
 using namespace sx::drawings;
 
 namespace {
-
-struct TmpFile {
-    std::string path;
-    explicit TmpFile(const char* name) : path(std::string("/tmp/sx_test_") + name) {}
-    ~TmpFile() { std::remove(path.c_str()); }
-};
 
 std::string slurp(const std::string& path) {
     std::ifstream f(path);

@@ -20,7 +20,13 @@ if [[ ! -f "$GODOT" ]]; then
 fi
 
 echo "==> cmake build (Release, sxcore only)"
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF \
+# Force GDExtension ON: windows-export CI configures tests with
+# SX_BUILD_GDEXTENSION=OFF first, and the cached OFF would otherwise leave
+# no sxcore target ("ninja: error: unknown target 'sxcore'").
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DSX_BUILD_TESTS=OFF \
+  -DSX_BUILD_GDEXTENSION=ON \
+  -DSX_BUILD_VOICE=OFF \
   -DGODOTCPP_TARGET=template_release \
   -DGODOTCPP_USE_STATIC_CPP=OFF \
   ${CMAKE_TOOLCHAIN_FILE:+-DCMAKE_TOOLCHAIN_FILE=$CMAKE_TOOLCHAIN_FILE}

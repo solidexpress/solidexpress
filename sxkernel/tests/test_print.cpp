@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <miniz.h>
 
 #include <cstdio>
@@ -15,14 +17,9 @@
 #include "sx/sxp.hpp"
 
 using namespace sx;
+using Tmp = sx::test::TmpFile;
 
 namespace {
-
-struct Tmp {
-    std::string path;
-    explicit Tmp(const char* name) { path = std::string("/tmp/") + name; }
-    ~Tmp() { std::remove(path.c_str()); }
-};
 
 std::string slurp(const std::string& path) {
     std::ifstream in(path, std::ios::binary);

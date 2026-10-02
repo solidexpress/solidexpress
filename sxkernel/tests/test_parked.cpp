@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -25,14 +27,7 @@
 #include "sx/shape_utils.hpp"
 
 using namespace sx;
-
-struct Tmp {
-    std::string path;
-    Tmp(const char* name) {
-        path = std::string("/tmp/") + name;
-    }
-    ~Tmp() { std::remove(path.c_str()); }
-};
+using Tmp = sx::test::TmpFile;
 
 TEST_CASE("in-context snapshot does not flow until update", "[parked][xref]") {
     Document doc;

@@ -1362,7 +1362,7 @@ static void quat_to_axis_angle(const std::array<double, 4>& quat, Vector3& axis_
     }
     q.Normalize();
     gp_Vec ax;
-    Standard_Real angle = 0.0;
+    double angle = 0.0;
     q.GetVectorAndAngle(ax, angle);
     if (ax.SquareMagnitude() < 1e-24) {
         axis_out = Vector3(0, 0, 1);

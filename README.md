@@ -10,14 +10,16 @@ The product is AI-first: every selectable entity has a generated markdown **sema
 
 ## Prerequisites
 
-**Ubuntu packages:**
+**Ubuntu packages** (OCCT itself is not taken from apt — pin **8.0.1**):
 
 ```bash
-sudo apt-get install -y ninja-build zip \
-  libocct-foundation-dev libocct-modeling-data-dev \
-  libocct-modeling-algorithms-dev libocct-data-exchange-dev \
-  libocct-ocaf-dev libocct-visualization-dev \
-  libeigen3-dev libboost-dev
+sudo apt-get install -y ninja-build zip cmake g++ \
+  libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
+  libfreetype-dev libfontconfig-dev rapidjson-dev
+# Build/install pinned OCCT (see packaging/occt.version):
+OCCT_PREFIX=/opt/occt-8.0.1 ./packaging/ci/install_occt.sh
+export CMAKE_PREFIX_PATH=/opt/occt-8.0.1
+export LD_LIBRARY_PATH=/opt/occt-8.0.1/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 ```
 
 **Godot 4.7-stable** (Linux x86_64 binary): download from

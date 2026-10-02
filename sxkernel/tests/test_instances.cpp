@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -16,14 +18,9 @@
 #include "sx/sxp.hpp"
 
 using namespace sx;
+using sx::test::TmpFile;
 
 namespace {
-
-struct TmpFile {
-    std::string path;
-    explicit TmpFile(const char* name) : path(std::string("/tmp/sx_test_") + name) {}
-    ~TmpFile() { std::remove(path.c_str()); }
-};
 
 void bbox_extents(const TopoDS_Shape& s, double& dx, double& dy, double& dz,
                   double& xmin, double& ymin, double& zmin) {

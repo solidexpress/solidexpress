@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -56,7 +58,7 @@ TEST_CASE("revolute joint seats connector origins", "[wave1][joints]") {
 }
 
 TEST_CASE("joints survive save and reload posed", "[wave1][joints]") {
-    const std::string path = "/tmp/sx_joints_roundtrip.sxp";
+    const std::string path = sx::test::temp_path("sx_joints_roundtrip.sxp");
     EntityId jid;
     {
         Document doc;

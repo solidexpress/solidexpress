@@ -1,7 +1,7 @@
 #include "ops.hpp"
 
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 
 #include <cmath>
 #include <stdexcept>
@@ -54,7 +54,7 @@ bool resolve_topo_shape(Document& doc, const Body& body, EntityKind kind,
         return !out.IsNull();
     }
     if (ref.is_number_integer() || ref.is_number_float()) {
-        TopTools_IndexedMapOfShape map;
+        sx::occt::ShapeIndexedMap map;
         TopAbs_ShapeEnum occt_kind = kind == EntityKind::Edge ? TopAbs_EDGE : TopAbs_FACE;
         TopExp::MapShapes(body.shape, occt_kind, map);
         int idx = ref.is_number_integer() ? ref.get<int>()
@@ -74,7 +74,7 @@ bool resolve_topo_shape(Document& doc, const Body& body, EntityKind kind,
             if (why) *why = "topology ref must be uuid string or integer index";
             return false;
         }
-        TopTools_IndexedMapOfShape map;
+        sx::occt::ShapeIndexedMap map;
         TopAbs_ShapeEnum occt_kind = kind == EntityKind::Edge ? TopAbs_EDGE : TopAbs_FACE;
         TopExp::MapShapes(body.shape, occt_kind, map);
         if (idx < 1 || idx > map.Extent()) {

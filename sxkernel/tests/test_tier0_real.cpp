@@ -11,7 +11,7 @@
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 
 #include "sx/document.hpp"
@@ -50,7 +50,7 @@ double face_centroid_z(const TopoDS_Shape& face) {
 // 1-based face index whose centroid is highest / lowest along Z, in the same
 // MapShapes order the document uses for subshape ids.
 int face_index_by_z(const TopoDS_Shape& s, bool highest) {
-    TopTools_IndexedMapOfShape faces;
+    sx::occt::ShapeIndexedMap faces;
     TopExp::MapShapes(s, TopAbs_FACE, faces);
     int best = 0;
     double best_z = highest ? -1e300 : 1e300;
