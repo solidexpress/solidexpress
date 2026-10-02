@@ -1994,12 +1994,20 @@ Dictionary SxDocument::thread_spec(const String& designation) const {
 
 bool SxDocument::export_3mf(const String& path) {
     std::string err;
-    return sx::interop::export_3mf(*doc_, to_std(path), &err);
+    const bool ok = sx::interop::export_3mf(*doc_, to_std(path), &err);
+    last_export_error_ = ok ? std::string() : err;
+    return ok;
 }
 
 bool SxDocument::export_3mf_for_body(const String& body_id, const String& path) {
     std::string err;
-    return sx::interop::export_3mf_for_body(*doc_, parse_id(body_id), to_std(path), &err);
+    const bool ok = sx::interop::export_3mf_for_body(*doc_, parse_id(body_id), to_std(path), &err);
+    last_export_error_ = ok ? std::string() : err;
+    return ok;
+}
+
+String SxDocument::last_export_error() const {
+    return to_gd(last_export_error_);
 }
 
 bool SxDocument::export_gltf(const String& path) {
@@ -2610,6 +2618,7 @@ void SxDocument::_bind_methods() {
                          &SxDocument::interference_volume);
     ClassDB::bind_method(D_METHOD("import_dxf", "path"), &SxDocument::import_dxf);
     ClassDB::bind_method(D_METHOD("export_3mf", "path"), &SxDocument::export_3mf);
+    ClassDB::bind_method(D_METHOD("last_export_error"), &SxDocument::last_export_error);
     ClassDB::bind_method(D_METHOD("export_gltf", "path"), &SxDocument::export_gltf);
     ClassDB::bind_method(D_METHOD("heal_report", "fid"), &SxDocument::heal_report);
     ClassDB::bind_method(
