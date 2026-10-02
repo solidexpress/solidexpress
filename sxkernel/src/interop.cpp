@@ -111,7 +111,7 @@ bool export_step(const Document& doc, const std::string& path, std::string* err)
         }
         return true;
     } catch (const Standard_Failure& e) {
-        set_err(err, std::string("STEP export: ") + e.GetMessageString());
+        set_err(err, std::string("STEP export: ") + e.what());
         return false;
     } catch (const std::exception& e) {
         set_err(err, std::string("STEP export: ") + e.what());
@@ -137,7 +137,7 @@ std::vector<EntityId> import_step(Document& doc, const std::string& path, std::s
         for (int i = 1; i <= n; ++i) collect_units(reader.Shape(i), units);
         return add_units(doc, units, "Imported ", err);
     } catch (const Standard_Failure& e) {
-        set_err(err, std::string("STEP import: ") + e.GetMessageString());
+        set_err(err, std::string("STEP import: ") + e.what());
         return {};
     } catch (const std::exception& e) {
         set_err(err, std::string("STEP import: ") + e.what());
@@ -169,7 +169,7 @@ bool export_iges(const Document& doc, const std::string& path, std::string* err)
         }
         return true;
     } catch (const Standard_Failure& e) {
-        set_err(err, std::string("IGES export: ") + e.GetMessageString());
+        set_err(err, std::string("IGES export: ") + e.what());
         return false;
     } catch (const std::exception& e) {
         set_err(err, std::string("IGES export: ") + e.what());
@@ -195,7 +195,7 @@ std::vector<EntityId> import_iges(Document& doc, const std::string& path, std::s
         for (int i = 1; i <= n; ++i) collect_units(reader.Shape(i), units);
         return add_units(doc, units, "Imported ", err);
     } catch (const Standard_Failure& e) {
-        set_err(err, std::string("IGES import: ") + e.GetMessageString());
+        set_err(err, std::string("IGES import: ") + e.what());
         return {};
     } catch (const std::exception& e) {
         set_err(err, std::string("IGES import: ") + e.what());
@@ -231,14 +231,14 @@ bool export_stl(const Document& doc, const std::string& path, bool binary, std::
         (void)mesher;
 
         StlAPI_Writer writer;
-        writer.ASCIIMode() = binary ? Standard_False : Standard_True;
+        writer.ASCIIMode() = binary ? false : true;
         if (!writer.Write(shape, path.c_str())) {
             set_err(err, "cannot write STL file " + path);
             return false;
         }
         return true;
     } catch (const Standard_Failure& e) {
-        set_err(err, std::string("STL export: ") + e.GetMessageString());
+        set_err(err, std::string("STL export: ") + e.what());
         return false;
     } catch (const std::exception& e) {
         set_err(err, std::string("STL export: ") + e.what());
@@ -256,7 +256,7 @@ std::vector<EntityId> import_stl(Document& doc, const std::string& path, std::st
         }
         return {doc.add_body(shape, "Mesh 1")};
     } catch (const Standard_Failure& e) {
-        set_err(err, std::string("STL import: ") + e.GetMessageString());
+        set_err(err, std::string("STL import: ") + e.what());
         return {};
     } catch (const std::exception& e) {
         set_err(err, std::string("STL import: ") + e.what());
@@ -280,7 +280,7 @@ TopoDS_Shape heal_shape(const TopoDS_Shape& shape, std::string* report) {
         fix->Perform();
         if (!fix->Shape().IsNull()) work = fix->Shape();
     } catch (const Standard_Failure& e) {
-        if (report) *report = std::string("heal: ShapeFix failed (") + e.GetMessageString() + ")";
+        if (report) *report = std::string("heal: ShapeFix failed (") + e.what() + ")";
         return shape;
     }
     const auto after = shape::count(work);

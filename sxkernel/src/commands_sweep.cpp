@@ -160,7 +160,7 @@ void SweepCommand::execute(Document& doc) {
     } catch (const std::runtime_error&) {
         throw;
     } catch (const Standard_Failure& e) {
-        throw std::runtime_error(std::string("Sweep: path build failed: ") + e.GetMessageString());
+        throw std::runtime_error(std::string("Sweep: path build failed: ") + e.what());
     }
 
     // MakePipe requires a G1-continuous spine and only sweeps the first smooth
@@ -182,8 +182,8 @@ void SweepCommand::execute(Document& doc) {
             BRepOffsetAPI_MakePipeShell shell(spine);
             shell.SetMode();
             shell.SetTransitionMode(BRepBuilderAPI_RightCorner);
-            shell.Add(profile_wire, /*withContact=*/Standard_False,
-                      /*withCorrection=*/Standard_True);
+            shell.Add(profile_wire, /*withContact=*/false,
+                      /*withCorrection=*/true);
             shell.Build();
             if (!shell.IsDone())
                 throw std::runtime_error("Sweep: MakePipeShell failed");
@@ -194,7 +194,7 @@ void SweepCommand::execute(Document& doc) {
     } catch (const std::runtime_error&) {
         throw;
     } catch (const Standard_Failure& e) {
-        throw std::runtime_error(std::string("Sweep: pipe failed: ") + e.GetMessageString());
+        throw std::runtime_error(std::string("Sweep: pipe failed: ") + e.what());
     }
 
     if (solid.IsNull() || !shape::is_valid(solid))
@@ -225,7 +225,7 @@ void LoftCommand::execute(Document& doc) {
     if (profiles_.size() < 2)
         throw std::runtime_error("Loft: need at least two profile sketches");
 
-    BRepOffsetAPI_ThruSections loft(/*isSolid=*/Standard_True, ruled_);
+    BRepOffsetAPI_ThruSections loft(/*isSolid=*/true, ruled_);
     for (size_t i = 0; i < profiles_.size(); ++i) {
         if (!profiles_[i]) throw std::runtime_error("Loft: null profile sketch");
         std::string err;
@@ -249,7 +249,7 @@ void LoftCommand::execute(Document& doc) {
         throw;
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("Loft: ThruSections failed: ") +
-                                 e.GetMessageString());
+                                 e.what());
     }
 
     if (solid.IsNull() || !shape::is_valid(solid))

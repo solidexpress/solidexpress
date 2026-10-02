@@ -154,7 +154,7 @@ bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& o
 // Merge those same-domain edges and fillet the curves that cover the picks.
 bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& picked, double v,
                     double r2, TopoDS_Shape& out) {
-    ShapeUpgrade_UnifySameDomain unif(shape, Standard_True, Standard_True, Standard_False);
+    ShapeUpgrade_UnifySameDomain unif(shape, true, true, false);
     unif.SetLinearTolerance(1e-6);
     unif.SetAngularTolerance(1e-4);
     unif.Build();

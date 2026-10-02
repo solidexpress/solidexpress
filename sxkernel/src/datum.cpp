@@ -168,7 +168,7 @@ DatumPlane plane_from_face(const TopoDS_Shape& face, const EntityId& keep_id) {
         pln = checker.Plan();
     }
 
-    Standard_Real umin = 0, umax = 0, vmin = 0, vmax = 0;
+    double umin = 0, umax = 0, vmin = 0, vmax = 0;
     BRepTools::UVBounds(f, umin, umax, vmin, vmax);
     const gp_Pnt origin = surf->Value(0.5 * (umin + umax), 0.5 * (vmin + vmax));
 

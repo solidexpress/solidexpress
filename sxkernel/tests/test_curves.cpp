@@ -158,7 +158,7 @@ TEST_CASE("pipe shell along helix produces solid", "[curves]") {
 
     BRepOffsetAPI_MakePipeShell shell(spine);
     shell.SetMode();  // Frenet
-    shell.Add(profile, /*withContact=*/Standard_False, /*withCorrection=*/Standard_True);
+    shell.Add(profile, /*withContact=*/false, /*withCorrection=*/true);
     shell.Build();
     REQUIRE(shell.IsDone());
     REQUIRE(shell.MakeSolid());

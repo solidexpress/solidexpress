@@ -46,7 +46,7 @@ gp_Dir face_normal(const TopoDS_Face& f) {
         if (f.Orientation() == TopAbs_REVERSED) n.Reverse();
         return n;
     }
-    Standard_Real umin = 0, umax = 0, vmin = 0, vmax = 0;
+    double umin = 0, umax = 0, vmin = 0, vmax = 0;
     BRepTools::UVBounds(f, umin, umax, vmin, vmax);
     Handle(Geom_Surface) surf = BRep_Tool::Surface(f);
     GeomLProp_SLProps props(surf, 0.5 * (umin + umax), 0.5 * (vmin + vmax), 1, 1e-6);
@@ -58,7 +58,7 @@ gp_Dir face_normal(const TopoDS_Face& f) {
 
 gp_Pnt face_mid(const TopoDS_Face& f) {
     Handle(Geom_Surface) surf = BRep_Tool::Surface(f);
-    Standard_Real umin = 0, umax = 0, vmin = 0, vmax = 0;
+    double umin = 0, umax = 0, vmin = 0, vmax = 0;
     BRepTools::UVBounds(f, umin, umax, vmin, vmax);
     return surf->Value(0.5 * (umin + umax), 0.5 * (vmin + vmax));
 }
@@ -135,8 +135,8 @@ PrintReport analyze_with(const Document& doc, const EntityId& body, const PrintS
     }
 
     Bnd_Box box;
-    BRepBndLib::AddOptimal(b->shape, box, Standard_False);
-    Standard_Real xmin, ymin, zmin, xmax, ymax, zmax;
+    BRepBndLib::AddOptimal(b->shape, box, false);
+    double xmin, ymin, zmin, xmax, ymax, zmax;
     box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
     const std::array<double, 3> corners[8] = {
         {xmin, ymin, zmin}, {xmax, ymin, zmin}, {xmin, ymax, zmin}, {xmax, ymax, zmin},

@@ -90,7 +90,7 @@ TopoCounts count(const TopoDS_Shape& s) {
 bool is_valid(const TopoDS_Shape& s) {
     if (s.IsNull()) return false;
     BRepCheck_Analyzer analyzer(s);
-    return analyzer.IsValid() == Standard_True;
+    return analyzer.IsValid() == true;
 }
 
 std::string to_brep_string(const TopoDS_Shape& s) {

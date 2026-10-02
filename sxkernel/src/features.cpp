@@ -568,13 +568,13 @@ TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
         json gsimp = simplify_path_for_sweep(*guide_path);
         TopoDS_Wire aux = make_polyline_wire(gsimp);
         // Auxiliary spine steers profile orientation / scale along the path.
-        shell.SetMode(aux, /*CurvilinearEquivalence=*/Standard_False);
+        shell.SetMode(aux, /*CurvilinearEquivalence=*/false);
     } else {
         shell.SetMode();
     }
     shell.SetTransitionMode(BRepBuilderAPI_RightCorner);
-    shell.Add(profile_wire, /*withContact=*/Standard_False,
-              /*withCorrection=*/Standard_True);
+    shell.Add(profile_wire, /*withContact=*/false,
+              /*withCorrection=*/true);
     shell.Build();
     if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");
     if (!shell.MakeSolid()) throw std::runtime_error("MakePipeShell could not make solid");
@@ -615,8 +615,8 @@ TopoDS_Shape helix_sweep_solid(const gp_Ax2& axis, double helix_r, double pitch,
 
     BRepOffsetAPI_MakePipeShell shell(spine);
     shell.SetMode();  // Frenet
-    shell.Add(profile, /*withContact=*/Standard_False,
-              /*withCorrection=*/Standard_True);
+    shell.Add(profile, /*withContact=*/false,
+              /*withCorrection=*/true);
     shell.Build();
     if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");
     if (!shell.MakeSolid()) throw std::runtime_error("MakePipeShell could not make solid");
@@ -668,8 +668,8 @@ TopoDS_Shape thread_cutter_solid(const gp_Ax2& axis, double major_radius, double
 
     BRepOffsetAPI_MakePipeShell shell(spine);
     shell.SetMode();  // Frenet
-    shell.Add(profile, /*withContact=*/Standard_False,
-              /*withCorrection=*/Standard_True);
+    shell.Add(profile, /*withContact=*/false,
+              /*withCorrection=*/true);
     shell.Build();
     if (!shell.IsDone()) throw std::runtime_error("thread MakePipeShell failed");
     if (!shell.MakeSolid()) throw std::runtime_error("thread MakePipeShell could not make solid");
@@ -1309,7 +1309,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 try {
                     result = sweep_along_polyline(face, path, guide_ptr, thin);
                 } catch (const Standard_Failure& e) {
-                    return fail(std::string("sweep failed: ") + e.GetMessageString());
+                    return fail(std::string("sweep failed: ") + e.what());
                 } catch (const std::runtime_error& e) {
                     return fail(e.what());
                 }
@@ -1368,7 +1368,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 if (params.contains("guides") && params["guides"].is_array() &&
                     !params["guides"].empty() && sections.size() >= 2) {
                     auto wire_center = [](const TopoDS_Wire& w) -> gp_Pnt {
-                        BRepBuilderAPI_MakeFace mkf(w, /*OnlyPlane=*/Standard_True);
+                        BRepBuilderAPI_MakeFace mkf(w, /*OnlyPlane=*/true);
                         if (mkf.IsDone()) {
                             GProp_GProps props;
                             BRepGProp::SurfaceProperties(mkf.Face(), props);
@@ -1459,7 +1459,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     sections = std::move(ordered);
                     ruled = false;  // smoothed loft through guide sections
                 }
-                BRepOffsetAPI_ThruSections loft(/*isSolid=*/Standard_True, ruled);
+                BRepOffsetAPI_ThruSections loft(/*isSolid=*/true, ruled);
                 for (const auto& w : sections) loft.AddWire(w);
                 TopoDS_Shape result;
                 try {
@@ -1467,7 +1467,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     if (!loft.IsDone()) return fail("ThruSections failed");
                     result = loft.Shape();
                 } catch (const Standard_Failure& e) {
-                    return fail(std::string("ThruSections failed: ") + e.GetMessageString());
+                    return fail(std::string("ThruSections failed: ") + e.what());
                 }
                 if (result.IsNull() || !shape::is_valid(result))
                     return fail("loft result invalid");
@@ -1491,7 +1491,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     result = helix_sweep_solid(axis, radius, pitch, turns, left_handed,
                                                profile_r);
                 } catch (const Standard_Failure& e) {
-                    return fail(std::string("helix sweep failed: ") + e.GetMessageString());
+                    return fail(std::string("helix sweep failed: ") + e.what());
                 } catch (const std::runtime_error& e) {
                     return fail(e.what());
                 }
@@ -1521,7 +1521,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     cutter = thread_cutter_solid(axis, major_radius, pitch, turns, depth,
                                                  angle_deg);
                 } catch (const Standard_Failure& e) {
-                    return fail(std::string("thread cutter failed: ") + e.GetMessageString());
+                    return fail(std::string("thread cutter failed: ") + e.what());
                 } catch (const std::runtime_error& e) {
                     return fail(e.what());
                 }
@@ -1962,7 +1962,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
             }
         }
     } catch (const Standard_Failure& e) {
-        return fail(e.GetMessageString() ? e.GetMessageString() : "OCCT failure");
+        return fail(e.what());
     } catch (const std::exception& e) {
         return fail(e.what());
     }

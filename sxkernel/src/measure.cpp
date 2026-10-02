@@ -61,7 +61,7 @@ std::optional<std::array<double, 3>> face_midpoint(const Document& doc,
     const TopoDS_Face f = TopoDS::Face(s);
     Handle(Geom_Surface) surf = BRep_Tool::Surface(f);
     if (surf.IsNull()) return std::nullopt;
-    Standard_Real umin = 0, umax = 0, vmin = 0, vmax = 0;
+    double umin = 0, umax = 0, vmin = 0, vmax = 0;
     BRepTools::UVBounds(f, umin, umax, vmin, vmax);
     const gp_Pnt p = surf->Value(0.5 * (umin + umax), 0.5 * (vmin + vmax));
     return std::array<double, 3>{p.X(), p.Y(), p.Z()};
@@ -72,10 +72,10 @@ std::optional<BBox> bounding_box(const Document& doc, const EntityId& id) {
     if (s.IsNull()) return std::nullopt;
 
     Bnd_Box box;
-    BRepBndLib::AddOptimal(s, box, /*useTriangulation=*/Standard_False);
+    BRepBndLib::AddOptimal(s, box, /*useTriangulation=*/false);
     if (box.IsVoid()) return std::nullopt;
 
-    Standard_Real xmin, ymin, zmin, xmax, ymax, zmax;
+    double xmin, ymin, zmin, xmax, ymax, zmax;
     box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
     BBox r;
     r.min = {xmin, ymin, zmin};
