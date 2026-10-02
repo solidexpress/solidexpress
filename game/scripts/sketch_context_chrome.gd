@@ -10,6 +10,8 @@ signal finish_requested(op: String, distance: float, end: String,
 		selected_contours: Array)
 ## Enter in the dim blank while drawing: typed length/radius commit.
 signal dim_submitted(value: float)
+## Blank text did not parse. WP4 wires this to the status line.
+signal dim_rejected(raw: String)
 
 const CHIP_H := 28
 const CHIP_PAD := 6
@@ -31,10 +33,21 @@ var _flip_side: CheckButton
 var _contour_bar: HBoxContainer
 var _selected_contours: Array = []  # int indices; empty = all
 var _dim_spin: SpinBox
+var _extrude_btn: Button
+var _distance_label: Label
+var _thin_label: Label
+var _thin_feature: CheckButton
+var _thin_badge: Label
+var _face_panel: PanelContainer
+var _face_label: Label
+## One-shot: the next model-face click is the Up To Surface target.
+var _face_pick_armed := false
 var _active_kind := ""
 ## True while the dim LineEdit has focus — mouse must not overwrite typed digits.
 var _dim_editing := false
 var _dim_syncing := false
+## SpinBox's deferred submit treats "23.22.5" as 23.22. Hold the previous value.
+var _dim_rejecting := false
 ## Face id for an Up To Surface end. The finish signal does not carry it;
 ## finish_extrude reads this after the extrude feature exists.
 var up_to_face_id := ""
@@ -62,23 +75,32 @@ func _make_bar() -> HBoxContainer:
 	return bar
 
 
+func _fit_spin(spin: SpinBox) -> void:
+	# Floor is UiScale.px(140). The line edit is wider than UiScale.px(110)
+	# after the arrow buttons, so "20.0 mm" and " AF" stay readable.
+	spin.custom_minimum_size = Vector2(UiScale.px(200), _chip_h())
+	var edit := spin.get_line_edit()
+	if edit != null:
+		edit.custom_minimum_size = Vector2(UiScale.px(140), 0)
+
+
 func _build_finish_bar() -> void:
 	_dim_spin = SpinBox.new()
+	_dim_spin.name = "DimSpin"
 	_dim_spin.min_value = 0.01
 	_dim_spin.max_value = 10000
 	_dim_spin.step = 0.01
 	_dim_spin.value = 10
 	_dim_spin.suffix = "mm"
 	_dim_spin.select_all_on_focus = true
-	_dim_spin.custom_minimum_size = Vector2(88, _chip_h())
 	_dim_spin.tooltip_text = "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
+	_fit_spin(_dim_spin)
 	_finish_bar.add_child(_dim_spin)
 	var dim_edit := _dim_spin.get_line_edit()
-	dim_edit.focus_entered.connect(func() -> void: _dim_editing = true)
+	dim_edit.name = "DimLineEdit"
+	dim_edit.focus_entered.connect(_on_dim_focus_entered)
 	dim_edit.focus_exited.connect(func() -> void: _dim_editing = false)
-	dim_edit.text_submitted.connect(func(_t: String) -> void:
-		_dim_spin.apply()
-		dim_submitted.emit(_dim_spin.value))
+	dim_edit.text_submitted.connect(_on_dim_text_submitted)
 	dim_edit.gui_input.connect(_on_dim_edit_gui_input)
 	_dim_spin.value_changed.connect(_on_dim_value_changed)
 	var dim_btn := Button.new()
@@ -87,14 +109,21 @@ func _build_finish_bar() -> void:
 	dim_btn.tooltip_text = "Apply driving dimension to the selection"
 	dim_btn.pressed.connect(func() -> void: action_chosen.emit("dimension"))
 	_finish_bar.add_child(dim_btn)
+	_distance_label = Label.new()
+	_distance_label.name = "DistanceLabel"
+	_distance_label.text = "D"
+	_distance_label.custom_minimum_size = Vector2(UiScale.px(16), _chip_h())
+	_distance_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_finish_bar.add_child(_distance_label)
 	_extrude_spin = SpinBox.new()
+	_extrude_spin.name = "DistanceSpin"
 	_extrude_spin.min_value = -1000
 	_extrude_spin.max_value = 1000
 	_extrude_spin.step = 0.5
 	_extrude_spin.value = 20
 	_extrude_spin.suffix = "mm"
-	_extrude_spin.custom_minimum_size = Vector2(88, _chip_h())
 	_extrude_spin.tooltip_text = "Blind distance (ignored for Through All cuts)"
+	_fit_spin(_extrude_spin)
 	_finish_bar.add_child(_extrude_spin)
 	_finish_end = OptionButton.new()
 	_finish_end.name = "FinishEnd"
@@ -104,6 +133,17 @@ func _build_finish_bar() -> void:
 	_finish_end.item_selected.connect(_on_finish_end_selected)
 	_finish_end.custom_minimum_size = Vector2(100, _chip_h())
 	_finish_bar.add_child(_finish_end)
+	_face_panel = PanelContainer.new()
+	_face_panel.name = "UpToFaceBox"
+	_face_panel.visible = false
+	_face_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_face_label = Label.new()
+	_face_label.name = "UpToFaceLabel"
+	_face_label.text = "Face: none"
+	_face_label.custom_minimum_size = Vector2(UiScale.px(120), _chip_h())
+	_face_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_face_panel.add_child(_face_label)
+	_finish_bar.add_child(_face_panel)
 	_finish_op = OptionButton.new()
 	_finish_op.name = "FinishOp"
 	for n in ["New", "Cut", "Fuse"]:
@@ -114,40 +154,59 @@ func _build_finish_bar() -> void:
 		if _finish_end != null and _finish_op.selected == 1:  # Cut
 			set_finish_end("through_all"))
 	_finish_bar.add_child(_finish_op)
+	_thin_feature = CheckButton.new()
+	_thin_feature.name = "ThinFeature"
+	_thin_feature.text = "Thin feature"
+	_thin_feature.button_pressed = false
+	_thin_feature.custom_minimum_size = Vector2(UiScale.px(120), _chip_h())
+	_thin_feature.tooltip_text = "Thin wall. Off extrudes a solid (thin thickness 0)."
+	_thin_feature.toggled.connect(func(_on: bool) -> void: _apply_thin_visibility())
+	_finish_bar.add_child(_thin_feature)
+	_thin_badge = Label.new()
+	_thin_badge.name = "ThinBadge"
+	_thin_badge.visible = false
+	_thin_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_thin_badge.custom_minimum_size = Vector2(UiScale.px(90), _chip_h())
+	_finish_bar.add_child(_thin_badge)
+	_thin_label = Label.new()
+	_thin_label.name = "ThinLabel"
+	_thin_label.text = "Thin"
+	_thin_label.custom_minimum_size = Vector2(UiScale.px(36), _chip_h())
+	_thin_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_finish_bar.add_child(_thin_label)
 	_thin_spin = SpinBox.new()
+	_thin_spin.name = "ThinSpin"
 	_thin_spin.min_value = 0
 	_thin_spin.max_value = 1000
 	_thin_spin.step = 0.5
 	_thin_spin.value = 0
 	_thin_spin.suffix = "mm"
-	_thin_spin.custom_minimum_size = Vector2(72, _chip_h())
 	_thin_spin.tooltip_text = "Thin wall (0 = solid closed profile)"
+	_fit_spin(_thin_spin)
+	_thin_spin.value_changed.connect(func(_v: float) -> void: _refresh_thin_badge())
 	_finish_bar.add_child(_thin_spin)
 	_thin_type = OptionButton.new()
+	_thin_type.name = "ThinType"
 	_thin_type.tooltip_text = "Thin wall offset: One Side / Midplane"
 	for n in ["One Side", "Midplane"]:
 		_thin_type.add_item(n)
 	_thin_type.custom_minimum_size = Vector2(88, _chip_h())
 	_finish_bar.add_child(_thin_type)
 	_flip_side = CheckButton.new()
+	_flip_side.name = "FlipSide"
 	_flip_side.text = "Flip"
 	_flip_side.custom_minimum_size = Vector2(56, _chip_h())
 	_flip_side.tooltip_text = (
 		"Thin wall side, or Extruded Cut Flip Side to Cut on an open profile")
 	_finish_bar.add_child(_flip_side)
+	_apply_thin_visibility()
 	var ex := Button.new()
+	ex.name = "ExtrudeButton"
 	ex.text = "Extrude"
 	ex.custom_minimum_size = Vector2(72, _chip_h())
-	ex.pressed.connect(func() -> void:
-		finish_requested.emit(
-			["new", "cut", "fuse"][_finish_op.selected],
-			_extrude_spin.value,
-			["blind", "through_all", "midplane", "to_face"][_finish_end.selected],
-			_thin_spin.value,
-			["one_side", "midplane"][_thin_type.selected],
-			_flip_side.button_pressed,
-			_selected_contours.duplicate()))
+	ex.pressed.connect(_emit_finish_requested)
 	_finish_bar.add_child(ex)
+	_extrude_btn = ex
 	var rv := Button.new()
 	rv.text = "Revolve"
 	rv.custom_minimum_size = Vector2(72, _chip_h())
@@ -190,15 +249,200 @@ func _apply_slot_radius(v: float) -> void:
 	sketch_mode.slot_radius = maxf(v, 0.01)
 
 
+## Store the face, disarm the one-shot pick, label from the face midpoint z,
+## and enable Extrude when the id is non-empty.
 func set_up_to_face(id: String) -> void:
 	up_to_face_id = id.strip_edges()
+	_face_pick_armed = false
+	_sync_face_box()
+	if up_to_face_id != "" and _extrude_btn != null:
+		_extrude_btn.disabled = false
+
+
+## Remember that the next model-face click is the target. Does not clear the id.
+func arm_face_pick() -> void:
+	_face_pick_armed = true
+	if up_to_face_id == "" and _face_label != null:
+		_face_label.text = "Face: none"
+	if _face_panel != null:
+		_face_panel.visible = true
+
+
+func wants_face_pick() -> bool:
+	return _face_pick_armed
+
+
+## Empty id, Face: none, and disable Extrude while End is Up To Surface.
+func clear_up_to_face() -> void:
+	up_to_face_id = ""
+	_face_pick_armed = false
+	if _face_label != null:
+		_face_label.text = "Face: none"
+	_sync_face_box()
 
 
 func _on_finish_end_selected(idx: int) -> void:
-	if idx != 3:
+	# OptionButton.select does not emit this. Do not copy view.selected_face.
+	if idx == 3:
+		clear_up_to_face()
+		arm_face_pick()
+		if _extrude_btn != null:
+			_extrude_btn.disabled = true
+	else:
+		clear_up_to_face()
+		if _face_panel != null:
+			_face_panel.visible = false
+		if _extrude_btn != null:
+			_extrude_btn.disabled = false
+
+
+func _sync_face_box() -> void:
+	if _face_label != null:
+		if up_to_face_id == "":
+			_face_label.text = "Face: none"
+		else:
+			_face_label.text = _face_z_text(up_to_face_id)
+	if _face_panel != null:
+		_face_panel.visible = get_finish_end() == "to_face" or _face_pick_armed
+	_refresh_extrude_enabled()
+
+
+func _refresh_extrude_enabled() -> void:
+	if _extrude_btn == null:
 		return
-	if up_to_face_id == "" and sketch_mode != null and sketch_mode.view != null:
-		up_to_face_id = sketch_mode.view.selected_face
+	_extrude_btn.disabled = get_finish_end() == "to_face" and up_to_face_id == ""
+
+
+func _face_z_text(id: String) -> String:
+	var z := _face_midpoint_z(id)
+	if is_nan(z):
+		return "Face: " + id.left(8)
+	return "Face: z %s mm" % String.num(z, 1)
+
+
+func _face_midpoint_z(id: String) -> float:
+	if id == "" or sketch_mode == null or sketch_mode.view == null:
+		return NAN
+	var doc = sketch_mode.view.doc
+	if doc == null or not doc.has_method("face_midpoint"):
+		return NAN
+	var mid: Variant = doc.face_midpoint(id)
+	if mid is Vector3:
+		return (mid as Vector3).z
+	return NAN
+
+
+func _apply_thin_visibility() -> void:
+	var on := _thin_feature != null and _thin_feature.button_pressed
+	if _thin_label != null:
+		_thin_label.visible = on
+	if _thin_spin != null:
+		_thin_spin.visible = on
+	if _thin_type != null:
+		_thin_type.visible = on
+	if _flip_side != null:
+		_flip_side.visible = on
+	_refresh_thin_badge()
+
+
+func _refresh_thin_badge() -> void:
+	if _thin_badge == null or _thin_feature == null or _thin_spin == null:
+		return
+	var show := _thin_feature.button_pressed and _thin_spin.value > 0.0
+	_thin_badge.visible = show
+	if show:
+		_thin_badge.text = "Thin %s mm" % _plain_num(_thin_spin.value)
+
+
+func _plain_num(v: float) -> String:
+	var s := String.num(v, 4)
+	if s.contains("."):
+		while s.ends_with("0"):
+			s = s.substr(0, s.length() - 1)
+		if s.ends_with("."):
+			s = s.substr(0, s.length() - 1)
+	return s
+
+
+func _emit_finish_requested() -> void:
+	var thin := 0.0
+	if _thin_feature != null and _thin_feature.button_pressed and _thin_spin != null:
+		thin = _thin_spin.value
+	finish_requested.emit(
+		["new", "cut", "fuse"][_finish_op.selected],
+		_extrude_spin.value,
+		["blind", "through_all", "midplane", "to_face"][_finish_end.selected],
+		thin,
+		["one_side", "midplane"][_thin_type.selected],
+		_flip_side.button_pressed,
+		_selected_contours.duplicate())
+
+
+func _on_dim_focus_entered() -> void:
+	_dim_editing = true
+	# Mouse clicks select-all from the release path so the caret click cannot
+	# win. Keyboard focus (and a fresh preview grab) selects immediately.
+	if _dim_spin == null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		return
+	_dim_spin.get_line_edit().select_all()
+
+
+func _on_dim_text_submitted(raw: String) -> void:
+	var parsed: Variant = _parse_dim_text(raw)
+	if parsed == null:
+		# Do not call apply() and do not emit dim_submitted. SpinBox still
+		# parses the same signal on a deferred connection and would store a
+		# truncated number; put the previous value back after that.
+		var keep := _dim_spin.value if _dim_spin != null else 0.0
+		_dim_rejecting = true
+		dim_rejected.emit(raw)
+		_restore_rejected_dim.call_deferred(keep)
+		return
+	if _dim_spin == null:
+		return
+	_dim_syncing = true
+	_dim_spin.value = float(parsed)
+	_dim_syncing = false
+	dim_submitted.emit(_dim_spin.value)
+	release_dim_focus()
+
+
+func _restore_rejected_dim(keep: float) -> void:
+	_dim_rejecting = false
+	if _dim_spin == null:
+		return
+	_dim_syncing = true
+	_dim_spin.value = keep
+	_dim_syncing = false
+
+
+## Number in the blank, after Godot's "prefix + space" / "space + suffix" chrome.
+## Null when the raw string is not a single float (for example "23.22.5").
+func _parse_dim_text(raw: String) -> Variant:
+	var text := raw.strip_edges()
+	if text.is_empty() or _dim_spin == null:
+		return null
+	var prefix := str(_dim_spin.prefix)
+	var suffix := str(_dim_spin.suffix)
+	if prefix != "":
+		var spaced := prefix + " "
+		if text.begins_with(spaced):
+			text = text.substr(spaced.length())
+		elif text.begins_with(prefix):
+			text = text.substr(prefix.length())
+	if suffix != "":
+		var spaced := " " + suffix
+		if text.ends_with(spaced):
+			text = text.substr(0, text.length() - spaced.length())
+		elif text.ends_with(suffix):
+			text = text.substr(0, text.length() - suffix.length())
+	text = text.strip_edges().replace(",", ".")
+	if not text.is_valid_float():
+		return null
+	var v := float(text)
+	if is_nan(v) or is_inf(v):
+		return null
+	return v
 
 
 ## Across-flats reads the typed length as AF. Circle keeps a radius number and
@@ -256,7 +500,7 @@ func release_dim_focus() -> void:
 
 
 func _on_dim_value_changed(v: float) -> void:
-	if _dim_syncing or not _dim_editing:
+	if _dim_syncing or _dim_rejecting or not _dim_editing:
 		return
 	_apply_slot_radius(v)
 	# Live lock rubber-band while digits change (Enter still commits via signal).
@@ -265,6 +509,12 @@ func _on_dim_value_changed(v: float) -> void:
 
 
 func _on_dim_edit_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		# Every left click, including the one that finds the field already
+		# focused. Deferred so it runs after LineEdit places the caret.
+		if mb.button_index == MOUSE_BUTTON_LEFT and _dim_spin != null:
+			_dim_spin.get_line_edit().call_deferred("select_all")
 	if event is InputEventKey and event.pressed and not event.echo:
 		var k := event as InputEventKey
 		if k.keycode == KEY_ESCAPE:
@@ -372,8 +622,10 @@ func done_button() -> Button:
 func show_for_session(on: bool) -> void:
 	_finish_bar.visible = on
 	if on:
+		clear_up_to_face()
 		# Sit to the right of the icon sketch rail, under the top chrome row.
 		_place_bar(_finish_bar, Vector2(60, 42))
+		_sync_dim_affordance()
 		if sketch_mode != null and sketch_mode.sketch != null:
 			refresh_contours(sketch_mode.sketch)
 	else:
@@ -437,6 +689,11 @@ func _clear_bar(bar: HBoxContainer) -> void:
 		var c := bar.get_child(0)
 		bar.remove_child(c)
 		c.queue_free()
+
+
+func _process(_delta: float) -> void:
+	if _finish_bar != null and _finish_bar.visible:
+		_sync_dim_affordance()
 
 
 func _place_bar(bar: Control, pos: Vector2) -> void:
