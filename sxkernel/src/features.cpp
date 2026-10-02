@@ -2,7 +2,10 @@
 
 #include "features/ops.hpp"
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <GeomAbs_SurfaceType.hxx>
+#include <gp_Pln.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Defeaturing.hxx>
@@ -995,6 +998,13 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                         end = params.value("symmetric", false) ? "symmetric" : "blind";
                     const bool symmetric = (end == "symmetric") || params.value("symmetric", false);
                     const std::string op_early = params.value("op", "new");
+                    // Up To Surface / Through All keep the sign of `distance`.
+                    // A cut stores a negative distance (opposite the sketch normal).
+                    const double extrude_sign = dist < 0.0 ? -1.0 : 1.0;
+                    // Material that appeared on the far side of a face sketch whose
+                    // plane did not move when the boss was thickened (top-face cut
+                    // to the bottom face, then base distance 10 → 14).
+                    double to_face_back = 0.0;
                     if ((end == "through_all" || end == "to_next" || end == "to_face") &&
                         op_early != "new") {
                         EntityId target = find_feature_body("target");
@@ -1008,31 +1018,72 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                                 gp_Vec ext(xmax - xmin, ymax - ymin, zmax - zmin);
                                 // Peer Through All: long enough to exit the target,
                                 // preserving the requested extrude direction (sign).
-                                double sign = dist < 0.0 ? -1.0 : 1.0;
-                                dist = sign * (ext.Magnitude() + 4.0);
+                                dist = extrude_sign * (ext.Magnitude() + 4.0);
                             }
                             if (end == "to_face" && params.contains("to_face") &&
                                 params["to_face"].is_string()) {
                                 TopoDS_Shape tf = doc.resolve(
                                     EntityId::from_string(params["to_face"].get<std::string>()));
-                                if (!tf.IsNull()) {
+                                if (!tf.IsNull() && tf.ShapeType() == TopAbs_FACE && !box.IsVoid()) {
                                     const auto& o = skf->sketch->plane().origin;
                                     gp_Pnt orig(o[0], o[1], o[2]);
-                                    BRepExtrema_DistShapeShape ds(
-                                        BRepBuilderAPI_MakeVertex(orig).Vertex(), tf);
-                                    if (ds.IsDone() && ds.NbSolution() >= 1) {
-                                        gp_Pnt hit = ds.PointOnShape2(1);
-                                        dist = std::max(1e-3, gp_Vec(orig, hit).Dot(dir));
+                                    // Signed extrude direction (unit): sketch normal,
+                                    // reversed when the feature distance is negative.
+                                    gp_Vec travel = dir;
+                                    travel.Multiply(extrude_sign);
+                                    double along = 0.0;
+                                    bool have_along = false;
+                                    BRepAdaptor_Surface surf(TopoDS::Face(tf));
+                                    if (surf.GetType() == GeomAbs_Plane) {
+                                        gp_Pln pln = surf.Plane();
+                                        gp_Vec n(pln.Axis().Direction());
+                                        double denom = travel.Dot(n);
+                                        if (std::abs(denom) > 1e-9) {
+                                            along = gp_Vec(orig, pln.Location()).Dot(n) / denom;
+                                            have_along = true;
+                                        }
+                                    }
+                                    if (!have_along) {
+                                        BRepExtrema_DistShapeShape ds(
+                                            BRepBuilderAPI_MakeVertex(orig).Vertex(), tf);
+                                        if (ds.IsDone() && ds.NbSolution() >= 1) {
+                                            along = gp_Vec(orig, ds.PointOnShape2(1)).Dot(travel);
+                                            have_along = true;
+                                        }
+                                    }
+                                    if (have_along) {
+                                        double xmin, ymin, zmin, xmax, ymax, zmax;
+                                        box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+                                        gp_Pnt corners[8] = {
+                                            {xmin, ymin, zmin}, {xmax, ymin, zmin},
+                                            {xmin, ymax, zmin}, {xmax, ymax, zmin},
+                                            {xmin, ymin, zmax}, {xmax, ymin, zmax},
+                                            {xmin, ymax, zmax}, {xmax, ymax, zmax}};
+                                        gp_Vec opposite = travel;
+                                        opposite.Reverse();
+                                        double back = 0.0;
+                                        for (const auto& c : corners)
+                                            back = std::max(back, gp_Vec(orig, c).Dot(opposite));
+                                        const double forward = std::max(1e-3, along);
+                                        to_face_back = back;
+                                        dist = extrude_sign * (forward + back);
                                     }
                                 }
                             }
                         }
                     }
                     TopoDS_Shape profile = face;
+                    if (to_face_back > 1e-4) {
+                        gp_Vec travel = dir;
+                        travel.Multiply(extrude_sign);
+                        gp_Trsf back_tr;
+                        back_tr.SetTranslation(travel.Reversed() * to_face_back);
+                        profile = BRepBuilderAPI_Transform(face, back_tr, true).Shape();
+                    }
                     if (symmetric) {
                         gp_Trsf t;
                         t.SetTranslation(dir * (-dist / 2.0));
-                        profile = BRepBuilderAPI_Transform(face, t, true).Shape();
+                        profile = BRepBuilderAPI_Transform(profile, t, true).Shape();
                     }
                     result = BRepPrimAPI_MakePrism(profile, dir * dist).Shape();
                 } else {
@@ -1920,6 +1971,88 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
     return fail("unhandled feature type");
 }
 
+// Record every currently resolvable edge so a later rebuild can find it
+// after topological naming mints a new id for the same geometry.
+static void remember_live_edges(FeatureGraph& graph, Document& doc) {
+    for (const auto& body_id : doc.body_ids()) {
+        const Body* body = doc.body(body_id);
+        if (!body) continue;
+        auto it = body->subshape_ids.find(EntityKind::Edge);
+        if (it == body->subshape_ids.end()) continue;
+        for (const auto& eid : it->second) {
+            TopoDS_Shape shape = doc.resolve(eid);
+            if (shape.IsNull() || shape.ShapeType() != TopAbs_EDGE) continue;
+            const TopoDS_Edge edge = TopoDS::Edge(shape);
+            BRepAdaptor_Curve curve(edge);
+            gp_Pnt p;
+            gp_Vec v;
+            curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
+            if (v.Magnitude() < 1e-12) continue;
+            v.Normalize();
+            graph.remember_edge(eid.str(), p.X(), p.Y(), p.Z(), v.X(), v.Y(), v.Z());
+        }
+    }
+}
+
+// A fillet/chamfer edge created by an earlier feature is released when the
+// base body is rebuilt, then minted again by that feature. Copy a cue onto
+// the feature while the id still resolves, or from an edge seen on a
+// previous regen. Cues are not overwritten when the id is already gone, so
+// a later regen keeps the pre-fillet location.
+static void remember_dressup_edge_cues(FeatureGraph& graph, Feature& f, Document& doc) {
+    if (f.type != FeatureType::Fillet && f.type != FeatureType::Chamfer) return;
+    if (!f.params.contains("edges") || !f.params["edges"].is_array()) return;
+    if (!f.params.contains("target") || !f.params["target"].is_string()) return;
+    const Feature* ref =
+        graph.feature(EntityId::from_string(f.params["target"].get<std::string>()));
+    if (!ref || ref->output_body.is_null()) return;
+    const Body* tb = doc.body(ref->output_body);
+    if (!tb) return;
+    json cues = f.params.value("edge_cues", json::object());
+    bool changed = false;
+    for (const auto& je : f.params["edges"]) {
+        if (!je.is_string()) continue;
+        const std::string key = je.get<std::string>();
+        TopoDS_Shape es;
+        std::string why;
+        if (feature_ops::resolve_topo_shape(doc, *tb, EntityKind::Edge, je, es, &why)) {
+            const TopoDS_Edge edge = TopoDS::Edge(es);
+            BRepAdaptor_Curve curve(edge);
+            gp_Pnt p;
+            gp_Vec v;
+            curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
+            if (v.Magnitude() < 1e-12) continue;
+            v.Normalize();
+            cues[key] = {{"point", {p.X(), p.Y(), p.Z()}}, {"dir", {v.X(), v.Y(), v.Z()}}};
+            changed = true;
+            continue;
+        }
+        double px, py, pz, dx, dy, dz;
+        if (!graph.recall_edge(key, px, py, pz, dx, dy, dz)) continue;
+        cues[key] = {{"point", {px, py, pz}}, {"dir", {dx, dy, dz}}};
+        changed = true;
+    }
+    if (changed) f.params["edge_cues"] = std::move(cues);
+}
+
+void FeatureGraph::remember_edge(const std::string& id, double px, double py, double pz,
+                                 double dx, double dy, double dz) {
+    edge_memory_[id] = EdgeMemory{px, py, pz, dx, dy, dz};
+}
+
+bool FeatureGraph::recall_edge(const std::string& id, double& px, double& py, double& pz,
+                               double& dx, double& dy, double& dz) const {
+    auto it = edge_memory_.find(id);
+    if (it == edge_memory_.end()) return false;
+    px = it->second.px;
+    py = it->second.py;
+    pz = it->second.pz;
+    dx = it->second.dx;
+    dy = it->second.dy;
+    dz = it->second.dz;
+    return true;
+}
+
 bool FeatureGraph::regenerate(Document& doc, std::string* err) {
     // Bodies this pass will rebuild stay in the document so apply() can route
     // through replace_body_shape and the naming service keeps subshape ids
@@ -1963,6 +2096,11 @@ bool FeatureGraph::regenerate(Document& doc, std::string* err) {
         }
     }
     generated_.clear();
+    remember_live_edges(*this, doc);
+    for (auto& f : timeline_) {
+        if (f.suppressed) continue;
+        remember_dressup_edge_cues(*this, f, doc);
+    }
     for (size_t i = 0; i < timeline_.size(); ++i) {
         auto& f = timeline_[i];
         if (f.suppressed || rolled_back(i)) continue;
@@ -1987,6 +2125,9 @@ bool FeatureGraph::regenerate(Document& doc, std::string* err) {
         if (!f.output_body.is_null()) generated_.push_back(f.output_body);
         for (const auto& id : f.output_bodies) generated_.push_back(id);
     }
+    // Selections made after this regen name the ids that exist now. Remember
+    // them so a later rollback (a refused fillet) can still resolve that pick.
+    remember_live_edges(*this, doc);
     return true;
 }
 
@@ -2012,6 +2153,12 @@ json FeatureGraph::to_json() const {
         if (f.sketch) jf["sketch_data"] = sketch_to_json(*f.sketch);
         j["timeline"].push_back(jf);
     }
+    if (!edge_memory_.empty()) {
+        json mem = json::object();
+        for (const auto& [id, e] : edge_memory_)
+            mem[id] = {e.px, e.py, e.pz, e.dx, e.dy, e.dz};
+        j["edge_memory"] = std::move(mem);
+    }
     return j;
 }
 
@@ -2034,6 +2181,14 @@ FeatureGraph FeatureGraph::from_json(const json& j) {
         }
         if (jf.contains("sketch_data")) f.sketch = sketch_from_json(jf["sketch_data"]);
         g.timeline_.push_back(std::move(f));
+    }
+    if (j.contains("edge_memory") && j["edge_memory"].is_object()) {
+        for (auto it = j["edge_memory"].begin(); it != j["edge_memory"].end(); ++it) {
+            const auto& a = it.value();
+            if (!a.is_array() || a.size() < 6) continue;
+            g.remember_edge(it.key(), a[0].get<double>(), a[1].get<double>(), a[2].get<double>(),
+                            a[3].get<double>(), a[4].get<double>(), a[5].get<double>());
+        }
     }
     return g;
 }

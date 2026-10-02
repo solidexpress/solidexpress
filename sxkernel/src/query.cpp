@@ -1,6 +1,12 @@
 #include "sx/query.hpp"
 
+#include <algorithm>
 #include <sstream>
+
+#include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS.hxx>
 
 #include "sx/cards.hpp"
 #include "sx/document.hpp"
@@ -117,6 +123,29 @@ std::string card_digest(const Feature& f) {
     if (f.params.contains("context")) ss << " in-context";
     if (f.params.contains("recipe")) ss << " recipe=" << f.params["recipe"].get<std::string>();
     return ss.str();
+}
+
+std::vector<EntityId> edges_of_face(const Document& doc, const EntityId& face) {
+    std::vector<EntityId> out;
+    auto ref = doc.find_subshape(face);
+    if (!ref || ref->kind != EntityKind::Face) return out;
+    const Body* body = doc.body(ref->body);
+    if (!body) return out;
+    TopoDS_Shape face_shape = doc.resolve(face);
+    if (face_shape.IsNull() || face_shape.ShapeType() != TopAbs_FACE) return out;
+    auto it = body->subshape_ids.find(EntityKind::Edge);
+    if (it == body->subshape_ids.end()) return out;
+    TopTools_IndexedMapOfShape edges;
+    TopExp::MapShapes(body->shape, TopAbs_EDGE, edges);
+    std::vector<int> seen;
+    for (TopExp_Explorer ex(face_shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+        const int idx = edges.FindIndex(ex.Current());
+        if (idx < 1 || idx > static_cast<int>(it->second.size())) continue;
+        if (std::find(seen.begin(), seen.end(), idx) != seen.end()) continue;
+        seen.push_back(idx);
+        out.push_back(it->second[static_cast<size_t>(idx - 1)]);
+    }
+    return out;
 }
 
 }  // namespace sx
