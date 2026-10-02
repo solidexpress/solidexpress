@@ -16,7 +16,9 @@ if [[ ! -x "$GODOT" ]]; then
 fi
 
 echo "==> cmake build (Release)"
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+# Prefer CMAKE_PREFIX_PATH from the environment (CI installs OCCT under /opt/occt-*).
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  ${CMAKE_PREFIX_PATH:+-DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"}
 cmake --build build -j "$(nproc)"
 
 echo "==> bundle libplanegcs next to GDExtension"

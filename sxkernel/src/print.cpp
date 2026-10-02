@@ -15,7 +15,7 @@
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <gp_Dir.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Pnt.hxx>
@@ -162,7 +162,7 @@ PrintReport analyze_with(const Document& doc, const EntityId& body, const PrintS
     double min_t = 1e9;
     double over_a = 0.0;
     // Map faces to a stable OCCT order that matches Body::subshape_ids.
-    TopTools_IndexedMapOfShape faces;
+    sx::occt::ShapeIndexedMap faces;
     TopExp::MapShapes(b->shape, TopAbs_FACE, faces);
     const auto& face_ids = b->subshape_ids.at(EntityKind::Face);
     r.thin_faces.clear();

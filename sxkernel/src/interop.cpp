@@ -20,7 +20,7 @@
 #include <StlAPI_Reader.hxx>
 #include <StlAPI_Writer.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Shape.hxx>
@@ -45,7 +45,7 @@ void set_err(std::string* err, const std::string& msg) {
 // (shells/surfaces from IGES, mesh compounds from STL, etc.).
 void collect_units(const TopoDS_Shape& root, std::vector<TopoDS_Shape>& out) {
     if (root.IsNull()) return;
-    TopTools_IndexedMapOfShape solids;
+    sx::occt::ShapeIndexedMap solids;
     TopExp::MapShapes(root, TopAbs_SOLID, solids);
     if (solids.Extent() > 0) {
         for (int i = 1; i <= solids.Extent(); ++i) out.push_back(solids(i));

@@ -27,12 +27,13 @@ notes below rather than re-deriving commands.
 ### Environment already provided by the VM snapshot
 These are typically baked into the image (do not add them to the update script
 when they are already present):
-- **OCCT:** Prefer a source build of **7.9+** at `/usr/local` when available
-  (toolkit names `TKDESTEP`/`TKDEIGES`/`TKDESTL`). Ubuntu 24.04 apt ships
-  **7.6.3** (`TKSTEP`/`TKIGES`/`TKSTL`). `sxkernel/CMakeLists.txt` probes for
-  `TKDESTEP` and falls back to the 7.6 names automatically — **apt 7.6.3 is a
-  supported build path**. When both are installed, `find_package` resolves
-  `/usr/local` first.
+- **OCCT:** All platforms pin **8.0.1** (`packaging/occt.version`). Linux/macOS
+  CI and releases build it from source via `packaging/ci/install_occt.sh`
+  (default prefix `/opt/occt-8.0.1`); Windows uses vcpkg with `vcpkg.json`
+  override `opencascade` → `8.0.1`. Toolkit names are `TKDESTEP`/`TKDEIGES`/
+  `TKDESTL`. Ubuntu apt 7.6.3 is no longer the CI path; set
+  `CMAKE_PREFIX_PATH` to the pinned install. `sxkernel/CMakeLists.txt` still
+  falls back to 7.6 `TKSTEP`/`TKIGES`/`TKSTL` names if somehow present.
 - System toolchain deps: `ninja-build`, `libstdc++-14-dev` (Clang 18 is the
   default `c++` and targets the gcc-14 toolchain), `libtbb-dev` (OCCT runtime),
   `libeigen3-dev`, `libboost-dev`, `zip`, and `mesa-vulkan-drivers` (lavapipe,

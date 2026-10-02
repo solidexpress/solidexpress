@@ -19,7 +19,9 @@ if [[ ! -x "$GODOT" ]]; then
 fi
 
 echo "==> cmake build (Release, sxcore only)"
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF -DGODOTCPP_TARGET=template_release
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSX_BUILD_TESTS=OFF \
+  -DGODOTCPP_TARGET=template_release \
+  ${CMAKE_PREFIX_PATH:+-DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"}
 cmake --build build -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" --target planegcs sxcore
 
 mkdir -p game/bin
@@ -64,7 +66,7 @@ if [[ ! -f "$OUT_APP/Contents/Frameworks/libsxcore.dylib" ]]; then
   cp -f game/bin/libsxcore.dylib "$OUT_APP/Contents/Frameworks/"
 fi
 
-echo "==> bundle Homebrew OCCT / transitive dylibs into Frameworks"
+echo "==> bundle OCCT / transitive dylibs into Frameworks"
 chmod +x "$ROOT/packaging/macos/bundle-dylibs.sh"
 "$ROOT/packaging/macos/bundle-dylibs.sh" "$OUT_APP"
 

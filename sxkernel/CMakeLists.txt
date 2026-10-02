@@ -4,8 +4,9 @@
 # editing this file (merge-conflict avoidance is worth the non-idiomatic glob).
 file(GLOB SXKERNEL_SOURCES CONFIGURE_DEPENDS src/*.cpp src/features/*.cpp)
 
-# OCCT data-exchange libs differ by distro OCCT version (7.6: TKSTEP/TKIGES/TKSTL;
-# 7.7+: TKDESTEP/TKDEIGES/TKDESTL). GitHub ubuntu-24.04 runners still ship 7.6.
+# OCCT data-exchange libs differ by version (7.6: TKSTEP/TKIGES/TKSTL;
+# 7.7+/8.x: TKDESTEP/TKDEIGES/TKDESTL). SolidExpress pins OCCT 8.0.1
+# (packaging/occt.version); the 7.6 names remain only as a local fallback.
 set(_SX_OCCT_DE_NAMES TKDESTEP TKDEIGES TKDESTL)
 find_library(_SX_OCCT_DE_PROBE NAMES TKDESTEP
     PATHS ${OpenCASCADE_LIBRARY_DIR} /usr/lib/x86_64-linux-gnu /usr/lib)

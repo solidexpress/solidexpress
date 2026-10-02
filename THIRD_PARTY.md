@@ -4,7 +4,7 @@ Policy: **never GPL/AGPL**. LGPL is allowed with dynamic linking only. Every dep
 
 | Dependency | Version | License | Linkage | Source | Notes |
 |---|---|---|---|---|---|
-| Open CASCADE Technology (OCCT) | 7.9.2 (Ubuntu `libocct-*-dev`) | LGPL-2.1 with OCCT exception | **Dynamic** (system `.so`) | Ubuntu archive | Geometry kernel. Prominent notice required in About/docs. |
+| Open CASCADE Technology (OCCT) | **8.0.1** (pinned: `packaging/occt.version`; Linux/macOS source install, Windows vcpkg override) | LGPL-2.1 with OCCT exception | **Dynamic** (bundled / system `.so`/`.dylib`/`.dll`) | [Open-Cascade-SAS/OCCT](https://github.com/Open-Cascade-SAS/OCCT) tag `V8_0_1` | Geometry kernel. Prominent notice required in About/docs. |
 | PlaneGCS | FreeCAD snapshot (see `thirdparty/planegcs/VENDORED_FROM.txt`) | LGPL-2.1-or-later | **Dynamic** (built as shared lib) | github.com/FreeCAD/FreeCAD `src/Mod/Sketcher/App/planegcs` | 2D constraint solver, isolated behind `SolverBackend`. |
 | godot-cpp | master @ API 4.7 | MIT | Static into GDExtension | github.com/godotengine/godot-cpp | C++ bindings for GDExtension. |
 | Godot Engine (editor binary, not distributed) | 4.7-stable | MIT | Tool only (`tools/godot/`, gitignored) | github.com/godotengine/godot-builds | Runtime/editor + headless test runner. |

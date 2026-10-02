@@ -10,7 +10,7 @@
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
@@ -132,7 +132,7 @@ TEST_CASE("polyline edges and validation", "[curves]") {
     REQUIRE_FALSE(w.IsNull());
     REQUIRE(shape::is_valid(w));
 
-    TopTools_IndexedMapOfShape edges;
+    sx::occt::ShapeIndexedMap edges;
     TopExp::MapShapes(w, TopAbs_EDGE, edges);
     REQUIRE(edges.Extent() == 2);
 

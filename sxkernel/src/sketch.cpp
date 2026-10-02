@@ -28,8 +28,7 @@
 #include <Geom_Circle.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
-#include <TColgp_Array1OfPnt.hxx>
-#include <TopTools_ListOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
@@ -522,7 +521,7 @@ std::vector<TopoDS_Shape> contours_by_planar_split(const gp_Pln& pln, const gp_A
     }
 
     BRepAlgoAPI_Splitter splitter;
-    TopTools_ListOfShape args, tools;
+    sx::occt::ShapeList args, tools;
     args.Append(pad.Face());
     splitter.SetArguments(args);
     for (const auto& e : edges) tools.Append(e);
@@ -629,7 +628,7 @@ std::vector<TopoDS_Shape> Sketch::contour_faces(std::string* err) const {
         } else if (e.type == SketchEntityType::Spline) {
             auto fits = spline_fit_points(e.id);
             if (fits.size() < 2) continue;
-            TColgp_Array1OfPnt poles(1, static_cast<int>(fits.size()));
+            sx::occt::Array1OfPnt poles(1, static_cast<int>(fits.size()));
             for (int i = 0; i < static_cast<int>(fits.size()); ++i)
                 poles.SetValue(i + 1, to3d(fits[static_cast<size_t>(i)][0],
                                            fits[static_cast<size_t>(i)][1]));

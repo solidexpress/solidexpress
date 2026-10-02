@@ -13,16 +13,12 @@
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
-#include <TopTools_ListIteratorOfListOfShape.hxx>
-#include <TopTools_ListOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <GeomAbs_SurfaceType.hxx>
-#include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Dir.hxx>
@@ -50,15 +46,15 @@ namespace {
 // straight remnant is 1.5). Profile cylinders larger than the edge, such
 // as a slot end, are not blends of that edge.
 double blend_radius_at(const TopoDS_Shape& body, const TopoDS_Vertex& vertex, double edge_len) {
-    TopTools_IndexedDataMapOfShapeListOfShape ancestors;
+    sx::occt::ShapeIndexedDataMapOfList ancestors;
     TopExp::MapShapesAndAncestors(body, TopAbs_VERTEX, TopAbs_FACE, ancestors);
     const int idx = ancestors.FindIndex(vertex);
     if (idx < 1) return 0.0;
     double extra = 0.0;
-    const TopTools_ListOfShape& faces = ancestors.FindFromIndex(idx);
-    for (TopTools_ListIteratorOfListOfShape it(faces); it.More(); it.Next()) {
-        if (it.Value().ShapeType() != TopAbs_FACE) continue;
-        BRepAdaptor_Surface surf(TopoDS::Face(it.Value()));
+    const sx::occt::ShapeList& faces = ancestors.FindFromIndex(idx);
+    for (const TopoDS_Shape& face_shape : faces) {
+        if (face_shape.ShapeType() != TopAbs_FACE) continue;
+        BRepAdaptor_Surface surf(TopoDS::Face(face_shape));
         double r = 0.0;
         if (surf.GetType() == GeomAbs_Cylinder)
             r = surf.Cylinder().Radius();
@@ -75,19 +71,19 @@ double blend_radius_at(const TopoDS_Shape& body, const TopoDS_Vertex& vertex, do
 // Half of that span is the largest radius that still fits when the same
 // wall is filleted from both ends (slot depth 2.5 → limit 1.25).
 double min_departure_length(const TopoDS_Shape& body, const TopoDS_Edge& fillet_edge) {
-    TopTools_IndexedDataMapOfShapeListOfShape ancestors;
+    sx::occt::ShapeIndexedDataMapOfList ancestors;
     TopExp::MapShapesAndAncestors(body, TopAbs_EDGE, TopAbs_FACE, ancestors);
     const int idx = ancestors.FindIndex(fillet_edge);
     if (idx < 1) return std::numeric_limits<double>::infinity();
-    TopTools_IndexedMapOfShape fillet_verts;
+    sx::occt::ShapeIndexedMap fillet_verts;
     TopExp::MapShapes(fillet_edge, TopAbs_VERTEX, fillet_verts);
     double best = std::numeric_limits<double>::infinity();
-    const TopTools_ListOfShape& faces = ancestors.FindFromIndex(idx);
-    for (TopTools_ListIteratorOfListOfShape it(faces); it.More(); it.Next()) {
-        for (TopExp_Explorer ex(it.Value(), TopAbs_EDGE); ex.More(); ex.Next()) {
+    const sx::occt::ShapeList& faces = ancestors.FindFromIndex(idx);
+    for (const TopoDS_Shape& face_shape : faces) {
+        for (TopExp_Explorer ex(face_shape, TopAbs_EDGE); ex.More(); ex.Next()) {
             const TopoDS_Edge edge = TopoDS::Edge(ex.Current());
             if (edge.IsSame(fillet_edge)) continue;
-            TopTools_IndexedMapOfShape verts;
+            sx::occt::ShapeIndexedMap verts;
             TopExp::MapShapes(edge, TopAbs_VERTEX, verts);
             bool shares = false;
             for (int i = 1; i <= verts.Extent(); ++i) {
@@ -130,7 +126,7 @@ bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& o
     gp_Vec want_dir(dj[0].get<double>(), dj[1].get<double>(), dj[2].get<double>());
     if (want_dir.Magnitude() < 1e-12) return false;
     want_dir.Normalize();
-    TopTools_IndexedMapOfShape map;
+    sx::occt::ShapeIndexedMap map;
     TopExp::MapShapes(body.shape, TopAbs_EDGE, map);
     double best = 1e300;
     bool found = false;
@@ -164,7 +160,7 @@ bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& p
     unif.Build();
     const TopoDS_Shape unified = unif.Shape();
     if (unified.IsNull()) return false;
-    TopTools_IndexedMapOfShape edges;
+    sx::occt::ShapeIndexedMap edges;
     TopExp::MapShapes(unified, TopAbs_EDGE, edges);
     std::vector<TopoDS_Edge> chosen;
     std::vector<int> seen;
@@ -302,7 +298,7 @@ bool apply_shell(ApplyCtx& ctx) {
     EntityId target = ctx.find_feature_body("target");
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
-    TopTools_ListOfShape remove_faces;
+    sx::occt::ShapeList remove_faces;
     for (const auto& jf : ctx.params.at("faces")) {
         TopoDS_Shape fs;
         std::string why;

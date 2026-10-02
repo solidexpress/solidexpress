@@ -11,7 +11,7 @@
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
@@ -39,7 +39,7 @@ bool fillet_c2(Document& doc, const EntityId& body, const std::vector<int>& edge
         if (err) *err = "fillet_c2 needs a body";
         return false;
     }
-    TopTools_IndexedMapOfShape map;
+    sx::occt::ShapeIndexedMap map;
     TopExp::MapShapes(b->shape, TopAbs_EDGE, map);
     try {
         BRepFilletAPI_MakeFillet mk(b->shape);
@@ -69,7 +69,7 @@ double subd_round_box(Document& doc, const EntityId& body, double radius, std::s
         if (err) *err = "subd needs a body";
         return 0.0;
     }
-    TopTools_IndexedMapOfShape map;
+    sx::occt::ShapeIndexedMap map;
     TopExp::MapShapes(b->shape, TopAbs_EDGE, map);
     std::vector<int> edges;
     for (int i = 1; i <= map.Extent(); ++i) edges.push_back(i);

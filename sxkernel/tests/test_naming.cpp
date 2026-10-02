@@ -8,7 +8,7 @@
 
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 
 using namespace sx;
@@ -48,7 +48,7 @@ TEST_CASE("naming: fillet keeps old faces, new face gets fresh id", "[naming]") 
     auto body_id = doc.add_body(box, "Box");
     auto old_face_ids = doc.body(body_id)->subshape_ids.at(EntityKind::Face);
 
-    TopTools_IndexedMapOfShape edges;
+    sx::occt::ShapeIndexedMap edges;
     TopExp::MapShapes(box, TopAbs_EDGE, edges);
     BRepFilletAPI_MakeFillet mk(box);
     mk.Add(2.0, TopoDS::Edge(edges(1)));

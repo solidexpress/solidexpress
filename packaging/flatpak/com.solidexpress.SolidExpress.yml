@@ -1,4 +1,8 @@
 app-id: com.solidexpress.SolidExpress
+# Flatpak wraps the Linux release tarball. OCCT is already bundled next to
+# libsxcore (see packaging/linux/bundle-shared-libs.sh); version is pinned by
+# packaging/occt.version (currently 8.0.1) on the Linux build that produces
+# the tarball — this manifest does not compile OCCT.
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
 sdk: org.freedesktop.Sdk

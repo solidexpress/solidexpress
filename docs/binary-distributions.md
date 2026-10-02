@@ -59,7 +59,8 @@ cd /path/to/solidexpress
 make build                                   # or let export-linux.sh build
 ```
 
-Ubuntu deps (same as CI): `cmake`, `ninja-build`, `g++`, OCCT dev packages, `libeigen3-dev`, `libboost-dev` — see `.github/workflows/release.yml`.
+Ubuntu deps (same as CI): `cmake`, `ninja-build`, `g++`, Eigen/Boost/TBB/FreeType/RapidJSON — then
+`packaging/ci/install_occt.sh` for pinned OCCT **8.0.1** (`packaging/occt.version`). See `.github/workflows/release.yml`.
 
 ### Verify locally before tagging
 
@@ -198,7 +199,7 @@ You have an **Apple Developer Program** membership.
 
 ### Export (local)
 
-Prefer the release script (builds sxcore, exports, **bundles Homebrew OCCT into Frameworks**):
+Prefer the release script (builds sxcore, exports, **bundles OCCT into Frameworks**):
 
 ```bash
 ./scripts/release/export-macos.sh
@@ -206,7 +207,8 @@ Prefer the release script (builds sxcore, exports, **bundles Homebrew OCCT into 
 ./packaging/macos/bundle-dylibs.sh dist/releases/SolidExpress-<ver>-macos/SolidExpress.app
 ```
 
-`libsxcore.dylib` links OCCT from Homebrew (`/opt/homebrew/opt/opencascade/...`). Without bundling, end users get a grey empty window because `SxDocument` never registers.
+`libsxcore.dylib` links OCCT from the pinned install (`/opt/occt-8.0.1/...` via
+`CMAKE_PREFIX_PATH`, or Homebrew as a local fallback). Without bundling, end users get a grey empty window because `SxDocument` never registers.
 
 ### Sign and notarize
 
@@ -299,7 +301,7 @@ Document secret rotation in your password manager; never commit certs.
 | Sketch constraints fail | `libplanegcs.so` / `.dll` / `.dylib` beside binary or in `game/bin/` |
 | Linux CI fails kernel tests | Fix on `main` before re-tagging (prefer new tag, not force-push) |
 | macOS “damaged” / Gatekeeper | Notarization + staple; or quarantine `xattr -cr` for local dev only |
-| macOS grey empty window / can’t open libsxcore | OCCT dylibs not bundled — `packaging/macos/bundle-dylibs.sh` (wired into `export-macos.sh`). Workaround: `brew install opencascade`. |
+| macOS grey empty window / can’t open libsxcore | OCCT dylibs not bundled — `packaging/macos/bundle-dylibs.sh` (wired into `export-macos.sh`). Workaround: install pinned OCCT 8.0.1 (`packaging/ci/install_occt.sh`) or `brew install opencascade`. |
 | Windows missing TK*.dll | `packaging/windows/bundle-dlls.sh` must run against `libsxcore.dll` (not only the .exe). |
 | Windows SmartScreen | Sign binary; EV cert helps reputation over time |
 | Flatpak blank window | `--device=dri`, Wayland/X11 sockets; verify GL in sandbox |

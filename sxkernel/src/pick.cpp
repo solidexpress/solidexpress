@@ -2,7 +2,7 @@
 
 #include <IntCurvesFace_ShapeIntersector.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <gp_Dir.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Pnt.hxx>
@@ -37,7 +37,7 @@ std::optional<PickHit> pick_ray(const Document& doc,
             if (w >= best_w) continue;
 
             // Map the hit face back to its stable id.
-            TopTools_IndexedMapOfShape face_map;
+            sx::occt::ShapeIndexedMap face_map;
             TopExp::MapShapes(b->shape, TopAbs_FACE, face_map);
             int face_index = face_map.FindIndex(inter.Face(i));
             if (face_index < 1) continue;

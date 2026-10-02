@@ -6,7 +6,7 @@
 #include <BRep_Tool.hxx>
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 #include <gp_Cylinder.hxx>
 #include <gp_Pln.hxx>
@@ -113,7 +113,7 @@ constexpr double kMaxCost = 2.0;
 }  // namespace
 
 std::vector<Signature> signatures(const TopoDS_Shape& shape, EntityKind kind) {
-    TopTools_IndexedMapOfShape map;
+    sx::occt::ShapeIndexedMap map;
     TopExp::MapShapes(shape, occt_kind(kind), map);
     std::vector<Signature> out;
     out.reserve(static_cast<size_t>(map.Extent()));

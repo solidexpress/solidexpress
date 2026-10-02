@@ -14,7 +14,7 @@
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
@@ -74,7 +74,7 @@ TopoCounts count(const TopoDS_Shape& s) {
     // TopExp::MapShapes deduplicates shared subshapes (an edge belongs to two
     // faces but counts once), unlike TopExp_Explorer.
     auto unique_count = [&s](TopAbs_ShapeEnum kind) {
-        TopTools_IndexedMapOfShape map;
+        sx::occt::ShapeIndexedMap map;
         TopExp::MapShapes(s, kind, map);
         return map.Extent();
     };

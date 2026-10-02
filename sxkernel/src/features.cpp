@@ -23,7 +23,7 @@
 #include <GProp_GProps.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
 #include <Geom_BSplineCurve.hxx>
-#include <TColgp_Array1OfPnt.hxx>
+#include "sx/occt_types.hpp"
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_Vertex.hxx>
@@ -42,8 +42,6 @@
 #include <BRepTools.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
-#include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Wire.hxx>
@@ -584,7 +582,7 @@ TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
     if (thin_thickness > 0.0) {
         // Closed hollow: offset the swept solid inward (no open faces removed).
         BRepOffsetAPI_MakeThickSolid mk;
-        TopTools_ListOfShape closing;
+        sx::occt::ShapeList closing;
         mk.MakeThickSolidByJoin(result, closing, -thin_thickness, 1e-3);
         if (!mk.IsDone()) throw std::runtime_error("thin wall shell failed");
         result = mk.Shape();
@@ -771,7 +769,7 @@ json sketch_ordered_polyline(const Sketch& sk) {
             // Sample the interpolating B-spline (not just fit-point chords).
             auto fits = sk.spline_fit_points(e.id);
             if (fits.size() < 2) continue;
-            TColgp_Array1OfPnt poles(1, static_cast<int>(fits.size()));
+            sx::occt::Array1OfPnt poles(1, static_cast<int>(fits.size()));
             for (int i = 0; i < static_cast<int>(fits.size()); ++i)
                 poles.SetValue(i + 1, sketch_uv_to_3d(pl, fits[static_cast<size_t>(i)][0],
                                                       fits[static_cast<size_t>(i)][1]));
@@ -1590,7 +1588,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 if (params.contains("face") && params["face"].is_string()) {
                     face_shape = doc.resolve(EntityId::from_string(params["face"].get<std::string>()));
                 } else if (params.contains("face_index")) {
-                    TopTools_IndexedMapOfShape faces;
+                    sx::occt::ShapeIndexedMap faces;
                     TopExp::MapShapes(tb->shape, TopAbs_FACE, faces);
                     int idx = params["face_index"].get<int>();
                     if (idx < 1 || idx > faces.Extent()) return fail("face index out of range");
@@ -1808,7 +1806,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                 EntityId target = find_feature_body("target");
                 const Body* tb = doc.body(target);
                 if (!tb) return fail("missing target body");
-                TopTools_IndexedMapOfShape faces;
+                sx::occt::ShapeIndexedMap faces;
                 TopExp::MapShapes(tb->shape, TopAbs_FACE, faces);
                 TopoDS_Shape face;
                 if (params.contains("face") && params["face"].is_string()) {

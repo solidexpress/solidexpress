@@ -10,7 +10,7 @@ import unittest
 
 # Update together with windows job cache key: in release.yml.
 EXPECTED_VCPKG_WIN_CACHE_KEY = (
-    "vcpkg-win-x64-opencascade-eigen3-tbb-boost-system-filesystem-graph"
+    "vcpkg-win-x64-occt-8.0.1-eigen3-tbb-boost-system-filesystem-graph"
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

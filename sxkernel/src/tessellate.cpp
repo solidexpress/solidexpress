@@ -7,7 +7,7 @@
 #include <Poly_Triangulation.hxx>
 #include <TopExp.hxx>
 #include <TopLoc_Location.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
@@ -31,7 +31,7 @@ BodyMesh tessellate_body(const Document& doc, const EntityId& body_id,
     BRepMesh_IncrementalMesh mesher(b->shape, linear_deflection, /*isRelative=*/false,
                                     angular_deflection, /*parallel=*/true);
 
-    TopTools_IndexedMapOfShape face_map;
+    sx::occt::ShapeIndexedMap face_map;
     TopExp::MapShapes(b->shape, TopAbs_FACE, face_map);
     const auto& face_ids = b->subshape_ids.at(EntityKind::Face);
 
@@ -81,7 +81,7 @@ BodyMesh tessellate_body(const Document& doc, const EntityId& body_id,
     }
 
     // Edge polylines from the triangulation (for wireframe overlay).
-    TopTools_IndexedMapOfShape edge_map;
+    sx::occt::ShapeIndexedMap edge_map;
     TopExp::MapShapes(b->shape, TopAbs_EDGE, edge_map);
     const auto& edge_ids = b->subshape_ids.at(EntityKind::Edge);
 

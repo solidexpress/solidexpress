@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Bundle non-system dylib deps of libsxcore into SolidExpress.app/Contents/Frameworks
-# and rewrite install names to @rpath so the app runs without Homebrew OCCT.
+# and rewrite install names to @rpath so the app runs without a host OCCT install
+# (source-built /opt/occt-* or Homebrew).
 # Run on macOS after Godot export. Requires otool + install_name_tool.
 # Compatible with macOS /bin/bash 3.2 (no associative arrays).
 set -euo pipefail
@@ -102,10 +103,40 @@ resolve_dep() {
     fi
   done < <(rpaths_of "$loader")
   for try in \
+    "/opt/occt-8.0.1/lib/$base" \
+    "/opt/occt/lib/$base" \
     "/opt/homebrew/lib/$base" \
     "/opt/homebrew/opt/opencascade/lib/$base" \
     "/usr/local/lib/$base" \
     "/usr/local/opt/opencascade/lib/$base"; do
+    if [[ -f "$try" ]]; then
+      echo "$try"
+      return 0
+    fi
+  done
+  # Also probe CMAKE_PREFIX_PATH / OCCT_PREFIX when set by CI (bash 3.2-safe).
+  local prefix rest
+  if [[ -n "${OCCT_PREFIX:-}" ]]; then
+    try="${OCCT_PREFIX}/lib/$base"
+    if [[ -f "$try" ]]; then
+      echo "$try"
+      return 0
+    fi
+  fi
+  rest="${CMAKE_PREFIX_PATH:-}"
+  while [[ -n "$rest" ]]; do
+    case "$rest" in
+      *:*)
+        prefix="${rest%%:*}"
+        rest="${rest#*:}"
+        ;;
+      *)
+        prefix="$rest"
+        rest=""
+        ;;
+    esac
+    [[ -z "$prefix" ]] && continue
+    try="$prefix/lib/$base"
     if [[ -f "$try" ]]; then
       echo "$try"
       return 0

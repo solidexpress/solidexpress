@@ -12,7 +12,7 @@
 #include <Geom_TrimmedCurve.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
-#include <TopTools_IndexedMapOfShape.hxx>
+#include "sx/occt_types.hpp"
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Wire.hxx>
@@ -169,7 +169,7 @@ void SweepCommand::execute(Document& doc) {
     // corner transition so L-paths produce a full solid.
     TopoDS_Shape solid;
     try {
-        TopTools_IndexedMapOfShape edges;
+        sx::occt::ShapeIndexedMap edges;
         TopExp::MapShapes(spine, TopAbs_EDGE, edges);
         if (edges.Extent() <= 1) {
             BRepOffsetAPI_MakePipe pipe(spine, face);
