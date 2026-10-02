@@ -106,20 +106,28 @@ else
 fi
 
 # Optional dependency dump for CI diagnosis (dumpbin from MSVC env).
+# Git Bash rewrites leading /flags as filesystem paths — use -dependents or
+# MSYS_NO_PATHCONV=1 when calling dumpbin.
 if command -v dumpbin >/dev/null 2>&1; then
-  echo "==> dumpbin /dependents sxkernel_tests.exe"
-  dumpbin /dependents "$TEST_EXE" || true
+  echo "==> dumpbin -dependents sxkernel_tests.exe"
+  WIN_EXE="$TEST_EXE"
+  if command -v cygpath >/dev/null 2>&1; then
+    WIN_EXE="$(cygpath -w "$TEST_EXE")"
+  fi
+  MSYS_NO_PATHCONV=1 dumpbin -dependents "$WIN_EXE" || true
 fi
 
 echo "==> DLLs staged beside test exe:"
 ls -1 "$TEST_DIR"/*.dll 2>/dev/null | xargs -n1 basename | sort | head -80 || true
 
+# planegcs + OCCT/TBB are already beside the exe; run from that directory so the
+# Windows loader finds them. Prefer the .exe path explicitly (Git Bash).
 echo "==> running $TEST_EXE"
-# cd into the exe dir so the application directory is on the DLL search path,
-# and use cmd so missing-DLL failures surface as Windows status codes (not bash 127).
-if command -v cygpath >/dev/null 2>&1 && command -v cmd.exe >/dev/null 2>&1; then
-  WIN_DIR="$(cygpath -w "$TEST_DIR")"
-  cmd.exe //C "cd /d \"${WIN_DIR}\" && sxkernel_tests.exe"
-else
-  (cd "$TEST_DIR" && ./sxkernel_tests.exe)
-fi
+(
+  cd "$TEST_DIR"
+  if [[ -f ./sxkernel_tests.exe ]]; then
+    ./sxkernel_tests.exe
+  else
+    ./sxkernel_tests
+  fi
+)
