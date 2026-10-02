@@ -1,10 +1,19 @@
 #include "ops.hpp"
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
+#include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ListIteratorOfListOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
@@ -18,6 +27,9 @@
 #include <gp_Vec.hxx>
 
 #include <cmath>
+#include <iomanip>
+#include <limits>
+#include <sstream>
 
 #include "sx/shape_utils.hpp"
 #include "sx/variables.hpp"
@@ -25,6 +37,131 @@
 #include "sx/log.hpp"
 
 namespace sx::feature_ops {
+
+namespace {
+
+// A blend already sitting on this vertex ate part of the original wall.
+// Add its radius back when it is smaller than the remaining edge, so a
+// 2.5 mm slot with an R1 floor fillet still reports a 2.5 mm span (the
+// straight remnant is 1.5). Profile cylinders larger than the edge, such
+// as a slot end, are not blends of that edge.
+double blend_radius_at(const TopoDS_Shape& body, const TopoDS_Vertex& vertex, double edge_len) {
+    TopTools_IndexedDataMapOfShapeListOfShape ancestors;
+    TopExp::MapShapesAndAncestors(body, TopAbs_VERTEX, TopAbs_FACE, ancestors);
+    const int idx = ancestors.FindIndex(vertex);
+    if (idx < 1) return 0.0;
+    double extra = 0.0;
+    const TopTools_ListOfShape& faces = ancestors.FindFromIndex(idx);
+    for (TopTools_ListIteratorOfListOfShape it(faces); it.More(); it.Next()) {
+        if (it.Value().ShapeType() != TopAbs_FACE) continue;
+        BRepAdaptor_Surface surf(TopoDS::Face(it.Value()));
+        double r = 0.0;
+        if (surf.GetType() == GeomAbs_Cylinder)
+            r = surf.Cylinder().Radius();
+        else if (surf.GetType() == GeomAbs_Torus)
+            r = surf.Torus().MinorRadius();
+        else if (surf.GetType() == GeomAbs_Sphere)
+            r = surf.Sphere().Radius();
+        if (r > 1e-6 && r <= edge_len + 1e-4) extra = std::max(extra, r);
+    }
+    return extra;
+}
+
+// Shortest edge that leaves `fillet_edge` across either adjacent face.
+// Half of that span is the largest radius that still fits when the same
+// wall is filleted from both ends (slot depth 2.5 → limit 1.25).
+double min_departure_length(const TopoDS_Shape& body, const TopoDS_Edge& fillet_edge) {
+    TopTools_IndexedDataMapOfShapeListOfShape ancestors;
+    TopExp::MapShapesAndAncestors(body, TopAbs_EDGE, TopAbs_FACE, ancestors);
+    const int idx = ancestors.FindIndex(fillet_edge);
+    if (idx < 1) return std::numeric_limits<double>::infinity();
+    TopTools_IndexedMapOfShape fillet_verts;
+    TopExp::MapShapes(fillet_edge, TopAbs_VERTEX, fillet_verts);
+    double best = std::numeric_limits<double>::infinity();
+    const TopTools_ListOfShape& faces = ancestors.FindFromIndex(idx);
+    for (TopTools_ListIteratorOfListOfShape it(faces); it.More(); it.Next()) {
+        for (TopExp_Explorer ex(it.Value(), TopAbs_EDGE); ex.More(); ex.Next()) {
+            const TopoDS_Edge edge = TopoDS::Edge(ex.Current());
+            if (edge.IsSame(fillet_edge)) continue;
+            TopTools_IndexedMapOfShape verts;
+            TopExp::MapShapes(edge, TopAbs_VERTEX, verts);
+            bool shares = false;
+            for (int i = 1; i <= verts.Extent(); ++i) {
+                if (fillet_verts.Contains(verts(i))) {
+                    shares = true;
+                    break;
+                }
+            }
+            if (!shares) continue;
+            GProp_GProps props;
+            BRepGProp::LinearProperties(edge, props);
+            const double len = props.Mass();
+            if (len <= 1e-6) continue;
+            double span = len;
+            span += blend_radius_at(body, TopoDS::Vertex(verts(1)), len);
+            if (verts.Extent() > 1)
+                span += blend_radius_at(body, TopoDS::Vertex(verts(verts.Extent())), len);
+            best = std::min(best, span);
+        }
+    }
+    return best;
+}
+
+std::string format_mm(double v) {
+    const double shown = std::round(v * 1000.0) / 1000.0;
+    std::ostringstream os;
+    os.setf(std::ios::fixed);
+    os << std::setprecision(3) << shown;
+    return os.str();
+}
+
+// Rebuilds mint new ids for edges that an upstream feature recreates. Match
+// the cue captured before regen (midpoint + direction) back onto the body.
+bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& out) {
+    if (!cue.is_object() || !cue.contains("point") || !cue.contains("dir")) return false;
+    const auto& pj = cue["point"];
+    const auto& dj = cue["dir"];
+    if (!pj.is_array() || pj.size() < 3 || !dj.is_array() || dj.size() < 3) return false;
+    const gp_Pnt want(pj[0].get<double>(), pj[1].get<double>(), pj[2].get<double>());
+    gp_Vec want_dir(dj[0].get<double>(), dj[1].get<double>(), dj[2].get<double>());
+    if (want_dir.Magnitude() < 1e-12) return false;
+    want_dir.Normalize();
+    TopTools_IndexedMapOfShape map;
+    TopExp::MapShapes(body.shape, TopAbs_EDGE, map);
+    double best = 1e300;
+    bool found = false;
+    for (int i = 1; i <= map.Extent(); ++i) {
+        const TopoDS_Edge edge = TopoDS::Edge(map(i));
+        BRepAdaptor_Curve curve(edge);
+        gp_Pnt p;
+        gp_Vec v;
+        curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
+        if (v.Magnitude() < 1e-12) continue;
+        v.Normalize();
+        const double dist = p.Distance(want);
+        const double align = std::abs(v.Dot(want_dir));
+        if (dist < 0.5 && align > 0.95 && dist < best) {
+            best = dist;
+            out = edge;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool resolve_dressup_edge(ApplyCtx& ctx, const Body& body, const nlohmann::json& je,
+                          TopoDS_Shape& es, std::string* why) {
+    if (resolve_topo_shape(ctx.doc, body, EntityKind::Edge, je, es, why)) return true;
+    if (!je.is_string() || !ctx.params.contains("edge_cues")) return false;
+    const auto& cues = ctx.params["edge_cues"];
+    const std::string key = je.get<std::string>();
+    if (!cues.is_object() || !cues.contains(key)) return false;
+    if (!match_edge_cue(body, cues[key], es)) return false;
+    if (why) why->clear();
+    return true;
+}
+
+}  // namespace
 
 bool apply_fillet_chamfer(ApplyCtx& ctx) {
     if (ctx.target_inactive("target")) return true;
@@ -42,25 +179,41 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
                               ? num_param(ctx.params, "radius2", v, ctx.env)
                               : v;
         int added = 0;
+        double limit = std::numeric_limits<double>::infinity();
+        std::vector<TopoDS_Edge> resolved;
         for (const auto& je : ctx.params.at("edges")) {
             TopoDS_Shape es;
             std::string why;
-            if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Edge, je, es, &why)) {
-                // Soft-skip: edge UUID lost after upstream topology (hole then
-                // another dress-up). Aborting the whole regen blocked Hole Wizard
-                // / jaw_af edits — leave the body as-is and continue the timeline.
+            if (!resolve_dressup_edge(ctx, *tb, je, es, &why)) {
+                // Soft-skip only a missing edge id (upstream regen dropped it
+                // and no pre-regen cue matches). A radius the user just typed
+                // still fails below once any edge resolves.
                 sx::log::error(std::string("fillet soft-skip: ") + why);
-                return true;
+                continue;
             }
-            if (std::abs(r2 - v) > 1e-12)
-                mk.Add(v, r2, TopoDS::Edge(es));
-            else
-                mk.Add(v, TopoDS::Edge(es));
+            TopoDS_Edge edge = TopoDS::Edge(es);
+            limit = std::min(limit, 0.5 * min_departure_length(tb->shape, edge));
+            resolved.push_back(edge);
             ++added;
         }
         if (added == 0) return true;
+        const double asked = std::max(v, r2);
+        if (limit < 1e290 && asked > limit + 1e-4) {
+            return ctx.fail("fillet radius " + format_mm(asked) + " exceeds limit " +
+                            format_mm(limit));
+        }
+        for (const auto& edge : resolved) {
+            if (std::abs(r2 - v) > 1e-12)
+                mk.Add(v, r2, edge);
+            else
+                mk.Add(v, edge);
+        }
         mk.Build();
-        if (!mk.IsDone()) return ctx.fail("fillet failed");
+        if (!mk.IsDone()) {
+            if (limit < 1e290)
+                return ctx.fail("fillet failed (limit " + format_mm(limit) + ")");
+            return ctx.fail("fillet failed");
+        }
         result = mk.Shape();
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
@@ -68,7 +221,7 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         for (const auto& je : ctx.params.at("edges")) {
             TopoDS_Shape es;
             std::string why;
-            if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Edge, je, es, &why)) {
+            if (!resolve_dressup_edge(ctx, *tb, je, es, &why)) {
                 sx::log::error(std::string("chamfer soft-skip: ") + why);
                 return true;
             }

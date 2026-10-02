@@ -591,6 +591,13 @@ PackedStringArray SxDocument::get_face_ids(const String& body_id) const {
     return out;
 }
 
+PackedStringArray SxDocument::edges_of_face(const String& face_id) const {
+    PackedStringArray out;
+    for (const auto& id : sx::edges_of_face(*doc_, parse_id(face_id)))
+        out.push_back(to_gd(id.str()));
+    return out;
+}
+
 PackedStringArray SxDocument::get_edge_ids(const String& body_id) const {
     PackedStringArray out;
     const sx::Body* b = doc_->body(parse_id(body_id));
@@ -786,7 +793,8 @@ String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
                                      bool symmetric, const String& op,
                                      const String& target_fid, const String& end,
                                      double thin_thickness, const String& thin_type,
-                                     bool flip_side, const Array& selected_contours) {
+                                     bool flip_side, const Array& selected_contours,
+                                     const String& to_face) {
     sx::EntityId fid;
     bool ok = apply_graph_edit("extrude", [&] {
         sx::Feature f;
@@ -812,6 +820,8 @@ String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
             }
             f.params["selected_contours"] = arr;
         }
+        // Optional Up To Surface target. Empty keeps every existing caller working.
+        if (!to_face.is_empty()) f.params["to_face"] = to_std(to_face);
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -920,12 +930,22 @@ String SxDocument::graph_add_dressup(bool fillet, const String& target_fid,
     // resolve_topo_shape; Godot JSON round-trips would turn ints into floats.
     nlohmann::json edges = nlohmann::json::array();
     for (int i = 0; i < edge_ids.size(); ++i) {
+        const std::string edge_s = to_std(edge_ids[i]);
         auto ref = doc_->find_subshape(parse_id(edge_ids[i]));
-        if (!ref || ref->kind != sx::EntityKind::Edge) {
-            sx::log::error("graph_add_dressup: not an edge id");
-            return {};
+        if (ref && ref->kind == sx::EntityKind::Edge) {
+            edges.push_back(edge_s);
+            continue;
         }
-        edges.push_back(to_std(edge_ids[i]));
+        // A refused fillet regenerates the body and mints new edge ids. The
+        // selection still names the previous id; the graph remembers its
+        // geometry so the next fillet can find the rebuilt edge.
+        double px, py, pz, dx, dy, dz;
+        if (doc_->graph().recall_edge(edge_s, px, py, pz, dx, dy, dz)) {
+            edges.push_back(edge_s);
+            continue;
+        }
+        sx::log::error("graph_add_dressup: not an edge id");
+        return {};
     }
     if (edges.empty()) return {};
     sx::EntityId fid;
@@ -2442,6 +2462,7 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("revision"), &SxDocument::revision);
     ClassDB::bind_method(D_METHOD("get_mesh", "body_id"), &SxDocument::get_mesh);
     ClassDB::bind_method(D_METHOD("get_face_ids", "body_id"), &SxDocument::get_face_ids);
+    ClassDB::bind_method(D_METHOD("edges_of_face", "face_id"), &SxDocument::edges_of_face);
     ClassDB::bind_method(D_METHOD("get_edge_lines", "body_id"), &SxDocument::get_edge_lines);
     ClassDB::bind_method(D_METHOD("pick", "origin", "direction"), &SxDocument::pick);
     ClassDB::bind_method(D_METHOD("card_markdown", "entity_id"), &SxDocument::card_markdown);
@@ -2458,9 +2479,10 @@ void SxDocument::_bind_methods() {
                          &SxDocument::graph_update_sketch);
     ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op",
                                   "target_fid", "end", "thin_thickness", "thin_type", "flip_side",
-                                  "selected_contours"),
+                                  "selected_contours", "to_face"),
                          &SxDocument::graph_add_extrude, DEFVAL(String("blind")), DEFVAL(0.0),
-                         DEFVAL(String("one_side")), DEFVAL(false), DEFVAL(Array()));
+                         DEFVAL(String("one_side")), DEFVAL(false), DEFVAL(Array()),
+                         DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid",

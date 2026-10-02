@@ -130,6 +130,8 @@ public:
     godot::Ref<godot::ArrayMesh> get_mesh(const godot::String& body_id) const;
     godot::PackedStringArray get_face_ids(const godot::String& body_id) const;
     godot::PackedStringArray get_edge_ids(const godot::String& body_id) const;
+    // Boundary edges of one face (stable edge ids). Empty if `face_id` is not a face.
+    godot::PackedStringArray edges_of_face(const godot::String& face_id) const;
     // Edge wireframe as a Dictionary {edge_uuid: PackedVector3Array}.
     godot::Dictionary get_edge_lines(const godot::String& body_id) const;
 
@@ -166,7 +168,8 @@ public:
                                     double thin_thickness = 0.0,
                                     const godot::String& thin_type = godot::String("one_side"),
                                     bool flip_side = false,
-                                    const godot::Array& selected_contours = godot::Array());
+                                    const godot::Array& selected_contours = godot::Array(),
+                                    const godot::String& to_face = godot::String());
     // Axis in sketch 2D coordinates (point + direction on the sketch plane).
     godot::String graph_add_revolve(const godot::String& sketch_fid,
                                     const godot::Vector2& axis_point,

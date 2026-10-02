@@ -21,4 +21,8 @@ std::vector<QueryHit> run_query(const Document& doc, const std::string& query);
 // One-sentence card digest from feature type + params.
 std::string card_digest(const class Feature& f);
 
+// Boundary edges of a face, in TopExp order, without duplicates.
+// Empty when `face` is missing or is not a face.
+std::vector<EntityId> edges_of_face(const Document& doc, const EntityId& face);
+
 }  // namespace sx

@@ -276,7 +276,15 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	name_btn.gui_input.connect(func(ev: InputEvent) -> void:
 		if ev is InputEventMouseButton and ev.pressed and ev.double_click \
 				and ev.button_index == MOUSE_BUTTON_LEFT:
-			_begin_rename(fid, row, name_btn)
+			var ftype := str(f["type"])
+			if ftype == "sketch":
+				_edit_sketch_feature(fid)
+			elif ftype == "extrude":
+				_select_feature(fid)
+				_focus_extrude_distance()
+				status.emit("Extrude — Distance and End")
+			else:
+				_begin_rename(fid, row, name_btn)
 	)
 	row.add_child(name_btn)
 
@@ -347,6 +355,49 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	del.pressed.connect(_delete_feature.bind(fid))
 	row.add_child(del)
 	return row
+
+
+func _find_sketch_mode() -> SketchMode:
+	var n: Node = self
+	while n != null:
+		var sm = n.get("sketch_mode")
+		if sm is SketchMode:
+			return sm
+		n = n.get_parent()
+	return null
+
+
+## Double-click a sketch row: reopen it in the sketch editor.
+func _edit_sketch_feature(fid: String) -> void:
+	var sm := _find_sketch_mode()
+	if sm == null:
+		status.emit("Sketch editor unavailable")
+		return
+	if sm.begin_edit(fid):
+		if view != null and view.has_method("refresh_sketch_pads"):
+			view.refresh_sketch_pads(sm.editing_fid)
+		status.emit("Editing sketch")
+	else:
+		status.emit("Could not edit sketch")
+
+
+## Distance is the first spin on an extrude property panel; End is the enum beside it.
+func _focus_extrude_distance() -> void:
+	if property_panel == null or not property_panel.visible:
+		return
+	var spin := _first_spin(property_panel)
+	if spin != null:
+		spin.grab_focus()
+
+
+func _first_spin(node: Node) -> SpinBox:
+	if node is SpinBox:
+		return node
+	for child in node.get_children():
+		var found := _first_spin(child)
+		if found != null:
+			return found
+	return null
 
 
 func _begin_rename(fid: String, row: HBoxContainer, name_btn: Button) -> void:

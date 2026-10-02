@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "sx/ids.hpp"
@@ -146,6 +147,13 @@ public:
 private:
     bool apply(Document& doc, Feature& f, const std::map<std::string, double>& env,
                std::string* err);
+public:
+    void remember_edge(const std::string& id, double px, double py, double pz, double dx,
+                       double dy, double dz);
+    bool recall_edge(const std::string& id, double& px, double& py, double& pz, double& dx,
+                     double& dy, double& dz) const;
+
+private:
     std::vector<Feature> timeline_;
     VariableTable variables_;
     int rollback_index_ = -1;
@@ -154,6 +162,13 @@ private:
     // Body ids created by the last regenerate. Needed so bodies belonging to
     // features that were since removed from the timeline still get cleaned up.
     std::vector<EntityId> generated_;
+    // Midpoint and direction of every edge id seen on a body before a rebuild.
+    // Slot and pocket edges are released when the base feature rebuilds and
+    // minted again by the cut; fillet params still name the previous id.
+    struct EdgeMemory {
+        double px = 0, py = 0, pz = 0, dx = 0, dy = 0, dz = 0;
+    };
+    std::unordered_map<std::string, EdgeMemory> edge_memory_;
 };
 
 }  // namespace sx
