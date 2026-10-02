@@ -154,6 +154,49 @@ TEST_CASE("multi-wire profile: outer rect minus inner hole", "[sketch][profile]"
     REQUIRE(shape::area(face) == Approx(40.0 * 30.0 - 20.0 * 10.0).epsilon(1e-6));
 }
 
+TEST_CASE("point-to-line distance sets hex across-flats", "[sketch][solver]") {
+    // Centre to each horizontal flat is 10 → across-flats is 20.
+    Sketch sk("HexAF");
+    const double af = 20.0;
+    const double R = af / std::sqrt(3.0);
+    std::vector<EntityId> edges;
+    for (int i = 0; i < 6; ++i) {
+        double a0 = i * M_PI / 3.0;
+        double a1 = (i + 1) * M_PI / 3.0;
+        edges.push_back(sk.add_line(R * std::cos(a0), R * std::sin(a0),
+                                    R * std::cos(a1), R * std::sin(a1)));
+    }
+    for (int i = 0; i < 6; ++i) {
+        sk.add_constraint(ConstraintType::Coincident,
+                          {{edges[static_cast<size_t>(i)], PointRole::End},
+                           {edges[static_cast<size_t>((i + 1) % 6)], PointRole::Start}});
+    }
+    // Top edge is 60°–120° (i = 1), bottom is 240°–300° (i = 4).
+    const auto top = edges[1];
+    const auto bot = edges[4];
+    sk.add_constraint(ConstraintType::Horizontal, {{top, PointRole::Self}});
+    sk.add_constraint(ConstraintType::Horizontal, {{bot, PointRole::Self}});
+    auto center = sk.add_point(0.2, -0.3);
+    sk.add_constraint(ConstraintType::Distance,
+                      {{center, PointRole::Self}, {top, PointRole::Self}}, 10.0);
+    sk.add_constraint(ConstraintType::Distance,
+                      {{center, PointRole::Self}, {bot, PointRole::Self}}, 10.0);
+
+    auto solver = make_planegcs_backend();
+    REQUIRE(solver->solve(sk).ok());
+    const SketchEntity* te = sk.entity(top);
+    const SketchEntity* be = sk.entity(bot);
+    const SketchEntity* ce = sk.entity(center);
+    double y_top = sk.param(te->params[1]);
+    double y_bot = sk.param(be->params[1]);
+    double y_c = sk.param(ce->params[1]);
+    REQUIRE(sk.param(te->params[1]) == Approx(sk.param(te->params[3])).margin(1e-5));
+    REQUIRE(sk.param(be->params[1]) == Approx(sk.param(be->params[3])).margin(1e-5));
+    REQUIRE(std::abs(y_top - y_c) == Approx(10.0).margin(1e-4));
+    REQUIRE(std::abs(y_bot - y_c) == Approx(10.0).margin(1e-4));
+    REQUIRE(std::abs(y_top - y_bot) == Approx(20.0).margin(1e-4));
+}
+
 TEST_CASE("multi-wire profile: open leftover fails", "[sketch][profile]") {
     Sketch sk("OpenHole");
     sk.add_line(0, 0, 40, 0);

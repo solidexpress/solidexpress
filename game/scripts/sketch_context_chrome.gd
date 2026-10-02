@@ -35,6 +35,9 @@ var _active_kind := ""
 ## True while the dim LineEdit has focus — mouse must not overwrite typed digits.
 var _dim_editing := false
 var _dim_syncing := false
+## Face id for an Up To Surface end. The finish signal does not carry it;
+## finish_extrude reads this after the extrude feature exists.
+var up_to_face_id := ""
 
 
 func _ready() -> void:
@@ -87,7 +90,7 @@ func _build_finish_bar() -> void:
 	_extrude_spin = SpinBox.new()
 	_extrude_spin.min_value = -1000
 	_extrude_spin.max_value = 1000
-	_extrude_spin.step = 1
+	_extrude_spin.step = 0.5
 	_extrude_spin.value = 20
 	_extrude_spin.suffix = "mm"
 	_extrude_spin.custom_minimum_size = Vector2(88, _chip_h())
@@ -95,9 +98,10 @@ func _build_finish_bar() -> void:
 	_finish_bar.add_child(_extrude_spin)
 	_finish_end = OptionButton.new()
 	_finish_end.name = "FinishEnd"
-	_finish_end.tooltip_text = "Extrude end: Blind / Through All / Midplane"
-	for n in ["Blind", "Through All", "Midplane"]:
+	_finish_end.tooltip_text = "Extrude end: Blind / Through All / Midplane / Up To Surface"
+	for n in ["Blind", "Through All", "Midplane", "Up To Surface"]:
 		_finish_end.add_item(n)
+	_finish_end.item_selected.connect(_on_finish_end_selected)
 	_finish_end.custom_minimum_size = Vector2(100, _chip_h())
 	_finish_bar.add_child(_finish_end)
 	_finish_op = OptionButton.new()
@@ -138,7 +142,7 @@ func _build_finish_bar() -> void:
 		finish_requested.emit(
 			["new", "cut", "fuse"][_finish_op.selected],
 			_extrude_spin.value,
-			["blind", "through_all", "midplane"][_finish_end.selected],
+			["blind", "through_all", "midplane", "to_face"][_finish_end.selected],
 			_thin_spin.value,
 			["one_side", "midplane"][_thin_type.selected],
 			_flip_side.button_pressed,
@@ -169,9 +173,52 @@ func extrude_distance() -> float:
 func set_dim_value(v: float) -> void:
 	if _dim_spin == null or _dim_editing:
 		return
+	_apply_slot_radius(v)
 	_dim_syncing = true
 	_dim_spin.value = v
 	_dim_syncing = false
+	_sync_dim_affordance()
+
+
+## Slot has no single-DOF preview until the first centre is down, so the blank
+## is the radius. After that click the blank is the centre distance.
+func _apply_slot_radius(v: float) -> void:
+	if sketch_mode == null or sketch_mode.tool != SketchMode.Tool.SLOT:
+		return
+	if sketch_mode.has_single_dof_preview():
+		return
+	sketch_mode.slot_radius = maxf(v, 0.01)
+
+
+func set_up_to_face(id: String) -> void:
+	up_to_face_id = id.strip_edges()
+
+
+func _on_finish_end_selected(idx: int) -> void:
+	if idx != 3:
+		return
+	if up_to_face_id == "" and sketch_mode != null and sketch_mode.view != null:
+		up_to_face_id = sketch_mode.view.selected_face
+
+
+## Across-flats reads the typed length as AF. Circle keeps a radius number and
+## shows Ø so the blank matches Smart Dimension's diameter.
+func _sync_dim_affordance() -> void:
+	if _dim_spin == null:
+		return
+	var suffix := "mm"
+	var prefix := ""
+	var tip := "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
+	if sketch_mode != null and sketch_mode.tool == SketchMode.Tool.POLYGON \
+			and sketch_mode.tool_variant == "across_flats":
+		suffix = " AF"
+		tip = "Across flats — typed length is the AF, not the circumradius"
+	elif sketch_mode != null and sketch_mode.tool == SketchMode.Tool.CIRCLE:
+		prefix = "Ø"
+		tip = "Circle radius (mm). Ø marks diameter; Smart Dimension drives Ø = 2× this radius"
+	_dim_spin.suffix = suffix
+	_dim_spin.prefix = prefix
+	_dim_spin.tooltip_text = tip
 
 
 func dim_is_editing() -> bool:
@@ -211,6 +258,7 @@ func release_dim_focus() -> void:
 func _on_dim_value_changed(v: float) -> void:
 	if _dim_syncing or not _dim_editing:
 		return
+	_apply_slot_radius(v)
 	# Live lock rubber-band while digits change (Enter still commits via signal).
 	if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
 		sketch_mode.set_length_override(v)
@@ -242,7 +290,7 @@ func set_finish_op(op: String) -> void:
 func set_finish_end(end: String) -> void:
 	if _finish_end == null:
 		return
-	var map := {"blind": 0, "through_all": 1, "midplane": 2}
+	var map := {"blind": 0, "through_all": 1, "midplane": 2, "to_face": 3}
 	if map.has(end):
 		_finish_end.select(map[end])
 
@@ -250,7 +298,7 @@ func set_finish_end(end: String) -> void:
 func get_finish_end() -> String:
 	if _finish_end == null:
 		return "blind"
-	var opts := ["blind", "through_all", "midplane"]
+	var opts := ["blind", "through_all", "midplane", "to_face"]
 	var i := clampi(_finish_end.selected, 0, opts.size() - 1)
 	return opts[i]
 
