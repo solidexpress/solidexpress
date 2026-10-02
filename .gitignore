@@ -21,3 +21,5 @@ dist/releases/
 *.mp4
 *.webm
 *.bak
+__pycache__/
+*.pyc
