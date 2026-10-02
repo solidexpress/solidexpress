@@ -1,6 +1,8 @@
 # TriBall Esc, hex in-face clamp, hole feature pick — post-#41 polish.
 extends SceneTree
 
+const FilmUI = preload("res://tests/lib/film_ui.gd")
+
 var failures := 0
 var checks := 0
 
@@ -30,7 +32,7 @@ func test_triball_esc() -> void:
 	main._do_new()
 	await process_frame
 	var ix = main.interaction
-	var id: String = str(main.view.doc.body_ids()[0])
+	var id: String = main.view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	main.view.select_entity(id, "")
 	ix._ctx_triball()
 	check(ix.triball != null and ix.triball.active, "TriBall armed")
@@ -64,7 +66,7 @@ func test_hex_stays_on_face() -> void:
 	main._do_new()
 	await process_frame
 	var view = main.view
-	var id: String = str(view.doc.body_ids()[0])
+	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	view.resize_primitive_aabb(id, Vector3(-70, -21, 0), Vector3(70, 21, 10))
 	await process_frame
 	id = str(view.doc.body_ids()[0])
@@ -112,7 +114,7 @@ func test_hex_feature_pick() -> void:
 	main._do_new()
 	await process_frame
 	var view = main.view
-	var id: String = str(view.doc.body_ids()[0])
+	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	var top := ""
 	for face_id in view.doc.get_face_ids(id):
 		var mid: Vector3 = view.doc.face_midpoint(face_id)
@@ -132,6 +134,21 @@ func test_hex_feature_pick() -> void:
 	check(ops._hole_type != null and ops._hole_type.selected == 3, "Type = hex")
 	check(ops._pending == ops.Pending.NONE, "select does not auto-arm move")
 	check(ops._selected_hole_fid == hid, "selected hole fid set")
+	var ctx := FilmContext.new()
+	ctx.main = main
+	ctx.view = view
+	ctx.tree = self
+	await FilmUI.ensure_test_viewport(ctx)
+	main.camera.frame_contents()
+	await process_frame
+	await process_frame
+	var rim := Vector3(6.0, 0.0, 5.0)
+	await FilmUI.viewport_click(ctx, FilmUI.model_to_screen(ctx, rim),
+			{"keys": "Click", "desc": "hex rim"})
+	check(ops._hole_type != null and ops._hole_type.selected == 3, "rim click Type = hex")
+	check(ops._selected_hole_fid != "", "rim click keeps hole fid")
+	check(not str(main.status_label.text).contains("Selection cleared"),
+			"rim click does not report Selection cleared")
 	# Timeline name
 	var hex_named := false
 	for f in view.doc.graph_features():
