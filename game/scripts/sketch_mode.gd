@@ -528,7 +528,17 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	_try_close_open_chain()
 	# Two circles plus tangents split into a holed face. Replace each boss
 	# the lines land on with its outer arc so the blank extrudes solid.
+	# Selecting every contour means "all regions". Seal rewrites the bosses,
+	# so those pre-seal indices are no longer the post-seal faces — pass an
+	# empty list and the kernel keeps every region.
+	var wanted_all := false
+	if sketch != null and sketch.has_method("contour_count"):
+		var before_seal := int(sketch.contour_count())
+		if before_seal > 0 and selected_contours.size() >= before_seal:
+			wanted_all = true
 	_seal_tangent_bosses()
+	if wanted_all:
+		selected_contours = []
 	var open_prof := not profile_is_closed(sketch)
 	if thin_thickness <= 0.0 and open_prof:
 		if op == "cut" or op == "fuse":
@@ -600,6 +610,22 @@ func _graph_error_suffix() -> String:
 	if err == "":
 		return ""
 	return " — " + err
+
+
+var _contour_sig := ""
+
+
+func _sync_contour_bar() -> void:
+	# The finish bar only listed contours at session start, so a three-region
+	# blank never offered Selected Contours until the next New.
+	var ids: PackedStringArray = sketch.entity_ids()
+	var sig := ",".join(ids)
+	if sig == _contour_sig:
+		return
+	_contour_sig = sig
+	var chrome := _sketch_chrome()
+	if chrome != null:
+		chrome.refresh_contours(sketch)
 
 
 func _sketch_chrome() -> SketchContextChrome:
@@ -2343,7 +2369,7 @@ func click(pos2: Vector2) -> void:
 					run_solve()
 					_weld_loop(lids)
 					if tool_variant == "across_flats":
-						status.emit("Polygon AF %.4g" % drag)
+						status.emit("Polygon AF %.4f" % drag)
 				_tool_points.clear()
 				_redraw()
 		Tool.POINT:
@@ -3704,6 +3730,7 @@ func _prune_orphan_dimensions() -> void:
 func _redraw() -> void:
 	if sketch == null:
 		return
+	_sync_contour_bar()
 	_prune_orphan_dimensions()
 	var im := ImmediateMesh.new()
 	var has := false

@@ -4,9 +4,12 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
@@ -26,6 +29,7 @@
 #include <gp_Pln.hxx>
 #include <gp_Vec.hxx>
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -149,6 +153,56 @@ bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& o
     return found;
 }
 
+// A circle seam splits one smooth boundary into two edges. MakeFillet then
+// rejects the whole face even though each piece is under the radius limit.
+// Merge those same-domain edges and fillet the curves that cover the picks.
+bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& picked, double v,
+                    double r2, TopoDS_Shape& out) {
+    ShapeUpgrade_UnifySameDomain unif(shape, Standard_True, Standard_True, Standard_False);
+    unif.SetLinearTolerance(1e-6);
+    unif.SetAngularTolerance(1e-4);
+    unif.Build();
+    const TopoDS_Shape unified = unif.Shape();
+    if (unified.IsNull()) return false;
+    TopTools_IndexedMapOfShape edges;
+    TopExp::MapShapes(unified, TopAbs_EDGE, edges);
+    std::vector<TopoDS_Edge> chosen;
+    std::vector<int> seen;
+    for (const auto& src : picked) {
+        BRepAdaptor_Curve curve(src);
+        gp_Pnt mid;
+        curve.D0(0.5 * (curve.FirstParameter() + curve.LastParameter()), mid);
+        for (int i = 1; i <= edges.Extent(); ++i) {
+            if (std::find(seen.begin(), seen.end(), i) != seen.end()) continue;
+            const TopoDS_Edge edge = TopoDS::Edge(edges(i));
+            BRepExtrema_DistShapeShape dist(BRepBuilderAPI_MakeVertex(mid), edge);
+            dist.Perform();
+            if (!dist.IsDone() || dist.Value() > 0.05) continue;
+            seen.push_back(i);
+            chosen.push_back(edge);
+            break;
+        }
+    }
+    if (chosen.empty()) return false;
+    try {
+        BRepFilletAPI_MakeFillet mk(unified);
+        for (const auto& edge : chosen) {
+            if (std::abs(r2 - v) > 1e-12)
+                mk.Add(v, r2, edge);
+            else
+                mk.Add(v, edge);
+        }
+        mk.Build();
+        if (!mk.IsDone()) return false;
+        const TopoDS_Shape result = mk.Shape();
+        if (!shape::is_valid(result)) return false;
+        out = result;
+        return true;
+    } catch (const Standard_Failure&) {
+        return false;
+    }
+}
+
 bool resolve_dressup_edge(ApplyCtx& ctx, const Body& body, const nlohmann::json& je,
                           TopoDS_Shape& es, std::string* why) {
     if (resolve_topo_shape(ctx.doc, body, EntityKind::Edge, je, es, why)) return true;
@@ -210,11 +264,16 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         }
         mk.Build();
         if (!mk.IsDone()) {
-            if (limit < 1e290)
+            TopoDS_Shape recovered;
+            if (fillet_unified(tb->shape, resolved, v, r2, recovered))
+                result = recovered;
+            else if (limit < 1e290)
                 return ctx.fail("fillet failed (limit " + format_mm(limit) + ")");
-            return ctx.fail("fillet failed");
+            else
+                return ctx.fail("fillet failed");
+        } else {
+            result = mk.Shape();
         }
-        result = mk.Shape();
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
         int added = 0;

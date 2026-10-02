@@ -1404,7 +1404,7 @@ func _on_sketch_dim_submitted(value: float) -> void:
 	if sketch_mode != null and sketch_mode.active \
 			and sketch_mode.has_single_dof_preview():
 		if sketch_mode.commit_at_length(value):
-			_on_status("Length %.4g mm" % value)
+			_on_status("Length %.4f mm" % value)
 			if sketch_chrome != null:
 				sketch_chrome.release_dim_focus()
 			return
