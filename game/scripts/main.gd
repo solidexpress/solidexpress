@@ -61,6 +61,8 @@ var notes_edit: TextEdit
 var file_dialog: FileDialog
 var confirm_dialog: ConfirmationDialog
 var current_path := ""
+## Directory of the last successful 3MF export. Empty until one succeeds.
+var _last_export_dir := ""
 enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF, OPEN_IN_SLICER }
 var _file_action: FileAction = FileAction.NONE
 var _pending_discard: Callable = Callable()
@@ -832,6 +834,10 @@ func _build_ui() -> void:
 	sketch_chrome.action_chosen.connect(_on_sketch_action)
 	sketch_chrome.finish_requested.connect(_on_sketch_finish)
 	sketch_chrome.dim_submitted.connect(_on_sketch_dim_submitted)
+	# WP1 owns the signal. Until it exists, skip the connect so the shell still
+	# boots; run_rung01_replan_shell.gd fails that gap instead of skipping it.
+	if sketch_chrome.has_signal("dim_rejected"):
+		sketch_chrome.dim_rejected.connect(_on_sketch_dim_rejected)
 	sketch_mode.preview_distance_changed.connect(_on_sketch_preview_distance)
 	interaction.sketch_chrome = sketch_chrome
 
@@ -1409,6 +1415,12 @@ func _on_sketch_dim_submitted(value: float) -> void:
 				sketch_chrome.release_dim_focus()
 			return
 	_apply_dimension()
+
+
+## Unparseable dim blank (WP1 emits dim_rejected). Success stays on
+## _on_sketch_dim_submitted and does not re-read the LineEdit.
+func _on_sketch_dim_rejected(raw: String) -> void:
+	_on_status("Cannot read dimension: " + raw)
 
 
 func _on_sketch_finish(op: String, distance: float, end: String = "blind",
@@ -2585,10 +2597,46 @@ func _on_insert_components_confirmed() -> void:
 	insert_components_from(_insert_path, offset, filter)
 
 
+func _user_home_dir() -> String:
+	var home := OS.get_environment("HOME").strip_edges()
+	if home == "":
+		home = OS.get_environment("USERPROFILE").strip_edges()
+	return home
+
+
+func _document_dir() -> String:
+	if current_path.strip_edges() == "":
+		return ""
+	return current_path.get_base_dir()
+
+
+func _export_3mf_filename() -> String:
+	var stem := ""
+	if current_path.strip_edges() != "":
+		stem = current_path.get_file().get_basename()
+	if stem == "":
+		return "part.3mf"
+	return stem + ".3mf"
+
+
+func _export_3mf_start_dir() -> String:
+	if _last_export_dir != "":
+		return _last_export_dir
+	var doc_dir := _document_dir()
+	if doc_dir != "":
+		return doc_dir
+	return _user_home_dir()
+
+
 func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: String) -> void:
 	_file_action = action
 	file_dialog.file_mode = mode
 	file_dialog.filters = PackedStringArray([filter])
+	if action == FileAction.EXPORT_3MF:
+		var dir := _export_3mf_start_dir()
+		if dir != "":
+			file_dialog.current_dir = dir
+		file_dialog.current_file = _export_3mf_filename()
 	file_dialog.popup_centered()
 
 
@@ -2650,7 +2698,14 @@ func _on_file_selected(path: String) -> void:
 				view.graph_changed()
 				_on_status("Imported DXF sketch")
 		FileAction.EXPORT_3MF:
-			_on_status("Exported 3MF" if view.doc.export_3mf(path) else "3MF export failed")
+			if view.doc.export_3mf(path):
+				_last_export_dir = path.get_base_dir()
+				_on_status("Exported 3MF")
+			else:
+				var detail := ""
+				if view.doc.has_method("last_export_error"):
+					detail = str(view.doc.last_export_error())
+				_on_status("3MF export failed — " + detail)
 		FileAction.EXPORT_GLTF:
 			_on_status("Exported glTF" if view.doc.export_gltf(path) else "glTF export failed")
 		FileAction.EXPORT_DRAWING_DXF:
@@ -2824,12 +2879,27 @@ func _notification(what: int) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
-			if interaction != null and interaction.triball != null \
-					and (interaction.triball.active or interaction.triball.visible):
-				interaction.triball.cancel()
-				_on_status("TriBall cancelled")
-				get_viewport().set_input_as_handled()
-				return
+			if interaction != null and interaction.has_method("cancel_stack"):
+				if bool(interaction.cancel_stack()):
+					get_viewport().set_input_as_handled()
+					return
+			else:
+				# No cancel_stack yet: drop the gizmo and the selection in this
+				# same keypress. Do not return between those two.
+				var had_gizmo := interaction != null and interaction.triball != null \
+						and (interaction.triball.active or interaction.triball.visible)
+				if had_gizmo:
+					interaction.triball.cancel()
+					_on_status("TriBall cancelled")
+				var had_sel := view != null and (view.selected_body != "" \
+						or view.selection_size() > 0 or view.selected_instance != "")
+				if had_sel:
+					view.clear_selection()
+					_update_panel_visibility()
+					_on_status("Selection cleared")
+				if had_gizmo or had_sel:
+					get_viewport().set_input_as_handled()
+					return
 			if cancel_property_panel():
 				_on_status("Edits cancelled")
 				get_viewport().set_input_as_handled()
