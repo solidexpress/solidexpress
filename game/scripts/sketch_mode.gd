@@ -42,8 +42,15 @@ var polygon_sides := 6:
 		polygon_sides = clampi(v, 3, 24)
 ## Tool variants: rect=corner|center|three_point|parallelogram;
 ## circle=center|perimeter|three_point; arc=center|tangent|three_point;
-## pattern=linear|circular.
+## pattern=linear|circular. Polygon uses tool_variant too; the last polygon
+## choice is kept in `_polygon_variant` so Circle/Rect can reset their own
+## names and Polygon still comes back as across-flats (or vertex, if chosen).
 var tool_variant := "corner"
+var _polygon_variant := "across_flats"
+## Construction +X used only as an angle datum. Jaw trim must not pick these
+## as the cutter — they pass through the rectangle centre and sit closer to
+## the trim click than the real centreline.
+var _angle_datum_lines: Dictionary = {}
 ## Draw next line as construction (centerline mode).
 var draw_construction := false
 ## Power-trim drag state: list of already-trimmed entity ids this stroke.
@@ -536,6 +543,10 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		var before_seal := int(sketch.contour_count())
 		if before_seal > 0 and selected_contours.size() >= before_seal:
 			wanted_all = true
+	# Solve first so tangent / on-circle constraints pull endpoints onto the
+	# circles. Seal and the 1e-6 profile check then see a closed wire.
+	if sketch != null:
+		run_solve()
 	_seal_tangent_bosses()
 	if wanted_all:
 		selected_contours = []
@@ -553,6 +564,12 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		return
 	if op == "cut":
 		distance = -absf(distance)
+	# Up To Surface with nothing picked must not extrude the host face.
+	# Do not read view.selected_face — that face is the sketch itself.
+	if end == "to_face" and _up_to_face_id() == "":
+		status.emit("Up To Surface needs a face")
+		_reassert_camera()
+		return
 	var symmetric := end == "midplane"
 	var sk_fid := _ensure_sketch_feature()
 	if sk_fid == "":
@@ -560,6 +577,10 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	var ex_fid: String = view.doc.graph_add_extrude(
 		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
 		thin_thickness, thin_type, flip_side, selected_contours)
+	if ex_fid == "" and _graph_error_text().contains("Thin wall"):
+		status.emit(_graph_error_text())
+		_reassert_camera()
+		return
 	var fail_msg := "Extrude failed — is the profile closed?"
 	_finish_feature(sk_fid, ex_fid, op, fail_msg)
 
@@ -603,13 +624,24 @@ func _ensure_sketch_feature() -> String:
 	return sk_fid
 
 
-func _graph_error_suffix() -> String:
+func _graph_error_text() -> String:
 	if view == null or view.doc == null or not view.doc.has_method("last_graph_error"):
 		return ""
-	var err := str(view.doc.last_graph_error()).strip_edges()
+	return str(view.doc.last_graph_error()).strip_edges()
+
+
+func _graph_error_suffix() -> String:
+	var err := _graph_error_text()
 	if err == "":
 		return ""
 	return " — " + err
+
+
+func _up_to_face_id() -> String:
+	var chrome := _sketch_chrome()
+	if chrome == null:
+		return ""
+	return str(chrome.up_to_face_id).strip_edges()
 
 
 var _contour_sig := ""
@@ -728,6 +760,8 @@ func set_tool(t: Tool) -> void:
 			tool_variant = "center"
 		Tool.PATTERN:
 			tool_variant = "linear"
+		Tool.POLYGON:
+			tool_variant = _polygon_variant
 		_:
 			pass
 	# Do not clear selection on tool switch — completed geometry must stay
@@ -738,6 +772,8 @@ func set_tool(t: Tool) -> void:
 
 func set_tool_variant(v: String) -> void:
 	tool_variant = v
+	if tool == Tool.POLYGON and (v == "across_flats" or v == "vertex"):
+		_polygon_variant = v
 	_tool_points.clear()
 	_length_override = -1.0
 	_update_preview()
@@ -991,6 +1027,14 @@ func snap_point(p: Vector2) -> Vector2:
 	if found:
 		_snap_marker = best_pt
 		return best_pt
+	# Tangent contact before H/V. A horizontal chord already on the circle
+	# (the wrench blank) must still take the axis snap — projecting onto the
+	# rim first walks that click off y = constant and the blank stops being
+	# three contours.
+	var tang: Variant = _snap_line_tangent(p)
+	if tang != null:
+		_snap_marker = tang
+		return tang
 	# (c) axis alignment from last committed tool point
 	if not _tool_points.is_empty():
 		var last: Vector2 = _tool_points[_tool_points.size() - 1]
@@ -1005,7 +1049,85 @@ func snap_point(p: Vector2) -> Vector2:
 		if snapped_axis:
 			_snap_marker = out
 			return out
+	# Near the rim, not a tangent and not on an axis.
+	var circ: Variant = _snap_line_on_circle(p)
+	if circ != null:
+		_snap_marker = circ
+		return circ
 	return p
+
+
+func _line_snap_armed() -> bool:
+	return (tool == Tool.LINE or tool == Tool.CENTERLINE) and sketch != null
+
+
+## Tangent contact from the anchored end. Empty until the line tool has an
+## anchor, and only when the cursor is within the snap radius of a contact.
+func _snap_line_tangent(p: Vector2) -> Variant:
+	if not _line_snap_armed() or _tool_points.is_empty():
+		return null
+	var anchor: Vector2 = _tool_points[_tool_points.size() - 1]
+	var best_d := _snap_radius()
+	var best: Variant = null
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind != "circle" and kind != "arc":
+			continue
+		var c: Vector2 = info["center"]
+		var r: float = float(info.get("radius", 0.0))
+		for t in _circle_tangent_points(anchor, c, r):
+			var d := p.distance_to(t)
+			if d <= best_d:
+				best_d = d
+				best = t
+	return best
+
+
+## Project onto a circumference when the cursor is within the snap radius of
+## the rim. Used for the first click (no anchor) and for a free end that is
+## not a tangent and not on an axis.
+func _snap_line_on_circle(p: Vector2) -> Variant:
+	if not _line_snap_armed():
+		return null
+	var rad := _snap_radius()
+	var best_d := rad
+	var best: Variant = null
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind != "circle" and kind != "arc":
+			continue
+		var c: Vector2 = info["center"]
+		var r: float = float(info.get("radius", 0.0))
+		if r < 1e-6:
+			continue
+		var dist := p.distance_to(c)
+		if dist < 1e-9 or absf(dist - r) > rad:
+			continue
+		var proj := c + (p - c) * (r / dist)
+		var d := p.distance_to(proj)
+		if d <= best_d:
+			best_d = d
+			best = proj
+	return best
+
+
+## External tangents from `anchor` to the circle. Empty when the anchor is
+## inside or on the circle (no real tangent).
+func _circle_tangent_points(anchor: Vector2, c: Vector2, r: float) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if r < 1e-6:
+		return out
+	var v := anchor - c
+	var dist := v.length()
+	if dist <= r + 1e-4:
+		return out
+	var theta := acos(clampf(r / dist, -1.0, 1.0))
+	var u := v / dist
+	out.append(c + u.rotated(theta) * r)
+	out.append(c + u.rotated(-theta) * r)
+	return out
 
 
 ## Circle/arc centres of body edges that lie on this sketch plane (the Ø20
@@ -1767,6 +1889,8 @@ func _nearest_construction_line(p: Vector2, max_dist: float) -> Dictionary:
 	for id in sketch.entity_ids():
 		if not sketch.is_construction(id):
 			continue
+		if _angle_datum_lines.has(id):
+			continue
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "line":
 			continue
@@ -2473,7 +2597,11 @@ func _click_rect(pos2: Vector2) -> void:
 						var qids: Array[String] = [q1, q2, q3, q4]
 						_weld_loop(qids)
 						_constrain_quad(q1, q2, q3, q4, false)
-						sketch.add_point(ctr.x, ctr.y)
+						var pt: String = sketch.add_point(ctr.x, ctr.y)
+						# Short side drives the jaw width. Long side is an angle
+						# to a construction +X through the centre. Construction
+						# stays out of the profile.
+						_add_centre_rect_dimensions(q1, q2, ctr, pt)
 				_tool_points.clear()
 		"parallelogram":
 			if _tool_points.size() == 3:
@@ -2671,6 +2799,10 @@ func _click_smart_dim(pos2: Vector2) -> void:
 			else:
 				_set_selected([hit])
 				constrain("distance", info["start"].distance_to(info["end"]))
+				var mid: Vector2 = (info["start"] + info["end"]) * 0.5
+				_add_angle_to_horizontal(hit, mid)
+				run_solve()
+				_redraw()
 			_smart_dim_first = null
 		_:
 			_set_selected([hit])
@@ -2983,6 +3115,69 @@ func _infer_rect(l1: String, l2: String, l3: String, l4: String) -> void:
 			{"entity": c[0], "role": c[1]},
 			{"entity": c[2], "role": c[3]}], 0.0)
 	run_solve()
+
+
+## Centre-3-pt rectangle: driving width on the short side, and an angle from
+## the long side to a construction line along sketch +X through the centre.
+func _add_centre_rect_dimensions(long_id: String, short_id: String, ctr: Vector2, pt_id: String) -> void:
+	if sketch == null:
+		return
+	var short_info: Dictionary = sketch.entity_info(short_id)
+	if str(short_info.get("type", "")) == "line":
+		var a: Vector2 = short_info["end"]
+		var b: Vector2 = short_info["start"]
+		var width := a.distance_to(b)
+		if width > 1e-6:
+			var cid: String = sketch.add_constraint("distance", [
+				{"entity": short_id, "role": "start"},
+				{"entity": short_id, "role": "end"}], width)
+			_record_dimension("distance", [short_id], width, cid)
+	_add_angle_to_horizontal(long_id, ctr, pt_id)
+	run_solve()
+
+
+## Construction +X through `through`, plus a driving angle to `line_id`.
+## The construction line stays construction so it is not part of the profile.
+## `pt_id` when set is kept on that line (the rectangle centre).
+func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String = "") -> void:
+	if sketch == null or line_id == "" or _line_has_angle_dim(line_id):
+		return
+	var info: Dictionary = sketch.entity_info(line_id)
+	if str(info.get("type", "")) != "line":
+		return
+	var span: float = (info["end"] - info["start"]).length()
+	var half := maxf(span * 0.75, 15.0)
+	var a := through + Vector2(-half, 0.0)
+	var b := through + Vector2(half, 0.0)
+	var xid: String = sketch.add_line(a.x, a.y, b.x, b.y)
+	if xid == "":
+		return
+	sketch.set_construction(xid, true)
+	_angle_datum_lines[xid] = true
+	sketch.add_constraint("horizontal", [{"entity": xid, "role": "self"}], 0.0)
+	if pt_id == "":
+		pt_id = sketch.add_point(through.x, through.y)
+	if pt_id != "":
+		sketch.add_constraint("point_on_line", [
+			{"entity": pt_id, "role": "self"},
+			{"entity": xid, "role": "self"}], 0.0)
+	var ang := _lines_signed_angle(xid, line_id)
+	var cid: String = sketch.add_constraint("angle", [
+		{"entity": xid, "role": "self"},
+		{"entity": line_id, "role": "self"}], ang)
+	_record_dimension("angle", [xid, line_id], ang, cid)
+
+
+func _line_has_angle_dim(line_id: String) -> bool:
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		if str(dim.get("type", "")) != "angle":
+			continue
+		for id in dim.get("ids", []):
+			if str(id) == line_id:
+				return true
+	return false
 
 
 ## Closed quad: coincident corners, parallel opposite sides, perpendicular
@@ -3507,10 +3702,12 @@ func _rebuild_dimension_labels() -> void:
 		label.fixed_size = true
 		label.pixel_size = 0.004
 		label.font_size = 28
-		var shown := _dimension_display_value(dim)
+		var shown := snappedf(_dimension_display_value(dim), 0.0001)
 		var text := _format_dimension(shown)
 		if str(dim.get("type", "")) == "diameter":
 			text = "Ø" + text
+		if str(dim.get("type", "")) == "angle":
+			text = text + "°"
 		label.text = text
 		label.position = _to3(pos2)
 		_dimension_labels.add_child(label)
