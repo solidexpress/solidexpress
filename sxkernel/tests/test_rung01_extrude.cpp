@@ -430,3 +430,46 @@ TEST_CASE("wrench neck fillet R10, face fillets R1, slot floor limit", "[rung01]
     fillet_face(bottom, 1.0);
     CHECK_FALSE(point_inside(doc.body(body)->shape, gp_Pnt(-9.9, 0, 0.1)));
 }
+
+TEST_CASE("face fillet accepts a circle split into two semicircles", "[rung01][fillet]") {
+    Document doc;
+    FeatureGraph graph;
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("Disk");
+    skf.sketch->add_arc(0, 0, 10.0, 0, M_PI);
+    skf.sketch->add_arc(0, 0, 10.0, M_PI, 2.0 * M_PI);
+    auto sk_id = graph.add(std::move(skf));
+    Feature ext;
+    ext.type = FeatureType::Extrude;
+    ext.params = {{"sketch", sk_id.str()}, {"distance", 10.0}, {"op", "new"}, {"end", "blind"}};
+    auto ext_id = graph.add(std::move(ext));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    EntityId body = graph.feature(ext_id)->output_body;
+    EntityId top;
+    double best = -1e300;
+    for (const auto& fid : doc.body(body)->subshape_ids.at(EntityKind::Face)) {
+        TopoDS_Shape s = doc.resolve(fid);
+        if (s.IsNull()) continue;
+        BRepAdaptor_Surface surf(TopoDS::Face(s));
+        if (surf.GetType() != GeomAbs_Plane) continue;
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(TopoDS::Face(s), props);
+        if (props.CentreOfMass().Z() > best) {
+            best = props.CentreOfMass().Z();
+            top = fid;
+        }
+    }
+    auto edges = edges_of_face(doc, top);
+    REQUIRE(edges.size() >= 2);
+    json ej = json::array();
+    for (const auto& e : edges) ej.push_back(e.str());
+    Feature fil;
+    fil.type = FeatureType::Fillet;
+    fil.params = {{"target", ext_id.str()}, {"radius", 1.0}, {"edges", ej}};
+    graph.add(std::move(fil));
+    REQUIRE(graph.regenerate(doc, &err));
+    CHECK_FALSE(point_inside(doc.body(body)->shape, gp_Pnt(-9.9, 0, 9.9)));
+    CHECK(point_inside(doc.body(body)->shape, gp_Pnt(0, 0, 5)));
+}

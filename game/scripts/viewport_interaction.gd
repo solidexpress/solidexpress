@@ -2884,7 +2884,9 @@ func _on_release(pos: Vector2) -> void:
 	_drag_mode = DragMode.NONE
 	# Pads sit on faces — prefer a pad hit even when the body ray is non-empty,
 	# otherwise face-hosted pads are unclickable under the solid.
-	if was_click and view.sketch_pads != null and (sketch_mode == null or not sketch_mode.active):
+	# An armed fillet/chamfer/hole pick must hit the solid, not reopen the pad.
+	var armed_pick := ops_panel != null and ops_panel.consumes_viewport_pick()
+	if was_click and not armed_pick and view.sketch_pads != null and (sketch_mode == null or not sketch_mode.active):
 		var pad_ray := _model_ray(_press_pos)
 		var pad_fid: String = view.sketch_pads.pick_pad(pad_ray[0], pad_ray[1])
 		if pad_fid != "":
@@ -4005,6 +4007,9 @@ func _sync_strip_dressup_radius() -> void:
 		armed = ops_panel._pending == OpsPanel.Pending.FILLET_EDGES \
 				or ops_panel._pending == OpsPanel.Pending.CHAMFER_EDGES
 	_strip_radius_box.visible = armed
+	if armed and _strip_radius != null:
+		# Typed 1 / 1.5 / 10 must not snap to the arrow step.
+		_strip_radius.step = 0.001
 	if armed and ops_panel != null and ops_panel.has_method("dressup_radius"):
 		_strip_radius.set_value_no_signal(ops_panel.dressup_radius())
 
