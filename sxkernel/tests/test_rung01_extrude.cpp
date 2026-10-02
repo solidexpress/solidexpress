@@ -13,9 +13,15 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <tuple>
+
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
 
 #include <gp_Vec.hxx>
 

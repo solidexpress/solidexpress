@@ -29,7 +29,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build g++ curl unzip patchelf file \
             libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
-            libfreetype-dev libfontconfig-dev rapidjson-dev
+            libfreetype-dev libfontconfig-dev rapidjson-dev \
+            libx11-dev libxi-dev libxext-dev libxmu-dev libgl1-mesa-dev
 
       - name: Cache OCCT ${{ env.OCCT_VERSION }}
         uses: actions/cache@v4

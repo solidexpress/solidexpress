@@ -56,20 +56,26 @@ fi
 [[ -d "${SRC}" ]] || { echo "error: extracted OCCT source not found" >&2; exit 1; }
 
 mkdir -p "${BUILD}"
-cmake -S "${SRC}" -B "${BUILD}" -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX="${OCCT_PREFIX}" \
-  -DBUILD_LIBRARY_TYPE=Shared \
-  -DBUILD_MODULE_Draw=OFF \
-  -DBUILD_DOC_Overview=OFF \
-  -DINSTALL_DIR_LAYOUT=Unix \
-  -DINSTALL_TEST_CASES=OFF \
-  -DUSE_TBB=ON \
-  -DUSE_FREETYPE=ON \
-  -DUSE_RAPIDJSON=ON \
-  -DUSE_TK=OFF \
-  -DUSE_FREEIMAGE=OFF \
+# Args as an array so a mid-run edit of this file cannot break line continuations.
+cmake_args=(
+  -S "${SRC}"
+  -B "${BUILD}"
+  -G Ninja
+  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_INSTALL_PREFIX="${OCCT_PREFIX}"
+  -DBUILD_LIBRARY_TYPE=Shared
+  -DBUILD_MODULE_Draw=OFF
+  -DBUILD_DOC_Overview=OFF
+  -DINSTALL_DIR_LAYOUT=Unix
+  -DINSTALL_TEST_CASES=OFF
+  -DUSE_TBB=ON
+  -DUSE_FREETYPE=ON
+  -DUSE_RAPIDJSON=ON
+  -DUSE_TK=OFF
+  -DUSE_FREEIMAGE=OFF
   -DUSE_VTK=OFF
+)
+cmake "${cmake_args[@]}"
 
 cmake --build "${BUILD}" -j "${OCCT_JOBS}"
 cmake --install "${BUILD}"
