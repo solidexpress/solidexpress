@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <sstream>
 #include <vector>
 
 namespace sx {
@@ -808,7 +809,25 @@ TopoDS_Shape Sketch::thin_profile_face(double thickness, bool midplane, bool fli
         segs.push_back({x1, y1, x2, y2, false});
     }
     if (segs.empty()) {
-        if (err) *err = "no usable open line chain for thin profile";
+        // Circles and arcs are closed (or curved) profiles, not a missing line
+        // chain. Same sentence FeatureGraph reports for a closed contour.
+        bool curve = false;
+        bool line = false;
+        for (const auto& e : entities_) {
+            if (e.construction) continue;
+            if (e.type == SketchEntityType::Line) line = true;
+            else if (e.type == SketchEntityType::Circle || e.type == SketchEntityType::Arc)
+                curve = true;
+        }
+        if (err) {
+            if (curve && !line) {
+                std::ostringstream os;
+                os << "Thin wall is on (" << thickness << " mm) — set 0 for a solid";
+                *err = os.str();
+            } else {
+                *err = "no usable open line chain for thin profile";
+            }
+        }
         return {};
     }
 

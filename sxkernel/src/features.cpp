@@ -55,6 +55,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <stdexcept>
 
 #include "sx/curves.hpp"
@@ -888,6 +889,22 @@ json densify_catmull(const std::vector<gp_Pnt>& ctrl, int samples_per_seg = 8) {
     return path;
 }
 
+// Leftover 5: a closed contour (circle, or any profile_face) is a solid.
+// Thin wall stays line-based; the kernel says so instead of "open profile".
+std::string thin_wall_on_error(double mm) {
+    std::ostringstream os;
+    os << "Thin wall is on (" << mm << " mm) — set 0 for a solid";
+    return os.str();
+}
+
+bool sketch_closed_contour(const Sketch& sk) {
+    for (const auto& e : sk.entities()) {
+        if (!e.construction && e.type == SketchEntityType::Circle) return true;
+    }
+    std::string ignored;
+    return !sk.profile_face(&ignored).IsNull();
+}
+
 }  // namespace
 
 bool FeatureGraph::apply(Document& doc, Feature& f,
@@ -942,6 +959,8 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     bool thin_midplane = (thin_type == "midplane");
                     face = skf->sketch->thin_profile_face(thin_thickness, thin_midplane, flip_side,
                                                           &perr);
+                    if (face.IsNull() && sketch_closed_contour(*skf->sketch))
+                        return fail(thin_wall_on_error(thin_thickness));
                 } else {
                     std::vector<int> contour_idxs;
                     if (params.contains("selected_contours") &&
