@@ -25,6 +25,7 @@ const SCHEMAS := {
 		{"key": "distance", "label": "Distance", "kind": "float", "min": 0.01, "max": 10000.0, "step": 1.0},
 		{"key": "end", "label": "End", "kind": "enum",
 			"options": ["blind", "through_all", "to_face", "to_next", "symmetric"]},
+		{"key": "to_face", "label": "Face", "kind": "face_pick"},
 		{"key": "symmetric", "label": "Symmetric", "kind": "bool"},
 		{"key": "op", "label": "Result", "kind": "enum", "options": ["new", "fuse", "cut"]},
 		{"key": "thin_thickness", "label": "Thin wall", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
@@ -130,6 +131,7 @@ const SCHEMAS := {
 }
 
 var _fid := ""
+var _type := ""
 var _params := {}
 var _original_json := ""
 var _edits := 0
@@ -140,6 +142,12 @@ var _building := false
 
 func _ready() -> void:
 	visible = false
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.16, 0.17, 0.20, 1.0)
+	style.set_content_margin_all(6)
+	style.set_corner_radius_all(4)
+	add_theme_stylebox_override("panel", style)
 	var vbox := VBoxContainer.new()
 	add_child(vbox)
 	_title = Label.new()
@@ -169,6 +177,10 @@ static func has_schema(type: String) -> bool:
 
 
 func open(fid: String) -> bool:
+	# A second click on the same row (double-click release) must not rebuild
+	# the spins — that would drop the distance field's focus and selection.
+	if visible and _fid == fid:
+		return true
 	for f in view.doc.graph_features():
 		if f["id"] != fid:
 			continue
@@ -176,6 +188,7 @@ func open(fid: String) -> bool:
 		if not SCHEMAS.has(type):
 			return false
 		_fid = fid
+		_type = type
 		_original_json = f["params"]
 		_params = JSON.parse_string(f["params"])
 		if _params == null:
@@ -194,6 +207,10 @@ func _build_fields(type: String) -> void:
 		_fields.remove_child(child)
 		child.queue_free()
 	for field in SCHEMAS[type]:
+		if str(field.get("kind", "")) == "face_pick":
+			if str(_params.get("end", "")) == "to_face":
+				_add_face_pick_row(field)
+			continue
 		var key: String = field["key"]
 		var optional: bool = bool(field.get("optional", false))
 		if not _params.has(key) and not optional and field["kind"] != "thread_standard":
@@ -282,25 +299,47 @@ func _row(label_text: String) -> HBoxContainer:
 func _add_spin_row(field: Dictionary, value) -> void:
 	var row := _row(field["label"])
 	var spin := SpinBox.new()
-	spin.min_value = field.get("min", -1e9)
-	spin.max_value = field.get("max", 1e9)
-	# Fine step so typed values are not snapped (Range snaps to min + k*step);
-	# the arrows move by the schema's ergonomic step instead.
-	spin.step = 1.0 if field["kind"] == "int" else 0.001
-	spin.custom_arrow_step = field.get("step", 1.0)
-	spin.rounded = field["kind"] == "int"
 	var display := float(value)
 	# Kernel stores some angles in radians; show degrees in the UI.
 	if field.get("ui_unit", "") == "deg_from_rad":
 		display = rad_to_deg(display)
-	spin.value = display
-	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Fine step so typed values are not snapped (Range snaps to min + k*step);
+	# the arrows move by the schema's ergonomic step instead.
+	SxUi.configure_spin(
+		spin,
+		float(field.get("min", -1e9)),
+		float(field.get("max", 1e9)),
+		float(field.get("step", 1.0)),
+		display,
+		field["kind"] == "int")
 	spin.value_changed.connect(func(v: float) -> void:
 		var store = int(v) if field["kind"] == "int" else v
 		if field.get("ui_unit", "") == "deg_from_rad":
 			store = deg_to_rad(float(v))
 		_set_param(field["key"], store))
 	row.add_child(spin)
+
+
+## Shown only while End is Up To Surface. The button arms the sketch chrome's
+## one-shot face pick (WP1 owns arm_face_pick).
+func _add_face_pick_row(field: Dictionary) -> void:
+	var row := _row(field["label"])
+	var btn := Button.new()
+	btn.name = "PickFace"
+	btn.text = "Pick face"
+	btn.tooltip_text = "Pick the Up To Surface face again"
+	btn.pressed.connect(_arm_face_pick)
+	row.add_child(btn)
+
+
+func _arm_face_pick() -> void:
+	var tree := get_tree()
+	var chrome: Node = tree.root.find_child("SketchContextChrome", true, false) if tree != null else null
+	if chrome == null or not chrome.has_method("arm_face_pick"):
+		push_error("SketchContextChrome.arm_face_pick is missing")
+		status.emit("Face pick unavailable")
+		return
+	chrome.call("arm_face_pick")
 
 
 func _add_check_row(field: Dictionary, value) -> void:
@@ -363,6 +402,9 @@ func _set_param(key: String, value) -> void:
 		_edits += 1
 		view.graph_changed()
 		status.emit("Preview: %s = %s" % [key, str(value)])
+		# End = Up To Surface reveals the face row; other ends hide it.
+		if key == "end" and _type != "":
+			_build_fields.call_deferred(_type)
 	else:
 		var why := ""
 		if view.doc.has_method("last_graph_error"):
@@ -387,6 +429,7 @@ func cancel_edits() -> void:
 
 func _close() -> void:
 	_fid = ""
+	_type = ""
 	_edits = 0
 	visible = false
 	closed.emit()

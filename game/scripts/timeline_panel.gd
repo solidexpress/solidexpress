@@ -43,6 +43,12 @@ const TYPE_ICONS := {
 
 
 func _ready() -> void:
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.16, 0.17, 0.20, 1.0)
+	style.set_content_margin_all(6)
+	style.set_corner_radius_all(4)
+	add_theme_stylebox_override("panel", style)
 	custom_minimum_size = Vector2(260, 0)
 	clip_contents = true
 	grow_horizontal = Control.GROW_DIRECTION_END
@@ -386,7 +392,14 @@ func _focus_extrude_distance() -> void:
 	if property_panel == null or not property_panel.visible:
 		return
 	var spin := _first_spin(property_panel)
-	if spin != null:
+	if spin == null:
+		return
+	# Godot 4.7 SpinBox focus_mode is NONE; the inner LineEdit takes the caret
+	# and select_all_on_focus.
+	var edit := spin.get_line_edit()
+	if edit != null:
+		edit.grab_focus()
+	else:
 		spin.grab_focus()
 
 
