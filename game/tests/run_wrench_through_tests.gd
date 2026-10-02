@@ -1,6 +1,8 @@
 # Through-cut hex, plane-locked move, pocket select, AF regen — wrench path.
 extends SceneTree
 
+const FilmUI = preload("res://tests/lib/film_ui.gd")
+
 var failures := 0
 var checks := 0
 
@@ -49,7 +51,7 @@ func test_through_cut_and_move() -> void:
 	await process_frame
 	await process_frame
 	var view = main.view
-	var id: String = str(view.doc.body_ids()[0])
+	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	view.resize_primitive_aabb(id, Vector3(-70, -21, 0), Vector3(70, 21, 5))
 	await process_frame
 	id = str(view.doc.body_ids()[0])
@@ -85,6 +87,22 @@ func test_through_cut_and_move() -> void:
 	if ops._hole_diam_expr != null:
 		check(ops._hole_diam_expr.text.contains("jaw_af") or ops._hole_diam_expr.text != "",
 				"Diameter expression visible")
+	# Click path beside the direct show_hole_feature call.
+	var ctx := FilmContext.new()
+	ctx.main = main
+	ctx.view = view
+	ctx.tree = self
+	await FilmUI.ensure_test_viewport(ctx)
+	main.camera.frame_contents()
+	await process_frame
+	await process_frame
+	var void_at := FilmUI.model_to_screen(ctx, pos0)
+	await FilmUI.viewport_click(ctx, void_at, {"keys": "Click", "desc": "pocket void"})
+	check(ops._hole_type != null and ops._hole_type.selected == 3, "void click Type = hex")
+	check(ops._hole_depth != null and is_equal_approx(ops._hole_depth.value, 0.0),
+			"void click Depth = 0")
+	check(not str(main.status_label.text).contains("Selection cleared"),
+			"void click does not report Selection cleared")
 	ops._hole_move_fid = hid
 	ops._finish_hole_move(id, top, Vector3(40, 5, 5))
 	await process_frame
@@ -115,7 +133,7 @@ func test_pocket_select_no_auto_move() -> void:
 	main._do_new()
 	await process_frame
 	var view = main.view
-	var id: String = str(view.doc.body_ids()[0])
+	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	var top: String = _top_face(view, id, 5.0)
 	view.select_entity(id, top)
 	var ops = main.ops_panel
@@ -136,7 +154,7 @@ func test_af_grows_existing() -> void:
 	main._do_new()
 	await process_frame
 	var view = main.view
-	var id: String = str(view.doc.body_ids()[0])
+	var id: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
 	var top: String = _top_face(view, id, 5.0)
 	view.select_entity(id, top)
 	var ops = main.ops_panel
@@ -165,5 +183,6 @@ func test_new_matte_no_triball() -> void:
 	check(is_equal_approx(main.view._body_metal(), main.view.BODY_METALLIC_FLAT), "flat metallic")
 	check(main.interaction.triball == null or not main.interaction.triball.active,
 			"TriBall not active after New")
+	check(main.view.doc.body_ids().is_empty(), "New leaves an empty part")
 	main.queue_free()
 	await process_frame

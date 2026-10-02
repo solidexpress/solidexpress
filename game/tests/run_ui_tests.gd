@@ -363,8 +363,7 @@ func test_file_actions(main) -> void:
 	check(FileAccess.file_exists("/tmp/sx_ui_file_test.sxp"), "file written")
 
 	main._on_file_menu(0)  # New
-	# File → New seeds a shop-default 50×50×5 plate (not an empty grid).
-	check(view.doc.body_ids().size() == 1, "new document seeds one plate")
+	check(view.doc.body_ids().is_empty(), "new document is an empty part")
 	check(main.current_path == "", "new clears path")
 
 	main._file_action = main.FileAction.OPEN

@@ -2314,20 +2314,16 @@ func _on_file_menu(id: int) -> void:
 func _do_new() -> void:
 	view.new_document()
 	current_path = ""
-	# Shop default: a thin plate ready for holes / hex / fillet — not an empty grid.
-	var bid: String = view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
-	# insert_primitive already names the feature "Box" in the add undo step.
-	view.graph_changed()
-	# Select for W/H/D, but never leave TriBall armed from a prior session.
-	view.select_entity(bid, "")
-	if interaction != null and interaction.triball != null:
-		interaction.triball.cancel()
-	# Selection handlers may run deferred — cancel TriBall again next frame.
-	await get_tree().process_frame
-	if interaction != null and interaction.triball != null:
-		interaction.triball.cancel()
+	# Empty part on the Top plane (XY through the origin). The Box primitive
+	# stays on the palette; New must not insert or select a body (that armed
+	# the selection strip and ate the next click).
+	if interaction != null:
+		interaction.reset_active_plane()
+		if interaction.triball != null:
+			interaction.triball.cancel()
 	if camera != null:
-		camera.frame_contents()
+		# Top: looking down model +Z. Same pose as the 3 key, without a sketch lock.
+		camera.apply_standard_view(0.0, deg_to_rad(89.0), false, true)
 	_last_saved_revision = view.doc.revision()
 	show_timeline = false
 	show_variables = false
@@ -2337,7 +2333,7 @@ func _do_new() -> void:
 	if view != null and view.has_method("set_scenic_reflections"):
 		view.set_scenic_reflections(false)
 	_update_panel_visibility()
-	_on_status("New — 50×50×5 plate")
+	_on_status("New — empty part, Top plane (XY). View ▸ Timeline to edit features")
 
 
 func _do_open_dialog() -> void:

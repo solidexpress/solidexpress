@@ -67,6 +67,10 @@ var _selected_hole_fid := ""
 var _hole_place_face := ""
 ## Optional expression editor for hex Diameter (=jaw_af+clearance).
 var _hole_diam_expr: LineEdit
+## Typed X/Y on the hole's entry face. Z stays on that face.
+var _hole_pos_x: SpinBox
+var _hole_pos_y: SpinBox
+var _syncing_hole_fields := false
 ## World-space magnet hold for Place hole… (mm). Farther clicks stay free.
 const HOLE_SNAP_MM := 8.0
 const HOLE_CORNER_TOL_MM := 0.45
@@ -337,6 +341,14 @@ func _build_face_ops() -> void:
 	_hole_diam_expr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_hole_diam_expr.text_submitted.connect(_on_hole_diam_expr_submitted)
 	expr_row.add_child(_hole_diam_expr)
+	var xy_row := HBoxContainer.new()
+	_face_ops.add_child(xy_row)
+	_hole_pos_x = _labeled_spin(xy_row, "X", -10000.0, 10000.0, 0.1, 0.0)
+	_hole_pos_x.name = "HolePosX"
+	_hole_pos_y = _labeled_spin(xy_row, "Y", -10000.0, 10000.0, 0.1, 0.0)
+	_hole_pos_y.name = "HolePosY"
+	_hole_pos_x.value_changed.connect(_on_hole_xy_edited)
+	_hole_pos_y.value_changed.connect(_on_hole_xy_edited)
 	_hole_inset = _labeled_spin(_face_ops, "Inset", 0.5, 500.0, 0.5, 8.0)
 	_hole_inset.tooltip_text = "Corner edge distance (auto from Ø, thickness, material softness)"
 	_hole_diameter.value_changed.connect(_on_hole_diameter_changed)
@@ -419,6 +431,13 @@ func show_hole_feature(fid: String) -> void:
 		status.emit("%s — Type %s · Ø%.2f · Depth %.1f — Move or click face to relocate" % [
 			fname if fname != "" else "Hole", htype, float(diam), float(p.get("depth", 0.0))])
 	_hole_depth.value = float(p.get("depth", 0.0))
+	if p.has("position") and _hole_pos_x != null and _hole_pos_y != null:
+		var arr_xy = p["position"]
+		if typeof(arr_xy) == TYPE_ARRAY and arr_xy.size() >= 2:
+			_syncing_hole_fields = true
+			_hole_pos_x.value = float(arr_xy[0])
+			_hole_pos_y.value = float(arr_xy[1])
+			_syncing_hole_fields = false
 	# Prefer feature display name on the Name field while hex/hole is selected.
 	if fname != "" and _name_edit != null:
 		_name_edit.text = fname
@@ -474,6 +493,18 @@ func _arm_selected_hole_move() -> void:
 	status.emit("Move: click a new point on the placement face (Esc cancel)")
 
 
+func _on_hole_xy_edited(_v: float) -> void:
+	if _syncing_hole_fields or _selected_hole_fid == "" or view == null:
+		return
+	if _hole_pos_x == null or _hole_pos_y == null:
+		return
+	var pos := _hole_move_start
+	pos.x = _hole_pos_x.value
+	pos.y = _hole_pos_y.value
+	_set_hole_position(_selected_hole_fid, pos)
+	show_hole_feature(_selected_hole_fid)
+
+
 func _on_selection_changed(body: String, face: String) -> void:
 	# Boolean / measure still resolve on selection change (different entity).
 	# Hole / pattern / mirror resolve via picked so same-face re-clicks work.
@@ -481,6 +512,15 @@ func _on_selection_changed(body: String, face: String) -> void:
 		_resolve_pending(body, face, view.last_pick_point)
 		return
 	if body == "":
+		# Regen and resize clear the body selection. Keep the hole id so a
+		# later face click can move again. A user deselect still drops it.
+		var refreshing := view != null and bool(view.get("refreshing_graph"))
+		if refreshing and _selected_hole_fid != "":
+			visible = true
+			_body_ops.visible = true
+			_face_ops.visible = true
+			_clamp_height()
+			return
 		_selected_hole_fid = ""
 		_hole_move_fid = ""
 	# Keep hole/hex editor visible while a hole feature is selected, even if
@@ -530,8 +570,13 @@ func _on_picked(body: String, face: String, point: Vector3) -> void:
 	if _pending == Pending.HOLE_MOVE:
 		_finish_hole_move(body, face, point)
 		return
-	# Selected hole/hex: a subsequent face click relocates on the placement plane.
+	# Selected hole/hex: a click on the pocket re-opens the editor. A click
+	# elsewhere on the face relocates, and stays available after regen.
 	if _selected_hole_fid != "" and _pending == Pending.NONE and body != "":
+		var near := view.hole_feature_near_point(body, point) if view != null else ""
+		if near != "":
+			show_hole_feature(near)
+			return
 		_hole_move_fid = _selected_hole_fid
 		_finish_hole_move(body, face, point)
 		return
@@ -1670,7 +1715,9 @@ func _set_hole_position(hole_fid: String, position: Vector3) -> bool:
 
 ## Cancel Hole Wizard (or any armed pending pick). Returns true if something was armed.
 func cancel_pending_pick() -> bool:
-	if _pending == Pending.NONE and _selected_hole_fid == "":
+	# An open hole editor is not its own Esc layer — one Esc clears the
+	# selection (and the editor with it). Only an armed pick consumes Esc.
+	if _pending == Pending.NONE:
 		return false
 	var was_wizard := _pending == Pending.HOLE_WIZARD
 	var was_fillet := _pending == Pending.FILLET_EDGES
@@ -2042,6 +2089,115 @@ func _hole_place_position(body: String, face: String, point: Vector3) -> Vector3
 		return on_face["point_b"] if not on_face.is_empty() else inset_pt
 	var mid_on_face: Dictionary = view.doc.closest_point_on(face, snap)
 	return mid_on_face["point_b"] if not mid_on_face.is_empty() else snap
+
+
+## After jaw_af changes, pull every hex back onto its face with the same
+## margin as place (AF/√3 + 0.5). Returns false when a face cannot hold the
+## hex: the variable write is undone and last_graph_error is set so the
+## notch is not kept.
+func reclamp_hex_openings() -> bool:
+	if view == null or view.doc == null:
+		return true
+	var holes: Array = []
+	for f in view.doc.graph_features():
+		if str(f.get("type", "")) != "hole":
+			continue
+		var hp = JSON.parse_string(str(f.get("params", "{}")))
+		if typeof(hp) != TYPE_DICTIONARY or str(hp.get("type", "")) != "hex":
+			continue
+		holes.append({"fid": str(f.get("id", "")), "params": hp})
+	if holes.is_empty():
+		return true
+	for h in holes:
+		if not _hex_opening_fits(h["params"]):
+			_reject_hex_that_does_not_fit(str(h["fid"]))
+			return false
+	for h in holes:
+		var hp: Dictionary = h["params"]
+		var fid := str(h["fid"])
+		if not hp.has("position"):
+			continue
+		var arr = hp["position"]
+		if typeof(arr) != TYPE_ARRAY or arr.size() < 3:
+			continue
+		var pos := Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+		var af := view.evaluated_param_number(hp.get("diameter", 10.0), 10.0)
+		var margin := af / sqrt(3.0) + 0.5
+		var body := view.body_of_feature(str(hp.get("target", "")))
+		var face := str(hp.get("face", _hole_place_face))
+		var clamped := _clamp_point_on_face(body, face, pos, margin)
+		if clamped.distance_to(pos) <= 0.05:
+			continue
+		hp["position"] = [clamped.x, clamped.y, clamped.z]
+		if not view.doc.graph_set_params(fid, JSON.stringify(hp)):
+			var err := str(view.doc.last_graph_error()) if view.doc.has_method("last_graph_error") else ""
+			status.emit("Hex reclamp failed%s" % ((" — " + err) if err != "" else ""))
+			return false
+		view.graph_changed()
+	return true
+
+
+func _hex_opening_fits(hp: Dictionary) -> bool:
+	var af := view.evaluated_param_number(hp.get("diameter", 10.0), 10.0)
+	var need := 2.0 * af / sqrt(3.0)
+	var body := view.body_of_feature(str(hp.get("target", "")))
+	var face := str(hp.get("face", ""))
+	var n := view.face_normal(body, face) if face != "" else Vector3.ZERO
+	if n.length_squared() < 1e-12 and hp.has("direction"):
+		var darr = hp["direction"]
+		if typeof(darr) == TYPE_ARRAY and darr.size() >= 3:
+			n = Vector3(float(darr[0]), float(darr[1]), float(darr[2]))
+	if n.length_squared() < 1e-12:
+		return true
+	n = n.normalized()
+	# Body AABB, not the trimmed face: a notch must not shrink the fit test.
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if bb.is_empty():
+		return true
+	var mn: Vector3 = bb["min"]
+	var mx: Vector3 = bb["max"]
+	var span := _uv_spans(n, mn, mx)
+	return span.x + 0.05 >= need and span.y + 0.05 >= need
+
+
+func _uv_spans(n: Vector3, mn: Vector3, mx: Vector3) -> Vector2:
+	var ref := Vector3.RIGHT if absf(n.dot(Vector3.RIGHT)) < 0.9 else Vector3.FORWARD
+	var u := n.cross(ref).normalized()
+	var v := n.cross(u).normalized()
+	var mid: Vector3 = (mn + mx) * 0.5
+	var u_min := INF
+	var u_max := -INF
+	var v_min := INF
+	var v_max := -INF
+	for x in [mn.x, mx.x]:
+		for y in [mn.y, mx.y]:
+			for z in [mn.z, mx.z]:
+				var c := Vector3(x, y, z) - mid
+				c -= n * c.dot(n)
+				u_min = minf(u_min, c.dot(u))
+				u_max = maxf(u_max, c.dot(u))
+				v_min = minf(v_min, c.dot(v))
+				v_max = maxf(v_max, c.dot(v))
+	return Vector2(u_max - u_min, v_max - v_min)
+
+
+func _reject_hex_that_does_not_fit(fid: String) -> void:
+	if view.doc.can_undo():
+		view.undo()
+	var raw := ""
+	for f in view.doc.graph_features():
+		if str(f.get("id")) == fid:
+			raw = str(f.get("params", "{}"))
+			break
+	var p = JSON.parse_string(raw) if raw != "" else null
+	if typeof(p) != TYPE_DICTIONARY:
+		status.emit("Hex does not fit on the face")
+		return
+	# Regen fails before cutting, then the edit rolls back. last_graph_error stays.
+	p["diameter"] = "=__hex_does_not_fit__"
+	view.doc.graph_set_params(fid, JSON.stringify(p))
+	var err := str(view.doc.last_graph_error()) if view.doc.has_method("last_graph_error") else ""
+	status.emit("Hex does not fit on the face%s" % ((" — " + err) if err != "" else ""))
 
 
 ## Keep `point` on `face` and at least `margin` mm from the face AABB rim

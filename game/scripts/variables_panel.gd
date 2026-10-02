@@ -147,6 +147,14 @@ func _on_quick_jaw(size: int) -> void:
 	if not view.doc.set_variable("jaw_af", str(size)):
 		status.emit("Failed to set jaw_af")
 		return
+	if not _reclamp_jaw_hex():
+		var why := ""
+		if view.doc.has_method("last_graph_error"):
+			why = str(view.doc.last_graph_error())
+		view.refresh()
+		view.document_changed.emit()
+		status.emit("jaw_af = %d — hex does not fit%s" % [size, (" — " + why) if why != "" else ""])
+		return
 	var regen_err := ""
 	if view.doc.has_method("last_graph_error"):
 		regen_err = str(view.doc.last_graph_error())
@@ -196,6 +204,10 @@ func add_variable(name: String, expr: String) -> bool:
 	if name.strip_edges() == "" or expr.strip_edges() == "":
 		return false
 	if view.doc.set_variable(name.strip_edges(), expr.strip_edges()):
+		if name.strip_edges() == "jaw_af" and not _reclamp_jaw_hex():
+			status.emit("jaw_af rejected — hex does not fit on the face")
+			view.graph_changed()
+			return false
 		view.graph_changed()
 		status.emit("Variable %s = %s" % [name.strip_edges(), expr.strip_edges()])
 		return true
@@ -205,11 +217,25 @@ func add_variable(name: String, expr: String) -> bool:
 
 func edit_variable(name: String, expr: String) -> bool:
 	if view.doc.set_variable(name, expr):
+		if name == "jaw_af" and not _reclamp_jaw_hex():
+			status.emit("jaw_af rejected — hex does not fit on the face")
+			view.graph_changed()
+			return false
 		view.graph_changed()
 		status.emit("Updated %s" % name)
 		return true
 	status.emit("Failed to update %s" % name)
 	return false
+
+
+func _reclamp_jaw_hex() -> bool:
+	var n: Node = self
+	while n != null:
+		var ops = n.get("ops_panel")
+		if ops != null and ops.has_method("reclamp_hex_openings"):
+			return bool(ops.reclamp_hex_openings())
+		n = n.get_parent()
+	return true
 
 
 func delete_variable(name: String) -> bool:

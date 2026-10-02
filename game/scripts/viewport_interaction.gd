@@ -2119,16 +2119,11 @@ func _sketch_input(event: InputEvent) -> void:
 				var travel := mb.position.distance_to(_sketch_press_pos)
 				var ray_up2 := _model_ray(mb.position)
 				var p2_up2 = sketch_mode.ray_to_sketch(ray_up2[0], ray_up2[1])
-				if p2_up2 != null:
-					if travel >= CLICK_SLOP:
-						sketch_mode.click(p2_up2)
-					elif sketch_mode.tool == SketchMode.Tool.LINE \
-							or sketch_mode.tool == SketchMode.Tool.CENTERLINE \
-							or sketch_mode.tool == SketchMode.Tool.POLYGON \
-							or sketch_mode.tool == SketchMode.Tool.RECT \
-							or sketch_mode.tool == SketchMode.Tool.CIRCLE:
-						# Tiny release never reached MIN_SEGMENT — name the view span.
-						sketch_mode.reject_tiny_draw(p2_up2)
+				# A stationary release is the first click of a two-click tool.
+				# Leave the anchor in place. reject_tiny_draw (WP2) is only for
+				# a second point that actually moved, and only by a hair.
+				if p2_up2 != null and travel >= CLICK_SLOP:
+					sketch_mode.click(p2_up2)
 			accept_event()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
 			sketch_mode.end_chain()
@@ -2286,14 +2281,20 @@ func _on_press(pos: Vector2) -> void:
 	var ray := _model_ray(pos)
 	var hit: Dictionary = view.pick_info(ray[0], ray[1])
 	_press_empty = hit.is_empty()
+	# A through-hole has no surface. Treat that ray as a hit so release
+	# reaches select_ray instead of clearing the selection.
+	if _press_empty and view != null and view.hole_feature_along_ray(ray[0], ray[1]) != "":
+		_press_empty = false
 
-	# TriBall: when armed, any press on/near the solid starts a ring drag.
+	# TriBall ring drag only when the press is on the ring the user armed.
+	# A face or edge click must still select — the gizmo used to eat it.
 	if triball != null and triball.active:
 		var tpt: Vector3 = hit["point"] if not hit.is_empty() \
 				else _plane_hit(ray[0], ray[1], triball.origin, triball.axis)
-		triball.begin_drag(tpt)
-		_press_empty = false
-		return
+		if _press_hits_triball_ring(tpt):
+			triball.begin_drag(tpt)
+			_press_empty = false
+			return
 
 	# Armed Hole Wizard / fillet / chamfer picks: do NOT start push-pull or
 	# body-move. Those gestures ate face/edge clicks so the wizard never counted
@@ -2974,17 +2975,26 @@ func _gui_key(event: InputEventKey) -> bool:
 					and main_n.cancel_property_panel():
 				status.emit("Edits cancelled")
 				return true
-			# Drop TriBall arm (must clear `active`, not only hide the mesh).
+			# Measure pair is its own layer and must not also drop the selection.
+			if measure_overlay != null and measure_overlay.has_anchor():
+				measure_overlay.clear_pair()
+				status.emit("")
+				return true
+			# One Esc drops an armed TriBall and the selection together.
+			var dropped := false
 			if triball != null and (triball.active or triball.visible):
 				triball.cancel()
 				status.emit("TriBall cancelled")
-				return true
-			# Clear selection card by clearing selection.
-			if view != null and (view.selected_body != "" or view.selection_size() > 0):
+				dropped = true
+			if view != null and (view.selected_body != "" or view.selection_size() > 0 \
+					or view.selected_instance != ""):
 				view.clear_selection()
 				if main_n != null:
 					main_n._update_panel_visibility()
 				status.emit("Selection cleared")
+				dropped = true
+			if dropped:
+				get_viewport().set_input_as_handled()
 				return true
 			# Dismiss Timeline / Variables when visible (user-toggled).
 			if main_n != null:
@@ -3028,13 +3038,7 @@ func _gui_key(event: InputEventKey) -> bool:
 			if _picking_active_plane:
 				cancel_pick_active_plane()
 				return true
-			if measure_overlay != null and measure_overlay.has_anchor():
-				measure_overlay.clear_pair()
-				status.emit("")
-				return true
-			view.clear_selection()
-			status.emit("")
-			return true
+			return false
 		KEY_DELETE, KEY_BACKSPACE:
 			return _delete_selection()
 		KEY_C:
@@ -4021,8 +4025,12 @@ func _ctx_jaw_af(size: int) -> void:
 	if not view.doc.set_variable("jaw_af", str(size)):
 		status.emit("Failed to set jaw_af")
 		return
-	view.doc.save_configuration(str(size))
-	view.doc.activate_configuration(str(size))
+	var fitted := true
+	if ops_panel != null and ops_panel.has_method("reclamp_hex_openings"):
+		fitted = ops_panel.reclamp_hex_openings()
+	if fitted:
+		view.doc.save_configuration(str(size))
+		view.doc.activate_configuration(str(size))
 	view.graph_changed()
 	view.refresh()
 	view.document_changed.emit()
@@ -4033,6 +4041,22 @@ func _ctx_jaw_af(size: int) -> void:
 		status.emit("jaw_af = %d (config %d) — regenerate: %s" % [size, size, err])
 	else:
 		status.emit("jaw_af = %d (config %d)" % [size, size])
+
+
+func _press_hits_triball_ring(pt: Vector3) -> bool:
+	if triball == null or not triball.active:
+		return false
+	var axis: Vector3 = triball.axis.normalized() if triball.axis.length_squared() > 1e-12 else Vector3.UP
+	var radial: Vector3 = pt - triball.origin
+	var along: float = radial.dot(axis)
+	radial = radial - axis * along
+	var rlen := radial.length()
+	# Ring radius matches TriBallGizmo._rebuild (12 mm), with a grab slop.
+	if absf(along) <= 4.0 and absf(rlen - 12.0) <= 4.0:
+		return true
+	if rlen <= 4.0 and along >= -2.0 and along <= 16.0:
+		return true
+	return false
 
 
 func _find_main() -> Node:

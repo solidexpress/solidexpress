@@ -47,7 +47,7 @@ func _init() -> void:
 
 
 func step_a_empty(main, _vp: SubViewport) -> void:
-	print("- A New = plate + flat bg + docks off")
+	print("- A New empty, then plate + flat bg + docks off")
 	main.show_scenic_bg = false
 	main._sync_world_background()
 	main._do_new()
@@ -56,11 +56,15 @@ func step_a_empty(main, _vp: SubViewport) -> void:
 	check(not main.timeline.visible, "Timeline hidden by default after New")
 	check(not main.variables_panel.visible, "Variables hidden by default after New")
 	check(not main.show_timeline, "show_timeline flag false")
+	check(main.view.doc.body_ids().is_empty(), "New leaves an empty part")
+	# Later steps still walk a 50×50×5 plate (volume 12500). New no longer seeds it.
+	var plate: String = main.view.insert_primitive("box", Vector3.ZERO, Vector3(50, 50, 5))
+	check(plate != "", "plate inserted after New")
 	var ids: PackedStringArray = main.view.doc.body_ids()
-	check(ids.size() == 1, "New seeds one body")
+	check(ids.size() == 1, "one body after plate insert")
 	if ids.size() > 0:
 		var vol: float = main.view.doc.body_volume(ids[0])
-		check(absf(vol - 12500.0) < 1.0, "New plate volume ~12500 (got %.1f)" % vol)
+		check(absf(vol - 12500.0) < 1.0, "plate volume ~12500 (got %.1f)" % vol)
 	var named := false
 	for f in main.view.doc.graph_features():
 		if str(f.get("name", "")).begins_with("Box"):
@@ -71,7 +75,7 @@ func step_a_empty(main, _vp: SubViewport) -> void:
 
 
 func step_b_box(main) -> void:
-	print("- B plate already from New; select it")
+	print("- B select the inserted plate")
 	var view = main.view
 	var id: String = str(view.doc.body_ids()[0]) if view.doc.body_ids().size() > 0 else ""
 	view.select_entity(id, "")

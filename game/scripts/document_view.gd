@@ -34,6 +34,8 @@ const DATUM_POINT_COLOR := Color(0.2, 0.7, 0.45)
 enum DisplayMode { SHADED, SHADED_EDGES, WIREFRAME }
 
 var doc: SxDocument = SxDocument.new()
+## True while graph_changed is clearing selection so panels can keep a hole edit.
+var refreshing_graph := false
 ## Primary (most recent) selection — single-select API, kept for panels/tests.
 var selected_body := ""
 var selected_face := ""
@@ -624,12 +626,8 @@ func hole_feature_near_point(body_id: String, point: Vector3) -> String:
 		if dir.length_squared() < 1e-12:
 			dir = Vector3(0, 0, 1)
 		dir = dir.normalized()
-		var diam := 6.0
-		if typeof(hp.get("diameter")) == TYPE_STRING:
-			diam = 20.0
-		elif typeof(hp.get("diameter")) == TYPE_FLOAT or typeof(hp.get("diameter")) == TYPE_INT:
-			diam = float(hp.get("diameter"))
-		var r := maxf(diam * 0.55, 3.0)
+		var diam := evaluated_param_number(hp.get("diameter", 6.0), 6.0)
+		var r := _hole_pick_radius(hp, diam)
 		var delta := point - pos
 		delta -= dir * delta.dot(dir)  # in-plane only
 		var d := delta.length()
@@ -637,6 +635,181 @@ func hole_feature_near_point(body_id: String, point: Vector3) -> String:
 			best_d = d
 			best = str(f.get("id", ""))
 	return best
+
+
+func _body_owning_hole(fid: String) -> String:
+	for f in doc.graph_features():
+		if str(f.get("id", "")) != fid:
+			continue
+		var hp = JSON.parse_string(str(f.get("params", "{}")))
+		if typeof(hp) != TYPE_DICTIONARY:
+			return ""
+		return body_of_feature(str(hp.get("target", "")))
+	return ""
+
+
+## Radius that still counts as "on this hole": hex vertices sit at AF/√3.
+func _hole_pick_radius(hp: Dictionary, diam: float) -> float:
+	if str(hp.get("type", "")) == "hex":
+		return diam / sqrt(3.0) + 0.5
+	return maxf(diam * 0.55, 3.0)
+
+
+## Through-void pick: the ray misses the solid, so test it against each hole axis
+## in the plane through the stored position.
+func hole_feature_along_ray(origin: Vector3, direction: Vector3) -> String:
+	var dir := direction.normalized() if direction.length_squared() > 1e-12 else direction
+	if dir.length_squared() < 1e-12:
+		return ""
+	var best := ""
+	var best_d := 1e9
+	for f in doc.graph_features():
+		if str(f.get("type", "")) != "hole":
+			continue
+		var hp = JSON.parse_string(str(f.get("params", "{}")))
+		if typeof(hp) != TYPE_DICTIONARY or not hp.has("position"):
+			continue
+		var arr = hp["position"]
+		if typeof(arr) != TYPE_ARRAY or arr.size() < 3:
+			continue
+		var pos := Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
+		var axis := Vector3(0, 0, 1)
+		if hp.has("direction"):
+			var darr = hp["direction"]
+			if typeof(darr) == TYPE_ARRAY and darr.size() >= 3:
+				axis = Vector3(float(darr[0]), float(darr[1]), float(darr[2]))
+		if axis.length_squared() < 1e-12:
+			axis = Vector3(0, 0, 1)
+		axis = axis.normalized()
+		var denom := dir.dot(axis)
+		if absf(denom) < 1e-6:
+			continue
+		var t := (pos - origin).dot(axis) / denom
+		if t <= 1e-4:
+			continue
+		var hit: Vector3 = origin + dir * t
+		var delta := hit - pos
+		delta -= axis * delta.dot(axis)
+		var diam := evaluated_param_number(hp.get("diameter", 6.0), 6.0)
+		var r := _hole_pick_radius(hp, diam)
+		var d := delta.length()
+		if d <= r and d < best_d:
+			best_d = d
+			best = str(f.get("id", ""))
+	return best
+
+
+## Number or `=jaw_af+clearance` style expression. A trailing junk token uses `fallback`.
+func evaluated_param_number(value, fallback: float) -> float:
+	if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
+		return float(value)
+	var s := str(value).strip_edges()
+	if s.begins_with("="):
+		s = s.substr(1).strip_edges()
+	if s == "":
+		return fallback
+	if s.is_valid_float():
+		return float(s)
+	var vars := {}
+	for entry in doc.list_variables():
+		var nm := str(entry.get("name", "")).strip_edges()
+		var val = entry.get("value", NAN)
+		if nm != "" and typeof(val) == TYPE_FLOAT and not is_nan(val):
+			vars[nm] = float(val)
+	var idx := [0]
+	var n := _parse_add(s, idx, vars)
+	_skip_spaces(s, idx)
+	if idx[0] < s.length():
+		return fallback
+	return n
+
+
+func _parse_add(s: String, idx: Array, vars: Dictionary) -> float:
+	var v := _parse_term(s, idx, vars)
+	while idx[0] < s.length():
+		_skip_spaces(s, idx)
+		if idx[0] >= s.length():
+			break
+		var c := s[idx[0]]
+		if c == "+":
+			idx[0] += 1
+			v += _parse_term(s, idx, vars)
+		elif c == "-":
+			idx[0] += 1
+			v -= _parse_term(s, idx, vars)
+		else:
+			break
+	return v
+
+
+func _parse_term(s: String, idx: Array, vars: Dictionary) -> float:
+	var v := _parse_unary(s, idx, vars)
+	while idx[0] < s.length():
+		_skip_spaces(s, idx)
+		if idx[0] >= s.length():
+			break
+		var c := s[idx[0]]
+		if c == "*":
+			idx[0] += 1
+			v *= _parse_unary(s, idx, vars)
+		elif c == "/":
+			idx[0] += 1
+			var d := _parse_unary(s, idx, vars)
+			v = v / d if absf(d) > 1e-12 else v
+		else:
+			break
+	return v
+
+
+func _parse_unary(s: String, idx: Array, vars: Dictionary) -> float:
+	_skip_spaces(s, idx)
+	if idx[0] < s.length() and s[idx[0]] == "-":
+		idx[0] += 1
+		return -_parse_unary(s, idx, vars)
+	if idx[0] < s.length() and s[idx[0]] == "+":
+		idx[0] += 1
+		return _parse_unary(s, idx, vars)
+	if idx[0] < s.length() and s[idx[0]] == "(":
+		idx[0] += 1
+		var val := _parse_add(s, idx, vars)
+		_skip_spaces(s, idx)
+		if idx[0] < s.length() and s[idx[0]] == ")":
+			idx[0] += 1
+		return val
+	return _parse_atom(s, idx, vars)
+
+
+func _parse_atom(s: String, idx: Array, vars: Dictionary) -> float:
+	_skip_spaces(s, idx)
+	var start := int(idx[0])
+	if start >= s.length():
+		return 0.0
+	var ch0 := s[start]
+	if ch0.is_valid_int() or ch0 == ".":
+		var end := start + 1
+		while end < s.length() and (s[end].is_valid_int() or s[end] == "."):
+			end += 1
+		idx[0] = end
+		return float(s.substr(start, end - start))
+	var end2 := start
+	while end2 < s.length():
+		var ch := s[end2]
+		var ident := ch == "_" or (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z")
+		if end2 > start and ch >= "0" and ch <= "9":
+			ident = true
+		if not ident:
+			break
+		end2 += 1
+	idx[0] = end2
+	var name := s.substr(start, end2 - start)
+	if vars.has(name):
+		return float(vars[name])
+	return 0.0
+
+
+func _skip_spaces(s: String, idx: Array) -> void:
+	while idx[0] < s.length() and (s[idx[0]] == " " or s[idx[0]] == "\t"):
+		idx[0] += 1
 
 
 ## Feature dict for the body, or {} when it is not a timeline feature.
@@ -752,6 +925,14 @@ func resize_primitive_aabb(body_id: String, new_min: Vector3, new_max: Vector3) 
 			new_min.x + fx * size.x,
 			new_min.y + fy * size.y,
 			new_min.z + fz * size.z)
+		if str(hp.get("type", "")) == "hex":
+			var af := evaluated_param_number(hp.get("diameter", 10.0), 10.0)
+			var hdir := Vector3(0, 0, -1)
+			if hp.has("direction"):
+				var darr = hp["direction"]
+				if typeof(darr) == TYPE_ARRAY and darr.size() >= 3:
+					hdir = Vector3(float(darr[0]), float(darr[1]), float(darr[2]))
+			npos = _clamp_hex_center(npos, hdir, af, new_min, new_max)
 		hp["position"] = [npos.x, npos.y, npos.z]
 		hole_updates.append({"fid": str(f.get("id")), "params": hp})
 	var kind := str(params.get("kind", "box"))
@@ -860,8 +1041,31 @@ func _sync_cyl_cone_params_from_body(body_id: String, params: Dictionary) -> voi
 
 
 func graph_changed() -> void:
+	refreshing_graph = true
 	clear_selection()
+	refreshing_graph = false
 	_after_mutation()
+
+
+## Keep a hex center on the resized box. Inset the axes perpendicular to the
+## hole direction by the circumradius (AF/√3), plus 0.5 mm when the face allows.
+func _clamp_hex_center(pos: Vector3, direction: Vector3, af: float,
+		mn: Vector3, mx: Vector3) -> Vector3:
+	var n := direction.normalized() if direction.length_squared() > 1e-12 else Vector3(0, 0, -1)
+	var r := maxf(af, 0.0) / sqrt(3.0)
+	var out := pos
+	for axis in range(3):
+		if absf(n[axis]) > 0.75:
+			continue
+		var span: float = mx[axis] - mn[axis]
+		var half := span * 0.5
+		var margin := r + 0.5
+		if half <= r + 0.05:
+			margin = maxf(0.0, half - 0.05)
+		elif half < margin:
+			margin = r
+		out[axis] = clampf(out[axis], mn[axis] + margin, mx[axis] - margin)
+	return out
 
 
 ## Boolean two bodies. Timeline-owned bodies get a graph Boolean feature so later
@@ -893,6 +1097,13 @@ func boolean_bodies(target: String, tool: String, op: String) -> bool:
 func select_ray(origin: Vector3, direction: Vector3, additive := false) -> bool:
 	var hit: Dictionary = _pick_visible(origin, direction)
 	if hit.is_empty():
+		var void_fid := hole_feature_along_ray(origin, direction)
+		if void_fid != "" and not additive:
+			var owner := _body_owning_hole(void_fid)
+			if owner != "":
+				select_entity(owner, "")
+			hole_feature_picked.emit(void_fid)
+			return true
 		if not additive:
 			clear_selection()
 		return false
