@@ -122,6 +122,9 @@ func _build_finish_bar() -> void:
 	_extrude_spin.step = 0.5
 	_extrude_spin.value = 20
 	_extrude_spin.suffix = "mm"
+	# A click that focuses D selects the digits, same as the dim blank, so
+	# typing 7.5 replaces 20.0 instead of appending.
+	_extrude_spin.select_all_on_focus = true
 	_extrude_spin.tooltip_text = "Blind distance (ignored for Through All cuts)"
 	_fit_spin(_extrude_spin)
 	_finish_bar.add_child(_extrude_spin)
@@ -403,6 +406,9 @@ func _on_dim_text_submitted(raw: String) -> void:
 	_dim_syncing = true
 	_dim_spin.value = float(parsed)
 	_dim_syncing = false
+	# value_changed is skipped while syncing, and the slot radius is the blank
+	# before the first centre (no single-DOF preview yet).
+	_apply_slot_radius(float(parsed))
 	dim_submitted.emit(_dim_spin.value)
 	release_dim_focus()
 
