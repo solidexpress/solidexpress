@@ -84,6 +84,11 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_rung01_sketch_tests.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_fillet_tests.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_wrench.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan_finishbar.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan_sketch.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan_input.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan_shell.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan_panel.gd
 
 test: test-kernel test-godot
 	@echo "ALL TESTS PASSED"
