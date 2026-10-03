@@ -1157,6 +1157,38 @@ func _model_circle_centers() -> Array[Vector2]:
 func _circle_center_of_poly(poly: PackedVector3Array) -> Variant:
 	if poly.size() < 12:
 		return null
+	var centroid: Variant = _centroid_if_circle(poly)
+	if centroid != null:
+		return centroid
+	# A rim split by the shaft tangents is an arc. Its vertex average is not
+	# the centre, so fit the circle through the two ends and the midpoint.
+	var n := poly.size()
+	var a: Vector3 = poly[0]
+	var b: Vector3 = poly[n / 2]
+	var c: Vector3 = poly[n - 1]
+	if a.distance_to(c) < 1e-3:
+		c = poly[maxi(n - 2, 1)]
+	if a.distance_to(c) < 1e-3 or a.distance_to(b) < 1e-3:
+		return null
+	var ab := b - a
+	var ac := c - a
+	var abxac := ab.cross(ac)
+	var denom := 2.0 * abxac.length_squared()
+	if denom < 1e-8:
+		return null
+	var center := a + (abxac.cross(ab) * ac.length_squared() + ac.cross(abxac) * ab.length_squared()) / denom
+	var radius := center.distance_to(a)
+	if radius < 0.4:
+		return null
+	var max_err := 0.0
+	for p in poly:
+		max_err = maxf(max_err, absf(p.distance_to(center) - radius))
+	if max_err > maxf(0.35, radius * 0.08):
+		return null
+	return center
+
+
+func _centroid_if_circle(poly: PackedVector3Array) -> Variant:
 	var c := Vector3.ZERO
 	for p in poly:
 		c += p
@@ -1917,22 +1949,15 @@ func _model_circles() -> Array:
 		var edges: Dictionary = view.doc.get_edge_lines(body_id)
 		for edge_id in edges:
 			var poly: PackedVector3Array = edges[edge_id]
-			if poly.size() < 12:
+			var fitted: Variant = _circle_center_of_poly(poly)
+			if fitted == null:
 				continue
-			var c3 := Vector3.ZERO
-			for pt in poly:
-				c3 += pt
-			c3 /= float(poly.size())
+			var c3: Vector3 = fitted
 			var r := 0.0
 			for pt in poly:
 				r += pt.distance_to(c3)
 			r /= float(poly.size())
 			if r < 0.4:
-				continue
-			var max_err := 0.0
-			for pt in poly:
-				max_err = maxf(max_err, absf(pt.distance_to(c3) - r))
-			if max_err > maxf(0.35, r * 0.08):
 				continue
 			if absf((c3 - plane_origin).dot(n)) > 0.75:
 				continue
