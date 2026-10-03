@@ -45,8 +45,22 @@ func _file_new(ctx: FilmContext) -> void:
 
 
 func _build_to_face_extrude(ctx: FilmContext) -> void:
-	print("- sketch a circle and extrude Up To Surface")
-	await FilmUI.enter_sketch(ctx)
+	print("- box, then a circle extruded Up To Surface")
+	# A faceless Up To Surface is refused (WP2). Place a box, sketch on the
+	# top face, and click the bottom face before Extrude.
+	await FilmUI.place_primitive(ctx, "box")
+	await process_frame
+	var ids: PackedStringArray = ctx.view.doc.body_ids()
+	check(not ids.is_empty(), "box body exists")
+	if ids.is_empty():
+		return
+	var body := str(ids[0])
+	var top := _face_along(ctx, body, 1)
+	var bottom := _face_along(ctx, body, -1)
+	check(top != "" and bottom != "" and top != bottom, "top and bottom faces differ")
+	if top == "" or bottom == "":
+		return
+	await FilmUI.enter_sketch_on_face(ctx, body, top)
 	var sm: SketchMode = ctx.main.sketch_mode
 	check(sm.active, "sketch session is open")
 	if not sm.active:
@@ -71,6 +85,9 @@ func _build_to_face_extrude(ctx: FilmContext) -> void:
 		end_opt.item_selected.emit(3)
 		await process_frame
 		check(end_opt.selected == 3, "End is Up To Surface")
+	check(chrome.wants_face_pick(), "Up To Surface arms a face pick")
+	await _click_bottom_face(ctx, bottom)
+	check(str(chrome.up_to_face_id) == bottom, "viewport click set the bottom face")
 	var ex_btn := chrome.extrude_button()
 	await FilmUI.click_control(ctx, ex_btn, FilmUICues.alert("Extrude", "Extrude circle"))
 	await process_frame
@@ -227,6 +244,50 @@ func _tap_key(ctx: FilmContext, keycode: Key, unicode: int, ctrl := false) -> vo
 	rel.ctrl_pressed = ctrl
 	vp.push_input(rel)
 	await process_frame
+
+
+func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
+	var cam = ctx.main.camera
+	if cam._view_tween != null and cam._view_tween.is_valid():
+		cam._view_tween.kill()
+		cam._view_tween = null
+	cam.sketch_orientation_locked = false
+	var mid: Vector3 = ctx.view.doc.face_midpoint(bottom)
+	cam.pivot = mid
+	cam.distance = 180.0
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.set_view(cam.yaw, deg_to_rad(-75.0), false)
+	await process_frame
+	await process_frame
+	var screen: Vector2 = ctx.main.interaction._model_to_screen(mid)
+	await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Bottom face"))
+	await process_frame
+
+
+func _face_along(ctx: FilmContext, body: String, z_sign: int) -> String:
+	var best := ""
+	var best_z := -1.0e30 if z_sign > 0 else 1.0e30
+	var best_area := -1.0
+	for f in ctx.view.doc.get_face_ids(body):
+		var bb: Dictionary = ctx.view.doc.measure_bbox(f)
+		if bb.is_empty():
+			continue
+		var fext: Vector3 = bb["max"] - bb["min"]
+		var span := maxf(fext.x, fext.y)
+		if fext.z > 0.5 and fext.z > span * 0.05:
+			continue
+		var z: float = bb["max"].z if z_sign > 0 else bb["min"].z
+		var area := fext.x * fext.y
+		var better := false
+		if z_sign > 0:
+			better = z > best_z + 0.05 or (absf(z - best_z) <= 0.05 and area > best_area)
+		else:
+			better = z < best_z - 0.05 or (absf(z - best_z) <= 0.05 and area > best_area)
+		if better:
+			best_z = z
+			best_area = area
+			best = f
+	return best
 
 
 func _base_extrude(ctx: FilmContext) -> Dictionary:
