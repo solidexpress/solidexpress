@@ -11,6 +11,9 @@ static func configure_spin(spin: SpinBox, min_v: float, max_v: float, arrow_step
 	spin.custom_arrow_step = arrow_step
 	spin.rounded = as_int
 	spin.value = value
+	# Focus selects the digits so a typed replacement (and Ctrl+A) edits the
+	# number instead of appending, and instead of selecting scene bodies.
+	spin.select_all_on_focus = true
 	spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return spin
 
