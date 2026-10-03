@@ -481,7 +481,10 @@ func workflow_bolt_blank() -> void:
 	sk.polygon_sides = 6
 	gesture(1)
 	sk.set_tool(SketchMode.Tool.POLYGON)
-	gesture(1)
+	# Default is across_flats; vertex makes the drag a circumradius so the
+	# hex head (R = 8) sits outside the Ø10 shaft.
+	sk.set_tool_variant("vertex")
+	gesture(2)
 	sk.click(Vector2(0, 0))
 	sk.click(Vector2(8, 0))
 	gesture(2)
