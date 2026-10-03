@@ -136,23 +136,24 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _draw_circle_typed(ctx, Vector2(200, 0), "22.5", true)
 	var circs := _circles(sm)
 	check(circs.size() == 2, "blank has two circles")
+	# Shaft lines sit on the horizontal tangents of the Ø20 (y = ±10) and meet
+	# the Ø45. Clicks are just off the rim so snap closes them. Infer is held
+	# off for these two segments: a tangent constraint on an under-defined
+	# circle otherwise drags the Ø20 off the origin.
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
 	if circs.size() == 2:
-		var tangents := _external_tangents(circs[0]["center"], float(circs[0]["radius"]),
-				circs[1]["center"], float(circs[1]["radius"]))
 		await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-		for pair in tangents:
-			var a: Vector2 = pair["a"]
-			var b: Vector2 = pair["b"]
-			var c1: Vector2 = circs[0]["center"]
-			var c2: Vector2 = circs[1]["center"]
-			var a_off := a + (a - c1).normalized() * 0.3
-			var b_off := b + (b - c2).normalized() * 1.1
-			await _zoom_uv(ctx, a_off, 90.0)
+		sm.infer_enabled = false
+		for y_sign in [1.0, -1.0]:
+			var y := 10.0 * float(y_sign)
+			var a_off := Vector2(0.0, y + 0.35 * float(y_sign))
+			var b_off := Vector2(far_x, y + 0.35 * float(y_sign))
+			await _zoom_uv(ctx, a_off, 40.0)
 			await _click_uv(ctx, a_off, "Tangent start near circle")
-			await _zoom_uv(ctx, b_off, 90.0)
+			await _zoom_uv(ctx, b_off, 40.0)
 			await _click_uv(ctx, b_off, "Tangent end near circle")
 			await _right_click_uv(ctx, b_off)
+		sm.infer_enabled = true
 	_assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
 	await _pick_option(_finish_end(ctx), 0)
@@ -192,6 +193,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	var s2 := sqrt(2.0) / 2.0
 	var ax := Vector2(s2, s2)
+	await _zoom_uv(ctx, Vector2(200, 0), 90.0)
 	await _click_uv(ctx, Vector2(200, 0) + ax * -12.0, "Trim inner jaw half")
 	await process_frame
 	err = _take_bad_status()
@@ -722,6 +724,7 @@ func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float) -
 	await _zoom(ctx, host, 500.0)
 	var host_screen := FilmUI.model_to_screen(ctx, host)
 	if FilmUI.is_on_screen(ctx, host_screen):
+		await _aim_pointer(ctx, host_screen)
 		await FilmUI.viewport_click(ctx, host_screen,
 				FilmUICues.alert("Click", "Select top face"))
 		await process_frame
@@ -814,11 +817,14 @@ func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 
 
 func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
-	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, uv, desc)
+	var sm: SketchMode = ctx.main.sketch_mode
+	await _aim_pointer(ctx, FilmUI.model_to_screen(ctx, sm.to_model(uv)))
+	await FilmUI.click_sketch(ctx, sm, uv, desc)
 
 
 func _click_model(ctx: FilmContext, pt: Vector3, desc: String) -> void:
 	var screen := FilmUI.model_to_screen(ctx, pt)
+	await _aim_pointer(ctx, screen)
 	await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", desc))
 	await process_frame
 
@@ -826,6 +832,7 @@ func _click_model(ctx: FilmContext, pt: Vector3, desc: String) -> void:
 func _right_click_uv(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+	await _aim_pointer(ctx, screen)
 	var down := InputEventMouseButton.new()
 	down.button_index = MOUSE_BUTTON_RIGHT
 	down.pressed = true
@@ -843,6 +850,7 @@ func _right_click_uv(ctx: FilmContext, uv: Vector2) -> void:
 func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+	await _aim_pointer(ctx, screen)
 	var motion := InputEventMouseMotion.new()
 	motion.position = screen
 	ctx.main.interaction._input(motion)
@@ -877,8 +885,22 @@ func _draw_centreline(ctx: FilmContext, center: Vector2) -> void:
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Centerline")
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Construction centreline"))
 	var across := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
+	await _zoom_uv(ctx, center - across * 25.0, 70.0)
 	await _click_uv(ctx, center - across * 25.0, "Centreline start")
+	await _zoom_uv(ctx, center + across * 25.0, 70.0)
 	await _click_uv(ctx, center + across * 25.0, "Centreline end")
+
+
+## A chrome click leaves gui_get_hovered_control() on that LineEdit. Sketch
+## clicks injected through Interaction._input are then dropped. Park the
+## pointer on the sketch pixel first so the next click belongs to the canvas.
+func _aim_pointer(ctx: FilmContext, screen: Vector2) -> void:
+	var vp: Viewport = ctx.main.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = screen
+	motion.global_position = screen
+	vp.push_input(motion)
+	await process_frame
 
 
 func _widen(ctx: FilmContext) -> void:
@@ -914,7 +936,7 @@ func _assert_thin_off(ctx: FilmContext) -> void:
 
 
 func _press_extrude(ctx: FilmContext, desc: String) -> void:
-	var btn := ctx.main.sketch_chrome.extrude_button()
+	var btn: Button = ctx.main.sketch_chrome.extrude_button()
 	await FilmUI.click_control(ctx, btn, FilmUICues.alert("Extrude", desc))
 	await process_frame
 	await process_frame
@@ -1126,7 +1148,8 @@ func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
 	await process_frame
 	await process_frame
 	var mid: Vector3 = ctx.view.doc.face_midpoint(bottom)
-	var screen := ctx.main.interaction._model_to_screen(mid)
+	var screen: Vector2 = ctx.main.interaction._model_to_screen(mid)
+	await _aim_pointer(ctx, screen)
 	await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Bottom face"))
 	await process_frame
 
@@ -1175,21 +1198,6 @@ func _circles(sm: SketchMode) -> Array:
 			out.append(info)
 	out.sort_custom(func(a, b): return float(a["center"].x) < float(b["center"].x))
 	return out
-
-
-func _external_tangents(c1: Vector2, r1: float, c2: Vector2, r2: float) -> Array:
-	var d := c2 - c1
-	var dist := d.length()
-	var along := (r2 - r1) / dist
-	var perp := sqrt(maxf(0.0, 1.0 - along * along))
-	var u := d / dist
-	var side := Vector2(-u.y, u.x)
-	var result: Array = []
-	for sign in [1.0, -1.0]:
-		var s := float(sign)
-		var n: Vector2 = u * along + side * (perp * s)
-		result.append({"a": c1 - n * r1, "b": c2 - n * r2})
-	return result
 
 
 func _dim_index(sm: SketchMode, type_name: String) -> int:
