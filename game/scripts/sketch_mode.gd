@@ -532,11 +532,13 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		flip_side: bool = false, selected_contours: Array = []) -> void:
 	if not active:
 		return
-	# Auto-commit an in-progress Polygon/Circle/Rect tip so Extrude doesn't
-	# see only a preview ghost and report "open profile". Typed length wins
-	# over the cursor when a dim override is set.
+	# Auto-commit an in-progress Polygon/Circle/Rect/Slot tip so Extrude
+	# doesn't see only a preview ghost and report "open profile". Pass the
+	# live hover: click() snaps that pick for direction, then locks the
+	# typed length. Passing effective_hover() here would snap the already
+	# scaled tip onto projected model points and steer the arm the wrong way.
 	if has_pending_draw_point():
-		click(effective_hover() if _length_override >= 0.0 else _hover)
+		click(_hover)
 	_try_close_open_chain()
 	# Two circles plus tangents split into a holed face. Replace each boss
 	# the lines land on with its outer arc so the blank extrudes solid.
@@ -930,8 +932,10 @@ func commit_at_length(length: float) -> bool:
 		status.emit("Too short")
 		return false
 	set_length_override(length)
-	click(effective_hover())
-	return true
+	# Pass the live hover so click() snaps the pointer for direction, then
+	# locks `length`. click(effective_hover()) would snap the scaled tip.
+	click(_hover)
+	return not has_length_override()
 
 
 ## Sentence from the last polygon-AF / circle / centre-to-flat commit.
@@ -2442,14 +2446,20 @@ func click(pos2: Vector2) -> void:
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
 	if tool != Tool.TRIM and tool != Tool.EXTEND:
 		pos2 = snap_point(pos2)
-	# Typed length wins over the cursor: keep the pick's direction, lock the
-	# distance to effective_hover() so a 4 mm click with override 20 commits 20.
+	# Typed length wins over the cursor: keep the (snapped) pick's direction
+	# and lock the distance. Do not write the pick into _hover — finish_extrude
+	# and the next rubber-band still need the live pointer — and do not snap
+	# the already-scaled tip (that pulls a 150 mm slot onto 3D pierce points).
 	if _length_override >= 0.0 and has_single_dof_preview():
 		if _length_override < MIN_SEGMENT_MM:
 			status.emit("Too short")
 			return
-		_hover = pos2
-		pos2 = effective_hover()
+		var last: Vector2 = _tool_points[_tool_points.size() - 1]
+		var d := pos2 - last
+		if d.length_squared() < 1e-12:
+			pos2 = last + Vector2(_length_override, 0.0)
+		else:
+			pos2 = last + d.normalized() * _length_override
 		_length_override = -1.0
 	match tool:
 		Tool.SELECT:
