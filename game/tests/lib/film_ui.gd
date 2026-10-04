@@ -593,6 +593,39 @@ static func enter_sketch(ctx: FilmContext) -> void:
 		_fail("ground sketch reopened existing pad %s" % sm.editing_fid)
 
 
+## Visible ConfirmationDialog, preferring the empty-sketch discard prompt.
+static func _visible_confirmation_dialog(ctx: FilmContext) -> ConfirmationDialog:
+	if ctx == null or ctx.main == null:
+		return null
+	var fallback: ConfirmationDialog = null
+	for c in ctx.main.find_children("*", "ConfirmationDialog", true, false):
+		var dlg := c as ConfirmationDialog
+		if dlg == null or not dlg.visible:
+			continue
+		var text := str(dlg.dialog_text).to_lower()
+		if text.find("empty") >= 0:
+			return dlg
+		if fallback == null:
+			fallback = dlg
+	return fallback
+
+
+## Click the visible confirm dialog's OK / discard button (the user path).
+static func _click_confirm_ok(ctx: FilmContext, desc: String) -> bool:
+	var dlg := _visible_confirmation_dialog(ctx)
+	if dlg == null:
+		_fail("expected confirm dialog is not visible (%s)" % desc)
+		return false
+	var ok := dlg.get_ok_button()
+	if ok == null or not ok.is_visible_in_tree():
+		_fail("confirm dialog has no clickable OK (%s)" % desc)
+		return false
+	if not await click_control(ctx, ok, FilmUICues.alert("OK", desc)):
+		return false
+	await wait_frames(ctx.tree, 3)
+	return true
+
+
 static func exit_sketch(ctx: FilmContext) -> String:
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm == null or not sm.active:
@@ -604,6 +637,11 @@ static func exit_sketch(ctx: FilmContext) -> String:
 	if not await click_control(ctx, exit_btn, FilmUICues.exit_sketch()):
 		return ""
 	await wait_frames(ctx.tree, 3)
+	# WP4: empty new sketches confirm before discard. Click OK the way a person
+	# would. Drawn sketches still leave on the one Exit Sketch click.
+	if sm.active:
+		if not await _click_confirm_ok(ctx, "Confirm discard empty sketch"):
+			return ""
 	if sm.active:
 		_fail("sketch still active after Exit Sketch click")
 		return ""
