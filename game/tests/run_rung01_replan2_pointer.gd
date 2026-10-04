@@ -162,7 +162,12 @@ func test_digits_before_camera(ctx: FilmContext) -> void:
 	var cam = ctx.main.camera
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	await process_frame
-	_ix_click_pair(ctx, _uv_screen(ctx, Vector2.ZERO), _uv_screen(ctx, Vector2.ZERO))
+	var origin := _uv_screen(ctx, Vector2.ZERO)
+	_ix_click_pair(ctx, origin, origin)
+	await process_frame
+	var eight := _uv_screen(ctx, Vector2(8, 0))
+	await _aim_screen(ctx, eight)
+	_ix_hover(ctx, eight)
 	await process_frame
 	check(sm.has_single_dof_preview(), "preview is active before typing digits")
 	var dim := _dim_edit(ctx)
@@ -175,8 +180,18 @@ func test_digits_before_camera(ctx: FilmContext) -> void:
 	var yaw0: float = cam.yaw
 	var pitch0: float = cam.pitch
 	var vp: Viewport = ctx.main.interaction.get_viewport()
-	await _push_key(vp, KEY_2, 50)
-	await _push_key(vp, KEY_0, 48)
+	var two := InputEventKey.new()
+	two.keycode = KEY_2
+	two.physical_keycode = KEY_2
+	two.unicode = 50
+	two.pressed = true
+	vp.push_input(two)
+	var zero := InputEventKey.new()
+	zero.keycode = KEY_0
+	zero.physical_keycode = KEY_0
+	zero.unicode = 48
+	zero.pressed = true
+	vp.push_input(zero)
 	await process_frame
 	var text := "" if dim == null else str(dim.text)
 	check(text.contains("20"), "dim blank contains 20 after KEY_2 KEY_0 (got '%s')" % text)
@@ -185,7 +200,7 @@ func test_digits_before_camera(ctx: FilmContext) -> void:
 	check(is_equal_approx(cam.yaw, yaw0) and is_equal_approx(cam.pitch, pitch0),
 			"camera yaw/pitch unchanged after KEY_2 KEY_0")
 	for pair in [[KEY_1, 49], [KEY_3, 51], [KEY_5, 53], [KEY_7, 55]]:
-		await _push_key(vp, pair[0], pair[1])
+		await _push_length_key(ctx, pair[0] as Key, pair[1] as int)
 	await process_frame
 	check(cam.global_basis.is_equal_approx(basis0),
 			"KEY_1 KEY_3 KEY_5 KEY_7 during preview leave the camera basis")
@@ -389,6 +404,27 @@ func _type_text(vp: Viewport, text: String) -> void:
 		var code := text.unicode_at(i)
 		var key := KEY_PERIOD if code == 46 else KEY_0 + (code - 48)
 		await _push_key(vp, key as Key, code)
+
+
+func _push_length_key(ctx: FilmContext, keycode: Key, unicode: int) -> void:
+	var vp: Viewport = ctx.main.interaction.get_viewport()
+	var ev := InputEventKey.new()
+	ev.keycode = keycode
+	ev.physical_keycode = keycode
+	ev.unicode = unicode
+	ev.pressed = true
+	vp.push_input(ev)
+	# Headless SceneTree does not dispatch unfocused number keys through this
+	# Control's _input/_gui_input. The WP3 handler is ViewportInteraction._input.
+	ctx.main.interaction._input(ev)
+	await process_frame
+	var rel := InputEventKey.new()
+	rel.keycode = keycode
+	rel.physical_keycode = keycode
+	rel.pressed = false
+	vp.push_input(rel)
+	ctx.main.interaction._input(rel)
+	await process_frame
 
 
 func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:

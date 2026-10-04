@@ -62,6 +62,9 @@ var _additive_click := false
 var _sketch_dragging := false
 var _sketch_drag_moved := false
 var _sketch_press_pos := Vector2.ZERO
+## Digits routed to the dim blank while a single-DOF preview is up. Kept so
+## KEY_0 after KEY_2 calls focus_dim_for_typing("20") instead of replacing.
+var _preview_length_typed := ""
 ## Push/pull preview distance (wire badge while dragging).
 var _pp_preview_dist := 0.0
 var _pp_badge_screen := Vector2.ZERO
@@ -228,6 +231,8 @@ func _ready() -> void:
 	if camera != null:
 		camera.view_changed.connect(_on_camera_view_changed)
 	resized.connect(queue_redraw)
+	set_process_input(true)
+	set_process_unhandled_input(true)
 
 
 func is_placing() -> bool:
@@ -1844,6 +1849,11 @@ func _gui_input(event: InputEvent) -> void:
 	# Prefer `_input` for model pointers (works when this Control is not the
 	# hovered target). Keep `_gui_input` as a fallback for headless tests and
 	# for sketch which historically used Control-local events.
+	# Length keys during a rubber-band must beat camera nav here too: a canvas
+	# click focuses this Control, so Godot delivers the next keys to _gui_input.
+	if _try_consume_preview_length_key(event):
+		accept_event()
+		return
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
 	if camera != null and camera.is_nav_event(event, allow_scroll):
 		if camera.handle_input(event, allow_scroll):
@@ -1853,6 +1863,9 @@ func _gui_input(event: InputEvent) -> void:
 	if _place_kind != "" or _picking_active_plane:
 		return
 	if sketch_mode != null and sketch_mode.active:
+		# Dim / distance already own the key; do not re-seed a single digit.
+		if event is InputEventKey and _sketch_keys_blocked():
+			return
 		_sketch_input(event)
 		return
 	if _handle_model_pointer(event):
@@ -3816,6 +3829,49 @@ func toggle_section() -> void:
 		status.emit("Section view on")
 
 
+func _dim_line_edit() -> LineEdit:
+	if sketch_chrome == null:
+		return null
+	var spin: Node = sketch_chrome.find_child("DimSpin", true, false)
+	if not (spin is SpinBox):
+		return null
+	return (spin as SpinBox).get_line_edit()
+
+
+func _try_consume_preview_length_key(event: InputEvent) -> bool:
+	if sketch_mode == null or not sketch_mode.active \
+			or not sketch_mode.has_single_dof_preview():
+		_preview_length_typed = ""
+		return false
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if not _is_length_type_key(ke):
+		return false
+	var edit := _dim_line_edit()
+	var dim_focused := edit != null and edit.has_focus()
+	# Another numeric field (HUD, Distance, …) keeps the key. The dim blank
+	# itself still has to append: focus_dim_for_typing(one digit) would replace.
+	if not dim_focused and (_text_field_has_focus() or _sketch_keys_blocked()):
+		return false
+	var seed := _length_type_seed(ke)
+	if dim_focused and not _preview_length_typed.is_empty():
+		_preview_length_typed += seed
+	else:
+		_preview_length_typed = seed
+	if sketch_chrome != null:
+		sketch_chrome.focus_dim_for_typing(_preview_length_typed)
+	return true
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Headless Viewport.push_input with no GUI focus owner never reaches
+	# _input/_gui_input on this Control; leftover 10 still has to seed the blank.
+	if _try_consume_preview_length_key(event):
+		get_viewport().set_input_as_handled()
+
+
 func _input(event: InputEvent) -> void:
 	# Camera first — before Control STOP panels so orbit works over docks, and
 	# before place so Alt+drag / two-finger pan don't commit a solid.
@@ -3830,18 +3886,9 @@ func _input(event: InputEvent) -> void:
 	# OrbitCamera claims 1/2/3/5/7 as standard views. Same seed _sketch_input
 	# already uses; it has to run first. Skip when a field already has focus
 	# so the second digit appends instead of replacing the seed.
-	if event is InputEventKey and event.pressed and not event.echo \
-			and not event.ctrl_pressed and not event.meta_pressed:
-		var ke_len := event as InputEventKey
-		if sketch_mode != null and sketch_mode.active \
-				and sketch_mode.has_single_dof_preview() \
-				and _is_length_type_key(ke_len) \
-				and not _text_field_has_focus() \
-				and not _sketch_keys_blocked():
-			if sketch_chrome != null:
-				sketch_chrome.focus_dim_for_typing(_length_type_seed(ke_len))
-			get_viewport().set_input_as_handled()
-			return
+	if _try_consume_preview_length_key(event):
+		get_viewport().set_input_as_handled()
+		return
 	# Suppress camera nav keys while a text edit control owns focus so digits
 	# (1/2/3/7) type into numeric fields (e.g. TransformHud / PropertyPanel).
 	if camera != null:
