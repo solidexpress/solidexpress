@@ -507,6 +507,9 @@ func _build_ui() -> void:
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	file_dialog.min_size = Vector2i(700, 460)
 	file_dialog.file_selected.connect(_on_file_selected)
+	file_dialog.close_requested.connect(_on_file_dialog_dismissed)
+	file_dialog.canceled.connect(_on_file_dialog_dismissed)
+	file_dialog.window_input.connect(_on_file_dialog_window_input)
 	ui.add_child(file_dialog)
 
 	confirm_dialog = ConfirmationDialog.new()
@@ -2831,12 +2834,21 @@ func _file_dialog_name_edit() -> LineEdit:
 	return null
 
 
+func _export_3mf_line_edit_live() -> LineEdit:
+	if file_dialog == null or not is_instance_valid(file_dialog) or not file_dialog.visible:
+		return null
+	var edit := _file_dialog_name_edit()
+	if edit == null or not is_instance_valid(edit) or not edit.is_inside_tree():
+		return null
+	return edit
+
+
 func _focus_export_3mf_filename() -> void:
 	if file_dialog == null or not file_dialog.visible:
 		return
 	if _file_action != FileAction.EXPORT_3MF:
 		return
-	var edit := _file_dialog_name_edit()
+	var edit := _export_3mf_line_edit_live()
 	if edit == null:
 		return
 	if not edit.text_changed.is_connected(_on_export_3mf_name_changed):
@@ -2846,9 +2858,20 @@ func _focus_export_3mf_filename() -> void:
 	_export_3mf_accept_name = edit.text.strip_edges()
 	edit.grab_focus()
 	edit.select_all()
-	edit.grab_focus.call_deferred()
-	edit.select_all.call_deferred()
+	# Deferred work must land on Main, never on the LineEdit — the edit can
+	# already be gone if Cancel / Escape / WM close hid the dialog.
+	_deferred_focus_export_3mf_filename.call_deferred()
 	_select_export_3mf_name_next_frame()
+
+
+func _deferred_focus_export_3mf_filename() -> void:
+	if file_dialog == null or not file_dialog.visible:
+		return
+	var edit := _export_3mf_line_edit_live()
+	if edit == null:
+		return
+	edit.grab_focus()
+	edit.select_all()
 
 
 func _on_export_3mf_name_gui_input(event: InputEvent) -> void:
@@ -2857,12 +2880,15 @@ func _on_export_3mf_name_gui_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	var edit := _file_dialog_name_edit()
+	if file_dialog == null or not file_dialog.visible:
+		return
+	var edit := _export_3mf_line_edit_live()
 	if edit == null:
 		return
 	# Deferred select after the caret click, then one more frame so the caret
-	# cannot win. Same pattern as the Distance / dim blanks.
-	edit.select_all.call_deferred()
+	# cannot win. Same pattern as the Distance / dim blanks. Guarded so a
+	# close that frees the edit cannot use-after-free.
+	_deferred_focus_export_3mf_filename.call_deferred()
 	_select_export_3mf_name_next_frame()
 
 
@@ -2874,12 +2900,18 @@ func _select_export_3mf_name_next_frame() -> void:
 		return
 	if _file_action != FileAction.EXPORT_3MF:
 		return
-	var edit := _file_dialog_name_edit()
-	if edit != null:
-		edit.select_all()
+	var edit := _export_3mf_line_edit_live()
+	if edit == null:
+		return
+	edit.select_all()
 
 
 func _on_export_3mf_name_changed(new_text: String) -> void:
+	if file_dialog == null or not file_dialog.visible:
+		return
+	var edit := _export_3mf_line_edit_live()
+	if edit == null:
+		return
 	_export_3mf_accept_name = new_text.strip_edges()
 
 
@@ -2888,8 +2920,53 @@ func _on_file_dialog_ok_pressed() -> void:
 	if _file_action != FileAction.EXPORT_3MF:
 		return
 	var edit := _file_dialog_name_edit()
-	if edit != null:
+	if edit != null and is_instance_valid(edit) and edit.is_inside_tree():
 		_export_3mf_accept_name = edit.text.strip_edges()
+
+
+func _on_file_dialog_dismissed() -> void:
+	if file_dialog != null and is_instance_valid(file_dialog) and file_dialog.visible:
+		file_dialog.hide()
+
+
+func _on_file_dialog_window_input(event: InputEvent) -> void:
+	if not (event is InputEventKey):
+		return
+	var key := event as InputEventKey
+	if not key.pressed or key.echo or key.keycode != KEY_ESCAPE:
+		return
+	_on_file_dialog_dismissed()
+	var vp := file_dialog.get_viewport() if file_dialog != null else null
+	if vp != null:
+		vp.set_input_as_handled()
+
+
+func _file_dialog_is_visible() -> bool:
+	return file_dialog != null and is_instance_valid(file_dialog) and file_dialog.visible
+
+
+## Hide any Window this file is currently showing. Returns true if at least one
+## was visible (so WM close must not quit).
+func _hide_visible_owned_windows() -> bool:
+	var hid := false
+	if _file_dialog_is_visible():
+		file_dialog.hide()
+		hid = true
+	if confirm_dialog != null and is_instance_valid(confirm_dialog) and confirm_dialog.visible:
+		confirm_dialog.hide()
+		_pending_discard = Callable()
+		hid = true
+	if not is_inside_tree():
+		return hid
+	for node in find_children("*", "Window", true, false):
+		var win := node as Window
+		if win == null or not is_instance_valid(win) or not win.visible:
+			continue
+		if win == file_dialog or win == confirm_dialog:
+			continue
+		win.hide()
+		hid = true
+	return hid
 
 
 func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: String) -> void:
@@ -2972,7 +3049,7 @@ func _on_file_selected(path: String) -> void:
 			_export_3mf_accept_name = ""
 			if typed == "" and file_dialog != null:
 				var edit := _file_dialog_name_edit()
-				if edit != null:
+				if edit != null and is_instance_valid(edit) and edit.is_inside_tree():
 					typed = edit.text.strip_edges()
 			path = _resolve_export_3mf_path(typed, path)
 			if file_dialog != null and path.is_absolute_path():
@@ -3153,12 +3230,20 @@ func _svg_size_for_current_surface(face: String, body: String, tex: Texture2D) -
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		# Child FileDialog / confirm / other Windows: hide that window only.
+		# A close of the main window with nothing up still confirms/quits.
+		if _hide_visible_owned_windows():
+			return
 		_confirm_discard(func() -> void: get_tree().quit())
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
+			if _file_dialog_is_visible():
+				file_dialog.hide()
+				get_viewport().set_input_as_handled()
+				return
 			if interaction != null and interaction.has_method("cancel_stack"):
 				if bool(interaction.cancel_stack()):
 					get_viewport().set_input_as_handled()
