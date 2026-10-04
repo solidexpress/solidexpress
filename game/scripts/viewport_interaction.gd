@@ -65,6 +65,9 @@ var _sketch_press_pos := Vector2.ZERO
 ## Digits routed to the dim blank while a single-DOF preview is up. Kept so
 ## KEY_0 after KEY_2 calls focus_dim_for_typing("20") instead of replacing.
 var _preview_length_typed := ""
+## Digits routed to Distance while a sketch is active with no preview.
+## KEY_5 after KEY_7 KEY_PERIOD calls focus_distance_for_typing("7.5").
+var _distance_length_typed := ""
 ## Push/pull preview distance (wire badge while dragging).
 var _pp_preview_dist := 0.0
 var _pp_badge_screen := Vector2.ZERO
@@ -1271,17 +1274,51 @@ func _commit_up_to_face_pick(screen_pos: Vector2) -> void:
 	if view == null or sketch_chrome == null:
 		return
 	var ray := _model_ray(screen_pos)
-	var hit: Dictionary = view.pick_info(ray[0], ray[1])
-	if hit.is_empty() or str(hit.get("face", "")) == "":
+	var origin: Vector3 = ray[0]
+	var dir: Vector3 = ray[1]
+	if dir.length_squared() < 1e-16:
 		status.emit("Click a model face for Up To Surface")
 		return
-	var face_id := str(hit["face"])
-	var body_id := str(hit.get("body", ""))
-	# Highlight the picked face. Stay in the sketch; do not place a point.
-	view.select_entity(body_id, face_id)
-	if sketch_chrome.has_method("set_up_to_face"):
-		sketch_chrome.set_up_to_face(face_id)
-	_finish_up_to_face_gesture()
+	dir = dir.normalized()
+	# Walk through the sketch-host face (the plane we are drawing on) so a
+	# click on a 10 mm block from the sketch view still reaches the bottom.
+	# A miss stays armed and does not start a line.
+	for _i in range(8):
+		var hit: Dictionary = view.pick_info(origin, dir)
+		if hit.is_empty() or str(hit.get("face", "")) == "":
+			break
+		var face_id := str(hit["face"])
+		if _up_to_face_is_sketch_plane(face_id):
+			var pt: Vector3 = hit["point"] if hit.get("point") is Vector3 else origin
+			origin = pt + dir * 0.05
+			continue
+		var body_id := str(hit.get("body", ""))
+		# Highlight the picked face. Stay in the sketch; do not place a point.
+		view.select_entity(body_id, face_id)
+		if sketch_chrome.has_method("set_up_to_face"):
+			sketch_chrome.set_up_to_face(face_id)
+		_finish_up_to_face_gesture()
+		return
+	status.emit("Click a model face for Up To Surface")
+
+
+func _up_to_face_is_sketch_plane(face_id: String) -> bool:
+	if face_id == "":
+		return false
+	# The face the sketch sits on is often still selected. Up To Surface must
+	# not store that host; keep walking the ray to the far face.
+	if view != null and view.selected_face != "" and face_id == view.selected_face:
+		return true
+	if sketch_mode == null or not sketch_mode.active or view == null or view.doc == null:
+		return false
+	var mid: Variant = view.doc.face_midpoint(face_id)
+	if not (mid is Vector3):
+		return false
+	var n: Vector3 = sketch_mode.plane_normal()
+	if n.length_squared() < 1e-12:
+		return false
+	n = n.normalized()
+	return absf(((mid as Vector3) - sketch_mode.plane_origin).dot(n)) <= 0.75
 
 
 ## Same shape as the active-plane one-shot: left click commits, right click
@@ -1851,12 +1888,8 @@ func _gui_input(event: InputEvent) -> void:
 	# for sketch which historically used Control-local events.
 	# Length keys during a rubber-band must beat camera nav here too: a canvas
 	# click focuses this Control, so Godot delivers the next keys to _gui_input.
-	if _try_consume_preview_length_key(event):
-		accept_event()
-		return
-	# Second digit of an unfocused KEY_2 KEY_0 pair: handle before the LineEdit
-	# select-all from grab_focus replaces the seed with "0".
-	if _try_append_focused_dim_length_key(event):
+	# Unfocused Distance 7.5 (no preview) uses the same gate.
+	if _try_route_length_key(event):
 		accept_event()
 		return
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
@@ -1866,6 +1899,10 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	# Place is owned entirely by `_input` — do not swallow `_gui_input` here.
 	if _place_kind != "" or _picking_active_plane:
+		return
+	# Up To Surface pick before sketch clicks, same order as `_input`.
+	if _input_up_to_face_pick(event):
+		accept_event()
 		return
 	if sketch_mode != null and sketch_mode.active:
 		# Dim / distance already own the key; do not re-seed a single digit.
@@ -2256,6 +2293,7 @@ func _sketch_input(event: InputEvent) -> void:
 			# A new canvas press starts a new length-entry; leftover-10's
 			# KEY_2 KEY_0 buffer must not leak into a later focused _type_dim.
 			_preview_length_typed = ""
+			_distance_length_typed = ""
 			# Read the dim blank before dropping focus so a typed length still
 			# wins on this press. Missing typed_dim_value (WP1) keeps click().
 			# Only polygon/circle: a leftover dim number must not steal a LINE
@@ -2361,11 +2399,8 @@ func _sketch_input(event: InputEvent) -> void:
 				accept_event()
 	elif event is InputEventKey and event.pressed and not event.ctrl_pressed:
 		var ke := event as InputEventKey
-		# Digits / decimal while rubber-banding → type into the distance blank.
-		if sketch_mode.has_single_dof_preview() and _is_length_type_key(ke):
-			var seed := _length_type_seed(ke)
-			if sketch_chrome != null:
-				sketch_chrome.focus_dim_for_typing(seed)
+		# Digits / decimal: preview → dim blank; no preview → Distance.
+		if _is_length_type_key(ke) and _try_route_length_key(event):
 			accept_event()
 			return
 		match ke.keycode:
@@ -3857,6 +3892,29 @@ func _dim_line_edit() -> LineEdit:
 	return (spin as SpinBox).get_line_edit()
 
 
+func _distance_line_edit() -> LineEdit:
+	if sketch_chrome == null:
+		return null
+	var spin: Node = sketch_chrome.find_child("DistanceSpin", true, false)
+	if not (spin is SpinBox):
+		return null
+	return (spin as SpinBox).get_line_edit()
+
+
+## Preview digits go to the dim blank; with no preview they go to Distance.
+## Runs before OrbitCamera so KEY_1/2/3/5/7 cannot steal 7.5 while sketching.
+func _try_route_length_key(event: InputEvent) -> bool:
+	if _try_consume_preview_length_key(event):
+		return true
+	if _try_append_focused_dim_length_key(event):
+		return true
+	if _try_consume_distance_length_key(event):
+		return true
+	if _try_append_focused_distance_length_key(event):
+		return true
+	return false
+
+
 func _try_consume_preview_length_key(event: InputEvent) -> bool:
 	if sketch_mode == null or not sketch_mode.active \
 			or not sketch_mode.has_single_dof_preview():
@@ -3874,7 +3932,11 @@ func _try_consume_preview_length_key(event: InputEvent) -> bool:
 	# appended in `_unhandled_input` when the LineEdit never eats it.
 	if _text_field_has_focus() or _sketch_keys_blocked():
 		return false
-	_preview_length_typed = _length_type_seed(ke)
+	var seed := _length_type_seed(ke)
+	if _preview_length_typed.is_empty():
+		_preview_length_typed = seed
+	else:
+		_preview_length_typed += seed
 	if sketch_chrome != null:
 		sketch_chrome.focus_dim_for_typing(_preview_length_typed)
 	return true
@@ -3905,17 +3967,60 @@ func _try_append_focused_dim_length_key(event: InputEvent) -> bool:
 	return true
 
 
+func _try_consume_distance_length_key(event: InputEvent) -> bool:
+	if sketch_mode == null or not sketch_mode.active \
+			or sketch_mode.has_single_dof_preview():
+		_distance_length_typed = ""
+		return false
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if not _is_length_type_key(ke):
+		return false
+	if _text_field_has_focus() or _sketch_keys_blocked():
+		return false
+	var seed := _length_type_seed(ke)
+	if _distance_length_typed.is_empty():
+		_distance_length_typed = seed
+	else:
+		_distance_length_typed += seed
+	if sketch_chrome != null:
+		if sketch_chrome.has_method("focus_distance_for_typing"):
+			sketch_chrome.focus_distance_for_typing(_distance_length_typed)
+	return true
+
+
+func _try_append_focused_distance_length_key(event: InputEvent) -> bool:
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if sketch_mode == null or not sketch_mode.active \
+			or sketch_mode.has_single_dof_preview() \
+			or not _is_length_type_key(ke) \
+			or _distance_length_typed.is_empty():
+		return false
+	var edit := _distance_line_edit()
+	if edit == null or not edit.has_focus():
+		return false
+	var seed := _length_type_seed(ke)
+	if seed.is_empty():
+		return false
+	_distance_length_typed += seed
+	if sketch_chrome != null and sketch_chrome.has_method("focus_distance_for_typing"):
+		sketch_chrome.focus_distance_for_typing(_distance_length_typed)
+	return true
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Headless Viewport.push_input with no GUI focus owner never reaches
 	# _input/_gui_input on this Control; leftover 10 still has to seed the blank.
-	if _try_consume_preview_length_key(event):
+	if _try_route_length_key(event):
 		get_viewport().set_input_as_handled()
 		return
-	# Second digit: the dim blank is focused so consume skipped. A live
-	# LineEdit already ate the key (unhandled does not run). Headless often
-	# does not, and leftover 10 still has to turn KEY_2 KEY_0 into 20.
-	if _try_append_focused_dim_length_key(event):
-		get_viewport().set_input_as_handled()
+	if _input_up_to_face_pick(event):
+		return
 
 
 func _input(event: InputEvent) -> void:
@@ -3929,13 +4034,9 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 	# Length keys during a single-DOF rubber-band seed the dim blank before
-	# OrbitCamera claims 1/2/3/5/7 as standard views. Same seed _sketch_input
-	# already uses; it has to run first. Skip when a field already has focus
-	# so the second digit appends instead of replacing the seed.
-	if _try_consume_preview_length_key(event):
-		get_viewport().set_input_as_handled()
-		return
-	if _try_append_focused_dim_length_key(event):
+	# OrbitCamera claims 1/2/3/5/7 as standard views. With no preview they
+	# seed Distance (unfocused 7.5). Same seed _sketch_input already uses.
+	if _try_route_length_key(event):
 		get_viewport().set_input_as_handled()
 		return
 	# Suppress camera nav keys while a text edit control owns focus so digits
