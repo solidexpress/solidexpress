@@ -2446,7 +2446,9 @@ func click(pos2: Vector2) -> void:
 	_last_commit_text = ""
 	# A dimension label sits a few millimetres off the geometry. Snapping first
 	# pulls that click onto the line and the in-sketch editor never opens.
-	if tool == Tool.SELECT:
+	# SMART_DIM stays armed after placing a distance; the next click on that
+	# label must open the editor instead of starting another dimension.
+	if tool == Tool.SELECT or tool == Tool.SMART_DIM:
 		var dhit_raw := dimension_hit(pos2)
 		if dhit_raw >= 0:
 			dimension_edit_requested.emit(dhit_raw)
