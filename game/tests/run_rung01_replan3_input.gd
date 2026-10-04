@@ -88,12 +88,13 @@ func test_unfocused_distance_75(ctx: FilmContext) -> void:
 	if chrome == null or not chrome.has_method("focus_distance_for_typing"):
 		check(false,
 				"focus_distance_for_typing is missing on SketchContextChrome — WP1 has not landed; unfocused 7.5 cannot fill Distance")
-	var parsed := _parse_distance_text(chrome)
-	check(parsed != null and is_equal_approx(float(parsed), 7.5),
-			"Distance LineEdit parses as 7.5 (got %s from '%s')" % [
-				str(parsed), _distance_raw(chrome)])
-	var readout := _readout_text(chrome)
-	check(readout.contains("7.5"), "readout contains 7.5 (%s)" % readout)
+	else:
+		var parsed: Variant = _parse_distance_text(chrome)
+		check(parsed != null and is_equal_approx(float(parsed), 7.5),
+				"Distance LineEdit parses as 7.5 (got %s from '%s')" % [
+					str(parsed), _distance_raw(chrome)])
+		var readout := _readout_text(chrome)
+		check(readout.contains("7.5"), "readout contains 7.5 (%s)" % readout)
 	check(cam.global_transform.basis.is_equal_approx(basis0),
 			"camera basis unchanged after unfocused 7.5")
 	check(is_equal_approx(cam.yaw, yaw0) and is_equal_approx(cam.pitch, pitch0),
@@ -123,7 +124,7 @@ func test_preview_digits_go_to_dim(ctx: FilmContext) -> void:
 	await process_frame
 	var dim_text := "" if dim == null else str(dim.text)
 	check(dim_text.contains("20"), "dim blank contains 20 (got '%s')" % dim_text)
-	var parsed := _parse_distance_text(chrome)
+	var parsed: Variant = _parse_distance_text(chrome)
 	check(parsed != null and is_equal_approx(float(parsed), 20.0),
 			"Distance still parses as the default 20 (got %s from '%s')" % [
 				str(parsed), _distance_raw(chrome)])
@@ -238,6 +239,7 @@ func test_up_to_surface_face_pick(ctx: FilmContext) -> void:
 	await _click_uv(ctx, Vector2(8, 8), "Uncut circle centre")
 	await _click_uv(ctx, Vector2(11, 8), "Uncut circle radius")
 	await _pick_option(ctx, _finish_op(chrome), 1, "Cut no-face")
+	await _pick_option(ctx, _finish_end(chrome), 0, "Blind before Up To Surface")
 	await _pick_option(ctx, _finish_end(chrome), 3, "Up To Surface no-face")
 	ex_btn = chrome.extrude_button()
 	check(str(chrome.up_to_face_id).strip_edges() == "", "no-face run starts with empty id")
@@ -303,62 +305,56 @@ func _exit_sketch(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm == null or not sm.active:
 		return
-	var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
-	if exit_btn != null and exit_btn.is_visible_in_tree():
-		await _click_control(exit_btn)
-		await process_frame
-		await process_frame
-	if sm.active:
-		var dlg: ConfirmationDialog = null
-		for c in ctx.main.find_children("*", "ConfirmationDialog", true, false):
-			var d := c as ConfirmationDialog
-			if d != null and d.visible:
-				dlg = d
-				break
-		if dlg != null:
-			var ok := dlg.get_ok_button()
-			if ok != null:
-				await _click_control(ok)
-				await process_frame
-				await process_frame
-	check(not sm.active, "sketch is closed")
+	var fid: String = await FilmUI.exit_sketch(ctx)
+	await process_frame
+	await process_frame
+	sm = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		check(false, "sketch is closed (Exit Sketch left it active, fid=%s)" % fid)
 
 
 func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float) -> void:
-	var host := Vector3(20, 15, z_top)
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		await _exit_sketch(ctx)
 	if top != "":
+		ctx.view.select_entity(body, top)
+		await process_frame
+	ctx.main.interaction._refresh_selection_strip()
+	await process_frame
+	var sketch_btn: Button = ctx.main.interaction._strip_sketch
+	if sketch_btn == null or not sketch_btn.is_visible_in_tree():
+		var host := Vector3(20, 15, z_top)
 		var picked := FilmUI.face_pick_point(ctx.view, body, top)
 		if picked != Vector3.INF:
 			host = picked
-	await _zoom_model(ctx, host, 90.0)
-	var host_screen := FilmUI.model_to_screen(ctx, host)
-	if FilmUI.is_on_screen(ctx, host_screen):
-		await _click_at(ctx.main.get_viewport(), host_screen)
-		await process_frame
-	var sm: SketchMode = ctx.main.sketch_mode
-	var on_top := sm.active and sm.plane_normal().dot(Vector3(0, 0, 1)) > 0.9 \
-			and absf(sm.plane_origin.z - z_top) < 0.5
-	if sm.active and not on_top:
-		await _exit_sketch(ctx)
-		sm = ctx.main.sketch_mode
-		on_top = false
-	if not on_top:
-		if top != "":
-			ctx.view.select_entity(body, top)
+		await _zoom_model(ctx, host, 90.0)
+		var host_screen := FilmUI.model_to_screen(ctx, host)
+		if FilmUI.is_on_screen(ctx, host_screen):
+			await _click_at(ctx.main.get_viewport(), host_screen)
+			await process_frame
+		ctx.view.select_entity(body, top)
 		ctx.main.interaction._refresh_selection_strip()
 		await process_frame
-		var sketch_btn: Button = ctx.main.interaction._strip_sketch
-		check(sketch_btn != null and sketch_btn.is_visible_in_tree(),
-				"selection-strip Sketch is visible")
-		if sketch_btn != null:
-			await _click_control(sketch_btn)
-			await process_frame
-			await process_frame
-	check(ctx.main.sketch_mode.active, "top-face sketch is active")
+		sketch_btn = ctx.main.interaction._strip_sketch
+	check(sketch_btn != null and sketch_btn.is_visible_in_tree(),
+			"selection-strip Sketch is visible")
+	if sketch_btn != null and sketch_btn.is_visible_in_tree():
+		await FilmUI.click_control(ctx, sketch_btn, {"keys": "Sketch", "desc": "Sketch on top face"})
+		await process_frame
+		await process_frame
+	sm = ctx.main.sketch_mode
+	check(sm.active, "top-face sketch is active")
+	if sm.active:
+		check(sm.plane_normal().dot(Vector3(0, 0, 1)) > 0.9,
+				"sketch plane normal is +Z (got %s)" % str(sm.plane_normal()))
+		check(absf(sm.plane_origin.z - z_top) < 0.5,
+				"sketch plane z is the top (got %.3f want %.3f)" % [sm.plane_origin.z, z_top])
 
 
 func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
 	var cam = ctx.main.camera
+	var ix: ViewportInteraction = ctx.main.interaction
 	if cam._view_tween != null and cam._view_tween.is_valid():
 		cam._view_tween.kill()
 		cam._view_tween = null
@@ -370,7 +366,18 @@ func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
 	cam.set_view(cam.yaw, deg_to_rad(-75.0), false)
 	await process_frame
 	await process_frame
-	var screen: Vector2 = ctx.main.interaction._model_to_screen(mid)
+	var screen: Vector2 = ix._model_to_screen(mid)
+	var ray: Array = ix._model_ray(screen)
+	var hit: Dictionary = ctx.view.pick_info(ray[0], ray[1])
+	if str(hit.get("face", "")) != bottom:
+		cam.set_view(deg_to_rad(180.0), deg_to_rad(-80.0), false)
+		await process_frame
+		await process_frame
+		screen = ix._model_to_screen(mid)
+		ray = ix._model_ray(screen)
+		hit = ctx.view.pick_info(ray[0], ray[1])
+	check(str(hit.get("face", "")) != "",
+			"bottom-face ray hits a model face (got %s)" % str(hit.get("face", "")))
 	await _click_at(ctx.main.get_viewport(), screen)
 	await process_frame
 
@@ -388,7 +395,7 @@ func _type_distance_click_path(ctx: FilmContext, digits: String) -> void:
 
 
 func _click_extrude(ctx: FilmContext) -> void:
-	var btn := ctx.main.sketch_chrome.extrude_button()
+	var btn: Button = ctx.main.sketch_chrome.extrude_button()
 	check(btn != null and btn.is_visible_in_tree(), "finish-bar Extrude is visible")
 	if btn == null:
 		return

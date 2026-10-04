@@ -1303,9 +1303,13 @@ func _commit_up_to_face_pick(screen_pos: Vector2) -> void:
 
 
 func _up_to_face_is_sketch_plane(face_id: String) -> bool:
-	if face_id == "" or sketch_mode == null or not sketch_mode.active:
+	if face_id == "":
 		return false
-	if view == null or view.doc == null or not view.doc.has_method("face_midpoint"):
+	# The face the sketch sits on is often still selected. Up To Surface must
+	# not store that host; keep walking the ray to the far face.
+	if view != null and view.selected_face != "" and face_id == view.selected_face:
+		return true
+	if sketch_mode == null or not sketch_mode.active or view == null or view.doc == null:
 		return false
 	var mid: Variant = view.doc.face_midpoint(face_id)
 	if not (mid is Vector3):
@@ -1314,7 +1318,7 @@ func _up_to_face_is_sketch_plane(face_id: String) -> bool:
 	if n.length_squared() < 1e-12:
 		return false
 	n = n.normalized()
-	return absf(((mid as Vector3) - sketch_mode.plane_origin).dot(n)) <= 0.5
+	return absf(((mid as Vector3) - sketch_mode.plane_origin).dot(n)) <= 0.75
 
 
 ## Same shape as the active-plane one-shot: left click commits, right click
