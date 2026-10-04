@@ -2,7 +2,7 @@ BUILD_DIR := build
 GODOT := tools/godot/godot
 JOBS := $(shell nproc)
 
-.PHONY: all configure build test test-kernel test-godot clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
+.PHONY: all configure build test test-kernel test-godot lint-rung01-e2e clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 
@@ -89,8 +89,19 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_rung01_replan_input.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan_shell.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan_panel.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan2_distance.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan2_commit.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan2_pointer.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan2_shell.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan2_layout.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan2_camera.gd
 
-test: test-kernel test-godot
+lint-rung01-e2e:
+	python3 tools/lint_rung01_e2e.py
+
+test: test-kernel
+	python3 tools/lint_rung01_e2e.py
+	$(MAKE) test-godot
 	@echo "ALL TESTS PASSED"
 
 # Prefer native Wayland so trackpad MagnifyGesture (pinch-zoom) actually arrives.
