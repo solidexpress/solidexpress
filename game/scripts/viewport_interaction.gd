@@ -525,21 +525,36 @@ func _show_dim_edit(index: int) -> void:
 	_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
 	var at := Vector2i(get_viewport().get_mouse_position()) + Vector2i(8, 8)
 	_dim_edit_popup.popup(Rect2i(at, Vector2i(240, 40)))
-	_dim_edit_line.grab_focus()
-	_dim_edit_line.select_all()
+	# Focus after popup() returns so Window focus_entered / tree_exited are
+	# not re-entered while the popup is still wiring those connections.
+	_dim_edit_select_gen += 1
+	_focus_dim_edit_line_if_gen.call_deferred(_dim_edit_select_gen)
 
 
 func _dim_edit_owns_keys() -> bool:
 	return _dim_edit_popup != null and _dim_edit_popup.visible
 
 
+func _focus_dim_edit_line_if_gen(gen: int) -> void:
+	if gen != _dim_edit_select_gen:
+		return
+	if _dim_edit_line == null:
+		return
+	if not _dim_edit_line.has_focus():
+		_dim_edit_line.grab_focus()
+	_select_dim_edit_all_if_gen(gen)
+
+
 func _on_dim_edit_line_focus_entered() -> void:
 	_dim_edit_replace = true
-	# Mouse clicks select-all from gui_input so the caret click cannot win.
-	# Keyboard focus (and opening the popup) selects immediately.
+	# Do not select_all / grab_focus here. That re-enters the root Window
+	# focus_entered / tree_exited connections and logs connect/disconnect
+	# errors. Mouse clicks already defer select from gui_input; keyboard
+	# and popup-open use one deferred select.
 	if _dim_edit_line == null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		return
-	_dim_edit_line.select_all()
+	_dim_edit_select_gen += 1
+	_select_dim_edit_all_if_gen.call_deferred(_dim_edit_select_gen)
 
 
 func _on_dim_edit_line_text_changed(_new_text: String) -> void:
@@ -1336,14 +1351,22 @@ func _commit_up_to_face_pick(screen_pos: Vector2) -> void:
 	dir = dir.normalized()
 	# Walk through the sketch-host face (the plane we are drawing on) so a
 	# click on a 10 mm block from the sketch view still reaches the bottom.
-	# A miss stays armed and does not start a line.
+	# Also walk through side walls (normal ⟂ sketch normal) so a Front or
+	# Right view click on the visible bottom face is not stolen by the near
+	# vertical face. A miss stays armed and does not start a line.
+	var sketch_n := Vector3.ZERO
+	if sketch_mode != null and sketch_mode.active:
+		sketch_n = sketch_mode.plane_normal()
+		if sketch_n.length_squared() > 1e-12:
+			sketch_n = sketch_n.normalized()
 	for _i in range(8):
 		var hit: Dictionary = view.pick_info(origin, dir)
 		if hit.is_empty() or str(hit.get("face", "")) == "":
 			break
 		var face_id := str(hit["face"])
-		if _up_to_face_is_sketch_plane(face_id):
-			var pt: Vector3 = hit["point"] if hit.get("point") is Vector3 else origin
+		var pt: Vector3 = hit["point"] if hit.get("point") is Vector3 else origin
+		if _up_to_face_is_sketch_plane(face_id) \
+				or _up_to_face_is_side_wall(face_id, str(hit.get("body", "")), sketch_n):
 			origin = pt + dir * 0.05
 			continue
 		var body_id := str(hit.get("body", ""))
@@ -1354,6 +1377,17 @@ func _commit_up_to_face_pick(screen_pos: Vector2) -> void:
 		_finish_up_to_face_gesture()
 		return
 	status.emit("Click a model face for Up To Surface")
+
+
+func _up_to_face_is_side_wall(face_id: String, body_id: String, sketch_n: Vector3) -> bool:
+	if face_id == "" or sketch_n.length_squared() < 1e-12 or view == null:
+		return false
+	if not view.has_method("face_normal"):
+		return false
+	var fn: Vector3 = view.face_normal(body_id, face_id)
+	if fn.length_squared() < 1e-12:
+		return false
+	return absf(fn.normalized().dot(sketch_n)) < 0.35
 
 
 func _up_to_face_is_sketch_plane(face_id: String) -> bool:
@@ -1377,6 +1411,7 @@ func _up_to_face_is_sketch_plane(face_id: String) -> bool:
 
 ## Same shape as the active-plane one-shot: left click commits, right click
 ## or Esc cancels, and the gesture runs during an active sketch.
+## Middle-button drag and Alt+left orbit leave the pick armed.
 ## Returns true when this event was consumed.
 func _input_up_to_face_pick(event: InputEvent) -> bool:
 	if event is InputEventMouseButton and not (event as InputEventMouseButton).pressed \
@@ -1390,12 +1425,16 @@ func _input_up_to_face_pick(event: InputEvent) -> bool:
 		var mouse_pos := (event as InputEventMouse).position
 		if _over_chrome(mouse_pos) or not _viewport_owns_pointer(mouse_pos):
 			return false
+	if _is_orbit_event(event):
+		# Camera owns middle-drag and Alt+left. Do not cancel, consume, or
+		# latch `_up_to_face_pick_consumed`.
+		return false
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if not mb.pressed:
 			get_viewport().set_input_as_handled()
 			return true
-		if mb.button_index == MOUSE_BUTTON_LEFT and not mb.alt_pressed:
+		if mb.button_index == MOUSE_BUTTON_LEFT:
 			_up_to_face_swallow_release = true
 			_commit_up_to_face_pick(mb.position)
 			get_viewport().set_input_as_handled()
@@ -1412,6 +1451,22 @@ func _input_up_to_face_pick(event: InputEvent) -> bool:
 			_disarm_up_to_face_pick()
 			status.emit("Up To Surface face pick cancelled")
 			get_viewport().set_input_as_handled()
+			return true
+	return false
+
+
+func _is_orbit_event(event: InputEvent) -> bool:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_MIDDLE:
+			return true
+		if mb.button_index == MOUSE_BUTTON_LEFT and mb.alt_pressed:
+			return true
+	if event is InputEventMouseMotion:
+		var mm := event as InputEventMouseMotion
+		if (mm.button_mask & MOUSE_BUTTON_MASK_MIDDLE) != 0:
+			return true
+		if (mm.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0 and mm.alt_pressed:
 			return true
 	return false
 
@@ -4094,6 +4149,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _try_route_length_key(event):
 		get_viewport().set_input_as_handled()
 		return
+	# Camera nav before the face pick so a headless middle-drag orbits
+	# instead of falling through as an unhandled button.
+	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
+	if camera != null:
+		var block_nav := false
+		if event is InputEventKey:
+			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
+		if not block_nav and camera.is_nav_event(event, allow_scroll):
+			if camera.handle_input(event, allow_scroll):
+				get_viewport().set_input_as_handled()
+				return
 	if _input_up_to_face_pick(event):
 		return
 

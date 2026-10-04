@@ -195,12 +195,24 @@ func _build_finish_bar() -> void:
 	_face_panel.name = "UpToFaceBox"
 	_face_panel.visible = false
 	_face_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var face_row := HBoxContainer.new()
+	face_row.name = "UpToFaceRow"
+	face_row.add_theme_constant_override("separation", 4)
+	face_row.mouse_filter = Control.MOUSE_FILTER_STOP
 	_face_label = Label.new()
 	_face_label.name = "UpToFaceLabel"
 	_face_label.text = "Face: none"
-	_face_label.custom_minimum_size = Vector2(UiScale.px(120), _chip_h())
+	_face_label.custom_minimum_size = Vector2(UiScale.px(88), _chip_h())
 	_face_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_face_panel.add_child(_face_label)
+	face_row.add_child(_face_label)
+	var opp := Button.new()
+	opp.name = "OppositeFaceButton"
+	opp.text = "Opposite face"
+	opp.custom_minimum_size = Vector2(UiScale.px(108), _chip_h())
+	opp.tooltip_text = "Use the target-body face farthest along the negative sketch normal"
+	opp.pressed.connect(_on_opposite_face_pressed)
+	face_row.add_child(opp)
+	_face_panel.add_child(face_row)
 	_finish_bar.add_child(_face_panel)
 	_finish_op = OptionButton.new()
 	_finish_op.name = "FinishOp"
@@ -456,6 +468,59 @@ func _face_midpoint_z(id: String) -> float:
 	if mid is Vector3:
 		return (mid as Vector3).z
 	return NAN
+
+
+## Target-body face farthest along −sketch normal (bottom of a top-face sketch).
+func _on_opposite_face_pressed() -> void:
+	var face_id := _opposite_face_id()
+	if face_id == "":
+		return
+	set_up_to_face(face_id)
+
+
+func _opposite_face_id() -> String:
+	if sketch_mode == null or not sketch_mode.active:
+		return ""
+	var view = sketch_mode.view
+	if view == null or view.doc == null:
+		return ""
+	var body := _up_to_target_body(view)
+	if body == "":
+		return ""
+	if not view.doc.has_method("get_face_ids") or not view.doc.has_method("face_midpoint"):
+		return ""
+	var n: Vector3 = sketch_mode.plane_normal()
+	if n.length_squared() < 1e-12:
+		return ""
+	n = n.normalized()
+	var origin: Vector3 = sketch_mode.plane_origin
+	var best_id := ""
+	var best_along := -INF
+	for face_id in view.doc.get_face_ids(body):
+		var mid: Variant = view.doc.face_midpoint(face_id)
+		if not (mid is Vector3):
+			continue
+		# Farthest along −n. The sketch-host face sits near 0 and loses.
+		var along := -((mid as Vector3) - origin).dot(n)
+		if along > best_along:
+			best_along = along
+			best_id = str(face_id)
+	return best_id
+
+
+func _up_to_target_body(view) -> String:
+	if sketch_mode != null and str(sketch_mode.target_fid) != "":
+		if view.has_method("body_of_feature"):
+			var from_target := str(view.body_of_feature(sketch_mode.target_fid))
+			if from_target != "":
+				return from_target
+	if view.selected_body != "":
+		return str(view.selected_body)
+	if view.doc != null and view.doc.has_method("body_ids"):
+		var ids: PackedStringArray = view.doc.body_ids()
+		if ids.size() == 1:
+			return str(ids[0])
+	return ""
 
 
 func _apply_thin_visibility() -> void:
@@ -718,11 +783,13 @@ func _on_distance_focus_entered() -> void:
 	if _extrude_spin != null:
 		_distance_origin = _extrude_spin.value
 	_distance_replace_next = true
-	# Mouse clicks select-all from the release path so the caret click cannot
-	# win. Keyboard focus selects immediately.
+	# Do not select_all / grab_focus here. That re-enters the root Window
+	# focus_entered / tree_exited connections. Mouse clicks already defer
+	# select from gui_input; keyboard focus uses one deferred select.
 	if _extrude_spin == null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		return
-	_select_distance_all()
+	_distance_select_gen += 1
+	_select_distance_all_if_gen.call_deferred(_distance_select_gen)
 
 
 func _on_distance_focus_exited() -> void:
@@ -747,11 +814,13 @@ func _on_distance_focus_exited() -> void:
 func _on_dim_focus_entered() -> void:
 	_dim_editing = true
 	_dim_replace_next = true
-	# Mouse clicks select-all from the release path so the caret click cannot
-	# win. Keyboard focus (and a fresh preview grab) selects immediately.
+	# Do not select_all / grab_focus here. That re-enters the root Window
+	# focus_entered / tree_exited connections. Mouse clicks already defer
+	# select from gui_input; keyboard focus uses one deferred select.
 	if _dim_spin == null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		return
-	_select_dim_all()
+	_dim_select_gen += 1
+	_select_dim_all_if_gen.call_deferred(_dim_select_gen)
 
 
 func _on_dim_focus_exited() -> void:
@@ -1050,6 +1119,10 @@ func extrude_button() -> Button:
 		if c is Button and str(c.text) == "Extrude":
 			return c as Button
 	return null
+
+
+func opposite_face_button() -> Button:
+	return find_child("OppositeFaceButton", true, false) as Button
 
 
 func revolve_button() -> Button:
