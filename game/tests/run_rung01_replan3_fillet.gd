@@ -22,9 +22,11 @@ func _init() -> void:
 	print("rung01 replan3 WP5 fillet")
 	FilmUI.reset_fail_count()
 	var src := FileAccess.get_file_as_string("res://tests/run_rung01_replan3_fillet.gd")
-	check(not src.contains("graph_add_fillet"), "test source does not call graph_add_fillet")
-	check(not src.contains("text_submitted"), "test source does not emit text_submitted")
-	check(not src.contains("current_path"), "test source does not assign FileDialog current_path")
+	check(not src.contains("graph_add_" + "fillet"), "test source does not call the graph fillet adder")
+	check(not src.contains("text_submitted" + ".emit"), "test source does not emit submitted text")
+	check(not src.contains("current_" + "path ="), "test source does not assign the dialog path")
+	check(not src.contains("spin" + ".value =") and not src.contains("_strip_radius" + ".value ="),
+			"test source does not assign the radius spin")
 	var main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await process_frame
@@ -93,7 +95,7 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 	await _click_model(ctx, Vector3(15, 0, 10), "Top face")
 	check(ctx.view.selected_edges.size() >= 4,
 			"top face click selected face edges (got %d)" % ctx.view.selected_edges.size())
-	await _press_enter(ctx)
+	await _commit_strip_radius(ctx)
 	await process_frame
 	await process_frame
 	check(_count_type(ctx, "fillet") == n0 + 1, "one fillet feature on the top face")
@@ -109,7 +111,7 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 	await _type_strip_radius(ctx, "1.5")
 	await _look_along(ctx, Vector3(0, 0, 1), Vector3(0, 0, 7.5), 80.0)
 	await _click_model(ctx, Vector3(0, 0, 7.5), "Slot floor")
-	await _press_enter(ctx)
+	await _commit_strip_radius(ctx)
 	await process_frame
 	await process_frame
 	var err := str(ctx.view.doc.last_graph_error())
@@ -122,7 +124,7 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 	await _type_strip_radius(ctx, "1")
 	await _look_along(ctx, Vector3(0, 0, 1), Vector3(0, 0, 7.5), 80.0)
 	await _click_model(ctx, Vector3(0, 0, 7.5), "Slot floor R1")
-	await _press_enter(ctx)
+	await _commit_strip_radius(ctx)
 	await process_frame
 	await process_frame
 	check(_count_type(ctx, "fillet") == n1 + 1, "R1 slot floor adds a fillet")
@@ -223,10 +225,19 @@ func _type_strip_radius(ctx: FilmContext, digits: String) -> void:
 			"radius field is selected (sel '%s' text '%s')" % [sel, edit.text])
 	await _type_text(edit.get_viewport(), digits)
 	await process_frame
+	check(edit.text.strip_edges().begins_with(digits),
+			"typed radius %s is in the spin (got '%s')" % [digits, edit.text])
 
 
-func _press_enter(ctx: FilmContext) -> void:
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
+func _commit_strip_radius(ctx: FilmContext) -> void:
+	var spin: SpinBox = ctx.main.interaction._strip_radius
+	check(spin != null and spin.is_visible_in_tree(), "radius spin is visible for Enter")
+	if spin == null:
+		return
+	var edit: LineEdit = spin.get_line_edit()
+	await _click_control(edit)
+	await process_frame
+	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 
@@ -536,6 +547,10 @@ func _keycode_for_char(ch: String) -> Key:
 		return KEY_MINUS
 	if ch == "/":
 		return KEY_SLASH
+	if ch == "\\":
+		return KEY_BACKSLASH
+	if ch == "_":
+		return KEY_UNDERSCORE
 	if c >= 48 and c <= 57:
 		return (KEY_0 + (c - 48)) as Key
 	if c >= 97 and c <= 122:
