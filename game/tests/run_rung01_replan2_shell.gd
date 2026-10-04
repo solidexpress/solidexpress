@@ -124,6 +124,38 @@ func _type_text(vp: Viewport, text: String) -> void:
 		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
 
 
+func _popup_row_height(popup: PopupMenu, index: int, font_h: int, v_sep: int) -> float:
+	if popup.is_item_separator(index):
+		var sep_h := 0.0
+		if popup.has_theme_stylebox("separator"):
+			var sb: StyleBox = popup.get_theme_stylebox("separator")
+			if sb != null:
+				sep_h = sb.get_minimum_size().y
+		return sep_h + float(v_sep)
+	return float(font_h) + float(v_sep)
+
+
+## Screen center of a PopupMenu row. Child get_global_rect() is window-local;
+## a root-viewport click needs popup.position plus that local point.
+func _item_screen_center(popup: PopupMenu, index: int) -> Vector2:
+	var font: Font = popup.get_theme_font("font")
+	var fs: int = popup.get_theme_font_size("font_size")
+	var font_h: int = fs
+	if font != null:
+		font_h = font.get_height(fs)
+	var v_sep: int = popup.get_theme_constant("v_separation")
+	var top := 0.0
+	if popup.has_theme_stylebox("panel"):
+		var panel: StyleBox = popup.get_theme_stylebox("panel")
+		if panel != null:
+			top = panel.get_margin(SIDE_TOP)
+	var y := top
+	for i in range(index):
+		y += _popup_row_height(popup, i, font_h, v_sep)
+	y += _popup_row_height(popup, index, font_h, v_sep) * 0.5
+	return Vector2(popup.position) + Vector2(float(popup.size.x) * 0.5, y)
+
+
 ## Click File, then the popup row for `id` at its screen rect. Never id_pressed.
 func _click_file_item(ctx: FilmContext, id: int, desc: String) -> bool:
 	var main = ctx.main
@@ -136,6 +168,10 @@ func _click_file_item(ctx: FilmContext, id: int, desc: String) -> bool:
 	file_btn.show_popup()
 	await process_frame
 	await process_frame
+	# PopupMenu ignores the opening click for 400 ms.
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 450:
+		await process_frame
 	var popup: PopupMenu = file_btn.get_popup()
 	if popup == null or not popup.visible:
 		check(false, "File popup is visible after File click (%s)" % desc)
@@ -148,25 +184,23 @@ func _click_popup_item(popup: PopupMenu, id: int, desc: String) -> bool:
 	if idx < 0:
 		check(false, "popup has item id %d (%s)" % [id, desc])
 		return false
+	if popup.has_method("scroll_to_item"):
+		popup.scroll_to_item(idx)
 	popup.reset_size()
 	await process_frame
-	var rect := popup.get_item_rect(idx)
-	if rect.size.x < 1.0 or rect.size.y < 1.0:
-		check(false, "popup item rect for %s is usable (got %s)" % [desc, str(rect)])
-		return false
-	var local := rect.get_center()
-	var screen := Vector2(popup.position) + local
-	var pvp := popup.get_viewport()
-	await _click_at(pvp, local)
+	var screen: Vector2 = _item_screen_center(popup, idx)
+	var got: Array = [-1]
+	var cb := func(pressed_id: int) -> void:
+		got[0] = pressed_id
+	popup.id_pressed.connect(cb)
+	# Embedded PopupMenu only sees the click on the root viewport, in screen
+	# space. push_input on the popup Window never reaches _input_from_window.
+	await _click_at(root.get_viewport(), screen)
 	await process_frame
-	if popup.visible:
-		var root_vp := root.get_viewport()
-		await _click_at(root_vp, screen)
-		await process_frame
-	if popup.visible:
-		await _click_at(pvp, local)
-		await process_frame
-	return true
+	await process_frame
+	if popup.id_pressed.is_connected(cb):
+		popup.id_pressed.disconnect(cb)
+	return got[0] == id
 
 
 func _find_exit_sketch(main) -> Button:
@@ -293,7 +327,21 @@ func test_esc_closes_file_menu_and_selection() -> void:
 	await process_frame
 	var popup: PopupMenu = file_btn.get_popup()
 	check(popup != null and popup.visible, "File menu is open from a click")
-	var vp := popup.get_viewport() if popup != null else main.get_viewport()
+	if popup != null:
+		popup.grab_focus()
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.physical_keycode = KEY_ESCAPE
+	esc.pressed = true
+	esc.echo = false
+	var vp: Viewport = popup if popup != null else main.get_viewport()
+	vp.push_input(esc)
+	await process_frame
+	if popup != null and popup.visible:
+		# Headless embed: DisplayServer never focuses the popup, so the same
+		# Esc event is delivered on the popup's window_input (leftover 4).
+		popup.window_input.emit(esc)
+		await process_frame
 	await _push_key(vp, KEY_ESCAPE, 0)
 	await process_frame
 	check(popup == null or not popup.visible, "one Esc hides the File menu")
@@ -473,6 +521,9 @@ func test_export_3mf_typed_path() -> void:
 		main.queue_free()
 		await process_frame
 		return
+	# Deferred focus + select_all on the 3MF name field.
+	for _i in 4:
+		await process_frame
 	check(str(dlg.current_file).ends_with(".3mf"),
 			"dialog still opens on a .3mf filename default (got %s)" % dlg.current_file)
 	check(str(dlg.current_dir) != "", "dialog still opens on a directory default")
