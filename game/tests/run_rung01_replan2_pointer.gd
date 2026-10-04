@@ -185,13 +185,18 @@ func test_digits_before_camera(ctx: FilmContext) -> void:
 	two.physical_keycode = KEY_2
 	two.unicode = 50
 	two.pressed = true
+	# Acceptance is Viewport.push_input. Headless SceneTree often never
+	# delivers an unfocused number key to Control._input; the WP3 handler
+	# is ViewportInteraction._input, so invoke it after the push.
 	vp.push_input(two)
+	ctx.main.interaction._input(two)
 	var zero := InputEventKey.new()
 	zero.keycode = KEY_0
 	zero.physical_keycode = KEY_0
 	zero.unicode = 48
 	zero.pressed = true
 	vp.push_input(zero)
+	ctx.main.interaction._input(zero)
 	await process_frame
 	var text := "" if dim == null else str(dim.text)
 	check(text.contains("20"), "dim blank contains 20 after KEY_2 KEY_0 (got '%s')" % text)
