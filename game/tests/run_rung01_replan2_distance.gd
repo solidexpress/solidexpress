@@ -39,10 +39,10 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	check(main.sketch_mode.active, "sketch session is open")
-	await test_typed_distance_without_enter(main)
-	await test_append_distance_rejected(main)
 	await test_typed_dim_override(ctx)
 	await test_circle_has_no_diameter_prefix(ctx)
+	await test_typed_distance_without_enter(main)
+	await test_append_distance_rejected(main)
 	await test_cut_does_not_clear_up_to_surface(main)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	print("%d checks, %d failures" % [checks, failures])
@@ -132,15 +132,22 @@ func test_typed_dim_override(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	await process_frame
+	check(sm.tool == SketchMode.Tool.POLYGON, "polygon tool is active")
 	check(sm.tool_variant == "across_flats",
 			"polygon variant is across_flats (got %s)" % sm.tool_variant)
 	var dim: SpinBox = ctx.main.sketch_chrome.find_child("DimSpin", true, false)
 	check(dim != null and str(dim.suffix).contains("AF"),
 			"across-flats suffix stays AF (%s)" % (dim.suffix if dim else ""))
+	if ctx.main.sketch_chrome != null:
+		ctx.main.sketch_chrome.release_dim_focus()
+	await _zoom(ctx, Vector3.ZERO, 80.0)
 	await FilmUI.click_sketch(ctx, sm, Vector2.ZERO, "Hex centre")
 	await _hover_uv(ctx, Vector2(8, 0))
 	await process_frame
-	check(sm.has_single_dof_preview(), "polygon preview is active")
+	await process_frame
+	check(sm.has_single_dof_preview(),
+			"polygon preview is active (tool=%s points=%d)" % [
+				str(sm.tool), sm._tool_points.size() if sm else -1])
 	if dim == null:
 		return
 	var edit := dim.get_line_edit()
@@ -206,6 +213,33 @@ func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = screen
 	ctx.main.interaction._input(motion)
+	await process_frame
+
+
+func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
+	var cam = ctx.main.camera
+	var ms: Node3D = ctx.main.model_space
+	if cam._view_tween != null and cam._view_tween.is_valid():
+		cam._view_tween.kill()
+		cam._view_tween = null
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		var n: Vector3 = sm.plane_normal()
+		if n.length_squared() > 1e-8:
+			cam.yaw = atan2(n.x, -n.y)
+			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
+		if ms != null and sm.plane_y.length_squared() > 1e-8:
+			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
+			if up_w.length_squared() > 1e-8:
+				cam._sketch_view_up = up_w.normalized()
+		cam.sketch_orientation_locked = true
+		cam._look_at_content = true
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
+	var half := tan(deg_to_rad(cam.fov) * 0.5)
+	cam.distance = size_mm / (2.0 * half)
+	cam._update_transform()
+	await process_frame
 	await process_frame
 
 
