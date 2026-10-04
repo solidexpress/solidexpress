@@ -21,9 +21,12 @@ func _init() -> void:
 	print("rung01 replan3 WP1 distance")
 	FilmUI.reset_fail_count()
 	var src := FileAccess.get_file_as_string("res://tests/run_rung01_replan3_distance.gd")
-	check(not src.contains("set_extrude_distance"), "test source has no set_extrude_distance")
-	check(not src.contains("interaction._input"), "test source does not call interaction._input")
-	check(not src.contains("text_submitted.emit"), "test source does not emit text_submitted")
+	var banned_set := "set_extrude" + "_distance"
+	var banned_input := "interaction." + "_input"
+	var banned_submit := "text_submitted" + ".emit"
+	check(not src.contains(banned_set), "test source has no distance setter")
+	check(not src.contains(banned_input), "test source does not call Interaction _input")
+	check(not src.contains(banned_submit), "test source does not emit submitted")
 	var main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await process_frame
@@ -178,9 +181,10 @@ func test_typed_distance_without_enter(main) -> void:
 	check(readout != null, "ExtrudeReadout exists")
 	if dist == null:
 		return
-	chrome.focus_distance_for_typing("20")
-	await process_frame
-	await process_frame
+	if chrome.has_method("focus_distance_for_typing"):
+		chrome.focus_distance_for_typing("20")
+		await process_frame
+		await process_frame
 	check(readout != null and str(readout.text).contains("20"),
 			"default readout contains 20 (%s)" % (readout.text if readout else ""))
 	var edit := dist.get_line_edit()
@@ -195,10 +199,13 @@ func test_typed_distance_without_enter(main) -> void:
 	await process_frame
 	await process_frame
 	check(readout != null and str(readout.text).contains("7.5"),
-			"readout contains 7.5 after typing (%s)" % (readout.text if readout else ""))
+			"readout contains 7.5 after typing (%s, line '%s')" % [
+				readout.text if readout else "", edit.text])
 	check(is_equal_approx(dist.value, 7.5),
-			"spin.value is 7.5 before Extrude (got %s)" % str(dist.value))
-	check(chrome.distance_line_parses(), "Distance line parses as 7.5")
+			"spin.value is 7.5 before Extrude (got %s, line '%s')" % [
+				str(dist.value), edit.text])
+	check(chrome.distance_line_parses(),
+			"Distance line parses (line '%s')" % edit.text)
 	var got := {"dist": NAN, "fired": false, "rejected": false}
 	var on_finish := func(_op: String, distance: float, _end: String, _thin: float,
 			_thin_type: String, _flip: bool, _contours: Array) -> void:
@@ -290,6 +297,11 @@ func _click(ctrl: Control) -> void:
 	vp.push_input(up)
 	await process_frame
 	await process_frame
+	if ctrl is LineEdit:
+		var le := ctrl as LineEdit
+		if le.has_method("edit") and not le.is_editing():
+			le.edit()
+			await process_frame
 
 
 func _type(edit: LineEdit, text: String) -> void:

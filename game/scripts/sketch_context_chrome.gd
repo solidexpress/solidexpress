@@ -57,6 +57,9 @@ var _dim_rejecting := false
 var _distance_syncing := false
 var _distance_rejecting := false
 var _distance_origin := 20.0
+## Bumped on click and on typed text so a pending next-frame select_all cannot
+## re-select the first digit and let the second key replace it.
+var _distance_select_gen := 0
 ## Face id for an Up To Surface end. The finish signal does not carry it;
 ## finish_extrude reads this after the extrude feature exists.
 var up_to_face_id := ""
@@ -311,7 +314,7 @@ func focus_distance_for_typing(seed: String = "") -> void:
 	else:
 		_select_distance_all()
 		_select_distance_all.call_deferred()
-		_select_distance_all_next_frame.call_deferred()
+		_select_distance_all_next_frame.call_deferred(_distance_select_gen)
 
 
 ## Parsed dim LineEdit number while that text is a single float, else null.
@@ -502,7 +505,7 @@ func _commit_distance_text() -> Variant:
 
 
 ## Write Distance onto the spin and ExtrudeReadout. keep_text restores the
-## LineEdit so setting .value cannot replace in-progress digits with "7 mm".
+## LineEdit so setting .value cannot replace in-progress digits with "7.0".
 func _write_extrude_spin(v: float, keep_text: String = "") -> void:
 	if _extrude_spin == null:
 		return
@@ -522,14 +525,34 @@ func _write_extrude_spin(v: float, keep_text: String = "") -> void:
 			sel_to = edit.get_selection_to_column()
 	_distance_syncing = true
 	_extrude_spin.value = v
-	if edit != null:
-		if edit.text != text:
-			edit.text = text
-		edit.caret_column = caret
-		if had_sel:
-			edit.select(sel_from, sel_to)
+	_apply_distance_line(edit, text, caret, had_sel, sel_from, sel_to)
 	_distance_syncing = false
 	_refresh_extrude_readout(v)
+	# SpinBox formats the line on a deferred update ("7" → "7.0"). Re-assert
+	# the typed string so the next key can still make 7.5.
+	if text != "":
+		_reassert_distance_line.call_deferred(text, caret, had_sel, sel_from, sel_to)
+
+
+func _apply_distance_line(edit: LineEdit, text: String, caret: int, had_sel: bool,
+		sel_from: int, sel_to: int) -> void:
+	if edit == null:
+		return
+	if edit.text != text:
+		edit.text = text
+	edit.caret_column = caret
+	if had_sel:
+		edit.select(sel_from, sel_to)
+
+
+func _reassert_distance_line(text: String, caret: int, had_sel: bool,
+		sel_from: int, sel_to: int) -> void:
+	if _extrude_spin == null:
+		return
+	_distance_syncing = true
+	_apply_distance_line(_extrude_spin.get_line_edit(), text, caret, had_sel,
+			sel_from, sel_to)
+	_distance_syncing = false
 
 
 func _select_distance_all() -> void:
@@ -540,9 +563,13 @@ func _select_distance_all() -> void:
 		edit.select_all()
 
 
-func _select_distance_all_next_frame() -> void:
+func _select_distance_all_next_frame(gen: int = -1) -> void:
+	if gen < 0:
+		gen = _distance_select_gen
 	if is_inside_tree() and get_tree() != null:
 		await get_tree().process_frame
+	if gen != _distance_select_gen:
+		return
 	_select_distance_all()
 
 
@@ -566,10 +593,13 @@ func _refresh_extrude_readout(v: float) -> void:
 func _on_distance_text_changed(new_text: String) -> void:
 	if _distance_syncing or _distance_rejecting:
 		return
+	# A pending next-frame select_all from the focusing click must not win
+	# over the first typed digit (7 then . would become ".5").
+	_distance_select_gen += 1
 	var parsed: Variant = _parse_spin_text(_extrude_spin, new_text)
 	if parsed == null:
-		# Keep the focus-in value so "20.07.5" cannot leave a truncated 20.07.
-		_write_extrude_spin(_distance_origin, new_text)
+		# Leave .value at the last good parse. "7." is a prefix of 7.5; do not
+		# snap the spin back to the focus-in 20 while the user is still typing.
 		return
 	_write_extrude_spin(float(parsed), new_text)
 
@@ -776,8 +806,10 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 		# focused. Deferred so it runs after LineEdit places the caret, and
 		# again next frame so the caret cannot win.
 		if mb.button_index == MOUSE_BUTTON_LEFT and _extrude_spin != null:
+			_distance_select_gen += 1
+			var gen := _distance_select_gen
 			_select_distance_all.call_deferred()
-			_select_distance_all_next_frame.call_deferred()
+			_select_distance_all_next_frame(gen)
 
 
 func _on_dim_edit_gui_input(event: InputEvent) -> void:
