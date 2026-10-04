@@ -495,7 +495,11 @@ func exit_sketch() -> String:
 		if view.doc.graph_update_sketch(editing_fid, sketch):
 			fid = editing_fid
 		else:
-			status.emit("Failed to update sketch")
+			# Graph already rolled back to the last good snapshot. Reload that
+			# profile, then leave so a failed regenerate cannot trap the session.
+			_reload_editing_sketch()
+			_end_sketch_session()
+			_emit_discard_status()
 			return ""
 	else:
 		if sketch.entity_ids().is_empty():
@@ -506,18 +510,7 @@ func exit_sketch() -> String:
 		if fid == "":
 			status.emit("Failed to save sketch" + _graph_error_suffix())
 			return ""
-	active = false
-	editing_fid = ""
-	_tool_points.clear()
-	_snap_marker = null
-	_drag.clear()
-	intersection_points.clear()
-	_clear_meshes()
-	_leave_camera()
-	if view != null:
-		view.refresh()
-		view.document_changed.emit()
-	finished.emit("")
+	_end_sketch_session()
 	status.emit("Sketch saved")
 	return fid
 
@@ -628,7 +621,8 @@ func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 func _ensure_sketch_feature() -> String:
 	if editing_fid != "":
 		if not view.doc.graph_update_sketch(editing_fid, sketch):
-			status.emit("Failed to update sketch" + _graph_error_suffix())
+			# Keep the session so the person can keep drawing; Exit can still leave.
+			_reload_editing_sketch()
 			return ""
 		return editing_fid
 	var sk_fid: String = view.doc.graph_add_sketch(sketch)
@@ -637,6 +631,44 @@ func _ensure_sketch_feature() -> String:
 	else:
 		editing_fid = sk_fid
 	return sk_fid
+
+
+## Replace the in-memory sketch with the graph's last accepted profile.
+func _reload_editing_sketch() -> bool:
+	if editing_fid == "" or view == null or view.doc == null:
+		return false
+	if not view.doc.has_method("graph_get_sketch"):
+		return false
+	var loaded: SxSketch = view.doc.graph_get_sketch(editing_fid)
+	if loaded == null:
+		return false
+	sketch = loaded
+	_restore_dimensions_from_sketch()
+	return true
+
+
+## Same cleanup a successful Exit uses. Always leaves `active` false.
+func _end_sketch_session() -> void:
+	active = false
+	editing_fid = ""
+	_tool_points.clear()
+	_snap_marker = null
+	_drag.clear()
+	intersection_points.clear()
+	_clear_meshes()
+	_leave_camera()
+	if view != null:
+		view.refresh()
+		view.document_changed.emit()
+	finished.emit("")
+
+
+func _emit_discard_status() -> void:
+	var err := _graph_error_text()
+	if err == "":
+		status.emit("Sketch edit discarded")
+	else:
+		status.emit("Sketch edit discarded — " + err)
 
 
 func _graph_error_text() -> String:
@@ -1612,6 +1644,16 @@ func constrain(type: String, value: float = 0.0) -> String:
 	if type == "distance" or type == "radius" or type == "diameter" or type == "angle" or absf(value) > 0.0:
 		_record_dimension(type, selected.duplicate(), value, cid)
 	var res: Dictionary = run_solve()
+	if str(res.get("status", "")) == "failed" and cid != "":
+		# Same as a failed drag: drop the relation that did not stick and
+		# leave last_solve_status on the previous good solve.
+		if sketch.has_method("remove_constraint"):
+			sketch.remove_constraint(cid)
+		for i in range(dimensions.size() - 1, -1, -1):
+			if str(dimensions[i].get("cid", "")) == cid:
+				dimensions.remove_at(i)
+		res = run_solve()
+		status.emit("Relation did not stick")
 	_redraw()
 	_redraw_selected()
 	return res["status"]
@@ -2058,6 +2100,41 @@ func _add_keep_side_arc(center: Vector2, radius: float, p0: Vector2, p1: Vector2
 	return arc_id
 
 
+func _dirs_within_deg(a: Vector2, b: Vector2, deg: float) -> bool:
+	if a.length_squared() < 1e-12 or b.length_squared() < 1e-12:
+		return false
+	return absf(a.normalized().dot(b.normalized())) >= cos(deg_to_rad(deg))
+
+
+func _longest_profile_dir() -> Vector2:
+	var best := Vector2.ZERO
+	var best_len := 0.0
+	if sketch == null:
+		return best
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var d: Vector2 = info["end"] - info["start"]
+		var L := d.length()
+		if L > best_len:
+			best_len = L
+			best = d
+	return best
+
+
+## Cutter line is within 15% of the radius of the centre, and the segment
+## overlaps the circle. Replaces the 1.0 mm best_cd gate that missed Ø45.
+func _circle_meets_cutter(c: Vector2, r: float, a: Vector2, b: Vector2) -> bool:
+	if r < 1e-6:
+		return false
+	if _point_line_distance(c, a, b) > 0.15 * r:
+		return false
+	return _point_segment_distance(c, a, b) <= r + 1.0
+
+
 ## Click on one side of a construction centreline: drop that half, keep the
 ## other, close it with a floor on the cutter and the keep-side arc of the
 ## circle centred on the cutter. The Ø10 (centre far from the cutter) stays.
@@ -2078,10 +2155,15 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var discard := 1.0 if side > 0.0 else -1.0
 	var keep_dir := normal * (-discard)
 	const EPS := 0.05
+	const CAP_DEG := 2.0
+	var long_dir := _longest_profile_dir()
+	if long_dir.length_squared() > 1e-8 and _dirs_within_deg(dir, long_dir, CAP_DEG):
+		status.emit("Trim failed — draw the centreline across the jaw")
+		return true
 	var cc := Vector2.ZERO
 	var cr := 0.0
 	var circ_id := ""
-	var best_cd := 1.0
+	var best_cd := INF
 	for id in sketch.entity_ids():
 		if sketch.is_construction(id):
 			continue
@@ -2089,19 +2171,24 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		if str(info.get("type", "")) != "circle":
 			continue
 		var c: Vector2 = info["center"]
+		var r := float(info.get("radius", 0.0))
+		if not _circle_meets_cutter(c, r, a, b):
+			continue
 		var d := _point_line_distance(c, a, b)
-		if d < best_cd and _point_segment_distance(c, a, b) < a.distance_to(b):
+		if d < best_cd:
 			best_cd = d
 			circ_id = id
 			cc = c
-			cr = float(info.get("radius", 0.0))
+			cr = r
 	if circ_id == "":
 		for mc in _model_circles():
 			var c2: Vector2 = mc["center"]
-			if _point_line_distance(c2, a, b) < 1.0 \
-					and _point_segment_distance(c2, a, b) < a.distance_to(b) + 5.0:
+			var r2 := float(mc["radius"])
+			if _circle_meets_cutter(c2, r2, a, b) or (
+					_point_line_distance(c2, a, b) < 1.0
+					and _point_segment_distance(c2, a, b) < a.distance_to(b) + 5.0):
 				cc = c2
-				cr = float(mc["radius"])
+				cr = r2
 				break
 	if cr < 1e-6:
 		status.emit("Trim failed")
@@ -2116,12 +2203,22 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 			continue
 		var s: Vector2 = info["start"]
 		var e: Vector2 = info["end"]
+		var side_dir := e - s
+		var is_cap := _dirs_within_deg(side_dir, dir, CAP_DEG)
 		var ss := (s - a).dot(normal)
 		var es := (e - a).dot(normal)
 		var s_disc := ss * discard > EPS
 		var e_disc := es * discard > EPS
 		var s_keep := ss * discard < -EPS
 		var e_keep := es * discard < -EPS
+		if is_cap:
+			# Caps stay off the wall list even when a slight skew puts their
+			# endpoints on opposite sides of the cutter.
+			if (s_disc or absf(ss) <= EPS) and (e_disc or absf(es) <= EPS) and (s_disc or e_disc):
+				to_delete.append(id)
+			elif s_keep and e_keep:
+				to_delete.append(id)
+			continue
 		if (s_disc or absf(ss) <= EPS) and (e_disc or absf(es) <= EPS) and (s_disc or e_disc):
 			to_delete.append(id)
 			continue
@@ -2135,7 +2232,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		var keep_pt: Vector2 = s if ss * discard < es * discard else e
 		walls.append({"id": id, "hit": hit, "keep": keep_pt})
 	if walls.size() != 2:
-		status.emit("Trim failed")
+		status.emit("Trim failed — centreline does not cross two jaw sides")
 		return true
 	for w in walls:
 		var hit: Vector2 = w["hit"]
@@ -3663,7 +3760,14 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	# Push it back so the cut/extrude downstream rebuilds.
 	if editing_fid != "" and view != null and view.doc != null:
 		if not view.doc.graph_update_sketch(editing_fid, sketch):
-			status.emit("Failed to update sketch" + _graph_error_suffix())
+			if _reload_editing_sketch():
+				_redraw()
+				_redraw_selected()
+				_rebuild_dimension_labels()
+				return res["status"]
+			_end_sketch_session()
+			_emit_discard_status()
+			return ""
 	_redraw()
 	_redraw_selected()
 	_rebuild_dimension_labels()
