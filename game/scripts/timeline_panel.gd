@@ -387,30 +387,12 @@ func _edit_sketch_feature(fid: String) -> void:
 		status.emit("Could not edit sketch")
 
 
-## Distance is the first spin on an extrude property panel; End is the enum beside it.
+## Distance is the schema key `distance`, not whichever spin happens to be first
+## (a primitive's first spin is W). End is the enum beside it.
 func _focus_extrude_distance() -> void:
 	if property_panel == null or not property_panel.visible:
 		return
-	var spin := _first_spin(property_panel)
-	if spin == null:
-		return
-	# Godot 4.7 SpinBox focus_mode is NONE; the inner LineEdit takes the caret
-	# and select_all_on_focus.
-	var edit := spin.get_line_edit()
-	if edit != null:
-		edit.grab_focus()
-	else:
-		spin.grab_focus()
-
-
-func _first_spin(node: Node) -> SpinBox:
-	if node is SpinBox:
-		return node
-	for child in node.get_children():
-		var found := _first_spin(child)
-		if found != null:
-			return found
-	return null
+	property_panel.focus_schema_key("distance")
 
 
 func _begin_rename(fid: String, row: HBoxContainer, name_btn: Button) -> void:
