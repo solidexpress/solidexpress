@@ -2015,6 +2015,12 @@ func _on_datum_offset_confirmed() -> void:
 func _on_status(text: String) -> void:
 	if text != "":
 		status_label.text = text
+	# Timeline double-click calls begin_edit without the pad-click path, so
+	# sketch chrome (Exit Sketch, tools) would stay hidden. Show it whenever
+	# a live session has no rail yet.
+	if sketch_mode != null and sketch_mode.active \
+			and sketch_toolbar != null and not sketch_toolbar.visible:
+		_on_sketch_session_started(text)
 
 
 func _build_paste_special_dialog(parent: Node) -> void:
@@ -2271,6 +2277,12 @@ func edit_undo() -> void:
 	if view == null:
 		return
 	view.undo()
+	# Reload the live sketch from the feature that still exists, or drop the
+	# session when undo removed it. Do not push the in-memory sketch (that
+	# would re-emit Failed to update sketch after an open-loop edit).
+	if sketch_mode != null and sketch_mode.active and str(sketch_mode.editing_fid) != "":
+		if not sketch_mode.begin_edit(sketch_mode.editing_fid):
+			sketch_mode.cancel()
 	_on_status("Undo")
 	if interaction != null:
 		interaction._refresh_transform_hud()
@@ -2427,6 +2439,8 @@ func _on_file_menu(id: int) -> void:
 func _do_new() -> void:
 	if sketch_mode != null and sketch_mode.active:
 		sketch_mode.exit_sketch()
+	if sketch_mode != null and sketch_mode.active:
+		sketch_mode.cancel()
 	if interaction != null:
 		if interaction.has_method("_disarm_place"):
 			interaction._disarm_place(false)
@@ -2526,6 +2540,9 @@ func _on_exit_sketch_pressed() -> void:
 			_empty_sketch_dialog.popup_centered()
 		return
 	sketch_mode.exit_sketch()
+	if sketch_mode.active:
+		sketch_mode.cancel()
+		_on_status("Sketch edit discarded — last saved profile kept")
 
 
 func _on_empty_sketch_discard_confirmed() -> void:
@@ -2786,6 +2803,58 @@ func _export_3mf_start_dir() -> String:
 	if doc_dir != "":
 		return doc_dir
 	return _user_home_dir()
+
+
+## True when the typed export name has no directory and is not absolute.
+func _export_3mf_is_bare_name(typed: String) -> bool:
+	var t := typed.strip_edges()
+	if t == "":
+		return false
+	if t.begins_with("user://") or t.begins_with("res://"):
+		return false
+	if t.is_absolute_path():
+		return false
+	if t.find("/") >= 0 or t.find("\\") >= 0:
+		return false
+	return true
+
+
+## Folder the Export 3MF dialog is showing at OK. Prefer current_dir; if that
+## disagrees with the path line the user can see, use the displayed directory.
+func _export_3mf_dialog_dir() -> String:
+	if file_dialog == null or not is_instance_valid(file_dialog):
+		return ""
+	var dir := str(file_dialog.current_dir).strip_edges()
+	if dir.begins_with("user://") or dir.begins_with("res://"):
+		dir = ProjectSettings.globalize_path(dir)
+	var shown := _export_3mf_displayed_dir()
+	if shown != "" and not _export_3mf_dirs_match(dir, shown):
+		dir = shown
+	return dir.trim_suffix("/").trim_suffix("\\")
+
+
+func _export_3mf_displayed_dir() -> String:
+	if file_dialog == null:
+		return ""
+	var name_edit := _file_dialog_name_edit()
+	for c in file_dialog.find_children("*", "LineEdit", true, false):
+		var edit := c as LineEdit
+		if edit == null or edit == name_edit:
+			continue
+		if not edit.is_visible_in_tree():
+			continue
+		var t := str(edit.text).strip_edges()
+		if t.begins_with("user://") or t.begins_with("res://"):
+			t = ProjectSettings.globalize_path(t)
+		if t.is_absolute_path() and DirAccess.dir_exists_absolute(t):
+			return t.trim_suffix("/").trim_suffix("\\")
+	return ""
+
+
+func _export_3mf_dirs_match(a: String, b: String) -> bool:
+	var left := a.replace("\\", "/").trim_suffix("/").strip_edges()
+	var right := b.replace("\\", "/").trim_suffix("/").strip_edges()
+	return left == right
 
 
 ## Prefer a typed absolute path over FileDialog joining onto current_dir.
@@ -3051,7 +3120,16 @@ func _on_file_selected(path: String) -> void:
 				var edit := _file_dialog_name_edit()
 				if edit != null and is_instance_valid(edit) and edit.is_inside_tree():
 					typed = edit.text.strip_edges()
-			path = _resolve_export_3mf_path(typed, path)
+			# Bare name: join onto the folder the dialog is showing at OK, not
+			# the start-dir file_selected path (which can stay HOME).
+			if _export_3mf_is_bare_name(typed) and file_dialog != null:
+				var dir := _export_3mf_dialog_dir()
+				if dir != "":
+					path = dir.path_join(typed)
+				else:
+					path = _resolve_export_3mf_path(typed, path)
+			else:
+				path = _resolve_export_3mf_path(typed, path)
 			if file_dialog != null and path.is_absolute_path():
 				file_dialog.current_dir = path.get_base_dir()
 				file_dialog.current_file = path.get_file()
