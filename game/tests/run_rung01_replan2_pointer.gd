@@ -172,7 +172,7 @@ func test_digits_before_camera(ctx: FilmContext) -> void:
 	var basis0: Basis = cam.global_basis
 	var yaw0: float = cam.yaw
 	var pitch0: float = cam.pitch
-	var vp := ctx.main.interaction.get_viewport()
+	var vp: Viewport = ctx.main.interaction.get_viewport()
 	await _push_key(vp, KEY_2, 50)
 	await _push_key(vp, KEY_0, 48)
 	await process_frame
@@ -342,7 +342,7 @@ func _click_control(ctrl: Control) -> void:
 	var pos := FilmUI.ensure_control_visible(ctrl)
 	await process_frame
 	pos = ctrl.get_global_rect().get_center()
-	var vp := ctrl.get_viewport()
+	var vp: Viewport = ctrl.get_viewport()
 	var hover := InputEventMouseMotion.new()
 	hover.position = pos
 	hover.global_position = pos
