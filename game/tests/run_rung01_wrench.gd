@@ -1146,7 +1146,11 @@ func _assert_contours_stay_on(ctx: FilmContext) -> void:
 				chips.append(cb)
 				if not cb.button_pressed:
 					off += 1
-	check(n >= 1 and chips.size() >= 1, "contour chips exist (count %d, chips %d)" % [n, chips.size()])
+	check(n >= 1, "blank has a contour (count %d)" % n)
+	# Chrome hides the bar when there is only one region. Multiple regions
+	# still show numbered chips, all on (select every contour).
+	if n > 1:
+		check(chips.size() >= 1, "contour chips exist (count %d, chips %d)" % [n, chips.size()])
 	check(off == 0, "contour chips stay on (%d off)" % off)
 
 
