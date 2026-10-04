@@ -101,6 +101,9 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_rung01_replan3_timeline.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan3_fillet.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan3_shell.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan4_numeric.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan4_dialog.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan4_smartdim.gd
 
 lint-rung01-e2e:
 	python3 tools/lint_rung01_e2e.py

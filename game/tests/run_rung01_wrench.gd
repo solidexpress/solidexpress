@@ -1,5 +1,6 @@
-# Rung 1 replan 3 WP7 — GUI walk (nut, wrench, thickened wrench) at 1280×800.
-# Every pointer and key goes through Viewport.push_input. Inference stays on.
+# Rung 1 replan 4 WP4 — GUI walk with honest X11 click-then-type at 1280×800.
+# Numeric line edits (dim blank, Distance, dimension popup, export name) use
+# _x11_click / _x11_type: same-burst mouse down+up, then keys. Inference stays on.
 # Fillet radii are typed; menus open from the click. Run:
 # tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
 extends SceneTree
@@ -26,7 +27,7 @@ func check(cond: bool, what: String) -> void:
 
 
 func _init() -> void:
-	print("rung01 wrench walk (replan-3 WP7 GUI)")
+	print("rung01 wrench walk (replan-4 WP4 X11 GUI)")
 	FilmUI.reset_fail_count()
 	var main_scene: PackedScene = load("res://scenes/main.tscn")
 	var main = main_scene.instantiate()
@@ -129,8 +130,15 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _pick_op(_finish_op(ctx), 0)
 	_assert_thin_off(ctx)
 	check(not sm.has_single_dof_preview(), "bore is committed, no preview before 7.5")
-	await _type_unfocused_distance(ctx, "7.5")
+	print("  nut Distance: X11 click DistanceLineEdit, type 7.5, no Enter")
+	await _type_distance(ctx, "7.5")
 	check(absf(chrome.extrude_distance() - 7.5) < 0.05, "nut distance is 7.5")
+	var nut_readout := ""
+	var nut_readout_node: Label = chrome.find_child("ExtrudeReadout", true, false)
+	if nut_readout_node != null:
+		nut_readout = str(nut_readout_node.text)
+	check(nut_readout.contains("7.5"),
+			"readout contains 7.5 before Extrude (got %s)" % nut_readout)
 	await _press_extrude(ctx, "Extrude nut 7.5")
 	var err := _take_bad_status()
 	check(err == "", "nut extrude status clean" if err == "" else err)
@@ -144,7 +152,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	var nut_status := str(ctx.main.status_label.text)
 	check(_status_has("Extrude Blind 7.5000 mm") or nut_status.contains("Extrude Blind 7.5000 mm"),
 			"status contains Extrude Blind 7.5000 mm (got %s)" % nut_status)
-	var nut_path := await _export_via_dialog(ctx, "nut.3mf")
+	var nut_path := await _export_via_dialog(ctx, "nut.3mf", true)
 	check(nut_path != "" and FileAccess.file_exists(nut_path), "exported nut.3mf through the dialog")
 	sm = ctx.main.sketch_mode
 	if sm.active:
@@ -165,11 +173,35 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	sm = ctx.main.sketch_mode
 	check(root.size == ROOT_SIZE, "wrench blank runs at 1280×800 (got %s)" % str(root.size))
 	await _zoom(ctx, Vector3(100, 0, 0), 280.0)
+	print("  wrench blank: X11 click dim blank, type 10, then 22.5")
 	await _draw_circle_typed(ctx, Vector2.ZERO, "10", false)
+	var near_circ := _first_of(sm, "circle")
+	if near_circ != "":
+		var r10 := float(sm.sketch.entity_info(near_circ)["radius"])
+		check(absf(r10 - 10.0) <= 0.05, "typed 10 is radius 10 (got %.4f)" % r10)
+	check(_status_has("Ø20") or str(ctx.main.status_label.text).contains("Ø20"),
+			"status contains Ø20 (got %s)" % ctx.main.status_label.text)
 	await _zoom_uv(ctx, Vector2(200, 0), 80.0)
 	await _draw_circle_typed(ctx, Vector2(200, 0), "22.5", true)
+	var dim_blank := _dim_edit(ctx)
+	var dim_raw := _spin_digits(dim_blank)
+	check(not dim_raw.contains("2.522"),
+			"second dim text does not contain 2.522 (got '%s')" % dim_raw)
 	var circs := _circles(sm)
 	check(circs.size() == 2, "blank has two circles")
+	if circs.size() == 2:
+		var r45 := float(circs[1]["radius"])
+		check(absf(r45 - 22.5) <= 0.05, "typed 22.5 is radius 22.5 (got %.4f)" % r45)
+	check(_status_has("Ø45") or str(ctx.main.status_label.text).contains("Ø45"),
+			"status contains Ø45 (got %s)" % ctx.main.status_label.text)
+	print("- Smart Dimension 200 between the two wrench centres")
+	await _smart_dim_centres(ctx, "200")
+	circs = _circles(sm)
+	if circs.size() == 2:
+		var gap := (circs[0]["center"] as Vector2).distance_to(circs[1]["center"] as Vector2)
+		check(absf(gap - 200.0) <= TOL, "centre distance is 200 ± 0.2 (got %.3f)" % gap)
+	else:
+		check(false, "two circles remain after Smart Dimension 200")
 	# Shaft 20 wide: lines at y=±10, tangent to the Ø20, meeting the Ø45 at
 	# the concave neck. Clicks are a few tenths off the contacts so snap +
 	# inference close them. Inference stays on; sized circles lock so the
@@ -776,7 +808,10 @@ func _feature_distance(ctx: FilmContext, fid: String) -> float:
 	return -1.0
 
 
-func _export_via_dialog(ctx: FilmContext, name: String) -> String:
+func _export_via_dialog(ctx: FilmContext, name: String, probe_survival: bool = false) -> String:
+	var path := "/tmp/sx-rung01-%s" % name
+	if probe_survival:
+		await _probe_export_dialog(ctx, path)
 	var opened: bool = await _click_menu_item(ctx, "File", 11, "File → Export 3MF")
 	await process_frame
 	await process_frame
@@ -786,42 +821,81 @@ func _export_via_dialog(ctx: FilmContext, name: String) -> String:
 		return ""
 	check(str(dlg.current_file).ends_with(".3mf"),
 			"dialog suggests a .3mf name (got %s)" % dlg.current_file)
-	var path := ProjectSettings.globalize_path("user://rung01").path_join(name)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
 	for _i in 4:
 		await process_frame
-	var edit: LineEdit = null
-	if dlg.has_method("get_line_edit"):
-		edit = dlg.get_line_edit()
-	if edit == null:
-		for c in dlg.find_children("*", "LineEdit", true, false):
-			edit = c as LineEdit
-			if edit != null:
-				break
-	check(edit != null, "Export 3MF name LineEdit exists for %s" % name)
-	if edit == null:
-		return ""
-	var selected := edit.get_selected_text()
-	check(selected != "" and selected == edit.text,
-			"name field selection is the entire suggested name (sel '%s' text '%s')" % [selected, edit.text])
-	edit.grab_focus()
-	await process_frame
-	await _type_text(edit.get_viewport(), path)
-	await process_frame
+	await _type_export_name(dlg, path)
 	var ok_btn := dlg.get_ok_button()
-	var confirmed: bool = await FilmUI.click_control(ctx, ok_btn,
-			FilmUICues.alert("Save", "Confirm " + name))
-	await process_frame
-	await process_frame
-	check(confirmed, "export dialog OK was pressed for %s" % name)
+	check(ok_btn != null and ok_btn.is_visible_in_tree(), "export OK is visible for %s" % name)
+	if ok_btn != null:
+		await _x11_click_embedded(ok_btn)
+		await process_frame
+		await process_frame
+		await process_frame
+	check(ctx.main.is_inside_tree(), "main stays in the tree after export OK for %s" % name)
 	var status := str(ctx.main.status_label.text)
 	check(status.begins_with("Exported 3MF → ") and status.contains(path),
 			"export status for %s starts with Exported 3MF → and contains the path (%s)" % [name, status])
 	if dlg.visible:
 		dlg.hide()
 	return path if FileAccess.file_exists(path) else ""
+
+
+func _probe_export_dialog(ctx: FilmContext, path: String) -> void:
+	print("  File dialog: Cancel once, then WM_CLOSE_REQUEST")
+	var opened: bool = await _click_menu_item(ctx, "File", 11, "File → Export 3MF (Cancel)")
+	await process_frame
+	await process_frame
+	var dlg: FileDialog = ctx.main.file_dialog
+	check(opened and dlg != null and dlg.visible, "Export 3MF opens a FileDialog for Cancel")
+	if dlg != null and dlg.visible:
+		await _type_export_name(dlg, path)
+		var cancel := dlg.get_cancel_button()
+		check(cancel != null, "export Cancel button exists")
+		if cancel != null:
+			await _x11_click_embedded(cancel)
+			await process_frame
+			await process_frame
+		check(ctx.main.is_inside_tree(), "main stays in the tree after Export Cancel")
+		print("  note - script continues after Export Cancel")
+	opened = await _click_menu_item(ctx, "File", 11, "File → Export 3MF (WM close)")
+	await process_frame
+	await process_frame
+	dlg = ctx.main.file_dialog
+	check(opened and dlg != null and dlg.visible, "Export 3MF reopens for WM_CLOSE_REQUEST")
+	if dlg != null and dlg.visible:
+		ctx.main.notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+		await process_frame
+		await process_frame
+		check(ctx.main.is_inside_tree(), "main stays in the tree after WM_CLOSE_REQUEST")
+		print("  note - script continues after WM_CLOSE_REQUEST")
+
+
+func _dialog_name_edit(dlg: FileDialog) -> LineEdit:
+	if dlg == null:
+		return null
+	if dlg.has_method("get_line_edit"):
+		var le: Variant = dlg.get_line_edit()
+		if le is LineEdit:
+			return le as LineEdit
+	for c in dlg.find_children("*", "LineEdit", true, false):
+		var edit := c as LineEdit
+		if edit != null:
+			return edit
+	return null
+
+
+func _type_export_name(dlg: FileDialog, path: String) -> void:
+	var edit := _dialog_name_edit(dlg)
+	check(edit != null, "Export 3MF name LineEdit exists")
+	if edit == null:
+		return
+	await _x11_click_embedded(edit)
+	await process_frame
+	await _x11_type(edit.get_viewport(), path)
+	await process_frame
 
 
 func _file_button(main) -> MenuButton:
@@ -969,9 +1043,36 @@ func _release_gui_focus(ctx: FilmContext) -> void:
 
 func _dim_edit(ctx: FilmContext) -> LineEdit:
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	if chrome == null or chrome._dim_spin == null:
+	if chrome == null:
+		return null
+	var named: LineEdit = chrome.find_child("DimLineEdit", true, false) as LineEdit
+	if named != null:
+		return named
+	if chrome._dim_spin == null:
 		return null
 	return chrome._dim_spin.get_line_edit()
+
+
+func _spin_digits(edit: LineEdit) -> String:
+	if edit == null:
+		return ""
+	var text := str(edit.text).strip_edges()
+	if text.ends_with(" mm"):
+		text = text.substr(0, text.length() - 3)
+	elif text.ends_with("mm"):
+		text = text.substr(0, text.length() - 2)
+	return text.strip_edges()
+
+
+func _distance_dim_index(sm: SketchMode) -> int:
+	for i in sm.dimensions.size():
+		var dim: Dictionary = sm.dimensions[i]
+		if str(dim.get("type", "")) != "distance":
+			continue
+		var ids: Array = dim.get("ids", [])
+		if ids.size() >= 2:
+			return i
+	return -1
 
 
 func _hud_w_edit(ix: ViewportInteraction) -> LineEdit:
@@ -1335,6 +1436,48 @@ func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String, 
 	await _type_dim(ctx, radius_text, second_click)
 
 
+func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var circs := _circles(sm)
+	check(circs.size() == 2, "Smart Dimension needs two circles (got %d)" % circs.size())
+	if circs.size() != 2:
+		return
+	var c1: Vector2 = circs[0]["center"]
+	var c2: Vector2 = circs[1]["center"]
+	await _zoom(ctx, Vector3(100, 0, 0), 280.0)
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
+	await _zoom_uv(ctx, c1, 50.0)
+	await _click_uv(ctx, c1, "Smart Dimension first centre")
+	await _zoom_uv(ctx, c2, 50.0)
+	await _click_uv(ctx, c2, "Smart Dimension second centre")
+	await process_frame
+	await process_frame
+	var di := _distance_dim_index(sm)
+	check(di >= 0, "distance dimension exists after two centres")
+	if di < 0:
+		return
+	var lp: Variant = sm._dimension_label_pos2(sm.dimensions[di])
+	check(lp != null, "centre-distance label has a position")
+	if lp == null:
+		return
+	await _zoom_uv(ctx, lp as Vector2, 50.0)
+	await _click_uv(ctx, lp as Vector2, "Click centre-distance label")
+	await process_frame
+	await process_frame
+	var ix: ViewportInteraction = ctx.main.interaction
+	check(ix._dim_edit_popup != null and ix._dim_edit_popup.visible,
+			"dimension popup is visible after the label click")
+	if ix._dim_edit_popup == null or not ix._dim_edit_popup.visible:
+		return
+	var line: LineEdit = ix._dim_edit_line
+	check(line != null, "popup line edit exists")
+	await _x11_click(line)
+	await _x11_type(line.get_viewport(), text)
+	await _x11_enter(line.get_viewport())
+	await process_frame
+	await process_frame
+
+
 func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
@@ -1439,32 +1582,144 @@ func _press_extrude(ctx: FilmContext, desc: String) -> void:
 	await process_frame
 
 
+func _x11_click(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = pos
+	down.global_position = pos
+	vp.push_input(down)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	vp.push_input(up)
+	await process_frame
+
+
+func _x11_type(vp: Viewport, text: String) -> void:
+	for i in text.length():
+		var ch := text.unicode_at(i)
+		var code := KEY_NONE
+		if ch >= 48 and ch <= 57:
+			code = (KEY_0 + (ch - 48)) as Key
+		elif ch >= 97 and ch <= 122:
+			code = (KEY_A + (ch - 97)) as Key
+		elif ch == 46:
+			code = KEY_PERIOD
+		elif ch == 45:
+			code = KEY_MINUS
+		elif ch == 47:
+			code = KEY_SLASH
+		else:
+			push_error("no X11 key for U+%X" % ch)
+			return
+		var ev := InputEventKey.new()
+		ev.keycode = code
+		ev.physical_keycode = code
+		ev.unicode = ch
+		ev.pressed = true
+		ev.echo = false
+		vp.push_input(ev)
+		var rel := ev.duplicate() as InputEventKey
+		rel.pressed = false
+		rel.unicode = 0
+		vp.push_input(rel)
+		await process_frame
+
+
+func _x11_enter(vp: Viewport) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_ENTER
+	ev.physical_keycode = KEY_ENTER
+	ev.unicode = 0
+	ev.pressed = true
+	ev.echo = false
+	vp.push_input(ev)
+	var rel := ev.duplicate() as InputEventKey
+	rel.pressed = false
+	rel.unicode = 0
+	vp.push_input(rel)
+	await process_frame
+
+
+func _x11_click_at(vp: Viewport, pos: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = pos
+	down.global_position = pos
+	vp.push_input(down)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	vp.push_input(up)
+	await process_frame
+
+
+## Embedded FileDialog only sees the click on the root viewport, in screen
+## space (push_input on the dialog Window does not hit Cancel/OK/name).
+## Same-burst X11 sequence as `_x11_click`.
+func _x11_click_embedded(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	if ctrl.has_method("get_screen_position"):
+		pos = ctrl.get_screen_position() + ctrl.size * 0.5
+	else:
+		var win := ctrl.get_viewport()
+		if win is Window:
+			pos = Vector2((win as Window).position) + pos
+	await _x11_click_at(root.get_viewport(), pos)
+
+
 func _type_dim(ctx: FilmContext, text: String, second_click: bool) -> void:
-	var edit: LineEdit = ctx.main.sketch_chrome._dim_spin.get_line_edit()
-	await _click_control(edit)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var edit: LineEdit = chrome.find_child("DimLineEdit", true, false) as LineEdit
+	if edit == null and chrome._dim_spin != null:
+		edit = chrome._dim_spin.get_line_edit()
+	check(edit != null, "DimLineEdit exists for typing %s" % text)
+	if edit == null:
+		return
+	await _x11_click(edit)
+	await _x11_type(edit.get_viewport(), text)
 	if second_click:
-		await _click_control(edit)
-		var sel := edit.get_selected_text()
-		check(sel != "" and sel == edit.text,
-				"second dim click selects all (sel '%s' text '%s')" % [sel, edit.text])
-	await _type_text(edit.get_viewport(), text)
-	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+		var raw := _spin_digits(edit)
+		check(not raw.contains("2.522"),
+				"second dim text does not contain 2.522 (got '%s')" % raw)
+		check(raw.contains(text) or (raw.is_valid_float() and absf(float(raw) - float(text)) < 0.001),
+				"second dim text parses as %s (got '%s')" % [text, raw])
+	await _x11_enter(edit.get_viewport())
 	await process_frame
 	await process_frame
 
 
 func _type_distance(ctx: FilmContext, text: String) -> void:
-	var edit: LineEdit = ctx.main.sketch_chrome._extrude_spin.get_line_edit()
-	await _click_control(edit)
-	await _click_control(edit)
-	var sel := edit.get_selected_text()
-	check(sel != "" and sel == edit.text,
-			"second D click selects the distance (sel '%s' text '%s')" % [sel, edit.text])
-	await _type_text(edit.get_viewport(), text)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var edit: LineEdit = chrome.find_child("DistanceLineEdit", true, false) as LineEdit
+	if edit == null and chrome._extrude_spin != null:
+		edit = chrome._extrude_spin.get_line_edit()
+	check(edit != null, "DistanceLineEdit exists for typing %s" % text)
+	if edit == null:
+		return
+	await _x11_click(edit)
+	await _x11_type(edit.get_viewport(), text)
 	await process_frame
 	await process_frame
 
 
+## Extra unfocused burst. Nut 7.5 uses `_type_distance` (X11 click), not this.
 func _type_unfocused_distance(ctx: FilmContext, digits: String) -> void:
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	var edit: LineEdit = chrome._extrude_spin.get_line_edit()
@@ -1488,12 +1743,12 @@ func _type_unfocused_distance(ctx: FilmContext, digits: String) -> void:
 
 
 func _type_popup(ctx: FilmContext, edit: LineEdit, text: String) -> void:
-	edit.grab_focus()
-	await process_frame
-	var sel := edit.get_selected_text()
-	check(sel != "" and sel == edit.text, "dimension popup text is selected ('%s')" % sel)
-	await _type_text(edit.get_viewport(), text)
-	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+	check(edit != null, "dimension popup LineEdit exists")
+	if edit == null:
+		return
+	await _x11_click(edit)
+	await _x11_type(edit.get_viewport(), text)
+	await _x11_enter(edit.get_viewport())
 	await process_frame
 
 
