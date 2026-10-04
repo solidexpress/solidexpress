@@ -119,6 +119,13 @@ var _orient_popup: PopupPanel
 var _dim_edit_popup: PopupPanel
 var _dim_edit_line: LineEdit
 var _dim_edit_index := -1
+## Next digit / '.' in the dim popup replaces the current number (WP1 first-key
+## rule). Armed on focus and on every left click so a same-burst caret cannot
+## leave the old distance selected-off for append.
+var _dim_edit_replace := false
+## Bumped on click and on typed text so a pending deferred select_all cannot
+## re-select the first digit and let the second key replace it.
+var _dim_edit_select_gen := 0
 var _last_hover_key := ""
 
 ## Armed click-to-place kind, or "" when idle.
@@ -495,9 +502,12 @@ func _build_dim_edit_popup() -> void:
 	row.add_child(lbl)
 	_dim_edit_line = LineEdit.new()
 	# Wide enough for "45.0" (and a short suffix) without scrolling the tail.
+	_dim_edit_line.name = "DimEditLine"
 	_dim_edit_line.custom_minimum_size = Vector2(160, 0)
 	_dim_edit_line.select_all_on_focus = true
+	_dim_edit_line.focus_entered.connect(_on_dim_edit_line_focus_entered)
 	_dim_edit_line.gui_input.connect(_on_dim_edit_line_gui_input)
+	_dim_edit_line.text_changed.connect(_on_dim_edit_line_text_changed)
 	_dim_edit_line.text_submitted.connect(_apply_dim_edit)
 	row.add_child(_dim_edit_line)
 
@@ -510,6 +520,7 @@ func _show_dim_edit(index: int) -> void:
 	if index < 0 or index >= sketch_mode.dimensions.size():
 		return
 	_dim_edit_index = index
+	_dim_edit_replace = true
 	var dim: Dictionary = sketch_mode.dimensions[index]
 	_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
 	var at := Vector2i(get_viewport().get_mouse_position()) + Vector2i(8, 8)
@@ -518,16 +529,59 @@ func _show_dim_edit(index: int) -> void:
 	_dim_edit_line.select_all()
 
 
+func _dim_edit_owns_keys() -> bool:
+	return _dim_edit_popup != null and _dim_edit_popup.visible
+
+
+func _on_dim_edit_line_focus_entered() -> void:
+	_dim_edit_replace = true
+	# Mouse clicks select-all from gui_input so the caret click cannot win.
+	# Keyboard focus (and opening the popup) selects immediately.
+	if _dim_edit_line == null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		return
+	_dim_edit_line.select_all()
+
+
+func _on_dim_edit_line_text_changed(_new_text: String) -> void:
+	# A pending deferred select_all from the focusing click must not re-select
+	# the first typed digit.
+	_dim_edit_select_gen += 1
+
+
+func _select_dim_edit_all_if_gen(gen: int) -> void:
+	if gen != _dim_edit_select_gen:
+		return
+	if _dim_edit_line == null:
+		return
+	_dim_edit_line.select_all()
+
+
 func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
-	# select_all_on_focus only runs when focus is gained. A second click in the
-	# already-focused field would otherwise park the caret at the end.
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
+		# Every left click, including a click that finds the field already
+		# focused. Arm replace so the caret that clears select_all cannot
+		# make the next digit append onto the old distance.
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			_dim_edit_line.call_deferred("select_all")
+			_dim_edit_replace = true
+			_dim_edit_select_gen += 1
+			var gen := _dim_edit_select_gen
+			_select_dim_edit_all_if_gen.call_deferred(gen)
+		return
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	var ke := event as InputEventKey
+	if not _dim_edit_replace or not _is_length_type_key(ke):
+		return
+	# Select all before the character is inserted, then later keys append.
+	_dim_edit_select_gen += 1
+	if _dim_edit_line != null:
+		_dim_edit_line.select_all()
+	_dim_edit_replace = false
 
 
 func _apply_dim_edit(text: String) -> void:
+	_dim_edit_replace = false
 	_dim_edit_popup.hide()
 	if sketch_mode == null or _dim_edit_index < 0:
 		return
@@ -1917,6 +1971,8 @@ func _gui_input(event: InputEvent) -> void:
 ## True when a LineEdit / TextEdit / SpinBox editor has focus — sketch hotkeys
 ## must not steal keystrokes from extrude distance / dimension fields.
 func _sketch_keys_blocked() -> bool:
+	if _dim_edit_owns_keys():
+		return true
 	var vp := get_viewport()
 	if vp == null:
 		return false
@@ -1944,6 +2000,12 @@ func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
 		# Nothing under the cursor (or Interaction size not hit-tested) → allow
 		# viewport gestures from `_input`.
 		return true
+	if _dim_edit_owns_keys():
+		var n: Node = h
+		while n != null:
+			if n == _dim_edit_popup or n == _dim_edit_line:
+				return false
+			n = n.get_parent()
 	if h == self:
 		return true
 	# TransformHud / SelectionStrip / PlaceSnapBar are our children with STOP.
@@ -2024,6 +2086,15 @@ func _handle_model_pointer(event: InputEvent) -> bool:
 
 
 func _over_chrome(global_mouse: Vector2) -> bool:
+	if _dim_edit_owns_keys():
+		if _dim_edit_line != null:
+			var lr: Rect2 = _dim_edit_line.get_global_rect()
+			if lr.has_point(global_mouse):
+				return true
+		if _dim_edit_popup != null:
+			var wr := Rect2(Vector2(_dim_edit_popup.position), Vector2(_dim_edit_popup.size))
+			if wr.has_point(global_mouse):
+				return true
 	# Ignore absurd chrome rects (headless / layout-before-size can make
 	# CENTER_BOTTOM HUD cover most of a tiny viewport and freeze place/select).
 	var vp := get_viewport()
@@ -3904,6 +3975,10 @@ func _distance_line_edit() -> LineEdit:
 ## Preview digits go to the dim blank; with no preview they go to Distance.
 ## Runs before OrbitCamera so KEY_1/2/3/5/7 cannot steal 7.5 while sketching.
 func _try_route_length_key(event: InputEvent) -> bool:
+	# The in-sketch dimension popup owns digits while it is open — do not seed
+	# the finish-bar dim blank or Distance with the same KEY_2 KEY_0 KEY_0.
+	if _dim_edit_owns_keys():
+		return false
 	if _try_consume_preview_length_key(event):
 		return true
 	if _try_append_focused_dim_length_key(event):
@@ -4214,6 +4289,8 @@ func _input(event: InputEvent) -> void:
 
 ## True when a LineEdit / TextEdit (incl. SpinBox inner edit) owns focus.
 func _text_field_has_focus() -> bool:
+	if _dim_edit_line != null and _dim_edit_line.has_focus():
+		return true
 	var vp := get_viewport()
 	if vp == null:
 		return false
