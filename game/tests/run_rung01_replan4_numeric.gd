@@ -37,11 +37,11 @@ func _init() -> void:
 func _assert_source_hygiene() -> void:
 	var src := FileAccess.get_file_as_string("res://tests/run_rung01_replan4_numeric.gd")
 	check(not src.contains("focus_dim" + "_for_typing"),
-			"test source does not call focus_dim_for_typing")
+			"test source does not call the dim focus helper")
 	check(not src.contains("focus_distance" + "_for_typing"),
-			"test source does not call focus_distance_for_typing")
+			"test source does not call the distance focus helper")
 	check(not src.contains("set_extrude" + "_distance"),
-			"test source does not call set_extrude_distance")
+			"test source does not call the distance setter")
 	check(not src.contains("text_submitted" + ".emit"),
 			"test source does not emit submitted")
 	check(not src.contains("interaction." + "_input"),
@@ -52,14 +52,14 @@ func _assert_source_hygiene() -> void:
 			"test source does not assign LineEdit.text")
 	check(not src.contains(".value" + " ="),
 			"test source does not assign SpinBox.value")
-	check(src.contains("func _x11_click"), "test source copies _x11_click")
-	check(src.contains("func _x11_type"), "test source copies _x11_type")
+	check(src.contains("func _x11_" + "click(ctrl"), "test source copies the X11 click helper")
+	check(src.contains("func _x11_" + "type(vp"), "test source copies the X11 type helper")
 	check(not _x11_click_awaits_between_down_up(src),
-			"_x11_click has no await between mouse-down and mouse-up")
+			"numeric click helper has no await between mouse-down and mouse-up")
 
 
 func _x11_click_awaits_between_down_up(src: String) -> bool:
-	var start := src.find("func _x11_click")
+	var start := src.find("func _x11_" + "click(ctrl")
 	if start < 0:
 		return true
 	var nxt := src.find("\nfunc ", start + 1)
