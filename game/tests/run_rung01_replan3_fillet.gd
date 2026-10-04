@@ -66,8 +66,16 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 	check(body != "", "plate extrude created a body")
 	if body == "":
 		return
+	if ctx.main.sketch_mode != null and ctx.main.sketch_mode.active:
+		await FilmUI.exit_sketch(ctx)
+		await process_frame
+	check(ctx.main.sketch_mode == null or not ctx.main.sketch_mode.active,
+			"plate extrude left sketch mode")
 	var bb: Dictionary = ctx.view.doc.measure_bbox(body)
-	check(absf(float(bb.get("max_z", 0)) - 10.0) <= 0.2, "plate thickness is 10 (zmax %s)" % str(bb.get("max_z")))
+	var zmax := 0.0
+	if bb.has("max"):
+		zmax = float((bb["max"] as Vector3).z)
+	check(absf(zmax - 10.0) <= 0.2, "plate thickness is 10 (zmax %s)" % str(zmax))
 
 	print("- sketch a 20×10 slot on the top and cut Blind 2.5")
 	await _sketch_on_top(ctx, body)
@@ -87,6 +95,7 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 	check(not ctx.main.sketch_mode.active, "slot cut left sketch mode")
 
 	print("- fillet R1 on the top face via the selection strip")
+	await _dismiss_property_panel(ctx)
 	await _ensure_body_selected(ctx, body)
 	var n0 := _count_type(ctx, "fillet")
 	await _arm_fillet(ctx)
@@ -105,6 +114,8 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 			"R1 top does not report limit 1.250")
 
 	print("- fillet R1.5 on the slot floor is refused")
+	await _dismiss_property_panel(ctx)
+	await _ensure_body_selected(ctx, body)
 	var vol0: float = ctx.view.doc.body_volume(body)
 	var n1 := _count_type(ctx, "fillet")
 	await _arm_fillet(ctx)
@@ -120,6 +131,8 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 	check(absf(ctx.view.doc.body_volume(body) - vol0) < 1e-3, "body unchanged after refused R1.5")
 
 	print("- fillet R1 on the slot floor succeeds")
+	await _dismiss_property_panel(ctx)
+	await _ensure_body_selected(ctx, body)
 	await _arm_fillet(ctx)
 	await _type_strip_radius(ctx, "1")
 	await _look_along(ctx, Vector3(0, 0, 1), Vector3(0, 0, 7.5), 80.0)
@@ -173,29 +186,34 @@ func _face_at(ctx: FilmContext, body: String, z_want: float) -> String:
 func _sketch_on_top(ctx: FilmContext, body: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm != null and sm.active:
-		var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
-		await FilmUI.click_control(ctx, exit_btn, FilmUICues.exit_sketch())
+		await FilmUI.exit_sketch(ctx)
 		await process_frame
 	var top := _face_at(ctx, body, 10.0)
 	check(top != "", "top face exists for the slot sketch")
-	await _look_along(ctx, Vector3(0, 0, 1), Vector3(15, 0, 10), 80.0)
-	await _click_model(ctx, Vector3(15, 0, 10), "Select top face")
-	if top != "":
-		ctx.view.select_entity(body, top)
-	ctx.main.interaction._refresh_selection_strip()
+	if top == "":
+		return
+	await FilmUI.enter_sketch_on_face(ctx, body, top)
 	await process_frame
-	var sketch_btn: Button = ctx.main.interaction._strip_sketch
-	await FilmUI.click_control(ctx, sketch_btn, FilmUICues.toolbar_sketch())
 	await process_frame
+
+
+func _dismiss_property_panel(ctx: FilmContext) -> void:
+	if ctx.main.has_method("cancel_property_panel"):
+		ctx.main.cancel_property_panel()
 	await process_frame
 
 
 func _ensure_body_selected(ctx: FilmContext, body: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm != null and sm.active:
-		var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
-		await FilmUI.click_control(ctx, exit_btn, FilmUICues.exit_sketch())
+		await FilmUI.exit_sketch(ctx)
 		await process_frame
+	await _dismiss_property_panel(ctx)
+	if ctx.view.selected_body == body and ctx.main.interaction._selection_strip != null \
+			and ctx.main.interaction._selection_strip.visible \
+			and ctx.main.interaction._strip_fillet != null \
+			and ctx.main.interaction._strip_fillet.is_visible_in_tree():
+		return
 	await _look_along(ctx, Vector3(0, 1, 0), Vector3(0, 15, 5), 80.0)
 	await _click_model(ctx, Vector3(0, 15, 5), "Select plate")
 	ctx.main.interaction._refresh_selection_strip()
@@ -218,14 +236,17 @@ func _type_strip_radius(ctx: FilmContext, digits: String) -> void:
 	if spin == null:
 		return
 	var edit: LineEdit = spin.get_line_edit()
-	await _click_control(edit)
-	await _click_control(edit)
+	edit.grab_focus()
+	await process_frame
+	await _ctrl_a(edit.get_viewport())
+	await process_frame
 	var sel := edit.get_selected_text()
 	check(sel != "" and sel == edit.text,
 			"radius field is selected (sel '%s' text '%s')" % [sel, edit.text])
 	await _type_text(edit.get_viewport(), digits)
 	await process_frame
-	check(edit.text.strip_edges().begins_with(digits),
+	var shown := edit.text.strip_edges()
+	check(shown == digits or shown.begins_with(digits + ".") or shown.begins_with(digits + " "),
 			"typed radius %s is in the spin (got '%s')" % [digits, edit.text])
 
 
@@ -235,7 +256,9 @@ func _commit_strip_radius(ctx: FilmContext) -> void:
 	if spin == null:
 		return
 	var edit: LineEdit = spin.get_line_edit()
-	await _click_control(edit)
+	edit.grab_focus()
+	await process_frame
+	await _ctrl_a(edit.get_viewport())
 	await process_frame
 	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
@@ -511,6 +534,27 @@ func _click_control(ctrl: Control) -> void:
 	await process_frame
 	pos = ctrl.get_global_rect().get_center()
 	await _click_at(ctrl.get_viewport(), pos)
+	await process_frame
+
+
+func _ctrl_a(vp: Viewport) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_A
+	ev.physical_keycode = KEY_A
+	ev.unicode = 0
+	ev.ctrl_pressed = true
+	ev.pressed = true
+	ev.echo = false
+	vp.push_input(ev)
+	await process_frame
+	var rel := InputEventKey.new()
+	rel.keycode = KEY_A
+	rel.physical_keycode = KEY_A
+	rel.unicode = 0
+	rel.ctrl_pressed = true
+	rel.pressed = false
+	rel.echo = false
+	vp.push_input(rel)
 	await process_frame
 
 
