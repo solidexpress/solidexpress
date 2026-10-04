@@ -384,10 +384,10 @@ func test_export_absolute_path() -> void:
 	await process_frame
 	await _type_text(edit.get_viewport(), dest)
 	await process_frame
-	check(edit.text == dest or edit.text.ends_with("abs.3mf"),
+	check(edit.text == dest,
 			"typed absolute path replaced the suggested name (got %s)" % edit.text)
-	check(not str(edit.text).begins_with(str(dlg.current_file)),
-			"typed path is not joined onto the suggested name (got %s)" % edit.text)
+	check(not str(edit.text).begins_with("part.3mf"),
+			"typed path is not glued onto part.3mf (got %s)" % edit.text)
 	var ok := dlg.get_ok_button()
 	check(ok != null and ok.is_visible_in_tree(), "Export dialog OK is visible")
 	if ok != null:
