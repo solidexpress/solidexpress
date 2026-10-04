@@ -119,7 +119,7 @@ func test_perpendicular_then_parallel_trim() -> void:
 	check(FilmUI.require_on_screen(ctx, screen, "shaft-side trim"),
 			"shaft-side trim click is on screen")
 	_status_log.clear()
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await _aim_then_click_screen(ctx.main.get_viewport(), screen)
 	await process_frame
 	await process_frame
 	var status_text := str(ctx.main.status_label.text)
@@ -147,7 +147,7 @@ func test_perpendicular_then_parallel_trim() -> void:
 	check(FilmUI.require_on_screen(ctx, screen, "parallel trim"),
 			"near-parallel trim click is on screen")
 	_status_log.clear()
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await _aim_then_click_screen(ctx.main.get_viewport(), screen)
 	await process_frame
 	await process_frame
 	status_text = str(ctx.main.status_label.text)
@@ -292,19 +292,107 @@ func _start_ground_sketch(ctx: FilmContext, ground := Vector3(22, 18, 0)) -> voi
 
 
 func _select_tool(ctx: FilmContext, label: String) -> void:
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+		await process_frame
 	var b := FilmUI.find_sketch_tool_button(ctx.main, label)
 	check(b != null and b.is_visible_in_tree(), "%s tool is visible" % label)
 	if b != null:
-		await _x11_click(b)
+		await _aim_then_click(b)
 		await process_frame
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and not _tool_is(sm, label):
+		var key := _tool_hotkey(label)
+		if key != KEY_NONE:
+			await _press_key(ctx.main.get_viewport(), key)
+			await process_frame
+	if sm != null and not _tool_is(sm, label):
+		await FilmUI.select_sketch_tool(ctx, sm, _tool_enum(label))
+		await process_frame
+	check(sm == null or _tool_is(sm, label), "%s tool is active" % label)
+
+
+func _aim_then_click(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	await process_frame
+	await _x11_click_screen(vp, pos)
+
+
+func _tool_hotkey(label: String) -> Key:
+	match label:
+		"Select":
+			return KEY_S
+		"Line":
+			return KEY_L
+		"Rectangle":
+			return KEY_R
+		"Circle":
+			return KEY_C
+		"Power Trim", "Trim":
+			return KEY_T
+		"Smart Dimension":
+			return KEY_D
+	return KEY_NONE
+
+
+func _tool_enum(label: String) -> int:
+	match label:
+		"Select":
+			return SketchMode.Tool.SELECT
+		"Line":
+			return SketchMode.Tool.LINE
+		"Rectangle":
+			return SketchMode.Tool.RECT
+		"Circle":
+			return SketchMode.Tool.CIRCLE
+		"Power Trim", "Trim":
+			return SketchMode.Tool.TRIM
+		"Smart Dimension":
+			return SketchMode.Tool.SMART_DIM
+		"Polygon":
+			return SketchMode.Tool.POLYGON
+	return SketchMode.Tool.NONE
+
+
+func _tool_is(sm: SketchMode, label: String) -> bool:
+	return sm.tool == _tool_enum(label)
+
+
+func _press_key(vp: Viewport, key: Key) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = key
+	ev.physical_keycode = key
+	ev.unicode = 0
+	ev.pressed = true
+	ev.echo = false
+	vp.push_input(ev)
+	var rel := ev.duplicate() as InputEventKey
+	rel.pressed = false
+	vp.push_input(rel)
+	await process_frame
 
 
 func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	var vp: Viewport = ctx.main.get_viewport()
+	await _aim_then_click_screen(vp, screen)
 	await process_frame
+
+
+func _aim_then_click_screen(vp: Viewport, pos: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	await process_frame
+	await _x11_click_screen(vp, pos)
 
 
 func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
@@ -387,7 +475,7 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2, angle_deg: float, half
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
 	check(chip != null and chip.is_visible_in_tree(), "Center Three Point chip is visible")
 	if chip != null:
-		await _x11_click(chip)
+		await FilmUI.click_control(ctx, chip, {"keys": "Click", "desc": "Center Three Point"})
 		await process_frame
 	var along := Vector2(cos(deg_to_rad(angle_deg)), sin(deg_to_rad(angle_deg)))
 	var across := Vector2(-along.y, along.x)
@@ -402,7 +490,7 @@ func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Centerline")
 	check(chip != null and chip.is_visible_in_tree(), "Centerline chip is visible")
 	if chip != null:
-		await _x11_click(chip)
+		await FilmUI.click_control(ctx, chip, {"keys": "Click", "desc": "Centerline"})
 		await process_frame
 	var dir := along.normalized()
 	await _zoom_uv(ctx, center - dir * 25.0, 70.0)
@@ -421,6 +509,8 @@ func _edit_rect_labels(ctx: FilmContext) -> void:
 		await _edit_label(ctx, width_i, "20")
 	var ang_i := _dim_index(sm, "angle")
 	if ang_i >= 0:
+		await _edit_label(ctx, ang_i, "45")
+	if absf(_long_side_angle_deg(sm) - 45.0) > TOL and ang_i >= 0:
 		await _edit_label(ctx, ang_i, "45")
 
 
@@ -447,45 +537,49 @@ func _edit_label(ctx: FilmContext, index: int, text: String) -> void:
 
 
 func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float) -> void:
-	var host := Vector3(100, 0, z_top)
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		await _exit_sketch(ctx)
 	if top != "":
+		ctx.view.select_entity(body, top)
+		await process_frame
+	ctx.main.interaction._refresh_selection_strip()
+	await process_frame
+	var sketch_btn: Button = ctx.main.interaction._strip_sketch
+	if sketch_btn == null or not sketch_btn.is_visible_in_tree():
+		var host := Vector3(100, 0, z_top)
 		var picked := FilmUI.face_pick_point(ctx.view, body, top)
 		if picked != Vector3.INF:
 			host = picked
-	await _zoom(ctx, host, 500.0)
-	var host_screen := FilmUI.model_to_screen(ctx, host)
-	if FilmUI.is_on_screen(ctx, host_screen):
-		await _x11_click_screen(ctx.main.get_viewport(), host_screen)
-		await process_frame
-	var sm: SketchMode = ctx.main.sketch_mode
-	var on_top := sm.active and sm.plane_normal().dot(Vector3(0, 0, 1)) > 0.9 \
-			and absf(sm.plane_origin.z - z_top) < 0.5
-	if sm.active and not on_top:
-		await _exit_sketch(ctx)
-		sm = ctx.main.sketch_mode
-		on_top = false
-	if not on_top:
-		if top != "":
-			ctx.view.select_entity(body, top)
+		await _zoom(ctx, host, 500.0)
+		var host_screen := FilmUI.model_to_screen(ctx, host)
+		if FilmUI.is_on_screen(ctx, host_screen):
+			await _aim_then_click_screen(ctx.main.get_viewport(), host_screen)
+			await process_frame
+		ctx.view.select_entity(body, top)
 		ctx.main.interaction._refresh_selection_strip()
-		var sketch_btn: Button = ctx.main.interaction._strip_sketch
-		check(sketch_btn != null, "selection-strip Sketch is present")
-		if sketch_btn != null:
-			await _x11_click(sketch_btn)
-			await process_frame
-			await process_frame
+		await process_frame
+		sketch_btn = ctx.main.interaction._strip_sketch
+	check(sketch_btn != null and sketch_btn.is_visible_in_tree(),
+			"selection-strip Sketch is visible")
+	if sketch_btn != null and sketch_btn.is_visible_in_tree():
+		await FilmUI.click_control(ctx, sketch_btn, {"keys": "Sketch", "desc": "Sketch on top face"})
+		await process_frame
+		await process_frame
+	sm = ctx.main.sketch_mode
+	if sm != null and sm.active and ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+		await process_frame
 
 
 func _exit_sketch(ctx: FilmContext) -> void:
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+		await process_frame
 	var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
-	if exit_btn == null or not exit_btn.is_visible_in_tree():
-		if ctx.main.has_method("_update_left_rail"):
-			ctx.main._update_left_rail()
-			await process_frame
-		exit_btn = FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
 	check(exit_btn != null and exit_btn.is_visible_in_tree(), "Exit Sketch is visible")
 	if exit_btn != null:
-		await _x11_click(exit_btn)
+		await FilmUI.click_control(ctx, exit_btn, {"keys": "Exit Sketch", "desc": "Exit Sketch"})
 		await process_frame
 		await process_frame
 

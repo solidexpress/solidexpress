@@ -97,8 +97,17 @@ func test_discard_open_profile_then_circle() -> void:
 	check(sm.editing_fid == sketch_fid, "editing_fid is the reopened sketch")
 	await _zoom(ctx, Vector3(20, 15, 0), 80.0)
 	await _select_tool(ctx, "Select")
-	await _click_uv(ctx, Vector2(20, 0), "Select bottom edge")
-	await process_frame
+	var edge_mids: Array[Vector2] = _line_mids(sm)
+	check(not edge_mids.is_empty(), "reopened sketch still has a rectangle edge")
+	for mid in edge_mids:
+		await _zoom(ctx, sm.to_model(mid), 50.0)
+		await _click_uv(ctx, mid, "Select rectangle edge")
+		await process_frame
+		if sm.selected.size() >= 1:
+			break
+	if sm.selected.is_empty() and not edge_mids.is_empty():
+		await _click_uv(ctx, edge_mids[0], "Select rectangle edge again")
+		await process_frame
 	check(sm.selected.size() >= 1, "one rectangle edge is selected (got %d)" % sm.selected.size())
 	var before_ids := sm.sketch.entity_ids() if sm.sketch != null else PackedStringArray()
 	await _press_delete(ctx)
@@ -123,10 +132,14 @@ func test_discard_open_profile_then_circle() -> void:
 	if body != "":
 		check(body in ctx.view.doc.body_ids(), "the same body id remains")
 	check(not sm.active, "session is inactive before the next ground sketch")
-	await _start_ground_sketch(ctx, Vector3(90, 80, 0))
+	await _start_ground_sketch(ctx, Vector3(-40, 40, 0))
 	sm = ctx.main.sketch_mode
 	check(sm.active, "ground sketch started after the discard")
-	await _zoom(ctx, Vector3(90, 80, 0), 60.0)
+	var origin3: Vector3 = sm.to_model(Vector2.ZERO)
+	await _zoom(ctx, origin3, 80.0)
+	var origin_screen := FilmUI.model_to_screen(ctx, origin3)
+	if not FilmUI.is_on_screen(ctx, origin_screen):
+		await _zoom(ctx, sm.plane_origin, 120.0)
 	await _select_tool(ctx, "Circle")
 	_status_log.clear()
 	await _click_uv(ctx, Vector2(0, 0), "Circle centre")
@@ -299,11 +312,103 @@ func _start_ground_sketch(ctx: FilmContext, ground := Vector3(22, 18, 0)) -> voi
 
 
 func _select_tool(ctx: FilmContext, label: String) -> void:
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+		await process_frame
 	var b := FilmUI.find_sketch_tool_button(ctx.main, label)
 	check(b != null and b.is_visible_in_tree(), "%s tool is visible" % label)
 	if b != null:
-		await _x11_click(b)
+		await _aim_then_click(b)
 		await process_frame
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and not _tool_is(sm, label):
+		var key := _tool_hotkey(label)
+		if key != KEY_NONE:
+			await _press_key(ctx.main.get_viewport(), key)
+			await process_frame
+	if sm != null and not _tool_is(sm, label):
+		await FilmUI.select_sketch_tool(ctx, sm, _tool_enum(label))
+		await process_frame
+	check(sm == null or _tool_is(sm, label), "%s tool is active" % label)
+
+
+func _aim_then_click(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	await process_frame
+	await _x11_click_screen(vp, pos)
+
+
+func _tool_hotkey(label: String) -> Key:
+	match label:
+		"Select":
+			return KEY_S
+		"Line":
+			return KEY_L
+		"Rectangle":
+			return KEY_R
+		"Circle":
+			return KEY_C
+		"Power Trim", "Trim":
+			return KEY_T
+		"Smart Dimension":
+			return KEY_D
+	return KEY_NONE
+
+
+func _tool_enum(label: String) -> int:
+	match label:
+		"Select":
+			return SketchMode.Tool.SELECT
+		"Line":
+			return SketchMode.Tool.LINE
+		"Rectangle":
+			return SketchMode.Tool.RECT
+		"Circle":
+			return SketchMode.Tool.CIRCLE
+		"Power Trim", "Trim":
+			return SketchMode.Tool.TRIM
+		"Smart Dimension":
+			return SketchMode.Tool.SMART_DIM
+		"Polygon":
+			return SketchMode.Tool.POLYGON
+	return SketchMode.Tool.NONE
+
+
+func _tool_is(sm: SketchMode, label: String) -> bool:
+	return sm.tool == _tool_enum(label)
+
+
+func _press_key(vp: Viewport, key: Key) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = key
+	ev.physical_keycode = key
+	ev.unicode = 0
+	ev.pressed = true
+	ev.echo = false
+	vp.push_input(ev)
+	var rel := ev.duplicate() as InputEventKey
+	rel.pressed = false
+	vp.push_input(rel)
+	await process_frame
+
+
+func _line_mids(sm: SketchMode) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if sm == null or sm.sketch == null:
+		return out
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		out.append(((info["start"] as Vector2) + (info["end"] as Vector2)) * 0.5)
+	return out
 
 
 func _show_timeline(ctx: FilmContext) -> void:

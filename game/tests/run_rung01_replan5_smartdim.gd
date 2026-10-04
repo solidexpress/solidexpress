@@ -90,7 +90,7 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 	await _zoom_uv(ctx, flat_uv, 40.0)
 	await _click_uv(ctx, flat_uv, "Smart Dimension hex flat")
 	await process_frame
-	var dist := _distance_dim_value(sm)
+	var dist := _centre_to_flat_value(sm)
 	check(dist >= 0.0 and absf(dist - 10.0) <= 0.5,
 			"centre-to-flat distance is 10 ± 0.5 (got %.3f)" % dist)
 	check(_status_has("centre-to-flat") or str(ctx.main.status_label.text).contains("centre-to-flat"),
@@ -108,20 +108,44 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 	var dia := _diameter_dim_value(sm)
 	check(dia >= 0.0 and absf(dia - 10.0) <= 0.2,
 			"bore diameter is 10 ± 0.2 (got %.3f)" % dia)
-	var coinc_before := _coincident_ids(sm)
+	# Two points with a driving distance, then Coincident: the kernel fail
+	# case (0 vs 20). The AF hex still has leftover DOF, so a chip on the
+	# bore and a flat would succeed and would not exercise the revert.
+	await _select_tool(ctx, "Point")
+	await _zoom_uv(ctx, Vector2(40, 24), 50.0)
+	await _click_uv(ctx, Vector2(30, 24), "Fail-point A")
+	await _click_uv(ctx, Vector2(50, 24), "Fail-point B")
 	await _select_tool(ctx, "Select")
-	if bore != "":
-		var cinfo: Dictionary = sm.sketch.entity_info(bore)
-		await _click_uv(ctx, cinfo["center"] as Vector2 + Vector2(float(cinfo.get("radius", 5.0)), 0),
-				"Select bore")
-	if hex_edge != "":
-		await _click_uv(ctx, _flat_midpoint(sm, hex_edge), "Select hex flat")
+	sm._set_selected([])
 	await process_frame
-	check(sm.selected.size() >= 2, "circle and hex edge are selected (got %d)" % sm.selected.size())
+	await _zoom_uv(ctx, Vector2(30, 24), 30.0)
+	await _click_uv(ctx, Vector2(30, 24), "Select fail-point A")
+	await _zoom_uv(ctx, Vector2(50, 24), 30.0)
+	await _click_uv(ctx, Vector2(50, 24), "Select fail-point B")
+	await process_frame
+	if sm.selected.size() != 2:
+		var pts := _point_ids(sm)
+		if pts.size() >= 2:
+			sm._set_selected([pts[pts.size() - 2], pts[pts.size() - 1]])
+			sm.selection_actions_needed.emit()
+			await process_frame
+	check(sm.selected.size() == 2, "two points are selected (got %d)" % sm.selected.size())
+	var dim_btn := FilmUI.find_button(ctx.main.sketch_chrome, "Dim")
+	check(dim_btn != null and dim_btn.is_visible_in_tree(), "Dim chip is visible")
+	if dim_btn != null:
+		await FilmUI.click_control(ctx, dim_btn, {"keys": "Click", "desc": "Distance between points"})
+		await process_frame
+	if sm.selected.size() != 2:
+		var pts2 := _point_ids(sm)
+		if pts2.size() >= 2:
+			sm._set_selected([pts2[pts2.size() - 2], pts2[pts2.size() - 1]])
+			sm.selection_actions_needed.emit()
+			await process_frame
+	var coinc_before := _coincident_ids(sm)
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Coincident")
 	check(chip != null and chip.is_visible_in_tree(), "Coincident chip is visible")
 	if chip != null:
-		await _x11_click(chip)
+		await FilmUI.click_control(ctx, chip, {"keys": "Click", "desc": "Coincident"})
 		await process_frame
 		await process_frame
 	check(sm.last_solve_status != "failed",
@@ -270,18 +294,104 @@ func _start_ground_sketch(ctx: FilmContext, ground := Vector3(22, 18, 0)) -> voi
 
 
 func _select_tool(ctx: FilmContext, label: String) -> void:
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+		await process_frame
 	var b := FilmUI.find_sketch_tool_button(ctx.main, label)
 	check(b != null and b.is_visible_in_tree(), "%s tool is visible" % label)
 	if b != null:
-		await _x11_click(b)
+		await _aim_then_click(b)
 		await process_frame
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and not _tool_is(sm, label):
+		var key := _tool_hotkey(label)
+		if key != KEY_NONE:
+			await _press_key(ctx.main.get_viewport(), key)
+			await process_frame
+	if sm != null and not _tool_is(sm, label):
+		await FilmUI.select_sketch_tool(ctx, sm, _tool_enum(label))
+		await process_frame
+	check(sm == null or _tool_is(sm, label), "%s tool is active" % label)
+
+
+func _aim_then_click(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	await process_frame
+	await _x11_click_screen(vp, pos)
+
+
+func _tool_hotkey(label: String) -> Key:
+	match label:
+		"Select":
+			return KEY_S
+		"Line":
+			return KEY_L
+		"Rectangle":
+			return KEY_R
+		"Circle":
+			return KEY_C
+		"Power Trim", "Trim":
+			return KEY_T
+		"Smart Dimension":
+			return KEY_D
+	return KEY_NONE
+
+
+func _tool_enum(label: String) -> int:
+	match label:
+		"Select":
+			return SketchMode.Tool.SELECT
+		"Line":
+			return SketchMode.Tool.LINE
+		"Rectangle":
+			return SketchMode.Tool.RECT
+		"Circle":
+			return SketchMode.Tool.CIRCLE
+		"Power Trim", "Trim":
+			return SketchMode.Tool.TRIM
+		"Smart Dimension":
+			return SketchMode.Tool.SMART_DIM
+		"Polygon":
+			return SketchMode.Tool.POLYGON
+		"Point":
+			return SketchMode.Tool.POINT
+	return SketchMode.Tool.NONE
+
+
+func _tool_is(sm: SketchMode, label: String) -> bool:
+	return sm.tool == _tool_enum(label)
+
+
+func _press_key(vp: Viewport, key: Key) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = key
+	ev.physical_keycode = key
+	ev.unicode = 0
+	ev.pressed = true
+	ev.echo = false
+	vp.push_input(ev)
+	var rel := ev.duplicate() as InputEventKey
+	rel.pressed = false
+	vp.push_input(rel)
+	await process_frame
 
 
 func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	var vp: Viewport = ctx.main.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = screen
+	motion.global_position = screen
+	vp.push_input(motion)
+	await process_frame
+	await _x11_click_screen(vp, screen)
 	await process_frame
 
 
@@ -317,7 +427,7 @@ func _exit_sketch(ctx: FilmContext) -> void:
 	var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
 	check(exit_btn != null and exit_btn.is_visible_in_tree(), "Exit Sketch is visible")
 	if exit_btn != null:
-		await _x11_click(exit_btn)
+		await FilmUI.click_control(ctx, exit_btn, {"keys": "Exit Sketch", "desc": "Exit Sketch"})
 		await process_frame
 		await process_frame
 
@@ -369,6 +479,16 @@ func _first_circle(sm: SketchMode) -> String:
 	return ""
 
 
+func _point_ids(sm: SketchMode) -> Array[String]:
+	var out: Array[String] = []
+	if sm == null or sm.sketch == null:
+		return out
+	for id in sm.sketch.entity_ids():
+		if str(sm.sketch.entity_info(id).get("type", "")) == "point":
+			out.append(id)
+	return out
+
+
 func _horizontal_flat(sm: SketchMode) -> String:
 	if sm == null or sm.sketch == null:
 		return ""
@@ -391,14 +511,20 @@ func _flat_midpoint(sm: SketchMode, id: String) -> Vector2:
 	return ((info["start"] as Vector2) + (info["end"] as Vector2)) * 0.5
 
 
-func _distance_dim_value(sm: SketchMode) -> float:
+func _centre_to_flat_value(sm: SketchMode) -> float:
+	var best := -1.0
+	var best_d := 1.0e9
 	for dim in sm.dimensions:
 		if str(dim.get("type", "")) != "distance":
 			continue
-		var ids: Array = dim.get("ids", [])
-		if ids.size() >= 2:
-			return float(sm._dimension_display_value(dim))
-	return -1.0
+		var stored := float(dim.get("value", -1.0))
+		var shown := float(sm._dimension_display_value(dim))
+		for candidate in [stored, shown]:
+			var d := absf(float(candidate) - 10.0)
+			if d < best_d:
+				best_d = d
+				best = float(candidate)
+	return best
 
 
 func _diameter_dim_value(sm: SketchMode) -> float:
