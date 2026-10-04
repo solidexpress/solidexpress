@@ -551,9 +551,13 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		if before_seal > 0 and selected_contours.size() >= before_seal:
 			wanted_all = true
 	# Solve first so tangent / on-circle constraints pull endpoints onto the
-	# circles. Seal and the 1e-6 profile check then see a closed wire.
+	# circles. Lock sized circles so that solve cannot translate a typed Ø20
+	# off the origin or change radii. Weld inference-marked contacts, then
+	# seal. The 1e-6 profile check then sees a closed wire.
 	if sketch != null:
+		_lock_sized_circles()
 		run_solve()
+		_weld_on_circle_endpoints()
 	_seal_tangent_bosses()
 	if wanted_all:
 		selected_contours = []
@@ -562,7 +566,7 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		if op == "cut" or op == "fuse":
 			status.emit("Open-profile cut needs a line chain (Flip Side toggles material)")
 		else:
-			status.emit("Extrude failed — open profile. Close it (or set Thin wall > 0)")
+			status.emit(_open_profile_status())
 		# Keep the sketch session alive so the mechanic can finish the outline.
 		_reassert_camera()
 		return
@@ -2658,7 +2662,7 @@ func _click_rect(pos2: Vector2) -> void:
 						# Short side drives the jaw width. Long side is an angle
 						# to a construction +X through the centre. Construction
 						# stays out of the profile.
-						_add_centre_rect_dimensions(q1, q2, ctr, pt)
+						_add_centre_rect_dimensions(q1, q2, q3, ctr, pt)
 				_tool_points.clear()
 		"parallelogram":
 			if _tool_points.size() == 3:
@@ -3093,6 +3097,7 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 				added = true
 	if added:
 		run_solve()
+		_weld_on_circle_endpoints(lid)
 
 
 ## Endpoint lying on a circle, with the segment perpendicular to the radius,
@@ -3118,6 +3123,9 @@ func _infer_tangent_at(lid: String, p: Vector2, seg: Vector2) -> bool:
 			continue
 		if absf(radial.normalized().dot(dir)) > 0.2:
 			continue
+		# Typed radius already lives on this circle. Lock centre + radius so
+		# the tangent solve may slide contact but must not move the boss.
+		_lock_sized_circle(id)
 		sketch.add_constraint("tangent", [
 			{"entity": lid, "role": "self"},
 			{"entity": id, "role": "self"}], 0.0)
@@ -3137,11 +3145,194 @@ func _infer_on_circle(lid: String, role: String, p: Vector2) -> bool:
 		var r: float = float(info.get("radius", 0.0))
 		if absf(p.distance_to(c) - r) > INFER_TOL:
 			continue
+		_lock_sized_circle(id)
 		sketch.add_constraint("distance", [
 			{"entity": lid, "role": role},
 			{"entity": id, "role": "center"}], r)
 		return true
 	return false
+
+
+## True when `entity_id` already has a constraint of `type_name`.
+func _entity_has_constraint(entity_id: String, type_name: String) -> bool:
+	if sketch == null or entity_id == "":
+		return false
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if str(info.get("type", "")) != type_name:
+			continue
+		for ref in info.get("refs", []):
+			if typeof(ref) != TYPE_DICTIONARY:
+				continue
+			if str(ref.get("entity", "")) == entity_id:
+				return true
+	return false
+
+
+## Lock a circle that already has a radius so a later tangent solve cannot
+## translate its centre or change that radius. Contact may still slide.
+func _lock_sized_circle(id: String) -> void:
+	if sketch == null or id == "":
+		return
+	var info: Dictionary = sketch.entity_info(id)
+	if str(info.get("type", "")) != "circle":
+		return
+	var r := float(info.get("radius", 0.0))
+	if r <= 1e-6:
+		return
+	if _entity_has_constraint(id, "fix"):
+		return
+	sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
+
+
+## Lock every sized circle (typed radius on the wrench bosses).
+func _lock_sized_circles() -> void:
+	if sketch == null:
+		return
+	for id in sketch.entity_ids():
+		_lock_sized_circle(id)
+
+
+## Snap inference-marked on-circle endpoints onto the circle so the 1e-6
+## chain and `_seal_tangent_bosses` (0.05 mm) both see a closed wire.
+func _weld_on_circle_endpoints(line_id: String = "") -> void:
+	if sketch == null:
+		return
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if str(info.get("type", "")) != "distance":
+			continue
+		var refs: Array = info.get("refs", [])
+		if refs.size() < 2:
+			continue
+		var lid := ""
+		var role := ""
+		var circ := ""
+		for ref in refs:
+			if typeof(ref) != TYPE_DICTIONARY:
+				continue
+			var eid := str(ref.get("entity", ""))
+			var rle := str(ref.get("role", ""))
+			var einfo: Dictionary = sketch.entity_info(eid)
+			var kind := str(einfo.get("type", ""))
+			if kind == "line" and (rle == "start" or rle == "end"):
+				lid = eid
+				role = rle
+			elif (kind == "circle" or kind == "arc") and (rle == "center" or rle == "self"):
+				circ = eid
+		if lid == "" or circ == "":
+			continue
+		if line_id != "" and lid != line_id:
+			continue
+		var linfo: Dictionary = sketch.entity_info(lid)
+		var cinfo: Dictionary = sketch.entity_info(circ)
+		if linfo.is_empty() or cinfo.is_empty():
+			continue
+		var c: Vector2 = cinfo["center"]
+		var rad := float(cinfo.get("radius", 0.0))
+		if rad < 1e-6:
+			continue
+		var p: Vector2 = linfo["start"] if role == "start" else linfo["end"]
+		var d := p - c
+		var welded: Vector2 = c + Vector2(rad, 0.0) if d.length_squared() < 1e-16 \
+				else c + d.normalized() * rad
+		if p.distance_to(welded) < 1e-12:
+			continue
+		if role == "start":
+			sketch.set_entity_geometry(lid, {"start": welded, "end": linfo["end"]})
+		else:
+			sketch.set_entity_geometry(lid, {"start": linfo["start"], "end": welded})
+
+
+## Status for a still-open extrude. Names the open vertex; does not offer
+## Thin wall or Insert Box as the way to finish the blank.
+func _open_profile_status() -> String:
+	var p: Variant = _open_profile_point()
+	if p is Vector2:
+		var v: Vector2 = p
+		return "Extrude failed — open profile at (%.1f, %.1f). Close that vertex." % [v.x, v.y]
+	return "Extrude failed — open profile at (0.0, 0.0). Close that vertex."
+
+
+## A degree-1 endpoint, or a tangent contact on a circle that does not yet
+## close the wire (only one hit). Null when the sketch is empty.
+func _open_profile_point() -> Variant:
+	if sketch == null:
+		return null
+	var ends: Array[Vector2] = []
+	var circs: Array = []
+	var segs: Array = []
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		match str(info.get("type", "")):
+			"circle":
+				circs.append({"c": info["center"], "r": float(info.get("radius", 0.0))})
+			"line":
+				var a: Vector2 = info["start"]
+				var b: Vector2 = info["end"]
+				if a.distance_to(b) > 1e-9:
+					ends.append(a)
+					ends.append(b)
+					segs.append({"a": a, "b": b})
+			"arc":
+				var pa: Vector2 = info["start"] if info.has("start") else info["center"]
+				var pb: Vector2 = info["end"] if info.has("end") else info["center"]
+				if pa.distance_to(pb) > 1e-9:
+					ends.append(pa)
+					ends.append(pb)
+					segs.append({"a": pa, "b": pb})
+			_:
+				pass
+	const TOL := 1e-6
+	var used := {}
+	var unmatched: Array[Vector2] = []
+	for i in range(ends.size()):
+		if used.has(i):
+			continue
+		var matched := false
+		for j in range(i + 1, ends.size()):
+			if used.has(j):
+				continue
+			if ends[i].distance_to(ends[j]) <= TOL:
+				used[i] = true
+				used[j] = true
+				matched = true
+				break
+		if not matched:
+			unmatched.append(ends[i])
+	for p in unmatched:
+		if _circle_hit_count_at(p, circs, segs, maxf(TOL, 1e-4)) < 2:
+			return p
+	if not unmatched.is_empty():
+		return unmatched[0]
+	return null
+
+
+static func _circle_hit_count_at(p: Vector2, circs: Array, segs: Array, tol: float) -> int:
+	var best := -1
+	var best_err := tol
+	for i in range(circs.size()):
+		if typeof(circs[i]) != TYPE_DICTIONARY:
+			continue
+		var err := absf(p.distance_to(circs[i]["c"]) - float(circs[i]["r"]))
+		if err <= best_err:
+			best_err = err
+			best = i
+	if best < 0:
+		return 0
+	var c: Vector2 = circs[best]["c"]
+	var r := float(circs[best]["r"])
+	var n := 0
+	for s in segs:
+		if typeof(s) != TYPE_DICTIONARY:
+			continue
+		if absf((s["a"] as Vector2).distance_to(c) - r) <= tol:
+			n += 1
+		if absf((s["b"] as Vector2).distance_to(c) - r) <= tol:
+			n += 1
+	return n
 
 
 ## Existing line endpoint within INFER_TOL of `p` (excluding `exclude_id`),
@@ -3180,7 +3371,10 @@ func _infer_rect(l1: String, l2: String, l3: String, l4: String) -> void:
 
 ## Centre-3-pt rectangle: driving width on the short side, and an angle from
 ## the long side to a construction line along sketch +X through the centre.
-func _add_centre_rect_dimensions(long_id: String, short_id: String, ctr: Vector2, pt_id: String) -> void:
+## `opp_long_id` is the opposite long side; a construction diagonal pins the
+## centre so a later width edit cannot flatten the driving angle.
+func _add_centre_rect_dimensions(long_id: String, short_id: String, opp_long_id: String,
+		ctr: Vector2, pt_id: String) -> void:
 	if sketch == null:
 		return
 	var short_info: Dictionary = sketch.entity_info(short_id)
@@ -3193,6 +3387,26 @@ func _add_centre_rect_dimensions(long_id: String, short_id: String, ctr: Vector2
 				{"entity": short_id, "role": "start"},
 				{"entity": short_id, "role": "end"}], width)
 			_record_dimension("distance", [short_id], width, cid)
+	if pt_id != "" and long_id != "" and opp_long_id != "":
+		var ia: Dictionary = sketch.entity_info(long_id)
+		var ic: Dictionary = sketch.entity_info(opp_long_id)
+		if str(ia.get("type", "")) == "line" and str(ic.get("type", "")) == "line":
+			var ra: Vector2 = ia["start"]
+			var rc: Vector2 = ic["start"]
+			var diag: String = sketch.add_line(ra.x, ra.y, rc.x, rc.y)
+			if diag != "":
+				sketch.set_construction(diag, true)
+				_angle_datum_lines[diag] = true
+				sketch.add_constraint("coincident", [
+					{"entity": long_id, "role": "start"},
+					{"entity": diag, "role": "start"}], 0.0)
+				sketch.add_constraint("coincident", [
+					{"entity": opp_long_id, "role": "start"},
+					{"entity": diag, "role": "end"}], 0.0)
+				sketch.add_constraint("midpoint", [
+					{"entity": pt_id, "role": "self"},
+					{"entity": diag, "role": "self"}], 0.0)
+		sketch.add_constraint("fix", [{"entity": pt_id, "role": "self"}], 0.0)
 	_add_angle_to_horizontal(long_id, ctr, pt_id)
 	run_solve()
 
@@ -3225,7 +3439,7 @@ func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String =
 	var ang := _lines_signed_angle(xid, line_id)
 	var cid: String = sketch.add_constraint("angle", [
 		{"entity": xid, "role": "self"},
-		{"entity": line_id, "role": "self"}], ang)
+		{"entity": line_id, "role": "self"}], ang, true)
 	_record_dimension("angle", [xid, line_id], ang, cid)
 
 
@@ -3361,7 +3575,11 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	if dim.has("expr"):
 		dim["value"] = sketch.constraint_info(cid).get("value", dim.get("value", 0.0))
 	dimensions[index] = dim
+	# A width edit must not drop the centre-rect angle to a reference dim.
+	_keep_angle_dims_driving()
 	var res := run_solve()
+	if str(dim.get("type", "")) == "distance":
+		_restore_driving_angles()
 	# The sketch is already a feature (reopened, or saved by a previous extrude).
 	# Push it back so the cut/extrude downstream rebuilds.
 	if editing_fid != "" and view != null and view.doc != null:
@@ -3371,6 +3589,49 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	_redraw_selected()
 	_rebuild_dimension_labels()
 	return res["status"]
+
+
+## Angle-to-horizontal on a centre-3-pt rectangle stays driving when a
+## distance (jaw width) is the value that just changed.
+func _keep_angle_dims_driving() -> void:
+	if sketch == null:
+		return
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		if str(dim.get("type", "")) != "angle":
+			continue
+		var acid := str(dim.get("cid", ""))
+		if acid == "":
+			continue
+		sketch.set_constraint_driving(acid, true)
+
+
+func _restore_driving_angles() -> void:
+	_keep_angle_dims_driving()
+	if sketch == null:
+		return
+	var need := false
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		if str(dim.get("type", "")) != "angle":
+			continue
+		var acid := str(dim.get("cid", ""))
+		if acid == "":
+			continue
+		var ids: Array = dim.get("ids", [])
+		if ids.size() < 2:
+			continue
+		var want := float(dim.get("value", 0.0))
+		var got := _lines_signed_angle(str(ids[0]), str(ids[1]))
+		var err := absf(got - want)
+		err = minf(err, absf(err - TAU))
+		if err > deg_to_rad(0.05):
+			sketch.set_constraint_value(acid, want)
+			need = true
+	if need:
+		run_solve()
 
 
 ## Driving dims live in the kernel once the sketch is a feature. Reopening a
@@ -4220,8 +4481,12 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 				break
 		if cursor.distance_to(loop_start) <= tol:
 			continue
+		# Ends on a circle close the chain only when that circle is a
+		# two-hit connector (both shaft tangents). One tangent is still open.
 		if _point_on_any_circle(loop_start, circs, on_tol) \
-				and _point_on_any_circle(cursor, circs, on_tol):
+				and _point_on_any_circle(cursor, circs, on_tol) \
+				and _circle_hit_count_at(loop_start, circs, segs, on_tol) >= 2 \
+				and _circle_hit_count_at(cursor, circs, segs, on_tol) >= 2:
 			continue
 		return false
 	return true
