@@ -558,16 +558,44 @@ func _fillet_neck(ctx: FilmContext, body: String, neck_x: float) -> void:
 	check(ctx.view.selected_body == body, "wrench selected for fillet")
 	var before := _count_type(ctx, "fillet")
 	await _arm_fillet(ctx, 10.0)
-	# Look along +X so the click hits the vertical concave neck edge, not the
-	# +Y shaft face (that face's 10 mm edges refuse R10 with limit 5).
-	await _look_along(ctx, Vector3(1, 0, 0), Vector3(neck_x, 10, 5), 25.0)
-	await _click_model(ctx, Vector3(neck_x, 10, 5), "Neck edge +Y")
-	await _look_along(ctx, Vector3(1, 0, 0), Vector3(neck_x, -10, 5), 25.0)
-	await _click_model(ctx, Vector3(neck_x, -10, 5), "Neck edge -Y")
+	# Side view, zoomed on the vertical junction: a face-interior click takes
+	# the whole shaft face (4 edges, R10 limit 5). A click within 2.5 mm of
+	# the silhouette adds one edge so both necks share one feature.
+	var pts := _neck_click_points(ctx, body, neck_x)
+	if pts.size() < 2:
+		pts = [Vector3(neck_x, 10.0, 5.0), Vector3(neck_x, -10.0, 5.0)]
+	for i in pts.size():
+		var p: Vector3 = pts[i]
+		var from_y := 1.0 if p.y >= 0.0 else -1.0
+		await _look_along(ctx, Vector3(0, from_y, 0), p, 10.0)
+		await _click_model(ctx, p, "Neck edge %s" % ("+Y" if from_y > 0.0 else "-Y"))
+		if ctx.view.selected_edges.size() > i + 1:
+			await _look_along(ctx, Vector3(0, from_y, 0), p, 6.0)
+			await _click_model(ctx, p, "Neck edge tighter")
 	check(ctx.view.selected_edges.size() >= 2, "both neck edges selected (got %d)" % ctx.view.selected_edges.size())
 	await _commit_fillet(ctx)
 	check(_count_type(ctx, "fillet") == before + 1, "one fillet on both neck edges")
 	check(ctx.view.doc.last_graph_error() == "", "neck fillet accepted (%s)" % ctx.view.doc.last_graph_error())
+
+
+func _neck_click_points(ctx: FilmContext, body: String, neck_x: float) -> Array:
+	var found: Dictionary = {}
+	var lines: Dictionary = ctx.view.doc.get_edge_lines(body)
+	for eid in lines.keys():
+		var pts: PackedVector3Array = lines[eid]
+		if pts.is_empty():
+			continue
+		var mid: Vector3 = (pts[0] + pts[pts.size() - 1]) * 0.5
+		if absf(mid.x - neck_x) < 1.5 and absf(absf(mid.y) - 10.0) < 0.8 and absf(mid.z - 5.0) < 1.5:
+			var side := 1 if mid.y >= 0.0 else -1
+			if not found.has(side):
+				found[side] = mid
+	var out: Array = []
+	if found.has(1):
+		out.append(found[1])
+	if found.has(-1):
+		out.append(found[-1])
+	return out
 
 
 func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vector3,
@@ -621,6 +649,11 @@ func _commit_fillet(ctx: FilmContext) -> void:
 	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
+	# A refused radius re-arms the same edges. Esc cancels that pick so the
+	# next Fillet click does not immediately re-commit leftover edges.
+	if str(ctx.view.doc.last_graph_error()) != "":
+		await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+		await process_frame
 
 
 func _radius_digits(radius: float) -> String:
@@ -1203,8 +1236,14 @@ func _look_along(ctx: FilmContext, from_side: Vector3, model_pivot: Vector3, siz
 	var n := from_side.normalized()
 	cam.sketch_orientation_locked = false
 	cam._sketch_view_up = Vector3.UP
-	cam.yaw = atan2(n.x, -n.y)
-	cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
+	# Model ±Z is world ±Y. look_at(..., Vector3.UP) is degenerate at pitch ±89.
+	# WP2's Up To Surface pick uses pitch ±75 and a yaw with a horizontal component.
+	if absf(n.z) > 0.9:
+		cam.yaw = deg_to_rad(180.0)
+		cam.pitch = deg_to_rad(-75.0 if n.z < 0.0 else 75.0)
+	else:
+		cam.yaw = atan2(n.x, -n.y)
+		cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
 	cam._look_at_content = true
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
@@ -1606,29 +1645,52 @@ func _edit_label(ctx: FilmContext, index: int, text: String) -> void:
 func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
 	var cam = ctx.main.camera
 	var ix: ViewportInteraction = ctx.main.interaction
+	var ms: Node3D = ctx.main.model_space
+	# Shaft interior on z=0 — on the bottom face, away from the jaw at x=200.
+	# Same camera as WP2's working Up To Surface pick: pitch -75, not ±89.
+	var target := Vector3(90.0, 0.0, 0.0)
+	var body := ctx.view.selected_body
+	if body == "":
+		var ids: PackedStringArray = ctx.view.doc.body_ids()
+		if not ids.is_empty():
+			body = str(ids[0])
+	var picked: Vector3 = FilmUI.face_pick_point(ctx.view, body, bottom)
+	if picked != Vector3.INF and absf(picked.z) <= 1.5:
+		target = Vector3(picked.x, picked.y, 0.0)
+		if absf(target.y) > 8.0:
+			target.y = 0.0
 	if cam._view_tween != null and cam._view_tween.is_valid():
 		cam._view_tween.kill()
 		cam._view_tween = null
 	cam.sketch_orientation_locked = false
-	var mid: Vector3 = ctx.view.doc.face_midpoint(bottom)
-	cam.pivot = mid
+	cam._look_at_content = true
+	cam.pivot = ms.to_global(target) if ms != null else target
 	cam.distance = 180.0
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	cam.set_view(cam.yaw, deg_to_rad(-75.0), false)
 	await process_frame
 	await process_frame
-	var screen: Vector2 = ix._model_to_screen(mid)
+	var screen: Vector2 = ix._model_to_screen(target)
 	var ray: Array = ix._model_ray(screen)
 	var hit: Dictionary = ctx.view.pick_info(ray[0], ray[1])
-	if str(hit.get("face", "")) != bottom:
-		cam.set_view(deg_to_rad(180.0), deg_to_rad(-80.0), false)
+	if str(hit.get("face", "")) == "":
+		cam.set_view(deg_to_rad(180.0), deg_to_rad(-75.0), false)
 		await process_frame
 		await process_frame
-		screen = ix._model_to_screen(mid)
+		screen = ix._model_to_screen(target)
+		ray = ix._model_ray(screen)
+		hit = ctx.view.pick_info(ray[0], ray[1])
+	if str(hit.get("face", "")) == "":
+		# Sketch top-down: first hit is the host; the pick walks through to the far face.
+		await _zoom(ctx, target, 80.0)
+		screen = ix._model_to_screen(target)
 		ray = ix._model_ray(screen)
 		hit = ctx.view.pick_info(ray[0], ray[1])
 	check(str(hit.get("face", "")) != "",
-			"bottom-face ray hits a model face (got %s)" % str(hit.get("face", "")))
+			"bottom-face ray hits a model face (got '%s' screen %s)" % [
+				str(hit.get("face", "")), str(screen)])
+	check(FilmUI.is_on_screen(ctx, screen),
+			"bottom-face click is on screen (%s)" % str(screen))
 	await _aim_pointer(ctx, screen)
 	await _pointer_click(ctx, screen, false)
 	await process_frame
