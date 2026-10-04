@@ -861,6 +861,8 @@ func _build_ui() -> void:
 	# boots; run_rung01_replan_shell.gd fails that gap instead of skipping it.
 	if sketch_chrome.has_signal("dim_rejected"):
 		sketch_chrome.dim_rejected.connect(_on_sketch_dim_rejected)
+	if sketch_chrome.has_signal("distance_rejected"):
+		sketch_chrome.distance_rejected.connect(_on_sketch_distance_rejected)
 	sketch_mode.preview_distance_changed.connect(_on_sketch_preview_distance)
 	interaction.sketch_chrome = sketch_chrome
 
@@ -1481,6 +1483,35 @@ func _on_sketch_dim_rejected(raw: String) -> void:
 	_on_status("Cannot read dimension: " + raw)
 
 
+func _on_sketch_distance_rejected(raw: String) -> void:
+	_on_status("Cannot read distance: " + raw)
+
+
+func _extrude_end_label(end: String) -> String:
+	match end:
+		"through_all":
+			return "Through All"
+		"midplane":
+			return "Midplane"
+		"to_face":
+			return "Up To Surface"
+		_:
+			return "Blind"
+
+
+func _distance_line_raw_text() -> String:
+	if sketch_chrome == null:
+		return ""
+	if sketch_chrome.has_method("_distance_raw_text"):
+		return str(sketch_chrome._distance_raw_text())
+	if sketch_chrome._extrude_spin == null:
+		return ""
+	var edit: LineEdit = sketch_chrome._extrude_spin.get_line_edit()
+	if edit == null:
+		return ""
+	return edit.text
+
+
 func _on_sketch_finish(op: String, distance: float, end: String = "blind",
 		thin_thickness: float = 0.0, thin_type: String = "one_side",
 		flip_side: bool = false, selected_contours: Array = []) -> void:
@@ -1490,6 +1521,9 @@ func _on_sketch_finish(op: String, distance: float, end: String = "blind",
 		"fuse": finish_op.selected = 2
 		_: finish_op.selected = 0
 	sketch_mode.finish_extrude(distance, op, end, thin_thickness, thin_type, flip_side, selected_contours)
+	# Failures keep the sketch open and already wrote the failure sentence.
+	if sketch_mode != null and not sketch_mode.active:
+		_on_status("Extrude %s %.4f mm" % [_extrude_end_label(end), distance])
 
 
 func _selected_entity() -> String:
@@ -1872,6 +1906,12 @@ func cancel_property_panel() -> bool:
 
 
 func _rail_finish_extrude() -> void:
+	# Do not send a stale 20. WP1's distance_line_parses is the suffix-aware
+	# gate; extrude_distance() is only called when that line is one float.
+	if sketch_chrome != null and sketch_chrome.has_method("distance_line_parses"):
+		if not sketch_chrome.distance_line_parses():
+			_on_status("Cannot read distance: " + _distance_line_raw_text())
+			return
 	var dist := 20.0
 	if sketch_chrome != null and sketch_chrome.has_method("extrude_distance"):
 		dist = sketch_chrome.extrude_distance()
@@ -2745,6 +2785,38 @@ func _export_3mf_start_dir() -> String:
 	return _user_home_dir()
 
 
+## Prefer a typed absolute path over FileDialog joining onto current_dir.
+## `part.3mf/tmp/nut.3mf` (missed select-all) keeps the absolute tail.
+func _resolve_export_3mf_path(typed: String, dialog_path: String) -> String:
+	var t := typed.strip_edges()
+	if t.begins_with("user://") or t.begins_with("res://"):
+		t = ProjectSettings.globalize_path(t)
+	if t.is_absolute_path():
+		return t
+	var glued := _glued_absolute_export_path(t)
+	if glued != "":
+		return glued
+	var out := dialog_path.strip_edges()
+	if out.begins_with("user://") or out.begins_with("res://"):
+		return ProjectSettings.globalize_path(out)
+	return out
+
+
+func _glued_absolute_export_path(typed: String) -> String:
+	var marker := ".3mf"
+	var idx := typed.findn(marker)
+	if idx < 0:
+		return ""
+	var after := typed.substr(idx + marker.length())
+	if after.is_empty():
+		return ""
+	if after.begins_with("user://") or after.begins_with("res://"):
+		return ProjectSettings.globalize_path(after)
+	if after.is_absolute_path():
+		return after
+	return ""
+
+
 func _file_dialog_name_edit() -> LineEdit:
 	if file_dialog == null:
 		return null
@@ -2769,11 +2841,42 @@ func _focus_export_3mf_filename() -> void:
 		return
 	if not edit.text_changed.is_connected(_on_export_3mf_name_changed):
 		edit.text_changed.connect(_on_export_3mf_name_changed)
+	if not edit.gui_input.is_connected(_on_export_3mf_name_gui_input):
+		edit.gui_input.connect(_on_export_3mf_name_gui_input)
 	_export_3mf_accept_name = edit.text.strip_edges()
 	edit.grab_focus()
 	edit.select_all()
 	edit.grab_focus.call_deferred()
 	edit.select_all.call_deferred()
+	_select_export_3mf_name_next_frame()
+
+
+func _on_export_3mf_name_gui_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var edit := _file_dialog_name_edit()
+	if edit == null:
+		return
+	# Deferred select after the caret click, then one more frame so the caret
+	# cannot win. Same pattern as the Distance / dim blanks.
+	edit.select_all.call_deferred()
+	_select_export_3mf_name_next_frame()
+
+
+func _select_export_3mf_name_next_frame() -> void:
+	if not is_inside_tree():
+		return
+	await get_tree().process_frame
+	if file_dialog == null or not file_dialog.visible:
+		return
+	if _file_action != FileAction.EXPORT_3MF:
+		return
+	var edit := _file_dialog_name_edit()
+	if edit != null:
+		edit.select_all()
 
 
 func _on_export_3mf_name_changed(new_text: String) -> void:
@@ -2871,10 +2974,10 @@ func _on_file_selected(path: String) -> void:
 				var edit := _file_dialog_name_edit()
 				if edit != null:
 					typed = edit.text.strip_edges()
-			if typed.is_absolute_path():
-				file_dialog.current_dir = typed.get_base_dir()
-				file_dialog.current_file = typed.get_file()
-				path = typed
+			path = _resolve_export_3mf_path(typed, path)
+			if file_dialog != null and path.is_absolute_path():
+				file_dialog.current_dir = path.get_base_dir()
+				file_dialog.current_file = path.get_file()
 			if view.doc.export_3mf(path):
 				_last_export_dir = path.get_base_dir()
 				_on_status("Exported 3MF → " + path)
