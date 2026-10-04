@@ -146,6 +146,11 @@ func test_opposite_face_cut() -> void:
 		check(absf((mid as Vector3).z) <= TOL_Z,
 				"opposite face midpoint z ≈ 0 (got %.3f)" % (mid as Vector3).z)
 	check(ex != null and not ex.disabled, "Extrude enables after Opposite face")
+	if ex != null:
+		var er := ex.get_global_rect()
+		var vp_r := chrome.get_viewport().get_visible_rect()
+		check(vp_r.encloses(er) or er.intersects(vp_r),
+				"Extrude is on screen after Opposite face (btn %s vp %s)" % [str(er), str(vp_r)])
 	var n_ex := _count_extrudes(ctx)
 	if ex != null:
 		await _x11_click(ex)
@@ -313,7 +318,20 @@ func _click_front_view(ctx: FilmContext) -> void:
 	check(front != null and front.is_visible_in_tree(), "Front view button is visible")
 	if front == null:
 		return
-	await _x11_click(front)
+	# ViewsPopup is a Window. Click through the main viewport at the
+	# popup's screen position — the same path OptionButton items use.
+	var popup: PopupPanel = null
+	var walk: Node = front
+	while walk != null:
+		if walk is PopupPanel:
+			popup = walk as PopupPanel
+			break
+		walk = walk.get_parent()
+	var local := front.get_global_rect().get_center()
+	var screen := local
+	if popup != null:
+		screen = Vector2(popup.position) + local
+	await _x11_click_screen(ctx.main.get_viewport(), screen)
 	await process_frame
 	await process_frame
 	var cam: OrbitCamera = ctx.main.camera

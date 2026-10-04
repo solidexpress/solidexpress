@@ -202,13 +202,13 @@ func _build_finish_bar() -> void:
 	_face_label = Label.new()
 	_face_label.name = "UpToFaceLabel"
 	_face_label.text = "Face: none"
-	_face_label.custom_minimum_size = Vector2(UiScale.px(88), _chip_h())
+	_face_label.custom_minimum_size = Vector2(UiScale.px(72), _chip_h())
 	_face_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	face_row.add_child(_face_label)
 	var opp := Button.new()
 	opp.name = "OppositeFaceButton"
 	opp.text = "Opposite face"
-	opp.custom_minimum_size = Vector2(UiScale.px(108), _chip_h())
+	opp.custom_minimum_size = Vector2(0, _chip_h())
 	opp.tooltip_text = "Use the target-body face farthest along the negative sketch normal"
 	opp.pressed.connect(_on_opposite_face_pressed)
 	face_row.add_child(opp)
@@ -442,6 +442,12 @@ func _sync_face_box() -> void:
 			_face_label.text = _face_z_text(up_to_face_id)
 	if _face_panel != null:
 		_face_panel.visible = get_finish_end() == "to_face" or _face_pick_armed
+	# Blind readout is unused for Up To Surface. Hiding it keeps Extrude
+	# on a 1280-wide finish bar after Opposite face appears.
+	if _extrude_readout != null:
+		_extrude_readout.visible = get_finish_end() != "to_face"
+	if _finish_bar != null and _finish_bar.visible:
+		_place_bar(_finish_bar, Vector2(60, 42))
 	_refresh_extrude_enabled()
 
 
