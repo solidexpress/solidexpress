@@ -1,5 +1,6 @@
-# Rung 1 replan 2 WP5 — GUI walk (nut, wrench, thickened wrench) at 1280×800.
-# Every pointer and key goes through Viewport.push_input. Run:
+# Rung 1 replan 3 WP7 — GUI walk (nut, wrench, thickened wrench) at 1280×800.
+# Every pointer and key goes through Viewport.push_input. Inference stays on.
+# Fillet radii are typed; menus open from the click. Run:
 # tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
 extends SceneTree
 
@@ -25,7 +26,7 @@ func check(cond: bool, what: String) -> void:
 
 
 func _init() -> void:
-	print("rung01 wrench walk (replan-2 WP5 GUI)")
+	print("rung01 wrench walk (replan-3 WP7 GUI)")
 	FilmUI.reset_fail_count()
 	var main_scene: PackedScene = load("res://scenes/main.tscn")
 	var main = main_scene.instantiate()
@@ -127,7 +128,8 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _pick_end(_finish_end(ctx), 0)
 	await _pick_op(_finish_op(ctx), 0)
 	_assert_thin_off(ctx)
-	await _type_distance(ctx, "7.5")
+	check(not sm.has_single_dof_preview(), "bore is committed, no preview before 7.5")
+	await _type_unfocused_distance(ctx, "7.5")
 	check(absf(chrome.extrude_distance() - 7.5) < 0.05, "nut distance is 7.5")
 	await _press_extrude(ctx, "Extrude nut 7.5")
 	var err := _take_bad_status()
@@ -139,6 +141,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	var nut_bb: Dictionary = ctx.view.doc.measure_bbox(nut_body)
 	var nut_ext: Vector3 = nut_bb["max"] - nut_bb["min"]
 	check(absf(nut_ext.z - 7.5) <= TOL, "nut bbox Z is 7.5 before export (got %.3f)" % nut_ext.z)
+	var nut_status := str(ctx.main.status_label.text)
+	check(_status_has("Extrude Blind 7.5000 mm") or nut_status.contains("Extrude Blind 7.5000 mm"),
+			"status contains Extrude Blind 7.5000 mm (got %s)" % nut_status)
 	var nut_path := await _export_via_dialog(ctx, "nut.3mf")
 	check(nut_path != "" and FileAccess.file_exists(nut_path), "exported nut.3mf through the dialog")
 	sm = ctx.main.sketch_mode
@@ -165,35 +170,35 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _draw_circle_typed(ctx, Vector2(200, 0), "22.5", true)
 	var circs := _circles(sm)
 	check(circs.size() == 2, "blank has two circles")
-	# Shaft lines sit on the horizontal tangents of the Ø20 (y = ±10) and meet
-	# the Ø45. Clicks are just off the rim so snap closes them. Infer is held
-	# off for these two segments: a tangent constraint on an under-defined
-	# circle otherwise drags the Ø20 off the origin.
+	# Shaft lines sit on the external tangents of the Ø20 and Ø45. Clicks are
+	# a few tenths of a millimetre off the exact contact so snap + inference
+	# close them. Inference stays on for the whole blank.
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
 	if circs.size() == 2:
 		await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-		sm.infer_enabled = false
-		for y_sign in [1.0, -1.0]:
-			var y := 10.0 * float(y_sign)
-			var a_off := Vector2(0.0, y + 0.35 * float(y_sign))
-			var b_off := Vector2(far_x, y + 0.35 * float(y_sign))
-			await _zoom_uv(ctx, a_off, 40.0)
-			await _click_uv(ctx, a_off, "Tangent start near circle")
-			await _zoom_uv(ctx, b_off, 40.0)
-			await _click_uv(ctx, b_off, "Tangent end near circle")
-			await _right_click_uv(ctx, b_off)
-		sm.infer_enabled = true
+		var c1: Vector2 = circs[0]["center"]
+		var c2: Vector2 = circs[1]["center"]
+		var r1 := float(circs[0]["radius"])
+		var r2 := float(circs[1]["radius"])
+		var tangents := _external_tangents(c1, r1, c2, r2)
+		check(tangents.size() == 2, "two external tangents")
+		for pair in tangents:
+			await _draw_tangent_segment(ctx, pair, c1, c2)
 	await _assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
 	await _pick_end(_finish_end(ctx), 0)
 	await _pick_op(_finish_op(ctx), 0)
 	_assert_thin_off(ctx)
 	await _type_distance(ctx, "10")
+	_status_log.clear()
 	await _press_extrude(ctx, "Extrude wrench blank 10")
 	await process_frame
 	await process_frame
 	err = _take_bad_status()
 	check(err == "", "blank extrude status clean" if err == "" else err)
+	check(not _status_has("open profile"),
+			"blank status does not contain open profile (%s)" % str(ctx.main.status_label.text))
+	check(_count_type(ctx, "primitive") == 0, "blank is not a primitive")
 	var body := _only_body(ctx)
 	check(body != "", "wrench body exists")
 	if body == "":
@@ -240,8 +245,8 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(ex_btn != null and not ex_btn.disabled, "Extrude enables after the face click")
 	check(chrome.get_finish_end() == "to_face",
 			"get_finish_end is to_face immediately before jaw Extrude")
-	check(str(chrome.up_to_face_id).strip_edges() != "",
-			"up_to_face_id is non-empty immediately before jaw Extrude")
+	check(str(chrome.up_to_face_id) == bottom,
+			"up_to_face_id is the bottom face immediately before jaw Extrude")
 	var face_label := ""
 	var face_node: Label = chrome.find_child("UpToFaceLabel", true, false)
 	if face_node != null:
@@ -305,6 +310,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(boss != "", "base extrude is on the timeline")
 	if boss != "":
 		await _type_timeline_distance(ctx, boss, "14")
+	var thick_bb: Dictionary = ctx.view.doc.measure_bbox(body)
+	var thick_ext: Vector3 = thick_bb["max"] - thick_bb["min"]
+	check(absf(thick_ext.z - 14.0) <= TOL, "thick bbox Z is 14 (got %.3f)" % thick_ext.z)
 	var thick_path := await _export_via_dialog(ctx, "wrench-t14.3mf")
 	check(thick_path != "" and FileAccess.file_exists(thick_path), "exported wrench-t14.3mf through the dialog")
 	return {
@@ -598,16 +606,65 @@ func _arm_fillet(ctx: FilmContext, radius: float) -> void:
 	check(spin != null and spin.is_visible_in_tree(), "fillet radius blank visible")
 	if spin == null:
 		return
-	spin.value = radius
-	await process_frame
+	await _type_strip_radius(ctx, _radius_digits(radius))
 
 
 func _commit_fillet(ctx: FilmContext) -> void:
 	var spin: SpinBox = ctx.main.interaction._strip_radius
 	if spin == null:
 		return
-	spin.get_line_edit().text_submitted.emit(str(spin.value))
+	var edit: LineEdit = spin.get_line_edit()
+	edit.grab_focus()
 	await process_frame
+	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+	await process_frame
+	await process_frame
+
+
+func _radius_digits(radius: float) -> String:
+	if is_equal_approx(radius, round(radius)):
+		return str(int(round(radius)))
+	return str(radius)
+
+
+func _type_strip_radius(ctx: FilmContext, digits: String) -> void:
+	var spin: SpinBox = ctx.main.interaction._strip_radius
+	check(spin != null and spin.is_visible_in_tree(), "radius spin is visible for typing %s" % digits)
+	if spin == null:
+		return
+	var edit: LineEdit = spin.get_line_edit()
+	edit.grab_focus()
+	await process_frame
+	await _ctrl_a(edit.get_viewport())
+	await process_frame
+	var sel := edit.get_selected_text()
+	check(sel != "" and sel == edit.text,
+			"radius field is selected (sel '%s' text '%s')" % [sel, edit.text])
+	await _type_text(edit.get_viewport(), digits)
+	await process_frame
+	var shown := edit.text.strip_edges()
+	check(shown == digits or shown.begins_with(digits + ".") or shown.begins_with(digits + " "),
+			"typed radius %s is in the spin (got '%s')" % [digits, edit.text])
+
+
+func _ctrl_a(vp: Viewport) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_A
+	ev.physical_keycode = KEY_A
+	ev.unicode = 0
+	ev.ctrl_pressed = true
+	ev.pressed = true
+	ev.echo = false
+	vp.push_input(ev)
+	await process_frame
+	var rel := InputEventKey.new()
+	rel.keycode = KEY_A
+	rel.physical_keycode = KEY_A
+	rel.unicode = 0
+	rel.ctrl_pressed = true
+	rel.pressed = false
+	rel.echo = false
+	vp.push_input(rel)
 	await process_frame
 
 
@@ -647,8 +704,8 @@ func _type_timeline_distance(ctx: FilmContext, fid: String, digits: String) -> v
 	await process_frame
 	await process_frame
 	check(tl.property_panel.visible, "double-click extrude opens Distance")
-	var spin := _first_spin(tl.property_panel)
-	check(spin != null, "distance field")
+	var spin := tl.property_panel.find_child("Param_distance", true, false) as SpinBox
+	check(spin != null, "distance field is Param_distance")
 	if spin == null:
 		return
 	var edit: LineEdit = spin.get_line_edit()
@@ -807,15 +864,15 @@ func _click_menu_item(ctx: FilmContext, title: String, id: int, desc: String) ->
 	if btn == null or not btn.is_visible_in_tree():
 		check(false, "%s menu button is visible for %s" % [title, desc])
 		return false
-	if not await FilmUI.click_control(ctx, btn, {"keys": "Click", "desc": "%s menu" % title}):
-		return false
-	btn.show_popup()
+	var center := FilmUI.ensure_control_visible(btn)
+	check(FilmUI.is_on_screen(ctx, center), "%s menu is on screen for %s" % [title, desc])
+	await _click_control(btn)
 	await process_frame
 	await process_frame
-	var t0 := Time.get_ticks_msec()
-	while Time.get_ticks_msec() - t0 < 450:
-		await process_frame
 	var popup: PopupMenu = btn.get_popup()
+	var t0 := Time.get_ticks_msec()
+	while popup != null and not popup.visible and Time.get_ticks_msec() - t0 < 450:
+		await process_frame
 	if popup == null or not popup.visible:
 		check(false, "%s popup is visible after click (%s)" % [title, desc])
 		return false
@@ -868,6 +925,9 @@ func _keycode_for_char(ch: String) -> Key:
 
 
 func _release_gui_focus(ctx: FilmContext) -> void:
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	if chrome != null and chrome.has_method("release_dim_focus"):
+		chrome.release_dim_focus()
 	var vp: Viewport = ctx.main.get_viewport()
 	var focus: Control = vp.gui_get_focus_owner()
 	if focus != null:
@@ -1013,10 +1073,13 @@ func _esc_box_then_file_menu(ctx: FilmContext) -> void:
 	check(file_btn != null, "File menu button exists for Esc")
 	if file_btn == null:
 		return
-	await FilmUI.click_control(ctx, file_btn, {"keys": "Click", "desc": "Open File menu"})
-	file_btn.show_popup()
+	await _click_control(file_btn)
+	await process_frame
 	await process_frame
 	var popup: PopupMenu = file_btn.get_popup()
+	var t_menu := Time.get_ticks_msec()
+	while popup != null and not popup.visible and Time.get_ticks_msec() - t_menu < 450:
+		await process_frame
 	check(popup != null and popup.visible, "File menu is open from a click")
 	var esc_vp: Viewport = popup if popup != null else vp
 	await _push_key(esc_vp, KEY_ESCAPE, 0)
@@ -1193,6 +1256,33 @@ func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String, 
 	await _type_dim(ctx, radius_text, second_click)
 
 
+func _draw_tangent_segment(ctx: FilmContext, pair: Dictionary, c1: Vector2, c2: Vector2) -> void:
+	var a: Vector2 = pair["a"]
+	var b: Vector2 = pair["b"]
+	var a_off := a + (a - c1).normalized() * 0.3
+	var b_off := b + (b - c2).normalized() * 0.3
+	await _zoom_uv(ctx, a_off, 90.0)
+	await _click_uv(ctx, a_off, "Tangent start near circle")
+	await _zoom_uv(ctx, b_off, 90.0)
+	await _click_uv(ctx, b_off, "Tangent end near circle")
+	await _right_click_uv(ctx, b_off)
+
+
+func _external_tangents(c1: Vector2, r1: float, c2: Vector2, r2: float) -> Array:
+	var d := c2 - c1
+	var dist := d.length()
+	var along := (r2 - r1) / dist
+	var perp := sqrt(maxf(0.0, 1.0 - along * along))
+	var u := d / dist
+	var side := Vector2(-u.y, u.x)
+	var out: Array = []
+	for sign in [1.0, -1.0]:
+		var s := float(sign)
+		var n: Vector2 = u * along + side * (perp * s)
+		out.append({"a": c1 - n * r1, "b": c2 - n * r2})
+	return out
+
+
 func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
@@ -1309,6 +1399,28 @@ func _type_distance(ctx: FilmContext, text: String) -> void:
 	await _type_text(edit.get_viewport(), text)
 	await process_frame
 	await process_frame
+
+
+func _type_unfocused_distance(ctx: FilmContext, digits: String) -> void:
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var edit: LineEdit = chrome._extrude_spin.get_line_edit()
+	await _release_gui_focus(ctx)
+	check(edit == null or not edit.has_focus(), "Distance is not focused before %s" % digits)
+	var owner: Control = ctx.main.get_viewport().gui_get_focus_owner()
+	check(owner == null or not (owner is LineEdit or owner is SpinBox),
+			"no LineEdit/SpinBox focused before %s (got %s)" % [
+				digits, owner.name if owner != null else "none"])
+	var vp: Viewport = ctx.main.get_viewport()
+	for i in digits.length():
+		var ch := digits.unicode_at(i)
+		var code := KEY_PERIOD if ch == 46 else ((KEY_0 + (ch - 48)) as Key)
+		await _push_key(vp, code, ch)
+	await process_frame
+	var readout := ""
+	var node: Label = chrome.find_child("ExtrudeReadout", true, false)
+	if node != null:
+		readout = str(node.text)
+	check(readout.contains(digits), "readout contains %s (got %s)" % [digits, readout])
 
 
 func _type_popup(ctx: FilmContext, edit: LineEdit, text: String) -> void:
@@ -1680,16 +1792,6 @@ func _row_name_button(tl: TimelinePanel, fid: String) -> Button:
 	for child in row.get_children():
 		if child is Button and child.text != "":
 			return child
-	return null
-
-
-func _first_spin(node: Node) -> SpinBox:
-	if node is SpinBox:
-		return node
-	for child in node.get_children():
-		var found := _first_spin(child)
-		if found != null:
-			return found
 	return null
 
 
