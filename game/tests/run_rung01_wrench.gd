@@ -1,13 +1,16 @@
-# Rung 1 replan 4 WP4 — GUI walk with honest X11 click-then-type at 1280×800.
-# Numeric line edits (dim blank, Distance, dimension popup, export name) use
-# _x11_click / _x11_type: same-burst mouse down+up, then keys. Inference stays on.
-# Fillet radii are typed; menus open from the click. Run:
-# tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
+# Rung 1 replan 5 WP4 — honest wrench walk: recovery, shaft-side Power Trim
+# click, Opposite face, one bare-name export. Numeric line edits keep the
+# replan-4 _x11_click / _x11_type path. Power Trim and recovery clicks use
+# _x11_click_screen with no await between mouse-down and mouse-up.
+# Run: tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
 extends SceneTree
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const TOL := 0.2
 const ROOT_SIZE := Vector2i(1280, 800)
+const NEW_SENTENCE := "New — empty part, Top plane (XY). View ▸ Timeline to edit features"
+const FAILED_SKETCH := "Failed to update sketch"
+const BARE_EXPORT_DIR := "/tmp/sx-rung01-out"
 
 var failures := 0
 var checks := 0
@@ -27,7 +30,7 @@ func check(cond: bool, what: String) -> void:
 
 
 func _init() -> void:
-	print("rung01 wrench walk (replan-4 WP4 X11 GUI)")
+	print("rung01 wrench walk (replan-5 WP4 honest GUI)")
 	FilmUI.reset_fail_count()
 	var main_scene: PackedScene = load("res://scenes/main.tscn")
 	var main = main_scene.instantiate()
@@ -82,7 +85,11 @@ func _take_bad_status() -> String:
 
 
 func _walk(ctx: FilmContext) -> Dictionary:
-	print("- File New, empty part, sketch on Top")
+	print("- recovery: rectangle, Extrude, reopen, delete edge, Exit Sketch, File New")
+	await _file_new(ctx)
+	await _recovery_open_profile_then_new(ctx)
+
+	print("- File New again, empty part, sketch on Top")
 	await _file_new(ctx)
 	check(ctx.view.doc.body_ids().is_empty(), "New leaves no bodies")
 	check(ctx.main.interaction.triball == null or not ctx.main.interaction.triball.active,
@@ -152,8 +159,10 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	var nut_status := str(ctx.main.status_label.text)
 	check(_status_has("Extrude Blind 7.5000 mm") or nut_status.contains("Extrude Blind 7.5000 mm"),
 			"status contains Extrude Blind 7.5000 mm (got %s)" % nut_status)
-	var nut_path := await _export_via_dialog(ctx, "nut.3mf", true)
+	var nut_path := await _export_via_dialog(ctx, "nut.3mf", true, true)
 	check(nut_path != "" and FileAccess.file_exists(nut_path), "exported nut.3mf through the dialog")
+	check(nut_path.begins_with(BARE_EXPORT_DIR),
+			"bare nut.3mf landed in the browsed folder (got %s)" % nut_path)
 	sm = ctx.main.sketch_mode
 	if sm.active:
 		await FilmUI.exit_sketch(ctx)
@@ -237,6 +246,11 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(absf(ext.z - 10.0) <= TOL, "blank bbox Z %.3f" % ext.z)
 	var blank_mesh := _load_mesh(ctx.view.doc, body)
 	check(_inside(blank_mesh, Vector3(90, 0, 5)), "shaft is solid at (90, 0, 5)")
+	var head_c := _head_centre_from_mesh(blank_mesh)
+	print("  P2.6 head centre from mesh: (%.3f, %.3f, %.3f)" % [head_c.x, head_c.y, head_c.z])
+	check(head_c.x > 0.0, "P2.6 head centre X is positive (got %.3f)" % head_c.x)
+	check(absf(head_c.x - 200.0) <= 5.0,
+			"P2.6 head centre X is near +200 so check_rung01 orientation is not flipX (got %.3f)" % head_c.x)
 
 	print("- hole and open jaw, Up To Surface")
 	var top := _face_along(ctx, body, 1)
@@ -250,15 +264,27 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _zoom_uv(ctx, Vector2.ZERO, 40.0)
 	await _place_hole_circle(ctx)
 	await _zoom_uv(ctx, Vector2(200, 0), 120.0)
+	print("  B2.8 redraw Ø45 at the head as a sketch circle")
+	await _draw_circle_typed(ctx, Vector2(200, 0), "22.5", true)
+	var jaw_circs := _circles(sm)
+	var head_r := 0.0
+	for c in jaw_circs:
+		var cr := float(c.get("radius", 0.0))
+		var cc: Vector2 = c.get("center", Vector2.ZERO)
+		if cc.distance_to(Vector2(200, 0)) < 1.0 and cr > 15.0:
+			head_r = cr
+	check(absf(head_r - 22.5) <= 0.05, "jaw sketch has Ø45 at the head (r=%.4f)" % head_r)
 	await _draw_centre_rect(ctx, Vector2(200, 0))
 	await _edit_rect_labels(ctx)
 	await _draw_centreline(ctx, Vector2(200, 0))
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
-	var s2 := sqrt(2.0) / 2.0
-	var ax := Vector2(s2, s2)
-	await _zoom_uv(ctx, Vector2(200, 0), 90.0)
-	await _click_uv(ctx, Vector2(200, 0) + ax * -12.0, "Trim inner jaw half")
+	_status_log.clear()
+	await _power_trim_shaft_click(ctx)
 	await process_frame
+	await process_frame
+	var trim_status := str(ctx.main.status_label.text)
+	check(trim_status.contains("Trimmed open jaw") or _status_has("Trimmed open jaw"),
+			"status contains Trimmed open jaw (got '%s')" % trim_status)
 	err = _take_bad_status()
 	check(err == "", "jaw trim status clean" if err == "" else err)
 	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile closed")
@@ -269,9 +295,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(ex_btn != null and ex_btn.disabled, "Extrude disabled until a face is picked")
 	check(str(chrome.up_to_face_id).strip_edges() == "", "Up To Surface starts with no face")
 	check(chrome.wants_face_pick(), "Up To Surface arms a face pick")
-	await _click_bottom_face(ctx, bottom)
-	check(str(chrome.up_to_face_id) == bottom, "viewport click set the bottom face")
-	check(ex_btn != null and not ex_btn.disabled, "Extrude enables after the face click")
+	await _pick_opposite_face(ctx, bottom)
+	check(str(chrome.up_to_face_id) == bottom, "Opposite face set the bottom face")
+	check(ex_btn != null and not ex_btn.disabled, "Extrude enables after Opposite face")
 	check(chrome.get_finish_end() == "to_face",
 			"get_finish_end is to_face immediately before jaw Extrude")
 	check(str(chrome.up_to_face_id) == bottom,
@@ -732,17 +758,225 @@ func _ctrl_a(vp: Viewport) -> void:
 	await process_frame
 
 
-func _file_new(ctx: FilmContext) -> void:
+func _recovery_open_profile_then_new(ctx: FilmContext) -> void:
+	print("  recovery Exit: _x11_click_screen, no yield between down and up")
+	await _recovery_ground_sketch(ctx)
+	var sm: SketchMode = ctx.main.sketch_mode
+	check(sm != null and sm.active, "recovery ground sketch is open")
+	await _zoom(ctx, Vector3(20, 15, 0), 80.0)
+	await _recovery_select_tool(ctx, "Rectangle")
+	await _recovery_click_uv(ctx, Vector2(0, 0), "Recovery rect A")
+	await _recovery_click_uv(ctx, Vector2(40, 30), "Recovery rect B")
+	await process_frame
+	var n_lines := _count_real(sm, "line")
+	check(n_lines >= 4, "recovery rectangle has four edges (got %d)" % n_lines)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	check(chrome != null and chrome.visible, "recovery finish bar is visible")
+	var ex_btn: Button = chrome.extrude_button()
+	check(ex_btn != null and ex_btn.is_visible_in_tree(), "recovery Extrude is visible")
+	await _x11_click(ex_btn)
+	await process_frame
+	await process_frame
+	await process_frame
+	check(not ctx.main.sketch_mode.active, "recovery Extrude left sketch mode")
+	check(ctx.view.doc.body_ids().size() >= 1, "recovery extrude created a body")
+	var sketch_fid := _sketch_feature_id(ctx)
+	check(sketch_fid != "", "recovery sketch is on the timeline")
+	await _show_timeline(ctx)
+	var row := _row_name_button(ctx.main.timeline, sketch_fid)
+	check(row != null and row.is_visible_in_tree(), "recovery sketch row is visible")
+	if row != null:
+		await _x11_double_click(row)
+		await process_frame
+		await process_frame
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+	await process_frame
+	sm = ctx.main.sketch_mode
+	check(sm.active, "timeline double-click reopened the recovery sketch")
+	await _zoom(ctx, Vector3(20, 15, 0), 80.0)
+	await _recovery_select_tool(ctx, "Select")
+	var edge_mids: Array[Vector2] = _line_mids(sm)
+	check(not edge_mids.is_empty(), "reopened recovery sketch has an edge")
+	for mid in edge_mids:
+		await _zoom(ctx, sm.to_model(mid), 50.0)
+		await _recovery_click_uv(ctx, mid, "Select recovery edge")
+		await process_frame
+		if sm.selected.size() >= 1:
+			break
+	check(sm.selected.size() >= 1, "one recovery edge is selected (got %d)" % sm.selected.size())
+	var before_n := sm.sketch.entity_ids().size() if sm.sketch != null else 0
+	await _recovery_press_delete(ctx)
+	await process_frame
+	var after_n := sm.sketch.entity_ids().size() if sm.sketch != null else 0
+	check(after_n < before_n, "Delete removed the selected recovery edge")
+	_status_log.clear()
+	await _recovery_click_exit(ctx)
+	sm = ctx.main.sketch_mode
+	var status_text := str(ctx.main.status_label.text)
+	print("  recovery Exit status: %s" % status_text)
+	check(not sm.active, "Exit Sketch after open profile is not active")
+	check(not status_text.contains(FAILED_SKETCH),
+			"recovery Exit status is not Failed to update sketch (got '%s')" % status_text)
+	print("- recovery: File → New, then a ground circle")
+	await _file_new(ctx)
+	status_text = str(ctx.main.status_label.text)
+	check(status_text.contains("New — empty part") or status_text == NEW_SENTENCE,
+			"status is the New sentence (got '%s')" % status_text)
+	check(not ctx.main.sketch_mode.active, "File → New leaves sketch_mode.active false")
+	check(not status_text.contains(FAILED_SKETCH),
+			"New status is not Failed to update sketch (got '%s')" % status_text)
+	await _recovery_ground_sketch(ctx, Vector3(-40, 40, 0))
+	sm = ctx.main.sketch_mode
+	check(sm.active, "ground sketch started after File → New")
+	var origin3: Vector3 = sm.to_model(Vector2.ZERO)
+	await _zoom(ctx, origin3, 80.0)
+	await _recovery_select_tool(ctx, "Circle")
+	_status_log.clear()
+	await _recovery_click_uv(ctx, Vector2(0, 0), "Recovery circle centre")
+	await _recovery_click_uv(ctx, Vector2(8, 0), "Recovery circle rim")
+	await process_frame
+	status_text = str(ctx.main.status_label.text)
+	check(status_text.contains("Circle") or _status_has("Circle"),
+			"ground circle drawable after New (got '%s')" % status_text)
+
+
+func _recovery_ground_sketch(ctx: FilmContext, ground := Vector3(22, 18, 0)) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm != null and sm.active:
-		await FilmUI.exit_sketch(ctx)
+		return
+	if ctx.view != null:
+		ctx.view.select_entity("", "")
+	await process_frame
+	await _zoom(ctx, ground, 80.0)
+	var sketch_btn := FilmUI.find_palette_sketch_button(ctx.main)
+	check(sketch_btn != null and sketch_btn.is_visible_in_tree(), "Sketch control is visible")
+	await _x11_click(sketch_btn)
+	await process_frame
+	sm = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		return
+	var screen := FilmUI.model_to_screen(ctx, ground)
+	check(FilmUI.require_on_screen(ctx, screen, "ground pick"), "ground pick is on screen")
+	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await process_frame
+	await process_frame
+
+
+func _recovery_select_tool(ctx: FilmContext, label: String) -> void:
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+		await process_frame
+	var b := FilmUI.find_sketch_tool_button(ctx.main, label)
+	check(b != null and b.is_visible_in_tree(), "%s tool is visible" % label)
+	if b != null:
+		await _x11_click(b)
+		await process_frame
+
+
+func _recovery_click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+	check(FilmUI.require_on_screen(ctx, screen, desc), "recovery click on screen: %s" % desc)
+	await _x11_click_screen(ctx.main.get_viewport(), screen)
+
+
+func _recovery_click_exit(ctx: FilmContext) -> void:
+	var btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
+	check(btn != null and btn.is_visible_in_tree(), "Exit Sketch button is visible")
+	if btn == null:
+		return
+	var n: Node = btn
+	while n != null:
+		if n is ScrollContainer:
+			(n as ScrollContainer).scroll_vertical = 0
+			(n as ScrollContainer).ensure_control_visible(btn)
+		n = n.get_parent()
+	await process_frame
+	await process_frame
+	var r: Rect2 = btn.get_global_rect()
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 400 and (r.size.x < 8.0 or r.position.x < 1.0):
+		await process_frame
+		r = btn.get_global_rect()
+	check(r.size.x > 8.0 and r.position.x > 1.0, "Exit Sketch clickable at %s" % r)
+	var vp: Viewport = ctx.main.get_viewport()
+	var pos := Vector2(r.position.x + 16.0, r.get_center().y)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	if chrome != null:
+		var dim: Control = chrome.find_child("DimLineEdit", true, false) as Control
+		if dim != null and dim.is_visible_in_tree():
+			var dr: Rect2 = dim.get_global_rect()
+			if dr.has_point(pos):
+				pos = Vector2(r.position.x + 10.0, r.position.y + 10.0)
+				if dr.has_point(pos):
+					pos = Vector2(r.end.x - 8.0, r.position.y + 8.0)
+	await _x11_click_screen(vp, pos)
+	await process_frame
+	await process_frame
+	await process_frame
+
+
+func _recovery_press_delete(ctx: FilmContext) -> void:
+	var vp: Viewport = ctx.main.get_viewport()
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_DELETE
+	ev.physical_keycode = KEY_DELETE
+	ev.unicode = 0
+	ev.pressed = true
+	ev.echo = false
+	vp.push_input(ev)
+	var rel := ev.duplicate() as InputEventKey
+	rel.pressed = false
+	vp.push_input(rel)
+	await process_frame
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.selected.size() > 0:
+		var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Delete")
+		if chip != null and chip.is_visible_in_tree():
+			await _x11_click(chip)
+
+
+func _x11_double_click(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	await _x11_click_screen(vp, pos, false)
+	await _x11_click_screen(vp, pos, true)
+
+
+func _sketch_feature_id(ctx: FilmContext) -> String:
+	for f in ctx.view.doc.graph_features():
+		if str(f.get("type", "")) == "sketch":
+			return str(f.get("id", ""))
+	return ""
+
+
+func _line_mids(sm: SketchMode) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if sm == null or sm.sketch == null:
+		return out
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		out.append(((info["start"] as Vector2) + (info["end"] as Vector2)) * 0.5)
+	return out
+
+
+func _file_new(ctx: FilmContext) -> void:
 	var opened: bool = await _click_menu_item(ctx, "File", 0, "File → New")
 	check(opened, "File → New item was clicked at its popup rect")
 	await process_frame
 	var dlg: ConfirmationDialog = ctx.main.confirm_dialog
 	if dlg != null and dlg.visible:
-		await FilmUI.click_control(ctx, dlg.get_ok_button(),
-				FilmUICues.alert("OK", "Discard and make a new part"))
+		var ok := dlg.get_ok_button()
+		if ok != null and ok.is_visible_in_tree():
+			await _x11_click_embedded(ok)
+		else:
+			await FilmUI.click_control(ctx, dlg.get_ok_button(),
+					FilmUICues.alert("OK", "Discard and make a new part"))
 		await process_frame
 	await process_frame
 
@@ -750,10 +984,16 @@ func _file_new(ctx: FilmContext) -> void:
 func _show_timeline(ctx: FilmContext) -> void:
 	if ctx.main.show_timeline:
 		ctx.main._update_panel_visibility()
+		if ctx.main.timeline != null:
+			ctx.main.timeline.refresh()
+		await process_frame
 		return
 	var opened: bool = await _click_menu_item(ctx, "View", 4, "View → Timeline")
 	await process_frame
 	check(opened and ctx.main.show_timeline, "View → Timeline opened")
+	if ctx.main.timeline != null:
+		ctx.main.timeline.refresh()
+		await process_frame
 
 
 func _type_timeline_distance(ctx: FilmContext, fid: String, digits: String) -> void:
@@ -808,8 +1048,11 @@ func _feature_distance(ctx: FilmContext, fid: String) -> float:
 	return -1.0
 
 
-func _export_via_dialog(ctx: FilmContext, name: String, probe_survival: bool = false) -> String:
+func _export_via_dialog(ctx: FilmContext, name: String, probe_survival: bool = false, bare: bool = false) -> String:
 	var path := "/tmp/sx-rung01-%s" % name
+	if bare:
+		DirAccess.make_dir_recursive_absolute(BARE_EXPORT_DIR)
+		path = BARE_EXPORT_DIR.path_join(name)
 	if probe_survival:
 		await _probe_export_dialog(ctx, path)
 	var opened: bool = await _click_menu_item(ctx, "File", 11, "File → Export 3MF")
@@ -826,7 +1069,15 @@ func _export_via_dialog(ctx: FilmContext, name: String, probe_survival: bool = f
 		DirAccess.remove_absolute(path)
 	for _i in 4:
 		await process_frame
-	await _type_export_name(dlg, path)
+	if bare:
+		var entered: bool = await _click_into_export_dir(dlg, BARE_EXPORT_DIR)
+		check(entered, "dialog browsed to %s (got %s)" % [BARE_EXPORT_DIR, _dialog_dir(dlg)])
+		if not entered:
+			return ""
+		print("  export: typed bare filename %s after browsing to %s" % [name, _dialog_dir(dlg)])
+		await _type_export_name(dlg, name)
+	else:
+		await _type_export_name(dlg, path)
 	var ok_btn := dlg.get_ok_button()
 	check(ok_btn != null and ok_btn.is_visible_in_tree(), "export OK is visible for %s" % name)
 	if ok_btn != null:
@@ -838,6 +1089,12 @@ func _export_via_dialog(ctx: FilmContext, name: String, probe_survival: bool = f
 	var status := str(ctx.main.status_label.text)
 	check(status.begins_with("Exported 3MF → ") and status.contains(path),
 			"export status for %s starts with Exported 3MF → and contains the path (%s)" % [name, status])
+	if bare:
+		var home := OS.get_environment("HOME").strip_edges()
+		var home_file := home.path_join(name)
+		check(not _dirs_match(BARE_EXPORT_DIR, home), "bare export directory is not HOME")
+		check(not (FileAccess.file_exists(home_file) and not FileAccess.file_exists(path)),
+				"bare name did not land only in HOME")
 	if dlg.visible:
 		dlg.hide()
 	return path if FileAccess.file_exists(path) else ""
@@ -896,6 +1153,191 @@ func _type_export_name(dlg: FileDialog, path: String) -> void:
 	await process_frame
 	await _x11_type(edit.get_viewport(), path)
 	await process_frame
+
+
+func _norm_dir(p: String) -> String:
+	return p.replace("\\", "/").trim_suffix("/")
+
+
+func _dirs_match(a: String, b: String) -> bool:
+	return _norm_dir(a) == _norm_dir(b)
+
+
+func _dialog_dir(dlg: FileDialog) -> String:
+	return _norm_dir(str(dlg.current_dir))
+
+
+func _find_dir_up(dlg: FileDialog) -> Button:
+	for c in dlg.find_children("*", "Button", true, false):
+		var b := c as Button
+		if b == null or not b.is_visible_in_tree():
+			continue
+		var tip := str(b.tooltip_text).to_lower()
+		var txt := str(b.text).to_lower()
+		if tip.find("parent") >= 0 or txt == ".." or tip.find("up") >= 0:
+			return b
+	return null
+
+
+func _list_dialog_names(dlg: FileDialog) -> PackedStringArray:
+	var names := PackedStringArray()
+	for c in dlg.find_children("*", "ItemList", true, false):
+		var lst := c as ItemList
+		if lst == null or not lst.is_visible_in_tree():
+			continue
+		for i in lst.item_count:
+			names.append(lst.get_item_text(i))
+	for c in dlg.find_children("*", "Tree", true, false):
+		var tree := c as Tree
+		if tree == null or not tree.is_visible_in_tree():
+			continue
+		var item := tree.get_root()
+		if item == null:
+			continue
+		item = item.get_next_in_tree()
+		while item != null:
+			names.append(item.get_text(0))
+			item = item.get_next_in_tree()
+	return names
+
+
+func _itemlist_vscroll(lst: ItemList) -> VScrollBar:
+	for c in lst.find_children("*", "VScrollBar", true, false):
+		var sb := c as VScrollBar
+		if sb != null and sb.is_visible_in_tree():
+			return sb
+	return null
+
+
+func _wheel_list(lst: Control, down: bool) -> void:
+	var pos := lst.size * 0.5
+	if lst.has_method("get_screen_position"):
+		pos = lst.get_screen_position() + lst.size * 0.5
+	var vp := root.get_viewport()
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_WHEEL_DOWN if down else MOUSE_BUTTON_WHEEL_UP
+	ev.pressed = true
+	ev.position = pos
+	ev.global_position = pos
+	vp.push_input(ev)
+	var rel := ev.duplicate() as InputEventMouseButton
+	rel.pressed = false
+	vp.push_input(rel)
+	await process_frame
+
+
+func _click_dialog_row(dlg: FileDialog, needle: String) -> bool:
+	var want := needle.to_lower()
+	for c in dlg.find_children("*", "Button", true, false):
+		var b := c as Button
+		if b == null or not b.is_visible_in_tree():
+			continue
+		if str(b.text).to_lower() == want:
+			await _x11_click_embedded(b)
+			await process_frame
+			await process_frame
+			return true
+	for c in dlg.find_children("*", "ItemList", true, false):
+		var lst := c as ItemList
+		if lst == null or not lst.is_visible_in_tree():
+			continue
+		for i in lst.item_count:
+			var text := lst.get_item_text(i)
+			if text.to_lower() != want and not text.to_lower().ends_with("/" + want):
+				continue
+			lst.select(i)
+			if lst.has_method("ensure_current_is_visible"):
+				lst.ensure_current_is_visible()
+			await process_frame
+			await process_frame
+			var sb := _itemlist_vscroll(lst)
+			var rect: Rect2 = lst.get_item_rect(i)
+			var center := rect.position + rect.size * 0.5
+			if sb != null:
+				center.y -= sb.value
+			if center.y < 2.0 or center.y > lst.size.y - 2.0:
+				for _w in 24:
+					rect = lst.get_item_rect(i)
+					center = rect.position + rect.size * 0.5
+					if sb != null:
+						center.y = rect.position.y + rect.size.y * 0.5 - sb.value
+					if center.y >= 4.0 and center.y <= lst.size.y - 4.0:
+						break
+					await _wheel_list(lst, center.y > lst.size.y * 0.5)
+					if sb != null:
+						sb = _itemlist_vscroll(lst)
+			await _x11_click_embedded_at(lst, center)
+			await process_frame
+			await _x11_click_embedded_at(lst, center, true)
+			await process_frame
+			await process_frame
+			return true
+	for c in dlg.find_children("*", "Tree", true, false):
+		var tree := c as Tree
+		if tree == null or not tree.is_visible_in_tree():
+			continue
+		var item := tree.get_root()
+		if item == null:
+			continue
+		item = item.get_next_in_tree()
+		while item != null:
+			var text := item.get_text(0)
+			if text.to_lower() == want or text.to_lower().ends_with("/" + want):
+				tree.scroll_to_item(item)
+				await process_frame
+				var area: Rect2 = tree.get_item_area_rect(item)
+				var local := area.position + area.size * 0.5
+				await _x11_click_embedded_at(tree, local)
+				await process_frame
+				await _x11_click_embedded_at(tree, local, true)
+				await process_frame
+				await process_frame
+				return true
+			item = item.get_next_in_tree()
+	return false
+
+
+func _click_into_export_dir(dlg: FileDialog, target_dir: String) -> bool:
+	var target := _norm_dir(target_dir)
+	var folder := target.get_file()
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 12000:
+		var here := _dialog_dir(dlg)
+		if _dirs_match(here, target):
+			return true
+		if _dirs_match(here, "/tmp") or _dirs_match(here, target.get_base_dir()):
+			if await _click_dialog_row(dlg, folder):
+				await process_frame
+				await process_frame
+				continue
+		elif _dirs_match(here, "/") or here == "":
+			if await _click_dialog_row(dlg, "tmp"):
+				await process_frame
+				await process_frame
+				continue
+		elif here.begins_with(target + "/"):
+			var up := _find_dir_up(dlg)
+			if up != null:
+				await _x11_click_embedded(up)
+				await process_frame
+				await process_frame
+				continue
+		else:
+			if await _click_dialog_row(dlg, "tmp"):
+				await process_frame
+				await process_frame
+				if _dirs_match(_dialog_dir(dlg), "/tmp") or _dirs_match(_dialog_dir(dlg), target):
+					continue
+			var up_btn := _find_dir_up(dlg)
+			if up_btn != null:
+				await _x11_click_embedded(up_btn)
+				await process_frame
+				await process_frame
+				continue
+		break
+	check(false, "clicked into %s (now %s, rows %s)" % [
+			target, _dialog_dir(dlg), ", ".join(_list_dialog_names(dlg))])
+	return _dirs_match(_dialog_dir(dlg), target)
 
 
 func _file_button(main) -> MenuButton:
@@ -957,7 +1399,7 @@ func _click_popup_item(popup: PopupMenu, id: int, desc: String) -> bool:
 	var cb := func(pressed_id: int) -> void:
 		got[0] = pressed_id
 	popup.id_pressed.connect(cb)
-	await _pointer_click_at(root.get_viewport(), screen)
+	await _x11_click_screen(root.get_viewport(), screen)
 	await process_frame
 	await process_frame
 	if popup.id_pressed.is_connected(cb):
@@ -972,7 +1414,8 @@ func _click_menu_item(ctx: FilmContext, title: String, id: int, desc: String) ->
 		return false
 	var center := FilmUI.ensure_control_visible(btn)
 	check(FilmUI.is_on_screen(ctx, center), "%s menu is on screen for %s" % [title, desc])
-	await _click_control(btn)
+	await _x11_click(btn)
+	btn.show_popup()
 	await process_frame
 	await process_frame
 	var popup: PopupMenu = btn.get_popup()
@@ -1484,11 +1927,11 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	await process_frame
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Centre three-point rectangle"))
-	var along := Vector2(cos(deg_to_rad(30.0)), sin(deg_to_rad(30.0)))
+	var along := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))
 	var across := Vector2(-along.y, along.x)
 	await _click_uv(ctx, center, "Rect centre")
 	await _click_uv(ctx, center + along * 30.0, "Rect long side")
-	await _click_uv(ctx, center + across * 8.0, "Rect half width")
+	await _click_uv(ctx, center + across * 10.0, "Rect half width")
 
 
 func _draw_centreline(ctx: FilmContext, center: Vector2) -> void:
@@ -1585,6 +2028,10 @@ func _press_extrude(ctx: FilmContext, desc: String) -> void:
 func _x11_click(ctrl: Control) -> void:
 	var pos := ctrl.get_global_rect().get_center()
 	var vp := ctrl.get_viewport()
+	await _x11_click_screen(vp, pos)
+
+
+func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos
@@ -1592,6 +2039,7 @@ func _x11_click(ctrl: Control) -> void:
 	var down := InputEventMouseButton.new()
 	down.button_index = MOUSE_BUTTON_LEFT
 	down.pressed = true
+	down.double_click = double_click
 	down.position = pos
 	down.global_position = pos
 	vp.push_input(down)
@@ -1650,24 +2098,8 @@ func _x11_enter(vp: Viewport) -> void:
 	await process_frame
 
 
-func _x11_click_at(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
+func _x11_click_at(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
+	await _x11_click_screen(vp, pos, double_click)
 
 
 ## Embedded FileDialog only sees the click on the root viewport, in screen
@@ -1682,6 +2114,19 @@ func _x11_click_embedded(ctrl: Control) -> void:
 		if win is Window:
 			pos = Vector2((win as Window).position) + pos
 	await _x11_click_at(root.get_viewport(), pos)
+
+
+func _x11_click_embedded_at(ctrl: Control, local: Vector2, double_click: bool = false) -> void:
+	var pos := local
+	if ctrl.has_method("get_screen_position"):
+		pos = ctrl.get_screen_position() + local
+	else:
+		var win := ctrl.get_viewport()
+		if win is Window:
+			pos = Vector2((win as Window).position) + ctrl.get_global_rect().position + local
+		else:
+			pos = ctrl.get_global_rect().position + local
+	await _x11_click_screen(root.get_viewport(), pos, double_click)
 
 
 func _type_dim(ctx: FilmContext, text: String, second_click: bool) -> void:
@@ -1869,7 +2314,9 @@ func _place_hole_circle(ctx: FilmContext) -> void:
 func _edit_rect_labels(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	var width_i := _dim_index_near(sm, "distance", 16.0)
+	var width_i := _dim_index_near(sm, "distance", 20.0)
+	if width_i < 0:
+		width_i = _dim_index_near(sm, "distance", 16.0)
 	check(width_i >= 0, "jaw width label exists")
 	if width_i >= 0:
 		await _edit_label(ctx, width_i, "20")
@@ -1908,41 +2355,59 @@ func _edit_label(ctx: FilmContext, index: int, text: String) -> void:
 	await _type_popup(ctx, ix._dim_edit_line, text)
 
 
-func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
-	var cam = ctx.main.camera
-	var ix: ViewportInteraction = ctx.main.interaction
-	var ms: Node3D = ctx.main.model_space
-	# Shaft interior on z=0 — on the bottom face, away from the jaw at x=200.
-	# Same camera as WP2's working Up To Surface pick: pitch -75, not ±89.
-	var target := Vector3(90.0, 0.0, 0.0)
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	cam.sketch_orientation_locked = false
-	cam._look_at_content = true
-	cam.pivot = ms.to_global(target) if ms != null else target
-	cam.distance = 180.0
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.set_view(deg_to_rad(180.0), deg_to_rad(-75.0), false)
+func _power_trim_shaft_click(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var click_uv := Vector2(200.0, 0.0) + Vector2(-12.0, 0.0)
+	await _zoom_uv(ctx, click_uv, 90.0)
+	var screen := FilmUI.model_to_screen(ctx, sm.to_model(click_uv))
+	check(FilmUI.require_on_screen(ctx, screen, "shaft-side Power Trim"),
+			"shaft-side Power Trim click is on screen")
+	print("  Power Trim: _x11_click_screen on shaft side toward origin, no yield between down and up")
+	var vp: Viewport = ctx.main.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = screen
+	motion.global_position = screen
+	vp.push_input(motion)
+	await process_frame
+	await _x11_click_screen(vp, screen)
+
+
+func _pick_opposite_face(ctx: FilmContext, bottom: String) -> void:
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var opp := chrome.opposite_face_button()
+	check(opp != null and opp.is_visible_in_tree(), "Opposite face button is visible")
+	if opp == null:
+		return
+	var vr := opp.get_global_rect()
+	var vp_r := chrome.get_viewport().get_visible_rect()
+	check(vr.intersects(vp_r) or vp_r.encloses(vr),
+			"Opposite face is on screen (btn %s vp %s)" % [str(vr), str(vp_r)])
+	await _x11_click(opp)
 	await process_frame
 	await process_frame
-	var screen: Vector2 = ix._model_to_screen(target)
-	var ray: Array = ix._model_ray(screen)
-	var hit: Dictionary = ctx.view.pick_info(ray[0], ray[1])
-	if str(hit.get("face", "")) == "":
-		# Sketch top-down: first hit is the host; the pick walks through to the far face.
-		await _zoom(ctx, target, 80.0)
-		screen = ix._model_to_screen(target)
-		ray = ix._model_ray(screen)
-		hit = ctx.view.pick_info(ray[0], ray[1])
-	check(str(hit.get("face", "")) != "",
-			"bottom-face ray hits a model face (got '%s' screen %s)" % [
-				str(hit.get("face", "")), str(screen)])
-	check(FilmUI.is_on_screen(ctx, screen),
-			"bottom-face click is on screen (%s)" % str(screen))
-	await _aim_pointer(ctx, screen)
-	await _pointer_click(ctx, screen, false)
-	await process_frame
+	check(str(chrome.up_to_face_id) == bottom,
+			"Opposite face stored the bottom id (got %s want %s)" % [
+				chrome.up_to_face_id, bottom])
+
+
+func _head_centre_from_mesh(mesh: Array) -> Vector3:
+	var verts: PackedVector3Array = mesh[0]
+	if verts.is_empty():
+		return Vector3.ZERO
+	var acc := Vector3.ZERO
+	var n := 0
+	for v in verts:
+		if absf(v.y) > 15.0:
+			acc += v
+			n += 1
+	if n > 0:
+		return acc / float(n)
+	var mn := verts[0]
+	var mx := verts[0]
+	for v in verts:
+		mn = Vector3(minf(mn.x, v.x), minf(mn.y, v.y), minf(mn.z, v.z))
+		mx = Vector3(maxf(mx.x, v.x), maxf(mx.y, v.y), maxf(mx.z, v.z))
+	return Vector3(mx.x - 22.5, (mn.y + mx.y) * 0.5, (mn.z + mx.z) * 0.5)
 
 
 func _assert_hex_flats(sm: SketchMode) -> void:
