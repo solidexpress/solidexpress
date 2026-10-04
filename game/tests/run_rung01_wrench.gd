@@ -1,6 +1,7 @@
-# Rung 1 WP4 — tutorial walk (nut, wrench, thickened wrench) and check_rung01.py.
-# Click-driven: File menu, Sketch rail, viewport clicks, finish bar, Fillet, Timeline.
-# Run: tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
+# Rung 1 replan WP7 — GUI walk (nut, wrench, thickened wrench) and check_rung01.py.
+# Every dimension, finish-bar choice, face pick, and 3MF export goes through
+# the control a person uses. Run:
+# tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
 extends SceneTree
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
@@ -23,7 +24,7 @@ func check(cond: bool, what: String) -> void:
 
 
 func _init() -> void:
-	print("rung01 wrench walk (WP4)")
+	print("rung01 wrench walk (WP7 GUI)")
 	FilmUI.reset_fail_count()
 	var main_scene: PackedScene = load("res://scenes/main.tscn")
 	var main = main_scene.instantiate()
@@ -83,40 +84,44 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(sm.active and plane_z > 0.9, "sketch plane normal along Z (Top)")
 	check(absf(look_model.z) > 0.9, "camera looks along model Z (got %s)" % look_model)
 
-	print("- nut: polygon AF 20, circle Ø10, extrude 7.5")
+	print("- nut: polygon AF 20, circle radius 5, extrude 7.5")
+	await _widen(ctx)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	await process_frame
-	var af_chip := FilmUI.find_button(ctx.main.sketch_chrome, "Across Flats")
-	await FilmUI.click_control(ctx, af_chip, FilmUICues.alert("Across Flats", "Polygon across flats"))
-	sm.polygon_sides = 6
+	check(sm.tool_variant == "across_flats",
+			"polygon variant is across_flats without a setter (got %s)" % sm.tool_variant)
 	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
-	await _hover_uv(ctx, Vector2(1, 0))
-	await _commit_dim(ctx, 20.0)
-	check(_count_real(sm, "line") >= 6, "hex has 6 edges")
+	await _hover_uv(ctx, Vector2(8, 0))
+	await _type_dim(ctx, "20", false)
+	_assert_hex_flats(sm)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, Vector2.ZERO, "Bore centre")
-	await _hover_uv(ctx, Vector2(1, 0))
-	await _commit_dim(ctx, 5.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
-	await _click_uv(ctx, Vector2(5, 0.4), "Bore diameter")
+	await _hover_uv(ctx, Vector2(4, 0))
+	await _type_dim(ctx, "5", false)
+	var bore := _first_of(sm, "circle")
+	check(bore != "", "bore circle exists")
+	if bore != "":
+		var br := float(sm.sketch.entity_info(bore)["radius"])
+		check(absf(br - 5.0) <= 0.05, "typed 5 is bore radius 5 (got %.4f)" % br)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	chrome.set_finish_op("new")
-	chrome.set_finish_end("blind")
-	chrome.set_extrude_distance(7.5)
-	await FilmUI.click_control(ctx, chrome.extrude_button(),
-			FilmUICues.alert("Extrude", "Extrude nut 7.5"))
-	await process_frame
-	await process_frame
+	await _pick_option(_finish_end(ctx), 0)
+	await _pick_option(_finish_op(ctx), 0)
+	_assert_thin_off(ctx)
+	await _type_distance(ctx, "7.5")
+	check(absf(chrome.extrude_distance() - 7.5) < 0.05, "nut distance is 7.5")
+	await _press_extrude(ctx, "Extrude nut 7.5")
 	var err := _take_bad_status()
 	check(err == "", "nut extrude status clean" if err == "" else err)
-	if sm.active:
-		await FilmUI.exit_sketch(ctx)
 	var nut_body := _only_body(ctx)
 	check(nut_body != "", "nut body exists")
 	if nut_body == "":
 		return {}
-	var nut_path := _export_3mf(ctx, "nut.3mf")
-	check(nut_path != "" and FileAccess.file_exists(nut_path), "exported nut.3mf")
+	var nut_path := await _export_via_dialog(ctx, "nut.3mf")
+	check(nut_path != "" and FileAccess.file_exists(nut_path), "exported nut.3mf through the dialog")
+	sm = ctx.main.sketch_mode
+	if sm.active:
+		await FilmUI.exit_sketch(ctx)
+	check(not ctx.main.sketch_mode.active, "nut sketch quit")
 
 	print("- File New again, wrench blank")
 	await _file_new(ctx)
@@ -125,24 +130,37 @@ func _walk(ctx: FilmContext) -> Dictionary:
 			"second New did not arm TriBall")
 	await _ground_sketch(ctx)
 	sm = ctx.main.sketch_mode
-	await _zoom(ctx, Vector3(100, 0, 0), 400.0)
-	await _draw_circle(ctx, Vector2.ZERO, 10.0)
-	await _draw_circle(ctx, Vector2(200, 0), 22.5)
+	await _zoom(ctx, Vector3(100, 0, 0), 280.0)
+	await _draw_circle_typed(ctx, Vector2.ZERO, "10", false)
+	await _zoom_uv(ctx, Vector2(200, 0), 80.0)
+	await _draw_circle_typed(ctx, Vector2(200, 0), "22.5", true)
+	var circs := _circles(sm)
+	check(circs.size() == 2, "blank has two circles")
+	# Shaft lines sit on the horizontal tangents of the Ø20 (y = ±10) and meet
+	# the Ø45. Clicks are just off the rim so snap closes them. Infer is held
+	# off for these two segments: a tangent constraint on an under-defined
+	# circle otherwise drags the Ø20 off the origin.
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await _click_uv(ctx, Vector2(0, 10), "Upper tangent start")
-	await _click_uv(ctx, Vector2(far_x, 10), "Upper tangent end")
-	await _right_click_uv(ctx, Vector2(far_x, 10))
-	await _click_uv(ctx, Vector2(0, -10), "Lower tangent start")
-	await _click_uv(ctx, Vector2(far_x, -10), "Lower tangent end")
-	await _right_click_uv(ctx, Vector2(far_x, -10))
-	await _select_all_contours(ctx)
+	if circs.size() == 2:
+		await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
+		sm.infer_enabled = false
+		for y_sign in [1.0, -1.0]:
+			var y := 10.0 * float(y_sign)
+			var a_off := Vector2(0.0, y + 0.35 * float(y_sign))
+			var b_off := Vector2(far_x, y + 0.35 * float(y_sign))
+			await _zoom_uv(ctx, a_off, 40.0)
+			await _click_uv(ctx, a_off, "Tangent start near circle")
+			await _zoom_uv(ctx, b_off, 40.0)
+			await _click_uv(ctx, b_off, "Tangent end near circle")
+			await _right_click_uv(ctx, b_off)
+		sm.infer_enabled = true
+	_assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
-	chrome.set_finish_op("new")
-	chrome.set_finish_end("blind")
-	chrome.set_extrude_distance(10.0)
-	await FilmUI.click_control(ctx, chrome.extrude_button(),
-			FilmUICues.alert("Extrude", "Extrude wrench blank 10"))
+	await _pick_option(_finish_end(ctx), 0)
+	await _pick_option(_finish_op(ctx), 0)
+	_assert_thin_off(ctx)
+	await _type_distance(ctx, "10")
+	await _press_extrude(ctx, "Extrude wrench blank 10")
 	await process_frame
 	await process_frame
 	err = _take_bad_status()
@@ -166,27 +184,39 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _sketch_on_top(ctx, body, top, 10.0)
 	sm = ctx.main.sketch_mode
 	check(sm.active and absf(sm.plane_origin.z - 10.0) < 0.5, "jaw sketch on the top face")
-	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
-	await _draw_circle(ctx, Vector2.ZERO, 5.0)
-	await _zoom_uv(ctx, Vector2(200, 0), 90.0)
-	await _draw_circle(ctx, Vector2(200, 0), 22.5)
+	await _zoom_uv(ctx, Vector2.ZERO, 40.0)
+	await _place_hole_circle(ctx)
+	await _zoom_uv(ctx, Vector2(200, 0), 120.0)
 	await _draw_centre_rect(ctx, Vector2(200, 0))
+	await _edit_rect_labels(ctx)
 	await _draw_centreline(ctx, Vector2(200, 0))
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	var s2 := sqrt(2.0) / 2.0
 	var ax := Vector2(s2, s2)
+	await _zoom_uv(ctx, Vector2(200, 0), 90.0)
 	await _click_uv(ctx, Vector2(200, 0) + ax * -12.0, "Trim inner jaw half")
 	await process_frame
 	err = _take_bad_status()
 	check(err == "", "jaw trim status clean" if err == "" else err)
 	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile closed")
 	chrome = ctx.main.sketch_chrome
-	chrome.set_up_to_face(bottom)
-	chrome.set_finish_op("cut")
-	chrome.set_finish_end("to_face")
-	chrome.set_extrude_distance(10.0)
-	await FilmUI.click_control(ctx, chrome.extrude_button(),
-			FilmUICues.alert("Extrude", "Cut jaw Up To Surface"))
+	await _pick_option(_finish_op(ctx), 1)
+	await _pick_option(_finish_end(ctx), 3)
+	var ex_btn := chrome.extrude_button()
+	check(ex_btn != null and ex_btn.disabled, "Extrude disabled until a face is picked")
+	check(str(chrome.up_to_face_id).strip_edges() == "", "Up To Surface starts with no face")
+	check(chrome.wants_face_pick(), "Up To Surface arms a face pick")
+	await _click_bottom_face(ctx, bottom)
+	check(str(chrome.up_to_face_id) == bottom, "viewport click set the bottom face")
+	check(ex_btn != null and not ex_btn.disabled, "Extrude enables after the face click")
+	var face_label := ""
+	var face_node: Label = chrome.find_child("UpToFaceLabel", true, false)
+	if face_node != null:
+		face_label = str(face_node.text)
+	check(face_label.contains("z 0"),
+			"face label z is near 0 (%s)" % face_label)
+	_assert_thin_off(ctx)
+	await _press_extrude(ctx, "Cut jaw Up To Surface")
 	await process_frame
 	await process_frame
 	err = _take_bad_status()
@@ -204,21 +234,20 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _sketch_on_top(ctx, body, top, 10.0)
 	sm = ctx.main.sketch_mode
 	check(sm.active and absf(sm.plane_origin.z - 10.0) < 0.5, "slot sketch on the top face")
-	await _zoom_uv(ctx, Vector2(90, 0), 260.0)
+	await _zoom_uv(ctx, Vector2(90, 0), 220.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SLOT)
-	ctx.main.sketch_chrome.focus_dim_for_typing("5")
-	ctx.main.sketch_chrome.release_dim_focus()
-	check(absf(sm.slot_radius - 5.0) < 1e-3, "slot radius from dim blank")
+	await _type_dim(ctx, "5", false)
+	check(absf(sm.slot_radius - 5.0) < 1e-3, "slot radius typed into the dim blank (got %.4f)" % sm.slot_radius)
 	await _click_uv(ctx, Vector2(18.5, 0), "Slot first centre")
-	await _hover_uv(ctx, Vector2(19.5, 0))
-	await _commit_dim(ctx, 150.0)
+	await _hover_uv(ctx, Vector2(40, 0))
+	await _type_dim(ctx, "150", false)
 	chrome = ctx.main.sketch_chrome
-	chrome.set_up_to_face("")
-	chrome.set_finish_op("cut")
-	chrome.set_finish_end("blind")
-	chrome.set_extrude_distance(2.5)
-	await FilmUI.click_control(ctx, chrome.extrude_button(),
-			FilmUICues.alert("Extrude", "Cut slot blind 2.5"))
+	await _pick_option(_finish_op(ctx), 1)
+	await _pick_option(_finish_end(ctx), 0)
+	check(str(chrome.up_to_face_id).strip_edges() == "", "Blind clears the previous face")
+	_assert_thin_off(ctx)
+	await _type_distance(ctx, "2.5")
+	await _press_extrude(ctx, "Cut slot blind 2.5")
 	await process_frame
 	await process_frame
 	err = _take_bad_status()
@@ -234,16 +263,16 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(_slot_floor_error.contains("1.25"),
 			"slot floor refusal names the limit (got '%s')" % _slot_floor_error)
 
-	var wrench_path := _export_3mf(ctx, "wrench.3mf")
-	check(wrench_path != "" and FileAccess.file_exists(wrench_path), "exported wrench.3mf")
+	var wrench_path := await _export_via_dialog(ctx, "wrench.3mf")
+	check(wrench_path != "" and FileAccess.file_exists(wrench_path), "exported wrench.3mf through the dialog")
 	print("- timeline: base extrude 10 → 14")
 	await _show_timeline(ctx)
 	var boss := _boss_extrude_id(ctx)
 	check(boss != "", "base extrude is on the timeline")
 	if boss != "":
-		await _set_extrude_distance(ctx, boss, 14.0)
-	var thick_path := _export_3mf(ctx, "wrench-t14.3mf")
-	check(thick_path != "" and FileAccess.file_exists(thick_path), "exported wrench-t14.3mf")
+		await _type_timeline_distance(ctx, boss, "14")
+	var thick_path := await _export_via_dialog(ctx, "wrench-t14.3mf")
+	check(thick_path != "" and FileAccess.file_exists(thick_path), "exported wrench-t14.3mf through the dialog")
 	return {
 		"nut": nut_path,
 		"wrench": wrench_path,
@@ -336,22 +365,33 @@ func _edit_jaw_to_21(ctx: FilmContext, jaw_sketch: String) -> void:
 	await _zoom_uv(ctx, lp as Vector2, 40.0)
 	await _click_uv(ctx, lp as Vector2, "Edit jaw width")
 	await process_frame
+	await process_frame
 	var ix = ctx.main.interaction
 	check(ix._dim_edit_popup != null and ix._dim_edit_popup.visible, "dimension editor opened")
 	if ix._dim_edit_popup == null or not ix._dim_edit_popup.visible:
 		return
-	ix._dim_edit_line.text = "21"
-	ix._dim_edit_line.text_submitted.emit("21")
+	await _type_popup(ctx, ix._dim_edit_line, "21")
 	await process_frame
 	await process_frame
+	var ang_i := _dim_index(sm, "angle")
+	var ang_shown := -1.0
+	if ang_i >= 0:
+		ang_shown = absf(float(sm._dimension_display_value(sm.dimensions[ang_i])))
+	check(absf(ang_shown - 45.0) <= TOL, "jaw angle stays 45° after the width edit (got %.3f)" % ang_shown)
+	var orient := _long_side_angle_deg(sm)
+	check(absf(orient - 45.0) <= TOL, "jaw long side is still 45° (got %.3f)" % orient)
 	if sm.active:
 		await FilmUI.exit_sketch(ctx)
-	var edited := _export_3mf(ctx, "wrench-af21.3mf")
-	var af := _jaw_af_of_3mf(edited)
-	check(af > 0.0 and absf(af - 21.0) <= TOL, "3MF jaw AF is 21 at 45° (got %.3f)" % af)
+	var edited := await _export_via_dialog(ctx, "wrench-af21.3mf")
+	check(edited != "" and FileAccess.file_exists(edited), "exported wrench-af21.3mf through the dialog")
+	var metrics := _jaw_metrics_of_3mf(edited)
+	check(metrics.x > 0.0 and absf(metrics.x - 21.0) <= TOL,
+			"3MF jaw AF is 21 (got %.3f)" % metrics.x)
+	check(metrics.y > 0.0 and absf(metrics.y - 45.0) <= TOL,
+			"3MF jaw angle is 45° (got %.3f)" % metrics.y)
 
 
-func _jaw_af_of_3mf(path: String) -> float:
+func _jaw_metrics_of_3mf(path: String) -> Vector2:
 	var repo := ProjectSettings.globalize_path("res://").trim_suffix("/").get_base_dir()
 	var checker := repo.path_join("tools/check_rung01.py")
 	var script := """
@@ -374,6 +414,13 @@ for fx in (False, True):
         tris = m.tri_arrays(W, T)
         def J(u, v, z):
             return (H + u * ax + v * pv + np.array([0.0, 0.0, z])).tolist()
+        def wall(u, z, sign):
+            origin = np.array(J(u, 0.0, z))
+            direction = sign * pv
+            dist = m.first_hit(tris, origin.tolist(), direction.tolist())
+            if dist is None:
+                return None
+            return origin + direction * float(dist)
         gs = []
         for z in (2.0, 5.0, 8.0):
             a = m.first_hit(tris, J(10, 0, z), pv)
@@ -385,21 +432,34 @@ for fx in (False, True):
         if not gs:
             continue
         mean = sum(gs) / len(gs)
-        if best is None or abs(mean - 21.0) < abs(best - 21.0):
-            best = mean
-print('%.6f' % (best if best is not None else -1.0))
+        ang = -1.0
+        p1 = wall(8.0, 5.0, 1.0)
+        p2 = wall(18.0, 5.0, 1.0)
+        if p1 is not None and p2 is not None:
+            d = p2 - p1
+            ang = abs(math.degrees(math.atan2(float(d[1]), float(d[0])))) % 180.0
+            if ang > 90.0:
+                ang = 180.0 - ang
+        if best is None or abs(mean - 21.0) < abs(best[0] - 21.0):
+            best = (mean, ang)
+if best is None:
+    best = (-1.0, -1.0)
+print('%.6f %.6f' % (best[0], best[1]))
 """
 	var py := "/tmp/rung01_jaw_af.py"
 	var f := FileAccess.open(py, FileAccess.WRITE)
 	if f == null:
-		return -1.0
+		return Vector2(-1, -1)
 	f.store_string(script)
 	f.close()
 	var output: Array = []
 	OS.execute("python3", PackedStringArray([py, checker, path]), output, true)
 	if output.is_empty():
-		return -1.0
-	return float(str(output[0]).strip_edges())
+		return Vector2(-1, -1)
+	var parts := str(output[0]).strip_edges().split(" ")
+	if parts.size() < 2:
+		return Vector2(-1, -1)
+	return Vector2(float(parts[0]), float(parts[1]))
 
 
 func _triball_one_esc(ctx: FilmContext) -> void:
@@ -424,10 +484,18 @@ func _triball_one_esc(ctx: FilmContext) -> void:
 	await process_frame
 	var tb = ctx.main.interaction.triball
 	check(tb != null and tb.active, "user armed TriBall")
-	_press_esc(ctx.main.interaction)
+	tb_btn.grab_focus()
 	await process_frame
-	check(tb == null or not tb.active, "one Esc clears TriBall")
+	var focus: Control = ctx.main.get_viewport().gui_get_focus_owner()
+	check(focus != ctx.main.interaction and not ctx.main.interaction.has_focus(),
+			"Esc is not delivered by grab_focus on Interaction")
+	_push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await process_frame
+	check(tb == null or (not tb.active and not tb.visible), "one Esc clears TriBall")
 	check(ctx.view.selected_body == "", "one Esc clears the selection with TriBall")
+	check(ctx.main.interaction._selection_strip == null
+			or not ctx.main.interaction._selection_strip.visible,
+			"one Esc hides the selection strip")
 
 
 func _ensure_body_selected(ctx: FilmContext, body: String) -> void:
@@ -532,7 +600,7 @@ func _show_timeline(ctx: FilmContext) -> void:
 	check(ctx.main.show_timeline, "View → Timeline opened")
 
 
-func _set_extrude_distance(ctx: FilmContext, fid: String, distance: float) -> void:
+func _type_timeline_distance(ctx: FilmContext, fid: String, digits: String) -> void:
 	var tl: TimelinePanel = ctx.main.timeline
 	tl.refresh()
 	await process_frame
@@ -540,18 +608,26 @@ func _set_extrude_distance(ctx: FilmContext, fid: String, distance: float) -> vo
 	check(btn != null, "extrude row")
 	if btn == null:
 		return
-	_double_click(btn)
+	await _double_click_control(ctx, btn)
+	await process_frame
 	await process_frame
 	check(tl.property_panel.visible, "double-click extrude opens Distance")
 	var spin := _first_spin(tl.property_panel)
 	check(spin != null, "distance field")
 	if spin == null:
 		return
-	spin.value = distance
+	var edit: LineEdit = spin.get_line_edit()
+	var owner: Control = ctx.main.get_viewport().gui_get_focus_owner()
+	check(owner == edit, "distance LineEdit is focused")
+	var selected := edit.get_selected_text() if edit != null else ""
+	check(selected != "" and selected == edit.text,
+			"distance text is selected ('%s')" % selected)
+	await _type_text(ctx.main.get_viewport(), digits)
+	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 	var got := _feature_distance(ctx, fid)
-	check(absf(got - distance) < 0.05, "base extrude distance is %.3f" % got)
+	check(absf(got - float(digits)) < 0.05, "base extrude distance is %.3f" % got)
 
 
 func _boss_extrude_id(ctx: FilmContext) -> String:
@@ -576,37 +652,67 @@ func _feature_distance(ctx: FilmContext, fid: String) -> float:
 	return -1.0
 
 
-func _export_3mf(ctx: FilmContext, name: String) -> String:
-	var dir := ProjectSettings.globalize_path("user://rung01")
-	DirAccess.make_dir_recursive_absolute(dir)
-	var path := dir.path_join(name)
-	var ok: bool = ctx.view.doc.export_3mf(path)
-	if not ok:
-		printerr("  export failed: " + path)
+func _export_via_dialog(ctx: FilmContext, name: String) -> String:
+	var file_btn := _file_button(ctx.main)
+	check(file_btn != null and file_btn.is_visible_in_tree(), "File menu button is visible")
+	if file_btn == null:
 		return ""
-	return path
+	var opened: bool = await FilmUI.activate_menu_id(ctx, file_btn, 11,
+			{"keys": "Click", "desc": "File → Export 3MF"})
+	await process_frame
+	var dlg: FileDialog = ctx.main.file_dialog
+	check(opened and dlg != null and dlg.visible, "Export 3MF opens a FileDialog for %s" % name)
+	if dlg == null or not dlg.visible:
+		return ""
+	check(str(dlg.current_file).ends_with(".3mf"),
+			"dialog suggests a .3mf name (got %s)" % dlg.current_file)
+	var path := ProjectSettings.globalize_path("user://rung01").path_join(name)
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+	dlg.current_path = path
+	var ok_btn := dlg.get_ok_button()
+	var confirmed: bool = await FilmUI.click_control(ctx, ok_btn,
+			FilmUICues.alert("Save", "Confirm " + name))
+	await process_frame
+	await process_frame
+	check(confirmed, "export dialog OK was pressed for %s" % name)
+	var status := str(ctx.main.status_label.text)
+	check(status.contains("Exported 3MF"), "export status for %s (%s)" % [name, status])
+	if dlg.visible:
+		dlg.hide()
+	return path if FileAccess.file_exists(path) else ""
 
 
-func _select_all_contours(ctx: FilmContext) -> void:
+func _file_button(main) -> MenuButton:
+	var bar: Node = main.get_node_or_null("UI/TopChrome/FileMenu")
+	if bar == null:
+		return null
+	for c in bar.find_children("*", "MenuButton", true, false):
+		var btn := c as MenuButton
+		if btn != null and str(btn.text) == "File":
+			return btn
+	return null
+
+
+func _assert_contours_stay_on(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var n := 0
 	if sm.sketch != null and sm.sketch.has_method("contour_count"):
 		n = int(sm.sketch.contour_count())
-	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	if chrome != null and chrome.has_method("refresh_contours") and sm.sketch != null:
-		chrome.refresh_contours(sm.sketch)
 	await process_frame
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	var chips: Array[CheckButton] = []
+	var off := 0
 	if chrome != null:
 		for c in chrome.find_children("*", "CheckButton", true, false):
 			var cb := c as CheckButton
 			if cb != null and cb.visible and str(cb.text).is_valid_int():
 				chips.append(cb)
-	check(n >= 3 and chips.size() >= 3, "three contours to select (count %d, chips %d)" % [n, chips.size()])
-	for cb in chips:
-		if not cb.button_pressed:
-			cb.button_pressed = true
-	await process_frame
+				if not cb.button_pressed:
+					off += 1
+	check(n >= 3 and chips.size() >= 3, "three contour chips (count %d, chips %d)" % [n, chips.size()])
+	check(off == 0, "contour chips stay on (%d off)" % off)
 
 
 func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float) -> void:
@@ -618,6 +724,7 @@ func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float) -
 	await _zoom(ctx, host, 500.0)
 	var host_screen := FilmUI.model_to_screen(ctx, host)
 	if FilmUI.is_on_screen(ctx, host_screen):
+		await _aim_pointer(ctx, host_screen)
 		await FilmUI.viewport_click(ctx, host_screen,
 				FilmUICues.alert("Click", "Select top face"))
 		await process_frame
@@ -710,11 +817,14 @@ func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 
 
 func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
-	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, uv, desc)
+	var sm: SketchMode = ctx.main.sketch_mode
+	await _aim_pointer(ctx, FilmUI.model_to_screen(ctx, sm.to_model(uv)))
+	await FilmUI.click_sketch(ctx, sm, uv, desc)
 
 
 func _click_model(ctx: FilmContext, pt: Vector3, desc: String) -> void:
 	var screen := FilmUI.model_to_screen(ctx, pt)
+	await _aim_pointer(ctx, screen)
 	await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", desc))
 	await process_frame
 
@@ -722,6 +832,7 @@ func _click_model(ctx: FilmContext, pt: Vector3, desc: String) -> void:
 func _right_click_uv(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+	await _aim_pointer(ctx, screen)
 	var down := InputEventMouseButton.new()
 	down.button_index = MOUSE_BUTTON_RIGHT
 	down.pressed = true
@@ -739,29 +850,19 @@ func _right_click_uv(ctx: FilmContext, uv: Vector2) -> void:
 func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+	await _aim_pointer(ctx, screen)
 	var motion := InputEventMouseMotion.new()
 	motion.position = screen
 	ctx.main.interaction._input(motion)
 	await process_frame
 
 
-func _commit_dim(ctx: FilmContext, value: float) -> void:
-	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	chrome.focus_dim_for_typing(str(value))
-	var edit: LineEdit = chrome._dim_spin.get_line_edit()
-	edit.text = str(value)
-	edit.text_submitted.emit(str(value))
-	await process_frame
-	await process_frame
-	chrome.release_dim_focus()
-
-
-func _draw_circle(ctx: FilmContext, center: Vector2, radius: float) -> void:
+func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String, second_click: bool) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, center, "Circle centre")
-	await _hover_uv(ctx, center + Vector2(1, 0))
-	await _commit_dim(ctx, radius)
+	await _hover_uv(ctx, center + Vector2(6, 0))
+	await _type_dim(ctx, radius_text, second_click)
 
 
 func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
@@ -770,12 +871,11 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	await process_frame
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Centre three-point rectangle"))
-	var s2 := sqrt(2.0) / 2.0
-	var along := Vector2(s2, s2)
-	var across := Vector2(-s2, s2)
+	var along := Vector2(cos(deg_to_rad(30.0)), sin(deg_to_rad(30.0)))
+	var across := Vector2(-along.y, along.x)
 	await _click_uv(ctx, center, "Rect centre")
 	await _click_uv(ctx, center + along * 30.0, "Rect long side")
-	await _click_uv(ctx, center + across * 10.0, "Rect half width")
+	await _click_uv(ctx, center + across * 8.0, "Rect half width")
 
 
 func _draw_centreline(ctx: FilmContext, center: Vector2) -> void:
@@ -785,17 +885,348 @@ func _draw_centreline(ctx: FilmContext, center: Vector2) -> void:
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Centerline")
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Construction centreline"))
 	var across := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
+	await _zoom_uv(ctx, center - across * 25.0, 70.0)
 	await _click_uv(ctx, center - across * 25.0, "Centreline start")
+	await _zoom_uv(ctx, center + across * 25.0, 70.0)
 	await _click_uv(ctx, center + across * 25.0, "Centreline end")
 
 
-func _press_esc(ix) -> void:
-	ix.grab_focus()
+## A chrome click leaves gui_get_hovered_control() on that LineEdit. Sketch
+## clicks injected through Interaction._input are then dropped. Park the
+## pointer on the sketch pixel first so the next click belongs to the canvas.
+func _aim_pointer(ctx: FilmContext, screen: Vector2) -> void:
+	var vp: Viewport = ctx.main.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = screen
+	motion.global_position = screen
+	vp.push_input(motion)
+	await process_frame
+
+
+func _widen(ctx: FilmContext) -> void:
+	ctx.tree.root.size = Vector2i(1920, 900)
+	if ctx.main.interaction is Control:
+		(ctx.main.interaction as Control).size = Vector2(1920, 900)
+	await process_frame
+
+
+func _finish_end(ctx: FilmContext) -> OptionButton:
+	return ctx.main.sketch_chrome.find_child("FinishEnd", true, false) as OptionButton
+
+
+func _finish_op(ctx: FilmContext) -> OptionButton:
+	return ctx.main.sketch_chrome.find_child("FinishOp", true, false) as OptionButton
+
+
+func _pick_option(opt: OptionButton, index: int) -> void:
+	check(opt != null and opt.is_visible_in_tree(), "finish option is visible")
+	if opt == null:
+		return
+	opt.select(index)
+	opt.item_selected.emit(index)
+	await process_frame
+
+
+func _assert_thin_off(ctx: FilmContext) -> void:
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var feature: CheckButton = chrome.find_child("ThinFeature", true, false)
+	check(feature != null and not feature.button_pressed, "Thin feature is off")
+	check(chrome._thin_spin == null or not chrome._thin_spin.is_visible_in_tree(),
+			"thin spin is hidden")
+
+
+func _press_extrude(ctx: FilmContext, desc: String) -> void:
+	var btn: Button = ctx.main.sketch_chrome.extrude_button()
+	await FilmUI.click_control(ctx, btn, FilmUICues.alert("Extrude", desc))
+	await process_frame
+	await process_frame
+	await process_frame
+
+
+func _type_dim(ctx: FilmContext, text: String, second_click: bool) -> void:
+	var edit: LineEdit = ctx.main.sketch_chrome._dim_spin.get_line_edit()
+	await _click_control(edit)
+	if second_click:
+		await _click_control(edit)
+		var sel := edit.get_selected_text()
+		check(sel != "" and sel == edit.text,
+				"second dim click selects all (sel '%s' text '%s')" % [sel, edit.text])
+	await _type_text(edit.get_viewport(), text)
+	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+	await process_frame
+	await process_frame
+
+
+func _type_distance(ctx: FilmContext, text: String) -> void:
+	var edit: LineEdit = ctx.main.sketch_chrome._extrude_spin.get_line_edit()
+	await _click_control(edit)
+	var sel := edit.get_selected_text()
+	check(sel != "" and sel == edit.text,
+			"D click selects the distance (sel '%s' text '%s')" % [sel, edit.text])
+	await _type_text(edit.get_viewport(), text)
+	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+	await process_frame
+	await process_frame
+
+
+func _type_popup(ctx: FilmContext, edit: LineEdit, text: String) -> void:
+	edit.grab_focus()
+	await process_frame
+	var sel := edit.get_selected_text()
+	check(sel != "" and sel == edit.text, "dimension popup text is selected ('%s')" % sel)
+	await _type_text(edit.get_viewport(), text)
+	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+	await process_frame
+
+
+func _type_text(vp: Viewport, text: String) -> void:
+	for i in text.length():
+		var code := text.unicode_at(i)
+		var key := KEY_PERIOD if code == 46 else KEY_0 + (code - 48)
+		await _push_key(vp, key as Key, code)
+
+
+func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
 	var ev := InputEventKey.new()
-	ev.keycode = KEY_ESCAPE
+	ev.keycode = keycode
+	ev.physical_keycode = keycode
+	ev.unicode = unicode
 	ev.pressed = true
-	ev.echo = false
-	ix._input(ev)
+	vp.push_input(ev)
+	await process_frame
+	var rel := InputEventKey.new()
+	rel.keycode = keycode
+	rel.physical_keycode = keycode
+	rel.pressed = false
+	vp.push_input(rel)
+	await process_frame
+
+
+func _click_control(ctrl: Control) -> void:
+	var pos := FilmUI.ensure_control_visible(ctrl)
+	await process_frame
+	pos = ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	var hover := InputEventMouseMotion.new()
+	hover.position = pos
+	hover.global_position = pos
+	vp.push_input(hover)
+	await process_frame
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = pos
+	down.global_position = pos
+	vp.push_input(down)
+	await process_frame
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	vp.push_input(up)
+	await process_frame
+	await process_frame
+
+
+func _double_click_control(ctx: FilmContext, ctrl: Control) -> void:
+	FilmUI.ensure_control_visible(ctrl)
+	await process_frame
+	var center := ctrl.get_global_rect().get_center()
+	await _pointer_click(ctx, center, false)
+	await process_frame
+	center = ctrl.get_global_rect().get_center()
+	await _pointer_click(ctx, center, true)
+
+
+func _pointer_click(ctx: FilmContext, pos: Vector2, double_click: bool) -> void:
+	var vp: Viewport = ctx.main.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	await process_frame
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.double_click = double_click
+	down.position = pos
+	down.global_position = pos
+	vp.push_input(down)
+	await process_frame
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	vp.push_input(up)
+	await process_frame
+
+
+func _place_hole_circle(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
+	await _click_uv(ctx, Vector2.ZERO, "Hole centre on the Ø20")
+	await _hover_uv(ctx, Vector2(6, 0))
+	await _click_uv(ctx, Vector2(6, 0), "Hole radius")
+	await process_frame
+	var circ := _first_of(sm, "circle")
+	check(circ != "", "hole circle exists")
+	if circ == "":
+		return
+	var info: Dictionary = sm.sketch.entity_info(circ)
+	var center: Vector2 = info["center"]
+	check(center.length() <= 0.5, "hole centre is the Ø20 centre (got %s)" % center)
+	var radius := float(info["radius"])
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
+	await _click_uv(ctx, center + Vector2(radius, 0.0), "Smart dimension the hole")
+	await process_frame
+	var di := _dim_index(sm, "diameter")
+	check(di >= 0, "hole has a diameter label")
+	if di < 0:
+		return
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	await _edit_label(ctx, di, "10")
+	info = sm.sketch.entity_info(circ)
+	var solved := float(info.get("radius", -1.0)) * 2.0
+	check(absf(solved - 10.0) <= TOL, "typed diameter 10 (got %.3f)" % solved)
+
+
+func _edit_rect_labels(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	var width_i := _dim_index_near(sm, "distance", 16.0)
+	check(width_i >= 0, "jaw width label exists")
+	if width_i >= 0:
+		await _edit_label(ctx, width_i, "20")
+	var ang_i := _dim_index(sm, "angle")
+	check(ang_i >= 0, "jaw angle label exists")
+	if ang_i >= 0:
+		await _edit_label(ctx, ang_i, "45")
+	width_i = _dim_index_near(sm, "distance", 20.0)
+	ang_i = _dim_index(sm, "angle")
+	var width_shown := -1.0
+	var ang_shown := -1.0
+	if width_i >= 0:
+		width_shown = float(sm._dimension_display_value(sm.dimensions[width_i]))
+	if ang_i >= 0:
+		ang_shown = absf(float(sm._dimension_display_value(sm.dimensions[ang_i])))
+	check(absf(width_shown - 20.0) <= TOL, "jaw width label is 20 (got %.3f)" % width_shown)
+	check(absf(ang_shown - 45.0) <= TOL, "jaw angle label is 45 (got %.3f)" % ang_shown)
+	var orient := _long_side_angle_deg(sm)
+	check(absf(orient - 45.0) <= TOL, "jaw long side is 45° (got %.3f)" % orient)
+
+
+func _edit_label(ctx: FilmContext, index: int, text: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var lp: Variant = sm._dimension_label_pos2(sm.dimensions[index])
+	check(lp != null, "dimension label has a position")
+	if lp == null:
+		return
+	await _zoom_uv(ctx, lp as Vector2, 50.0)
+	await _click_uv(ctx, lp as Vector2, "Edit dimension label")
+	await process_frame
+	await process_frame
+	var ix = ctx.main.interaction
+	check(ix._dim_edit_popup != null and ix._dim_edit_popup.visible, "dimension editor opened")
+	if ix._dim_edit_popup == null or not ix._dim_edit_popup.visible:
+		return
+	await _type_popup(ctx, ix._dim_edit_line, text)
+
+
+func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
+	var cam = ctx.main.camera
+	var ms: Node3D = ctx.main.model_space
+	if cam._view_tween != null and cam._view_tween.is_valid():
+		cam._view_tween.kill()
+		cam._view_tween = null
+	cam.sketch_orientation_locked = false
+	cam.pivot = ms.to_global(Vector3(100, 0, 5)) if ms != null else Vector3(100, 0, 5)
+	cam.distance = 350.0
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.set_view(cam.yaw, deg_to_rad(-75.0), false)
+	await process_frame
+	await process_frame
+	var mid: Vector3 = ctx.view.doc.face_midpoint(bottom)
+	var screen: Vector2 = ctx.main.interaction._model_to_screen(mid)
+	await _aim_pointer(ctx, screen)
+	await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Bottom face"))
+	await process_frame
+
+
+func _assert_hex_flats(sm: SketchMode) -> void:
+	var ys: Array[float] = []
+	var on_x := false
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		for p in [info["start"], info["end"]]:
+			var v: Vector2 = p
+			ys.append(v.y)
+			if absf(v.y) <= 0.2 and absf(absf(v.x) - 20.0 / sqrt(3.0)) <= 0.2:
+				on_x = true
+	if ys.is_empty():
+		check(false, "hex vertices")
+		return
+	ys.sort()
+	check(absf(ys[0] + 10.0) <= 0.15 and absf(ys[ys.size() - 1] - 10.0) <= 0.15,
+			"flats at y=±10 (%.3f .. %.3f)" % [ys[0], ys[ys.size() - 1]])
+	check(on_x, "vertices on ±X")
+
+
+func _first_of(sm: SketchMode, kind: String) -> String:
+	if sm.sketch == null:
+		return ""
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		if str(sm.sketch.entity_info(id).get("type", "")) == kind:
+			return id
+	return ""
+
+
+func _circles(sm: SketchMode) -> Array:
+	var out: Array = []
+	if sm.sketch == null:
+		return out
+	for id in sm.sketch.entity_ids():
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) == "circle":
+			out.append(info)
+	out.sort_custom(func(a, b): return float(a["center"].x) < float(b["center"].x))
+	return out
+
+
+func _dim_index(sm: SketchMode, type_name: String) -> int:
+	for i in range(sm.dimensions.size()):
+		if str(sm.dimensions[i].get("type", "")) == type_name:
+			return i
+	return -1
+
+
+func _long_side_angle_deg(sm: SketchMode) -> float:
+	var best_len := -1.0
+	var best_deg := -1.0
+	if sm.sketch == null:
+		return best_deg
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var d: Vector2 = info["end"] - info["start"]
+		if d.length() > best_len:
+			best_len = d.length()
+			var deg := absf(rad_to_deg(d.angle()))
+			deg = fmod(deg, 180.0)
+			if deg > 90.0:
+				deg = 180.0 - deg
+			best_deg = deg
+	return best_deg
 
 
 func _count_real(sm: SketchMode, kind: String) -> int:
