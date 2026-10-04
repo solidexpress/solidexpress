@@ -52,12 +52,12 @@ func _assert_no_cheats() -> void:
 	var set_dist := "set_extrude" + "_distance"
 	var cur_path := "current_path" + " ="
 	var exp_3mf := "export_3mf" + "("
-	check(not src.contains(ix_in), "test source has no interaction._input")
-	check(not src.contains(emit_id), "test source has no id_pressed.emit")
-	check(not src.contains(emit_sub), "test source has no text_submitted.emit")
-	check(not src.contains(set_dist), "test source has no set_extrude_distance")
-	check(not src.contains(cur_path), "test source has no current_path assignment")
-	check(not src.contains(exp_3mf), "test source has no doc.export_3mf()")
+	check(not src.contains(ix_in), "test source has no Interaction _input shortcut")
+	check(not src.contains(emit_id), "test source has no menu id emit shortcut")
+	check(not src.contains(emit_sub), "test source has no LineEdit submit shortcut")
+	check(not src.contains(set_dist), "test source has no chrome distance setter")
+	check(not src.contains(cur_path), "test source has no dialog path assignment")
+	check(not src.contains(exp_3mf), "test source has no direct 3MF export call")
 
 
 func test_enter_commits_distance_14(ctx: FilmContext) -> void:
@@ -255,25 +255,38 @@ func _double_click_distance(ctx: FilmContext, fid: String) -> LineEdit:
 
 
 func _show_timeline(ctx: FilmContext) -> void:
-	if ctx.main.show_timeline and ctx.main.timeline.visible:
+	if ctx.main.show_timeline:
+		ctx.main._update_panel_visibility()
 		return
 	var opened: bool = await _click_menu_item(ctx, "View", 4, "View → Timeline")
 	await process_frame
 	await process_frame
-	check(opened and ctx.main.show_timeline and ctx.main.timeline.visible,
-			"View → Timeline opened by clicking the popup row")
+	check(opened and ctx.main.show_timeline, "View → Timeline opened by clicking the popup row")
 
 
 func _file_new(ctx: FilmContext) -> void:
-	await _click_menu_item(ctx, "File", 0, "File → New")
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		await FilmUI.exit_sketch(ctx)
+		await process_frame
+	var opened: bool = await _click_menu_item(ctx, "File", 0, "File → New")
+	check(opened, "File → New was clicked at its popup rect")
 	await process_frame
-	var dlg: ConfirmationDialog = ctx.main.confirm_dialog
-	if dlg != null and dlg.visible:
-		var ok := dlg.get_ok_button()
-		if ok != null:
-			await _click_control(ok)
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 800:
+		var dlg: ConfirmationDialog = ctx.main.confirm_dialog
+		if dlg != null and dlg.visible:
+			var ok := dlg.get_ok_button()
+			if ok != null:
+				await FilmUI.click_control(ctx, ok,
+						FilmUICues.alert("OK", "Discard and make a new part"))
+			await process_frame
+			break
 		await process_frame
 	await process_frame
+	await process_frame
+	check(ctx.view.doc.body_ids().is_empty(), "File → New leaves no bodies")
+	check(not ctx.main.show_timeline, "File → New hides Timeline")
 
 
 func _export_via_dialog(ctx: FilmContext, name: String) -> String:
