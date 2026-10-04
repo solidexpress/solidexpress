@@ -552,11 +552,15 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 			wanted_all = true
 	# Solve first so tangent / on-circle constraints pull endpoints onto the
 	# circles. Lock sized circles so that solve cannot translate a typed Ø20
-	# off the origin or change radii. Weld inference-marked contacts, then
-	# seal. The 1e-6 profile check then sees a closed wire.
+	# off the origin or change radii. DogLeg may still jump a horizontal
+	# tangent to the far side of a locked Ø20 — put that line back, weld,
+	# then seal. The 1e-6 profile check then sees a closed wire.
 	if sketch != null:
 		_lock_sized_circles()
+		_weld_on_circle_endpoints()
+		var pre_solve := _snapshot_line_geometry()
 		run_solve()
+		_restore_flipped_shaft_lines(pre_solve)
 		_weld_on_circle_endpoints()
 	_seal_tangent_bosses()
 	if wanted_all:
@@ -3096,8 +3100,28 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 			if _infer_on_circle(lid, str(role_pos[0]), role_pos[1]):
 				added = true
 	if added:
-		run_solve()
+		# Snap contacts onto the circles before DogLeg runs — otherwise a
+		# horizontal tangent has two solutions (y=+r and y=-r) and the solver
+		# can jump to the far side of a typed Ø20.
 		_weld_on_circle_endpoints(lid)
+		var info0: Dictionary = sketch.entity_info(lid)
+		run_solve()
+		var flipped := false
+		var info1: Dictionary = sketch.entity_info(lid)
+		if not info0.is_empty() and not info1.is_empty():
+			var mid_click := (a + b) * 0.5
+			var mid1: Vector2 = ((info1["start"] as Vector2) + (info1["end"] as Vector2)) * 0.5
+			if absf(mid_click.y) > 1.0 and mid_click.y * mid1.y < 0.0:
+				flipped = true
+				sketch.set_entity_geometry(lid, {
+					"start": info0["start"],
+					"end": info0["end"],
+				})
+		_weld_on_circle_endpoints(lid)
+		# Pin a restored horizontal tangent so a later Extrude solve cannot
+		# jump it to the far side again.
+		if flipped and not _entity_has_constraint(lid, "fix"):
+			sketch.add_constraint("fix", [{"entity": lid, "role": "self"}], 0.0)
 
 
 ## Endpoint lying on a circle, with the segment perpendicular to the radius,
@@ -3242,6 +3266,59 @@ func _weld_on_circle_endpoints(line_id: String = "") -> void:
 			sketch.set_entity_geometry(lid, {"start": welded, "end": linfo["end"]})
 		else:
 			sketch.set_entity_geometry(lid, {"start": linfo["start"], "end": welded})
+
+
+## Line id → {start, end} for the current sketch.
+func _snapshot_line_geometry() -> Dictionary:
+	var out := {}
+	if sketch == null:
+		return out
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		out[id] = {"start": info["start"], "end": info["end"]}
+	return out
+
+
+## DogLeg's other horizontal-tangent solution sits on the far side of a
+## locked circle. Put those lines back so `_seal_tangent_bosses` still sees
+## one hit on each side of the shaft.
+func _restore_flipped_shaft_lines(before: Dictionary) -> void:
+	if sketch == null or before.is_empty():
+		return
+	var circs: Array = []
+	for cid in sketch.entity_ids():
+		var cinfo: Dictionary = sketch.entity_info(cid)
+		if str(cinfo.get("type", "")) == "circle":
+			circs.append({"c": cinfo["center"], "r": float(cinfo.get("radius", 0.0))})
+	for id in before.keys():
+		var prev: Dictionary = before[id]
+		var info: Dictionary = sketch.entity_info(str(id))
+		if info.is_empty() or str(info.get("type", "")) != "line":
+			continue
+		var s0: Vector2 = prev["start"]
+		var e0: Vector2 = prev["end"]
+		var s1: Vector2 = info["start"]
+		var e1: Vector2 = info["end"]
+		var mid0 := (s0 + e0) * 0.5
+		var mid1 := (s1 + e1) * 0.5
+		if absf(mid0.y) > 1.0 and mid0.y * mid1.y < 0.0:
+			sketch.set_entity_geometry(str(id), {"start": s0, "end": e0})
+			continue
+		# Keep an on-circle end on that circle when solve slides it off.
+		if (_endpoint_on_a_circle(s0, circs, 0.05) and not _endpoint_on_a_circle(s1, circs, 0.05)) \
+				or (_endpoint_on_a_circle(e0, circs, 0.05) and not _endpoint_on_a_circle(e1, circs, 0.05)):
+			sketch.set_entity_geometry(str(id), {"start": s0, "end": e0})
+
+
+func _endpoint_on_a_circle(p: Vector2, circs: Array, tol: float) -> bool:
+	for circ in circs:
+		if absf(p.distance_to(circ["c"]) - float(circ["r"])) <= tol:
+			return true
+	return false
 
 
 ## Status for a still-open extrude. Names the open vertex; does not offer

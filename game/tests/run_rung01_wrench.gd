@@ -172,17 +172,13 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(circs.size() == 2, "blank has two circles")
 	# Shaft 20 wide: lines at y=±10, tangent to the Ø20, meeting the Ø45 at
 	# the concave neck. Clicks are a few tenths off the contacts so snap +
-	# inference close them. Trim the inner arcs so one outer contour remains.
+	# inference close them. Inference stays on; sized circles lock so the
+	# Ø20 stays put.
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	for sign in [1.0, -1.0]:
-		await _draw_shaft_line(ctx, far_x, sign)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
-	await _zoom_uv(ctx, Vector2(9.5, 0), 40.0)
-	await _click_uv(ctx, Vector2(9.5, 0), "Trim Ø20 inner half")
-	await _zoom_uv(ctx, Vector2(177.5, 0), 40.0)
-	await _click_uv(ctx, Vector2(177.5, 0), "Trim Ø45 inner arc")
-	await process_frame
+	for y_sign in [1.0, -1.0]:
+		await _draw_shaft_line(ctx, far_x, float(y_sign))
+	await _assert_shaft_lines_both_sides(sm)
 	await _assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
 	await _pick_end(_finish_end(ctx), 0)
@@ -1294,16 +1290,37 @@ func _draw_shaft_line(ctx: FilmContext, far_x: float, sign: float) -> void:
 	var y := 10.0 * sign
 	var a := Vector2(0.0, y)
 	var b := Vector2(far_x, y)
-	var c1 := Vector2.ZERO
 	var c2 := Vector2(200.0, 0.0)
-	var a_off := a + (a - c1).normalized() * 0.3
+	var a_off := a + Vector2(0.0, 0.3 * sign)
 	var b_dir := b - c2
 	var b_off := b + (b_dir.normalized() if b_dir.length_squared() > 1e-8 else Vector2(0, sign)) * 0.3
 	await _zoom_uv(ctx, a_off, 90.0)
-	await _click_uv(ctx, a_off, "Shaft start near Ø20")
+	await _click_uv(ctx, a_off, "Tangent start near circle")
 	await _zoom_uv(ctx, b_off, 90.0)
-	await _click_uv(ctx, b_off, "Shaft end near Ø45")
+	await _click_uv(ctx, b_off, "Tangent end near circle")
 	await _right_click_uv(ctx, b_off)
+
+
+func _assert_shaft_lines_both_sides(sm: SketchMode) -> void:
+	var mids: Array[float] = []
+	if sm.sketch == null:
+		check(false, "shaft lines exist before extrude")
+		return
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var mid: Vector2 = ((info["start"] as Vector2) + (info["end"] as Vector2)) * 0.5
+		mids.append(mid.y)
+	check(mids.size() >= 2, "blank has two shaft lines (got %d)" % mids.size())
+	if mids.size() < 2:
+		return
+	mids.sort()
+	check(mids[0] < -5.0 and mids[mids.size() - 1] > 5.0,
+			"shaft lines sit on both sides of the axis (%.3f .. %.3f)" % [
+				mids[0], mids[mids.size() - 1]])
 
 
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String, second_click: bool) -> void:
