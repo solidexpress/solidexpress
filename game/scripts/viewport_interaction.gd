@@ -62,6 +62,9 @@ var _additive_click := false
 var _sketch_dragging := false
 var _sketch_drag_moved := false
 var _sketch_press_pos := Vector2.ZERO
+## Digits routed to the dim blank while a single-DOF preview is up. Kept so
+## KEY_0 after KEY_2 calls focus_dim_for_typing("20") instead of replacing.
+var _preview_length_typed := ""
 ## Push/pull preview distance (wire badge while dragging).
 var _pp_preview_dist := 0.0
 var _pp_badge_screen := Vector2.ZERO
@@ -228,6 +231,8 @@ func _ready() -> void:
 	if camera != null:
 		camera.view_changed.connect(_on_camera_view_changed)
 	resized.connect(queue_redraw)
+	set_process_input(true)
+	set_process_unhandled_input(true)
 
 
 func is_placing() -> bool:
@@ -1320,15 +1325,17 @@ func _input_up_to_face_pick(event: InputEvent) -> bool:
 	return false
 
 
-## One Esc outside a sketch: release a focused LineEdit, drop TriBall when
-## the gizmo is active or visible, and clear the selection. Returns true
-## when at least one of those did something. Sketch Esc does not call this.
+## One Esc outside a sketch: release a focused LineEdit / SpinBox (HUD W/H/D),
+## drop TriBall when the gizmo is active or visible, and clear the selection.
+## Clearing the selection is what hides the rotate rings and the lift grip.
+## Returns true when at least one of those did something. Sketch Esc does not
+## call this.
 func cancel_stack() -> bool:
 	var acted := false
 	var vp := get_viewport()
 	if vp != null:
 		var focus := vp.gui_get_focus_owner()
-		if focus is LineEdit and focus.has_focus():
+		if _should_release_cancel_focus(focus):
 			focus.release_focus()
 			acted = true
 	if triball != null and (triball.active or triball.visible):
@@ -1345,6 +1352,21 @@ func cancel_stack() -> bool:
 		status.emit("Selection cleared")
 		acted = true
 	return acted
+
+
+## True when Esc should drop focus from a LineEdit, a SpinBox, or a control
+## sitting inside a SpinBox (the TransformHud W/H/D editors).
+func _should_release_cancel_focus(focus: Control) -> bool:
+	if focus == null or not focus.has_focus():
+		return false
+	if focus is LineEdit or focus is TextEdit or focus is CodeEdit or focus is SpinBox:
+		return true
+	var p: Node = focus
+	while p != null:
+		if p is SpinBox:
+			return true
+		p = p.get_parent()
+	return false
 
 
 func _commit_pick_sketch_host(screen_pos: Vector2) -> void:
@@ -1827,6 +1849,11 @@ func _gui_input(event: InputEvent) -> void:
 	# Prefer `_input` for model pointers (works when this Control is not the
 	# hovered target). Keep `_gui_input` as a fallback for headless tests and
 	# for sketch which historically used Control-local events.
+	# Length keys during a rubber-band must beat camera nav here too: a canvas
+	# click focuses this Control, so Godot delivers the next keys to _gui_input.
+	if _try_consume_preview_length_key(event):
+		accept_event()
+		return
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
 	if camera != null and camera.is_nav_event(event, allow_scroll):
 		if camera.handle_input(event, allow_scroll):
@@ -1836,6 +1863,9 @@ func _gui_input(event: InputEvent) -> void:
 	if _place_kind != "" or _picking_active_plane:
 		return
 	if sketch_mode != null and sketch_mode.active:
+		# Dim / distance already own the key; do not re-seed a single digit.
+		if event is InputEventKey and _sketch_keys_blocked():
+			return
 		_sketch_input(event)
 		return
 	if _handle_model_pointer(event):
@@ -2210,6 +2240,12 @@ func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			# Read the dim blank before dropping focus so a typed length still
+			# wins on this press. Missing typed_dim_value (WP1) keeps click().
+			var typed_len: Variant = null
+			if sketch_chrome != null and sketch_chrome.has_method("typed_dim_value") \
+					and sketch_mode.has_single_dof_preview():
+				typed_len = sketch_chrome.typed_dim_value()
 			# Drop the dim blank before the canvas consumes the click, so the
 			# next key is a sketch hotkey and not another digit in the field.
 			if sketch_chrome != null:
@@ -2228,6 +2264,9 @@ func _sketch_input(event: InputEvent) -> void:
 						and not sketch_mode.drag_hit(p2).is_empty():
 					sketch_mode.begin_drag(p2)
 					_sketch_dragging = true
+				elif typeof(typed_len) == TYPE_FLOAT or typeof(typed_len) == TYPE_INT:
+					sketch_mode.hover(p2)
+					sketch_mode.commit_at_length(float(typed_len))
 				else:
 					sketch_mode.click(p2)
 			accept_event()
@@ -2254,7 +2293,11 @@ func _sketch_input(event: InputEvent) -> void:
 				# A stationary release is the first click of a two-click tool.
 				# Leave the anchor in place. reject_tiny_draw (WP2) is only for
 				# a second point that actually moved, and only by a hair.
-				if p2_up2 != null and travel >= CLICK_SLOP:
+				# Polygon and circle commit on a second press (or Enter), not
+				# mouse-up — a shaky release must not bake the pointer length.
+				# Line drag-draw is unchanged.
+				if p2_up2 != null and travel >= CLICK_SLOP \
+						and not _sketch_skips_mouse_up_commit():
 					sketch_mode.click(p2_up2)
 			accept_event()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -2335,6 +2378,15 @@ func _sketch_input(event: InputEvent) -> void:
 				else:
 					sketch_mode.cancel()
 		accept_event()
+
+
+## Polygon and circle: the second point is a second press or Enter, not the
+## mouse-up that ends the first click. Preview still tracks via hover.
+func _sketch_skips_mouse_up_commit() -> bool:
+	if sketch_mode == null:
+		return false
+	return sketch_mode.tool == SketchMode.Tool.POLYGON \
+			or sketch_mode.tool == SketchMode.Tool.CIRCLE
 
 
 func _is_length_type_key(ke: InputEventKey) -> bool:
@@ -3777,6 +3829,76 @@ func toggle_section() -> void:
 		status.emit("Section view on")
 
 
+func _dim_line_edit() -> LineEdit:
+	if sketch_chrome == null:
+		return null
+	var spin: Node = sketch_chrome.find_child("DimSpin", true, false)
+	if not (spin is SpinBox):
+		return null
+	return (spin as SpinBox).get_line_edit()
+
+
+func _try_consume_preview_length_key(event: InputEvent) -> bool:
+	if sketch_mode == null or not sketch_mode.active \
+			or not sketch_mode.has_single_dof_preview():
+		_preview_length_typed = ""
+		return false
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if not _is_length_type_key(ke):
+		return false
+	# A focused dim / distance / HUD field types the digit itself. Do not
+	# replace that string with a one-key seed (wrench `_type_dim` clicks the
+	# blank first). The second KEY_0 of an unfocused KEY_2 KEY_0 pair is
+	# appended in `_unhandled_input` when the LineEdit never eats it.
+	if _text_field_has_focus() or _sketch_keys_blocked():
+		return false
+	_preview_length_typed = _length_type_seed(ke)
+	if sketch_chrome != null:
+		sketch_chrome.focus_dim_for_typing(_preview_length_typed)
+	return true
+
+
+func _try_append_focused_dim_length_key(event: InputEvent) -> bool:
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if sketch_mode == null or not sketch_mode.active \
+			or not sketch_mode.has_single_dof_preview() \
+			or not _is_length_type_key(ke) \
+			or _preview_length_typed.is_empty():
+		return false
+	var edit := _dim_line_edit()
+	if edit == null or not edit.has_focus():
+		return false
+	var seed := _length_type_seed(ke)
+	if seed.is_empty():
+		return false
+	# Only continue a leftover-10 seed started while the blank was unfocused.
+	# Wrench `_type_dim` clicks the blank first, so the buffer is empty and
+	# the LineEdit keeps the keys even if this unhandled path also fires.
+	_preview_length_typed += seed
+	if sketch_chrome != null:
+		sketch_chrome.focus_dim_for_typing(_preview_length_typed)
+	return true
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Headless Viewport.push_input with no GUI focus owner never reaches
+	# _input/_gui_input on this Control; leftover 10 still has to seed the blank.
+	if _try_consume_preview_length_key(event):
+		get_viewport().set_input_as_handled()
+		return
+	# Second digit: the dim blank is focused so consume skipped. A live
+	# LineEdit already ate the key (unhandled does not run). Headless often
+	# does not, and leftover 10 still has to turn KEY_2 KEY_0 into 20.
+	if _try_append_focused_dim_length_key(event):
+		get_viewport().set_input_as_handled()
+
+
 func _input(event: InputEvent) -> void:
 	# Camera first — before Control STOP panels so orbit works over docks, and
 	# before place so Alt+drag / two-finger pan don't commit a solid.
@@ -3787,6 +3909,13 @@ func _input(event: InputEvent) -> void:
 		if camera.handle_input(event, true):
 			get_viewport().set_input_as_handled()
 			return
+	# Length keys during a single-DOF rubber-band seed the dim blank before
+	# OrbitCamera claims 1/2/3/5/7 as standard views. Same seed _sketch_input
+	# already uses; it has to run first. Skip when a field already has focus
+	# so the second digit appends instead of replacing the seed.
+	if _try_consume_preview_length_key(event):
+		get_viewport().set_input_as_handled()
+		return
 	# Suppress camera nav keys while a text edit control owns focus so digits
 	# (1/2/3/7) type into numeric fields (e.g. TransformHud / PropertyPanel).
 	if camera != null:
