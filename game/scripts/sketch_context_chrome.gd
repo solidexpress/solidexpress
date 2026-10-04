@@ -581,11 +581,15 @@ func focus_dim_for_typing(seed := "") -> void:
 		_dim_spin.value = v
 		edit.text = seed
 		edit.caret_column = seed.length()
+		edit.deselect()
+		edit.deselect.call_deferred()
 		if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
 			sketch_mode.set_length_override(v)
 	elif seed != "":
 		edit.text = seed
 		edit.caret_column = seed.length()
+		edit.deselect()
+		edit.deselect.call_deferred()
 	else:
 		edit.select_all()
 
