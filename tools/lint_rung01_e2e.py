@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail if the rung-1 walk or replan-3/4 scripts shortcut the operator GUI.
+"""Fail if the rung-1 walk or replan-3/4/5 scripts shortcut the operator GUI.
 
 Exits non-zero when run_rung01_wrench.gd contains:
   - infer_enabled
@@ -13,7 +13,9 @@ Exits non-zero when run_rung01_wrench.gd contains:
   - a root size other than Vector2i(1280, 800) (including 1920 or 900 in _widen)
   - focus_dim_for_typing / focus_distance_for_typing / set_extrude_distance
   - set_up_to_face / set_finish_op / set_finish_end / export_3mf(
-  - an _x11_click helper that awaits between pressed=true and pressed=false
+  - sketch_mode.cancel( / exit_sketch( / trim_at( / new_document( / graph_update_sketch(
+  - an _x11_click helper, Power Trim click, or recovery click that awaits
+    between pressed=true and pressed=false
 
 Also scans game/tests/run_rung01_replan3_*.gd for:
   - interaction._input
@@ -28,6 +30,9 @@ And game/tests/run_rung01_replan4_*.gd for the replan-3 list plus:
   - focus_distance_for_typing
   - assignment to .text
   - set_extrude_distance (already in the replan-3 list)
+
+And game/tests/run_rung01_replan5_*.gd for the walk's new forbiddens plus
+the no-await-between-press/release rule.
 """
 from __future__ import annotations
 
@@ -51,12 +56,29 @@ REPLAN4_EXTRA_FORBIDDEN = (
     "focus_dim_for_typing",
     "focus_distance_for_typing",
 )
+REPLAN5_FORBIDDEN = (
+    "sketch_mode.cancel(",
+    "sketch_mode.exit_sketch(",
+    "sketch_mode.trim_at(",
+    "new_document(",
+    "graph_update_sketch(",
+    "set_up_to_face",
+    "focus_dim_for_typing",
+    "focus_distance_for_typing",
+    "set_extrude_distance",
+)
 WALK_EXTRA_FORBIDDEN = REPLAN4_EXTRA_FORBIDDEN + (
     "set_extrude_distance",
     "set_up_to_face",
     "set_finish_op",
     "set_finish_end",
     "export_3mf(",
+) + (
+    "sketch_mode.cancel(",
+    "sketch_mode.exit_sketch(",
+    "sketch_mode.trim_at(",
+    "new_document(",
+    "graph_update_sketch(",
 )
 
 
@@ -76,6 +98,14 @@ def _line_of(src: str, index: int) -> int:
     return src.count("\n", 0, index) + 1
 
 
+def _is_press_release_fn(name: str) -> bool:
+    if name == "_x11_click" or name.startswith("_x11_click_"):
+        return True
+    if name.startswith("_recovery") or name.startswith("_power_trim"):
+        return True
+    return False
+
+
 def _lint_needles(src: str, needles: tuple[str, ...], errors: list[str], prefix: str) -> None:
     for needle in needles:
         for m in re.finditer(re.escape(needle), src):
@@ -89,10 +119,12 @@ def _lint_text_assignment(src: str, errors: list[str], prefix: str) -> None:
 
 def _lint_x11_click_await(src: str, errors: list[str], prefix: str) -> None:
     found = False
+    found_screen = False
     for name, start, end in _functions(src):
-        if name != "_x11_click" and not name.startswith("_x11_click_"):
+        if not _is_press_release_fn(name):
             continue
         found = found or name == "_x11_click"
+        found_screen = found_screen or name == "_x11_click_screen"
         body = src[start:end]
         down = body.find("pressed = true")
         up = body.find("pressed = false")
@@ -111,6 +143,28 @@ def _lint_x11_click_await(src: str, errors: list[str], prefix: str) -> None:
             )
     if prefix == "" and not found:
         errors.append("walk is missing func _x11_click (numeric fields must use the X11 burst)")
+    if prefix == "" and not found_screen:
+        errors.append(
+            "walk is missing func _x11_click_screen (Power Trim and recovery must use it)"
+        )
+
+
+def _lint_walk_trim_recovery(src: str, errors: list[str]) -> None:
+    if "Trimmed open jaw" not in src:
+        errors.append("walk does not assert Trimmed open jaw")
+    if "_power_trim_shaft_click" not in src:
+        errors.append("walk is missing _power_trim_shaft_click")
+    if "_recovery_open_profile_then_new" not in src:
+        errors.append("walk is missing recovery scene _recovery_open_profile_then_new")
+    for i, line in enumerate(src.splitlines(), 1):
+        if "_click_uv" in line and "Trim" in line:
+            errors.append(
+                f"line {i}: Power Trim click uses _click_uv (must use _x11_click_screen)"
+            )
+        if "set_view(" in line:
+            errors.append(
+                f"line {i}: camera set_view is not the Opposite face / Front-view pick"
+            )
 
 
 def _lint_walk(src: str, errors: list[str]) -> None:
@@ -165,6 +219,7 @@ def _lint_walk(src: str, errors: list[str]) -> None:
     _lint_needles(src, WALK_EXTRA_FORBIDDEN, errors, "")
     _lint_text_assignment(src, errors, "")
     _lint_x11_click_await(src, errors, "")
+    _lint_walk_trim_recovery(src, errors)
 
 
 def _lint_replan3(errors: list[str]) -> None:
@@ -195,6 +250,20 @@ def _lint_replan4(errors: list[str]) -> None:
         _lint_x11_click_await(src, errors, prefix)
 
 
+def _lint_replan5(errors: list[str]) -> None:
+    paths = sorted(TESTS.glob("run_rung01_replan5_*.gd"))
+    if not paths:
+        errors.append(f"no run_rung01_replan5_*.gd scripts under {TESTS}")
+        return
+    for path in paths:
+        src = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT)
+        prefix = f"{rel}:"
+        _lint_needles(src, REPLAN5_FORBIDDEN, errors, prefix)
+        _lint_text_assignment(src, errors, prefix)
+        _lint_x11_click_await(src, errors, prefix)
+
+
 def main() -> int:
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
@@ -204,6 +273,7 @@ def main() -> int:
     _lint_walk(src, errors)
     _lint_replan3(errors)
     _lint_replan4(errors)
+    _lint_replan5(errors)
 
     if errors:
         print("lint_rung01_e2e: GUI shortcuts remain:", file=sys.stderr)
@@ -212,9 +282,11 @@ def main() -> int:
         return 1
     n3 = len(list(TESTS.glob("run_rung01_replan3_*.gd")))
     n4 = len(list(TESTS.glob("run_rung01_replan4_*.gd")))
+    n5 = len(list(TESTS.glob("run_rung01_replan5_*.gd")))
     print(f"lint_rung01_e2e: {WALK} is clean")
     print(f"lint_rung01_e2e: {n3} replan3 scripts are clean")
     print(f"lint_rung01_e2e: {n4} replan4 scripts are clean")
+    print(f"lint_rung01_e2e: {n5} replan5 scripts are clean")
     return 0
 
 
