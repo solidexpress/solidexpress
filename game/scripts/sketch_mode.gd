@@ -495,7 +495,11 @@ func exit_sketch() -> String:
 		if view.doc.graph_update_sketch(editing_fid, sketch):
 			fid = editing_fid
 		else:
-			status.emit("Failed to update sketch")
+			# Graph already rolled back to the last good snapshot. Reload that
+			# profile, then leave so a failed regenerate cannot trap the session.
+			_reload_editing_sketch()
+			_end_sketch_session()
+			_emit_discard_status()
 			return ""
 	else:
 		if sketch.entity_ids().is_empty():
@@ -506,18 +510,7 @@ func exit_sketch() -> String:
 		if fid == "":
 			status.emit("Failed to save sketch" + _graph_error_suffix())
 			return ""
-	active = false
-	editing_fid = ""
-	_tool_points.clear()
-	_snap_marker = null
-	_drag.clear()
-	intersection_points.clear()
-	_clear_meshes()
-	_leave_camera()
-	if view != null:
-		view.refresh()
-		view.document_changed.emit()
-	finished.emit("")
+	_end_sketch_session()
 	status.emit("Sketch saved")
 	return fid
 
@@ -628,7 +621,8 @@ func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 func _ensure_sketch_feature() -> String:
 	if editing_fid != "":
 		if not view.doc.graph_update_sketch(editing_fid, sketch):
-			status.emit("Failed to update sketch" + _graph_error_suffix())
+			# Keep the session so the person can keep drawing; Exit can still leave.
+			_reload_editing_sketch()
 			return ""
 		return editing_fid
 	var sk_fid: String = view.doc.graph_add_sketch(sketch)
@@ -637,6 +631,44 @@ func _ensure_sketch_feature() -> String:
 	else:
 		editing_fid = sk_fid
 	return sk_fid
+
+
+## Replace the in-memory sketch with the graph's last accepted profile.
+func _reload_editing_sketch() -> bool:
+	if editing_fid == "" or view == null or view.doc == null:
+		return false
+	if not view.doc.has_method("graph_get_sketch"):
+		return false
+	var loaded: SxSketch = view.doc.graph_get_sketch(editing_fid)
+	if loaded == null:
+		return false
+	sketch = loaded
+	_restore_dimensions_from_sketch()
+	return true
+
+
+## Same cleanup a successful Exit uses. Always leaves `active` false.
+func _end_sketch_session() -> void:
+	active = false
+	editing_fid = ""
+	_tool_points.clear()
+	_snap_marker = null
+	_drag.clear()
+	intersection_points.clear()
+	_clear_meshes()
+	_leave_camera()
+	if view != null:
+		view.refresh()
+		view.document_changed.emit()
+	finished.emit("")
+
+
+func _emit_discard_status() -> void:
+	var err := _graph_error_text()
+	if err == "":
+		status.emit("Sketch edit discarded")
+	else:
+		status.emit("Sketch edit discarded — " + err)
 
 
 func _graph_error_text() -> String:
@@ -3663,7 +3695,14 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	# Push it back so the cut/extrude downstream rebuilds.
 	if editing_fid != "" and view != null and view.doc != null:
 		if not view.doc.graph_update_sketch(editing_fid, sketch):
-			status.emit("Failed to update sketch" + _graph_error_suffix())
+			if _reload_editing_sketch():
+				_redraw()
+				_redraw_selected()
+				_rebuild_dimension_labels()
+				return res["status"]
+			_end_sketch_session()
+			_emit_discard_status()
+			return ""
 	_redraw()
 	_redraw_selected()
 	_rebuild_dimension_labels()
