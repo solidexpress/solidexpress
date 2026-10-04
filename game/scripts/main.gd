@@ -71,6 +71,13 @@ var _mode_popup: PopupMenu
 var _work_mode := "Model"
 var _edit_popup: PopupMenu
 var _recent_menu: PopupMenu
+## True while File menu / discard dialog is in the pointer gesture that closes
+## them, so a mouse-up on Box does not arm place (leftover 3).
+var _palette_insert_blocked := false
+## Empty-sketch Exit Sketch confirm (leftover 13). Separate from discard-new.
+var _empty_sketch_dialog: ConfirmationDialog
+## Filename LineEdit text captured on Export 3MF OK (leftover 14).
+var _export_3mf_accept_name := ""
 var _paste_special_dialog: ConfirmationDialog
 var _paste_ox: SpinBox
 var _paste_oy: SpinBox
@@ -316,6 +323,8 @@ func _build_ui() -> void:
 	_file_popup.add_submenu_node_item("Recent", _recent_menu)
 	_recent_menu.id_pressed.connect(_on_recent_menu)
 	_file_popup.id_pressed.connect(_on_file_menu)
+	_file_popup.about_to_popup.connect(_arm_menu_gesture)
+	_file_popup.popup_hide.connect(_release_menu_gesture)
 	_load_recent()
 	_rebuild_recent_menu()
 
@@ -503,9 +512,17 @@ func _build_ui() -> void:
 	confirm_dialog = ConfirmationDialog.new()
 	confirm_dialog.dialog_text = "Discard unsaved changes?"
 	confirm_dialog.confirmed.connect(_on_discard_confirmed)
+	confirm_dialog.visibility_changed.connect(_on_discard_dialog_visibility)
+	_connect_popup_esc(confirm_dialog)
 	ui.add_child(confirm_dialog)
+	_empty_sketch_dialog = ConfirmationDialog.new()
+	_empty_sketch_dialog.dialog_text = "This sketch is empty. Exiting discards it without adding a feature."
+	_empty_sketch_dialog.confirmed.connect(_on_empty_sketch_discard_confirmed)
+	_connect_popup_esc(_empty_sketch_dialog)
+	ui.add_child(_empty_sketch_dialog)
 
-	# Left icon rail: primitives (swaps for Modify / Sketch tools).
+	# Left icon rail: Sketch, finish verbs, then primitives (leftover 3).
+	# Box under Sketch was the accidental click target when File/New closed.
 	palette = PanelContainer.new()
 	palette.name = "Palette"
 	palette.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -519,13 +536,7 @@ func _build_ui() -> void:
 	sketch_btn.pressed.connect(_request_sketch)
 	vbox.add_child(sketch_btn)
 	vbox.add_child(HSeparator.new())
-	for entry in [["box", "Box"], ["cylinder", "Cylinder"], ["sphere", "Sphere"],
-			["cone", "Cone"], ["torus", "Torus"]]:
-		var btn := PaletteButton.new(entry[0], entry[1])
-		btn.insert_requested.connect(interaction.insert_at_center)
-		vbox.add_child(btn)
 	# Finish verbs for selected sketch pads (SW/Fusion left-rail reachability).
-	vbox.add_child(HSeparator.new())
 	_rail_extrude = UIIcons.button("extrude", "",
 		"Extrude: select a closed sketch pad, then Extrude")
 	_rail_extrude.pressed.connect(_rail_finish_extrude)
@@ -542,6 +553,16 @@ func _build_ui() -> void:
 		"Loft: Ctrl+click 2+ profile pads, then Loft")
 	_rail_loft.pressed.connect(_rail_finish_loft)
 	vbox.add_child(_rail_loft)
+	var prim_label := Label.new()
+	prim_label.name = "PrimitivesLabel"
+	prim_label.text = "Primitives"
+	prim_label.add_theme_font_size_override("font_size", UiScale.body())
+	vbox.add_child(prim_label)
+	for entry in [["box", "Box"], ["cylinder", "Cylinder"], ["sphere", "Sphere"],
+			["cone", "Cone"], ["torus", "Torus"]]:
+		var btn := PaletteButton.new(entry[0], entry[1])
+		btn.insert_requested.connect(_on_palette_insert)
+		vbox.add_child(btn)
 	# Wave 6.5: simple mechanic-tool catalog (shop tooling).
 	vbox.add_child(HSeparator.new())
 	for entry in [
@@ -740,20 +761,22 @@ func _build_ui() -> void:
 	sketch_toolbar = PanelContainer.new()
 	sketch_toolbar.name = "SketchTools"
 	sketch_toolbar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	sketch_toolbar.custom_minimum_size = Vector2(_RAIL_ICON_W, 0)
+	sketch_toolbar.custom_minimum_size = Vector2(0, 0)
 	sketch_toolbar.visible = false
 	left_stack.add_child(sketch_toolbar)
 	var sk_scroll := ScrollContainer.new()
-	sk_scroll.custom_minimum_size = Vector2(_RAIL_ICON_W, 560)
+	# Width follows the Exit Sketch label (leftover 13); do not lock to 44 px.
+	sk_scroll.custom_minimum_size = Vector2(0, 560)
 	sk_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	sketch_toolbar.add_child(sk_scroll)
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 2)
 	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sk_scroll.add_child(rows)
-	var exit_btn := UIIcons.button("cancel", "",
+	var exit_btn := UIIcons.button("ok", "Exit Sketch",
 		"Exit Sketch: save and return to the previous view")
-	exit_btn.pressed.connect(func() -> void: sketch_mode.exit_sketch())
+	exit_btn.name = "ExitSketch"
+	exit_btn.pressed.connect(_on_exit_sketch_pressed)
 	rows.add_child(exit_btn)
 	rows.add_child(HSeparator.new())
 	for entry in [
@@ -884,6 +907,30 @@ func _style_popup_menu(popup: PopupMenu) -> void:
 	if popup == null:
 		return
 	popup.add_theme_font_size_override("font_size", UiScale.body())
+	_connect_popup_esc(popup)
+
+
+## Esc on a menu or dialog this file owns hides that window and runs cancel_stack
+## in the same keypress (leftover 4). PopupMenu otherwise swallows Esc.
+func _connect_popup_esc(win: Window) -> void:
+	if win == null or win.has_meta("_sx_esc_connected"):
+		return
+	win.set_meta("_sx_esc_connected", true)
+	win.window_input.connect(func(event: InputEvent) -> void:
+		_on_owned_window_esc(event, win))
+
+
+func _on_owned_window_esc(event: InputEvent, win: Window) -> void:
+	if win == null or not (event is InputEventKey):
+		return
+	var key := event as InputEventKey
+	if not key.pressed or key.echo or key.keycode != KEY_ESCAPE:
+		return
+	win.hide()
+	if interaction != null and interaction.has_method("cancel_stack"):
+		interaction.cancel_stack()
+	if win.get_viewport() != null:
+		win.get_viewport().set_input_as_handled()
 
 
 ## Resize expands the 3D viewport only — menu/chrome scale stays DPI-fixed.
@@ -1347,12 +1394,17 @@ func _on_sketch_tool_changed(tool: int) -> void:
 	var variants: Array = sketch_mode.variants_for_tool(tool as SketchMode.Tool)
 	if variants.is_empty():
 		sketch_chrome.hide_variants()
+		return
+	# Dock beside the left sketch rail — NOT under the cursor. Putting the
+	# chip bar on the mouse swallowed the first Line/Circle/Polygon click.
+	var rail_x := 56.0
+	if sketch_toolbar != null and sketch_toolbar.visible:
+		rail_x = sketch_toolbar.global_position.x + sketch_toolbar.size.x + 8.0
+	if sketch_chrome.has_method("place_variant_row"):
+		sketch_chrome.show_variants(_variant_kind_for(tool), variants, Vector2(rail_x, 0.0))
+		sketch_chrome.place_variant_row(rail_x)
 	else:
-		# Dock beside the left sketch rail — NOT under the cursor. Putting the
-		# chip bar on the mouse swallowed the first Line/Circle/Polygon click.
-		var rail_x := 56.0
-		if sketch_toolbar != null and sketch_toolbar.visible:
-			rail_x = sketch_toolbar.global_position.x + sketch_toolbar.size.x + 8.0
+		# WP1 publishes place_variant_row. Keep chips visible until that lands.
 		sketch_chrome.show_variants(_variant_kind_for(tool), variants, Vector2(rail_x, 80.0))
 
 
@@ -1410,7 +1462,13 @@ func _on_sketch_dim_submitted(value: float) -> void:
 	if sketch_mode != null and sketch_mode.active \
 			and sketch_mode.has_single_dof_preview():
 		if sketch_mode.commit_at_length(value):
-			_on_status("Length %.4f mm" % value)
+			var sentence := ""
+			if sketch_mode.has_method("last_commit_text"):
+				sentence = str(sketch_mode.last_commit_text())
+			if sentence != "":
+				_on_status(sentence)
+			else:
+				_on_status("Length %.4f mm" % value)
 			if sketch_chrome != null:
 				sketch_chrome.release_dim_focus()
 			return
@@ -2324,6 +2382,13 @@ func _on_file_menu(id: int) -> void:
 
 
 func _do_new() -> void:
+	if sketch_mode != null and sketch_mode.active:
+		sketch_mode.exit_sketch()
+	if interaction != null:
+		if interaction.has_method("_disarm_place"):
+			interaction._disarm_place(false)
+		if interaction.triball != null:
+			interaction.triball.cancel()
 	view.new_document()
 	current_path = ""
 	# Empty part on the Top plane (XY through the origin). The Box primitive
@@ -2371,6 +2436,58 @@ func _on_discard_confirmed() -> void:
 	_pending_discard = Callable()
 	if action.is_valid():
 		action.call()
+
+
+func _on_discard_dialog_visibility() -> void:
+	if confirm_dialog == null:
+		return
+	if confirm_dialog.visible:
+		_arm_menu_gesture()
+	else:
+		_release_menu_gesture()
+
+
+## Palette Box/Cylinder/… click. Ignored while File or Discard is closing so
+## the mouse-up that hides them cannot arm place (leftover 3).
+func _on_palette_insert(kind: String) -> void:
+	if _palette_insert_blocked:
+		return
+	if interaction != null:
+		interaction.insert_at_center(kind)
+
+
+func _arm_menu_gesture() -> void:
+	_palette_insert_blocked = true
+
+
+func _release_menu_gesture() -> void:
+	call_deferred("_release_menu_gesture_deferred")
+
+
+func _release_menu_gesture_deferred() -> void:
+	if _file_popup != null and _file_popup.visible:
+		return
+	if confirm_dialog != null and confirm_dialog.visible:
+		return
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		call_deferred("_release_menu_gesture_deferred")
+		return
+	_palette_insert_blocked = false
+
+
+func _on_exit_sketch_pressed() -> void:
+	if sketch_mode == null:
+		return
+	if sketch_mode.has_method("is_empty_new_sketch") and sketch_mode.is_empty_new_sketch():
+		if _empty_sketch_dialog != null:
+			_empty_sketch_dialog.popup_centered()
+		return
+	sketch_mode.exit_sketch()
+
+
+func _on_empty_sketch_discard_confirmed() -> void:
+	if sketch_mode != null:
+		sketch_mode.exit_sketch()
 
 
 func _load_recent() -> void:
@@ -2628,6 +2745,50 @@ func _export_3mf_start_dir() -> String:
 	return _user_home_dir()
 
 
+func _file_dialog_name_edit() -> LineEdit:
+	if file_dialog == null:
+		return null
+	if file_dialog.has_method("get_line_edit"):
+		var le: Variant = file_dialog.get_line_edit()
+		if le is LineEdit:
+			return le as LineEdit
+	for c in file_dialog.find_children("*", "LineEdit", true, false):
+		var edit := c as LineEdit
+		if edit != null:
+			return edit
+	return null
+
+
+func _focus_export_3mf_filename() -> void:
+	if file_dialog == null or not file_dialog.visible:
+		return
+	if _file_action != FileAction.EXPORT_3MF:
+		return
+	var edit := _file_dialog_name_edit()
+	if edit == null:
+		return
+	if not edit.text_changed.is_connected(_on_export_3mf_name_changed):
+		edit.text_changed.connect(_on_export_3mf_name_changed)
+	_export_3mf_accept_name = edit.text.strip_edges()
+	edit.grab_focus()
+	edit.select_all()
+	edit.grab_focus.call_deferred()
+	edit.select_all.call_deferred()
+
+
+func _on_export_3mf_name_changed(new_text: String) -> void:
+	_export_3mf_accept_name = new_text.strip_edges()
+
+
+func _on_file_dialog_ok_pressed() -> void:
+	_export_3mf_accept_name = ""
+	if _file_action != FileAction.EXPORT_3MF:
+		return
+	var edit := _file_dialog_name_edit()
+	if edit != null:
+		_export_3mf_accept_name = edit.text.strip_edges()
+
+
 func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: String) -> void:
 	_file_action = action
 	file_dialog.file_mode = mode
@@ -2637,7 +2798,13 @@ func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: St
 		if dir != "":
 			file_dialog.current_dir = dir
 		file_dialog.current_file = _export_3mf_filename()
+		_export_3mf_accept_name = ""
+		var ok := file_dialog.get_ok_button()
+		if ok != null and not ok.pressed.is_connected(_on_file_dialog_ok_pressed):
+			ok.pressed.connect(_on_file_dialog_ok_pressed)
 	file_dialog.popup_centered()
+	if action == FileAction.EXPORT_3MF:
+		_focus_export_3mf_filename.call_deferred()
 
 
 func _save_current() -> void:
@@ -2698,9 +2865,19 @@ func _on_file_selected(path: String) -> void:
 				view.graph_changed()
 				_on_status("Imported DXF sketch")
 		FileAction.EXPORT_3MF:
+			var typed := _export_3mf_accept_name.strip_edges()
+			_export_3mf_accept_name = ""
+			if typed == "" and file_dialog != null:
+				var edit := _file_dialog_name_edit()
+				if edit != null:
+					typed = edit.text.strip_edges()
+			if typed.is_absolute_path():
+				file_dialog.current_dir = typed.get_base_dir()
+				file_dialog.current_file = typed.get_file()
+				path = typed
 			if view.doc.export_3mf(path):
 				_last_export_dir = path.get_base_dir()
-				_on_status("Exported 3MF")
+				_on_status("Exported 3MF → " + path)
 			else:
 				var detail := ""
 				if view.doc.has_method("last_export_error"):
