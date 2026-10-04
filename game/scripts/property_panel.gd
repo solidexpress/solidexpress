@@ -299,6 +299,9 @@ func _row(label_text: String) -> HBoxContainer:
 func _add_spin_row(field: Dictionary, value) -> void:
 	var row := _row(field["label"])
 	var spin := SpinBox.new()
+	var key: String = field["key"]
+	spin.name = "Param_%s" % key
+	spin.set_meta("schema_key", key)
 	var display := float(value)
 	# Kernel stores some angles in radians; show degrees in the UI.
 	if field.get("ui_unit", "") == "deg_from_rad":
@@ -313,11 +316,145 @@ func _add_spin_row(field: Dictionary, value) -> void:
 		display,
 		field["kind"] == "int")
 	spin.value_changed.connect(func(v: float) -> void:
+		if key == "distance" and not _distance_line_parses(spin):
+			return
 		var store = int(v) if field["kind"] == "int" else v
 		if field.get("ui_unit", "") == "deg_from_rad":
 			store = deg_to_rad(float(v))
-		_set_param(field["key"], store))
+		_set_param(key, store))
+	var edit := spin.get_line_edit()
+	if edit != null and key == "distance":
+		# Every click, including a second click on an already-focused field,
+		# reselects the digits so typing 14 replaces 10 instead of appending.
+		edit.gui_input.connect(_on_distance_edit_gui_input.bind(spin))
+		edit.text_submitted.connect(_on_distance_submitted.bind(spin))
+		edit.focus_exited.connect(_on_distance_focus_exited.bind(spin))
 	row.add_child(spin)
+
+
+## Focus the spin whose schema key is `key` (extrude Distance, not W/H/D).
+func focus_schema_key(key: String) -> void:
+	var spin := _spin_for_key(key)
+	if spin == null:
+		return
+	var edit := spin.get_line_edit()
+	if edit != null:
+		edit.grab_focus()
+		_queue_select_all(edit)
+	else:
+		spin.grab_focus()
+
+
+func _spin_for_key(key: String) -> SpinBox:
+	if _fields == null:
+		return null
+	var named := _fields.find_child("Param_%s" % key, true, false)
+	if named is SpinBox:
+		return named as SpinBox
+	for row in _fields.get_children():
+		for child in row.get_children():
+			if child is SpinBox and str(child.get_meta("schema_key", "")) == key:
+				return child as SpinBox
+	return null
+
+
+func _on_distance_edit_gui_input(event: InputEvent, spin: SpinBox) -> void:
+	if spin == null or not is_instance_valid(spin):
+		return
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			var edit := spin.get_line_edit()
+			if edit != null:
+				_queue_select_all(edit)
+
+
+func _queue_select_all(edit: LineEdit) -> void:
+	if edit == null or not is_instance_valid(edit):
+		return
+	# After the caret click, then once more next frame so the caret cannot win.
+	edit.call_deferred("select_all")
+	if not is_inside_tree():
+		return
+	var tree := get_tree()
+	if tree == null:
+		return
+	tree.process_frame.connect(func() -> void:
+		if is_instance_valid(edit):
+			edit.call_deferred("select_all")
+	, CONNECT_ONE_SHOT)
+
+
+func _on_distance_submitted(_raw: String, spin: SpinBox) -> void:
+	_commit_distance_line(spin)
+
+
+func _on_distance_focus_exited(spin: SpinBox) -> void:
+	_commit_distance_line(spin)
+
+
+## Parse the Distance LineEdit and write `distance` before the spin can be freed.
+## Partial junk that is not a single float does not write.
+func _commit_distance_line(spin: SpinBox) -> void:
+	if _building or _fid == "" or spin == null or not is_instance_valid(spin):
+		return
+	var edit := spin.get_line_edit()
+	if edit == null:
+		return
+	var parsed: Variant = _parse_spin_text(spin, edit.text)
+	if parsed == null:
+		var keep := float(_params.get("distance", spin.value))
+		_restore_distance_value.call_deferred(spin, keep)
+		return
+	_set_param("distance", float(parsed))
+
+
+func _restore_distance_value(spin: SpinBox, keep: float) -> void:
+	if spin == null or not is_instance_valid(spin):
+		return
+	if is_equal_approx(spin.value, keep):
+		return
+	spin.value = keep
+
+
+func _distance_line_parses(spin: SpinBox) -> bool:
+	if spin == null or not is_instance_valid(spin):
+		return false
+	var edit := spin.get_line_edit()
+	if edit == null:
+		return false
+	return _parse_spin_text(spin, edit.text) != null
+
+
+func _parse_spin_text(spin: SpinBox, raw: String) -> Variant:
+	var text := raw.strip_edges()
+	if text.is_empty() or spin == null:
+		return null
+	var prefix := str(spin.prefix)
+	var suffix := str(spin.suffix)
+	if prefix != "":
+		var spaced := prefix + " "
+		if text.begins_with(spaced):
+			text = text.substr(spaced.length())
+		elif text.begins_with(prefix):
+			text = text.substr(prefix.length())
+	if suffix != "":
+		var spaced := " " + suffix
+		if text.ends_with(spaced):
+			text = text.substr(0, text.length() - spaced.length())
+		elif text.ends_with(suffix):
+			text = text.substr(0, text.length() - suffix.length())
+	text = text.strip_edges().replace(",", ".")
+	if not text.is_valid_float():
+		return null
+	var v := float(text)
+	if is_nan(v) or is_inf(v):
+		return null
+	return v
+
+
+func _flush_distance_text() -> void:
+	_commit_distance_line(_spin_for_key("distance"))
 
 
 ## Shown only while End is Up To Surface. The button arms the sketch chrome's
@@ -397,6 +534,8 @@ func _looks_like_expr(s: String) -> bool:
 func _set_param(key: String, value) -> void:
 	if _building or _fid == "":
 		return
+	if _params.has(key) and _same_param(_params[key], value):
+		return
 	_params[key] = value
 	if view.doc.graph_set_params(_fid, JSON.stringify(_params)):
 		_edits += 1
@@ -413,7 +552,17 @@ func _set_param(key: String, value) -> void:
 		_params = JSON.parse_string(_original_json) if _edits == 0 else _params
 
 
+func _same_param(a, b) -> bool:
+	if a is float or a is int:
+		if b is float or b is int:
+			return is_equal_approx(float(a), float(b))
+	return a == b
+
+
 func commit() -> void:
+	# Click-away / File may free the spin in the same turn as focus exit.
+	# Parse Distance now so Export cannot steal an uncommitted 14.
+	_flush_distance_text()
 	if _edits > 0:
 		status.emit("Feature updated (%d change(s))" % _edits)
 	_close()

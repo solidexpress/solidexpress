@@ -9,6 +9,7 @@
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
+#include <BRep_Tool.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
@@ -18,10 +19,13 @@
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <GeomAbs_CurveType.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
+#include <gp_Lin.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Vec.hxx>
 
@@ -149,19 +153,48 @@ bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& o
     return found;
 }
 
-// A circle seam splits one smooth boundary into two edges. MakeFillet then
-// rejects the whole face even though each piece is under the radius limit.
-// Merge those same-domain edges and fillet the curves that cover the picks.
-bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& picked, double v,
-                    double r2, TopoDS_Shape& out) {
-    ShapeUpgrade_UnifySameDomain unif(shape, true, true, false);
-    unif.SetLinearTolerance(1e-6);
-    unif.SetAngularTolerance(1e-4);
-    unif.Build();
-    const TopoDS_Shape unified = unif.Shape();
-    if (unified.IsNull()) return false;
+bool same_smooth_curve(const TopoDS_Edge& a, const TopoDS_Edge& b) {
+    if (a.IsSame(b)) return true;
+    BRepAdaptor_Curve ca(a);
+    BRepAdaptor_Curve cb(b);
+    if (ca.GetType() != cb.GetType()) return false;
+    if (ca.GetType() == GeomAbs_Line) {
+        const gp_Lin la = ca.Line();
+        const gp_Lin lb = cb.Line();
+        if (!la.Direction().IsParallel(lb.Direction(), 1e-4)) return false;
+        return la.Distance(lb.Location()) < 1e-4;
+    }
+    if (ca.GetType() == GeomAbs_Circle) {
+        const gp_Circ cia = ca.Circle();
+        const gp_Circ cib = cb.Circle();
+        if (std::abs(cia.Radius() - cib.Radius()) > 1e-4) return false;
+        if (cia.Location().Distance(cib.Location()) > 1e-4) return false;
+        return cia.Axis().Direction().IsParallel(cib.Axis().Direction(), 1e-4);
+    }
+    return false;
+}
+
+// Forward/reverse of a seam, or two halves of one circle, are one curve.
+std::vector<TopoDS_Edge> drop_seam_duplicates(const std::vector<TopoDS_Edge>& edges) {
+    std::vector<TopoDS_Edge> out;
+    for (const auto& edge : edges) {
+        if (BRep_Tool::Degenerated(edge)) continue;
+        bool dup = false;
+        for (const auto& kept : out) {
+            if (same_smooth_curve(edge, kept)) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup) out.push_back(edge);
+    }
+    return out;
+}
+
+std::vector<TopoDS_Edge> map_edges_onto(const TopoDS_Shape& shape,
+                                        const std::vector<TopoDS_Edge>& picked) {
     sx::occt::ShapeIndexedMap edges;
-    TopExp::MapShapes(unified, TopAbs_EDGE, edges);
+    TopExp::MapShapes(shape, TopAbs_EDGE, edges);
     std::vector<TopoDS_Edge> chosen;
     std::vector<int> seen;
     for (const auto& src : picked) {
@@ -171,6 +204,7 @@ bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& p
         for (int i = 1; i <= edges.Extent(); ++i) {
             if (std::find(seen.begin(), seen.end(), i) != seen.end()) continue;
             const TopoDS_Edge edge = TopoDS::Edge(edges(i));
+            if (BRep_Tool::Degenerated(edge)) continue;
             BRepExtrema_DistShapeShape dist(BRepBuilderAPI_MakeVertex(mid), edge);
             dist.Perform();
             if (!dist.IsDone() || dist.Value() > 0.05) continue;
@@ -179,10 +213,20 @@ bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& p
             break;
         }
     }
-    if (chosen.empty()) return false;
+    return drop_seam_duplicates(chosen);
+}
+
+// Add() already grows a G1 contour. A second Add of a tangent (or seam-split)
+// partner duplicates that contour and MakeFillet fails even when the radius
+// fits. Skip edges already claimed; drop IsSame / same-curve duplicates first.
+bool build_fillet(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& picked, double v,
+                  double r2, TopoDS_Shape& out) {
+    const std::vector<TopoDS_Edge> edges = drop_seam_duplicates(picked);
+    if (edges.empty()) return false;
     try {
-        BRepFilletAPI_MakeFillet mk(unified);
-        for (const auto& edge : chosen) {
+        BRepFilletAPI_MakeFillet mk(shape);
+        for (const auto& edge : edges) {
+            if (mk.Contour(edge) != 0) continue;
             if (std::abs(r2 - v) > 1e-12)
                 mk.Add(v, r2, edge);
             else
@@ -191,12 +235,28 @@ bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& p
         mk.Build();
         if (!mk.IsDone()) return false;
         const TopoDS_Shape result = mk.Shape();
-        if (!shape::is_valid(result)) return false;
+        if (result.IsNull() || !shape::is_valid(result)) return false;
         out = result;
         return true;
     } catch (const Standard_Failure&) {
         return false;
     }
+}
+
+// A circle seam splits one smooth boundary into two edges. MakeFillet then
+// rejects the whole face even though each piece is under the radius limit.
+// Merge those same-domain edges and fillet one Add per unique curve.
+bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& picked, double v,
+                    double r2, TopoDS_Shape& out) {
+    ShapeUpgrade_UnifySameDomain unif(shape, true, true, true);
+    unif.SetLinearTolerance(1e-6);
+    unif.SetAngularTolerance(1e-4);
+    unif.Build();
+    const TopoDS_Shape unified = unif.Shape();
+    if (unified.IsNull()) return false;
+    const std::vector<TopoDS_Edge> chosen = map_edges_onto(unified, picked);
+    if (chosen.empty()) return false;
+    return build_fillet(unified, chosen, v, r2, out);
 }
 
 bool resolve_dressup_edge(ApplyCtx& ctx, const Body& body, const nlohmann::json& je,
@@ -224,7 +284,6 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
 
     TopoDS_Shape result;
     if (ctx.feature.type == FeatureType::Fillet) {
-        BRepFilletAPI_MakeFillet mk(tb->shape);
         const double r2 = ctx.params.contains("radius2")
                               ? num_param(ctx.params, "radius2", v, ctx.env)
                               : v;
@@ -248,27 +307,16 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         }
         if (added == 0) return true;
         const double asked = std::max(v, r2);
+        // "fillet failed (limit …)" is only for a radius that does not fit.
         if (limit < 1e290 && asked > limit + 1e-4) {
-            return ctx.fail("fillet radius " + format_mm(asked) + " exceeds limit " +
-                            format_mm(limit));
+            return ctx.fail("fillet failed (limit " + format_mm(limit) + ")");
         }
-        for (const auto& edge : resolved) {
-            if (std::abs(r2 - v) > 1e-12)
-                mk.Add(v, r2, edge);
-            else
-                mk.Add(v, edge);
-        }
-        mk.Build();
-        if (!mk.IsDone()) {
+        if (!build_fillet(tb->shape, resolved, v, r2, result)) {
             TopoDS_Shape recovered;
             if (fillet_unified(tb->shape, resolved, v, r2, recovered))
                 result = recovered;
-            else if (limit < 1e290)
-                return ctx.fail("fillet failed (limit " + format_mm(limit) + ")");
             else
                 return ctx.fail("fillet failed");
-        } else {
-            result = mk.Shape();
         }
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
