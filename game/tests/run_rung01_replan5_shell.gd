@@ -316,11 +316,39 @@ func _exit_btn(main) -> Button:
 func _click_exit(ctx: FilmContext) -> void:
 	var btn := _exit_btn(ctx.main)
 	check(btn != null and btn.is_visible_in_tree(), "Exit Sketch button is visible")
-	if btn != null:
-		await _x11_click(btn)
+	if btn == null:
+		return
+	var n: Node = btn
+	while n != null:
+		if n is ScrollContainer:
+			(n as ScrollContainer).scroll_vertical = 0
+			(n as ScrollContainer).ensure_control_visible(btn)
+		n = n.get_parent()
+	await process_frame
+	await process_frame
+	var r: Rect2 = btn.get_global_rect()
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 400 and (r.size.x < 8.0 or r.position.x < 1.0):
 		await process_frame
-		await process_frame
-		await process_frame
+		r = btn.get_global_rect()
+	check(r.size.x > 8.0 and r.position.x > 1.0, "Exit Sketch clickable at %s" % r)
+	var vp: Viewport = ctx.main.get_viewport()
+	# Finish-bar DimLineEdit can sit on the Exit label at 1280×800. Click the
+	# icon (left) side of the button so the press hits Exit Sketch.
+	var pos := Vector2(r.position.x + 16.0, r.get_center().y)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	if chrome != null:
+		var dim: Control = chrome.find_child("DimLineEdit", true, false) as Control
+		if dim != null and dim.is_visible_in_tree():
+			var dr: Rect2 = dim.get_global_rect()
+			if dr.has_point(pos):
+				pos = Vector2(r.position.x + 10.0, r.position.y + 10.0)
+				if dr.has_point(pos):
+					pos = Vector2(r.end.x - 8.0, r.position.y + 8.0)
+	await _x11_click_screen(vp, pos)
+	await process_frame
+	await process_frame
+	await process_frame
 
 
 func _enter_ground_sketch(ctx: FilmContext) -> void:
@@ -421,6 +449,12 @@ func _reopen_sketch_from_timeline(ctx: FilmContext) -> void:
 	await process_frame
 	var sm: SketchMode = ctx.main.sketch_mode
 	check(sm != null and sm.active, "timeline double-click reopened the sketch")
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 800:
+		var exit_btn := _exit_btn(ctx.main)
+		if exit_btn != null and exit_btn.is_visible_in_tree():
+			break
+		await process_frame
 	if sm != null and sm.active:
 		await _zoom(ctx, Vector3.ZERO, 80.0)
 
@@ -550,11 +584,18 @@ func _wait_dialog(main, frames: int = 8) -> FileDialog:
 
 
 func _dirs_match(a: String, b: String) -> bool:
-	return a.replace("\\", "/").trim_suffix("/") == b.replace("\\", "/").trim_suffix("/")
+	return _norm_dir(a) == _norm_dir(b)
+
+
+func _norm_dir(p: String) -> String:
+	var s := p.replace("\\", "/").strip_edges()
+	if s == "/":
+		return "/"
+	return s.trim_suffix("/")
 
 
 func _dialog_dir(dlg: FileDialog) -> String:
-	return str(dlg.current_dir).replace("\\", "/").trim_suffix("/")
+	return _norm_dir(str(dlg.current_dir))
 
 
 func _find_dir_up(dlg: FileDialog) -> Button:
@@ -594,8 +635,42 @@ func _list_dialog_names(dlg: FileDialog) -> PackedStringArray:
 	return names
 
 
+func _wheel_list(lst: Control, down: bool) -> void:
+	var pos := lst.size * 0.5
+	if lst.has_method("get_screen_position"):
+		pos = lst.get_screen_position() + lst.size * 0.5
+	var vp := root.get_viewport()
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_WHEEL_DOWN if down else MOUSE_BUTTON_WHEEL_UP
+	ev.pressed = true
+	ev.position = pos
+	ev.global_position = pos
+	vp.push_input(ev)
+	var rel := ev.duplicate() as InputEventMouseButton
+	rel.pressed = false
+	vp.push_input(rel)
+	await process_frame
+
+
+func _itemlist_vscroll(lst: ItemList) -> VScrollBar:
+	for c in lst.find_children("*", "VScrollBar", true, false):
+		var sb := c as VScrollBar
+		if sb != null and sb.is_visible_in_tree():
+			return sb
+	return null
+
+
 func _click_dialog_row(dlg: FileDialog, needle: String) -> bool:
 	var want := needle.to_lower()
+	for c in dlg.find_children("*", "Button", true, false):
+		var b := c as Button
+		if b == null or not b.is_visible_in_tree():
+			continue
+		if str(b.text).to_lower() == want:
+			await _x11_click_embedded(b)
+			await process_frame
+			await process_frame
+			return true
 	for c in dlg.find_children("*", "ItemList", true, false):
 		var lst := c as ItemList
 		if lst == null or not lst.is_visible_in_tree():
@@ -604,11 +679,31 @@ func _click_dialog_row(dlg: FileDialog, needle: String) -> bool:
 			var text := lst.get_item_text(i)
 			if text.to_lower() != want and not text.to_lower().ends_with("/" + want):
 				continue
-			var rect: Rect2 = lst.get_item_rect(i)
-			var local := rect.position + rect.size * 0.5
-			await _x11_click_embedded_at(lst, local)
+			lst.select(i)
+			if lst.has_method("ensure_current_is_visible"):
+				lst.ensure_current_is_visible()
 			await process_frame
-			await _x11_click_embedded_at(lst, local, true)
+			await process_frame
+			var sb := _itemlist_vscroll(lst)
+			var rect: Rect2 = lst.get_item_rect(i)
+			var center := rect.position + rect.size * 0.5
+			if sb != null:
+				center.y -= sb.value
+			if center.y < 2.0 or center.y > lst.size.y - 2.0:
+				# Thumbnails keep content-space rects; scroll until the icon is in view.
+				for _w in 24:
+					rect = lst.get_item_rect(i)
+					center = rect.position + rect.size * 0.5
+					if sb != null:
+						center.y = rect.position.y + rect.size.y * 0.5 - sb.value
+					if center.y >= 4.0 and center.y <= lst.size.y - 4.0:
+						break
+					await _wheel_list(lst, center.y > lst.size.y * 0.5)
+					if sb != null:
+						sb = _itemlist_vscroll(lst)
+			await _x11_click_embedded_at(lst, center)
+			await process_frame
+			await _x11_click_embedded_at(lst, center, true)
 			await process_frame
 			await process_frame
 			return true
@@ -619,8 +714,7 @@ func _click_dialog_row(dlg: FileDialog, needle: String) -> bool:
 		var item := tree.get_root()
 		if item == null:
 			continue
-		if item.get_child_count() > 0:
-			item = item.get_first_child()
+		item = item.get_next_in_tree()
 		while item != null:
 			var text := item.get_text(0)
 			if text.to_lower() == want or text.to_lower().ends_with("/" + want):
@@ -634,7 +728,7 @@ func _click_dialog_row(dlg: FileDialog, needle: String) -> bool:
 				await process_frame
 				await process_frame
 				return true
-			item = item.get_next()
+			item = item.get_next_in_tree()
 	return false
 
 
@@ -646,37 +740,35 @@ func _click_into_export_dir(dlg: FileDialog) -> bool:
 		var here := _dialog_dir(dlg)
 		if _dirs_match(here, target):
 			return true
-		if here == target.get_base_dir() or _dirs_match(here, "/tmp"):
+		if _dirs_match(here, "/tmp") or _dirs_match(here, target.get_base_dir()):
 			if await _click_dialog_row(dlg, folder):
 				await process_frame
 				await process_frame
 				continue
-		if here == "/" or here == "":
+		elif _dirs_match(here, "/") or here == "":
 			if await _click_dialog_row(dlg, "tmp"):
 				await process_frame
 				await process_frame
 				continue
-		if here.begins_with(target + "/"):
+		elif here.begins_with(target + "/"):
 			var up := _find_dir_up(dlg)
 			if up != null:
 				await _x11_click_embedded(up)
 				await process_frame
 				await process_frame
 				continue
-		if await _click_dialog_row(dlg, folder):
-			await process_frame
-			await process_frame
-			continue
-		if await _click_dialog_row(dlg, "tmp"):
-			await process_frame
-			await process_frame
-			continue
-		var up_btn := _find_dir_up(dlg)
-		if up_btn != null:
-			await _x11_click_embedded(up_btn)
-			await process_frame
-			await process_frame
-			continue
+		else:
+			if await _click_dialog_row(dlg, "tmp"):
+				await process_frame
+				await process_frame
+				if _dirs_match(_dialog_dir(dlg), "/tmp") or _dirs_match(_dialog_dir(dlg), target):
+					continue
+			var up_btn := _find_dir_up(dlg)
+			if up_btn != null:
+				await _x11_click_embedded(up_btn)
+				await process_frame
+				await process_frame
+				continue
 		break
 	check(false, "clicked into %s (now %s, rows %s)" % [
 			target, _dialog_dir(dlg), ", ".join(_list_dialog_names(dlg))])
@@ -696,6 +788,14 @@ func _type_dialog_name(dlg: FileDialog, name: String) -> void:
 
 func _test_bare_export_uses_dialog_folder(ctx: FilmContext, main) -> void:
 	print("- File → Export 3MF, click into non-HOME dir, type nut.3mf")
+	var sm: SketchMode = main.sketch_mode
+	if sm != null and sm.active:
+		await _finish_extrude(ctx)
+	if _body_count(ctx) < 1:
+		await _enter_ground_sketch(ctx)
+		await _draw_rectangle(ctx)
+		await _finish_extrude(ctx)
+	check(_body_count(ctx) >= 1, "a solid exists before export")
 	DirAccess.make_dir_recursive_absolute(EXPORT_DIR)
 	DirAccess.make_dir_recursive_absolute(ABS_EXPORT.get_base_dir())
 	var dest := EXPORT_DIR.path_join(EXPORT_NAME)
