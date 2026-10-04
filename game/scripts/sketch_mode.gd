@@ -117,6 +117,9 @@ var _hover: Vector2 = Vector2.ZERO
 ## When ≥ 0, rubber-band length/radius is locked to this value; mouse only
 ## steers direction. Cleared on tool change / Esc / after the next commit click.
 var _length_override: float = -1.0
+## Last named commit sentence (polygon AF, circle radius, centre-to-flat).
+## Empty means the caller should keep a generic length status.
+var _last_commit_text := ""
 ## Set by snap_point when a snap applied; drawn as a small cross in preview.
 var _snap_marker: Variant = null  # Vector2 | null
 ## Active SELECT-tool geometry drag. Empty when idle. Keys when dragging:
@@ -401,6 +404,7 @@ func _activate_session() -> void:
 	_tool_points.clear()
 	_drag.clear()
 	_smart_dim_pending.clear()
+	_last_commit_text = ""
 	dimensions.clear()
 	intersection_points.clear()
 	_clear_dimension_labels()
@@ -496,7 +500,7 @@ func exit_sketch() -> String:
 	else:
 		if sketch.entity_ids().is_empty():
 			cancel()
-			status.emit("Empty sketch discarded")
+			status.emit("Empty sketch discarded — nothing was drawn")
 			return ""
 		fid = view.doc.graph_add_sketch(sketch)
 		if fid == "":
@@ -529,9 +533,10 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	if not active:
 		return
 	# Auto-commit an in-progress Polygon/Circle/Rect tip so Extrude doesn't
-	# see only a preview ghost and report "open profile".
+	# see only a preview ghost and report "open profile". Typed length wins
+	# over the cursor when a dim override is set.
 	if has_pending_draw_point():
-		click(_hover)
+		click(effective_hover() if _length_override >= 0.0 else _hover)
 	_try_close_open_chain()
 	# Two circles plus tangents split into a holed face. Replace each boss
 	# the lines land on with its outer arc so the blank extrudes solid.
@@ -916,13 +921,28 @@ func effective_hover() -> Vector2:
 
 
 ## Commit the next click at `length` along the current hover direction.
-## Returns false when no single-DOF preview is active.
+## Returns false when no single-DOF preview is active, or when `length` is
+## below MIN_SEGMENT_MM (typed arm must not sneak a 0.01 mm segment through).
 func commit_at_length(length: float) -> bool:
 	if not has_single_dof_preview():
+		return false
+	if length < MIN_SEGMENT_MM:
+		status.emit("Too short")
 		return false
 	set_length_override(length)
 	click(effective_hover())
 	return true
+
+
+## Sentence from the last polygon-AF / circle / centre-to-flat commit.
+func last_commit_text() -> String:
+	return _last_commit_text
+
+
+## True when this session is a new sketch with no entities yet.
+func is_empty_new_sketch() -> bool:
+	return active and editing_fid == "" and sketch != null \
+			and sketch.entity_ids().is_empty()
 
 
 func variants_for_tool(t: Tool = tool) -> Array:
@@ -2411,6 +2431,7 @@ func _redraw_selected() -> void:
 func click(pos2: Vector2) -> void:
 	if not active:
 		return
+	_last_commit_text = ""
 	# A dimension label sits a few millimetres off the geometry. Snapping first
 	# pulls that click onto the line and the in-sketch editor never opens.
 	if tool == Tool.SELECT:
@@ -2421,14 +2442,14 @@ func click(pos2: Vector2) -> void:
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
 	if tool != Tool.TRIM and tool != Tool.EXTEND:
 		pos2 = snap_point(pos2)
-	# Typed length wins over snap: keep direction toward the pick, lock distance.
+	# Typed length wins over the cursor: keep the pick's direction, lock the
+	# distance to effective_hover() so a 4 mm click with override 20 commits 20.
 	if _length_override >= 0.0 and has_single_dof_preview():
-		var last: Vector2 = _tool_points[_tool_points.size() - 1]
-		var d := pos2 - last
-		if d.length_squared() < 1e-12:
-			pos2 = last + Vector2(_length_override, 0.0)
-		else:
-			pos2 = last + d.normalized() * _length_override
+		if _length_override < MIN_SEGMENT_MM:
+			status.emit("Too short")
+			return
+		_hover = pos2
+		pos2 = effective_hover()
 		_length_override = -1.0
 	match tool:
 		Tool.SELECT:
@@ -2518,7 +2539,8 @@ func click(pos2: Vector2) -> void:
 					run_solve()
 					_weld_loop(lids)
 					if tool_variant == "across_flats":
-						status.emit("Polygon AF %.4f" % drag)
+						_last_commit_text = "Polygon AF %.4f" % drag
+						status.emit(_last_commit_text)
 				_tool_points.clear()
 				_redraw()
 		Tool.POINT:
@@ -2675,6 +2697,8 @@ func _click_circle(pos2: Vector2) -> void:
 				var r := c.distance_to(_tool_points[1])
 				if r > 1e-6:
 					sketch.add_circle(c.x, c.y, r)
+					_last_commit_text = "Circle r=%.4f (Ø%.4f)" % [r, r * 2.0]
+					status.emit(_last_commit_text)
 				_tool_points.clear()
 	_redraw()
 
@@ -2887,6 +2911,8 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 			{"entity": str(pt["entity"]), "role": str(pt.get("role", "center"))},
 			{"entity": line_id, "role": "self"}], dist)
 		_record_dimension("distance", [str(pt["entity"]), line_id], dist, cid)
+		_last_commit_text = "centre-to-flat %.4f" % dist
+		status.emit(_last_commit_text)
 		run_solve()
 		_redraw()
 		return
