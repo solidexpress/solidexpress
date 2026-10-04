@@ -3182,8 +3182,6 @@ func _lock_sized_circle(id: String) -> void:
 		return
 	if _entity_has_constraint(id, "fix"):
 		return
-	if not _entity_has_constraint(id, "radius") and not _entity_has_constraint(id, "diameter"):
-		sketch.add_constraint("radius", [{"entity": id, "role": "self"}], r)
 	sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
 
 

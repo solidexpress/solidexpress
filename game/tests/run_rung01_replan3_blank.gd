@@ -129,11 +129,16 @@ func test_tangent_blank_and_open_vertex() -> void:
 	await _assert_thin_off(ctx)
 	await _type_distance(ctx, "10")
 	before = _count_type(ctx, "extrude")
+	_status_log.clear()
 	await _press_extrude(ctx, "Extrude closed wrench blank 10")
 	await process_frame
 	await process_frame
-	st = _latest_status(ctx)
-	check(not st.contains("open profile"), "closed blank status is not an open profile (%s)" % st)
+	var open_again := false
+	for s in _status_log:
+		if str(s).contains("open profile"):
+			open_again = true
+	check(not open_again, "closed blank did not emit open profile (%s)" % ",".join(_status_log))
+	check(not sm.active, "closed blank leaves sketch mode")
 	check(_count_type(ctx, "extrude") == before + 1, "blank extrude added")
 	check(_count_type(ctx, "primitive") == 0, "blank is not a primitive")
 	var body := _only_body(ctx)
