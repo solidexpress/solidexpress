@@ -118,7 +118,11 @@ func test_discard_open_profile_then_circle() -> void:
 	_status_log.clear()
 	var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
 	check(exit_btn != null and exit_btn.is_visible_in_tree(), "Exit Sketch is visible")
-	await _x11_click(exit_btn)
+	# Finish-bar DimLineEdit can sit on the Exit label at 1280×800. Click the
+	# icon (left) side so the press hits Exit Sketch.
+	var r: Rect2 = exit_btn.get_global_rect()
+	var pos := Vector2(r.position.x + 16.0, r.get_center().y)
+	await _x11_click_screen(ctx.main.get_viewport(), pos)
 	await process_frame
 	await process_frame
 	sm = ctx.main.sketch_mode
