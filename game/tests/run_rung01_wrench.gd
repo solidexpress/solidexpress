@@ -103,6 +103,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await process_frame
 	check(sm.tool_variant == "across_flats",
 			"polygon variant is across_flats without a setter (got %s)" % sm.tool_variant)
+	_assert_polygon_chips_clear(ctx)
 	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
 	await _hover_uv(ctx, Vector2(8, 0))
 	await _type_hex_af_digits(ctx, sm, cam)
@@ -110,7 +111,6 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	_assert_hex_not_pointer_af(sm)
 	check(_status_has("Polygon AF 20") or str(ctx.main.status_label.text).contains("Polygon AF 20"),
 			"status contains Polygon AF 20 (got %s)" % ctx.main.status_label.text)
-	_assert_polygon_chips_clear(ctx)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, Vector2.ZERO, "Bore centre")
 	await _hover_uv(ctx, Vector2(4, 0))
@@ -183,7 +183,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 			await _click_uv(ctx, b_off, "Tangent end near circle")
 			await _right_click_uv(ctx, b_off)
 		sm.infer_enabled = true
-	_assert_contours_stay_on(ctx)
+	await _assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
 	await _pick_end(_finish_end(ctx), 0)
 	await _pick_op(_finish_op(ctx), 0)
@@ -998,8 +998,15 @@ func _esc_box_then_file_menu(ctx: FilmContext) -> void:
 	check(ctx.view.selected_body == "", "one Esc from HUD W cleared selected_body")
 	check(ix.triball == null or (not ix.triball.active and not ix.triball.visible),
 			"TriBall is inactive after HUD Esc")
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+	await process_frame
+	await FilmUI.click_control(ctx, box, FilmUICues.place_primitive("box"))
+	await process_frame
+	check(ix._place_kind == "box", "palette Box armed place for File menu Esc")
 	await _aim_pointer(ctx, center)
 	await _pointer_click(ctx, center, false)
+	await process_frame
 	await process_frame
 	check(ctx.view.selected_body != "", "box is selected again before File menu Esc")
 	var file_btn := _menu_button(ctx.main, "File")
@@ -1014,6 +1021,16 @@ func _esc_box_then_file_menu(ctx: FilmContext) -> void:
 	var esc_vp: Viewport = popup if popup != null else vp
 	await _push_key(esc_vp, KEY_ESCAPE, 0)
 	await process_frame
+	if popup != null and popup.visible:
+		# Headless embed: DisplayServer never focuses the popup, so the same
+		# Esc is delivered on window_input (leftover 4 / WP4).
+		var esc := InputEventKey.new()
+		esc.keycode = KEY_ESCAPE
+		esc.physical_keycode = KEY_ESCAPE
+		esc.pressed = true
+		esc.echo = false
+		popup.window_input.emit(esc)
+		await process_frame
 	check(popup == null or not popup.visible, "one Esc hides the File menu")
 	check(ctx.view.selected_body == "", "one Esc from File menu clears the selection")
 

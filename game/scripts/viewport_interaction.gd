@@ -1854,6 +1854,11 @@ func _gui_input(event: InputEvent) -> void:
 	if _try_consume_preview_length_key(event):
 		accept_event()
 		return
+	# Second digit of an unfocused KEY_2 KEY_0 pair: handle before the LineEdit
+	# select-all from grab_focus replaces the seed with "0".
+	if _try_append_focused_dim_length_key(event):
+		accept_event()
+		return
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
 	if camera != null and camera.is_nav_event(event, allow_scroll):
 		if camera.handle_input(event, allow_scroll):
@@ -1914,6 +1919,14 @@ func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
 	# Sibling docks / palette buttons / menus own their GUI clicks. Stealing
 	# them via `_input` + set_input_as_handled breaks "click Box to place".
 	# Camera nav is handled earlier in `_input` and still works over docks.
+	# Stale hover (toolbar / dim blank from a previous click) must not drop a
+	# later canvas click whose event position is no longer on that sibling —
+	# WP5 push_input parks the pointer, but headless hover can lag.
+	if event_pos != Vector2.INF:
+		var hr: Rect2 = h.get_global_rect()
+		if hr.has_point(event_pos):
+			return false
+		return true
 	return false
 
 
@@ -2240,11 +2253,17 @@ func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			# A new canvas press starts a new length-entry; leftover-10's
+			# KEY_2 KEY_0 buffer must not leak into a later focused _type_dim.
+			_preview_length_typed = ""
 			# Read the dim blank before dropping focus so a typed length still
 			# wins on this press. Missing typed_dim_value (WP1) keeps click().
+			# Only polygon/circle: a leftover dim number must not steal a LINE
+			# click (wrench shaft tangents).
 			var typed_len: Variant = null
 			if sketch_chrome != null and sketch_chrome.has_method("typed_dim_value") \
-					and sketch_mode.has_single_dof_preview():
+					and sketch_mode.has_single_dof_preview() \
+					and _sketch_skips_mouse_up_commit():
 				typed_len = sketch_chrome.typed_dim_value()
 			# Drop the dim blank before the canvas consumes the click, so the
 			# next key is a sketch hotkey and not another digit in the field.
@@ -3914,6 +3933,9 @@ func _input(event: InputEvent) -> void:
 	# already uses; it has to run first. Skip when a field already has focus
 	# so the second digit appends instead of replacing the seed.
 	if _try_consume_preview_length_key(event):
+		get_viewport().set_input_as_handled()
+		return
+	if _try_append_focused_dim_length_key(event):
 		get_viewport().set_input_as_handled()
 		return
 	# Suppress camera nav keys while a text edit control owns focus so digits
