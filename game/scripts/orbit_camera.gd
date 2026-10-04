@@ -11,7 +11,7 @@ extends Camera3D
 ## Keyboard: arrows pan (Shift+arrows orbit); WASD fly (in/out + strafe);
 ## Alt+WASD screen-pan; +/- and PageUp/Down zoom; F / Home zoom-extents;
 ## 1/2/3/7 views; 5 ortho. Wheel / pan over ScrollContainers are left alone.
-## While sketch view is locked, plain WASD stays with sketch tools (S/A/D).
+## While sketch view is locked, plain WASD and 1/2/3/5/7 stay with sketch tools.
 
 ## Fired after yaw/pitch/distance/pivot/projection update the camera transform.
 ## Overlay gizmos connect so they redraw only when the view actually moves.
@@ -201,7 +201,8 @@ func note_screen_touch(st: InputEventScreenTouch) -> bool:
 	return was_multi
 
 
-## Keys owned by the camera. Number-row views are claimed here; Interaction
+## Keys owned by the camera. Number-row views are claimed here unless the
+## sketch camera is locked (digits type into the dim blank). Interaction also
 ## suppresses them while sketch length-entry / text fields are active.
 func _is_nav_key(k: InputEventKey) -> bool:
 	if not k.pressed or k.ctrl_pressed or k.meta_pressed:
@@ -210,7 +211,7 @@ func _is_nav_key(k: InputEventKey) -> bool:
 		KEY_F, KEY_HOME:
 			return true
 		KEY_1, KEY_2, KEY_3, KEY_5, KEY_7:
-			return not k.alt_pressed
+			return not k.alt_pressed and not sketch_orientation_locked
 		KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN:
 			return true
 		KEY_PAGEUP, KEY_PAGEDOWN:
@@ -395,20 +396,28 @@ func _handle_nav_key(k: InputEventKey) -> bool:
 			frame_selection_or_all(k.shift_pressed)
 			return true
 		KEY_1:  # front: looking along -Y in model space (Z-up kernel)
+			if sketch_orientation_locked:
+				return false
 			apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0))
 			return true
 		KEY_2:  # right: looking along -X
+			if sketch_orientation_locked:
+				return false
 			apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0))
 			return true
 		KEY_3:  # top: looking down model +Z (world +Y)
+			if sketch_orientation_locked:
+				return false
 			apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0))
 			return true
 		KEY_7:  # isometric
+			if sketch_orientation_locked:
+				return false
 			apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0))
 			return true
 		KEY_5:
 			if sketch_orientation_locked:
-				return true
+				return false
 			toggle_projection()
 			return true
 		KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN:
