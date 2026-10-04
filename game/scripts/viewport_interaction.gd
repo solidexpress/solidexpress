@@ -1320,15 +1320,17 @@ func _input_up_to_face_pick(event: InputEvent) -> bool:
 	return false
 
 
-## One Esc outside a sketch: release a focused LineEdit, drop TriBall when
-## the gizmo is active or visible, and clear the selection. Returns true
-## when at least one of those did something. Sketch Esc does not call this.
+## One Esc outside a sketch: release a focused LineEdit / SpinBox (HUD W/H/D),
+## drop TriBall when the gizmo is active or visible, and clear the selection.
+## Clearing the selection is what hides the rotate rings and the lift grip.
+## Returns true when at least one of those did something. Sketch Esc does not
+## call this.
 func cancel_stack() -> bool:
 	var acted := false
 	var vp := get_viewport()
 	if vp != null:
 		var focus := vp.gui_get_focus_owner()
-		if focus is LineEdit and focus.has_focus():
+		if _should_release_cancel_focus(focus):
 			focus.release_focus()
 			acted = true
 	if triball != null and (triball.active or triball.visible):
@@ -1345,6 +1347,21 @@ func cancel_stack() -> bool:
 		status.emit("Selection cleared")
 		acted = true
 	return acted
+
+
+## True when Esc should drop focus from a LineEdit, a SpinBox, or a control
+## sitting inside a SpinBox (the TransformHud W/H/D editors).
+func _should_release_cancel_focus(focus: Control) -> bool:
+	if focus == null or not focus.has_focus():
+		return false
+	if focus is LineEdit or focus is TextEdit or focus is CodeEdit or focus is SpinBox:
+		return true
+	var p: Node = focus
+	while p != null:
+		if p is SpinBox:
+			return true
+		p = p.get_parent()
+	return false
 
 
 func _commit_pick_sketch_host(screen_pos: Vector2) -> void:
@@ -2210,6 +2227,12 @@ func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			# Read the dim blank before dropping focus so a typed length still
+			# wins on this press. Missing typed_dim_value (WP1) keeps click().
+			var typed_len: Variant = null
+			if sketch_chrome != null and sketch_chrome.has_method("typed_dim_value") \
+					and sketch_mode.has_single_dof_preview():
+				typed_len = sketch_chrome.typed_dim_value()
 			# Drop the dim blank before the canvas consumes the click, so the
 			# next key is a sketch hotkey and not another digit in the field.
 			if sketch_chrome != null:
@@ -2228,6 +2251,9 @@ func _sketch_input(event: InputEvent) -> void:
 						and not sketch_mode.drag_hit(p2).is_empty():
 					sketch_mode.begin_drag(p2)
 					_sketch_dragging = true
+				elif typeof(typed_len) == TYPE_FLOAT or typeof(typed_len) == TYPE_INT:
+					sketch_mode.hover(p2)
+					sketch_mode.commit_at_length(float(typed_len))
 				else:
 					sketch_mode.click(p2)
 			accept_event()
@@ -2254,7 +2280,11 @@ func _sketch_input(event: InputEvent) -> void:
 				# A stationary release is the first click of a two-click tool.
 				# Leave the anchor in place. reject_tiny_draw (WP2) is only for
 				# a second point that actually moved, and only by a hair.
-				if p2_up2 != null and travel >= CLICK_SLOP:
+				# Polygon and circle commit on a second press (or Enter), not
+				# mouse-up — a shaky release must not bake the pointer length.
+				# Line drag-draw is unchanged.
+				if p2_up2 != null and travel >= CLICK_SLOP \
+						and not _sketch_skips_mouse_up_commit():
 					sketch_mode.click(p2_up2)
 			accept_event()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -2335,6 +2365,15 @@ func _sketch_input(event: InputEvent) -> void:
 				else:
 					sketch_mode.cancel()
 		accept_event()
+
+
+## Polygon and circle: the second point is a second press or Enter, not the
+## mouse-up that ends the first click. Preview still tracks via hover.
+func _sketch_skips_mouse_up_commit() -> bool:
+	if sketch_mode == null:
+		return false
+	return sketch_mode.tool == SketchMode.Tool.POLYGON \
+			or sketch_mode.tool == SketchMode.Tool.CIRCLE
 
 
 func _is_length_type_key(ke: InputEventKey) -> bool:
@@ -3785,6 +3824,22 @@ func _input(event: InputEvent) -> void:
 	# Magnify must never fall through place/sketch even if scroll gating diffs.
 	if event is InputEventMagnifyGesture and camera != null:
 		if camera.handle_input(event, true):
+			get_viewport().set_input_as_handled()
+			return
+	# Length keys during a single-DOF rubber-band seed the dim blank before
+	# OrbitCamera claims 1/2/3/5/7 as standard views. Same seed _sketch_input
+	# already uses; it has to run first. Skip when a field already has focus
+	# so the second digit appends instead of replacing the seed.
+	if event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed:
+		var ke_len := event as InputEventKey
+		if sketch_mode != null and sketch_mode.active \
+				and sketch_mode.has_single_dof_preview() \
+				and _is_length_type_key(ke_len) \
+				and not _text_field_has_focus() \
+				and not _sketch_keys_blocked():
+			if sketch_chrome != null:
+				sketch_chrome.focus_dim_for_typing(_length_type_seed(ke_len))
 			get_viewport().set_input_as_handled()
 			return
 	# Suppress camera nav keys while a text edit control owns focus so digits
