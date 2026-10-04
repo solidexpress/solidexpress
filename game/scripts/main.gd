@@ -2015,6 +2015,12 @@ func _on_datum_offset_confirmed() -> void:
 func _on_status(text: String) -> void:
 	if text != "":
 		status_label.text = text
+	# Timeline double-click calls begin_edit without the pad-click path, so
+	# sketch chrome (Exit Sketch, tools) would stay hidden. Show it whenever
+	# a live session has no rail yet.
+	if sketch_mode != null and sketch_mode.active \
+			and sketch_toolbar != null and not sketch_toolbar.visible:
+		_on_sketch_session_started(text)
 
 
 func _build_paste_special_dialog(parent: Node) -> void:
