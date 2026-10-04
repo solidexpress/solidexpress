@@ -52,6 +52,14 @@ var _dim_editing := false
 var _dim_syncing := false
 ## SpinBox's deferred submit treats "23.22.5" as 23.22. Hold the previous value.
 var _dim_rejecting := false
+## Distance LineEdit: ignore our own value/text writes, and hold the spin
+## value from focus-in so an unparseable string cannot leave a truncated .value.
+var _distance_syncing := false
+var _distance_rejecting := false
+var _distance_origin := 20.0
+## Bumped on click and on typed text so a pending next-frame select_all cannot
+## re-select the first digit and let the second key replace it.
+var _distance_select_gen := 0
 ## Face id for an Up To Surface end. The finish signal does not carry it;
 ## finish_extrude reads this after the extrude feature exists.
 var up_to_face_id := ""
@@ -145,13 +153,19 @@ func _build_finish_bar() -> void:
 	_extrude_spin.tooltip_text = "Blind distance (ignored for Through All cuts)"
 	_fit_spin(_extrude_spin)
 	var dist_edit := _extrude_spin.get_line_edit()
+	dist_edit.name = "DistanceLineEdit"
 	dist_edit.gui_input.connect(_on_distance_edit_gui_input)
 	dist_edit.text_changed.connect(_on_distance_text_changed)
+	dist_edit.text_submitted.connect(_on_distance_text_submitted)
+	dist_edit.focus_entered.connect(_on_distance_focus_entered)
+	dist_edit.focus_exited.connect(_on_distance_focus_exited)
 	_finish_bar.add_child(_extrude_spin)
 	_extrude_readout = Label.new()
 	_extrude_readout.name = "ExtrudeReadout"
 	_extrude_readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_extrude_readout.custom_minimum_size = Vector2(0, _chip_h())
+	# Wide enough for "Extrude 20 mm" and "Extrude 7.5 mm" without clipping.
+	_extrude_readout.custom_minimum_size = Vector2(UiScale.px(128), _chip_h())
+	_extrude_readout.clip_text = false
 	_extrude_readout.tooltip_text = "Distance the next Extrude will send"
 	_finish_bar.add_child(_extrude_readout)
 	_refresh_extrude_readout(_extrude_spin.value)
@@ -261,6 +275,46 @@ func extrude_distance() -> float:
 		distance_rejected.emit(_distance_raw_text())
 		return prev
 	return float(parsed)
+
+
+## True when the Distance LineEdit is one float after prefix/suffix stripping.
+func distance_line_parses() -> bool:
+	return _parse_spin_text(_extrude_spin, _distance_raw_text()) != null
+
+
+## Focus the Distance LineEdit for typed blind distance. Optional seed digit
+## or decimal replaces the text (WP2 unfocused burst). A parsed seed is stored
+## on the spin and on ExtrudeReadout.
+func focus_distance_for_typing(seed: String = "") -> void:
+	if _extrude_spin == null:
+		return
+	var edit := _extrude_spin.get_line_edit()
+	if edit == null:
+		return
+	_distance_origin = _extrude_spin.value
+	edit.grab_focus()
+	if seed != "" and seed.is_valid_float():
+		var v := float(seed)
+		_write_extrude_spin(v, seed)
+		edit.caret_column = seed.length()
+		edit.deselect()
+		edit.deselect.call_deferred()
+	elif seed != "":
+		_distance_syncing = true
+		edit.text = seed
+		_distance_syncing = false
+		edit.caret_column = seed.length()
+		edit.deselect()
+		edit.deselect.call_deferred()
+		var parsed: Variant = _parse_spin_text(_extrude_spin, seed)
+		if parsed != null:
+			_write_extrude_spin(float(parsed), seed)
+		else:
+			_write_extrude_spin(_distance_origin, seed)
+	else:
+		_select_distance_all()
+		_select_distance_all.call_deferred()
+		_select_distance_all_next_frame.call_deferred(_distance_select_gen)
 
 
 ## Parsed dim LineEdit number while that text is a single float, else null.
@@ -445,9 +499,89 @@ func _commit_distance_text() -> Variant:
 	var parsed: Variant = _parse_spin_text(_extrude_spin, _distance_raw_text())
 	if parsed == null:
 		return null
-	_extrude_spin.value = float(parsed)
-	_refresh_extrude_readout(float(parsed))
+	_write_extrude_spin(float(parsed))
+	_distance_origin = float(parsed)
 	return parsed
+
+
+## Write Distance onto the spin and ExtrudeReadout. keep_text restores the
+## LineEdit so setting .value cannot replace in-progress digits with "7.0".
+func _write_extrude_spin(v: float, keep_text: String = "") -> void:
+	if _extrude_spin == null:
+		return
+	var edit := _extrude_spin.get_line_edit()
+	var text := keep_text
+	var caret := 0
+	var had_sel := false
+	var sel_from := 0
+	var sel_to := 0
+	if edit != null:
+		if text == "":
+			text = edit.text
+		caret = edit.caret_column
+		had_sel = edit.has_selection()
+		if had_sel:
+			sel_from = edit.get_selection_from_column()
+			sel_to = edit.get_selection_to_column()
+	_distance_syncing = true
+	_extrude_spin.value = v
+	_apply_distance_line(edit, text, caret, had_sel, sel_from, sel_to)
+	_distance_syncing = false
+	_refresh_extrude_readout(v)
+	# SpinBox formats the line on a deferred update ("7" → "7.0"). Re-assert
+	# the typed string so the next key can still make 7.5.
+	if text != "":
+		_reassert_distance_line.call_deferred(text, caret, had_sel, sel_from, sel_to)
+
+
+func _apply_distance_line(edit: LineEdit, text: String, caret: int, had_sel: bool,
+		sel_from: int, sel_to: int) -> void:
+	if edit == null:
+		return
+	if edit.text != text:
+		edit.text = text
+	edit.caret_column = caret
+	if had_sel:
+		edit.select(sel_from, sel_to)
+
+
+func _reassert_distance_line(text: String, caret: int, had_sel: bool,
+		sel_from: int, sel_to: int) -> void:
+	if _extrude_spin == null:
+		return
+	_distance_syncing = true
+	_apply_distance_line(_extrude_spin.get_line_edit(), text, caret, had_sel,
+			sel_from, sel_to)
+	_distance_syncing = false
+
+
+func _select_distance_all() -> void:
+	if _extrude_spin == null:
+		return
+	var edit := _extrude_spin.get_line_edit()
+	if edit != null:
+		edit.select_all()
+
+
+func _select_distance_all_next_frame(gen: int = -1) -> void:
+	if gen < 0:
+		gen = _distance_select_gen
+	if is_inside_tree() and get_tree() != null:
+		await get_tree().process_frame
+	if gen != _distance_select_gen:
+		return
+	_select_distance_all()
+
+
+func _restore_rejected_distance(keep: float, keep_text: String = "") -> void:
+	# SpinBox applies a truncated parse on a deferred text_submitted / focus
+	# exit. Wait one frame so this write wins, then restore the junk string
+	# so Extrude still sees an unparseable line.
+	if is_inside_tree() and get_tree() != null:
+		await get_tree().process_frame
+	_distance_rejecting = false
+	var raw := keep_text if keep_text != "" else _distance_raw_text()
+	_write_extrude_spin(keep, raw)
 
 
 func _refresh_extrude_readout(v: float) -> void:
@@ -457,10 +591,52 @@ func _refresh_extrude_readout(v: float) -> void:
 
 
 func _on_distance_text_changed(new_text: String) -> void:
+	if _distance_syncing or _distance_rejecting:
+		return
+	# A pending next-frame select_all from the focusing click must not win
+	# over the first typed digit (7 then . would become ".5").
+	_distance_select_gen += 1
 	var parsed: Variant = _parse_spin_text(_extrude_spin, new_text)
 	if parsed == null:
+		# Leave .value at the last good parse. "7." is a prefix of 7.5; do not
+		# snap the spin back to the focus-in 20 while the user is still typing.
 		return
-	_refresh_extrude_readout(float(parsed))
+	_write_extrude_spin(float(parsed), new_text)
+
+
+func _on_distance_text_submitted(raw: String) -> void:
+	if _distance_syncing:
+		return
+	var parsed: Variant = _parse_spin_text(_extrude_spin, raw)
+	if parsed == null:
+		_distance_rejecting = true
+		distance_rejected.emit(raw)
+		_restore_rejected_distance(_distance_origin, raw)
+		return
+	_write_extrude_spin(float(parsed))
+	_distance_origin = float(parsed)
+
+
+func _on_distance_focus_entered() -> void:
+	if _extrude_spin != null:
+		_distance_origin = _extrude_spin.value
+	# Mouse clicks select-all from the release path so the caret click cannot
+	# win. Keyboard focus selects immediately.
+	if _extrude_spin == null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		return
+	_select_distance_all()
+
+
+func _on_distance_focus_exited() -> void:
+	if _distance_syncing or _distance_rejecting:
+		return
+	var raw := _distance_raw_text()
+	var parsed: Variant = _parse_spin_text(_extrude_spin, raw)
+	if parsed == null:
+		_restore_rejected_distance(_distance_origin, raw)
+		return
+	_write_extrude_spin(float(parsed))
+	_distance_origin = float(parsed)
 
 
 func _on_dim_focus_entered() -> void:
@@ -626,8 +802,14 @@ func _on_dim_text_changed(new_text: String) -> void:
 func _on_distance_edit_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
+		# Every left click, including the one that finds the field already
+		# focused. Deferred so it runs after LineEdit places the caret, and
+		# again next frame so the caret cannot win.
 		if mb.button_index == MOUSE_BUTTON_LEFT and _extrude_spin != null:
-			_extrude_spin.get_line_edit().call_deferred("select_all")
+			_distance_select_gen += 1
+			var gen := _distance_select_gen
+			_select_distance_all.call_deferred()
+			_select_distance_all_next_frame(gen)
 
 
 func _on_dim_edit_gui_input(event: InputEvent) -> void:
@@ -648,8 +830,8 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 
 func set_extrude_distance(v: float) -> void:
 	if _extrude_spin:
-		_extrude_spin.value = v
-		_refresh_extrude_readout(v)
+		_write_extrude_spin(v)
+		_distance_origin = v
 
 
 func set_finish_op(op: String) -> void:
