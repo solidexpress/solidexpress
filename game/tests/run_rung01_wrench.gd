@@ -170,20 +170,19 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _draw_circle_typed(ctx, Vector2(200, 0), "22.5", true)
 	var circs := _circles(sm)
 	check(circs.size() == 2, "blank has two circles")
-	# Shaft lines sit on the external tangents of the Ø20 and Ø45. Clicks are
-	# a few tenths of a millimetre off the exact contact so snap + inference
-	# close them. Inference stays on for the whole blank.
+	# Shaft 20 wide: lines at y=±10, tangent to the Ø20, meeting the Ø45 at
+	# the concave neck. Clicks are a few tenths off the contacts so snap +
+	# inference close them. Trim the inner arcs so one outer contour remains.
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
-	if circs.size() == 2:
-		await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-		var c1: Vector2 = circs[0]["center"]
-		var c2: Vector2 = circs[1]["center"]
-		var r1 := float(circs[0]["radius"])
-		var r2 := float(circs[1]["radius"])
-		var tangents := _external_tangents(c1, r1, c2, r2)
-		check(tangents.size() == 2, "two external tangents")
-		for pair in tangents:
-			await _draw_tangent_segment(ctx, pair, c1, c2)
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
+	for sign in [1.0, -1.0]:
+		await _draw_shaft_line(ctx, far_x, sign)
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
+	await _zoom_uv(ctx, Vector2(9.5, 0), 40.0)
+	await _click_uv(ctx, Vector2(9.5, 0), "Trim Ø20 inner half")
+	await _zoom_uv(ctx, Vector2(177.5, 0), 40.0)
+	await _click_uv(ctx, Vector2(177.5, 0), "Trim Ø45 inner arc")
+	await process_frame
 	await _assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
 	await _pick_end(_finish_end(ctx), 0)
@@ -208,6 +207,8 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(absf(ext.x - 232.5) <= TOL, "blank bbox X %.3f" % ext.x)
 	check(absf(ext.y - 45.0) <= TOL, "blank bbox Y %.3f" % ext.y)
 	check(absf(ext.z - 10.0) <= TOL, "blank bbox Z %.3f" % ext.z)
+	var blank_mesh := _load_mesh(ctx.view.doc, body)
+	check(_inside(blank_mesh, Vector3(90, 0, 5)), "shaft is solid at (90, 0, 5)")
 
 	print("- hole and open jaw, Up To Surface")
 	var top := _face_along(ctx, body, 1)
@@ -1289,39 +1290,28 @@ func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 	await _aim_pointer(ctx, screen)
 
 
+func _draw_shaft_line(ctx: FilmContext, far_x: float, sign: float) -> void:
+	var y := 10.0 * sign
+	var a := Vector2(0.0, y)
+	var b := Vector2(far_x, y)
+	var c1 := Vector2.ZERO
+	var c2 := Vector2(200.0, 0.0)
+	var a_off := a + (a - c1).normalized() * 0.3
+	var b_dir := b - c2
+	var b_off := b + (b_dir.normalized() if b_dir.length_squared() > 1e-8 else Vector2(0, sign)) * 0.3
+	await _zoom_uv(ctx, a_off, 90.0)
+	await _click_uv(ctx, a_off, "Shaft start near Ø20")
+	await _zoom_uv(ctx, b_off, 90.0)
+	await _click_uv(ctx, b_off, "Shaft end near Ø45")
+	await _right_click_uv(ctx, b_off)
+
+
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String, second_click: bool) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text, second_click)
-
-
-func _draw_tangent_segment(ctx: FilmContext, pair: Dictionary, c1: Vector2, c2: Vector2) -> void:
-	var a: Vector2 = pair["a"]
-	var b: Vector2 = pair["b"]
-	var a_off := a + (a - c1).normalized() * 0.3
-	var b_off := b + (b - c2).normalized() * 0.3
-	await _zoom_uv(ctx, a_off, 90.0)
-	await _click_uv(ctx, a_off, "Tangent start near circle")
-	await _zoom_uv(ctx, b_off, 90.0)
-	await _click_uv(ctx, b_off, "Tangent end near circle")
-	await _right_click_uv(ctx, b_off)
-
-
-func _external_tangents(c1: Vector2, r1: float, c2: Vector2, r2: float) -> Array:
-	var d := c2 - c1
-	var dist := d.length()
-	var along := (r2 - r1) / dist
-	var perp := sqrt(maxf(0.0, 1.0 - along * along))
-	var u := d / dist
-	var side := Vector2(-u.y, u.x)
-	var out: Array = []
-	for sign in [1.0, -1.0]:
-		var s := float(sign)
-		var n: Vector2 = u * along + side * (perp * s)
-		out.append({"a": c1 - n * r1, "b": c2 - n * r2})
-	return out
 
 
 func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
@@ -1649,16 +1639,6 @@ func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
 	# Shaft interior on z=0 — on the bottom face, away from the jaw at x=200.
 	# Same camera as WP2's working Up To Surface pick: pitch -75, not ±89.
 	var target := Vector3(90.0, 0.0, 0.0)
-	var body := ctx.view.selected_body
-	if body == "":
-		var ids: PackedStringArray = ctx.view.doc.body_ids()
-		if not ids.is_empty():
-			body = str(ids[0])
-	var picked: Vector3 = FilmUI.face_pick_point(ctx.view, body, bottom)
-	if picked != Vector3.INF and absf(picked.z) <= 1.5:
-		target = Vector3(picked.x, picked.y, 0.0)
-		if absf(target.y) > 8.0:
-			target.y = 0.0
 	if cam._view_tween != null and cam._view_tween.is_valid():
 		cam._view_tween.kill()
 		cam._view_tween = null
@@ -1667,19 +1647,12 @@ func _click_bottom_face(ctx: FilmContext, bottom: String) -> void:
 	cam.pivot = ms.to_global(target) if ms != null else target
 	cam.distance = 180.0
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.set_view(cam.yaw, deg_to_rad(-75.0), false)
+	cam.set_view(deg_to_rad(180.0), deg_to_rad(-75.0), false)
 	await process_frame
 	await process_frame
 	var screen: Vector2 = ix._model_to_screen(target)
 	var ray: Array = ix._model_ray(screen)
 	var hit: Dictionary = ctx.view.pick_info(ray[0], ray[1])
-	if str(hit.get("face", "")) == "":
-		cam.set_view(deg_to_rad(180.0), deg_to_rad(-75.0), false)
-		await process_frame
-		await process_frame
-		screen = ix._model_to_screen(target)
-		ray = ix._model_ray(screen)
-		hit = ctx.view.pick_info(ray[0], ray[1])
 	if str(hit.get("face", "")) == "":
 		# Sketch top-down: first hit is the host; the pick walks through to the far face.
 		await _zoom(ctx, target, 80.0)
