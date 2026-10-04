@@ -12,6 +12,8 @@ signal finish_requested(op: String, distance: float, end: String,
 signal dim_submitted(value: float)
 ## Blank text did not parse. WP4 wires this to the status line.
 signal dim_rejected(raw: String)
+## Extrude pressed (or distance read) while the Distance text does not parse.
+signal distance_rejected(raw: String)
 
 const CHIP_H := 28
 const CHIP_PAD := 6
@@ -35,6 +37,8 @@ var _selected_contours: Array = []  # int indices; empty = all
 var _dim_spin: SpinBox
 var _extrude_btn: Button
 var _distance_label: Label
+var _extrude_readout: Label
+var _dim_cue: Label
 var _thin_label: Label
 var _thin_feature: CheckButton
 var _thin_badge: Label
@@ -57,8 +61,10 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_variant_bar = _make_bar()
+	_variant_bar.name = "VariantBar"
 	_action_bar = _make_bar()
 	_finish_bar = _make_bar()
+	_finish_bar.name = "FinishBar"
 	_contour_bar = _make_bar()
 	_build_finish_bar()
 	_finish_bar.visible = false
@@ -95,12 +101,21 @@ func _build_finish_bar() -> void:
 	_dim_spin.select_all_on_focus = true
 	_dim_spin.tooltip_text = "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
 	_fit_spin(_dim_spin)
+	_dim_cue = Label.new()
+	_dim_cue.name = "DimRadiusCue"
+	_dim_cue.text = "r"
+	_dim_cue.visible = false
+	_dim_cue.custom_minimum_size = Vector2(UiScale.px(16), _chip_h())
+	_dim_cue.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_dim_cue.tooltip_text = "Circle radius (mm). The number in the blank is the radius, not the diameter."
+	_finish_bar.add_child(_dim_cue)
 	_finish_bar.add_child(_dim_spin)
 	var dim_edit := _dim_spin.get_line_edit()
 	dim_edit.name = "DimLineEdit"
 	dim_edit.focus_entered.connect(_on_dim_focus_entered)
 	dim_edit.focus_exited.connect(func() -> void: _dim_editing = false)
 	dim_edit.text_submitted.connect(_on_dim_text_submitted)
+	dim_edit.text_changed.connect(_on_dim_text_changed)
 	dim_edit.gui_input.connect(_on_dim_edit_gui_input)
 	_dim_spin.value_changed.connect(_on_dim_value_changed)
 	var dim_btn := Button.new()
@@ -129,8 +144,17 @@ func _build_finish_bar() -> void:
 	_extrude_spin.select_all_on_focus = true
 	_extrude_spin.tooltip_text = "Blind distance (ignored for Through All cuts)"
 	_fit_spin(_extrude_spin)
-	_extrude_spin.get_line_edit().gui_input.connect(_on_distance_edit_gui_input)
+	var dist_edit := _extrude_spin.get_line_edit()
+	dist_edit.gui_input.connect(_on_distance_edit_gui_input)
+	dist_edit.text_changed.connect(_on_distance_text_changed)
 	_finish_bar.add_child(_extrude_spin)
+	_extrude_readout = Label.new()
+	_extrude_readout.name = "ExtrudeReadout"
+	_extrude_readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_extrude_readout.custom_minimum_size = Vector2(0, _chip_h())
+	_extrude_readout.tooltip_text = "Distance the next Extrude will send"
+	_finish_bar.add_child(_extrude_readout)
+	_refresh_extrude_readout(_extrude_spin.value)
 	_finish_end = OptionButton.new()
 	_finish_end.name = "FinishEnd"
 	_finish_end.tooltip_text = "Extrude end: Blind / Through All / Midplane / Up To Surface"
@@ -155,10 +179,7 @@ func _build_finish_bar() -> void:
 	for n in ["New", "Cut", "Fuse"]:
 		_finish_op.add_item(n)
 	_finish_op.custom_minimum_size = Vector2(64, _chip_h())
-	# Default for cuts: make through cuts go Through All unless the user overrides.
-	_finish_op.item_selected.connect(func(_idx: int) -> void:
-		if _finish_end != null and _finish_op.selected == 1:  # Cut
-			set_finish_end("through_all"))
+	# Cut must not auto-select Through All; that silently drops Up To Surface.
 	_finish_bar.add_child(_finish_op)
 	_thin_feature = CheckButton.new()
 	_thin_feature.name = "ThinFeature"
@@ -230,8 +251,26 @@ func dim_value() -> float:
 	return _dim_spin.value if _dim_spin else 10.0
 
 
+## Parse the Distance LineEdit first. On success store it on the spin and
+## return it so Extrude without Enter still sends the typed number. On
+## failure return the previous spin value and emit distance_rejected.
 func extrude_distance() -> float:
-	return _extrude_spin.value if _extrude_spin else 20.0
+	var prev := _extrude_spin.value if _extrude_spin else 20.0
+	var parsed: Variant = _commit_distance_text()
+	if parsed == null:
+		distance_rejected.emit(_distance_raw_text())
+		return prev
+	return float(parsed)
+
+
+## Parsed dim LineEdit number while that text is a single float, else null.
+func typed_dim_value() -> Variant:
+	if _dim_spin == null:
+		return null
+	var edit := _dim_spin.get_line_edit()
+	if edit == null:
+		return null
+	return _parse_spin_text(_dim_spin, edit.text)
 
 
 ## Sync from mouse rubber-band. Skipped while the user is typing in the blank.
@@ -371,17 +410,57 @@ func _plain_num(v: float) -> String:
 
 
 func _emit_finish_requested() -> void:
+	var parsed: Variant = _commit_distance_text()
+	if parsed == null:
+		distance_rejected.emit(_distance_raw_text())
+		return
+	var dist := float(parsed)
 	var thin := 0.0
 	if _thin_feature != null and _thin_feature.button_pressed and _thin_spin != null:
 		thin = _thin_spin.value
 	finish_requested.emit(
 		["new", "cut", "fuse"][_finish_op.selected],
-		_extrude_spin.value,
+		dist,
 		["blind", "through_all", "midplane", "to_face"][_finish_end.selected],
 		thin,
 		["one_side", "midplane"][_thin_type.selected],
 		_flip_side.button_pressed,
 		_selected_contours.duplicate())
+
+
+func _distance_raw_text() -> String:
+	if _extrude_spin == null:
+		return ""
+	var edit := _extrude_spin.get_line_edit()
+	if edit == null:
+		return ""
+	return edit.text
+
+
+## Store a parsed Distance value on the spin. Null when the LineEdit is not a
+## single float (for example "20.07.5"). Does not emit distance_rejected.
+func _commit_distance_text() -> Variant:
+	if _extrude_spin == null:
+		return null
+	var parsed: Variant = _parse_spin_text(_extrude_spin, _distance_raw_text())
+	if parsed == null:
+		return null
+	_extrude_spin.value = float(parsed)
+	_refresh_extrude_readout(float(parsed))
+	return parsed
+
+
+func _refresh_extrude_readout(v: float) -> void:
+	if _extrude_readout == null:
+		return
+	_extrude_readout.text = "Extrude %s mm" % _plain_num(v)
+
+
+func _on_distance_text_changed(new_text: String) -> void:
+	var parsed: Variant = _parse_spin_text(_extrude_spin, new_text)
+	if parsed == null:
+		return
+	_refresh_extrude_readout(float(parsed))
 
 
 func _on_dim_focus_entered() -> void:
@@ -428,11 +507,15 @@ func _restore_rejected_dim(keep: float) -> void:
 ## Number in the blank, after Godot's "prefix + space" / "space + suffix" chrome.
 ## Null when the raw string is not a single float (for example "23.22.5").
 func _parse_dim_text(raw: String) -> Variant:
+	return _parse_spin_text(_dim_spin, raw)
+
+
+func _parse_spin_text(spin: SpinBox, raw: String) -> Variant:
 	var text := raw.strip_edges()
-	if text.is_empty() or _dim_spin == null:
+	if text.is_empty() or spin == null:
 		return null
-	var prefix := str(_dim_spin.prefix)
-	var suffix := str(_dim_spin.suffix)
+	var prefix := str(spin.prefix)
+	var suffix := str(spin.suffix)
 	if prefix != "":
 		var spaced := prefix + " "
 		if text.begins_with(spaced):
@@ -454,24 +537,32 @@ func _parse_dim_text(raw: String) -> Variant:
 	return v
 
 
-## Across-flats reads the typed length as AF. Circle keeps a radius number and
-## shows Ø so the blank matches Smart Dimension's diameter.
+## Across-flats reads the typed length as AF. Circle keeps a radius number; the
+## r cue is a label, not a prefix glued to the digits.
 func _sync_dim_affordance() -> void:
 	if _dim_spin == null:
 		return
 	var suffix := "mm"
 	var prefix := ""
 	var tip := "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
+	var show_r := false
 	if sketch_mode != null and sketch_mode.tool == SketchMode.Tool.POLYGON \
 			and sketch_mode.tool_variant == "across_flats":
 		suffix = " AF"
 		tip = "Across flats — typed length is the AF, not the circumradius"
 	elif sketch_mode != null and sketch_mode.tool == SketchMode.Tool.CIRCLE:
-		prefix = "Ø"
-		tip = "Circle radius (mm). Ø marks diameter; Smart Dimension drives Ø = 2× this radius"
-	_dim_spin.suffix = suffix
-	_dim_spin.prefix = prefix
+		show_r = true
+		tip = "Circle radius (mm). The r label is the radius; diameter is 2× this number"
+	var was_syncing := _dim_syncing
+	_dim_syncing = true
+	if _dim_spin.suffix != suffix:
+		_dim_spin.suffix = suffix
+	if str(_dim_spin.prefix) != prefix:
+		_dim_spin.prefix = prefix
 	_dim_spin.tooltip_text = tip
+	_dim_syncing = was_syncing
+	if _dim_cue != null:
+		_dim_cue.visible = show_r
 
 
 func dim_is_editing() -> bool:
@@ -517,6 +608,17 @@ func _on_dim_value_changed(v: float) -> void:
 		sketch_mode.set_length_override(v)
 
 
+func _on_dim_text_changed(new_text: String) -> void:
+	if _dim_syncing or _dim_rejecting:
+		return
+	var parsed: Variant = _parse_spin_text(_dim_spin, new_text)
+	if parsed == null:
+		return
+	_apply_slot_radius(float(parsed))
+	if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
+		sketch_mode.set_length_override(float(parsed))
+
+
 func _on_distance_edit_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -543,6 +645,7 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 func set_extrude_distance(v: float) -> void:
 	if _extrude_spin:
 		_extrude_spin.value = v
+		_refresh_extrude_readout(v)
 
 
 func set_finish_op(op: String) -> void:
@@ -642,6 +745,8 @@ func show_for_session(on: bool) -> void:
 		# Sit to the right of the icon sketch rail, under the top chrome row.
 		_place_bar(_finish_bar, Vector2(60, 42))
 		_sync_dim_affordance()
+		if _extrude_spin != null:
+			_refresh_extrude_readout(_extrude_spin.value)
 		if sketch_mode != null and sketch_mode.sketch != null:
 			refresh_contours(sketch_mode.sketch)
 	else:
@@ -663,7 +768,46 @@ func show_variants(kind: String, variants: Array, screen_pos: Vector2) -> void:
 		b.pressed.connect(func() -> void: variant_chosen.emit(kind, label))
 		_variant_bar.add_child(b)
 	_variant_bar.visible = not variants.is_empty()
-	_place_bar(_variant_bar, screen_pos + Vector2(12, -_chip_h() - CHIP_PAD))
+	# Ignore a caller Y that would pull the chips up into the finish bar.
+	if _variant_bar.visible:
+		place_variant_row(screen_pos.x)
+
+
+## Stack variant chips on the next row under the finish bar. Caller Y is not
+## used; rail_x is the left edge. WP4 calls this instead of show_variants(y=80).
+func place_variant_row(rail_x: float) -> void:
+	if _variant_bar == null:
+		return
+	if _variant_bar.get_child_count() > 0:
+		_variant_bar.visible = true
+	if not _variant_bar.visible:
+		return
+	_place_bar(_variant_bar, Vector2(rail_x, _finish_bar_bottom() + float(CHIP_PAD)))
+	_keep_variant_below_finish()
+
+
+func _finish_bar_bottom() -> float:
+	if _finish_bar == null:
+		return 42.0 + float(_chip_h())
+	_finish_bar.reset_size()
+	var top := _finish_bar.position.y
+	if _finish_bar.visible and _finish_bar.size.y <= 0.0:
+		top = 42.0
+	var h := maxf(_finish_bar.size.y, _finish_bar.get_combined_minimum_size().y)
+	if h <= 0.0:
+		h = float(_chip_h())
+	return top + h
+
+
+func _keep_variant_below_finish() -> void:
+	if _variant_bar == null or _finish_bar == null:
+		return
+	if not _variant_bar.visible or not _finish_bar.visible:
+		return
+	var fr := _finish_bar.get_global_rect()
+	var need_y := fr.position.y + fr.size.y + float(CHIP_PAD)
+	if _variant_bar.global_position.y < need_y:
+		_variant_bar.global_position.y = need_y
 
 
 func hide_variants() -> void:
