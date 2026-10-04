@@ -375,11 +375,18 @@ func _screen_for_face(ctx: FilmContext, face_id: String) -> Vector2:
 		return Vector2.INF
 	var pt: Vector3 = mid
 	var bb: Dictionary = ctx.view.doc.measure_bbox(face_id)
-	if not bb.is_empty():
-		# Front looks along −Y; sit the click on the visible +Y edge of the face.
-		pt = Vector3(float((bb["min"] as Vector3).x + (bb["max"] as Vector3).x) * 0.5,
-				float((bb["max"] as Vector3).y) - 0.4,
-				float((bb["min"] as Vector3).z + (bb["max"] as Vector3).z) * 0.5)
+	if not bb.is_empty() and ctx.main.camera != null and ctx.main.model_space != null:
+		# Sit on the camera-facing half of the face so a Front/Right click
+		# lands on the visible edge, not the far side.
+		var inv: Transform3D = ctx.main.model_space.global_transform.affine_inverse()
+		var cam_m: Vector3 = inv * ctx.main.camera.global_position
+		var mn: Vector3 = bb["min"]
+		var mx: Vector3 = bb["max"]
+		var toward := cam_m - (mid as Vector3)
+		pt = Vector3(
+			(mx.x if toward.x >= 0.0 else mn.x) * 0.35 + (mid as Vector3).x * 0.65,
+			(mx.y if toward.y >= 0.0 else mn.y) * 0.35 + (mid as Vector3).y * 0.65,
+			(mx.z if toward.z >= 0.0 else mn.z) * 0.35 + (mid as Vector3).z * 0.65)
 	var screen := FilmUI.model_to_screen(ctx, pt)
 	if FilmUI.is_on_screen(ctx, screen):
 		return screen

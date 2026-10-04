@@ -1369,14 +1369,106 @@ func _commit_up_to_face_pick(screen_pos: Vector2) -> void:
 				or _up_to_face_is_side_wall(face_id, str(hit.get("body", "")), sketch_n):
 			origin = pt + dir * 0.05
 			continue
-		var body_id := str(hit.get("body", ""))
-		# Highlight the picked face. Stay in the sketch; do not place a point.
-		view.select_entity(body_id, face_id)
-		if sketch_chrome.has_method("set_up_to_face"):
-			sketch_chrome.set_up_to_face(face_id)
-		_finish_up_to_face_gesture()
+		_apply_up_to_face_pick(face_id, str(hit.get("body", "")))
+		return
+	# Front / Right look along the sketch plane, so the bottom face is
+	# edge-on and pick_info misses it. A ray that grazes that face still
+	# counts — same id Opposite face would store.
+	var grazed := _up_to_face_from_graze(ray[0], dir, sketch_n)
+	if grazed != "":
+		_apply_up_to_face_pick(grazed, _up_to_pick_body())
 		return
 	status.emit("Click a model face for Up To Surface")
+
+
+func _apply_up_to_face_pick(face_id: String, body_id: String) -> void:
+	if face_id == "":
+		return
+	view.select_entity(body_id, face_id)
+	if sketch_chrome != null and sketch_chrome.has_method("set_up_to_face"):
+		sketch_chrome.set_up_to_face(face_id)
+	_finish_up_to_face_gesture()
+
+
+func _up_to_pick_body() -> String:
+	if view == null:
+		return ""
+	if sketch_mode != null and str(sketch_mode.target_fid) != "":
+		if view.has_method("body_of_feature"):
+			var from_target := str(view.body_of_feature(sketch_mode.target_fid))
+			if from_target != "":
+				return from_target
+	if view.selected_body != "":
+		return str(view.selected_body)
+	if view.doc != null and view.doc.has_method("body_ids"):
+		var ids: PackedStringArray = view.doc.body_ids()
+		if ids.size() == 1:
+			return str(ids[0])
+	return ""
+
+
+## Face the screen ray grazes: used when Front/Right looks along a planar face
+## so the mesh pick only sees side walls. Prefers faces aligned with the
+## sketch normal (top/bottom) whose plane the ray stays in.
+func _up_to_face_from_graze(origin: Vector3, dir: Vector3, sketch_n: Vector3) -> String:
+	if view == null or view.doc == null or not view.doc.has_method("get_face_ids"):
+		return ""
+	var body := _up_to_pick_body()
+	if body == "" or dir.length_squared() < 1e-16:
+		return ""
+	dir = dir.normalized()
+	var n := sketch_n
+	if n.length_squared() > 1e-12:
+		n = n.normalized()
+	var best_id := ""
+	var best_score := -INF
+	for face_id_v in view.doc.get_face_ids(body):
+		var face_id := str(face_id_v)
+		if _up_to_face_is_sketch_plane(face_id):
+			continue
+		var mid: Variant = view.doc.face_midpoint(face_id)
+		if not (mid is Vector3):
+			continue
+		var fn: Vector3 = view.face_normal(body, face_id) if view.has_method("face_normal") \
+				else Vector3.ZERO
+		if fn.length_squared() < 1e-12:
+			continue
+		fn = fn.normalized()
+		var denom := fn.dot(dir)
+		var hit_pt: Vector3
+		var graze := 0.0
+		if absf(denom) < 0.12:
+			var plane_d := absf((origin - (mid as Vector3)).dot(fn))
+			if plane_d > 1.5:
+				continue
+			var t: float = ((mid as Vector3) - origin).dot(dir)
+			if t < -0.5:
+				continue
+			hit_pt = origin + dir * maxf(t, 0.0)
+			graze = plane_d
+		else:
+			var t: float = ((mid as Vector3) - origin).dot(fn) / denom
+			if t < 0.0:
+				continue
+			hit_pt = origin + dir * t
+		var bb: Dictionary = view.doc.measure_bbox(face_id)
+		if not bb.is_empty():
+			var mn: Vector3 = bb["min"]
+			var mx: Vector3 = bb["max"]
+			var pad := 1.25
+			if hit_pt.x < mn.x - pad or hit_pt.x > mx.x + pad \
+					or hit_pt.y < mn.y - pad or hit_pt.y > mx.y + pad \
+					or hit_pt.z < mn.z - pad or hit_pt.z > mx.z + pad:
+				continue
+		var align := absf(fn.dot(n)) if n.length_squared() > 1e-12 else 0.0
+		var along := -((mid as Vector3) - (
+				sketch_mode.plane_origin if sketch_mode != null else origin)).dot(
+				n if n.length_squared() > 1e-12 else fn)
+		var score := align * 1000.0 + along - graze
+		if score > best_score:
+			best_score = score
+			best_id = face_id
+	return best_id
 
 
 func _up_to_face_is_side_wall(face_id: String, body_id: String, sketch_n: Vector3) -> bool:
