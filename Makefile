@@ -95,6 +95,12 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_rung01_replan2_shell.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan2_layout.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan2_camera.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan3_distance.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan3_input.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan3_blank.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan3_timeline.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan3_fillet.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_replan3_shell.gd
 
 lint-rung01-e2e:
 	python3 tools/lint_rung01_e2e.py
