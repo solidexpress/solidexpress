@@ -34,7 +34,7 @@ func _assert_source_hygiene() -> void:
 	var src := FileAccess.get_file_as_string("res://tests/run_rung01_replan4_smartdim.gd")
 	check(not src.contains("interaction." + "_input"), "test source has no interaction input hook")
 	check(not src.contains("id_pressed" + ".emit"), "test source has no id_pressed emit")
-	check(not src.contains("set_dimension" + "_value"), "test source has no set_dimension_value")
+	check(not src.contains("set_dimension" + "_value"), "test source has no dimension setter")
 	check(not src.contains("text_submitted" + ".emit"), "test source has no text_submitted emit")
 	check(not src.contains("focus_dim" + "_for_typing"), "test source has no dim typing helper")
 	check(not src.contains("focus_distance" + "_for_typing"), "test source has no distance typing helper")
