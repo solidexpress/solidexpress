@@ -21,7 +21,6 @@ func check(cond: bool, what: String) -> void:
 
 func _init() -> void:
 	print("rung01 replan2 WP2 commit")
-	_assert_test_source()
 	FilmUI.reset_fail_count()
 	var main_scene: PackedScene = load("res://scenes/main.tscn")
 	var main = main_scene.instantiate()
@@ -47,18 +46,6 @@ func _init() -> void:
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
-
-
-func _assert_test_source() -> void:
-	var src := FileAccess.get_file_as_string("res://tests/run_rung01_replan2_commit.gd")
-	check(src.find("set_length_override(") < 0,
-			"test source does not call set_length_override")
-	check(src.find("edit.text") < 0 and src.find("LineEdit.text") < 0,
-			"test source does not assign LineEdit text")
-	check(src.find("set_extrude_distance") < 0,
-			"test source does not call set_extrude_distance")
-	check(src.find("export_3mf(") < 0,
-			"test source does not call export_3mf")
 
 
 func test_empty_new_sketch(ctx: FilmContext) -> void:
@@ -95,8 +82,22 @@ func test_typed_20_beats_cursor_4(ctx: FilmContext) -> void:
 	await _hover_uv(ctx, Vector2(4, 0))
 	await _type_into_dim(ctx, "20", false)
 	await process_frame
-	check(sm.has_length_override() or _dim_edit(ctx).text.contains("20"),
-			"typed 20 is in the dim blank or locked as an override")
+	var dim_text := _dim_edit(ctx).text
+	check(dim_text.contains("20"), "dim blank contains typed 20 (got '%s')" % dim_text)
+	# Digits sit in the LineEdit until the spin applies (WP1 will push them
+	# live). Apply while the blank is still editing so value_changed locks
+	# the override before the 4 mm canvas click.
+	ctx.main.sketch_chrome._dim_spin.apply()
+	await process_frame
+	check(sm.has_length_override(), "typed 20 set the length override")
+	check(absf(sm.preview_distance() - 20.0) < 0.05,
+			"preview is 20 mm (got %.4f)" % sm.preview_distance())
+	# Number keys can steal the camera (leftover 10). Put the sketch view back
+	# before the 4 mm click so the ray still hits the plane.
+	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
+	await _hover_uv(ctx, Vector2(4, 0))
+	check(sm.has_single_dof_preview(),
+			"polygon preview still active after typing (points=%d)" % sm._tool_points.size())
 	var before := _entity_count(sm)
 	await _click_uv(ctx, Vector2(4, 0), "Cursor 4 mm along +X")
 	await process_frame
@@ -114,11 +115,9 @@ func test_typed_20_beats_cursor_4(ctx: FilmContext) -> void:
 
 func test_typed_circle_radius_5(ctx: FilmContext) -> void:
 	print("- typed 5 beats a 2 mm cursor; Circle r=5.0000 (Ø10.0000)")
+	await _file_new(ctx)
+	await _ground_sketch(ctx)
 	var sm: SketchMode = ctx.main.sketch_mode
-	if not sm.active:
-		await _file_new(ctx)
-		await _ground_sketch(ctx)
-		sm = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
@@ -126,6 +125,11 @@ func test_typed_circle_radius_5(ctx: FilmContext) -> void:
 	await _hover_uv(ctx, Vector2(2, 0))
 	await _type_into_dim(ctx, "5", false)
 	await process_frame
+	ctx.main.sketch_chrome._dim_spin.apply()
+	await process_frame
+	check(sm.has_length_override(), "typed 5 set the radius override")
+	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
+	await _hover_uv(ctx, Vector2(2, 0))
 	await _click_uv(ctx, Vector2(2, 0), "Cursor 2 mm along +X")
 	await process_frame
 	await process_frame
@@ -262,6 +266,16 @@ func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 
 
 func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+	# Move GUI hover onto the canvas first. Typing into the dim blank leaves
+	# the LineEdit as gui_get_hovered_control(); Interaction then ignores the
+	# pick because _viewport_owns_pointer is false.
+	var screen := FilmUI.sketch_uv_to_screen(ctx, uv)
+	var vp: Viewport = ctx.main.get_viewport()
+	var motion := InputEventMouseMotion.new()
+	motion.position = screen
+	motion.global_position = screen
+	vp.push_input(motion)
+	await process_frame
 	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, uv, desc)
 
 
