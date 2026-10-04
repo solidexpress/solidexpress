@@ -1644,6 +1644,16 @@ func constrain(type: String, value: float = 0.0) -> String:
 	if type == "distance" or type == "radius" or type == "diameter" or type == "angle" or absf(value) > 0.0:
 		_record_dimension(type, selected.duplicate(), value, cid)
 	var res: Dictionary = run_solve()
+	if str(res.get("status", "")) == "failed" and cid != "":
+		# Same as a failed drag: drop the relation that did not stick and
+		# leave last_solve_status on the previous good solve.
+		if sketch.has_method("remove_constraint"):
+			sketch.remove_constraint(cid)
+		for i in range(dimensions.size() - 1, -1, -1):
+			if str(dimensions[i].get("cid", "")) == cid:
+				dimensions.remove_at(i)
+		res = run_solve()
+		status.emit("Relation did not stick")
 	_redraw()
 	_redraw_selected()
 	return res["status"]
