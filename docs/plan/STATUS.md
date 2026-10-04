@@ -2,6 +2,11 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Rung 1 replan 2 WP2 follow-up (typed length / wrench walk)
+- `SketchMode.click` still locks a typed length over the cursor (`Polygon AF 20.0000` / `Circle r=5.0000`). It must not write the pick into `_hover` or snap an already-scaled tip: that steers a pending slot/arm onto projected model points and opens the wrench mesh.
+- `finish_extrude` / `commit_at_length` pass the live hover into `click()` so snap is at the pointer; `click()` then applies `_length_override`.
+- Gate: `run_rung01_wrench.gd` 163/0 and `run_rung01_replan2_commit.gd`.
+
 ## Operating protocol (current)
 - Most implementation work goes to Grok background agents with exclusive, non-overlapping file sets and scratch build dirs; Fable only integrates, reviews, fixes failures, and commits.
 - NO actions that require user approval: run only command shapes that auto-approve (sandboxed cmake/ctest builds; allowlisted `make test` and `tools/godot/godot --headless ...`). Subagents must never request elevated permissions — if verification is blocked in the sandbox, report it as pending for the integrator to run.
