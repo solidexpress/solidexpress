@@ -105,6 +105,8 @@ func test_typed_canvas_click_af20(ctx: FilmContext) -> void:
 				check(is_equal_approx(float(typed), 20.0),
 						"typed_dim_value is 20 (got %s)" % str(typed))
 	var short_pt := _uv_screen(ctx, Vector2(4, 0))
+	# Leave the dim LineEdit so Interaction._input is not blocked by chrome hover.
+	await _aim_screen(ctx, short_pt)
 	_ix_hover(ctx, short_pt)
 	_ix_click_pair(ctx, short_pt, short_pt)
 	await process_frame
@@ -165,9 +167,9 @@ func test_digits_before_camera(ctx: FilmContext) -> void:
 	check(sm.has_single_dof_preview(), "preview is active before typing digits")
 	var dim := _dim_edit(ctx)
 	check(dim != null, "dim LineEdit exists for digit seed")
-	if dim != null and dim.has_focus():
-		dim.release_focus()
-		await process_frame
+	# Canvas _input does not move GUI focus. Drop a leftover Distance/dim
+	# LineEdit so KEY_2 is a length seed, not a blocked nav key.
+	await _release_gui_focus(ctx)
 	check(dim == null or not dim.has_focus(), "dim blank is not focused before KEY_2")
 	var basis0: Basis = cam.global_basis
 	var yaw0: float = cam.yaw
@@ -258,6 +260,23 @@ func _hud_w_edit(ix: ViewportInteraction) -> LineEdit:
 
 func _uv_screen(ctx: FilmContext, uv: Vector2) -> Vector2:
 	return FilmUI.model_to_screen(ctx, ctx.main.sketch_mode.to_model(uv))
+
+
+func _aim_screen(ctx: FilmContext, screen: Vector2) -> void:
+	var vp: Viewport = ctx.main.interaction.get_viewport()
+	var mm := InputEventMouseMotion.new()
+	mm.position = screen
+	mm.global_position = screen
+	vp.push_input(mm)
+	await process_frame
+
+
+func _release_gui_focus(ctx: FilmContext) -> void:
+	var vp: Viewport = ctx.main.interaction.get_viewport()
+	var focus: Control = vp.gui_get_focus_owner()
+	if focus != null:
+		focus.release_focus()
+	await process_frame
 
 
 func _ix_hover(ctx: FilmContext, screen: Vector2) -> void:
