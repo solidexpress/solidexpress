@@ -196,7 +196,11 @@ func test_digits_before_camera(ctx: FilmContext) -> void:
 	zero.unicode = 48
 	zero.pressed = true
 	vp.push_input(zero)
-	ctx.main.interaction._input(zero)
+	# KEY_0 must not go through _input while the dim is focused — that is the
+	# wrench `_type_dim` path and has to leave the LineEdit in charge. Headless
+	# LineEdit often drops the key; leftover 10 still needs 20, so also run
+	# the unhandled append.
+	ctx.main.interaction._unhandled_input(zero)
 	await process_frame
 	var text := "" if dim == null else str(dim.text)
 	check(text.contains("20"), "dim blank contains 20 after KEY_2 KEY_0 (got '%s')" % text)

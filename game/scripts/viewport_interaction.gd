@@ -3849,17 +3849,38 @@ func _try_consume_preview_length_key(event: InputEvent) -> bool:
 	var ke := event as InputEventKey
 	if not _is_length_type_key(ke):
 		return false
+	# A focused dim / distance / HUD field types the digit itself. Do not
+	# replace that string with a one-key seed (wrench `_type_dim` clicks the
+	# blank first). The second KEY_0 of an unfocused KEY_2 KEY_0 pair is
+	# appended in `_unhandled_input` when the LineEdit never eats it.
+	if _text_field_has_focus() or _sketch_keys_blocked():
+		return false
+	_preview_length_typed = _length_type_seed(ke)
+	if sketch_chrome != null:
+		sketch_chrome.focus_dim_for_typing(_preview_length_typed)
+	return true
+
+
+func _try_append_focused_dim_length_key(event: InputEvent) -> bool:
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if sketch_mode == null or not sketch_mode.active \
+			or not sketch_mode.has_single_dof_preview() \
+			or not _is_length_type_key(ke) \
+			or _preview_length_typed.is_empty():
+		return false
 	var edit := _dim_line_edit()
-	var dim_focused := edit != null and edit.has_focus()
-	# Another numeric field (HUD, Distance, …) keeps the key. The dim blank
-	# itself still has to append: focus_dim_for_typing(one digit) would replace.
-	if not dim_focused and (_text_field_has_focus() or _sketch_keys_blocked()):
+	if edit == null or not edit.has_focus():
 		return false
 	var seed := _length_type_seed(ke)
-	if dim_focused and not _preview_length_typed.is_empty():
-		_preview_length_typed += seed
-	else:
-		_preview_length_typed = seed
+	if seed.is_empty():
+		return false
+	# Only continue a leftover-10 seed started while the blank was unfocused.
+	# Wrench `_type_dim` clicks the blank first, so the buffer is empty and
+	# the LineEdit keeps the keys even if this unhandled path also fires.
+	_preview_length_typed += seed
 	if sketch_chrome != null:
 		sketch_chrome.focus_dim_for_typing(_preview_length_typed)
 	return true
@@ -3869,6 +3890,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Headless Viewport.push_input with no GUI focus owner never reaches
 	# _input/_gui_input on this Control; leftover 10 still has to seed the blank.
 	if _try_consume_preview_length_key(event):
+		get_viewport().set_input_as_handled()
+		return
+	# Second digit: the dim blank is focused so consume skipped. A live
+	# LineEdit already ate the key (unhandled does not run). Headless often
+	# does not, and leftover 10 still has to turn KEY_2 KEY_0 into 20.
+	if _try_append_focused_dim_length_key(event):
 		get_viewport().set_input_as_handled()
 
 
