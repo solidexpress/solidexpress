@@ -142,6 +142,20 @@ func _x11_click_at(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
+## Embedded FileDialog only sees the click on the root viewport, in screen
+## space — same as PopupMenu (push_input on the dialog Window does not hit
+## the Cancel/OK/name widgets). Same-burst X11 sequence as `_x11_click`.
+func _x11_click_embedded(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	if ctrl.has_method("get_screen_position"):
+		pos = ctrl.get_screen_position() + ctrl.size * 0.5
+	else:
+		var win := ctrl.get_viewport()
+		if win is Window:
+			pos = Vector2((win as Window).position) + pos
+	await _x11_click_at(root.get_viewport(), pos)
+
+
 func _push_enter(vp: Viewport) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = KEY_ENTER
@@ -288,7 +302,7 @@ func _type_dialog_path(dlg: FileDialog, path: String) -> void:
 	check(edit != null, "dialog name LineEdit exists")
 	if edit == null:
 		return
-	await _x11_click(edit)
+	await _x11_click_embedded(edit)
 	await process_frame
 	await _x11_type(edit.get_viewport(), path)
 	await process_frame
@@ -344,7 +358,7 @@ func _test_export_cancel(ctx: FilmContext, main) -> void:
 	var cancel := dlg.get_cancel_button()
 	check(cancel != null and cancel.is_visible_in_tree(), "Export Cancel is visible")
 	if cancel != null:
-		await _x11_click(cancel)
+		await _x11_click_embedded(cancel)
 		await process_frame
 		await process_frame
 	check(dlg != null and not dlg.visible, "Cancel hides the Export dialog")
@@ -361,7 +375,7 @@ func _test_wm_close_hides(ctx: FilmContext, main) -> void:
 	check(dlg != null and dlg.visible, "Export dialog is visible before WM close")
 	if dlg == null or not dlg.visible:
 		return
-	main.notification(NOTIFICATION_WM_CLOSE_REQUEST)
+	main.notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
 	await process_frame
 	await process_frame
 	check(not dlg.visible, "WM_CLOSE_REQUEST hides the file dialog")
@@ -386,7 +400,7 @@ func _test_export_ok(ctx: FilmContext, main) -> void:
 	var ok := dlg.get_ok_button()
 	check(ok != null and ok.is_visible_in_tree(), "Export OK is visible")
 	if ok != null:
-		await _x11_click(ok)
+		await _x11_click_embedded(ok)
 		await process_frame
 		await process_frame
 		await process_frame
@@ -411,7 +425,7 @@ func _test_save_as(ctx: FilmContext, main) -> void:
 	var cancel := dlg.get_cancel_button()
 	check(cancel != null and cancel.is_visible_in_tree(), "Save As Cancel is visible")
 	if cancel != null:
-		await _x11_click(cancel)
+		await _x11_click_embedded(cancel)
 		await process_frame
 		await process_frame
 	check(dlg != null and not dlg.visible, "Cancel hides the Save As dialog")
@@ -428,7 +442,7 @@ func _test_save_as(ctx: FilmContext, main) -> void:
 	var ok := dlg.get_ok_button()
 	check(ok != null and ok.is_visible_in_tree(), "Save As OK is visible")
 	if ok != null:
-		await _x11_click(ok)
+		await _x11_click_embedded(ok)
 		await process_frame
 		await process_frame
 		await process_frame
