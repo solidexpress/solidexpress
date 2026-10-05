@@ -1301,6 +1301,8 @@ func _on_sketch_action(action: String) -> void:
 		"sweep_path":
 			_sweep_profile_along_path()
 			return
+		"shaft_lines":
+			sketch_mode.shaft_lines_selected()
 		"fillet":
 			sketch_mode.fillet_selected(sketch_chrome.dim_value() if sketch_chrome else 2.0)
 		"chamfer":

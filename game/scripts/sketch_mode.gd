@@ -1030,6 +1030,8 @@ func selection_actions() -> Array:
 	if selected.size() == 2:
 		var t0: String = sketch.entity_info(selected[0]).get("type", "")
 		var t1: String = sketch.entity_info(selected[1]).get("type", "")
+		if (t0 == "circle" or t0 == "arc") and (t1 == "circle" or t1 == "arc"):
+			acts.append("shaft_lines")
 		if t0 == "line" and t1 == "line":
 			acts.append("fillet")
 			acts.append("chamfer")
@@ -1042,6 +1044,58 @@ func selection_actions() -> Array:
 		acts.append("block")
 		acts.append("split")
 	return acts
+
+
+## Two circles selected, one larger: add the two shaft lines of the handout.
+## Each line runs parallel to the centre line, tangent to the smaller circle
+## at its top or bottom and ending where it meets the larger circle on the
+## side nearer the small one. Both go through _infer_line, the same path a
+## hand-drawn shaft line takes, so they get the tangent constraint on the small
+## circle, the on-circle constraint on the large one, and the flip guard.
+## Returns the number of lines added.
+func shaft_lines_selected() -> int:
+	if sketch == null or selected.size() != 2:
+		status.emit("Shaft lines: select two circles first")
+		return 0
+	var ia: Dictionary = sketch.entity_info(selected[0])
+	var ib: Dictionary = sketch.entity_info(selected[1])
+	for info in [ia, ib]:
+		var kind := str(info.get("type", ""))
+		if kind != "circle" and kind != "arc":
+			status.emit("Shaft lines: select two circles first")
+			return 0
+	var small: Dictionary = ia
+	var large: Dictionary = ib
+	if float(ia["radius"]) > float(ib["radius"]):
+		small = ib
+		large = ia
+	var cs: Vector2 = small["center"]
+	var cl: Vector2 = large["center"]
+	var rs := float(small["radius"])
+	var rl := float(large["radius"])
+	var d := cs.distance_to(cl)
+	if rl - rs <= 1e-4:
+		status.emit("Shaft lines: the two circles are the same size")
+		return 0
+	if d <= rl:
+		status.emit("Shaft lines: the small circle must sit outside the large one")
+		return 0
+	var u := (cl - cs) / d
+	var perp := Vector2(-u.y, u.x)
+	var neck := d - sqrt(rl * rl - rs * rs)
+	var added := 0
+	for side in [1.0, -1.0]:
+		var off := perp * (rs * float(side))
+		var pa := cs + off
+		var pb := cs + off + u * neck
+		var lid: String = sketch.add_line(pa.x, pa.y, pb.x, pb.y)
+		if lid == "":
+			continue
+		_infer_line(lid, pa, pb)
+		added += 1
+	status.emit("Shaft lines: %d added" % added)
+	_redraw()
+	return added
 
 
 func set_snap(on: bool) -> void:
