@@ -374,6 +374,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await process_frame
 	err = _take_bad_status()
 	check(err == "", "slot cut status clean" if err == "" else err)
+	var slot_mesh := _load_mesh(ctx.view.doc, body)
+	check(not _inside(slot_mesh, Vector3(93.5, 0, 8.75)), "slot is open at z=8.75")
+	check(_inside(slot_mesh, Vector3(93.5, 0, 6.5)), "slot is a 2.5 mm pocket (solid at z=6.5)")
 
 	print("- fillets: neck R10, faces R1, slot floor R1.5 refused")
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
@@ -696,6 +699,8 @@ func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vec
 	var n := ctx.view.selected_edges.size()
 	check(n >= 4, "%s click selected the face edges (got %d, status %s)" % [
 		label, n, ctx.main.status_label.text])
+	if n < 1:
+		return
 	await _commit_fillet(ctx)
 	check(_count_type(ctx, "fillet") == before + 1, "fillet committed on %s" % label)
 	check(ctx.view.doc.last_graph_error() == "", "%s fillet accepted (%s)" % [label, ctx.view.doc.last_graph_error()])
@@ -709,6 +714,10 @@ func _refuse_slot_floor(ctx: FilmContext, body: String) -> void:
 	await _arm_fillet(ctx, 1.5)
 	await _look_along(ctx, Vector3(0, 0, 1), point, 80.0)
 	await _click_model(ctx, point, "Slot floor")
+	if ctx.view.selected_edges.is_empty():
+		_slot_floor_error = str(ctx.view.doc.last_graph_error())
+		_slot_floor_refused = false
+		return
 	await _commit_fillet(ctx)
 	_slot_floor_error = str(ctx.view.doc.last_graph_error())
 	_slot_floor_refused = _count_type(ctx, "fillet") == before and _slot_floor_error != ""
@@ -2336,10 +2345,30 @@ func _type_distance(ctx: FilmContext, text: String) -> void:
 	check(edit != null, "DistanceLineEdit exists for typing %s" % text)
 	if edit == null:
 		return
+	var t0 := Time.get_ticks_msec()
+	while not edit.is_visible_in_tree() and Time.get_ticks_msec() - t0 < 800:
+		await process_frame
+	check(edit.is_visible_in_tree(), "DistanceLineEdit is visible for typing %s" % text)
+	var vr := edit.get_global_rect()
+	var vp_r := edit.get_viewport().get_visible_rect()
+	check(vr.intersects(vp_r) or vp_r.encloses(vr),
+			"DistanceLineEdit is on screen for %s (edit %s vp %s)" % [text, str(vr), str(vp_r)])
+	print("  DistanceLineEdit click %s at %s" % [text, str(vr)])
 	await _x11_click(edit)
 	await _x11_type(edit.get_viewport(), text)
 	await process_frame
 	await process_frame
+	var got := chrome.extrude_distance()
+	if absf(got - float(text)) > TOL:
+		print("  distance was %.3f after first type, Ctrl+A retry for %s" % [got, text])
+		await _x11_click(edit)
+		await process_frame
+		await _x11_select_all(edit.get_viewport())
+		await _x11_type(edit.get_viewport(), text)
+		await process_frame
+		await process_frame
+		got = chrome.extrude_distance()
+	check(absf(got - float(text)) <= TOL, "typed Blind distance %s (got %.3f)" % [text, got])
 
 
 ## Extra unfocused burst. Nut 7.5 uses `_type_distance` (X11 click), not this.
