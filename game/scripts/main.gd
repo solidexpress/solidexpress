@@ -125,6 +125,9 @@ func _finish_op_name() -> String:
 	return ["new", "cut", "fuse"][finish_op.selected]
 var extrude_distance: SpinBox
 var _last_saved_revision := 0
+## Revision last written to user://autosave.sxp. Kept apart from
+## _last_saved_revision so an autosave never hides the Discard prompt.
+var _last_autosaved_revision := 0
 
 
 func _ready() -> void:
@@ -1035,11 +1038,12 @@ func _build_autosave() -> void:
 
 
 func _autosave() -> void:
-	if view.doc.revision() == _last_saved_revision:
+	var rev: int = view.doc.revision()
+	if rev == _last_saved_revision or rev == _last_autosaved_revision:
 		return
 	var path := ProjectSettings.globalize_path("user://autosave.sxp")
 	if view.save(path):
-		_last_saved_revision = view.doc.revision()
+		_last_autosaved_revision = rev
 
 
 func _request_sketch() -> void:
