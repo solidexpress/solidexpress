@@ -462,6 +462,9 @@ func _edit_jaw_to_21(ctx: FilmContext, jaw_sketch: String) -> void:
 	check(jaw_sketch != "", "jaw sketch id")
 	if jaw_sketch == "":
 		return
+	var sm0: SketchMode = ctx.main.sketch_mode
+	if sm0 != null and sm0.active:
+		await FilmUI.exit_sketch(ctx)
 	await _show_timeline(ctx)
 	var tl: TimelinePanel = ctx.main.timeline
 	tl.refresh()
@@ -1012,6 +1015,9 @@ func _file_new(ctx: FilmContext) -> void:
 
 
 func _show_timeline(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		await FilmUI.exit_sketch(ctx)
 	if ctx.main.show_timeline:
 		ctx.main._update_panel_visibility()
 		if ctx.main.timeline != null:
@@ -1027,6 +1033,9 @@ func _show_timeline(ctx: FilmContext) -> void:
 
 
 func _type_timeline_distance(ctx: FilmContext, fid: String, digits: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		await FilmUI.exit_sketch(ctx)
 	var tl: TimelinePanel = ctx.main.timeline
 	tl.refresh()
 	await process_frame
@@ -2812,6 +2821,7 @@ func _assert_jaw(mesh: Array, af: float) -> void:
 		for z in [0.5, 5.0, 9.5]:
 			if _inside(mesh, h + axis * u + Vector3(0, 0, z)):
 				open = false
+				print("  jaw still solid at u=%.1f z=%.1f" % [u, z])
 	check(open, "jaw open through the depth")
 	for z in [2.0, 5.0, 8.0]:
 		var pa := _first_hit(mesh, h + axis * 10.0 + Vector3(0, 0, z), pv)
