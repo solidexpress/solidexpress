@@ -1,5 +1,5 @@
-# Rung 1 replan 9 WP2 — Smart Dim keeps its first pick through a miss, says so, and Esc drops it without leaving the sketch.
-# Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan9_dim.gd
+# Rung 1 replan 10 WP3 — Esc clears a selection, then drops the tool, before it ever discards a sketch that has geometry.
+# Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan10_esc.gd
 extends SceneTree
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
@@ -20,113 +20,84 @@ func check(cond: bool, what: String) -> void:
 
 
 func _init() -> void:
-	print("rung01 replan9 WP2 smart dim second pick")
+	print("rung01 replan10 WP3 Esc keeps a sketch that has geometry")
 	FilmUI.reset_fail_count()
-	await test_centre_then_centre()
-	await test_centre_then_edge()
-	await test_esc_drops_pick()
+	await test_jaw_esc_ladder()
+	await test_empty_sketch_esc_exits()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
 
-func _two_circles(ctx: FilmContext) -> Array[String]:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var a: String = sm.sketch.add_circle(0.0, 0.0, 10.0)
-	var b: String = sm.sketch.add_circle(200.0, 0.0, 22.5)
-	await _zoom(ctx, Vector3(100, 0, 0), 280.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
-	return [a, b]
+func _profile_lines(sm: SketchMode) -> int:
+	var n := 0
+	for id in sm.sketch.entity_ids():
+		if not sm.sketch.is_construction(id) and str(sm.sketch.entity_info(id).get("type", "")) == "line":
+			n += 1
+	return n
 
 
-func test_centre_then_centre() -> void:
+func test_jaw_esc_ladder() -> void:
 	var ctx := await _boot()
 	await FilmUI.enter_sketch(ctx)
 	var sm: SketchMode = ctx.main.sketch_mode
 	var vp: Viewport = ctx.main.get_viewport()
-	var ids := await _two_circles(ctx)
-	var edits: Array[int] = []
-	sm.dimension_edit_requested.connect(func(i: int) -> void: edits.append(i))
+	await _zoom(ctx, Vector3(0, 0, 0), 120.0)
 
-	_status_log.clear()
-	await _click_uv(ctx, vp, Vector2.ZERO)
-	check(_pending(sm), "the first centre click sets a pending pick")
-	check(sm.selected.size() == 1 and sm.selected[0] == ids[0], "the first circle is selected")
-	check(_status_has("Smart Dim: first pick set"), "the first pick says what to click next (log: %s)" % str(_status_log))
-
-	_status_log.clear()
-	await _click_uv(ctx, vp, Vector2(100.0, 80.0))
-	check(_pending(sm), "a click on empty canvas keeps the first pick")
-	check(sm.selected.size() == 1 and sm.selected[0] == ids[0], "the first circle stays selected after the miss")
-	check(_status_has("first pick kept"), "the miss is named in the status (log: %s)" % str(_status_log))
-
-	_status_log.clear()
-	await _click_uv(ctx, vp, Vector2.ZERO)
-	check(_pending(sm), "a second click on the same circle keeps the first pick")
-	check(_status_has("pick a different circle"), "the same-circle click is named (log: %s)" % str(_status_log))
-	check(_distance_near(sm, 0.0, 0.5) < 0, "no zero-length distance dimension was made")
-
-	await _click_uv(ctx, vp, Vector2(200.0, 0.0))
+	await _x11_click(FilmUI.find_sketch_tool_button(ctx.main, "Jaw"))
 	await process_frame
-	await process_frame
-	check(not _pending(sm), "the second centre click completes the pick")
-	check(sm.selected.size() == 2, "both circles are selected after the dimension (got %d)" % sm.selected.size())
-	check(_distance_near(sm, 200.0, 0.5) >= 0, "a centre distance of 200 was dimensioned")
-	check(not edits.is_empty(), "the dimension editor was requested")
-	await _shutdown(ctx)
-
-
-func test_centre_then_edge() -> void:
-	var ctx := await _boot()
-	await FilmUI.enter_sketch(ctx)
-	var sm: SketchMode = ctx.main.sketch_mode
-	var vp: Viewport = ctx.main.get_viewport()
-	var ids := await _two_circles(ctx)
+	check(sm.tool == SketchMode.Tool.RECT and sm.tool_variant == "center_three_point", "Jaw is the active tool")
 	await _click_uv(ctx, vp, Vector2.ZERO)
-	check(_pending(sm), "first centre pick is pending")
-	await _click_uv(ctx, vp, Vector2(200.0, 22.5))
+	await _click_uv(ctx, vp, Vector2(30.0, 0.0))
+	await _click_uv(ctx, vp, Vector2(0.0, 10.0))
 	await process_frame
+	check(_profile_lines(sm) == 4, "the Jaw rectangle has four lines (got %d)" % _profile_lines(sm))
+
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	await _click_uv(ctx, vp, Vector2(0.0, 10.0))
 	await process_frame
-	check(not _pending(sm), "an edge click on the second circle completes the pick")
-	check(sm.selected.size() == 2 and sm.selected.has(ids[0]) and sm.selected.has(ids[1]), "both circles are selected")
-	check(_distance_near(sm, 200.0, 0.5) >= 0, "the edge pick dimensions the centre distance, 200")
-	await _shutdown(ctx)
+	check(sm.selected.size() == 1, "one Jaw line is selected (got %d)" % sm.selected.size())
 
-
-func test_esc_drops_pick() -> void:
-	var ctx := await _boot()
-	await FilmUI.enter_sketch(ctx)
-	var sm: SketchMode = ctx.main.sketch_mode
-	var vp: Viewport = ctx.main.get_viewport()
-	await _two_circles(ctx)
-	await _click_uv(ctx, vp, Vector2.ZERO)
-	check(_pending(sm), "first centre pick is pending before Esc")
 	_status_log.clear()
 	await _x11_key(vp, KEY_ESCAPE)
-	check(sm.active, "Esc with a pending Smart Dim pick keeps the sketch open")
-	check(not _pending(sm), "Esc drops the pending pick")
-	check(sm.selected.is_empty(), "Esc clears the first-pick selection")
-	check(_status_has("Smart Dim pick dropped"), "Esc says the pick was dropped (log: %s)" % str(_status_log))
-	check(sm.sketch.entity_ids().size() == 2, "both circles are still in the sketch")
-	for _i in 3:
-		if not sm.active:
-			break
-		await _x11_key(vp, KEY_ESCAPE)
-	check(not sm.active, "Esc with nothing pending still exits the sketch (after the selection and tool rungs)")
+	check(sm.active, "the first Esc after selecting a Jaw line keeps the sketch open")
+	check(_status_has("Measure cleared"), "the first Esc clears the measure pair (log: %s)" % str(_status_log))
+	check(_profile_lines(sm) == 4, "the Jaw lines are all still there (got %d)" % _profile_lines(sm))
+
+	_status_log.clear()
+	await _x11_key(vp, KEY_ESCAPE)
+	check(sm.active, "the second Esc keeps the sketch open")
+	check(sm.selected.is_empty(), "the second Esc clears the selection")
+	check(_profile_lines(sm) == 4, "the Jaw lines survive the selection clear (got %d)" % _profile_lines(sm))
+	check(_status_has("Selection cleared — Esc again exits the sketch"),
+			"Esc names what it dropped (log: %s)" % str(_status_log))
+
+	await _x11_click(FilmUI.find_sketch_tool_button(ctx.main, "Jaw"))
+	await process_frame
+	check(sm.tool == SketchMode.Tool.RECT, "Jaw is the active tool again")
+	_status_log.clear()
+	await _x11_key(vp, KEY_ESCAPE)
+	check(sm.active, "Esc with the Jaw tool active and geometry drawn keeps the sketch open")
+	check(sm.tool == SketchMode.Tool.SELECT, "Esc drops the Jaw tool back to Select")
+	check(_profile_lines(sm) == 4, "the Jaw lines survive the tool drop (got %d)" % _profile_lines(sm))
+	check(_status_has("Tool dropped — Esc again exits the sketch"),
+			"the tool drop is named (log: %s)" % str(_status_log))
+
+	await _x11_key(vp, KEY_ESCAPE)
+	check(not sm.active, "Esc with nothing selected and the Select tool still exits the sketch")
 	await _shutdown(ctx)
 
 
-func _pending(sm: SketchMode) -> bool:
-	return sm.has_method("has_pending_dim_pick") and bool(sm.call("has_pending_dim_pick"))
-
-
-func _distance_near(sm: SketchMode, value: float, tol: float) -> int:
-	for i in sm.dimensions.size():
-		var d: Dictionary = sm.dimensions[i]
-		if str(d.get("type", "")) == "distance" and absf(float(d.get("value", -1.0)) - value) <= tol:
-			return i
-	return -1
-
+func test_empty_sketch_esc_exits() -> void:
+	var ctx := await _boot()
+	await FilmUI.enter_sketch(ctx)
+	var sm: SketchMode = ctx.main.sketch_mode
+	var vp: Viewport = ctx.main.get_viewport()
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
+	check(sm.sketch.entity_ids().is_empty(), "the sketch is empty")
+	await _x11_key(vp, KEY_ESCAPE)
+	check(not sm.active, "Esc in an empty sketch with a tool active exits at once")
+	await _shutdown(ctx)
 
 func _status_has(needle: String) -> bool:
 	for s in _status_log:

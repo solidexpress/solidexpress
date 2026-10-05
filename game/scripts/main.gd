@@ -2463,6 +2463,8 @@ func _do_new() -> void:
 			interaction.triball.cancel()
 	view.new_document()
 	current_path = ""
+	if sketch_chrome != null:
+		sketch_chrome.reset_finish_defaults()
 	# Empty part on the Top plane (XY through the origin). The Box primitive
 	# stays on the palette; New must not insert or select a body (that armed
 	# the selection strip and ate the next click).

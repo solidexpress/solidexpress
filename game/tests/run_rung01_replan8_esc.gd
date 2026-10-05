@@ -57,8 +57,11 @@ func test_esc_ladder() -> void:
 		if str(info.get("type", "")) == "circle":
 			r = float(info.get("radius", 0.0))
 	check(absf(r - 10.0) < 0.6, "after the dropped point a fresh two-click circle has r~10 (got %.2f)" % r)
-	await _x11_key(vp, KEY_ESCAPE)
-	check(not sm.active, "Esc with nothing pending still exits the sketch")
+	for _i in 3:
+		if not sm.active:
+			break
+		await _x11_key(vp, KEY_ESCAPE)
+	check(not sm.active, "Esc with nothing pending still exits the sketch (after the selection and tool rungs)")
 	await _shutdown(ctx)
 
 

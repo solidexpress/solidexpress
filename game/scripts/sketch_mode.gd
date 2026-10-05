@@ -3379,6 +3379,22 @@ func has_pending_dim_pick() -> bool:
 	return tool == Tool.SMART_DIM and not _smart_dim_pending.is_empty()
 
 
+## Esc rungs between "drop a pending point" and "discard the sketch": clear a
+## selection, then drop a draw tool back to Select once the sketch holds
+## geometry. Returns the status to show, or "" when nothing is left to drop
+## and Esc should discard the sketch.
+func esc_keep_sketch() -> String:
+	if not active or sketch == null:
+		return ""
+	if not selected.is_empty():
+		_set_selected([])
+		return "Selection cleared — Esc again exits the sketch"
+	if tool != Tool.SELECT and tool != Tool.NONE and not sketch.entity_ids().is_empty():
+		set_tool(Tool.SELECT)
+		return "Tool dropped — Esc again exits the sketch"
+	return ""
+
+
 ## Esc with a first Smart Dim pick: drop the pick and keep the sketch session.
 func cancel_pending_dim_pick() -> void:
 	_smart_dim_pending.clear()

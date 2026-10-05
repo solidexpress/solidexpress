@@ -1118,6 +1118,25 @@ func get_finish_end() -> String:
 	return opts[i]
 
 
+## File > New starts the finish bar from its defaults. Without this a Cut / Up
+## To Surface from the last part is still selected for the next part's blank.
+func reset_finish_defaults() -> void:
+	if _finish_op != null:
+		_finish_op.select(0)
+	if _finish_end != null:
+		_finish_end.select(0)
+	if _thin_feature != null:
+		_thin_feature.set_pressed_no_signal(false)
+	if _thin_spin != null:
+		_thin_spin.value = 0
+	if _thin_type != null:
+		_thin_type.select(0)
+	if _flip_side != null:
+		_flip_side.set_pressed_no_signal(false)
+	_apply_thin_visibility()
+	clear_up_to_face()
+
+
 func set_flip_side(on: bool) -> void:
 	if _flip_side:
 		_flip_side.button_pressed = on
