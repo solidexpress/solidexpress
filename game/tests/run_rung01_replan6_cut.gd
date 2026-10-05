@@ -128,12 +128,11 @@ func test_offset_cutter_jaw_cut() -> void:
 	await _end_centreline_chain(ctx)
 	await _draw_centreline(ctx, HEAD + JAW * first_miss, PERP)
 	var after_second := _non_datum_construction_ids(sm)
-	check(after_second.size() >= 2,
-			"leftover and offset cutter are both present (got %d)" % after_second.size())
+	check(after_second.size() == 1,
+			"exactly one non-datum construction line remains after the retry (got %d)" % after_second.size())
 	var offset_d := _offset_construction_distance(sm, HEAD)
 	check(offset_d > 0.15 * 22.5,
-			"offset cutter misses the head by > 3.375 (got %.3f)" % offset_d)
-	var leftover_before_trim := after_second.size()
+			"remaining cutter misses the head by > 3.375 (got %.3f)" % offset_d)
 	await _select_tool(ctx, "Power Trim")
 	var click_uv := HEAD + JAW * 3.0 + PERP * 8.0
 	await _zoom_uv(ctx, click_uv, 90.0)
@@ -148,9 +147,7 @@ func test_offset_cutter_jaw_cut() -> void:
 	var status_text := str(ctx.main.status_label.text)
 	check(status_text.contains("Trimmed open jaw") or _status_has("Trimmed open jaw"),
 			"status contains Trimmed open jaw (got '%s')" % status_text)
-	var leftover_after_trim := _non_datum_construction_ids(sm).size()
-	check(leftover_after_trim >= leftover_before_trim,
-			"first centreline is still present after trim (commit 3 removes it)")
+	check(_labels_are_stacked(sm), "no two dimension labels share a point within 2 mm")
 	check(_hole_circle_present(sm), "Ø10 circle is still in the sketch")
 	chrome = ctx.main.sketch_chrome
 	await _pick_option(ctx, _finish_op(chrome), 1, "Cut")
@@ -715,6 +712,23 @@ func _non_datum_construction_ids(sm: SketchMode) -> Array[String]:
 			continue
 		out.append(str(id))
 	return out
+
+
+func _labels_are_stacked(sm: SketchMode) -> bool:
+	var uvs: Array[Vector2] = []
+	if sm == null or sm._dimension_labels == null:
+		return true
+	for child in sm._dimension_labels.get_children():
+		if not (child is Label3D):
+			continue
+		var p3: Vector3 = (child as Label3D).position
+		var rel := p3 - sm.plane_origin
+		uvs.append(Vector2(rel.dot(sm.plane_x), rel.dot(sm.plane_y)))
+	for i in range(uvs.size()):
+		for j in range(i + 1, uvs.size()):
+			if uvs[i].distance_to(uvs[j]) < 2.0:
+				return false
+	return true
 
 
 func _offset_construction_distance(sm: SketchMode, p: Vector2) -> float:

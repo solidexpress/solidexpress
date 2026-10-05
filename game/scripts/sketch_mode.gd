@@ -2703,6 +2703,24 @@ func _drop_stale_dimensions() -> void:
 	dimensions = kept
 
 
+## A new centreline replaces the previous cutter. Datum diagonal and
+## datum +X (`_angle_datum_lines`) stay.
+func _delete_other_non_datum_construction_lines() -> void:
+	if sketch == null:
+		return
+	var to_drop: Array[String] = []
+	for id in sketch.entity_ids():
+		if not sketch.is_construction(id):
+			continue
+		if _angle_datum_lines.has(id):
+			continue
+		if str(sketch.entity_info(id).get("type", "")) != "line":
+			continue
+		to_drop.append(id)
+	for id in to_drop:
+		sketch.remove_entity(id)
+
+
 ## Flip construction flag on all selected entities and redraw (construction
 ## entities use a dimmer gray so the style persists across redraws).
 func toggle_construction_selected() -> void:
@@ -2834,10 +2852,17 @@ func click(pos2: Vector2) -> void:
 			if _tool_points.size() >= 2:
 				var a := _tool_points[_tool_points.size() - 2]
 				var b := _tool_points[_tool_points.size() - 1]
+				var as_centreline := draw_construction or tool == Tool.CENTERLINE
+				if as_centreline:
+					_delete_other_non_datum_construction_lines()
 				var lid: String = sketch.add_line(a.x, a.y, b.x, b.y)
-				if draw_construction or tool == Tool.CENTERLINE:
+				if as_centreline:
 					sketch.set_construction(lid, true)
+					# Two-point centreline: do not extend the next click.
+					_tool_points.clear()
 				_infer_line(lid, a, b)
+				if as_centreline:
+					_drop_stale_dimensions()
 				_redraw()
 				# Propose chips follow new geometry even when infer did not solve.
 				selection_actions_needed.emit()
@@ -4456,12 +4481,20 @@ func _rebuild_dimension_labels() -> void:
 	if _dimension_labels == null or sketch == null:
 		return
 	_dimension_labels.visible = dimensions_visible
+	var taken: Array[Vector2] = []
 	for dim in dimensions:
 		if typeof(dim) != TYPE_DICTIONARY:
 			continue
 		var pos2: Variant = _dimension_label_pos2(dim)
 		if pos2 == null:
 			continue
+		var pos := pos2 as Vector2
+		# Same 2 mm / 2.5 mm stack the constraint glyphs already use.
+		var guard := 0
+		while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
+			pos += Vector2(0, 2.5)
+			guard += 1
+		taken.append(pos)
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.fixed_size = true
@@ -4474,7 +4507,7 @@ func _rebuild_dimension_labels() -> void:
 		if str(dim.get("type", "")) == "angle":
 			text = text + "°"
 		label.text = text
-		label.position = _to3(pos2)
+		label.position = _to3(pos)
 		_dimension_labels.add_child(label)
 
 
