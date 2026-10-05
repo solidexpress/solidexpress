@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail if the rung-1 walk or replan-3/4/5 scripts shortcut the operator GUI.
+"""Fail if the rung-1 walk or replan-3/4/5/6 scripts shortcut the operator GUI.
 
 Exits non-zero when run_rung01_wrench.gd contains:
   - infer_enabled
@@ -9,13 +9,16 @@ Exits non-zero when run_rung01_wrench.gd contains:
   - interaction._input
   - id_pressed.emit
   - item_selected.emit outside function _pick_end
-  - assignment to a dialog current_path
+  - assignment to a dialog current_path or current_dir
   - a root size other than Vector2i(1280, 800) (including 1920 or 900 in _widen)
   - focus_dim_for_typing / focus_distance_for_typing / set_extrude_distance
   - set_up_to_face / set_finish_op / set_finish_end / export_3mf(
   - sketch_mode.cancel( / exit_sketch( / trim_at( / new_document( / graph_update_sketch(
-  - an _x11_click helper, Power Trim click, or recovery click that awaits
-    between pressed=true and pressed=false
+  - dimension_edit_requested.emit
+  - an _x11_click helper, Power Trim click, recovery click, centreline,
+    right-half head click, or path-field export that awaits between
+    pressed=true and pressed=false
+  - _dimension_label_pos2 inside _smart_dim_centres (or a replacement)
 
 Also scans game/tests/run_rung01_replan3_*.gd for:
   - interaction._input
@@ -33,6 +36,9 @@ And game/tests/run_rung01_replan4_*.gd for the replan-3 list plus:
 
 And game/tests/run_rung01_replan5_*.gd for the walk's new forbiddens plus
 the no-await-between-press/release rule.
+
+And game/tests/run_rung01_replan6_*.gd for the replan-5 list plus
+assignment to current_dir and a call to _dimension_label_pos2.
 """
 from __future__ import annotations
 
@@ -73,12 +79,20 @@ WALK_EXTRA_FORBIDDEN = REPLAN4_EXTRA_FORBIDDEN + (
     "set_finish_op",
     "set_finish_end",
     "export_3mf(",
+    "dimension_edit_requested.emit",
 ) + (
     "sketch_mode.cancel(",
     "sketch_mode.exit_sketch(",
     "sketch_mode.trim_at(",
     "new_document(",
     "graph_update_sketch(",
+)
+WALK_PRESS_RELEASE_EXTRA = (
+    "_draw_centreline",
+    "_end_centreline_chain",
+    "_place_head_right_half",
+    "_export_bare_via_path_field",
+    "_smart_dim_centres",
 )
 
 
@@ -103,6 +117,8 @@ def _is_press_release_fn(name: str) -> bool:
         return True
     if name.startswith("_recovery") or name.startswith("_power_trim"):
         return True
+    if name in WALK_PRESS_RELEASE_EXTRA:
+        return True
     return False
 
 
@@ -115,6 +131,16 @@ def _lint_needles(src: str, needles: tuple[str, ...], errors: list[str], prefix:
 def _lint_text_assignment(src: str, errors: list[str], prefix: str) -> None:
     for m in re.finditer(r"\.\s*text\s*=(?!=)", src):
         errors.append(f"{prefix}line {_line_of(src, m.start())}: assignment to .text")
+
+
+def _lint_current_dir_assignment(src: str, errors: list[str], prefix: str) -> None:
+    for m in re.finditer(r"\bcurrent_dir\s*=", src):
+        errors.append(f"{prefix}line {_line_of(src, m.start())}: assignment to current_dir")
+
+
+def _lint_dimension_label_pos2(src: str, errors: list[str], prefix: str) -> None:
+    for m in re.finditer(r"_dimension_label_pos2", src):
+        errors.append(f"{prefix}line {_line_of(src, m.start())}: _dimension_label_pos2")
 
 
 def _lint_x11_click_await(src: str, errors: list[str], prefix: str) -> None:
@@ -200,6 +226,8 @@ def _lint_walk(src: str, errors: list[str]) -> None:
     for m in re.finditer(r"\bcurrent_path\s*=", src):
         errors.append(f"line {_line_of(src, m.start())}: assignment to dialog current_path")
 
+    _lint_current_dir_assignment(src, errors, "")
+
     for m in re.finditer(r"Vector2i\s*\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)", src):
         size = (int(m.group(1)), int(m.group(2)))
         if size != ALLOWED_SIZE:
@@ -220,6 +248,25 @@ def _lint_walk(src: str, errors: list[str]) -> None:
     _lint_text_assignment(src, errors, "")
     _lint_x11_click_await(src, errors, "")
     _lint_walk_trim_recovery(src, errors)
+    _lint_walk_smart_dim(src, errors)
+
+
+def _lint_walk_smart_dim(src: str, errors: list[str]) -> None:
+    found = False
+    for name, start, end in _functions(src):
+        if name != "_smart_dim_centres" and "smart_dim" not in name:
+            continue
+        found = True
+        body = src[start:end]
+        hit = body.find("_dimension_label_pos2")
+        if hit >= 0:
+            errors.append(
+                f"line {_line_of(src, start + hit)}: {name} contains _dimension_label_pos2"
+            )
+    if not found:
+        errors.append(
+            "walk is missing _smart_dim_centres (or a replacement) for centre-to-centre Smart Dimension"
+        )
 
 
 def _lint_replan3(errors: list[str]) -> None:
@@ -264,6 +311,22 @@ def _lint_replan5(errors: list[str]) -> None:
         _lint_x11_click_await(src, errors, prefix)
 
 
+def _lint_replan6(errors: list[str]) -> None:
+    paths = sorted(TESTS.glob("run_rung01_replan6_*.gd"))
+    if not paths:
+        errors.append(f"no run_rung01_replan6_*.gd scripts under {TESTS}")
+        return
+    for path in paths:
+        src = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT)
+        prefix = f"{rel}:"
+        _lint_needles(src, REPLAN5_FORBIDDEN, errors, prefix)
+        _lint_text_assignment(src, errors, prefix)
+        _lint_x11_click_await(src, errors, prefix)
+        _lint_current_dir_assignment(src, errors, prefix)
+        _lint_dimension_label_pos2(src, errors, prefix)
+
+
 def main() -> int:
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
@@ -274,6 +337,7 @@ def main() -> int:
     _lint_replan3(errors)
     _lint_replan4(errors)
     _lint_replan5(errors)
+    _lint_replan6(errors)
 
     if errors:
         print("lint_rung01_e2e: GUI shortcuts remain:", file=sys.stderr)
@@ -283,10 +347,12 @@ def main() -> int:
     n3 = len(list(TESTS.glob("run_rung01_replan3_*.gd")))
     n4 = len(list(TESTS.glob("run_rung01_replan4_*.gd")))
     n5 = len(list(TESTS.glob("run_rung01_replan5_*.gd")))
+    n6 = len(list(TESTS.glob("run_rung01_replan6_*.gd")))
     print(f"lint_rung01_e2e: {WALK} is clean")
     print(f"lint_rung01_e2e: {n3} replan3 scripts are clean")
     print(f"lint_rung01_e2e: {n4} replan4 scripts are clean")
     print(f"lint_rung01_e2e: {n5} replan5 scripts are clean")
+    print(f"lint_rung01_e2e: {n6} replan6 scripts are clean")
     return 0
 
 

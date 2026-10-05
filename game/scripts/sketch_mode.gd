@@ -2077,6 +2077,32 @@ func _line_cross_cutter(s: Vector2, e: Vector2, origin_a: Vector2, normal: Vecto
 	return s.lerp(e, ss / denom)
 
 
+func _line_line_intersect(p0: Vector2, d0: Vector2, p1: Vector2, d1: Vector2) -> Vector2:
+	var det := d0.x * d1.y - d0.y * d1.x
+	if absf(det) < 1e-12:
+		return p0
+	var delta := p1 - p0
+	var t := (delta.x * d1.y - delta.y * d1.x) / det
+	return p0 + d0 * t
+
+
+## Move each wall/cutter hit along its wall onto the line through the cap
+## centre along the cutter. Width is unchanged for parallel jaw sides.
+func _snap_jaw_hits_through_centre(walls: Array, cc: Vector2, cutter_dir: Vector2) -> void:
+	if walls.size() != 2 or cutter_dir.length_squared() < 1e-12:
+		return
+	var cd := cutter_dir.normalized()
+	for w in walls:
+		var hit: Vector2 = w["hit"]
+		var keep: Vector2 = w["keep"]
+		var wd: Vector2 = keep - hit
+		if wd.length_squared() < 1e-12:
+			wd = keep - cc
+		if wd.length_squared() < 1e-12:
+			continue
+		w["hit"] = _line_line_intersect(hit, wd, cc, cd)
+
+
 func _ray_circle_point(origin: Vector2, direction: Vector2, center: Vector2, radius: float) -> Vector2:
 	var dir := direction
 	if dir.length_squared() < 1e-12:
@@ -2251,6 +2277,11 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	if walls.size() != 2:
 		status.emit("Trim failed — centreline does not cross two jaw sides")
 		return true
+	# An offset cutter (leftover retry, >15% of radius) still caps on this
+	# circle. The midpoint constraint wants the floor through `cc`; apply
+	# that geometrically so DogLeg cannot leave the floor on the offset
+	# line (checker u=3 / floor-from-u=10).
+	_snap_jaw_hits_through_centre(walls, cc, dir)
 	for w in walls:
 		var hit: Vector2 = w["hit"]
 		var keep: Vector2 = _ray_circle_point(hit, w["keep"] - hit, cc, cr)
