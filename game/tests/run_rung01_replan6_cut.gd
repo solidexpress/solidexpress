@@ -187,6 +187,11 @@ func test_offset_cutter_jaw_cut() -> void:
 		check(not _inside(mesh, Vector3(0, 0, 5.0)), "origin hole is open at mid-thickness")
 		var mid_jaw := Vector3(200, 0, 5.0) + Vector3(JAW.x, JAW.y, 0) * 11.0
 		check(not _inside(mesh, mid_jaw), "jaw is open at mid-thickness")
+		var near_jaw := Vector3(200, 0, 5.0) + Vector3(JAW.x, JAW.y, 0) * 3.0
+		check(not _inside(mesh, near_jaw),
+				"jaw is open at u=3 (floor through the head, not on the offset cutter)")
+		var behind := Vector3(200, 0, 5.0) + Vector3(JAW.x, JAW.y, 0) * -1.0
+		check(_inside(mesh, behind), "jaw floor at u=-1 is solid")
 	await _shutdown(ctx)
 
 
