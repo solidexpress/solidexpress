@@ -865,6 +865,7 @@ func _build_ui() -> void:
 	sketch_chrome.visible = false
 	ui.add_child(sketch_chrome)
 	sketch_chrome.variant_chosen.connect(_on_sketch_variant)
+	sketch_mode.tool_variant_changed.connect(sketch_chrome.sync_variant_highlight)
 	sketch_chrome.action_chosen.connect(_on_sketch_action)
 	sketch_chrome.finish_requested.connect(_on_sketch_finish)
 	sketch_chrome.dim_submitted.connect(_on_sketch_dim_submitted)

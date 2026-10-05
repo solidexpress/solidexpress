@@ -824,6 +824,8 @@ func ray_to_sketch(origin: Vector3, direction: Vector3) -> Variant:
 
 
 signal tool_changed(tool: int)
+## Emitted after set_tool_variant. The chip row re-highlights the active chip.
+signal tool_variant_changed
 ## Emitted when selection chips should refresh (ids may be empty).
 signal selection_actions_needed
 ## Live rubber-band distance (mm) while a single-DOF draw step is active.
@@ -881,6 +883,7 @@ func set_tool_variant(v: String) -> void:
 		status.emit(JAW_HINT)
 	else:
 		status.emit("Variant: %s" % v.replace("_", " "))
+	tool_variant_changed.emit()
 
 
 ## True when a draw tool has the first anchor and is waiting for the tip.

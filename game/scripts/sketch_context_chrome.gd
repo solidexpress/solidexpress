@@ -1206,12 +1206,55 @@ func show_variants(kind: String, variants: Array, screen_pos: Vector2) -> void:
 		var b := Button.new()
 		b.text = label.capitalize().replace("_", " ")
 		b.custom_minimum_size = Vector2(0, _chip_h())
-		b.pressed.connect(func() -> void: variant_chosen.emit(kind, label))
+		b.toggle_mode = true
+		b.set_meta("variant", label)
+		b.add_theme_stylebox_override("pressed", _active_chip_style())
+		b.add_theme_stylebox_override("hover_pressed", _active_chip_style())
+		b.add_theme_color_override("font_pressed_color", Color.WHITE)
+		b.add_theme_color_override("font_hover_pressed_color", Color.WHITE)
+		b.pressed.connect(func() -> void:
+			variant_chosen.emit(kind, label)
+			sync_variant_highlight())
 		_variant_bar.add_child(b)
+	sync_variant_highlight()
 	_variant_bar.visible = not variants.is_empty()
 	# Ignore a caller Y that would pull the chips up into the finish bar.
 	if _variant_bar.visible:
 		place_variant_row(screen_pos.x)
+
+
+## Variant chip that matches what SketchMode is doing right now.
+func _active_variant() -> String:
+	if sketch_mode == null:
+		return ""
+	if _active_kind == "line":
+		return "centerline" if sketch_mode.tool == SketchMode.Tool.CENTERLINE else "line"
+	return sketch_mode.tool_variant
+
+
+## Exactly one chip is pressed: the active variant. A toggle chip pressed twice
+## would un-press itself, so every press re-syncs.
+func sync_variant_highlight() -> void:
+	if _variant_bar == null:
+		return
+	var active := _active_variant()
+	for c in _variant_bar.get_children():
+		var b := c as Button
+		if b != null and b.has_meta("variant"):
+			b.set_pressed_no_signal(str(b.get_meta("variant")) == active)
+
+
+func _active_chip_style() -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color("2d5f93")
+	s.border_color = Color("6ab0f3")
+	s.set_border_width_all(2)
+	s.set_corner_radius_all(3)
+	s.content_margin_left = 4.0
+	s.content_margin_right = 4.0
+	s.content_margin_top = 4.0
+	s.content_margin_bottom = 4.0
+	return s
 
 
 ## Stack variant chips on the next row under the finish bar. Caller Y is not
