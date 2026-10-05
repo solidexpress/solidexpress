@@ -2027,6 +2027,7 @@ func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 	print("  Smart Dimension: _x11_click_screen first centre, no label click")
 	await _x11_click_screen(ctx.main.get_viewport(), s1)
 	await process_frame
+	check(_status_has("Smart Dim: first pick set"), "the first centre pick says what to click next")
 	await _zoom_uv(ctx, c2, 50.0)
 	var s2 := FilmUI.model_to_screen(ctx, sm.to_model(c2))
 	check(FilmUI.require_on_screen(ctx, s2, "Smart Dimension second centre"),
@@ -2057,6 +2058,9 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	await FilmUI.click_control(ctx, jaw, FilmUICues.alert("Click", "Jaw on the sketch rail"))
 	check(sm.tool == SketchMode.Tool.RECT and sm.tool_variant == "center_three_point",
 			"Jaw selects Rectangle, Center Three Point (got tool %d variant %s)" % [int(sm.tool), sm.tool_variant])
+	var jaw_chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
+	check(jaw_chip != null and jaw_chip.button_pressed,
+			"the Center Three Point chip is highlighted after Jaw")
 	var along := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))
 	var across := Vector2(-along.y, along.x)
 	await _x11_click_uv(ctx, center, "Rect centre")
