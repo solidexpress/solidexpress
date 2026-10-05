@@ -2804,7 +2804,7 @@ func click(pos2: Vector2) -> void:
 	if tool == Tool.SELECT or tool == Tool.SMART_DIM:
 		var dhit_raw := dimension_hit(pos2)
 		if dhit_raw >= 0:
-			dimension_edit_requested.emit(dhit_raw)
+			_emit_dimension_edit(dhit_raw)
 			return
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
 	if tool != Tool.TRIM and tool != Tool.EXTEND:
@@ -2834,7 +2834,7 @@ func click(pos2: Vector2) -> void:
 				select_constraint("")
 			var dhit := dimension_hit(pos2)
 			if dhit >= 0:
-				dimension_edit_requested.emit(dhit)
+				_emit_dimension_edit(dhit)
 				return
 			_select_at(pos2)
 			selection_actions_needed.emit()
@@ -3304,10 +3304,28 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 		# stale index — only emit when that centre distance is still live.
 		var idx := _distance_dim_index_for(ida, idb)
 		if idx >= 0:
-			dimension_edit_requested.emit(idx)
+			_emit_dimension_edit(idx)
 		return
 	if ta == "line" and tb == "line":
 		constrain("angle", _lines_signed_angle(ida, idb))
+
+
+## Open the in-viewport editor now, and again next frame. A click that hits
+## a label while the popup is already up dismisses that popup on mouse-up;
+## the deferred emit puts it back so a label click still leaves it visible.
+func _emit_dimension_edit(index: int) -> void:
+	if index < 0:
+		return
+	dimension_edit_requested.emit(index)
+	_reemit_dimension_edit.call_deferred(index)
+
+
+func _reemit_dimension_edit(index: int) -> void:
+	if index < 0 or index >= dimensions.size():
+		return
+	if str(dimensions[index].get("cid", "")) == "":
+		return
+	dimension_edit_requested.emit(index)
 
 
 func _distance_dim_index_for(ida: String, idb: String) -> int:
