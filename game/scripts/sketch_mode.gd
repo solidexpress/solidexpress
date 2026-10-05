@@ -598,9 +598,10 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	if sk_fid == "":
 		return
 	var vol_before := _body_volume(view.body_of_feature(target_fid)) if op == "cut" else -1.0
+	var to_face_id := _up_to_face_id() if end == "to_face" else ""
 	var ex_fid: String = view.doc.graph_add_extrude(
 		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
-		thin_thickness, thin_type, flip_side, selected_contours)
+		thin_thickness, thin_type, flip_side, selected_contours, to_face_id)
 	if ex_fid == "" and _graph_error_text().contains("Thin wall"):
 		status.emit(_graph_error_text())
 		_reassert_camera()
@@ -612,6 +613,14 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 			view.doc.graph_remove(ex_fid)
 			view.refresh()
 			status.emit(refuse)
+			_reassert_camera()
+			return
+	if ex_fid != "" and op != "new":
+		var open_reason := _open_shell_reason(view.body_of_feature(target_fid))
+		if open_reason != "":
+			view.doc.graph_remove(ex_fid)
+			view.refresh()
+			status.emit(_open_shell_refusal(op, open_reason))
 			_reassert_camera()
 			return
 	var fail_msg := "Extrude failed — is the profile closed?"
@@ -626,6 +635,33 @@ func _body_volume(body_id: String) -> float:
 	if body_id == "" or view == null or view.doc == null:
 		return -1.0
 	return float(view.doc.measure_mass(body_id).get("volume", -1.0))
+
+
+## "" when the body exports as a closed mesh, else the kernel's own
+## "3MF mesh is open (bad/total edges not shared twice)" sentence. Uses the
+## exporter's check so the refusal and a later File > Export agree.
+func _open_shell_reason(body_id: String) -> String:
+	if body_id == "" or view == null or view.doc == null:
+		return ""
+	if not view.doc.has_method("export_3mf_for_body"):
+		return ""
+	var dir := OS.get_cache_dir()
+	DirAccess.make_dir_recursive_absolute(dir)
+	var path := dir.path_join("sx-open-shell-probe.3mf")
+	var ok: bool = view.doc.export_3mf_for_body(body_id, path)
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+	if ok:
+		return ""
+	var err := str(view.doc.last_export_error())
+	return err if err.contains("mesh is open") else ""
+
+
+func _open_shell_refusal(op: String, reason: String) -> String:
+	var counts := reason.substr(reason.find("(")) if reason.contains("(") else ""
+	var verb := "cut" if op == "cut" else "fused"
+	return "%s left an open shell %s. Nothing was %s — the contour overlaps or sits on the body's own edge. Fix the contour and try again." % [
+			"Cut" if op == "cut" else "Fuse", counts, verb]
 
 
 ## Named refusal for a cut that boolean-succeeded but wrecked the body.

@@ -8,6 +8,7 @@
 #include <gp_Pln.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <BRepAlgoAPI_Defeaturing.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBndLib.hxx>
@@ -1128,9 +1129,21 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
                     EntityId target = find_feature_body("target");
                     const Body* tb = doc.body(target);
                     if (!tb) return fail("missing target body");
-                    TopoDS_Shape merged = (op == "cut")
-                                              ? TopoDS_Shape(BRepAlgoAPI_Cut(tb->shape, result).Shape())
-                                              : TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, result).Shape());
+                    TopoDS_Shape merged;
+                    if (op == "cut") {
+                        BRepAlgoAPI_Cut cutter_op;
+                        TopTools_ListOfShape args;
+                        TopTools_ListOfShape tools;
+                        args.Append(tb->shape);
+                        tools.Append(result);
+                        cutter_op.SetArguments(args);
+                        cutter_op.SetTools(tools);
+                        cutter_op.SetFuzzyValue(1e-4);
+                        cutter_op.Build();
+                        merged = cutter_op.Shape();
+                    } else {
+                        merged = TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, result).Shape());
+                    }
                     if (merged.IsNull()) return fail("boolean failed");
                     doc.replace_body_shape(target, merged);
                 }
