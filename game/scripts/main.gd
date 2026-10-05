@@ -78,6 +78,10 @@ var _palette_insert_blocked := false
 var _empty_sketch_dialog: ConfirmationDialog
 ## Filename LineEdit text captured on Export 3MF OK (leftover 14).
 var _export_3mf_accept_name := ""
+## Path LineEdit (not get_line_edit) captured on Export 3MF OK while the
+## dialog is still visible. Typing there does not update current_dir until
+## Enter; after hide() the field is not is_visible_in_tree().
+var _export_3mf_path_dir := ""
 var _paste_special_dialog: ConfirmationDialog
 var _paste_ox: SpinBox
 var _paste_oy: SpinBox
@@ -2819,29 +2823,33 @@ func _export_3mf_is_bare_name(typed: String) -> bool:
 	return true
 
 
-## Folder the Export 3MF dialog is showing at OK. Prefer current_dir; if that
-## disagrees with the path line the user can see, use the displayed directory.
+## Folder the Export 3MF dialog is showing at OK. Prefer the path-field
+## snapshot taken while the dialog was still visible. With no snapshot,
+## keep today's current_dir join (ItemList double-click).
 func _export_3mf_dialog_dir() -> String:
+	if _export_3mf_path_dir != "":
+		return _export_3mf_path_dir
 	if file_dialog == null or not is_instance_valid(file_dialog):
 		return ""
 	var dir := str(file_dialog.current_dir).strip_edges()
 	if dir.begins_with("user://") or dir.begins_with("res://"):
 		dir = ProjectSettings.globalize_path(dir)
-	var shown := _export_3mf_displayed_dir()
-	if shown != "" and not _export_3mf_dirs_match(dir, shown):
-		dir = shown
 	return dir.trim_suffix("/").trim_suffix("\\")
 
 
-func _export_3mf_displayed_dir() -> String:
-	if file_dialog == null:
+## Snapshot every LineEdit that is not get_line_edit() whose text is an
+## existing absolute directory. Call only while the dialog is still visible.
+func _snapshot_export_3mf_path_dir() -> String:
+	if file_dialog == null or not is_instance_valid(file_dialog):
 		return ""
-	var name_edit := _file_dialog_name_edit()
+	var name_edit: LineEdit = null
+	if file_dialog.has_method("get_line_edit"):
+		var le: Variant = file_dialog.get_line_edit()
+		if le is LineEdit:
+			name_edit = le as LineEdit
 	for c in file_dialog.find_children("*", "LineEdit", true, false):
 		var edit := c as LineEdit
 		if edit == null or edit == name_edit:
-			continue
-		if not edit.is_visible_in_tree():
 			continue
 		var t := str(edit.text).strip_edges()
 		if t.begins_with("user://") or t.begins_with("res://"):
@@ -2849,12 +2857,6 @@ func _export_3mf_displayed_dir() -> String:
 		if t.is_absolute_path() and DirAccess.dir_exists_absolute(t):
 			return t.trim_suffix("/").trim_suffix("\\")
 	return ""
-
-
-func _export_3mf_dirs_match(a: String, b: String) -> bool:
-	var left := a.replace("\\", "/").trim_suffix("/").strip_edges()
-	var right := b.replace("\\", "/").trim_suffix("/").strip_edges()
-	return left == right
 
 
 ## Prefer a typed absolute path over FileDialog joining onto current_dir.
@@ -2986,11 +2988,15 @@ func _on_export_3mf_name_changed(new_text: String) -> void:
 
 func _on_file_dialog_ok_pressed() -> void:
 	_export_3mf_accept_name = ""
+	_export_3mf_path_dir = ""
 	if _file_action != FileAction.EXPORT_3MF:
 		return
 	var edit := _file_dialog_name_edit()
 	if edit != null and is_instance_valid(edit) and edit.is_inside_tree():
 		_export_3mf_accept_name = edit.text.strip_edges()
+	# Dialog is still visible here. Snapshot the Path: field even if Enter
+	# was never pressed (current_dir may still be HOME).
+	_export_3mf_path_dir = _snapshot_export_3mf_path_dir()
 
 
 func _on_file_dialog_dismissed() -> void:
@@ -3048,6 +3054,7 @@ func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: St
 			file_dialog.current_dir = dir
 		file_dialog.current_file = _export_3mf_filename()
 		_export_3mf_accept_name = ""
+		_export_3mf_path_dir = ""
 		var ok := file_dialog.get_ok_button()
 		if ok != null and not ok.pressed.is_connected(_on_file_dialog_ok_pressed):
 			ok.pressed.connect(_on_file_dialog_ok_pressed)
@@ -3120,15 +3127,17 @@ func _on_file_selected(path: String) -> void:
 				var edit := _file_dialog_name_edit()
 				if edit != null and is_instance_valid(edit) and edit.is_inside_tree():
 					typed = edit.text.strip_edges()
-			# Bare name: join onto the folder the dialog is showing at OK, not
-			# the start-dir file_selected path (which can stay HOME).
+			# Bare name: join onto the path-field snapshot from OK, or onto
+			# current_dir when that snapshot is empty (ItemList browse).
 			if _export_3mf_is_bare_name(typed) and file_dialog != null:
 				var dir := _export_3mf_dialog_dir()
+				_export_3mf_path_dir = ""
 				if dir != "":
 					path = dir.path_join(typed)
 				else:
 					path = _resolve_export_3mf_path(typed, path)
 			else:
+				_export_3mf_path_dir = ""
 				path = _resolve_export_3mf_path(typed, path)
 			if file_dialog != null and path.is_absolute_path():
 				file_dialog.current_dir = path.get_base_dir()
