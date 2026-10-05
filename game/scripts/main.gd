@@ -2986,17 +2986,49 @@ func _on_export_3mf_name_changed(new_text: String) -> void:
 	_export_3mf_accept_name = new_text.strip_edges()
 
 
+func _watch_export_3mf_path_edit() -> void:
+	if file_dialog == null or not file_dialog.visible:
+		return
+	if _file_action != FileAction.EXPORT_3MF:
+		return
+	var name_edit: LineEdit = null
+	if file_dialog.has_method("get_line_edit"):
+		var le: Variant = file_dialog.get_line_edit()
+		if le is LineEdit:
+			name_edit = le as LineEdit
+	for c in file_dialog.find_children("*", "LineEdit", true, false):
+		var edit := c as LineEdit
+		if edit == null or edit == name_edit:
+			continue
+		if not edit.text_changed.is_connected(_on_export_3mf_path_changed):
+			edit.text_changed.connect(_on_export_3mf_path_changed)
+
+
+func _on_export_3mf_path_changed(new_text: String) -> void:
+	if file_dialog == null or not file_dialog.visible:
+		return
+	if _file_action != FileAction.EXPORT_3MF:
+		return
+	var t := new_text.strip_edges()
+	if t.begins_with("user://") or t.begins_with("res://"):
+		t = ProjectSettings.globalize_path(t)
+	if t.is_absolute_path() and DirAccess.dir_exists_absolute(t):
+		_export_3mf_path_dir = t.trim_suffix("/").trim_suffix("\\")
+
+
 func _on_file_dialog_ok_pressed() -> void:
-	_export_3mf_accept_name = ""
-	_export_3mf_path_dir = ""
 	if _file_action != FileAction.EXPORT_3MF:
 		return
 	var edit := _file_dialog_name_edit()
 	if edit != null and is_instance_valid(edit) and edit.is_inside_tree():
 		_export_3mf_accept_name = edit.text.strip_edges()
-	# Dialog is still visible here. Snapshot the Path: field even if Enter
-	# was never pressed (current_dir may still be HOME).
-	_export_3mf_path_dir = _snapshot_export_3mf_path_dir()
+	# Snapshot only while the dialog is still visible. FileDialog's own
+	# pressed handler hide()s and can reset Path: to current_dir (HOME).
+	if file_dialog == null or not file_dialog.visible:
+		return
+	var shown := _snapshot_export_3mf_path_dir()
+	if shown != "":
+		_export_3mf_path_dir = shown
 
 
 func _on_file_dialog_dismissed() -> void:
@@ -3056,11 +3088,17 @@ func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: St
 		_export_3mf_accept_name = ""
 		_export_3mf_path_dir = ""
 		var ok := file_dialog.get_ok_button()
-		if ok != null and not ok.pressed.is_connected(_on_file_dialog_ok_pressed):
-			ok.pressed.connect(_on_file_dialog_ok_pressed)
+		if ok != null:
+			# button_down runs while the dialog is still visible, before
+			# FileDialog's own pressed handler hide()s and resets Path:.
+			if not ok.button_down.is_connected(_on_file_dialog_ok_pressed):
+				ok.button_down.connect(_on_file_dialog_ok_pressed)
+			if not ok.pressed.is_connected(_on_file_dialog_ok_pressed):
+				ok.pressed.connect(_on_file_dialog_ok_pressed)
 	file_dialog.popup_centered()
 	if action == FileAction.EXPORT_3MF:
 		_focus_export_3mf_filename.call_deferred()
+		_watch_export_3mf_path_edit.call_deferred()
 
 
 func _save_current() -> void:
