@@ -80,6 +80,7 @@ WALK_EXTRA_FORBIDDEN = REPLAN4_EXTRA_FORBIDDEN + (
     "set_finish_end",
     "export_3mf(",
     "dimension_edit_requested.emit",
+    "select_entity(",
 ) + (
     "sketch_mode.cancel(",
     "sketch_mode.exit_sketch(",
