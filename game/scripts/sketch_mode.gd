@@ -3328,26 +3328,52 @@ func _add_semicircle(center: Vector2, start_off: Vector2, outward: Vector2) -> v
 		prev = p
 
 
+const SMART_DIM_PICK_HINT := "Smart Dim: first pick set — click the second circle's centre or edge (Esc drops it)"
+const SMART_DIM_MISS_HINT := "Smart Dim: nothing there — first pick kept, click the second circle's centre or edge (Esc drops it)"
+const SMART_DIM_SAME_HINT := "Smart Dim: pick a different circle — first pick kept"
+
+
+## True while Smart Dim holds a first centre pick and waits for the second.
+func has_pending_dim_pick() -> bool:
+	return tool == Tool.SMART_DIM and not _smart_dim_pending.is_empty()
+
+
+## Esc with a first Smart Dim pick: drop the pick and keep the sketch session.
+func cancel_pending_dim_pick() -> void:
+	_smart_dim_pending.clear()
+	_smart_dim_first = null
+	_set_selected([])
+
+
 func _click_smart_dim(pos2: Vector2) -> void:
 	var center_ref := _center_ref_near(pos2)
 	if not center_ref.is_empty():
 		if not _smart_dim_pending.is_empty():
+			if str(_smart_dim_pending["entity"]) == str(center_ref["entity"]):
+				status.emit(SMART_DIM_SAME_HINT)
+				return
 			_smart_dim_between(_smart_dim_pending, center_ref)
 			_smart_dim_pending.clear()
 		else:
 			_smart_dim_pending = center_ref
 			_set_selected([str(center_ref["entity"])])
+			status.emit(SMART_DIM_PICK_HINT)
 		_smart_dim_first = null
 		return
 	var hit := _nearest_entity_at(pos2)
 	if hit == "":
-		_smart_dim_pending.clear()
+		if not _smart_dim_pending.is_empty():
+			status.emit(SMART_DIM_MISS_HINT)
+			return
 		_smart_dim_first = null
 		return
 	var info: Dictionary = sketch.entity_info(hit)
 	match str(info.get("type", "")):
 		"circle", "arc":
 			if not _smart_dim_pending.is_empty():
+				if str(_smart_dim_pending["entity"]) == hit:
+					status.emit(SMART_DIM_SAME_HINT)
+					return
 				_smart_dim_between(_smart_dim_pending, {"entity": hit, "role": "center"})
 				_smart_dim_pending.clear()
 			else:
