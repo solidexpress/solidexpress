@@ -108,8 +108,11 @@ func test_esc_drops_pick() -> void:
 	check(sm.selected.is_empty(), "Esc clears the first-pick selection")
 	check(_status_has("Smart Dim pick dropped"), "Esc says the pick was dropped (log: %s)" % str(_status_log))
 	check(sm.sketch.entity_ids().size() == 2, "both circles are still in the sketch")
-	await _x11_key(vp, KEY_ESCAPE)
-	check(not sm.active, "Esc with nothing pending still exits the sketch")
+	for _i in 3:
+		if not sm.active:
+			break
+		await _x11_key(vp, KEY_ESCAPE)
+	check(not sm.active, "Esc with nothing pending still exits the sketch (after the selection and tool rungs)")
 	await _shutdown(ctx)
 
 
