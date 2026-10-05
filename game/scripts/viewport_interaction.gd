@@ -2655,6 +2655,9 @@ func _sketch_input(event: InputEvent) -> void:
 					# keep the sketch session so Extrude stays available.
 					sketch_mode.end_chain()
 					status.emit("Chain ended")
+				elif sketch_mode.has_pending_draw_point():
+					sketch_mode.cancel_pending_draw()
+					status.emit("First point dropped — Esc again exits the sketch")
 				else:
 					sketch_mode.cancel()
 		accept_event()
