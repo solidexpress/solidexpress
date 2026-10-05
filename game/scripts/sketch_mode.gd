@@ -851,6 +851,13 @@ func has_pending_draw_point() -> bool:
 			return false
 
 
+## Esc with a first anchor placed: drop the anchor and keep the sketch session.
+func cancel_pending_draw() -> void:
+	_tool_points.clear()
+	_length_override = -1.0
+	_update_preview()
+
+
 ## A stationary mouse-up lands on the anchor that the press just stored.
 ## That is not a second point: keep the anchor so the next click can finish
 ## the segment. A real second point closer than MIN_SEGMENT_MM is rejected
