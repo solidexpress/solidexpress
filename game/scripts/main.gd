@@ -787,29 +787,33 @@ func _build_ui() -> void:
 	rows.add_child(exit_btn)
 	rows.add_child(HSeparator.new())
 	for entry in [
-			[SketchMode.Tool.SELECT, "select", "Select (S)"],
-			[SketchMode.Tool.LINE, "line", "Line / centerline (L)"],
-			[SketchMode.Tool.ARC, "arc", "Arc tool (A)"],
-			[SketchMode.Tool.CIRCLE, "circle", "Circle (C)"],
-			[SketchMode.Tool.RECT, "rect", "Rectangle (R)"],
-			[SketchMode.Tool.POLYGON, "polygon", "Polygon"],
-			[SketchMode.Tool.ELLIPSE, "circle", "Ellipse (approx)"],
-			[SketchMode.Tool.SLOT, "rect", "Straight slot"],
-			[SketchMode.Tool.SPLINE, "spline", "Fit spline"],
-			[SketchMode.Tool.POINT, "point", "Sketch point"],
-			[SketchMode.Tool.TRIM, "trim", "Power Trim (T)"],
-			[SketchMode.Tool.EXTEND, "extend", "Extend to next"],
-			[SketchMode.Tool.SMART_DIM, "dimension", "Smart Dimension (D)"],
-			[SketchMode.Tool.CONVERT, "convert", "Convert entities"],
-			[SketchMode.Tool.MIRROR, "mirror", "Mirror selection"],
-			[SketchMode.Tool.PATTERN, "pattern", "Linear / circular pattern"],
+			[SketchMode.Tool.SELECT, "select", "Select (S)", "Select"],
+			[SketchMode.Tool.LINE, "line", "Line / centerline (L)", "Line"],
+			[SketchMode.Tool.ARC, "arc", "Arc tool (A)", "Arc"],
+			[SketchMode.Tool.CIRCLE, "circle", "Circle (C)", "Circle"],
+			[SketchMode.Tool.RECT, "rect", "Rectangle (R)", "Rect"],
+			[SketchMode.Tool.POLYGON, "polygon", "Polygon", "Polygon"],
+			[SketchMode.Tool.ELLIPSE, "circle", "Ellipse (approx)", "Ellipse"],
+			[SketchMode.Tool.SLOT, "rect", "Straight slot", "Slot"],
+			[SketchMode.Tool.SPLINE, "spline", "Fit spline", "Spline"],
+			[SketchMode.Tool.POINT, "point", "Sketch point", "Point"],
+			[SketchMode.Tool.TRIM, "trim", "Power Trim (T)", "Trim"],
+			[SketchMode.Tool.EXTEND, "extend", "Extend to next", "Extend"],
+			[SketchMode.Tool.SMART_DIM, "dimension", "Smart Dimension (D)", "Smart Dim"],
+			[SketchMode.Tool.CONVERT, "convert", "Convert entities", "Convert"],
+			[SketchMode.Tool.MIRROR, "mirror", "Mirror selection", "Mirror"],
+			[SketchMode.Tool.PATTERN, "pattern", "Linear / circular pattern", "Pattern"],
 			]:
-		var b := UIIcons.button(entry[1], "", entry[2])
+		var b := UIIcons.button(entry[1], entry[3], entry[2])
 		b.pressed.connect(sketch_mode.set_tool.bind(entry[0]))
 		rows.add_child(b)
-	# Icon-only like the rest of the rail — a text label widens the 44px
-	# column into the finish-bar dim blank (layout suite).
-	var auto_def := UIIcons.button("dimension", "",
+		if entry[0] == SketchMode.Tool.RECT:
+			var jaw := UIIcons.button("wrench_open", "Jaw",
+				"Jaw: open-end wrench jaw. Click 1 = centre, click 2 = end of the long side, click 3 = half the width")
+			jaw.name = "JawTool"
+			jaw.pressed.connect(sketch_mode.start_jaw_tool)
+			rows.add_child(jaw)
+	var auto_def := UIIcons.button("solve", "Auto Dim",
 		"Auto-define — promote weak dims until DOF 0")
 	auto_def.name = "AutoDefine"
 	auto_def.pressed.connect(func() -> void: sketch_mode.auto_define())
