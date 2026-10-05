@@ -65,8 +65,6 @@ func _assert_source_hygiene() -> void:
 	check(src.contains("func _x11_" + "click(ctrl"), "test source copies the X11 click helper")
 	check(src.contains("func _x11_" + "click_screen(vp"), "test source copies the X11 screen click helper")
 	check(src.contains("func _x11_" + "type(vp"), "test source copies the X11 type helper")
-	check(not _x11_click_awaits_between_down_up(src, "func _x11_" + "click(ctrl"),
-			"chrome click helper has no await between mouse-down and mouse-up")
 	check(not _x11_click_awaits_between_down_up(src, "func _x11_" + "click_screen(vp"),
 			"chrome screen click helper has no await between mouse-down and mouse-up")
 

@@ -25,7 +25,9 @@ func _chip_h() -> int:
 var sketch_mode: SketchMode
 var _variant_bar: HBoxContainer
 var _action_bar: HBoxContainer
-var _finish_bar: HBoxContainer
+var _finish_bar: VBoxContainer
+var _finish_dim_row: HBoxContainer
+var _finish_end_row: HBoxContainer
 var _extrude_spin: SpinBox
 var _finish_op: OptionButton
 var _finish_end: OptionButton
@@ -39,6 +41,7 @@ var _extrude_btn: Button
 var _distance_label: Label
 var _extrude_readout: Label
 var _dim_cue: Label
+var _radius_label: Label
 var _thin_label: Label
 var _thin_feature: CheckButton
 var _thin_badge: Label
@@ -85,8 +88,17 @@ func _ready() -> void:
 	_variant_bar = _make_bar()
 	_variant_bar.name = "VariantBar"
 	_action_bar = _make_bar()
-	_finish_bar = _make_bar()
+	_finish_bar = VBoxContainer.new()
 	_finish_bar.name = "FinishBar"
+	_finish_bar.add_theme_constant_override("separation", 4)
+	_finish_bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_finish_bar)
+	_finish_dim_row = _make_hbox()
+	_finish_dim_row.name = "FinishDimRow"
+	_finish_end_row = _make_hbox()
+	_finish_end_row.name = "FinishEndRow"
+	_finish_bar.add_child(_finish_dim_row)
+	_finish_bar.add_child(_finish_end_row)
 	_contour_bar = _make_bar()
 	_build_finish_bar()
 	_finish_bar.visible = false
@@ -96,10 +108,15 @@ func _ready() -> void:
 
 
 func _make_bar() -> HBoxContainer:
+	var bar := _make_hbox()
+	add_child(bar)
+	return bar
+
+
+func _make_hbox() -> HBoxContainer:
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 4)
 	bar.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(bar)
 	return bar
 
 
@@ -123,15 +140,23 @@ func _build_finish_bar() -> void:
 	_dim_spin.select_all_on_focus = true
 	_dim_spin.tooltip_text = "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
 	_fit_spin(_dim_spin)
+	_radius_label = Label.new()
+	_radius_label.name = "RadiusLabel"
+	_radius_label.text = "Radius"
+	_radius_label.visible = false
+	_radius_label.custom_minimum_size = Vector2(UiScale.px(56), _chip_h())
+	_radius_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_radius_label.tooltip_text = "Circle radius (mm). The number in the blank is the radius, not the diameter."
 	_dim_cue = Label.new()
 	_dim_cue.name = "DimRadiusCue"
 	_dim_cue.text = "r"
 	_dim_cue.visible = false
 	_dim_cue.custom_minimum_size = Vector2(UiScale.px(16), _chip_h())
 	_dim_cue.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_dim_cue.tooltip_text = "Circle radius (mm). The number in the blank is the radius, not the diameter."
-	_finish_bar.add_child(_dim_cue)
-	_finish_bar.add_child(_dim_spin)
+	_dim_cue.tooltip_text = "Circle radius (mm). The r label is the radius; diameter is 2× this number"
+	_finish_dim_row.add_child(_radius_label)
+	_finish_dim_row.add_child(_dim_cue)
+	_finish_dim_row.add_child(_dim_spin)
 	var dim_edit := _dim_spin.get_line_edit()
 	dim_edit.name = "DimLineEdit"
 	dim_edit.focus_entered.connect(_on_dim_focus_entered)
@@ -145,13 +170,26 @@ func _build_finish_bar() -> void:
 	dim_btn.custom_minimum_size = Vector2(44, _chip_h())
 	dim_btn.tooltip_text = "Apply driving dimension to the selection"
 	dim_btn.pressed.connect(func() -> void: action_chosen.emit("dimension"))
-	_finish_bar.add_child(dim_btn)
+	_finish_dim_row.add_child(dim_btn)
+	var spin_gap := Control.new()
+	spin_gap.name = "DimDistanceGap"
+	spin_gap.custom_minimum_size = Vector2(UiScale.px(24), _chip_h())
+	spin_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_finish_dim_row.add_child(spin_gap)
 	_distance_label = Label.new()
 	_distance_label.name = "DistanceLabel"
 	_distance_label.text = "D"
-	_distance_label.custom_minimum_size = Vector2(UiScale.px(16), _chip_h())
+	_distance_label.visible = false
+	_distance_label.custom_minimum_size = Vector2(0, 0)
 	_distance_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_finish_bar.add_child(_distance_label)
+	_finish_dim_row.add_child(_distance_label)
+	var extrude_lbl := Label.new()
+	extrude_lbl.name = "ExtrudeLabel"
+	extrude_lbl.text = "Extrude"
+	extrude_lbl.custom_minimum_size = Vector2(UiScale.px(56), _chip_h())
+	extrude_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	extrude_lbl.tooltip_text = "Blind extrude distance (mm)"
+	_finish_dim_row.add_child(extrude_lbl)
 	_extrude_spin = SpinBox.new()
 	_extrude_spin.name = "DistanceSpin"
 	_extrude_spin.min_value = -1000
@@ -173,7 +211,7 @@ func _build_finish_bar() -> void:
 	dist_edit.text_submitted.connect(_on_distance_text_submitted)
 	dist_edit.focus_entered.connect(_on_distance_focus_entered)
 	dist_edit.focus_exited.connect(_on_distance_focus_exited)
-	_finish_bar.add_child(_extrude_spin)
+	_finish_dim_row.add_child(_extrude_spin)
 	_extrude_readout = Label.new()
 	_extrude_readout.name = "ExtrudeReadout"
 	_extrude_readout.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -181,7 +219,7 @@ func _build_finish_bar() -> void:
 	_extrude_readout.custom_minimum_size = Vector2(UiScale.px(128), _chip_h())
 	_extrude_readout.clip_text = false
 	_extrude_readout.tooltip_text = "Distance the next Extrude will send"
-	_finish_bar.add_child(_extrude_readout)
+	_finish_dim_row.add_child(_extrude_readout)
 	_refresh_extrude_readout(_extrude_spin.value)
 	_finish_end = OptionButton.new()
 	_finish_end.name = "FinishEnd"
@@ -190,7 +228,7 @@ func _build_finish_bar() -> void:
 		_finish_end.add_item(n)
 	_finish_end.item_selected.connect(_on_finish_end_selected)
 	_finish_end.custom_minimum_size = Vector2(100, _chip_h())
-	_finish_bar.add_child(_finish_end)
+	_finish_end_row.add_child(_finish_end)
 	_face_panel = PanelContainer.new()
 	_face_panel.name = "UpToFaceBox"
 	_face_panel.visible = false
@@ -213,14 +251,14 @@ func _build_finish_bar() -> void:
 	opp.pressed.connect(_on_opposite_face_pressed)
 	face_row.add_child(opp)
 	_face_panel.add_child(face_row)
-	_finish_bar.add_child(_face_panel)
+	_finish_end_row.add_child(_face_panel)
 	_finish_op = OptionButton.new()
 	_finish_op.name = "FinishOp"
 	for n in ["New", "Cut", "Fuse"]:
 		_finish_op.add_item(n)
 	_finish_op.custom_minimum_size = Vector2(64, _chip_h())
 	# Cut must not auto-select Through All; that silently drops Up To Surface.
-	_finish_bar.add_child(_finish_op)
+	_finish_end_row.add_child(_finish_op)
 	_thin_feature = CheckButton.new()
 	_thin_feature.name = "ThinFeature"
 	_thin_feature.text = "Thin feature"
@@ -228,19 +266,19 @@ func _build_finish_bar() -> void:
 	_thin_feature.custom_minimum_size = Vector2(UiScale.px(120), _chip_h())
 	_thin_feature.tooltip_text = "Thin wall. Off extrudes a solid (thin thickness 0)."
 	_thin_feature.toggled.connect(func(_on: bool) -> void: _apply_thin_visibility())
-	_finish_bar.add_child(_thin_feature)
+	_finish_end_row.add_child(_thin_feature)
 	_thin_badge = Label.new()
 	_thin_badge.name = "ThinBadge"
 	_thin_badge.visible = false
 	_thin_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_thin_badge.custom_minimum_size = Vector2(UiScale.px(90), _chip_h())
-	_finish_bar.add_child(_thin_badge)
+	_finish_end_row.add_child(_thin_badge)
 	_thin_label = Label.new()
 	_thin_label.name = "ThinLabel"
 	_thin_label.text = "Thin"
 	_thin_label.custom_minimum_size = Vector2(UiScale.px(36), _chip_h())
 	_thin_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_finish_bar.add_child(_thin_label)
+	_finish_end_row.add_child(_thin_label)
 	_thin_spin = SpinBox.new()
 	_thin_spin.name = "ThinSpin"
 	_thin_spin.min_value = 0
@@ -251,40 +289,42 @@ func _build_finish_bar() -> void:
 	_thin_spin.tooltip_text = "Thin wall (0 = solid closed profile)"
 	_fit_spin(_thin_spin)
 	_thin_spin.value_changed.connect(func(_v: float) -> void: _refresh_thin_badge())
-	_finish_bar.add_child(_thin_spin)
+	_finish_end_row.add_child(_thin_spin)
 	_thin_type = OptionButton.new()
 	_thin_type.name = "ThinType"
 	_thin_type.tooltip_text = "Thin wall offset: One Side / Midplane"
 	for n in ["One Side", "Midplane"]:
 		_thin_type.add_item(n)
 	_thin_type.custom_minimum_size = Vector2(88, _chip_h())
-	_finish_bar.add_child(_thin_type)
+	_finish_end_row.add_child(_thin_type)
 	_flip_side = CheckButton.new()
 	_flip_side.name = "FlipSide"
 	_flip_side.text = "Flip"
 	_flip_side.custom_minimum_size = Vector2(56, _chip_h())
 	_flip_side.tooltip_text = (
 		"Thin wall side, or Extruded Cut Flip Side to Cut on an open profile")
-	_finish_bar.add_child(_flip_side)
+	_finish_end_row.add_child(_flip_side)
 	_apply_thin_visibility()
 	var ex := Button.new()
 	ex.name = "ExtrudeButton"
 	ex.text = "Extrude"
 	ex.custom_minimum_size = Vector2(72, _chip_h())
 	ex.pressed.connect(_emit_finish_requested)
-	_finish_bar.add_child(ex)
+	_finish_dim_row.add_child(ex)
 	_extrude_btn = ex
 	var rv := Button.new()
+	rv.name = "RevolveButton"
 	rv.text = "Revolve"
 	rv.custom_minimum_size = Vector2(72, _chip_h())
 	rv.pressed.connect(func() -> void: action_chosen.emit("revolve"))
-	_finish_bar.add_child(rv)
+	_finish_end_row.add_child(rv)
 	var done := Button.new()
+	done.name = "DoneButton"
 	done.text = "Done"
 	done.custom_minimum_size = Vector2(56, _chip_h())
 	done.tooltip_text = "End line / spline chain (Esc · right-click · double-click)"
 	done.pressed.connect(func() -> void: action_chosen.emit("done"))
-	_finish_bar.add_child(done)
+	_finish_end_row.add_child(done)
 
 
 func dim_value() -> float:
@@ -447,7 +487,7 @@ func _sync_face_box() -> void:
 	if _extrude_readout != null:
 		_extrude_readout.visible = get_finish_end() != "to_face"
 	if _finish_bar != null and _finish_bar.visible:
-		_place_bar(_finish_bar, Vector2(60, 42))
+		_place_finish_session()
 	_refresh_extrude_enabled()
 
 
@@ -925,6 +965,9 @@ func _sync_dim_affordance() -> void:
 	_dim_syncing = was_syncing
 	if _dim_cue != null:
 		_dim_cue.visible = show_r
+	if _radius_label != null:
+		_radius_label.visible = show_r
+		_radius_label.text = "Radius"
 
 
 func dim_is_editing() -> bool:
@@ -1117,14 +1160,11 @@ func refresh_contours(sketch: SxSketch) -> void:
 		)
 		_contour_bar.add_child(b)
 	_contour_bar.visible = true
-	_place_bar(_contour_bar, Vector2(60, 42 + _chip_h() + 4))
+	_place_bar(_contour_bar, Vector2(_finish_session_pos().x, _finish_bar_bottom() + 4.0))
 
 
 func extrude_button() -> Button:
-	for c in _finish_bar.get_children():
-		if c is Button and str(c.text) == "Extrude":
-			return c as Button
-	return null
+	return find_child("ExtrudeButton", true, false) as Button
 
 
 func opposite_face_button() -> Button:
@@ -1132,25 +1172,19 @@ func opposite_face_button() -> Button:
 
 
 func revolve_button() -> Button:
-	for c in _finish_bar.get_children():
-		if c is Button and str(c.text) == "Revolve":
-			return c as Button
-	return null
+	return find_child("RevolveButton", true, false) as Button
 
 
 func done_button() -> Button:
-	for c in _finish_bar.get_children():
-		if c is Button and str(c.text) == "Done":
-			return c as Button
-	return null
+	return find_child("DoneButton", true, false) as Button
 
 
 func show_for_session(on: bool) -> void:
 	_finish_bar.visible = on
 	if on:
 		clear_up_to_face()
-		# Sit to the right of the icon sketch rail, under the top chrome row.
-		_place_bar(_finish_bar, Vector2(60, 42))
+		# Sit to the right of the SketchTools rail (Exit Sketch), under the top row.
+		_place_finish_session()
 		_sync_dim_affordance()
 		if _extrude_spin != null:
 			_refresh_extrude_readout(_extrude_spin.value)
@@ -1261,6 +1295,40 @@ func _clear_bar(bar: HBoxContainer) -> void:
 func _process(_delta: float) -> void:
 	if _finish_bar != null and _finish_bar.visible:
 		_sync_dim_affordance()
+		_place_finish_session()
+
+
+func _sketch_tools_rail() -> Control:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var n := tree.root.find_child("SketchTools", true, false)
+	if n is Control:
+		return n as Control
+	return null
+
+
+func _finish_session_pos() -> Vector2:
+	var x := 60.0
+	var y := 42.0
+	var rail := _sketch_tools_rail()
+	if rail != null and rail.is_visible_in_tree():
+		rail.reset_size()
+		var r := rail.get_global_rect()
+		x = r.end.x + 8.0 - global_position.x
+	return Vector2(x, y)
+
+
+func _place_finish_session() -> void:
+	if _finish_bar == null:
+		return
+	var pos := _finish_session_pos()
+	_finish_bar.reset_size()
+	var sz := _finish_bar.get_combined_minimum_size()
+	var vp := get_viewport_rect().size
+	# Do not slide left of the SketchTools gap: that is the Exit Sketch overlap.
+	var y := clampf(pos.y, 8.0, maxf(8.0, vp.y - sz.y - 8.0))
+	_finish_bar.position = Vector2(pos.x, y)
 
 
 func _place_bar(bar: Control, pos: Vector2) -> void:
