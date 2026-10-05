@@ -847,10 +847,10 @@ func _recovery_open_profile_then_new(ctx: FilmContext) -> void:
 		if sm.selected.size() >= 1:
 			break
 	check(sm.selected.size() >= 1, "one recovery edge is selected (got %d)" % sm.selected.size())
-	var before_n := sm.sketch.entity_ids().size() if sm.sketch != null else 0
+	var before_n: int = sm.sketch.entity_ids().size() if sm.sketch != null else 0
 	await _recovery_press_delete(ctx)
 	await process_frame
-	var after_n := sm.sketch.entity_ids().size() if sm.sketch != null else 0
+	var after_n: int = sm.sketch.entity_ids().size() if sm.sketch != null else 0
 	check(after_n < before_n, "Delete removed the selected recovery edge")
 	_status_log.clear()
 	await _recovery_click_exit(ctx)
