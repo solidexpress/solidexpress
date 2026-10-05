@@ -26,6 +26,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	_assert_source_hygiene()
 	await test_second_centre_opens_popup()
+	await test_right_half_head_stays_plus_x()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -124,6 +125,93 @@ func test_second_centre_opens_popup() -> void:
 	check(absf(gap1 - 200.0) <= 0.2, "centre distance is 200 ± 0.2 (got %.3f)" % gap1)
 	check(absf(gap1 - gap0) > 0.05 or absf(gap0 - 200.0) <= 0.2,
 			"blank is not left at the original click gap (%.3f → %.3f)" % [gap0, gap1])
+	await _shutdown(ctx)
+
+
+func test_right_half_head_stays_plus_x() -> void:
+	print("- right-half ground-sketch click, inexact tangents, Extrude 10")
+	var ctx := await _boot()
+	await _start_ground_sketch(ctx)
+	var sm: SketchMode = ctx.main.sketch_mode
+	check(sm != null and sm.active, "ground sketch is open for right-half click")
+	await _select_tool(ctx, "Circle")
+	var ix: ViewportInteraction = ctx.main.interaction
+	var canvas := ix.get_global_rect()
+	var screen := Vector2(maxf(641.0, canvas.position.x + canvas.size.x * 0.72), 400.0)
+	if screen.x > canvas.end.x - 8.0:
+		screen.x = canvas.position.x + canvas.size.x * 0.65
+	check(screen.x > 640.0, "right-half click has screen x > 640 (got %.1f)" % screen.x)
+	check(FilmUI.require_on_screen(ctx, screen, "right-half head"),
+			"right-half click is on screen")
+	var aim := InputEventMouseMotion.new()
+	aim.position = screen
+	aim.global_position = screen
+	ctx.main.get_viewport().push_input(aim)
+	await process_frame
+	var ray: Array = ix._model_ray(screen)
+	var click_uv: Variant = sm.ray_to_sketch(ray[0], ray[1])
+	check(click_uv is Vector2, "right-half screen ray hits the sketch plane")
+	await _aim_then_click_screen(ctx.main.get_viewport(), screen)
+	await process_frame
+	await process_frame
+	check(sm._tool_points.size() >= 1, "right-half click stored a circle centre")
+	var hover_uv: Vector2 = click_uv if click_uv is Vector2 else Vector2(6, 0)
+	await _hover_uv(ctx, hover_uv + Vector2(6, 0))
+	await _type_dim(ctx, "22.5")
+	var head_id := _newest_circle(sm)
+	check(head_id != "", "typed radius committed the right-half circle")
+	var head_uv := Vector2.ZERO
+	var head_model := Vector3.ZERO
+	if head_id != "":
+		head_uv = sm.sketch.entity_info(head_id)["center"]
+		head_model = sm.to_model(head_uv)
+		var hr := float(sm.sketch.entity_info(head_id).get("radius", 0.0))
+		check(absf(hr - 22.5) <= 0.05, "typed radius 22.5 (got %.3f)" % hr)
+	print("  measure: screen X=%.1f Y=%.1f → sketch UV (%.3f, %.3f) → model X=%.3f" % [
+		screen.x, screen.y, head_uv.x, head_uv.y, head_model.x])
+	check(head_model.x > 0.0,
+			"right-half circle model X is positive (got %.3f)" % head_model.x)
+	await _zoom_uv(ctx, Vector2.ZERO, 50.0)
+	await _draw_circle_typed(ctx, Vector2.ZERO, "10")
+	# B1 then types 200 so the shaft is a real blank, not two overlapping bosses.
+	var bosses := _boss_pair(sm)
+	if bosses.size() >= 4 and float(bosses[2].x) < 180.0:
+		await _smart_dim_centres_to(ctx, bosses[0], bosses[2], "200")
+		bosses = _boss_pair(sm)
+		if bosses.size() >= 4:
+			head_uv = bosses[2]
+			head_model = sm.to_model(head_uv)
+			print("  after centre distance 200: origin (%.3f, %.3f) head (%.3f, %.3f) gap=%.3f model X=%.3f" % [
+				bosses[0].x, bosses[0].y, head_uv.x, head_uv.y,
+				head_uv.distance_to(bosses[0]), head_model.x])
+	if bosses.size() < 4:
+		bosses = _boss_pair(sm)
+	check(bosses.size() >= 4, "shaft and head circles exist")
+	await _select_tool(ctx, "Line")
+	if bosses.size() >= 4:
+		for y_sign in [1.0, -1.0]:
+			await _draw_offset_shaft_line(ctx, bosses[0], float(bosses[1]),
+					bosses[2], float(bosses[3]), float(y_sign), 3.0)
+	await _type_distance(ctx, "10")
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	await _x11_click(chrome.extrude_button())
+	await process_frame
+	await process_frame
+	await process_frame
+	check(not ctx.main.sketch_mode.active, "blank Extrude left sketch mode")
+	var body := ""
+	if not ctx.view.doc.body_ids().is_empty():
+		body = str(ctx.view.doc.body_ids()[0])
+	check(body != "", "blank body exists after inexact tangents")
+	if body != "":
+		var mesh := _load_mesh(ctx.view.doc, body)
+		var mesh_head := _head_centre_from_mesh(mesh)
+		print("  mesh head centre (%.3f, %.3f, %.3f) vs sketch model X=%.3f" % [
+			mesh_head.x, mesh_head.y, mesh_head.z, head_model.x])
+		check(mesh_head.x > 0.0, "mesh head centre X is positive (got %.3f)" % mesh_head.x)
+		check(absf(mesh_head.x - head_model.x) <= 5.0,
+				"mesh head X is within 5 mm of the sketch head (got %.3f vs %.3f)" % [
+					mesh_head.x, head_model.x])
 	await _shutdown(ctx)
 
 
@@ -431,3 +519,132 @@ func _circle_infos(sm: SketchMode) -> Array:
 			out.append(info)
 	out.sort_custom(func(a, b): return float(a["center"].x) < float(b["center"].x))
 	return out
+
+
+func _newest_circle(sm: SketchMode) -> String:
+	var last := ""
+	if sm == null or sm.sketch == null:
+		return last
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		if str(sm.sketch.entity_info(id).get("type", "")) == "circle":
+			last = id
+	return last
+
+
+func _smart_dim_centres_to(ctx: FilmContext, a: Vector2, b: Vector2, text: String) -> void:
+	await _select_tool(ctx, "Smart Dimension")
+	await _zoom_uv(ctx, a, 40.0)
+	await _click_uv(ctx, a, "Smart Dim first centre")
+	await _zoom_uv(ctx, b, 40.0)
+	await _click_uv(ctx, b, "Smart Dim second centre")
+	var ix: ViewportInteraction = ctx.main.interaction
+	if ix._dim_edit_popup != null and ix._dim_edit_popup.visible and ix._dim_edit_line != null:
+		await _x11_click(ix._dim_edit_line)
+		await _x11_type(ix._dim_edit_line.get_viewport(), text)
+		await _x11_enter(ix._dim_edit_line.get_viewport())
+		await process_frame
+		await process_frame
+
+
+func _boss_pair(sm: SketchMode) -> Array:
+	var circs := _circle_infos(sm)
+	if circs.size() < 2:
+		return []
+	var left: Dictionary = circs[0]
+	var right: Dictionary = circs[circs.size() - 1]
+	return [left["center"], float(left["radius"]), right["center"], float(right["radius"])]
+
+
+func _draw_offset_shaft_line(ctx: FilmContext, c0: Vector2, r0: float,
+		c1: Vector2, r1: float, sign: float, miss: float) -> void:
+	# 2–4 mm off the exact horizontal contact (the walk's far_x / y=±r0).
+	# Zoom wide enough that snap (≥ span×0.02) can still catch the rim.
+	var far := sqrt(maxf(r1 * r1 - r0 * r0, 0.0))
+	var a_exact := c0 + Vector2(0.0, r0 * sign)
+	var b_exact := Vector2(c1.x - far, c0.y + r0 * sign)
+	# 2–4 mm off the exact contact, perpendicular to the shaft. First click
+	# snaps to the Ø20 rim; second click H/V-snaps back onto y = ±r0 at far_x.
+	var a := a_exact + Vector2(0.0, miss * sign)
+	var b := b_exact + Vector2(0.0, miss * sign)
+	await _zoom_uv(ctx, a, 200.0)
+	await _click_uv(ctx, a, "Offset tangent start")
+	await _zoom_uv(ctx, b, 200.0)
+	await _click_uv(ctx, b, "Offset tangent end")
+	var sm: SketchMode = ctx.main.sketch_mode
+	var screen := FilmUI.model_to_screen(ctx, sm.to_model(b))
+	await _x11_right_click_screen(ctx.main.get_viewport(), screen)
+
+
+func _x11_right_click_screen(vp: Viewport, pos: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_RIGHT
+	down.pressed = true
+	down.position = pos
+	down.global_position = pos
+	vp.push_input(down)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_RIGHT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	vp.push_input(up)
+	await process_frame
+
+
+func _type_distance(ctx: FilmContext, text: String) -> void:
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var edit: LineEdit = chrome.find_child("DistanceLineEdit", true, false) as LineEdit
+	if edit == null and chrome._extrude_spin != null:
+		edit = chrome._extrude_spin.get_line_edit()
+	check(edit != null, "DistanceLineEdit exists for typing %s" % text)
+	if edit == null:
+		return
+	await _x11_click(edit)
+	await _x11_type(edit.get_viewport(), text)
+	await process_frame
+	await process_frame
+
+
+func _load_mesh(doc: SxDocument, body: String) -> Array:
+	var mesh: ArrayMesh = doc.get_mesh(body)
+	var verts := PackedVector3Array()
+	var idx := PackedInt32Array()
+	for s in mesh.get_surface_count():
+		var arrays: Array = mesh.surface_get_arrays(s)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var base := verts.size()
+		verts.append_array(v)
+		var ii: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		if ii.is_empty():
+			for i in v.size():
+				idx.append(base + i)
+		else:
+			for i in ii:
+				idx.append(base + i)
+	return [verts, idx]
+
+
+func _head_centre_from_mesh(mesh: Array) -> Vector3:
+	var verts: PackedVector3Array = mesh[0]
+	if verts.is_empty():
+		return Vector3.ZERO
+	var acc := Vector3.ZERO
+	var n := 0
+	for v in verts:
+		if absf(v.y) > 15.0:
+			acc += v
+			n += 1
+	if n > 0:
+		return acc / float(n)
+	var mn := verts[0]
+	var mx := verts[0]
+	for v in verts:
+		mn = Vector3(minf(mn.x, v.x), minf(mn.y, v.y), minf(mn.z, v.z))
+		mx = Vector3(maxf(mx.x, v.x), maxf(mx.y, v.y), maxf(mx.z, v.z))
+	return Vector3(mx.x - 22.5, (mn.y + mx.y) * 0.5, (mn.z + mx.z) * 0.5)
