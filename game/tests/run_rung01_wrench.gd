@@ -8,6 +8,7 @@
 extends SceneTree
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const SHAFT_PICK_X := 100.0
 const TOL := 0.2
 const ROOT_SIZE := Vector2i(1280, 800)
 const NEW_SENTENCE := "New — empty part, Top plane (XY). View ▸ Timeline to edit features"
@@ -887,8 +888,7 @@ func _recovery_ground_sketch(ctx: FilmContext, ground := Vector3(22, 18, 0)) -> 
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm != null and sm.active:
 		return
-	if ctx.view != null:
-		ctx.view.select_entity("", "")
+	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 	await _zoom(ctx, ground, 80.0)
 	var sketch_btn := FilmUI.find_palette_sketch_button(ctx.main)
@@ -1784,34 +1784,26 @@ func _assert_contours_stay_on(ctx: FilmContext) -> void:
 
 
 func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float) -> void:
-	var host := Vector3(100, 0, z_top)
-	if top != "":
-		var picked := FilmUI.face_pick_point(ctx.view, body, top)
-		if picked != Vector3.INF:
-			host = picked
-	await _zoom(ctx, host, 500.0)
-	var host_screen := FilmUI.model_to_screen(ctx, host)
-	if FilmUI.is_on_screen(ctx, host_screen):
-		await _aim_pointer(ctx, host_screen)
-		await _pointer_click(ctx, host_screen, false)
-		await process_frame
-	var sm: SketchMode = ctx.main.sketch_mode
-	var on_top := sm.active and sm.plane_normal().dot(Vector3(0, 0, 1)) > 0.9 \
-			and absf(sm.plane_origin.z - z_top) < 0.5
-	if sm.active and not on_top:
-		var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
-		await FilmUI.click_control(ctx, exit_btn, FilmUICues.exit_sketch())
-		await process_frame
-		sm = ctx.main.sketch_mode
-		on_top = false
-	if not on_top:
-		if top != "":
-			ctx.view.select_entity(body, top)
-		ctx.main.interaction._refresh_selection_strip()
-		var sketch_btn: Button = ctx.main.interaction._strip_sketch
-		await FilmUI.click_control(ctx, sketch_btn, FilmUICues.toolbar_sketch())
-		await process_frame
-		await process_frame
+	var vp: Viewport = ctx.main.get_viewport()
+	var host := Vector3(SHAFT_PICK_X, 0.0, z_top)
+	await _look_along(ctx, Vector3(0, 0, 1), host, 500.0)
+	await _push_key(vp, KEY_ESCAPE, 0)
+	var screen := FilmUI.model_to_screen(ctx, host)
+	check(FilmUI.require_on_screen(ctx, screen, "top face pick"), "top face pick is on screen")
+	await _aim_pointer(ctx, screen)
+	await _x11_click_screen(vp, screen)
+	await process_frame
+	check(not ctx.main.sketch_mode.active, "first top-face click does not reopen a sketch")
+	check(ctx.view.selected_body == body, "first top-face click selects the body")
+	await _x11_click_screen(vp, screen)
+	await process_frame
+	check(not ctx.main.sketch_mode.active, "second top-face click does not reopen a sketch")
+	check(ctx.view.selected_face == top, "second top-face click selects the top face")
+	var strip: Button = ctx.main.interaction._strip_sketch
+	check(strip.is_visible_in_tree(), "selection strip offers Sketch")
+	await FilmUI.click_control(ctx, strip, FilmUICues.toolbar_sketch())
+	await process_frame
+	await process_frame
 
 
 func _ground_sketch(ctx: FilmContext) -> void:
