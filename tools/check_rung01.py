@@ -3,14 +3,14 @@
 
 Usage:
   python3 check_rung01.py wrench <file.3mf> [--allow-mirror]
+  python3 check_rung01.py blank  <file.3mf>   # right after Extrude 10: size and head at +X
   python3 check_rung01.py nut    <file.3mf>
   python3 check_rung01.py thick  <file.3mf> <T>   # after editing base extrude 10 -> T (Up To Surface survival)
 
 Needs only numpy. Reads the first <mesh> objects of a 3MF (all objects merged).
 Source frame (wrench): pivot centre (0,0), head centre (200,0), bottom z=0, top z=10,
 jaw opening toward +X+Y at 45 deg. The mesh is auto-aligned by its bbox (min corner
-moved to (-10,-22.5,0)); if the head is at -X or the jaw opens to -Y the script tries
-the XY flips and reports which one it used (mirror only accepted with --allow-mirror).
+moved to (-10,-22.5,0)); the head end is found from the vertices (the X end whose last 10 mm has the larger Y extent); the script then tries only the rotation and the mirror for that end and reports which one it used (mirror only accepted with --allow-mirror).
 Tolerance: 0.2 mm on every length.
 """
 import sys, zipfile, re, math
@@ -134,6 +134,27 @@ def wrench_tests(tris, r):
     r.add('outer wall solid mid-z', inside(tris, (-9.7, 0, 5)), '', 'inside')
     r.add('1mm fillet on jaw top edge', not inside(tris, J(10, 10.08, 9.92)), '', 'outside')
 
+END_BAND = 10.0
+
+def head_at_min_x(V):
+    """True when the wide (head) end of the part is at the minimum-X end.
+
+    The head end is the X end whose last END_BAND mm has the larger Y extent
+    (head dia 45 against pivot boss dia 20). Geometry decides this, never a
+    count of failed rows, so a blank without holes cannot report a mirror.
+    """
+    lo, hi = V[:, 0].min(), V[:, 0].max()
+    def ye(m):
+        y = V[m, 1]
+        return float(y.max() - y.min())
+    return ye(V[:, 0] <= lo + END_BAND) > ye(V[:, 0] >= hi - END_BAND)
+
+def orientation_candidates(V):
+    """(flipx, flipy) pairs to try. The first is the pure rotation, the second the mirror."""
+    if head_at_min_x(V):
+        return [(True, True), (True, False)]
+    return [(False, False), (False, True)]
+
 def align(V, flipx, flipy, want_min):
     W = V.copy()
     if flipx: W[:, 0] *= -1
@@ -156,14 +177,13 @@ def main():
         r.add('bbox Z == new thickness', abs(ext[2] - T_) <= TOL, round(ext[2], 3), f'{T_}')
         s2 = math.sqrt(2) / 2
         best = None
-        for fx in (False, True):
-            for fy in (False, True):
-                W = align(V, fx, fy, (-10, -22.5, 0)); tr = tri_arrays(W, T)
-                zs = (0.5, T_ / 2, T_ - 0.5)
-                ok_h = all(not inside(tr, (0, 0, z)) for z in zs)
-                ok_j = all(not inside(tr, (200 + u * s2, u * s2, z)) for u in (3, 11, 18) for z in zs)
-                sc = ok_h + ok_j
-                if best is None or sc > best[0]: best = (sc, ok_h, ok_j, fx, fy)
+        for fx, fy in orientation_candidates(V):
+            W = align(V, fx, fy, (-10, -22.5, 0)); tr = tri_arrays(W, T)
+            zs = (0.5, T_ / 2, T_ - 0.5)
+            ok_h = all(not inside(tr, (0, 0, z)) for z in zs)
+            ok_j = all(not inside(tr, (200 + u * s2, u * s2, z)) for u in (3, 11, 18) for z in zs)
+            sc = ok_h + ok_j
+            if best is None or sc > best[0]: best = (sc, ok_h, ok_j, fx, fy)
         _, ok_h, ok_j, fx, fy = best
         r.add('pivot hole still through at new T', ok_h, f'flipX={fx} flipY={fy}', 'open at 0.5, T/2, T-0.5')
         r.add('jaw still through at new T', ok_j, '', 'open at 0.5, T/2, T-0.5')
@@ -181,17 +201,22 @@ def main():
         r.add('bore diameter', g is not None and abs(g - 10) <= TOL, g, '10.0')
         r.add('nut body solid at r=8', inside(tris, (0, 8, 3.75)) or inside(tris, (8, 0, 3.75)), '', 'inside')
         r.show(); sys.exit(1 if r.fail else 0)
+    if kind == 'blank':
+        r.add('bbox X (length)', abs(ext[0] - 232.5) <= TOL, round(ext[0], 3), '232.5')
+        r.add('bbox Y (head dia)', abs(ext[1] - 45) <= TOL, round(ext[1], 3), '45.0')
+        r.add('bbox Z (thickness)', abs(ext[2] - 10) <= TOL, round(ext[2], 3), '10.0')
+        r.add('head end at +X', not head_at_min_x(V), 'head at -X' if head_at_min_x(V) else 'head at +X', 'head at +X')
+        r.show(); sys.exit(1 if r.fail else 0)
     # wrench
     r.add('bbox X (length)', abs(ext[0] - 232.5) <= TOL, round(ext[0], 3), '232.5')
     r.add('bbox Y (head dia)', abs(ext[1] - 45) <= TOL, round(ext[1], 3), '45.0')
     r.add('bbox Z (thickness)', abs(ext[2] - 10) <= TOL, round(ext[2], 3), '10.0')
     best = None
-    for fx in (False, True):
-        for fy in (False, True):
-            W = align(V, fx, fy, (-10, -22.5, 0))
-            rr = R(); wrench_tests(tri_arrays(W, T), rr)
-            if best is None or rr.fail < best[0].fail:
-                best = (rr, fx, fy)
+    for fx, fy in orientation_candidates(V):
+        W = align(V, fx, fy, (-10, -22.5, 0))
+        rr = R(); wrench_tests(tri_arrays(W, T), rr)
+        if best is None or rr.fail < best[0].fail:
+            best = (rr, fx, fy)
     rr, fx, fy = best
     mirrored = (fx != fy)  # one flip = mirror image; two flips = 180 deg rotation
     r.add('orientation', (not mirrored) or allow_mirror,
