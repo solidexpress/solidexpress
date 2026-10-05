@@ -217,20 +217,8 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		check(absf(gap - 200.0) <= TOL, "centre distance is 200 ± 0.2 (got %.3f)" % gap)
 	else:
 		check(false, "two circles remain after Smart Dimension 200")
-	# Shaft 20 wide: lines at y = ±r0 relative to the origin boss, meeting
-	# the Ø45 at the concave neck. Clicks are a few tenths off the contacts
-	# so snap + inference close them. Use the solved centres (right-half
-	# click then Smart Dimension 200), not a hardcoded (200, 0).
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	if circs.size() == 2:
-		print("  shaft from bosses origin (%.3f, %.3f) r=%.3f  head (%.3f, %.3f) r=%.3f" % [
-			(circs[0]["center"] as Vector2).x, (circs[0]["center"] as Vector2).y,
-			float(circs[0]["radius"]),
-			(circs[1]["center"] as Vector2).x, (circs[1]["center"] as Vector2).y,
-			float(circs[1]["radius"])])
-		for y_sign in [1.0, -1.0]:
-			await _draw_shaft_line(ctx, circs[0]["center"] as Vector2, float(circs[0]["radius"]),
-					circs[1]["center"] as Vector2, float(circs[1]["radius"]), float(y_sign))
+	# Shaft 20 wide: the Shaft Lines chip adds the two lines at y = ±r0 that end on the Ø45.
+	await _shaft_lines_via_chip(ctx)
 	await _assert_shaft_lines_both_sides(sm)
 	await _assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
@@ -1919,18 +1907,30 @@ func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 	await _aim_pointer(ctx, screen)
 
 
-func _draw_shaft_line(ctx: FilmContext, c0: Vector2, r0: float, c1: Vector2, r1: float, sign: float) -> void:
-	var far := sqrt(maxf(r1 * r1 - r0 * r0, 0.0))
-	var a_exact := c0 + Vector2(0.0, r0 * sign)
-	var b_exact := Vector2(c1.x - far, c0.y + r0 * sign)
-	var a_off := a_exact + Vector2(0.0, 0.3 * sign)
-	var b_dir := b_exact - c1
-	var b_off := b_exact + (b_dir.normalized() if b_dir.length_squared() > 1e-8 else Vector2(0, sign)) * 0.3
-	await _zoom_uv(ctx, a_off, 90.0)
-	await _click_uv(ctx, a_off, "Tangent start near circle")
-	await _zoom_uv(ctx, b_off, 90.0)
-	await _click_uv(ctx, b_off, "Tangent end near circle")
-	await _right_click_uv(ctx, b_off)
+func _shaft_lines_via_chip(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var circs := _circles(sm)
+	check(circs.size() == 2, "Shaft Lines needs two circles (got %d)" % circs.size())
+	if circs.size() != 2:
+		return
+	await _zoom(ctx, Vector3(100, 0, 0), 280.0)
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	await _x11_click_uv(ctx, Vector2(100.0, 80.0), "Clear the selection on empty canvas")
+	await process_frame
+	check(sm.selected.is_empty(), "a click on empty canvas clears the sketch selection (got %d)" % sm.selected.size())
+	for c in circs:
+		var top: Vector2 = (c["center"] as Vector2) + Vector2(0.0, float(c["radius"]))
+		await _x11_click_uv(ctx, top, "Select circle edge")
+		await process_frame
+	check(sm.selected.size() == 2, "two circle-edge clicks select both circles (got %d)" % sm.selected.size())
+	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Shaft Lines")
+	check(chip != null and chip.is_visible_in_tree(), "the Shaft Lines chip is visible after selecting both circles")
+	if chip == null:
+		return
+	_status_log.clear()
+	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Shaft Lines"))
+	await process_frame
+	check(_status_has("Shaft lines: 2 added"), "status reports 2 shaft lines (got %s)" % ctx.main.status_label.text)
 
 
 func _assert_shaft_lines_both_sides(sm: SketchMode) -> void:
@@ -2052,10 +2052,11 @@ func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 
 func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
-	await process_frame
-	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
-	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Centre three-point rectangle"))
+	var jaw := FilmUI.find_sketch_tool_button(ctx.main, "Jaw")
+	check(jaw != null and jaw.is_visible_in_tree(), "the Jaw button is on the sketch rail")
+	await FilmUI.click_control(ctx, jaw, FilmUICues.alert("Click", "Jaw on the sketch rail"))
+	check(sm.tool == SketchMode.Tool.RECT and sm.tool_variant == "center_three_point",
+			"Jaw selects Rectangle, Center Three Point (got tool %d variant %s)" % [int(sm.tool), sm.tool_variant])
 	var along := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))
 	var across := Vector2(-along.y, along.x)
 	await _x11_click_uv(ctx, center, "Rect centre")

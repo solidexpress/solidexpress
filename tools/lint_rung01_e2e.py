@@ -344,6 +344,22 @@ def _lint_replan7(errors: list[str]) -> None:
         _lint_dimension_label_pos2(src, errors, prefix)
 
 
+def _lint_replan8(errors: list[str]) -> None:
+    paths = sorted(TESTS.glob("run_rung01_replan8_*.gd"))
+    if not paths:
+        errors.append(f"no run_rung01_replan8_*.gd scripts under {TESTS}")
+        return
+    for path in paths:
+        src = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT)
+        prefix = f"{rel}:"
+        _lint_needles(src, REPLAN7_FORBIDDEN, errors, prefix)
+        _lint_text_assignment(src, errors, prefix)
+        _lint_x11_click_await(src, errors, prefix)
+        _lint_current_dir_assignment(src, errors, prefix)
+        _lint_dimension_label_pos2(src, errors, prefix)
+
+
 def main() -> int:
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
@@ -356,6 +372,7 @@ def main() -> int:
     _lint_replan5(errors)
     _lint_replan6(errors)
     _lint_replan7(errors)
+    _lint_replan8(errors)
 
     if errors:
         print("lint_rung01_e2e: GUI shortcuts remain:", file=sys.stderr)
@@ -367,12 +384,14 @@ def main() -> int:
     n5 = len(list(TESTS.glob("run_rung01_replan5_*.gd")))
     n6 = len(list(TESTS.glob("run_rung01_replan6_*.gd")))
     n7 = len(list(TESTS.glob("run_rung01_replan7_*.gd")))
+    n8 = len(list(TESTS.glob("run_rung01_replan8_*.gd")))
     print(f"lint_rung01_e2e: {WALK} is clean")
     print(f"lint_rung01_e2e: {n3} replan3 scripts are clean")
     print(f"lint_rung01_e2e: {n4} replan4 scripts are clean")
     print(f"lint_rung01_e2e: {n5} replan5 scripts are clean")
     print(f"lint_rung01_e2e: {n6} replan6 scripts are clean")
     print(f"lint_rung01_e2e: {n7} replan7 scripts are clean")
+    print(f"lint_rung01_e2e: {n8} replan8 scripts are clean")
     return 0
 
 
