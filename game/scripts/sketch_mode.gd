@@ -61,6 +61,7 @@ var draw_construction := false
 ## Power-trim drag state: list of already-trimmed entity ids this stroke.
 var _trim_drag_ids: Array[String] = []
 var _trim_dragging := false
+var _trim_jaw_done_in_drag := false
 ## Highlight entity under trim hover (red).
 var _trim_hover_id := ""
 ## Smart-dim / convert / mirror / pattern scratch.
@@ -2093,10 +2094,10 @@ func trim_at(pos2: Vector2) -> bool:
 		return true
 	var id := _nearest_entity_at(pos2)
 	if id == "":
-		status.emit("Trim failed")
+		status.emit("Trim failed — nothing under the pointer: click on a line or arc")
 		return false
 	if not sketch.trim_entity(id, pos2.x, pos2.y):
-		status.emit("Trim failed")
+		status.emit("Trim failed — this %s has no crossing to trim at" % str(sketch.entity_info(id).get("type", "entity")))
 		return false
 	run_solve()
 	# Drop selection entries that no longer exist after a replace-style trim.
@@ -2284,6 +2285,68 @@ func _circle_meets_cutter(c: Vector2, r: float, a: Vector2, b: Vector2) -> bool:
 	return _point_segment_distance(c, a, b) <= r + 1.0
 
 
+## Largest circle whose disc the cutter line crosses well inside the rim:
+## sketch circles first, then the solid's head edge. {} when none.
+func _jaw_cap_circle(a: Vector2, b: Vector2) -> Dictionary:
+	var best: Dictionary = {}
+	var best_r := 0.0
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		var c: Vector2 = info["center"]
+		var r := float(info.get("radius", 0.0))
+		if _jaw_cutter_crosses_disc(c, r, a, b) and r > best_r:
+			best = {"id": id, "center": c, "radius": r}
+			best_r = r
+	if not best.is_empty():
+		return best
+	for mc in _model_circles():
+		var c2: Vector2 = mc["center"]
+		var r2 := float(mc["radius"])
+		if _jaw_cutter_crosses_disc(c2, r2, a, b) and r2 > best_r:
+			best = {"id": "", "center": c2, "radius": r2}
+			best_r = r2
+	return best
+
+
+const JAW_CUTTER_MAX_RIM_FRACTION := 0.9
+
+
+func _jaw_cutter_crosses_disc(c: Vector2, r: float, a: Vector2, b: Vector2) -> bool:
+	if r < 1e-6:
+		return false
+	if _point_line_distance(c, a, b) > JAW_CUTTER_MAX_RIM_FRACTION * r:
+		return false
+	return _point_segment_distance(c, a, b) <= r + 1.0
+
+
+func _jaw_no_cap_status(a: Vector2, b: Vector2) -> String:
+	var best_r := 0.0
+	var best_d := INF
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		var r := float(info.get("radius", 0.0))
+		if r > best_r:
+			best_r = r
+			best_d = _point_line_distance(info["center"], a, b)
+	for mc in _model_circles():
+		var r2 := float(mc["radius"])
+		if r2 > best_r:
+			best_r = r2
+			best_d = _point_line_distance(mc["center"], a, b)
+	if best_r < 1e-6:
+		return "Trim failed — no head circle: redraw the Ø45 head circle on this sketch"
+	return "Trim failed — the centreline is %.1f mm from the Ø%.0f head centre (limit %.1f mm): draw it closer to the head centre" % [
+			best_d, best_r * 2.0, JAW_CUTTER_MAX_RIM_FRACTION * best_r]
+
+
 ## Click on one side of a construction centreline: drop that half, keep the
 ## other, close it with a floor on the cutter and the keep-side arc of the
 ## circle centred on the cutter. The Ø10 (centre far from the cutter) stays.
@@ -2291,6 +2354,9 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var cutter := _nearest_construction_line(pos2, 40.0)
 	if cutter.is_empty():
 		return false
+	if _jaw_ids_alive():
+		status.emit("Jaw is already open — nothing left to trim here")
+		return true
 	var a: Vector2 = cutter["a"]
 	var b: Vector2 = cutter["b"]
 	var dir := b - a
@@ -2309,42 +2375,13 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	if long_dir.length_squared() > 1e-8 and _dirs_within_deg(dir, long_dir, CAP_DEG):
 		status.emit("Trim failed — draw the centreline across the jaw")
 		return true
-	var cc := Vector2.ZERO
-	var cr := 0.0
-	var circ_id := ""
-	var best_cd := INF
-	for id in sketch.entity_ids():
-		if sketch.is_construction(id):
-			continue
-		var info: Dictionary = sketch.entity_info(id)
-		if str(info.get("type", "")) != "circle":
-			continue
-		var c: Vector2 = info["center"]
-		var r := float(info.get("radius", 0.0))
-		if not _circle_meets_cutter(c, r, a, b):
-			continue
-		var d := _point_line_distance(c, a, b)
-		if d < best_cd:
-			best_cd = d
-			circ_id = id
-			cc = c
-			cr = r
-	if circ_id == "":
-		for mc in _model_circles():
-			var c2: Vector2 = mc["center"]
-			var r2 := float(mc["radius"])
-			# A ~5 mm offset cutter misses the 15% sketch-circle gate
-			# (0.15 × 22.5 = 3.375). The solid's head edge is still the cap.
-			var md := _point_line_distance(c2, a, b)
-			if _circle_meets_cutter(c2, r2, a, b) or (
-					md <= 6.0
-					and _point_segment_distance(c2, a, b) < a.distance_to(b) + 5.0):
-				cc = c2
-				cr = r2
-				break
-	if cr < 1e-6:
-		status.emit("Trim failed")
+	var cap := _jaw_cap_circle(a, b)
+	if cap.is_empty():
+		status.emit(_jaw_no_cap_status(a, b))
 		return true
+	var cc: Vector2 = cap["center"]
+	var cr: float = float(cap["radius"])
+	var circ_id: String = str(cap["id"])
 	var to_delete: Array[String] = []
 	var walls: Array = []
 	for id in sketch.entity_ids():
@@ -2474,6 +2511,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	_weld_jaw_profile(floor_id, walls, arc_id)
 	_redraw()
 	_redraw_selected()
+	_trim_jaw_done_in_drag = true
 	status.emit("Trimmed open jaw")
 	return true
 
@@ -4411,6 +4449,7 @@ func hover(pos2: Vector2) -> void:
 ## Power-trim drag: trim every entity the cursor crosses.
 func begin_trim_drag(pos2: Vector2) -> void:
 	_trim_dragging = true
+	_trim_jaw_done_in_drag = false
 	_trim_drag_ids.clear()
 	trim_at(pos2)
 	var id := _nearest_entity_at(pos2)
@@ -4419,7 +4458,7 @@ func begin_trim_drag(pos2: Vector2) -> void:
 
 
 func update_trim_drag(pos2: Vector2) -> void:
-	if not _trim_dragging:
+	if not _trim_dragging or _trim_jaw_done_in_drag:
 		return
 	var id := _nearest_entity_at(pos2)
 	if id != "" and id not in _trim_drag_ids:
@@ -4431,6 +4470,7 @@ func update_trim_drag(pos2: Vector2) -> void:
 
 func end_trim_drag() -> void:
 	_trim_dragging = false
+	_trim_jaw_done_in_drag = false
 	_trim_drag_ids.clear()
 	_trim_hover_id = ""
 
