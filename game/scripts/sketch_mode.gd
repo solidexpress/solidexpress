@@ -51,6 +51,11 @@ var _polygon_variant := "across_flats"
 ## as the cutter — they pass through the rectangle centre and sit closer to
 ## the trim click than the real centreline.
 var _angle_datum_lines: Dictionary = {}
+## Jaw floor / walls / keep-side arc from the last successful Power Trim.
+## Re-welded after the extrude-time solve so 1e-6 joints survive DogLeg.
+var _jaw_floor_id := ""
+var _jaw_arc_id := ""
+var _jaw_wall_ids: Array[String] = []
 ## Draw next line as construction (centerline mode).
 var draw_construction := false
 ## Power-trim drag state: list of already-trimmed entity ids this stroke.
@@ -405,6 +410,9 @@ func _activate_session() -> void:
 	_drag.clear()
 	_smart_dim_pending.clear()
 	_last_commit_text = ""
+	_jaw_floor_id = ""
+	_jaw_arc_id = ""
+	_jaw_wall_ids.clear()
 	dimensions.clear()
 	intersection_points.clear()
 	_clear_dimension_labels()
@@ -555,13 +563,19 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		run_solve()
 		_restore_flipped_shaft_lines(pre_solve)
 		_weld_on_circle_endpoints()
+		_reweld_jaw_profile()
+	# Drop the leftover redrawn Ø45 before seal. Trim that missed the 15%
+	# gate left that full circle; seal would turn it into a second cap and
+	# the 1e-6 jaw joints would then fail.
+	_drop_circles_concentric_with_jaw_arcs()
 	_seal_tangent_bosses()
+	_reweld_jaw_profile()
 	if wanted_all:
 		selected_contours = []
 	var open_prof := not profile_is_closed(sketch)
 	if thin_thickness <= 0.0 and open_prof:
 		if op == "cut" or op == "fuse":
-			status.emit("Open-profile cut needs a line chain (Flip Side toggles material)")
+			status.emit(_chain_breaker_status())
 		else:
 			status.emit(_open_profile_status())
 		# Keep the sketch session alive so the mechanic can finish the outline.
@@ -2184,8 +2198,11 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		for mc in _model_circles():
 			var c2: Vector2 = mc["center"]
 			var r2 := float(mc["radius"])
+			# A ~5 mm offset cutter misses the 15% sketch-circle gate
+			# (0.15 × 22.5 = 3.375). The solid's head edge is still the cap.
+			var md := _point_line_distance(c2, a, b)
 			if _circle_meets_cutter(c2, r2, a, b) or (
-					_point_line_distance(c2, a, b) < 1.0
+					md <= 6.0
 					and _point_segment_distance(c2, a, b) < a.distance_to(b) + 5.0):
 				cc = c2
 				cr = r2
@@ -2248,6 +2265,11 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var floor_id: String = sketch.add_line(h0.x, h0.y, h1.x, h1.y)
 	var arc_id := _add_keep_side_arc(cc, cr, k0, k1, keep_dir)
 	_weld_jaw_profile(floor_id, walls, arc_id)
+	_jaw_floor_id = floor_id
+	_jaw_arc_id = arc_id
+	_jaw_wall_ids.clear()
+	for w in walls:
+		_jaw_wall_ids.append(str(w["id"]))
 	if circ_id != "":
 		sketch.remove_entity(circ_id)
 	var anchor := _lock_projected_circle(cc, cr)
@@ -2336,6 +2358,222 @@ func _weld_jaw_profile(floor_id: String, walls: Array, arc_id: String) -> void:
 	sketch.set_entity_geometry(str(walls[1]["id"]), {"start": h1, "end": s1})
 	sketch.set_entity_geometry(floor_id, {"start": h0, "end": h1})
 	sketch.set_entity_geometry(arc_id, {"start": s0, "end": s1})
+
+
+## Delete a leftover full circle that is concentric with a jaw arc trim
+## already added (same centre and radius within 0.5 mm). The arc is the cap.
+## The Ø10 hole at the origin is not concentric with that arc.
+func _drop_circles_concentric_with_jaw_arcs() -> void:
+	if sketch == null:
+		return
+	var arcs: Array = []
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "arc":
+			continue
+		arcs.append({
+			"c": info["center"],
+			"r": float(info.get("radius", 0.0)),
+		})
+	if arcs.is_empty():
+		return
+	var to_drop: Array[String] = []
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		var c: Vector2 = info["center"]
+		var r := float(info.get("radius", 0.0))
+		for arc in arcs:
+			if c.distance_to(arc["c"]) <= 0.5 and absf(r - float(arc["r"])) <= 0.5:
+				to_drop.append(id)
+				break
+	for id in to_drop:
+		sketch.remove_entity(id)
+
+
+## Re-weld the last trimmed jaw after an extrude-time solve. Float drift
+## from DogLeg can open the 1e-6 joints between the floor, walls, and arc.
+func _reweld_jaw_profile() -> void:
+	if sketch == null:
+		return
+	_discover_jaw_entities()
+	if _jaw_floor_id == "" or _jaw_arc_id == "" or _jaw_wall_ids.size() != 2:
+		return
+	if sketch.entity_info(_jaw_floor_id).is_empty() \
+			or sketch.entity_info(_jaw_arc_id).is_empty():
+		return
+	var finfo: Dictionary = sketch.entity_info(_jaw_floor_id)
+	var walls: Array = []
+	for wid in _jaw_wall_ids:
+		var winfo: Dictionary = sketch.entity_info(wid)
+		if winfo.is_empty() or str(winfo.get("type", "")) != "line":
+			return
+		var s: Vector2 = winfo["start"]
+		var e: Vector2 = winfo["end"]
+		var f0: Vector2 = finfo["start"]
+		var f1: Vector2 = finfo["end"]
+		var s_floor := minf(s.distance_to(f0), s.distance_to(f1))
+		var e_floor := minf(e.distance_to(f0), e.distance_to(f1))
+		var hit := s if s_floor <= e_floor else e
+		var keep := e if s_floor <= e_floor else s
+		walls.append({"id": wid, "hit": hit, "keep": keep})
+	_weld_jaw_profile(_jaw_floor_id, walls, _jaw_arc_id)
+
+
+## Recover floor / wall / arc ids when trim stored them, or find the only
+## non-construction jaw loop (one arc, two walls on its ends, one floor).
+func _discover_jaw_entities() -> void:
+	if sketch == null:
+		return
+	if _jaw_ids_alive():
+		return
+	_jaw_floor_id = ""
+	_jaw_arc_id = ""
+	_jaw_wall_ids.clear()
+	var arc_id := ""
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		if str(sketch.entity_info(id).get("type", "")) == "arc":
+			arc_id = id
+			break
+	if arc_id == "":
+		return
+	var ainfo: Dictionary = sketch.entity_info(arc_id)
+	var a0: Vector2 = ainfo["start"]
+	var a1: Vector2 = ainfo["end"]
+	var walls: Array[String] = []
+	var floor_id := ""
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id) or id == arc_id:
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var s: Vector2 = info["start"]
+		var e: Vector2 = info["end"]
+		var on_arc := s.distance_to(a0) <= 0.5 or s.distance_to(a1) <= 0.5 \
+				or e.distance_to(a0) <= 0.5 or e.distance_to(a1) <= 0.5
+		if on_arc:
+			walls.append(id)
+		else:
+			# Candidate floor: both ends near the non-arc ends of the walls.
+			if floor_id == "":
+				floor_id = id
+	if walls.size() != 2:
+		return
+	if floor_id == "" or not _line_joins_walls(floor_id, walls):
+		floor_id = _find_floor_for_walls(walls)
+	if floor_id == "":
+		return
+	_jaw_arc_id = arc_id
+	_jaw_floor_id = floor_id
+	_jaw_wall_ids = walls
+
+
+func _jaw_ids_alive() -> bool:
+	if sketch == null or _jaw_floor_id == "" or _jaw_arc_id == "" \
+			or _jaw_wall_ids.size() != 2:
+		return false
+	if sketch.entity_info(_jaw_floor_id).is_empty():
+		return false
+	if sketch.entity_info(_jaw_arc_id).is_empty():
+		return false
+	for wid in _jaw_wall_ids:
+		if sketch.entity_info(wid).is_empty():
+			return false
+	return true
+
+
+func _line_joins_walls(floor_id: String, walls: Array[String]) -> bool:
+	var finfo: Dictionary = sketch.entity_info(floor_id)
+	if finfo.is_empty():
+		return false
+	var f0: Vector2 = finfo["start"]
+	var f1: Vector2 = finfo["end"]
+	var hits := 0
+	for wid in walls:
+		var winfo: Dictionary = sketch.entity_info(wid)
+		if winfo.is_empty():
+			continue
+		var s: Vector2 = winfo["start"]
+		var e: Vector2 = winfo["end"]
+		if s.distance_to(f0) <= 0.5 or s.distance_to(f1) <= 0.5 \
+				or e.distance_to(f0) <= 0.5 or e.distance_to(f1) <= 0.5:
+			hits += 1
+	return hits == 2
+
+
+func _find_floor_for_walls(walls: Array[String]) -> String:
+	if walls.size() != 2:
+		return ""
+	var ends: Array[Vector2] = []
+	for wid in walls:
+		var winfo: Dictionary = sketch.entity_info(wid)
+		if winfo.is_empty():
+			return ""
+		ends.append(winfo["start"])
+		ends.append(winfo["end"])
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		if walls.has(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var s: Vector2 = info["start"]
+		var e: Vector2 = info["end"]
+		var s_hit := false
+		var e_hit := false
+		for p in ends:
+			if s.distance_to(p) <= 0.5:
+				s_hit = true
+			if e.distance_to(p) <= 0.5:
+				e_hit = true
+		if s_hit and e_hit:
+			return id
+	return ""
+
+
+## Names the entity that still opens the wire. One sentence with
+## `breaks the chain` so a refused cut is inspectable.
+func _chain_breaker_status() -> String:
+	var p: Variant = _open_profile_point()
+	var breaker_id := ""
+	var breaker_type := "entity"
+	if p is Vector2:
+		var pt: Vector2 = p
+		var best := 1.0e9
+		for id in sketch.entity_ids():
+			if sketch.is_construction(id):
+				continue
+			var info: Dictionary = sketch.entity_info(id)
+			var kind := str(info.get("type", ""))
+			var pts: Array = []
+			match kind:
+				"line", "arc":
+					pts = [info.get("start", Vector2.ZERO), info.get("end", Vector2.ZERO)]
+				_:
+					continue
+			for q in pts:
+				if typeof(q) != TYPE_VECTOR2:
+					continue
+				var d := pt.distance_to(q)
+				if d < best:
+					best = d
+					breaker_id = id
+					breaker_type = kind
+		if breaker_id != "":
+			return "%s %s at (%.1f, %.1f) breaks the chain" % [
+				breaker_type, breaker_id, pt.x, pt.y]
+		return "open profile at (%.1f, %.1f) breaks the chain" % [pt.x, pt.y]
+	return "open profile breaks the chain"
 
 
 ## Lines that end on a circle turn that circle into a hole when the planar
@@ -2465,6 +2703,24 @@ func _drop_stale_dimensions() -> void:
 	dimensions = kept
 
 
+## A new centreline replaces the previous cutter. Datum diagonal and
+## datum +X (`_angle_datum_lines`) stay.
+func _delete_other_non_datum_construction_lines() -> void:
+	if sketch == null:
+		return
+	var to_drop: Array[String] = []
+	for id in sketch.entity_ids():
+		if not sketch.is_construction(id):
+			continue
+		if _angle_datum_lines.has(id):
+			continue
+		if str(sketch.entity_info(id).get("type", "")) != "line":
+			continue
+		to_drop.append(id)
+	for id in to_drop:
+		sketch.remove_entity(id)
+
+
 ## Flip construction flag on all selected entities and redraw (construction
 ## entities use a dimmer gray so the style persists across redraws).
 func toggle_construction_selected() -> void:
@@ -2548,7 +2804,7 @@ func click(pos2: Vector2) -> void:
 	if tool == Tool.SELECT or tool == Tool.SMART_DIM:
 		var dhit_raw := dimension_hit(pos2)
 		if dhit_raw >= 0:
-			dimension_edit_requested.emit(dhit_raw)
+			_emit_dimension_edit(dhit_raw)
 			return
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
 	if tool != Tool.TRIM and tool != Tool.EXTEND:
@@ -2578,7 +2834,7 @@ func click(pos2: Vector2) -> void:
 				select_constraint("")
 			var dhit := dimension_hit(pos2)
 			if dhit >= 0:
-				dimension_edit_requested.emit(dhit)
+				_emit_dimension_edit(dhit)
 				return
 			_select_at(pos2)
 			selection_actions_needed.emit()
@@ -2596,10 +2852,17 @@ func click(pos2: Vector2) -> void:
 			if _tool_points.size() >= 2:
 				var a := _tool_points[_tool_points.size() - 2]
 				var b := _tool_points[_tool_points.size() - 1]
+				var as_centreline := draw_construction or tool == Tool.CENTERLINE
+				if as_centreline:
+					_delete_other_non_datum_construction_lines()
 				var lid: String = sketch.add_line(a.x, a.y, b.x, b.y)
-				if draw_construction or tool == Tool.CENTERLINE:
+				if as_centreline:
 					sketch.set_construction(lid, true)
+					# Two-point centreline: do not extend the next click.
+					_tool_points.clear()
 				_infer_line(lid, a, b)
+				if as_centreline:
+					_drop_stale_dimensions()
 				_redraw()
 				# Propose chips follow new geometry even when infer did not solve.
 				selection_actions_needed.emit()
@@ -3037,9 +3300,49 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 		var ca: Vector2 = sketch.entity_info(ida)["center"]
 		var cb: Vector2 = sketch.entity_info(idb)["center"]
 		constrain("distance", ca.distance_to(cb))
+		# A failed solve reverts the constraint. Do not open a popup on a
+		# stale index — only emit when that centre distance is still live.
+		var idx := _distance_dim_index_for(ida, idb)
+		if idx >= 0:
+			_emit_dimension_edit(idx)
 		return
 	if ta == "line" and tb == "line":
 		constrain("angle", _lines_signed_angle(ida, idb))
+
+
+## Open the in-viewport editor now, and again next frame. A click that hits
+## a label while the popup is already up dismisses that popup on mouse-up;
+## the deferred emit puts it back so a label click still leaves it visible.
+func _emit_dimension_edit(index: int) -> void:
+	if index < 0:
+		return
+	dimension_edit_requested.emit(index)
+	_reemit_dimension_edit.call_deferred(index)
+
+
+func _reemit_dimension_edit(index: int) -> void:
+	if index < 0 or index >= dimensions.size():
+		return
+	if str(dimensions[index].get("cid", "")) == "":
+		return
+	dimension_edit_requested.emit(index)
+
+
+func _distance_dim_index_for(ida: String, idb: String) -> int:
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if str(dim.get("type", "")) != "distance":
+			continue
+		if str(dim.get("cid", "")) == "":
+			continue
+		var ids: Array = dim.get("ids", [])
+		if ids.size() < 2:
+			continue
+		var a := str(ids[0])
+		var b := str(ids[1])
+		if (a == ida and b == idb) or (a == idb and b == ida):
+			return i
+	return -1
 
 
 func _point_xy(ref: Dictionary) -> Vector2:
@@ -4196,12 +4499,20 @@ func _rebuild_dimension_labels() -> void:
 	if _dimension_labels == null or sketch == null:
 		return
 	_dimension_labels.visible = dimensions_visible
+	var taken: Array[Vector2] = []
 	for dim in dimensions:
 		if typeof(dim) != TYPE_DICTIONARY:
 			continue
 		var pos2: Variant = _dimension_label_pos2(dim)
 		if pos2 == null:
 			continue
+		var pos := pos2 as Vector2
+		# Same 2 mm / 2.5 mm stack the constraint glyphs already use.
+		var guard := 0
+		while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
+			pos += Vector2(0, 2.5)
+			guard += 1
+		taken.append(pos)
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.fixed_size = true
@@ -4214,7 +4525,7 @@ func _rebuild_dimension_labels() -> void:
 		if str(dim.get("type", "")) == "angle":
 			text = text + "°"
 		label.text = text
-		label.position = _to3(pos2)
+		label.position = _to3(pos)
 		_dimension_labels.add_child(label)
 
 
