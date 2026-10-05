@@ -14,6 +14,10 @@ const PROFILE_COLOR_CLOSED := Color(0.98, 0.78, 0.08, 1.0)
 const PROFILE_COLOR_OPEN := Color(0.35, 0.88, 1.0, 1.0)
 const CONSTRUCTION_COLOR := Color(0.85, 0.7, 0.25, 0.45)
 const PAD_FRAC := 0.2
+## A pad whose plane is within this distance of the solid surface under the
+## cursor is "on" that surface. It only wins if the cursor is on its ink.
+const PAD_FACE_EPS_MM := 0.6
+const PAD_INK_TOL_MM := 1.5
 ## Rim half-width in sketch-plane units (mm); ~1/3 of the original 0.35.
 const EDGE_HALF := 0.35 / 3.0
 ## Profile curve half-width in sketch-plane units (mm) — world-space so it stays readable when orbiting.
@@ -190,7 +194,44 @@ func _add_pad(fid: String, sk: SxSketch) -> void:
 		"min2": mn,
 		"max2": mx,
 		"closed": closed,
+		"ink": _collect_ink(sk),
 	}
+
+
+## Non-construction strokes of a sketch in plane (u, v) units, for hit tests.
+func _collect_ink(sk: SxSketch) -> Array:
+	var ink: Array = []
+	for id in sk.entity_ids():
+		var info: Dictionary = sk.entity_info(id)
+		if bool(info.get("construction", false)):
+			continue
+		match str(info.get("type", "")):
+			"line":
+				ink.append({"k": "line", "a": info["start"], "b": info["end"]})
+			"circle":
+				ink.append({"k": "circle", "c": info["center"], "r": float(info["radius"])})
+			"arc":
+				ink.append({"k": "circle", "c": info["center"], "r": float(info["radius"])})
+			_:
+				pass
+	return ink
+
+
+func _ink_distance(ink: Array, p: Vector2) -> float:
+	var best := INF
+	for seg in ink:
+		var d := INF
+		if str(seg["k"]) == "line":
+			var a: Vector2 = seg["a"]
+			var b: Vector2 = seg["b"]
+			var ab := b - a
+			var len2 := ab.length_squared()
+			var t := 0.0 if len2 < 1e-12 else clampf((p - a).dot(ab) / len2, 0.0, 1.0)
+			d = p.distance_to(a + ab * t)
+		else:
+			d = absf(p.distance_to(seg["c"] as Vector2) - float(seg["r"]))
+		best = minf(best, d)
+	return best
 
 
 ## Reflective rim: thin quads around the pad perimeter (screen-stable width in mm).
@@ -353,6 +394,49 @@ func pick_pad(ray_origin: Vector3, ray_dir: Vector3) -> String:
 		var extent := (mx2 - mn2).length()
 		var radial := Vector2(u, v).distance_to(center)
 		# Normalize by pad size; tiny depth bias so equal scores prefer nearer.
+		var score := radial / maxf(extent, 1.0) + t * 1e-4
+		if score < best_score:
+			best_score = score
+			best_fid = fid
+	return best_fid
+
+
+## Like pick_pad, but aware of the solid under the same ray. `solid_t` is the
+## distance along `ray_dir` (unit length) to the first solid hit, INF when the
+## ray misses every solid. A pad behind that surface never wins. A pad on that
+## surface (a face sketch) only wins when the cursor is on its drawn ink, so a
+## click elsewhere on the face still reaches the face.
+func pick_pad_visible(ray_origin: Vector3, ray_dir: Vector3, solid_t: float = INF) -> String:
+	var d := ray_dir.normalized() if ray_dir.length_squared() > 1e-12 else ray_dir
+	var best_score := INF
+	var best_fid := ""
+	for fid in _pads:
+		var e: Dictionary = _pads[fid]
+		var n: Vector3 = e["normal"]
+		var denom := d.dot(n)
+		if absf(denom) < 1e-9:
+			continue
+		var origin: Vector3 = e["origin"]
+		var t := (origin - ray_origin).dot(n) / denom
+		if t < 0.0:
+			continue
+		var hit: Vector3 = ray_origin + d * t
+		var local := hit - origin
+		var u := local.dot(e["x"] as Vector3)
+		var v := local.dot(e["y"] as Vector3)
+		var mn2: Vector2 = e["min2"]
+		var mx2: Vector2 = e["max2"]
+		if u < mn2.x or u > mx2.x or v < mn2.y or v > mx2.y:
+			continue
+		if is_finite(solid_t):
+			if t > solid_t + PAD_FACE_EPS_MM:
+				continue
+			if t >= solid_t - PAD_FACE_EPS_MM \
+					and _ink_distance(e["ink"] as Array, Vector2(u, v)) > PAD_INK_TOL_MM:
+				continue
+		var center := (mn2 + mx2) * 0.5
+		var extent := (mx2 - mn2).length()
+		var radial := Vector2(u, v).distance_to(center)
 		var score := radial / maxf(extent, 1.0) + t * 1e-4
 		if score < best_score:
 			best_score = score

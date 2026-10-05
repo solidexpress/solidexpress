@@ -1607,16 +1607,24 @@ func _should_release_cancel_focus(focus: Control) -> bool:
 	return false
 
 
+## Distance along the (unit) ray to a solid hit; INF when the ray missed.
+func _solid_hit_t(ray: Array, hit: Dictionary) -> float:
+	if hit.is_empty() or not (hit.get("point") is Vector3):
+		return INF
+	var d: Vector3 = (ray[1] as Vector3).normalized()
+	return ((hit["point"] as Vector3) - (ray[0] as Vector3)).dot(d)
+
+
 func _commit_pick_sketch_host(screen_pos: Vector2) -> void:
 	var ray := _model_ray(screen_pos)
-	# Prefer yellow sketch pads.
+	var hit: Dictionary = view.pick_info(ray[0], ray[1])
 	if view.sketch_pads != null:
-		var pad_fid: String = view.sketch_pads.pick_pad(ray[0], ray[1])
+		var pad_fid: String = view.sketch_pads.pick_pad_visible(
+				ray[0], ray[1], _solid_hit_t(ray, hit))
 		if pad_fid != "":
 			_picking_sketch_host = false
 			sketch_host_picked.emit("pad", "", "", pad_fid)
 			return
-	var hit: Dictionary = view.pick_info(ray[0], ray[1])
 	if not hit.is_empty() and str(hit.get("face", "")) != "":
 		var face_id := str(hit["face"])
 		var body_id := str(hit.get("body", ""))
@@ -3272,6 +3280,10 @@ func _on_release(pos: Vector2) -> void:
 						status.emit("Push/pull failed (planar faces only for now)")
 			_pp_preview_dist = 0.0
 			_drag_mode = DragMode.NONE
+			if was_click and _click_hits_pad():
+				_refresh_transform_hud()
+				queue_redraw()
+				return
 			_box_drag = false
 			_additive_click = false
 			_refresh_transform_hud()
@@ -3343,17 +3355,8 @@ func _on_release(pos: Vector2) -> void:
 	# Pads sit on faces — prefer a pad hit even when the body ray is non-empty,
 	# otherwise face-hosted pads are unclickable under the solid.
 	# An armed fillet/chamfer/hole pick must hit the solid, not reopen the pad.
-	var armed_pick := ops_panel != null and ops_panel.consumes_viewport_pick()
-	if was_click and not armed_pick and view.sketch_pads != null and (sketch_mode == null or not sketch_mode.active):
-		var pad_ray := _model_ray(_press_pos)
-		var pad_fid: String = view.sketch_pads.pick_pad(pad_ray[0], pad_ray[1])
-		if pad_fid != "":
-			sketch_pad_clicked.emit(pad_fid, _additive_click)
-			_box_drag = false
-			_additive_click = false
-			_press_empty = false
-			_press_travel = 0.0
-			return
+	if was_click and _click_hits_pad():
+		return
 	if _press_empty:
 		if not _additive_click:
 			view.clear_selection()
@@ -3393,6 +3396,29 @@ func _on_release(pos: Vector2) -> void:
 	_additive_click = false
 	_press_empty = false
 	_press_travel = 0.0
+
+
+## A click that lands on a sketch pad reopens that sketch. An armed
+## fillet/chamfer/hole pick must hit the solid instead. Returns true when the
+## click was consumed by a pad.
+func _click_hits_pad() -> bool:
+	var armed_pick := ops_panel != null and ops_panel.consumes_viewport_pick()
+	if armed_pick or view.sketch_pads == null:
+		return false
+	if sketch_mode != null and sketch_mode.active:
+		return false
+	var pad_ray := _model_ray(_press_pos)
+	var pad_hit: Dictionary = view.pick_info(pad_ray[0], pad_ray[1])
+	var pad_fid: String = view.sketch_pads.pick_pad_visible(
+			pad_ray[0], pad_ray[1], _solid_hit_t(pad_ray, pad_hit))
+	if pad_fid == "":
+		return false
+	sketch_pad_clicked.emit(pad_fid, _additive_click)
+	_box_drag = false
+	_additive_click = false
+	_press_empty = false
+	_press_travel = 0.0
+	return true
 
 
 func _commit_property_panel_on_deselect() -> void:
