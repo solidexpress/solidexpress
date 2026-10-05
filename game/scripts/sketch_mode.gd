@@ -3275,9 +3275,31 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 		var ca: Vector2 = sketch.entity_info(ida)["center"]
 		var cb: Vector2 = sketch.entity_info(idb)["center"]
 		constrain("distance", ca.distance_to(cb))
+		# A failed solve reverts the constraint. Do not open a popup on a
+		# stale index — only emit when that centre distance is still live.
+		var idx := _distance_dim_index_for(ida, idb)
+		if idx >= 0:
+			dimension_edit_requested.emit(idx)
 		return
 	if ta == "line" and tb == "line":
 		constrain("angle", _lines_signed_angle(ida, idb))
+
+
+func _distance_dim_index_for(ida: String, idb: String) -> int:
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if str(dim.get("type", "")) != "distance":
+			continue
+		if str(dim.get("cid", "")) == "":
+			continue
+		var ids: Array = dim.get("ids", [])
+		if ids.size() < 2:
+			continue
+		var a := str(ids[0])
+		var b := str(ids[1])
+		if (a == ida and b == idb) or (a == idb and b == ida):
+			return i
+	return -1
 
 
 func _point_xy(ref: Dictionary) -> Vector2:
