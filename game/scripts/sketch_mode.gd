@@ -596,6 +596,7 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	var sk_fid := _ensure_sketch_feature()
 	if sk_fid == "":
 		return
+	var vol_before := _body_volume(view.body_of_feature(target_fid)) if op == "cut" else -1.0
 	var ex_fid: String = view.doc.graph_add_extrude(
 		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
 		thin_thickness, thin_type, flip_side, selected_contours)
@@ -603,8 +604,40 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		status.emit(_graph_error_text())
 		_reassert_camera()
 		return
+	if ex_fid != "" and op == "cut" and vol_before > 0.0:
+		var vol_after := _body_volume(view.body_of_feature(target_fid))
+		var refuse := _cut_refusal(vol_before, vol_after)
+		if refuse != "":
+			view.doc.graph_remove(ex_fid)
+			view.refresh()
+			status.emit(refuse)
+			_reassert_camera()
+			return
 	var fail_msg := "Extrude failed — is the profile closed?"
 	_finish_feature(sk_fid, ex_fid, op, fail_msg)
+
+
+const CUT_MAX_REMOVED_FRACTION := 0.5
+const CUT_MIN_REMOVED_MM3 := 1e-3
+
+
+func _body_volume(body_id: String) -> float:
+	if body_id == "" or view == null or view.doc == null:
+		return -1.0
+	return float(view.doc.measure_mass(body_id).get("volume", -1.0))
+
+
+## Named refusal for a cut that boolean-succeeded but wrecked the body.
+## Empty string = accept.
+func _cut_refusal(before: float, after: float) -> String:
+	if after < 0.0:
+		return "Cut removed the whole body — the sketch contour is not inside the face. Fix the contour or pick Selected Contours."
+	var removed := before - after
+	if removed <= CUT_MIN_REMOVED_MM3:
+		return "Cut removed nothing — the contour does not reach the body. Check the contour and the Up To Surface face."
+	if removed > before * CUT_MAX_REMOVED_FRACTION:
+		return "Cut would remove %d%% of the body — the contour covers most of it. Nothing was cut." % int(round(100.0 * removed / before))
+	return ""
 
 
 ## Finish the sketch and revolve. The axis is the selected line when one is
