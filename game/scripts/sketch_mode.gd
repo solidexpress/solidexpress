@@ -831,6 +831,12 @@ func set_tool(t: Tool) -> void:
 	tool_changed.emit(int(t))
 
 
+## Rail "Jaw" button: Rectangle tool, Center Three Point variant.
+func start_jaw_tool() -> void:
+	set_tool(Tool.RECT)
+	set_tool_variant("center_three_point")
+
+
 func set_tool_variant(v: String) -> void:
 	tool_variant = v
 	if tool == Tool.POLYGON and (v == "across_flats" or v == "vertex"):
@@ -838,7 +844,10 @@ func set_tool_variant(v: String) -> void:
 	_tool_points.clear()
 	_length_override = -1.0
 	_update_preview()
-	status.emit("Variant: %s" % v.replace("_", " "))
+	if v == "center_three_point":
+		status.emit(JAW_HINT)
+	else:
+		status.emit("Variant: %s" % v.replace("_", " "))
 
 
 ## True when a draw tool has the first anchor and is waiting for the tip.
@@ -1001,6 +1010,9 @@ func last_commit_text() -> String:
 func is_empty_new_sketch() -> bool:
 	return active and editing_fid == "" and sketch != null \
 			and sketch.entity_ids().is_empty()
+
+
+const JAW_HINT := "Jaw — click 1 centre, click 2 end of the long side, click 3 half the width"
 
 
 func variants_for_tool(t: Tool = tool) -> Array:
