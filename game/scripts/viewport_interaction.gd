@@ -2662,7 +2662,11 @@ func _sketch_input(event: InputEvent) -> void:
 					sketch_mode.cancel_pending_draw()
 					status.emit("First point dropped — Esc again exits the sketch")
 				else:
-					sketch_mode.cancel()
+					var kept := sketch_mode.esc_keep_sketch()
+					if kept != "":
+						status.emit(kept)
+					else:
+						sketch_mode.cancel()
 		accept_event()
 
 
