@@ -2,9 +2,17 @@ BUILD_DIR := build
 GODOT := tools/godot/godot
 JOBS := $(shell nproc)
 
-.PHONY: all configure build test test-kernel test-godot lint-rung01-e2e clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
+.PHONY: all configure build test test-kernel test-godot preflight test-tools lint-rung01-e2e clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
+
+# OCCT shared libraries must be on the loader path or libsxcore does not load
+# and every Godot script dies with "Could not find type SxDocument".
+-include packaging/occt.version
+OCCT_PREFIX ?= /opt/occt-$(OCCT_VERSION)
+ifneq ($(wildcard $(OCCT_PREFIX)/lib),)
+export LD_LIBRARY_PATH := $(OCCT_PREFIX)/lib$(if $(LD_LIBRARY_PATH),:$(LD_LIBRARY_PATH))
+endif
 
 all: build
 
@@ -23,7 +31,10 @@ test-kernel: build
 import: build
 	$(GODOT) --headless --path game --import > /dev/null 2>&1 || true
 
-test-godot: build import
+preflight: build import
+	$(GODOT) --headless --path game --script tests/preflight_sxcore.gd
+
+test-godot: build import preflight
 	$(GODOT) --headless --path game --script tests/run_parse_sweep_tests.gd
 	$(GODOT) --headless --path game --script tests/run_tests.gd
 	$(GODOT) --headless --path game --script tests/run_ui_tests.gd
@@ -113,12 +124,20 @@ test-godot: build import
 	$(GODOT) --headless --path game --script tests/run_rung01_replan6_smartdim.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan6_export.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan6_chrome.gd
+	@for f in game/tests/run_rung01_replan7_*.gd; do \
+		[ -e "$$f" ] || continue; \
+		$(GODOT) --headless --path game --script tests/$$(basename $$f) || exit 1; \
+	done
 
 lint-rung01-e2e:
 	python3 tools/lint_rung01_e2e.py
 
+test-tools:
+	@if [ -f tools/test_check_rung01.py ]; then python3 tools/test_check_rung01.py; fi
+
 test: test-kernel
 	python3 tools/lint_rung01_e2e.py
+	$(MAKE) test-tools
 	$(MAKE) test-godot
 	@echo "ALL TESTS PASSED"
 

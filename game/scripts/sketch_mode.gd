@@ -3330,6 +3330,8 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 	if (ta == "circle" or ta == "arc") and (tb == "circle" or tb == "arc"):
 		var ca: Vector2 = sketch.entity_info(ida)["center"]
 		var cb: Vector2 = sketch.entity_info(idb)["center"]
+		_pin_circle_at_sketch_origin(ida, ca)
+		_pin_circle_at_sketch_origin(idb, cb)
 		constrain("distance", ca.distance_to(cb))
 		# A failed solve reverts the constraint. Do not open a popup on a
 		# stale index — only emit when that centre distance is still live.
@@ -3640,6 +3642,41 @@ func _lock_sized_circle(id: String) -> void:
 	if _entity_has_constraint(id, "fix"):
 		return
 	sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
+
+
+const ORIGIN_PIN_TOL := 0.5
+
+
+func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
+	if center.length() > ORIGIN_PIN_TOL:
+		return
+	var anchor := _origin_anchor_point()
+	if anchor == "":
+		return
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if str(info.get("type", "")) != "coincident":
+			continue
+		var refs: Array = info.get("refs", [])
+		if refs.size() == 2 and str(refs[0].get("entity", "")) == id and str(refs[1].get("entity", "")) == anchor:
+			return
+	sketch.add_constraint("coincident", [
+		{"entity": id, "role": "center"},
+		{"entity": anchor, "role": "self"}], 0.0)
+
+
+func _origin_anchor_point() -> String:
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) == "point" and sketch.is_construction(id) \
+				and _entity_has_constraint(id, "fix"):
+			return id
+	var pt: String = sketch.add_point(0.0, 0.0)
+	if pt == "":
+		return ""
+	sketch.set_construction(pt, true)
+	sketch.add_constraint("fix", [{"entity": pt, "role": "self"}], 0.0)
+	return pt
 
 
 ## Lock every sized circle (typed radius on the wrench bosses).
