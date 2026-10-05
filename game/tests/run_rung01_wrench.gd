@@ -216,14 +216,20 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		check(absf(gap - 200.0) <= TOL, "centre distance is 200 ± 0.2 (got %.3f)" % gap)
 	else:
 		check(false, "two circles remain after Smart Dimension 200")
-	# Shaft 20 wide: lines at y=±10, tangent to the Ø20, meeting the Ø45 at
-	# the concave neck. Clicks are a few tenths off the contacts so snap +
-	# inference close them. Inference stays on; sized circles lock so the
-	# Ø20 stays put.
-	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
+	# Shaft 20 wide: lines at y = ±r0 relative to the origin boss, meeting
+	# the Ø45 at the concave neck. Clicks are a few tenths off the contacts
+	# so snap + inference close them. Use the solved centres (right-half
+	# click then Smart Dimension 200), not a hardcoded (200, 0).
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	for y_sign in [1.0, -1.0]:
-		await _draw_shaft_line(ctx, far_x, float(y_sign))
+	if circs.size() == 2:
+		print("  shaft from bosses origin (%.3f, %.3f) r=%.3f  head (%.3f, %.3f) r=%.3f" % [
+			(circs[0]["center"] as Vector2).x, (circs[0]["center"] as Vector2).y,
+			float(circs[0]["radius"]),
+			(circs[1]["center"] as Vector2).x, (circs[1]["center"] as Vector2).y,
+			float(circs[1]["radius"])])
+		for y_sign in [1.0, -1.0]:
+			await _draw_shaft_line(ctx, circs[0]["center"] as Vector2, float(circs[0]["radius"]),
+					circs[1]["center"] as Vector2, float(circs[1]["radius"]), float(y_sign))
 	await _assert_shaft_lines_both_sides(sm)
 	await _assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
@@ -370,6 +376,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(err == "", "slot cut status clean" if err == "" else err)
 
 	print("- fillets: neck R10, faces R1, slot floor R1.5 refused")
+	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
 	await _fillet_neck(ctx, body, far_x)
 	await _fillet_face(ctx, body, Vector3(0, 0, 1), Vector3(200, -16, 10), 1.0, "top face")
 	await _fillet_face(ctx, body, Vector3(0, 0, -1), Vector3(50, 0, 0), 1.0, "bottom face")
@@ -1902,14 +1909,13 @@ func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 	await _aim_pointer(ctx, screen)
 
 
-func _draw_shaft_line(ctx: FilmContext, far_x: float, sign: float) -> void:
-	var y := 10.0 * sign
-	var a := Vector2(0.0, y)
-	var b := Vector2(far_x, y)
-	var c2 := Vector2(200.0, 0.0)
-	var a_off := a + Vector2(0.0, 0.3 * sign)
-	var b_dir := b - c2
-	var b_off := b + (b_dir.normalized() if b_dir.length_squared() > 1e-8 else Vector2(0, sign)) * 0.3
+func _draw_shaft_line(ctx: FilmContext, c0: Vector2, r0: float, c1: Vector2, r1: float, sign: float) -> void:
+	var far := sqrt(maxf(r1 * r1 - r0 * r0, 0.0))
+	var a_exact := c0 + Vector2(0.0, r0 * sign)
+	var b_exact := Vector2(c1.x - far, c0.y + r0 * sign)
+	var a_off := a_exact + Vector2(0.0, 0.3 * sign)
+	var b_dir := b_exact - c1
+	var b_off := b_exact + (b_dir.normalized() if b_dir.length_squared() > 1e-8 else Vector2(0, sign)) * 0.3
 	await _zoom_uv(ctx, a_off, 90.0)
 	await _click_uv(ctx, a_off, "Tangent start near circle")
 	await _zoom_uv(ctx, b_off, 90.0)
