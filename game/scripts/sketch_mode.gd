@@ -140,6 +140,11 @@ var _line_material: StandardMaterial3D
 var _preview_material: StandardMaterial3D
 
 const DIM_LABEL_OFFSET := 4.0  # sketch-plane units perpendicular to a distance dim
+const DIM_LABEL_FONT := 18  # Label3D font px (fixed_size: screen size follows the window, not the zoom)
+const DIM_LABEL_PIXEL := 0.004  # Label3D.pixel_size
+const DIM_LABEL_PAD_PX := 8.0  # extra screen px around the text that still count as a click
+const DIM_LABEL_STACK_MM := 14.0  # labels anchored closer than this stack upward on screen
+const DIM_LABEL_STACK_PX := 28.0  # label-space px between stacked labels (> the 18 px font height)
 const COLOR_ENTITY := Color(0.95, 0.95, 1.0)
 const COLOR_CONSTRUCTION := Color(0.45, 0.45, 0.48)  # dimmer/desaturated
 const COLOR_CONSTRAINED := Color(0.35, 0.85, 0.45)  # fully constrained sketch
@@ -5032,6 +5037,47 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 	return mid + perp * DIM_LABEL_OFFSET
 
 
+func _dimension_label_text(dim: Dictionary) -> String:
+	var shown := snappedf(_dimension_display_value(dim), 0.0001)
+	var text := _format_dimension(shown)
+	if str(dim.get("type", "")) == "diameter":
+		text = "Ø" + text
+	if str(dim.get("type", "")) == "angle":
+		text = text + "°"
+	return text
+
+
+## Screen px per Label3D font px for a fixed_size label seen by `cam`.
+func _label_px_scale(cam: Camera3D) -> float:
+	var h := cam.get_viewport().get_visible_rect().size.y
+	var k := DIM_LABEL_PIXEL * h * 0.5
+	if cam.projection == Camera3D.PROJECTION_PERSPECTIVE:
+		k /= tan(deg_to_rad(cam.fov) * 0.5)
+	return k
+
+
+func _dimension_label_size_px(text: String) -> Vector2:
+	var font: Font = ThemeDB.fallback_font
+	return Vector2(font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, DIM_LABEL_FONT).x,
+			font.get_height(DIM_LABEL_FONT))
+
+
+## Screen rectangle of the drawn text. `anchor` is the projected label_pos.
+func _dimension_label_rect(dim: Dictionary, anchor: Vector2, k: float) -> Rect2:
+	var text := str(dim.get("label_text", ""))
+	if text == "":
+		text = _dimension_label_text(dim)
+	var size := _dimension_label_size_px(text) * k
+	var centre := anchor - Vector2(0.0, float(dim.get("label_stack", 0)) * DIM_LABEL_STACK_PX * k)
+	return Rect2(centre - size * 0.5, size)
+
+
+func _rect_gap(r: Rect2, p: Vector2) -> float:
+	var dx := maxf(maxf(r.position.x - p.x, 0.0), p.x - r.end.x)
+	var dy := maxf(maxf(r.position.y - p.y, 0.0), p.y - r.end.y)
+	return sqrt(dx * dx + dy * dy)
+
+
 func _rebuild_dimension_labels() -> void:
 	_clear_dimension_labels()
 	if _dimension_labels == null or sketch == null:
@@ -5045,24 +5091,22 @@ func _rebuild_dimension_labels() -> void:
 		if pos2 == null:
 			continue
 		var pos := pos2 as Vector2
-		# Same 2 mm / 2.5 mm stack the constraint glyphs already use.
-		var guard := 0
-		while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
-			pos += Vector2(0, 2.5)
-			guard += 1
+		var stack := 0
+		for t in taken:
+			if t.distance_to(pos) < DIM_LABEL_STACK_MM:
+				stack += 1
 		taken.append(pos)
+		var text := _dimension_label_text(dim)
 		dim["label_pos"] = pos
+		dim["label_stack"] = stack
+		dim["label_text"] = text
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.fixed_size = true
-		label.pixel_size = 0.004
-		label.font_size = 28
-		var shown := snappedf(_dimension_display_value(dim), 0.0001)
-		var text := _format_dimension(shown)
-		if str(dim.get("type", "")) == "diameter":
-			text = "Ø" + text
-		if str(dim.get("type", "")) == "angle":
-			text = text + "°"
+		label.pixel_size = DIM_LABEL_PIXEL
+		label.font_size = DIM_LABEL_FONT
+		label.outline_size = 4
+		label.offset = Vector2(0.0, float(stack) * DIM_LABEL_STACK_PX)
 		label.text = text
 		label.position = _to3(pos)
 		_dimension_labels.add_child(label)
@@ -5209,14 +5253,22 @@ func delete_selected_constraint() -> bool:
 	return true
 
 
-## Index of the dimension whose label sits within PICK_TOLERANCE of pos2 (-1 = none).
+## Index of the dimension whose label text is under pos2 (-1 = none). The test is
+## the label's screen rectangle plus DIM_LABEL_PAD_PX; the 22 px circle around
+## the stored anchor and the 6 mm sketch-space radius stay as fallbacks.
 func dimension_hit(pos2: Vector2) -> int:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var screen := Vector2(INF, INF)
+	var k := 0.0
 	if cam != null:
 		screen = cam.unproject_position(to_global(to_model(pos2)))
-	var best := -1
+		k = _label_px_scale(cam)
+	var rect_hit := -1
+	var rect_gap := INF
+	var rect_centre_d := INF
+	var anchor_hit := -1
 	var best_px := 22.0
+	var mm_hit := -1
 	var best_mm := 6.0
 	for i in range(dimensions.size()):
 		var dim: Dictionary = dimensions[i]
@@ -5226,19 +5278,29 @@ func dimension_hit(pos2: Vector2) -> int:
 		if lp == null:
 			continue
 		var p: Vector2 = lp
-		var dmm := pos2.distance_to(p)
-		var win := false
 		if cam != null:
 			var sp := cam.unproject_position(to_global(to_model(p)))
+			var rect := _dimension_label_rect(dim, sp, k)
+			var gap := _rect_gap(rect, screen)
+			var centre_d := screen.distance_to(rect.get_center())
+			if gap <= DIM_LABEL_PAD_PX and (gap < rect_gap - 0.01
+					or (absf(gap - rect_gap) <= 0.01 and centre_d < rect_centre_d)):
+				rect_hit = i
+				rect_gap = gap
+				rect_centre_d = centre_d
 			var dpx := screen.distance_to(sp)
 			if dpx < best_px:
 				best_px = dpx
-				best = i
-				win = true
-		if not win and dmm < best_mm:
+				anchor_hit = i
+		var dmm := pos2.distance_to(p)
+		if dmm < best_mm:
 			best_mm = dmm
-			best = i
-	return best
+			mm_hit = i
+	if rect_hit >= 0:
+		return rect_hit
+	if anchor_hit >= 0:
+		return anchor_hit
+	return mm_hit
 
 
 ## Live inference hint while drawing: which constraint the LINE tool would add

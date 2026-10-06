@@ -147,7 +147,7 @@ func test_offset_cutter_jaw_cut() -> void:
 	var status_text := str(ctx.main.status_label.text)
 	check(status_text.contains("Trimmed open jaw") or _status_has("Trimmed open jaw"),
 			"status contains Trimmed open jaw (got '%s')" % status_text)
-	check(_labels_are_stacked(sm), "no two dimension labels share a point within 2 mm")
+	check(_labels_are_stacked(ctx, sm), "no two dimension label rectangles overlap on screen")
 	check(_hole_circle_present(sm), "Ø10 circle is still in the sketch")
 	chrome = ctx.main.sketch_chrome
 	await _pick_option(ctx, _finish_op(chrome), 1, "Cut")
@@ -719,19 +719,18 @@ func _non_datum_construction_ids(sm: SketchMode) -> Array[String]:
 	return out
 
 
-func _labels_are_stacked(sm: SketchMode) -> bool:
-	var uvs: Array[Vector2] = []
-	if sm == null or sm._dimension_labels == null:
-		return true
-	for child in sm._dimension_labels.get_children():
-		if not (child is Label3D):
+func _labels_are_stacked(ctx: FilmContext, sm: SketchMode) -> bool:
+	var cam: Camera3D = ctx.main.camera
+	var k := sm._label_px_scale(cam)
+	var rects: Array[Rect2] = []
+	for dim in sm.dimensions:
+		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
 			continue
-		var p3: Vector3 = (child as Label3D).position
-		var rel := p3 - sm.plane_origin
-		uvs.append(Vector2(rel.dot(sm.plane_x), rel.dot(sm.plane_y)))
-	for i in range(uvs.size()):
-		for j in range(i + 1, uvs.size()):
-			if uvs[i].distance_to(uvs[j]) < 2.0:
+		var anchor: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(dim["label_pos"] as Vector2))
+		rects.append(sm._dimension_label_rect(dim, anchor, k))
+	for i in range(rects.size()):
+		for j in range(i + 1, rects.size()):
+			if rects[i].intersects(rects[j]):
 				return false
 	return true
 
