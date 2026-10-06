@@ -2383,11 +2383,106 @@ func _jaw_no_cap_status(a: Vector2, b: Vector2) -> String:
 			best_d, best_r * 2.0, JAW_CUTTER_MAX_RIM_FRACTION * best_r]
 
 
+## Two longest non-construction lines within 2° of the longest profile line.
+func _jaw_long_sides() -> Array:
+	var dir := _longest_profile_dir()
+	if dir.length_squared() < 1e-8:
+		return []
+	var sides: Array = []
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var a: Vector2 = info["start"]
+		var b: Vector2 = info["end"]
+		var d := b - a
+		if d.length() < 1.0:
+			continue
+		if not _dirs_within_deg(d, dir, 2.0):
+			continue
+		sides.append({"id": id, "a": a, "b": b, "len": d.length()})
+	sides.sort_custom(func(x, y): return float(x["len"]) > float(y["len"]))
+	if sides.size() > 2:
+		sides = sides.slice(0, 2)
+	return sides
+
+
+## Proper segment-segment intersection, or null.
+func _segment_intersect(a: Vector2, b: Vector2, c: Vector2, d: Vector2) -> Variant:
+	var r := b - a
+	var s := d - c
+	var denom := r.x * s.y - r.y * s.x
+	if absf(denom) < 1e-9:
+		return null
+	var t := ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / denom
+	var u := ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / denom
+	if t < -1e-4 or t > 1.0 + 1e-4 or u < -1e-4 or u > 1.0 + 1e-4:
+		return null
+	return a + r * t
+
+
+func _cutter_crosses_both_sides(a: Vector2, b: Vector2, sides: Array) -> bool:
+	if sides.size() != 2:
+		return false
+	return _segment_intersect(a, b, sides[0]["a"], sides[0]["b"]) != null \
+			and _segment_intersect(a, b, sides[1]["a"], sides[1]["b"]) != null
+
+
+func _jaw_aabb_expanded(sides: Array, pad: float) -> Rect2:
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	for s in sides:
+		mn = mn.min(s["a"]).min(s["b"])
+		mx = mx.max(s["a"]).max(s["b"])
+	return Rect2(mn - Vector2(pad, pad), (mx - mn) + Vector2(pad, pad) * 2.0)
+
+
+## True when this line is a jaw cutter candidate: crosses both long sides,
+## or runs along the jaw inside the jaw box.
+func _line_is_jaw_cutter_candidate(a: Vector2, b: Vector2, sides: Array) -> bool:
+	if sides.size() != 2:
+		return false
+	var dir: Vector2 = sides[0]["b"] - sides[0]["a"]
+	if _cutter_crosses_both_sides(a, b, sides):
+		return true
+	var mid := (a + b) * 0.5
+	return _dirs_within_deg(b - a, dir, 2.0) and _jaw_aabb_expanded(sides, 2.0).has_point(mid)
+
+
+func _jaw_cutter_for_click(pos2: Vector2) -> Dictionary:
+	var sides := _jaw_long_sides()
+	var jaw_dir := _longest_profile_dir()
+	var best: Dictionary = {}
+	var best_d := 40.0
+	if sides.size() == 2:
+		for id in sketch.entity_ids():
+			if not sketch.is_construction(id) or _angle_datum_lines.has(id):
+				continue
+			var info: Dictionary = sketch.entity_info(id)
+			if str(info.get("type", "")) != "line":
+				continue
+			var a: Vector2 = info["start"]
+			var b: Vector2 = info["end"]
+			if jaw_dir.length_squared() > 1e-8 and _dirs_within_deg(b - a, jaw_dir, 2.0):
+				continue
+			if not _cutter_crosses_both_sides(a, b, sides):
+				continue
+			var d := _point_segment_distance(pos2, a, b)
+			if d < best_d:
+				best_d = d
+				best = {"id": id, "a": a, "b": b}
+	if not best.is_empty():
+		return best
+	return _nearest_construction_line(pos2, 40.0)
+
+
 ## Click on one side of a construction centreline: drop that half, keep the
 ## other, close it with a floor on the cutter and the keep-side arc of the
 ## circle centred on the cutter. The Ø10 (centre far from the cutter) stays.
 func _trim_open_jaw(pos2: Vector2) -> bool:
-	var cutter := _nearest_construction_line(pos2, 40.0)
+	var cutter := _jaw_cutter_for_click(pos2)
 	if cutter.is_empty():
 		return false
 	if _jaw_ids_alive():
@@ -2409,7 +2504,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	const CAP_DEG := 2.0
 	var long_dir := _longest_profile_dir()
 	if long_dir.length_squared() > 1e-8 and _dirs_within_deg(dir, long_dir, CAP_DEG):
-		status.emit("Trim failed — draw the centreline across the jaw")
+		status.emit("Trim failed — the construction line nearest your click runs along the jaw (from %.1f,%.1f to %.1f,%.1f); draw a centreline across the jaw or delete the along-jaw line" % [a.x, a.y, b.x, b.y])
 		return true
 	var cap := _jaw_cap_circle(a, b)
 	if cap.is_empty():
@@ -2457,7 +2552,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		var keep_pt: Vector2 = s if ss * discard < es * discard else e
 		walls.append({"id": id, "hit": hit, "keep": keep_pt})
 	if walls.size() != 2:
-		status.emit("Trim failed — centreline does not cross two jaw sides")
+		status.emit("Trim failed — the construction line nearest your click runs along the jaw (from %.1f,%.1f to %.1f,%.1f); draw a centreline across the jaw or delete the along-jaw line" % [a.x, a.y, b.x, b.y])
 		return true
 	# An offset cutter (leftover retry, >15% of radius) still caps on this
 	# circle. The midpoint constraint wants the floor through `cc`; apply
@@ -2947,9 +3042,41 @@ func toggle_construction_selected() -> void:
 		sketch.set_construction(id, on)
 		if on:
 			any_on = true
+	var removed := 0
+	if any_on:
+		var sides := _jaw_long_sides()
+		if sides.size() == 2:
+			var drop: Array[String] = []
+			for id in sketch.entity_ids():
+				if id in selected:
+					continue
+				if not sketch.is_construction(id) or _angle_datum_lines.has(id):
+					continue
+				var info: Dictionary = sketch.entity_info(id)
+				if str(info.get("type", "")) != "line":
+					continue
+				if _line_is_jaw_cutter_candidate(info["start"], info["end"], sides):
+					# Only drop when the line we just turned on is itself a jaw candidate.
+					var turned_on_is_candidate := false
+					for sel in selected:
+						if not sketch.is_construction(sel):
+							continue
+						var si: Dictionary = sketch.entity_info(sel)
+						if str(si.get("type", "")) != "line":
+							continue
+						if _line_is_jaw_cutter_candidate(si["start"], si["end"], sides):
+							turned_on_is_candidate = true
+					if turned_on_is_candidate:
+						drop.append(id)
+			for id in drop:
+				sketch.remove_entity(id)
+				removed += 1
+	if removed > 0:
+		status.emit("Removed %d jaw construction line(s) — one cutter at a time" % removed)
+	else:
+		status.emit("Construction " + ("on" if any_on else "off"))
 	_redraw()
 	_redraw_selected()
-	status.emit("Construction " + ("on" if any_on else "off"))
 
 
 func _endpoint_pos(id: String, role: String) -> Vector2:
