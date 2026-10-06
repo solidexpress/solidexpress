@@ -693,6 +693,10 @@ Array SxDocument::graph_features() const {
         const bool failed = !last_failed_fid_.empty() && f.id.str() == last_failed_fid_;
         d["failed"] = failed;
         d["error"] = failed ? to_gd(last_graph_error_) : String();
+        String warning;
+        for (const auto& w : doc_->graph().warnings())
+            if (w.first == f.id.str()) warning = to_gd(w.second);
+        d["warning"] = warning;
         String ctx_id;
         if (f.params.contains("context")) ctx_id = to_gd(f.params["context"].get<std::string>());
         d["context_id"] = ctx_id;
@@ -1149,6 +1153,12 @@ bool SxDocument::set_variable(const String& name, const String& expr) {
 
 String SxDocument::last_graph_error() const {
     return to_gd(last_graph_error_);
+}
+
+PackedStringArray SxDocument::graph_warnings() const {
+    PackedStringArray out;
+    for (const auto& w : doc_->graph().warnings()) out.push_back(to_gd(w.second));
+    return out;
 }
 
 bool SxDocument::remove_variable(const String& name) {
@@ -2480,6 +2490,7 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_card_notes", "entity_id"), &SxDocument::get_card_notes);
     ClassDB::bind_method(D_METHOD("export_context"), &SxDocument::export_context);
     ClassDB::bind_method(D_METHOD("graph_features"), &SxDocument::graph_features);
+    ClassDB::bind_method(D_METHOD("graph_warnings"), &SxDocument::graph_warnings);
     ClassDB::bind_method(D_METHOD("graph_add_primitive", "kind", "a", "b", "c", "origin"), &SxDocument::graph_add_primitive);
     ClassDB::bind_method(D_METHOD("graph_add_sketch", "sketch"), &SxDocument::graph_add_sketch);
     ClassDB::bind_method(D_METHOD("graph_get_sketch", "fid"), &SxDocument::graph_get_sketch);

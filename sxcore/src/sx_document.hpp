@@ -235,6 +235,9 @@ public:
     bool remove_variable(const godot::String& name);
     // Last regenerate error from apply_graph_edit / set_variable (empty if ok).
     godot::String last_graph_error() const;
+    // Notes from the last regenerate that did not stop it (a fillet that lost
+    // some edges). Empty when the rebuild was clean.
+    godot::PackedStringArray graph_warnings() const;
     // Array of {name, expr, value (float; NAN on error), error: String}.
     godot::Array list_variables() const;
 

@@ -310,6 +310,16 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 		row.add_child(badge)
 		name_btn.modulate = Color(1.0, 0.55, 0.5)
 
+	if str(f.get("warning", "")) != "" and not f.get("failed", false):
+		var warn := Label.new()
+		warn.name = "WarnBadge"
+		warn.text = "⚠"
+		warn.tooltip_text = str(f["warning"])
+		warn.mouse_filter = Control.MOUSE_FILTER_STOP
+		warn.add_theme_color_override("font_color", Color(0.95, 0.75, 0.2))
+		warn.add_theme_font_size_override("font_size", UiScale.font(16))
+		row.add_child(warn)
+
 	if f.get("context_stale", false):
 		var upd := Button.new()
 		upd.name = "UpdateContext"

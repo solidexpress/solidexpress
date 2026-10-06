@@ -136,6 +136,15 @@ public:
     const EntityId& last_failed_feature() const { return last_failed_; }
     const std::string& last_error() const { return last_error_; }
 
+    // Non-fatal notes from the last regenerate: (feature id, message). A fillet
+    // that lost some of its edges on a rebuild still builds and says so here.
+    const std::vector<std::pair<std::string, std::string>>& warnings() const {
+        return warnings_;
+    }
+    void add_warning(const EntityId& feature, std::string message) {
+        warnings_.emplace_back(feature.str(), std::move(message));
+    }
+
     // Full rebuild: removes all graph-owned bodies from the document and
     // replays the timeline. On failure, err names the offending feature and
     // the document is left with features applied up to that point.
@@ -159,6 +168,7 @@ private:
     int rollback_index_ = -1;
     EntityId last_failed_;
     std::string last_error_;
+    std::vector<std::pair<std::string, std::string>> warnings_;
     // Body ids created by the last regenerate. Needed so bodies belonging to
     // features that were since removed from the timeline still get cleaned up.
     std::vector<EntityId> generated_;
