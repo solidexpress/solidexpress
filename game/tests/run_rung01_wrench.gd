@@ -124,11 +124,12 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
 	print("  B13.14 Typed fields (polygon preview)")
 	var last_r := -1.0
-	for tip in [Vector2(8, 3), Vector2(10, 6), Vector2(12, 4)]:
+	var tips: Array[Vector2] = [Vector2(8, 3), Vector2(10, 6), Vector2(12, 4)]
+	for tip in tips:
 		await _hover_uv(ctx, tip)
 		await process_frame
 		var got_r := _preview_circumradius(sm, Vector2.ZERO)
-		var want_r := tip.length() / sqrt(3.0)
+		var want_r: float = tip.length() / sqrt(3.0)
 		check(got_r > 0.0 and absf(got_r - want_r) <= 0.05,
 				"B13.14 polygon preview radius follows pointer at %s (got %.4f want %.4f)" % [
 					str(tip), got_r, want_r])
@@ -398,9 +399,11 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(sm.active and absf(sm.plane_origin.z - 10.0) < 0.5, "slot sketch on the top face")
 	print("  B13.6 Finish bar")
 	chrome = ctx.main.sketch_chrome
-	var slot_op := _finish_op(ctx)
-	var slot_op_txt := slot_op.get_item_text(slot_op.selected) if slot_op != null else ""
-	var slot_ex := chrome.extrude_button() if chrome != null else null
+	var slot_op: OptionButton = _finish_op(ctx)
+	var slot_op_txt := ""
+	if slot_op != null:
+		slot_op_txt = slot_op.get_item_text(slot_op.selected)
+	var slot_ex: Button = chrome.extrude_button() if chrome != null else null
 	check(slot_op_txt == "New", "B13.6 new sketch Op is New (got %s)" % slot_op_txt)
 	check(chrome != null and chrome.get_finish_end() == "blind",
 			"B13.6 new sketch End is Blind (got %s)" % (chrome.get_finish_end() if chrome != null else ""))
@@ -2887,9 +2890,9 @@ func _assert_chip_row_clear_of_rail(ctx: FilmContext) -> void:
 	check(bar != null and bar.visible, "B13.3 action bar is visible")
 	if bar == null:
 		return
-	var rail_r := rail.get_global_rect()
-	var bar_r := bar.get_global_rect()
-	var vp := ctx.main.get_viewport().get_visible_rect()
+	var rail_r: Rect2 = rail.get_global_rect()
+	var bar_r: Rect2 = bar.get_global_rect()
+	var vp: Rect2 = ctx.main.get_viewport().get_visible_rect()
 	check(not bar_r.intersects(rail_r),
 			"B13.3 chip row does not overlap the left rail (chip %s rail %s)" % [str(bar_r), str(rail_r)])
 	check(vp.has_point(bar_r.end) or vp.encloses(bar_r.grow(-0.5)),
@@ -2900,16 +2903,17 @@ func _assert_both_circles_on_screen(ctx: FilmContext, via: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var circs := _circles(sm)
 	check(circs.size() == 2, "B13.10 %s: two circles" % via)
-	var vp := ctx.main.get_viewport().get_visible_rect().grow(-4.0)
+	var vp: Rect2 = ctx.main.get_viewport().get_visible_rect().grow(-4.0)
 	var rail: Control = ctx.main.sketch_toolbar
-	var rail_r := rail.get_global_rect() if rail != null else Rect2()
+	var rail_r: Rect2 = rail.get_global_rect() if rail != null else Rect2()
 	for c in circs:
 		var center: Vector2 = c["center"]
 		var r := float(c["radius"])
-		for d in [Vector2(r, 0.0), Vector2(-r, 0.0), Vector2(0.0, r), Vector2(0.0, -r)]:
+		var dirs: Array[Vector2] = [Vector2(r, 0.0), Vector2(-r, 0.0), Vector2(0.0, r), Vector2(0.0, -r)]
+		for d in dirs:
 			var uv: Vector2 = center + d
 			var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-			var ok := vp.has_point(screen) and not rail_r.has_point(screen)
+			var ok: bool = vp.has_point(screen) and not rail_r.has_point(screen)
 			check(ok, "B13.10 %s: circle extreme %s on screen at %s" % [via, str(uv), str(screen)])
 
 
