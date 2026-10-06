@@ -2,6 +2,12 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-034 A9 — sketch Frame keeps the origin right of the left rail
+- After `F` / Sketch view fit in a face sketch (jaw on the wrench head, pivot Ø20 at the part origin), the origin must sit on the canvas to the right of the labeled left rail — not under Polygon. Walk rule 28 forbids panning/zooming to dodge chrome.
+- Cause: `fit_view` framed only new sketch entities (the jaw at the head) in the full window, so the origin landed ~48 px under the rail. `enter_sketch_view` did not inset for chrome.
+- Fix: face-sketch extents keep (0,0) and the host body; `enter_sketch_view` fits that radius into the chrome-free canvas and pans the centre there.
+- Gate: `run_rung01_replan13_frame.gd` (origin canvas-margin assertion).
+
 ## sx-033 A11d — click vs body-move
 - A still LMB click-release on a selected body (Bottom view, wrench head / plate face) refines to a face. It must not emit `Moved body`.
 - Cause: LMB on the selected mesh armed `_pending_body_move`; a lost/late mouse-up left `_pressed` true, so the next pointer move past 8 px committed a translate. Sub-slop wiggling during a real click also had to stay a select.

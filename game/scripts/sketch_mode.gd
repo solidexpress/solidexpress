@@ -327,6 +327,8 @@ func plane_normal() -> Vector3:
 
 ## 2D AABB of all entities inflated by `pad_frac` (0.2 = 20% past extents).
 ## Returns {min, max, center, radius} or empty if no entities.
+## Face sketches also keep the part origin (0,0) and the host body in the
+## fit so Frame cannot bury the ground origin under the left rail.
 func sketch_extents(pad_frac := 0.2) -> Dictionary:
 	if sketch == null:
 		return {}
@@ -354,6 +356,13 @@ func sketch_extents(pad_frac := 0.2) -> Dictionary:
 				mx = mx.max(p)
 	if not is_finite(mn.x):
 		return {}
+	if target_fid != "" or support_host != "":
+		mn = mn.min(Vector2.ZERO)
+		mx = mx.max(Vector2.ZERO)
+		var host := _host_body_uv_aabb()
+		if not host.is_empty():
+			mn = mn.min(host["min"])
+			mx = mx.max(host["max"])
 	var size := mx - mn
 	var pad := size * pad_frac * 0.5
 	pad.x = maxf(pad.x, 2.0)
@@ -366,6 +375,36 @@ func sketch_extents(pad_frac := 0.2) -> Dictionary:
 	var radius := maxf(half.x, half.y) * 1.414
 	return {"min": mn, "max": mx, "center": center3, "radius": maxf(radius, 5.0),
 			"min2": mn, "max2": mx}
+
+
+## Projected 2D AABB of the body this face sketch sits on, in sketch UV.
+func _host_body_uv_aabb() -> Dictionary:
+	if view == null or view.doc == null:
+		return {}
+	var body := ""
+	if target_fid != "" and view.has_method("body_of_feature"):
+		body = view.body_of_feature(target_fid)
+	if body == "" and view.selected_body != "":
+		body = view.selected_body
+	if body == "":
+		return {}
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if bb.is_empty():
+		return {}
+	var bmin: Vector3 = bb["min"]
+	var bmax: Vector3 = bb["max"]
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	for x in [bmin.x, bmax.x]:
+		for y in [bmin.y, bmax.y]:
+			for z in [bmin.z, bmax.z]:
+				var rel := Vector3(x, y, z) - plane_origin
+				var uv := Vector2(rel.dot(plane_x), rel.dot(plane_y))
+				mn = mn.min(uv)
+				mx = mx.max(uv)
+	if not is_finite(mn.x):
+		return {}
+	return {"min": mn, "max": mx}
 
 
 ## Sketch 2D → model space.
