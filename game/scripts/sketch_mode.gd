@@ -4141,13 +4141,8 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 		return
 	var added := false
 	var d := b - a
-	if d.length() > INFER_TOL:
-		if absf(d.y) <= INFER_TOL:
-			sketch.add_constraint("horizontal", [{"entity": lid, "role": "self"}], 0.0)
-			added = true
-		elif absf(d.x) <= INFER_TOL:
-			sketch.add_constraint("vertical", [{"entity": lid, "role": "self"}], 0.0)
-			added = true
+	var got_tangent := false
+	var got_on_circle := false
 	for role_pos in [["start", a], ["end", b]]:
 		var hit := _endpoint_hit(role_pos[1], lid)
 		if hit.size() == 2:
@@ -4158,10 +4153,23 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 		else:
 			if _infer_tangent_at(lid, role_pos[1], d):
 				added = true
+				got_tangent = true
 			# Keep an endpoint that was placed on a circle on that circle.
 			# Tangent alone lets the contact slide off during solve.
 			if _infer_on_circle(lid, str(role_pos[0]), role_pos[1]):
 				added = true
+				got_on_circle = true
+	# A tangent + point-on-circle pair already locks a shaft line when the
+	# bosses are dimensioned (A3). Adding H there conflicts; shaft_lines
+	# drops it after both lines exist. Free two-circle sketches still get H.
+	if d.length() > INFER_TOL and not (got_tangent and got_on_circle \
+			and _shaft_circles_already_located()):
+		if absf(d.y) <= INFER_TOL:
+			sketch.add_constraint("horizontal", [{"entity": lid, "role": "self"}], 0.0)
+			added = true
+		elif absf(d.x) <= INFER_TOL:
+			sketch.add_constraint("vertical", [{"entity": lid, "role": "self"}], 0.0)
+			added = true
 	if added:
 		# Snap contacts onto the circles before DogLeg runs — otherwise a
 		# horizontal tangent has two solutions (y=+r and y=-r) and the solver
@@ -4185,6 +4193,30 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 		# jump it to the far side again.
 		if flipped and not _entity_has_constraint(lid, "fix"):
 			sketch.add_constraint("fix", [{"entity": lid, "role": "self"}], 0.0)
+
+
+## True when the shaft bosses are already located (A3 200-dim): origin pin
+## plus a centre distance. Free two-circle sketches stay false so they get H.
+func _shaft_circles_already_located() -> bool:
+	if sketch == null:
+		return false
+	var coincident_circles := 0
+	var has_distance := false
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		var t := str(info.get("type", ""))
+		if t == "distance":
+			has_distance = true
+		if t != "coincident":
+			continue
+		for ref in info.get("refs", []):
+			if typeof(ref) != TYPE_DICTIONARY:
+				continue
+			var einfo: Dictionary = sketch.entity_info(str(ref.get("entity", "")))
+			var kind := str(einfo.get("type", ""))
+			if kind == "circle" or kind == "arc":
+				coincident_circles += 1
+	return has_distance and coincident_circles >= 1
 
 
 ## Endpoint lying on a circle, with the segment perpendicular to the radius,
@@ -4268,6 +4300,9 @@ func _lock_sized_circle(id: String) -> void:
 	if r <= 1e-6:
 		return
 	if _entity_has_constraint(id, "fix"):
+		return
+	# A3 already pins the bosses. A second Fix makes one shaft tangent redundant.
+	if _entity_has_constraint(id, "coincident"):
 		return
 	sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
 
