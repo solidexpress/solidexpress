@@ -76,6 +76,7 @@ var _clipboard_paste_count := 0
 var _clipboard_cut := false
 
 const EDGE_PICK_TOLERANCE := 2.5  # model units (mm)
+const EDGE_PICK_SCREEN_TIE_PX := 8.0
 const DATUM_PLANE_HALF := 20.0  # ~40 unit square
 const DATUM_AXIS_HALF_LEN := 100.0
 const DATUM_POINT_RADIUS := 1.5
@@ -1248,22 +1249,62 @@ func selection_size() -> int:
 
 ## Closest edge of `body_id` to a model-space point, "" when none in tolerance.
 func _edge_near_point(body_id: String, point: Vector3) -> String:
-	return edge_near_point(body_id, point, EDGE_PICK_TOLERANCE)
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	return edge_near_point(body_id, point, EDGE_PICK_TOLERANCE, cam)
 
 
 ## Public edge pick with optional wider tolerance (armed fillet / chamfer).
-func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE_PICK_TOLERANCE) -> String:
+func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE_PICK_TOLERANCE, camera: Camera3D = null) -> String:
 	var lines: Dictionary = doc.get_edge_lines(body_id)
+	if camera == null:
+		var best_id := ""
+		var best_d := tolerance_mm
+		for edge_id in lines:
+			var pts: PackedVector3Array = lines[edge_id]
+			for i in range(pts.size() - 1):
+				var d := _point_segment_distance3(point, pts[i], pts[i + 1])
+				if d < best_d:
+					best_d = d
+					best_id = edge_id
+		return best_id
+	var ray := (-camera.global_transform.basis.z).normalized()
+	var screen := camera.unproject_position(point)
 	var best_id := ""
-	var best_d := tolerance_mm
+	var best_px := INF
+	var best_align := -1.0
 	for edge_id in lines:
 		var pts: PackedVector3Array = lines[edge_id]
+		var d3 := INF
 		for i in range(pts.size() - 1):
-			var d := _point_segment_distance3(point, pts[i], pts[i + 1])
-			if d < best_d:
-				best_d = d
-				best_id = edge_id
+			d3 = minf(d3, _point_segment_distance3(point, pts[i], pts[i + 1]))
+		if d3 > tolerance_mm:
+			continue
+		var px := _polyline_screen_distance(camera, screen, pts)
+		var align := absf(edge_direction(body_id, str(edge_id)).dot(ray))
+		var closer := px < best_px - EDGE_PICK_SCREEN_TIE_PX
+		var tie := absf(px - best_px) <= EDGE_PICK_SCREEN_TIE_PX
+		if best_id == "" or closer or (tie and align > best_align + 0.05):
+			best_id = str(edge_id)
+			best_px = px
+			best_align = align
 	return best_id
+
+
+func _polyline_screen_distance(camera: Camera3D, screen: Vector2, pts: PackedVector3Array) -> float:
+	var best := INF
+	for i in range(pts.size() - 1):
+		if camera.is_position_behind(pts[i]) and camera.is_position_behind(pts[i + 1]):
+			continue
+		var a := camera.unproject_position(pts[i])
+		var b := camera.unproject_position(pts[i + 1])
+		best = minf(best, _point_segment_distance2(screen, a, b))
+	return best
+
+
+func _point_segment_distance2(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var t := 0.0 if ab.length_squared() < 1e-12 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	return p.distance_to(a + ab * t)
 
 
 ## Closest point on any edge of `body_id` to `point` (no pick tolerance).

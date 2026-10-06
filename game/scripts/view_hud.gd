@@ -16,8 +16,11 @@ signal default_view_requested(view_id: String)
 ## Built-in orientations (not deletable).
 const DEFAULT_VIEWS := [
 	{"id": "front", "label": "Front"},
+	{"id": "back", "label": "Back"},
 	{"id": "right", "label": "Right"},
+	{"id": "left", "label": "Left"},
 	{"id": "top", "label": "Top"},
+	{"id": "bottom", "label": "Bottom"},
 	{"id": "iso", "label": "Isometric"},
 ]
 
@@ -101,16 +104,19 @@ func _ready() -> void:
 	var left_pad := Control.new()
 	left_pad.custom_minimum_size = Vector2(8, 0)
 	strip_row.add_child(left_pad)
-	var view_lbl := Label.new()
-	view_lbl.text = "View"
-	# No font_size override — matches Shade / Section / Frame button text.
-	strip_row.add_child(view_lbl)
+	var view_word := Button.new()
+	view_word.name = "ViewWord"
+	view_word.text = "View"
+	view_word.flat = true
+	view_word.tooltip_text = "Show default and saved views"
+	view_word.pressed.connect(_toggle_views_popup)
+	strip_row.add_child(view_word)
 	_views_drop_btn = Button.new()
-	# Use an icon for the dropdown rather than a cryptic text glyph.
-	_views_drop_btn.text = ""
+	_views_drop_btn.name = "ViewsDrop"
+	_views_drop_btn.text = "▼"
 	_views_drop_btn.icon = UIIcons.get_icon("down", 14)
 	_views_drop_btn.tooltip_text = "Show default and saved views"
-	_views_drop_btn.custom_minimum_size = Vector2(22, 0)
+	_views_drop_btn.custom_minimum_size = Vector2(28, 28)
 	_compact_icon_btn(_views_drop_btn)
 	_views_drop_btn.pressed.connect(_toggle_views_popup)
 	strip_row.add_child(_views_drop_btn)
@@ -223,7 +229,11 @@ func _toggle_views_popup() -> void:
 	var pos := _popup_pos(anchor, int(w), int(h))
 	# Align the menu's right edge with the ▼ button (opens leftward).
 	pos.x = int(anchor.end.x - w)
-	_views_popup.popup(Rect2i(pos, Vector2i(int(w), int(h))))
+	var origin := Vector2i.ZERO
+	var win := get_window()
+	if win != null:
+		origin = win.position
+	_views_popup.popup(Rect2i(Vector2i(pos) + origin, Vector2i(int(w), int(h))))
 
 
 ## Place a popup below the anchor when there is room; otherwise above

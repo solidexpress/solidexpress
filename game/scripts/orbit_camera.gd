@@ -101,8 +101,21 @@ func _orbit_by(dx: float, dy: float) -> void:
 	if sketch_orientation_locked:
 		return
 	yaw -= dx * ORBIT_SPEED
-	pitch = clampf(pitch + dy * ORBIT_SPEED, MIN_PITCH, MAX_PITCH)
+	_fold_pitch(pitch + dy * ORBIT_SPEED)
 	_update_transform()
+
+
+func _fold_pitch(next: float) -> void:
+	if next > MAX_PITCH:
+		var over := next - MAX_PITCH
+		yaw += PI
+		pitch = clampf(MAX_PITCH - over, MIN_PITCH, MAX_PITCH)
+	elif next < MIN_PITCH:
+		var over := MIN_PITCH - next
+		yaw += PI
+		pitch = clampf(MIN_PITCH + over, MIN_PITCH, MAX_PITCH)
+	else:
+		pitch = next
 
 
 func _pan_by(dx: float, dy: float) -> void:
@@ -210,7 +223,7 @@ func _is_nav_key(k: InputEventKey) -> bool:
 	match k.keycode:
 		KEY_F, KEY_HOME:
 			return true
-		KEY_1, KEY_2, KEY_3, KEY_5, KEY_7:
+		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8:
 			return not k.alt_pressed and not sketch_orientation_locked
 		KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN:
 			return true
@@ -286,7 +299,7 @@ func handle_input(event: InputEvent, allow_scroll_gestures := true) -> bool:
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			scale *= 1.15
 		yaw -= pg.delta.x * scale
-		pitch = clampf(pitch + pg.delta.y * scale, MIN_PITCH, MAX_PITCH)
+		_fold_pitch(pitch + pg.delta.y * scale)
 		_update_transform()
 		return true
 	if event is InputEventMouseButton:
@@ -409,6 +422,21 @@ func _handle_nav_key(k: InputEventKey) -> bool:
 			if sketch_orientation_locked:
 				return false
 			apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0))
+			return true
+		KEY_4:  # back: looking along +Y
+			if sketch_orientation_locked:
+				return false
+			apply_standard_view(deg_to_rad(180.0), deg_to_rad(0.0))
+			return true
+		KEY_6:  # left: looking along +X
+			if sketch_orientation_locked:
+				return false
+			apply_standard_view(deg_to_rad(-90.0), deg_to_rad(0.0))
+			return true
+		KEY_8:  # bottom: looking up model +Z
+			if sketch_orientation_locked:
+				return false
+			apply_standard_view(deg_to_rad(0.0), deg_to_rad(-89.0))
 			return true
 		KEY_7:  # isometric
 			if sketch_orientation_locked:
