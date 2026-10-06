@@ -384,6 +384,11 @@ func _walk(ctx: FilmContext) -> Dictionary:
 			and not cut_blob.contains("Open-profile cut needs a line chain"),
 			"jaw cut is not refused with Open-profile cut needs a line chain (got '%s')" % cut_status)
 	print("  jaw cut status: %s" % cut_status)
+	check(cut_status.contains("Extrude Up To Surface 10.0000 mm")
+			or _status_has("Extrude Up To Surface 10.0000 mm"),
+			"A9b status is Extrude Up To Surface 10.0000 mm (got '%s')" % cut_status)
+	check(not cut_status.contains("20.0000"),
+			"A9b status does not echo the leftover Blind 20 mm (got '%s')" % cut_status)
 	var cut := _extrude_with_end(ctx, "to_face")
 	check(not cut.is_empty() and str(cut.get("end", "")) == "to_face", "jaw end is to_face")
 	check(str(cut.get("to_face", "")) == bottom, "jaw cut stores the bottom face")
