@@ -25,8 +25,8 @@ func _chip_h() -> int:
 var sketch_mode: SketchMode
 var _variant_bar: HBoxContainer
 var _action_bar: VBoxContainer
-## Verbs currently shown on `_action_bar` (wraps when the row would hit the
-## viewport edge). Empty when the bar is hidden.
+## Verbs currently shown on `_action_bar`. Chips that do not fit between the
+## rail and the viewport edge go in a … More menu. Empty when the bar is hidden.
 var _action_verbs: Array = []
 var _action_wrap_width := -1.0
 var _action_dock_to_rail := false
@@ -1356,6 +1356,7 @@ func show_selection_actions(actions: Array, screen_pos: Vector2) -> void:
 	if _action_dock_to_rail:
 		# Always sit to the right of the SketchTools rail, never on the pointer.
 		# A long HBox used to clamp to x=8 and paint over the rail (sx-033 A1).
+		# Overflow goes in … More so the row stays one line and on-screen.
 		_stack_sketch_rows()
 	else:
 		_relayout_action_bar(screen_pos + Vector2(12, CHIP_PAD))
@@ -1473,6 +1474,24 @@ func _chip_min_width(b: Button) -> float:
 	return font.get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + pad
 
 
+func _make_more_chip(verbs: Array) -> MenuButton:
+	var more := MenuButton.new()
+	more.text = "… More"
+	more.tooltip_text = "More sketch actions"
+	more.custom_minimum_size = Vector2(0, _chip_h())
+	more.flat = false
+	var popup := more.get_popup()
+	for i in verbs.size():
+		var verb := str(verbs[i])
+		popup.add_item(verb.capitalize().replace("_", " "))
+		popup.set_item_metadata(i, verb)
+	popup.id_pressed.connect(func(id: int) -> void:
+		var v: Variant = popup.get_item_metadata(id)
+		if v != null:
+			action_chosen.emit(str(v)))
+	return more
+
+
 func _rebuild_wrapped_chips(max_w: float) -> void:
 	if absf(max_w - _action_wrap_width) < 0.5 and _action_bar.get_child_count() > 0:
 		return
@@ -1489,7 +1508,14 @@ func _rebuild_wrapped_chips(max_w: float) -> void:
 		var b := _make_action_chip(str(a))
 		measure.add_child(b)
 		chips.append(b)
+	var more_probe := _make_more_chip(["block"])
+	measure.add_child(more_probe)
 	measure.reset_size()
+	var more_w := more_probe.get_combined_minimum_size().x
+	if more_w < 8.0:
+		more_w = _chip_min_width(more_probe)
+	measure.remove_child(more_probe)
+	more_probe.queue_free()
 	for b in chips:
 		var w := b.get_combined_minimum_size().x
 		if w < 8.0:
@@ -1502,24 +1528,33 @@ func _rebuild_wrapped_chips(max_w: float) -> void:
 	_action_bar.add_child(row)
 	var used := 0.0
 	var sep := 4.0
+	var shown := 0
 	for i in chips.size():
 		var b: Button = chips[i]
 		var bw: float = widths[i]
-		if row.get_child_count() > 0 and used + sep + bw > max_w:
-			row = _new_chip_row()
-			_action_bar.add_child(row)
-			used = 0.0
+		var last := i == chips.size() - 1
+		var reserve := 0.0 if last else sep + more_w
+		if row.get_child_count() > 0 and used + sep + bw + reserve > max_w:
+			break
 		row.add_child(b)
+		shown += 1
 		used += bw if row.get_child_count() == 1 else sep + bw
+	for i in range(shown, chips.size()):
+		chips[i].queue_free()
+	if shown < _action_verbs.size():
+		var overflow: Array = _action_verbs.slice(shown)
+		row.add_child(_make_more_chip(overflow))
 	_action_bar.reset_size()
 
 
-## Dock the action chips at `pos` (local). Never slides left of that X — wrap
-## instead of clamping over the left rail when the row is too wide.
+## Dock the action chips at `pos` (local). Never slides left of the live
+## SketchTools right edge: leftover verbs go in … More instead of painting
+## over Arc/Point (sx-033 A1).
 func _relayout_action_bar(pos: Vector2) -> void:
 	if _action_bar == null or not _action_bar.visible:
 		return
-	var max_w := _chip_row_max_width(pos.x)
+	var x := maxf(pos.x, _finish_session_pos().x)
+	var max_w := _chip_row_max_width(x)
 	_rebuild_wrapped_chips(max_w)
 	_action_bar.reset_size()
 	var vp := get_viewport_rect().size
@@ -1528,4 +1563,4 @@ func _relayout_action_bar(pos: Vector2) -> void:
 	if h < 1.0:
 		h = float(_chip_h())
 	var y := clampf(pos.y, 8.0, maxf(8.0, vp.y - h - 8.0))
-	_action_bar.position = Vector2(pos.x, y)
+	_action_bar.position = Vector2(x, y)
