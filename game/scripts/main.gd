@@ -478,6 +478,8 @@ func _build_ui() -> void:
 	left_stack.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	left_stack.position = Vector2(_CHROME_PAD, 48.0)
 	left_stack.add_theme_constant_override("separation", int(_STACK_GAP))
+	left_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left_stack.minimum_size_changed.connect(left_stack.reset_size, CONNECT_DEFERRED)
 	ui.add_child(left_stack)
 
 	# Mode overlays sit under chrome and stay hidden in Model (layout suite).
@@ -1879,6 +1881,7 @@ func _reflow_left_stack() -> void:
 			used += maxf(cc.size.y, cc.get_combined_minimum_size().y) + _STACK_GAP
 		var card_h := minf(_CARD_H, maxf(80.0, max_h - used))
 		card_box.custom_minimum_size = Vector2(_CARD_W, card_h)
+	left_stack.reset_size()
 	# Rail width may have changed (Modify ↔ Palette ↔ Sketch): re-dock the
 	# floating panels so they never land on top of the icons.
 	_sync_bottom_docks()
@@ -3117,6 +3120,10 @@ func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: St
 	_file_action = action
 	file_dialog.file_mode = mode
 	file_dialog.filters = PackedStringArray([filter])
+	if action == FileAction.SAVE_AS:
+		file_dialog.current_file = current_path.get_file() if current_path != "" else "untitled.sxp"
+		if current_path.is_absolute_path():
+			file_dialog.current_dir = current_path.get_base_dir()
 	if action == FileAction.EXPORT_3MF:
 		var dir := _export_3mf_start_dir()
 		if dir != "":
@@ -3142,11 +3149,21 @@ func _save_current() -> void:
 	if current_path == "":
 		_show_file_dialog(FileAction.SAVE_AS, FileDialog.FILE_MODE_SAVE_FILE, "*.sxp ; SolidExpress")
 		return
+	var reenter_fid := ""
+	var reenter_pose: Dictionary = {}
 	if sketch_mode != null and sketch_mode.active:
-		sketch_mode.exit_sketch()
-	if view.save(current_path):
+		reenter_pose = camera.capture_pose()
+		reenter_fid = sketch_mode.exit_sketch()
+	var saved := view.save(current_path)
+	if saved:
 		_last_saved_revision = view.doc.revision()
 		_push_recent(current_path)
+	if reenter_fid != "" and sketch_mode.begin_edit(reenter_fid):
+		_on_sketch_session_started("Editing sketch")
+		view.refresh_sketch_pads(sketch_mode.editing_fid)
+		camera.apply_pose(reenter_pose)
+		sketch_mode.set_tool(SketchMode.Tool.SELECT)
+	if saved:
 		_on_status("Saved " + current_path)
 	else:
 		_on_status("Save FAILED: " + current_path)

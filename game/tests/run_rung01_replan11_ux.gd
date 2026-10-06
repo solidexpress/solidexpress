@@ -166,9 +166,12 @@ func _run() -> void:
 	main._save_current()
 	await process_frame
 	var saved := _sxp_text(save_path)
-	check((saved.contains("\"type\": \"sketch\"") or saved.contains("sketch")) and not sm.active,
-			"save of an open sketch writes a sketch feature and leaves the session (active=%s has_sketch=%s)" % [
+	check((saved.contains("\"type\": \"sketch\"") or saved.contains("sketch")) and sm.active,
+			"save of an open sketch writes a sketch feature and keeps the session (active=%s has_sketch=%s)" % [
 				str(sm.active), str(saved.contains("sketch"))])
+	if sm.active:
+		sm.cancel()
+		await process_frame
 	if FileAccess.file_exists(save_path):
 		DirAccess.remove_absolute(save_path)
 
