@@ -713,6 +713,7 @@ Array SxDocument::graph_features() const {
 bool SxDocument::apply_graph_edit(const std::string& label,
                                   const std::function<bool()>& mutate) {
     nlohmann::json before = doc_->graph().to_json();
+    const uint64_t rev0 = doc_->revision();
     if (!mutate()) return false;
     std::string err;
     if (!doc_->graph().regenerate(*doc_, &err)) {
@@ -724,6 +725,7 @@ bool SxDocument::apply_graph_edit(const std::string& label,
         last_graph_error_ = err;
         doc_->set_graph(sx::FeatureGraph::from_json(before));
         doc_->graph().regenerate(*doc_, nullptr);
+        doc_->restore_revision(rev0);
         return false;
     }
     last_failed_fid_.clear();

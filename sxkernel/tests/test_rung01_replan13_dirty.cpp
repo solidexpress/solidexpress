@@ -66,10 +66,8 @@ EntityId add_box(Document& doc, double a, double b, double c) {
 }
 
 // Mirrors SxDocument::apply_graph_edit (not linked into sxkernel_tests):
-// mutate, regenerate, and on failure restore the graph via set_graph + regen.
-// Reproduce-first: no restore_revision here, so a refused edit leaves
-// revision moved (the first case is red on baseline). The product commit
-// adds restore_revision to this helper and to apply_graph_edit.
+// mutate, regenerate, and on failure restore the graph via set_graph + regen
+// then restore_revision so a refused edit is not dirty.
 bool apply_graph_edit_like(Document& doc, const std::function<bool()>& mutate) {
     json before = doc.graph().to_json();
     const uint64_t rev0 = doc.revision();
@@ -78,7 +76,7 @@ bool apply_graph_edit_like(Document& doc, const std::function<bool()>& mutate) {
     if (!doc.graph().regenerate(doc, &err)) {
         doc.set_graph(FeatureGraph::from_json(before));
         doc.graph().regenerate(doc, nullptr);
-        (void)rev0;
+        doc.restore_revision(rev0);
         return false;
     }
     return true;
