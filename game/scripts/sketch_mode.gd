@@ -961,6 +961,8 @@ func set_tool(t: Tool) -> void:
 	# visible/selectable (polygon/circle vanishing after another tool was a bug).
 	_update_preview()
 	tool_changed.emit(int(t))
+	if t == Tool.RECT:
+		status.emit("Rect — click 1 first corner, click 2 the opposite corner")
 
 
 ## Rail "Jaw" button: Rectangle tool, Center Three Point variant.
@@ -3775,6 +3777,17 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 		var cb: Vector2 = sketch.entity_info(idb)["center"]
 		_pin_circle_at_sketch_origin(ida, ca)
 		_pin_circle_at_sketch_origin(idb, cb)
+		var dxy: Vector2 = cb - ca
+		if absf(dxy.x) > 1e-9 and absf(dxy.y) <= tan(deg_to_rad(2.0)) * absf(dxy.x):
+			var lid: String = sketch.add_line(ca.x, ca.y, cb.x, cb.y)
+			sketch.set_construction(lid, true)
+			sketch.add_constraint("coincident", [
+				{"entity": ida, "role": "center"},
+				{"entity": lid, "role": "start"}], 0.0)
+			sketch.add_constraint("coincident", [
+				{"entity": idb, "role": "center"},
+				{"entity": lid, "role": "end"}], 0.0)
+			sketch.add_constraint("horizontal", [{"entity": lid, "role": "self"}], 0.0)
 		constrain("distance", ca.distance_to(cb))
 		# A failed solve reverts the constraint. Do not open a popup on a
 		# stale index — only emit when that centre distance is still live.
@@ -5201,7 +5214,7 @@ func dimension_hit(pos2: Vector2) -> int:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var screen := Vector2(INF, INF)
 	if cam != null:
-		screen = cam.unproject_position(to_model(pos2))
+		screen = cam.unproject_position(to_global(to_model(pos2)))
 	var best := -1
 	var best_px := 22.0
 	var best_mm := 6.0
@@ -5216,7 +5229,7 @@ func dimension_hit(pos2: Vector2) -> int:
 		var dmm := pos2.distance_to(p)
 		var win := false
 		if cam != null:
-			var sp := cam.unproject_position(to_model(p))
+			var sp := cam.unproject_position(to_global(to_model(p)))
 			var dpx := screen.distance_to(sp)
 			if dpx < best_px:
 				best_px = dpx

@@ -2644,8 +2644,11 @@ func _sketch_input(event: InputEvent) -> void:
 			KEY_X: sketch_mode.toggle_construction_selected()
 			KEY_DELETE, KEY_BACKSPACE:
 				if not sketch_mode.delete_selected_constraint():
-					if sketch_mode.delete_selected_entities() == 0:
+					var n: int = sketch_mode.delete_selected_entities()
+					if n == 0:
 						status.emit("Nothing to delete")
+					else:
+						status.emit("Deleted %d" % n)
 			KEY_ESCAPE:
 				if sketch_mode.has_pending_draw_point():
 					if measure_overlay != null and measure_overlay.has_anchor():
@@ -3435,14 +3438,13 @@ func _click_hits_pad() -> bool:
 
 
 func _commit_property_panel_on_deselect() -> void:
-	var main_n := _find_main()
+	var main_n: Node = _find_main()
 	if main_n == null or main_n.timeline == null:
 		return
 	var pp = main_n.timeline.property_panel
-	if pp != null and pp.visible:
-		pp.commit()
-		if main_n.has_method("hide_timeline_if_idle"):
-			main_n.hide_timeline_if_idle()
+	if pp == null or not pp.visible:
+		return
+	pp.dismiss_keep_preview()
 
 
 func _gui_key(event: InputEventKey) -> bool:
@@ -4678,6 +4680,10 @@ func _sync_strip_dressup_radius() -> void:
 		_strip_radius.step = 0.001
 	if armed and ops_panel != null and ops_panel.has_method("dressup_radius"):
 		_strip_radius.set_value_no_signal(ops_panel.dressup_radius())
+		var le: LineEdit = _strip_radius.get_line_edit()
+		if le != null:
+			le.text = str(_strip_radius.value) + " mm"
+			le.caret_column = le.text.length()
 
 
 func _sync_strip_jaw_af() -> void:

@@ -197,8 +197,19 @@ func open(fid: String) -> bool:
 		_title.text = "%s — %s" % [f["name"], type]
 		_build_fields(type)
 		visible = true
+		if _params.has("distance"):
+			focus_schema_key("distance")
 		return true
 	return false
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not visible or not (event is InputEventKey):
+		return
+	var ke: InputEventKey = event as InputEventKey
+	if ke.pressed and ke.keycode == KEY_ESCAPE:
+		cancel_edits()
+		get_viewport().set_input_as_handled()
 
 
 func _build_fields(type: String) -> void:
@@ -573,6 +584,10 @@ func cancel_edits() -> void:
 		view.undo()
 	if _edits > 0:
 		status.emit("Edits cancelled")
+	_close()
+
+
+func dismiss_keep_preview() -> void:
 	_close()
 
 

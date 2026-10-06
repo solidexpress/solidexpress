@@ -892,7 +892,10 @@ func _build_ui() -> void:
 	interaction.status.connect(_on_status)
 	sketch_mode.status.connect(_on_status)
 	sketch_mode.finished.connect(func(_id: String) -> void: _on_sketch_session_ended())
-	sketch_mode.cancelled.connect(func() -> void: _on_sketch_session_ended())
+	sketch_mode.cancelled.connect(func() -> void:
+		_on_sketch_session_ended()
+		_on_status("Sketch cancelled")
+	)
 	sketch_mode.selection_changed.connect(_on_sketch_selection)
 	sketch_mode.solve_updated.connect(_on_sketch_solve)
 
@@ -2647,6 +2650,8 @@ func _on_recent_menu(id: int) -> void:
 
 
 func _open_document(path: String) -> void:
+	if sketch_mode != null and sketch_mode.active:
+		sketch_mode.cancel()
 	if view.load_from(path):
 		current_path = path
 		_last_saved_revision = view.doc.revision()
@@ -3137,6 +3142,8 @@ func _save_current() -> void:
 	if current_path == "":
 		_show_file_dialog(FileAction.SAVE_AS, FileDialog.FILE_MODE_SAVE_FILE, "*.sxp ; SolidExpress")
 		return
+	if sketch_mode != null and sketch_mode.active:
+		sketch_mode.exit_sketch()
 	if view.save(current_path):
 		_last_saved_revision = view.doc.revision()
 		_push_recent(current_path)
