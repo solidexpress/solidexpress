@@ -1290,6 +1290,35 @@ func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE
 	return best_id
 
 
+## Screen position of a model-space point under `camera`.
+func model_to_screen(camera: Camera3D, point: Vector3) -> Vector2:
+	return camera.unproject_position(_model_to_world(point))
+
+
+## Closest edge of `body_id` to a screen position, within `max_px`, "" when none.
+## Edges within EDGE_PICK_SCREEN_TIE_PX of each other prefer the one most
+## parallel to the view ray (an end-on vertical beats the arc it meets).
+func edge_near_screen(body_id: String, camera: Camera3D, screen: Vector2, max_px: float) -> String:
+	var lines: Dictionary = doc.get_edge_lines(body_id)
+	var ray := (-camera.global_transform.basis.z).normalized()
+	var best_id := ""
+	var best_px := INF
+	var best_align := -1.0
+	for edge_id in lines:
+		var near := _polyline_screen_nearest(camera, screen, lines[edge_id])
+		var px: float = near["px"]
+		if px > max_px or not _edge_point_visible(camera, near["point"]):
+			continue
+		var align := absf(_model_to_world_dir(edge_direction(body_id, str(edge_id))).dot(ray))
+		var closer := px < best_px - EDGE_PICK_SCREEN_TIE_PX
+		var tie := absf(px - best_px) <= EDGE_PICK_SCREEN_TIE_PX
+		if best_id == "" or closer or (tie and align > best_align + 0.05):
+			best_id = str(edge_id)
+			best_px = px
+			best_align = align
+	return best_id
+
+
 func _model_to_world(p: Vector3) -> Vector3:
 	return to_global(p) if is_inside_tree() else p
 
@@ -1301,7 +1330,13 @@ func _model_to_world_dir(d: Vector3) -> Vector3:
 
 
 func _polyline_screen_distance(camera: Camera3D, screen: Vector2, pts: PackedVector3Array) -> float:
+	return _polyline_screen_nearest(camera, screen, pts)["px"]
+
+
+## Closest approach of the projected polyline to `screen`: {px, point (model space)}.
+func _polyline_screen_nearest(camera: Camera3D, screen: Vector2, pts: PackedVector3Array) -> Dictionary:
 	var best := INF
+	var best_pt := Vector3.ZERO
 	for i in range(pts.size() - 1):
 		var wa := _model_to_world(pts[i])
 		var wb := _model_to_world(pts[i + 1])
@@ -1309,8 +1344,33 @@ func _polyline_screen_distance(camera: Camera3D, screen: Vector2, pts: PackedVec
 			continue
 		var a := camera.unproject_position(wa)
 		var b := camera.unproject_position(wb)
-		best = minf(best, _point_segment_distance2(screen, a, b))
-	return best
+		var ab := b - a
+		var t := 0.0 if ab.length_squared() < 1e-12 else clampf((screen - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+		var d := screen.distance_to(a + ab * t)
+		if d < best:
+			best = d
+			best_pt = pts[i].lerp(pts[i + 1], t)
+	return {"px": best, "point": best_pt}
+
+
+## False when a solid face sits between the camera and `model_pt` (a hidden edge
+## must not be snapped to through a wall).
+func _edge_point_visible(camera: Camera3D, model_pt: Vector3) -> bool:
+	var world_pt := _model_to_world(model_pt)
+	var sp := camera.unproject_position(world_pt)
+	var wo := camera.project_ray_origin(sp)
+	var wd := camera.project_ray_normal(sp)
+	var o := to_local(wo) if is_inside_tree() else wo
+	var d := (to_local(wo + wd) - o) if is_inside_tree() else wd
+	if d.length_squared() < 1e-12:
+		return true
+	d = d.normalized()
+	var dist := (model_pt - o).dot(d)
+	var hit: Dictionary = doc.pick(o, d)
+	if hit.is_empty() or not (hit.get("point") is Vector3):
+		return true
+	var hit_dist := ((hit["point"] as Vector3) - o).dot(d)
+	return hit_dist >= dist - maxf(0.3, dist * 0.002)
 
 
 func _point_segment_distance2(p: Vector2, a: Vector2, b: Vector2) -> float:

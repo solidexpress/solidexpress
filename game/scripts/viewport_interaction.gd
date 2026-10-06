@@ -1580,6 +1580,11 @@ func cancel_stack() -> bool:
 			vp.gui_get_focus_owner().release_focus()
 		status.emit("Edits cancelled")
 		return true
+	if ops_panel != null and ops_panel.cancel_pending_pick():
+		clear_hole_markers()
+		if vp != null and _should_release_cancel_focus(vp.gui_get_focus_owner()):
+			vp.gui_get_focus_owner().release_focus()
+		return true
 	if vp != null:
 		var focus := vp.gui_get_focus_owner()
 		if _should_release_cancel_focus(focus):
@@ -3379,7 +3384,8 @@ func _on_release(pos: Vector2) -> void:
 	# An armed fillet/chamfer/hole pick must hit the solid, not reopen the pad.
 	if was_click and _click_hits_pad():
 		return
-	if _press_empty:
+	var armed_pick := ops_panel != null and ops_panel.consumes_viewport_pick()
+	if _press_empty and not armed_pick:
 		if not _additive_click:
 			view.clear_selection()
 			_commit_property_panel_on_deselect()
@@ -3392,15 +3398,16 @@ func _on_release(pos: Vector2) -> void:
 	# Prefer the press ray so a tiny slide off the body still selects it.
 	var ray := _model_ray(_press_pos)
 	# Armed geometry picks (Hole Wizard / Fillet edges / …) must NOT go through
-	# select_ray face-refine — that clears accumulated edges mid-pick.
-	if ops_panel != null and ops_panel.consumes_viewport_pick():
+	# select_ray face-refine — that clears accumulated edges mid-pick. An empty
+	# press while armed keeps the set (silhouette pick or a named miss).
+	if armed_pick:
 		var hit: Dictionary = view.pick_info(ray[0], ray[1])
 		if not hit.is_empty():
 			ops_panel.handle_viewport_pick(
 				str(hit.get("body", "")), str(hit.get("face", "")),
 				hit.get("point", Vector3.ZERO) as Vector3)
 		else:
-			status.emit("Missed the solid — click a face or edge")
+			ops_panel.handle_viewport_miss(_press_pos, get_viewport().get_camera_3d())
 		_box_drag = false
 		_additive_click = false
 		_press_empty = false
