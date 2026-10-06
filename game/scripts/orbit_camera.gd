@@ -16,6 +16,9 @@ extends Camera3D
 ## Fired after yaw/pitch/distance/pivot/projection update the camera transform.
 ## Overlay gizmos connect so they redraw only when the view actually moves.
 signal view_changed
+## Part-mode Frame / F / Home / Shift+F / HUD / marking menu. Strings match the
+## HUD: "Framed selection" or "Framed all". Not emitted while a live sketch fits.
+signal framed(what: String)
 
 enum NavPreset { SOLIDEXPRESS, SOLIDWORKS, FUSION }
 
@@ -562,23 +565,35 @@ func _want_alt_pan(shift_held: bool) -> bool:
 
 
 ## Zoom by `factor` (< 1 in, > 1 out) keeping the point under `screen_pos`
-## approximately fixed: intersect the cursor ray with the plane through the
-## pivot perpendicular to the view axis, then shift the pivot by (1 - factor)
-## of that pivot→anchor vector (in-plane).
-## Zoom-out past ~fit distance gently pulls the pivot toward visible content
-## so a stray cursor-anchored zoom cannot leave the scene off-screen.
+## fixed: intersect the cursor ray with the plane through the pivot
+## perpendicular to the view axis, clamp distance first, then shift the pivot
+## by (1 - effective_factor) of that in-plane pivot→anchor vector so a clamp
+## cannot drag the anchor. Zoom-out does not pull toward content while any
+## body is on screen; `_nudge_pivot_on_zoom_out` is the off-screen safety net.
 func zoom_at(screen_pos: Vector2, factor: float) -> void:
+	var old_distance := distance
+	if old_distance < 1e-12:
+		old_distance = MIN_DISTANCE
+	var max_d := MAX_DISTANCE
+	if _has_visible_body():
+		var united := _visible_contents_aabb()
+		if united.size.length_squared() >= 1e-12:
+			var fit_d := _fit_distance_for_world_aabb(united)
+			if fit_d > 1e-6:
+				max_d = minf(MAX_DISTANCE, ZOOM_OUT_MAX_FIT_MULT * fit_d)
+	var new_distance := clampf(old_distance * factor, MIN_DISTANCE, max_d)
+	var eff := new_distance / old_distance
 	var anchor := _zoom_anchor(screen_pos)
 	var basis := global_transform.basis if is_inside_tree() else transform.basis
 	var forward := -basis.z
 	var to_anchor := anchor - pivot
 	# Project onto the view plane (numerical safety; anchor should already lie on it).
 	var plane_delta := to_anchor - forward * to_anchor.dot(forward)
-	distance = clampf(distance * factor, MIN_DISTANCE, MAX_DISTANCE)
-	pivot += (1.0 - factor) * plane_delta
+	distance = new_distance
+	pivot += (1.0 - eff) * plane_delta
+	_update_transform()
 	if factor > 1.0:
 		_nudge_pivot_on_zoom_out(factor)
-	_update_transform()
 
 
 func _zoom_anchor(screen_pos: Vector2) -> Vector3:
@@ -731,13 +746,16 @@ func _animate_pose(to: Dictionary, duration := 0.25) -> void:
 ## Frame selection when anything is selected; otherwise all bodies.
 ## Pass `force_all=true` for Shift+F / “fit whole model”.
 func frame_selection_or_all(force_all := false) -> void:
-	if sketch_fit.is_valid():
+	if _sketch_fit_should_run():
 		sketch_fit.call()
 		return
+	_clear_stale_sketch_fit()
 	if not force_all and view != null and view.selected_body != "":
 		if frame_selection():
+			framed.emit("Framed selection")
 			return
 	frame_contents()
+	framed.emit("Framed all")
 
 
 ## Frames the current selection AABB (model → world). Returns false if empty.
@@ -768,9 +786,10 @@ func frame_selection() -> bool:
 
 ## Frames all visible bodies (world-space AABB union); origin fallback when empty.
 func frame_contents() -> void:
-	if sketch_fit.is_valid():
+	if _sketch_fit_should_run():
 		sketch_fit.call()
 		return
+	_clear_stale_sketch_fit()
 	if not _has_visible_body():
 		_look_at_content = false
 		pivot = Vector3.ZERO
@@ -809,12 +828,33 @@ func _visible_contents_aabb() -> AABB:
 
 
 ## CAD zoom-extents: pivot on the AABB center, look straight at it, and set
-## distance so every corner fits the current frustum (aspect-aware).
+## distance so every corner fits the chrome-free canvas (same free rect as
+## sketch fit), then pan so the AABB sits in that rect rather than under the
+## left rail.
 func _frame_world_aabb(united: AABB) -> void:
 	_look_at_content = true
 	pivot = united.get_center()
 	distance = _fit_distance_for_world_aabb(united)
+	var vp := get_viewport()
+	var vp_size := Vector2.ZERO
+	if vp != null:
+		vp_size = vp.get_visible_rect().size
+	if vp_size.y > 1.0:
+		var canvas := sketch_fit_canvas_rect(vp_size)
+		if canvas.size.x > 1.0 and canvas.size.y > 1.0:
+			distance *= maxf(vp_size.x / canvas.size.x, vp_size.y / canvas.size.y)
+	distance = clampf(distance, MIN_DISTANCE, MAX_DISTANCE)
 	_update_transform()
+	if vp_size.y > 1.0:
+		var canvas := sketch_fit_canvas_rect(vp_size)
+		var dc := canvas.get_center() - vp_size * 0.5
+		if dc.length_squared() >= 1e-8:
+			var ppm := pixels_per_mm_at_pivot()
+			var mm_per_px := 1.0 / maxf(ppm, 1e-9)
+			var basis := global_transform.basis if is_inside_tree() else transform.basis
+			pivot -= basis.x * (dc.x * mm_per_px)
+			pivot += basis.y * (dc.y * mm_per_px)
+			_update_transform()
 
 
 ## Minimum orbit distance so `united` fills the view with FRAME_PADDING margin.
@@ -869,27 +909,72 @@ func _fit_distance_for_world_aabb(united: AABB) -> float:
 	return clampf(d_needed * FRAME_PADDING, MIN_DISTANCE, MAX_DISTANCE)
 
 
-## When zooming out past fit, blend the pivot toward content and soft-cap distance.
+## Off-screen safety net: when every visible body is outside the viewport,
+## pull the pivot toward the content so a stray zoom cannot lose the scene.
+## Does not move the pivot while any body's projected AABB is on screen —
+## that would break cursor-anchored zoom.
 func _nudge_pivot_on_zoom_out(factor: float) -> void:
 	if not _has_visible_body():
 		return
 	var united := _visible_contents_aabb()
 	if united.size.length_squared() < 1e-12:
 		return
+	if _projected_aabb_intersects_view(united):
+		return
 	var center := united.get_center()
-	var fit_d := _fit_distance_for_world_aabb(united)
-	if fit_d < 1e-6:
-		return
-	var ratio := distance / fit_d
-	if ratio > ZOOM_OUT_MAX_FIT_MULT:
-		distance = fit_d * ZOOM_OUT_MAX_FIT_MULT
-		ratio = ZOOM_OUT_MAX_FIT_MULT
-	if ratio <= ZOOM_OUT_RECENTER_START:
-		return
-	# Stronger pull the farther past fit we are; scale by this zoom step size.
-	var over := (ratio - ZOOM_OUT_RECENTER_START) / (ZOOM_OUT_MAX_FIT_MULT - ZOOM_OUT_RECENTER_START)
-	var t := clampf(over * (factor - 1.0) * 10.0, 0.0, 0.4)
+	var t := clampf((factor - 1.0) * 10.0, 0.0, 0.4)
 	pivot = pivot.lerp(center, t)
+	_update_transform()
+
+
+func _projected_aabb_intersects_view(united: AABB) -> bool:
+	if not is_inside_tree():
+		return false
+	var vp := get_viewport()
+	if vp == null:
+		return false
+	var vr := vp.get_visible_rect()
+	var min_s := Vector2(INF, INF)
+	var max_s := Vector2(-INF, -INF)
+	var any := false
+	var corners: Array[Vector3] = [
+		united.position,
+		united.position + Vector3(united.size.x, 0, 0),
+		united.position + Vector3(0, united.size.y, 0),
+		united.position + Vector3(0, 0, united.size.z),
+		united.position + Vector3(united.size.x, united.size.y, 0),
+		united.position + Vector3(united.size.x, 0, united.size.z),
+		united.position + Vector3(0, united.size.y, united.size.z),
+		united.position + united.size,
+	]
+	for c in corners:
+		if is_position_behind(c):
+			continue
+		any = true
+		var p := unproject_position(c)
+		min_s.x = minf(min_s.x, p.x)
+		min_s.y = minf(min_s.y, p.y)
+		max_s.x = maxf(max_s.x, p.x)
+		max_s.y = maxf(max_s.y, p.y)
+	if not any:
+		return false
+	return vr.intersects(Rect2(min_s, max_s - min_s))
+
+
+func _sketch_fit_should_run() -> bool:
+	if not sketch_fit.is_valid():
+		return false
+	if sketch_orientation_locked:
+		return true
+	var obj := sketch_fit.get_object()
+	if obj == null:
+		return false
+	return obj.get("active") == true
+
+
+func _clear_stale_sketch_fit() -> void:
+	if sketch_fit.is_valid() and not _sketch_fit_should_run():
+		sketch_fit = Callable()
 
 
 ## Orient the camera to look along -normal (face “normal to” / look-at).

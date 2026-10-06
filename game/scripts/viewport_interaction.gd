@@ -5545,10 +5545,8 @@ func _on_orient_id(id: int) -> void:
 			status.emit("Projection toggled")
 		20:
 			camera.frame_selection_or_all(false)
-			status.emit("Framed selection")
 		21:
-			camera.frame_contents()
-			status.emit("Framed all")
+			camera.frame_selection_or_all(true)
 
 
 # --- on-canvas gizmos ---
