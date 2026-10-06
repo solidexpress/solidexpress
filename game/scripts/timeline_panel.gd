@@ -269,10 +269,14 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	suppress.toggled.connect(func(on: bool) -> void: _set_suppressed(fid, not on))
 	row.add_child(suppress)
 
+	focus_mode = Control.FOCUS_CLICK
 	var name_btn := Button.new()
 	name_btn.text = f["name"]
 	name_btn.icon = UIIcons.get_icon(_row_icon(f), 14)
+	var is_sketch := str(f["type"]) == "sketch"
 	name_btn.tooltip_text = "Select feature (click again to rename) · drag to reorder"
+	if is_sketch:
+		name_btn.tooltip_text = "Select feature (double-click a sketch to edit it, click again to rename) · drag to reorder"
 	name_btn.flat = true
 	name_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -280,6 +284,18 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 		name_btn.modulate = Color(1, 1, 1, 0.45)
 	name_btn.pressed.connect(_select_feature.bind(fid))
 	name_btn.gui_input.connect(func(ev: InputEvent) -> void:
+		if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F2:
+			var focused := get_viewport().gui_get_focus_owner() if get_viewport() != null else null
+			if focused is LineEdit or focused is TextEdit:
+				return
+			_begin_rename(fid, row, name_btn)
+			name_btn.accept_event()
+			return
+		if ev is InputEventMouseButton and ev.pressed \
+				and ev.button_index == MOUSE_BUTTON_RIGHT:
+			_popup_rename_menu(fid, row, name_btn)
+			name_btn.accept_event()
+			return
 		if ev is InputEventMouseButton and ev.pressed and ev.double_click \
 				and ev.button_index == MOUSE_BUTTON_LEFT:
 			var ftype := str(f["type"])
@@ -348,8 +364,14 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 			_move_feature(str(data["timeline_fid"]), index)
 	name_btn.set_drag_forwarding(get_data, can_drop, drop)
 
-	var edit_btn := UIIcons.button("rename", "", "Rename feature")
-	edit_btn.pressed.connect(func() -> void: _begin_rename(fid, row, name_btn))
+	# Pencil stays the `rename` glyph (already used on every timeline row; no
+	# separate `edit` icon exists). On a sketch it means Edit sketch.
+	var edit_btn := UIIcons.button("rename", "", "Edit sketch" if is_sketch else "Rename feature")
+	edit_btn.name = "RowEdit"
+	if is_sketch:
+		edit_btn.pressed.connect(func() -> void: _edit_sketch_feature(fid))
+	else:
+		edit_btn.pressed.connect(func() -> void: _begin_rename(fid, row, name_btn))
 	row.add_child(edit_btn)
 
 	if PropertyPanel.has_schema(str(f["type"])):
@@ -381,6 +403,72 @@ func _find_sketch_mode() -> SketchMode:
 			return sm
 		n = n.get_parent()
 	return null
+
+
+func _popup_rename_menu(fid: String, row: HBoxContainer, name_btn: Button) -> void:
+	var existing := get_node_or_null("RowRenameMenu")
+	if existing != null:
+		existing.queue_free()
+	var menu := PopupMenu.new()
+	menu.name = "RowRenameMenu"
+	menu.add_item("Rename", 0)
+	menu.id_pressed.connect(func(id: int) -> void:
+		if id == 0:
+			_begin_rename(fid, row, name_btn)
+		menu.hide()
+		menu.queue_free()
+	)
+	menu.popup_hide.connect(func() -> void:
+		if is_instance_valid(menu):
+			menu.queue_free()
+	)
+	add_child(menu)
+	var gp := name_btn.get_global_rect()
+	menu.position = Vector2i(gp.position + Vector2(0.0, gp.size.y))
+	menu.popup()
+
+
+func _row_name_button(fid: String) -> Button:
+	var row: Control = _rows.get(fid)
+	if row == null:
+		return null
+	for c in row.get_children():
+		if c is Button and not (c is CheckBox):
+			return c as Button
+	return null
+
+
+func _is_row_name_button(n: Node) -> bool:
+	if n == null or not (n is Button) or n is CheckBox:
+		return false
+	for fid in _rows:
+		if _row_name_button(str(fid)) == n:
+			return true
+	return false
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not visible or not is_visible_in_tree():
+		return
+	if not (event is InputEventKey):
+		return
+	var key := event as InputEventKey
+	if not key.pressed or key.echo or key.keycode != KEY_F2:
+		return
+	var focused := get_viewport().gui_get_focus_owner() if get_viewport() != null else null
+	if focused is LineEdit or focused is TextEdit or focused is SpinBox:
+		return
+	if focused != self and not _is_row_name_button(focused):
+		return
+	if _selected_fid == "":
+		return
+	var row: HBoxContainer = _rows.get(_selected_fid) as HBoxContainer
+	var name_btn := _row_name_button(_selected_fid)
+	if row == null or name_btn == null:
+		return
+	_begin_rename(_selected_fid, row, name_btn)
+	if get_viewport() != null:
+		get_viewport().set_input_as_handled()
 
 
 ## Double-click a sketch row: reopen it in the sketch editor.
