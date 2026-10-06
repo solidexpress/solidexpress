@@ -10,7 +10,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 ## Rung 1 A11a — Slot rail must arm from a real click
 - The Slot button's tool id was already `SketchMode.Tool.SLOT` (named enum, not rail index). A press still did not arm: sketch `_input` treated Interaction hover as canvas ownership, marked the event handled, and `_sketch_input` hid Rect chips then started a LINE/RECT point. Typing 5+Enter hit `_apply_dimension` (`Select entities with the Sel tool first`).
-- Viewport owns the pointer only when the event is outside SketchTools / FinishBar / top chrome. `set_tool` emits `Slot — …` for every rail tool. Dim Enter before the first centre sets `slot_radius`. New face sketches reset the rail scroll and Blind/New.
+- Viewport owns the pointer only when the event is outside SketchTools / FinishBar. `set_tool` emits `Slot — …` for every rail tool. Dim Enter before the first centre sets `slot_radius`. New face sketches reset the rail scroll and Blind/New.
 - Gate: `run_rung01_replan12_slotarm.gd` (real `Viewport.push_input` at each rail button, including Slot after a canvas park). Walk A11a read-back `Slot c-c 150.0000 R5.0000 — typed`.
 
 ## Rung 1 replan 2 WP2 follow-up (typed length / wrench walk)
