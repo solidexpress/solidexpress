@@ -1889,19 +1889,20 @@ func _reflow_left_stack() -> void:
 
 ## After creating a feature: open params ONLY if Timeline is already user-shown.
 ## Never force Timeline on — that broke "hidden until requested."
-func open_feature_params(fid: String) -> void:
+func open_feature_params(fid: String, lead: String = "") -> void:
 	if fid == "" or timeline == null:
 		return
+	var head := "Feature created" if lead == "" else lead
 	if not show_timeline:
-		_on_status("Feature created — View ▸ Timeline to edit parameters")
+		_on_status(head + " — View ▸ Timeline to edit parameters")
 		return
 	_update_panel_visibility()
 	timeline.refresh()
 	timeline._select_feature(fid)
 	if timeline.property_panel != null and timeline.property_panel.visible:
-		_on_status("Feature created — adjust parameters (Esc cancels, deselect keeps)")
+		_on_status(head + " — adjust parameters (Esc cancels, deselect keeps)")
 	else:
-		_on_status("Feature created — edit Params (JSON) if needed")
+		_on_status(head + " — edit Params (JSON) if needed")
 
 
 ## Keep View menu checkboxes honest with show_* flags.

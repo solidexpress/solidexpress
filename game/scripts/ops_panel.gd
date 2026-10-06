@@ -884,11 +884,12 @@ func _apply_dressup(fillet: bool) -> void:
 	if ok:
 		_dressup_from_face = false
 		view.graph_changed()
-		status.emit("%s %s %.2f applied" % [name, scope, value])
+		var applied := "%s %s %.2f applied" % [name, scope, value]
+		status.emit(applied)
 		_pending = Pending.NONE
 		dressup_armed_changed.emit(false, fillet)
 		if new_fid != "":
-			_open_last_feature("fillet" if fillet else "chamfer")
+			_open_last_feature("fillet" if fillet else "chamfer", applied)
 	else:
 		if fillet:
 			status.emit(_fillet_refusal_status(value, targets.size()))
@@ -943,7 +944,7 @@ func _fault_phrase(why: String) -> String:
 	return "" if m == null else m.get_string(1)
 
 
-func _open_last_feature(ftype: String) -> void:
+func _open_last_feature(ftype: String, lead: String = "") -> void:
 	var main := _find_main()
 	if main == null or not main.has_method("open_feature_params"):
 		return
@@ -952,7 +953,7 @@ func _open_last_feature(ftype: String) -> void:
 		if str(f.get("type", "")) == ftype:
 			fid = str(f.get("id", ""))
 	if fid != "":
-		main.open_feature_params(fid)
+		main.open_feature_params(fid, lead)
 
 
 func _find_main() -> Node:
@@ -1782,6 +1783,9 @@ func cancel_pending_pick() -> bool:
 	_selected_hole_fid = ""
 	_clear_hole_wizard()
 	if was_dress:
+		if view.selected_body != "" and (view.selected_edges.size() > 0 or view.selected_edge != ""):
+			view.select_entity(view.selected_body, "")
+		_dressup_from_face = false
 		dressup_armed_changed.emit(false, was_fillet)
 	if was_wizard:
 		status.emit("Hole Wizard cancelled")
@@ -2001,21 +2005,61 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 	if _pending_body != "" and body != _pending_body:
 		status.emit("Fillet/Chamfer: pick edges on the same body")
 		return
-	# A click on the face interior fillets every edge of that face. A click
-	# on the silhouette (within 2.5 mm, or 12 mm when no face was hit) adds
-	# one edge so the two neck edges can share one feature.
-	var edge := view.edge_near_point(body, point, 2.5)
+	# A click on the face interior fillets every edge of that face, but only as
+	# the FIRST pick. Once an edge is armed, a face click snaps to the nearest
+	# edge within DRESSUP_SNAP_PX or is refused; it never replaces the set.
+	var cam := _dressup_camera()
+	var edge := view.edge_near_point(body, point, 2.5, cam)
 	if edge == "" and face != "":
-		_add_dressup_face(body, face)
-		return
+		if not _dressup_has_edges():
+			_add_dressup_face(body, face)
+			return
+		if cam != null:
+			edge = view.edge_near_screen(body, cam, view.model_to_screen(cam, point), DRESSUP_SNAP_PX)
+		if edge == "":
+			status.emit("No edge near click — click on an edge (a face click fillets the whole face only as the first pick)")
+			return
 	if edge == "":
-		edge = view.edge_near_point(body, point, 12.0)
+		edge = view.edge_near_point(body, point, 12.0, cam)
 	if edge == "":
 		status.emit("No edge near click — zoom in or click closer to an edge")
 		return
-	# Additive edge selection while armed (do not go through select_ray —
-	# face refine would clear the edge set).
+	_toggle_dressup_edge(body, edge)
+
+
+const DRESSUP_SNAP_PX := 14.0
+const DRESSUP_SILHOUETTE_PX := 10.0
+
+
+func _dressup_camera() -> Camera3D:
+	if view == null or not view.is_inside_tree():
+		return null
+	return view.get_viewport().get_camera_3d()
+
+
+func _dressup_has_edges() -> bool:
+	return not view.selected_edges.is_empty() or view.selected_edge != ""
+
+
+## A press that missed the solid while a pick is armed. Never clears the set:
+## an edge seen edge-on within DRESSUP_SILHOUETTE_PX of the press is toggled,
+## anything else is a named miss.
+func handle_viewport_miss(screen: Vector2, camera: Camera3D) -> void:
+	var body := _pending_body if _pending_body != "" else view.selected_body
+	if (_pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES) \
+			and body != "" and camera != null:
+		var edge := view.edge_near_screen(body, camera, screen, DRESSUP_SILHOUETTE_PX)
+		if edge != "":
+			_toggle_dressup_edge(body, edge)
+			return
+	status.emit("Missed the solid — click a face or edge")
+
+
+## Add `edge` to the armed set, or remove it when it is already there. Does not
+## go through select_ray (face refine would clear the edge set).
+func _toggle_dressup_edge(body: String, edge: String) -> void:
 	if view.selected_edges.has(edge) or view.selected_edge == edge:
+		var gone := _edge_length_kind(body, edge)
 		view.selected_edges.erase(edge)
 		if view.selected_edge == edge:
 			view.selected_edge = str(view.selected_edges[0]) if not view.selected_edges.is_empty() else ""
@@ -2024,7 +2068,7 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 		view._highlight_edge()
 		view.selection_changed.emit(view.selected_body, view.selected_face)
 		_dressup_from_face = false
-		status.emit(_dressup_pick_status() + " — removed")
+		status.emit(_dressup_pick_status() + " — removed " + gone)
 		return
 	elif view.selected_edges.is_empty() and view.selected_edge == "":
 		view.select_edge(body, edge)
