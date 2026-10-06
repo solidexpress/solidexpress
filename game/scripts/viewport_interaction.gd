@@ -1574,6 +1574,12 @@ func _is_orbit_event(event: InputEvent) -> bool:
 func cancel_stack() -> bool:
 	var acted := false
 	var vp := get_viewport()
+	var main_pp := _find_main()
+	if main_pp != null and main_pp.has_method("cancel_property_panel") and main_pp.cancel_property_panel():
+		if vp != null and _should_release_cancel_focus(vp.gui_get_focus_owner()):
+			vp.gui_get_focus_owner().release_focus()
+		status.emit("Edits cancelled")
+		return true
 	if vp != null:
 		var focus := vp.gui_get_focus_owner()
 		if _should_release_cancel_focus(focus):
@@ -3376,6 +3382,7 @@ func _on_release(pos: Vector2) -> void:
 	if _press_empty:
 		if not _additive_click:
 			view.clear_selection()
+			_commit_property_panel_on_deselect()
 			status.emit("")
 			_box_drag = false
 			_additive_click = false
