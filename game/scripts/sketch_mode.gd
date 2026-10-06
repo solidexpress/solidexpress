@@ -966,8 +966,15 @@ func set_tool(t: Tool) -> void:
 	# visible/selectable (polygon/circle vanishing after another tool was a bug).
 	_update_preview()
 	tool_changed.emit(int(t))
-	if t == Tool.RECT:
-		status.emit("Rect — click 1 first corner, click 2 the opposite corner")
+	match t:
+		Tool.RECT:
+			status.emit("Rect — click 1 first corner, click 2 the opposite corner")
+		Tool.CIRCLE:
+			status.emit("Circle — click the centre, then the rim (or type a radius)")
+		Tool.SELECT:
+			status.emit("Select — click geometry, or a dimension label to edit it")
+		Tool.CENTERLINE:
+			status.emit("Centerline — click 2 points (construction, never part of the profile)")
 
 
 ## Rail "Jaw" button: Rectangle tool, Center Three Point variant.
@@ -3300,6 +3307,8 @@ func click(pos2: Vector2) -> void:
 				_redraw()
 				# Propose chips follow new geometry even when infer did not solve.
 				selection_actions_needed.emit()
+				if as_centreline:
+					status.emit("Centerline added — construction, not part of the profile")
 		Tool.RECT:
 			_click_rect(pos2)
 		Tool.CIRCLE:
@@ -3390,6 +3399,9 @@ func click(pos2: Vector2) -> void:
 			_tool_points.append(pos2)
 			if _tool_points.size() == 2:
 				_add_slot(_tool_points[0], _tool_points[1], slot_radius)
+				status.emit("Slot c-c %.4f R%.4f%s" % [
+						_tool_points[0].distance_to(_tool_points[1]), slot_radius,
+						" — typed" if _point_from_length else ""])
 				_tool_points.clear()
 				_redraw()
 		Tool.SMART_DIM:
@@ -3468,6 +3480,8 @@ func _click_rect(pos2: Vector2) -> void:
 						# to a construction +X through the centre. Construction
 						# stays out of the profile.
 						_add_centre_rect_dimensions(q1, q2, q3, ctr, pt)
+						status.emit("Jaw committed — width %.4f, long side %.1f° — click a label to edit it" % [
+								half_w * 2.0, fposmod(rad_to_deg(dir.angle()), 180.0)])
 				_tool_points.clear()
 		"parallelogram":
 			if _tool_points.size() == 3:
