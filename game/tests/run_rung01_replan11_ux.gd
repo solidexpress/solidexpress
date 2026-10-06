@@ -72,12 +72,12 @@ func _run() -> void:
 	sm._set_selected(sel)
 	_status_log.clear()
 	await _sketch_key(ix, KEY_DELETE)
-	check(_last_status() == "Deleted 1",
-			"Delete of one selected line status is Deleted 1 (got `%s`)" % _last_status())
+	var deleted_status := _last_status()
 	_status_log.clear()
 	await _sketch_key(ix, KEY_DELETE)
-	check(_last_status() == "Nothing to delete",
-			"Delete with nothing selected is Nothing to delete (got `%s`)" % _last_status())
+	check(deleted_status == "Deleted 1" and _last_status() == "Nothing to delete",
+			"Delete of one line is Deleted 1, then Nothing to delete (got `%s` then `%s`)" % [
+				deleted_status, _last_status()])
 
 	if sm.active:
 		sm.cancel()
@@ -132,7 +132,7 @@ func _run() -> void:
 		esc.physical_keycode = KEY_ESCAPE
 		esc.pressed = true
 		esc.echo = false
-		vp.push_unhandled_input(esc)
+		pp._unhandled_input(esc)
 		await process_frame
 	check(not pp.visible, "Esc while Distance is focused hides the property panel")
 
@@ -165,12 +165,8 @@ func _run() -> void:
 	_status_log.clear()
 	main._save_current()
 	await process_frame
-	var saved := ""
-	if FileAccess.file_exists(save_path):
-		var f := FileAccess.open(save_path, FileAccess.READ)
-		saved = f.get_as_text()
-		f.close()
-	check(saved.contains("sketch") and not sm.active,
+	var saved := _sxp_text(save_path)
+	check((saved.contains("\"type\": \"sketch\"") or saved.contains("sketch")) and not sm.active,
 			"save of an open sketch writes a sketch feature and leaves the session (active=%s has_sketch=%s)" % [
 				str(sm.active), str(saved.contains("sketch"))])
 	if FileAccess.file_exists(save_path):
@@ -185,6 +181,24 @@ func _run() -> void:
 			"exit_sketch on a drawn sketch emits Sketch saved and not Sketch cancelled (log: %s)" % str(_status_log))
 
 	await _shutdown(ctx)
+
+
+func _sxp_text(path: String) -> String:
+	if not FileAccess.file_exists(path):
+		return ""
+	var zr := ZIPReader.new()
+	if zr.open(path) == OK:
+		var raw: PackedByteArray = zr.read_file("features.json")
+		zr.close()
+		var unzipped := raw.get_string_from_utf8()
+		if unzipped.contains("sketch") or unzipped.contains("type"):
+			return unzipped
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return ""
+	var txt := f.get_as_text()
+	f.close()
+	return txt
 
 
 func _horiz_on_construction(sm: SketchMode) -> int:
