@@ -238,6 +238,7 @@ func _ready() -> void:
 	_build_transform_hud()
 	_build_context_menu()
 	_build_selection_strip()
+	_wire_numeric_focus_release()
 	_build_orient_popup()
 	_build_dim_edit_popup()
 	if sketch_mode != null:
@@ -257,6 +258,57 @@ func _ready() -> void:
 
 func is_placing() -> bool:
 	return _place_kind != ""
+
+
+func _wire_numeric_focus_release() -> void:
+	if _strip_radius != null:
+		SxUi.release_focus_on_commit(_strip_radius)
+	gui_input.connect(_on_numeric_canvas_press)
+
+
+func _on_numeric_canvas_press(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if _over_chrome(mb.position):
+		return
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var f := vp.gui_get_focus_owner()
+	if f is LineEdit or f is TextEdit or f is SpinBox \
+			or (f != null and f.get_parent() is SpinBox):
+		vp.gui_release_focus()
+	# Do not accept_event — the part-mode pick still runs on this press.
+
+
+## Esc with a first sketch anchor: drop it and print the A6 sentence once.
+func drop_pending_draw_esc() -> bool:
+	if sketch_mode == null or not sketch_mode.has_pending_draw_point():
+		return false
+	if measure_overlay != null and measure_overlay.has_anchor():
+		measure_overlay.clear_pair()
+	sketch_mode.cancel_pending_draw()
+	status.emit("First point dropped — Esc again exits the sketch")
+	return true
+
+
+func _emit_view_key_status(event: InputEvent) -> void:
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	var ke := event as InputEventKey
+	if ke.ctrl_pressed or ke.meta_pressed or ke.alt_pressed:
+		return
+	match ke.keycode:
+		KEY_1: status.emit("Front view")
+		KEY_2: status.emit("Right view")
+		KEY_3: status.emit("Top view")
+		KEY_4: status.emit("Back view")
+		KEY_6: status.emit("Left view")
+		KEY_7: status.emit("Isometric view")
+		KEY_8: status.emit("Bottom view")
 
 
 ## Re-evaluate the selection strip (call after entering sketch mode, which
@@ -2827,11 +2879,8 @@ func _sketch_input(event: InputEvent) -> void:
 					else:
 						status.emit("Deleted %d" % n)
 			KEY_ESCAPE:
-				if sketch_mode.has_pending_draw_point():
-					if measure_overlay != null and measure_overlay.has_anchor():
-						measure_overlay.clear_pair()
-					sketch_mode.cancel_pending_draw()
-					status.emit("First point dropped — Esc again exits the sketch")
+				if drop_pending_draw_esc():
+					pass
 				elif measure_overlay != null and measure_overlay.has_anchor():
 					measure_overlay.clear_pair()
 					status.emit("Measure cleared")
@@ -4500,6 +4549,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
 		if not block_nav and camera.is_nav_event(event, allow_scroll):
 			if camera.handle_input(event, allow_scroll):
+				_emit_view_key_status(event)
 				get_viewport().set_input_as_handled()
 				return
 	if _input_up_to_face_pick(event):
@@ -4530,6 +4580,7 @@ func _input(event: InputEvent) -> void:
 			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
 		if not block_nav and camera.is_nav_event(event, allow_scroll):
 			if camera.handle_input(event, allow_scroll):
+				_emit_view_key_status(event)
 				get_viewport().set_input_as_handled()
 				return
 	# Place mode uses viewport mouse coords so ghost/commit work even when the
