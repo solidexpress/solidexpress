@@ -1,7 +1,8 @@
 # Rung 1 replan 13 WP3 — Fillet Radius in the selection strip and the Modify
 # panel are one value. Validation suite: box via insert_primitive, select_entity,
 # arm through ops_panel.arm_or_apply_fillet(); every key under test is a real
-# pushed event.
+# pushed event. L3: Tab (not Enter) after typing 10 in the panel, and 1.5 in
+# the strip, keeps strip, panel, and status `r=` on the same number.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script res://tests/run_rung01_replan13_radius.gd
 extends SceneTree
@@ -44,11 +45,13 @@ func _observe(main, tag: String) -> void:
 	if spin != null:
 		var le: LineEdit = spin.get_line_edit()
 		text = le.text if le != null else ""
-		print("  observed %s: strip.value=%s strip.text=`%s` panel=%s" % [
-			tag, str(spin.value), text, str(main.ops_panel.dressup_radius())])
-	else:
-		print("  observed %s: StripRadius missing panel=%s" % [
-			tag, str(main.ops_panel.dressup_radius())])
+	var panel_text := ""
+	if main.ops_panel._radius_spin != null:
+		var ple: LineEdit = main.ops_panel._radius_spin.get_line_edit()
+		panel_text = ple.text if ple != null else ""
+	print("  observed %s: strip.value=%s strip.text=`%s` panel.value=%s panel.text=`%s` status=`%s`" % [
+		tag, str(spin.value) if spin != null else "?", text,
+		str(main.ops_panel.dressup_radius()), panel_text, _st(main)])
 
 
 func _text_radius(text: String) -> float:
@@ -78,6 +81,20 @@ func _agree(main, want: float, tag: String) -> void:
 			"%s: panel Radius == %s (got %s)" % [tag, str(want), str(main.ops_panel.dressup_radius())])
 	check(_parses_to(text, want),
 			"%s: strip text parses to %s (got `%s`)" % [tag, str(want), text])
+
+
+func _agree_armed(main, want: float, tag: String) -> void:
+	_agree(main, want, tag)
+	var panel_le: LineEdit = main.ops_panel._radius_spin.get_line_edit()
+	var panel_text := panel_le.text if panel_le != null else ""
+	check(_parses_to(panel_text, want),
+			"%s: panel text parses to %s (got `%s`)" % [tag, str(want), panel_text])
+	var st := _st(main)
+	var needle := "r=%.2f" % want
+	check(st.contains(needle),
+			"%s: status contains %s (got `%s`)" % [tag, needle, st])
+	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"%s: Fillet still armed" % tag)
 
 
 func _vertical_edges(view: DocumentView, body: String) -> Array:
@@ -220,6 +237,63 @@ func _run() -> void:
 	# into the strip. The leftover is that a panel edit while armed (or an
 	# Enter that only commits the number) leaves the strip on its last value.
 	_agree(main, 10.0, "1b LineEdit Enter")
+
+	print("- 7. L3: type 10 in panel (intermediate 0), Tab; strip, panel, status agree")
+	view.select_entity(body, "")
+	await process_frame
+	if ops._pending != OpsPanel.Pending.FILLET_EDGES:
+		ops.arm_or_apply_fillet()
+		await process_frame
+		await process_frame
+	ops.set_dressup_radius(1.0)
+	await process_frame
+	await process_frame
+	check(ops._pending == OpsPanel.Pending.FILLET_EDGES, "7: Fillet armed at 1")
+	_observe(main, "7 armed at 1")
+	_agree_armed(main, 1.0, "7 start")
+	panel_le = ops._radius_spin.get_line_edit()
+	await _focus_select_all(panel_le)
+	await _type_text("0")
+	await process_frame
+	_observe(main, "7 intermediate 0")
+	# Walk: strip latched the partial 0 and never caught up. Plant that stale
+	# LineEdit so Tab-commit of 10 must overwrite it, not keep 0.0 mm.
+	var strip0 := _strip(main)
+	if strip0 != null:
+		var sle0: LineEdit = strip0.get_line_edit()
+		if sle0 != null and not sle0.has_focus():
+			sle0.text = "0.0 mm"
+	await _focus_select_all(panel_le)
+	await _type_text("10")
+	await process_frame
+	_observe(main, "7 panel typed 10 before Tab")
+	panel_le.grab_focus()
+	await process_frame
+	await _push_key(KEY_TAB)
+	await process_frame
+	await process_frame
+	await process_frame
+	_observe(main, "7 after panel Tab")
+	_agree_armed(main, 10.0, "7 panel Tab 10")
+
+	print("- 8. L3: type 1.5 in the strip, Tab; strip, panel, status agree")
+	if ops._pending != OpsPanel.Pending.FILLET_EDGES:
+		view.select_entity(body, "")
+		await process_frame
+		ops.arm_or_apply_fillet()
+		await process_frame
+		await process_frame
+	spin = _strip(main)
+	check(spin != null and spin.is_visible_in_tree(), "8: StripRadius visible")
+	await _type_into_spin(spin, "1.5")
+	await process_frame
+	_observe(main, "8 strip typed 1.5 before Tab")
+	await _push_key(KEY_TAB)
+	await process_frame
+	await process_frame
+	await process_frame
+	_observe(main, "8 after strip Tab")
+	_agree_armed(main, 1.5, "8 strip Tab 1.5")
 
 	print("- 2. type 1.5 in the strip; Enter applies 1.50")
 	if ops._pending != OpsPanel.Pending.FILLET_EDGES:
