@@ -17,6 +17,10 @@ signal distance_rejected(raw: String)
 
 const CHIP_H := 28
 const CHIP_PAD := 6
+## Visible action chips stay this wide at most; leftover verbs go in … More.
+## A full-viewport HBox under the finish bar ate the wrench walk's empty-canvas
+## click at the view centre (sx-033 A1 follow-up).
+const ACTION_ROW_CAP := 420.0
 
 
 func _chip_h() -> int:
@@ -1313,7 +1317,9 @@ func _stack_sketch_rows() -> void:
 		var vh := maxf(_variant_bar.size.y, float(_chip_h()))
 		y = _variant_bar.position.y + vh + 4.0
 	if _action_bar != null and _action_bar.visible:
-		_relayout_action_bar(Vector2(x, y))
+		# Sit to the right of the finish bar, not in a band under it across
+		# the canvas (that covered the wrench empty-canvas click).
+		_relayout_action_bar(_action_bar_anchor())
 
 
 func _finish_bar_bottom() -> float:
@@ -1354,9 +1360,9 @@ func show_selection_actions(actions: Array, screen_pos: Vector2) -> void:
 		_clear_bar(_action_bar)
 		return
 	if _action_dock_to_rail:
-		# Always sit to the right of the SketchTools rail, never on the pointer.
-		# A long HBox used to clamp to x=8 and paint over the rail (sx-033 A1).
-		# Overflow goes in … More so the row stays one line and on-screen.
+		# Always sit to the right of the SketchTools rail / finish bar, never
+		# on the pointer. A long HBox used to clamp to x=8 and paint over the
+		# rail (sx-033 A1). Overflow goes in … More so the row stays one line.
 		_stack_sketch_rows()
 	else:
 		_relayout_action_bar(screen_pos + Vector2(12, CHIP_PAD))
@@ -1415,6 +1421,18 @@ func _finish_session_pos() -> Vector2:
 	return Vector2(x, y)
 
 
+## Local origin for selection chips: right of the finish session (or the rail
+## when that bar is hidden) so the row cannot run over Arc/Point or the canvas.
+func _action_bar_anchor() -> Vector2:
+	var pos := _finish_session_pos()
+	if _finish_bar == null or not _finish_bar.visible:
+		return pos
+	_finish_bar.reset_size()
+	var fr := _finish_bar.get_global_rect()
+	var gp := global_position
+	return Vector2(maxf(pos.x, fr.end.x + 8.0 - gp.x), fr.position.y - gp.y)
+
+
 func _place_finish_session() -> void:
 	if _finish_bar == null:
 		return
@@ -1436,10 +1454,12 @@ func _place_bar(bar: Control, pos: Vector2) -> void:
 		clampf(pos.y, 8, maxf(8, vp.y - sz.y - 8)))
 
 
-## Available width from a local X to the viewport's right margin.
+## Available width from a local X to the viewport's right margin, capped so
+## leftover chips go in … More instead of a band across the sketch.
 func _chip_row_max_width(local_x: float) -> float:
 	var vp := get_viewport_rect().size
-	return maxf(96.0, vp.x - local_x - 8.0)
+	var room := maxf(96.0, vp.x - local_x - 8.0)
+	return minf(room, ACTION_ROW_CAP)
 
 
 func _make_action_chip(verb: String) -> Button:
@@ -1548,12 +1568,12 @@ func _rebuild_wrapped_chips(max_w: float) -> void:
 
 
 ## Dock the action chips at `pos` (local). Never slides left of the live
-## SketchTools right edge: leftover verbs go in … More instead of painting
-## over Arc/Point (sx-033 A1).
+## SketchTools / finish-bar right edge: leftover verbs go in … More instead
+## of painting over Arc/Point (sx-033 A1).
 func _relayout_action_bar(pos: Vector2) -> void:
 	if _action_bar == null or not _action_bar.visible:
 		return
-	var x := maxf(pos.x, _finish_session_pos().x)
+	var x := maxf(pos.x, _action_bar_anchor().x)
 	var max_w := _chip_row_max_width(x)
 	_rebuild_wrapped_chips(max_w)
 	_action_bar.reset_size()
