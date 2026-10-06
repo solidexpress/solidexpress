@@ -205,6 +205,11 @@ func _assert_chip_row(ctx: FilmContext, why: String) -> void:
 		check(bar.get_global_rect().size.y < 50.0,
 				"%s: overflow is in … More, not a second chip line (bar %s)" % [
 				why, str(bar.get_global_rect())])
+		# The wrench walk clicks empty canvas near the view centre after a
+		# zoom; a full-width row under the finish bar stole that click.
+		check(not bar.get_global_rect().intersects(Rect2(600, 150, 80, 40)),
+				"%s: chip row leaves the canvas centre clickable (bar %s)" % [
+				why, str(bar.get_global_rect())])
 	for b in chips:
 		var r := b.get_global_rect()
 		var right_of := r.position.x >= rail_rect.end.x - 0.5
