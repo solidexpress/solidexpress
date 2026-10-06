@@ -1472,10 +1472,13 @@ func _on_sketch_selection_chips() -> void:
 	if acts.is_empty():
 		sketch_chrome.hide_selection_actions()
 	else:
-		# Keep chips off the 44px icon rail and the finish bar at (60, 42).
-		var mouse := get_viewport().get_mouse_position()
-		var pos := mouse if mouse.x > 56.0 else Vector2(60, 80)
-		sketch_chrome.show_selection_actions(acts, pos)
+		# Dock to the live SketchTools right edge. Do not follow the pointer:
+		# a click on the Ø20 rim sits over the rail, and a too-wide HBox then
+		# clamps to x=8 and paints over Arc/Point (sx-033 A1).
+		var rail_x := 60.0
+		if sketch_toolbar != null and sketch_toolbar.visible:
+			rail_x = sketch_toolbar.global_position.x + sketch_toolbar.size.x + 8.0
+		sketch_chrome.show_selection_actions(acts, Vector2(rail_x, 0.0))
 
 
 func _on_sketch_variant(kind: String, variant: String) -> void:

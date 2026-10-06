@@ -24,7 +24,12 @@ func _chip_h() -> int:
 
 var sketch_mode: SketchMode
 var _variant_bar: HBoxContainer
-var _action_bar: HBoxContainer
+var _action_bar: VBoxContainer
+## Verbs currently shown on `_action_bar` (wraps when the row would hit the
+## viewport edge). Empty when the bar is hidden.
+var _action_verbs: Array = []
+var _action_wrap_width := -1.0
+var _action_dock_to_rail := false
 var _finish_bar: VBoxContainer
 var _finish_dim_row: HBoxContainer
 var _finish_end_row: HBoxContainer
@@ -87,7 +92,11 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_variant_bar = _make_bar()
 	_variant_bar.name = "VariantBar"
-	_action_bar = _make_bar()
+	_action_bar = VBoxContainer.new()
+	_action_bar.name = "ActionBar"
+	_action_bar.add_theme_constant_override("separation", 4)
+	_action_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_action_bar)
 	_finish_bar = VBoxContainer.new()
 	_finish_bar.name = "FinishBar"
 	_finish_bar.add_theme_constant_override("separation", 4)
@@ -1211,7 +1220,7 @@ func show_for_session(on: bool) -> void:
 			refresh_contours(sketch_mode.sketch)
 	else:
 		_variant_bar.visible = false
-		_action_bar.visible = false
+		hide_selection_actions()
 		_contour_bar.visible = false
 		_selected_contours.clear()
 		_dim_editing = false
@@ -1300,14 +1309,11 @@ func _stack_sketch_rows() -> void:
 		y += h + 4.0
 	if _variant_bar != null and _variant_bar.visible:
 		_place_bar(_variant_bar, Vector2(x, y))
+		_variant_bar.reset_size()
+		var vh := maxf(_variant_bar.size.y, float(_chip_h()))
+		y = _variant_bar.position.y + vh + 4.0
 	if _action_bar != null and _action_bar.visible:
-		_action_bar.reset_size()
-		var ah := maxf(_action_bar.size.y, _action_bar.get_combined_minimum_size().y)
-		_place_bar(_action_bar, Vector2(x, y + float(_chip_h()) + 4.0))
-		# Selection chips sit under the variant row, not on the contour row.
-		if _variant_bar != null and _variant_bar.visible:
-			var vh := maxf(_variant_bar.size.y, float(_chip_h()))
-			_place_bar(_action_bar, Vector2(x, _variant_bar.position.y + vh + 4.0))
+		_relayout_action_bar(Vector2(x, y))
 
 
 func _finish_bar_bottom() -> float:
@@ -1340,21 +1346,26 @@ func hide_variants() -> void:
 
 
 func show_selection_actions(actions: Array, screen_pos: Vector2) -> void:
-	_clear_bar(_action_bar)
-	for a in actions:
-		var label: String = str(a)
-		var b := Button.new()
-		b.text = label.capitalize().replace("_", " ")
-		b.tooltip_text = label
-		b.custom_minimum_size = Vector2(0, _chip_h())
-		b.pressed.connect(func() -> void: action_chosen.emit(label))
-		_action_bar.add_child(b)
+	_action_verbs = actions.duplicate()
+	_action_wrap_width = -1.0
+	_action_dock_to_rail = _finish_bar != null and _finish_bar.visible
 	_action_bar.visible = not actions.is_empty()
-	_place_bar(_action_bar, screen_pos + Vector2(12, CHIP_PAD))
+	if not _action_bar.visible:
+		_clear_bar(_action_bar)
+		return
+	if _action_dock_to_rail:
+		# Always sit to the right of the SketchTools rail, never on the pointer.
+		# A long HBox used to clamp to x=8 and paint over the rail (sx-033 A1).
+		_stack_sketch_rows()
+	else:
+		_relayout_action_bar(screen_pos + Vector2(12, CHIP_PAD))
 
 
 func hide_selection_actions() -> void:
 	_action_bar.visible = false
+	_action_verbs.clear()
+	_action_wrap_width = -1.0
+	_clear_bar(_action_bar)
 
 
 ## Merge-sketches option strip (2+ pads selected outside sketch mode).
@@ -1368,7 +1379,7 @@ func show_sketch_to_3d_menu(actions: Array, screen_pos: Vector2) -> void:
 	show_selection_actions(actions, screen_pos)
 
 
-func _clear_bar(bar: HBoxContainer) -> void:
+func _clear_bar(bar: Control) -> void:
 	while bar.get_child_count() > 0:
 		var c := bar.get_child(0)
 		bar.remove_child(c)
@@ -1422,3 +1433,99 @@ func _place_bar(bar: Control, pos: Vector2) -> void:
 	bar.position = Vector2(
 		clampf(pos.x, 8, maxf(8, vp.x - sz.x - 8)),
 		clampf(pos.y, 8, maxf(8, vp.y - sz.y - 8)))
+
+
+## Available width from a local X to the viewport's right margin.
+func _chip_row_max_width(local_x: float) -> float:
+	var vp := get_viewport_rect().size
+	return maxf(96.0, vp.x - local_x - 8.0)
+
+
+func _make_action_chip(verb: String) -> Button:
+	var b := Button.new()
+	b.text = verb.capitalize().replace("_", " ")
+	b.tooltip_text = verb
+	b.custom_minimum_size = Vector2(0, _chip_h())
+	b.pressed.connect(func() -> void: action_chosen.emit(verb))
+	return b
+
+
+func _new_chip_row() -> HBoxContainer:
+	var row := _make_hbox()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return row
+
+
+func _chip_min_width(b: Button) -> float:
+	var ms := b.get_combined_minimum_size().x
+	if ms >= 8.0:
+		return ms
+	var font: Font = b.get_theme_font("font")
+	var fs := b.get_theme_font_size("font_size")
+	if font == null:
+		font = ThemeDB.fallback_font
+	if fs <= 0:
+		fs = UiScale.body()
+	var pad := 20.0
+	var style := b.get_theme_stylebox("normal")
+	if style != null:
+		pad = style.get_margin(SIDE_LEFT) + style.get_margin(SIDE_RIGHT) + 8.0
+	return font.get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + pad
+
+
+func _rebuild_wrapped_chips(max_w: float) -> void:
+	if absf(max_w - _action_wrap_width) < 0.5 and _action_bar.get_child_count() > 0:
+		return
+	_action_wrap_width = max_w
+	_clear_bar(_action_bar)
+	if _action_verbs.is_empty():
+		return
+	var chips: Array[Button] = []
+	var widths: Array[float] = []
+	var measure := _new_chip_row()
+	measure.visible = false
+	_action_bar.add_child(measure)
+	for a in _action_verbs:
+		var b := _make_action_chip(str(a))
+		measure.add_child(b)
+		chips.append(b)
+	measure.reset_size()
+	for b in chips:
+		var w := b.get_combined_minimum_size().x
+		if w < 8.0:
+			w = _chip_min_width(b)
+		widths.append(w)
+		measure.remove_child(b)
+	_action_bar.remove_child(measure)
+	measure.queue_free()
+	var row := _new_chip_row()
+	_action_bar.add_child(row)
+	var used := 0.0
+	var sep := 4.0
+	for i in chips.size():
+		var b: Button = chips[i]
+		var bw: float = widths[i]
+		if row.get_child_count() > 0 and used + sep + bw > max_w:
+			row = _new_chip_row()
+			_action_bar.add_child(row)
+			used = 0.0
+		row.add_child(b)
+		used += bw if row.get_child_count() == 1 else sep + bw
+	_action_bar.reset_size()
+
+
+## Dock the action chips at `pos` (local). Never slides left of that X — wrap
+## instead of clamping over the left rail when the row is too wide.
+func _relayout_action_bar(pos: Vector2) -> void:
+	if _action_bar == null or not _action_bar.visible:
+		return
+	var max_w := _chip_row_max_width(pos.x)
+	_rebuild_wrapped_chips(max_w)
+	_action_bar.reset_size()
+	var vp := get_viewport_rect().size
+	var sz := _action_bar.get_combined_minimum_size()
+	var h := maxf(sz.y, _action_bar.size.y)
+	if h < 1.0:
+		h = float(_chip_h())
+	var y := clampf(pos.y, 8.0, maxf(8.0, vp.y - h - 8.0))
+	_action_bar.position = Vector2(pos.x, y)
