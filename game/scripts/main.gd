@@ -835,6 +835,8 @@ func _build_ui() -> void:
 			var jaw := UIIcons.button("wrench_open", "Jaw",
 				"Jaw: open-end wrench jaw. Click 1 = centre, click 2 = end of the long side, click 3 = half the width")
 			jaw.name = "JawTool"
+			jaw.toggle_mode = true
+			jaw.button_group = rail_group
 			jaw.pressed.connect(sketch_mode.start_jaw_tool)
 			rows.add_child(jaw)
 	var auto_def := UIIcons.button("solve", "Auto Dim",
@@ -1502,12 +1504,20 @@ func _on_sketch_rail_tool(t: int) -> void:
 
 
 func _sync_sketch_rail_highlight(tool: int) -> void:
+	var jaw_armed := sketch_mode != null and sketch_mode.is_jaw_armed()
 	for b in _sketch_rail_buttons:
 		if b == null or not is_instance_valid(b):
 			continue
 		var want := int(b.get_meta("sx_tool", -1)) == tool
+		if jaw_armed and int(b.get_meta("sx_tool", -1)) == int(SketchMode.Tool.RECT):
+			want = false
 		if b.button_pressed != want:
 			b.set_pressed_no_signal(want)
+	var jaw: Button = null
+	if sketch_toolbar != null:
+		jaw = sketch_toolbar.find_child("JawTool", true, false) as Button
+	if jaw != null and is_instance_valid(jaw) and jaw.button_pressed != jaw_armed:
+		jaw.set_pressed_no_signal(jaw_armed)
 
 
 func _reset_sketch_rail_scroll() -> void:

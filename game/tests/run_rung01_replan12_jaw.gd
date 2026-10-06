@@ -302,8 +302,9 @@ func _run() -> void:
 	check(sm.tool == SketchMode.Tool.RECT and sm.tool_variant == "center_three_point",
 			"Jaw arms Rectangle, Center Three Point (got tool %d variant %s)" % [int(sm.tool), sm.tool_variant])
 	check(_last() == SketchMode.JAW_HINT, "armed status is JAW_HINT (got `%s`)" % _last())
-	check(_chip_names(main) == ["Center Three Point"],
-			"Jaw chips are only Center Three Point (got %s)" % str(_chip_names(main)))
+	var jaw_bar: Control = main.sketch_chrome.find_child("VariantBar", true, false) as Control
+	check(jaw_bar == null or not jaw_bar.visible or _chip_names(main).is_empty(),
+			"Jaw shows no variant chips (got %s)" % str(_chip_names(main)))
 
 	await _push_click(s1)
 	check(_last() == SketchMode.JAW_AFTER_CENTRE,

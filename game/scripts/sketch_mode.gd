@@ -1078,6 +1078,10 @@ func tool_arm_hint(t: Tool) -> String:
 			return ""
 
 
+func is_jaw_armed() -> bool:
+	return _jaw_armed
+
+
 ## Rail "Jaw" button: Rectangle tool, Center Three Point variant.
 func start_jaw_tool() -> void:
 	_arming_jaw = true
@@ -1315,6 +1319,7 @@ func is_empty_new_sketch() -> bool:
 
 
 const JAW_HINT := "Jaw — click 1 centre, click 2 end of the long side, click 3 half the width"
+const CIRCLE_CENTRE_SET := "Circle — centre set, click the rim or type a radius"
 const JAW_AFTER_CENTRE := "Jaw — centre set, click 2 end of the long side"
 const JAW_AFTER_LONG := "Jaw — long side set, click 3 half the width"
 const JAW_ZERO_WIDTH := "Jaw — width is zero — click 3 again for half the width"
@@ -1325,7 +1330,7 @@ func variants_for_tool(t: Tool = tool) -> Array:
 	match t:
 		Tool.RECT:
 			if _jaw_armed:
-				return ["center_three_point"]
+				return []
 			return ["corner", "center", "three_point", "center_three_point", "parallelogram"]
 		Tool.CIRCLE:
 			return ["center", "perimeter", "three_point"]
@@ -3795,7 +3800,9 @@ func _click_circle(pos2: Vector2) -> void:
 						sketch.add_circle(c.x, c.y, r)
 				_tool_points.clear()
 		_:  # center
-			if _tool_points.size() == 2:
+			if _tool_points.size() == 1:
+				status.emit(CIRCLE_CENTRE_SET)
+			elif _tool_points.size() == 2:
 				var c := _tool_points[0]
 				var r := c.distance_to(_tool_points[1])
 				if r > 1e-6:

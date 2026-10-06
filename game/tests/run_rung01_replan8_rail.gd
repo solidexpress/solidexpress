@@ -82,7 +82,7 @@ func test_rail() -> void:
 	check(sm.tool_variant == "center_three_point", "Jaw selects the Center Three Point variant (got %s)" % sm.tool_variant)
 	check(_status_has("Jaw — click 1 centre, click 2 end of the long side, click 3 half the width"), "Jaw status explains the three clicks")
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
-	check(chip != null and chip.is_visible_in_tree(), "Center Three Point chip is visible after Jaw")
+	check(chip == null or not chip.is_visible_in_tree(), "Jaw shows no Center Three Point chip")
 
 	await _zoom(ctx, Vector3(0, 0, 0), 120.0)
 	var along := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))

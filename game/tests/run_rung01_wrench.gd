@@ -2349,8 +2349,8 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	check(sm.tool == SketchMode.Tool.RECT and sm.tool_variant == "center_three_point",
 			"Jaw selects Rectangle, Center Three Point (got tool %d variant %s)" % [int(sm.tool), sm.tool_variant])
 	var jaw_chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
-	check(jaw_chip != null and jaw_chip.button_pressed,
-			"the Center Three Point chip is highlighted after Jaw")
+	check(jaw_chip == null or not jaw_chip.is_visible_in_tree(),
+			"Jaw shows no Center Three Point chip")
 	var along := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))
 	var across := Vector2(-along.y, along.x)
 	var before_n: int = sm.sketch.entity_ids().size()
