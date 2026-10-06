@@ -972,15 +972,51 @@ func set_tool(t: Tool) -> void:
 	# visible/selectable (polygon/circle vanishing after another tool was a bug).
 	_update_preview()
 	tool_changed.emit(int(t))
+	var hint := tool_arm_hint(t)
+	if hint != "":
+		status.emit(hint)
+
+
+## One-line status when a rail tool (or shortcut) is armed. Empty = keep the
+## previous line. Slot must say `Slot —` so a walker can tell it actually armed.
+func tool_arm_hint(t: Tool) -> String:
 	match t:
-		Tool.RECT:
-			status.emit("Rect — click 1 first corner, click 2 the opposite corner")
-		Tool.CIRCLE:
-			status.emit("Circle — click the centre, then the rim (or type a radius)")
 		Tool.SELECT:
-			status.emit("Select — click geometry, or a dimension label to edit it")
+			return "Select — click geometry, or a dimension label to edit it"
+		Tool.LINE:
+			return "Line — click 2 points (or type a length)"
+		Tool.ARC:
+			return "Arc — click the centre, then the start, then the end"
+		Tool.CIRCLE:
+			return "Circle — click the centre, then the rim (or type a radius)"
+		Tool.RECT:
+			return "Rect — click 1 first corner, click 2 the opposite corner"
+		Tool.POLYGON:
+			return "Polygon — click the centre, then a vertex (or type the size)"
+		Tool.ELLIPSE:
+			return "Ellipse — click the centre, then a corner of the box"
+		Tool.SLOT:
+			return "Slot — type the radius, click the first centre, then the second (or type the length)"
+		Tool.SPLINE:
+			return "Spline — click fit points; Done / Esc / right-click to finish"
+		Tool.POINT:
+			return "Point — click to place a sketch point"
+		Tool.TRIM:
+			return "Trim — drag across entities to trim them"
+		Tool.EXTEND:
+			return "Extend — click a segment to extend it to the next"
+		Tool.SMART_DIM:
+			return "Smart Dim — click geometry to dimension it"
+		Tool.CONVERT:
+			return "Convert — click to convert pierce points"
+		Tool.MIRROR:
+			return "Mirror — select geometry and a mirror axis, then click"
+		Tool.PATTERN:
+			return "Pattern — select geometry, then a linear or circular variant"
 		Tool.CENTERLINE:
-			status.emit("Centerline — click 2 points (construction, never part of the profile)")
+			return "Centerline — click 2 points (construction, never part of the profile)"
+		_:
+			return ""
 
 
 ## Rail "Jaw" button: Rectangle tool, Center Three Point variant.
@@ -5499,6 +5535,29 @@ func _append_jaw_preview(im: ImmediateMesh, tip: Vector2) -> void:
 	_append_preview_seg(im, rd, ra)
 
 
+func _append_slot_preview(im: ImmediateMesh, a: Vector2, b: Vector2, r: float) -> void:
+	var d := b - a
+	if d.length() < 1e-6 or r < 1e-6:
+		im.surface_add_vertex(_to3(a))
+		im.surface_add_vertex(_to3(b))
+		return
+	var n := Vector2(-d.y, d.x).normalized() * r
+	_append_entity_lines(im, {"type": "line", "start": a + n, "end": b + n})
+	_append_entity_lines(im, {"type": "line", "start": a - n, "end": b - n})
+	var out_b := d.normalized()
+	var out_a := -out_b
+	_append_entity_lines(im, {
+		"type": "arc", "center": b, "radius": r,
+		"start_angle": out_b.angle() - PI * 0.5,
+		"end_angle": out_b.angle() + PI * 0.5,
+	})
+	_append_entity_lines(im, {
+		"type": "arc", "center": a, "radius": r,
+		"start_angle": out_a.angle() - PI * 0.5,
+		"end_angle": out_a.angle() + PI * 0.5,
+	})
+
+
 func _update_preview() -> void:
 	var im := ImmediateMesh.new()
 	var has := false
@@ -5593,8 +5652,7 @@ func _update_preview() -> void:
 					im.surface_add_vertex(_to3(verts[i]))
 					im.surface_add_vertex(_to3(verts[(i + 1) % n]))
 			Tool.SLOT:
-				im.surface_add_vertex(_to3(last))
-				im.surface_add_vertex(_to3(tip))
+				_append_slot_preview(im, last, tip, slot_radius)
 	if _snap_marker != null:
 		var m: Vector2 = _snap_marker
 		const MARK := 0.6

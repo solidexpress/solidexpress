@@ -968,6 +968,9 @@ func _sync_dim_affordance() -> void:
 	elif sketch_mode != null and sketch_mode.tool == SketchMode.Tool.CIRCLE:
 		show_r = true
 		tip = "Circle radius (mm). The r label is the radius; diameter is 2× this number"
+	elif sketch_mode != null and sketch_mode.tool == SketchMode.Tool.SLOT:
+		show_r = true
+		tip = "Slot radius (mm) until the first centre is down; then the centre distance"
 	var was_syncing := _dim_syncing
 	_dim_syncing = true
 	if _dim_spin.suffix != suffix:
@@ -1148,6 +1151,27 @@ func reset_finish_defaults() -> void:
 		_flip_side.set_pressed_no_signal(false)
 	_apply_thin_visibility()
 	clear_up_to_face()
+
+
+## New face/plane sketch (not File > New, not begin_edit): Blind, New, default D.
+func reset_finish_for_new_sketch() -> void:
+	reset_finish_defaults()
+	if _extrude_spin != null:
+		_distance_syncing = true
+		_extrude_spin.value = 20
+		_distance_syncing = false
+		_refresh_extrude_readout(20)
+	if _dim_spin != null:
+		_dim_syncing = true
+		_dim_spin.value = 10
+		_dim_syncing = false
+
+
+func sync_for_tool() -> void:
+	_sync_dim_affordance()
+	if sketch_mode != null and sketch_mode.tool == SketchMode.Tool.SLOT \
+			and not sketch_mode.has_single_dof_preview():
+		set_dim_value(sketch_mode.slot_radius)
 
 
 func set_flip_side(on: bool) -> void:
