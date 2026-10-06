@@ -2455,7 +2455,7 @@ func _jaw_cutter_for_click(pos2: Vector2) -> Dictionary:
 	var sides := _jaw_long_sides()
 	var jaw_dir := _longest_profile_dir()
 	var best: Dictionary = {}
-	var best_d := INF
+	var best_d := 40.0
 	if sides.size() == 2:
 		for id in sketch.entity_ids():
 			if not sketch.is_construction(id) or _angle_datum_lines.has(id):

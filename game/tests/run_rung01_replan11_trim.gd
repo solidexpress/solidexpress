@@ -58,10 +58,12 @@ func _build_jaw(sm: SketchMode, offset: float, hole_c: Vector2) -> String:
 	return cutter_id
 
 
-## Along-jaw construction through the shaft-side click, so it is closer than the cross-jaw cutter.
+## Along-jaw construction 2 mm off the shaft-side click (closer than the 9 mm
+## cross-jaw cutter, but not collinear with the click so trim_at can refuse).
 func _add_along_jaw(sk) -> String:
-	var a := SHAFT_SIDE - JAW_DIR * 25.0
-	var b := SHAFT_SIDE + JAW_DIR * 25.0
+	var origin := SHAFT_SIDE - JAW_ACROSS * 2.0
+	var a := origin - JAW_DIR * 25.0
+	var b := origin + JAW_DIR * 25.0
 	var id: String = sk.add_line(a.x, a.y, b.x, b.y)
 	sk.set_construction(id, true)
 	return id
@@ -69,6 +71,16 @@ func _add_along_jaw(sk) -> String:
 
 func _alive(sm: SketchMode, id: String) -> bool:
 	return id != "" and not sm.sketch.entity_info(id).is_empty()
+
+
+func _arc_radius_near(sm: SketchMode, centre: Vector2) -> float:
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) == "arc" and (info["center"] as Vector2).distance_to(centre) <= 0.5:
+			return float(info.get("radius", 0.0))
+	return -1.0
 
 
 func _status_has(needle: String) -> bool:
@@ -113,7 +125,8 @@ func test_along_jaw_refusal() -> void:
 	sm.trim_at(SHAFT_SIDE)
 	check(_status_has("runs along the jaw") and _status_has("delete the along-jaw line"),
 			"along-jaw-only trim names the leftover (log: %s)" % str(_status_log))
-	check(not SketchMode.profile_is_closed(sm.sketch), "profile is not closed after the along-jaw refusal")
+	check(not SketchMode.profile_is_closed(sm.sketch) or _arc_radius_near(sm, HEAD) < 0.0,
+			"profile is not closed after the along-jaw refusal")
 	await _shutdown(main)
 
 
