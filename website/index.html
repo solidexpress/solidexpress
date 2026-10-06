@@ -248,9 +248,18 @@ Built with ❤️ by the Express Consortium<br/>
   var RELEASES_LATEST = "https://api.github.com/repos/solidexpress/solidexpress/releases/latest";
   var RELEASES_PAGE = "https://github.com/solidexpress/solidexpress/releases/latest";
 
+  function isPublicLatestRelease(release) {
+    if (!release) return false;
+    if (release.draft || release.prerelease) return false;
+    if (release.tag_name === "linux-test-build") return false;
+    return true;
+  }
+
   function pickAsset(assets, re) {
     for (var i = 0; i < assets.length; i++) {
       var a = assets[i];
+      // Rolling internal tarball; never a product download even if it leaked onto latest.
+      if (/linux-test/i.test(a.name)) continue;
       if (re.test(a.name) && !/\.sha256$/.test(a.name)) return a;
     }
     return null;
@@ -282,7 +291,9 @@ Built with ❤️ by the Express Consortium<br/>
         return r.json();
       })
       .then(function (release) {
-        if (!release || !release.assets) return;
+        if (!isPublicLatestRelease(release) || !release.assets) {
+          throw new Error("ignoring prerelease / linux-test-build");
+        }
         var assets = release.assets;
         var page = release.html_url || RELEASES_PAGE;
         setDownload("macos-dmg", pickAsset(assets, /\.dmg$/i), page);

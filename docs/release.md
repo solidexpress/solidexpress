@@ -55,6 +55,8 @@ Workflow `.github/workflows/release.yml`:
 3. macOS: Developer ID sign, `notarytool`, staple (`packaging/macos/sign-and-notarize.sh`)
 4. GitHub Release with Linux/Windows/macOS artifacts + checksums
 
+Internal GUI testers use a separate rolling **prerelease** (`linux-test-build`), never GitHub latest. See [loop/linux-test-build.md](loop/linux-test-build.md).
+
 macOS signing secrets (repo Actions secrets):
 
 - `APPLE_CERTIFICATE` — base64 Developer ID Application `.p12`
