@@ -89,7 +89,7 @@ func _vertical_edge(view, body: String) -> String:
 		if pts.size() < 2:
 			continue
 		var d: Vector3 = pts[pts.size() - 1] - pts[0]
-		if absf(d.z) > 5.0 and absf(d.x) < 0.2 and absf(d.y) < 0.2:
+		if absf(d.z) >= 5.0 and absf(d.x) < 0.2 and absf(d.y) < 0.2:
 			return str(id)
 	return ""
 
