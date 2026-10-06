@@ -187,6 +187,23 @@ def main():
         _, ok_h, ok_j, fx, fy = best
         r.add('pivot hole still through at new T', ok_h, f'flipX={fx} flipY={fy}', 'open at 0.5, T/2, T-0.5')
         r.add('jaw still through at new T', ok_j, '', 'open at 0.5, T/2, T-0.5')
+        W = align(V, fx, fy, (-10, -22.5, 0)); tr = tri_arrays(W, T)
+        z_open = T_ - 1.25
+        xs = [x for x in np.arange(60, 130, 1.0) if not inside(tr, (float(x), 0.0, z_open))]
+        xm = float(np.median(xs)) if len(xs) else None
+        floor = None
+        if xm is not None:
+            hit = first_hit(tr, (xm, 0.0, T_ + 5.0), (0, 0, -1))
+            floor = None if hit is None else (T_ + 5.0) - hit
+        slot_ok = (
+            xm is not None
+            and not inside(tr, (xm, 0.0, T_ - 1.25))
+            and floor is not None and abs(floor - (T_ - 2.5)) <= TOL
+            and not inside(tr, (xm, 0.0, T_ - 0.5))
+        )
+        r.add('grip slot open from the top', slot_ok,
+              '' if slot_ok else f'xm={xm} floor={floor}',
+              'open at z=T-1.25, floor T-2.5, solid skin absent at z=T-0.5')
         r.show(); sys.exit(1 if r.fail else 0)
     if kind == 'nut':
         e = sorted(ext[:2])
