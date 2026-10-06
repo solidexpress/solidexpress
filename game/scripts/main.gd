@@ -522,6 +522,11 @@ func _build_ui() -> void:
 	file_dialog.canceled.connect(_on_file_dialog_dismissed)
 	file_dialog.window_input.connect(_on_file_dialog_window_input)
 	ui.add_child(file_dialog)
+	var open_name := _file_dialog_name_edit()
+	if open_name != null and not open_name.text_changed.is_connected(_sync_open_button):
+		open_name.text_changed.connect(_sync_open_button)
+	if not file_dialog.visibility_changed.is_connected(_on_file_dialog_visibility_changed):
+		file_dialog.visibility_changed.connect(_on_file_dialog_visibility_changed)
 
 	confirm_dialog = ConfirmationDialog.new()
 	confirm_dialog.dialog_text = "Discard unsaved changes?"
@@ -3235,6 +3240,103 @@ func _file_dialog_is_visible() -> bool:
 	return file_dialog != null and is_instance_valid(file_dialog) and file_dialog.visible
 
 
+func _sync_open_button(_unused: Variant = null) -> void:
+	if _file_action != FileAction.OPEN:
+		return
+	if file_dialog == null or not is_instance_valid(file_dialog) or not file_dialog.visible:
+		return
+	_hook_open_file_lists()
+	var edit := _file_dialog_name_edit()
+	if edit == null:
+		return
+	var text := edit.text.strip_edges()
+	if text.begins_with("user://") or text.begins_with("res://"):
+		text = ProjectSettings.globalize_path(text)
+	if not text.to_lower().ends_with(".sxp"):
+		return
+	var path := text
+	if not path.is_absolute_path():
+		path = str(file_dialog.current_dir).path_join(text)
+	if not FileAccess.file_exists(path):
+		return
+	file_dialog.current_file = path.get_file()
+	var ok := file_dialog.get_ok_button()
+	if ok != null:
+		ok.disabled = false
+
+
+func _hook_open_file_lists() -> void:
+	if file_dialog == null or not is_instance_valid(file_dialog):
+		return
+	for c in file_dialog.find_children("*", "ItemList", true, false):
+		var lst := c as ItemList
+		if lst != null:
+			_hook_one_open_list(lst)
+	for c in file_dialog.find_children("*", "Tree", true, false):
+		var tree := c as Tree
+		if tree == null or tree.has_meta("sx_open_hooked"):
+			continue
+		tree.set_meta("sx_open_hooked", true)
+		tree.item_selected.connect(_on_open_file_tree_selected)
+
+
+func _hook_one_open_list(lst: ItemList) -> void:
+	if lst.has_meta("sx_open_hooked"):
+		return
+	lst.set_meta("sx_open_hooked", true)
+	lst.item_selected.connect(func(idx: int) -> void:
+		if idx >= 0 and idx < lst.item_count:
+			_apply_open_list_name(lst.get_item_text(idx))
+	)
+	lst.multi_selected.connect(func(idx: int, on: bool) -> void:
+		if on and idx >= 0 and idx < lst.item_count:
+			_apply_open_list_name(lst.get_item_text(idx))
+	)
+	if lst.has_signal("item_clicked"):
+		lst.item_clicked.connect(func(idx: int, _at: Vector2, _mb: int) -> void:
+			if idx >= 0 and idx < lst.item_count:
+				_apply_open_list_name(lst.get_item_text(idx))
+		)
+
+
+func _on_file_dialog_visibility_changed() -> void:
+	if file_dialog == null or not is_instance_valid(file_dialog):
+		return
+	if not file_dialog.visible:
+		file_dialog.current_file = ""
+		return
+	if _file_action == FileAction.OPEN:
+		_hook_open_file_lists()
+		_hook_open_file_lists.call_deferred()
+		_sync_open_button.call_deferred()
+
+
+func _on_open_file_tree_selected() -> void:
+	if _file_action != FileAction.OPEN or file_dialog == null:
+		return
+	for c in file_dialog.find_children("*", "Tree", true, false):
+		var tree := c as Tree
+		if tree == null:
+			continue
+		var item := tree.get_selected()
+		if item == null:
+			continue
+		_apply_open_list_name(item.get_text(0))
+		return
+
+
+func _apply_open_list_name(raw: String) -> void:
+	if _file_action != FileAction.OPEN:
+		return
+	var name := raw.strip_edges()
+	if name == "" or name.ends_with("/") or name.ends_with("\\"):
+		return
+	var edit := _file_dialog_name_edit()
+	if edit != null and edit.text.strip_edges() != name:
+		edit.text = name
+	_sync_open_button()
+
+
 ## Hide any Window this file is currently showing. Returns true if at least one
 ## was visible (so WM close must not quit).
 func _hide_visible_owned_windows() -> bool:
@@ -3267,6 +3369,8 @@ func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: St
 		file_dialog.current_file = current_path.get_file() if current_path != "" else "untitled.sxp"
 		if current_path.is_absolute_path():
 			file_dialog.current_dir = current_path.get_base_dir()
+	if action == FileAction.OPEN:
+		file_dialog.current_file = ""
 	if action == FileAction.EXPORT_3MF:
 		var dir := _export_3mf_start_dir()
 		if dir != "":
@@ -3288,6 +3392,14 @@ func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: St
 		_watch_export_3mf_path_edit.call_deferred()
 	elif action == FileAction.SAVE_AS or action == FileAction.OPEN:
 		_focus_file_name_field.call_deferred()
+	if action == FileAction.OPEN:
+		var edit := _file_dialog_name_edit()
+		if edit != null and not edit.text_changed.is_connected(_sync_open_button):
+			edit.text_changed.connect(_sync_open_button)
+		if not file_dialog.dir_selected.is_connected(_sync_open_button):
+			file_dialog.dir_selected.connect(_sync_open_button)
+		_hook_open_file_lists()
+		_sync_open_button.call_deferred()
 
 
 func _save_current() -> void:
