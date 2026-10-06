@@ -47,6 +47,10 @@ var polygon_sides := 6:
 ## names and Polygon still comes back as across-flats (or vertex, if chosen).
 var tool_variant := "corner"
 var _polygon_variant := "across_flats"
+## True while the rail Jaw button is the armed rect tool. Limits chips to the
+## Center Three Point variant the checklist names; Rect itself still shows all five.
+var _jaw_armed := false
+var _arming_jaw := false
 ## Construction +X used only as an angle datum. Jaw trim must not pick these
 ## as the cutter — they pass through the rectangle centre and sit closer to
 ## the trim click than the real centreline.
@@ -937,6 +941,8 @@ signal preview_distance_changed(distance: float)
 func set_tool(t: Tool) -> void:
 	if not _drag.is_empty():
 		end_drag()
+	_jaw_armed = _arming_jaw and t == Tool.RECT
+	_arming_jaw = false
 	tool = t
 	_tool_points.clear()
 	_spline_pts.clear()
@@ -979,6 +985,7 @@ func set_tool(t: Tool) -> void:
 
 ## Rail "Jaw" button: Rectangle tool, Center Three Point variant.
 func start_jaw_tool() -> void:
+	_arming_jaw = true
 	set_tool(Tool.RECT)
 	set_tool_variant("center_three_point")
 
@@ -987,6 +994,9 @@ func set_tool_variant(v: String) -> void:
 	tool_variant = v
 	if tool == Tool.POLYGON and (v == "across_flats" or v == "vertex"):
 		_polygon_variant = v
+	if _jaw_armed and v != "center_three_point":
+		_jaw_armed = false
+		tool_changed.emit(int(tool))
 	_tool_points.clear()
 	_length_override = -1.0
 	_update_preview()
@@ -1000,7 +1010,12 @@ func set_tool_variant(v: String) -> void:
 ## True when a draw tool has the first anchor and is waiting for the tip.
 func has_pending_draw_point() -> bool:
 	match tool:
-		Tool.LINE, Tool.CENTERLINE, Tool.CIRCLE, Tool.RECT, Tool.POLYGON, \
+		Tool.RECT:
+			if tool_variant == "center_three_point" or tool_variant == "three_point" \
+					or tool_variant == "parallelogram":
+				return _tool_points.size() >= 1
+			return _tool_points.size() == 1
+		Tool.LINE, Tool.CENTERLINE, Tool.CIRCLE, Tool.POLYGON, \
 				Tool.SLOT, Tool.ELLIPSE, Tool.ARC:
 			return _tool_points.size() == 1
 		_:
@@ -1167,11 +1182,17 @@ func is_empty_new_sketch() -> bool:
 
 
 const JAW_HINT := "Jaw — click 1 centre, click 2 end of the long side, click 3 half the width"
+const JAW_AFTER_CENTRE := "Jaw — centre set, click 2 end of the long side"
+const JAW_AFTER_LONG := "Jaw — long side set, click 3 half the width"
+const JAW_ZERO_WIDTH := "Jaw — width is zero — click 3 again for half the width"
+const JAW_ZERO_LONG := "Jaw — long side is zero — click 2 again for the end of the long side"
 
 
 func variants_for_tool(t: Tool = tool) -> Array:
 	match t:
 		Tool.RECT:
+			if _jaw_armed:
+				return ["center_three_point"]
 			return ["corner", "center", "three_point", "center_three_point", "parallelogram"]
 		Tool.CIRCLE:
 			return ["center", "perimeter", "three_point"]
@@ -3453,15 +3474,30 @@ func _click_rect(pos2: Vector2) -> void:
 		"center_three_point":
 			# Click 1 = centre, click 2 = long-side direction and half-length,
 			# click 3 = half-width (perpendicular distance from the axis).
-			if _tool_points.size() == 3:
+			var npts := _tool_points.size()
+			if npts == 1:
+				status.emit(JAW_AFTER_CENTRE)
+			elif npts == 2:
+				if _tool_points[0].distance_to(_tool_points[1]) <= 1e-6:
+					_tool_points.remove_at(1)
+					status.emit(JAW_ZERO_LONG)
+				else:
+					status.emit(JAW_AFTER_LONG)
+			elif npts >= 3:
 				var ctr: Vector2 = _tool_points[0]
 				var along: Vector2 = _tool_points[1] - ctr
-				if along.length() > 1e-6:
+				if along.length() <= 1e-6:
+					_tool_points.resize(1)
+					status.emit(JAW_ZERO_LONG)
+				else:
 					var dir := along.normalized()
 					var half_len := along.length()
 					var nrm := Vector2(-dir.y, dir.x)
 					var half_w := absf((_tool_points[2] - ctr).dot(nrm))
-					if half_w > 1e-6:
+					if half_w <= 1e-6:
+						_tool_points.resize(2)
+						status.emit(JAW_ZERO_WIDTH)
+					else:
 						var u := dir * half_len
 						var v := nrm * half_w
 						var ra := ctr - u - v
@@ -3482,7 +3518,7 @@ func _click_rect(pos2: Vector2) -> void:
 						_add_centre_rect_dimensions(q1, q2, q3, ctr, pt)
 						status.emit("Jaw committed — width %.4f, long side %.1f° — click a label to edit it" % [
 								half_w * 2.0, fposmod(rad_to_deg(dir.angle()), 180.0)])
-				_tool_points.clear()
+						_tool_points.clear()
 		"parallelogram":
 			if _tool_points.size() == 3:
 				var p0 := _tool_points[0]
@@ -5429,6 +5465,40 @@ func _redraw() -> void:
 	_rebuild_constraint_glyphs()
 
 
+func _append_preview_seg(im: ImmediateMesh, a: Vector2, b: Vector2) -> void:
+	im.surface_add_vertex(_to3(a))
+	im.surface_add_vertex(_to3(b))
+
+
+## Jaw (center three-point rect): after click 1 a long-side line; after click 2
+## the rotated rectangle whose width follows the pointer.
+func _append_jaw_preview(im: ImmediateMesh, tip: Vector2) -> void:
+	if _tool_points.is_empty():
+		return
+	var ctr: Vector2 = _tool_points[0]
+	if _tool_points.size() == 1:
+		_append_preview_seg(im, ctr, tip)
+		return
+	var along: Vector2 = _tool_points[1] - ctr
+	if along.length() <= 1e-6:
+		_append_preview_seg(im, ctr, tip)
+		return
+	var dir := along.normalized()
+	var half_len := along.length()
+	var nrm := Vector2(-dir.y, dir.x)
+	var half_w := absf((tip - ctr).dot(nrm))
+	var u := dir * half_len
+	var v := nrm * half_w
+	var ra := ctr - u - v
+	var rb := ctr + u - v
+	var rc := ctr + u + v
+	var rd := ctr - u + v
+	_append_preview_seg(im, ra, rb)
+	_append_preview_seg(im, rb, rc)
+	_append_preview_seg(im, rc, rd)
+	_append_preview_seg(im, rd, ra)
+
+
 func _update_preview() -> void:
 	var im := ImmediateMesh.new()
 	var has := false
@@ -5458,12 +5528,15 @@ func _update_preview() -> void:
 				im.surface_add_vertex(_to3(last))
 				im.surface_add_vertex(_to3(tip))
 			Tool.RECT:
-				var a := _tool_points[0]
-				var b := tip
-				im.surface_add_vertex(_to3(a)); im.surface_add_vertex(_to3(Vector2(b.x, a.y)))
-				im.surface_add_vertex(_to3(Vector2(b.x, a.y))); im.surface_add_vertex(_to3(b))
-				im.surface_add_vertex(_to3(b)); im.surface_add_vertex(_to3(Vector2(a.x, b.y)))
-				im.surface_add_vertex(_to3(Vector2(a.x, b.y))); im.surface_add_vertex(_to3(a))
+				if tool_variant == "center_three_point":
+					_append_jaw_preview(im, tip)
+				else:
+					var a := _tool_points[0]
+					var b := tip
+					im.surface_add_vertex(_to3(a)); im.surface_add_vertex(_to3(Vector2(b.x, a.y)))
+					im.surface_add_vertex(_to3(Vector2(b.x, a.y))); im.surface_add_vertex(_to3(b))
+					im.surface_add_vertex(_to3(b)); im.surface_add_vertex(_to3(Vector2(a.x, b.y)))
+					im.surface_add_vertex(_to3(Vector2(a.x, b.y))); im.surface_add_vertex(_to3(a))
 			Tool.CIRCLE:
 				var c := _tool_points[0]
 				var r := c.distance_to(tip)
