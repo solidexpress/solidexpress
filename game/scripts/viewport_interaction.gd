@@ -74,6 +74,11 @@ var _pp_badge_screen := Vector2.ZERO
 ## Selection-aware chrome.
 var _context_menu: PopupMenu
 var _selection_strip: PanelContainer
+var _cached_top_chrome: Control
+var _layout_strip_busy := false
+var _strip_layout_again := false
+var _strip_x_floor := 0.0
+var _left_stack_wired: Control
 var _strip_fillet: Button
 var _strip_chamfer: Button
 var _strip_radius_box: HBoxContainer
@@ -347,15 +352,11 @@ func _build_selection_strip() -> void:
 	_selection_strip.name = "SelectionStrip"
 	_selection_strip.visible = false
 	_selection_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_selection_strip.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_selection_strip.offset_left = -420
-	_selection_strip.offset_right = 420
-	_selection_strip.offset_top = 8
-	_selection_strip.offset_bottom = 44
+	_selection_strip.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	add_child(_selection_strip)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	row.add_theme_constant_override("v_separation", 4)
 	_selection_strip.add_child(row)
 	_strip_fuse = UIIcons.button("fuse", "Join", "Fuse selected bodies (primary receives the result)")
 	_strip_fuse.pressed.connect(func() -> void: _ctx_boolean("fuse"))
@@ -509,6 +510,21 @@ func _build_selection_strip() -> void:
 	_strip_delete.text = "Delete"
 	_strip_delete.pressed.connect(func() -> void: _ctx_delete())
 	row.add_child(_strip_delete)
+	_selection_strip.visibility_changed.connect(_layout_selection_strip)
+	if not resized.is_connected(_layout_selection_strip):
+		resized.connect(_layout_selection_strip)
+	if is_inside_tree():
+		var vp := get_viewport()
+		if vp != null and not vp.size_changed.is_connected(_layout_selection_strip):
+			vp.size_changed.connect(_layout_selection_strip)
+	for child in row.get_children():
+		var c := child as Control
+		if c == null:
+			continue
+		if not c.visibility_changed.is_connected(_layout_selection_strip):
+			c.visibility_changed.connect(_layout_selection_strip)
+		if not c.item_rect_changed.is_connected(_layout_selection_strip):
+			c.item_rect_changed.connect(_layout_selection_strip)
 
 
 func _build_orient_popup() -> void:
@@ -4814,6 +4830,258 @@ func _refresh_selection_strip() -> void:
 	_strip_plane.visible = not has_instance and view.selected_face != ""
 	_strip_hide.visible = not has_instance
 	_strip_delete.visible = true
+	_layout_selection_strip()
+	call_deferred("_layout_selection_strip")
+
+
+## Left-anchor SelectionStrip below the menu row and wrap it inside the window.
+func _layout_selection_strip() -> void:
+	if _selection_strip == null:
+		return
+	if _layout_strip_busy:
+		_strip_layout_again = true
+		return
+	if not _selection_strip.visible:
+		return
+	_layout_strip_busy = true
+	_strip_layout_again = false
+	var x_fixed := _selection_strip_x_fixed()
+	var y_fixed := _selection_strip_y_fixed()
+	var vp_w := size.x
+	if get_viewport() != null:
+		vp_w = get_viewport().get_visible_rect().size.x
+	var max_w := maxf(32.0, vp_w - x_fixed - 8.0)
+	var content_w := _selection_strip_content_width()
+	var w := minf(content_w, max_w)
+	_selection_strip.position = Vector2(x_fixed, y_fixed)
+	_selection_strip.custom_minimum_size = Vector2(w, 0.0)
+	_selection_strip.size.x = w
+	var row := _selection_strip_row()
+	if row != null:
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.custom_minimum_size.x = 0.0
+	_selection_strip.reset_size()
+	if _selection_strip.size.x > w + 0.5:
+		_selection_strip.size.x = w
+	var pad_v := _selection_strip_panel_pad_v()
+	var inner_w := maxf(8.0, w - _selection_strip_panel_pad_h())
+	var wrapped_h := _selection_strip_wrapped_height(inner_w) + pad_v
+	var h := maxf(_selection_strip.size.y, wrapped_h)
+	_selection_strip.size = Vector2(w, h)
+	_layout_strip_busy = false
+	if _strip_layout_again:
+		_layout_selection_strip()
+
+
+func _selection_strip_row() -> Container:
+	if _selection_strip == null:
+		return null
+	for child in _selection_strip.get_children():
+		if child is Container:
+			return child as Container
+	return null
+
+
+func _selection_strip_x_fixed() -> float:
+	_ensure_left_stack_layout_wire()
+	var x_fixed := ChromeDock.rail_right
+	var left_stack := _named_chrome_control("LeftStack")
+	if left_stack != null:
+		var lr := _rect_in_this(left_stack)
+		# Largest column width any selection state yields (Modify min 230,
+		# plus hidden CardPanel / face-ops rows). Never a function of the
+		# strip's own content, so Fillet/Chamfer stay put across states.
+		var stack_w := _left_stack_column_width(left_stack)
+		x_fixed = maxf(x_fixed, lr.position.x + stack_w + 8.0)
+	_strip_x_floor = maxf(_strip_x_floor, x_fixed)
+	return _strip_x_floor
+
+
+func _left_stack_column_width(left_stack: Control) -> float:
+	# Model-mode column only: Palette / CardPanel / OpsPanel (and whatever is
+	# already visible). Skip hidden sketch / Cam / Sim / MoveDelta chrome so
+	# x_fixed is LeftStack+8, not an unused toolbar. HBox rows inside Modify
+	# (including hidden face-ops) are summed so the first body layout already
+	# uses the widest state. When that walk is still wider than the live
+	# size, add 8 px of PanelContainer theme chrome that combined_min misses
+	# until the first real layout (280 → 322).
+	var walked := 230.0
+	for child in left_stack.get_children():
+		var c := child as Control
+		if c == null:
+			continue
+		var n := String(c.name)
+		if not c.visible and n != "CardPanel" and n != "OpsPanel" and n != "Palette":
+			continue
+		walked = maxf(walked, _control_column_width(c, 0))
+	var stack_w := maxf(left_stack.size.x, walked)
+	if walked > left_stack.size.x + 0.5:
+		stack_w = maxf(stack_w, walked + 8.0)
+	return stack_w
+
+
+func _control_column_width(c: Control, depth: int) -> float:
+	if c == null or depth > 10:
+		return 0.0
+	# Pre-layout budget: mins and children only. Live size is max()'d on
+	# LeftStack so we do not add the +8 chrome pad on top of an already
+	# laid-out 322 px panel.
+	var w := maxf(c.custom_minimum_size.x, c.get_combined_minimum_size().x)
+	if c is HBoxContainer:
+		var box := c as HBoxContainer
+		var sep := float(box.get_theme_constant("separation"))
+		var sum := 0.0
+		var n := 0
+		for child in box.get_children():
+			var g := child as Control
+			if g == null:
+				continue
+			if n > 0:
+				sum += sep
+			sum += _control_column_width(g, depth + 1)
+			n += 1
+		w = maxf(w, sum)
+	else:
+		for child in c.get_children():
+			var g := child as Control
+			if g == null:
+				continue
+			w = maxf(w, _control_column_width(g, depth + 1))
+	return w
+
+
+func _ensure_left_stack_layout_wire() -> void:
+	var left_stack := _named_chrome_control("LeftStack")
+	if left_stack == null:
+		return
+	if left_stack != _left_stack_wired:
+		if _left_stack_wired != null:
+			if _left_stack_wired.resized.is_connected(_layout_selection_strip):
+				_left_stack_wired.resized.disconnect(_layout_selection_strip)
+			if _left_stack_wired.minimum_size_changed.is_connected(_layout_selection_strip):
+				_left_stack_wired.minimum_size_changed.disconnect(_layout_selection_strip)
+		_left_stack_wired = left_stack
+		if not left_stack.resized.is_connected(_layout_selection_strip):
+			left_stack.resized.connect(_layout_selection_strip)
+		if not left_stack.minimum_size_changed.is_connected(_layout_selection_strip):
+			left_stack.minimum_size_changed.connect(_layout_selection_strip)
+	for child in left_stack.get_children():
+		var c := child as Control
+		if c == null:
+			continue
+		if not c.resized.is_connected(_layout_selection_strip):
+			c.resized.connect(_layout_selection_strip)
+		if not c.minimum_size_changed.is_connected(_layout_selection_strip):
+			c.minimum_size_changed.connect(_layout_selection_strip)
+
+
+func _selection_strip_y_fixed() -> float:
+	var y_fixed := ChromeDock.top_inset
+	var tc := _cached_top_chrome_node()
+	if tc != null and tc.visible:
+		var tr := _rect_in_this(tc)
+		y_fixed = maxf(y_fixed, tr.end.y + 4.0)
+	return y_fixed
+
+
+func _cached_top_chrome_node() -> Control:
+	if _cached_top_chrome != null and is_instance_valid(_cached_top_chrome):
+		return _cached_top_chrome
+	_cached_top_chrome = _named_chrome_control("TopChrome")
+	return _cached_top_chrome
+
+
+func _named_chrome_control(n: String) -> Control:
+	if not is_inside_tree():
+		return null
+	return get_tree().root.find_child(n, true, false) as Control
+
+
+func _rect_in_this(ctrl: Control) -> Rect2:
+	var g := ctrl.get_global_rect()
+	return Rect2(g.position - get_global_rect().position, g.size)
+
+
+func _selection_strip_content_width() -> float:
+	var row := _selection_strip_row()
+	if row == null:
+		return 1.0
+	var h_sep := float(row.get_theme_constant("h_separation"))
+	if h_sep <= 0.0:
+		h_sep = 6.0
+	var sum := 0.0
+	var n := 0
+	for child in row.get_children():
+		var c := child as Control
+		if c == null or not c.visible:
+			continue
+		var cw := c.get_combined_minimum_size().x
+		if cw <= 0.0:
+			cw = maxf(c.size.x, c.custom_minimum_size.x)
+		if n > 0:
+			sum += h_sep
+		sum += cw
+		n += 1
+	return maxf(1.0, sum + _selection_strip_panel_pad_h())
+
+
+func _selection_strip_wrapped_height(inner_w: float) -> float:
+	var row := _selection_strip_row()
+	if row == null:
+		return 0.0
+	var h_sep := float(row.get_theme_constant("h_separation"))
+	var v_sep := float(row.get_theme_constant("v_separation"))
+	if h_sep <= 0.0:
+		h_sep = 6.0
+	if v_sep <= 0.0:
+		v_sep = 4.0
+	var x := 0.0
+	var row_h := 0.0
+	var total := 0.0
+	var rows := 0
+	for child in row.get_children():
+		var c := child as Control
+		if c == null or not c.visible:
+			continue
+		var cs := c.get_combined_minimum_size()
+		if cs.x <= 0.0:
+			cs.x = maxf(c.size.x, 1.0)
+		if cs.y <= 0.0:
+			cs.y = maxf(c.size.y, 1.0)
+		if x > 0.0 and x + h_sep + cs.x > inner_w + 0.5:
+			if rows > 0:
+				total += v_sep
+			total += row_h
+			rows += 1
+			x = 0.0
+			row_h = 0.0
+		if x > 0.0:
+			x += h_sep
+		x += cs.x
+		row_h = maxf(row_h, cs.y)
+	if row_h > 0.0:
+		if rows > 0:
+			total += v_sep
+		total += row_h
+	return total
+
+
+func _selection_strip_panel_pad_h() -> float:
+	if _selection_strip == null:
+		return 0.0
+	var sb := _selection_strip.get_theme_stylebox("panel")
+	if sb == null:
+		return 0.0
+	return sb.get_margin(SIDE_LEFT) + sb.get_margin(SIDE_RIGHT)
+
+
+func _selection_strip_panel_pad_v() -> float:
+	if _selection_strip == null:
+		return 0.0
+	var sb := _selection_strip.get_theme_stylebox("panel")
+	if sb == null:
+		return 0.0
+	return sb.get_margin(SIDE_TOP) + sb.get_margin(SIDE_BOTTOM)
 
 
 func _open_context_menu(screen_pos: Vector2) -> void:
