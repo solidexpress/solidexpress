@@ -3620,11 +3620,13 @@ func _click_rect(pos2: Vector2) -> void:
 		"center_three_point":
 			# Click 1 = centre, click 2 = long-side direction and half-length,
 			# click 3 = half-width (perpendicular distance from the axis).
+			# Repeat click 2 must not commit: camera/snap noise sits well above
+			# 1e-6 mm and still prints width 0.0000. Same floor as a line.
 			var npts := _tool_points.size()
 			if npts == 1:
 				status.emit(JAW_AFTER_CENTRE)
 			elif npts == 2:
-				if _tool_points[0].distance_to(_tool_points[1]) <= 1e-6:
+				if _tool_points[0].distance_to(_tool_points[1]) < MIN_SEGMENT_MM:
 					_tool_points.remove_at(1)
 					status.emit(JAW_ZERO_LONG)
 				else:
@@ -3632,7 +3634,7 @@ func _click_rect(pos2: Vector2) -> void:
 			elif npts >= 3:
 				var ctr: Vector2 = _tool_points[0]
 				var along: Vector2 = _tool_points[1] - ctr
-				if along.length() <= 1e-6:
+				if along.length() < MIN_SEGMENT_MM:
 					_tool_points.resize(1)
 					status.emit(JAW_ZERO_LONG)
 				else:
@@ -3640,7 +3642,9 @@ func _click_rect(pos2: Vector2) -> void:
 					var half_len := along.length()
 					var nrm := Vector2(-dir.y, dir.x)
 					var half_w := absf((_tool_points[2] - ctr).dot(nrm))
-					if half_w <= 1e-6:
+					var near_click2 := _tool_points[2].distance_to(_tool_points[1]) \
+							< MIN_SEGMENT_MM
+					if half_w < MIN_SEGMENT_MM or near_click2:
 						_tool_points.resize(2)
 						status.emit(JAW_ZERO_WIDTH)
 					else:
