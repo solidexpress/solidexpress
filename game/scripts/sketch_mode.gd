@@ -2649,6 +2649,53 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	if walls.size() != 2:
 		status.emit("Trim failed — the construction line nearest your click runs along the jaw (from %.1f,%.1f to %.1f,%.1f); draw a centreline across the jaw or delete the along-jaw line" % [a.x, a.y, b.x, b.y])
 		return true
+	# Typed width/angle win over the geometry the snap is about to move.
+	# Capture from the live records that name the short side / a wall+datum;
+	# if the jaw was never labelled, round the current measure to 1e-4.
+	var wall_ids := {}
+	for w in walls:
+		wall_ids[str(w["id"])] = true
+	var drop_ids := {}
+	for id in to_delete:
+		drop_ids[str(id)] = true
+	var jaw_width := 0.0
+	var have_width := false
+	var jaw_angle := 0.0
+	var have_angle := false
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		var dtype := str(dim.get("type", ""))
+		var dids: Array = dim.get("ids", [])
+		if dtype == "distance" and not have_width:
+			for id in dids:
+				if drop_ids.has(str(id)):
+					jaw_width = float(dim.get("value", 0.0))
+					have_width = true
+					break
+		elif dtype == "angle" and not have_angle:
+			var names_wall := false
+			var names_datum := false
+			for id in dids:
+				if wall_ids.has(str(id)):
+					names_wall = true
+				if _angle_datum_lines.has(str(id)):
+					names_datum = true
+			if names_wall or names_datum:
+				jaw_angle = float(dim.get("value", 0.0))
+				have_angle = true
+	if not have_width:
+		jaw_width = snappedf(walls[0]["hit"].distance_to(walls[1]["hit"]), 1e-4)
+	if not have_angle:
+		var md: Vector2 = walls[0]["keep"] - walls[0]["hit"]
+		if md.length_squared() < 1e-12:
+			md = keep_dir
+		jaw_angle = snappedf(Vector2(1, 0).angle_to(md), 1e-4)
+	if jaw_width < 0.1:
+		jaw_width = 10.0
+	var wall_along := Vector2.from_angle(jaw_angle)
+	if wall_along.dot(keep_dir) < 0.0:
+		wall_along = -wall_along
 	# An offset cutter (leftover retry, >15% of radius) still caps on this
 	# circle. The midpoint constraint wants the floor through `cc`; apply
 	# that geometrically so DogLeg cannot leave the floor on the offset
@@ -2656,7 +2703,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	_snap_jaw_hits_through_centre(walls, cc, dir)
 	for w in walls:
 		var hit: Vector2 = w["hit"]
-		var keep: Vector2 = _ray_circle_point(hit, w["keep"] - hit, cc, cr)
+		var keep: Vector2 = _ray_circle_point(hit, wall_along, cc, cr)
 		w["keep"] = keep
 		sketch.set_entity_geometry(str(w["id"]), {"start": hit, "end": keep})
 	for id in to_delete:
@@ -2671,15 +2718,20 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		var across: Vector2 = walls[1]["hit"] - walls[0]["hit"]
 		if fdir.dot(across) < 0.0:
 			fdir = -fdir
-		var half := across.length() * 0.5
+		var half := jaw_width * 0.5
 		if half < 0.1:
 			half = 10.0
 		h0 = cc - fdir * half
 		h1 = cc + fdir * half
 		walls[0]["hit"] = h0
 		walls[1]["hit"] = h1
-		sketch.set_entity_geometry(str(walls[0]["id"]), {"start": h0, "end": walls[0]["keep"]})
-		sketch.set_entity_geometry(str(walls[1]["id"]), {"start": h1, "end": walls[1]["keep"]})
+		for w in walls:
+			var hit2: Vector2 = w["hit"]
+			var keep2: Vector2 = _ray_circle_point(hit2, wall_along, cc, cr)
+			w["keep"] = keep2
+			sketch.set_entity_geometry(str(w["id"]), {"start": hit2, "end": keep2})
+		k0 = walls[0]["keep"]
+		k1 = walls[1]["keep"]
 	var floor_id: String = sketch.add_line(h0.x, h0.y, h1.x, h1.y)
 	var arc_id := _add_keep_side_arc(cc, cr, k0, k1, keep_dir)
 	_weld_jaw_profile(floor_id, walls, arc_id)
@@ -2696,7 +2748,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 			{"entity": arc_id, "role": "center"},
 			{"entity": anchor, "role": "center"}], 0.0)
 	sketch.add_constraint("radius", [{"entity": arc_id, "role": "self"}], cr)
-	var width := h0.distance_to(h1)
+	var width := jaw_width
 	var dist_cid: String = sketch.add_constraint("distance", [
 		{"entity": floor_id, "role": "start"},
 		{"entity": floor_id, "role": "end"}], width)
@@ -2729,7 +2781,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var hx: String = sketch.add_line(cc.x - 8.0, cc.y, cc.x + 8.0, cc.y)
 	sketch.set_construction(hx, true)
 	sketch.add_constraint("horizontal", [{"entity": hx, "role": "self"}], 0.0)
-	var ang := _lines_signed_angle(hx, str(walls[0]["id"]))
+	var ang := jaw_angle
 	var ang_cid: String = sketch.add_constraint("angle", [
 		{"entity": hx, "role": "self"},
 		{"entity": str(walls[0]["id"]), "role": "self"}], ang)
@@ -2748,6 +2800,33 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 				{"entity": id, "role": "center"},
 				{"entity": oanchor, "role": "center"}], 0.0)
 	_drop_stale_dimensions()
+	# One label per fact: drop any other floor-width or wall-angle record
+	# that survived because a wall kept its id.
+	var kept_dims: Array = []
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		var keep_type := str(dim.get("type", ""))
+		var keep_ids: Array = dim.get("ids", [])
+		var keep_cid := str(dim.get("cid", ""))
+		if keep_type == "distance":
+			var names_floor := false
+			for id in keep_ids:
+				if str(id) == floor_id:
+					names_floor = true
+					break
+			if names_floor and keep_cid != dist_cid:
+				continue
+		elif keep_type == "angle":
+			var names_keep_wall := false
+			for id in keep_ids:
+				if wall_ids.has(str(id)):
+					names_keep_wall = true
+					break
+			if names_keep_wall and keep_cid != ang_cid:
+				continue
+		kept_dims.append(dim)
+	dimensions = kept_dims
 	run_solve()
 	var winfo: Dictionary = sketch.entity_info(str(walls[0]["id"]))
 	var finfo: Dictionary = sketch.entity_info(floor_id)
