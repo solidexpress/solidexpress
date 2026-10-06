@@ -43,17 +43,16 @@ func test_chip_highlight() -> void:
 	await _x11_click(FilmUI.find_sketch_tool_button(ctx.main, "Jaw"))
 	await process_frame
 	check(sm.tool_variant == "center_three_point", "Jaw sets the Center Three Point variant")
-	check(_pressed(ctx) == ["Center Three Point"], "Jaw: only Center Three Point is highlighted (got %s)" % str(_pressed(ctx)))
+	var jaw_bar := _variant_bar(ctx) as Control
+	check(jaw_bar == null or not jaw_bar.visible,
+			"Jaw shows no variant chip row (visible=%s chips=%s)" % [
+				str(jaw_bar.visible) if jaw_bar != null else "missing", str(_chip_names(ctx))])
 	var chip := _chip(ctx, "Center Three Point")
-	check(chip != null and chip.is_visible_in_tree(), "the Center Three Point chip is visible")
-	if chip != null:
-		var style := chip.get_theme_stylebox("pressed") as StyleBoxFlat
-		check(style != null and style.bg_color == Color("2d5f93") and style.border_color == Color("6ab0f3"),
-				"the highlighted chip draws the accent fill and border")
-	check(_chip(ctx, "Corner") == null, "Jaw does not show the Corner chip")
-	check(_chip(ctx, "Parallelogram") == null, "Jaw does not show the Parallelogram chip")
-	check(_chip_names(ctx) == ["Center Three Point"],
-			"Jaw chips are only Center Three Point (got %s)" % str(_chip_names(ctx)))
+	check(chip == null or not chip.is_visible_in_tree(), "the Center Three Point chip is not visible after Jaw")
+	var corner_chip := _chip(ctx, "Corner")
+	check(corner_chip == null or not corner_chip.is_visible_in_tree(), "Jaw does not show the Corner chip")
+	var para_chip := _chip(ctx, "Parallelogram")
+	check(para_chip == null or not para_chip.is_visible_in_tree(), "Jaw does not show the Parallelogram chip")
 
 	await _x11_click(FilmUI.find_sketch_tool_button(ctx.main, "Rect"))
 	await process_frame
