@@ -5,11 +5,14 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepClass_FaceClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
+#include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
+#include <ElSLib.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
@@ -27,6 +30,7 @@
 #include <gp_Dir.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Pln.hxx>
+#include <gp_Pnt2d.hxx>
 #include <gp_Vec.hxx>
 
 #include <algorithm>
@@ -144,7 +148,7 @@ void note_faulty_contour(BRepFilletAPI_MakeFillet& mk, std::string* fault) {
     fault->clear();
     if (mk.NbFaultyContours() < 1) return;
     const int ic = mk.FaultyContour(1);
-    if (mk.NbEdges(ic) < 1) return;
+    if (ic < 1 || ic > mk.NbContours() || mk.NbEdges(ic) < 1) return;
     const TopoDS_Edge fe = mk.Edge(ic, 1);
     if (!fe.IsNull()) *fault = edge_phrase(fe);
 }
@@ -292,6 +296,125 @@ bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& p
     return build_fillet(unified, chosen, v, r2, out, fault);
 }
 
+// A face pick fillets every edge of that face. Edge ids and cues move when an
+// upstream edit (a thicker base extrude) moves the face, so the feature also
+// remembers the face itself: its plane normal and one point inside it.
+std::vector<TopoDS_Edge> face_edges(const TopoDS_Face& face) {
+    sx::occt::ShapeIndexedMap map;
+    TopExp::MapShapes(face, TopAbs_EDGE, map);
+    std::vector<TopoDS_Edge> out;
+    for (int i = 1; i <= map.Extent(); ++i) {
+        const TopoDS_Edge edge = TopoDS::Edge(map(i));
+        if (!BRep_Tool::Degenerated(edge)) out.push_back(edge);
+    }
+    return out;
+}
+
+bool contains_edge(const std::vector<TopoDS_Edge>& edges, const TopoDS_Edge& edge) {
+    for (const auto& e : edges)
+        if (e.IsSame(edge)) return true;
+    return false;
+}
+
+bool planar_face_normal(const TopoDS_Face& face, gp_Dir& n) {
+    BRepAdaptor_Surface surf(face);
+    if (surf.GetType() != GeomAbs_Plane) return false;
+    n = surf.Plane().Axis().Direction();
+    if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+    return true;
+}
+
+// The grid sample inside the face that sits nearest the middle of its UV box.
+bool face_interior_point(const TopoDS_Face& face, gp_Pnt& out) {
+    double u0, u1, v0, v1;
+    BRepTools::UVBounds(face, u0, u1, v0, v1);
+    BRepAdaptor_Surface surf(face);
+    const int n = 16;
+    double best = 1e300;
+    bool found = false;
+    for (int i = 1; i < n; ++i) {
+        for (int j = 1; j < n; ++j) {
+            const double fu = static_cast<double>(i) / n;
+            const double fv = static_cast<double>(j) / n;
+            const double u = u0 + (u1 - u0) * fu;
+            const double v = v0 + (v1 - v0) * fv;
+            BRepClass_FaceClassifier cl(face, gp_Pnt2d(u, v), 1e-7);
+            if (cl.State() != TopAbs_IN) continue;
+            const double d = (fu - 0.5) * (fu - 0.5) + (fv - 0.5) * (fv - 0.5);
+            if (d < best) {
+                best = d;
+                out = surf.Value(u, v);
+                found = true;
+            }
+        }
+    }
+    return found;
+}
+
+nlohmann::json face_cues_for(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& edges) {
+    nlohmann::json cues = nlohmann::json::array();
+    sx::occt::ShapeIndexedMap faces;
+    TopExp::MapShapes(shape, TopAbs_FACE, faces);
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        const TopoDS_Face face = TopoDS::Face(faces(i));
+        gp_Dir n;
+        if (!planar_face_normal(face, n)) continue;
+        const std::vector<TopoDS_Edge> fe = face_edges(face);
+        if (fe.size() < 3) continue;
+        bool covered = true;
+        for (const auto& e : fe) {
+            if (!contains_edge(edges, e)) {
+                covered = false;
+                break;
+            }
+        }
+        if (!covered) continue;
+        gp_Pnt p;
+        if (!face_interior_point(face, p)) continue;
+        cues.push_back({{"point", {p.X(), p.Y(), p.Z()}}, {"normal", {n.X(), n.Y(), n.Z()}}});
+    }
+    return cues;
+}
+
+// The planar face with the cue's normal that still contains the cue point once
+// the point slides along the normal onto the face's plane. When several faces
+// qualify (a pocket floor under the top face), the one whose plane moved
+// least wins.
+bool match_face_cue(const TopoDS_Shape& shape, const nlohmann::json& cue, TopoDS_Face& out) {
+    if (!cue.is_object() || !cue.contains("point") || !cue.contains("normal")) return false;
+    const auto& pj = cue["point"];
+    const auto& nj = cue["normal"];
+    if (!pj.is_array() || pj.size() < 3 || !nj.is_array() || nj.size() < 3) return false;
+    const gp_Pnt want(pj[0].get<double>(), pj[1].get<double>(), pj[2].get<double>());
+    gp_Vec want_n(nj[0].get<double>(), nj[1].get<double>(), nj[2].get<double>());
+    if (want_n.Magnitude() < 1e-12) return false;
+    want_n.Normalize();
+    sx::occt::ShapeIndexedMap faces;
+    TopExp::MapShapes(shape, TopAbs_FACE, faces);
+    double best = 1e300;
+    bool found = false;
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        const TopoDS_Face face = TopoDS::Face(faces(i));
+        gp_Dir n;
+        if (!planar_face_normal(face, n)) continue;
+        if (gp_Vec(n).Dot(want_n) < 0.999) continue;
+        BRepAdaptor_Surface surf(face);
+        const gp_Pln pln = surf.Plane();
+        const double shift = gp_Vec(want, pln.Location()).Dot(want_n);
+        const gp_Pnt on_plane = want.Translated(want_n * shift);
+        double u, v;
+        ElSLib::PlaneParameters(pln.Position(), on_plane, u, v);
+        BRepClass_FaceClassifier cl(face, gp_Pnt2d(u, v), 1e-4);
+        if (cl.State() != TopAbs_IN && cl.State() != TopAbs_ON) continue;
+        if (std::abs(shift) < best) {
+            best = std::abs(shift);
+            out = face;
+            found = true;
+        }
+    }
+    return found;
+}
+
 bool resolve_dressup_edge(ApplyCtx& ctx, const Body& body, const nlohmann::json& je,
                           TopoDS_Shape& es, std::string* why) {
     if (resolve_topo_shape(ctx.doc, body, EntityKind::Edge, je, es, why)) return true;
@@ -302,6 +425,65 @@ bool resolve_dressup_edge(ApplyCtx& ctx, const Body& body, const nlohmann::json&
     if (!match_edge_cue(body, cues[key], es)) return false;
     if (why) why->clear();
     return true;
+}
+
+struct DressupEdges {
+    std::vector<TopoDS_Edge> edges;
+    int total = 0;
+    int lost = 0;
+};
+
+// Every edge the feature names that still resolves. Edges that do not are
+// re-found through the face the feature was built from (face_cues). What
+// stays unresolved after that is counted in `lost`.
+DressupEdges resolve_dressup_edges(ApplyCtx& ctx, const Body& body, const char* soft_skip_tag) {
+    DressupEdges out;
+    for (const auto& je : ctx.params.at("edges")) {
+        ++out.total;
+        TopoDS_Shape es;
+        std::string why;
+        if (!resolve_dressup_edge(ctx, body, je, es, &why)) {
+            sx::log::error(std::string(soft_skip_tag) + why);
+            continue;
+        }
+        const TopoDS_Edge edge = TopoDS::Edge(es);
+        if (!contains_edge(out.edges, edge)) out.edges.push_back(edge);
+    }
+    if (static_cast<int>(out.edges.size()) < out.total) {
+        const auto& cues = ctx.feature.params.value("face_cues", nlohmann::json::array());
+        if (cues.is_array()) {
+            for (const auto& cue : cues) {
+                TopoDS_Face face;
+                if (!match_face_cue(body.shape, cue, face)) continue;
+                for (const auto& e : face_edges(face))
+                    if (!contains_edge(out.edges, e)) out.edges.push_back(e);
+            }
+        }
+    }
+    out.lost = std::max(0, out.total - static_cast<int>(out.edges.size()));
+    return out;
+}
+
+// Lost edges never fail the rebuild: unrelated edits (a later sketch, a hole)
+// must not be rolled back. They are reported as a warning the status line and
+// the timeline row show.
+bool report_lost_edges(ApplyCtx& ctx, const DressupEdges& found) {
+    if (found.total == 0 || found.lost == 0) return true;
+    const std::string what =
+        found.edges.empty()
+            ? "all " + std::to_string(found.total) + " edges lost on rebuild — it changes nothing now"
+            : std::to_string(found.lost) + " of " + std::to_string(found.total)
+                  + " edges lost on rebuild";
+    ctx.graph.add_warning(ctx.feature.id, ctx.feature.name + ": " + what);
+    return true;
+}
+
+void remember_face_cues(ApplyCtx& ctx, const Body& body, const std::vector<TopoDS_Edge>& edges) {
+    nlohmann::json cues = face_cues_for(body.shape, edges);
+    if (cues.empty())
+        ctx.feature.params.erase("face_cues");
+    else
+        ctx.feature.params["face_cues"] = std::move(cues);
 }
 
 }  // namespace
@@ -320,30 +502,19 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         const double r2 = ctx.params.contains("radius2")
                               ? num_param(ctx.params, "radius2", v, ctx.env)
                               : v;
-        int added = 0;
         double limit = std::numeric_limits<double>::infinity();
         TopoDS_Edge limit_edge;
-        std::vector<TopoDS_Edge> resolved;
-        for (const auto& je : ctx.params.at("edges")) {
-            TopoDS_Shape es;
-            std::string why;
-            if (!resolve_dressup_edge(ctx, *tb, je, es, &why)) {
-                // Soft-skip only a missing edge id (upstream regen dropped it
-                // and no pre-regen cue matches). A radius the user just typed
-                // still fails below once any edge resolves.
-                sx::log::error(std::string("fillet soft-skip: ") + why);
-                continue;
-            }
-            TopoDS_Edge edge = TopoDS::Edge(es);
+        const DressupEdges found = resolve_dressup_edges(ctx, *tb, "fillet soft-skip: ");
+        if (!report_lost_edges(ctx, found)) return false;
+        std::vector<TopoDS_Edge> resolved = found.edges;
+        for (const auto& edge : resolved) {
             const double this_limit = 0.5 * min_departure_length(tb->shape, edge);
             if (this_limit < limit) {
                 limit = this_limit;
                 limit_edge = edge;
             }
-            resolved.push_back(edge);
-            ++added;
         }
-        if (added == 0) return true;
+        if (resolved.empty()) return true;
         const double asked = std::max(v, r2);
         // "fillet failed (limit …)" is only for a radius that does not fit.
         if (limit < 1e290 && asked > limit + 1e-4) {
@@ -363,23 +534,17 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
                 return ctx.fail("fillet failed");
             }
         }
+        remember_face_cues(ctx, *tb, resolved);
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
-        int added = 0;
-        for (const auto& je : ctx.params.at("edges")) {
-            TopoDS_Shape es;
-            std::string why;
-            if (!resolve_dressup_edge(ctx, *tb, je, es, &why)) {
-                sx::log::error(std::string("chamfer soft-skip: ") + why);
-                return true;
-            }
-            mk.Add(v, TopoDS::Edge(es));
-            ++added;
-        }
-        if (added == 0) return true;
+        const DressupEdges found = resolve_dressup_edges(ctx, *tb, "chamfer soft-skip: ");
+        if (!report_lost_edges(ctx, found)) return false;
+        if (found.edges.empty()) return true;
+        for (const auto& edge : found.edges) mk.Add(v, edge);
         mk.Build();
         if (!mk.IsDone()) return ctx.fail("chamfer failed");
         result = mk.Shape();
+        remember_face_cues(ctx, *tb, found.edges);
     }
     if (!shape::is_valid(result)) return ctx.fail("result invalid");
     ctx.doc.replace_body_shape(target, result);

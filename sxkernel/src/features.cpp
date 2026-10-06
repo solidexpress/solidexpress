@@ -2133,6 +2133,7 @@ bool FeatureGraph::regenerate(Document& doc, std::string* err) {
     std::map<std::string, double> env;
     last_failed_ = {};
     last_error_.clear();
+    warnings_.clear();
     try {
         env = variables_.evaluate();
     } catch (const std::exception& e) {

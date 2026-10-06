@@ -551,7 +551,12 @@ func _set_param(key: String, value) -> void:
 	if view.doc.graph_set_params(_fid, JSON.stringify(_params)):
 		_edits += 1
 		view.graph_changed()
-		status.emit("Preview: %s = %s" % [key, str(value)])
+		var note := ""
+		if view.doc.has_method("graph_warnings"):
+			var warnings: PackedStringArray = view.doc.graph_warnings()
+			if not warnings.is_empty():
+				note = " — " + "; ".join(warnings)
+		status.emit("Preview: %s = %s%s" % [key, str(value), note])
 		# End = Up To Surface reveals the face row; other ends hide it.
 		if key == "end" and _type != "":
 			_build_fields.call_deferred(_type)
