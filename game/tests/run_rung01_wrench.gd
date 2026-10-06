@@ -669,19 +669,22 @@ func _fillet_neck(ctx: FilmContext, body: String, neck_x: float) -> void:
 	check(ctx.view.selected_body == body, "wrench selected for fillet")
 	var before := _count_type(ctx, "fillet")
 	await _arm_fillet(ctx, 10.0)
-	# Front view (key 1): both vertical neck edges are silhouettes.
-	await _view_key(ctx, KEY_1)
+	# Front (key 1) and Back (key 4): each vertical neck edge is a silhouette
+	# from one side. One Front view stacks both midpoints on the same ray.
 	var pts := _neck_click_points(ctx, body, neck_x)
 	if pts.size() < 2:
 		pts = [Vector3(neck_x, 10.0, 5.0), Vector3(neck_x, -10.0, 5.0)]
 	for i in pts.size():
 		var p: Vector3 = pts[i]
 		var from_y := 1.0 if p.y >= 0.0 else -1.0
+		await _view_key(ctx, KEY_4 if from_y > 0.0 else KEY_1)
 		await _click_model(ctx, p, "Neck edge %s" % ("+Y" if from_y > 0.0 else "-Y"))
 	check(ctx.view.selected_edges.size() >= 2, "both neck edges selected (got %d)" % ctx.view.selected_edges.size())
 	check(str(ctx.main.status_label.text).contains("mm vertical"),
 			"status contains mm vertical (got %s)" % ctx.main.status_label.text)
 	var first_neck: Vector3 = pts[0]
+	var first_y := 1.0 if first_neck.y >= 0.0 else -1.0
+	await _view_key(ctx, KEY_4 if first_y > 0.0 else KEY_1)
 	await _click_model(ctx, first_neck, "Neck edge deselect")
 	check(str(ctx.main.status_label.text).contains("removed"),
 			"status contains removed (got %s)" % ctx.main.status_label.text)
