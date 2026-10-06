@@ -111,19 +111,16 @@ func _btn_center_visible(btn: Control, scroll: ScrollContainer) -> Vector2:
 	if btn == null:
 		return Vector2.INF
 	var br: Rect2 = btn.get_global_rect()
-	if scroll == null:
-		return br.get_center()
-	var sr: Rect2 = scroll.get_global_rect()
-	if not sr.intersects(br):
-		return Vector2.INF
 	var c := br.get_center()
-	if sr.has_point(c):
+	if scroll == null:
 		return c
-	# Click the overlap, not the unscrolled layout position.
-	var clipped := sr.intersection(br)
-	if clipped.size.x < 4.0 or clipped.size.y < 4.0:
-		return Vector2.INF
-	return clipped.get_center()
+	var sr: Rect2 = scroll.get_global_rect()
+	# Only the button centre, not a 1-px sliver at the clip edge. A top sliver
+	# of Ellipse after a wheel is really Jaw; a bottom sliver is the next tool.
+	var inner := sr.grow_individual(0.0, -6.0, 0.0, -6.0)
+	if inner.has_point(c):
+		return c
+	return Vector2.INF
 
 
 func _click_rail_button(main, label: String) -> Button:
@@ -332,12 +329,14 @@ func _run() -> void:
 		var wheel_at := rail.get_global_rect().get_center()
 		await _wheel_at(wheel_at, true, 14)
 		check(scroll.scroll_vertical > 0, "second scroll pass moved the rail")
-		# Re-press every tool that is on-screen at this offset.
+		# Re-press every tool whose centre is on-screen at this offset.
+		var scrolled_hits := 0
 		for row in RAIL_TOOLS:
 			var btn := FilmUI.find_sketch_tool_button(main, str(row[0]))
 			var pos := _btn_center_visible(btn, scroll)
 			if pos == Vector2.INF:
 				continue
+			scrolled_hits += 1
 			await _push_click(pos)
 			check(int(sm.tool) == int(row[1]),
 					"scrolled `%s` at (%.0f, %.0f) arms tool %d (got %d, status `%s`)" % [
@@ -347,6 +346,8 @@ func _run() -> void:
 					or _status_of(main).contains(str(row[2])),
 					"scrolled `%s` hint is `%s…` (got `%s`)" % [
 						str(row[0]), str(row[2]), _status_of(main)])
+		check(scrolled_hits >= 3,
+				"scrolled pass hit at least 3 on-screen rail tools (got %d)" % scrolled_hits)
 
 	main.queue_free()
 	await process_frame
