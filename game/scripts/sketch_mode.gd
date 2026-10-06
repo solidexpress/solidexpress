@@ -123,6 +123,7 @@ var _hover: Vector2 = Vector2.ZERO
 ## When ≥ 0, rubber-band length/radius is locked to this value; mouse only
 ## steers direction. Cleared on tool change / Esc / after the next commit click.
 var _length_override: float = -1.0
+var _point_from_length := false
 ## Last named commit sentence (polygon AF, circle radius, centre-to-flat).
 ## Empty means the caller should keep a generic length status.
 var _last_commit_text := ""
@@ -3160,6 +3161,7 @@ func _redraw_selected() -> void:
 func click(pos2: Vector2) -> void:
 	if not active:
 		return
+	_point_from_length = false
 	_last_commit_text = ""
 	# A dimension label sits a few millimetres off the geometry. Snapping first
 	# pulls that click onto the line and the in-sketch editor never opens.
@@ -3177,7 +3179,9 @@ func click(pos2: Vector2) -> void:
 	# and lock the distance. Do not write the pick into _hover — finish_extrude
 	# and the next rubber-band still need the live pointer — and do not snap
 	# the already-scaled tip (that pulls a 150 mm slot onto 3D pierce points).
+	_point_from_length = false
 	if _length_override >= 0.0 and has_single_dof_preview():
+		_point_from_length = true
 		if _length_override < MIN_SEGMENT_MM:
 			status.emit("Too short")
 			return
@@ -3255,6 +3259,11 @@ func click(pos2: Vector2) -> void:
 				if tool_variant == "across_flats":
 					polygon_sides = 6
 					r = drag / sqrt(3.0)
+					if _point_from_length:
+						start_angle = 0.0
+					else:
+						var step := deg_to_rad(30.0)
+						start_angle = round(start_angle / step) * step
 				if r > 1e-6:
 					var n := polygon_sides
 					var verts: Array[Vector2] = []
@@ -3283,7 +3292,7 @@ func click(pos2: Vector2) -> void:
 					run_solve()
 					_weld_loop(lids)
 					if tool_variant == "across_flats":
-						_last_commit_text = "Polygon AF %.4f" % drag
+						_last_commit_text = "Polygon AF %.4f — flats horizontal" % drag
 						status.emit(_last_commit_text)
 				_tool_points.clear()
 				_redraw()
@@ -5344,6 +5353,11 @@ func _update_preview() -> void:
 				if tool_variant == "across_flats":
 					r = r / sqrt(3.0)
 					n = 6
+					if _length_override >= 0.0:
+						start_angle = 0.0
+					else:
+						var step := deg_to_rad(30.0)
+						start_angle = round(start_angle / step) * step
 				var steps := 48
 				for i in range(steps):
 					var a0 := TAU * i / steps
