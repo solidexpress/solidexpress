@@ -94,7 +94,7 @@ func _agree_armed(main, want: float, tag: String) -> void:
 	check(st.contains(needle),
 			"%s: status contains %s (got `%s`)" % [tag, needle, st])
 	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
-			"%s: Fillet still armed (pending %s)" % [tag, str(main.ops_panel._pending)])
+			"%s: Fillet still armed" % tag)
 
 
 func _vertical_edges(view: DocumentView, body: String) -> Array:
@@ -239,17 +239,15 @@ func _run() -> void:
 	_agree(main, 10.0, "1b LineEdit Enter")
 
 	print("- 7. L3: type 10 in panel (intermediate 0), Tab; strip, panel, status agree")
+	view.select_entity(body, "")
+	await process_frame
 	if ops._pending != OpsPanel.Pending.FILLET_EDGES:
-		view.select_entity(body, "")
-		await process_frame
-		ops.set_dressup_radius(1.0)
 		ops.arm_or_apply_fillet()
 		await process_frame
 		await process_frame
-	else:
-		ops.set_dressup_radius(1.0)
-		await process_frame
-		await process_frame
+	ops.set_dressup_radius(1.0)
+	await process_frame
+	await process_frame
 	check(ops._pending == OpsPanel.Pending.FILLET_EDGES, "7: Fillet armed at 1")
 	_observe(main, "7 armed at 1")
 	_agree_armed(main, 1.0, "7 start")

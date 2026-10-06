@@ -219,13 +219,13 @@ func _build_body_ops() -> void:
 	var radius_le := _radius_spin.get_line_edit()
 	_radius_spin.value_changed.connect(func(v: float) -> void:
 		# A focused LineEdit can emit 0 while the user is typing 10 (soft-GL
-		# drops a digit, or SpinBox parses a partial). The strip and status
-		# follow the committed value only (Tab / Enter / arrows / assignment).
+		# drops a digit, or SpinBox parses a partial). Skip only incomplete
+		# text — an assignment `.value = 10` must still push the strip.
 		if _radius_committing:
 			return
 		if radius_le != null and radius_le.has_focus():
 			var parsed := _parse_dressup_radius_text(radius_le.text)
-			if is_nan(parsed) or not is_equal_approx(parsed, v):
+			if is_nan(parsed) or parsed < 0.05 - 1e-9:
 				return
 		_notify_dressup_radius(v))
 	# Tab (focus-exit) commits the number without applying the fillet.
@@ -837,10 +837,16 @@ func set_dressup_radius(v: float) -> void:
 	_radius_spin.min_value = 0.05
 	_radius_spin.max_value = 100.0
 	var clamped := clampf(v, _radius_spin.min_value, _radius_spin.max_value)
-	if is_equal_approx(_radius_spin.value, clamped):
-		_notify_dressup_radius(clamped)
-		return
+	_radius_committing = true
+	var le := _radius_spin.get_line_edit()
+	if le != null and le.has_focus():
+		# focus_exited would otherwise apply the stale LineEdit ("10") over v.
+		le.release_focus()
 	_radius_spin.value = clamped
+	if le != null:
+		le.text = str(_radius_spin.value)
+	_radius_committing = false
+	_notify_dressup_radius(clamped)
 
 
 func _parse_dressup_radius_text(text: String) -> float:
