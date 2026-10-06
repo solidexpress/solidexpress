@@ -48,7 +48,7 @@ func _run() -> void:
 	check(absf(cam.pitch - before_pitch) > 0.05 or absf(wrapf(cam.yaw - before_yaw, -PI, PI)) > 0.2,
 			"vertical orbit off Top moves the camera")
 	var hud = main.view_hud
-	var word := hud.find_child("ViewWord", true, false)
+	var word = hud.find_child("ViewWord", true, false)
 	check(word is Button, "View word is a button")
 	if word is Button:
 		(word as Button).pressed.emit()
@@ -67,9 +67,9 @@ func _run() -> void:
 	await _tap(main, KEY_3)
 	var vertical := _vertical_edge(main.view, body)
 	var corner := _top_of(main.view, body, vertical) + Vector3(0.3, 0.3, 0.0)
-	var picked := main.view.edge_near_point(body, corner, 2.5, cam)
+	var picked = main.view.edge_near_point(body, corner, 2.5, cam)
 	check(picked == vertical, "top-view corner picks the vertical edge (got %s want %s)" % [picked, vertical])
-	var dir := main.view.edge_direction(body, picked)
+	var dir = main.view.edge_direction(body, picked)
 	check(absf(dir.z) > 0.9, "picked edge is vertical")
 	main.queue_free()
 	await process_frame
