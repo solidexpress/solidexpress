@@ -50,9 +50,14 @@ func test_chip_highlight() -> void:
 		var style := chip.get_theme_stylebox("pressed") as StyleBoxFlat
 		check(style != null and style.bg_color == Color("2d5f93") and style.border_color == Color("6ab0f3"),
 				"the highlighted chip draws the accent fill and border")
-		var other := _chip(ctx, "Corner")
-		check(other != null and not other.button_pressed, "the Corner chip is not highlighted")
+	check(_chip(ctx, "Corner") == null, "Jaw does not show the Corner chip")
+	check(_chip(ctx, "Parallelogram") == null, "Jaw does not show the Parallelogram chip")
+	check(_chip_names(ctx) == ["Center Three Point"],
+			"Jaw chips are only Center Three Point (got %s)" % str(_chip_names(ctx)))
 
+	await _x11_click(FilmUI.find_sketch_tool_button(ctx.main, "Rect"))
+	await process_frame
+	check(_pressed(ctx) == ["Corner"], "Rect after Jaw: only Corner is highlighted (got %s)" % str(_pressed(ctx)))
 	await _x11_click(_chip(ctx, "Parallelogram"))
 	await process_frame
 	check(sm.tool_variant == "parallelogram", "clicking Parallelogram sets the variant")
@@ -113,6 +118,18 @@ func _chip(ctx: FilmContext, text: String) -> Button:
 		if b != null and b.text == text:
 			return b
 	return null
+
+
+func _chip_names(ctx: FilmContext) -> Array[String]:
+	var out: Array[String] = []
+	var bar := _variant_bar(ctx)
+	if bar == null:
+		return out
+	for c in bar.get_children():
+		var b := c as Button
+		if b != null:
+			out.append(b.text)
+	return out
 
 
 func _pressed(ctx: FilmContext) -> Array[String]:
