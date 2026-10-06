@@ -384,6 +384,9 @@ func focus_distance_for_typing(seed: String = "") -> void:
 		_distance_line_invalid = false
 		_distance_invalid_raw = ""
 		_write_extrude_spin(v, seed)
+		# Origin is the seeded value, not the spin's previous number, so
+		# Escape restores this session's start instead of the last burst.
+		_distance_origin = v
 		edit.caret_column = seed.length()
 		edit.deselect()
 		edit.deselect.call_deferred()
@@ -399,6 +402,7 @@ func focus_distance_for_typing(seed: String = "") -> void:
 			_distance_line_invalid = false
 			_distance_invalid_raw = ""
 			_write_extrude_spin(float(parsed), seed)
+			_distance_origin = float(parsed)
 		else:
 			_distance_line_invalid = true
 			_distance_invalid_raw = seed
@@ -1065,6 +1069,16 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 			_select_distance_all_next_frame(gen)
 	if event is InputEventKey and event.pressed and not event.echo:
 		var k := event as InputEventKey
+		if k.keycode == KEY_ESCAPE:
+			_distance_line_invalid = false
+			_distance_invalid_raw = ""
+			_write_extrude_spin(_distance_origin, _plain_num(_distance_origin))
+			if _extrude_spin != null:
+				var line := _extrude_spin.get_line_edit()
+				if line != null and line.has_focus():
+					line.release_focus()
+			accept_event()
+			return
 		if not _is_numeric_replace_key(k, true):
 			return
 		_distance_user_key = true
