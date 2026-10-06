@@ -12,6 +12,7 @@ Source frame (wrench): pivot centre (0,0), head centre (200,0), bottom z=0, top 
 jaw opening toward +X+Y at 45 deg. The mesh is auto-aligned by its bbox (min corner
 moved to (-10,-22.5,0)); the head end is found from the vertices (the X end whose last 10 mm has the larger Y extent); the script then tries only the rotation and the mirror for that end and reports which one it used (mirror only accepted with --allow-mirror).
 Tolerance: 0.2 mm on every length.
+DIAG: run `wrench` on a T≠10 file only to read the other fillet rows; `bbox Z (thickness)`, `1mm fillet top outer edge` and `1mm fillet on jaw top edge` fail by design at T≠10 — `thick` is the pass.
 """
 import sys, zipfile, re, math
 import xml.etree.ElementTree as ET
@@ -134,6 +135,15 @@ def wrench_tests(tris, r):
     r.add('outer wall solid mid-z', inside(tris, (-9.7, 0, 5)), '', 'inside')
     r.add('1mm fillet on jaw top edge', not inside(tris, J(10, 10.08, 9.92)), '', 'outside')
 
+def thick_jaw_top_probe(T):
+    """XY of wrench J(10, 10.08, 9.92) shifted to z = T − 0.08.
+
+    At T = 14 this is (199.9434, 14.1986, 13.92). The DIAG wrench row probes
+    z ≈ 9.92, inside solid material at T ≠ 10, so `thick` is the T-aware pass.
+    """
+    s2 = math.sqrt(2) / 2
+    return (200 + (10 - 10.08) * s2, (10 + 10.08) * s2, T - 0.08)
+
 END_BAND = 10.0
 
 def head_at_min_x(V):
@@ -205,6 +215,7 @@ def main():
               '' if slot_ok else f'xm={xm} floor={floor}',
               'open at z=T-1.25, floor T-2.5, solid skin absent at z=T-0.5')
         r.add('1mm top fillet at new T', not inside(tr, (-9.9, 0.0, T_ - 0.1)), '', 'outside')
+        r.add('1mm jaw top fillet at new T', not inside(tr, thick_jaw_top_probe(T_)), '', 'outside')
         r.show(); sys.exit(1 if r.fail else 0)
     if kind == 'nut':
         e = sorted(ext[:2])
