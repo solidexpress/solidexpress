@@ -1467,13 +1467,11 @@ func _on_sketch_session_started(msg: String) -> void:
 		_sync_sketch_rail_highlight(int(sketch_mode.tool))
 	if sketch_chrome != null:
 		sketch_chrome.visible = true
-		# A brand-new sketch (not begin_edit / Save As re-enter) starts Blind/New.
-		if sketch_mode != null and sketch_mode.editing_fid == "":
-			if sketch_chrome.has_method("reset_finish_for_new_sketch"):
-				sketch_chrome.reset_finish_for_new_sketch()
-			else:
-				sketch_chrome.reset_finish_defaults()
-		sketch_chrome.show_for_session(true)
+		# show_for_session owns Blind/New reset vs same-owner keep (Save As).
+		var fid := ""
+		if sketch_mode != null:
+			fid = str(sketch_mode.editing_fid)
+		sketch_chrome.show_for_session(true, fid)
 	if not sketch_mode.tool_changed.is_connected(_on_sketch_tool_changed):
 		sketch_mode.tool_changed.connect(_on_sketch_tool_changed)
 	if not sketch_mode.selection_actions_needed.is_connected(_on_sketch_selection_chips):
