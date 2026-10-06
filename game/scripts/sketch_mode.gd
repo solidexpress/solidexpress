@@ -1038,11 +1038,23 @@ func set_tool_variant(v: String) -> void:
 	_tool_points.clear()
 	_length_override = -1.0
 	_update_preview()
-	if v == "center_three_point":
-		status.emit(JAW_HINT)
-	else:
-		status.emit("Variant: %s" % v.replace("_", " "))
+	status.emit(_variant_arm_hint(v))
 	tool_variant_changed.emit()
+
+
+## Chip-variant arm sentence. Jaw keeps JAW_HINT; Circle Three Point is the
+## listed distinct gesture; every other variant re-emits the tool sentence so
+## the status still names the armed tool. The `Variant: %s` form stays as the
+## fallback for a tool with no arm hint (byte-identical existing emit).
+func _variant_arm_hint(v: String) -> String:
+	if v == "center_three_point":
+		return JAW_HINT
+	if tool == Tool.CIRCLE and v == "three_point":
+		return "Circle · Three Point — click 3 points on the rim"
+	var hint := tool_arm_hint(tool)
+	if hint != "":
+		return hint
+	return "Variant: %s" % v.replace("_", " ")
 
 
 ## True when a draw tool has the first anchor and is waiting for the tip.

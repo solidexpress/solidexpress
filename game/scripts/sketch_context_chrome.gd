@@ -37,6 +37,10 @@ var _action_dock_to_rail := false
 var _finish_bar: VBoxContainer
 var _finish_dim_row: HBoxContainer
 var _finish_end_row: HBoxContainer
+## Sketch feature id the Op/End/distance belong to. Empty = a new sketch.
+var _finish_owner := ""
+## Process-frame when the bar was last hidden. Save As hide+show is same-frame.
+var _finish_hidden_frame := -1
 var _extrude_spin: SpinBox
 var _finish_op: OptionButton
 var _finish_end: OptionButton
@@ -1148,9 +1152,14 @@ func get_finish_end() -> String:
 	return opts[i]
 
 
+func finish_owner() -> String:
+	return _finish_owner
+
+
 ## File > New starts the finish bar from its defaults. Without this a Cut / Up
 ## To Surface from the last part is still selected for the next part's blank.
 func reset_finish_defaults() -> void:
+	_finish_owner = ""
 	if _finish_op != null:
 		_finish_op.select(0)
 	if _finish_end != null:
@@ -1249,9 +1258,21 @@ func done_button() -> Button:
 	return find_child("DoneButton", true, false) as Button
 
 
-func show_for_session(on: bool) -> void:
+func show_for_session(on: bool, fid: String = "") -> void:
 	_finish_bar.visible = on
 	if on:
+		if fid != "" and fid == _finish_owner:
+			# Same owner (Save As of an already-saved sketch): keep Op/End/D.
+			pass
+		elif fid != "" and _finish_owner == "" \
+				and _finish_hidden_frame == Engine.get_process_frames():
+			# Save As of a brand-new sketch: hide+show is the same frame; adopt
+			# the new feature id without wiping Cut / Up To Surface / distance.
+			_finish_owner = fid
+		else:
+			# New sketch, or begin_edit of a different existing sketch.
+			reset_finish_for_new_sketch()
+			_finish_owner = fid
 		clear_up_to_face()
 		# Sit to the right of the SketchTools rail (Exit Sketch), under the top row.
 		_place_finish_session()
@@ -1261,6 +1282,7 @@ func show_for_session(on: bool) -> void:
 		if sketch_mode != null and sketch_mode.sketch != null:
 			refresh_contours(sketch_mode.sketch)
 	else:
+		_finish_hidden_frame = Engine.get_process_frames()
 		_variant_bar.visible = false
 		hide_selection_actions()
 		_contour_bar.visible = false

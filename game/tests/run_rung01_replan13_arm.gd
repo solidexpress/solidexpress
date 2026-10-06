@@ -150,23 +150,37 @@ func _finish_op_text(chrome: SketchContextChrome) -> String:
 	return op.get_item_text(op.selected)
 
 
+func _distance_of(chrome: SketchContextChrome) -> float:
+	if chrome != null and chrome._extrude_spin != null:
+		return float(chrome._extrude_spin.value)
+	return chrome.extrude_distance() if chrome != null else 0.0
+
+
 func _dirt_finish(chrome: SketchContextChrome) -> void:
 	chrome.set_finish_op("cut")
 	chrome.set_finish_end("to_face")
 	chrome._on_finish_end_selected(3)
-	chrome.set_extrude_distance(7.0)
+	# Write D the same way reset_finish_for_new_sketch does. set_extrude_distance
+	# keeps the LineEdit string, so extrude_distance() would still parse 20.
+	if chrome._extrude_spin != null:
+		chrome._distance_syncing = true
+		chrome._extrude_spin.value = 7
+		chrome._distance_syncing = false
+		chrome._refresh_extrude_readout(7)
+	else:
+		chrome.set_extrude_distance(7.0)
 
 
 func _is_defaults(chrome: SketchContextChrome) -> bool:
 	return _finish_op_text(chrome) == "New" \
 			and chrome.get_finish_end() == "blind" \
-			and absf(chrome.extrude_distance() - 20.0) < 0.01
+			and absf(_distance_of(chrome) - 20.0) < 0.01
 
 
 func _is_dirty(chrome: SketchContextChrome) -> bool:
 	return _finish_op_text(chrome) == "Cut" \
 			and chrome.get_finish_end() == "to_face" \
-			and absf(chrome.extrude_distance() - 7.0) < 0.01
+			and absf(_distance_of(chrome) - 7.0) < 0.01
 
 
 func _owner_of(chrome: SketchContextChrome) -> String:
@@ -182,14 +196,14 @@ func _assert_defaults(chrome: SketchContextChrome, what: String) -> void:
 	check(_is_defaults(chrome),
 			"%s: Blind / New / 20 (got Op=%s End=%s D=%.3f owner='%s')" % [
 				what, _finish_op_text(chrome), chrome.get_finish_end(),
-				chrome.extrude_distance(), _owner_of(chrome)])
+				_distance_of(chrome), _owner_of(chrome)])
 
 
 func _assert_dirty(chrome: SketchContextChrome, what: String) -> void:
 	check(_is_dirty(chrome),
 			"%s: Cut / Up To Surface / 7 (got Op=%s End=%s D=%.3f)" % [
 				what, _finish_op_text(chrome), chrome.get_finish_end(),
-				chrome.extrude_distance()])
+				_distance_of(chrome)])
 
 
 func _assert_named(main, word: String, prev: String, what: String) -> void:
