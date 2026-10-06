@@ -4914,29 +4914,142 @@ func _restore_driving_angles() -> void:
 func _restore_dimensions_from_sketch() -> void:
 	if sketch == null:
 		return
-	dimensions.clear()
-	for cid in sketch.constraint_ids():
-		var info: Dictionary = sketch.constraint_info(str(cid))
-		var t := str(info.get("type", ""))
-		if t != "distance" and t != "radius" and t != "diameter" and t != "angle":
-			continue
-		var refs: Array = info.get("refs", [])
-		var ids: Array = []
-		for ref in refs:
-			if typeof(ref) != TYPE_DICTIONARY:
-				continue
-			var eid := str(ref.get("entity", ""))
-			if eid != "" and eid not in ids:
-				ids.append(eid)
-		if ids.is_empty():
-			continue
-		dimensions.append({
-			"type": t,
-			"ids": ids,
-			"value": float(info.get("value", 0.0)),
-			"cid": str(cid),
-		})
+	var prior: Array = dimensions.duplicate(true)
+	dimensions = _merge_dimension_records(_dimension_records_from_sketch(), prior)
 	_rebuild_dimension_labels()
+
+
+## One label record per dimensional constraint, deduped by
+## (type, sorted ids, value rounded to 1e-4) then by display text.
+func _dimension_records_from_sketch() -> Array:
+	var out: Array = []
+	if sketch == null:
+		return out
+	var seen_fact := {}
+	var seen_text := {}
+	for cid in sketch.constraint_ids():
+		var rec := _dimension_record_from_cid(str(cid))
+		if rec.is_empty():
+			continue
+		var key := _dimension_fact_key(rec)
+		if seen_fact.has(key):
+			continue
+		var text := _dimension_label_text(rec)
+		if text != "" and seen_text.has(text):
+			continue
+		seen_fact[key] = true
+		if text != "":
+			seen_text[text] = true
+		out.append(rec)
+	return out
+
+
+func _dimension_record_from_cid(cid: String) -> Dictionary:
+	if sketch == null or cid == "":
+		return {}
+	var info: Dictionary = sketch.constraint_info(cid)
+	var t := str(info.get("type", ""))
+	if t != "distance" and t != "radius" and t != "diameter" and t != "angle":
+		return {}
+	var refs: Array = info.get("refs", [])
+	var ids: Array = []
+	for ref in refs:
+		if typeof(ref) != TYPE_DICTIONARY:
+			continue
+		var eid := str(ref.get("entity", ""))
+		if eid != "" and eid not in ids:
+			ids.append(eid)
+	if ids.is_empty():
+		return {}
+	return {
+		"type": t,
+		"ids": ids,
+		"value": float(info.get("value", 0.0)),
+		"cid": cid,
+	}
+
+
+func _dimension_fact_key(dim: Dictionary) -> String:
+	var ids: Array = []
+	for id in dim.get("ids", []):
+		ids.append(str(id))
+	ids.sort()
+	return "%s|%s|%.4f" % [str(dim.get("type", "")), ",".join(ids),
+			snappedf(float(dim.get("value", 0.0)), 0.0001)]
+
+
+## Keep Smart Dim / Jaw / Trim fields (label_text, cid, drag override) when
+## the same constraint is rebuilt. `kept` wins by cid, then by fact key.
+func _merge_dimension_records(built: Array, kept: Array) -> Array:
+	var by_cid := {}
+	var by_key := {}
+	for dim in kept:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		var cid := str(dim.get("cid", ""))
+		if cid != "":
+			by_cid[cid] = dim
+		by_key[_dimension_fact_key(dim)] = dim
+	var out: Array = []
+	var used := {}
+	for rec in built:
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var cid := str(rec.get("cid", ""))
+		var keep: Variant = null
+		if cid != "" and by_cid.has(cid):
+			keep = by_cid[cid]
+		elif by_key.has(_dimension_fact_key(rec)):
+			keep = by_key[_dimension_fact_key(rec)]
+		if keep != null:
+			var merged: Dictionary = (keep as Dictionary).duplicate(true)
+			merged["type"] = rec["type"]
+			merged["ids"] = rec["ids"]
+			merged["value"] = rec["value"]
+			merged["cid"] = cid
+			out.append(merged)
+			if cid != "":
+				used[cid] = true
+		else:
+			out.append(rec)
+			if cid != "":
+				used[cid] = true
+	return out
+
+
+## Re-apply the live label list after Save's exit / begin_edit cycle.
+func reapply_dimension_records(kept: Array) -> void:
+	if sketch == null:
+		return
+	dimensions = _merge_dimension_records(_dimension_records_from_sketch(), kept)
+	_rebuild_dimension_labels()
+
+
+func _sync_missing_radius_records() -> void:
+	if sketch == null:
+		return
+	_ensure_circle_radius_constraints()
+	dimensions = _merge_dimension_records(_dimension_records_from_sketch(), dimensions)
+
+
+## Typed circle / arc radii become kernel radius constraints so the one
+## builder can label them both live and after Save / Open.
+func _ensure_circle_radius_constraints() -> void:
+	if sketch == null:
+		return
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind != "circle" and kind != "arc":
+			continue
+		var r := float(info.get("radius", 0.0))
+		if r <= 1e-6:
+			continue
+		if _entity_has_constraint(id, "radius") or _entity_has_constraint(id, "diameter"):
+			continue
+		sketch.add_constraint("radius", [{"entity": id, "role": "self"}], r)
 
 
 ## Double-click or right-click ends a line chain / commits a spline.
@@ -5342,9 +5455,11 @@ func _rebuild_dimension_labels() -> void:
 	_clear_dimension_labels()
 	if _dimension_labels == null or sketch == null:
 		return
+	_sync_missing_radius_records()
 	_dimension_labels.visible = dimensions_visible
 	var taken: Array[Vector2] = []
-	for dim in dimensions:
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
 		if typeof(dim) != TYPE_DICTIONARY:
 			continue
 		var pos2: Variant = _dimension_label_pos2(dim)
@@ -5357,9 +5472,23 @@ func _rebuild_dimension_labels() -> void:
 				stack += 1
 		taken.append(pos)
 		var text := _dimension_label_text(dim)
+		if str(dim.get("type", "")) == "angle":
+			# 45.0001° from a 45° degree constraint is the same label.
+			var shown := snappedf(_dimension_display_value(dim), 0.01)
+			text = _format_dimension(shown) + "°"
 		dim["label_pos"] = pos
 		dim["label_stack"] = stack
 		dim["label_text"] = text
+		dimensions[i] = dim
+	_rebuild_constraint_glyphs()
+	_resolve_label_overlaps()
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		if dim.get("label_pos", null) == null:
+			continue
+		var pos: Vector2 = dim["label_pos"]
+		var stack := int(dim.get("label_stack", 0))
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.fixed_size = true
@@ -5367,9 +5496,115 @@ func _rebuild_dimension_labels() -> void:
 		label.font_size = DIM_LABEL_FONT
 		label.outline_size = 4
 		label.offset = Vector2(0.0, float(stack) * DIM_LABEL_STACK_PX)
-		label.text = text
+		label.text = str(dim.get("label_text", ""))
 		label.position = _to3(pos)
 		_dimension_labels.add_child(label)
+
+
+## Nudge labels (never glyphs) along the label_stack axis until no label
+## rect intersects another label or a constraint glyph. Deterministic by
+## dimension index so a rebuild yields the same layout.
+func _resolve_label_overlaps() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return
+	var k := _label_px_scale(cam)
+	var glyphs: Array[Rect2] = []
+	for g in constraint_glyph_screen_rects():
+		if typeof(g) == TYPE_DICTIONARY:
+			glyphs.append(g["rect"] as Rect2)
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+			continue
+		var stack := int(dim.get("label_stack", 0))
+		var guard := 0
+		while guard < 16:
+			dim["label_stack"] = stack
+			dimensions[i] = dim
+			var rect := _projected_label_rect(dim, cam, k)
+			var hit := false
+			for gr in glyphs:
+				if rect.intersects(gr):
+					hit = true
+					break
+			if not hit:
+				for j in range(dimensions.size()):
+					if j == i:
+						continue
+					var other: Dictionary = dimensions[j]
+					if typeof(other) != TYPE_DICTIONARY or other.get("label_pos", null) == null:
+						continue
+					if rect.intersects(_projected_label_rect(other, cam, k)):
+						hit = true
+						break
+			if not hit:
+				break
+			stack += 1
+			guard += 1
+		dim["label_stack"] = stack
+		dimensions[i] = dim
+
+
+func _projected_label_anchor(dim: Dictionary, cam: Camera3D) -> Vector2:
+	var lp: Vector2 = dim["label_pos"]
+	return cam.unproject_position(to_global(to_model(lp)))
+
+
+func _projected_label_rect(dim: Dictionary, cam: Camera3D, k: float) -> Rect2:
+	return _dimension_label_rect(dim, _projected_label_anchor(dim, cam), k)
+
+
+## Viewport-pixel rectangles of every drawn dimension label.
+func dimension_label_screen_rects() -> Array:
+	var out: Array = []
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return out
+	var k := _label_px_scale(cam)
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		var lp: Variant = dim.get("label_pos", null)
+		if lp == null:
+			lp = _dimension_label_pos2(dim)
+		if lp == null:
+			continue
+		var work: Dictionary = dim.duplicate(true)
+		work["label_pos"] = lp
+		var text := str(work.get("label_text", ""))
+		if text == "":
+			text = _dimension_label_text(work)
+			work["label_text"] = text
+		out.append({
+			"text": text,
+			"rect": _projected_label_rect(work, cam, k),
+			"index": i,
+		})
+	return out
+
+
+## Viewport-pixel rectangles of every drawn constraint glyph.
+func constraint_glyph_screen_rects() -> Array:
+	var out: Array = []
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return out
+	var k := _label_px_scale(cam)
+	var font: Font = ThemeDB.fallback_font
+	for a in _glyph_anchors:
+		var type := str(a.get("type", ""))
+		if type == "" and sketch != null:
+			type = str(sketch.constraint_info(str(a.get("cid", ""))).get("type", ""))
+		var symbol := str(GLYPH_SYMBOLS.get(type, type))
+		var size := Vector2(
+				font.get_string_size(symbol, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x,
+				font.get_height(22)) * k
+		var world: Vector3 = to_global(to_model(a["pos"] as Vector2))
+		var centre: Vector2 = cam.unproject_position(world)
+		out.append({"type": type, "rect": Rect2(centre - size * 0.5, size)})
+	return out
 
 
 # --- constraint glyphs (visible relations, SolidWorks-style) ---
@@ -5464,7 +5699,7 @@ func _rebuild_constraint_glyphs() -> void:
 		label.position = _to3(pos)
 		label.set_meta("cid", str(cid))
 		_constraint_glyphs.add_child(label)
-		_glyph_anchors.append({"cid": str(cid), "pos": pos})
+		_glyph_anchors.append({"cid": str(cid), "pos": pos, "type": type})
 
 
 ## Constraint whose glyph is within GLYPH_PICK_RADIUS of pos2, or "".

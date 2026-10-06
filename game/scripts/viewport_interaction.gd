@@ -2894,6 +2894,9 @@ func _length_type_seed(ke: InputEventKey) -> String:
 func _update_sketch_measure(pos2: Vector2) -> void:
 	if measure_overlay == null or sketch_mode == null:
 		return
+	if _dim_edit_owns_keys():
+		measure_overlay.clear_pair()
+		return
 	if sketch_mode.tool != SketchMode.Tool.SELECT:
 		return
 	var eid: String = sketch_mode._nearest_entity_at(pos2)
