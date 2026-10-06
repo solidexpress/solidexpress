@@ -101,5 +101,13 @@ Godot presets are in `game/export_presets.cfg` (`Windows Desktop`, `macOS`). Ste
 make release-linux    # same as export-linux.sh (after fetch-godot-templates)
 ```
 
+## Windows nightly CI
+
+Windows kernel tests and Godot export (`windows-vcpkg` / `windows-export`) run from `.github/workflows/windows-nightly.yml`, not from PR CI.
+
+- Schedule: 08:17 UTC daily, but only when `main` has new commits since the last green nightly. A red nightly retries the next day even with no new commits.
+- Manual: Actions tab → workflow **windows-nightly** → Run workflow. Optional `force` input rebuilds even when `main` is unchanged.
+- Pull requests no longer run the ~2-hour Windows jobs. Tag releases still use `release.yml` (and can restore the vcpkg cache this nightly saves on `main`).
+
 ## Next CI steps
 - Windows vcpkg binary cache key: bump the cache key in .github/workflows/release.yml together with EXPECTED_VCPKG_WIN_CACHE_KEY in scripts/release/test_windows_vcpkg_cache_key.py (CI pin test).
