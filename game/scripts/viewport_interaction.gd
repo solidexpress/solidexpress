@@ -2796,6 +2796,9 @@ func _sketch_input(event: InputEvent) -> void:
 				var made: Array = sketch_mode.paste_entities()
 				status.emit("Pasted %d sketch entities" % made.size() if not made.is_empty() else "Clipboard empty")
 				accept_event()
+			KEY_Z, KEY_Y:
+				if _gui_key(ke):
+					accept_event()
 	elif event is InputEventKey and event.pressed and not event.ctrl_pressed:
 		var ke := event as InputEventKey
 		# Digits / decimal: preview → dim blank; no preview → Distance.
@@ -3649,6 +3652,16 @@ func _commit_property_panel_on_deselect() -> void:
 	pp.dismiss_keep_preview()
 
 
+func _status_sketch_undo() -> void:
+	var label := sketch_mode.undo()
+	status.emit("Nothing to undo" if label == "" else "Undo: " + label)
+
+
+func _status_sketch_redo() -> void:
+	var label := sketch_mode.redo()
+	status.emit("Nothing to redo" if label == "" else "Redo: " + label)
+
+
 func _gui_key(event: InputEventKey) -> bool:
 	if not event.pressed:
 		return false
@@ -3771,6 +3784,14 @@ func _gui_key(event: InputEventKey) -> bool:
 				return true
 		KEY_Z:
 			if event.ctrl_pressed:
+				if SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus():
+					return false
+				if sketch_mode != null and sketch_mode.active:
+					if event.shift_pressed:
+						_status_sketch_redo()
+					else:
+						_status_sketch_undo()
+					return true
 				if event.shift_pressed:
 					view.redo()
 				else:
@@ -3779,6 +3800,11 @@ func _gui_key(event: InputEventKey) -> bool:
 				return true
 		KEY_Y:
 			if event.ctrl_pressed:
+				if SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus():
+					return false
+				if sketch_mode != null and sketch_mode.active:
+					_status_sketch_redo()
+					return true
 				view.redo()
 				status.emit("Redo")
 				return true

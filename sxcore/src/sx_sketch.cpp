@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <map>
 
+#include "sx/sketch_json.hpp"
 #include "sx/sketch_tools.hpp"
+
+#include <nlohmann/json.hpp>
 
 using namespace godot;
 
@@ -372,6 +375,29 @@ int SxSketch::contour_count() const {
     return static_cast<int>(sketch_->contour_faces(&err).size());
 }
 
+String SxSketch::snapshot() const {
+    if (!sketch_) return {};
+    return to_gd(sx::sketch_to_json(*sketch_).dump());
+}
+
+bool SxSketch::restore(const String& json_text) {
+    if (!sketch_) return false;
+    nlohmann::json j;
+    try {
+        j = nlohmann::json::parse(to_std(json_text));
+    } catch (...) {
+        return false;
+    }
+    try {
+        auto restored = sx::sketch_from_json(j);
+        if (!restored) return false;
+        adopt(restored);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 String SxSketch::project_line_edge(const Vector3& a, const Vector3& b, const String& edge_id) {
     auto id = sketch_->project_line_edge({a.x, a.y, a.z}, {b.x, b.y, b.z}, to_std(edge_id));
     return to_gd(id.str());
@@ -446,6 +472,8 @@ void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("analyze", "gap_tol"), &SxSketch::analyze, DEFVAL(1e-4));
     ClassDB::bind_method(D_METHOD("fully_define"), &SxSketch::fully_define);
     ClassDB::bind_method(D_METHOD("contour_count"), &SxSketch::contour_count);
+    ClassDB::bind_method(D_METHOD("snapshot"), &SxSketch::snapshot);
+    ClassDB::bind_method(D_METHOD("restore", "json"), &SxSketch::restore);
     ClassDB::bind_method(D_METHOD("project_line_edge", "a", "b", "edge_id"),
                          &SxSketch::project_line_edge);
     ClassDB::bind_method(D_METHOD("project_circle_edge", "center", "radius", "edge_id"),

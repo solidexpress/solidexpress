@@ -140,6 +140,18 @@ var _snap_marker: Variant = null  # Vector2 | null
 ## id, part ("start"|"end"|"whole"|"center"|"radius"), grab_pos, orig_info,
 ## preview_info. Commits live via SxSketch.set_entity_geometry + re-solve.
 var _drag: Dictionary = {}
+## In-sketch undo: snapshots of the kernel sketch plus the dimension records.
+## Not document history — Exit Sketch is the only write to the feature graph.
+const UNDO_STACK_MAX := 100
+var _undo_stack: Array = []  # {json, dimensions, label} = state before the op
+var _redo_stack: Array = []
+var _undo_head := ""
+var _undo_head_dims: Array = []
+var _undo_label := ""
+var _undo_restoring := false
+var _undo_parked: Dictionary = {}
+var _undo_merge_frame := -1
+var _undo_drag_open := false
 var _line_material: StandardMaterial3D
 var _preview_material: StandardMaterial3D
 
@@ -507,8 +519,18 @@ func _activate_session() -> void:
 	intersection_points.clear()
 	_clear_dimension_labels()
 	_restore_dimensions_from_sketch()
+	var adopted := _try_adopt_parked_undo()
+	_undo_restoring = true
 	_enter_camera()
 	_redraw()
+	if not adopted:
+		_reset_undo_history()
+	else:
+		_undo_head_dims = dimensions.duplicate(true)
+	_undo_restoring = false
+	_undo_label = ""
+	_undo_merge_frame = -1
+	_undo_drag_open = false
 
 
 func _enter_camera() -> void:
@@ -567,6 +589,9 @@ func _leave_camera() -> void:
 func cancel() -> void:
 	if not active:
 		return
+	_undo_parked.clear()
+	_undo_stack.clear()
+	_redo_stack.clear()
 	active = false
 	editing_fid = ""
 	_tool_points.clear()
@@ -843,6 +868,7 @@ func _reload_editing_sketch() -> bool:
 
 ## Same cleanup a successful Exit uses. Always leaves `active` false.
 func _end_sketch_session() -> void:
+	_park_undo_history()
 	active = false
 	editing_fid = ""
 	_tool_points.clear()
@@ -855,6 +881,202 @@ func _end_sketch_session() -> void:
 		view.refresh()
 		view.document_changed.emit()
 	finished.emit("")
+
+
+func _undo_note(label: String) -> void:
+	_undo_label = label
+
+
+func can_undo() -> bool:
+	return not _undo_stack.is_empty()
+
+
+func can_redo() -> bool:
+	return not _redo_stack.is_empty()
+
+
+func undo() -> String:
+	if _undo_stack.is_empty() or sketch == null:
+		return ""
+	var entry: Dictionary = _undo_stack.pop_back()
+	_redo_stack.append(_undo_current_entry(str(entry.get("label", ""))))
+	return _restore_undo_entry(entry)
+
+
+func redo() -> String:
+	if _redo_stack.is_empty() or sketch == null:
+		return ""
+	var entry: Dictionary = _redo_stack.pop_back()
+	_undo_stack.append(_undo_current_entry(str(entry.get("label", ""))))
+	return _restore_undo_entry(entry)
+
+
+func _undo_current_entry(label: String) -> Dictionary:
+	return {
+		"json": _undo_head,
+		"dimensions": _undo_head_dims.duplicate(true),
+		"label": label,
+	}
+
+
+func _restore_undo_entry(entry: Dictionary) -> String:
+	var json := str(entry.get("json", ""))
+	var dims: Array = entry.get("dimensions", [])
+	_undo_restoring = true
+	if json != "" and sketch.has_method("restore"):
+		sketch.restore(json)
+	dimensions = dims.duplicate(true)
+	_tool_points.clear()
+	_set_selected([])
+	selected_constraint = ""
+	_jaw_floor_id = ""
+	_jaw_arc_id = ""
+	_jaw_wall_ids.clear()
+	_drag.clear()
+	_trim_dragging = false
+	_redraw()
+	_undo_head = json
+	if _undo_head == "" and sketch.has_method("snapshot"):
+		_undo_head = sketch.snapshot()
+	_undo_head_dims = dimensions.duplicate(true)
+	_undo_restoring = false
+	_undo_label = ""
+	_undo_drag_open = false
+	_undo_merge_frame = -1
+	return str(entry.get("label", ""))
+
+
+func _reset_undo_history() -> void:
+	_undo_stack.clear()
+	_redo_stack.clear()
+	_set_undo_head_from_live()
+
+
+func _set_undo_head_from_live() -> void:
+	if sketch != null and sketch.has_method("snapshot"):
+		_undo_head = sketch.snapshot()
+	else:
+		_undo_head = ""
+	_undo_head_dims = dimensions.duplicate(true)
+
+
+func _park_undo_history() -> void:
+	_undo_parked = {
+		"fid": editing_fid,
+		"undo": _undo_stack.duplicate(true),
+		"redo": _redo_stack.duplicate(true),
+		"head_json": _undo_head,
+		"head_dims": _undo_head_dims.duplicate(true),
+		"frame": Engine.get_process_frames(),
+	}
+	_undo_stack.clear()
+	_redo_stack.clear()
+
+
+func _try_adopt_parked_undo() -> bool:
+	if _undo_parked.is_empty():
+		return false
+	var parked: Dictionary = _undo_parked.duplicate(true)
+	_undo_parked.clear()
+	if Engine.get_process_frames() != int(parked.get("frame", -1)):
+		return false
+	var pfid := str(parked.get("fid", ""))
+	if pfid != "" and pfid != editing_fid:
+		return false
+	if sketch == null or not sketch.has_method("snapshot"):
+		return false
+	if sketch.snapshot() != str(parked.get("head_json", "")):
+		return false
+	_undo_stack = parked.get("undo", []).duplicate(true)
+	_redo_stack = parked.get("redo", []).duplicate(true)
+	_undo_head = str(parked.get("head_json", ""))
+	_undo_head_dims = parked.get("head_dims", []).duplicate(true)
+	dimensions = _undo_head_dims.duplicate(true)
+	_undo_label = ""
+	return true
+
+
+func _undo_tool_label() -> String:
+	if _jaw_armed:
+		return "Jaw"
+	match tool:
+		Tool.LINE, Tool.CENTERLINE:
+			return "Line"
+		Tool.CIRCLE:
+			return "Circle"
+		Tool.RECT:
+			return "Rect"
+		Tool.POLYGON:
+			return "Polygon"
+		Tool.SLOT:
+			return "Slot"
+		Tool.ARC:
+			return "Arc"
+		Tool.SPLINE:
+			return "Spline"
+		Tool.POINT:
+			return "Point"
+		Tool.ELLIPSE:
+			return "Ellipse"
+		Tool.CHAMFER:
+			return "Chamfer"
+		Tool.TRIM:
+			return "Trim"
+		Tool.EXTEND:
+			return "Extend"
+		Tool.SMART_DIM:
+			return "Dimension"
+		Tool.CONVERT:
+			return "Convert"
+		Tool.MIRROR:
+			return "Mirror"
+		Tool.PATTERN:
+			return "Pattern"
+		Tool.SELECT:
+			return "Edit"
+		_:
+			return "Edit"
+
+
+func _capture_undo_if_changed() -> void:
+	if sketch == null or _undo_restoring:
+		return
+	if not sketch.has_method("snapshot"):
+		return
+	var json: String = sketch.snapshot()
+	if json == _undo_head:
+		return
+	var frame := Engine.get_process_frames()
+	var dragging := not _drag.is_empty() or _trim_dragging
+	var merge := false
+	if not _undo_stack.is_empty():
+		if _undo_merge_frame == frame:
+			merge = true
+		elif _undo_drag_open:
+			merge = true
+	if merge:
+		_undo_head = json
+		_undo_head_dims = dimensions.duplicate(true)
+		_undo_label = ""
+		if not dragging:
+			_undo_drag_open = false
+		return
+	var label := _undo_label
+	if label == "":
+		label = _undo_tool_label()
+	_undo_stack.append({
+		"json": _undo_head,
+		"dimensions": _undo_head_dims.duplicate(true),
+		"label": label,
+	})
+	if _undo_stack.size() > UNDO_STACK_MAX:
+		_undo_stack.remove_at(0)
+	_redo_stack.clear()
+	_undo_head = json
+	_undo_head_dims = dimensions.duplicate(true)
+	_undo_label = ""
+	_undo_merge_frame = frame
+	_undo_drag_open = dragging
 
 
 func _emit_discard_status() -> void:
@@ -1394,6 +1616,8 @@ func shaft_lines_selected() -> int:
 	# The second line's solve can drag the first onto the same side. Put both
 	# back on the constructed sides (no extra Fix: Fix + H conflicts on A3).
 	_pin_shaft_line_pair(lids, geos)
+	if added > 0:
+		_undo_note("Shaft lines")
 	status.emit("Shaft lines: %d added" % added)
 	_redraw()
 	return added
@@ -2019,6 +2243,8 @@ func constrain(type: String, value: float = 0.0) -> String:
 			status.emit("Fix relation: use dimensions to lock geometry (v1)")
 	if not added:
 		return ""
+	if type == "distance" or type == "radius" or type == "diameter" or type == "angle":
+		_undo_note("Dimension")
 	# Record dimensional constraints (distance/radius, or any with a numeric value).
 	if type == "distance" or type == "radius" or type == "diameter" or type == "angle" or absf(value) > 0.0:
 		_record_dimension(type, selected.duplicate(), value, cid)
@@ -2074,6 +2300,7 @@ func fillet_selected(radius: float) -> String:
 	if arc_id == "":
 		status.emit("Fillet failed")
 		return ""
+	_undo_note("Fillet")
 	run_solve()
 	_redraw()
 	_redraw_selected()
@@ -2092,6 +2319,7 @@ func offset_selected(distance: float) -> Array:
 	if new_ids.is_empty():
 		status.emit("Offset failed")
 		return []
+	_undo_note("Offset")
 	_redraw()
 	_redraw_selected()
 	var out: Array = []
@@ -2111,6 +2339,7 @@ func extend_at(pos2: Vector2) -> bool:
 	if not sketch.extend_entity(id, pos2.x, pos2.y):
 		status.emit("Extend failed — no forward intersection")
 		return false
+	_undo_note("Extend")
 	run_solve()
 	_redraw()
 	return true
@@ -2141,6 +2370,7 @@ func pattern_selected(dx: float, dy: float, count: int) -> Array:
 	if new_ids.is_empty():
 		status.emit("Pattern failed")
 		return []
+	_undo_note("Pattern")
 	_redraw()
 	var out: Array = []
 	for id2 in new_ids:
@@ -2225,6 +2455,8 @@ func mirror_selected() -> Array:
 				var ctr2: Vector2 = refl.call(info["center"])
 				out.append(sketch.add_arc(ctr2.x, ctr2.y, float(info["radius"]),
 						-float(info["end_angle"]), -float(info["start_angle"])))
+	if not out.is_empty():
+		_undo_note("Mirror")
 	_redraw()
 	return out
 
@@ -2238,6 +2470,7 @@ func convert_pierce_points() -> int:
 	if n == 0:
 		status.emit("Convert: no pierce points on this plane")
 	else:
+		_undo_note("Convert")
 		status.emit("Converted %d pierce points" % n)
 		_redraw()
 	return n
@@ -2279,6 +2512,7 @@ func chamfer_selected(distance: float) -> String:
 	sketch.set_entity_geometry(selected[0], {"start": p1, "end": a_other})
 	sketch.set_entity_geometry(selected[1], {"start": p2, "end": b_other})
 	var cid: String = sketch.add_line(p1.x, p1.y, p2.x, p2.y)
+	_undo_note("Chamfer")
 	run_solve()
 	_redraw()
 	return cid
@@ -2354,6 +2588,7 @@ func trim_at(pos2: Vector2) -> bool:
 	if not sketch.trim_entity(id, pos2.x, pos2.y):
 		status.emit("Trim failed — this %s has no crossing to trim at" % str(sketch.entity_info(id).get("type", "entity")))
 		return false
+	_undo_note("Trim")
 	run_solve()
 	# Drop selection entries that no longer exist after a replace-style trim.
 	var alive: Array[String] = []
@@ -2961,6 +3196,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 			if absf(wd.normalized().dot(fd.normalized())) > 0.0009:
 				run_solve()
 	_weld_jaw_profile(floor_id, walls, arc_id)
+	_undo_note("Trim")
 	_redraw()
 	_redraw_selected()
 	_trim_jaw_done_in_drag = true
@@ -3723,6 +3959,7 @@ func _click_rect(pos2: Vector2) -> void:
 						# to a construction +X through the centre. Construction
 						# stays out of the profile.
 						_add_centre_rect_dimensions(q1, q2, q3, ctr, pt)
+						_undo_note("Jaw")
 						status.emit("Jaw committed — width %.4f, long side %.1f° — click a label to edit it" % [
 								half_w * 2.0, fposmod(rad_to_deg(dir.angle()), 180.0)])
 						_tool_points.clear()
@@ -3835,6 +4072,7 @@ func _add_slot(a: Vector2, b: Vector2, half_w: float) -> void:
 	var d := b - a
 	if d.length() < 1e-6 or half_w < 1e-6:
 		return
+	_undo_note("Slot")
 	var r := half_w
 	var n := Vector2(-d.y, d.x).normalized() * r
 	var p_top_a := a + n
@@ -4031,6 +4269,7 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 		_record_dimension("distance", [str(pt["entity"]), line_id], dist, cid)
 		_last_commit_text = "centre-to-flat %.4f" % dist
 		status.emit(_last_commit_text)
+		_undo_note("Dimension")
 		run_solve()
 		_redraw()
 		return
@@ -4843,6 +5082,7 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	if dim.has("expr"):
 		dim["value"] = sketch.constraint_info(cid).get("value", dim.get("value", 0.0))
 	dimensions[index] = dim
+	_undo_note("Dimension")
 	# A width edit must not drop the centre-rect angle to a reference dim.
 	_keep_angle_dims_driving()
 	var res := run_solve()
@@ -5120,6 +5360,8 @@ func delete_selected_entities() -> int:
 	for id in selected.duplicate():
 		if sketch.remove_entity(id):
 			n += 1
+	if n > 0:
+		_undo_note("Delete")
 	_set_selected([])
 	run_solve()
 	_redraw()
@@ -5182,6 +5424,8 @@ func paste_entities(offset := Vector2(10, 10)) -> Array:
 	for x in out:
 		if typeof(x) == TYPE_STRING and str(x) != "":
 			ids.append(str(x))
+	if not ids.is_empty():
+		_undo_note("Paste")
 	_set_selected(ids)
 	run_solve()
 	_redraw()
@@ -5501,6 +5745,7 @@ func delete_selected_constraint() -> bool:
 	var cid := selected_constraint
 	if not sketch.remove_constraint(cid):
 		return false
+	_undo_note("Delete")
 	selected_constraint = ""
 	# Drop any recorded dimension driven by this constraint.
 	for i in range(dimensions.size() - 1, -1, -1):
@@ -5673,6 +5918,7 @@ func _redraw() -> void:
 		_draw_node.mesh = null
 	_rebuild_dimension_labels()
 	_rebuild_constraint_glyphs()
+	_capture_undo_if_changed()
 
 
 func _append_preview_seg(im: ImmediateMesh, a: Vector2, b: Vector2) -> void:

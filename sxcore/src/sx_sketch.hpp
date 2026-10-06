@@ -74,6 +74,10 @@ public:
     // SolidWorks Selected Contours: number of outermost solid regions.
     int contour_count() const;
 
+    // JSON snapshot for in-sketch undo. Entity and constraint ids are preserved.
+    godot::String snapshot() const;
+    bool restore(const godot::String& json);
+
     godot::String project_line_edge(const godot::Vector3& a, const godot::Vector3& b,
                                     const godot::String& edge_id);
     godot::String project_circle_edge(const godot::Vector3& center, double radius,
