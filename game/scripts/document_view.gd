@@ -1277,7 +1277,7 @@ func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE
 		var d3 := INF
 		for i in range(pts.size() - 1):
 			d3 = minf(d3, _point_segment_distance3(point, pts[i], pts[i + 1]))
-		if d3 > tolerance_mm:
+		if d3 >= tolerance_mm:
 			continue
 		var px := _polyline_screen_distance(camera, screen, pts)
 		var align := absf(_model_to_world_dir(edge_direction(body_id, str(edge_id))).dot(ray))
