@@ -1,9 +1,11 @@
-# Rung 1 replan 6 WP4 — the walk is the sx-026 sequence: right-half head
-# click, Smart Dimension popup on the second centre (no label click),
-# Path-field bare export (no Enter in that field), leftover then offset
-# centreline, shaft-side Power Trim, Cut. Numeric line edits keep the
-# replan-4 _x11_click / _x11_type path. The four sx-026 steps use
-# _x11_click_screen with no await between mouse-down and mouse-up.
+# Rung 1 replan 11 WP11 — 3D picks use view keys 1 3 4 8 (Front / Top /
+# Back / Bottom), not a scripted camera look. The walk is the sx-026
+# sequence: right-half head click, Smart Dimension popup on the second
+# centre (no label click), Path-field bare export (no Enter in that field),
+# leftover then offset centreline, shaft-side Power Trim, Cut. Numeric
+# line edits keep the replan-4 _x11_click / _x11_type path. The four
+# sx-026 steps use _x11_click_screen with no await between mouse-down
+# and mouse-up.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
 extends SceneTree
 
@@ -120,12 +122,14 @@ func _walk(ctx: FilmContext) -> Dictionary:
 			"polygon variant is across_flats without a setter (got %s)" % sm.tool_variant)
 	_assert_polygon_chips_clear(ctx)
 	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
-	await _hover_uv(ctx, Vector2(8, 0))
+	await _hover_uv(ctx, Vector2(8, 3))
 	await _type_hex_af_digits(ctx, sm, cam)
 	_assert_hex_flats(sm)
 	_assert_hex_not_pointer_af(sm)
 	check(_status_has("Polygon AF 20") or str(ctx.main.status_label.text).contains("Polygon AF 20"),
 			"status contains Polygon AF 20 (got %s)" % ctx.main.status_label.text)
+	check(_status_has("flats horizontal") or str(ctx.main.status_label.text).contains("flats horizontal"),
+			"status contains flats horizontal (got %s)" % ctx.main.status_label.text)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, Vector2.ZERO, "Bore centre")
 	await _hover_uv(ctx, Vector2(4, 0))
@@ -261,6 +265,21 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _sketch_on_top(ctx, body, top, 10.0)
 	sm = ctx.main.sketch_mode
 	check(sm.active and absf(sm.plane_origin.z - 10.0) < 0.5, "jaw sketch on the top face")
+	await _zoom_uv(ctx, Vector2.ZERO, 40.0)
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
+	await _click_uv(ctx, Vector2.ZERO, "pending circle first point")
+	await process_frame
+	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await process_frame
+	var drop_status := str(ctx.main.status_label.text)
+	check(drop_status.contains("First point dropped — Esc again exits the sketch")
+			or _status_has("First point dropped — Esc again exits the sketch"),
+			"status contains First point dropped — Esc again exits the sketch (got %s)" % drop_status)
+	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await process_frame
+	check(not sm.active, "Esc again exits the face sketch")
+	await _sketch_on_top(ctx, body, top, 10.0)
+	sm = ctx.main.sketch_mode
 	await _zoom_uv(ctx, Vector2.ZERO, 40.0)
 	await _place_hole_circle(ctx)
 	await _zoom_uv(ctx, Vector2(200, 0), 120.0)
@@ -398,6 +417,8 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	var thick_bb: Dictionary = ctx.view.doc.measure_bbox(body)
 	var thick_ext: Vector3 = thick_bb["max"] - thick_bb["min"]
 	check(absf(thick_ext.z - 14.0) <= TOL, "thick bbox Z is 14 (got %.3f)" % thick_ext.z)
+	var thick_mesh := _load_mesh(ctx.view.doc, body)
+	check(not _inside(thick_mesh, Vector3(93.5, 0, 12.75)), "thick slot is open at z=12.75")
 	var thick_path := await _export_via_dialog(ctx, "wrench-t14.3mf")
 	check(thick_path != "" and FileAccess.file_exists(thick_path), "exported wrench-t14.3mf through the dialog")
 	return {
@@ -428,6 +449,8 @@ func _checker(checker: String, args: Array) -> void:
 	var text := "\n".join(output)
 	print(text)
 	check(code == 0, "check_rung01.py %s exit %d" % [" ".join(args), code])
+	if str(args[0]) == "thick":
+		check(text.contains("5/5"), "thick checker prints 5/5")
 
 
 func _assert_timeline(ctx: FilmContext) -> void:
@@ -634,8 +657,8 @@ func _ensure_body_selected(ctx: FilmContext, body: String) -> void:
 		await FilmUI.exit_sketch(ctx)
 	if ctx.view.selected_body == body and ctx.main.interaction._selection_strip.visible:
 		return
-	# Side view: a top-down click lands on the sketch pad and reopens the sketch.
-	await _look_along(ctx, Vector3(0, 1, 0), Vector3(100, 10, 5), 80.0)
+	# Back view (key 4): a top-down click lands on the sketch pad and reopens the sketch.
+	await _view_key(ctx, KEY_4)
 	await _click_model(ctx, Vector3(100, 10, 5), "Select wrench")
 	ctx.main.interaction._refresh_selection_strip()
 	await process_frame
@@ -646,21 +669,23 @@ func _fillet_neck(ctx: FilmContext, body: String, neck_x: float) -> void:
 	check(ctx.view.selected_body == body, "wrench selected for fillet")
 	var before := _count_type(ctx, "fillet")
 	await _arm_fillet(ctx, 10.0)
-	# Side view, zoomed on the vertical junction: a face-interior click takes
-	# the whole shaft face (4 edges, R10 limit 5). A click within 2.5 mm of
-	# the silhouette adds one edge so both necks share one feature.
+	# Front view (key 1): both vertical neck edges are silhouettes.
+	await _view_key(ctx, KEY_1)
 	var pts := _neck_click_points(ctx, body, neck_x)
 	if pts.size() < 2:
 		pts = [Vector3(neck_x, 10.0, 5.0), Vector3(neck_x, -10.0, 5.0)]
 	for i in pts.size():
 		var p: Vector3 = pts[i]
 		var from_y := 1.0 if p.y >= 0.0 else -1.0
-		await _look_along(ctx, Vector3(0, from_y, 0), p, 10.0)
 		await _click_model(ctx, p, "Neck edge %s" % ("+Y" if from_y > 0.0 else "-Y"))
-		if ctx.view.selected_edges.size() > i + 1:
-			await _look_along(ctx, Vector3(0, from_y, 0), p, 6.0)
-			await _click_model(ctx, p, "Neck edge tighter")
 	check(ctx.view.selected_edges.size() >= 2, "both neck edges selected (got %d)" % ctx.view.selected_edges.size())
+	check(str(ctx.main.status_label.text).contains("mm vertical"),
+			"status contains mm vertical (got %s)" % ctx.main.status_label.text)
+	var first_neck: Vector3 = pts[0]
+	await _click_model(ctx, first_neck, "Neck edge deselect")
+	check(str(ctx.main.status_label.text).contains("removed"),
+			"status contains removed (got %s)" % ctx.main.status_label.text)
+	await _click_model(ctx, first_neck, "Neck edge reselect")
 	await _commit_fillet(ctx)
 	check(_count_type(ctx, "fillet") == before + 1, "one fillet on both neck edges")
 	check(ctx.view.doc.last_graph_error() == "", "neck fillet accepted (%s)" % ctx.view.doc.last_graph_error())
@@ -691,11 +716,17 @@ func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vec
 	await _ensure_body_selected(ctx, body)
 	var before := _count_type(ctx, "fillet")
 	await _arm_fillet(ctx, radius)
-	await _look_along(ctx, from_side, point, 80.0)
+	if from_side.z < -0.5:
+		await _view_key(ctx, KEY_8)
+	else:
+		await _view_key(ctx, KEY_3)
 	await _click_model(ctx, point, label)
 	var n := ctx.view.selected_edges.size()
 	check(n >= 4, "%s click selected the face edges (got %d, status %s)" % [
 		label, n, ctx.main.status_label.text])
+	if label == "top face":
+		check(not str(ctx.main.status_label.text).contains("No edges selected"),
+				"top-face fillet status is not No edges selected (got %s)" % ctx.main.status_label.text)
 	if n < 1:
 		return
 	await _commit_fillet(ctx)
@@ -709,7 +740,7 @@ func _refuse_slot_floor(ctx: FilmContext, body: String) -> void:
 	var before := _count_type(ctx, "fillet")
 	var vol0: float = ctx.view.doc.body_volume(body)
 	await _arm_fillet(ctx, 1.5)
-	await _look_along(ctx, Vector3(0, 0, 1), point, 80.0)
+	await _view_key(ctx, KEY_3)
 	await _click_model(ctx, point, "Slot floor")
 	if ctx.view.selected_edges.is_empty():
 		_slot_floor_error = str(ctx.view.doc.last_graph_error())
@@ -1782,7 +1813,7 @@ func _assert_contours_stay_on(ctx: FilmContext) -> void:
 func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float) -> void:
 	var vp: Viewport = ctx.main.get_viewport()
 	var host := Vector3(SHAFT_PICK_X, 0.0, z_top)
-	await _look_along(ctx, Vector3(0, 0, 1), host, 500.0)
+	await _view_key(ctx, KEY_3)
 	await _push_key(vp, KEY_ESCAPE, 0)
 	var screen := FilmUI.model_to_screen(ctx, host)
 	check(FilmUI.require_on_screen(ctx, screen, "top face pick"), "top face pick is on screen")
@@ -1845,29 +1876,16 @@ func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
 	await process_frame
 
 
-func _look_along(ctx: FilmContext, from_side: Vector3, model_pivot: Vector3, size_mm: float) -> void:
+func _view_key(ctx: FilmContext, code: int) -> void:
 	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():
 		cam._view_tween.kill()
 		cam._view_tween = null
-	var n := from_side.normalized()
 	cam.sketch_orientation_locked = false
-	cam._sketch_view_up = Vector3.UP
-	# Model ±Z is world ±Y. look_at(..., Vector3.UP) is degenerate at pitch ±89.
-	# WP2's Up To Surface pick uses pitch ±75 and a yaw with a horizontal component.
-	if absf(n.z) > 0.9:
-		cam.yaw = deg_to_rad(180.0)
-		cam.pitch = deg_to_rad(-75.0 if n.z < 0.0 else 75.0)
-	else:
-		cam.yaw = atan2(n.x, -n.y)
-		cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-	cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
+	var ev := InputEventKey.new()
+	ev.keycode = code
+	ev.pressed = true
+	cam.handle_input(ev, true)
 	await process_frame
 	await process_frame
 
@@ -2548,6 +2566,30 @@ func _edit_rect_labels(ctx: FilmContext) -> void:
 	check(absf(ang_shown - 45.0) <= TOL, "jaw angle label is 45 (got %.3f)" % ang_shown)
 	var orient := _long_side_angle_deg(sm)
 	check(absf(orient - 45.0) <= TOL, "jaw long side is 45° (got %.3f)" % orient)
+	var wall_dir := Vector2.ZERO
+	var floor_dir := Vector2.ZERO
+	var wall_len := -1.0
+	var floor_len := INF
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var d: Vector2 = info["end"] - info["start"]
+		var L := d.length()
+		if L > wall_len:
+			wall_len = L
+			wall_dir = d
+		if L < floor_len and L > 0.5:
+			floor_len = L
+			floor_dir = d
+	if wall_dir.length() > 1e-9:
+		wall_dir = wall_dir.normalized()
+	if floor_dir.length() > 1e-9:
+		floor_dir = floor_dir.normalized()
+	check(absf(wall_dir.dot(floor_dir)) <= sin(deg_to_rad(0.05)),
+			"jaw floor is perpendicular to the wall")
 
 
 func _edit_label(ctx: FilmContext, index: int, text: String) -> void:

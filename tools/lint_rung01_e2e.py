@@ -91,6 +91,32 @@ WALK_EXTRA_FORBIDDEN = REPLAN4_EXTRA_FORBIDDEN + (
 REPLAN7_FORBIDDEN = REPLAN5_FORBIDDEN + (
     "select_entity(",
 )
+REPLAN11_CAMERA = (
+    "_look_along",
+    "set_view(",
+    ".yaw =",
+    ".pitch =",
+    ".basis =",
+)
+REPLAN11_CAMERA_YAW_PITCH = (".yaw =", ".pitch =")
+REPLAN11_YAW_PITCH_OK = ("_zoom", "_zoom_uv")
+REPLAN11_NO_ZOOM = (
+    "_fillet_neck",
+    "_fillet_face",
+    "_refuse_slot_floor",
+    "_ensure_body_selected",
+    "_sketch_on_top",
+)
+REPLAN11_VALIDATION = {
+    "run_rung01_replan11_fillet_ui.gd",
+    "run_rung01_replan11_fillet_err.gd",
+    "run_rung01_replan11_trim.gd",
+    "run_rung01_replan11_slot.gd",
+    "run_rung01_replan11_dim.gd",
+    "run_rung01_replan11_dimhit.gd",
+    "run_rung01_replan11_poly.gd",
+    "run_rung01_replan11_ux.gd",
+}
 WALK_PRESS_RELEASE_EXTRA = (
     "_draw_centreline",
     "_end_centreline_chain",
@@ -253,6 +279,7 @@ def _lint_walk(src: str, errors: list[str]) -> None:
     _lint_x11_click_await(src, errors, "")
     _lint_walk_trim_recovery(src, errors)
     _lint_walk_smart_dim(src, errors)
+    _lint_walk_replan11_camera(src, errors)
 
 
 def _lint_walk_smart_dim(src: str, errors: list[str]) -> None:
@@ -392,6 +419,55 @@ def _lint_replan10(errors: list[str]) -> None:
         _lint_dimension_label_pos2(src, errors, prefix)
 
 
+def _lint_replan11_camera(src: str, errors: list[str], prefix: str, *, skip_look_along: bool = False) -> None:
+    always = tuple(
+        n for n in REPLAN11_CAMERA
+        if n not in REPLAN11_CAMERA_YAW_PITCH and not (skip_look_along and n == "_look_along")
+    )
+    _lint_needles(src, always, errors, prefix)
+    funcs = _functions(src)
+    for needle in REPLAN11_CAMERA_YAW_PITCH:
+        for m in re.finditer(re.escape(needle), src):
+            idx = m.start()
+            owner = ""
+            for name, start, end in funcs:
+                if start <= idx < end:
+                    owner = name
+                    break
+            if owner in REPLAN11_YAW_PITCH_OK:
+                continue
+            errors.append(f"{prefix}line {_line_of(src, idx)}: {needle}")
+
+
+def _lint_walk_replan11_camera(src: str, errors: list[str]) -> None:
+    _lint_replan11_camera(src, errors, "")
+    funcs = {name: src[start:end] for name, start, end in _functions(src)}
+    for name in REPLAN11_NO_ZOOM:
+        body = funcs.get(name, "")
+        if "_zoom(" in body:
+            errors.append(f"{name} contains _zoom(")
+
+
+def _lint_replan11(errors: list[str]) -> None:
+    paths = sorted(TESTS.glob("run_rung01_replan11_*.gd"))
+    if len(paths) != 11:
+        errors.append("expected 11 run_rung01_replan11_*.gd")
+    for path in paths:
+        src = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT)
+        prefix = f"{rel}:"
+        # dimhit's header comment names _look_along as forbidden and does not
+        # call it. Exempt that needle for this file only.
+        skip_look_along = path.name == "run_rung01_replan11_dimhit.gd"
+        _lint_replan11_camera(src, errors, prefix, skip_look_along=skip_look_along)
+        if path.name in REPLAN11_VALIDATION:
+            continue
+        _lint_needles(src, REPLAN7_FORBIDDEN, errors, prefix)
+        _lint_text_assignment(src, errors, prefix)
+        _lint_x11_click_await(src, errors, prefix)
+        _lint_current_dir_assignment(src, errors, prefix)
+
+
 def main() -> int:
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
@@ -407,6 +483,7 @@ def main() -> int:
     _lint_replan8(errors)
     _lint_replan9(errors)
     _lint_replan10(errors)
+    _lint_replan11(errors)
 
     if errors:
         print("lint_rung01_e2e: GUI shortcuts remain:", file=sys.stderr)
@@ -421,6 +498,7 @@ def main() -> int:
     n8 = len(list(TESTS.glob("run_rung01_replan8_*.gd")))
     n9 = len(list(TESTS.glob("run_rung01_replan9_*.gd")))
     n10 = len(list(TESTS.glob("run_rung01_replan10_*.gd")))
+    n11 = len(list(TESTS.glob("run_rung01_replan11_*.gd")))
     print(f"lint_rung01_e2e: {WALK} is clean")
     print(f"lint_rung01_e2e: {n3} replan3 scripts are clean")
     print(f"lint_rung01_e2e: {n4} replan4 scripts are clean")
@@ -430,6 +508,7 @@ def main() -> int:
     print(f"lint_rung01_e2e: {n8} replan8 scripts are clean")
     print(f"lint_rung01_e2e: {n9} replan9 scripts are clean")
     print(f"lint_rung01_e2e: {n10} replan10 scripts are clean")
+    print(f"lint_rung01_e2e: {n11} replan11 scripts are clean")
     return 0
 
 
