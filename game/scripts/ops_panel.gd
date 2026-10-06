@@ -55,6 +55,7 @@ var _pending_first := ""  # armed source entity (body for boolean, any for measu
 var _pending_body := ""
 var _pending_face := ""
 var _pending_fid := ""
+var _dressup_from_face := false
 ## Accumulated drill points for Hole Wizard (one Hole feature on Apply).
 var _hole_wizard_positions: PackedVector3Array = PackedVector3Array()
 var _hole_wizard_direction := Vector3.ZERO
@@ -754,17 +755,15 @@ func _chamfer_all() -> void:
 ## Strip / marking-menu: arm edge picking; second press commits when edges exist.
 func arm_or_apply_fillet() -> void:
 	if _pending == Pending.FILLET_EDGES:
-		if view != null and (not view.selected_edges.is_empty() or view.selected_edge != ""):
-			try_commit_pending()
-			return
+		try_commit_pending()
+		return
 	_arm_dressup(true)
 
 
 func arm_or_apply_chamfer() -> void:
 	if _pending == Pending.CHAMFER_EDGES:
-		if view != null and (not view.selected_edges.is_empty() or view.selected_edge != ""):
-			try_commit_pending()
-			return
+		try_commit_pending()
+		return
 	_arm_dressup(false)
 
 
@@ -828,18 +827,25 @@ func _start_or_apply_dressup(fillet: bool) -> void:
 	if not view.selected_edges.is_empty() or view.selected_edge != "":
 		_apply_dressup(fillet)
 		return
+	if view.selected_face != "":
+		_add_dressup_face(view.selected_body, view.selected_face)
+		_apply_dressup(fillet)
+		return
 	_arm_dressup(fillet)
 
 
 func _commit_armed_dressup() -> bool:
 	var fillet := _pending == Pending.FILLET_EDGES
 	if view.selected_edges.is_empty() and view.selected_edge == "":
-		_pending = Pending.NONE
-		dressup_armed_changed.emit(false, fillet)
-		status.emit("No edges selected — cancelled")
-		return false
+		if view.selected_face != "":
+			_add_dressup_face(view.selected_body, view.selected_face)
+		if view.selected_edges.is_empty() and view.selected_edge == "":
+			_pending = Pending.NONE
+			dressup_armed_changed.emit(false, fillet)
+			if view.selected_face == "":
+				status.emit("No edges selected — cancelled")
+			return false
 	_apply_dressup(fillet)
-	# Success clears _pending; failure re-arms the same pick.
 	return _pending == Pending.NONE
 
 
@@ -876,6 +882,7 @@ func _apply_dressup(fillet: bool) -> void:
 	else:
 		ok = view.doc.chamfer_edges(targets, value)
 	if ok:
+		_dressup_from_face = false
 		view.graph_changed()
 		status.emit("%s %s %.2f applied" % [name, scope, value])
 		_pending = Pending.NONE
@@ -883,14 +890,57 @@ func _apply_dressup(fillet: bool) -> void:
 		if new_fid != "":
 			_open_last_feature("fillet" if fillet else "chamfer")
 	else:
-		status.emit(
-			"%s r=%.2f too large for selected edge(s) — reduce Radius, Enter again" % [
-				name, value])
+		if fillet:
+			status.emit(_fillet_refusal_status(value, targets.size()))
+		else:
+			status.emit("%s r=%.2f too large for selected edge(s) — reduce Radius, Enter again" % [name, value])
 		_pending = Pending.FILLET_EDGES if fillet else Pending.CHAMFER_EDGES
 		_pending_body = view.selected_body
 		_pending_fid = view.feature_of_body(view.selected_body)
 		dressup_armed_changed.emit(true, fillet)
 		_reveal_radius(fillet)
+
+
+func _fillet_refusal_status(radius: float, n: int) -> String:
+	var why := ""
+	if view.doc.has_method("last_graph_error"):
+		why = str(view.doc.last_graph_error())
+	if why.contains("limit "):
+		var num := _first_number_after(why, "limit ")
+		var edge := _first_mm_kind(why)
+		var by := "the %s edge" % edge if edge != "" else "an edge in the selection"
+		return "Fillet r=%.2f exceeds the %s mm limit set by %s — click it again to remove it, or reduce Radius" % [radius, num, by]
+	var fault := _fault_phrase(why)
+	var mid := " (%s)" % fault if fault != "" else ""
+	return "Fillet could not be built on %d edge(s)%s — fillet the R10 neck first, or pick fewer edges" % [n, mid]
+
+
+func _first_number_after(why: String, marker: String) -> String:
+	var i := why.find(marker)
+	if i < 0:
+		return ""
+	var rest := why.substr(i + marker.length())
+	var num := ""
+	for ch in rest:
+		if (ch >= "0" and ch <= "9") or ch == ".":
+			num += ch
+		else:
+			break
+	return num
+
+
+func _first_mm_kind(why: String) -> String:
+	var re := RegEx.new()
+	re.compile("(\\d+\\.\\d+ mm [a-z]+)")
+	var m := re.search(why)
+	return "" if m == null else m.get_string(1)
+
+
+func _fault_phrase(why: String) -> String:
+	var re := RegEx.new()
+	re.compile("\\((\\d+\\.\\d+ mm [a-z]+ at \\([^)]*\\))\\)")
+	var m := re.search(why)
+	return "" if m == null else m.get_string(1)
 
 
 func _open_last_feature(ftype: String) -> void:
@@ -1940,12 +1990,13 @@ func _dressup_radius_refused() -> bool:
 	if view == null or view.doc == null or not view.doc.has_method("last_graph_error"):
 		return false
 	var why := str(view.doc.last_graph_error())
-	return why.contains("limit") or why.contains("exceeds") or why.contains("radius") \
-			or why.contains("fillet failed") or why.contains("chamfer failed")
+	return why.contains("limit ") or why.contains("fillet failed") or why.contains("chamfer failed")
 
 
 func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -> void:
 	if body == "" or view == null:
+		return
+	if _pending != Pending.FILLET_EDGES and _pending != Pending.CHAMFER_EDGES:
 		return
 	if _pending_body != "" and body != _pending_body:
 		status.emit("Fillet/Chamfer: pick edges on the same body")
@@ -1964,8 +2015,17 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 		return
 	# Additive edge selection while armed (do not go through select_ray —
 	# face refine would clear the edge set).
-	if view.selected_edges.has(edge):
-		pass
+	if view.selected_edges.has(edge) or view.selected_edge == edge:
+		view.selected_edges.erase(edge)
+		if view.selected_edge == edge:
+			view.selected_edge = str(view.selected_edges[0]) if not view.selected_edges.is_empty() else ""
+		if view.selected_edges.is_empty():
+			view.selected_edge = ""
+		view._highlight_edge()
+		view.selection_changed.emit(view.selected_body, view.selected_face)
+		_dressup_from_face = false
+		status.emit(_dressup_pick_status() + " — removed")
+		return
 	elif view.selected_edges.is_empty() and view.selected_edge == "":
 		view.select_edge(body, edge)
 	else:
@@ -1976,9 +2036,41 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 		view.selected_face = ""
 		view._highlight_edge()
 		view.selection_changed.emit(view.selected_body, view.selected_face)
-	var n := maxi(view.selected_edges.size(), 1 if view.selected_edge != "" else 0)
+	_dressup_from_face = false
+	status.emit(_dressup_pick_status())
+
+
+func _edge_length_kind(body: String, edge_id: String) -> String:
+	var length := float(view.doc.measure_edge_length(edge_id))
+	var dir := view.edge_direction(body, edge_id)
+	var kind := "line"
+	if absf(dir.z) >= 0.95 and absf(dir.x) < 0.2 and absf(dir.y) < 0.2:
+		kind = "vertical"
+	elif dir == Vector3.ZERO:
+		kind = "line"
+	else:
+		var pts: PackedVector3Array = view.doc.get_edge_lines(body).get(edge_id, PackedVector3Array())
+		if pts.size() >= 2:
+			var chord: float = pts[0].distance_to(pts[pts.size() - 1])
+			if length > 0.5 and chord < length * 0.95:
+				kind = "arc"
+	return "%.1f mm %s" % [length, kind]
+
+
+func _dressup_pick_status() -> String:
 	var kind := "Fillet" if _pending == Pending.FILLET_EDGES else "Chamfer"
-	status.emit("%s: %d edge(s) — click more, Enter to apply, Esc cancel" % [kind, n])
+	var ids: Array = []
+	for e in view.selected_edges:
+		ids.append(str(e))
+	if ids.is_empty() and view.selected_edge != "":
+		ids.append(view.selected_edge)
+	var parts: PackedStringArray = PackedStringArray()
+	for id in ids:
+		parts.append(_edge_length_kind(view.selected_body, str(id)))
+	var listed := ", ".join(parts)
+	if listed == "":
+		listed = "none"
+	return "%s: %d edge(s) — %s — click more, Enter to apply, Esc cancel" % [kind, ids.size(), listed]
 
 
 func _add_dressup_face(body: String, face: String) -> void:
@@ -1995,8 +2087,8 @@ func _add_dressup_face(body: String, face: String) -> void:
 	view.selected_face = ""
 	view._highlight_edge()
 	view.selection_changed.emit(view.selected_body, view.selected_face)
-	var kind := "Fillet" if _pending == Pending.FILLET_EDGES else "Chamfer"
-	status.emit("%s: face, %d edge(s) — Enter to apply" % [kind, arr.size()])
+	_dressup_from_face = true
+	status.emit(_dressup_pick_status())
 
 
 func _arm_boolean(op: String) -> void:
