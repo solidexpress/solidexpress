@@ -1,4 +1,6 @@
 # Rung 1 replan 13 WP5 — F / Frame inside a sketch fits the whole sketch (both circles).
+# sx-034 A9: face-sketch F also keeps the part origin on the canvas, right of
+# the left rail (chrome-inset fit), even when entities sit only at the head.
 # Real events: Viewport.push_input for F / Shift+F; View HUD Frame and marking-menu
 # items 20/21 via visible buttons. Geometry is placed through the sketch API.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan13_frame.gd
