@@ -2796,6 +2796,11 @@ func _sketch_input(event: InputEvent) -> void:
 				var made: Array = sketch_mode.paste_entities()
 				status.emit("Pasted %d sketch entities" % made.size() if not made.is_empty() else "Clipboard empty")
 				accept_event()
+			KEY_S:
+				var main_n := _find_main()
+				if main_n != null and main_n.has_method("_save_current"):
+					main_n._save_current()
+					accept_event()
 			KEY_Z, KEY_Y:
 				if _gui_key(ke):
 					accept_event()

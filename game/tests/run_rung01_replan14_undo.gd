@@ -131,16 +131,17 @@ func test_jaw_undo_redo_line_save() -> void:
 	check(_id_set(sm.sketch.entity_ids()) == jaw_ids, "Ctrl+Y restores the Jaw entity id set")
 	check(_status_text(ctx) == "Redo: Jaw", "Ctrl+Y status Redo: Jaw (got `%s`)" % _status_text(ctx))
 
+	_status_log.clear()
+	await _push_key(vp, KEY_Z, true, true)
+	print("  observed empty Ctrl+Shift+Z after redo: `%s`" % _status_text(ctx))
+	check(_status_text(ctx) == "Nothing to redo", "empty redo Ctrl+Shift+Z → Nothing to redo (got `%s`)" % _status_text(ctx))
+
 	while sm.has_method("can_undo") and sm.can_undo():
 		await _push_key(vp, KEY_Z, true, false)
 	_status_log.clear()
 	await _push_key(vp, KEY_Z, true, false)
 	print("  observed empty Ctrl+Z: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to undo", "empty stack Ctrl+Z → Nothing to undo (got `%s`)" % _status_text(ctx))
-	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, true)
-	print("  observed empty Ctrl+Shift+Z: `%s`" % _status_text(ctx))
-	check(_status_text(ctx) == "Nothing to redo", "empty redo Ctrl+Shift+Z → Nothing to redo (got `%s`)" % _status_text(ctx))
 
 	await _press_rail(ctx, "Jaw")
 	await _click_uv(ctx, HEAD, "Jaw 2 click 1")
@@ -214,6 +215,7 @@ func test_coalesce_circle_hover_drag() -> void:
 	var vp: Viewport = ctx.main.get_viewport()
 	check(sm != null and sm.active, "blank sketch is open")
 	sm.snap_enabled = false
+	sm.infer_enabled = false
 	sm.fit_view()
 	await process_frame
 	await _press_rail(ctx, "Circle")
@@ -249,15 +251,23 @@ func test_coalesce_circle_hover_drag() -> void:
 	await process_frame
 	check(_undo_size(sm) == hover_n, "ten hover motions push no undo entry (stack %d)" % _undo_size(sm))
 
-	await _press_rail(ctx, "Line")
-	await _click_uv(ctx, Vector2(12.0, -6.0), "drag-line start")
-	await _click_uv(ctx, Vector2(20.0, -6.0), "drag-line end")
-	await process_frame
+	sm.infer_enabled = false
 	await _press_rail(ctx, "Select")
+	check(sm.tool == SketchMode.Tool.SELECT, "Select tool is armed for the handle drag")
+	var drag_from := Vector2.ZERO
+	var drag_to := Vector2(3.0, 0.0)
+	for id in sm.sketch.entity_ids():
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		drag_from = info["center"] as Vector2
+		drag_to = drag_from + Vector2(3.0, 0.0)
+		break
 	var drag_n := _undo_size(sm)
-	await _drag_uv(ctx, Vector2(20.0, -6.0), Vector2(20.0, 8.0), 8)
+	await _drag_uv(ctx, drag_from, drag_to, 8)
 	await process_frame
-	print("  observed drag stack %d→%d" % [drag_n, _undo_size(sm)])
+	print("  observed drag stack %d→%d from %s to %s" % [
+			drag_n, _undo_size(sm), str(drag_from), str(drag_to)])
 	check(_undo_size(sm) == drag_n + 1, "a handle drag is one undo entry (stack %d→%d)" % [drag_n, _undo_size(sm)])
 	await _shutdown(ctx)
 
@@ -559,22 +569,28 @@ func _drag_uv(ctx: FilmContext, a: Vector2, b: Vector2, steps: int) -> void:
 	var vp: Viewport = ctx.main.get_viewport()
 	var sa := FilmUI.model_to_screen(ctx, sm.to_model(a))
 	var sb := FilmUI.model_to_screen(ctx, sm.to_model(b))
+	check(FilmUI.require_on_screen(ctx, sa, "drag start"), "drag start on screen")
+	check(FilmUI.require_on_screen(ctx, sb, "drag end"), "drag end on screen")
 	var motion := InputEventMouseMotion.new()
 	motion.position = sa
 	motion.global_position = sa
 	vp.push_input(motion)
+	await process_frame
 	var down := InputEventMouseButton.new()
 	down.button_index = MOUSE_BUTTON_LEFT
 	down.pressed = true
 	down.position = sa
 	down.global_position = sa
+	down.button_mask = MOUSE_BUTTON_MASK_LEFT
 	vp.push_input(down)
+	await process_frame
 	for i in range(1, steps + 1):
 		var t := float(i) / float(steps)
 		var p: Vector2 = sa.lerp(sb, t)
 		var mv := InputEventMouseMotion.new()
 		mv.position = p
 		mv.global_position = p
+		mv.relative = p - sa
 		mv.button_mask = MOUSE_BUTTON_MASK_LEFT
 		vp.push_input(mv)
 		await process_frame
@@ -584,6 +600,7 @@ func _drag_uv(ctx: FilmContext, a: Vector2, b: Vector2, steps: int) -> void:
 	up.position = sb
 	up.global_position = sb
 	vp.push_input(up)
+	await process_frame
 	await process_frame
 
 
