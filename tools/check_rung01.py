@@ -204,6 +204,7 @@ def main():
         r.add('grip slot open from the top', slot_ok,
               '' if slot_ok else f'xm={xm} floor={floor}',
               'open at z=T-1.25, floor T-2.5, solid skin absent at z=T-0.5')
+        r.add('1mm top fillet at new T', not inside(tr, (-9.9, 0.0, T_ - 0.1)), '', 'outside')
         r.show(); sys.exit(1 if r.fail else 0)
     if kind == 'nut':
         e = sorted(ext[:2])

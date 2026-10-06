@@ -468,6 +468,19 @@ def _lint_replan11(errors: list[str]) -> None:
         _lint_current_dir_assignment(src, errors, prefix)
 
 
+def _lint_replan12(errors: list[str]) -> None:
+    paths = sorted(TESTS.glob("run_rung01_replan12_*.gd"))
+    if len(paths) != 7:
+        errors.append("expected 7 run_rung01_replan12_*.gd")
+    for path in paths:
+        src = path.read_text(encoding="utf-8")
+        prefix = f"{path.relative_to(ROOT)}:"
+        # These are validation suites: script-side setup (insert_primitive,
+        # select_entity to arm) is allowed, but the pointer and camera paths
+        # under test must be real keys and events.
+        _lint_replan11_camera(src, errors, prefix)
+
+
 def main() -> int:
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
@@ -484,6 +497,7 @@ def main() -> int:
     _lint_replan9(errors)
     _lint_replan10(errors)
     _lint_replan11(errors)
+    _lint_replan12(errors)
 
     if errors:
         print("lint_rung01_e2e: GUI shortcuts remain:", file=sys.stderr)
@@ -509,6 +523,8 @@ def main() -> int:
     print(f"lint_rung01_e2e: {n9} replan9 scripts are clean")
     print(f"lint_rung01_e2e: {n10} replan10 scripts are clean")
     print(f"lint_rung01_e2e: {n11} replan11 scripts are clean")
+    n12 = len(list(TESTS.glob("run_rung01_replan12_*.gd")))
+    print(f"lint_rung01_e2e: {n12} replan12 scripts are clean")
     return 0
 
 
