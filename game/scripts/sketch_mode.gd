@@ -1309,6 +1309,8 @@ func shaft_lines_selected() -> int:
 	var perp := Vector2(-u.y, u.x)
 	var neck := d - sqrt(rl * rl - rs * rs)
 	var added := 0
+	var lids: Array[String] = []
+	var geos: Array[Dictionary] = []
 	for side in [1.0, -1.0]:
 		var off := perp * (rs * float(side))
 		var pa := cs + off
@@ -1317,10 +1319,25 @@ func shaft_lines_selected() -> int:
 		if lid == "":
 			continue
 		_infer_line(lid, pa, pb)
+		lids.append(lid)
+		geos.append({"start": pa, "end": pb})
 		added += 1
+	# The second line's solve can drag the first onto the same side. Put both
+	# back on the constructed sides (no extra Fix: Fix + H conflicts on A3).
+	_pin_shaft_line_pair(lids, geos)
 	status.emit("Shaft lines: %d added" % added)
 	_redraw()
 	return added
+
+
+## The second line's solve can drag the first onto the same side. Put both
+## back on the constructed sides without adding Fix (Fix + H conflicts on A3).
+func _pin_shaft_line_pair(lids: Array[String], geos: Array[Dictionary]) -> void:
+	if lids.is_empty():
+		return
+	for i in lids.size():
+		sketch.set_entity_geometry(lids[i], geos[i])
+	_weld_on_circle_endpoints()
 
 
 func set_snap(on: bool) -> void:
@@ -4141,8 +4158,13 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 		return
 	var added := false
 	var d := b - a
-	var got_tangent := false
-	var got_on_circle := false
+	if d.length() > INFER_TOL:
+		if absf(d.y) <= INFER_TOL:
+			sketch.add_constraint("horizontal", [{"entity": lid, "role": "self"}], 0.0)
+			added = true
+		elif absf(d.x) <= INFER_TOL:
+			sketch.add_constraint("vertical", [{"entity": lid, "role": "self"}], 0.0)
+			added = true
 	for role_pos in [["start", a], ["end", b]]:
 		var hit := _endpoint_hit(role_pos[1], lid)
 		if hit.size() == 2:
@@ -4153,23 +4175,10 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 		else:
 			if _infer_tangent_at(lid, role_pos[1], d):
 				added = true
-				got_tangent = true
 			# Keep an endpoint that was placed on a circle on that circle.
 			# Tangent alone lets the contact slide off during solve.
 			if _infer_on_circle(lid, str(role_pos[0]), role_pos[1]):
 				added = true
-				got_on_circle = true
-	# A tangent + point-on-circle pair already locks a shaft line when the
-	# bosses are dimensioned (A3). Adding H there conflicts; shaft_lines
-	# drops it after both lines exist. Free two-circle sketches still get H.
-	if d.length() > INFER_TOL and not (got_tangent and got_on_circle \
-			and _shaft_circles_already_located()):
-		if absf(d.y) <= INFER_TOL:
-			sketch.add_constraint("horizontal", [{"entity": lid, "role": "self"}], 0.0)
-			added = true
-		elif absf(d.x) <= INFER_TOL:
-			sketch.add_constraint("vertical", [{"entity": lid, "role": "self"}], 0.0)
-			added = true
 	if added:
 		# Snap contacts onto the circles before DogLeg runs — otherwise a
 		# horizontal tangent has two solutions (y=+r and y=-r) and the solver
@@ -4193,30 +4202,6 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 		# jump it to the far side again.
 		if flipped and not _entity_has_constraint(lid, "fix"):
 			sketch.add_constraint("fix", [{"entity": lid, "role": "self"}], 0.0)
-
-
-## True when the shaft bosses are already located (A3 200-dim): origin pin
-## plus a centre distance. Free two-circle sketches stay false so they get H.
-func _shaft_circles_already_located() -> bool:
-	if sketch == null:
-		return false
-	var coincident_circles := 0
-	var has_distance := false
-	for cid in sketch.constraint_ids():
-		var info: Dictionary = sketch.constraint_info(cid)
-		var t := str(info.get("type", ""))
-		if t == "distance":
-			has_distance = true
-		if t != "coincident":
-			continue
-		for ref in info.get("refs", []):
-			if typeof(ref) != TYPE_DICTIONARY:
-				continue
-			var einfo: Dictionary = sketch.entity_info(str(ref.get("entity", "")))
-			var kind := str(einfo.get("type", ""))
-			if kind == "circle" or kind == "arc":
-				coincident_circles += 1
-	return has_distance and coincident_circles >= 1
 
 
 ## Endpoint lying on a circle, with the segment perpendicular to the radius,
