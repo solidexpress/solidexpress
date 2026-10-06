@@ -783,6 +783,8 @@ func _build_ui() -> void:
 	# Width follows the Exit Sketch label (leftover 13); do not lock to 44 px.
 	sk_scroll.custom_minimum_size = Vector2(0, 560)
 	sk_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# PASS so a wheel does not capture the next LMB; child tool buttons own clicks.
+	sk_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
 	sketch_toolbar.add_child(sk_scroll)
 	_sketch_rail_scroll = sk_scroll
 	var rows := VBoxContainer.new()

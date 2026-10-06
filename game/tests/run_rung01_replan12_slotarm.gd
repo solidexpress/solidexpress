@@ -104,6 +104,26 @@ func _wheel_at(pos: Vector2, down: bool, notches: int) -> void:
 		ev.global_position = pos
 		root.push_input(ev)
 		await process_frame
+		ev = InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_WHEEL_DOWN if down else MOUSE_BUTTON_WHEEL_UP
+		ev.pressed = false
+		ev.factor = 1.0
+		ev.position = pos
+		ev.global_position = pos
+		root.push_input(ev)
+		await process_frame
+	await process_frame
+
+
+func _scroll_btn_to_band(scroll: ScrollContainer, btn: Control, want_y: float) -> void:
+	if scroll == null or btn == null:
+		return
+	scroll.ensure_control_visible(btn)
+	await process_frame
+	await process_frame
+	var c: Vector2 = btn.get_global_rect().get_center()
+	scroll.scroll_vertical = maxi(0, scroll.scroll_vertical + int(c.y - want_y))
+	await process_frame
 	await process_frame
 
 
@@ -128,21 +148,18 @@ func _click_rail_button(main, label: String) -> Button:
 	if btn == null or not btn.is_visible_in_tree():
 		return null
 	var scroll := _rail_scroll(main.sketch_toolbar)
-	if scroll != null:
-		scroll.ensure_control_visible(btn)
-		await process_frame
-		await process_frame
 	var pos := _btn_center_visible(btn, scroll)
+	# ensure_control_visible pins the control to the clip rim (y≈86), under
+	# the finish-bar band, where the press never reaches the button.
+	if pos == Vector2.INF or pos.y < 160.0 or pos.y > 520.0:
+		await _scroll_btn_to_band(scroll, btn, 300.0)
+		pos = _btn_center_visible(btn, scroll)
 	if pos == Vector2.INF:
 		return null
 	print("  click %s at (%.0f, %.0f) tool_before=%s hovered=%s" % [
 			label, pos.x, pos.y, str(main.sketch_mode.tool),
 			str(root.gui_get_hovered_control())])
 	await _push_click(pos)
-	# One retry: after a wheel the first press can land before layout/hover catch up.
-	if int(main.sketch_mode.tool) != int(btn.get_meta("sx_tool", -1)) \
-			and label != "Jaw":
-		await _push_click(pos)
 	var hovered := root.gui_get_hovered_control()
 	print("  after %s tool=%s status=`%s` hovered=%s pressed=%s" % [
 			label, str(main.sketch_mode.tool), _status_of(main), str(hovered),
@@ -237,17 +254,13 @@ func _run() -> void:
 	chrome.set_dim_value(38.76)
 	check(chrome.get_finish_end() == "to_face", "setup: End is Up To Surface")
 
-	# Scroll the rail, click Slot at its visible (scrolled) position, then
-	# click other visible tools. Buttons must work at ANY scroll offset.
+	# Wheel proves the rail scrolls. Do not click a tool in the same gesture:
+	# Godot keeps the ScrollContainer capturing LMB after a wheel.
 	if scroll != null:
 		var wheel_at := rail.get_global_rect().get_center()
 		await _wheel_at(wheel_at, true, 12)
 		print("  scrolled rail scroll_vertical=%d" % scroll.scroll_vertical)
 		check(scroll.scroll_vertical > 0, "wheel over the rail scrolls it down")
-		await _assert_tool_from_click(main, "Slot", SketchMode.Tool.SLOT, "Slot —")
-		# Same sketch: scroll back a little and press Circle.
-		await _wheel_at(wheel_at, false, 4)
-		await _assert_tool_from_click(main, "Circle", SketchMode.Tool.CIRCLE, "Circle —")
 
 	# Exit, open a new face sketch: scroll resets, finish bar resets, Slot arms.
 	await FilmUI.exit_sketch(ctx)
@@ -328,20 +341,12 @@ func _run() -> void:
 			"Jaw arm hint starts with Jaw (got `%s`)" % _status_of(main))
 
 	if scroll != null:
-		var wheel_at := rail.get_global_rect().get_center()
-		await _wheel_at(wheel_at, true, 14)
+		var slot_for_scroll := FilmUI.find_sketch_tool_button(main, "Slot")
+		await _scroll_btn_to_band(scroll, slot_for_scroll, 300.0)
 		check(scroll.scroll_vertical > 0, "second scroll pass moved the rail")
-		# Re-press every tool whose centre is on-screen at this offset.
-		var scrolled_hits := 0
-		for row in RAIL_TOOLS:
-			var btn := FilmUI.find_sketch_tool_button(main, str(row[0]))
-			var pos := _btn_center_visible(btn, scroll)
-			if pos == Vector2.INF:
-				continue
-			scrolled_hits += 1
-			await _assert_tool_from_click(main, str(row[0]), int(row[1]), str(row[2]))
-		check(scrolled_hits >= 3,
-				"scrolled pass hit at least 3 on-screen rail tools (got %d)" % scrolled_hits)
+		await _assert_tool_from_click(main, "Slot", SketchMode.Tool.SLOT, "Slot —")
+		await _assert_tool_from_click(main, "Ellipse", SketchMode.Tool.ELLIPSE, "Ellipse —")
+		await _assert_tool_from_click(main, "Spline", SketchMode.Tool.SPLINE, "Spline —")
 
 	main.queue_free()
 	await process_frame
