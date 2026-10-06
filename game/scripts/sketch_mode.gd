@@ -2570,6 +2570,21 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var h1: Vector2 = walls[1]["hit"]
 	var k0: Vector2 = walls[0]["keep"]
 	var k1: Vector2 = walls[1]["keep"]
+	var w0: Vector2 = walls[0]["keep"] - walls[0]["hit"]
+	if w0.length_squared() > 1e-8:
+		var fdir := Vector2(-w0.y, w0.x).normalized()
+		var across: Vector2 = walls[1]["hit"] - walls[0]["hit"]
+		if fdir.dot(across) < 0.0:
+			fdir = -fdir
+		var half := across.length() * 0.5
+		if half < 0.1:
+			half = 10.0
+		h0 = cc - fdir * half
+		h1 = cc + fdir * half
+		walls[0]["hit"] = h0
+		walls[1]["hit"] = h1
+		sketch.set_entity_geometry(str(walls[0]["id"]), {"start": h0, "end": walls[0]["keep"]})
+		sketch.set_entity_geometry(str(walls[1]["id"]), {"start": h1, "end": walls[1]["keep"]})
 	var floor_id: String = sketch.add_line(h0.x, h0.y, h1.x, h1.y)
 	var arc_id := _add_keep_side_arc(cc, cr, k0, k1, keep_dir)
 	_weld_jaw_profile(floor_id, walls, arc_id)
@@ -2639,6 +2654,14 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 				{"entity": oanchor, "role": "center"}], 0.0)
 	_drop_stale_dimensions()
 	run_solve()
+	var winfo: Dictionary = sketch.entity_info(str(walls[0]["id"]))
+	var finfo: Dictionary = sketch.entity_info(floor_id)
+	if not winfo.is_empty() and not finfo.is_empty():
+		var wd: Vector2 = (winfo["end"] as Vector2) - (winfo["start"] as Vector2)
+		var fd: Vector2 = (finfo["end"] as Vector2) - (finfo["start"] as Vector2)
+		if wd.length_squared() > 1e-12 and fd.length_squared() > 1e-12:
+			if absf(wd.normalized().dot(fd.normalized())) > 0.0009:
+				run_solve()
 	_weld_jaw_profile(floor_id, walls, arc_id)
 	_redraw()
 	_redraw_selected()
@@ -4889,6 +4912,18 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 		var c: Vector2 = info["center"]
 		var r: float = info["radius"]
 		return c + Vector2(r * 0.7071, r * 0.7071)
+	if type == "angle" and ids.size() >= 2:
+		var ia: Dictionary = sketch.entity_info(str(ids[0]))
+		var ib: Dictionary = sketch.entity_info(str(ids[1]))
+		if str(ia.get("type", "")) == "line" and str(ib.get("type", "")) == "line":
+			var hit = _line_line_intersect(ia["start"], ia["end"] - ia["start"], ib["start"], ib["end"] - ib["start"])
+			if hit != null:
+				var da: Vector2 = (ia["end"] - ia["start"]).normalized()
+				var db: Vector2 = (ib["end"] - ib["start"]).normalized()
+				var bis := da + db
+				if bis.length_squared() < 1e-8:
+					bis = Vector2(-da.y, da.x)
+				return (hit as Vector2) + bis.normalized() * (DIM_LABEL_OFFSET * 2.0)
 	# Distance (or other): midpoint of the two reference points, offset perpendicular.
 	var a: Vector2
 	var b: Vector2
@@ -4935,6 +4970,7 @@ func _rebuild_dimension_labels() -> void:
 			pos += Vector2(0, 2.5)
 			guard += 1
 		taken.append(pos)
+		dim["label_pos"] = pos
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.fixed_size = true
@@ -5094,15 +5130,32 @@ func delete_selected_constraint() -> bool:
 
 ## Index of the dimension whose label sits within PICK_TOLERANCE of pos2 (-1 = none).
 func dimension_hit(pos2: Vector2) -> int:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var screen := Vector2(INF, INF)
+	if cam != null:
+		screen = cam.unproject_position(to_model(pos2))
 	var best := -1
-	var best_d := PICK_TOLERANCE
+	var best_px := 22.0
+	var best_mm := 6.0
 	for i in range(dimensions.size()):
-		var lp: Variant = _dimension_label_pos2(dimensions[i])
+		var dim: Dictionary = dimensions[i]
+		var lp: Variant = dim.get("label_pos", null)
+		if lp == null:
+			lp = _dimension_label_pos2(dim)
 		if lp == null:
 			continue
-		var d: float = pos2.distance_to(lp as Vector2)
-		if d < best_d:
-			best_d = d
+		var p: Vector2 = lp
+		var dmm := pos2.distance_to(p)
+		var win := false
+		if cam != null:
+			var sp := cam.unproject_position(to_model(p))
+			var dpx := screen.distance_to(sp)
+			if dpx < best_px:
+				best_px = dpx
+				best = i
+				win = true
+		if not win and dmm < best_mm:
+			best_mm = dmm
 			best = i
 	return best
 

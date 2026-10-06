@@ -524,6 +524,9 @@ func _show_dim_edit(index: int) -> void:
 	var dim: Dictionary = sketch_mode.dimensions[index]
 	_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
 	var at := Vector2i(get_viewport().get_mouse_position()) + Vector2i(8, 8)
+	var win := get_window()
+	if win != null:
+		at += win.position
 	_dim_edit_popup.popup(Rect2i(at, Vector2i(240, 40)))
 	# Focus after popup() returns so Window focus_entered / tree_exited are
 	# not re-entered while the popup is still wiring those connections.
