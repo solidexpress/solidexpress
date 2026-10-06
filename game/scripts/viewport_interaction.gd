@@ -4847,21 +4847,35 @@ func _selection_strip_x_fixed() -> float:
 
 
 func _left_stack_column_width(left_stack: Control) -> float:
-	var w := maxf(left_stack.size.x, left_stack.get_combined_minimum_size().x)
-	w = maxf(w, 230.0)
+	# Model-mode column only: Palette / CardPanel / OpsPanel (and whatever is
+	# already visible). Skip hidden sketch / Cam / Sim / MoveDelta chrome so
+	# x_fixed is LeftStack+8, not an unused toolbar. HBox rows inside Modify
+	# (including hidden face-ops) are summed so the first body layout already
+	# uses the widest state. When that walk is still wider than the live
+	# size, add 8 px of PanelContainer theme chrome that combined_min misses
+	# until the first real layout (280 → 322).
+	var walked := 230.0
 	for child in left_stack.get_children():
 		var c := child as Control
 		if c == null:
 			continue
-		w = maxf(w, _control_column_width(c, 0))
-	return w
+		var n := String(c.name)
+		if not c.visible and n != "CardPanel" and n != "OpsPanel" and n != "Palette":
+			continue
+		walked = maxf(walked, _control_column_width(c, 0))
+	var stack_w := maxf(left_stack.size.x, walked)
+	if walked > left_stack.size.x + 0.5:
+		stack_w = maxf(stack_w, walked + 8.0)
+	return stack_w
 
 
 func _control_column_width(c: Control, depth: int) -> float:
 	if c == null or depth > 10:
 		return 0.0
-	var w := maxf(c.custom_minimum_size.x, c.size.x)
-	w = maxf(w, c.get_combined_minimum_size().x)
+	# Pre-layout budget: mins and children only. Live size is max()'d on
+	# LeftStack so we do not add the +8 chrome pad on top of an already
+	# laid-out 322 px panel.
+	var w := maxf(c.custom_minimum_size.x, c.get_combined_minimum_size().x)
 	if c is HBoxContainer:
 		var box := c as HBoxContainer
 		var sep := float(box.get_theme_constant("separation"))
