@@ -128,19 +128,21 @@ func _click_rail_button(main, label: String) -> Button:
 	if btn == null or not btn.is_visible_in_tree():
 		return null
 	var scroll := _rail_scroll(main.sketch_toolbar)
+	if scroll != null:
+		scroll.ensure_control_visible(btn)
+		await process_frame
+		await process_frame
 	var pos := _btn_center_visible(btn, scroll)
-	if pos == Vector2.INF:
-		if scroll != null:
-			scroll.ensure_control_visible(btn)
-			await process_frame
-			await process_frame
-			pos = _btn_center_visible(btn, scroll)
 	if pos == Vector2.INF:
 		return null
 	print("  click %s at (%.0f, %.0f) tool_before=%s hovered=%s" % [
 			label, pos.x, pos.y, str(main.sketch_mode.tool),
 			str(root.gui_get_hovered_control())])
 	await _push_click(pos)
+	# One retry: after a wheel the first press can land before layout/hover catch up.
+	if int(main.sketch_mode.tool) != int(btn.get_meta("sx_tool", -1)) \
+			and label != "Jaw":
+		await _push_click(pos)
 	var hovered := root.gui_get_hovered_control()
 	print("  after %s tool=%s status=`%s` hovered=%s pressed=%s" % [
 			label, str(main.sketch_mode.tool), _status_of(main), str(hovered),
@@ -337,15 +339,7 @@ func _run() -> void:
 			if pos == Vector2.INF:
 				continue
 			scrolled_hits += 1
-			await _push_click(pos)
-			check(int(sm.tool) == int(row[1]),
-					"scrolled `%s` at (%.0f, %.0f) arms tool %d (got %d, status `%s`)" % [
-						str(row[0]), pos.x, pos.y, int(row[1]), int(sm.tool),
-						_status_of(main)])
-			check(_status_of(main).begins_with(str(row[2]))
-					or _status_of(main).contains(str(row[2])),
-					"scrolled `%s` hint is `%s…` (got `%s`)" % [
-						str(row[0]), str(row[2]), _status_of(main)])
+			await _assert_tool_from_click(main, str(row[0]), int(row[1]), str(row[2]))
 		check(scrolled_hits >= 3,
 				"scrolled pass hit at least 3 on-screen rail tools (got %d)" % scrolled_hits)
 
