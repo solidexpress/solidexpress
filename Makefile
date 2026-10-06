@@ -77,6 +77,7 @@ test-godot: build import preflight
 	$(GODOT) --headless --path game --script tests/run_ui_button_coverage_tests.gd
 	$(GODOT) --headless --path game --script tests/run_film_manifest_smoke.gd
 	$(GODOT) --headless --path game --script tests/run_visual_ux_tests.gd
+	$(GODOT) --headless --path game --script tests/run_body_move_click_tests.gd
 	$(GODOT) --headless --path game --script tests/run_move_snap_tests.gd
 	$(GODOT) --headless --path game --script tests/run_timeline_ux_tests.gd
 	$(GODOT) --headless --path game --script tests/run_measure_overlay_tests.gd

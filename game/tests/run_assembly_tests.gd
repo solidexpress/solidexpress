@@ -360,6 +360,7 @@ func test_pick_and_drag_instance(main) -> void:
 	check(vi._pending_instance_move, "instance drag armed (deferred)")
 	var mm := InputEventMouseMotion.new()
 	mm.position = screen + Vector2(60, 0)
+	mm.button_mask = MOUSE_BUTTON_MASK_LEFT
 	vi._input(mm)
 	check(vi._drag_mode == ViewportInteraction.DragMode.MOVE_INSTANCE,
 		"travel past slop arms MOVE_INSTANCE")
@@ -438,6 +439,7 @@ func test_drag_resnap_with_mate(main) -> void:
 		return
 	var mm := InputEventMouseMotion.new()
 	mm.position = screen + Vector2(50, 0)
+	mm.button_mask = MOUSE_BUTTON_MASK_LEFT
 	vi._input(mm)
 	var release := InputEventMouseButton.new()
 	release.button_index = MOUSE_BUTTON_LEFT

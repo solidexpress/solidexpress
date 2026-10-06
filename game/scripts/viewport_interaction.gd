@@ -103,6 +103,8 @@ var _rmb_orbiting := false
 ## LMB on selected body: wait for travel before arming move (avoids nudge).
 var _pending_body_move := false
 var _pending_move_point := Vector3.ZERO
+## True when the pending body-move started on the yellow lift grip.
+var _pending_move_z_lock := false
 ## LMB on a component instance: deferred ground-plane drag; on release the
 ## transform commits and mates re-solve (peer "drag then snap home" feel).
 var _pending_instance_move := false
@@ -188,6 +190,9 @@ var _precision_rotate_axis := Vector3.ZERO
 var _precision_rotate_center := Vector3.ZERO
 
 const CLICK_SLOP := 12.0
+## Body/instance translate needs this much screen travel while LMB is held.
+## A still click or a sub-slop wiggle (sx-033 A11d) must never commit a move.
+const BODY_MOVE_SLOP := 8.0
 ## Empty-drag travel below this is still treated as a deselect click (trackpad).
 const ORBIT_CLICK_SLOP := 22.0
 const HANDLE_PX := 22.0
@@ -1585,6 +1590,8 @@ func cancel_stack() -> bool:
 		if vp != null and _should_release_cancel_focus(vp.gui_get_focus_owner()):
 			vp.gui_get_focus_owner().release_focus()
 		return true
+	if _cancel_modifying_drag():
+		return true
 	if vp != null:
 		var focus := vp.gui_get_focus_owner()
 		if _should_release_cancel_focus(focus):
@@ -1604,6 +1611,50 @@ func cancel_stack() -> bool:
 		status.emit("Selection cleared")
 		acted = true
 	return acted
+
+
+## Esc during a live / pending body translate restores the pre-drag pose and
+## does not commit. A later click can still select the face.
+func _cancel_modifying_drag() -> bool:
+	if _drag_mode != DragMode.MOVE_BODY and _drag_mode != DragMode.MOVE_INSTANCE \
+			and not _pending_body_move and not _pending_instance_move:
+		return false
+	if _drag_mode == DragMode.MOVE_BODY and view != null:
+		var node := view.body_node(view.selected_body)
+		if node != null:
+			node.transform = _move_start_node_xform
+	if _drag_mode == DragMode.MOVE_INSTANCE and view != null:
+		var inode := view.instance_node(_drag_instance_id)
+		if inode != null:
+			inode.transform = _instance_start_xform
+	_drag_mode = DragMode.NONE
+	_pending_body_move = false
+	_pending_instance_move = false
+	_pending_move_z_lock = false
+	_pressed = false
+	_press_travel = 0.0
+	_move_axis_lock = -1
+	_drag_accum = Vector3.ZERO
+	_drag_instance_id = ""
+	_move_snap_active = {}
+	_move_snap_hover_body = ""
+	_move_start_bb = {}
+	_hide_snap_bar_unless_placing()
+	if transform_hud != null:
+		transform_hud.hide_move_delta()
+	status.emit("Move cancelled")
+	queue_redraw()
+	return true
+
+
+## True when LMB travel is enough to start a body/instance translate.
+func _body_move_gesture_ready(pos: Vector2) -> bool:
+	return pos.distance_to(_press_pos) >= BODY_MOVE_SLOP
+
+
+## True when this LMB release is a click (still, or a sub-dead-zone wiggle).
+func _body_click_release() -> bool:
+	return _press_travel < BODY_MOVE_SLOP
 
 
 ## True when Esc should drop focus from a LineEdit, a SpinBox, or a control
@@ -2247,6 +2298,14 @@ func _handle_model_pointer(event: InputEvent) -> bool:
 					camera._orbit_by(rel.x, rel.y)
 			return true
 		if _pressed:
+			# Real body/instance drags set the left mask. Motion after a lost
+			# mouse-up (plain face click, then pointer move) must not translate.
+			var no_lmb := (mm.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0
+			if no_lmb and (_pending_body_move or _pending_instance_move \
+					or _drag_mode == DragMode.MOVE_BODY \
+					or _drag_mode == DragMode.MOVE_INSTANCE):
+				_on_release(_press_pos)
+				return true
 			_on_drag(mm.position)
 			return true
 		_update_hover(mm.position)
@@ -2767,6 +2826,7 @@ func _on_press(pos: Vector2) -> void:
 	_pp_preview_dist = 0.0
 	_pending_body_move = false
 	_pending_instance_move = false
+	_pending_move_z_lock = false
 	_move_axis_lock = -1
 	grab_focus()
 	view.clear_hover()
@@ -2829,9 +2889,8 @@ func _on_press(pos: Vector2) -> void:
 	var hit_selected := (not hit.is_empty() and view.selected_body != ""
 			and str(hit.get("body", "")) == view.selected_body)
 
-	# Body mesh itself is the move grip. Defer MOVE until past CLICK_SLOP so a
-	# tiny press still drill-selects (face/edge) instead of nudging. Face drag
-	# starts push/pull immediately. Stretch / rotate grips when ray misses body.
+	# Body mesh itself is the move grip. Defer MOVE until past BODY_MOVE_SLOP
+	# so a still click or a sub-slop wiggle still drill-selects (face/edge).
 	if hit_selected:
 		_drag_start_mouse = pos
 		_drag_start_point = hit["point"]
@@ -2844,6 +2903,7 @@ func _on_press(pos: Vector2) -> void:
 		else:
 			_pending_body_move = true
 			_pending_move_point = hit["point"]
+			_pending_move_z_lock = false
 			queue_redraw()
 		return
 
@@ -2866,8 +2926,11 @@ func _on_press(pos: Vector2) -> void:
 	# tip wins over the outward face arrow on primitives.
 	var z_grip := _pick_z_move_grip(pos)
 	if not z_grip.is_empty():
-		_begin_move_body(pos, z_grip["point"])
-		_move_axis_lock = AXIS_Z
+		# Same click-vs-drag gate as the body mesh: a tap on the lift must
+		# not start a translate (Esc still cancels a real held drag).
+		_pending_body_move = true
+		_pending_move_point = z_grip["point"]
+		_pending_move_z_lock = true
 		_press_empty = false
 		status.emit("Move lift — drag to leave / approach the active plane")
 		return
@@ -2946,15 +3009,24 @@ func _on_drag(pos: Vector2) -> void:
 				else _plane_hit(ray[0], ray[1], triball.origin, triball.axis)
 		triball.update_drag(tpt)
 		return
-	if pos.distance_to(_press_pos) < CLICK_SLOP:
-		return
-	# Deferred body move after travel threshold.
+	# Body-move dead zone is BODY_MOVE_SLOP (8 px), tighter than orbit slop.
 	if _pending_body_move and _drag_mode == DragMode.NONE:
+		if not _body_move_gesture_ready(pos):
+			return
 		_pending_body_move = false
 		_begin_move_body(_press_pos, _pending_move_point)
+		if _pending_move_z_lock:
+			_move_axis_lock = AXIS_Z
+			_pending_move_z_lock = false
 	if _pending_instance_move and _drag_mode == DragMode.NONE:
+		if not _body_move_gesture_ready(pos):
+			return
 		_pending_instance_move = false
 		_drag_mode = DragMode.MOVE_INSTANCE
+	# Orbit still uses the larger CLICK_SLOP; a body-move already armed above
+	# must apply the live delta even between 8 and 12 px.
+	if _drag_mode == DragMode.NONE and pos.distance_to(_press_pos) < CLICK_SLOP:
+		return
 	# Empty-space drag: orbit (or pan when sketch orientation is locked).
 	# Ctrl+empty-drag: rubber-band box select.
 	if _drag_mode == DragMode.NONE and _press_empty and _place_kind == "":
@@ -3242,7 +3314,7 @@ func _on_release(pos: Vector2) -> void:
 			_press_travel = 0.0
 			return
 		DragMode.MOVE_BODY:
-			if not was_click and _drag_accum.length() > 1e-6:
+			if not _body_click_release() and _drag_accum.length() > 1e-6:
 				# Reset live preview, then commit absolute Δ from pre-drag pose.
 				var node := view.body_node(view.selected_body)
 				if node != null:
@@ -3328,8 +3400,9 @@ func _on_release(pos: Vector2) -> void:
 			return
 		DragMode.MOVE_INSTANCE:
 			var inode := view.instance_node(_drag_instance_id)
+			var inst_click := was_click or _body_click_release()
 			# Dropped on a connector: fasten there instead of leaving it loose.
-			if not was_click and inode != null and _snap_on_drop():
+			if not inst_click and inode != null and _snap_on_drop():
 				_drag_mode = DragMode.NONE
 				_drag_instance_id = ""
 				_box_drag = false
@@ -3337,14 +3410,14 @@ func _on_release(pos: Vector2) -> void:
 				_press_travel = 0.0
 				return
 			# A jointed part has one degree of freedom; the drag drives it.
-			if not was_click and inode != null and _drive_joint_from_drag(pos):
+			if not inst_click and inode != null and _drive_joint_from_drag(pos):
 				_drag_mode = DragMode.NONE
 				_drag_instance_id = ""
 				_box_drag = false
 				_additive_click = false
 				_press_travel = 0.0
 				return
-			if not was_click and inode != null:
+			if not inst_click and inode != null:
 				var rot := _instance_rotation(_drag_instance_id)
 				if view.doc.set_instance_transform(_drag_instance_id,
 						inode.transform.origin, rot[0], rot[1]):
