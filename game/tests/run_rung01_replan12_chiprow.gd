@@ -58,6 +58,7 @@ func _run() -> void:
 	await _settle()
 	check(sm.selected.size() == 2, "two circles are selected")
 	check(sm.selection_actions().has("shaft_lines"), "two circles offer shaft_lines")
+	_assert_chip_order(main.sketch_chrome, sm.selection_actions(), "two circles selected")
 	_assert_chip_row(ctx, "two circles selected")
 	var shaft := FilmUI.find_button(main.sketch_chrome, "Shaft Lines")
 	check(shaft != null and shaft.is_visible_in_tree(),
@@ -76,10 +77,11 @@ func _run() -> void:
 	var chrome: SketchContextChrome = main.sketch_chrome
 	chrome.show_selection_actions(SIXTEEN_CHIPS, Vector2(12, 219))
 	await _settle()
-	check(_action_chip_texts(chrome) == _labels_of(SIXTEEN_CHIPS),
-			"16-chip case keeps chip order and labels (got %s)" % str(_action_chip_texts(chrome)))
+	_assert_chip_order(chrome, SIXTEEN_CHIPS, "16-chip case")
 	_assert_chip_row(ctx, "16-chip case")
-	check(_action_chips(chrome).size() == 16, "16-chip case shows 16 chips (got %d)" % _action_chips(chrome).size())
+	var shaft16 := FilmUI.find_button(chrome, "Shaft Lines")
+	check(shaft16 != null and shaft16.is_visible_in_tree() and not (shaft16 is MenuButton),
+			"16-chip case keeps Shaft Lines on the open row, not in … More")
 
 	# Smart Dim second-pick: arm the tool on two selected circles (the long
 	# row still showing), then pick the Ø20 centre so a first pick is pending.
@@ -138,11 +140,20 @@ func _action_chips(chrome: SketchContextChrome) -> Array[Button]:
 	return out
 
 
-func _action_chip_texts(chrome: SketchContextChrome) -> PackedStringArray:
-	var texts := PackedStringArray()
+func _open_row_chips(chrome: SketchContextChrome) -> Array[Button]:
+	var out: Array[Button] = []
 	for b in _action_chips(chrome):
-		texts.append(b.text)
-	return texts
+		if b is MenuButton and b.text.begins_with("…"):
+			continue
+		out.append(b)
+	return out
+
+
+func _more_button(chrome: SketchContextChrome) -> MenuButton:
+	for b in _action_chips(chrome):
+		if b is MenuButton and b.text.begins_with("…"):
+			return b as MenuButton
+	return null
 
 
 func _labels_of(verbs: Array) -> PackedStringArray:
@@ -150,6 +161,27 @@ func _labels_of(verbs: Array) -> PackedStringArray:
 	for v in verbs:
 		texts.append(str(v).capitalize().replace("_", " "))
 	return texts
+
+
+func _assert_chip_order(chrome: SketchContextChrome, verbs: Array, why: String) -> void:
+	var expected := _labels_of(verbs)
+	var open_texts := PackedStringArray()
+	for b in _open_row_chips(chrome):
+		open_texts.append(b.text)
+	var more := _more_button(chrome)
+	var overflow := PackedStringArray()
+	if more != null:
+		var popup := more.get_popup()
+		for i in popup.item_count:
+			overflow.append(popup.get_item_text(i))
+	var got := PackedStringArray()
+	got.append_array(open_texts)
+	got.append_array(overflow)
+	check(got == expected, "%s keeps chip order and labels (got %s)" % [why, str(got)])
+	if more != null:
+		check(open_texts.size() < expected.size(),
+				"%s: overflow lives in … More (%d on the row, %d in the menu)" % [
+				why, open_texts.size(), overflow.size()])
 
 
 func _assert_chip_row(ctx: FilmContext, why: String) -> void:
@@ -170,6 +202,9 @@ func _assert_chip_row(ctx: FilmContext, why: String) -> void:
 		check(bar.get_global_rect().position.x >= rail_rect.end.x - 0.5,
 				"%s: action bar starts to the right of the rail (bar x=%.1f rail right=%.1f)" % [
 				why, bar.get_global_rect().position.x, rail_rect.end.x])
+		check(bar.get_global_rect().size.y < 50.0,
+				"%s: overflow is in … More, not a second chip line (bar %s)" % [
+				why, str(bar.get_global_rect())])
 	for b in chips:
 		var r := b.get_global_rect()
 		var right_of := r.position.x >= rail_rect.end.x - 0.5
