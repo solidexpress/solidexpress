@@ -25,6 +25,8 @@ var _view_popup: PopupMenu
 var autosave_timer: Timer
 var sketch_mode: SketchMode
 var sketch_toolbar: PanelContainer
+var _sketch_rail_scroll: ScrollContainer
+var _sketch_rail_buttons: Array[Button] = []
 var sketch_chrome: SketchContextChrome
 ## Multi-selected sketch pad feature ids (Ctrl+click outside sketch mode).
 var selected_sketch_pads: Array[String] = []
@@ -777,10 +779,14 @@ func _build_ui() -> void:
 	sketch_toolbar.visible = false
 	left_stack.add_child(sketch_toolbar)
 	var sk_scroll := ScrollContainer.new()
+	sk_scroll.name = "SketchRailScroll"
 	# Width follows the Exit Sketch label (leftover 13); do not lock to 44 px.
 	sk_scroll.custom_minimum_size = Vector2(0, 560)
 	sk_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# PASS so a wheel does not capture the next LMB; child tool buttons own clicks.
+	sk_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
 	sketch_toolbar.add_child(sk_scroll)
+	_sketch_rail_scroll = sk_scroll
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 2)
 	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -791,6 +797,9 @@ func _build_ui() -> void:
 	exit_btn.pressed.connect(_on_exit_sketch_pressed)
 	rows.add_child(exit_btn)
 	rows.add_child(HSeparator.new())
+	_sketch_rail_buttons.clear()
+	var rail_group := ButtonGroup.new()
+	rail_group.allow_unpress = false
 	for entry in [
 			[SketchMode.Tool.SELECT, "select", "Select (S)", "Select"],
 			[SketchMode.Tool.LINE, "line", "Line / centerline (L)", "Line"],
@@ -810,7 +819,17 @@ func _build_ui() -> void:
 			[SketchMode.Tool.PATTERN, "pattern", "Linear / circular pattern", "Pattern"],
 			]:
 		var b := UIIcons.button(entry[1], entry[3], entry[2])
-		b.pressed.connect(sketch_mode.set_tool.bind(entry[0]))
+		b.name = "Tool%s" % str(entry[3]).replace(" ", "")
+		b.toggle_mode = true
+		b.button_group = rail_group
+		b.set_meta("sx_tool", int(entry[0]))
+		# Bind the enum now (not the loop index) so Slot after Ellipse cannot
+		# pick up a neighbour's tool id. `pressed` keeps FilmUI.emit working;
+		# `toggled` only arms on press-on so unpressing Rect cannot re-arm Rect.
+		var tool_id := int(entry[0])
+		b.pressed.connect(_on_sketch_rail_tool.bind(tool_id))
+		b.toggled.connect(_on_sketch_rail_toggled.bind(tool_id))
+		_sketch_rail_buttons.append(b)
 		rows.add_child(b)
 		if entry[0] == SketchMode.Tool.RECT:
 			var jaw := UIIcons.button("wrench_open", "Jaw",
@@ -1443,8 +1462,17 @@ func _on_sketch_session_started(msg: String) -> void:
 		dof_label.text = "— DOF"
 		dof_label.remove_theme_color_override("font_color")
 	view.refresh_sketch_pads(sketch_mode.editing_fid if sketch_mode.editing_fid != "" else "_active")
+	_reset_sketch_rail_scroll()
+	if sketch_mode != null:
+		_sync_sketch_rail_highlight(int(sketch_mode.tool))
 	if sketch_chrome != null:
 		sketch_chrome.visible = true
+		# A brand-new sketch (not begin_edit / Save As re-enter) starts Blind/New.
+		if sketch_mode != null and sketch_mode.editing_fid == "":
+			if sketch_chrome.has_method("reset_finish_for_new_sketch"):
+				sketch_chrome.reset_finish_for_new_sketch()
+			else:
+				sketch_chrome.reset_finish_defaults()
 		sketch_chrome.show_for_session(true)
 	if not sketch_mode.tool_changed.is_connected(_on_sketch_tool_changed):
 		sketch_mode.tool_changed.connect(_on_sketch_tool_changed)
@@ -1465,9 +1493,36 @@ func _on_sketch_session_ended() -> void:
 		sketch_chrome.visible = false
 
 
+func _on_sketch_rail_toggled(on: bool, t: int) -> void:
+	if on:
+		_on_sketch_rail_tool(t)
+
+
+func _on_sketch_rail_tool(t: int) -> void:
+	if sketch_mode != null:
+		sketch_mode.set_tool(t as SketchMode.Tool)
+
+
+func _sync_sketch_rail_highlight(tool: int) -> void:
+	for b in _sketch_rail_buttons:
+		if b == null or not is_instance_valid(b):
+			continue
+		var want := int(b.get_meta("sx_tool", -1)) == tool
+		if b.button_pressed != want:
+			b.set_pressed_no_signal(want)
+
+
+func _reset_sketch_rail_scroll() -> void:
+	if _sketch_rail_scroll != null:
+		_sketch_rail_scroll.scroll_vertical = 0
+
+
 func _on_sketch_tool_changed(tool: int) -> void:
+	_sync_sketch_rail_highlight(tool)
 	if sketch_chrome == null:
 		return
+	if sketch_chrome.has_method("sync_for_tool"):
+		sketch_chrome.sync_for_tool()
 	var variants: Array = sketch_mode.variants_for_tool(tool as SketchMode.Tool)
 	if variants.is_empty():
 		sketch_chrome.hide_variants()
@@ -1552,6 +1607,16 @@ func _on_sketch_dim_submitted(value: float) -> void:
 			if sketch_chrome != null:
 				sketch_chrome.release_dim_focus()
 			return
+	# Slot radius lives in the dim blank until the first centre is down.
+	# Enter must not fall through to "Select entities with the Sel tool first".
+	if sketch_mode != null and sketch_mode.active \
+			and sketch_mode.tool == SketchMode.Tool.SLOT \
+			and not sketch_mode.has_single_dof_preview():
+		sketch_mode.slot_radius = maxf(value, 0.01)
+		_on_status("Slot radius %.4f — click the first centre, then the second (or type the length)" % sketch_mode.slot_radius)
+		if sketch_chrome != null:
+			sketch_chrome.release_dim_focus()
+		return
 	_apply_dimension()
 
 
