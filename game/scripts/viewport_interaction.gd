@@ -378,17 +378,28 @@ func _build_selection_strip() -> void:
 	_strip_radius.name = "StripRadius"
 	SxUi.configure_spin(_strip_radius, 0.05, 100.0, 0.5, 0.5)
 	_strip_radius.suffix = "mm"
+	_strip_radius.update_on_text_changed = false
 	_strip_radius.custom_minimum_size = Vector2(88, 0)
 	_strip_radius.tooltip_text = "Fillet radius / Chamfer distance — edit, then Enter"
 	_strip_radius.value_changed.connect(func(v: float) -> void:
-		if _strip_radius_editing:
+		if _strip_radius_editing or _strip_radius_syncing:
 			return
 		if ops_panel != null and ops_panel.has_method("set_dressup_radius"):
 			ops_panel.set_dressup_radius(v))
 	var strip_le := _strip_radius.get_line_edit()
 	strip_le.focus_entered.connect(func() -> void:
+		if _strip_radius_syncing:
+			return
 		_strip_radius_editing = true
 		_panel_changed_while_strip_focused = false
+		# Tab onto a latched partial ("0.0" from typing 10 in the panel) must
+		# not become the model. The panel value is source of truth until the
+		# user types here.
+		if ops_panel != null and ops_panel.has_method("dressup_radius"):
+			var model: float = ops_panel.dressup_radius()
+			var parsed := _parse_strip_radius_text(strip_le.text)
+			if is_nan(parsed) or not is_equal_approx(parsed, model):
+				_write_strip_radius(model, true)
 		_strip_focus_text = strip_le.text)
 	strip_le.focus_exited.connect(func() -> void:
 		if _strip_radius_syncing:
@@ -4878,15 +4889,12 @@ func _ensure_dressup_radius_connected() -> void:
 func _on_dressup_radius_changed(v: float) -> void:
 	if _strip_radius == null:
 		return
-	if _strip_radius_editing:
+	# Only skip when the user is mid-typing in the strip. A latched partial
+	# ("0.0" vs panel 10) is not a user edit — overwrite it.
+	if _strip_line_focused() and _strip_user_typed():
 		_panel_changed_while_strip_focused = true
-	if _strip_radius_text_dirty():
 		return
 	_write_strip_radius(v)
-	if _strip_radius_editing:
-		var le := _strip_radius.get_line_edit()
-		if le != null:
-			_strip_focus_text = le.text
 
 
 func _parse_strip_radius_text(text: String) -> float:
@@ -4896,16 +4904,11 @@ func _parse_strip_radius_text(text: String) -> float:
 	return float(t)
 
 
-func _strip_radius_text_dirty() -> bool:
+func _strip_line_focused() -> bool:
 	if _strip_radius == null:
 		return false
 	var le := _strip_radius.get_line_edit()
-	if le == null or not le.has_focus():
-		return false
-	var parsed := _parse_strip_radius_text(le.text)
-	if is_nan(parsed):
-		return true
-	return not is_equal_approx(parsed, _strip_radius.value)
+	return le != null and le.has_focus()
 
 
 func _strip_user_typed() -> bool:
@@ -4917,36 +4920,30 @@ func _strip_user_typed() -> bool:
 	return le.text != _strip_focus_text
 
 
-func _write_strip_radius(v: float) -> void:
+func _write_strip_radius(v: float, force := false) -> void:
 	if _strip_radius == null:
 		return
 	var le := _strip_radius.get_line_edit()
-	var restore_focus := false
+	if not force and le != null and le.has_focus() and _strip_user_typed():
+		return
 	_strip_radius_syncing = true
-	if le != null and le.has_focus():
-		var parsed_focus := _parse_strip_radius_text(le.text)
-		if is_nan(parsed_focus) or not is_equal_approx(parsed_focus, v):
-			restore_focus = true
-			le.release_focus()
+	v = clampf(v, _strip_radius.min_value, _strip_radius.max_value)
 	var already := is_equal_approx(_strip_radius.value, v)
 	_strip_radius.set_value_no_signal(v)
 	if le != null:
 		var parsed := _parse_strip_radius_text(le.text)
 		if already and (is_nan(parsed) or not is_equal_approx(parsed, v)):
 			# Value already matches, so SpinBox will not refresh a stale LineEdit
-			# ("0.0" vs 1.0). Nudge so the widget formats the text itself.
+			# ("0.0" vs 10). Nudge so the widget formats the text itself.
 			var bump := 0.001 if v + 0.001 <= _strip_radius.max_value else -0.001
 			_strip_radius.set_value_no_signal(v + bump)
 			_strip_radius.set_value_no_signal(v)
 		parsed = _parse_strip_radius_text(le.text)
-		# Unfocused: SpinBox formatting is allowed. Never write while focused
-		# (that race printed 1.0 / 0.0 against a panel 10).
-		if not le.has_focus() and (is_nan(parsed) or not is_equal_approx(parsed, v)):
+		if is_nan(parsed) or not is_equal_approx(parsed, v):
 			var suffix := str(_strip_radius.suffix)
 			le.text = str(_strip_radius.value) + (" " if suffix != "" else "") + suffix
+		_strip_focus_text = le.text
 	_strip_radius_syncing = false
-	if restore_focus and le != null:
-		le.grab_focus()
 
 
 func _commit_strip_radius() -> void:
@@ -4957,16 +4954,26 @@ func _commit_strip_radius() -> void:
 	if not armed:
 		return
 	# Only push strip → panel when the user typed here. A stale LineEdit
-	# (default 0.5, or text left behind after a panel edit) must not win.
+	# (default 0.5, or a latched partial 0 from panel typing) must not win.
 	if _panel_changed_while_strip_focused or not _strip_user_typed():
+		if ops_panel.has_method("dressup_radius"):
+			_write_strip_radius(ops_panel.dressup_radius())
+		return
+	var le := _strip_radius.get_line_edit()
+	var parsed := NAN
+	if le != null:
+		parsed = _parse_strip_radius_text(le.text)
+	if is_nan(parsed):
+		if ops_panel.has_method("dressup_radius"):
+			_write_strip_radius(ops_panel.dressup_radius())
 		return
 	var was_editing := _strip_radius_editing
 	_strip_radius_editing = false
-	_strip_radius.apply()
+	_strip_radius.set_value_no_signal(
+			clampf(parsed, _strip_radius.min_value, _strip_radius.max_value))
 	if ops_panel.has_method("set_dressup_radius"):
 		ops_panel.set_dressup_radius(_strip_radius.value)
 	_strip_radius_editing = was_editing
-	var le := _strip_radius.get_line_edit()
 	if le != null:
 		_strip_focus_text = le.text
 
@@ -4989,6 +4996,9 @@ func _sync_strip_dressup_radius() -> void:
 		_strip_radius.custom_arrow_step = 0.5
 		_strip_radius.step = 0.001
 	if not armed:
+		return
+	if _strip_line_focused() and _strip_user_typed():
+		_panel_changed_while_strip_focused = true
 		return
 	if ops_panel != null and ops_panel.has_method("dressup_radius"):
 		_write_strip_radius(ops_panel.dressup_radius())

@@ -6,6 +6,11 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 - Typing the centre-to-centre length after the first Slot centre printed `Length 150.0000 mm` because `click()` emitted `Slot c-c …` but did not set `last_commit_text`, so dim Enter overwrote the bar. Slot commit now stores that sentence (with ` — typed` when the length was typed). Editing the 150 label re-reads `Slot c-c … R…` instead of a bare `Dimension updated`. After the first centre the dim blank is labelled `c-c`, not `Radius r`.
 - Gate: `run_rung01_replan12_status.gd`, `run_rung01_replan12_slotarm.gd` (typed 150 via dim Enter), wrench B13.1.
 
+## sx-034 GUI L3 — Fillet Radius fields stay one number
+- While Fillet is armed, the selection-strip `R` field, Modify panel Radius, and status `Fillet r=…` share `OpsPanel` as the model.
+- Typing in the panel (including a soft-GL intermediate `0` on the way to `10`) commits on Tab/focus-exit and pushes strip + status; a partial digit must not latch on the strip. Typing `1.5` in the strip does the same the other way.
+- Gate: `run_rung01_replan13_radius.gd`.
+
 ## sx-034 A9b — Up To Surface status depth
 - Finish-bar End Up To Surface was accepted (jaw cut through, opposite face stored) but the success line echoed the leftover Blind Distance spinbox: `Extrude Up To Surface 20.0000 mm`. Checklist A9b wants `Extrude Up To Surface 10.0000 mm` (sketch at z=10 to opposite face z=0).
 - `_on_sketch_finish` now reports `up_to_surface_depth()` (sketch-plane origin to the picked face along the sketch normal) and omits the Blind number when that depth cannot be measured.
