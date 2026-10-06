@@ -5028,28 +5028,9 @@ func reapply_dimension_records(kept: Array) -> void:
 func _sync_missing_radius_records() -> void:
 	if sketch == null:
 		return
-	_ensure_circle_radius_constraints()
+	# Label every dimensional constraint the kernel already has. Do not add
+	# new radius constraints here — that makes Shaft Lines / infer conflict.
 	dimensions = _merge_dimension_records(_dimension_records_from_sketch(), dimensions)
-
-
-## Typed circle / arc radii become kernel radius constraints so the one
-## builder can label them both live and after Save / Open.
-func _ensure_circle_radius_constraints() -> void:
-	if sketch == null:
-		return
-	for id in sketch.entity_ids():
-		if sketch.is_construction(id):
-			continue
-		var info: Dictionary = sketch.entity_info(id)
-		var kind := str(info.get("type", ""))
-		if kind != "circle" and kind != "arc":
-			continue
-		var r := float(info.get("radius", 0.0))
-		if r <= 1e-6:
-			continue
-		if _entity_has_constraint(id, "radius") or _entity_has_constraint(id, "diameter"):
-			continue
-		sketch.add_constraint("radius", [{"entity": id, "role": "self"}], r)
 
 
 ## Double-click or right-click ends a line chain / commits a spline.
