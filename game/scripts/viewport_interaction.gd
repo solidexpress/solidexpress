@@ -2842,13 +2842,20 @@ func _sketch_input(event: InputEvent) -> void:
 		accept_event()
 
 
-## Polygon and circle: the second point is a second press or Enter, not the
-## mouse-up that ends the first click. Preview still tracks via hover.
+## Polygon, circle, and multi-click rectangles (Jaw / three-point / parallelogram):
+## each pick is a press, not the mouse-up that ends the previous click. A shaky
+## click-2 release must not become Jaw click 3 (zero-width commit).
 func _sketch_skips_mouse_up_commit() -> bool:
 	if sketch_mode == null:
 		return false
-	return sketch_mode.tool == SketchMode.Tool.POLYGON \
-			or sketch_mode.tool == SketchMode.Tool.CIRCLE
+	if sketch_mode.tool == SketchMode.Tool.POLYGON \
+			or sketch_mode.tool == SketchMode.Tool.CIRCLE:
+		return true
+	if sketch_mode.tool == SketchMode.Tool.RECT:
+		var v := sketch_mode.tool_variant
+		return v == "center_three_point" or v == "three_point" \
+				or v == "parallelogram"
+	return false
 
 
 func _is_length_type_key(ke: InputEventKey) -> bool:

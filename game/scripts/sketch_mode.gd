@@ -327,6 +327,8 @@ func plane_normal() -> Vector3:
 
 ## 2D AABB of all entities inflated by `pad_frac` (0.2 = 20% past extents).
 ## Returns {min, max, center, radius} or empty if no entities.
+## Face sketches also keep the part origin (0,0) and the host body in the
+## fit so Frame cannot bury the ground origin under the left rail.
 func sketch_extents(pad_frac := 0.2) -> Dictionary:
 	if sketch == null:
 		return {}
@@ -354,6 +356,13 @@ func sketch_extents(pad_frac := 0.2) -> Dictionary:
 				mx = mx.max(p)
 	if not is_finite(mn.x):
 		return {}
+	if target_fid != "" or support_host != "":
+		mn = mn.min(Vector2.ZERO)
+		mx = mx.max(Vector2.ZERO)
+		var host := _host_body_uv_aabb()
+		if not host.is_empty():
+			mn = mn.min(host["min"])
+			mx = mx.max(host["max"])
 	var size := mx - mn
 	var pad := size * pad_frac * 0.5
 	pad.x = maxf(pad.x, 2.0)
@@ -366,6 +375,36 @@ func sketch_extents(pad_frac := 0.2) -> Dictionary:
 	var radius := maxf(half.x, half.y) * 1.414
 	return {"min": mn, "max": mx, "center": center3, "radius": maxf(radius, 5.0),
 			"min2": mn, "max2": mx}
+
+
+## Projected 2D AABB of the body this face sketch sits on, in sketch UV.
+func _host_body_uv_aabb() -> Dictionary:
+	if view == null or view.doc == null:
+		return {}
+	var body := ""
+	if target_fid != "" and view.has_method("body_of_feature"):
+		body = view.body_of_feature(target_fid)
+	if body == "" and view.selected_body != "":
+		body = view.selected_body
+	if body == "":
+		return {}
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if bb.is_empty():
+		return {}
+	var bmin: Vector3 = bb["min"]
+	var bmax: Vector3 = bb["max"]
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	for x in [bmin.x, bmax.x]:
+		for y in [bmin.y, bmax.y]:
+			for z in [bmin.z, bmax.z]:
+				var rel := Vector3(x, y, z) - plane_origin
+				var uv := Vector2(rel.dot(plane_x), rel.dot(plane_y))
+				mn = mn.min(uv)
+				mx = mx.max(uv)
+	if not is_finite(mn.x):
+		return {}
+	return {"min": mn, "max": mx}
 
 
 ## Sketch 2D → model space.
@@ -844,6 +883,24 @@ func _up_to_face_id() -> String:
 	if chrome == null:
 		return ""
 	return str(chrome.up_to_face_id).strip_edges()
+
+
+## Signed sketch-plane → Up To Surface face depth (mm). NAN when the face is
+## missing or has no midpoint. Status uses this instead of the Blind spinbox.
+func up_to_surface_depth() -> float:
+	var face_id := _up_to_face_id()
+	if face_id == "" or view == null or view.doc == null:
+		return NAN
+	if not view.doc.has_method("face_midpoint"):
+		return NAN
+	var n := plane_normal()
+	if n.length_squared() < 1e-12:
+		return NAN
+	n = n.normalized()
+	var mid: Variant = view.doc.face_midpoint(face_id)
+	if not (mid is Vector3):
+		return NAN
+	return absf(((mid as Vector3) - plane_origin).dot(n))
 
 
 var _contour_sig := ""
@@ -3647,11 +3704,13 @@ func _click_rect(pos2: Vector2) -> void:
 		"center_three_point":
 			# Click 1 = centre, click 2 = long-side direction and half-length,
 			# click 3 = half-width (perpendicular distance from the axis).
+			# Repeat click 2 must not commit: camera/snap noise sits well above
+			# 1e-6 mm and still prints width 0.0000. Same floor as a line.
 			var npts := _tool_points.size()
 			if npts == 1:
 				status.emit(JAW_AFTER_CENTRE)
 			elif npts == 2:
-				if _tool_points[0].distance_to(_tool_points[1]) <= 1e-6:
+				if _tool_points[0].distance_to(_tool_points[1]) < MIN_SEGMENT_MM:
 					_tool_points.remove_at(1)
 					status.emit(JAW_ZERO_LONG)
 				else:
@@ -3659,7 +3718,7 @@ func _click_rect(pos2: Vector2) -> void:
 			elif npts >= 3:
 				var ctr: Vector2 = _tool_points[0]
 				var along: Vector2 = _tool_points[1] - ctr
-				if along.length() <= 1e-6:
+				if along.length() < MIN_SEGMENT_MM:
 					_tool_points.resize(1)
 					status.emit(JAW_ZERO_LONG)
 				else:
@@ -3667,7 +3726,9 @@ func _click_rect(pos2: Vector2) -> void:
 					var half_len := along.length()
 					var nrm := Vector2(-dir.y, dir.x)
 					var half_w := absf((_tool_points[2] - ctr).dot(nrm))
-					if half_w <= 1e-6:
+					var near_click2 := _tool_points[2].distance_to(_tool_points[1]) \
+							< MIN_SEGMENT_MM
+					if half_w < MIN_SEGMENT_MM or near_click2:
 						_tool_points.resize(2)
 						status.emit(JAW_ZERO_WIDTH)
 					else:

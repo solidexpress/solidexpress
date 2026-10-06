@@ -1661,10 +1661,23 @@ func _on_sketch_finish(op: String, distance: float, end: String = "blind",
 		"cut": finish_op.selected = 1
 		"fuse": finish_op.selected = 2
 		_: finish_op.selected = 0
+	# Blind Distance is unused once End is Up To Surface. Capture the solved
+	# sketch-to-face depth before finish_extrude leaves the session.
+	var status_dist := distance
+	var have_uts_depth := false
+	if end == "to_face" and sketch_mode != null \
+			and sketch_mode.has_method("up_to_surface_depth"):
+		var solved := sketch_mode.up_to_surface_depth()
+		if is_finite(solved):
+			status_dist = solved
+			have_uts_depth = true
 	sketch_mode.finish_extrude(distance, op, end, thin_thickness, thin_type, flip_side, selected_contours)
 	# Failures keep the sketch open and already wrote the failure sentence.
 	if sketch_mode != null and not sketch_mode.active:
-		_on_status("Extrude %s %.4f mm" % [_extrude_end_label(end), distance])
+		if end == "to_face" and not have_uts_depth:
+			_on_status("Extrude %s" % _extrude_end_label(end))
+		else:
+			_on_status("Extrude %s %.4f mm" % [_extrude_end_label(end), status_dist])
 
 
 func _selected_entity() -> String:

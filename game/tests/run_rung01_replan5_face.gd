@@ -151,13 +151,21 @@ func test_opposite_face_cut() -> void:
 		var vp_r := chrome.get_viewport().get_visible_rect()
 		check(vp_r.encloses(er) or er.intersects(vp_r),
 				"Extrude is on screen after Opposite face (btn %s vp %s)" % [str(er), str(vp_r)])
+	check(absf(chrome.extrude_distance() - 20.0) < 0.05,
+			"Blind distance field is still the 20 mm leftover (got %.3f)" % chrome.extrude_distance())
 	var n_ex := _count_extrudes(ctx)
+	_status_log.clear()
 	if ex != null:
 		await _x11_click(ex)
 	await process_frame
 	await process_frame
 	await process_frame
 	check(sm == null or not sm.active, "cut Extrude left the sketch")
+	var uts_status := str(ctx.main.status_label.text)
+	check(uts_status.contains("Extrude Up To Surface 10.0000 mm"),
+			"UTS cut status uses solved 10 mm, not Blind 20 (got '%s')" % uts_status)
+	check(not uts_status.contains("20.0000"),
+			"UTS cut status does not echo Blind 20 (got '%s')" % uts_status)
 	check(_count_extrudes(ctx) == n_ex + 1, "cut added one extrude")
 	var feat := _last_extrude(ctx)
 	var stored := _feature_to_face(feat)

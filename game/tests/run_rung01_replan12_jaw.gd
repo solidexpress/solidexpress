@@ -1,6 +1,8 @@
 # Rung 1 replan 12 follow-up — Jaw (Center Three Point) on a face sketch: per-click
-# status, long-side then outline preview, degenerate click-3 message, Jaw chips.
-# Real events: Viewport.push_input (motion, press, release), never sm.click / ix._input.
+# status, long-side then outline preview, degenerate click-3 / repeat click-2 guard,
+# Jaw chips. Walk clicks use Viewport.push_input (motion, press, release). The
+# sub-threshold half-width floor (formats as width 0.0000) is asserted via
+# sm.click so it does not depend on zoom.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan12_jaw.gd
 extends SceneTree
 
@@ -61,6 +63,26 @@ func _push_motion(pos: Vector2) -> void:
 	motion.position = pos
 	motion.global_position = pos
 	root.push_input(motion)
+	await process_frame
+	await process_frame
+
+
+func _push_press_drag_release(press: Vector2, release: Vector2) -> void:
+	await _push_motion(press)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = press
+	down.global_position = press
+	root.push_input(down)
+	await process_frame
+	await _push_motion(release)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = release
+	up.global_position = release
+	root.push_input(up)
 	await process_frame
 	await process_frame
 
@@ -293,10 +315,16 @@ func _run() -> void:
 	check(_has_long_side_preview(sm, p1, p2),
 			"after click 1 the preview is the long-side line")
 
-	await _push_click(s2)
+	# Click 2 as a press plus a >CLICK_SLOP drag along the long side. A mouse-up
+	# must not become click 3 (zero-width jaw).
+	var s2_drag := s2 + (s2 - s1).normalized() * 20.0
+	var lines_before_click2 := _profile_lines(sm)
+	await _push_press_drag_release(s2, s2_drag)
 	check(_last() == SketchMode.JAW_AFTER_LONG,
 			"click 2 status is long-side-set (got `%s`)" % _last())
 	check(sm._tool_points.size() == 2, "click 2 kept the centre and long-side (n=%d)" % sm._tool_points.size())
+	check(_profile_lines(sm) == lines_before_click2,
+			"shaky click-2 release does not commit (lines %d)" % _profile_lines(sm))
 	await _push_motion(s3)
 	check(not _has_axis_aligned_box_preview(sm),
 			"after click 2 the preview is not an axis-aligned box")
@@ -304,13 +332,40 @@ func _run() -> void:
 			"after click 2 the preview is the jaw outline")
 
 	var before_lines := _profile_lines(sm)
+	# Walk A8: leave the pointer, then click the same pixel as click 2.
 	await _push_click(s2)
 	check(_last() == SketchMode.JAW_ZERO_WIDTH,
-			"degenerate click 3 reports zero width (got `%s`)" % _last())
+			"repeat click 2 reports zero width (got `%s`)" % _last())
 	check(sm._tool_points.size() == 2,
-			"degenerate click 3 keeps clicks 1–2 (n=%d)" % sm._tool_points.size())
+			"repeat click 2 keeps clicks 1–2 (n=%d)" % sm._tool_points.size())
 	check(_profile_lines(sm) == before_lines,
-			"degenerate click 3 does not commit a jaw (lines %d)" % _profile_lines(sm))
+			"repeat click 2 does not commit a jaw (lines %d)" % _profile_lines(sm))
+
+	# Sub-threshold half-width still formats as width 0.0000 (the #135 miss).
+	sm.click(p2 + across.normalized() * 1.0e-4)
+	check(_last() == SketchMode.JAW_ZERO_WIDTH,
+			"1e-4 mm half-width is refused (got `%s`)" % _last())
+	check(sm._tool_points.size() == 2,
+			"1e-4 mm half-width keeps clicks 1–2 (n=%d)" % sm._tool_points.size())
+	check(_profile_lines(sm) == before_lines,
+			"1e-4 mm half-width does not commit")
+
+	sm.click(p2 + across.normalized() * 0.2)
+	check(_last() == SketchMode.JAW_ZERO_WIDTH,
+			"0.2 mm half-width is refused (got `%s`)" % _last())
+	check(sm._tool_points.size() == 2,
+			"0.2 mm half-width keeps clicks 1–2 (n=%d)" % sm._tool_points.size())
+	check(_profile_lines(sm) == before_lines,
+			"0.2 mm half-width does not commit")
+
+	# One screen pixel off click 2 is still a repeated click 2, not click 3.
+	await _push_click(s2 + Vector2(1, 0))
+	check(_last() == SketchMode.JAW_ZERO_WIDTH,
+			"1 px offset from click 2 reports zero width (got `%s`)" % _last())
+	check(sm._tool_points.size() == 2,
+			"1 px offset keeps clicks 1–2 (n=%d)" % sm._tool_points.size())
+	check(_profile_lines(sm) == before_lines,
+			"1 px offset does not commit a jaw")
 
 	await _push_click(s3)
 	check(_last().begins_with("Jaw committed — width "),
