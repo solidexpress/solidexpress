@@ -95,6 +95,8 @@ public:
     // Monotonic revision, bumped on every mutation (autosave/dirty tracking).
     uint64_t revision() const { return revision_; }
     void bump_revision() { ++revision_; }
+    // Only for rolling back a refused edit (apply_graph_edit failure branch).
+    void restore_revision(uint64_t r) { revision_ = r; }
 
     // Used by the .sxp loader to restore persisted ids exactly.
     void restore_body(Body&& b);
