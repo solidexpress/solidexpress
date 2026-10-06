@@ -44,11 +44,89 @@ var prev_body := ""
 var prev_entity := ""
 ## Last live B point while hovering a second body (null when not showing pair).
 var _last_b: Variant = null
+## Sketch inspector is Select-only. False skips sketch ✕ / Δ draw.
+var sketch_gate_open := true
+var _sketch_signals_bound := false
 
 ## Screen-draw lists (model-space points); rebuilt on every update.
 var segments: Array = []  # {a: Vector3, b: Vector3, color: Color}
 var marks: Array = []  # {p: Vector3, color: Color}
 var labels: Array = []  # {p: Vector3, text: String, color: Color}
+
+
+func set_sketch_tool_gate(open: bool) -> void:
+	if sketch_gate_open == open:
+		return
+	sketch_gate_open = open
+	_rebuild()
+
+
+## Connect once to the live sketch session (tool / solve / rail status).
+func bind_sketch_session() -> void:
+	if sketch_mode == null or _sketch_signals_bound:
+		return
+	if not sketch_mode.tool_changed.is_connected(_on_sketch_tool_changed):
+		sketch_mode.tool_changed.connect(_on_sketch_tool_changed)
+	if not sketch_mode.solve_updated.is_connected(_on_sketch_solve_updated):
+		sketch_mode.solve_updated.connect(_on_sketch_solve_updated)
+	if not sketch_mode.status.is_connected(_on_sketch_status):
+		sketch_mode.status.connect(_on_sketch_status)
+	_sketch_signals_bound = true
+	if sketch_mode.active:
+		set_sketch_tool_gate(sketch_mode.tool == SketchMode.Tool.SELECT)
+
+
+func _on_sketch_tool_changed(tool: int) -> void:
+	var open := tool == SketchMode.Tool.SELECT
+	set_sketch_tool_gate(open)
+	if not open:
+		clear_pair()
+
+
+func _on_sketch_solve_updated(_dofs: int, _status: String, _conflicts: int) -> void:
+	_drop_dead_sketch_anchors()
+
+
+func _on_sketch_status(text: String) -> void:
+	if _is_rail_geometry_status(text):
+		clear_pair()
+
+
+func _is_rail_geometry_status(text: String) -> bool:
+	return text.begins_with("Shaft lines") \
+			or text.begins_with("Jaw committed") \
+			or text.begins_with("Trimmed") \
+			or text.begins_with("Convert") \
+			or text.begins_with("Contours")
+
+
+func _sketch_marks_allowed() -> bool:
+	if sketch_mode == null or not sketch_mode.active:
+		return true
+	return sketch_gate_open
+
+
+func _drop_dead_sketch_anchors() -> void:
+	if sketch_mode == null or sketch_mode.sketch == null:
+		return
+	var ids: Array = sketch_mode.sketch.entity_ids()
+	var drop_anchor := anchor_entity != "" and anchor_entity != "pierce" \
+			and not ids.has(anchor_entity)
+	var drop_prev := prev_entity != "" and prev_entity != "pierce" \
+			and not ids.has(prev_entity)
+	if not drop_anchor and not drop_prev:
+		return
+	if drop_anchor:
+		anchor_point = null
+		anchor_body = ""
+		anchor_entity = ""
+		following = false
+		_last_b = null
+	if drop_prev:
+		prev_point = null
+		prev_body = ""
+		prev_entity = ""
+	_rebuild()
 
 
 ## Clear both sticky ✕ marks and live dims (keeps selection bound dims until refresh).
@@ -101,6 +179,9 @@ func update_hover(body: String, hit_point: Vector3) -> void:
 func update_sketch_hover(entity_id: String, hit_point: Vector3) -> void:
 	if sketch_mode == null or not sketch_mode.active:
 		return
+	if not sketch_gate_open:
+		return
+	_drop_dead_sketch_anchors()
 	if entity_id == "":
 		if anchor_point == null:
 			return
@@ -234,11 +315,11 @@ func _rebuild(b_point: Variant = null) -> void:
 	if _last_b == null and not inter_sticky:
 		_append_selection_bounds()
 
-	if prev_point != null:
+	if _sketch_marks_allowed() and prev_point != null:
 		var p: Vector3 = prev_point
 		marks.append({"p": p, "color": COLOR_MARK})
 
-	if anchor_point != null:
+	if _sketch_marks_allowed() and anchor_point != null:
 		var a: Vector3 = anchor_point
 		var driving := following or _last_b != null or inter_sticky
 		marks.append({"p": a, "color": COLOR_MARK_ACTIVE if driving else COLOR_MARK})

@@ -1248,9 +1248,38 @@ func _mount_measure_overlay() -> void:
 		add_child(measure_overlay)
 	measure_overlay.view = view
 	measure_overlay.sketch_mode = sketch_mode
+	measure_overlay.bind_sketch_session()
+	if sketch_mode != null:
+		if not sketch_mode.tool_changed.is_connected(_on_sketch_measure_tool_changed):
+			sketch_mode.tool_changed.connect(_on_sketch_measure_tool_changed)
+		if not sketch_mode.cancelled.is_connected(_on_sketch_measure_cancelled):
+			sketch_mode.cancelled.connect(_on_sketch_measure_cancelled)
+		if not sketch_mode.finished.is_connected(_on_sketch_measure_finished):
+			sketch_mode.finished.connect(_on_sketch_measure_finished)
 	if not measure_overlay.changed.is_connected(_on_measure_overlay_changed):
 		measure_overlay.changed.connect(_on_measure_overlay_changed)
 	measure_overlay.refresh_bounds()
+
+
+func _on_sketch_measure_tool_changed(tool: int) -> void:
+	if measure_overlay == null:
+		return
+	var open := tool == SketchMode.Tool.SELECT
+	measure_overlay.set_sketch_tool_gate(open)
+	if not open:
+		measure_overlay.clear_pair()
+
+
+func _on_sketch_measure_cancelled() -> void:
+	if measure_overlay != null:
+		measure_overlay.clear_all()
+		measure_overlay.set_sketch_tool_gate(true)
+
+
+func _on_sketch_measure_finished(_id: String) -> void:
+	if measure_overlay != null:
+		measure_overlay.clear_all()
+		measure_overlay.set_sketch_tool_gate(true)
 
 
 func _on_measure_overlay_changed() -> void:
@@ -2847,6 +2876,8 @@ func _length_type_seed(ke: InputEventKey) -> String:
 func _update_sketch_measure(pos2: Vector2) -> void:
 	if measure_overlay == null or sketch_mode == null:
 		return
+	if sketch_mode.tool != SketchMode.Tool.SELECT:
+		return
 	var eid: String = sketch_mode._nearest_entity_at(pos2)
 	if eid == "":
 		# Also try pierce points as measure anchors.
@@ -3230,6 +3261,9 @@ func _draw_measure_overlay() -> void:
 	if measure_overlay == null or camera == null or model_space == null:
 		return
 	if _hide_measure_chrome():
+		return
+	if measure_overlay.sketch_mode != null and measure_overlay.sketch_mode.active \
+			and not measure_overlay.sketch_gate_open:
 		return
 	var font_px := maxi(int(round(size.y * MeasureOverlay.SCREEN_FRAC)), 10)
 	var mark_half := float(font_px) * 0.45

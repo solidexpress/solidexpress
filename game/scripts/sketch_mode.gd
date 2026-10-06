@@ -1321,6 +1321,8 @@ func shaft_lines_selected() -> int:
 	var perp := Vector2(-u.y, u.x)
 	var neck := d - sqrt(rl * rl - rs * rs)
 	var added := 0
+	var lids: Array[String] = []
+	var geos: Array[Dictionary] = []
 	for side in [1.0, -1.0]:
 		var off := perp * (rs * float(side))
 		var pa := cs + off
@@ -1329,10 +1331,25 @@ func shaft_lines_selected() -> int:
 		if lid == "":
 			continue
 		_infer_line(lid, pa, pb)
+		lids.append(lid)
+		geos.append({"start": pa, "end": pb})
 		added += 1
+	# The second line's solve can drag the first onto the same side. Put both
+	# back on the constructed sides (no extra Fix: Fix + H conflicts on A3).
+	_pin_shaft_line_pair(lids, geos)
 	status.emit("Shaft lines: %d added" % added)
 	_redraw()
 	return added
+
+
+## The second line's solve can drag the first onto the same side. Put both
+## back on the constructed sides without adding Fix (Fix + H conflicts on A3).
+func _pin_shaft_line_pair(lids: Array[String], geos: Array[Dictionary]) -> void:
+	if lids.is_empty():
+		return
+	for i in lids.size():
+		sketch.set_entity_geometry(lids[i], geos[i])
+	_weld_on_circle_endpoints()
 
 
 func set_snap(on: bool) -> void:
@@ -4280,6 +4297,9 @@ func _lock_sized_circle(id: String) -> void:
 	if r <= 1e-6:
 		return
 	if _entity_has_constraint(id, "fix"):
+		return
+	# A3 already pins the bosses. A second Fix makes one shaft tangent redundant.
+	if _entity_has_constraint(id, "coincident"):
 		return
 	sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
 
