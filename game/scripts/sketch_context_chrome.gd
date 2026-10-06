@@ -1179,7 +1179,7 @@ func refresh_contours(sketch: SxSketch) -> void:
 		)
 		_contour_bar.add_child(b)
 	_contour_bar.visible = true
-	_place_bar(_contour_bar, Vector2(_finish_session_pos().x, _finish_bar_bottom() + 4.0))
+	_stack_sketch_rows()
 
 
 func extrude_button() -> Button:
@@ -1285,8 +1285,29 @@ func place_variant_row(rail_x: float) -> void:
 		_variant_bar.visible = true
 	if not _variant_bar.visible:
 		return
-	_place_bar(_variant_bar, Vector2(rail_x, _finish_bar_bottom() + float(CHIP_PAD)))
-	_keep_variant_below_finish()
+	_stack_sketch_rows()
+
+
+func _stack_sketch_rows() -> void:
+	var x := _finish_session_pos().x
+	var y := _finish_bar_bottom() + 4.0
+	if _contour_bar != null and _contour_bar.visible:
+		_place_bar(_contour_bar, Vector2(x, y))
+		_contour_bar.reset_size()
+		var h := maxf(_contour_bar.size.y, _contour_bar.get_combined_minimum_size().y)
+		if h < 1.0:
+			h = float(_chip_h())
+		y += h + 4.0
+	if _variant_bar != null and _variant_bar.visible:
+		_place_bar(_variant_bar, Vector2(x, y))
+	if _action_bar != null and _action_bar.visible:
+		_action_bar.reset_size()
+		var ah := maxf(_action_bar.size.y, _action_bar.get_combined_minimum_size().y)
+		_place_bar(_action_bar, Vector2(x, y + float(_chip_h()) + 4.0))
+		# Selection chips sit under the variant row, not on the contour row.
+		if _variant_bar != null and _variant_bar.visible:
+			var vh := maxf(_variant_bar.size.y, float(_chip_h()))
+			_place_bar(_action_bar, Vector2(x, _variant_bar.position.y + vh + 4.0))
 
 
 func _finish_bar_bottom() -> float:
@@ -1358,6 +1379,7 @@ func _process(_delta: float) -> void:
 	if _finish_bar != null and _finish_bar.visible:
 		_sync_dim_affordance()
 		_place_finish_session()
+		_stack_sketch_rows()
 
 
 func _sketch_tools_rail() -> Control:
