@@ -820,10 +820,13 @@ func _build_ui() -> void:
 		b.name = "Tool%s" % str(entry[3]).replace(" ", "")
 		b.toggle_mode = true
 		b.button_group = rail_group
-		b.set_meta("sx_tool", entry[0])
-		# Bind the enum now (not the loop variable) so Slot cannot pick up a
-		# neighbour's tool id if the rail order changes.
-		b.pressed.connect(_on_sketch_rail_tool.bind(int(entry[0])))
+		b.set_meta("sx_tool", int(entry[0]))
+		# Bind the enum now (not the loop index) so Slot after Ellipse cannot
+		# pick up a neighbour's tool id. `pressed` keeps FilmUI.emit working;
+		# `toggled` only arms on press-on so unpressing Rect cannot re-arm Rect.
+		var tool_id := int(entry[0])
+		b.pressed.connect(_on_sketch_rail_tool.bind(tool_id))
+		b.toggled.connect(_on_sketch_rail_toggled.bind(tool_id))
 		_sketch_rail_buttons.append(b)
 		rows.add_child(b)
 		if entry[0] == SketchMode.Tool.RECT:
@@ -1453,6 +1456,11 @@ func _on_sketch_session_ended() -> void:
 		sketch_chrome.hide_variants()
 		sketch_chrome.hide_selection_actions()
 		sketch_chrome.visible = false
+
+
+func _on_sketch_rail_toggled(on: bool, t: int) -> void:
+	if on:
+		_on_sketch_rail_tool(t)
 
 
 func _on_sketch_rail_tool(t: int) -> void:

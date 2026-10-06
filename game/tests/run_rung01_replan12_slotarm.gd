@@ -268,6 +268,22 @@ func _run() -> void:
 	check(absf(chrome.extrude_distance() - 20.0) < 0.01,
 			"new sketch Extrude distance is 20 mm (got %.3f)" % chrome.extrude_distance())
 
+	# Park the pointer on the canvas so hover is Interaction — the real-GUI
+	# trap. Sketch `_input` used to mark that motion handled, so Slot's press
+	# was a canvas click (hide Rect chips, LINE rubber-band, no set_tool).
+	await _assert_tool_from_click(main, "Rect", SketchMode.Tool.RECT, "Rect —")
+	var canvas := Vector2(ROOT_SIZE.x * 0.55, ROOT_SIZE.y * 0.55)
+	var park := InputEventMouseMotion.new()
+	park.position = canvas
+	park.global_position = canvas
+	root.push_input(park)
+	await process_frame
+	await process_frame
+	var parked := root.gui_get_hovered_control()
+	print("  parked hover=%s (want Interaction)" % str(parked))
+	check(parked == main.interaction,
+			"canvas park puts hover on Interaction (got %s)" % str(parked))
+
 	# Core A11a: press Slot at its visible position with real mouse events.
 	var slot_btn := await _click_rail_button(main, "Slot")
 	check(slot_btn != null, "Slot is visible on the unscrolled rail")
