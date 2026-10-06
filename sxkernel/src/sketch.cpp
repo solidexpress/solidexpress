@@ -87,6 +87,11 @@ std::array<double, 3> SketchPlane::normal() const {
 Sketch::Sketch(std::string name, SketchPlane plane)
     : id_(EntityId::generate()), name_(std::move(name)), plane_(plane) {}
 
+void Sketch::set_plane(SketchPlane plane) {
+    plane_ = std::move(plane);
+    revision_++;
+}
+
 size_t Sketch::push_params(std::initializer_list<double> values) {
     size_t first = params_.size();
     for (double v : values) params_.push_back(v);

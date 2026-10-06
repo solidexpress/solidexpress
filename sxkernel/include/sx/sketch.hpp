@@ -103,6 +103,7 @@ public:
     const EntityId& id() const { return id_; }
     const std::string& name() const { return name_; }
     const SketchPlane& plane() const { return plane_; }
+    void set_plane(SketchPlane plane);
 
     // --- entities ---
     EntityId add_point(double x, double y);

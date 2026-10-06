@@ -44,6 +44,7 @@
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
 #include <TopoDS.hxx>
+#include <TopAbs_Orientation.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Wire.hxx>
 #include <gp_Ax1.hxx>
@@ -906,6 +907,45 @@ bool sketch_closed_contour(const Sketch& sk) {
     return !sk.profile_face(&ignored).IsNull();
 }
 
+void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f) {
+    if (!f.sketch) return;
+    if (!f.params.contains("support_host") || !f.params["support_host"].is_string()) return;
+    if (!f.params.contains("support_normal") || !f.params["support_normal"].is_array()
+        || f.params["support_normal"].size() < 3) return;
+    gp_Vec want(f.params["support_normal"][0].get<double>(),
+                f.params["support_normal"][1].get<double>(),
+                f.params["support_normal"][2].get<double>());
+    if (want.Magnitude() < 1e-12) return;
+    want.Normalize();
+    const Feature* host = graph.feature(
+        EntityId::from_string(f.params["support_host"].get<std::string>()));
+    if (host == nullptr || host->output_body.is_null()) return;
+    const Body* body = doc.body(host->output_body);
+    if (body == nullptr || body->shape.IsNull()) return;
+    std::string side = "max";
+    if (f.params.contains("support_side") && f.params["support_side"].is_string())
+        side = f.params["support_side"].get<std::string>();
+    bool have = false;
+    double best = 0.0;
+    for (TopExp_Explorer ex(body->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Face face = TopoDS::Face(ex.Current());
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() != GeomAbs_Plane) continue;
+        gp_Dir n = surf.Plane().Axis().Direction();
+        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        if (gp_Vec(n).Dot(want) < 0.999) continue;
+        const double offset = gp_Vec(surf.Plane().Location().XYZ()).Dot(want);
+        if (!have || (side == "min" ? offset < best : offset > best)) {
+            best = offset;
+            have = true;
+        }
+    }
+    if (!have) return;
+    SketchPlane pl = f.sketch->plane();
+    pl.origin = {want.X() * best, want.Y() * best, want.Z() * best};
+    f.sketch->set_plane(std::move(pl));
+}
+
 }  // namespace
 
 bool FeatureGraph::apply(Document& doc, Feature& f,
@@ -928,8 +968,9 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
 
         switch (f.type) {
             case FeatureType::Sketch:
+                rebind_sketch_support(*this, doc, f);
                 if (f.params.contains("converted_edges")) rebuild_converted_points(doc, f.id);
-                return true;  // no geometry output
+                return true;
 
             case FeatureType::Primitive: {
                 TopoDS_Shape shape = build_primitive_feature(params, env);

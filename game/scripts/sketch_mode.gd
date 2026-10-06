@@ -85,6 +85,9 @@ var _smart_dim_pending: Dictionary = {}
 ## Feature id of the body being sketched on ("" when on the ground plane);
 ## used as the boolean target for cut/fuse finishes.
 var target_fid := ""
+var support_host := ""
+var support_normal := Vector3.ZERO
+var support_side := ""
 ## Feature id of the sketch being edited ("" when creating a new sketch).
 var editing_fid := ""
 ## Optional OrbitCamera for enter/leave sketch view locking.
@@ -285,6 +288,29 @@ static func derive_face_plane(doc: SxDocument, face_id: String, body_id: String,
 	}
 
 
+static func _support_side(doc: SxDocument, body_id: String, face_id: String,
+		normal: Vector3) -> String:
+	var n := normal.normalized()
+	var face_bb: Dictionary = doc.measure_bbox(face_id)
+	if face_bb.is_empty():
+		return "max"
+	var face_c: Vector3 = (face_bb["min"] + face_bb["max"]) * 0.5
+	var face_off := face_c.dot(n)
+	var max_off := face_off
+	var min_off := face_off
+	for fid in doc.get_face_ids(body_id):
+		var bb: Dictionary = doc.measure_bbox(str(fid))
+		if bb.is_empty():
+			continue
+		var c: Vector3 = (bb["min"] + bb["max"]) * 0.5
+		var off := c.dot(n)
+		max_off = maxf(max_off, off)
+		min_off = minf(min_off, off)
+	if absf(face_off - max_off) <= absf(face_off - min_off):
+		return "max"
+	return "min"
+
+
 ## Unit normal of the current sketch plane (model space).
 func plane_normal() -> Vector3:
 	return plane_x.cross(plane_y).normalized()
@@ -338,11 +364,23 @@ func to_model(p: Vector2) -> Vector3:
 	return plane_origin + plane_x * p.x + plane_y * p.y
 
 
+func _clear_support() -> void:
+	support_host = ""
+	support_normal = Vector3.ZERO
+	support_side = ""
+
+
 ## Begin a sketch on the model-space plane (origin + normal). x_hint picks the
 ## in-plane X direction; pass ZERO for an automatic perpendicular (n × world-Z,
 ## or world-X when the normal is parallel to Z). Extrude follows this normal.
-func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO) -> void:
+func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO,
+		support: Dictionary = {}) -> void:
 	editing_fid = ""
+	_clear_support()
+	if not support.is_empty():
+		support_host = str(support.get("host", ""))
+		support_normal = support.get("normal", Vector3.ZERO)
+		support_side = str(support.get("side", "max"))
 	_setup_plane(origin, normal, x_hint)
 	sketch = SxSketch.new()
 	sketch.set_plane(origin, plane_x, plane_y)
@@ -355,6 +393,7 @@ func begin_on_plane(origin: Vector3, x_dir: Vector3, y_dir: Vector3) -> bool:
 	if view == null or active:
 		return false
 	editing_fid = ""
+	_clear_support()
 	plane_origin = origin
 	plane_x = x_dir.normalized()
 	plane_y = y_dir.normalized()
@@ -383,6 +422,7 @@ func begin_edit(fid: String) -> bool:
 	plane_x = (pi["x_dir"] as Vector3).normalized()
 	plane_y = (pi["y_dir"] as Vector3).normalized()
 	sketch = loaded
+	_clear_support()
 	_activate_session()
 	status.emit("Editing sketch — Exit Sketch to save · Esc discard")
 	return true
@@ -520,6 +560,7 @@ func exit_sketch() -> String:
 		if fid == "":
 			status.emit("Failed to save sketch" + _graph_error_suffix())
 			return ""
+		_write_sketch_support(fid)
 	_end_sketch_session()
 	status.emit("Sketch saved")
 	return fid
@@ -702,6 +743,23 @@ func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 	_finish_feature(sk_fid, rv_fid, op, "Revolve failed — closed profile on one side of the axis?")
 
 
+func _write_sketch_support(fid: String) -> void:
+	if support_host == "" or view == null or view.doc == null:
+		return
+	var params := {}
+	for f in view.doc.graph_features():
+		if str(f.get("id", "")) != fid:
+			continue
+		var parsed = JSON.parse_string(str(f.get("params", "{}")))
+		if typeof(parsed) == TYPE_DICTIONARY:
+			params = parsed
+		break
+	params["support_host"] = support_host
+	params["support_normal"] = [support_normal.x, support_normal.y, support_normal.z]
+	params["support_side"] = support_side if support_side != "" else "max"
+	view.doc.graph_set_params_no_regen(fid, JSON.stringify(params))
+
+
 ## Ensure the active sketch is a graph feature; reuse editing_fid when set.
 func _ensure_sketch_feature() -> String:
 	if editing_fid != "":
@@ -715,6 +773,7 @@ func _ensure_sketch_feature() -> String:
 		status.emit("Failed to add sketch" + _graph_error_suffix())
 	else:
 		editing_fid = sk_fid
+		_write_sketch_support(sk_fid)
 	return sk_fid
 
 

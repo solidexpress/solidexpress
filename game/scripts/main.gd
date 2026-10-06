@@ -1373,9 +1373,19 @@ func _start_sketch_on_face(face_id: String, body_id: String) -> void:
 		var plane: Dictionary = SketchMode.derive_face_plane(
 			view.doc, face_id, body_id, fn)
 		plane_msg = plane["message"]
-		if plane["ok"]:
-			origin = plane["origin"]
-			normal = plane["normal"]
+		if not plane["ok"]:
+			_on_status(plane_msg)
+			return
+		origin = plane["origin"]
+		normal = plane["normal"]
+		var side := SketchMode._support_side(view.doc, body_id, face_id, normal)
+		sketch_mode.begin(origin, normal, Vector3.ZERO, {
+			"host": sketch_mode.target_fid,
+			"normal": normal,
+			"side": side,
+		})
+		_on_sketch_session_started(plane_msg)
+		return
 	sketch_mode.begin(origin, normal)
 	_on_sketch_session_started(plane_msg)
 
