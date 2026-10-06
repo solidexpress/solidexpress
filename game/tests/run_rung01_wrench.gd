@@ -986,6 +986,13 @@ func _commit_fillet(ctx: FilmContext) -> void:
 	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
+	# WP3: StripRadius == panel after Enter applies the armed radius (10, then 1).
+	# Assert here, not mid-type: SpinBox.value and the panel still hold the
+	# previous number until Enter.
+	var applied := spin.value
+	if is_equal_approx(applied, 10.0) or is_equal_approx(applied, 1.0):
+		print("  B13.8 Fillet radius %s" % _radius_digits(applied))
+		_assert_strip_equals_panel(ctx, applied, _radius_digits(applied))
 	# A refused radius re-arms the same edges. Esc cancels that pick so the
 	# next Fillet click does not immediately re-commit leftover edges.
 	if str(ctx.view.doc.last_graph_error()) != "":
@@ -1017,9 +1024,6 @@ func _type_strip_radius(ctx: FilmContext, digits: String) -> void:
 	var shown := edit.text.strip_edges()
 	check(shown == digits or shown.begins_with(digits + ".") or shown.begins_with(digits + " "),
 			"typed radius %s is in the spin (got '%s')" % [digits, edit.text])
-	if digits == "10" or digits == "1":
-		print("  B13.8 Fillet radius %s" % digits)
-		_assert_strip_equals_panel(ctx, float(digits), digits)
 
 
 func _ctrl_a(vp: Viewport) -> void:
