@@ -634,12 +634,19 @@ func _apply_dim_edit(text: String) -> void:
 	if v <= 0.0:
 		status.emit("Dimension must be a positive number")
 		return
-	var result: String = sketch_mode.set_dimension_value(_dim_edit_index, v)
+	var dim_index := _dim_edit_index
+	var result: String = sketch_mode.set_dimension_value(dim_index, v)
 	_dim_edit_index = -1
 	if result == "failed":
 		status.emit("Dimension rejected — constraints could not be satisfied")
 	elif result != "":
-		status.emit("Dimension updated")
+		var slot_text := ""
+		if sketch_mode.has_method("slot_cc_status_for_dim"):
+			slot_text = str(sketch_mode.slot_cc_status_for_dim(dim_index))
+		if slot_text != "":
+			status.emit(slot_text)
+		else:
+			status.emit("Dimension updated")
 
 
 func _build_place_snap_ui() -> void:

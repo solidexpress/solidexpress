@@ -961,24 +961,35 @@ func _parse_spin_text(spin: SpinBox, raw: String) -> Variant:
 
 
 ## Across-flats reads the typed length as AF. Circle keeps a radius number; the
-## r cue is a label, not a prefix glued to the digits.
+## r cue is a label, not a prefix glued to the digits. Slot is radius until the
+## first centre, then the blank is the centre-to-centre length.
 func _sync_dim_affordance() -> void:
 	if _dim_spin == null:
 		return
 	var suffix := "mm"
 	var prefix := ""
 	var tip := "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
-	var show_r := false
+	var show_label := false
+	var show_cue := false
+	var label_text := "Radius"
+	var cue_text := "r"
 	if sketch_mode != null and sketch_mode.tool == SketchMode.Tool.POLYGON \
 			and sketch_mode.tool_variant == "across_flats":
 		suffix = " AF"
 		tip = "Across flats — typed length is the AF, not the circumradius"
 	elif sketch_mode != null and sketch_mode.tool == SketchMode.Tool.CIRCLE:
-		show_r = true
+		show_label = true
+		show_cue = true
 		tip = "Circle radius (mm). The r label is the radius; diameter is 2× this number"
 	elif sketch_mode != null and sketch_mode.tool == SketchMode.Tool.SLOT:
-		show_r = true
-		tip = "Slot radius (mm) until the first centre is down; then the centre distance"
+		show_label = true
+		if sketch_mode.has_single_dof_preview():
+			label_text = "c-c"
+			show_cue = false
+			tip = "Slot centre-to-centre length (mm). Type the length, or click the second centre"
+		else:
+			show_cue = true
+			tip = "Slot radius (mm) until the first centre is down; then the centre distance"
 	var was_syncing := _dim_syncing
 	_dim_syncing = true
 	if _dim_spin.suffix != suffix:
@@ -988,10 +999,12 @@ func _sync_dim_affordance() -> void:
 	_dim_spin.tooltip_text = tip
 	_dim_syncing = was_syncing
 	if _dim_cue != null:
-		_dim_cue.visible = show_r
+		_dim_cue.visible = show_cue
+		_dim_cue.text = cue_text
 	if _radius_label != null:
-		_radius_label.visible = show_r
-		_radius_label.text = "Radius"
+		_radius_label.visible = show_label
+		_radius_label.text = label_text
+		_radius_label.tooltip_text = tip
 
 
 func dim_is_editing() -> bool:

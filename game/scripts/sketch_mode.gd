@@ -1220,9 +1220,35 @@ func commit_at_length(length: float) -> bool:
 	return not has_length_override()
 
 
-## Sentence from the last polygon-AF / circle / centre-to-flat commit.
+## Sentence from the last polygon-AF / circle / centre-to-flat / slot commit.
 func last_commit_text() -> String:
 	return _last_commit_text
+
+
+## Slot stadium readback. Four decimals so a rubber-band 150.3466 is visible.
+func slot_cc_status(cc: float, typed: bool = false) -> String:
+	return "Slot c-c %.4f R%.4f%s" % [cc, slot_radius, " — typed" if typed else ""]
+
+
+## Slot c-c readback for a recorded dimension, or "" if it is not a slot stadium.
+func slot_cc_status_for_dim(index: int) -> String:
+	if sketch == null or index < 0 or index >= dimensions.size():
+		return ""
+	var dim: Dictionary = dimensions[index]
+	if str(dim.get("type", "")) != "distance":
+		return ""
+	var ids: Array = dim.get("ids", [])
+	if ids.size() != 2:
+		return ""
+	var r := -1.0
+	for id in ids:
+		var info: Dictionary = sketch.entity_info(str(id))
+		if str(info.get("type", "")) != "arc":
+			return ""
+		r = float(info.get("radius", 0.0))
+	if r <= 0.0:
+		r = slot_radius
+	return "Slot c-c %.4f R%.4f" % [float(dim.get("value", 0.0)), r]
 
 
 ## True when this session is a new sketch with no entities yet.
@@ -3566,9 +3592,10 @@ func click(pos2: Vector2) -> void:
 			_tool_points.append(pos2)
 			if _tool_points.size() == 2:
 				_add_slot(_tool_points[0], _tool_points[1], slot_radius)
-				status.emit("Slot c-c %.4f R%.4f%s" % [
-						_tool_points[0].distance_to(_tool_points[1]), slot_radius,
-						" — typed" if _point_from_length else ""])
+				_last_commit_text = slot_cc_status(
+						_tool_points[0].distance_to(_tool_points[1]),
+						_point_from_length)
+				status.emit(_last_commit_text)
 				_tool_points.clear()
 				_redraw()
 		Tool.SMART_DIM:

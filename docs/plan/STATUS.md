@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-034 A11a — Slot typed-length status
+- Typing the centre-to-centre length after the first Slot centre printed `Length 150.0000 mm` because `click()` emitted `Slot c-c …` but did not set `last_commit_text`, so dim Enter overwrote the bar. Slot commit now stores that sentence (with ` — typed` when the length was typed). Editing the 150 label re-reads `Slot c-c … R…` instead of a bare `Dimension updated`. After the first centre the dim blank is labelled `c-c`, not `Radius r`.
+- Gate: `run_rung01_replan12_status.gd`, `run_rung01_replan12_slotarm.gd` (typed 150 via dim Enter), wrench B13.1.
+
 ## sx-033 A11d — click vs body-move
 - A still LMB click-release on a selected body (Bottom view, wrench head / plate face) refines to a face. It must not emit `Moved body`.
 - Cause: LMB on the selected mesh armed `_pending_body_move`; a lost/late mouse-up left `_pressed` true, so the next pointer move past 8 px committed a translate. Sub-slop wiggling during a real click also had to stay a select.
