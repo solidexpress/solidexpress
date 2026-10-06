@@ -1,0 +1,337 @@
+# sx-033 A11a — Slot (and every sketch-rail tool) arms from a real viewport click
+# at the button's on-screen position. Drive InputEventMouseButton through
+# Viewport.push_input; never emit the button's pressed signal.
+# Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan12_slotarm.gd
+extends SceneTree
+
+const FilmUI = preload("res://tests/lib/film_ui.gd")
+const ROOT_SIZE := Vector2i(1280, 800)
+
+# label on the rail, expected SketchMode.Tool, status prefix after the press
+const RAIL_TOOLS := [
+	["Select", SketchMode.Tool.SELECT, "Select —"],
+	["Line", SketchMode.Tool.LINE, "Line —"],
+	["Arc", SketchMode.Tool.ARC, "Arc —"],
+	["Circle", SketchMode.Tool.CIRCLE, "Circle —"],
+	["Rect", SketchMode.Tool.RECT, "Rect —"],
+	["Polygon", SketchMode.Tool.POLYGON, "Polygon —"],
+	["Ellipse", SketchMode.Tool.ELLIPSE, "Ellipse —"],
+	["Slot", SketchMode.Tool.SLOT, "Slot —"],
+	["Spline", SketchMode.Tool.SPLINE, "Spline —"],
+	["Point", SketchMode.Tool.POINT, "Point —"],
+	["Trim", SketchMode.Tool.TRIM, "Trim —"],
+	["Extend", SketchMode.Tool.EXTEND, "Extend —"],
+	["Smart Dim", SketchMode.Tool.SMART_DIM, "Smart Dim —"],
+	["Convert", SketchMode.Tool.CONVERT, "Convert —"],
+	["Mirror", SketchMode.Tool.MIRROR, "Mirror —"],
+	["Pattern", SketchMode.Tool.PATTERN, "Pattern —"],
+]
+
+var failures := 0
+var checks := 0
+var _log: Array[String] = []
+
+
+func check(cond: bool, what: String) -> void:
+	checks += 1
+	if cond:
+		print("  ok   - " + what)
+	else:
+		failures += 1
+		printerr("  FAIL - " + what)
+
+
+func _init() -> void:
+	print("rung01 replan12 A11a Slot rail arming via real clicks")
+	FilmUI.reset_fail_count()
+	await _run()
+	print("%d checks, %d failures" % [checks, failures])
+	quit(1 if failures > 0 else 0)
+
+
+func _last() -> String:
+	return "" if _log.is_empty() else _log[_log.size() - 1]
+
+
+func _status_of(main) -> String:
+	if main.status_label != null:
+		return str(main.status_label.text)
+	return _last()
+
+
+func _rail_scroll(rail: Control) -> ScrollContainer:
+	if rail == null:
+		return null
+	var named := rail.find_child("SketchRailScroll", true, false)
+	if named is ScrollContainer:
+		return named
+	for c in rail.find_children("*", "ScrollContainer", true, false):
+		return c as ScrollContainer
+	return null
+
+
+func _push_click(pos: Vector2) -> void:
+	var vp: Viewport = root
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	await process_frame
+	await process_frame
+	for pressed in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = pressed
+		ev.position = pos
+		ev.global_position = pos
+		vp.push_input(ev)
+		await process_frame
+	await process_frame
+
+
+func _wheel_at(pos: Vector2, down: bool, notches: int) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	root.push_input(motion)
+	await process_frame
+	for _i in notches:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_WHEEL_DOWN if down else MOUSE_BUTTON_WHEEL_UP
+		ev.pressed = true
+		ev.factor = 1.0
+		ev.position = pos
+		ev.global_position = pos
+		root.push_input(ev)
+		await process_frame
+	await process_frame
+
+
+func _btn_center_visible(btn: Control, scroll: ScrollContainer) -> Vector2:
+	if btn == null:
+		return Vector2.INF
+	var br: Rect2 = btn.get_global_rect()
+	if scroll == null:
+		return br.get_center()
+	var sr: Rect2 = scroll.get_global_rect()
+	if not sr.intersects(br):
+		return Vector2.INF
+	var c := br.get_center()
+	if sr.has_point(c):
+		return c
+	# Click the overlap, not the unscrolled layout position.
+	var clipped := sr.intersection(br)
+	if clipped.size.x < 4.0 or clipped.size.y < 4.0:
+		return Vector2.INF
+	return clipped.get_center()
+
+
+func _click_rail_button(main, label: String) -> Button:
+	var btn := FilmUI.find_sketch_tool_button(main, label)
+	if btn == null or not btn.is_visible_in_tree():
+		return null
+	var scroll := _rail_scroll(main.sketch_toolbar)
+	var pos := _btn_center_visible(btn, scroll)
+	if pos == Vector2.INF:
+		if scroll != null:
+			scroll.ensure_control_visible(btn)
+			await process_frame
+			await process_frame
+			pos = _btn_center_visible(btn, scroll)
+	if pos == Vector2.INF:
+		return null
+	print("  click %s at (%.0f, %.0f) tool_before=%s hovered=%s" % [
+			label, pos.x, pos.y, str(main.sketch_mode.tool),
+			str(root.gui_get_hovered_control())])
+	await _push_click(pos)
+	var hovered := root.gui_get_hovered_control()
+	print("  after %s tool=%s status=`%s` hovered=%s pressed=%s" % [
+			label, str(main.sketch_mode.tool), _status_of(main), str(hovered),
+			str(btn.button_pressed)])
+	return btn
+
+
+func _type_into_dim(main, text: String) -> void:
+	var chrome: SketchContextChrome = main.sketch_chrome
+	var edit: LineEdit = chrome.find_child("DimLineEdit", true, false) as LineEdit
+	if edit == null and chrome._dim_spin != null:
+		edit = chrome._dim_spin.get_line_edit()
+	if edit == null:
+		return
+	var pos := edit.get_global_rect().get_center()
+	await _push_click(pos)
+	for i in text.length():
+		var ch := text.unicode_at(i)
+		var code := KEY_NONE
+		if ch >= 48 and ch <= 57:
+			code = (KEY_0 + (ch - 48)) as Key
+		elif ch == 46:
+			code = KEY_PERIOD
+		else:
+			continue
+		for pressed in [true, false]:
+			var ev := InputEventKey.new()
+			ev.keycode = code
+			ev.unicode = ch
+			ev.pressed = pressed
+			root.push_input(ev)
+			await process_frame
+	var enter := InputEventKey.new()
+	enter.keycode = KEY_ENTER
+	enter.pressed = true
+	root.push_input(enter)
+	await process_frame
+	enter = InputEventKey.new()
+	enter.keycode = KEY_ENTER
+	enter.pressed = false
+	root.push_input(enter)
+	await process_frame
+	await process_frame
+
+
+func _assert_tool_from_click(main, label: String, want_tool: int, hint_prefix: String) -> void:
+	var sm: SketchMode = main.sketch_mode
+	var btn := await _click_rail_button(main, label)
+	check(btn != null, "rail button `%s` is clickable at a visible position" % label)
+	if btn == null:
+		return
+	check(int(sm.tool) == want_tool,
+			"`%s` click arms tool %d (got %d, status `%s`)" % [
+				label, want_tool, int(sm.tool), _status_of(main)])
+	var st := _status_of(main)
+	check(st.begins_with(hint_prefix) or st.contains(hint_prefix),
+			"`%s` arm hint starts with `%s` (got `%s`)" % [label, hint_prefix, st])
+	check(btn.button_pressed,
+			"`%s` rail button is highlighted after the press" % label)
+
+
+func _run() -> void:
+	var main = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await process_frame
+	await process_frame
+	var ctx := FilmContext.new()
+	ctx.main = main
+	ctx.view = main.view
+	ctx.tree = self
+	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
+	main.sketch_mode.status.connect(func(m): _log.append(str(m)))
+	main.interaction.status.connect(func(m): _log.append(str(m)))
+
+	await FilmUI.place_primitive(ctx, "box")
+	var body: String = ctx.view.selected_body
+	var face := FilmUI.find_face_by_normal(ctx.view, body, Vector3(0, 0, 1))
+	check(body != "" and face != "", "box placed, +Z face found")
+	await FilmUI.enter_sketch_on_face(ctx, body, face)
+	var sm: SketchMode = main.sketch_mode
+	check(sm.active, "first face sketch is active")
+	var rail: Control = main.sketch_toolbar
+	check(rail != null and rail.visible, "sketch rail is visible")
+	var scroll := _rail_scroll(rail)
+	check(scroll != null, "sketch rail has a ScrollContainer")
+
+	# Dirty the finish bar the way the jaw cut leaves it.
+	var chrome: SketchContextChrome = main.sketch_chrome
+	chrome.set_finish_op("cut")
+	chrome.set_finish_end("to_face")
+	chrome._on_finish_end_selected(3)
+	chrome.set_dim_value(38.76)
+	check(chrome.get_finish_end() == "to_face", "setup: End is Up To Surface")
+
+	# Scroll the rail, click Slot at its visible (scrolled) position, then
+	# click other visible tools. Buttons must work at ANY scroll offset.
+	if scroll != null:
+		var wheel_at := rail.get_global_rect().get_center()
+		await _wheel_at(wheel_at, true, 12)
+		print("  scrolled rail scroll_vertical=%d" % scroll.scroll_vertical)
+		check(scroll.scroll_vertical > 0, "wheel over the rail scrolls it down")
+		await _assert_tool_from_click(main, "Slot", SketchMode.Tool.SLOT, "Slot —")
+		# Same sketch: scroll back a little and press Circle.
+		await _wheel_at(wheel_at, false, 4)
+		await _assert_tool_from_click(main, "Circle", SketchMode.Tool.CIRCLE, "Circle —")
+
+	# Exit, open a new face sketch: scroll resets, finish bar resets, Slot arms.
+	await FilmUI.exit_sketch(ctx)
+	check(not sm.active, "exited the first sketch")
+	await FilmUI.enter_sketch_on_face(ctx, body, face)
+	check(sm.active, "second face sketch is active")
+	scroll = _rail_scroll(rail)
+	if scroll != null:
+		check(scroll.scroll_vertical == 0,
+				"a newly opened sketch resets the rail scroll to the top (got %d)" % scroll.scroll_vertical)
+	check(chrome.get_finish_end() == "blind",
+			"new sketch End is Blind (got %s)" % chrome.get_finish_end())
+	var op := chrome.find_child("FinishOp", true, false) as OptionButton
+	check(op != null and op.selected == 0, "new sketch Op is New")
+	var ex := chrome.extrude_button()
+	check(ex != null and not ex.disabled, "new sketch Extrude is enabled")
+	check(absf(chrome.extrude_distance() - 20.0) < 0.01,
+			"new sketch Extrude distance is 20 mm (got %.3f)" % chrome.extrude_distance())
+
+	# Core A11a: press Slot at its visible position with real mouse events.
+	var slot_btn := await _click_rail_button(main, "Slot")
+	check(slot_btn != null, "Slot is visible on the unscrolled rail")
+	check(int(sm.tool) == int(SketchMode.Tool.SLOT),
+			"Slot click arms SketchMode.Tool.SLOT (got %d)" % int(sm.tool))
+	check(_status_of(main).begins_with("Slot"),
+			"Slot arm status is `Slot …` (got `%s`)" % _status_of(main))
+	check(slot_btn != null and slot_btn.button_pressed,
+			"Slot rail button is highlighted")
+	var variants := main.find_child("VariantBar", true, false) as Control
+	check(variants == null or not variants.visible,
+			"Slot has no leftover Rect chip row")
+
+	# Typing 5 + Enter is the slot radius, not a Smart Dim / Sel-tool distance.
+	await _type_into_dim(main, "5")
+	check(absf(sm.slot_radius - 5.0) < 1e-3,
+			"typed 5 sets slot radius (got %.4f)" % sm.slot_radius)
+	check(not _status_of(main).contains("Select entities"),
+			"Enter on the Slot radius does not apply a dimension (got `%s`)" % _status_of(main))
+	check(int(sm.tool) == int(SketchMode.Tool.SLOT),
+			"tool is still SLOT after typing the radius")
+
+	# 150 c-c after the first centre — A11a read-back.
+	sm.click(Vector2(0.0, 0.0))
+	sm.set_length_override(150.0)
+	sm.click(Vector2(40.0, 0.0))
+	check(_last() == "Slot c-c 150.0000 R5.0000 — typed"
+			or _status_of(main) == "Slot c-c 150.0000 R5.0000 — typed",
+			"A11a read-back is Slot c-c 150.0000 R5.0000 — typed (got `%s` / `%s`)" % [
+				_last(), _status_of(main)])
+
+	# Every remaining rail tool at scroll 0, then again after scrolling.
+	for row in RAIL_TOOLS:
+		if str(row[0]) == "Slot":
+			continue
+		await _assert_tool_from_click(main, str(row[0]), int(row[1]), str(row[2]))
+
+	var jaw := await _click_rail_button(main, "Jaw")
+	check(jaw != null, "Jaw is on the rail")
+	check(int(sm.tool) == int(SketchMode.Tool.RECT),
+			"Jaw click arms the rectangle tool (got %d)" % int(sm.tool))
+	check(_status_of(main).begins_with("Jaw"),
+			"Jaw arm hint starts with Jaw (got `%s`)" % _status_of(main))
+
+	if scroll != null:
+		var wheel_at := rail.get_global_rect().get_center()
+		await _wheel_at(wheel_at, true, 14)
+		check(scroll.scroll_vertical > 0, "second scroll pass moved the rail")
+		# Re-press every tool that is on-screen at this offset.
+		for row in RAIL_TOOLS:
+			var btn := FilmUI.find_sketch_tool_button(main, str(row[0]))
+			var pos := _btn_center_visible(btn, scroll)
+			if pos == Vector2.INF:
+				continue
+			await _push_click(pos)
+			check(int(sm.tool) == int(row[1]),
+					"scrolled `%s` at (%.0f, %.0f) arms tool %d (got %d, status `%s`)" % [
+						str(row[0]), pos.x, pos.y, int(row[1]), int(sm.tool),
+						_status_of(main)])
+			check(_status_of(main).begins_with(str(row[2]))
+					or _status_of(main).contains(str(row[2])),
+					"scrolled `%s` hint is `%s…` (got `%s`)" % [
+						str(row[0]), str(row[2]), _status_of(main)])
+
+	main.queue_free()
+	await process_frame
+	await process_frame
