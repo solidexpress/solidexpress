@@ -158,8 +158,11 @@ func test_face_sketch_and_exit_3d() -> void:
 	await _push_key(vp, KEY_F)
 	check(not _sketch_fit_valid(cam), "sketch_fit stays invalid after 3D F")
 	check(not cam.sketch_orientation_locked, "3D F does not re-lock the sketch view")
-	check(cam.distance > OrbitCamera.DEFAULT_DISTANCE + 0.5,
-			"3D F frames the body AABB (distance %.3f, not empty-scene default)" % cam.distance)
+	var dist0 := cam.distance
+	var pivot0 := cam.pivot
+	cam.frame_selection_or_all(false)
+	check(is_equal_approx(cam.distance, dist0) and cam.pivot.is_equal_approx(pivot0),
+			"3D F matches the pre-change body AABB framer (distance %.3f)" % dist0)
 	await _shutdown(ctx)
 
 

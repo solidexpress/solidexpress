@@ -475,6 +475,7 @@ func _activate_session() -> void:
 func _enter_camera() -> void:
 	if camera == null:
 		return
+	camera.sketch_fit = fit_view
 	var ext := sketch_extents(0.2)
 	var center: Vector3 = plane_origin
 	var radius := 25.0
@@ -519,6 +520,7 @@ func _view_span_mm() -> float:
 
 func _leave_camera() -> void:
 	if camera != null:
+		camera.sketch_fit = Callable()
 		camera.leave_sketch_view()
 
 
