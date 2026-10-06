@@ -89,8 +89,15 @@
       (function () {
         var LATEST = "https://api.github.com/repos/solidexpress/solidexpress/releases/latest";
         var PAGE = "https://github.com/solidexpress/solidexpress/releases/latest";
+        function isPublicLatestRelease(release) {
+          if (!release) return false;
+          if (release.draft || release.prerelease) return false;
+          if (release.tag_name === "linux-test-build") return false;
+          return true;
+        }
         function pick(assets, re) {
           for (var i = 0; i < assets.length; i++) {
+            if (/linux-test/i.test(assets[i].name)) continue;
             if (re.test(assets[i].name) && !/\.sha256$/.test(assets[i].name)) return assets[i];
           }
           return null;
@@ -109,6 +116,7 @@
         fetch(LATEST)
           .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
           .then(function (release) {
+            if (!isPublicLatestRelease(release)) throw new Error("ignoring prerelease / linux-test-build");
             var assets = release.assets || [];
             var page = release.html_url || PAGE;
             set("macos-dmg", pick(assets, /\.dmg$/i), page);

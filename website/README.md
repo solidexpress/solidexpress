@@ -27,3 +27,5 @@ scripts/sx-sync-website           # also copies ui_movie_manifest.json
 
 Every platform button must hydrate from **`/repos/solidexpress/solidexpress/releases/latest` only**.
 Never fall back to an older release when an asset is missing (that is how macOS used to keep serving `v0.0.1` while the page claimed a newer version). See `.cursor/rules/website-latest-release-downloads.mdc`.
+
+The rolling **`linux-test-build` prerelease** is an internal Linux GUI-test tarball, not a product release. GitHub’s `/releases/latest` already skips prereleases; the download script also refuses `prerelease`, tag `linux-test-build`, and asset names containing `linux-test`. Testers: [docs/loop/linux-test-build.md](../docs/loop/linux-test-build.md).

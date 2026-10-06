@@ -15,6 +15,7 @@ SolidExpress download links on the marketing site must **always** resolve to ass
 3. **No hardcoded versioned asset URLs** in HTML (`.../releases/download/v0.0.1/SolidExpress-0.0.1-macos.dmg`). Initial `href`s may be `https://github.com/solidexpress/solidexpress/releases/latest` until JS hydrates.
 4. **No ZIP alternate download buttons** on the public download row (DMG / Setup.exe / `.tar.gz` only).
 5. **No OS-detection “Detected macOS…” hint** and no “installer-ready builds…” tagline on the download section.
+6. **Ignore the `linux-test-build` prerelease.** That tag is a rolling internal Linux tarball and must never be treated as latest. If `release.prerelease` is true or `release.tag_name === "linux-test-build"`, do not hydrate from it. Skip assets whose names contain `linux-test`.
 
 ## Correct pattern
 
@@ -22,7 +23,8 @@ SolidExpress download links on the marketing site must **always** resolve to ass
 fetch("https://api.github.com/repos/solidexpress/solidexpress/releases/latest")
   .then((r) => r.json())
   .then((release) => {
-    // pick .dmg / setup.exe / .tar.gz from release.assets ONLY
+    // refuse prerelease / tag linux-test-build
+    // pick .dmg / setup.exe / .tar.gz from release.assets ONLY (skip linux-test names)
     // set #dl-version and “all assets” link from release.tag_name / release.html_url
   });
 ```

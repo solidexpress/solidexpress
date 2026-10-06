@@ -1,0 +1,189 @@
+# Rolling Linux GUI-test tarball. NOT a product release.
+# Published to the `linux-test-build` prerelease (never GitHub "latest").
+name: linux-test-build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "website/**"
+      - "*.md"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (branch, tag, or SHA). Leave empty to build the branch this workflow was run from."
+        required: false
+        type: string
+        default: ""
+
+# One rolling build at a time: a newer main push cancels an older in-flight run.
+concurrency:
+  group: linux-test-build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Keep in sync with packaging/occt.version, ci.yml, and release.yml.
+  OCCT_VERSION: "8.0.1"
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ curl unzip patchelf file ccache \
+            libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
+            libfreetype-dev libfontconfig-dev rapidjson-dev \
+            libx11-dev libxi-dev libxext-dev libxmu-dev libgl1-mesa-dev
+
+      - name: Cache OCCT ${{ env.OCCT_VERSION }}
+        uses: actions/cache@v4
+        with:
+          path: /opt/occt-${{ env.OCCT_VERSION }}
+          key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
+
+      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
+        run: |
+          chmod +x packaging/ci/install_occt.sh
+          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
+          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
+          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-linux-test-build-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ccache-linux-test-build-${{ runner.os }}-
+            ccache-linux-test-build-
+
+      - name: Enable ccache
+        run: |
+          mkdir -p "${HOME}/.ccache"
+          echo "CCACHE_DIR=${HOME}/.ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+          echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+          ccache -z
+          ccache -s
+
+      - name: Cache Godot 4.7-stable binary
+        uses: actions/cache@v4
+        with:
+          path: tools/godot/godot
+          key: godot-${{ runner.os }}-4.7-stable-linux-x86_64
+          restore-keys: |
+            godot-${{ runner.os }}-4.7-stable-
+            godot-
+
+      - name: Cache Godot 4.7 export templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates/4.7.stable
+          key: godot-export-templates-4.7-stable-linux-v1
+
+      - name: Fetch Godot editor + export templates
+        run: |
+          chmod +x scripts/release/fetch-godot-templates.sh
+          ./scripts/release/fetch-godot-templates.sh
+          tools/godot/godot --version
+
+      - name: Run kernel tests
+        run: |
+          export CMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          export LD_LIBRARY_PATH="/opt/occt-${OCCT_VERSION}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}"
+          cmake --build build -j "$(nproc)" --target sxkernel_tests
+          ./build/sxkernel/sxkernel_tests
+
+      - name: Export Linux client
+        run: |
+          export CMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          export LD_LIBRARY_PATH="/opt/occt-${OCCT_VERSION}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          chmod +x scripts/release/export-linux.sh
+          ./scripts/release/export-linux.sh
+
+      - name: Stage rolling test-build assets
+        run: |
+          chmod +x scripts/release/stage-linux-test-build.sh
+          ./scripts/release/stage-linux-test-build.sh
+          ccache -s
+
+      - name: Publish linux-test-build prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG=linux-test-build
+          SHA="$(git rev-parse HEAD)"
+          SHORT="$(git rev-parse --short HEAD)"
+          DIST="dist/releases"
+          NOTES="$(mktemp)"
+          {
+            echo "Internal GUI testing build. **Not a product release.**"
+            echo
+            echo "Rolling Linux tarball for testers who need a download over plain HTTPS (no GitHub login). The public website and \`/releases/latest\` ignore this tag."
+            echo
+            echo "- Stable URL: https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/SolidExpress-linux-test-latest-x86_64.tar.gz"
+            echo "- This run: SolidExpress-${SHORT}-linux-x86_64.tar.gz at commit ${SHA}"
+            echo "- See BUILDINFO.txt on this release for the full SHA, OCCT, and Godot versions."
+            echo
+            echo "Rebuilt on every main push (docs/website-only commits skipped) and on workflow_dispatch. Newer runs cancel older in-flight runs."
+          } > "$NOTES"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            mapfile -t assets < <(gh release view "$TAG" --json assets --jq '.assets[].name')
+            for name in "${assets[@]}"; do
+              [[ -z "${name}" ]] && continue
+              gh release delete-asset "$TAG" "$name" --yes
+            done
+            gh release edit "$TAG" \
+              --title "Linux test build (not a release)" \
+              --notes-file "$NOTES" \
+              --prerelease \
+              --latest=false \
+              --target "$SHA"
+          else
+            gh release create "$TAG" \
+              --title "Linux test build (not a release)" \
+              --notes-file "$NOTES" \
+              --prerelease \
+              --latest=false \
+              --target "$SHA"
+          fi
+
+          gh release upload "$TAG" \
+            "${DIST}/SolidExpress-${SHORT}-linux-x86_64.tar.gz" \
+            "${DIST}/SolidExpress-${SHORT}-linux-x86_64.tar.gz.sha256" \
+            "${DIST}/SolidExpress-linux-test-latest-x86_64.tar.gz" \
+            "${DIST}/SolidExpress-linux-test-latest-x86_64.tar.gz.sha256" \
+            "${DIST}/BUILDINFO.txt" \
+            --clobber
+
+          # Move the git tag onto the commit we just built (edit --target does not always move the ref).
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+              -f sha="$SHA" -F force=true
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" -f sha="$SHA"
+          fi
+
+          echo "Published prerelease ${TAG} at ${SHA}"
+          gh release view "$TAG" --json isPrerelease,isDraft,isLatest,tagName,targetCommitish,url --jq .
