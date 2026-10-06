@@ -445,7 +445,7 @@ func _rebuild_orient_popup() -> void:
 	title.text = "Orientation (Space)"
 	col.add_child(title)
 	for entry in [
-		["Front", 1], ["Right", 2], ["Top", 3], ["Isometric", 7],
+		["Front", 1], ["Back", 4], ["Right", 2], ["Left", 6], ["Top", 3], ["Bottom", 8], ["Isometric", 7],
 		["Frame selection", 20], ["Frame all", 21], ["Ortho/Persp", 5],
 	]:
 		var b := Button.new()
@@ -4849,8 +4849,14 @@ func _on_orient_id(id: int) -> void:
 			camera.set_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
 		3:
 			camera.set_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
+		4:
+			camera.set_view(deg_to_rad(180.0), deg_to_rad(0.0), true)
+		6:
+			camera.set_view(deg_to_rad(-90.0), deg_to_rad(0.0), true)
 		7:
 			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
+		8:
+			camera.set_view(deg_to_rad(0.0), deg_to_rad(-89.0), true)
 		5:
 			camera.toggle_projection()
 			status.emit("Projection toggled")

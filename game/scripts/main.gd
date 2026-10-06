@@ -975,6 +975,15 @@ func _on_default_view(view_id: String) -> void:
 		"iso":
 			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
 			_on_status("Isometric view")
+		"back":
+			camera.set_view(deg_to_rad(180.0), deg_to_rad(0.0), false)
+			_on_status("Back view")
+		"left":
+			camera.set_view(deg_to_rad(-90.0), deg_to_rad(0.0), false)
+			_on_status("Left view")
+		"bottom":
+			camera.set_view(deg_to_rad(0.0), deg_to_rad(-89.0), false)
+			_on_status("Bottom view")
 		_:
 			_on_status("Unknown view “%s”" % view_id)
 
