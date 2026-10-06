@@ -419,13 +419,21 @@ def _lint_replan10(errors: list[str]) -> None:
         _lint_dimension_label_pos2(src, errors, prefix)
 
 
-def _lint_replan11_camera(src: str, errors: list[str], prefix: str, *, skip_look_along: bool = False) -> None:
+def _lint_replan11_camera(
+    src: str,
+    errors: list[str],
+    prefix: str,
+    *,
+    skip_look_along: bool = False,
+    extra_yaw_pitch_ok: tuple[str, ...] = (),
+) -> None:
     always = tuple(
         n for n in REPLAN11_CAMERA
         if n not in REPLAN11_CAMERA_YAW_PITCH and not (skip_look_along and n == "_look_along")
     )
     _lint_needles(src, always, errors, prefix)
     funcs = _functions(src)
+    yaw_ok = set(REPLAN11_YAW_PITCH_OK) | set(extra_yaw_pitch_ok)
     for needle in REPLAN11_CAMERA_YAW_PITCH:
         for m in re.finditer(re.escape(needle), src):
             idx = m.start()
@@ -434,7 +442,7 @@ def _lint_replan11_camera(src: str, errors: list[str], prefix: str, *, skip_look
                 if start <= idx < end:
                     owner = name
                     break
-            if owner in REPLAN11_YAW_PITCH_OK:
+            if owner in yaw_ok:
                 continue
             errors.append(f"{prefix}line {_line_of(src, idx)}: {needle}")
 
@@ -481,6 +489,21 @@ def _lint_replan12(errors: list[str]) -> None:
         _lint_replan11_camera(src, errors, prefix)
 
 
+def _lint_replan13(errors: list[str]) -> None:
+    paths = sorted(TESTS.glob("run_rung01_replan13_*.gd"))
+    if len(paths) < 1:
+        errors.append("expected at least 1 run_rung01_replan13_*.gd")
+    for path in paths:
+        src = path.read_text(encoding="utf-8")
+        prefix = f"{path.relative_to(ROOT)}:"
+        # Validation suites: same camera needles as replan 12. Script-side
+        # setup is allowed; every press/key/motion under test is real.
+        # WP8's zoom helper is `_zoom_model` (yaw/pitch only there).
+        _lint_replan11_camera(
+            src, errors, prefix, extra_yaw_pitch_ok=("_zoom_model",)
+        )
+
+
 def main() -> int:
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
@@ -498,6 +521,7 @@ def main() -> int:
     _lint_replan10(errors)
     _lint_replan11(errors)
     _lint_replan12(errors)
+    _lint_replan13(errors)
 
     if errors:
         print("lint_rung01_e2e: GUI shortcuts remain:", file=sys.stderr)
@@ -525,6 +549,8 @@ def main() -> int:
     print(f"lint_rung01_e2e: {n11} replan11 scripts are clean")
     n12 = len(list(TESTS.glob("run_rung01_replan12_*.gd")))
     print(f"lint_rung01_e2e: {n12} replan12 scripts are clean")
+    n13 = len(list(TESTS.glob("run_rung01_replan13_*.gd")))
+    print(f"lint_rung01_e2e: {n13} replan13 scripts are clean")
     return 0
 
 

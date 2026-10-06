@@ -55,5 +55,13 @@ class OrientationTests(unittest.TestCase):
             self.assertNotEqual(fx, fy)
 
 
+class ThickJawProbeTests(unittest.TestCase):
+    def test_thick_jaw_top_probe_at_t14(self):
+        x, y, z = c.thick_jaw_top_probe(14.0)
+        self.assertAlmostEqual(x, 199.9434, delta=1e-3)
+        self.assertAlmostEqual(y, 14.1986, delta=1e-3)
+        self.assertAlmostEqual(z, 13.92, delta=1e-3)
+
+
 if __name__ == "__main__":
     unittest.main()

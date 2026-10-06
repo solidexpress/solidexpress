@@ -122,7 +122,20 @@ func _walk(ctx: FilmContext) -> Dictionary:
 			"polygon variant is across_flats without a setter (got %s)" % sm.tool_variant)
 	_assert_polygon_chips_clear(ctx)
 	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
-	await _hover_uv(ctx, Vector2(8, 3))
+	print("  B13.14 Typed fields (polygon preview)")
+	var last_r := -1.0
+	var tips: Array[Vector2] = [Vector2(8, 3), Vector2(10, 6), Vector2(12, 4)]
+	for tip in tips:
+		await _hover_uv(ctx, tip)
+		await process_frame
+		var got_r := _preview_circumradius(sm, Vector2.ZERO)
+		var want_r: float = tip.length() / sqrt(3.0)
+		check(got_r > 0.0 and absf(got_r - want_r) <= 0.05,
+				"B13.14 polygon preview radius follows pointer at %s (got %.4f want %.4f)" % [
+					str(tip), got_r, want_r])
+		check(last_r < 0.0 or not is_equal_approx(got_r, last_r),
+				"B13.14 polygon preview changed with the pointer (was %.4f now %.4f)" % [last_r, got_r])
+		last_r = got_r
 	await _type_hex_af_digits(ctx, sm, cam)
 	_assert_hex_flats(sm)
 	_assert_hex_not_pointer_af(sm)
@@ -180,6 +193,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 
 	print("- Esc from HUD W and from the File menu (palette box)")
 	await _esc_box_then_file_menu(ctx)
+	await _assert_view_popup_opaque(ctx)
 
 	print("- File New again, wrench blank")
 	await _file_new(ctx)
@@ -221,6 +235,11 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		check(absf(gap - 200.0) <= TOL, "centre distance is 200 ± 0.2 (got %.3f)" % gap)
 	else:
 		check(false, "two circles remain after Smart Dimension 200")
+	print("  B13.10 Frame")
+	await _push_key(ctx.main.get_viewport(), KEY_F, 0)
+	await process_frame
+	await process_frame
+	_assert_both_circles_on_screen(ctx, "F after 200 dim")
 	# Shaft 20 wide: the Shaft Lines chip adds the two lines at y = ±r0 that end on the Ø45.
 	await _shaft_lines_via_chip(ctx)
 	await _assert_shaft_lines_both_sides(sm)
@@ -298,6 +317,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(absf(head_r - 22.5) <= 0.05, "jaw sketch has Ø45 at the head (r=%.4f)" % head_r)
 	await _draw_centre_rect(ctx, Vector2(200, 0))
 	await _edit_rect_labels(ctx)
+	await _circle_motions_leave_no_marks(ctx)
 	await _save_as_in_sketch(ctx)
 	var first_miss := 12.0
 	check(first_miss > 0.15 * 22.5, "offset cutter misses the Ø45 15% gate")
@@ -312,7 +332,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	var offset_d := _offset_construction_distance(sm, HEAD)
 	check(offset_d > 0.15 * 22.5,
 			"remaining cutter misses the head by > 3.375 (got %.3f)" % offset_d)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
+	await _press_rail_label(ctx, "Trim")
 	_status_log.clear()
 	await _power_trim_shaft_click(ctx)
 	await process_frame
@@ -323,6 +343,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	err = _take_bad_status()
 	check(err == "", "jaw trim status clean" if err == "" else err)
 	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile closed")
+	_assert_trim_typed_labels(ctx)
 	_status_log.clear()
 	await _power_trim_shaft_click(ctx)
 	await process_frame
@@ -376,13 +397,34 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _sketch_on_top(ctx, body, top, 10.0)
 	sm = ctx.main.sketch_mode
 	check(sm.active and absf(sm.plane_origin.z - 10.0) < 0.5, "slot sketch on the top face")
+	print("  B13.6 Finish bar")
+	chrome = ctx.main.sketch_chrome
+	var slot_op: OptionButton = _finish_op(ctx)
+	var slot_op_txt := ""
+	if slot_op != null:
+		slot_op_txt = slot_op.get_item_text(slot_op.selected)
+	var slot_ex: Button = chrome.extrude_button() if chrome != null else null
+	check(slot_op_txt == "New", "B13.6 new sketch Op is New (got %s)" % slot_op_txt)
+	check(chrome != null and chrome.get_finish_end() == "blind",
+			"B13.6 new sketch End is Blind (got %s)" % (chrome.get_finish_end() if chrome != null else ""))
+	check(slot_ex != null and not slot_ex.disabled, "B13.6 Extrude is enabled on the new sketch")
 	await _zoom_uv(ctx, Vector2(90, 0), 220.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SLOT)
+	print("  B13.1 Slot by pointer")
+	var slot_btn := await _press_rail_label(ctx, "Slot")
+	check(slot_btn != null and slot_btn.button_pressed, "B13.1 Slot button is highlighted")
+	check(sm.tool == SketchMode.Tool.SLOT, "B13.1 Slot tool is armed")
+	var slot_arm := str(ctx.main.status_label.text)
+	check(slot_arm.begins_with("Slot —") or slot_arm.begins_with("Slot -"),
+			"B13.1 status starts Slot — (got `%s`)" % slot_arm)
 	await _type_dim(ctx, "5", false)
 	check(absf(sm.slot_radius - 5.0) < 1e-3, "slot radius typed into the dim blank (got %.4f)" % sm.slot_radius)
+	_status_log.clear()
 	await _click_uv(ctx, Vector2(18.5, 0), "Slot first centre")
-	await _hover_uv(ctx, Vector2(40, 0))
-	await _type_dim(ctx, "150", false)
+	await _click_uv(ctx, Vector2(168.5, 0), "Slot second centre")
+	await process_frame
+	var slot_commit := str(ctx.main.status_label.text)
+	check(slot_commit.contains("Slot c-c 150.0000 R5.0000") or _status_has("Slot c-c 150.0000 R5.0000"),
+			"B13.1 Slot c-c 150.0000 R5.0000 (got `%s`)" % slot_commit)
 	chrome = ctx.main.sketch_chrome
 	await _pick_op(_finish_op(ctx), 1)
 	await _pick_end(_finish_end(ctx), 0)
@@ -462,7 +504,7 @@ func _checker(checker: String, args: Array) -> void:
 	print(text)
 	check(code == 0, "check_rung01.py %s exit %d" % [" ".join(args), code])
 	if str(args[0]) == "thick":
-		check(text.contains("6/6"), "thick checker prints 6/6")
+		check(text.contains("7/7"), "B13.15 thick checker prints 7/7")
 
 
 func _assert_timeline(ctx: FilmContext) -> void:
@@ -732,7 +774,26 @@ func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vec
 		await _view_key(ctx, KEY_8)
 	else:
 		await _view_key(ctx, KEY_3)
+	var bb0: Dictionary = {}
+	if label == "bottom face":
+		print("  B13.4 Bottom-face pick")
+		bb0 = ctx.view.doc.measure_bbox(body)
+		_status_log.clear()
 	await _click_model(ctx, point, label)
+	if label == "bottom face":
+		var screen := FilmUI.model_to_screen(ctx, point)
+		var moved := screen + Vector2(40, 0)
+		await _aim_pointer(ctx, moved)
+		await process_frame
+		var bb1: Dictionary = ctx.view.doc.measure_bbox(body)
+		var min0: Vector3 = bb0.get("min", Vector3.ZERO)
+		var max0: Vector3 = bb0.get("max", Vector3.ZERO)
+		var min1: Vector3 = bb1.get("min", Vector3.ZERO)
+		var max1: Vector3 = bb1.get("max", Vector3.ZERO)
+		check(min0.is_equal_approx(min1) and max0.is_equal_approx(max1),
+				"B13.4 bbox unchanged after bottom-face click + 40px move")
+		check(not _status_has("Moved body") and not str(ctx.main.status_label.text).contains("Moved body"),
+				"B13.4 status never says Moved body (got %s)" % ctx.main.status_label.text)
 	var n := ctx.view.selected_edges.size()
 	check(n >= 4, "%s click selected the face edges (got %d, status %s)" % [
 		label, n, ctx.main.status_label.text])
@@ -751,17 +812,25 @@ func _refuse_slot_floor(ctx: FilmContext, body: String) -> void:
 	await _ensure_body_selected(ctx, body)
 	var before := _count_type(ctx, "fillet")
 	var vol0: float = ctx.view.doc.body_volume(body)
+	var dirty0: bool = ctx.main._document_is_dirty()
+	print("  B13.9 Refused fillet is clean")
 	await _arm_fillet(ctx, 1.5)
 	await _view_key(ctx, KEY_3)
 	await _click_model(ctx, point, "Slot floor")
 	if ctx.view.selected_edges.is_empty():
 		_slot_floor_error = str(ctx.view.doc.last_graph_error())
 		_slot_floor_refused = false
+		check(ctx.main._document_is_dirty() == dirty0,
+				"B13.9 dirty flag unchanged after refused R1.5 (before %s after %s)" % [
+					str(dirty0), str(ctx.main._document_is_dirty())])
 		return
 	await _commit_fillet(ctx)
 	_slot_floor_error = str(ctx.view.doc.last_graph_error())
 	_slot_floor_refused = _count_type(ctx, "fillet") == before and _slot_floor_error != ""
 	check(absf(ctx.view.doc.body_volume(body) - vol0) < 1e-3, "body unchanged after refused fillet")
+	check(ctx.main._document_is_dirty() == dirty0,
+			"B13.9 dirty flag unchanged after refused R1.5 (before %s after %s)" % [
+				str(dirty0), str(ctx.main._document_is_dirty())])
 	print("  slot floor refusal: " + _slot_floor_error)
 	await _esc_ends_pick(ctx)
 
@@ -806,7 +875,18 @@ func _save_as_in_sketch(ctx: FilmContext) -> void:
 	check(str(dlg.current_file).ends_with(".sxp"), "Save As suggests an .sxp name (got %s)" % dlg.current_file)
 	for _i in 4:
 		await process_frame
-	await _type_export_name(dlg, path)
+	print("  B13.12 Save As name")
+	var name_edit := _dialog_name_edit(dlg)
+	check(name_edit != null, "Save As filename LineEdit exists")
+	var prefilled := str(name_edit.text) if name_edit != null else str(dlg.current_file)
+	# WP7 selects the name on open; type without Ctrl+A so the typed string replaces it.
+	await _x11_type(name_edit.get_viewport() if name_edit != null else dlg.get_viewport(), path)
+	await process_frame
+	var after_name := str(name_edit.text) if name_edit != null else str(dlg.current_file)
+	check(after_name == path or after_name.ends_with(path.get_file()),
+			"B13.12 typed name replaced the pre-filled name (got `%s`, was `%s`)" % [after_name, prefilled])
+	check(prefilled == "" or not after_name.begins_with(prefilled) or after_name == path,
+			"B13.12 name is not an append of the pre-filled value (got `%s`)" % after_name)
 	var ok_btn := dlg.get_ok_button()
 	if ok_btn != null:
 		await _x11_click_embedded(ok_btn)
@@ -906,6 +986,13 @@ func _commit_fillet(ctx: FilmContext) -> void:
 	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
+	# WP3: StripRadius == panel after Enter applies the armed radius (10, then 1).
+	# Assert here, not mid-type: SpinBox.value and the panel still hold the
+	# previous number until Enter.
+	var applied := spin.value
+	if is_equal_approx(applied, 10.0) or is_equal_approx(applied, 1.0):
+		print("  B13.8 Fillet radius %s" % _radius_digits(applied))
+		_assert_strip_equals_panel(ctx, applied, _radius_digits(applied))
 	# A refused radius re-arms the same edges. Esc cancels that pick so the
 	# next Fillet click does not immediately re-commit leftover edges.
 	if str(ctx.view.doc.last_graph_error()) != "":
@@ -1227,8 +1314,16 @@ func _type_timeline_distance(ctx: FilmContext, fid: String, digits: String) -> v
 			"distance text is selected ('%s')" % selected)
 	await _type_text(ctx.main.get_viewport(), digits)
 	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
-	await process_frame
-	await process_frame
+	if digits == "14":
+		print("  B13.14 Typed fields (Distance)")
+		for i in 5:
+			await process_frame
+			var shown := "" if edit == null else edit.text.strip_edges()
+			check(not shown.contains("10") or shown.contains("14"),
+					"B13.14 Distance never flashes old 10 after 14 Enter (frame %d got `%s`)" % [i, shown])
+	else:
+		await process_frame
+		await process_frame
 	var got := _feature_distance(ctx, fid)
 	check(absf(got - float(digits)) < 0.05, "base extrude distance is %.3f" % got)
 
@@ -2104,6 +2199,7 @@ func _shaft_lines_via_chip(ctx: FilmContext) -> void:
 		await _x11_click_uv(ctx, top, "Select circle edge")
 		await process_frame
 	check(sm.selected.size() == 2, "two circle-edge clicks select both circles (got %d)" % sm.selected.size())
+	_assert_chip_row_clear_of_rail(ctx)
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Shaft Lines")
 	check(chip != null and chip.is_visible_in_tree(), "the Shaft Lines chip is visible after selecting both circles")
 	if chip == null:
@@ -2112,6 +2208,10 @@ func _shaft_lines_via_chip(ctx: FilmContext) -> void:
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Shaft Lines"))
 	await process_frame
 	check(_status_has("Shaft lines: 2 added"), "status reports 2 shaft lines (got %s)" % ctx.main.status_label.text)
+	print("  B13.11 Measure marks (Shaft Lines)")
+	var mo: MeasureOverlay = ctx.main.interaction.measure_overlay
+	check(mo == null or not mo.has_anchor(),
+			"B13.11 after Shaft Lines measure_overlay.has_anchor() is false")
 
 
 func _assert_shaft_lines_both_sides(sm: SketchMode) -> void:
@@ -2200,7 +2300,7 @@ func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 	var c1: Vector2 = circs[0]["center"]
 	var c2: Vector2 = circs[1]["center"]
 	await _zoom(ctx, Vector3(100, 0, 0), 280.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
+	await _press_rail_label(ctx, "Smart Dim")
 	await _zoom_uv(ctx, c1, 50.0)
 	var s1 := FilmUI.model_to_screen(ctx, sm.to_model(c1))
 	check(FilmUI.require_on_screen(ctx, s1, "Smart Dimension first centre"),
@@ -2234,9 +2334,9 @@ func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 
 func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
-	var jaw := FilmUI.find_sketch_tool_button(ctx.main, "Jaw")
+	print("  B13.2 Jaw click 2 twice")
+	var jaw := await _press_rail_label(ctx, "Jaw")
 	check(jaw != null and jaw.is_visible_in_tree(), "the Jaw button is on the sketch rail")
-	await FilmUI.click_control(ctx, jaw, FilmUICues.alert("Click", "Jaw on the sketch rail"))
 	check(sm.tool == SketchMode.Tool.RECT and sm.tool_variant == "center_three_point",
 			"Jaw selects Rectangle, Center Three Point (got tool %d variant %s)" % [int(sm.tool), sm.tool_variant])
 	var jaw_chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
@@ -2244,9 +2344,32 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 			"the Center Three Point chip is highlighted after Jaw")
 	var along := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))
 	var across := Vector2(-along.y, along.x)
-	await _x11_click_uv(ctx, center, "Rect centre")
-	await _x11_click_uv(ctx, center + along * 30.0, "Rect long side")
-	await _x11_click_uv(ctx, center + across * 10.0, "Rect half width")
+	var before_n: int = sm.sketch.entity_ids().size()
+	await _click_uv(ctx, center, "Jaw click 1 centre")
+	await process_frame
+	await _click_uv(ctx, center + along * 30.0, "Jaw click 2 long side")
+	await process_frame
+	var after2 := str(ctx.main.status_label.text)
+	check(after2.contains("click 3") or after2 == SketchMode.JAW_AFTER_LONG,
+			"B13.2 after click 2 the status names the next step (got `%s`)" % after2)
+	await _click_uv(ctx, center + along * 30.0, "Jaw click 2 again")
+	await process_frame
+	var after_repeat := str(ctx.main.status_label.text)
+	check(sm.sketch.entity_ids().size() == before_n,
+			"B13.2 repeat click 2 does not commit a zero-width jaw (n=%d was %d)" % [
+				sm.sketch.entity_ids().size(), before_n])
+	check(after_repeat.contains("zero") or after_repeat == SketchMode.JAW_ZERO_WIDTH,
+			"B13.2 status says the repeat did not commit (got `%s`)" % after_repeat)
+	await _click_uv(ctx, center + across * 10.0, "Jaw click 3 half width")
+	await process_frame
+	check(str(ctx.main.status_label.text).begins_with("Jaw committed") or _status_has("Jaw committed"),
+			"B13.2 click 3 commits (got `%s`)" % ctx.main.status_label.text)
+	print("  B13.5 Tool status")
+	for pair in [["Line", "Line"], ["Smart Dim", "Smart Dim"], ["Trim", "Trim"]]:
+		await _press_rail_label(ctx, str(pair[0]))
+		var st := str(ctx.main.status_label.text)
+		check(st.begins_with(str(pair[1])),
+				"B13.5 %s status starts with %s (got `%s`)" % [pair[0], pair[1], st])
 
 
 func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void:
@@ -2667,6 +2790,243 @@ func _pointer_click(ctx: FilmContext, pos: Vector2, double_click: bool) -> void:
 	await process_frame
 
 
+func _rail_scroll(rail: Control) -> ScrollContainer:
+	if rail == null:
+		return null
+	var named := rail.find_child("SketchRailScroll", true, false)
+	if named is ScrollContainer:
+		return named
+	for c in rail.find_children("*", "ScrollContainer", true, false):
+		return c as ScrollContainer
+	return null
+
+
+func _scroll_btn_to_band(scroll: ScrollContainer, btn: Control, want_y: float) -> void:
+	if scroll == null or btn == null:
+		return
+	scroll.ensure_control_visible(btn)
+	await process_frame
+	await process_frame
+	var c: Vector2 = btn.get_global_rect().get_center()
+	scroll.scroll_vertical = maxi(0, scroll.scroll_vertical + int(c.y - want_y))
+	await process_frame
+	await process_frame
+
+
+func _btn_center_visible(btn: Control, scroll: ScrollContainer) -> Vector2:
+	if btn == null:
+		return Vector2.INF
+	var br: Rect2 = btn.get_global_rect()
+	var c := br.get_center()
+	if scroll == null:
+		return c
+	var sr: Rect2 = scroll.get_global_rect()
+	var inner := sr.grow_individual(0.0, -6.0, 0.0, -6.0)
+	if inner.has_point(c):
+		return c
+	return Vector2.INF
+
+
+func _press_rail_label(ctx: FilmContext, label: String) -> Button:
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+		await process_frame
+	var btn := FilmUI.find_sketch_tool_button(ctx.main, label)
+	check(btn != null and btn.is_visible_in_tree(), "rail button `%s` is visible" % label)
+	if btn == null:
+		return null
+	var scroll := _rail_scroll(ctx.main.sketch_toolbar)
+	var pos := _btn_center_visible(btn, scroll)
+	if pos == Vector2.INF or pos.y < 160.0 or pos.y > 520.0:
+		await _scroll_btn_to_band(scroll, btn, 300.0)
+		pos = _btn_center_visible(btn, scroll)
+	check(pos != Vector2.INF, "rail button `%s` centre is on the rail clip" % label)
+	if pos == Vector2.INF:
+		return null
+	await _aim_pointer(ctx, pos)
+	await _pointer_click(ctx, pos, false)
+	await process_frame
+	return btn
+
+
+func _preview_hex_uvs(sm: SketchMode) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if sm == null or sm._preview_node == null or sm._preview_node.mesh == null:
+		return out
+	var mesh: Mesh = sm._preview_node.mesh
+	if mesh.get_surface_count() < 1:
+		return out
+	var arrays: Array = mesh.surface_get_arrays(0)
+	if arrays.is_empty() or arrays[Mesh.ARRAY_VERTEX] == null:
+		return out
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	if verts.is_empty():
+		return out
+	var start := maxi(0, verts.size() - 12)
+	for i in range(start, verts.size()):
+		var d: Vector3 = verts[i] - sm.plane_origin
+		var uv := Vector2(d.dot(sm.plane_x), d.dot(sm.plane_y))
+		var dup := false
+		for p in out:
+			if p.distance_to(uv) <= 1e-5:
+				dup = true
+				break
+		if not dup:
+			out.append(uv)
+	return out
+
+
+func _preview_circumradius(sm: SketchMode, centre: Vector2) -> float:
+	var best := 0.0
+	for p in _preview_hex_uvs(sm):
+		best = maxf(best, p.distance_to(centre))
+	return best
+
+
+func _assert_chip_row_clear_of_rail(ctx: FilmContext) -> void:
+	print("  B13.3 Chip row")
+	var rail: Control = ctx.main.sketch_toolbar
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	check(rail != null and chrome != null, "B13.3 rail and chrome exist")
+	if rail == null or chrome == null:
+		return
+	var bar: Control = chrome._action_bar
+	check(bar != null and bar.visible, "B13.3 action bar is visible")
+	if bar == null:
+		return
+	var rail_r: Rect2 = rail.get_global_rect()
+	var bar_r: Rect2 = bar.get_global_rect()
+	var vp: Rect2 = ctx.main.get_viewport().get_visible_rect()
+	check(not bar_r.intersects(rail_r),
+			"B13.3 chip row does not overlap the left rail (chip %s rail %s)" % [str(bar_r), str(rail_r)])
+	check(vp.has_point(bar_r.end) or vp.encloses(bar_r.grow(-0.5)),
+			"B13.3 chip row ends inside the viewport (chip %s vp %s)" % [str(bar_r), str(vp)])
+
+
+func _assert_both_circles_on_screen(ctx: FilmContext, via: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var circs := _circles(sm)
+	check(circs.size() == 2, "B13.10 %s: two circles" % via)
+	var vp: Rect2 = ctx.main.get_viewport().get_visible_rect().grow(-4.0)
+	var rail: Control = ctx.main.sketch_toolbar
+	var rail_r: Rect2 = rail.get_global_rect() if rail != null else Rect2()
+	for c in circs:
+		var center: Vector2 = c["center"]
+		var r := float(c["radius"])
+		var dirs: Array[Vector2] = [Vector2(r, 0.0), Vector2(-r, 0.0), Vector2(0.0, r), Vector2(0.0, -r)]
+		for d in dirs:
+			var uv: Vector2 = center + d
+			var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+			var ok: bool = vp.has_point(screen) and not rail_r.has_point(screen)
+			check(ok, "B13.10 %s: circle extreme %s on screen at %s" % [via, str(uv), str(screen)])
+
+
+func _assert_trim_typed_labels(ctx: FilmContext) -> void:
+	print("  B13.7 Trim typed values")
+	var sm: SketchMode = ctx.main.sketch_mode
+	var widths: Array = []
+	var angles: Array = []
+	var floor_id := str(sm._jaw_floor_id)
+	var walls := {}
+	for wid in sm._jaw_wall_ids:
+		walls[str(wid)] = true
+	for dim in sm.dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		var t := str(dim.get("type", ""))
+		if t == "distance":
+			var hit := floor_id != "" and floor_id != "0"
+			if hit:
+				hit = false
+				for id in dim.get("ids", []):
+					if str(id) == floor_id:
+						hit = true
+						break
+			if hit or (floor_id == "" and sm._dimension_label_text(dim) == sm._format_dimension(20.0)):
+				widths.append(dim)
+		elif t == "angle":
+			var hit_a := false
+			for id in dim.get("ids", []):
+				if walls.has(str(id)):
+					hit_a = true
+					break
+			if hit_a:
+				angles.append(dim)
+			elif walls.is_empty():
+				var at := sm._dimension_label_text(dim)
+				if at == "45°" or at.begins_with("45"):
+					angles.append(dim)
+	check(widths.size() == 1, "B13.7 exactly one width label (got %d)" % widths.size())
+	check(angles.size() == 1, "B13.7 exactly one angle label (got %d)" % angles.size())
+	if not widths.is_empty():
+		var wt := sm._dimension_label_text(widths[0])
+		check(wt == "20" or wt == sm._format_dimension(20.0),
+				"B13.7 width label reads 20 (got `%s`)" % wt)
+	if not angles.is_empty():
+		var at := sm._dimension_label_text(angles[0])
+		check(at == "45°" or at.begins_with("45"),
+				"B13.7 angle label reads 45° (got `%s`)" % at)
+	var wall := _long_side_angle_deg(sm)
+	check(absf(wall - 45.0) <= 0.01, "B13.7 measured wall angle is 45 ± 0.01° (got %.4f)" % wall)
+
+
+func _assert_strip_equals_panel(ctx: FilmContext, want: float, tag: String) -> void:
+	var spin: SpinBox = ctx.main.interaction.find_child("StripRadius", true, false)
+	check(spin != null, "B13.8 %s StripRadius exists" % tag)
+	if spin == null:
+		return
+	var panel: float = ctx.main.ops_panel.dressup_radius()
+	check(is_equal_approx(spin.value, want) and is_equal_approx(panel, want),
+			"B13.8 %s StripRadius equals panel Radius %s (strip %s panel %s)" % [
+				tag, str(want), str(spin.value), str(panel)])
+
+
+func _assert_view_popup_opaque(ctx: FilmContext) -> void:
+	print("  B13.13 Popups")
+	var hud: ViewHud = ctx.main.view_hud
+	check(hud != null, "B13.13 View HUD exists")
+	if hud == null:
+		return
+	var drop: Button = hud.find_child("ViewsDrop", true, false)
+	check(drop != null and drop.is_visible_in_tree(), "B13.13 View ▼ is visible")
+	if drop == null:
+		return
+	var pos := drop.get_global_rect().get_center()
+	await _aim_pointer(ctx, pos)
+	await _pointer_click(ctx, pos, false)
+	await process_frame
+	await process_frame
+	var pop: PopupPanel = hud._views_popup
+	check(pop != null and pop.visible, "B13.13 View ▼ popup is visible")
+	if pop == null:
+		return
+	var sb: StyleBox = pop.get_theme_stylebox("panel", "PopupPanel")
+	var alpha := 0.0
+	if sb is StyleBoxFlat:
+		alpha = (sb as StyleBoxFlat).bg_color.a
+	check(sb is StyleBoxFlat and is_equal_approx(alpha, 1.0),
+			"B13.13 View popup panel is opaque (alpha %.3f)" % alpha)
+	if pop.visible:
+		pop.hide()
+		await process_frame
+
+
+func _circle_motions_leave_no_marks(ctx: FilmContext) -> void:
+	print("  B13.11 Measure marks (Circle over jaw)")
+	var sm: SketchMode = ctx.main.sketch_mode
+	var mo: MeasureOverlay = ctx.main.interaction.measure_overlay
+	await _press_rail_label(ctx, "Circle")
+	for k in 10:
+		var uv: Vector2 = HEAD + JAW * (2.0 + float(k) * 1.5) + PERP * 4.0
+		await _hover_uv(ctx, uv)
+		await process_frame
+		var marks := 0 if mo == null else mo.marks.size()
+		check(mo == null or (not mo.has_anchor() and marks == 0),
+				"B13.11 Circle motion %d leaves no measure marks (anchor=%s marks=%d)" % [
+					k, str(mo.has_anchor() if mo != null else false), marks])
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+
+
 func _place_hole_circle(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
@@ -2682,7 +3042,7 @@ func _place_hole_circle(ctx: FilmContext) -> void:
 	var center: Vector2 = info["center"]
 	check(center.length() <= 0.5, "hole centre is the Ø20 centre (got %s)" % center)
 	var radius := float(info["radius"])
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
+	await _press_rail_label(ctx, "Smart Dim")
 	await _click_uv(ctx, center + Vector2(radius, 0.0), "Smart dimension the hole")
 	await process_frame
 	var di := _dim_index(sm, "diameter")
