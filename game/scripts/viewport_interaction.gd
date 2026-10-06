@@ -78,6 +78,11 @@ var _strip_fillet: Button
 var _strip_chamfer: Button
 var _strip_radius_box: HBoxContainer
 var _strip_radius: SpinBox
+var _dressup_radius_connected := false
+var _strip_radius_editing := false
+var _strip_focus_text := ""
+var _panel_changed_while_strip_focused := false
+var _strip_radius_syncing := false
 var _strip_jaw_box: HBoxContainer
 var _strip_hide: Button
 var _strip_delete: Button
@@ -371,15 +376,32 @@ func _build_selection_strip() -> void:
 	_strip_radius_box.add_child(r_lbl)
 	_strip_radius = SpinBox.new()
 	_strip_radius.name = "StripRadius"
-	SxUi.configure_spin(_strip_radius, 0.05, 100.0, 0.1, 0.5)
+	SxUi.configure_spin(_strip_radius, 0.05, 100.0, 0.5, 0.5)
 	_strip_radius.suffix = "mm"
 	_strip_radius.custom_minimum_size = Vector2(88, 0)
 	_strip_radius.tooltip_text = "Fillet radius / Chamfer distance — edit, then Enter"
 	_strip_radius.value_changed.connect(func(v: float) -> void:
+		if _strip_radius_editing:
+			return
 		if ops_panel != null and ops_panel.has_method("set_dressup_radius"):
 			ops_panel.set_dressup_radius(v))
-	_strip_radius.get_line_edit().text_submitted.connect(func(_t: String) -> void:
-		_strip_radius.apply()
+	var strip_le := _strip_radius.get_line_edit()
+	strip_le.focus_entered.connect(func() -> void:
+		_strip_radius_editing = true
+		_panel_changed_while_strip_focused = false
+		_strip_focus_text = strip_le.text)
+	strip_le.focus_exited.connect(func() -> void:
+		if _strip_radius_syncing:
+			return
+		_strip_radius_editing = false
+		if _panel_changed_while_strip_focused:
+			_sync_strip_dressup_radius()
+		else:
+			_commit_strip_radius()
+			_sync_strip_dressup_radius()
+		_panel_changed_while_strip_focused = false)
+	strip_le.text_submitted.connect(func(_t: String) -> void:
+		_commit_strip_radius()
 		if ops_panel != null:
 			ops_panel.try_commit_pending())
 	_strip_radius_box.add_child(_strip_radius)
@@ -4788,6 +4810,7 @@ func _ctx_chamfer() -> void:
 
 
 func _on_dressup_armed_changed(armed: bool, _is_fillet: bool) -> void:
+	_ensure_dressup_radius_connected()
 	_sync_strip_dressup_radius()
 	if armed and _strip_radius != null:
 		var le := _strip_radius.get_line_edit()
@@ -4796,7 +4819,112 @@ func _on_dressup_armed_changed(armed: bool, _is_fillet: bool) -> void:
 			le.select_all()
 
 
+func _ensure_dressup_radius_connected() -> void:
+	if _dressup_radius_connected or ops_panel == null:
+		return
+	if ops_panel.has_signal("dressup_radius_changed"):
+		ops_panel.dressup_radius_changed.connect(_on_dressup_radius_changed)
+		_dressup_radius_connected = true
+
+
+func _on_dressup_radius_changed(v: float) -> void:
+	if _strip_radius == null:
+		return
+	if _strip_radius_editing:
+		_panel_changed_while_strip_focused = true
+	if _strip_radius_text_dirty():
+		return
+	_write_strip_radius(v)
+	if _strip_radius_editing:
+		var le := _strip_radius.get_line_edit()
+		if le != null:
+			_strip_focus_text = le.text
+
+
+func _parse_strip_radius_text(text: String) -> float:
+	var t := text.strip_edges().replace("mm", "").replace("MM", "").strip_edges()
+	if t.is_empty() or t == "." or t == "-" or not t.is_valid_float():
+		return NAN
+	return float(t)
+
+
+func _strip_radius_text_dirty() -> bool:
+	if _strip_radius == null:
+		return false
+	var le := _strip_radius.get_line_edit()
+	if le == null or not le.has_focus():
+		return false
+	var parsed := _parse_strip_radius_text(le.text)
+	if is_nan(parsed):
+		return true
+	return not is_equal_approx(parsed, _strip_radius.value)
+
+
+func _strip_user_typed() -> bool:
+	if _strip_radius == null:
+		return false
+	var le := _strip_radius.get_line_edit()
+	if le == null:
+		return false
+	return le.text != _strip_focus_text
+
+
+func _write_strip_radius(v: float) -> void:
+	if _strip_radius == null:
+		return
+	var le := _strip_radius.get_line_edit()
+	var restore_focus := false
+	_strip_radius_syncing = true
+	if le != null and le.has_focus():
+		var parsed_focus := _parse_strip_radius_text(le.text)
+		if is_nan(parsed_focus) or not is_equal_approx(parsed_focus, v):
+			restore_focus = true
+			le.release_focus()
+	var already := is_equal_approx(_strip_radius.value, v)
+	_strip_radius.set_value_no_signal(v)
+	if le != null:
+		var parsed := _parse_strip_radius_text(le.text)
+		if already and (is_nan(parsed) or not is_equal_approx(parsed, v)):
+			# Value already matches, so SpinBox will not refresh a stale LineEdit
+			# ("0.0" vs 1.0). Nudge so the widget formats the text itself.
+			var bump := 0.001 if v + 0.001 <= _strip_radius.max_value else -0.001
+			_strip_radius.set_value_no_signal(v + bump)
+			_strip_radius.set_value_no_signal(v)
+		parsed = _parse_strip_radius_text(le.text)
+		# Unfocused: SpinBox formatting is allowed. Never write while focused
+		# (that race printed 1.0 / 0.0 against a panel 10).
+		if not le.has_focus() and (is_nan(parsed) or not is_equal_approx(parsed, v)):
+			var suffix := str(_strip_radius.suffix)
+			le.text = str(_strip_radius.value) + (" " if suffix != "" else "") + suffix
+	_strip_radius_syncing = false
+	if restore_focus and le != null:
+		le.grab_focus()
+
+
+func _commit_strip_radius() -> void:
+	if _strip_radius == null or ops_panel == null:
+		return
+	var armed := ops_panel._pending == OpsPanel.Pending.FILLET_EDGES \
+			or ops_panel._pending == OpsPanel.Pending.CHAMFER_EDGES
+	if not armed:
+		return
+	# Only push strip → panel when the user typed here. A stale LineEdit
+	# (default 0.5, or text left behind after a panel edit) must not win.
+	if _panel_changed_while_strip_focused or not _strip_user_typed():
+		return
+	var was_editing := _strip_radius_editing
+	_strip_radius_editing = false
+	_strip_radius.apply()
+	if ops_panel.has_method("set_dressup_radius"):
+		ops_panel.set_dressup_radius(_strip_radius.value)
+	_strip_radius_editing = was_editing
+	var le := _strip_radius.get_line_edit()
+	if le != null:
+		_strip_focus_text = le.text
+
+
 func _sync_strip_dressup_radius() -> void:
+	_ensure_dressup_radius_connected()
 	if _strip_radius_box == null:
 		return
 	var armed := false
@@ -4804,15 +4932,21 @@ func _sync_strip_dressup_radius() -> void:
 		armed = ops_panel._pending == OpsPanel.Pending.FILLET_EDGES \
 				or ops_panel._pending == OpsPanel.Pending.CHAMFER_EDGES
 	_strip_radius_box.visible = armed
-	if armed and _strip_radius != null:
+	if _strip_radius == null:
+		return
+	if armed:
 		# Typed 1 / 1.5 / 10 must not snap to the arrow step.
+		_strip_radius.min_value = 0.05
+		_strip_radius.max_value = 100.0
+		_strip_radius.custom_arrow_step = 0.5
 		_strip_radius.step = 0.001
-	if armed and ops_panel != null and ops_panel.has_method("dressup_radius"):
-		_strip_radius.set_value_no_signal(ops_panel.dressup_radius())
-		var le: LineEdit = _strip_radius.get_line_edit()
+	if not armed:
+		return
+	if ops_panel != null and ops_panel.has_method("dressup_radius"):
+		_write_strip_radius(ops_panel.dressup_radius())
+		var le := _strip_radius.get_line_edit()
 		if le != null:
-			le.text = str(_strip_radius.value) + " mm"
-			le.caret_column = le.text.length()
+			_strip_focus_text = le.text
 
 
 func _sync_strip_jaw_af() -> void:

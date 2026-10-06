@@ -10,6 +10,8 @@ extends PanelContainer
 signal status(text: String)
 ## Fired when fillet/chamfer edge-pick arms or clears (strip Radius chip).
 signal dressup_armed_changed(armed: bool, is_fillet: bool)
+## Panel Radius is the model; the selection-strip R field mirrors this.
+signal dressup_radius_changed(value: float)
 signal sketch_requested
 
 enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, HEX_PLACE, HOLE_MOVE,
@@ -209,7 +211,9 @@ func _build_body_ops() -> void:
 	_apply_holes_btn.disabled = true
 
 	_body_ops.add_child(HSeparator.new())
-	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.1, 100.0, 0.5, 2.0)
+	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.05, 100.0, 0.5, 2.0)
+	_radius_spin.value_changed.connect(func(v: float) -> void:
+		dressup_radius_changed.emit(v))
 	# Enter in the Radius field commits an armed fillet/chamfer pick (otherwise
 	# SpinBox eats Enter and the mechanic thinks the pick did nothing).
 	_radius_spin.get_line_edit().text_submitted.connect(func(_t: String) -> void:
@@ -795,6 +799,10 @@ func _reveal_radius(fillet: bool) -> void:
 	if _radius_spin == null:
 		return
 	# Arrow step stays coarse; the stored step is fine so a typed 1.5 or 10 sticks.
+	# Same range as the strip R field (0.05 is the floor, not a hidden 0.1).
+	_radius_spin.min_value = 0.05
+	_radius_spin.max_value = 100.0
+	_radius_spin.custom_arrow_step = 0.5
 	_radius_spin.step = 0.001
 	_radius_spin.name = "DressupRadius"
 	_radius_spin.tooltip_text = ("Fillet radius (mm)" if fillet else "Chamfer distance (mm)") \
@@ -816,6 +824,8 @@ func dressup_radius() -> float:
 
 func set_dressup_radius(v: float) -> void:
 	if _radius_spin != null:
+		_radius_spin.min_value = 0.05
+		_radius_spin.max_value = 100.0
 		_radius_spin.value = clampf(v, _radius_spin.min_value, _radius_spin.max_value)
 
 
@@ -862,6 +872,8 @@ func _apply_dressup(fillet: bool) -> void:
 		scope = "%d edges" % view.selected_edges.size()
 	elif view.selected_edge != "":
 		scope = "edge"
+	if interaction != null and interaction.has_method("_commit_strip_radius"):
+		interaction._commit_strip_radius()
 	var value: float = _radius_spin.value
 	var fid := view.feature_of_body(view.selected_body)
 	var ok: bool

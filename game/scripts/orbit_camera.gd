@@ -27,6 +27,9 @@ var pitch := deg_to_rad(40.0)
 ## Set by main; used by frame_contents (F) to fit all bodies.
 var view: DocumentView
 var model_space: Node3D
+## Installed by SketchMode for the open session. F / Home / Shift+F / Frame
+## call this first so a sketch with no body still fits its extents.
+var sketch_fit: Callable
 ## Mouse binding preset for middle-drag (and Shift+middle). Fusion-only in UI.
 var nav_preset := NavPreset.FUSION
 
@@ -722,6 +725,9 @@ func _animate_pose(to: Dictionary, duration := 0.25) -> void:
 ## Frame selection when anything is selected; otherwise all bodies.
 ## Pass `force_all=true` for Shift+F / “fit whole model”.
 func frame_selection_or_all(force_all := false) -> void:
+	if sketch_fit.is_valid():
+		sketch_fit.call()
+		return
 	if not force_all and view != null and view.selected_body != "":
 		if frame_selection():
 			return
@@ -756,6 +762,9 @@ func frame_selection() -> bool:
 
 ## Frames all visible bodies (world-space AABB union); origin fallback when empty.
 func frame_contents() -> void:
+	if sketch_fit.is_valid():
+		sketch_fit.call()
+		return
 	if not _has_visible_body():
 		_look_at_content = false
 		pivot = Vector3.ZERO
