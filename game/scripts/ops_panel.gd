@@ -105,6 +105,7 @@ func _ready() -> void:
 	_body_ops = VBoxContainer.new()
 	vbox.add_child(_body_ops)
 	_build_body_ops()
+	SxUi.release_focus_on_commit(_radius_spin)
 
 	_face_ops = VBoxContainer.new()
 	vbox.add_child(_face_ops)

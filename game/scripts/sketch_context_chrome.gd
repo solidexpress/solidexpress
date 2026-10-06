@@ -1125,12 +1125,30 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 			if sketch_mode != null:
 				sketch_mode.clear_length_override()
 			release_dim_focus()
+			var ix := _host_interaction()
+			if ix != null and ix.has_method("drop_pending_draw_esc"):
+				ix.drop_pending_draw_esc()
+			accept_event()
+			return
+		if (k.ctrl_pressed or k.meta_pressed) and not k.alt_pressed \
+				and k.keycode == KEY_A:
+			if _dim_spin != null:
+				var edit := _dim_spin.get_line_edit()
+				if edit != null:
+					edit.select_all()
 			accept_event()
 			return
 		if _is_numeric_replace_key(k, false) and _dim_replace_next:
 			_dim_replace_next = false
 			_dim_select_gen += 1
 			_select_dim_all()
+
+
+func _host_interaction() -> ViewportInteraction:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	return tree.root.find_child("Interaction", true, false) as ViewportInteraction
 
 
 func set_extrude_distance(v: float) -> void:

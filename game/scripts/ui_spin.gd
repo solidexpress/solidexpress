@@ -41,3 +41,91 @@ static func numeric_field_focused(vp: Viewport) -> bool:
 	var f := vp.gui_get_focus_owner()
 	return f is LineEdit or f is TextEdit or f is SpinBox \
 			or (f != null and f.get_parent() is SpinBox)
+
+
+## Opt-in: after Enter / an arrow click, give the viewport the keys back.
+## Does not change `configure_spin` — property panels, dim blanks, and Extrude
+## Distance keep today's keep-focus behaviour.
+static func release_focus_on_commit(spin: SpinBox) -> void:
+	if spin == null:
+		return
+	if spin.has_meta("_sx_release_focus_on_commit"):
+		return
+	spin.set_meta("_sx_release_focus_on_commit", true)
+	var line := spin.get_line_edit()
+	if line != null:
+		line.text_submitted.connect(func(_t: String) -> void:
+			# One frame later so Enter-commits-the-fillet / strip commit run first.
+			_deferred_release_line.call_deferred(line))
+		line.gui_input.connect(func(event: InputEvent) -> void:
+			_note_arrow_press(spin, line, event))
+	spin.gui_input.connect(func(event: InputEvent) -> void:
+		_note_arrow_press(spin, line, event))
+	spin.value_changed.connect(func(_v: float) -> void:
+		if not _is_arrow_commit(spin, line):
+			return
+		if line != null:
+			_deferred_release_line.call_deferred(line)
+		else:
+			spin.release_focus.call_deferred())
+
+
+static func _note_arrow_press(spin: SpinBox, line: LineEdit, event: InputEvent) -> void:
+	if spin == null or not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	# gui_input.position is local to the control that received it.
+	var local := mb.position
+	if line != null:
+		# A press on the LineEdit is typing, not an arrow.
+		var lr: Rect2 = line.get_global_rect()
+		var at := mb.global_position
+		if at == Vector2.ZERO:
+			at = line.get_global_rect().position + local
+		if lr.has_point(at) and local.x < line.size.x:
+			return
+	var on_arrow := local.x > spin.size.x * 0.68 and local.x <= spin.size.x + 2.0 \
+			and local.y >= 0.0 and local.y <= spin.size.y
+	if not on_arrow:
+		return
+	spin.set_meta("_sx_arrow_press", true)
+	# SpinBox::_gui_input emits value_changed before this signal, so the
+	# value_changed handler cannot see the meta yet. Viewport.push_input
+	# also does not update get_global_mouse_position. Release from here.
+	if line != null:
+		_deferred_release_line.call_deferred(line)
+	else:
+		spin.release_focus.call_deferred()
+
+
+static func _is_arrow_commit(spin: SpinBox, line: LineEdit) -> bool:
+	if spin == null:
+		return false
+	var marked := bool(spin.get_meta("_sx_arrow_press", false))
+	if marked:
+		spin.set_meta("_sx_arrow_press", false)
+		return true
+	# Typing: caret in the line and the text is not the committed value.
+	if line != null and line.has_focus() and _line_mismatches_value(spin, line):
+		return false
+	var mouse_at := spin.get_global_mouse_position()
+	var r: Rect2 = spin.get_global_rect()
+	if not r.has_point(mouse_at):
+		return false
+	# Arrow gutter: right of the field. LMB-down is the real click; a parked
+	# pointer over the arrows after a synthetic press still counts.
+	return mouse_at.x >= r.position.x + r.size.x * 0.68
+
+
+static func _line_mismatches_value(spin: SpinBox, line: LineEdit) -> bool:
+	var raw := line.text.strip_edges().replace("mm", "").replace("MM", "").strip_edges()
+	if not raw.is_valid_float():
+		return true
+	return not is_equal_approx(float(raw), spin.value)
+
+
+static func _deferred_release_line(line: LineEdit) -> void:
+	if line != null and is_instance_valid(line) and line.has_focus():
+		line.release_focus()
