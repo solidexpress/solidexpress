@@ -2420,8 +2420,12 @@ func _refresh_edit_menu() -> void:
 	else:
 		has_sel = view != null and view.selection_size() > 0
 		has_clip = view != null and view.has_clipboard()
-	_edit_popup.set_item_disabled(_edit_popup.get_item_index(0), view == null or not view.doc.can_undo())
-	_edit_popup.set_item_disabled(_edit_popup.get_item_index(1), view == null or not view.doc.can_redo())
+	if sketching:
+		_edit_popup.set_item_disabled(_edit_popup.get_item_index(0), not sketch_mode.can_undo())
+		_edit_popup.set_item_disabled(_edit_popup.get_item_index(1), not sketch_mode.can_redo())
+	else:
+		_edit_popup.set_item_disabled(_edit_popup.get_item_index(0), view == null or not view.doc.can_undo())
+		_edit_popup.set_item_disabled(_edit_popup.get_item_index(1), view == null or not view.doc.can_redo())
 	_edit_popup.set_item_disabled(_edit_popup.get_item_index(2), not has_sel)
 	_edit_popup.set_item_disabled(_edit_popup.get_item_index(3), not has_sel)
 	_edit_popup.set_item_disabled(_edit_popup.get_item_index(4), not has_clip)
@@ -2442,6 +2446,10 @@ func _on_edit_menu(id: int) -> void:
 
 
 func edit_undo() -> void:
+	if sketch_mode != null and sketch_mode.active:
+		var label := sketch_mode.undo()
+		_on_status("Undo: " + label if label != "" else "Nothing to undo")
+		return
 	if view == null:
 		return
 	view.undo()
@@ -2458,6 +2466,10 @@ func edit_undo() -> void:
 
 
 func edit_redo() -> void:
+	if sketch_mode != null and sketch_mode.active:
+		var label := sketch_mode.redo()
+		_on_status("Redo: " + label if label != "" else "Nothing to redo")
+		return
 	if view == null:
 		return
 	view.redo()
@@ -3745,9 +3757,26 @@ func _unhandled_input(event: InputEvent) -> void:
 					_confirm_discard(_do_open_dialog)
 					get_viewport().set_input_as_handled()
 				KEY_Z:
-					if view != null and view.doc.can_undo():
+					if SxUi.numeric_field_focused(get_viewport()):
+						return
+					if sketch_mode != null and sketch_mode.active:
+						if event.shift_pressed:
+							var rl := sketch_mode.redo()
+							_on_status("Redo: " + rl if rl != "" else "Nothing to redo")
+						else:
+							var ul := sketch_mode.undo()
+							_on_status("Undo: " + ul if ul != "" else "Nothing to undo")
+						get_viewport().set_input_as_handled()
+					elif view != null and view.doc.can_undo():
 						view.undo()
 						_on_status("Undo")
+						get_viewport().set_input_as_handled()
+				KEY_Y:
+					if SxUi.numeric_field_focused(get_viewport()):
+						return
+					if sketch_mode != null and sketch_mode.active:
+						var ry := sketch_mode.redo()
+						_on_status("Redo: " + ry if ry != "" else "Nothing to redo")
 						get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_F1:
 			help_overlay.toggle()
