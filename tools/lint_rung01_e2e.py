@@ -470,8 +470,8 @@ def _lint_replan11(errors: list[str]) -> None:
 
 def _lint_replan12(errors: list[str]) -> None:
     paths = sorted(TESTS.glob("run_rung01_replan12_*.gd"))
-    if len(paths) != 8:
-        errors.append("expected 8 run_rung01_replan12_*.gd")
+    if len(paths) != 10:
+        errors.append("expected 10 run_rung01_replan12_*.gd")
     for path in paths:
         src = path.read_text(encoding="utf-8")
         prefix = f"{path.relative_to(ROOT)}:"
