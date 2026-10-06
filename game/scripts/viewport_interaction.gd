@@ -3273,6 +3273,9 @@ func _push_pull_distance(pos: Vector2) -> float:
 
 
 func _on_release(pos: Vector2) -> void:
+	# Duplicate / late mouse-up after a lost-up was already finished as a click.
+	if not _pressed:
+		return
 	_pressed = false
 	_press_travel = maxf(_press_travel, pos.distance_to(_press_pos))
 	if triball != null and triball.active and triball._dragging:
