@@ -119,6 +119,36 @@ std::string format_mm(double v) {
     return os.str();
 }
 
+std::string edge_phrase(const TopoDS_Edge& edge) {
+    BRepAdaptor_Curve curve(edge);
+    GProp_GProps props;
+    BRepGProp::LinearProperties(edge, props);
+    const char* kind = "curve";
+    if (curve.GetType() == GeomAbs_Line) {
+        kind = std::abs(curve.Line().Direction().Z()) >= 0.95 ? "vertical" : "line";
+    } else if (curve.GetType() == GeomAbs_Circle) {
+        kind = "arc";
+    } else if (curve.GetType() == GeomAbs_Ellipse) {
+        kind = "ellipse";
+    } else if (curve.GetType() == GeomAbs_BSplineCurve || curve.GetType() == GeomAbs_BezierCurve) {
+        kind = "spline";
+    }
+    gp_Pnt mid;
+    curve.D0(0.5 * (curve.FirstParameter() + curve.LastParameter()), mid);
+    return format_mm(props.Mass()) + " mm " + kind + " at (" + format_mm(mid.X()) + ", "
+           + format_mm(mid.Y()) + ", " + format_mm(mid.Z()) + ")";
+}
+
+void note_faulty_contour(BRepFilletAPI_MakeFillet& mk, std::string* fault) {
+    if (!fault) return;
+    fault->clear();
+    if (mk.NbFaultyContours() < 1) return;
+    const int ic = mk.FaultyContour(1);
+    if (mk.NbEdges(ic) < 1) return;
+    const TopoDS_Edge fe = mk.Edge(ic, 1);
+    if (!fe.IsNull()) *fault = edge_phrase(fe);
+}
+
 // Rebuilds mint new ids for edges that an upstream feature recreates. Match
 // the cue captured before regen (midpoint + direction) back onto the body.
 bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& out) {
@@ -220,7 +250,7 @@ std::vector<TopoDS_Edge> map_edges_onto(const TopoDS_Shape& shape,
 // partner duplicates that contour and MakeFillet fails even when the radius
 // fits. Skip edges already claimed; drop IsSame / same-curve duplicates first.
 bool build_fillet(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& picked, double v,
-                  double r2, TopoDS_Shape& out) {
+                  double r2, TopoDS_Shape& out, std::string* fault) {
     const std::vector<TopoDS_Edge> edges = drop_seam_duplicates(picked);
     if (edges.empty()) return false;
     try {
@@ -233,7 +263,10 @@ bool build_fillet(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& pic
                 mk.Add(v, edge);
         }
         mk.Build();
-        if (!mk.IsDone()) return false;
+        if (!mk.IsDone()) {
+            note_faulty_contour(mk, fault);
+            return false;
+        }
         const TopoDS_Shape result = mk.Shape();
         if (result.IsNull() || !shape::is_valid(result)) return false;
         out = result;
@@ -247,7 +280,7 @@ bool build_fillet(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& pic
 // rejects the whole face even though each piece is under the radius limit.
 // Merge those same-domain edges and fillet one Add per unique curve.
 bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& picked, double v,
-                    double r2, TopoDS_Shape& out) {
+                    double r2, TopoDS_Shape& out, std::string* fault) {
     ShapeUpgrade_UnifySameDomain unif(shape, true, true, true);
     unif.SetLinearTolerance(1e-6);
     unif.SetAngularTolerance(1e-4);
@@ -256,7 +289,7 @@ bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& p
     if (unified.IsNull()) return false;
     const std::vector<TopoDS_Edge> chosen = map_edges_onto(unified, picked);
     if (chosen.empty()) return false;
-    return build_fillet(unified, chosen, v, r2, out);
+    return build_fillet(unified, chosen, v, r2, out, fault);
 }
 
 bool resolve_dressup_edge(ApplyCtx& ctx, const Body& body, const nlohmann::json& je,
@@ -289,6 +322,7 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
                               : v;
         int added = 0;
         double limit = std::numeric_limits<double>::infinity();
+        TopoDS_Edge limit_edge;
         std::vector<TopoDS_Edge> resolved;
         for (const auto& je : ctx.params.at("edges")) {
             TopoDS_Shape es;
@@ -301,7 +335,11 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
                 continue;
             }
             TopoDS_Edge edge = TopoDS::Edge(es);
-            limit = std::min(limit, 0.5 * min_departure_length(tb->shape, edge));
+            const double this_limit = 0.5 * min_departure_length(tb->shape, edge);
+            if (this_limit < limit) {
+                limit = this_limit;
+                limit_edge = edge;
+            }
             resolved.push_back(edge);
             ++added;
         }
@@ -309,14 +347,21 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         const double asked = std::max(v, r2);
         // "fillet failed (limit …)" is only for a radius that does not fit.
         if (limit < 1e290 && asked > limit + 1e-4) {
-            return ctx.fail("fillet failed (limit " + format_mm(limit) + ")");
+            std::string extra;
+            if (!limit_edge.IsNull()) extra = "; " + edge_phrase(limit_edge);
+            return ctx.fail("fillet failed (limit " + format_mm(limit) + extra + ")");
         }
-        if (!build_fillet(tb->shape, resolved, v, r2, result)) {
+        std::string fault;
+        if (!build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
             TopoDS_Shape recovered;
-            if (fillet_unified(tb->shape, resolved, v, r2, recovered))
+            std::string fault2;
+            if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
                 result = recovered;
-            else
+            else {
+                if (fault.empty()) fault = fault2;
+                if (!fault.empty()) return ctx.fail("fillet failed (" + fault + ")");
                 return ctx.fail("fillet failed");
+            }
         }
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
