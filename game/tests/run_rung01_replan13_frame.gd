@@ -1,4 +1,6 @@
 # Rung 1 replan 13 WP5 — F / Frame inside a sketch fits the whole sketch (both circles).
+# sx-034 A9: face-sketch F also keeps the part origin on the canvas, right of
+# the left rail (chrome-inset fit), even when entities sit only at the head.
 # Real events: Viewport.push_input for F / Shift+F; View HUD Frame and marking-menu
 # items 20/21 via visible buttons. Geometry is placed through the sketch API.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan13_frame.gd
@@ -32,6 +34,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await test_blank_sketch_f_fits_both_circles()
 	await test_face_sketch_and_exit_3d()
+	await test_face_sketch_origin_clears_rail()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	print("%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -166,6 +169,57 @@ func test_face_sketch_and_exit_3d() -> void:
 	await _shutdown(ctx)
 
 
+func test_face_sketch_origin_clears_rail() -> void:
+	# sx-034 A9: face sketch with geometry only at the head (jaw / Ø45). After
+	# F the part origin (pivot Ø20 centre) must sit on the canvas to the right
+	# of the left rail — not under Polygon.
+	print("- face sketch: F leaves a canvas margin left of the part origin")
+	var ctx := await _boot()
+	await FilmUI.place_primitive(ctx, "box")
+	await process_frame
+	await process_frame
+	var body: String = ctx.view.selected_body
+	if body == "":
+		var ids: PackedStringArray = ctx.view.doc.body_ids()
+		if not ids.is_empty():
+			body = ids[0]
+	var face := FilmUI.find_face_by_normal(ctx.view, body, Vector3(0, 0, 1))
+	check(body != "" and face != "", "box placed, +Z face found (%s/%s)" % [body, face])
+	await FilmUI.enter_sketch_on_face(ctx, body, face)
+	var sm: SketchMode = ctx.main.sketch_mode
+	var cam: OrbitCamera = ctx.main.camera
+	var vp: Viewport = ctx.main.get_viewport()
+	check(sm != null and sm.active, "face sketch is open for origin-rail fit")
+	sm.sketch.add_circle(HEAD.x, HEAD.y, HEAD_R)
+	sm.run_solve()
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+	await process_frame
+	await process_frame
+	await _push_key(vp, KEY_F)
+	await process_frame
+	var origin_screen := _project_uv(ctx, ORIGIN)
+	var rail_right := _rail_right_px(ctx)
+	var canvas: Rect2 = cam.sketch_fit_canvas_rect()
+	print("  origin px=%s rail_right=%.1f canvas=%s" % [
+			str(origin_screen), rail_right, str(canvas)])
+	check(_in_framed_canvas(ctx, origin_screen),
+			"after F, origin is on the canvas right of the rail (px %s, rail %.1f)" % [
+				str(origin_screen), rail_right])
+	check(origin_screen.x >= rail_right + MARGIN_PX,
+			"origin has a canvas margin left of it (x=%.1f rail=%.1f)" % [
+				origin_screen.x, rail_right])
+	check(canvas.has_point(origin_screen),
+			"origin sits in the chrome-inset canvas %s (px %s)" % [
+				str(canvas), str(origin_screen)])
+	var head_ok := true
+	for uv in _circle_extremes(HEAD, HEAD_R):
+		if not _in_framed_canvas(ctx, _project_uv(ctx, uv)):
+			head_ok = false
+	check(head_ok, "Ø45 extremes stay in the canvas after origin-aware F")
+	await _shutdown(ctx)
+
+
 func _assert_both_circles_framed(ctx: FilmContext, via: String,
 		origin_r: float = ORIGIN_R, head_r: float = HEAD_R) -> void:
 	var origin_ok := true
@@ -232,12 +286,17 @@ func _in_framed_canvas(ctx: FilmContext, screen: Vector2) -> bool:
 	var vp := ctx.tree.root.get_viewport().get_visible_rect().grow(-MARGIN_PX)
 	if not vp.has_point(screen):
 		return false
-	var stack: Control = ctx.main.left_stack
-	if stack != null:
-		var rail := stack.get_global_rect()
-		if rail.has_point(screen):
-			return false
+	var rail_right := _rail_right_px(ctx)
+	if screen.x < rail_right + MARGIN_PX:
+		return false
 	return true
+
+
+func _rail_right_px(ctx: FilmContext) -> float:
+	var stack: Control = ctx.main.left_stack
+	if stack != null and stack.is_visible_in_tree():
+		return stack.get_global_rect().end.x
+	return ChromeDock.rail_right
 
 
 func _size_near(a: float, b: float) -> bool:

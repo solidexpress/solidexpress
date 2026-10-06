@@ -44,6 +44,12 @@ const MAX_DISTANCE := 20000.0
 const VIEW_PIVOT_Y_BIAS := 0.72
 ## Padding applied when frustum-fitting an AABB (CAD zoom-extents margin).
 const FRAME_PADDING := 1.2
+## Sketch Frame (`F`) pad around the fit radius, matching the historical
+## `enter_sketch_view` 1.35 scale (ortho height = 2.7 × radius on a full view).
+const SKETCH_FIT_PAD := 1.35
+## Extra pixels inside the chrome-free canvas so fitted points stay clickable
+## and not flush against the left rail (sx-034 A9 / walk rule 28).
+const SKETCH_FIT_MARGIN_PX := 24.0
 ## Zoom-out past this multiple of fit-distance starts pulling the pivot back.
 const ZOOM_OUT_RECENTER_START := 1.5
 ## Soft cap on how far past fit-distance a wheel zoom-out may go.
@@ -954,10 +960,70 @@ func enter_sketch_view(
 			_sketch_view_up = Vector3.UP
 	else:
 		_sketch_view_up = Vector3.UP
-	var r := maxf(frame_radius, 5.0)
-	distance = clampf(r / tan(deg_to_rad(fov) / 2.0) * 1.35, MIN_DISTANCE, MAX_DISTANCE)
 	_look_at_content = true
+	_frame_radius_in_chrome_canvas(maxf(frame_radius, 5.0))
+
+
+## Fit a sketch-plane circle of `frame_radius` mm into the chrome-free canvas
+## (viewport minus left rail / top / bottom insets) and pan so its centre sits
+## at the canvas centre — not the full-window centre, which buries left-side
+## geometry under the labeled sketch rail.
+func _frame_radius_in_chrome_canvas(frame_radius: float) -> void:
+	var half_v := tan(deg_to_rad(fov) * 0.5)
+	var vp := get_viewport()
+	var vp_size := Vector2.ZERO
+	if vp != null:
+		vp_size = vp.get_visible_rect().size
+	if vp_size.y < 1.0:
+		distance = clampf(
+				frame_radius / maxf(half_v, 1e-6) * SKETCH_FIT_PAD,
+				MIN_DISTANCE, MAX_DISTANCE)
+		_update_transform()
+		return
+	var canvas := sketch_fit_canvas_rect(vp_size)
+	var limit := minf(canvas.size.x, canvas.size.y)
+	var size_needed := 2.0 * frame_radius * SKETCH_FIT_PAD * vp_size.y / maxf(limit, 1.0)
+	distance = clampf(
+			size_needed / (2.0 * maxf(half_v, 1e-6)),
+			MIN_DISTANCE, MAX_DISTANCE)
 	_update_transform()
+	var mm_per_px := size / vp_size.y
+	var dc := canvas.get_center() - vp_size * 0.5
+	if dc.length_squared() < 1e-8:
+		return
+	# Screen +X is camera right; screen +Y is down, camera +Y is up.
+	pivot -= global_transform.basis.x * (dc.x * mm_per_px)
+	pivot += global_transform.basis.y * (dc.y * mm_per_px)
+	_update_transform()
+
+
+## Visible sketch canvas in viewport pixels: full view minus chrome + a click
+## margin. Falls back to the full viewport when the remaining rect is tiny.
+func sketch_fit_canvas_rect(vp_size: Vector2 = Vector2.ZERO) -> Rect2:
+	if vp_size.y < 1.0:
+		var vp := get_viewport()
+		if vp != null:
+			vp_size = vp.get_visible_rect().size
+	if vp_size.y < 1.0:
+		vp_size = Vector2(1280, 800)
+	var left := ChromeDock.rail_right
+	var top := ChromeDock.top_inset
+	var bottom := ChromeDock.bottom_inset
+	var right := SKETCH_FIT_MARGIN_PX
+	if is_inside_tree():
+		for node in get_tree().get_nodes_in_group("sx_main"):
+			var stack: Variant = node.get("left_stack")
+			if stack is Control and (stack as Control).is_visible_in_tree():
+				left = maxf(left, (stack as Control).get_global_rect().end.x)
+			break
+	left += SKETCH_FIT_MARGIN_PX
+	top += SKETCH_FIT_MARGIN_PX
+	bottom += SKETCH_FIT_MARGIN_PX
+	var w := vp_size.x - left - right
+	var h := vp_size.y - top - bottom
+	if w < 64.0 or h < 64.0:
+		return Rect2(Vector2.ZERO, vp_size)
+	return Rect2(left, top, w, h)
 
 
 ## Leave sketch view: unlock orientation and restore the pre-entry pose.
