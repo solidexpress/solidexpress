@@ -425,11 +425,15 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(absf(sm.slot_radius - 5.0) < 1e-3, "slot radius typed into the dim blank (got %.4f)" % sm.slot_radius)
 	_status_log.clear()
 	await _click_uv(ctx, Vector2(18.5, 0), "Slot first centre")
-	await _click_uv(ctx, Vector2(168.5, 0), "Slot second centre")
+	await _hover_uv(ctx, Vector2(168.5, 0))
+	await _type_dim(ctx, "150", false)
 	await process_frame
 	var slot_commit := str(ctx.main.status_label.text)
-	check(slot_commit.contains("Slot c-c 150.0000 R5.0000") or _status_has("Slot c-c 150.0000 R5.0000"),
-			"B13.1 Slot c-c 150.0000 R5.0000 (got `%s`)" % slot_commit)
+	check(slot_commit == "Slot c-c 150.0000 R5.0000 — typed"
+			or slot_commit.contains("Slot c-c 150.0000 R5.0000"),
+			"B13.1 Slot c-c 150.0000 R5.0000 — typed (got `%s`)" % slot_commit)
+	check(not slot_commit.begins_with("Length"),
+			"B13.1 typed length is not a bare Length … mm (got `%s`)" % slot_commit)
 	chrome = ctx.main.sketch_chrome
 	await _pick_op(_finish_op(ctx), 1)
 	await _pick_end(_finish_end(ctx), 0)

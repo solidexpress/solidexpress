@@ -318,14 +318,20 @@ func _run() -> void:
 	check(int(sm.tool) == int(SketchMode.Tool.SLOT),
 			"tool is still SLOT after typing the radius")
 
-	# 150 c-c after the first centre — A11a read-back.
+	# 150 c-c after the first centre — A11a typed-length read-back on the
+	# status bar (dim Enter used to overwrite Slot c-c with Length … mm).
 	sm.click(Vector2(0.0, 0.0))
-	sm.set_length_override(150.0)
-	sm.click(Vector2(40.0, 0.0))
-	check(_last() == "Slot c-c 150.0000 R5.0000 — typed"
-			or _status_of(main) == "Slot c-c 150.0000 R5.0000 — typed",
-			"A11a read-back is Slot c-c 150.0000 R5.0000 — typed (got `%s` / `%s`)" % [
-				_last(), _status_of(main)])
+	sm.hover(Vector2(40.0, 0.0))
+	main.sketch_chrome.sync_for_tool()
+	var cc_label: Label = chrome.find_child("RadiusLabel", true, false)
+	check(cc_label != null and cc_label.visible and str(cc_label.text) == "c-c",
+			"after the first centre the dim field is labelled c-c (got `%s`)" % [
+				str(cc_label.text) if cc_label != null else "missing"])
+	await _type_into_dim(main, "150")
+	check(_status_of(main) == "Slot c-c 150.0000 R5.0000 — typed",
+			"A11a read-back is Slot c-c 150.0000 R5.0000 — typed (got `%s`)" % _status_of(main))
+	check(not _status_of(main).begins_with("Length"),
+			"typed Slot length is not a bare Length … mm (got `%s`)" % _status_of(main))
 
 	# Every remaining rail tool at scroll 0, then again after scrolling.
 	for row in RAIL_TOOLS:
