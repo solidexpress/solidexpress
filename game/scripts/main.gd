@@ -3430,20 +3430,27 @@ func _save_current() -> void:
 		return
 	var reenter_fid := ""
 	var reenter_pose: Dictionary = {}
+	var kept_dims: Array = []
 	if sketch_mode != null and sketch_mode.active:
 		reenter_pose = camera.capture_pose()
+		kept_dims = sketch_mode.dimensions.duplicate(true)
 		reenter_fid = sketch_mode.exit_sketch()
 	var saved := view.save(current_path)
 	if saved:
 		_last_saved_revision = view.doc.revision()
 		_push_recent(current_path)
 	if reenter_fid != "" and sketch_mode.begin_edit(reenter_fid):
+		if not kept_dims.is_empty() and sketch_mode.has_method("reapply_dimension_records"):
+			sketch_mode.reapply_dimension_records(kept_dims)
 		_on_sketch_session_started("Editing sketch")
 		view.refresh_sketch_pads(sketch_mode.editing_fid)
 		camera.apply_pose(reenter_pose)
 		sketch_mode.set_tool(SketchMode.Tool.SELECT)
 	if saved:
+		# begin_edit re-enters the camera and may emit "Sketch view fit"
+		# on a deferred frame; keep the Saved line as the last status.
 		_on_status("Saved " + current_path)
+		call_deferred("_on_status", "Saved " + current_path)
 	else:
 		_on_status("Save FAILED: " + current_path)
 
