@@ -1268,7 +1268,7 @@ func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE
 					best_id = edge_id
 		return best_id
 	var ray := (-camera.global_transform.basis.z).normalized()
-	var screen := camera.unproject_position(point)
+	var screen := camera.unproject_position(_model_to_world(point))
 	var best_id := ""
 	var best_px := INF
 	var best_align := -1.0
@@ -1280,7 +1280,7 @@ func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE
 		if d3 > tolerance_mm:
 			continue
 		var px := _polyline_screen_distance(camera, screen, pts)
-		var align := absf(edge_direction(body_id, str(edge_id)).dot(ray))
+		var align := absf(_model_to_world_dir(edge_direction(body_id, str(edge_id))).dot(ray))
 		var closer := px < best_px - EDGE_PICK_SCREEN_TIE_PX
 		var tie := absf(px - best_px) <= EDGE_PICK_SCREEN_TIE_PX
 		if best_id == "" or closer or (tie and align > best_align + 0.05):
@@ -1290,13 +1290,25 @@ func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE
 	return best_id
 
 
+func _model_to_world(p: Vector3) -> Vector3:
+	return to_global(p) if is_inside_tree() else p
+
+
+func _model_to_world_dir(d: Vector3) -> Vector3:
+	if not is_inside_tree() or d.length_squared() < 1e-12:
+		return d
+	return (global_transform.basis * d).normalized()
+
+
 func _polyline_screen_distance(camera: Camera3D, screen: Vector2, pts: PackedVector3Array) -> float:
 	var best := INF
 	for i in range(pts.size() - 1):
-		if camera.is_position_behind(pts[i]) and camera.is_position_behind(pts[i + 1]):
+		var wa := _model_to_world(pts[i])
+		var wb := _model_to_world(pts[i + 1])
+		if camera.is_position_behind(wa) and camera.is_position_behind(wb):
 			continue
-		var a := camera.unproject_position(pts[i])
-		var b := camera.unproject_position(pts[i + 1])
+		var a := camera.unproject_position(wa)
+		var b := camera.unproject_position(wb)
 		best = minf(best, _point_segment_distance2(screen, a, b))
 	return best
 
