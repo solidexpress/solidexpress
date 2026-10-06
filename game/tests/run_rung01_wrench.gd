@@ -276,8 +276,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(absf(head_r - 22.5) <= 0.05, "jaw sketch has Ø45 at the head (r=%.4f)" % head_r)
 	await _draw_centre_rect(ctx, Vector2(200, 0))
 	await _edit_rect_labels(ctx)
-	var first_miss := 5.0
+	var first_miss := 12.0
 	check(first_miss > 0.15 * 22.5, "offset cutter misses the Ø45 15% gate")
+	check(first_miss < 0.9 * 22.5, "offset cutter still crosses the Ø45 disc inside the 90% rim limit")
 	print("  B2.10 leftover centreline along the jaw, then offset perpendicular retry")
 	await _draw_centreline(ctx, HEAD, JAW)
 	await _end_centreline_chain(ctx, HEAD)
@@ -299,6 +300,13 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	err = _take_bad_status()
 	check(err == "", "jaw trim status clean" if err == "" else err)
 	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile closed")
+	_status_log.clear()
+	await _power_trim_shaft_click(ctx)
+	await process_frame
+	check(_status_has("Jaw is already open"), "a second Power Trim click says the jaw is already open")
+	err = _take_bad_status()
+	check(err == "", "second trim click status clean" if err == "" else err)
+	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile still closed after the second trim click")
 	chrome = ctx.main.sketch_chrome
 	await _pick_op(_finish_op(ctx), 1)
 	await _pick_end(_finish_end(ctx), 3)
