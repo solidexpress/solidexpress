@@ -137,13 +137,13 @@ func _case_refuse_stays_clean() -> void:
 	check(not main._document_is_dirty(), "refused fillet leaves the document clean")
 	check(doc.revision() == saved, "revision equals the saved revision (got %d want %d)" % [
 			doc.revision(), saved])
-	await _file_new(main)
-	check(not main.confirm_dialog.visible, "File → New does not pop Discard after a refusal")
 	# Direct fillet_edges fallback must not bump either when it returns false.
 	var edges := _select_top_edges(view, body)
 	var rev_direct: int = doc.revision()
 	check(not doc.fillet_edges(edges, 50.0), "fillet_edges r=50 is refused")
 	check(doc.revision() == rev_direct, "fillet_edges refusal does not bump revision")
+	await _file_new(main)
+	check(not main.confirm_dialog.visible, "File → New does not pop Discard after a refusal")
 	await _shutdown(c)
 
 
