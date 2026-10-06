@@ -927,6 +927,7 @@ func _build_ui() -> void:
 	_reflow_left_stack()
 
 ## Window theme: readable default font that does not track window size.
+## PopupPanel / PopupMenu panels are opaque (sx-033 leftover 11).
 func _apply_ui_theme() -> void:
 	var theme := Theme.new()
 	var body := UiScale.body()
@@ -935,7 +936,38 @@ func _apply_ui_theme() -> void:
 			"LineEdit", "TextEdit", "OptionButton", "PopupMenu"]:
 		theme.set_font_size("font_size", t, body)
 	theme.set_font_size("normal_font_size", "RichTextLabel", body)
+	var panel := _opaque_popup_panel_style()
+	theme.set_stylebox("panel", "PopupPanel", panel)
+	theme.set_stylebox("panel", "PopupMenu", panel)
 	get_window().theme = theme
+	var tree := get_tree()
+	if tree != null and not tree.node_added.is_connected(_on_popup_node_added):
+		tree.node_added.connect(_on_popup_node_added)
+
+
+## Existing dark panel colour, fully opaque, 1 px border, 6 px content margin.
+func _opaque_popup_panel_style() -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(0.16, 0.17, 0.20, 1.0)
+	s.set_border_width_all(1)
+	s.border_color = Color(0.22, 0.23, 0.26, 1.0)
+	s.set_content_margin_all(6)
+	return s
+
+
+func _on_popup_node_added(n: Node) -> void:
+	_opaque_popup_window(n)
+
+
+func _opaque_popup_window(n: Node) -> void:
+	if not (n is PopupPanel or n is PopupMenu):
+		return
+	var win := n as Window
+	win.transparent = false
+	win.transparent_bg = false
+	# Child Windows do not inherit get_window().theme; override so HUD / orient /
+	# dim / timeline popups see the same opaque panel as the menu bar.
+	win.add_theme_stylebox_override("panel", _opaque_popup_panel_style())
 
 
 func _style_menu_button(btn: MenuButton) -> void:
@@ -948,6 +980,7 @@ func _style_popup_menu(popup: PopupMenu) -> void:
 	if popup == null:
 		return
 	popup.add_theme_font_size_override("font_size", UiScale.body())
+	_opaque_popup_window(popup)
 	_connect_popup_esc(popup)
 
 
@@ -3023,6 +3056,47 @@ func _export_3mf_line_edit_live() -> LineEdit:
 	return edit
 
 
+func _focus_file_name_field(select_all := true) -> void:
+	if file_dialog == null or not file_dialog.visible:
+		return
+	var edit := _file_dialog_name_edit()
+	if edit == null or not is_instance_valid(edit) or not edit.is_inside_tree():
+		return
+	edit.grab_focus()
+	if select_all:
+		edit.select_all()
+	# Deferred work must land on Main, never on the LineEdit — the edit can
+	# already be gone if Cancel / Escape / WM close hid the dialog. The soft-GL
+	# dialog also steals focus once, so re-select on the next frame.
+	_deferred_focus_file_name_field.call_deferred(select_all)
+	_select_file_name_next_frame(select_all)
+
+
+func _deferred_focus_file_name_field(select_all := true) -> void:
+	if file_dialog == null or not file_dialog.visible:
+		return
+	var edit := _file_dialog_name_edit()
+	if edit == null or not is_instance_valid(edit) or not edit.is_inside_tree():
+		return
+	edit.grab_focus()
+	if select_all:
+		edit.select_all()
+
+
+func _select_file_name_next_frame(select_all := true) -> void:
+	if not is_inside_tree():
+		return
+	await get_tree().process_frame
+	if file_dialog == null or not file_dialog.visible:
+		return
+	if not select_all:
+		return
+	var edit := _file_dialog_name_edit()
+	if edit == null:
+		return
+	edit.select_all()
+
+
 func _focus_export_3mf_filename() -> void:
 	if file_dialog == null or not file_dialog.visible:
 		return
@@ -3036,22 +3110,11 @@ func _focus_export_3mf_filename() -> void:
 	if not edit.gui_input.is_connected(_on_export_3mf_name_gui_input):
 		edit.gui_input.connect(_on_export_3mf_name_gui_input)
 	_export_3mf_accept_name = edit.text.strip_edges()
-	edit.grab_focus()
-	edit.select_all()
-	# Deferred work must land on Main, never on the LineEdit — the edit can
-	# already be gone if Cancel / Escape / WM close hid the dialog.
-	_deferred_focus_export_3mf_filename.call_deferred()
-	_select_export_3mf_name_next_frame()
+	_focus_file_name_field(true)
 
 
 func _deferred_focus_export_3mf_filename() -> void:
-	if file_dialog == null or not file_dialog.visible:
-		return
-	var edit := _export_3mf_line_edit_live()
-	if edit == null:
-		return
-	edit.grab_focus()
-	edit.select_all()
+	_deferred_focus_file_name_field(true)
 
 
 func _on_export_3mf_name_gui_input(event: InputEvent) -> void:
@@ -3212,6 +3275,8 @@ func _show_file_dialog(action: FileAction, mode: FileDialog.FileMode, filter: St
 	if action == FileAction.EXPORT_3MF:
 		_focus_export_3mf_filename.call_deferred()
 		_watch_export_3mf_path_edit.call_deferred()
+	elif action == FileAction.SAVE_AS or action == FileAction.OPEN:
+		_focus_file_name_field.call_deferred()
 
 
 func _save_current() -> void:

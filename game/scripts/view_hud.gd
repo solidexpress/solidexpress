@@ -132,6 +132,9 @@ func _ready() -> void:
 
 	_views_popup = PopupPanel.new()
 	_views_popup.name = "ViewsPopup"
+	_views_popup.transparent = false
+	_views_popup.transparent_bg = false
+	_views_popup.add_theme_stylebox_override("panel", _opaque_popup_panel_style())
 	add_child(_views_popup)
 	_views_list = VBoxContainer.new()
 	_views_list.name = "ViewsList"
@@ -142,6 +145,9 @@ func _ready() -> void:
 
 	_rename_popup = PopupPanel.new()
 	_rename_popup.name = "ViewRenamePopup"
+	_rename_popup.transparent = false
+	_rename_popup.transparent_bg = false
+	_rename_popup.add_theme_stylebox_override("panel", _opaque_popup_panel_style())
 	add_child(_rename_popup)
 	var rename_row := HBoxContainer.new()
 	_rename_popup.add_child(rename_row)
@@ -185,6 +191,18 @@ func _compact_icon_btn(b: Button) -> void:
 	b.add_theme_constant_override("h_separation", 0)
 	b.add_theme_constant_override("outline_size", 0)
 	b.flat = true
+
+
+## Opaque popup fill. The HUD shell stays StyleBoxEmpty; only these windows
+## get a panel. Matches main._opaque_popup_panel_style (window theme does not
+## reach child PopupPanels).
+func _opaque_popup_panel_style() -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(0.16, 0.17, 0.20, 1.0)
+	s.set_border_width_all(1)
+	s.border_color = Color(0.22, 0.23, 0.26, 1.0)
+	s.set_content_margin_all(6)
+	return s
 
 
 ## Refresh the ▼ menu contents (defaults always; user names from camera).
