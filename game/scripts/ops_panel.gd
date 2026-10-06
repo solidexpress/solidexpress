@@ -27,6 +27,9 @@ var _face_ops: VBoxContainer
 var _name_edit: LineEdit
 var _color_picker: ColorPickerButton
 var _radius_spin: SpinBox
+## True while Tab/Enter is applying the Radius LineEdit so a partial digit
+## cannot emit `dressup_radius_changed` (typing 10 must not latch 0).
+var _radius_committing := false
 var _pattern_count: SpinBox
 var _pattern_spacing: SpinBox
 var _inst_ox: SpinBox
@@ -212,12 +215,26 @@ func _build_body_ops() -> void:
 
 	_body_ops.add_child(HSeparator.new())
 	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.05, 100.0, 0.5, 2.0)
+	_radius_spin.update_on_text_changed = false
+	var radius_le := _radius_spin.get_line_edit()
 	_radius_spin.value_changed.connect(func(v: float) -> void:
-		dressup_radius_changed.emit(v))
+		# A focused LineEdit can emit 0 while the user is typing 10 (soft-GL
+		# drops a digit, or SpinBox parses a partial). The strip and status
+		# follow the committed value only (Tab / Enter / arrows / assignment).
+		if _radius_committing:
+			return
+		if radius_le != null and radius_le.has_focus():
+			var parsed := _parse_dressup_radius_text(radius_le.text)
+			if is_nan(parsed) or not is_equal_approx(parsed, v):
+				return
+		_notify_dressup_radius(v))
+	# Tab (focus-exit) commits the number without applying the fillet.
+	radius_le.focus_exited.connect(func() -> void:
+		_commit_panel_radius())
 	# Enter in the Radius field commits an armed fillet/chamfer pick (otherwise
 	# SpinBox eats Enter and the mechanic thinks the pick did nothing).
-	_radius_spin.get_line_edit().text_submitted.connect(func(_t: String) -> void:
-		_radius_spin.apply()
+	radius_le.text_submitted.connect(func(_t: String) -> void:
+		_commit_panel_radius()
 		if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
 			try_commit_pending())
 	var round_row := HBoxContainer.new()
@@ -781,15 +798,7 @@ func _arm_dressup(fillet: bool) -> void:
 	_pending_fid = view.feature_of_body(view.selected_body)
 	dressup_armed_changed.emit(true, fillet)
 	_reveal_radius(fillet)
-	var kind := "Fillet" if fillet else "Chamfer"
-	var n := view.selected_edges.size()
-	if n == 0 and view.selected_edge != "":
-		n = 1
-	if n > 0:
-		status.emit("%s r=%.2f — %d edge(s) selected. Edit Radius, Enter to apply" % [
-			kind, _radius_spin.value, n])
-	else:
-		status.emit("%s r=%.2f — edit Radius, click edges, Enter" % [kind, _radius_spin.value])
+	_emit_armed_dressup_status()
 
 
 ## Scroll/focus the Radius spin and keep body ops visible while armed.
@@ -823,10 +832,64 @@ func dressup_radius() -> float:
 
 
 func set_dressup_radius(v: float) -> void:
-	if _radius_spin != null:
-		_radius_spin.min_value = 0.05
-		_radius_spin.max_value = 100.0
-		_radius_spin.value = clampf(v, _radius_spin.min_value, _radius_spin.max_value)
+	if _radius_spin == null:
+		return
+	_radius_spin.min_value = 0.05
+	_radius_spin.max_value = 100.0
+	var clamped := clampf(v, _radius_spin.min_value, _radius_spin.max_value)
+	if is_equal_approx(_radius_spin.value, clamped):
+		_notify_dressup_radius(clamped)
+		return
+	_radius_spin.value = clamped
+
+
+func _parse_dressup_radius_text(text: String) -> float:
+	var t := text.strip_edges().replace("mm", "").replace("MM", "").strip_edges()
+	if t.is_empty() or t == "." or t == "-" or not t.is_valid_float():
+		return NAN
+	return float(t)
+
+
+## Apply the Radius LineEdit (Tab / focus-exit / Enter) and push strip + status.
+func _commit_panel_radius() -> void:
+	if _radius_spin == null or _radius_committing:
+		return
+	_radius_committing = true
+	var le := _radius_spin.get_line_edit()
+	if le != null:
+		var parsed := _parse_dressup_radius_text(le.text)
+		if not is_nan(parsed):
+			var v := clampf(parsed, 0.05, 100.0)
+			_radius_spin.set_value_no_signal(v)
+		else:
+			_radius_spin.apply()
+	_notify_dressup_radius(_radius_spin.value)
+	_radius_committing = false
+
+
+func _notify_dressup_radius(v: float) -> void:
+	dressup_radius_changed.emit(v)
+	_emit_armed_dressup_status()
+	if interaction != null and interaction.has_method("_sync_strip_dressup_radius"):
+		interaction.call_deferred("_sync_strip_dressup_radius")
+
+
+func _emit_armed_dressup_status() -> void:
+	if _pending != Pending.FILLET_EDGES and _pending != Pending.CHAMFER_EDGES:
+		return
+	if _radius_spin == null:
+		return
+	var kind := "Fillet" if _pending == Pending.FILLET_EDGES else "Chamfer"
+	var n := 0
+	if view != null:
+		n = view.selected_edges.size()
+		if n == 0 and view.selected_edge != "":
+			n = 1
+	if n > 0:
+		status.emit("%s r=%.2f — %d edge(s) selected. Edit Radius, Enter to apply" % [
+			kind, _radius_spin.value, n])
+	else:
+		status.emit("%s r=%.2f — edit Radius, click edges, Enter" % [kind, _radius_spin.value])
 
 
 ## If edges are already selected, commit immediately; otherwise arm edge picking.
