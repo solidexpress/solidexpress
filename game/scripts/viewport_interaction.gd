@@ -2232,8 +2232,34 @@ func _sketch_keys_blocked() -> bool:
 	return false
 
 
+## Cached SketchTools rail; clicks there must never be stolen as sketch canvas.
+var _cached_sketch_tools: Control
+
+func _sketch_tools_control() -> Control:
+	if _cached_sketch_tools != null and is_instance_valid(_cached_sketch_tools):
+		return _cached_sketch_tools
+	var n := get_parent()
+	if n != null:
+		_cached_sketch_tools = n.find_child("SketchTools", true, false) as Control
+	return _cached_sketch_tools
+
+
+## True when the pointer is over the left sketch rail (any scroll offset).
+func _over_sketch_rail(global_mouse: Vector2) -> bool:
+	var rail := _sketch_tools_control()
+	if rail == null or not rail.visible or not rail.is_visible_in_tree():
+		return false
+	return rail.get_global_rect().has_point(global_mouse)
+
+
 ## True when model LMB/motion should run from `_input`, not blocked by chrome/docks.
 func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
+	# Rect check first: sketch `_input` handles motion while hover is this
+	# Control, which marks the event handled so GUI hover never updates onto
+	# the rail. Slot (and every other rail button) then looks painted but the
+	# press is a canvas click — hide_variants, LINE rubber-band, no set_tool.
+	if event_pos != Vector2.INF and _over_chrome(event_pos):
+		return false
 	var vp := get_viewport()
 	if vp == null:
 		return true
@@ -2364,6 +2390,18 @@ func _over_chrome(global_mouse: Vector2) -> bool:
 			continue
 		if r.has_point(global_mouse):
 			return true
+	if _over_sketch_rail(global_mouse):
+		return true
+	if sketch_chrome != null and sketch_chrome.visible:
+		for child_name in ["FinishBar", "VariantBar"]:
+			var bar := sketch_chrome.find_child(child_name, true, false) as Control
+			if bar == null or not bar.visible:
+				continue
+			var br: Rect2 = bar.get_global_rect()
+			if br.get_area() < 4.0 or br.get_area() > max_area:
+				continue
+			if br.has_point(global_mouse):
+				return true
 	return false
 
 
@@ -4526,11 +4564,12 @@ func _input(event: InputEvent) -> void:
 
 	# Sketch: same `_input` ownership so it works if Interaction isn't hovered.
 	# Do not steal clicks aimed at the sketch toolbar / docks / spinboxes —
-	# Fusion/Onshape chrome owns the pointer there.
+	# Fusion/Onshape chrome owns the pointer there. `_over_chrome` includes
+	# the rail by rect so a stale Interaction hover cannot eat Slot.
 	if sketch_mode != null and sketch_mode.active:
 		if event is InputEventMouse:
 			var mouse_pos := (event as InputEventMouse).position
-			if not _viewport_owns_pointer(mouse_pos):
+			if _over_chrome(mouse_pos) or not _viewport_owns_pointer(mouse_pos):
 				return
 			_sketch_input(event)
 			get_viewport().set_input_as_handled()
