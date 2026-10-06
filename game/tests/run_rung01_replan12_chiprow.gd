@@ -81,11 +81,14 @@ func _run() -> void:
 	_assert_chip_row(ctx, "16-chip case")
 	check(_action_chips(chrome).size() == 16, "16-chip case shows 16 chips (got %d)" % _action_chips(chrome).size())
 
-	# Smart Dim second-pick: first pick keeps a pending centre and a chip row.
+	# Smart Dim second-pick: arm the tool on two selected circles (the long
+	# row still showing), then pick the Ø20 centre so a first pick is pending.
 	sm._set_selected([a, b])
 	await _settle()
 	sm.set_tool(SketchMode.Tool.SMART_DIM)
-	sm.click(Vector2(0.0, 10.0))
+	await _settle()
+	_assert_chip_row(ctx, "Smart Dim armed, two circles selected")
+	sm.click(Vector2.ZERO)
 	await _settle()
 	check(sm.has_pending_dim_pick(), "Smart Dim holds the first pick (second-pick state)")
 	_assert_chip_row(ctx, "Smart Dim second-pick")
