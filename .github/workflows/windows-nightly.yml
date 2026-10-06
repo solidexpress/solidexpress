@@ -1,0 +1,213 @@
+name: windows-nightly
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build even if main has not changed since the last green nightly"
+        type: boolean
+        default: false
+
+env:
+  # Keep in sync with ci.yml / release.yml / packaging/occt.version.
+  OCCT_VERSION: "8.0.1"
+  VCPKG_COMMIT: "3aea538b2bb21a586502c67b00eb474fdd2e3098"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE: ${{ github.event.inputs.force || false }}
+          CURRENT_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "event=${EVENT_NAME} force=${FORCE} github.sha=${CURRENT_SHA}"
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" && "${FORCE}" == "true" ]]; then
+            echo "Decision: build=true (workflow_dispatch with force=true)"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Most recent COMPLETED run of this workflow on main whose conclusion is success.
+          last="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${REPO}/actions/workflows/windows-nightly.yml/runs?branch=main&status=completed&per_page=30" \
+            --jq '[.workflow_runs[] | select(.status=="completed" and .conclusion=="success")] | if length==0 then "" else "\(.[0].head_sha) \(.[0].html_url)" end')"
+          last_sha="${last%% *}"
+          last_url="${last#* }"
+
+          if [[ -z "${last_sha}" ]]; then
+            echo "Decision: build=true (no previous successful windows-nightly run on main)"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Last green nightly head_sha=${last_sha} url=${last_url}"
+          if [[ "${last_sha}" == "${CURRENT_SHA}" ]]; then
+            echo "Decision: build=false (main unchanged since last green nightly)"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Decision: build=true (main changed since last green nightly: ${last_sha} -> ${CURRENT_SHA})"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Populate the Windows vcpkg binary cache (scheduled on main) so tag releases
+  # can restore it. Also exercises the exact vcpkg OCCT pin used by export.
+  windows-vcpkg:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-binary-cache,readwrite"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-binary-cache
+          key: vcpkg-win-x64-occt-8.0.1-eigen3-tbb-boost-system-filesystem-graph
+          restore-keys: |
+            vcpkg-win-x64-occt-8.0.1-
+            vcpkg-win-x64-
+
+      - name: Install vcpkg packages
+        shell: bash
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/vcpkg-binary-cache"
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_COMMIT"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"
+          mkdir -p "$RUNNER_TEMP/vcpkg/downloads"
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "$RUNNER_TEMP/vcpkg/downloads/boost-1.91.0-LICENSE_1_0.txt" \
+            "https://github.com/boostorg/boost/raw/boost-1.91.0/LICENSE_1_0.txt" \
+            || curl -fsSL --retry 5 --retry-all-errors \
+              -o "$RUNNER_TEMP/vcpkg/downloads/boost-1.91.0-LICENSE_1_0.txt" \
+              "https://raw.githubusercontent.com/boostorg/boost/boost-1.91.0/LICENSE_1_0.txt" \
+            || true
+          ok=0
+          for attempt in 1 2 3; do
+            echo "==> vcpkg install attempt ${attempt}/3"
+            if "$RUNNER_TEMP/vcpkg/vcpkg.exe" install --triplet x64-windows \
+                --x-manifest-root="${GITHUB_WORKSPACE}"; then
+              ok=1
+              break
+            fi
+            echo "vcpkg install failed on attempt ${attempt}; sleeping before retry"
+            sleep 20
+          done
+          [[ "$ok" -eq 1 ]] || exit 1
+
+  # Windows: vcpkg OCCT 8.0.1 → kernel tests → Godot export (same path as
+  # release.yml "Export Windows release"). No tags, no GitHub Release, no publish.
+  windows-export:
+    needs: [changes]
+    if: needs.changes.outputs.build == 'true'
+    runs-on: windows-latest
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-binary-cache,readwrite"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-binary-cache
+          key: vcpkg-win-x64-occt-8.0.1-eigen3-tbb-boost-system-filesystem-graph
+          restore-keys: |
+            vcpkg-win-x64-occt-8.0.1-
+            vcpkg-win-x64-
+
+      - name: Install vcpkg packages
+        shell: bash
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/vcpkg-binary-cache"
+          choco install ninja cmake -y --no-progress
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git -C "$RUNNER_TEMP/vcpkg" checkout "$VCPKG_COMMIT"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat"
+          echo "SX_VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+          echo "CMAKE_TOOLCHAIN_FILE=$RUNNER_TEMP/vcpkg/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/vcpkg/downloads"
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "$RUNNER_TEMP/vcpkg/downloads/boost-1.91.0-LICENSE_1_0.txt" \
+            "https://github.com/boostorg/boost/raw/boost-1.91.0/LICENSE_1_0.txt" \
+            || true
+          ok=0
+          for attempt in 1 2 3; do
+            echo "==> vcpkg install attempt ${attempt}/3"
+            if "$RUNNER_TEMP/vcpkg/vcpkg.exe" install --triplet x64-windows \
+                --x-manifest-root="${GITHUB_WORKSPACE}"; then
+              ok=1
+              break
+            fi
+            sleep 20
+          done
+          [[ "$ok" -eq 1 ]] || exit 1
+
+      - name: Fetch Godot editor + export templates
+        shell: bash
+        run: |
+          chmod +x scripts/release/fetch-godot-templates.sh
+          ./scripts/release/fetch-godot-templates.sh
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Restore project vcpkg root
+        shell: bash
+        run: |
+          if [[ -n "${SX_VCPKG_ROOT:-}" ]]; then
+            echo "VCPKG_ROOT=$SX_VCPKG_ROOT" >> "$GITHUB_ENV"
+            echo "Restored VCPKG_ROOT=$SX_VCPKG_ROOT"
+          fi
+
+      - name: Configure + build + run kernel tests
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
+            -DSX_BUILD_GDEXTENSION=OFF -DSX_BUILD_VOICE=OFF
+          cmake --build build -j "$(nproc)" --target sxkernel_tests
+          # planegcs.dll is emitted to game/bin; stage it (+ OCCT/TBB) beside the
+          # test exe before running — bare ./sxkernel_tests exits 127 in Git Bash
+          # when a DLL is missing.
+          chmod +x packaging/ci/run_windows_kernel_tests.sh
+          packaging/ci/run_windows_kernel_tests.sh
+
+      - name: Export Windows release (no publish)
+        shell: bash
+        run: |
+          # Reconfigure with GDExtension for sxcore; export-windows.sh builds sxcore itself.
+          chmod +x scripts/release/export-windows.sh
+          ./scripts/release/export-windows.sh
+
+      - name: Upload Windows export folder (nightly evidence; not a Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SolidExpress-windows-x86_64-nightly
+          path: dist/releases/SolidExpress-*-windows-x86_64/
+          if-no-files-found: error
+          retention-days: 7
