@@ -2,6 +2,12 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-033 A11d — click vs body-move
+- A still LMB click-release on a selected body (Bottom view, wrench head / plate face) refines to a face. It must not emit `Moved body`.
+- Cause: LMB on the selected mesh armed `_pending_body_move`; a lost/late mouse-up left `_pressed` true, so the next pointer move past 8 px committed a translate. Sub-slop wiggling during a real click also had to stay a select.
+- Fix: `BODY_MOVE_SLOP` 8 px + LMB `button_mask` required to start MOVE. Hover motion after a missed up finishes as a click at the press point. Esc restores the pre-drag pose.
+- Gate: `run_body_move_click_tests.gd`.
+
 ## Rung 1 replan 2 WP2 follow-up (typed length / wrench walk)
 - `SketchMode.click` still locks a typed length over the cursor (`Polygon AF 20.0000` / `Circle r=5.0000`). It must not write the pick into `_hover` or snap an already-scaled tip: that steers a pending slot/arm onto projected model points and opens the wrench mesh.
 - `finish_extrude` / `commit_at_length` pass the live hover into `click()` so snap is at the pointer; `click()` then applies `_length_override`.

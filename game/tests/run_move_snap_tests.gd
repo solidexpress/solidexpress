@@ -90,6 +90,7 @@ func test_snap_bar_during_move(main) -> void:
 	ix._handle_model_pointer(press)
 	var drag := InputEventMouseMotion.new()
 	drag.position = screen + Vector2(40, 0)
+	drag.button_mask = MOUSE_BUTTON_MASK_LEFT
 	ix._handle_model_pointer(drag)
 	check(ix._drag_mode == ViewportInteraction.DragMode.MOVE_BODY, "move armed")
 	check(ix._place_snap_panel.visible, "snap dock still visible during move")

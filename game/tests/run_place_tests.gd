@@ -472,6 +472,7 @@ func test_transform_hud_and_resize(main) -> void:
 	check(armed_on_press or pending, "body press arms or defers MOVE_BODY (mode=%s)" % ix._drag_mode)
 	var drag := InputEventMouseMotion.new()
 	drag.position = screen_body + Vector2(40, 0)
+	drag.button_mask = MOUSE_BUTTON_MASK_LEFT
 	ix._input(drag)
 	check(ix._drag_mode == ViewportInteraction.DragMode.MOVE_BODY, "drag stays MOVE_BODY")
 	check(ix._drag_accum.length() > 1e-3, "move accum non-zero")
@@ -483,6 +484,7 @@ func test_transform_hud_and_resize(main) -> void:
 	check(ix._move_axis_lock == ViewportInteraction.AXIS_X, "X tap locks move to X axis")
 	var diag := InputEventMouseMotion.new()
 	diag.position = screen_body + Vector2(60, 30)
+	diag.button_mask = MOUSE_BUTTON_MASK_LEFT
 	ix._input(diag)
 	check(absf(ix._drag_accum.y) < 1e-6, "X-locked drag keeps ΔY at 0 (got %s)" % ix._drag_accum.y)
 	check(absf(ix._drag_accum.x) > 1e-3, "X-locked drag still moves along X")
@@ -499,6 +501,7 @@ func test_transform_hud_and_resize(main) -> void:
 	check(ix._move_axis_lock == ViewportInteraction.AXIS_Z, "Z tap locks move to vertical")
 	var wriggle := InputEventMouseMotion.new()
 	wriggle.position = screen_body + Vector2(90, 50)
+	wriggle.button_mask = MOUSE_BUTTON_MASK_LEFT
 	ix._input(wriggle)
 	check(absf(ix._drag_accum.x - xy_before.x) < 1e-6 \
 			and absf(ix._drag_accum.y - xy_before.y) < 1e-6,

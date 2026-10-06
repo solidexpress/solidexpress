@@ -184,6 +184,7 @@ func test_move_delta_hud(main) -> void:
 	check(ix._drag_mode == ViewportInteraction.DragMode.NONE, "drag mode still NONE on press")
 	var drag := InputEventMouseMotion.new()
 	drag.position = screen + Vector2(50, 0)
+	drag.button_mask = MOUSE_BUTTON_MASK_LEFT
 	ix._handle_model_pointer(drag)
 	check(ix._drag_mode == ViewportInteraction.DragMode.MOVE_BODY, "travel past slop = MOVE_BODY")
 	check(ix._drag_accum.length() > 1e-3, "move accum after drag")
@@ -208,6 +209,7 @@ func test_move_delta_hud(main) -> void:
 	ix._handle_model_pointer(press2)
 	var drag2 := InputEventMouseMotion.new()
 	drag2.position = screen2 + Vector2(0, 40)
+	drag2.button_mask = MOUSE_BUTTON_MASK_LEFT
 	ix._handle_model_pointer(drag2)
 	check(ix._drag_mode == ViewportInteraction.DragMode.MOVE_BODY, "second drag is MOVE_BODY")
 	check(ix.transform_hud.is_move_delta_visible(), "Δ move row visible on second drag")
