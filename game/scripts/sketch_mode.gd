@@ -846,6 +846,24 @@ func _up_to_face_id() -> String:
 	return str(chrome.up_to_face_id).strip_edges()
 
 
+## Signed sketch-plane → Up To Surface face depth (mm). NAN when the face is
+## missing or has no midpoint. Status uses this instead of the Blind spinbox.
+func up_to_surface_depth() -> float:
+	var face_id := _up_to_face_id()
+	if face_id == "" or view == null or view.doc == null:
+		return NAN
+	if not view.doc.has_method("face_midpoint"):
+		return NAN
+	var n := plane_normal()
+	if n.length_squared() < 1e-12:
+		return NAN
+	n = n.normalized()
+	var mid: Variant = view.doc.face_midpoint(face_id)
+	if not (mid is Vector3):
+		return NAN
+	return absf(((mid as Vector3) - plane_origin).dot(n))
+
+
 var _contour_sig := ""
 
 

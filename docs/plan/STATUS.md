@@ -2,6 +2,11 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-034 A9b — Up To Surface status depth
+- Finish-bar End Up To Surface was accepted (jaw cut through, opposite face stored) but the success line echoed the leftover Blind Distance spinbox: `Extrude Up To Surface 20.0000 mm`. Checklist A9b wants `Extrude Up To Surface 10.0000 mm` (sketch at z=10 to opposite face z=0).
+- `_on_sketch_finish` now reports `up_to_surface_depth()` (sketch-plane origin to the picked face along the sketch normal) and omits the Blind number when that depth cannot be measured.
+- Gate: `run_rung01_replan13_uts_status.gd`; also `run_rung01_replan5_face.gd` and the wrench walk A9b row.
+
 ## sx-033 A11d — click vs body-move
 - A still LMB click-release on a selected body (Bottom view, wrench head / plate face) refines to a face. It must not emit `Moved body`.
 - Cause: LMB on the selected mesh armed `_pending_body_move`; a lost/late mouse-up left `_pressed` true, so the next pointer move past 8 px committed a translate. Sub-slop wiggling during a real click also had to stay a select.
