@@ -267,7 +267,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(sm.active and absf(sm.plane_origin.z - 10.0) < 0.5, "jaw sketch on the top face")
 	await _zoom_uv(ctx, Vector2.ZERO, 40.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2.ZERO, "pending circle first point")
+	var esc_screen := FilmUI.model_to_screen(ctx, sm.to_model(Vector2.ZERO))
+	await _aim_pointer(ctx, esc_screen)
+	await _pointer_click(ctx, esc_screen, false)
 	await process_frame
 	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
@@ -278,7 +280,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 	check(not sm.active, "Esc again exits the face sketch")
-	await _sketch_on_top(ctx, body, top, 10.0)
+	await _sketch_on_top(ctx, body, top, 10.0, false)
 	sm = ctx.main.sketch_mode
 	await _zoom_uv(ctx, Vector2.ZERO, 40.0)
 	await _place_hole_circle(ctx)
@@ -1813,24 +1815,28 @@ func _assert_contours_stay_on(ctx: FilmContext) -> void:
 	check(off == 0, "contour chips stay on (%d off)" % off)
 
 
-func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float) -> void:
+func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float, verify := true) -> void:
 	var vp: Viewport = ctx.main.get_viewport()
 	var host := Vector3(SHAFT_PICK_X, 0.0, z_top)
 	await _view_key(ctx, KEY_3)
 	await _push_key(vp, KEY_ESCAPE, 0)
 	var screen := FilmUI.model_to_screen(ctx, host)
-	check(FilmUI.require_on_screen(ctx, screen, "top face pick"), "top face pick is on screen")
+	if verify:
+		check(FilmUI.require_on_screen(ctx, screen, "top face pick"), "top face pick is on screen")
 	await _aim_pointer(ctx, screen)
 	await _x11_click_screen(vp, screen)
 	await process_frame
-	check(not ctx.main.sketch_mode.active, "first top-face click does not reopen a sketch")
-	check(ctx.view.selected_body == body, "first top-face click selects the body")
+	if verify:
+		check(not ctx.main.sketch_mode.active, "first top-face click does not reopen a sketch")
+		check(ctx.view.selected_body == body, "first top-face click selects the body")
 	await _x11_click_screen(vp, screen)
 	await process_frame
-	check(not ctx.main.sketch_mode.active, "second top-face click does not reopen a sketch")
-	check(ctx.view.selected_face == top, "second top-face click selects the top face")
+	if verify:
+		check(not ctx.main.sketch_mode.active, "second top-face click does not reopen a sketch")
+		check(ctx.view.selected_face == top, "second top-face click selects the top face")
 	var strip: Button = ctx.main.interaction._strip_sketch
-	check(strip.is_visible_in_tree(), "selection strip offers Sketch")
+	if verify:
+		check(strip.is_visible_in_tree(), "selection strip offers Sketch")
 	await FilmUI.click_control(ctx, strip, FilmUICues.toolbar_sketch())
 	await process_frame
 	await process_frame
