@@ -22,7 +22,7 @@ func _init() -> void:
 	# Feature-graph box. Direct add_box() has no feature id, so graph_add_fillet cannot target it.
 	var body: String = main.view.insert_primitive("box", Vector3.ZERO, Vector3(20, 10, 10))
 	await process_frame
-	var fid := main.view.feature_of_body(body)
+	var fid: String = main.view.feature_of_body(body)
 	check(fid != "", "box has a feature id")
 	var edges: PackedStringArray = doc.get_edge_ids(body)
 	check(edges.size() >= 1, "box has edges")
