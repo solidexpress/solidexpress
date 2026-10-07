@@ -121,6 +121,14 @@ const _CARD_W := 280.0
 const _CARD_H := 140.0
 ## Keep the left stack (rail + card) clear of the bottom timeline.
 const _LEFT_STACK_LIMIT := 470.0
+## Sketch-rail rows at 1280×800 (sx-036 A1). ~30 px keeps Exit Sketch through
+## Auto Dim inside the rail without scrolling; labels stay on the buttons.
+const _SKETCH_RAIL_ROW_H := 30.0
+## Status bar is offset_top = -30. Leave that strip clear of the sketch rail.
+const _STATUS_BAR_H := 30.0
+## Keep the labelled rail at least as wide as the 36 px glyph column so the
+## finish bar still docks where Extrude's second click expects empty canvas.
+const _SKETCH_RAIL_MIN_W := 125.0
 
 
 func _finish_op_name() -> String:
@@ -787,14 +795,19 @@ func _build_ui() -> void:
 	var sk_scroll := ScrollContainer.new()
 	sk_scroll.name = "SketchRailScroll"
 	# Width follows the Exit Sketch label (leftover 13); do not lock to 44 px.
-	sk_scroll.custom_minimum_size = Vector2(0, 560)
+	# Height is the live column down to the status bar (_fit_sketch_rail), not
+	# a fixed ~350 px clip (sx-036 A1).
+	sk_scroll.custom_minimum_size = Vector2(0, 0)
+	sk_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sk_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sk_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	# PASS so a wheel does not capture the next LMB; child tool buttons own clicks.
 	sk_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
 	sketch_toolbar.add_child(sk_scroll)
 	_sketch_rail_scroll = sk_scroll
 	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 2)
+	rows.name = "SketchRailRows"
+	rows.add_theme_constant_override("separation", 1)
 	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sk_scroll.add_child(rows)
 	var exit_btn := UIIcons.button("ok", "Exit Sketch",
@@ -802,7 +815,10 @@ func _build_ui() -> void:
 	exit_btn.name = "ExitSketch"
 	exit_btn.pressed.connect(_on_exit_sketch_pressed)
 	rows.add_child(exit_btn)
-	rows.add_child(HSeparator.new())
+	_compact_sketch_rail_button(exit_btn)
+	var exit_sep := HSeparator.new()
+	exit_sep.custom_minimum_size.y = 4.0
+	rows.add_child(exit_sep)
 	_sketch_rail_buttons.clear()
 	var rail_group := ButtonGroup.new()
 	rail_group.allow_unpress = false
@@ -837,6 +853,7 @@ func _build_ui() -> void:
 		b.toggled.connect(_on_sketch_rail_toggled.bind(tool_id))
 		_sketch_rail_buttons.append(b)
 		rows.add_child(b)
+		_compact_sketch_rail_button(b)
 		if entry[0] == SketchMode.Tool.RECT:
 			var jaw := UIIcons.button("wrench_open", "Jaw",
 				"Jaw: open-end wrench jaw. Click 1 = centre, click 2 = end of the long side, click 3 = half the width")
@@ -845,28 +862,35 @@ func _build_ui() -> void:
 			jaw.button_group = rail_group
 			jaw.pressed.connect(sketch_mode.start_jaw_tool)
 			rows.add_child(jaw)
+			_compact_sketch_rail_button(jaw)
 	var auto_def := UIIcons.button("solve", "Auto Dim",
 		"Auto-define — promote weak dims until DOF 0")
 	auto_def.name = "AutoDefine"
 	auto_def.pressed.connect(func() -> void: sketch_mode.auto_define())
 	rows.add_child(auto_def)
-	rows.add_child(HSeparator.new())
+	_compact_sketch_rail_button(auto_def)
+	var tail_sep := HSeparator.new()
+	tail_sep.custom_minimum_size.y = 4.0
+	rows.add_child(tail_sep)
 	dof_label = Label.new()
 	dof_label.text = "—"
 	dof_label.tooltip_text = "Sketch degrees of freedom (0 = fully constrained)"
 	dof_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	dof_label.custom_minimum_size.y = 16.0
 	dof_label.add_theme_font_size_override("font_size", UiScale.caption())
 	rows.add_child(dof_label)
 	var snap_toggle := CheckBox.new()
 	snap_toggle.text = ""
 	snap_toggle.tooltip_text = "Snap to grid / endpoints"
 	snap_toggle.button_pressed = sketch_mode.snap_enabled
+	snap_toggle.custom_minimum_size.y = 22.0
 	snap_toggle.toggled.connect(sketch_mode.set_snap)
 	rows.add_child(snap_toggle)
 	var infer_toggle := CheckBox.new()
 	infer_toggle.text = ""
 	infer_toggle.tooltip_text = "Infer constraints while drawing"
 	infer_toggle.button_pressed = sketch_mode.infer_enabled
+	infer_toggle.custom_minimum_size.y = 22.0
 	infer_toggle.toggled.connect(sketch_mode.set_infer)
 	rows.add_child(infer_toggle)
 	# Kept for tests / voice that still read these nodes.
@@ -1926,6 +1950,7 @@ func _update_left_rail() -> void:
 		ops_panel.visible = false
 		if cam_rail: cam_rail.visible = false
 		if sim_rail: sim_rail.visible = false
+		_reflow_left_stack()
 		return
 	var placing := interaction != null and interaction.is_placing()
 	var has_body := view.selected_body != ""
@@ -1990,11 +2015,63 @@ func _left_stack_top() -> float:
 	return _CHROME_PAD + h + _STACK_GAP
 
 
+## Icon + label at a fixed row height. Theme content margins otherwise keep
+## each button near 36 px, and 19 of those plus the DOF tail do not fit in
+## an 800 px window even when the rail uses the full column.
+func _compact_sketch_rail_button(b: Button) -> void:
+	b.custom_minimum_size.y = _SKETCH_RAIL_ROW_H
+	b.add_theme_font_size_override("font_size", UiScale.body())
+	# Glyphs rasterize at 2× (36 px for an 18 px icon) and otherwise force a
+	# ~38 px row. Cap the drawn icon so the label row can sit at 30 px.
+	b.add_theme_constant_override("icon_max_width", 16)
+	for state_name in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
+		if not b.has_theme_stylebox(state_name):
+			continue
+		var src := b.get_theme_stylebox(state_name)
+		if src == null:
+			continue
+		var dup := src.duplicate() as StyleBox
+		if dup == null:
+			continue
+		# Style margin (border / expand) is what makes the default button ~38 px.
+		# Content margin alone cannot shrink below that, so zero the vertical
+		# expand and keep a 1 px content pad. custom_minimum_size then holds 30.
+		if dup is StyleBoxFlat:
+			var flat := dup as StyleBoxFlat
+			flat.set_expand_margin(SIDE_TOP, 0.0)
+			flat.set_expand_margin(SIDE_BOTTOM, 0.0)
+			flat.set_border_width(SIDE_TOP, 0)
+			flat.set_border_width(SIDE_BOTTOM, 0)
+		dup.set_content_margin(SIDE_TOP, 1.0)
+		dup.set_content_margin(SIDE_BOTTOM, 1.0)
+		b.add_theme_stylebox_override(state_name, dup)
+
+
+## Size the sketch rail to the open column: top of the left stack down to the
+## status bar. A fixed scroll height left Trim and the tools below it off
+## screen at 1280×800 while the rest of the column sat empty (sx-036 A1).
+func _fit_sketch_rail(stack_top: float) -> void:
+	if sketch_toolbar == null:
+		return
+	if not sketch_toolbar.visible:
+		if sketch_toolbar.custom_minimum_size.y != 0.0:
+			sketch_toolbar.custom_minimum_size.y = 0.0
+		return
+	var vp_h := 800.0
+	if get_viewport() != null:
+		vp_h = get_viewport().get_visible_rect().size.y
+	var avail := maxf(_SKETCH_RAIL_ROW_H * 8.0, vp_h - stack_top - _STATUS_BAR_H - _STACK_GAP)
+	sketch_toolbar.custom_minimum_size = Vector2(_SKETCH_RAIL_MIN_W, avail)
+	if _sketch_rail_scroll != null:
+		_sketch_rail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+
 func _reflow_left_stack() -> void:
 	if left_stack == null or not is_instance_valid(left_stack):
 		return
 	var top := _left_stack_top()
 	left_stack.position = Vector2(_CHROME_PAD, top)
+	_fit_sketch_rail(top)
 	var limit := _LEFT_STACK_LIMIT
 	if timeline != null and timeline.visible:
 		limit = minf(limit, timeline.get_global_rect().position.y - _STACK_GAP)
