@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Runs a subset of Godot headless test suites that must stay green.
-# Gated suites: workflow, ui, sketch, print
+# Gated suites: workflow, ui, sketch, sketch tools, print
 #
 # This expects:
 #  - tools/godot/godot present (use packaging/ci/fetch_godot.sh beforehand)
@@ -22,10 +22,13 @@ fi
 echo "Warming import cache..."
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --import > /dev/null 2>&1 || true
 
-echo "Running gated Godot suites (workflow, ui, sketch, print, rung01 e2e)"
+echo "Running gated Godot suites (workflow, ui, sketch, sketch tools, print, rung01 e2e)"
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_workflow_tests.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_ui_tests.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_sketch_tests.gd
+# Measured headless on this tree: ~2s, 141 checks. It was red on main and
+# absent from this list, so make test-godot stopped here while CI stayed green.
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_sketch_tools_tests.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_print_tests.gd
 # Headless wrench walk plus the two suites that regressed with it.
 # Measured on lavapipe: the three together finish in under a minute
