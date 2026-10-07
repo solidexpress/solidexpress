@@ -278,35 +278,41 @@ func test_rail_extrude() -> void:
 	await FilmUI.click_sketch(ctx, sm, Vector2(10, 0), "Circle radius")
 	await process_frame
 	check(sm.active, "closed circle leaves the sketch session open")
+	# The palette hides for the whole sketch (`_update_left_rail`). A person
+	# extrudes from the finish bar, which is the sketch-mode Extrude path.
 	var rail: Button = main._rail_extrude
 	var finish_ex: Button = chrome.extrude_button() if chrome != null else null
-	check(rail != null and rail.is_visible_in_tree(), "palette/rail Extrude button is visible")
-	check(rail != null and rail != finish_ex, "rail Extrude is not the finish-bar button")
+	check(finish_ex != null and finish_ex.is_visible_in_tree(),
+			"sketch-mode Extrude is visible while the sketch is open")
+	check(rail != null and finish_ex != null and rail != finish_ex,
+			"palette Extrude is a different button from the finish bar")
+	check(rail == null or not rail.is_visible_in_tree(),
+			"palette Extrude stays hidden while a sketch is active")
 	var bodies_before := ctx.view.doc.body_ids().size()
 	await _type_distance(main, "20.07.5")
 	check(not chrome.distance_line_parses(), "20.07.5 does not parse")
-	if rail != null:
-		await FilmUI.click_control(ctx, rail, {"keys": "Click", "desc": "Rail Extrude unparseable"})
+	if finish_ex != null:
+		await FilmUI.click_control(ctx, finish_ex, {"keys": "Click", "desc": "Sketch Extrude unparseable"})
 		await process_frame
 		await process_frame
 	check(ctx.view.doc.body_ids().size() == bodies_before,
-			"unparseable rail Extrude does not add a body")
-	check(sm.active, "unparseable rail Extrude leaves the sketch active")
+			"unparseable sketch Extrude does not add a body")
+	check(sm.active, "unparseable sketch Extrude leaves the sketch active")
 	var bad_status := str(main.status_label.text)
 	check(bad_status.contains("Cannot read distance"),
-			"unparseable rail status contains Cannot read distance (got %s)" % bad_status)
+			"unparseable sketch status contains Cannot read distance (got %s)" % bad_status)
 	check(not bad_status.contains("Extrude Blind"),
-			"unparseable rail does not overwrite with success (got %s)" % bad_status)
+			"unparseable sketch does not overwrite with success (got %s)" % bad_status)
 	await _type_distance(main, "7.5")
 	check(chrome.distance_line_parses(), "7.5 parses")
-	if rail != null:
-		await FilmUI.click_control(ctx, rail, {"keys": "Click", "desc": "Rail Extrude 7.5"})
+	if finish_ex != null:
+		await FilmUI.click_control(ctx, finish_ex, {"keys": "Click", "desc": "Sketch Extrude 7.5"})
 		await process_frame
 		await process_frame
 		await process_frame
-	check(not sm.active, "rail Extrude 7.5 finishes the sketch")
+	check(not sm.active, "sketch Extrude 7.5 finishes the sketch")
 	var ids: PackedStringArray = ctx.view.doc.body_ids()
-	check(ids.size() == bodies_before + 1, "rail Extrude 7.5 adds one body")
+	check(ids.size() == bodies_before + 1, "sketch Extrude 7.5 adds one body")
 	if ids.size() > 0:
 		var bb: Dictionary = ctx.view.doc.measure_bbox(ids[ids.size() - 1])
 		var ext: Vector3 = bb["max"] - bb["min"]
