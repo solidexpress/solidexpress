@@ -2,8 +2,10 @@
 #include "sx/shape_utils.hpp"
 #include "sx/variables.hpp"
 
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepTools_WireExplorer.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
@@ -24,6 +26,7 @@
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Wire.hxx>
 #include <BRep_Builder.hxx>
+#include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <Geom_Circle.hxx>
 #include <Geom_BSplineCurve.hxx>
@@ -762,6 +765,119 @@ std::vector<TopoDS_Shape> Sketch::contour_faces(std::string* err) const {
         return {};
     }
     return contours;
+}
+
+namespace {
+
+bool uv_near(const std::array<double, 2>& a, const std::array<double, 2>& b) {
+    return std::hypot(a[0] - b[0], a[1] - b[1]) <= 1e-9;
+}
+
+void append_uv(std::vector<std::array<double, 2>>& loop, const std::array<double, 2>& p) {
+    if (!loop.empty() && uv_near(loop.back(), p)) return;
+    loop.push_back(p);
+}
+
+void sample_wire_uv(const TopoDS_Wire& wire, const TopoDS_Face& face, double deflection,
+                    const gp_Pnt& origin, const gp_Vec& x_dir, const gp_Vec& y_dir,
+                    std::vector<std::array<double, 2>>& loop) {
+    auto project = [&](const gp_Pnt& p) {
+        gp_Vec d(origin, p);
+        return std::array<double, 2>{d.Dot(x_dir), d.Dot(y_dir)};
+    };
+    auto take_edge = [&](const TopoDS_Edge& edge) {
+        BRepAdaptor_Curve curve(edge);
+        std::vector<gp_Pnt> pts;
+        if (curve.GetType() == GeomAbs_Line) {
+            pts.push_back(curve.Value(curve.FirstParameter()));
+            pts.push_back(curve.Value(curve.LastParameter()));
+        } else {
+            try {
+                GCPnts_QuasiUniformDeflection samp(curve, deflection);
+                if (samp.IsDone()) {
+                    for (int i = 1; i <= samp.NbPoints(); ++i)
+                        pts.push_back(samp.Value(i));
+                }
+            } catch (...) {
+            }
+            if (pts.size() < 2) {
+                pts.clear();
+                pts.push_back(curve.Value(curve.FirstParameter()));
+                pts.push_back(curve.Value(curve.LastParameter()));
+            }
+            // A full circle at deflection 0.05 is dozens of points; tiny
+            // circles (and short arcs the sampler under-samples) clamp to 48.
+            if (curve.GetType() == GeomAbs_Circle && static_cast<int>(pts.size()) < 48) {
+                const double u0 = curve.FirstParameter();
+                const double u1 = curve.LastParameter();
+                const double span = std::abs(u1 - u0);
+                const bool full = std::abs(span - 6.283185307179586) < 1e-4;
+                pts.clear();
+                constexpr int n = 48;
+                const int last = full ? n - 1 : n;
+                for (int i = 0; i <= last; ++i) {
+                    const double u =
+                        u0 + (u1 - u0) * (static_cast<double>(i) / static_cast<double>(n));
+                    pts.push_back(curve.Value(u));
+                }
+            }
+        }
+        if (edge.Orientation() == TopAbs_REVERSED) std::reverse(pts.begin(), pts.end());
+        for (const auto& p : pts) append_uv(loop, project(p));
+    };
+    bool any = false;
+    for (BRepTools_WireExplorer exp(wire, face); exp.More(); exp.Next()) {
+        any = true;
+        take_edge(TopoDS::Edge(exp.Current()));
+    }
+    if (!any) {
+        for (TopExp_Explorer ex(wire, TopAbs_EDGE); ex.More(); ex.Next())
+            take_edge(TopoDS::Edge(ex.Current()));
+    }
+    if (loop.size() >= 2 && uv_near(loop.front(), loop.back())) loop.pop_back();
+}
+
+}  // namespace
+
+std::vector<Sketch::ContourOutline> Sketch::contour_outlines(double deflection,
+                                                            std::string* err) const {
+    auto faces = contour_faces(err);
+    if (faces.empty()) return {};
+    if (!(deflection > 0.0)) deflection = 0.05;
+    const gp_Pnt origin(plane_.origin[0], plane_.origin[1], plane_.origin[2]);
+    const gp_Vec x_dir(plane_.x_dir[0], plane_.x_dir[1], plane_.x_dir[2]);
+    const gp_Vec y_dir(plane_.y_dir[0], plane_.y_dir[1], plane_.y_dir[2]);
+    std::vector<ContourOutline> out;
+    out.reserve(faces.size());
+    for (const auto& shape : faces) {
+        if (shape.ShapeType() != TopAbs_FACE) continue;
+        const TopoDS_Face face = TopoDS::Face(shape);
+        const TopoDS_Wire outer_wire = BRepTools::OuterWire(face);
+        ContourOutline region;
+        region.area = shape::area(face);
+        for (TopExp_Explorer wx(face, TopAbs_WIRE); wx.More(); wx.Next()) {
+            const TopoDS_Wire wire = TopoDS::Wire(wx.Current());
+            std::vector<std::array<double, 2>> loop;
+            sample_wire_uv(wire, face, deflection, origin, x_dir, y_dir, loop);
+            if (wire.IsSame(outer_wire)) region.outer = std::move(loop);
+            else region.holes.push_back(std::move(loop));
+        }
+        if (!region.outer.empty()) {
+            double minx = region.outer[0][0], miny = region.outer[0][1];
+            double maxx = minx, maxy = miny;
+            for (const auto& p : region.outer) {
+                minx = std::min(minx, p[0]);
+                miny = std::min(miny, p[1]);
+                maxx = std::max(maxx, p[0]);
+                maxy = std::max(maxy, p[1]);
+            }
+            region.min = {minx, miny};
+            region.size = {maxx - minx, maxy - miny};
+            region.center = {(minx + maxx) * 0.5, (miny + maxy) * 0.5};
+        }
+        out.push_back(std::move(region));
+    }
+    return out;
 }
 
 TopoDS_Shape Sketch::profile_face_selected(const std::vector<int>& indices,

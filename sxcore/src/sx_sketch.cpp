@@ -375,6 +375,41 @@ int SxSketch::contour_count() const {
     return static_cast<int>(sketch_->contour_faces(&err).size());
 }
 
+Array SxSketch::contour_outlines() const {
+    Array out;
+    if (!sketch_) return out;
+    std::string err;
+    const auto regions = sketch_->contour_outlines(0.05, &err);
+    if (regions.empty() && !err.empty()) return out;
+    for (const auto& region : regions) {
+        Dictionary d;
+        PackedVector2Array outer;
+        outer.resize(static_cast<int>(region.outer.size()));
+        for (int i = 0; i < outer.size(); ++i) {
+            const auto& p = region.outer[static_cast<size_t>(i)];
+            outer[i] = Vector2(p[0], p[1]);
+        }
+        Array holes;
+        for (const auto& hole : region.holes) {
+            PackedVector2Array hp;
+            hp.resize(static_cast<int>(hole.size()));
+            for (int i = 0; i < hp.size(); ++i) {
+                const auto& p = hole[static_cast<size_t>(i)];
+                hp[i] = Vector2(p[0], p[1]);
+            }
+            holes.push_back(hp);
+        }
+        d["outer"] = outer;
+        d["holes"] = holes;
+        d["area"] = region.area;
+        d["min"] = Vector2(region.min[0], region.min[1]);
+        d["size"] = Vector2(region.size[0], region.size[1]);
+        d["center"] = Vector2(region.center[0], region.center[1]);
+        out.push_back(d);
+    }
+    return out;
+}
+
 String SxSketch::snapshot() const {
     if (!sketch_) return {};
     return to_gd(sx::sketch_to_json(*sketch_).dump());
@@ -472,6 +507,7 @@ void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("analyze", "gap_tol"), &SxSketch::analyze, DEFVAL(1e-4));
     ClassDB::bind_method(D_METHOD("fully_define"), &SxSketch::fully_define);
     ClassDB::bind_method(D_METHOD("contour_count"), &SxSketch::contour_count);
+    ClassDB::bind_method(D_METHOD("contour_outlines"), &SxSketch::contour_outlines);
     ClassDB::bind_method(D_METHOD("snapshot"), &SxSketch::snapshot);
     ClassDB::bind_method(D_METHOD("restore", "json"), &SxSketch::restore);
     ClassDB::bind_method(D_METHOD("project_line_edge", "a", "b", "edge_id"),

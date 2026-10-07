@@ -73,6 +73,9 @@ public:
     int fully_define();
     // SolidWorks Selected Contours: number of outermost solid regions.
     int contour_count() const;
+    // One Dictionary per region, same order as contour_count / contour_faces:
+    // outer, holes, area, min, size, center. Empty when the kernel call fails.
+    godot::Array contour_outlines() const;
 
     // JSON snapshot for in-sketch undo. Entity and constraint ids are preserved.
     godot::String snapshot() const;

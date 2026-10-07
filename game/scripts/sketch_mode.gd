@@ -128,6 +128,17 @@ var dimensions_visible := true
 var _draw_node: MeshInstance3D
 var _preview_node: MeshInstance3D
 var _selected_node: MeshInstance3D
+var _contour_node: MeshInstance3D
+var _contour_fill_material: StandardMaterial3D
+var _contour_line_material: StandardMaterial3D
+var _contour_tags: Node3D
+var _contour_tag: Label3D
+var _contour_included: Array = []
+var _contour_focus := -1
+var _contour_cache: Array = []
+var _contour_cache_sig := "\u0001"
+var _contour_fill_alphas: Array = []
+var _contour_outline_count := 0
 var _dimension_labels: Node3D
 var _constraint_glyphs: Node3D
 ## Anchors of the drawn glyphs: Array of {cid: String, pos: Vector2}.
@@ -232,6 +243,38 @@ func _ready() -> void:
 	_selected_node = MeshInstance3D.new()
 	_selected_node.material_override = _selected_material
 	add_child(_selected_node)
+	_contour_fill_material = StandardMaterial3D.new()
+	_contour_fill_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_contour_fill_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_contour_fill_material.albedo_color = Color.WHITE
+	_contour_fill_material.vertex_color_use_as_albedo = true
+	_contour_fill_material.no_depth_test = false
+	_contour_fill_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_contour_fill_material.render_priority = -2
+	_contour_line_material = StandardMaterial3D.new()
+	_contour_line_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_contour_line_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_contour_line_material.albedo_color = Color.WHITE
+	_contour_line_material.vertex_color_use_as_albedo = true
+	_contour_line_material.no_depth_test = false
+	_contour_line_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_contour_line_material.render_priority = -1
+	_contour_node = MeshInstance3D.new()
+	_contour_node.name = "ContourHighlight"
+	_contour_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_contour_node)
+	_contour_tags = Node3D.new()
+	_contour_tags.name = "ContourTags"
+	add_child(_contour_tags)
+	_contour_tag = Label3D.new()
+	_contour_tag.name = "ContourTag"
+	_contour_tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_contour_tag.fixed_size = true
+	_contour_tag.pixel_size = DIM_LABEL_PIXEL
+	_contour_tag.font_size = DIM_LABEL_FONT
+	_contour_tag.no_depth_test = true
+	_contour_tag.visible = false
+	_contour_tags.add_child(_contour_tag)
 	_dimension_labels = Node3D.new()
 	_dimension_labels.name = "DimensionLabels"
 	add_child(_dimension_labels)
@@ -1197,6 +1240,7 @@ func _sync_contour_bar() -> void:
 	var chrome := _sketch_chrome()
 	if chrome != null:
 		chrome.refresh_contours(sketch)
+	_redraw_contour_highlight()
 
 
 func _sketch_chrome() -> SketchContextChrome:
@@ -3908,6 +3952,268 @@ func _redraw_selected() -> void:
 	_selected_node.mesh = im
 
 
+const CONTOUR_COLORS := [
+	Color(0.20, 0.65, 1.00),
+	Color(1.00, 0.55, 0.15),
+	Color(0.35, 0.85, 0.45),
+	Color(0.85, 0.40, 0.90),
+]
+const CONTOUR_FILL_ALPHA := 0.28
+const CONTOUR_FOCUS_ALPHA := 0.50
+const CONTOUR_OFF_COLOR := Color(0.55, 0.55, 0.55, 0.8)
+const CONTOUR_LIFT_MM := 0.05
+
+
+func set_contour_highlight(included: Array, focus: int = -1) -> void:
+	_contour_included = included.duplicate()
+	_contour_focus = focus
+	_redraw_contour_highlight()
+
+
+func contour_label(index: int) -> String:
+	var regions := _contour_regions()
+	var n := regions.size()
+	if index < 0 or index >= n:
+		return "Contour %d of %d" % [index + 1, n]
+	var region: Dictionary = regions[index]
+	var sz: Vector2 = region["size"]
+	var c: Vector2 = region["center"]
+	return "Contour %d of %d — %.1f × %.1f mm at (%.1f, %.1f)" % [
+		index + 1, n, sz.x, sz.y, c.x, c.y]
+
+
+func contour_highlight_state() -> Dictionary:
+	var live := _contour_node != null and _contour_node.mesh != null
+	var tag := ""
+	if _contour_tag != null and _contour_tag.visible:
+		tag = _contour_tag.text
+	return {
+		"count": _contour_fill_alphas.size() if live else 0,
+		"included": _contour_included.duplicate(),
+		"focus": _contour_focus if live else -1,
+		"fills": _contour_fill_alphas.duplicate() if live else [],
+		"outlines": _contour_outline_count if live else 0,
+		"tag": tag,
+	}
+
+
+func _contour_regions() -> Array:
+	if sketch == null or not sketch.has_method("contour_outlines"):
+		return []
+	if _contour_cache_sig != _contour_sig:
+		_contour_cache = sketch.contour_outlines()
+		_contour_cache_sig = _contour_sig
+	return _contour_cache
+
+
+func _contour_bar_visible() -> bool:
+	var chrome := _sketch_chrome()
+	return chrome != null and chrome._contour_bar != null and chrome._contour_bar.visible
+
+
+func _contour_is_on(index: int) -> bool:
+	for x in _contour_included:
+		if int(x) == index:
+			return true
+	return false
+
+
+func _redraw_contour_highlight() -> void:
+	_contour_fill_alphas = []
+	_contour_outline_count = 0
+	if _contour_tag != null:
+		_contour_tag.visible = false
+		_contour_tag.text = ""
+	if _contour_node == null:
+		return
+	var regions := _contour_regions()
+	if sketch == null or not _contour_bar_visible() or regions.size() < 2:
+		_contour_node.mesh = null
+		_contour_focus = -1
+		return
+	var tris := PackedVector2Array()
+	var tri_cols := PackedColorArray()
+	var lines := PackedVector2Array()
+	var line_cols := PackedColorArray()
+	for i in regions.size():
+		var region: Dictionary = regions[i]
+		var on := _contour_is_on(i)
+		var focused := i == _contour_focus
+		var base: Color = CONTOUR_COLORS[i % CONTOUR_COLORS.size()]
+		var fill_alpha := 0.0
+		if on:
+			fill_alpha = CONTOUR_FOCUS_ALPHA if focused else CONTOUR_FILL_ALPHA
+		_contour_fill_alphas.append(fill_alpha)
+		var outer: PackedVector2Array = region["outer"]
+		var holes: Array = region["holes"]
+		if on and fill_alpha > 0.0 and outer.size() >= 3:
+			var fill := Color(base.r, base.g, base.b, fill_alpha)
+			for p in _contour_fill_triangles(outer, holes):
+				tris.append(p)
+				tri_cols.append(fill)
+		var outline_col := base if on else CONTOUR_OFF_COLOR
+		outline_col.a = 1.0 if on else CONTOUR_OFF_COLOR.a
+		if _append_outline(lines, line_cols, outer, outline_col):
+			_contour_outline_count += 1
+		for hole in holes:
+			if _append_outline(lines, line_cols, hole, outline_col):
+				_contour_outline_count += 1
+		if focused:
+			_append_outline(lines, line_cols, _inset_loop(outer, 0.35), outline_col)
+			for hole in holes:
+				_append_outline(lines, line_cols, _inset_loop(hole, 0.35), outline_col)
+	if tris.is_empty() and lines.is_empty():
+		_contour_node.mesh = null
+		return
+	# ArrayMesh so fills and outlines stay separate surfaces (vertex colours).
+	# The sketch lines stay ImmediateMesh; this overlay only needs a static mesh.
+	var mesh := ArrayMesh.new()
+	var lift := plane_normal() * CONTOUR_LIFT_MM
+	if tris.size() >= 3:
+		var verts := PackedVector3Array()
+		for p in tris:
+			verts.append(_to3(p) + lift)
+		var arrays: Array = []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_COLOR] = tri_cols
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, _contour_fill_material)
+	if lines.size() >= 2:
+		var lverts := PackedVector3Array()
+		for p in lines:
+			lverts.append(_to3(p) + lift)
+		var larrays: Array = []
+		larrays.resize(Mesh.ARRAY_MAX)
+		larrays[Mesh.ARRAY_VERTEX] = lverts
+		larrays[Mesh.ARRAY_COLOR] = line_cols
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, larrays)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, _contour_line_material)
+	_contour_node.mesh = mesh
+	if _contour_focus >= 0 and _contour_focus < regions.size() and _contour_tag != null:
+		var centre: Vector2 = regions[_contour_focus]["center"]
+		_contour_tag.text = str(_contour_focus + 1)
+		_contour_tag.position = _to3(centre)
+		_contour_tag.modulate = CONTOUR_COLORS[_contour_focus % CONTOUR_COLORS.size()]
+		_contour_tag.visible = true
+
+
+func _append_outline(lines: PackedVector2Array, cols: PackedColorArray,
+		loop: PackedVector2Array, col: Color) -> bool:
+	if loop.size() < 2:
+		return false
+	for i in loop.size():
+		lines.append(loop[i])
+		lines.append(loop[(i + 1) % loop.size()])
+		cols.append(col)
+		cols.append(col)
+	return true
+
+
+func _inset_loop(loop: PackedVector2Array, dist: float) -> PackedVector2Array:
+	if loop.size() < 3:
+		return PackedVector2Array()
+	var c := Vector2.ZERO
+	for p in loop:
+		c += p
+	c /= float(loop.size())
+	var out := PackedVector2Array()
+	for p in loop:
+		var d: Vector2 = c - p
+		if d.length() > dist * 1.5:
+			out.append(p + d.normalized() * dist)
+		else:
+			out.append(p)
+	return out
+
+
+func _contour_fill_triangles(outer: PackedVector2Array, holes: Array) -> PackedVector2Array:
+	var polys: Array = _contour_polygons(outer, holes)
+	var tris := PackedVector2Array()
+	for poly in polys:
+		var loop: PackedVector2Array = poly
+		tris.append_array(_triangulate_loop(loop))
+	return tris
+
+
+func _contour_polygons(outer: PackedVector2Array, holes: Array) -> Array:
+	if holes.is_empty():
+		return [outer]
+	var acc := outer
+	for hole in holes:
+		var hole_loop: PackedVector2Array = hole
+		var clipped: Array = Geometry2D.clip_polygons(acc, hole_loop)
+		var kept: Array = []
+		for p in clipped:
+			var poly: PackedVector2Array = p
+			if Geometry2D.is_polygon_clockwise(poly):
+				continue
+			kept.append(poly)
+		var kept_area := 0.0
+		for p in kept:
+			kept_area += absf(_loop_area(p))
+		var base := absf(_loop_area(acc))
+		var hole_area := absf(_loop_area(hole_loop))
+		if kept.is_empty() or kept_area > base - hole_area * 0.5:
+			acc = _bridge_hole(acc, hole_loop)
+		else:
+			return kept
+	return [acc]
+
+
+func _bridge_hole(outer: PackedVector2Array, hole: PackedVector2Array) -> PackedVector2Array:
+	var h := hole.duplicate()
+	if Geometry2D.is_polygon_clockwise(outer) == Geometry2D.is_polygon_clockwise(h):
+		h.reverse()
+	var bi := 0
+	var hi := 0
+	var best := INF
+	for i in outer.size():
+		for j in h.size():
+			var d: float = outer[i].distance_squared_to(h[j])
+			if d < best:
+				best = d
+				bi = i
+				hi = j
+	var result := PackedVector2Array()
+	for i in outer.size():
+		result.append(outer[(bi + i) % outer.size()])
+	result.append(outer[bi])
+	for i in h.size():
+		result.append(h[(hi + i) % h.size()])
+	result.append(h[hi])
+	return result
+
+
+func _triangulate_loop(poly: PackedVector2Array) -> PackedVector2Array:
+	if poly.size() < 3:
+		return PackedVector2Array()
+	var idx := Geometry2D.triangulate_polygon(poly)
+	var src := poly
+	if idx.is_empty():
+		src = poly.duplicate()
+		src.reverse()
+		idx = Geometry2D.triangulate_polygon(src)
+	var tris := PackedVector2Array()
+	for t in range(0, idx.size(), 3):
+		tris.append(src[idx[t]])
+		tris.append(src[idx[t + 1]])
+		tris.append(src[idx[t + 2]])
+	return tris
+
+
+func _loop_area(poly: PackedVector2Array) -> float:
+	var a := 0.0
+	var n := poly.size()
+	if n < 3:
+		return 0.0
+	for i in n:
+		var p: Vector2 = poly[i]
+		var q: Vector2 = poly[(i + 1) % n]
+		a += p.x * q.y - q.x * p.y
+	return a * 0.5
+
+
 func click(pos2: Vector2) -> void:
 	if not active:
 		return
@@ -5779,6 +6085,13 @@ func _clear_meshes() -> void:
 	_draw_node.mesh = null
 	_preview_node.mesh = null
 	_selected_node.mesh = null
+	if _contour_node != null:
+		_contour_node.mesh = null
+	if _contour_tag != null:
+		_contour_tag.visible = false
+		_contour_tag.text = ""
+	_contour_fill_alphas = []
+	_contour_outline_count = 0
 	selected = []
 	selected_constraint = ""
 	dimensions.clear()

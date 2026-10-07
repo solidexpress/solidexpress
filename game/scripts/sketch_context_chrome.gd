@@ -1264,10 +1264,14 @@ func refresh_contours(sketch: SxSketch) -> void:
 	_selected_contours.clear()
 	if sketch == null or not sketch.has_method("contour_count"):
 		_contour_bar.visible = false
+		if sketch_mode != null:
+			sketch_mode.set_contour_highlight([], -1)
 		return
 	var n: int = int(sketch.contour_count())
 	if n <= 1:
 		_contour_bar.visible = false
+		if sketch_mode != null:
+			sketch_mode.set_contour_highlight([], -1)
 		return
 	var lbl := Label.new()
 	lbl.text = "Contours"
@@ -1288,10 +1292,28 @@ func refresh_contours(sketch: SxSketch) -> void:
 					_selected_contours.sort()
 			else:
 				_selected_contours.erase(idx)
+			if sketch_mode != null:
+				sketch_mode.set_contour_highlight(_selected_contours, idx)
+				sketch_mode.status.emit(sketch_mode.contour_label(idx) + (
+						" — included" if on else " — skipped"))
 		)
+		b.mouse_entered.connect(func() -> void:
+			if sketch_mode != null:
+				sketch_mode.set_contour_highlight(_selected_contours, idx))
+		b.mouse_exited.connect(func() -> void:
+			if sketch_mode != null:
+				sketch_mode.set_contour_highlight(_selected_contours, -1))
+		b.focus_entered.connect(func() -> void:
+			if sketch_mode != null:
+				sketch_mode.set_contour_highlight(_selected_contours, idx))
+		b.focus_exited.connect(func() -> void:
+			if sketch_mode != null:
+				sketch_mode.set_contour_highlight(_selected_contours, -1))
 		_contour_bar.add_child(b)
 	_contour_bar.visible = true
 	_stack_sketch_rows()
+	if sketch_mode != null:
+		sketch_mode.set_contour_highlight(_selected_contours, -1)
 
 
 func extrude_button() -> Button:
@@ -1339,6 +1361,8 @@ func show_for_session(on: bool, fid: String = "") -> void:
 		hide_selection_actions()
 		_contour_bar.visible = false
 		_selected_contours.clear()
+		if sketch_mode != null:
+			sketch_mode.set_contour_highlight([], -1)
 		_dim_editing = false
 
 

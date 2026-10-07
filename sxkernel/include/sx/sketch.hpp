@@ -167,6 +167,17 @@ public:
     // are split into planar regions (BRepAlgoAPI_Splitter).
     std::vector<TopoDS_Shape> contour_faces(std::string* err = nullptr) const;
 
+    // Closed region outlines in sketch UV, same order as contour_faces()
+    // (area descending, then centroid x, then y). Chip i is entry i.
+    struct ContourOutline {
+        std::vector<std::array<double, 2>> outer;  // last point != first
+        std::vector<std::vector<std::array<double, 2>>> holes;
+        double area = 0.0;  // outer minus holes, mm^2
+        std::array<double, 2> min{0, 0}, size{0, 0}, center{0, 0};  // bbox of outer
+    };
+    std::vector<ContourOutline> contour_outlines(double deflection = 0.05,
+                                                 std::string* err = nullptr) const;
+
     // profile_face restricted to contour indices (empty = all). Indices match
     // contour_faces() order.
     TopoDS_Shape profile_face_selected(const std::vector<int>& indices,
