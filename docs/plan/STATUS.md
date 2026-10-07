@@ -2,6 +2,12 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-035 N1a / N1b — sketch dimension labels at 150 px and after Save As
+- Typed circle radii (`5`, `22.5`) are driving dimensions: the chrome-field commit adds a kernel `radius` constraint and a label record. Trim also records the keep-side arc and pivot-hole radii so the face-sketch set is `20`, `45°`, `5`, `22.5` live, not only after a reload.
+- Save restores the live camera pose *before* restacking labels, and a pending fit-view reassert cannot run afterwards. `keep_current_view` also holds `view_changed` restack until `reapply_dimension_records` puts the live `label_stack` values back (geometry unchanged). Parked undo `head_dims` merge with the kernel builder so a same-frame exit/begin_edit cannot drop the circle labels. Stack offsets match Label3D screen pixels; labels use `no_depth_test`.
+- A click on a dimension label opens the editor even when Jaw or Trim is still armed (first glyph of `20` / `45°`). Draw tools hit the on-screen text rect only, so an armed Jaw click 2 near a typed-circle radius is not stolen.
+- Gate: `run_rung01_replan14_savelabels.gd` (N1a 150 px head, N1b Save As, Jaw-armed glyph click).
+
 ## sx-035 A11a — Slot radius typing must not steal Extrude
 - Unfocused digits while Slot is armed (no first centre yet) were routed to Extrude Distance because there is no single-DOF rubber-band. Typing `5` Enter set Extrude 20→5 and left Distance focused, so the later `150` never reached the c-c blank. After a typed length the strip labelled `Radius r` over the leftover 150.
 - Route Slot radius (and any single-DOF preview) to the dim blank; restore the radius number after a c-c commit so the `Radius` label matches the value.

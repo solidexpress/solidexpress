@@ -3440,11 +3440,17 @@ func _save_current() -> void:
 		_last_saved_revision = view.doc.revision()
 		_push_recent(current_path)
 	if reenter_fid != "" and sketch_mode.begin_edit(reenter_fid):
-		if not kept_dims.is_empty() and sketch_mode.has_method("reapply_dimension_records"):
-			sketch_mode.reapply_dimension_records(kept_dims)
+		# Hold restack, then restore the live zoom, then place labels. begin_edit
+		# fits the view; apply_pose without the hold restacks those fit-view
+		# stacks at 150 px and parks 45° on 20 (N1b).
+		if sketch_mode.has_method("keep_current_view"):
+			sketch_mode.keep_current_view()
+		camera.apply_pose(reenter_pose)
+		if sketch_mode.has_method("reapply_dimension_records"):
+			sketch_mode.reapply_dimension_records(
+					kept_dims if not kept_dims.is_empty() else sketch_mode.dimensions)
 		_on_sketch_session_started("Editing sketch")
 		view.refresh_sketch_pads(sketch_mode.editing_fid)
-		camera.apply_pose(reenter_pose)
 		sketch_mode.set_tool(SketchMode.Tool.SELECT)
 	if saved:
 		# begin_edit re-enters the camera and may emit "Sketch view fit"
