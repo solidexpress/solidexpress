@@ -162,6 +162,7 @@ test-godot: build import preflight
 		[ -e "$$f" ] || continue; \
 		$(GODOT) --headless --path game --script tests/$$(basename $$f) || exit 1; \
 	done
+	$(GODOT) --headless --path game --script tests/run_rung01_sx036_rail.gd
 
 lint-rung01-e2e:
 	python3 tools/lint_rung01_e2e.py

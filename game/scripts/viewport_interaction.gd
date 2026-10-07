@@ -96,6 +96,13 @@ var _strip_radius_syncing := false
 var _strip_jaw_box: HBoxContainer
 const POST_FINISH_CHIP_GUARD_MSEC := 600
 var _post_finish_chip_guard_until_msec := 0
+## Global rect of the finish-bar Extrude button at the moment the sketch
+## committed. A second click there (a double-click, or a late click that never
+## moved off the button) must not land on the selection strip.
+var _finish_click_rect := Rect2()
+var _finish_click_global := Vector2.ZERO
+var _finish_click_shield_armed := false
+var _finish_click_shield: Control
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
@@ -283,7 +290,8 @@ func _wire_post_finish_guard() -> void:
 	if sketch_mode == null:
 		return
 	sketch_mode.finished.connect(func(_id: String) -> void:
-		_post_finish_chip_guard_until_msec = Time.get_ticks_msec() + POST_FINISH_CHIP_GUARD_MSEC)
+		_post_finish_chip_guard_until_msec = Time.get_ticks_msec() + POST_FINISH_CHIP_GUARD_MSEC
+		_arm_finish_click_shield())
 
 
 func _on_numeric_canvas_press(event: InputEvent) -> void:
@@ -2606,7 +2614,7 @@ func _over_chrome(global_mouse: Vector2) -> bool:
 	var max_area := vp_area * 0.25
 	var move_delta: Control = transform_hud.move_delta_panel() if transform_hud != null else null
 	var view_hud := _named_chrome_control("ViewHud")
-	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip, view_hud]:
+	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip, _finish_click_shield, view_hud]:
 		if ctrl == null or not ctrl.visible:
 			continue
 		if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE:
@@ -4747,6 +4755,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	_release_finish_click_shield_on_motion(event)
 	# Strip / other STOP children swallow gui_input; still give the viewport
 	# the keys when the press is not on the focused numeric field.
 	_on_numeric_canvas_press(event)
@@ -4981,6 +4990,10 @@ func _refresh_selection_strip() -> void:
 	# Sketch mode is modal: its toolbar takes the top-center slot, and the
 	# strip's body verbs don't apply while sketching.
 	var sketching := sketch_mode != null and sketch_mode.active
+	# The shield sits on the old Extrude button. A new sketch puts that button
+	# back; drop the shield so the finish bar can be clicked.
+	if sketching:
+		_disarm_finish_click_shield()
 	_selection_strip.visible = has and _place_kind == "" and not sketching
 	_selection_strip.mouse_filter = Control.MOUSE_FILTER_STOP if _selection_strip.visible \
 			else Control.MOUSE_FILTER_IGNORE
@@ -5023,7 +5036,7 @@ func _layout_selection_strip() -> void:
 	_layout_strip_busy = true
 	_strip_layout_again = false
 	var x_fixed := _selection_strip_x_fixed()
-	var y_fixed := _selection_strip_y_fixed()
+	var y_fixed := _finish_click_strip_y(_selection_strip_y_fixed())
 	var vp_w := size.x
 	if get_viewport() != null:
 		vp_w = get_viewport().get_visible_rect().size.x
@@ -5519,10 +5532,117 @@ func _sync_strip_dressup_radius() -> void:
 func _sync_strip_jaw_af() -> void:
 	if _strip_jaw_box == null:
 		return
-	# Show AF chips when a hex hole is selected or any body is selected after
-	# hex work — always available with a body so Jaw AF does not need Variables.
-	_strip_jaw_box.visible = view != null and view.selected_body != "" \
-			and view.selected_instance == ""
+	# AF 10/12/14 only when this body actually drives jaw_af (a hex opening).
+	# A plain extrude has the seeded variable and no jaw, so the chips stay hidden.
+	_strip_jaw_box.visible = view != null and view.selected_instance == "" \
+			and _body_uses_jaw_af(view.selected_body)
+
+
+## True when a feature of `body_id` stores a `jaw_af` expression (hex diameter).
+func _body_uses_jaw_af(body_id: String) -> bool:
+	if view == null or view.doc == null or body_id == "" \
+			or not view.doc.has_method("graph_features"):
+		return false
+	var own := {}
+	var feats: Array = view.doc.graph_features()
+	for f in feats:
+		if str(f.get("output_body", "")) == body_id:
+			var fid := str(f.get("id", ""))
+			if fid != "":
+				own[fid] = true
+	for f in feats:
+		var params := str(f.get("params", ""))
+		if not params.contains("jaw_af"):
+			continue
+		if own.has(str(f.get("id", ""))):
+			return true
+		if str(f.get("output_body", "")) == body_id:
+			return true
+		var parsed = JSON.parse_string(params)
+		if typeof(parsed) != TYPE_DICTIONARY:
+			continue
+		for key in ["target", "blank", "tool", "a", "b", "body"]:
+			var id := str(parsed.get(key, ""))
+			if id != "" and own.has(id):
+				return true
+	return false
+
+
+func _ensure_finish_click_shield() -> Control:
+	if _finish_click_shield != null and is_instance_valid(_finish_click_shield):
+		return _finish_click_shield
+	var shield := Control.new()
+	shield.name = "FinishClickShield"
+	shield.mouse_filter = Control.MOUSE_FILTER_STOP
+	shield.focus_mode = Control.FOCUS_NONE
+	shield.visible = false
+	shield.z_index = 20
+	shield.gui_input.connect(func(_ev: InputEvent) -> void:
+		shield.accept_event())
+	add_child(shield)
+	_finish_click_shield = shield
+	return shield
+
+
+## Cover the Extrude button's rect so a same-pixel follow-up click is eaten.
+## Stays up until the pointer leaves that spot, which is longer than the 600 ms
+## jaw guard: a soft-GL screenshot can land the second click well after 600 ms.
+func _arm_finish_click_shield() -> void:
+	if not is_inside_tree():
+		return
+	var btn := get_tree().root.find_child("ExtrudeButton", true, false) as Control
+	if btn == null or not btn.is_visible_in_tree():
+		return
+	var rect := btn.get_global_rect().grow(4.0)
+	if rect.size.x < 2.0 or rect.size.y < 2.0:
+		return
+	_finish_click_rect = rect
+	_finish_click_global = rect.get_center()
+	_finish_click_shield_armed = true
+	var shield := _ensure_finish_click_shield()
+	var origin := get_global_rect().position
+	shield.position = rect.position - origin
+	shield.size = rect.size
+	shield.visible = true
+	move_child(shield, get_child_count() - 1)
+	_layout_selection_strip()
+
+
+func _disarm_finish_click_shield() -> void:
+	if not _finish_click_shield_armed and (_finish_click_shield == null or not _finish_click_shield.visible):
+		return
+	_finish_click_shield_armed = false
+	if _finish_click_shield != null and is_instance_valid(_finish_click_shield):
+		_finish_click_shield.visible = false
+	if not _layout_strip_busy:
+		_layout_selection_strip()
+
+
+func _release_finish_click_shield_on_motion(event: InputEvent) -> void:
+	if not _finish_click_shield_armed or not (event is InputEventMouseMotion):
+		return
+	var mot := event as InputEventMouseMotion
+	var at := mot.global_position
+	if at == Vector2.ZERO:
+		at = mot.position
+	if at.distance_to(_finish_click_global) <= CLICK_SLOP:
+		return
+	_disarm_finish_click_shield()
+
+
+## While the shield is up, place the chip row below the Extrude button so the
+## row is not drawn on the pixel that was just clicked. Same y every layout.
+func _finish_click_strip_y(y_natural: float) -> float:
+	if not _finish_click_shield_armed or _selection_strip == null:
+		return y_natural
+	var origin := get_global_rect().position
+	var local_y := _finish_click_global.y - origin.y
+	var floor_y := _finish_click_rect.end.y - origin.y + 6.0
+	var band_h := maxf(_selection_strip.size.y, _selection_strip.get_combined_minimum_size().y)
+	band_h = maxf(band_h, 28.0)
+	if local_y >= y_natural - 1.0 and local_y <= y_natural + band_h + 1.0:
+		return maxf(y_natural, floor_y)
+	return y_natural
 
 
 func _ctx_jaw_af(size: int) -> void:
