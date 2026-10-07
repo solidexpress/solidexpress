@@ -62,11 +62,16 @@ var _additive_click := false
 var _sketch_dragging := false
 var _sketch_drag_moved := false
 var _sketch_press_pos := Vector2.ZERO
-## Digits routed to the dim blank while a single-DOF preview is up. Kept so
-## KEY_0 after KEY_2 calls focus_dim_for_typing("20") instead of replacing.
+## Digits routed to the dim blank while a single-DOF preview is up, or while
+## Slot is waiting for its radius (no rubber-band yet). Kept so KEY_0 after
+## KEY_2 calls focus_dim_for_typing("20") instead of replacing.
 var _preview_length_typed := ""
-## Digits routed to Distance while a sketch is active with no preview.
-## KEY_5 after KEY_7 KEY_PERIOD calls focus_distance_for_typing("7.5").
+## Last `has_single_dof_preview()` seen while seeding the dim blank. Slot
+## radius "5" and the later c-c "150" are different bursts; flipping this
+## drops the leftover buffer.
+var _dim_keys_had_preview := false
+## Digits routed to Distance while a sketch is active and the dim blank does
+## not own them. KEY_5 after KEY_7 KEY_PERIOD calls focus_distance_for_typing("7.5").
 var _distance_length_typed := ""
 ## Push/pull preview distance (wire badge while dragging).
 var _pp_preview_dist := 0.0
@@ -2881,7 +2886,7 @@ func _sketch_input(event: InputEvent) -> void:
 					accept_event()
 	elif event is InputEventKey and event.pressed and not event.ctrl_pressed:
 		var ke := event as InputEventKey
-		# Digits / decimal: preview → dim blank; no preview → Distance.
+		# Digits / decimal: dim blank (preview, or Slot radius) else Distance.
 		if _is_length_type_key(ke) and _try_route_length_key(event):
 			accept_event()
 			return
@@ -4468,7 +4473,7 @@ func _distance_line_edit() -> LineEdit:
 	return (spin as SpinBox).get_line_edit()
 
 
-## Preview digits go to the dim blank; with no preview they go to Distance.
+## Dim-blank digits (rubber-band length, Slot radius) beat Extrude Distance.
 ## Runs before OrbitCamera so KEY_1/2/3/5/7 cannot steal 7.5 while sketching.
 func _try_route_length_key(event: InputEvent) -> bool:
 	# The in-sketch dimension popup owns digits while it is open — do not seed
@@ -4487,9 +4492,9 @@ func _try_route_length_key(event: InputEvent) -> bool:
 
 
 func _try_consume_preview_length_key(event: InputEvent) -> bool:
-	if sketch_mode == null or not sketch_mode.active \
-			or not sketch_mode.has_single_dof_preview():
+	if sketch_mode == null or not sketch_mode.wants_dim_length_keys():
 		_preview_length_typed = ""
+		_dim_keys_had_preview = false
 		return false
 	if not (event is InputEventKey and event.pressed and not event.echo \
 			and not event.ctrl_pressed and not event.meta_pressed):
@@ -4503,6 +4508,10 @@ func _try_consume_preview_length_key(event: InputEvent) -> bool:
 	# appended in `_unhandled_input` when the LineEdit never eats it.
 	if _text_field_has_focus() or _sketch_keys_blocked():
 		return false
+	var preview := sketch_mode.has_single_dof_preview()
+	if preview != _dim_keys_had_preview:
+		_preview_length_typed = ""
+		_dim_keys_had_preview = preview
 	var seed := _length_type_seed(ke)
 	if _preview_length_typed.is_empty():
 		_preview_length_typed = seed
@@ -4518,8 +4527,7 @@ func _try_append_focused_dim_length_key(event: InputEvent) -> bool:
 			and not event.ctrl_pressed and not event.meta_pressed):
 		return false
 	var ke := event as InputEventKey
-	if sketch_mode == null or not sketch_mode.active \
-			or not sketch_mode.has_single_dof_preview() \
+	if sketch_mode == null or not sketch_mode.wants_dim_length_keys() \
 			or not _is_length_type_key(ke) \
 			or _preview_length_typed.is_empty():
 		return false
@@ -4540,7 +4548,7 @@ func _try_append_focused_dim_length_key(event: InputEvent) -> bool:
 
 func _try_consume_distance_length_key(event: InputEvent) -> bool:
 	if sketch_mode == null or not sketch_mode.active \
-			or sketch_mode.has_single_dof_preview():
+			or sketch_mode.wants_dim_length_keys():
 		_distance_length_typed = ""
 		return false
 	if not (event is InputEventKey and event.pressed and not event.echo \
@@ -4568,7 +4576,7 @@ func _try_append_focused_distance_length_key(event: InputEvent) -> bool:
 		return false
 	var ke := event as InputEventKey
 	if sketch_mode == null or not sketch_mode.active \
-			or sketch_mode.has_single_dof_preview() \
+			or sketch_mode.wants_dim_length_keys() \
 			or not _is_length_type_key(ke) \
 			or _distance_length_typed.is_empty():
 		return false

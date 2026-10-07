@@ -176,6 +176,15 @@ func _type_into_dim(main, text: String) -> void:
 		return
 	var pos := edit.get_global_rect().get_center()
 	await _push_click(pos)
+	await _type_keys(text, true)
+
+
+## Unfocused burst — the A11a walk types radius/length without clicking the blank.
+func _type_unfocused(text: String) -> void:
+	await _type_keys(text, true)
+
+
+func _type_keys(text: String, press_enter: bool) -> void:
 	for i in text.length():
 		var ch := text.unicode_at(i)
 		var code := KEY_NONE
@@ -192,6 +201,8 @@ func _type_into_dim(main, text: String) -> void:
 			ev.pressed = pressed
 			root.push_input(ev)
 			await process_frame
+	if not press_enter:
+		return
 	var enter := InputEventKey.new()
 	enter.keycode = KEY_ENTER
 	enter.pressed = true
@@ -309,17 +320,28 @@ func _run() -> void:
 	check(variants == null or not variants.visible,
 			"Slot has no leftover Rect chip row")
 
-	# Typing 5 + Enter is the slot radius, not a Smart Dim / Sel-tool distance.
-	await _type_into_dim(main, "5")
+	# Typing 5 + Enter is the slot radius, not Extrude Distance. Seed a
+	# non-default radius first: default is already 5, so a stolen Extrude
+	# burst would still leave slot_radius == 5.
+	sm.slot_radius = 3.0
+	chrome.sync_for_tool()
+	var dist_edit: LineEdit = chrome.find_child("DistanceLineEdit", true, false) as LineEdit
+	check(absf(chrome.extrude_distance() - 20.0) < 0.01,
+			"Extrude is 20 mm before typing Slot radius (got %.3f)" % chrome.extrude_distance())
+	await _type_unfocused("5")
 	check(absf(sm.slot_radius - 5.0) < 1e-3,
-			"typed 5 sets slot radius (got %.4f)" % sm.slot_radius)
+			"unfocused 5 sets slot radius (got %.4f)" % sm.slot_radius)
+	check(absf(chrome.extrude_distance() - 20.0) < 0.01,
+			"typing Slot radius does not change Extrude (got %.3f)" % chrome.extrude_distance())
+	check(dist_edit == null or not dist_edit.has_focus(),
+			"Extrude does not keep focus after Slot radius")
 	check(not _status_of(main).contains("Select entities"),
 			"Enter on the Slot radius does not apply a dimension (got `%s`)" % _status_of(main))
 	check(int(sm.tool) == int(SketchMode.Tool.SLOT),
 			"tool is still SLOT after typing the radius")
 
 	# 150 c-c after the first centre — A11a typed-length read-back on the
-	# status bar (dim Enter used to overwrite Slot c-c with Length … mm).
+	# status bar. Type unfocused so leftover Extrude focus cannot eat 150.
 	sm.click(Vector2(0.0, 0.0))
 	sm.hover(Vector2(40.0, 0.0))
 	main.sketch_chrome.sync_for_tool()
@@ -327,11 +349,20 @@ func _run() -> void:
 	check(cc_label != null and cc_label.visible and str(cc_label.text) == "c-c",
 			"after the first centre the dim field is labelled c-c (got `%s`)" % [
 				str(cc_label.text) if cc_label != null else "missing"])
-	await _type_into_dim(main, "150")
+	await _type_unfocused("150")
 	check(_status_of(main) == "Slot c-c 150.0000 R5.0000 — typed",
 			"A11a read-back is Slot c-c 150.0000 R5.0000 — typed (got `%s`)" % _status_of(main))
 	check(not _status_of(main).begins_with("Length"),
 			"typed Slot length is not a bare Length … mm (got `%s`)" % _status_of(main))
+	check(absf(chrome.extrude_distance() - 20.0) < 0.01,
+			"typed Slot length does not change Extrude (got %.3f)" % chrome.extrude_distance())
+	await process_frame
+	cc_label = chrome.find_child("RadiusLabel", true, false)
+	check(cc_label != null and cc_label.visible and str(cc_label.text) == "Radius",
+			"after typed Slot commit the blank is labelled Radius (got `%s`)" % [
+				str(cc_label.text) if cc_label != null else "missing"])
+	check(absf(chrome.dim_value() - 5.0) < 0.01,
+			"after typed Slot commit the blank shows radius 5, not 150 (got %.3f)" % chrome.dim_value())
 
 	# Every remaining rail tool at scroll 0, then again after scrolling.
 	for row in RAIL_TOOLS:
