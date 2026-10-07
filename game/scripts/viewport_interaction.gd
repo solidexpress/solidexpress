@@ -2504,7 +2504,8 @@ func _over_chrome(global_mouse: Vector2) -> bool:
 		vp_area = maxf(s.x * s.y, 1.0)
 	var max_area := vp_area * 0.25
 	var move_delta: Control = transform_hud.move_delta_panel() if transform_hud != null else null
-	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip]:
+	var view_hud := _named_chrome_control("ViewHud")
+	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip, view_hud]:
 		if ctrl == null or not ctrl.visible:
 			continue
 		if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE:

@@ -84,10 +84,14 @@ func _ready() -> void:
 	_zebra_btn.toggled.connect(func(on: bool) -> void: zebra_toggle_requested.emit(on))
 	btn_col.add_child(_zebra_btn)
 	_fit_btn = Button.new()
+	_fit_btn.name = "Frame"
 	_fit_btn.text = "Frame"
+	# Do not steal viewport focus — F / Shift+F must keep working after a click,
+	# and focus-driven layout must not change the frame canvas vs the key path.
+	_fit_btn.focus_mode = Control.FOCUS_NONE
 	_fit_btn.tooltip_text = (
 		"Zoom extents — frame the selection (or the whole model) centered "
-		+ "in view. Shortcut: F. Shift+F always frames everything."
+		+ "in view. Same view as F. Shift+F always frames everything."
 	)
 	_fit_btn.pressed.connect(func() -> void: fit_requested.emit())
 	btn_col.add_child(_fit_btn)

@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-035 N6 — HUD Frame matches key F / Shift+F
+- View HUD `Frame` uses the same `frame_selection_or_all` path as `F` (selection or all) and `Shift+F` (always all). A real mouse click on the button must not steal the event as a viewport pick or recompute zoom against a stale LeftStack rect, which zoomed out further than `F` while still printing `Framed all`.
+- Gate: `run_rung01_replan14_camera.gd` (HUD Frame pose == F, including Timeline open and a real `Viewport.push_input` click).
+
 ## sx-035 A11c — Fillet re-click toggles the picked edge off
 - Re-clicking an already-picked Fillet edge added a second same-length edge (`44.3 mm line` twice) because nearest-id pick can return a parallel twin or seam-split UUID, and the set only toggled on exact id match.
 - Pick now prefers a selected edge that shares geometry or is still within 6 mm / 1.5 mm slack of the click, and removes by string-normalized id. Esc still cancels the whole set.

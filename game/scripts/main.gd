@@ -725,6 +725,7 @@ func _build_ui() -> void:
 		else:
 			_on_status("Exploded %d part(s)" % moved if on else "Collapsed to assembled"))
 	camera.framed.connect(_on_status)
+	# HUD Frame is F (selection or all). Same OrbitCamera path as the F key.
 	view_hud.fit_requested.connect(func() -> void:
 		camera.frame_selection_or_all(false))
 	view_hud.save_view_requested.connect(_on_save_named_view)
