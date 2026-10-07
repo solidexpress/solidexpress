@@ -2,6 +2,11 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-035 A11a — Slot radius typing must not steal Extrude
+- Unfocused digits while Slot is armed (no first centre yet) were routed to Extrude Distance because there is no single-DOF rubber-band. Typing `5` Enter set Extrude 20→5 and left Distance focused, so the later `150` never reached the c-c blank. After a typed length the strip labelled `Radius r` over the leftover 150.
+- Route Slot radius (and any single-DOF preview) to the dim blank; restore the radius number after a c-c commit so the `Radius` label matches the value.
+- Gate: `run_rung01_replan12_slotarm.gd` (unfocused `5` then `150`; Extrude stays 20).
+
 ## sx-035 A9 — Power Trim opens the jaw from a profile Line
 - Face-sketch A9 drew a regular Line across the jaw (not Centerline). `_jaw_cutter_for_click` only accepted construction, `_longest_profile_dir` could treat that Line as a wall, and a drag on the cutter fell through to kernel trim (`Trim failed — this line has no crossing to trim at`, or `Trimmed` that collapsed the rectangle / shortened the cutter). Status never became `Trimmed open jaw`.
 - Open-jaw trim now classifies the two similar-length parallel walls, accepts a profile Line that crosses their interiors, infers the shaft-side discard when the stroke starts on the cutter, and removes that Line from the profile after a successful open.

@@ -989,7 +989,15 @@ func _sync_dim_affordance() -> void:
 			tip = "Slot centre-to-centre length (mm). Type the length, or click the second centre"
 		else:
 			show_cue = true
+			label_text = "Radius"
 			tip = "Slot radius (mm) until the first centre is down; then the centre distance"
+			# After a typed c-c commit the blank still holds the length. Put
+			# the radius back so the Radius label does not sit over 150 mm.
+			if not _dim_editing and _dim_spin != null \
+					and not is_equal_approx(_dim_spin.value, sketch_mode.slot_radius):
+				_dim_syncing = true
+				_dim_spin.value = sketch_mode.slot_radius
+				_dim_syncing = false
 	var was_syncing := _dim_syncing
 	_dim_syncing = true
 	if _dim_spin.suffix != suffix:
@@ -1015,6 +1023,9 @@ func dim_is_editing() -> bool:
 func focus_dim_for_typing(seed := "") -> void:
 	if _dim_spin == null:
 		return
+	# Slot radius / c-c must not leave digits in Extrude if Distance was
+	# still the focus owner from a previous burst.
+	_release_distance_focus()
 	var edit := _dim_spin.get_line_edit()
 	edit.grab_focus()
 	_dim_editing = true
@@ -1029,6 +1040,7 @@ func focus_dim_for_typing(seed := "") -> void:
 		edit.caret_column = seed.length()
 		edit.deselect()
 		edit.deselect.call_deferred()
+		_apply_slot_radius(v)
 		if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
 			sketch_mode.set_length_override(v)
 	elif seed != "":
@@ -1048,6 +1060,15 @@ func release_dim_focus() -> void:
 		edit.release_focus()
 	_dim_editing = false
 	_dim_replace_next = false
+
+
+func _release_distance_focus() -> void:
+	if _extrude_spin == null:
+		return
+	var edit := _extrude_spin.get_line_edit()
+	if edit != null and edit.has_focus():
+		edit.release_focus()
+	_distance_replace_next = false
 
 
 func _on_dim_value_changed(v: float) -> void:
