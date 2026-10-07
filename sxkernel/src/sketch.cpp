@@ -391,8 +391,16 @@ struct Segment {
 TopoDS_Shape Sketch::profile_face(std::string* err) const {
     // All selectable solid regions (Selected Contours default = all). Nested
     // wires remain outer+holes; disjoint regions fuse as a compound of faces.
+    // A dangling open chain does not erase contour_faces, but a whole-sketch
+    // extrude still refuses it with the existing open-loop message.
+    bool stray = false;
+    std::string ignored;
+    contour_faces_impl(&ignored, &stray);
+    if (stray) {
+        if (err) *err = "profile has an open loop";
+        return {};
+    }
     return profile_face_selected({}, err);
-
 }
 
 namespace {
@@ -580,6 +588,11 @@ std::vector<TopoDS_Shape> contours_by_planar_split(const gp_Pln& pln, const gp_A
 }  // namespace
 
 std::vector<TopoDS_Shape> Sketch::contour_faces(std::string* err) const {
+    return contour_faces_impl(err, nullptr);
+}
+
+std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* stray_open) const {
+    if (stray_open) *stray_open = false;
     // Build closed wires (same chaining as profile_face), then classify
     // nesting: nested → holes; disjoint → separate Selected Contours solids.
     const auto n = plane_.normal();
@@ -740,8 +753,16 @@ std::vector<TopoDS_Shape> Sketch::contour_faces(std::string* err) const {
             auto split = contours_by_planar_split(pln, ax, all_edges, err);
             if (!split.empty()) return split;
         }
-        if (err) *err = "profile has an open loop";
-        return {};
+        // A chain that does not meet a closed wire is dangling. It must not
+        // wipe out the closed regions (contour selection). Chains that do
+        // meet a wire already took the planar split above. An open-only
+        // sketch still refuses.
+        if (!wires.empty() && !shared) {
+            if (stray_open) *stray_open = true;
+        } else {
+            if (err) *err = "profile has an open loop";
+            return {};
+        }
     }
 
     if (wires.empty()) {

@@ -527,6 +527,23 @@ TEST_CASE("contour_faces pliers head: circle plus exterior nose", "[sketch][cont
     CHECK(vol == Approx((disk + nose) * 8.0).epsilon(1e-3));
 }
 
+TEST_CASE("contour_faces keeps closed regions beside a dangling line", "[sketch][contours]") {
+    Sketch sk("Dangling");
+    sk.add_line(0, 0, 40, 0);
+    sk.add_line(40, 0, 40, 30);
+    sk.add_line(40, 30, 0, 30);
+    sk.add_line(0, 30, 0, 0);
+    sk.add_line(50, -5, 70, 12);
+    std::string err;
+    auto contours = sk.contour_faces(&err);
+    REQUIRE(contours.size() >= 1);
+    CHECK(shape::area(contours[0]) == Approx(1200.0).epsilon(1e-3));
+    // Whole-sketch extrude still refuses the open chain.
+    std::string perr;
+    CHECK(sk.profile_face(&perr).IsNull());
+    CHECK(perr.find("profile has an open loop") != std::string::npos);
+}
+
 TEST_CASE("contour_faces keeps nested wire as a hole", "[sketch][contours]") {
     Sketch sk("PlateHole");
     sk.add_line(0, 0, 40, 0);

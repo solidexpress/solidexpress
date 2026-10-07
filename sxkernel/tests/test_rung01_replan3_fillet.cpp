@@ -266,3 +266,85 @@ TEST_CASE("wrench neck R10 on concave edges still succeeds", "[rung01][replan3][
     CHECK(point_inside(doc.body(body)->shape, gp_Pnt(179.0, -10.5, 5.0)));
     CHECK_FALSE(point_inside(doc.body(body)->shape, gp_Pnt(174.0, 12.5, 5.0)));
 }
+
+TEST_CASE("slot floor R1 then R1.5 still names the 1.25 depth limit",
+          "[rung01][replan15][fillet]") {
+    Document doc;
+    FeatureGraph graph;
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("Plate");
+    add_rect(*skf.sketch, -20, -15, 20, 15);
+    auto sk_id = graph.add(std::move(skf));
+    Feature ext;
+    ext.type = FeatureType::Extrude;
+    ext.params = {{"sketch", sk_id.str()}, {"distance", 10.0}, {"op", "new"}, {"end", "blind"}};
+    auto ext_id = graph.add(std::move(ext));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    EntityId body = graph.feature(ext_id)->output_body;
+
+    Feature slot_sk;
+    slot_sk.type = FeatureType::Sketch;
+    SketchPlane slot_plane;
+    slot_plane.origin = {0, 0, 10};
+    slot_plane.x_dir = {1, 0, 0};
+    slot_plane.y_dir = {0, 1, 0};
+    slot_sk.sketch = std::make_shared<Sketch>("Slot", slot_plane);
+    add_rect(*slot_sk.sketch, -10, -5, 10, 5);
+    auto slot_sk_id = graph.add(std::move(slot_sk));
+    Feature slot;
+    slot.type = FeatureType::Extrude;
+    slot.params = {{"sketch", slot_sk_id.str()},
+                   {"distance", -2.5},
+                   {"end", "blind"},
+                   {"op", "cut"},
+                   {"target", ext_id.str()}};
+    graph.add(std::move(slot));
+    REQUIRE(graph.regenerate(doc, &err));
+
+    EntityId top = face_at_z(doc, body, 10.0, 20.0);
+    REQUIRE(!top.is_null());
+    json top_json = json::array();
+    for (const auto& e : edges_of_face(doc, top)) top_json.push_back(e.str());
+    REQUIRE(top_json.size() >= 4);
+    Feature top_fil;
+    top_fil.type = FeatureType::Fillet;
+    top_fil.params = {{"target", ext_id.str()}, {"radius", 1.0}, {"edges", top_json}};
+    graph.add(std::move(top_fil));
+    REQUIRE(graph.regenerate(doc, &err));
+
+    EntityId floor = face_at_z(doc, body, 7.5, 2.0);
+    REQUIRE(!floor.is_null());
+    json floor_json = json::array();
+    for (const auto& e : edges_of_face(doc, floor)) floor_json.push_back(e.str());
+    REQUIRE(floor_json.size() >= 4);
+    Feature floor_fil;
+    floor_fil.type = FeatureType::Fillet;
+    floor_fil.params = {{"target", ext_id.str()}, {"radius", 1.0}, {"edges", floor_json}};
+    graph.add(std::move(floor_fil));
+    REQUIRE(graph.regenerate(doc, &err));
+
+    EntityId floor2 = face_at_z(doc, body, 7.5, 2.0);
+    REQUIRE(!floor2.is_null());
+    json floor2_json = json::array();
+    for (const auto& e : edges_of_face(doc, floor2)) floor2_json.push_back(e.str());
+    REQUIRE(floor2_json.size() >= 4);
+
+    const double vol_before = shape::volume(doc.body(body)->shape);
+    const int n_before = static_cast<int>(graph.timeline().size());
+    Feature too_big;
+    too_big.type = FeatureType::Fillet;
+    too_big.params = {{"target", ext_id.str()}, {"radius", 1.5}, {"edges", floor2_json}};
+    auto bad_id = graph.add(std::move(too_big));
+    std::string ferr;
+    REQUIRE_FALSE(graph.regenerate(doc, &ferr));
+    INFO(ferr);
+    CHECK(ferr.find("limit") != std::string::npos);
+    CHECK(ferr.find("1.25") != std::string::npos);
+    CHECK(shape::volume(doc.body(body)->shape) == Approx(vol_before).margin(1e-3));
+    REQUIRE(graph.remove(bad_id));
+    REQUIRE(graph.regenerate(doc, &err));
+    CHECK(static_cast<int>(graph.timeline().size()) == n_before);
+    CHECK(shape::volume(doc.body(body)->shape) == Approx(vol_before).margin(1e-3));
+}
