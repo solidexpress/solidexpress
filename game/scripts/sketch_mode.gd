@@ -399,18 +399,18 @@ func plane_normal() -> Vector3:
 
 
 ## 2D AABB of all entities inflated by `pad_frac` (0.2 = 20% past extents).
-## Returns {min, max, center, radius} or empty if no entities.
-## Face sketches also keep the part origin (0,0) and the host body in the
-## fit so Frame cannot bury the ground origin under the left rail.
+## Returns {min, max, center, radius} or empty when there is nothing to fit.
+## An empty ground sketch stays empty (the caller uses a small default).
+## Face sketches — including an empty one just opened on a face — keep the
+## part origin (0,0) and the host body so entry / F / Frame show the whole
+## face, not a 25 mm window on the origin that hides the far end.
 func sketch_extents(pad_frac := 0.2) -> Dictionary:
 	if sketch == null:
 		return {}
-	var ids: PackedStringArray = sketch.entity_ids()
-	if ids.is_empty():
-		return {}
 	var mn := Vector2(INF, INF)
 	var mx := Vector2(-INF, -INF)
-	for id in ids:
+	var have := false
+	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match str(info.get("type", "")):
 			"line":
@@ -418,24 +418,33 @@ func sketch_extents(pad_frac := 0.2) -> Dictionary:
 				var b: Vector2 = info["end"]
 				mn = mn.min(a).min(b)
 				mx = mx.max(a).max(b)
+				have = true
 			"circle", "arc":
 				var c: Vector2 = info["center"]
 				var r: float = float(info.get("radius", 0.0))
 				mn = mn.min(c - Vector2(r, r))
 				mx = mx.max(c + Vector2(r, r))
+				have = true
 			"point":
 				var p: Vector2 = info.get("position", info.get("point", Vector2.ZERO))
 				mn = mn.min(p)
 				mx = mx.max(p)
-	if not is_finite(mn.x):
-		return {}
+				have = true
 	if target_fid != "" or support_host != "":
-		mn = mn.min(Vector2.ZERO)
-		mx = mx.max(Vector2.ZERO)
+		if not have:
+			mn = Vector2.ZERO
+			mx = Vector2.ZERO
+			have = true
+		else:
+			mn = mn.min(Vector2.ZERO)
+			mx = mx.max(Vector2.ZERO)
 		var host := _host_body_uv_aabb()
 		if not host.is_empty():
 			mn = mn.min(host["min"])
 			mx = mx.max(host["max"])
+			have = true
+	if not have or not is_finite(mn.x):
+		return {}
 	var size := mx - mn
 	var pad := size * pad_frac * 0.5
 	pad.x = maxf(pad.x, 2.0)
@@ -459,6 +468,8 @@ func _host_body_uv_aabb() -> Dictionary:
 		body = view.body_of_feature(target_fid)
 	if body == "" and view.selected_body != "":
 		body = view.selected_body
+	if body == "" and view.doc.body_ids().size() == 1:
+		body = view.doc.body_ids()[0]
 	if body == "":
 		return {}
 	var bb: Dictionary = view.doc.measure_bbox(body)
@@ -624,7 +635,12 @@ func keep_current_view() -> void:
 func _reassert_camera_if(gen: int) -> void:
 	if gen != _camera_reassert_gen:
 		return
-	_reassert_camera()
+	if not active or camera == null:
+		return
+	# The first fit runs inside begin(), before the sketch rail is shown.
+	# Refit once layout has settled so the whole face lands in the canvas
+	# that is actually left of the rail, not the pre-rail column.
+	_apply_sketch_frame(sketch_extents(0.2))
 
 
 func _reassert_camera() -> void:
