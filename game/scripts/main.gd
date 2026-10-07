@@ -73,6 +73,12 @@ var _mode_popup: PopupMenu
 var _work_mode := "Model"
 var _edit_popup: PopupMenu
 var _recent_menu: PopupMenu
+## Process frame of the last menu-bar / HUD popup hide. Esc in that frame,
+## or while one of these menus is still visible, is consumed by the menu.
+var _esc_menu_frame := -1
+var _esc_menus: Array[Window] = []
+## Time.get_ticks_msec() until which hover hints must not replace the status.
+var _status_hold_until := 0
 ## True while File menu / discard dialog is in the pointer gesture that closes
 ## them, so a mouse-up on Box does not arm place (leftover 3).
 var _palette_insert_blocked := false
@@ -129,6 +135,8 @@ const _STATUS_BAR_H := 30.0
 ## Keep the labelled rail at least as wide as the 36 px glyph column so the
 ## finish bar still docks where Extrude's second click expects empty canvas.
 const _SKETCH_RAIL_MIN_W := 125.0
+## Command results stay on the status line this long; hover hints yield.
+const STATUS_HOLD_MS := 2500
 
 
 func _finish_op_name() -> String:
@@ -943,6 +951,8 @@ func _build_ui() -> void:
 	interaction.paste_special_requested.connect(edit_paste_special)
 	_update_panel_visibility()
 	interaction.status.connect(_on_status)
+	interaction.hover_hint.connect(_on_hover_hint)
+	_install_esc_menu_watch()
 	sketch_mode.status.connect(_on_status)
 	sketch_mode.finished.connect(func(_id: String) -> void: _on_sketch_session_ended())
 	sketch_mode.cancelled.connect(func() -> void:
@@ -1024,6 +1034,48 @@ func _connect_popup_esc(win: Window) -> void:
 	win.set_meta("_sx_esc_connected", true)
 	win.window_input.connect(func(event: InputEvent) -> void:
 		_on_owned_window_esc(event, win))
+
+
+## Record menu-bar and HUD popups so a closing Esc does not fall through
+## into cancel_stack / selection clear.
+func _install_esc_menu_watch() -> void:
+	for btn in find_children("*", "MenuButton", true, false):
+		var pop: PopupMenu = btn.get_popup()
+		_watch_esc_popup(pop)
+		if pop == null:
+			continue
+		for child in pop.get_children():
+			if child is PopupMenu:
+				_watch_esc_popup(child)
+	if view_hud == null:
+		return
+	for node in view_hud.find_children("*", "Popup", true, false):
+		if node is Window:
+			_watch_esc_popup(node)
+
+
+func _watch_esc_popup(win: Window) -> void:
+	if win == null or win.has_meta("_sx_esc_menu_watched"):
+		return
+	win.set_meta("_sx_esc_menu_watched", true)
+	_esc_menus.append(win)
+	if not win.popup_hide.is_connected(_on_esc_menu_hide):
+		win.popup_hide.connect(_on_esc_menu_hide)
+	_connect_popup_esc(win)
+
+
+func _on_esc_menu_hide() -> void:
+	_esc_menu_frame = Engine.get_process_frames()
+
+
+## True when this Esc closed a menu, or a watched menu is still up.
+func _esc_closed_menu() -> bool:
+	if _esc_menu_frame == Engine.get_process_frames():
+		return true
+	for win in _esc_menus:
+		if win != null and is_instance_valid(win) and win.visible:
+			return true
+	return false
 
 
 func _on_owned_window_esc(event: InputEvent, win: Window) -> void:
@@ -1784,9 +1836,20 @@ func _apply_chrome_docks() -> void:
 			else Vector2(1280, 720)
 	if vp.x < 400.0:
 		vp = Vector2(1280, 720)
-	# Pin docks to the ICON rail only — not the full LeftStack (Modify card) —
-	# so Timeline never sits on the plate center.
+	# Right of the icon rail, and right of the Modify column when that stack
+	# is on screen, so Timeline never covers the Radius field.
 	var dock_left := _CHROME_PAD + _RAIL_ICON_W + 8.0
+	if left_stack != null and left_stack.visible:
+		var stack_right := left_stack.position.x + maxf(
+				left_stack.size.x, left_stack.get_combined_minimum_size().x)
+		for child in left_stack.get_children():
+			if not (child is Control):
+				continue
+			var column := child as Control
+			if not column.visible:
+				continue
+			stack_right = maxf(stack_right, column.get_global_rect().end.x)
+		dock_left = maxf(dock_left, stack_right + 8.0)
 	var max_w := minf(220.0, vp.x * 0.28)
 	var top := ChromeDock.top_inset
 	var max_h := maxf(120.0, vp.y - top - ChromeDock.bottom_inset - 8.0)
@@ -2042,9 +2105,22 @@ func _compact_sketch_rail_button(b: Button) -> void:
 			flat.set_expand_margin(SIDE_BOTTOM, 0.0)
 			flat.set_border_width(SIDE_TOP, 0)
 			flat.set_border_width(SIDE_BOTTOM, 0)
+			# Armed tool: accent fill plus a left bar the hover style lacks.
+			if state_name == "pressed" or state_name == "hover_pressed":
+				var accent := Color.html(UIIcons.ACCENT)
+				flat.bg_color = accent
+				flat.border_color = accent
+				flat.set_border_width(SIDE_LEFT, 3)
 		dup.set_content_margin(SIDE_TOP, 1.0)
 		dup.set_content_margin(SIDE_BOTTOM, 1.0)
 		b.add_theme_stylebox_override(state_name, dup)
+	# Theme types often omit hover_pressed; the armed bar has to exist on
+	# that state too, not only on pressed.
+	var armed_box := b.get_theme_stylebox("pressed")
+	if armed_box is StyleBoxFlat:
+		var hover_armed := armed_box.duplicate() as StyleBoxFlat
+		hover_armed.set_border_width(SIDE_LEFT, 3)
+		b.add_theme_stylebox_override("hover_pressed", hover_armed)
 
 
 ## Size the sketch rail to the open column: top of the left stack down to the
@@ -2263,12 +2339,22 @@ func _on_datum_offset_confirmed() -> void:
 func _on_status(text: String) -> void:
 	if text != "":
 		status_label.text = text
+		_status_hold_until = Time.get_ticks_msec() + STATUS_HOLD_MS
 	# Timeline double-click calls begin_edit without the pad-click path, so
 	# sketch chrome (Exit Sketch, tools) would stay hidden. Show it whenever
 	# a live session has no rail yet.
 	if sketch_mode != null and sketch_mode.active \
 			and sketch_toolbar != null and not sketch_toolbar.visible:
 		_on_sketch_session_started(text)
+
+
+## Hover copy yields while a command result is still on the hold timer.
+func _on_hover_hint(text: String) -> void:
+	if text == "":
+		return
+	if Time.get_ticks_msec() < _status_hold_until:
+		return
+	status_label.text = text
 
 
 func _build_paste_special_dialog(parent: Node) -> void:
@@ -2879,6 +2965,8 @@ func _open_document(path: String) -> void:
 		current_path = path
 		_last_saved_revision = view.doc.revision()
 		_push_recent(path)
+		if camera != null:
+			camera.frame_contents()
 		_on_status("Opened " + path)
 	else:
 		_on_status("Open failed: " + path)
@@ -3817,6 +3905,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE:
 			if _file_dialog_is_visible():
 				file_dialog.hide()
+				get_viewport().set_input_as_handled()
+				return
+			if _esc_closed_menu():
+				for win in _esc_menus:
+					if win != null and is_instance_valid(win) and win.visible:
+						win.hide()
 				get_viewport().set_input_as_handled()
 				return
 			if interaction != null and interaction.has_method("cancel_stack"):
