@@ -32,6 +32,8 @@ const MIN_SKETCH_VIEW_MM := 20.0
 ## instead of silently adding junk geometry that can never close a profile.
 const MIN_SEGMENT_MM := 0.5
 var _sketch_view_radius := 25.0
+## Invalidates a pending `_reassert_camera` after Save restores the live pose.
+var _camera_reassert_gen := 0
 ## When true, click/hover positions pass through snap_point().
 var snap_enabled := true
 ## When true, end_chain / Done / Esc auto-adds a closing segment if ends are near.
@@ -548,9 +550,24 @@ func _enter_camera() -> void:
 	radius = maxf(radius, MIN_SKETCH_VIEW_RADIUS_MM)
 	camera.enter_sketch_view(plane_normal(), center, radius, plane_y)
 	_sketch_view_radius = radius
+	if not camera.view_changed.is_connected(_on_sketch_camera_moved):
+		camera.view_changed.connect(_on_sketch_camera_moved)
 	# Re-assert after layout/resize handlers settle so nothing zooms us into
 	# the 0.1 mm grid behind our back.
-	call_deferred("_reassert_camera")
+	_camera_reassert_gen += 1
+	var gen := _camera_reassert_gen
+	_reassert_camera_if.call_deferred(gen)
+
+
+## Drop a pending fit-view reassert (Save restores the live camera pose).
+func keep_current_view() -> void:
+	_camera_reassert_gen += 1
+
+
+func _reassert_camera_if(gen: int) -> void:
+	if gen != _camera_reassert_gen:
+		return
+	_reassert_camera()
 
 
 func _reassert_camera() -> void:
@@ -581,8 +598,32 @@ func _view_span_mm() -> float:
 
 func _leave_camera() -> void:
 	if camera != null:
+		if camera.view_changed.is_connected(_on_sketch_camera_moved):
+			camera.view_changed.disconnect(_on_sketch_camera_moved)
 		camera.sketch_fit = Callable()
 		camera.leave_sketch_view()
+
+
+## Re-stack labels at the current zoom. Pixel offsets that were resolved at
+## fit-view overlap again when the head is ~150 px (N1a / N1b).
+func _on_sketch_camera_moved() -> void:
+	if not active or _undo_restoring or sketch == null:
+		return
+	if dimensions.is_empty() or _dimension_labels == null:
+		return
+	_resolve_label_overlaps()
+	var li := 0
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+			continue
+		if li >= _dimension_labels.get_child_count():
+			break
+		var lab := _dimension_labels.get_child(li) as Label3D
+		if lab != null:
+			var stack := int(dim.get("label_stack", 0))
+			lab.offset = Vector2(0.0, float(stack) * DIM_LABEL_STACK_PX)
+			lab.position = _to3(dim["label_pos"] as Vector2) + plane_normal() * 0.2
+		li += 1
 
 
 ## Discard the session without committing (Esc).
@@ -991,7 +1032,10 @@ func _try_adopt_parked_undo() -> bool:
 	_redo_stack = parked.get("redo", []).duplicate(true)
 	_undo_head = str(parked.get("head_json", ""))
 	_undo_head_dims = parked.get("head_dims", []).duplicate(true)
-	dimensions = _undo_head_dims.duplicate(true)
+	# Keep user-positioned fields, but never drop kernel radius/angle records
+	# that the live session had already labelled.
+	dimensions = _merge_dimension_records(
+			_dimension_records_from_sketch(), _undo_head_dims)
 	_undo_label = ""
 	return true
 
@@ -3254,7 +3298,9 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		sketch.add_constraint("concentric", [
 			{"entity": arc_id, "role": "center"},
 			{"entity": anchor, "role": "center"}], 0.0)
-	sketch.add_constraint("radius", [{"entity": arc_id, "role": "self"}], cr)
+	var arc_rad_cid: String = sketch.add_constraint(
+			"radius", [{"entity": arc_id, "role": "self"}], cr)
+	_record_dimension("radius", [arc_id], cr, arc_rad_cid)
 	var width := jaw_width
 	var dist_cid: String = sketch.add_constraint("distance", [
 		{"entity": floor_id, "role": "start"},
@@ -3300,7 +3346,9 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		if (info["center"] as Vector2).distance_to(Vector2.ZERO) > 1.0:
 			continue
 		var hole_r := float(info.get("radius", 1.0))
-		sketch.add_constraint("radius", [{"entity": id, "role": "self"}], hole_r)
+		var hole_cid: String = sketch.add_constraint(
+				"radius", [{"entity": id, "role": "self"}], hole_r)
+		_record_dimension("radius", [id], hole_r, hole_cid)
 		var oanchor := _lock_projected_circle(Vector2.ZERO, maxf(hole_r, 1.0))
 		if oanchor != "":
 			sketch.add_constraint("concentric", [
@@ -3850,13 +3898,12 @@ func click(pos2: Vector2) -> void:
 	_last_commit_text = ""
 	# A dimension label sits a few millimetres off the geometry. Snapping first
 	# pulls that click onto the line and the in-sketch editor never opens.
-	# SMART_DIM stays armed after placing a distance; the next click on that
-	# label must open the editor instead of starting another dimension.
-	if tool == Tool.SELECT or tool == Tool.SMART_DIM:
-		var dhit_raw := dimension_hit(pos2)
-		if dhit_raw >= 0:
-			_emit_dimension_edit(dhit_raw)
-			return
+	# Jaw / Trim / SMART_DIM stay armed after a commit; a click on the first
+	# glyph must open the editor instead of starting a new gesture.
+	var dhit_raw := dimension_hit(pos2)
+	if dhit_raw >= 0:
+		_emit_dimension_edit(dhit_raw)
+		return
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
 	if tool != Tool.TRIM and tool != Tool.EXTEND:
 		pos2 = snap_point(pos2)
@@ -4164,9 +4211,14 @@ func _click_circle(pos2: Vector2) -> void:
 				var c := _tool_points[0]
 				var r := c.distance_to(_tool_points[1])
 				if r > 1e-6:
-					sketch.add_circle(c.x, c.y, r)
+					var typed := _point_from_length
+					var circ_id: String = sketch.add_circle(c.x, c.y, r)
 					_last_commit_text = "Circle r=%.4f (Ø%.4f)" % [r, r * 2.0]
 					status.emit(_last_commit_text)
+					if typed and circ_id != "":
+						var rcid: String = sketch.add_constraint(
+								"radius", [{"entity": circ_id, "role": "self"}], r)
+						_record_dimension("radius", [circ_id], r, rcid)
 				_tool_points.clear()
 	_redraw()
 
@@ -5356,6 +5408,9 @@ func _dimension_record_from_cid(cid: String) -> Dictionary:
 			ids.append(eid)
 	if ids.is_empty():
 		return {}
+	# Construction projected-circle anchors are not user dimensions.
+	if (t == "radius" or t == "diameter") and sketch.is_construction(str(ids[0])):
+		return {}
 	return {
 		"type": t,
 		"ids": ids,
@@ -5749,8 +5804,18 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 		if info.get("type", "") != "circle" and info.get("type", "") != "arc":
 			return null
 		var c: Vector2 = info["center"]
-		var r: float = info["radius"]
-		return c + Vector2(r * 0.7071, r * 0.7071)
+		var r: float = float(info.get("radius", 0.0))
+		var reach := r + DIM_LABEL_OFFSET
+		# Keep-side jaw arc: sit on the remaining metal, away from the 20 / 45°
+		# cluster in the opening. Full circles sit above the centre so a pivot
+		# hole label is not buried in the shaft.
+		if str(info.get("type", "")) == "arc":
+			var sa := float(info.get("start_angle", 0.0))
+			var ea := float(info.get("end_angle", sa + PI))
+			if ea < sa:
+				ea += TAU
+			return c + Vector2.from_angle((sa + ea) * 0.5) * reach
+		return c + Vector2(0.0, reach)
 	if type == "angle" and ids.size() >= 2:
 		var ia: Dictionary = sketch.entity_info(str(ids[0]))
 		var ib: Dictionary = sketch.entity_info(str(ids[1]))
@@ -5821,7 +5886,10 @@ func _dimension_label_rect(dim: Dictionary, anchor: Vector2, k: float) -> Rect2:
 	if text == "":
 		text = _dimension_label_text(dim)
 	var size := _dimension_label_size_px(text) * k
-	var centre := anchor - Vector2(0.0, float(dim.get("label_stack", 0)) * DIM_LABEL_STACK_PX * k)
+	# Label3D.offset is screen pixels when fixed_size is set — do not scale
+	# the stack by k or hit-testing / overlap think labels are farther apart
+	# than they are drawn (N1b: 45° on top of 20 after a zoomed Save).
+	var centre := anchor - Vector2(0.0, float(dim.get("label_stack", 0)) * DIM_LABEL_STACK_PX)
 	return Rect2(centre - size * 0.5, size)
 
 
@@ -5875,9 +5943,12 @@ func _rebuild_dimension_labels() -> void:
 		label.pixel_size = DIM_LABEL_PIXEL
 		label.font_size = DIM_LABEL_FONT
 		label.outline_size = 4
+		label.no_depth_test = true
+		label.render_priority = 2
+		label.outline_render_priority = 1
 		label.offset = Vector2(0.0, float(stack) * DIM_LABEL_STACK_PX)
 		label.text = str(dim.get("label_text", ""))
-		label.position = _to3(pos)
+		label.position = _to3(pos) + plane_normal() * 0.2
 		_dimension_labels.add_child(label)
 
 
