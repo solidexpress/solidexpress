@@ -182,7 +182,13 @@ Deltas this plan requires (everything else identical before and after, after #15
 
 Take the sx-034 checklist ([`rung-01-replan-13.md`](rung-01-replan-13.md) "sx-034 GUI checklist", with its A/L rows and rules 1–36) and apply this delta. Keep every row id. New rows are **N**; the five failed rows come back as **re-verify** rows with their own pass text.
 
-**Walk order** = sx-034's with the N rows inserted where they happen: A1, A2, **N7**, L1, A3, L5, A4, L6, A5, L10, A5b, L8, L11, A7, L2, A6, **N4**, A7b, A8 (re-verify, #148), A8b, **N8a**, A9 (re-verify, #149), L4, **N1a**, L12, A17, **N5**, A9c, **N1b**, A9b (re-verify, #150), A16, **N6**, A11a (re-verify, #151), A11b (now with real key `3`), **N2**, L3 (re-verify, #152), **N3**, A11c, A11d, A11e, A12, A13, A13b, A13c (DIAG note, **N9**), L7, A10, A10b, A14, L9, **N8b**, A15. Keep the blank open through A13c. A10 and A14 start a new document.
+**GUI testers download the Linux build** from the rolling `linux-test-build` prerelease ([`linux-test-build.md`](linux-test-build.md)). Do not use a box-local `/workspace/sx-build` or any other local export.
+
+**sx-035 GUI walk is lean.** Walk only the re-verify rows (A8, A9, A9b, A11a, L3) plus the new N / A15 rows. Every other sx-034 A/L row is covered by the headless walk (`run_rung01_wrench.gd`) and CI. Keep the blank through N9 (A13c DIAG) so the T=14 export exists.
+
+**Lean walk order** (re-verify + new, in the order they happen on the handout): **N7**, A8 (re-verify, #148), **N8a**, A9 (re-verify, #149), **N1a**, **N5**, **N1b**, A9b (re-verify, #150), **N6**, A11a (re-verify, #151), **N2**, L3 (re-verify, #152), **N3**, **N4**, A13c / **N9**, **N8b**, **A15**. N4 can use a throwaway Polygon+Circle if the session has already left that sketch. A10 / A14 (new document) are headless/CI.
+
+The full sx-034 insertion order is kept as a reference only (not the GUI walk): A1, A2, **N7**, L1, A3, L5, A4, L6, A5, L10, A5b, L8, L11, A7, L2, A6, **N4**, A7b, A8 (re-verify, #148), A8b, **N8a**, A9 (re-verify, #149), L4, **N1a**, L12, A17, **N5**, A9c, **N1b**, A9b (re-verify, #150), A16, **N6**, A11a (re-verify, #151), A11b (now with real key `3`), **N2**, L3 (re-verify, #152), **N3**, A11c, A11d, A11e, A12, A13, A13b, A13c (DIAG note, **N9**), L7, A10, A10b, A14, L9, **N8b**, A15.
 
 ### Re-verify rows (the five failed rows)
 

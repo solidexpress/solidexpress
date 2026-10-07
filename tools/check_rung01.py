@@ -12,13 +12,30 @@ Source frame (wrench): pivot centre (0,0), head centre (200,0), bottom z=0, top 
 jaw opening toward +X+Y at 45 deg. The mesh is auto-aligned by its bbox (min corner
 moved to (-10,-22.5,0)); the head end is found from the vertices (the X end whose last 10 mm has the larger Y extent); the script then tries only the rotation and the mirror for that end and reports which one it used (mirror only accepted with --allow-mirror).
 Tolerance: 0.2 mm on every length.
-DIAG: run `wrench` on a T≠10 file only to read the other fillet rows; `bbox Z (thickness)`, `1mm fillet top outer edge` and `1mm fillet on jaw top edge` fail by design at T≠10 — `thick` is the pass.
+DIAG: run `wrench` on a T≠10 file only to read the other fillet rows; `bbox Z (thickness)`, `grip slot present at y=0,z=8.75`, `1mm fillet top outer edge` and `1mm fillet on jaw top edge` fail by design at T≠10 — `thick` is the pass. `bbox Z`, the grip slot and both fillet rows fail by design at T≠10; the other rows are the diagnostic.
 """
 import sys, zipfile, re, math
 import xml.etree.ElementTree as ET
 import numpy as np
 
 TOL = 0.2
+
+def diag_expected_failures_at_t(T):
+    """Wrench-row names that fail by design when T is not 10. Pure; no numpy.
+
+    `wrench` is the T=10 handout checker. At T≠10 the grip-slot probe sits at
+    z=8.75 (between the floor fillet 7.5–8.5 and the rim fillet 9–10), which is
+    inside solid material, so that row reads 0 samples open along with bbox Z
+    and both 1 mm top-edge fillet rows. `thick` is the T-aware pass.
+    """
+    if abs(float(T) - 10) > TOL:
+        return [
+            'bbox Z (thickness)',
+            'grip slot present at y=0,z=8.75',
+            '1mm fillet top outer edge',
+            '1mm fillet on jaw top edge',
+        ]
+    return []
 
 def load_3mf(path):
     z = zipfile.ZipFile(path)
@@ -240,6 +257,12 @@ def main():
     r.add('bbox X (length)', abs(ext[0] - 232.5) <= TOL, round(ext[0], 3), '232.5')
     r.add('bbox Y (head dia)', abs(ext[1] - 45) <= TOL, round(ext[1], 3), '45.0')
     r.add('bbox Z (thickness)', abs(ext[2] - 10) <= TOL, round(ext[2], 3), '10.0')
+    if abs(ext[2] - 10) > TOL:
+        names = ', '.join(diag_expected_failures_at_t(ext[2]))
+        print(
+            f"DIAG: bbox Z is {ext[2]:.3f} mm, not 10 — this is the T=10 handout checker; "
+            f"at T≠10 these four rows fail by design: {names}. Use `thick` for the pass."
+        )
     best = None
     for fx, fy in orientation_candidates(V):
         W = align(V, fx, fy, (-10, -22.5, 0))
