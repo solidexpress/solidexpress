@@ -82,6 +82,10 @@ var _dim_select_gen := 0
 ## Next digit / '.' / (Distance) '-' replaces the whole line. Set on focus and
 ## every left click so a caret click that clears select_all still replaces.
 var _dim_replace_next := false
+## Bumped when an unfocused key seed writes the line, so a late focus_entered
+## does not arm replace and select_all the seed (first digit dropped).
+var _dim_seed_gen := 0
+var _dim_seed_seen := 0
 var _distance_replace_next := false
 ## True while the Distance line is not one float. Survives SpinBox apply on
 ## focus exit, which would otherwise to_float "20.07.5" into 20 and Extrude.
@@ -155,6 +159,10 @@ func _build_finish_bar() -> void:
 	_dim_spin.value = 10
 	_dim_spin.suffix = "mm"
 	_dim_spin.select_all_on_focus = true
+	# Typing must not push the SpinBox value on every character. That rewrite
+	# parks the caret at column 0 (digits come out reversed) and restores the
+	# previous value into a cleared line.
+	_dim_spin.update_on_text_changed = false
 	_dim_spin.tooltip_text = "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
 	_fit_spin(_dim_spin)
 	_radius_label = Label.new()
@@ -786,6 +794,24 @@ func _is_numeric_replace_key(k: InputEventKey, allow_minus: bool) -> bool:
 	return false
 
 
+func _numeric_key_char(k: InputEventKey) -> String:
+	var code := k.keycode
+	if code >= KEY_0 and code <= KEY_9:
+		return str(code - KEY_0)
+	if code >= KEY_KP_0 and code <= KEY_KP_9:
+		return str(code - KEY_KP_0)
+	if code == KEY_PERIOD or code == KEY_KP_PERIOD:
+		return "."
+	if code == KEY_MINUS or code == KEY_KP_SUBTRACT:
+		return "-"
+	var ch := k.unicode
+	if ch >= 48 and ch <= 57:
+		return char(ch)
+	if ch == 46 or ch == 45:
+		return char(ch)
+	return ""
+
+
 func _restore_rejected_distance(keep: float, keep_text: String = "") -> void:
 	# SpinBox applies a truncated parse on a deferred text_submitted / focus
 	# exit. Wait one frame so this write wins, then restore the junk string
@@ -880,14 +906,19 @@ func _on_distance_focus_exited() -> void:
 
 func _on_dim_focus_entered() -> void:
 	_dim_editing = true
-	_dim_replace_next = true
-	# Do not select_all / grab_focus here. That re-enters the root Window
-	# focus_entered / tree_exited connections. Mouse clicks already defer
-	# select from gui_input; keyboard focus uses one deferred select.
-	if _dim_spin == null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+	# A seed write bumped the generation before grab_focus. Do not arm replace
+	# or the deferred select_all eats that first digit ("20" reads back "0").
+	if _dim_seed_seen != _dim_seed_gen:
+		_dim_seed_seen = _dim_seed_gen
+		_dim_replace_next = false
 		return
-	_dim_select_gen += 1
-	_select_dim_all_if_gen.call_deferred(_dim_select_gen)
+	_dim_replace_next = true
+	# Deferred select only. Synchronous select_all here re-enters Window
+	# focus_entered / tree_exited. Mouse-down used to skip the select entirely,
+	# so the caret stayed at column 0 and the next digit was inserted in front.
+	if _dim_spin == null:
+		return
+	SxUi.arm_replace_on_focus(_dim_spin.get_line_edit())
 
 
 func _on_dim_focus_exited() -> void:
@@ -1027,29 +1058,71 @@ func focus_dim_for_typing(seed := "") -> void:
 	# still the focus owner from a previous burst.
 	_release_distance_focus()
 	var edit := _dim_spin.get_line_edit()
+	if seed != "":
+		_dim_seed_gen += 1
 	edit.grab_focus()
 	_dim_editing = true
 	if seed != "":
 		# Unfocused burst writes the whole seed. Do not replace the next key.
 		_dim_replace_next = false
 		_dim_select_gen += 1
-	if seed != "" and seed.is_valid_float():
-		var v := float(seed)
-		_dim_spin.value = v
-		edit.text = seed
-		edit.caret_column = seed.length()
-		edit.deselect()
-		edit.deselect.call_deferred()
-		_apply_slot_radius(v)
-		if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
-			sketch_mode.set_length_override(v)
-	elif seed != "":
-		edit.text = seed
-		edit.caret_column = seed.length()
-		edit.deselect()
-		edit.deselect.call_deferred()
+		SxUi.write_typed_text(edit, seed)
+		if seed.is_valid_float():
+			_dim_syncing = true
+			_dim_spin.set_value_no_signal(float(seed))
+			_dim_syncing = false
+			# set_value rewrites the line and parks the caret at column 0.
+			SxUi.write_typed_text(edit, seed)
+			_apply_slot_radius(float(seed))
+			if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
+				sketch_mode.set_length_override(float(seed))
 	else:
-		edit.select_all()
+		_dim_replace_next = true
+		SxUi.arm_replace_on_focus(edit)
+
+
+## Focus the dim blank with its current (or `shown`) value selected so the
+## next digit replaces it. Canvas centre clicks use this so Radius / AF do
+## not keep a stale Slot value and do not leave Extrude focused.
+func arm_dim_replace(shown: float = -1.0) -> void:
+	if _dim_spin == null:
+		return
+	_release_distance_focus()
+	if shown > 0.0:
+		var was := _dim_editing
+		_dim_editing = false
+		set_dim_value(shown)
+		_dim_editing = was
+	_dim_editing = true
+	_dim_replace_next = true
+	var edit := _dim_spin.get_line_edit()
+	if edit == null:
+		return
+	edit.grab_focus()
+	SxUi.arm_replace_on_focus(edit)
+
+
+## First key after arm replaces the whole blank. Later keys append.
+## Returns false when the line is not focused or replace is not armed.
+func replace_dim_with_char(ch: String) -> bool:
+	if _dim_spin == null or ch == "":
+		return false
+	var edit := _dim_spin.get_line_edit()
+	if edit == null or not edit.has_focus():
+		return false
+	if not _dim_replace_next and not SxUi.replace_armed(edit):
+		return false
+	# Set before the text write so a preview echo cannot put the old value back.
+	_dim_editing = true
+	_dim_replace_next = false
+	_dim_select_gen += 1
+	SxUi.write_typed_text(edit, ch)
+	var parsed: Variant = _parse_spin_text(_dim_spin, ch)
+	if parsed != null:
+		_apply_slot_radius(float(parsed))
+		if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
+			sketch_mode.set_length_override(float(parsed))
+	return true
 
 
 func release_dim_focus() -> void:
@@ -1060,6 +1133,10 @@ func release_dim_focus() -> void:
 		edit.release_focus()
 	_dim_editing = false
 	_dim_replace_next = false
+
+
+func release_distance_focus() -> void:
+	_release_distance_focus()
 
 
 func _release_distance_focus() -> void:
@@ -1160,9 +1237,10 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 			accept_event()
 			return
 		if _is_numeric_replace_key(k, false) and _dim_replace_next:
-			_dim_replace_next = false
-			_dim_select_gen += 1
-			_select_dim_all()
+			var ch := _numeric_key_char(k)
+			if ch != "" and replace_dim_with_char(ch):
+				accept_event()
+				return
 
 
 func _host_interaction() -> ViewportInteraction:
@@ -1244,9 +1322,14 @@ func reset_finish_for_new_sketch() -> void:
 
 func sync_for_tool() -> void:
 	_sync_dim_affordance()
-	if sketch_mode != null and sketch_mode.tool == SketchMode.Tool.SLOT \
+	if sketch_mode == null or _dim_editing:
+		return
+	if sketch_mode.tool == SketchMode.Tool.SLOT \
 			and not sketch_mode.has_single_dof_preview():
 		set_dim_value(sketch_mode.slot_radius)
+	elif sketch_mode.tool == SketchMode.Tool.CIRCLE \
+			and not sketch_mode.has_single_dof_preview():
+		set_dim_value(sketch_mode.circle_radius)
 
 
 func set_flip_side(on: bool) -> void:
