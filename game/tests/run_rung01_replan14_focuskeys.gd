@@ -392,12 +392,12 @@ func _part_rows() -> void:
 			"3: panel parses to 10 (got `%s`)" % _panel_text(main))
 	check(not _strip_text(main).contains("104") and not _strip_text(main).contains("410"),
 			"3: no stray digit in strip (got `%s`)" % _strip_text(main))
+	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"3: Fillet still armed after Enter / KEY_4")
 
 	print("- 3b. click strip, 10 Tab; display is 10 not 0.0; KEY_4 is Back")
-	if main.ops_panel._pending != OpsPanel.Pending.FILLET_EDGES:
-		ctx.view.select_entity(body, "")
-		await process_frame
-		await _arm_fillet_strip(ctx)
+	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"3b: Fillet still armed after the previous Enter")
 	spin = _strip(main)
 	if spin != null:
 		await _click_at(vp, _spin_text_pos(spin))
@@ -483,10 +483,8 @@ func _part_rows() -> void:
 			"6: Iso view (status_tail=`%s`)" % _last_status())
 
 	print("- 7. panel Radius arrows / typed 10 Enter / view keys")
-	if main.ops_panel._pending != OpsPanel.Pending.FILLET_EDGES:
-		ctx.view.select_entity(body, "")
-		await process_frame
-		await _arm_fillet_strip(ctx)
+	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"7: Fillet still armed after the previous Enter")
 	var panel := _panel_spin(main)
 	check(panel != null, "7: panel Radius exists")
 	if panel != null:
@@ -533,6 +531,8 @@ func _part_rows() -> void:
 				"7: panel parses to 10 (got `%s`)" % _panel_text(main))
 		check(_parses_to(_strip_text(main), 10.0),
 				"7: strip parses to 10 (got `%s`)" % _strip_text(main))
+		check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+				"7: Fillet still armed after Enter / KEY_4")
 		_status_log.clear()
 		await _push_key(vp, KEY_8, 56)
 		await process_frame
@@ -542,10 +542,8 @@ func _part_rows() -> void:
 		_assert_top(cam, "7 KEY_3 after panel")
 
 	print("- 8. Esc with the field focused still clears the armed fillet")
-	if main.ops_panel._pending != OpsPanel.Pending.FILLET_EDGES:
-		ctx.view.select_entity(body, "")
-		await process_frame
-		await _arm_fillet_strip(ctx)
+	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"8: Fillet still armed after the previous Enter")
 	spin = _strip(main)
 	if spin != null:
 		await _click_at(vp, _spin_text_pos(spin))

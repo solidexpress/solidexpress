@@ -236,8 +236,7 @@ func _build_body_ops() -> void:
 	# SpinBox eats Enter and the mechanic thinks the pick did nothing).
 	radius_le.text_submitted.connect(func(_t: String) -> void:
 		_commit_panel_radius()
-		if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
-			try_commit_pending()
+		commit_radius_field_enter()
 		_return_viewport_keys())
 	radius_le.gui_input.connect(func(event: InputEvent) -> void:
 		if not (event is InputEventKey) or not event.pressed or event.echo:
@@ -1963,6 +1962,18 @@ func try_commit_pending() -> bool:
 		return _apply_hole_wizard()
 	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
 		return _commit_armed_dressup()
+	return false
+
+
+## Enter inside the strip / panel Radius field. Commits the number the caller
+## already pushed, and applies only when edges are already picked. With nothing
+## picked the fillet stays armed so the next view key / edge click works.
+func commit_radius_field_enter() -> bool:
+	if _pending != Pending.FILLET_EDGES and _pending != Pending.CHAMFER_EDGES:
+		return false
+	if view != null and (not view.selected_edges.is_empty() or view.selected_edge != ""):
+		return try_commit_pending()
+	_emit_armed_dressup_status()
 	return false
 
 
