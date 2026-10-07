@@ -118,10 +118,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build g++ unzip curl ca-certificates \
+            python3-pip \
             libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
             libfreetype-dev libfontconfig-dev rapidjson-dev \
             libx11-dev libxi-dev libxext-dev libxmu-dev libgl1-mesa-dev \
             mesa-vulkan-drivers
+
+      # check_rung01.py and the wrench jaw AF/angle readback import numpy.
+      # Ubuntu's python is externally managed, so install into that interpreter.
+      - name: Install checker Python dependencies
+        run: |
+          python3 -m pip install --break-system-packages -r tools/requirements.txt
+          python3 -c 'import numpy; print("numpy", numpy.__version__)'
 
       - name: Cache OCCT ${{ env.OCCT_VERSION }}
         uses: actions/cache@v4

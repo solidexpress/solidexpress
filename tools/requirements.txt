@@ -1,0 +1,4 @@
+# Python imports for tools/check_rung01.py and the jaw AF/angle readback
+# embedded in game/tests/run_rung01_wrench.gd. The stdlib modules those
+# scripts use (zipfile, xml, math) need no pin.
+numpy==2.4.4
