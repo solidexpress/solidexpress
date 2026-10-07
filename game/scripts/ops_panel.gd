@@ -2106,11 +2106,20 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 	if edge == "":
 		status.emit("No edge near click — zoom in or click closer to an edge")
 		return
+	# Nearest-id is not unique: same-length twins and seam splits can win the
+	# 3D/screen tie-break on a re-click of an already-picked edge. Prefer
+	# toggling the selected edge off when the click is still on it.
+	edge = _prefer_selected_dressup_edge(body, str(edge), point)
 	_toggle_dressup_edge(body, edge)
 
 
 const DRESSUP_SNAP_PX := 14.0
 const DRESSUP_SILHOUETTE_PX := 10.0
+## Re-click of a picked edge: the face-hit can sit a few mm inward, and a
+## same-length twin can be slightly closer. Stay on the picked edge when it
+## is still nearby and within slack of the nearest resolved id.
+const DRESSUP_TOGGLE_MAX_MM := 6.0
+const DRESSUP_TOGGLE_SLACK_MM := 1.5
 
 
 func _dressup_camera() -> Camera3D:
@@ -2132,20 +2141,93 @@ func handle_viewport_miss(screen: Vector2, camera: Camera3D) -> void:
 			and body != "" and camera != null:
 		var edge := view.edge_near_screen(body, camera, screen, DRESSUP_SILHOUETTE_PX)
 		if edge != "":
+			edge = _prefer_selected_dressup_edge_screen(body, str(edge), camera, screen)
 			_toggle_dressup_edge(body, edge)
 			return
 	status.emit("Missed the solid — click a face or edge")
 
 
+## When `resolved` is a same-length twin of a picked edge (or the click is
+## still on a picked edge), return that picked id so toggle-off wins.
+func _prefer_selected_dressup_edge(body: String, resolved: String, point: Vector3) -> String:
+	var want := str(resolved)
+	var picked := _selected_dressup_ids()
+	if picked.is_empty():
+		return want
+	for id in picked:
+		if id == want or view.edges_share_geometry(body, id, want):
+			return id
+	if want == "" or not view.has_method("edge_distance_to_point"):
+		return want
+	var d_new := view.edge_distance_to_point(body, want, point)
+	var best_id := ""
+	var best_d := INF
+	for id in picked:
+		var d: float = view.edge_distance_to_point(body, id, point)
+		if d < best_d:
+			best_d = d
+			best_id = id
+	if best_id != "" and best_d <= DRESSUP_TOGGLE_MAX_MM \
+			and best_d <= d_new + DRESSUP_TOGGLE_SLACK_MM:
+		return best_id
+	return want
+
+
+func _prefer_selected_dressup_edge_screen(body: String, resolved: String,
+		camera: Camera3D, screen: Vector2) -> String:
+	var want := str(resolved)
+	var picked := _selected_dressup_ids()
+	if picked.is_empty() or camera == null or not view.has_method("edge_screen_distance"):
+		return want
+	for id in picked:
+		if id == want or view.edges_share_geometry(body, id, want):
+			return id
+	var d_new: float = view.edge_screen_distance(body, want, camera, screen)
+	var best_id := ""
+	var best_d := INF
+	for id in picked:
+		var d: float = view.edge_screen_distance(body, id, camera, screen)
+		if d < best_d:
+			best_d = d
+			best_id = id
+	if best_id != "" and best_d <= DRESSUP_SILHOUETTE_PX \
+			and best_d <= d_new + 8.0:
+		return best_id
+	return want
+
+
+func _selected_dressup_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for e in view.selected_edges:
+		var s := str(e)
+		if s != "" and not ids.has(s):
+			ids.append(s)
+	var primary := str(view.selected_edge)
+	if primary != "" and not ids.has(primary):
+		ids.append(primary)
+	return ids
+
+
 ## Add `edge` to the armed set, or remove it when it is already there. Does not
 ## go through select_ray (face refine would clear the edge set).
 func _toggle_dressup_edge(body: String, edge: String) -> void:
-	if view.selected_edges.has(edge) or view.selected_edge == edge:
-		var gone := _edge_length_kind(body, edge)
-		view.selected_edges.erase(edge)
-		if view.selected_edge == edge:
-			view.selected_edge = str(view.selected_edges[0]) if not view.selected_edges.is_empty() else ""
-		if view.selected_edges.is_empty():
+	var want := str(edge)
+	var existing := ""
+	for id in _selected_dressup_ids():
+		if id == want or view.edges_share_geometry(body, id, want):
+			existing = id
+			break
+	if existing != "":
+		var gone := _edge_length_kind(body, existing)
+		var kept: Array[String] = []
+		for e in view.selected_edges:
+			var s := str(e)
+			if s != existing and not view.edges_share_geometry(body, s, existing):
+				kept.append(s)
+		view.selected_edges = kept
+		if str(view.selected_edge) == existing or str(view.selected_edge) == want:
+			view.selected_edge = kept[0] if not kept.is_empty() else ""
+		if kept.is_empty():
 			view.selected_edge = ""
 		view._highlight_edge()
 		view.selection_changed.emit(view.selected_body, view.selected_face)
@@ -2153,11 +2235,11 @@ func _toggle_dressup_edge(body: String, edge: String) -> void:
 		status.emit(_dressup_pick_status() + " — removed " + gone)
 		return
 	elif view.selected_edges.is_empty() and view.selected_edge == "":
-		view.select_edge(body, edge)
+		view.select_edge(body, want)
 	else:
-		if not view.selected_edges.has(edge):
-			view.selected_edges.append(edge)
-		view.selected_edge = edge
+		if not _selected_dressup_ids().has(want):
+			view.selected_edges.append(want)
+		view.selected_edge = want
 		view.selected_body = body
 		view.selected_face = ""
 		view._highlight_edge()

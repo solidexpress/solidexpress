@@ -78,6 +78,20 @@ func _mid_of(view: DocumentView, body: String, edge: String) -> Vector3:
 	return (pts[0] + pts[pts.size() - 1]) * 0.5
 
 
+func _top_long_edges(view: DocumentView, body: String) -> Array:
+	var out := []
+	var lines: Dictionary = view.doc.get_edge_lines(body)
+	for id in lines:
+		var pts: PackedVector3Array = lines[id]
+		if pts.size() < 2:
+			continue
+		var d: Vector3 = pts[pts.size() - 1] - pts[0]
+		var mid: Vector3 = (pts[0] + pts[pts.size() - 1]) * 0.5
+		if absf(d.x) >= 40.0 and absf(d.y) < 0.3 and absf(d.z) < 0.3 and mid.z > 5.0:
+			out.append(str(id))
+	return out
+
+
 func _tap(main, keycode: int) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = keycode
@@ -250,6 +264,32 @@ func _run() -> void:
 	check(view.selected_edges.is_empty() and view.selected_edge == "", "Esc drops the picked edges")
 	check(view.selected_body == body2, "Esc keeps the body selected")
 	check(_st(main).contains("Edge pick cancelled"), "status says the pick was cancelled (got `%s`)" % _st(main))
+
+	# 10. Re-click of a picked long edge toggles it off even when a same-length
+	# twin is slightly closer (thin pad, face-hit inward of the edge).
+	var thin: String = view.insert_primitive("box", Vector3(200, 0, 0), Vector3(50, 5, 10))
+	await process_frame
+	var top_longs := _top_long_edges(view, thin)
+	check(top_longs.size() == 2, "thin box has two top 50 mm edges (got %d)" % top_longs.size())
+	if top_longs.size() == 2:
+		ops.cancel_pending_pick()
+		await _arm(main, thin)
+		await _tap(main, KEY_3)
+		var a: String = top_longs[0]
+		var b: String = top_longs[1]
+		var mid_a := _mid_of(view, thin, a)
+		var mid_b := _mid_of(view, thin, b)
+		await _push_click(FilmUI.model_to_screen(ctx, mid_a))
+		check(view.selected_edges.size() == 1 and view.selected_edges.has(a),
+				"Top-view click arms one 50 mm edge (got %s)" % str(view.selected_edges))
+		var between := mid_a.lerp(mid_b, 0.52)
+		await _push_click(FilmUI.model_to_screen(ctx, between))
+		check(not view.selected_edges.has(a),
+				"re-click near the picked edge removes it (edges %s)" % str(view.selected_edges))
+		check(not view.selected_edges.has(b),
+				"the same-length twin was not added (edges %s)" % str(view.selected_edges))
+		check(_st(main).contains("removed"), "status names the removal (got `%s`)" % _st(main))
+		check(ops._pending == OpsPanel.Pending.FILLET_EDGES, "toggle-off keeps Fillet armed")
 
 	main.queue_free()
 	await process_frame

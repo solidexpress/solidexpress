@@ -2,6 +2,11 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-035 A11c — Fillet re-click toggles the picked edge off
+- Re-clicking an already-picked Fillet edge added a second same-length edge (`44.3 mm line` twice) because nearest-id pick can return a parallel twin or seam-split UUID, and the set only toggled on exact id match.
+- Pick now prefers a selected edge that shares geometry or is still within 6 mm / 1.5 mm slack of the click, and removes by string-normalized id. Esc still cancels the whole set.
+- Gate: `run_rung01_replan11_fillet_ui.gd` (thin 50×5 pad, inward re-click), `run_rung01_replan12_pick.gd` (real pointer).
+
 ## sx-035 N1a / N1b — sketch dimension labels at 150 px and after Save As
 - Typed circle radii (`5`, `22.5`) are driving dimensions: the chrome-field commit adds a kernel `radius` constraint and a label record. Trim also records the keep-side arc and pivot-hole radii so the face-sketch set is `20`, `45°`, `5`, `22.5` live, not only after a reload.
 - Save restores the live camera pose *before* restacking labels, and a pending fit-view reassert cannot run afterwards. `keep_current_view` also holds `view_changed` restack until `reapply_dimension_records` puts the live `label_stack` values back (geometry unchanged). Parked undo `head_dims` merge with the kernel builder so a same-frame exit/begin_edit cannot drop the circle labels. Stack offsets match Label3D screen pixels; labels use `no_depth_test`.

@@ -1510,6 +1510,64 @@ func _closest_point_on_segment3(p: Vector3, a: Vector3, b: Vector3) -> Vector3:
 	return a + ab * t
 
 
+## Distance from `point` to the tessellated polyline of `edge_id`, or INF.
+func edge_distance_to_point(body_id: String, edge_id: String, point: Vector3) -> float:
+	var pts := _edge_polyline(body_id, edge_id)
+	if pts.size() < 2:
+		return INF
+	var best := INF
+	for i in range(pts.size() - 1):
+		best = minf(best, _point_segment_distance3(point, pts[i], pts[i + 1]))
+	return best
+
+
+## True when `a` and `b` are the same id or occupy the same curve (seam split /
+## coincident twins that fillet pick can resolve as two UUIDs).
+func edges_share_geometry(body_id: String, a: String, b: String) -> bool:
+	var ia := str(a)
+	var ib := str(b)
+	if ia == "" or ib == "":
+		return false
+	if ia == ib:
+		return true
+	var pa := _edge_polyline(body_id, ia)
+	var pb := _edge_polyline(body_id, ib)
+	if pa.size() < 2 or pb.size() < 2:
+		return false
+	var a0 := pa[0]
+	var a1 := pa[pa.size() - 1]
+	var b0 := pb[0]
+	var b1 := pb[pb.size() - 1]
+	var same := a0.distance_to(b0) <= 0.25 and a1.distance_to(b1) <= 0.25
+	var flip := a0.distance_to(b1) <= 0.25 and a1.distance_to(b0) <= 0.25
+	if not (same or flip):
+		return false
+	var la := float(doc.measure_edge_length(ia))
+	var lb := float(doc.measure_edge_length(ib))
+	return absf(la - lb) <= 0.2
+
+
+func _edge_polyline(body_id: String, edge_id: String) -> PackedVector3Array:
+	var lines: Dictionary = doc.get_edge_lines(body_id)
+	if lines.has(edge_id):
+		return lines[edge_id]
+	var want := str(edge_id)
+	for k in lines:
+		if str(k) == want:
+			return lines[k]
+	return PackedVector3Array()
+
+
+## Screen-pixel distance from `screen` to the projected polyline of `edge_id`.
+func edge_screen_distance(body_id: String, edge_id: String, camera: Camera3D, screen: Vector2) -> float:
+	if camera == null:
+		return INF
+	var pts := _edge_polyline(body_id, edge_id)
+	if pts.size() < 2:
+		return INF
+	return _polyline_screen_distance(camera, screen, pts)
+
+
 func select_edge(body_id: String, edge_id: String) -> void:
 	selected_body = body_id
 	selected_face = ""
