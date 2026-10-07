@@ -149,6 +149,14 @@ var _dim_edit_index := -1
 ## rule). Armed on focus and on every left click so a same-burst caret cannot
 ## leave the old distance selected-off for append.
 var _dim_edit_replace := false
+## Characters written by the router while the popup is arming focus. The
+## LineEdit caret is not reliable until focus_entered has finished.
+var _dim_edit_typed := ""
+var _dim_edit_seed_gen := 0
+var _dim_edit_seed_seen := 0
+## Popup windows receive the same key in gui_input and again in _input.
+## One write per key; the duplicate in the same idle frame is swallowed.
+var _dim_edit_guard_usec := 0
 ## Bumped on click and on typed text so a pending deferred select_all cannot
 ## re-select the first digit and let the second key replace it.
 var _dim_edit_select_gen := 0
@@ -271,6 +279,7 @@ func _ready() -> void:
 		view.document_changed.connect(_on_view_document_changed)
 	if camera != null:
 		camera.view_changed.connect(_on_camera_view_changed)
+	_refresh_work_grid()
 	resized.connect(queue_redraw)
 	set_process_input(true)
 	set_process_unhandled_input(true)
@@ -369,9 +378,19 @@ func refresh_selection_chrome() -> void:
 
 
 func _on_camera_view_changed() -> void:
+	# The work grid sheet is authored at ±50 mm until LOD runs. Zooming out to
+	# a sketch leaves that sheet as a grey patch unless the step grows.
+	_refresh_work_grid()
 	# Gizmo screen projections only need a redraw when the camera moves.
 	if view != null and view.selected_body != "" and _place_kind == "":
 		queue_redraw()
+
+
+func _refresh_work_grid() -> void:
+	if world_gizmos == null or camera == null:
+		return
+	if camera.has_method("pixels_per_mm_at_pivot"):
+		world_gizmos.refresh_lod(camera.pixels_per_mm_at_pivot())
 
 
 func _build_transform_hud() -> void:
@@ -695,8 +714,12 @@ func _show_dim_edit(index: int) -> void:
 		return
 	if index < 0 or index >= sketch_mode.dimensions.size():
 		return
+	# A deferred re-open must not wipe digits the user already typed.
+	if _dim_edit_popup.visible and _dim_edit_index == index and _dim_edit_typed != "":
+		return
 	_dim_edit_index = index
 	_dim_edit_replace = true
+	_dim_edit_typed = ""
 	var dim: Dictionary = sketch_mode.dimensions[index]
 	_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
 	var at := Vector2i(get_viewport().get_mouse_position()) + Vector2i(8, 8)
@@ -714,6 +737,77 @@ func _dim_edit_owns_keys() -> bool:
 	return _dim_edit_popup != null and _dim_edit_popup.visible
 
 
+## Write one length character into the dimension editor, replacing on the
+## first key after arm and appending after that. The whole string is assigned
+## so a caret stuck at column 0 cannot reverse "45" into "54".
+func _apply_dim_edit_char(ch: String) -> void:
+	if _dim_edit_line == null or ch == "":
+		return
+	# Popup focus delivers one key twice. The duplicate sees the post-write
+	# state; a later real key does not arrive in the same few milliseconds.
+	var here := "%s|%d|%s" % [ch, _dim_edit_typed.length(), str(_dim_edit_replace)]
+	var now := Time.get_ticks_usec()
+	if str(_dim_edit_line.get_meta("_sx_key_token", "")) == here \
+			and now - _dim_edit_guard_usec < 4000:
+		return
+	var after_len := 1 if (_dim_edit_replace or _dim_edit_typed == "") else _dim_edit_typed.length() + 1
+	_dim_edit_line.set_meta("_sx_key_token", "%s|%d|false" % [ch, after_len])
+	_dim_edit_guard_usec = now
+	if _dim_edit_replace or _dim_edit_typed == "":
+		_dim_edit_typed = ch
+	else:
+		_dim_edit_typed += ch
+	_dim_edit_replace = false
+	_dim_edit_seed_gen += 1
+	_dim_edit_select_gen += 1
+	SxUi.write_typed_text(_dim_edit_line, _dim_edit_typed)
+	if not _dim_edit_line.has_focus():
+		_dim_edit_line.grab_focus()
+	# The popup LineEdit still inserts the key after this write ("4" → "44").
+	# Put the owned string back once that insert has landed.
+	_reassert_dim_edit_text.call_deferred(_dim_edit_typed)
+
+
+func _try_replace_dim_edit_key(event: InputEvent) -> bool:
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if ke.keycode == KEY_ENTER or ke.keycode == KEY_KP_ENTER:
+		# The popup is its own window, so Enter on the main viewport does not
+		# reach LineEdit.text_submitted. Commit the owned text from here.
+		var text := str(_dim_edit_line.text) if _dim_edit_line != null else ""
+		if _dim_edit_typed != "":
+			text = _dim_edit_typed
+		_apply_dim_edit(text)
+		return true
+	if not _is_length_type_key(ke):
+		# Backspace belongs to the LineEdit. Drop the owned buffer so the
+		# next digit does not resurrect the pre-edit string.
+		_dim_edit_typed = ""
+		return false
+	if _dim_edit_line == null:
+		return false
+	if _dim_edit_line.has_focus() and not _dim_edit_replace and _dim_edit_typed == "":
+		return false
+	_apply_dim_edit_char(_length_type_seed(ke))
+	return true
+
+
+func _reassert_dim_edit_text(expected: String) -> void:
+	if _dim_edit_line == null or not is_instance_valid(_dim_edit_line):
+		return
+	if _dim_edit_typed != expected:
+		return
+	if str(_dim_edit_line.text) == expected:
+		_dim_edit_line.caret_column = expected.length()
+		_dim_edit_line.deselect()
+		return
+	_dim_edit_line.text = expected
+	_dim_edit_line.caret_column = expected.length()
+	_dim_edit_line.deselect()
+
+
 func _focus_dim_edit_line_if_gen(gen: int) -> void:
 	if gen != _dim_edit_select_gen:
 		return
@@ -725,15 +819,17 @@ func _focus_dim_edit_line_if_gen(gen: int) -> void:
 
 
 func _on_dim_edit_line_focus_entered() -> void:
-	_dim_edit_replace = true
-	# Do not select_all / grab_focus here. That re-enters the root Window
-	# focus_entered / tree_exited connections and logs connect/disconnect
-	# errors. Mouse clicks already defer select from gui_input; keyboard
-	# and popup-open use one deferred select.
-	if _dim_edit_line == null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+	# Seed writes bump the generation before grab_focus. A late focus_entered
+	# must not re-arm replace or select_all the first digit.
+	if _dim_edit_seed_seen != _dim_edit_seed_gen:
+		_dim_edit_seed_seen = _dim_edit_seed_gen
+		_dim_edit_replace = false
 		return
-	_dim_edit_select_gen += 1
-	_select_dim_edit_all_if_gen.call_deferred(_dim_edit_select_gen)
+	_dim_edit_replace = true
+	_dim_edit_typed = ""
+	if _dim_edit_line == null:
+		return
+	SxUi.arm_replace_on_focus(_dim_edit_line)
 
 
 func _on_dim_edit_line_text_changed(_new_text: String) -> void:
@@ -758,24 +854,31 @@ func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
 		# make the next digit append onto the old distance.
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			_dim_edit_replace = true
+			_dim_edit_typed = ""
 			_dim_edit_select_gen += 1
-			var gen := _dim_edit_select_gen
-			_select_dim_edit_all_if_gen.call_deferred(gen)
+			if _dim_edit_line != null:
+				SxUi.arm_replace_on_focus(_dim_edit_line)
 		return
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	var ke := event as InputEventKey
-	if not _dim_edit_replace or not _is_length_type_key(ke):
+	if not _is_length_type_key(ke):
 		return
-	# Select all before the character is inserted, then later keys append.
-	_dim_edit_select_gen += 1
-	if _dim_edit_line != null:
-		_dim_edit_line.select_all()
-	_dim_edit_replace = false
+	# _input already wrote this character. Swallow it so the LineEdit does
+	# not insert a second copy at column 0.
+	if _dim_edit_line != null and _dim_edit_typed != "" \
+			and str(_dim_edit_line.text) == _dim_edit_typed:
+		accept_event()
+		return
+	if not _dim_edit_replace and _dim_edit_line != null and _dim_edit_line.has_focus():
+		return
+	_apply_dim_edit_char(_length_type_seed(ke))
+	accept_event()
 
 
 func _apply_dim_edit(text: String) -> void:
 	_dim_edit_replace = false
+	_dim_edit_typed = ""
 	_dim_edit_popup.hide()
 	if sketch_mode == null or _dim_edit_index < 0:
 		return
@@ -2860,6 +2963,8 @@ func _sketch_input(event: InputEvent) -> void:
 			# next key is a sketch hotkey and not another digit in the field.
 			if sketch_chrome != null:
 				sketch_chrome.release_dim_focus()
+				if sketch_chrome.has_method("release_distance_focus"):
+					sketch_chrome.release_distance_focus()
 				sketch_chrome.hide_variants()
 			_sketch_press_pos = mb.position
 			var ray := _model_ray(mb.position)
@@ -2879,6 +2984,16 @@ func _sketch_input(event: InputEvent) -> void:
 					sketch_mode.commit_at_length(float(typed_len))
 				else:
 					sketch_mode.click(p2)
+					if sketch_chrome != null and sketch_chrome.has_method("arm_dim_replace") \
+							and sketch_mode.has_single_dof_preview():
+						var shown := sketch_mode.preview_distance()
+						if shown < 0.5:
+							if sketch_mode.tool == SketchMode.Tool.CIRCLE:
+								shown = sketch_mode.circle_radius
+							else:
+								shown = -1.0
+						sketch_chrome.arm_dim_replace(shown)
+						_preview_length_typed = ""
 			accept_event()
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_dragging:
 			var ray_up := _model_ray(mb.position)
@@ -4553,7 +4668,7 @@ func _try_route_length_key(event: InputEvent) -> bool:
 	# The in-sketch dimension popup owns digits while it is open — do not seed
 	# the finish-bar dim blank or Distance with the same KEY_2 KEY_0 KEY_0.
 	if _dim_edit_owns_keys():
-		return false
+		return _try_replace_dim_edit_key(event)
 	if _try_consume_preview_length_key(event):
 		return true
 	if _try_append_focused_dim_length_key(event):
@@ -4580,13 +4695,20 @@ func _try_consume_preview_length_key(event: InputEvent) -> bool:
 	# replace that string with a one-key seed (wrench `_type_dim` clicks the
 	# blank first). The second KEY_0 of an unfocused KEY_2 KEY_0 pair is
 	# appended in `_unhandled_input` when the LineEdit never eats it.
+	var seed := _length_type_seed(ke)
 	if _text_field_has_focus() or _sketch_keys_blocked():
+		var dim_edit := _dim_line_edit()
+		if dim_edit != null and dim_edit.has_focus() and sketch_chrome != null \
+				and sketch_chrome.has_method("replace_dim_with_char") \
+				and sketch_chrome.replace_dim_with_char(seed):
+			_preview_length_typed = seed
+			_dim_keys_had_preview = sketch_mode.has_single_dof_preview()
+			return true
 		return false
 	var preview := sketch_mode.has_single_dof_preview()
 	if preview != _dim_keys_had_preview:
 		_preview_length_typed = ""
 		_dim_keys_had_preview = preview
-	var seed := _length_type_seed(ke)
 	if _preview_length_typed.is_empty():
 		_preview_length_typed = seed
 	else:

@@ -172,3 +172,83 @@ static func _line_mismatches_value(spin: SpinBox, line: LineEdit) -> bool:
 static func _deferred_release_line(line: LineEdit) -> void:
 	if line != null and is_instance_valid(line) and line.has_focus():
 		line.release_focus()
+
+
+## Arm replace-on-next-key and select the current text one frame later.
+## Never select_all synchronously from focus_entered — that re-enters Window
+## focus and the deferred select used to eat the first typed digit.
+static func arm_replace_on_focus(line: LineEdit) -> void:
+	if line == null:
+		return
+	line.set_meta("_sx_replace_armed", true)
+	var gen := int(line.get_meta("_sx_select_gen", 0)) + 1
+	line.set_meta("_sx_select_gen", gen)
+	_select_line_if_gen.call_deferred(line, gen)
+
+
+static func replace_armed(line: LineEdit) -> bool:
+	return line != null and is_instance_valid(line) \
+			and bool(line.get_meta("_sx_replace_armed", false))
+
+
+## Replace the line with `text`, caret at the end, and cancel any pending
+## select_all. A deferred reassert puts the same characters back if a SpinBox
+## reformats "2" into "2.00" without turning a later "20" back into "2".
+static func write_typed_text(line: LineEdit, text: String) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	line.set_meta("_sx_replace_armed", false)
+	var gen := int(line.get_meta("_sx_select_gen", 0)) + 1
+	line.set_meta("_sx_select_gen", gen)
+	line.set_meta("_sx_typed", text)
+	line.text = text
+	line.caret_column = text.length()
+	line.deselect()
+	_reassert_typed.call_deferred(line, text)
+
+
+static func _select_line_if_gen(line: LineEdit, gen: int) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	if int(line.get_meta("_sx_select_gen", 0)) != gen:
+		return
+	if not bool(line.get_meta("_sx_replace_armed", false)):
+		return
+	line.select_all()
+
+
+static func _reassert_typed(line: LineEdit, text: String) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	if str(line.get_meta("_sx_typed", "")) != text:
+		return
+	var current := str(line.text)
+	if current == text:
+		if line.caret_column != text.length():
+			line.caret_column = text.length()
+			line.deselect()
+		return
+	if not _same_number(current, text):
+		return
+	line.text = text
+	line.caret_column = text.length()
+	line.deselect()
+
+
+static func _same_number(a: String, b: String) -> bool:
+	var as_ := _numeric_body(a)
+	var bs_ := _numeric_body(b)
+	if not as_.is_valid_float() or not bs_.is_valid_float():
+		return false
+	return is_equal_approx(float(as_), float(bs_))
+
+
+static func _numeric_body(raw: String) -> String:
+	var text := raw.strip_edges()
+	if text.ends_with(" mm"):
+		text = text.substr(0, text.length() - 3)
+	elif text.ends_with("mm"):
+		text = text.substr(0, text.length() - 2)
+	elif text.ends_with(" AF"):
+		text = text.substr(0, text.length() - 3)
+	return text.strip_edges().replace(",", ".")

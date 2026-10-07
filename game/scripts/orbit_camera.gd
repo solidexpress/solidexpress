@@ -1051,6 +1051,48 @@ func enter_sketch_view(
 	_frame_radius_in_chrome_canvas(maxf(frame_radius, 5.0))
 
 
+## Frame a sketch AABB (half extents in plane X/Y, mm) into the chrome-free
+## canvas. Width and height are fitted separately so a long sketch is not
+## shrunk to a circle that only fills the shorter side.
+func frame_sketch_rect(
+		normal: Vector3, frame_center: Vector3, half_x: float, half_y: float,
+		model_up: Vector3 = Vector3.ZERO) -> void:
+	var span := maxf(maxf(half_x, half_y), 5.0)
+	enter_sketch_view(normal, frame_center, span, model_up)
+	_frame_rect_in_chrome_canvas(maxf(half_x, 0.5), maxf(half_y, 0.5))
+
+
+func _frame_rect_in_chrome_canvas(half_x: float, half_y: float) -> void:
+	var half_v := tan(deg_to_rad(fov) * 0.5)
+	var vp := get_viewport()
+	var vp_size := Vector2.ZERO
+	if vp != null:
+		vp_size = vp.get_visible_rect().size
+	var need_h := 2.0 * half_y * SKETCH_FIT_PAD
+	var need_w := 2.0 * half_x * SKETCH_FIT_PAD
+	if vp_size.y < 1.0:
+		distance = clampf(
+				maxf(need_h, need_w) / (2.0 * maxf(half_v, 1e-6)),
+				MIN_DISTANCE, MAX_DISTANCE)
+		_update_transform()
+		return
+	var canvas := sketch_fit_canvas_rect(vp_size)
+	var size_needed := maxf(
+			need_h * vp_size.y / maxf(canvas.size.y, 1.0),
+			need_w * vp_size.y / maxf(canvas.size.x, 1.0))
+	distance = clampf(
+			size_needed / (2.0 * maxf(half_v, 1e-6)),
+			MIN_DISTANCE, MAX_DISTANCE)
+	_update_transform()
+	var mm_per_px := size / vp_size.y
+	var dc := canvas.get_center() - vp_size * 0.5
+	if dc.length_squared() < 1e-8:
+		return
+	pivot -= global_transform.basis.x * (dc.x * mm_per_px)
+	pivot += global_transform.basis.y * (dc.y * mm_per_px)
+	_update_transform()
+
+
 ## Fit a sketch-plane circle of `frame_radius` mm into the chrome-free canvas
 ## (viewport minus left rail / top / bottom insets) and pan so its centre sits
 ## at the canvas centre — not the full-window centre, which buries left-side
