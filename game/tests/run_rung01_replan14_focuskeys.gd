@@ -590,6 +590,8 @@ func _sketch_rows() -> void:
 		str(sm.has_pending_draw_point()), str(_preview_hidden(sm)),
 		str(vp.gui_get_focus_owner()), _last_status()])
 	check(not sm.has_pending_draw_point(), "10: pending point is gone")
+	check(sm.active, "10: first Esc keeps the sketch open")
+	check(sm.tool == SketchMode.Tool.CIRCLE, "10: Circle stays armed after the point drop")
 	check(_last_status() == FIRST_DROP or _status_has(FIRST_DROP),
 			"10: last status is First point dropped (got `%s` log=%s)" % [
 				_last_status(), str(_status_log)])
@@ -599,13 +601,26 @@ func _sketch_rows() -> void:
 			"10: field no longer has focus")
 	await _push_key(vp, KEY_ESCAPE)
 	await process_frame
-	print("  after second Esc: active=%s last_status=`%s`" % [str(sm.active), _last_status()])
+	print("  after second Esc: active=%s label=`%s` last_status=`%s`" % [
+		str(sm.active), _st(main), _last_status()])
+	check(not sm.active, "10: second Esc exits the sketch")
+	check(not _status_has("Tool dropped"),
+			"10: second Esc does not drop the tool (log=%s)" % str(_status_log))
+	check(_st(main) == "Sketch cancelled",
+			"10: status is Sketch cancelled (got `%s`)" % _st(main))
 
 	print("- 11. Esc with the field not focused is the same two-press ladder")
 	if not sm.active:
 		await FilmUI.enter_sketch(ctx)
 		sm = main.sketch_mode
 		await _zoom_model(ctx, Vector3.ZERO, 80.0)
+	if sm.sketch.entity_ids().is_empty():
+		await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
+		await _click_uv(ctx, Vector2.ZERO, "11 line start")
+		await _click_uv(ctx, Vector2(15, 0), "11 line end")
+		await process_frame
+	check(sm.sketch.entity_ids().size() >= 1,
+			"11: sketch holds geometry so a tool drop could steal the exit")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, Vector2(8, 0), "Circle centre unfocused")
 	await process_frame
@@ -621,9 +636,16 @@ func _sketch_rows() -> void:
 	check(not sm.has_pending_draw_point(), "11: first Esc drops the pending point")
 	check(_last_status() == FIRST_DROP or _status_has(FIRST_DROP),
 			"11: first Esc is First point dropped (got `%s`)" % _last_status())
+	check(sm.active, "11: first Esc keeps the sketch open")
+	check(sm.tool == SketchMode.Tool.CIRCLE, "11: Circle stays armed after the point drop")
 	var active_after_first := sm.active
 	await _push_key(vp, KEY_ESCAPE)
 	await process_frame
-	print("  11 second Esc: was_active=%s now_active=%s last=`%s`" % [
-		str(active_after_first), str(sm.active), _last_status()])
+	print("  11 second Esc: was_active=%s now_active=%s label=`%s` last=`%s`" % [
+		str(active_after_first), str(sm.active), _st(main), _last_status()])
+	check(not sm.active, "11: second Esc exits the sketch")
+	check(not _status_has("Tool dropped"),
+			"11: second Esc does not drop the tool (log=%s)" % str(_status_log))
+	check(_st(main) == "Sketch cancelled",
+			"11: status is Sketch cancelled (got `%s`)" % _st(main))
 	await _shutdown(ctx)
