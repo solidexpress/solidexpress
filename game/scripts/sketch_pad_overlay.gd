@@ -82,6 +82,7 @@ func refresh(doc: SxDocument, editing_fid: String = "") -> void:
 	_clear()
 	if doc == null:
 		return
+	var consumed := _consumed_sketch_ids(doc)
 	for feat in doc.graph_features():
 		if str(feat.get("type", "")) != "sketch":
 			continue
@@ -91,7 +92,10 @@ func refresh(doc: SxDocument, editing_fid: String = "") -> void:
 		var sk: SxSketch = doc.graph_get_sketch(fid)
 		if sk == null or sk.entity_ids().is_empty():
 			continue
-		_add_pad(fid, sk)
+		# A sketch that already feeds a solid keeps its pad for picks, but
+		# draws nothing. Profile strokes are the yellow jaw outline, circles,
+		# and shaft lines left on the part after Extrude (new or cut).
+		_add_pad(fid, sk, not consumed.has(fid))
 
 
 func _clear() -> void:
@@ -104,7 +108,32 @@ func _clear() -> void:
 	_pads.clear()
 
 
-func _add_pad(fid: String, sk: SxSketch) -> void:
+## Sketch ids referenced by an extrude, revolve, sweep, or loft.
+func _consumed_sketch_ids(doc: SxDocument) -> Dictionary:
+	var used := {}
+	for feat in doc.graph_features():
+		var kind := str(feat.get("type", ""))
+		if kind != "extrude" and kind != "revolve" and kind != "sweep" and kind != "loft":
+			continue
+		var parsed = JSON.parse_string(str(feat.get("params", "{}")))
+		if typeof(parsed) != TYPE_DICTIONARY:
+			continue
+		_note_sketch_ref(parsed.get("sketch", null), used)
+		for key in ["sketches", "guides", "profiles"]:
+			var arr = parsed.get(key, null)
+			if typeof(arr) != TYPE_ARRAY:
+				continue
+			for item in arr:
+				_note_sketch_ref(item, used)
+	return used
+
+
+func _note_sketch_ref(value: Variant, used: Dictionary) -> void:
+	if typeof(value) == TYPE_STRING and str(value) != "":
+		used[str(value)] = true
+
+
+func _add_pad(fid: String, sk: SxSketch, draw_lines: bool = true) -> void:
 	var pi: Dictionary = sk.plane_info()
 	if pi.is_empty():
 		return
@@ -113,7 +142,6 @@ func _add_pad(fid: String, sk: SxSketch) -> void:
 	var y_dir: Vector3 = (pi["y_dir"] as Vector3).normalized()
 	var normal: Vector3 = (pi["normal"] as Vector3).normalized()
 	var closed := SketchMode.profile_is_closed(sk)
-	var pad_col := PAD_COLOR_CLOSED if closed else PAD_COLOR_OPEN
 	var mn := Vector2(INF, INF)
 	var mx := Vector2(-INF, -INF)
 	for id in sk.entity_ids():
@@ -158,30 +186,33 @@ func _add_pad(fid: String, sk: SxSketch) -> void:
 		origin + x_dir * mn.x + y_dir * mx.y + lift,
 	]
 
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_color(pad_col)
-	# Two triangles (both windings via CULL_DISABLED).
-	st.add_vertex(corners[0])
-	st.add_vertex(corners[1])
-	st.add_vertex(corners[2])
-	st.add_vertex(corners[0])
-	st.add_vertex(corners[2])
-	st.add_vertex(corners[3])
-	var mesh := MeshInstance3D.new()
-	mesh.mesh = st.commit()
-	mesh.material_override = _mat_closed if closed else _mat_open
-	mesh.name = "SketchPad_%s" % fid.substr(0, 8)
-	add_child(mesh)
-
-	var edge := _make_edge_mesh(corners, normal, closed)
-	edge.name = "SketchPadEdge_%s" % fid.substr(0, 8)
-	add_child(edge)
-
-	var profile := _make_profile_mesh(sk, origin, x_dir, y_dir, normal, closed)
-	if profile != null:
-		profile.name = "SketchPadProfile_%s" % fid.substr(0, 8)
-		add_child(profile)
+	var mesh: MeshInstance3D = null
+	var edge: MeshInstance3D = null
+	var profile: MeshInstance3D = null
+	if draw_lines:
+		var pad_col := PAD_COLOR_CLOSED if closed else PAD_COLOR_OPEN
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		st.set_color(pad_col)
+		# Two triangles (both windings via CULL_DISABLED).
+		st.add_vertex(corners[0])
+		st.add_vertex(corners[1])
+		st.add_vertex(corners[2])
+		st.add_vertex(corners[0])
+		st.add_vertex(corners[2])
+		st.add_vertex(corners[3])
+		mesh = MeshInstance3D.new()
+		mesh.mesh = st.commit()
+		mesh.material_override = _mat_closed if closed else _mat_open
+		mesh.name = "SketchPad_%s" % fid.substr(0, 8)
+		add_child(mesh)
+		edge = _make_edge_mesh(corners, normal, closed)
+		edge.name = "SketchPadEdge_%s" % fid.substr(0, 8)
+		add_child(edge)
+		profile = _make_profile_mesh(sk, origin, x_dir, y_dir, normal, closed)
+		if profile != null:
+			profile.name = "SketchPadProfile_%s" % fid.substr(0, 8)
+			add_child(profile)
 
 	_pads[fid] = {
 		"mesh": mesh,
