@@ -680,22 +680,23 @@ func _leave_camera() -> void:
 func _on_sketch_camera_moved() -> void:
 	if not active or _undo_restoring or sketch == null:
 		return
-	if _label_restack_hold != 0 and _label_restack_hold == _camera_reassert_gen:
-		return
-	if dimensions.is_empty() or _dimension_labels == null:
-		return
-	_resolve_label_overlaps()
-	var li := 0
-	for dim in dimensions:
-		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
-			continue
-		if li >= _dimension_labels.get_child_count():
-			break
-		var lab := _dimension_labels.get_child(li) as Label3D
-		if lab != null:
-			lab.offset = _dimension_label_offset_px(dim)
-			lab.position = _to3(dim["label_pos"] as Vector2) + plane_normal() * 0.2
-		li += 1
+	var hold := _label_restack_hold != 0 and _label_restack_hold == _camera_reassert_gen
+	if not hold and not dimensions.is_empty() and _dimension_labels != null:
+		_resolve_label_overlaps()
+		var li := 0
+		for dim in dimensions:
+			if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+				continue
+			if li >= _dimension_labels.get_child_count():
+				break
+			var lab := _dimension_labels.get_child(li) as Label3D
+			if lab != null:
+				lab.offset = _dimension_label_offset_px(dim)
+				lab.position = _to3(dim["label_pos"] as Vector2) + plane_normal() * 0.2
+			li += 1
+	# Glyph badges are a fixed pixel size. Restack them in screen space whenever
+	# the zoom changes, or a 2.5 mm step stays an 8 px pile at a 150 px head.
+	_rebuild_constraint_glyphs()
 
 
 ## Discard the session without committing (Esc).
@@ -2799,8 +2800,18 @@ func trim_at(pos2: Vector2) -> bool:
 	if id == "":
 		status.emit("Trim failed — nothing under the pointer: click on a line or arc")
 		return false
-	if not sketch.trim_entity(id, pos2.x, pos2.y):
-		status.emit("Trim failed — this %s has no crossing to trim at" % str(sketch.entity_info(id).get("type", "entity")))
+	# trim_entity returns false when nothing crosses, and can return true while
+	# leaving the snapshot unchanged. Either way the sketch did not change:
+	# do not solve (that nudges nodes) and do not push an undo entry.
+	var before := ""
+	if sketch.has_method("snapshot"):
+		before = sketch.snapshot()
+	var trimmed := sketch.trim_entity(id, pos2.x, pos2.y)
+	var after := before
+	if sketch.has_method("snapshot"):
+		after = sketch.snapshot()
+	if not trimmed or (before != "" and after == before):
+		status.emit("Nothing trimmed — no crossing at that point")
 		return false
 	_undo_note("Trim")
 	run_solve()
@@ -4411,26 +4422,13 @@ func click(pos2: Vector2) -> void:
 				var c := _tool_points[0]
 				var vertex := _tool_points[1]
 				var drag := c.distance_to(vertex)
-				# Click ray is a vertex. Across-flats: the drag/typed length is
-				# AF (not circumradius). For a hex, AF = R * √3, so a +X click
-				# puts vertices on ±X and flats at y = ±AF/2. Do not add 30° —
-				# that parks a vertex on +Y.
-				var r := drag
-				var start_angle := (vertex - c).angle()
+				# Across-flats is always flats-horizontal (start angle 0), in
+				# preview and on commit. The drag/typed length is the AF.
 				if tool_variant == "across_flats":
 					polygon_sides = 6
-					r = drag / sqrt(3.0)
-					if _point_from_length:
-						start_angle = 0.0
-					else:
-						var step := deg_to_rad(30.0)
-						start_angle = round(start_angle / step) * step
-				if r > 1e-6:
-					var n := polygon_sides
-					var verts: Array[Vector2] = []
-					for i in range(n):
-						var ang := start_angle + TAU * float(i) / float(n)
-						verts.append(c + Vector2(cos(ang), sin(ang)) * r)
+				var verts := _polygon_ring_vertices(c, vertex)
+				if verts.size() >= 3:
+					var n := verts.size()
 					var lids: Array[String] = []
 					for i in range(n):
 						var va: Vector2 = verts[i]
@@ -6089,6 +6087,12 @@ func hover(pos2: Vector2) -> void:
 	_update_preview()
 	if has_single_dof_preview():
 		preview_distance_changed.emit(preview_distance())
+	# One point down: the rubber-band is the across-flats size, and the flats
+	# stay horizontal no matter where the pointer sits.
+	if tool == Tool.POLYGON and tool_variant == "across_flats" and _tool_points.size() == 1:
+		var af := _tool_points[0].distance_to(effective_hover())
+		if af >= 0.05:
+			status.emit("Polygon AF %.4f — flats horizontal — click to place (or type the size)" % af)
 
 
 ## Power-trim drag: trim every entity the cursor crosses.
@@ -6369,6 +6373,52 @@ func _dimension_display_value(dim: Dictionary) -> float:
 	return float(dim.get("value", 0.0))
 
 
+## Another arc of the same radius, far enough to be the other slot cap.
+func _slot_sibling_center(info: Dictionary) -> Variant:
+	if sketch == null or str(info.get("type", "")) != "arc":
+		return null
+	var c: Vector2 = info["center"]
+	var r := float(info.get("radius", 0.0))
+	if r < 1e-6:
+		return null
+	for id in sketch.entity_ids():
+		var other: Dictionary = sketch.entity_info(id)
+		if str(other.get("type", "")) != "arc":
+			continue
+		var oc: Vector2 = other["center"]
+		if oc.distance_to(c) <= 1e-3:
+			continue
+		if absf(float(other.get("radius", 0.0)) - r) > 1e-3:
+			continue
+		if oc.distance_to(c) > r * 2.0:
+			return oc
+	return null
+
+
+## Slot-cap radius sits beside the stadium, 4 mm outside the body.
+func _slot_cap_radius_pos(info: Dictionary) -> Variant:
+	var sib: Variant = _slot_sibling_center(info)
+	if sib == null:
+		return null
+	var c: Vector2 = info["center"]
+	var axis: Vector2 = (sib as Vector2) - c
+	if axis.length_squared() < 1e-12:
+		return null
+	var perp := Vector2(-axis.y, axis.x).normalized()
+	var r := float(info.get("radius", 0.0))
+	return c + perp * (r + DIM_LABEL_OFFSET)
+
+
+## Radius callout on a slot cap. The overlap resolver must not walk it.
+func _is_slot_cap_radius(dim: Dictionary) -> bool:
+	if sketch == null or str(dim.get("type", "")) != "radius":
+		return false
+	var ids: Array = dim.get("ids", [])
+	if ids.size() != 1:
+		return false
+	return _slot_sibling_center(sketch.entity_info(str(ids[0]))) != null
+
+
 func _dimension_label_pos2(dim: Dictionary) -> Variant:
 	## Sketch-plane 2D position for a dimension label, or null if unresolvable.
 	var ids: Array = dim.get("ids", [])
@@ -6382,6 +6432,12 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 		var c: Vector2 = info["center"]
 		var r: float = float(info.get("radius", 0.0))
 		var reach := r + DIM_LABEL_OFFSET
+		# Slot cap radius sits beside the stadium, not off the outer end of
+		# cap A. Still outside the body and within 1.5r+6 of the slot AABB.
+		if str(info.get("type", "")) == "arc":
+			var slot_pos: Variant = _slot_cap_radius_pos(info)
+			if slot_pos != null:
+				return slot_pos
 		# Keep-side jaw arc: sit on the remaining metal, away from the 20 / 45°
 		# cluster in the opening. Full circles sit below the centre so a head
 		# Ø45 label is not in the 45° jaw click fan.
@@ -6680,7 +6736,7 @@ func _resolve_label_overlaps() -> void:
 		# Full-circle radius text is anchored just below the rim. Stacking it
 		# upward (#164, 28 px per step) walks the Ø45 label onto the top rim
 		# that Shaft Lines clicks. Leave it on the anchor.
-		if _full_circle_dimension(dim):
+		if _full_circle_dimension(dim) or _is_slot_cap_radius(dim):
 			dim["label_stack"] = 0
 			dimensions[i] = dim
 			continue
@@ -6869,6 +6925,98 @@ func dimension_label_screen_rects() -> Array:
 	return out
 
 
+func _glyph_symbol_size_px(type: String, k: float) -> Vector2:
+	var font: Font = ThemeDB.fallback_font
+	var symbol := str(GLYPH_SYMBOLS.get(type, type))
+	return Vector2(
+			font.get_string_size(symbol, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x,
+			font.get_height(22)) * k
+
+
+func _glyph_screen_rect(pos: Vector2, type: String, cam: Camera3D, k: float) -> Rect2:
+	var size := _glyph_symbol_size_px(type, k)
+	var centre := cam.unproject_position(to_global(to_model(pos)))
+	return Rect2(centre - size * 0.5, size)
+
+
+## Inverse of the glyph projection: screen pixel → sketch plane.
+func _sketch_at_screen(cam: Camera3D, screen: Vector2) -> Variant:
+	var inv := global_transform.affine_inverse()
+	var origin: Vector3 = inv * cam.project_ray_origin(screen)
+	var direction: Vector3 = inv.basis * cam.project_ray_normal(screen)
+	return ray_to_sketch(origin, direction)
+
+
+func _label_rects_for_glyphs(cam: Camera3D) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	var k := _label_px_scale(cam)
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+			continue
+		out.append(_projected_label_rect(dim, cam, k))
+	return out
+
+
+func _glyph_overlap_fraction(a: Rect2, b: Rect2) -> float:
+	if not a.intersects(b):
+		return 0.0
+	var inter := a.intersection(b)
+	var area := maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0)
+	var smaller := minf(a.size.x * a.size.y, b.size.x * b.size.y)
+	if smaller <= 1e-6:
+		return 0.0
+	return area / smaller
+
+
+## 0 when the badge is clear of other glyphs, labels, and sketch geometry.
+func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
+		labels: Array[Rect2], cam: Camera3D) -> float:
+	var score := 0.0
+	for prev in placed:
+		var frac := _glyph_overlap_fraction(rect, prev)
+		if frac > 0.20:
+			score += (frac - 0.20) * 100.0
+	for lr in labels:
+		if rect.intersects(lr):
+			var inter := rect.intersection(lr)
+			score += 80.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0)
+	var sk: Variant = _sketch_at_screen(cam, centre)
+	if sk == null:
+		score += 40.0
+	else:
+		var near := _nearest_entity_at(sk)
+		if near != "":
+			var gap := _entity_distance(sketch.entity_info(near), sk)
+			# A click on the badge centre must not lose to the geometry-wins rule.
+			if gap < 0.5:
+				score += 30.0 + (0.5 - gap) * 10.0
+	return score
+
+
+## Screen centre of a glyph pushed off the pile, the labels, and the curves.
+func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2],
+		labels: Array[Rect2], cam: Camera3D) -> Vector2:
+	var step := maxf(size.x, size.y) + 2.0
+	var best := natural
+	var best_score := INF
+	for ring in range(16):
+		var count := 1 if ring == 0 else ring * 8
+		for i in range(count):
+			var centre := natural
+			if ring > 0:
+				var ang := TAU * float(i) / float(count)
+				centre = natural + Vector2(cos(ang), sin(ang)) * step * float(ring)
+			var rect := Rect2(centre - size * 0.5, size)
+			var score := _glyph_block_score(rect, centre, placed, labels, cam)
+			if score < best_score:
+				best_score = score
+				best = centre
+			if score <= 0.0:
+				return centre
+	return best
+
+
 ## Viewport-pixel rectangles of every drawn constraint glyph.
 func constraint_glyph_screen_rects() -> Array:
 	var out: Array = []
@@ -6876,18 +7024,14 @@ func constraint_glyph_screen_rects() -> Array:
 	if cam == null:
 		return out
 	var k := _label_px_scale(cam)
-	var font: Font = ThemeDB.fallback_font
 	for a in _glyph_anchors:
 		var type := str(a.get("type", ""))
 		if type == "" and sketch != null:
 			type = str(sketch.constraint_info(str(a.get("cid", ""))).get("type", ""))
-		var symbol := str(GLYPH_SYMBOLS.get(type, type))
-		var size := Vector2(
-				font.get_string_size(symbol, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x,
-				font.get_height(22)) * k
-		var world: Vector3 = to_global(to_model(a["pos"] as Vector2))
-		var centre: Vector2 = cam.unproject_position(world)
-		out.append({"type": type, "rect": Rect2(centre - size * 0.5, size)})
+		out.append({
+			"type": type,
+			"rect": _glyph_screen_rect(a["pos"] as Vector2, type, cam, k),
+		})
 	return out
 
 
@@ -6952,6 +7096,10 @@ func _rebuild_constraint_glyphs() -> void:
 		return
 	if selected_constraint != "" and sketch.constraint_info(selected_constraint).is_empty():
 		selected_constraint = ""
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var k := _label_px_scale(cam) if cam != null else 1.0
+	var label_rects: Array[Rect2] = _label_rects_for_glyphs(cam) if cam != null else []
+	var placed: Array[Rect2] = []
 	var taken: Array[Vector2] = []
 	for cid in sketch.constraint_ids():
 		var cinfo: Dictionary = sketch.constraint_info(cid)
@@ -6962,12 +7110,22 @@ func _rebuild_constraint_glyphs() -> void:
 		if anchor == null:
 			continue
 		var pos := anchor as Vector2
-		# Stack overlapping badges instead of drawing them on top of each other.
-		var guard := 0
-		while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
-			pos += Vector2(0, 2.5)
-			guard += 1
-		taken.append(pos)
+		if cam != null:
+			# De-stack in pixels. A 2.5 mm step is ~8 px at a 150 px head,
+			# smaller than the badge, so the pile survives a millimetre nudge.
+			var size := _glyph_symbol_size_px(type, k)
+			var natural := cam.unproject_position(to_global(to_model(pos)))
+			var centre := _separate_glyph_screen(natural, size, placed, label_rects, cam)
+			placed.append(Rect2(centre - size * 0.5, size))
+			var back: Variant = _sketch_at_screen(cam, centre)
+			if back != null:
+				pos = back
+		else:
+			var guard := 0
+			while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
+				pos += Vector2(0, 2.5)
+				guard += 1
+			taken.append(pos)
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.fixed_size = true
@@ -7259,6 +7417,33 @@ func _append_slot_preview(im: ImmediateMesh, a: Vector2, b: Vector2, r: float) -
 	})
 
 
+## Across-flats is always a flats-horizontal hex (start angle 0). The drag
+## length is the across-flats size; the vertex variant keeps the pointer angle.
+func _polygon_ring_vertices(c: Vector2, tip: Vector2) -> Array[Vector2]:
+	var drag := c.distance_to(tip)
+	var n := polygon_sides
+	var radius := drag
+	var start_angle := (tip - c).angle() if drag > 1e-9 else 0.0
+	if tool_variant == "across_flats":
+		n = 6
+		radius = drag / sqrt(3.0)
+		start_angle = 0.0
+	var verts: Array[Vector2] = []
+	if n < 3 or radius < 1e-9:
+		return verts
+	for i in range(n):
+		var a := start_angle + TAU * float(i) / float(n)
+		verts.append(c + Vector2(cos(a), sin(a)) * radius)
+	return verts
+
+
+## Live across-flats / vertex ring. Empty until the centre click is down.
+func polygon_preview_vertices() -> Array[Vector2]:
+	if tool != Tool.POLYGON or _tool_points.is_empty():
+		return []
+	return _polygon_ring_vertices(_tool_points[0], effective_hover())
+
+
 func _update_preview() -> void:
 	var im := ImmediateMesh.new()
 	var has := false
@@ -7326,29 +7511,15 @@ func _update_preview() -> void:
 						im.surface_add_vertex(_to3(c + Vector2(cos(a1), sin(a1)) * r))
 			Tool.POLYGON:
 				var c := _tool_points[0]
-				var r := c.distance_to(tip)
-				var n := polygon_sides
-				# Same orientation as the committed polygon: across-flats uses
-				# the click ray (a +X drag puts vertices on ±X). Do not add 30°.
-				var start_angle := (tip - c).angle()
-				if tool_variant == "across_flats":
-					r = r / sqrt(3.0)
-					n = 6
-					if _length_override >= 0.0:
-						start_angle = 0.0
-					else:
-						var step := deg_to_rad(30.0)
-						start_angle = round(start_angle / step) * step
+				var verts := _polygon_ring_vertices(c, tip)
+				var r := c.distance_to(verts[0]) if not verts.is_empty() else 0.0
 				var steps := 48
 				for i in range(steps):
 					var a0 := TAU * i / steps
 					var a1 := TAU * (i + 1) / steps
 					im.surface_add_vertex(_to3(c + Vector2(cos(a0), sin(a0)) * r))
 					im.surface_add_vertex(_to3(c + Vector2(cos(a1), sin(a1)) * r))
-				var verts: Array[Vector2] = []
-				for i in range(n):
-					var a := start_angle + TAU * float(i) / float(n)
-					verts.append(c + Vector2(cos(a), sin(a)) * r)
+				var n := verts.size()
 				for i in range(n):
 					im.surface_add_vertex(_to3(verts[i]))
 					im.surface_add_vertex(_to3(verts[(i + 1) % n]))
