@@ -4116,6 +4116,8 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 		await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 		await process_frame
 		await process_frame
+		check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+				"B14.7 Fillet still armed after Enter")
 	await _push_key(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
@@ -4134,6 +4136,8 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 		await _push_key(p_edit.get_viewport(), KEY_ENTER, 0)
 		await process_frame
 		await process_frame
+		check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+				"B14.7 Fillet still armed after Enter")
 	await _push_key(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
@@ -4145,10 +4149,9 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 
 func _b14_fillet_tab(ctx: FilmContext) -> void:
 	print("  B14.5 Fillet Tab sync")
-	# B14.7 types 10 Enter with no edges selected; that Enter applies/cancels
-	# the pick (`No edges selected — cancelled`). Re-arm so Tab can emit r=.
 	var btn: Button = ctx.main.interaction._strip_fillet
-	if btn != null and btn.is_visible_in_tree():
+	if btn != null and btn.is_visible_in_tree() \
+			and ctx.main.ops_panel._pending != OpsPanel.Pending.FILLET_EDGES:
 		await FilmUI.click_control(ctx, btn, FilmUICues.alert("Fillet", "Arm fillet"))
 		await process_frame
 		await process_frame

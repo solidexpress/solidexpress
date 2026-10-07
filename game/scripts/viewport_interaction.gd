@@ -503,7 +503,7 @@ func _build_selection_strip() -> void:
 		_commit_strip_radius()
 		_sync_strip_dressup_radius()
 		if ops_panel != null:
-			ops_panel.try_commit_pending()
+			ops_panel.commit_radius_field_enter()
 		return_viewport_keys.call_deferred())
 	# Tab commits the number and keeps the keys on the viewport. Default
 	# focus-next lands on the AF 10 chip, which eats Enter (sets jaw_af) and
