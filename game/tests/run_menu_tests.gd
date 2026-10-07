@@ -40,7 +40,16 @@ func _init() -> void:
 func test_insert_datums(main) -> void:
 	print("- insert menu datums")
 	check(main.view.doc.datum_list().size() == 0, "no datums initially")
-	main._on_insert_menu(0)  # plane XY
+	# Datum planes ask for an offset before they exist. Confirming 0 mm
+	# (through the origin) is the insert; the menu item itself only opens
+	# the dialog.
+	main._on_insert_menu(0)  # Datum Plane XY
+	check(main._datum_dialog != null and main._datum_dialog.visible,
+			"Insert → Datum Plane XY opens the offset dialog")
+	check(main.view.doc.datum_list().is_empty(),
+			"the plane is not inserted until the offset dialog is confirmed")
+	main._datum_dialog.confirmed.emit()
+	check(main.view.doc.datum_list().size() == 1, "confirming offset 0 adds the XY plane")
 	main._on_insert_menu(3)  # axis X
 	main._on_insert_menu(6)  # point at origin
 	var datums: Array = main.view.doc.datum_list()

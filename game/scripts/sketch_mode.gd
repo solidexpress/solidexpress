@@ -528,7 +528,9 @@ func begin_on_plane(origin: Vector3, x_dir: Vector3, y_dir: Vector3) -> bool:
 
 
 ## Reopen an existing Sketch feature for editing.
-func begin_edit(fid: String) -> bool:
+## `announce` is false when Save re-enters the same session: that path must
+## not print "Editing sketch" again (the pencil click is the only time).
+func begin_edit(fid: String, announce: bool = true) -> bool:
 	if view == null or view.doc == null or fid == "":
 		return false
 	var loaded: SxSketch = view.doc.graph_get_sketch(fid)
@@ -546,7 +548,8 @@ func begin_edit(fid: String) -> bool:
 	_edit_baseline = loaded.snapshot() if loaded.has_method("snapshot") else ""
 	_clear_support()
 	_activate_session()
-	status.emit("Editing sketch — Exit Sketch to save · Esc discard")
+	if announce:
+		status.emit("Editing sketch — Exit Sketch to save · Esc discard")
 	return true
 
 

@@ -135,27 +135,19 @@ func _floor_length(sm: SketchMode) -> float:
 
 
 func _labels_overlap(main, sm: SketchMode) -> bool:
+	# Drawn labels are offset by label_stack / label_clamp. The on-screen
+	# rect (not the raw anchor) is what a person sees.
 	sm._rebuild_dimension_labels()
-	var cam: Camera3D = main.camera
-	if cam == null:
+	if main.camera == null:
 		return false
-	var k := sm._label_px_scale(cam)
-	var rects: Array[Rect2] = []
-	for dim in sm.dimensions:
-		if typeof(dim) != TYPE_DICTIONARY:
-			continue
-		var pos_v: Variant = dim.get("label_pos", null)
-		if pos_v == null:
-			continue
-		var world: Vector3 = sm.to_model(pos_v as Vector2)
-		var ms: Node3D = main.model_space
-		if ms != null:
-			world = ms.to_global(world)
-		var anchor: Vector2 = cam.unproject_position(world)
-		rects.append(sm._dimension_label_rect(dim, anchor, k))
+	var rects: Array = sm.dimension_label_screen_rects()
 	for i in range(rects.size()):
 		for j in range(i + 1, rects.size()):
-			if rects[i].intersects(rects[j]):
+			var a: Rect2 = rects[i]["rect"]
+			var b: Rect2 = rects[j]["rect"]
+			if a.intersects(b):
+				print("  overlap %s %s and %s %s" % [
+					str(rects[i]["text"]), str(a), str(rects[j]["text"]), str(b)])
 				return true
 	return false
 
@@ -276,11 +268,47 @@ func _boot():
 	root.add_child(main)
 	await process_frame
 	await process_frame
+	# Headless default is a few dozen pixels. Every label then clamps onto
+	# the top of that rect and the overlap check measures the pile-up.
+	root.size = Vector2i(1280, 800)
+	if main.interaction is Control:
+		(main.interaction as Control).size = Vector2(1280, 800)
+	await process_frame
+	await process_frame
 	main.view.clear_selection()
 	main._start_sketch()
+	var jaw_pivot: Vector3 = main.sketch_mode.to_model(HEAD)
+	await _zoom_model(main, jaw_pivot, 120.0)
 	_status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return main
+
+
+func _zoom_model(main, model_pivot: Vector3, size_mm: float) -> void:
+	var cam = main.camera
+	var ms: Node3D = main.model_space
+	if cam._view_tween != null and cam._view_tween.is_valid():
+		cam._view_tween.kill()
+		cam._view_tween = null
+	var sm: SketchMode = main.sketch_mode
+	if sm != null and sm.active:
+		var n: Vector3 = sm.plane_normal()
+		if n.length_squared() > 1e-8:
+			cam.yaw = atan2(n.x, -n.y)
+			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
+		if ms != null and sm.plane_y.length_squared() > 1e-8:
+			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
+			if up_w.length_squared() > 1e-8:
+				cam._sketch_view_up = up_w.normalized()
+		cam.sketch_orientation_locked = true
+		cam._look_at_content = true
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
+	var half := tan(deg_to_rad(cam.fov) * 0.5)
+	cam.distance = size_mm / (2.0 * half)
+	cam._update_transform()
+	await process_frame
+	await process_frame
 
 
 func _on_status(text: String) -> void:
