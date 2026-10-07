@@ -282,8 +282,8 @@ func _run() -> void:
 		await _push_click(FilmUI.model_to_screen(ctx, mid_a))
 		check(view.selected_edges.size() == 1 and view.selected_edges.has(a),
 				"Top-view click arms one 50 mm edge (got %s)" % str(view.selected_edges))
-		var inward := mid_a.lerp(mid_b, 0.52)
-		await _push_click(FilmUI.model_to_screen(ctx, inward))
+		var between := mid_a.lerp(mid_b, 0.52)
+		await _push_click(FilmUI.model_to_screen(ctx, between))
 		check(not view.selected_edges.has(a),
 				"re-click near the picked edge removes it (edges %s)" % str(view.selected_edges))
 		check(not view.selected_edges.has(b),
