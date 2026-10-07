@@ -75,6 +75,14 @@ func test_save_does_not_change_labels() -> void:
 	check(_status_has("Trimmed open jaw"),
 			"status includes Trimmed open jaw (log=%s)" % str(_status_log))
 
+	await _zoom_head_px(ctx, 150.0)
+	await process_frame
+	await process_frame
+	var head_px := _head_width_px(ctx)
+	print("  head width after zoom: %.1f px" % head_px)
+	check(head_px >= 120.0 and head_px <= 180.0,
+			"N1a head is ~150 px across (got %.1f)" % head_px)
+
 	_dump_constraints(sm, "after trim (live)")
 	_dump_live_dims(sm, "after trim (live)")
 
@@ -84,6 +92,7 @@ func test_save_does_not_change_labels() -> void:
 	print("  glyphs: %s" % _rects_brief(glyphs))
 	_assert_required_texts(before, "before save")
 	_assert_no_overlaps(before, glyphs, "before save")
+	await _assert_jaw_armed_first_glyph(ctx, sm)
 
 	var save_dir := "/tmp/rung01_replan14_wp1"
 	DirAccess.make_dir_recursive_absolute(save_dir)
@@ -109,6 +118,9 @@ func test_save_does_not_change_labels() -> void:
 	_assert_same_layout(before, after_s, "after Ctrl+S")
 	_assert_required_texts(after_s, "after Ctrl+S")
 	_assert_no_overlaps(after_s, _glyph_rects(sm), "after Ctrl+S")
+	check(absf(_head_width_px(ctx) - head_px) <= 12.0,
+			"Ctrl+S keeps the 150 px head zoom (%.1f → %.1f)" % [
+				head_px, _head_width_px(ctx)])
 
 	await _file_save_as(ctx, "pre-cut.sxp")
 	await process_frame
@@ -367,6 +379,82 @@ func _file_save_as(ctx: FilmContext, filename: String) -> void:
 		ctx.main._on_file_selected(ctx.main.current_path)
 	await process_frame
 	await process_frame
+
+
+func _head_width_px(ctx: FilmContext) -> float:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null:
+		return 0.0
+	var a := FilmUI.model_to_screen(ctx, sm.to_model(HEAD + Vector2(-22.5, 0.0)))
+	var b := FilmUI.model_to_screen(ctx, sm.to_model(HEAD + Vector2(22.5, 0.0)))
+	return a.distance_to(b)
+
+
+func _zoom_head_px(ctx: FilmContext, want_px: float) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var vp: Viewport = ctx.main.get_viewport()
+	var target := FilmUI.model_to_screen(ctx, sm.to_model(HEAD))
+	var got := _head_width_px(ctx)
+	var guard := 0
+	while got > 1.0 and absf(got - want_px) > 8.0 and guard < 40:
+		var zoom_in := got < want_px
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_WHEEL_UP if zoom_in else MOUSE_BUTTON_WHEEL_DOWN
+		ev.pressed = true
+		ev.factor = 1.0
+		ev.position = target
+		ev.global_position = target
+		vp.push_input(ev)
+		await process_frame
+		got = _head_width_px(ctx)
+		target = FilmUI.model_to_screen(ctx, sm.to_model(HEAD))
+		guard += 1
+	print("  zoomed head to %.1f px in %d wheel notches" % [got, guard])
+
+
+func _label_first_glyph(sm: SketchMode, needle: String) -> Vector2:
+	var centre := _label_screen_center(sm, needle)
+	if centre == Vector2.INF:
+		return centre
+	for r in _label_rects(sm):
+		var text := str(r.get("text", ""))
+		if text != needle:
+			var raw := text.trim_suffix("°")
+			var want := needle.trim_suffix("°")
+			if not (want.is_valid_float() and raw.is_valid_float()
+					and absf(float(raw) - float(want)) <= 0.05
+					and text.ends_with("°") == needle.ends_with("°")):
+				continue
+		var rect: Rect2 = r["rect"]
+		return Vector2(rect.position.x + minf(6.0, rect.size.x * 0.25),
+				rect.get_center().y)
+	return centre
+
+
+func _assert_jaw_armed_first_glyph(ctx: FilmContext, sm: SketchMode) -> void:
+	sm.start_jaw_tool()
+	await process_frame
+	check(sm.is_jaw_armed(), "Jaw is armed for the first-glyph click")
+	var hit := _label_first_glyph(sm, "20")
+	check(hit != Vector2.INF, "N1a first glyph of `20` is hittable")
+	if hit == Vector2.INF:
+		return
+	check(FilmUI.require_on_screen(ctx, hit, "20 first glyph"),
+			"N1a first glyph of `20` is on screen")
+	var ix: ViewportInteraction = ctx.main.interaction
+	await FilmUI.viewport_click(ctx, hit, FilmUICues.alert("Click", "Edit 20 (Jaw armed)"))
+	await process_frame
+	await process_frame
+	check(ix != null and ix._dim_edit_owns_keys(),
+			"N1a Jaw-armed click on `20` first glyph opens the editor")
+	check(sm._tool_points.is_empty(),
+			"N1a Jaw-armed label click did not start a new jaw")
+	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await process_frame
+	await process_frame
+	check(ix != null and not ix._dim_edit_owns_keys(),
+			"Esc closes the editor after the Jaw-armed glyph click")
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 
 
 func _label_rects(sm: SketchMode) -> Array:
