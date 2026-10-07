@@ -1,6 +1,12 @@
 #include <catch.hpp>
 #include <cmath>
 
+#include <BRepClass_FaceClassifier.hxx>
+#include <TopAbs_State.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Face.hxx>
+#include <gp_Pnt.hxx>
+
 #include "sx/shape_utils.hpp"
 #include "sx/sketch.hpp"
 #include "sx/solver.hpp"
@@ -211,4 +217,74 @@ TEST_CASE("multi-wire profile: open leftover fails", "[sketch][profile]") {
     TopoDS_Shape face = sk.profile_face(&err);
     REQUIRE(face.IsNull());
     REQUIRE(!err.empty());
+}
+
+namespace {
+
+bool on_face(const TopoDS_Shape& shape, double x, double y) {
+    TopoDS_Face face = TopoDS::Face(shape);
+    BRepClass_FaceClassifier cls(face, gp_Pnt(x, y, 0.0), 1e-6);
+    return cls.State() == TopAbs_IN || cls.State() == TopAbs_ON;
+}
+
+// GUI pre-cut jaw: floor through the head centre, walls out to the Ø45 rim,
+// arc endpoints on that rim, but stored angles naming the complementary bulge.
+void add_gui_jaw_mouth(Sketch& sk, bool stale_angles) {
+    const double cx = 200.0;
+    const double cy = 0.0;
+    const double r = 22.50000250339508;
+    const double sa = -5.037233207302222;
+    const double ea = -5.9583410802620556;
+    const double sx = 221.32325744628906;
+    const double sy = 7.181128025054932;
+    const double ex = 207.18112182617188;
+    const double ey = 21.32326316833496;
+    sk.add_line(207.0710678100586, -7.071067810058594, sx, sy);
+    sk.add_line(192.9289321899414, 7.071067810058594, ex, ey);
+    sk.add_line(207.0710678100586, -7.071067810058594, 192.9289321899414, 7.071067810058594);
+    auto arc = sk.add_arc(cx, cy, r, sa, ea);
+    const SketchEntity* e = sk.entity(arc);
+    REQUIRE(e != nullptr);
+    if (stale_angles) {
+        sk.param_mut(e->params[5]) = sx;
+        sk.param_mut(e->params[6]) = sy;
+        sk.param_mut(e->params[7]) = ex;
+        sk.param_mut(e->params[8]) = ey;
+    }
+}
+
+}  // namespace
+
+TEST_CASE("stale jaw arc angles follow the endpoint mouth", "[sketch][profile][jaw]") {
+    Sketch stale("StaleJaw");
+    add_gui_jaw_mouth(stale, true);
+    std::string err;
+    TopoDS_Shape face = stale.profile_face(&err);
+    INFO(err);
+    REQUIRE_FALSE(face.IsNull());
+    // u ≈ 12 along the jaw, inside the 20 mm mouth. The complementary bulge
+    // would leave this point outside and swallow the rest of the head.
+    CHECK(on_face(face, 200.0 + 12.0 * 0.70710678, 12.0 * 0.70710678));
+    CHECK_FALSE(on_face(face, 200.0 - 12.0 * 0.70710678, -12.0 * 0.70710678));
+    CHECK(shape::area(face) < 800.0);
+
+    // A consistent major arc (angles name its endpoints) must stay the long bulge.
+    Sketch major("MajorArc");
+    const double sa = 0.2;
+    const double sweep = 300.0 * 3.14159265358979323846 / 180.0;
+    auto arc = major.add_arc(0.0, 0.0, 10.0, sa, sa + sweep);
+    const SketchEntity* e = major.entity(arc);
+    REQUIRE(e != nullptr);
+    major.add_line(major.param(e->params[5]), major.param(e->params[6]),
+                   major.param(e->params[7]), major.param(e->params[8]));
+    TopoDS_Shape wide = major.profile_face(&err);
+    INFO(err);
+    REQUIRE_FALSE(wide.IsNull());
+    const double mid = sa + sweep * 0.5;
+    CHECK(on_face(wide, 5.0 * std::cos(mid), 5.0 * std::sin(mid)));
+    // The unused cap sits past the chord (r·cos(30°) ≈ 8.7). A consistent
+    // major arc must keep that cap outside the face.
+    const double gap = mid + 3.14159265358979323846;
+    CHECK_FALSE(on_face(wide, 9.5 * std::cos(gap), 9.5 * std::sin(gap)));
+    CHECK(shape::area(wide) == Approx(305.1).epsilon(0.02));
 }
