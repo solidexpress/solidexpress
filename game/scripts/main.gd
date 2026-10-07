@@ -724,9 +724,9 @@ func _build_ui() -> void:
 			_on_status("Nothing to explode")
 		else:
 			_on_status("Exploded %d part(s)" % moved if on else "Collapsed to assembled"))
+	camera.framed.connect(_on_status)
 	view_hud.fit_requested.connect(func() -> void:
-		camera.frame_selection_or_all(false)
-		_on_status("Framed selection" if view.selected_body != "" else "Framed all"))
+		camera.frame_selection_or_all(false))
 	view_hud.save_view_requested.connect(_on_save_named_view)
 	view_hud.view_restore_requested.connect(func(view_name: String) -> void:
 		if camera.restore_named_view(view_name):
