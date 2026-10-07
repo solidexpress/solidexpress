@@ -1,6 +1,7 @@
 #include <catch.hpp>
 
 #include "test_temp.hpp"
+#include <array>
 #include <cmath>
 
 #include <cstdio>
@@ -538,4 +539,127 @@ TEST_CASE("contour_faces keeps nested wire as a hole", "[sketch][contours]") {
     REQUIRE(contours.size() == 1);
     // Solid area ≈ 40*30 - π*25.
     REQUIRE(shape::area(contours[0]) == Approx(1200.0 - 3.141592653589793 * 25.0).epsilon(1e-3));
+}
+
+namespace {
+
+bool near_pt(const std::array<double, 2>& p, double x, double y, double tol = 1e-6) {
+    return std::hypot(p[0] - x, p[1] - y) <= tol;
+}
+
+bool has_corner(const std::vector<std::array<double, 2>>& loop, double x, double y) {
+    for (const auto& p : loop)
+        if (near_pt(p, x, y)) return true;
+    return false;
+}
+
+void add_rect(Sketch& sk, double x0, double y0, double x1, double y1) {
+    sk.add_line(x0, y0, x1, y0);
+    sk.add_line(x1, y0, x1, y1);
+    sk.add_line(x1, y1, x0, y1);
+    sk.add_line(x0, y1, x0, y0);
+}
+
+}  // namespace
+
+TEST_CASE("contour_outlines: disjoint rect and circle", "[sketch][contours]") {
+    Sketch sk("RectCircle");
+    add_rect(sk, 0, 0, 40, 20);
+    sk.add_circle(80, 10, 6);
+    std::string err;
+    auto faces = sk.contour_faces(&err);
+    auto outlines = sk.contour_outlines(0.05, &err);
+    REQUIRE(faces.size() == 2);
+    REQUIRE(outlines.size() == 2);
+    CHECK(outlines[0].area == Approx(800.0).epsilon(1e-4));
+    CHECK(outlines[0].size[0] == Approx(40.0).margin(1e-6));
+    CHECK(outlines[0].size[1] == Approx(20.0).margin(1e-6));
+    CHECK(outlines[0].center[0] == Approx(20.0).margin(1e-6));
+    CHECK(outlines[0].center[1] == Approx(10.0).margin(1e-6));
+    REQUIRE(outlines[0].outer.size() == 4);
+    CHECK(has_corner(outlines[0].outer, 0, 0));
+    CHECK(has_corner(outlines[0].outer, 40, 0));
+    CHECK(has_corner(outlines[0].outer, 40, 20));
+    CHECK(has_corner(outlines[0].outer, 0, 20));
+    CHECK(outlines[0].outer.front() != outlines[0].outer.back());
+    CHECK(outlines[1].area == Approx(3.141592653589793 * 36.0).epsilon(1e-3));
+    CHECK(outlines[1].size[0] == Approx(12.0).margin(0.05));
+    CHECK(outlines[1].size[1] == Approx(12.0).margin(0.05));
+    CHECK(outlines[1].center[0] == Approx(80.0).margin(0.05));
+    CHECK(outlines[1].center[1] == Approx(10.0).margin(0.05));
+    REQUIRE(outlines[1].outer.size() >= 48);
+    for (const auto& p : outlines[1].outer) {
+        const double d = std::hypot(p[0] - 80.0, p[1] - 10.0);
+        CHECK(std::abs(d - 6.0) <= 0.06);
+    }
+    for (size_t i = 0; i < outlines.size(); ++i)
+        CHECK(outlines[i].area == Approx(shape::area(faces[i])).epsilon(1e-6));
+}
+
+TEST_CASE("contour_outlines: nested circle is a hole", "[sketch][contours]") {
+    Sketch sk("PlateHoleOutline");
+    add_rect(sk, 0, 0, 40, 30);
+    sk.add_circle(20, 15, 5);
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    REQUIRE(outlines.size() == 1);
+    REQUIRE(outlines[0].holes.size() == 1);
+    for (const auto& p : outlines[0].holes[0]) {
+        const double d = std::hypot(p[0] - 20.0, p[1] - 15.0);
+        CHECK(std::abs(d - 5.0) <= 0.06);
+    }
+    CHECK(outlines[0].area == Approx(1200.0 - 3.141592653589793 * 25.0).epsilon(1e-3));
+}
+
+TEST_CASE("contour_outlines: circle split by a chord", "[sketch][contours]") {
+    Sketch sk("ChordedCircleOutline");
+    sk.add_circle(0, 0, 10);
+    sk.add_line(-10, 0, 10, 0);
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    REQUIRE(outlines.size() == 2);
+    const double half = 0.5 * 3.141592653589793 * 100.0;
+    for (const auto& o : outlines) {
+        CHECK(o.area == Approx(half).epsilon(1e-3));
+        REQUIRE(o.outer.size() >= 3);
+        CHECK(o.outer.front() != o.outer.back());
+        CHECK(o.size[1] == Approx(10.0).margin(0.05));
+        CHECK(o.size[0] == Approx(20.0).margin(0.05));
+    }
+}
+
+TEST_CASE("contour_outlines: plane origin and orientation", "[sketch][contours]") {
+    Sketch def("DefaultPlane");
+    add_rect(def, 0, 0, 40, 20);
+    SketchPlane pl;
+    pl.origin = {0, 0, 10};
+    pl.x_dir = {0, 1, 0};
+    pl.y_dir = {0, 0, 1};
+    Sketch moved("MovedPlane", pl);
+    add_rect(moved, 0, 0, 40, 20);
+    std::string err;
+    auto a = def.contour_outlines(0.05, &err);
+    auto b = moved.contour_outlines(0.05, &err);
+    REQUIRE(a.size() == 1);
+    REQUIRE(b.size() == 1);
+    REQUIRE(a[0].outer.size() == b[0].outer.size());
+    REQUIRE(a[0].outer.size() == 4);
+    for (const auto& p : a[0].outer)
+        CHECK(has_corner(b[0].outer, p[0], p[1]));
+    CHECK(b[0].center[0] == Approx(a[0].center[0]).margin(1e-6));
+    CHECK(b[0].center[1] == Approx(a[0].center[1]).margin(1e-6));
+    CHECK(b[0].size[0] == Approx(a[0].size[0]).margin(1e-6));
+    CHECK(b[0].size[1] == Approx(a[0].size[1]).margin(1e-6));
+}
+
+TEST_CASE("contour_outlines: no profile", "[sketch][contours]") {
+    Sketch sk("OpenLine");
+    sk.add_line(0, 0, 10, 0);
+    std::string face_err;
+    std::string outline_err;
+    auto faces = sk.contour_faces(&face_err);
+    auto outlines = sk.contour_outlines(0.05, &outline_err);
+    REQUIRE(faces.empty());
+    REQUIRE(outlines.empty());
+    CHECK(outline_err == face_err);
 }
