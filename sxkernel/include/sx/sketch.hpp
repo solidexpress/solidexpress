@@ -164,7 +164,9 @@ public:
     // Selectable solid regions for Selected Contours (SW). Empty on failure.
     // Disjoint closed wires are separate solids; nested wires are holes.
     // Edges that share arcs (circle split by a chord, pliers head + nose)
-    // are split into planar regions (BRepAlgoAPI_Splitter).
+    // are split into planar regions (BRepAlgoAPI_Splitter). A stray open
+    // chain that does not meet those wires is ignored so it cannot erase
+    // the closed regions. Whole-sketch profile_face still refuses that sketch.
     std::vector<TopoDS_Shape> contour_faces(std::string* err = nullptr) const;
 
     // Closed region outlines in sketch UV, same order as contour_faces()
@@ -225,6 +227,10 @@ private:
     friend struct SketchSerde;  // JSON persistence (sketch_json.cpp)
     size_t push_params(std::initializer_list<double> values);
     std::array<double, 2> to_sketch_uv(const std::array<double, 3>& p) const;
+
+    // stray_open is set when a dangling chain was ignored so closed regions
+    // could still be returned. Whole-sketch extrude treats that as open.
+    std::vector<TopoDS_Shape> contour_faces_impl(std::string* err, bool* stray_open) const;
 
     EntityId id_;
     std::string name_;

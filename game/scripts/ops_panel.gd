@@ -1010,7 +1010,50 @@ func _fillet_refusal_status(radius: float, n: int) -> String:
 		return "Fillet r=%.2f exceeds the %s mm limit set by %s — click it again to remove it, or reduce Radius" % [radius, num, by]
 	var fault := _fault_phrase(why)
 	var mid := " (%s)" % fault if fault != "" else ""
-	return "Fillet could not be built on %d edge(s)%s — fillet the R10 neck first, or pick fewer edges" % [n, mid]
+	# The neck sentence is the sharp-corner offer (the head arc dies in OCCT
+	# until the two vertical neck edges are filleted). Once those edges are
+	# gone it is the wrong hint — a slot-floor radius limit is a different
+	# refusal and must not send the user back to the neck.
+	if _neck_is_unfilleted():
+		return "Fillet could not be built on %d edge(s)%s — fillet the R10 neck first, or pick fewer edges" % [n, mid]
+	return "Fillet could not be built on %d edge(s)%s — pick fewer edges" % [n, mid]
+
+
+# The wrench neck is the pair of full-thickness vertical edges on the shaft
+# sides (y = ±10). An R10 fillet removes them. Other parts have no such pair,
+# so the neck hint stays off.
+func _neck_is_unfilleted() -> bool:
+	if view == null or view.doc == null or str(view.selected_body) == "":
+		return false
+	if not view.doc.has_method("measure_bbox") or not view.doc.has_method("get_edge_lines"):
+		return false
+	var body := str(view.selected_body)
+	var bb: Dictionary = view.doc.measure_bbox(body)
+	if not bb.has("min") or not bb.has("max"):
+		return false
+	var ext: Vector3 = bb["max"] - bb["min"]
+	var thick := ext.z
+	if thick < 4.0:
+		return false
+	var lines: Dictionary = view.doc.get_edge_lines(body)
+	var hits := 0
+	for eid in lines.keys():
+		var pts: PackedVector3Array = lines[eid]
+		if pts.size() < 2:
+			continue
+		var a: Vector3 = pts[0]
+		var b: Vector3 = pts[pts.size() - 1]
+		var d := b - a
+		var len := d.length()
+		if absf(len - thick) > 0.6:
+			continue
+		if absf(d.z) < len * 0.95:
+			continue
+		var mid_y := (a.y + b.y) * 0.5
+		if absf(absf(mid_y) - 10.0) > 0.8:
+			continue
+		hits += 1
+	return hits >= 2
 
 
 func _first_number_after(why: String, marker: String) -> String:

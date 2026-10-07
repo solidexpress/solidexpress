@@ -75,9 +75,115 @@ double blend_radius_at(const TopoDS_Shape& body, const TopoDS_Vertex& vertex, do
     return extra;
 }
 
+double linear_length(const TopoDS_Edge& edge) {
+    GProp_GProps props;
+    BRepGProp::LinearProperties(edge, props);
+    return props.Mass();
+}
+
+// A corner blend is a circular arc of about a quarter turn. A slot-end
+// semicircle (angle ~π) is the floor boundary, not a blend of the wall.
+bool corner_blend_arc(const TopoDS_Edge& edge, double& radius) {
+    BRepAdaptor_Curve curve(edge);
+    const double angle = std::abs(curve.LastParameter() - curve.FirstParameter());
+    // Quarter-turn only. A slot-end semicircle (parameter ~π) is the floor
+    // boundary, not the wall the radius has to fit in.
+    if (!(angle > 0.5 && angle < 2.2)) return false;
+    if (curve.GetType() == GeomAbs_Circle) {
+        radius = curve.Circle().Radius();
+    } else if (curve.GetType() == GeomAbs_Ellipse) {
+        // Rectangular-slot corners come back as a quarter ellipse whose minor
+        // radius is the fillet that already ate the wall (major is the
+        // corner diagonal, √2 r).
+        radius = curve.Ellipse().MinorRadius();
+    } else {
+        return false;
+    }
+    return radius > 1e-6;
+}
+
+gp_Vec tangent_at_vertex(const TopoDS_Edge& edge, const TopoDS_Vertex& vertex) {
+    BRepAdaptor_Curve curve(edge);
+    const gp_Pnt vp = BRep_Tool::Pnt(vertex);
+    double t = curve.FirstParameter();
+    gp_Pnt p0;
+    curve.D0(t, p0);
+    if (p0.Distance(vp) > 1e-4) t = curve.LastParameter();
+    gp_Pnt p;
+    gp_Vec v;
+    curve.D1(t, p, v);
+    if (v.Magnitude() < 1e-12) return gp_Vec(0, 0, 0);
+    v.Normalize();
+    return v;
+}
+
+// Radius of a corner-blend arc leaving `vertex`, other than `skip`.
+// Used when the straight remnant is shorter than the blend (R1 on both
+// ends of a 2.5 mm wall leaves 0.5 mm), so blend_radius_at would drop it.
+double corner_radius_at(const TopoDS_Shape& body, const TopoDS_Vertex& vertex,
+                        const TopoDS_Edge& skip) {
+    sx::occt::ShapeIndexedDataMapOfList ancestors;
+    TopExp::MapShapesAndAncestors(body, TopAbs_VERTEX, TopAbs_EDGE, ancestors);
+    const int idx = ancestors.FindIndex(vertex);
+    if (idx < 1) return 0.0;
+    double best = 0.0;
+    const sx::occt::ShapeList& edges = ancestors.FindFromIndex(idx);
+    for (const TopoDS_Shape& es : edges) {
+        if (es.ShapeType() != TopAbs_EDGE) continue;
+        const TopoDS_Edge edge = TopoDS::Edge(es);
+        if (edge.IsSame(skip) || BRep_Tool::Degenerated(edge)) continue;
+        double radius = 0.0;
+        if (!corner_blend_arc(edge, radius)) continue;
+        best = std::max(best, radius);
+    }
+    return best;
+}
+
+// After a floor fillet the sharp wall edge is gone. The departure from the
+// new floor boundary is the blend's quarter-circle; the original wall is
+// that radius plus the straight remnant plus a blend on the far end.
+double continuation_past_blend(const TopoDS_Shape& body, const TopoDS_Vertex& far,
+                               const TopoDS_Edge& blend_arc, const gp_Vec& wall_dir) {
+    if (wall_dir.SquareMagnitude() < 1e-12) return 0.0;
+    sx::occt::ShapeIndexedDataMapOfList ancestors;
+    TopExp::MapShapesAndAncestors(body, TopAbs_VERTEX, TopAbs_EDGE, ancestors);
+    const int idx = ancestors.FindIndex(far);
+    if (idx < 1) return 0.0;
+    double best_align = 0.7;
+    TopoDS_Edge chosen;
+    bool found = false;
+    const sx::occt::ShapeList& edges = ancestors.FindFromIndex(idx);
+    for (const TopoDS_Shape& es : edges) {
+        if (es.ShapeType() != TopAbs_EDGE) continue;
+        const TopoDS_Edge edge = TopoDS::Edge(es);
+        if (edge.IsSame(blend_arc) || BRep_Tool::Degenerated(edge)) continue;
+        const gp_Vec t = tangent_at_vertex(edge, far);
+        if (t.SquareMagnitude() < 1e-12) continue;
+        const double align = std::abs(t.Dot(wall_dir));
+        if (align > best_align) {
+            best_align = align;
+            chosen = edge;
+            found = true;
+        }
+    }
+    if (!found) return 0.0;
+    double radius = 0.0;
+    if (corner_blend_arc(chosen, radius)) return radius;
+    const double len = linear_length(chosen);
+    if (len <= 1e-6) return 0.0;
+    TopoDS_Vertex v1, v2;
+    TopExp::Vertices(chosen, v1, v2);
+    const gp_Pnt farp = BRep_Tool::Pnt(far);
+    const TopoDS_Vertex other =
+        BRep_Tool::Pnt(v1).Distance(farp) >= BRep_Tool::Pnt(v2).Distance(farp) ? v1 : v2;
+    return len + std::max(blend_radius_at(body, other, len), corner_radius_at(body, other, chosen));
+}
+
 // Shortest edge that leaves `fillet_edge` across either adjacent face.
 // Half of that span is the largest radius that still fits when the same
-// wall is filleted from both ends (slot depth 2.5 → limit 1.25).
+// wall is filleted from both ends (slot depth 2.5 → limit 1.25). A floor
+// that already carries a fillet still reports the original wall: the
+// blend arc counts as its radius, not its arc length.
 double min_departure_length(const TopoDS_Shape& body, const TopoDS_Edge& fillet_edge) {
     sx::occt::ShapeIndexedDataMapOfList ancestors;
     TopExp::MapShapesAndAncestors(body, TopAbs_EDGE, TopAbs_FACE, ancestors);
@@ -101,14 +207,26 @@ double min_departure_length(const TopoDS_Shape& body, const TopoDS_Edge& fillet_
                 }
             }
             if (!shares) continue;
-            GProp_GProps props;
-            BRepGProp::LinearProperties(edge, props);
-            const double len = props.Mass();
+            const double len = linear_length(edge);
             if (len <= 1e-6) continue;
             double span = len;
             span += blend_radius_at(body, TopoDS::Vertex(verts(1)), len);
             if (verts.Extent() > 1)
                 span += blend_radius_at(body, TopoDS::Vertex(verts(verts.Extent())), len);
+            double blend_r = 0.0;
+            if (corner_blend_arc(edge, blend_r)) {
+                TopoDS_Vertex ev1, ev2;
+                TopExp::Vertices(edge, ev1, ev2);
+                const bool v1_on = fillet_verts.Contains(ev1);
+                const TopoDS_Vertex far_v = v1_on && !fillet_verts.Contains(ev2) ? ev2 : ev1;
+                const gp_Vec wall = tangent_at_vertex(edge, far_v);
+                const double walked = blend_r + continuation_past_blend(body, far_v, edge, wall);
+                // The arc-length sum double-counts a blend that already ate
+                // the wall (quarter-circle ~1.57 plus its own radius). The
+                // walked span is the original wall. Keep the shorter one
+                // only when the walk actually left the blend.
+                if (walked > blend_r + 1e-6) span = std::min(span, walked);
+            }
             best = std::min(best, span);
         }
     }
