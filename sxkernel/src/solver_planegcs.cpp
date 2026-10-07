@@ -422,6 +422,7 @@ struct Xlate {
 
 SolveResult PlaneGCSBackendImpl::solve(Sketch& sketch) {
     SolveResult result;
+    sketch.reconcile_arc_angles();
     Xlate x(sketch);
     x.build_geometry();
 

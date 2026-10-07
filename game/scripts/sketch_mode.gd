@@ -3224,8 +3224,14 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		# Power Trim stroke still opens the jaw once it leaves the line.
 		return true
 	var discard := 1.0 if side > 0.0 else -1.0
-	var keep_dir := normal * (-discard)
 	var cc: Vector2 = cap["center"]
+	# The mouth is the side of the cutter away from the head centre (the stub
+	# past the rim). Dragging Trim across that stub must cut the same opening
+	# as dragging the shaft side. A cutter through the centre keeps the click.
+	var center_side := (cc - a).dot(normal)
+	if absf(center_side) > 0.05:
+		discard = 1.0 if center_side > 0.0 else -1.0
+	var keep_dir := normal * (-discard)
 	var cr: float = float(cap["radius"])
 	var circ_id: String = str(cap["id"])
 	var to_delete: Array[String] = []
@@ -3473,6 +3479,17 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	return true
 
 
+## CCW sweep from start to end, in (0, 2π]. The profile builder uses that
+## sweep as the bulge, so the angles have to name the same points.
+func _jaw_ccw_angles(center: Vector2, p_start: Vector2, p_end: Vector2) -> Vector2:
+	var sa := (p_start - center).angle()
+	var ea := (p_end - center).angle()
+	var sweep := wrapf(ea - sa, 0.0, TAU)
+	if sweep < 1e-6:
+		sweep = TAU
+	return Vector2(sa, sa + sweep)
+
+
 ## Arc start/end and the wall/floor corners must be the same points. Angle
 ## reconstruction in float32 drifts past the 1e-6 wire tolerance.
 func _weld_jaw_profile(floor_id: String, walls: Array, arc_id: String) -> void:
@@ -3492,7 +3509,14 @@ func _weld_jaw_profile(floor_id: String, walls: Array, arc_id: String) -> void:
 	sketch.set_entity_geometry(str(walls[0]["id"]), {"start": h0, "end": s0})
 	sketch.set_entity_geometry(str(walls[1]["id"]), {"start": h1, "end": s1})
 	sketch.set_entity_geometry(floor_id, {"start": h0, "end": h1})
-	sketch.set_entity_geometry(arc_id, {"start": s0, "end": s1})
+	var center: Vector2 = ainfo["center"]
+	var ang := _jaw_ccw_angles(center, s0, s1)
+	sketch.set_entity_geometry(arc_id, {
+		"start": s0,
+		"end": s1,
+		"start_angle": ang.x,
+		"end_angle": ang.y,
+	})
 
 
 ## Delete a leftover full circle that is concentric with a jaw arc trim
