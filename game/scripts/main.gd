@@ -1635,6 +1635,8 @@ func _on_sketch_dim_submitted(value: float) -> void:
 	if sketch_mode != null and sketch_mode.active \
 			and sketch_mode.has_single_dof_preview():
 		if sketch_mode.commit_at_length(value):
+			if sketch_mode.tool == SketchMode.Tool.CIRCLE:
+				sketch_mode.circle_radius = maxf(value, 0.01)
 			var sentence := ""
 			if sketch_mode.has_method("last_commit_text"):
 				sentence = str(sketch_mode.last_commit_text())
