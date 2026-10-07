@@ -147,6 +147,9 @@ var _dim_edit_replace := false
 var _dim_edit_typed := ""
 var _dim_edit_seed_gen := 0
 var _dim_edit_seed_seen := 0
+## Popup windows receive the same key in gui_input and again in _input.
+## One write per key; the duplicate in the same idle frame is swallowed.
+var _dim_edit_guard_usec := 0
 ## Bumped on click and on typed text so a pending deferred select_all cannot
 ## re-select the first digit and let the second key replace it.
 var _dim_edit_select_gen := 0
@@ -732,6 +735,16 @@ func _dim_edit_owns_keys() -> bool:
 func _apply_dim_edit_char(ch: String) -> void:
 	if _dim_edit_line == null or ch == "":
 		return
+	# Popup focus delivers one key twice. The duplicate sees the post-write
+	# state; a later real key does not arrive in the same few milliseconds.
+	var here := "%s|%d|%s" % [ch, _dim_edit_typed.length(), str(_dim_edit_replace)]
+	var now := Time.get_ticks_usec()
+	if str(_dim_edit_line.get_meta("_sx_key_token", "")) == here \
+			and now - _dim_edit_guard_usec < 4000:
+		return
+	var after_len := 1 if (_dim_edit_replace or _dim_edit_typed == "") else _dim_edit_typed.length() + 1
+	_dim_edit_line.set_meta("_sx_key_token", "%s|%d|false" % [ch, after_len])
+	_dim_edit_guard_usec = now
 	if _dim_edit_replace or _dim_edit_typed == "":
 		_dim_edit_typed = ch
 	else:
@@ -742,6 +755,9 @@ func _apply_dim_edit_char(ch: String) -> void:
 	SxUi.write_typed_text(_dim_edit_line, _dim_edit_typed)
 	if not _dim_edit_line.has_focus():
 		_dim_edit_line.grab_focus()
+	# The popup LineEdit still inserts the key after this write ("4" → "44").
+	# Put the owned string back once that insert has landed.
+	_reassert_dim_edit_text.call_deferred(_dim_edit_typed)
 
 
 func _try_replace_dim_edit_key(event: InputEvent) -> bool:
@@ -749,9 +765,17 @@ func _try_replace_dim_edit_key(event: InputEvent) -> bool:
 			and not event.ctrl_pressed and not event.meta_pressed):
 		return false
 	var ke := event as InputEventKey
+	if ke.keycode == KEY_ENTER or ke.keycode == KEY_KP_ENTER:
+		# The popup is its own window, so Enter on the main viewport does not
+		# reach LineEdit.text_submitted. Commit the owned text from here.
+		var text := str(_dim_edit_line.text) if _dim_edit_line != null else ""
+		if _dim_edit_typed != "":
+			text = _dim_edit_typed
+		_apply_dim_edit(text)
+		return true
 	if not _is_length_type_key(ke):
-		# Backspace / Enter belong to the LineEdit. Drop the owned buffer so
-		# the next digit does not resurrect the pre-edit string.
+		# Backspace belongs to the LineEdit. Drop the owned buffer so the
+		# next digit does not resurrect the pre-edit string.
 		_dim_edit_typed = ""
 		return false
 	if _dim_edit_line == null:
@@ -760,6 +784,20 @@ func _try_replace_dim_edit_key(event: InputEvent) -> bool:
 		return false
 	_apply_dim_edit_char(_length_type_seed(ke))
 	return true
+
+
+func _reassert_dim_edit_text(expected: String) -> void:
+	if _dim_edit_line == null or not is_instance_valid(_dim_edit_line):
+		return
+	if _dim_edit_typed != expected:
+		return
+	if str(_dim_edit_line.text) == expected:
+		_dim_edit_line.caret_column = expected.length()
+		_dim_edit_line.deselect()
+		return
+	_dim_edit_line.text = expected
+	_dim_edit_line.caret_column = expected.length()
+	_dim_edit_line.deselect()
 
 
 func _focus_dim_edit_line_if_gen(gen: int) -> void:

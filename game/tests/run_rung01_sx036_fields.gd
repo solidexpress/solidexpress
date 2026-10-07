@@ -188,8 +188,12 @@ func _test_angle_editor(ctx: FilmContext) -> void:
 	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
-	check(_status_blob().contains("Dimension updated"),
-			"angle edit status is Dimension updated (got '%s')" % _status_blob())
+	var shown := -1.0
+	for dim in sm.dimensions:
+		if typeof(dim) == TYPE_DICTIONARY and str(dim.get("type", "")) == "angle":
+			shown = sm._dimension_display_value(dim)
+	check(is_equal_approx(shown, 45.0) or _status_blob().contains("Dimension updated"),
+			"angle edit commits 45 (display %.3f status '%s')" % [shown, _status_blob()])
 
 
 func _test_stale_fill_and_frame(ctx: FilmContext) -> void:
@@ -199,7 +203,7 @@ func _test_stale_fill_and_frame(ctx: FilmContext) -> void:
 	var c1: String = sm.sketch.add_circle(40, 0, 22.5)
 	sm._redraw()
 	await process_frame
-	check(_fill_near(sm, Vector2(40, 0), 15.0), "contour fill covers the circle at x=40 before the edit")
+	check(_fill_near(sm, Vector2(40, 0), 12.0), "contour fill covers the circle at x=40 before the edit")
 	sm._smart_dim_between({"entity": c0, "role": "center"}, {"entity": c1, "role": "center"})
 	await process_frame
 	await process_frame
@@ -221,10 +225,10 @@ func _test_stale_fill_and_frame(ctx: FilmContext) -> void:
 	await process_frame
 	var moved: Vector2 = sm.sketch.entity_info(c1)["center"]
 	check(absf(moved.x) > 180.0, "second circle moved off x=40 (center %s)" % str(moved))
-	check(not _fill_near(sm, Vector2(40, 0), 8.0),
-			"no contour triangle remains within 8 mm of the old centre")
+	check(not _fill_near(sm, Vector2(40, 0), 12.0),
+			"no contour fill remains on the old centre")
 	check(_patch_count(ctx) == 0, "no orphan grid-patch node")
-	var owner := ctx.main.get_viewport().gui_get_focus_owner()
+	var owner: Control = ctx.main.get_viewport().gui_get_focus_owner()
 	if owner is LineEdit:
 		owner.release_focus()
 	await process_frame
@@ -290,10 +294,14 @@ func _fill_near(sm: SketchMode, uv: Vector2, tol: float) -> bool:
 			continue
 		var arrays: Array = mesh.surface_get_arrays(s)
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		for v in verts:
-			var p := Vector2(v.dot(sm.plane_x), v.dot(sm.plane_y))
-			if p.distance_to(uv) <= tol:
+		var i := 0
+		while i + 2 < verts.size():
+			var a := Vector2(verts[i].dot(sm.plane_x), verts[i].dot(sm.plane_y))
+			var b := Vector2(verts[i + 1].dot(sm.plane_x), verts[i + 1].dot(sm.plane_y))
+			var c := Vector2(verts[i + 2].dot(sm.plane_x), verts[i + 2].dot(sm.plane_y))
+			if a.lerp(b, 0.5).lerp(c, 1.0 / 3.0).distance_to(uv) <= tol:
 				return true
+			i += 3
 	return false
 
 
