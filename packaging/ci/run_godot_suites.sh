@@ -33,6 +33,7 @@ echo "Running gated Godot suites (workflow, ui, sketch, print, rung01 e2e)"
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_wrench.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan6_cut.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan12_status.gd
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_n12_extrude.gd
 
 echo "Gated suites completed."
 

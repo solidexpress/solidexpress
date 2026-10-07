@@ -39,7 +39,7 @@ func _init() -> void:
 
 
 func test_blind_then_second_click() -> void:
-	print("-- A0/A1/A2/A3 blind extrude, second pixel, then AF 12")
+	print("-- A0/A1/A2/A3 blind extrude, second pixel, AF chips stay hidden")
 	var ctx := await _boot(ROOT_SIZE)
 	await _ground_rectangle(ctx)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
@@ -105,20 +105,31 @@ func test_blind_then_second_click() -> void:
 			"A2 the AF chip did not run (active='%s')" % str(doc.active_configuration()))
 	check(str(doc.last_graph_error()) == "",
 			"A2 last_graph_error empty (got '%s')" % str(doc.last_graph_error()))
+	# A plain body does not use jaw_af. The 10/12/14 chips stay hidden, and a
+	# click at the Extrude pixel after the 600 ms window still must not set it.
 	await create_timer(0.7).timeout
+	var jaw_box := ctx.main.interaction.find_child("StripJawAF", true, false) as Control
 	var jaw := ctx.main.interaction.find_child("StripJaw12", true, false) as Button
-	check(jaw != null and jaw.is_visible_in_tree(), "A3 StripJaw12 is visible after the window")
-	if jaw != null:
-		_status_log.clear()
-		await _x11_click_screen(jaw.get_viewport(), jaw.get_global_rect().get_center())
-		await process_frame
-		await process_frame
-		_capture_status(ctx.main)
-	var jaw_last := _last_status()
-	print("A3 last status='%s'" % jaw_last)
-	check(jaw_last == "jaw_af = 12 (config 12)",
-			"A3 status is jaw_af = 12 (config 12) (got '%s')" % jaw_last)
-	check(_var_is(doc, "jaw_af", 12.0), "A3 jaw_af == 12 in list_variables")
+	check(jaw_box == null or not jaw_box.is_visible_in_tree(),
+			"A3 AF chips hidden on a body that does not use jaw_af")
+	check(jaw == null or not jaw.is_visible_in_tree(),
+			"A3 StripJaw12 hidden without a jaw")
+	var log_late := _status_log.size()
+	await _x11_click_screen(vp, centre)
+	await process_frame
+	await process_frame
+	_capture_status(ctx.main)
+	var late := false
+	for i in range(log_late, _status_log.size()):
+		if _status_log[i] != last_before:
+			late = true
+	print("A3 log after late click=%s" % str(_status_log))
+	check(not late, "A3 late click at the Extrude pixel adds no status (log=%s)" % str(_status_log))
+	check(_extrude_count(doc) == ex1, "A3 extrude feature count still %d" % ex1)
+	check(doc.body_ids().size() == bodies1, "A3 body count still %d" % bodies1)
+	check(str(doc.active_configuration()) == "",
+			"A3 the AF chip did not run (active='%s')" % str(doc.active_configuration()))
+	check(_var_is(doc, "jaw_af", 10.0), "A3 jaw_af stays 10")
 	await _shutdown(ctx)
 
 
