@@ -198,7 +198,7 @@ The full sx-034 insertion order is kept as a reference only (not the GUI walk): 
 | A9 | #149 | After `F` in the sketch, click the pivot circle centre at the origin, **30 px right of the visible rail, without moving the view** | The click lands (`Circle r=5.0000 …`). `Trimmed open jaw`, then `Jaw is already open — nothing left to trim here`. No pan (rule 28) |
 | A9b | #150 | Cut, Up To Surface, opposite face | Closed jaw cut; status `Extrude Up To Surface 10.0000 mm` (the real depth, not the Blind spin) |
 | A11a | #151 | Press the rail **Slot**; type radius 5 Enter; click the first centre; **read the entry field label**; type 150 Enter | Slot highlighted; status `Slot — …`; stadium preview; after the first centre the field label reads `c-c` (not `Radius r`); typed 150 → `Slot c-c 150.0000 R5.0000 — typed`; cut blind 2.5 → `Extrude Blind 2.5000 mm` |
-| L3 | #152 | While Fillet is armed read **both** Radius fields and the status; type 10 in the panel then **Tab**; type 1.5 in the strip then Tab | Strip `R`, panel Radius and the status `Fillet r=` show the same number each time (never `0.0` / `1.0` against `10`). Enter uses the number on screen |
+| L3 | #152 | While Fillet is armed read **both** Radius fields and the status; type 10 in the panel then **Tab**; type 1.5 in the strip then Tab; type **10 in the strip** then Tab | Strip `R`, panel Radius and the status `Fillet r=` show the same number each time (never `0.0` / `1.0` against `10` — the leading `1` of `10` must be visible, not a scrolled suffix). Tab/Enter return keys to the viewport (not `AF 10`). Enter uses the number on screen |
 
 ### New rows
 

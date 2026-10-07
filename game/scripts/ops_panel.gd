@@ -237,7 +237,16 @@ func _build_body_ops() -> void:
 	radius_le.text_submitted.connect(func(_t: String) -> void:
 		_commit_panel_radius()
 		if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
-			try_commit_pending())
+			try_commit_pending()
+		_return_viewport_keys())
+	radius_le.gui_input.connect(func(event: InputEvent) -> void:
+		if not (event is InputEventKey) or not event.pressed or event.echo:
+			return
+		if (event as InputEventKey).keycode != KEY_TAB:
+			return
+		_commit_panel_radius()
+		_return_viewport_keys()
+		radius_le.accept_event())
 	var round_row := HBoxContainer.new()
 	_body_ops.add_child(round_row)
 	_op_button(round_row, "Fillet", _fillet_all, "fillet",
@@ -821,10 +830,8 @@ func _reveal_radius(fillet: bool) -> void:
 		await get_tree().process_frame
 		if is_instance_valid(_scroll) and is_instance_valid(_radius_spin):
 			_scroll.ensure_control_visible(_radius_spin)
-	var le := _radius_spin.get_line_edit()
-	if le != null:
-		le.grab_focus()
-		le.select_all()
+	# Do not grab_focus — that stole 3/4/6/8 after arming (sx-035 N2). The
+	# strip R and this field stay in sync; the walker clicks to type.
 
 
 ## Current fillet/chamfer size (shared with the strip Radius chip).
@@ -844,8 +851,7 @@ func set_dressup_radius(v: float) -> void:
 		# focus_exited would otherwise apply the stale LineEdit ("10") over v.
 		le.release_focus()
 	_radius_spin.value = clamped
-	if le != null:
-		le.text = str(_radius_spin.value)
+	SxUi.reveal_committed_spin(_radius_spin, clamped)
 	_radius_committing = false
 	_notify_dressup_radius(clamped)
 
@@ -870,8 +876,18 @@ func _commit_panel_radius() -> void:
 			_radius_spin.set_value_no_signal(v)
 		else:
 			_radius_spin.apply()
+	SxUi.reveal_committed_spin(_radius_spin, _radius_spin.value)
 	_notify_dressup_radius(_radius_spin.value)
 	_radius_committing = false
+
+
+func _return_viewport_keys() -> void:
+	if interaction != null and interaction.has_method("return_viewport_keys"):
+		interaction.return_viewport_keys()
+	elif _radius_spin != null:
+		var le := _radius_spin.get_line_edit()
+		if le != null and le.has_focus():
+			le.release_focus()
 
 
 func _notify_dressup_radius(v: float) -> void:
