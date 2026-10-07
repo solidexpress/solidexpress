@@ -57,6 +57,8 @@ func test_shaft_web() -> void:
 	var lines := 0
 	var tangents := 0
 	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
 		if str(sm.sketch.entity_info(id).get("type", "")) == "line":
 			lines += 1
 	for cid in sm.sketch.constraint_ids():
@@ -66,6 +68,8 @@ func test_shaft_web() -> void:
 	check(tangents == 2, "each shaft line is tangent to the small circle (got %d tangent constraints)" % tangents)
 	var ys: Array[float] = []
 	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
 		var info: Dictionary = sm.sketch.entity_info(id)
 		if str(info.get("type", "")) == "line":
 			ys.append(float((info["start"] as Vector2).y))
@@ -144,6 +148,8 @@ func test_mouse_select_then_chip() -> void:
 		await FilmUI.click_control(ctx, chip, FilmUICues.alert("Shaft Lines", "Shaft Lines"))
 	var lines := 0
 	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
 		if str(sm.sketch.entity_info(id).get("type", "")) == "line":
 			lines += 1
 	check(lines == 2, "the chip adds two lines after a mouse selection (got %d)" % lines)
