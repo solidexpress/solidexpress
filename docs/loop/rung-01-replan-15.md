@@ -1,6 +1,6 @@
 # Rung 1 replan 15 — leftovers after sx-035: Fillet stays armed on Enter, Contours highlight, the open-jaw chain re-verified, export name, Extrude click, strings
 
-Status: plan only. No product code in this change.
+Status: merged: WP1–WP7 on main at PENDING_SHA
 
 Baseline: `main` at `d534765cf39b6418e889a72248b3d528775629ad` (replan-14 WP1–WP8 plus the seven sx-035 spin-outs #163–#169, all merged) when this plan was written; line numbers in the WP docs are `d534765c` and are marked `~`, so search hunks by name. Launch every BUILD agent from the **full 40-character sha of `main` at launch time** (never a short sha). The sx-035 FULL GUI critique of linux-test-build `d408a8c7` scored **~6.5/10 and failed rung 1**. The condensed critique and the ten leftovers, with verbatim evidence, are in [`rung-01-leftovers-sx035.md`](rung-01-leftovers-sx035.md). Do not re-critique sha256 `bccb500819c39690218e6ebfdaed01fc79f00d6b4cc1de2c3b2965456dc8cfb8`. Replan 14 is [`rung-01-replan-14.md`](rung-01-replan-14.md).
 
