@@ -295,12 +295,16 @@ func _on_numeric_canvas_press(event: InputEvent) -> void:
 
 
 ## Esc with a first sketch anchor: drop it and print the A6 sentence once.
+## The draw tool stays armed so the next click can start again. The status
+## promise is recorded so the following Esc leaves the sketch instead of
+## stopping on the tool-drop rung when geometry is already there.
 func drop_pending_draw_esc() -> bool:
 	if sketch_mode == null or not sketch_mode.has_pending_draw_point():
 		return false
 	if measure_overlay != null and measure_overlay.has_anchor():
 		measure_overlay.clear_pair()
 	sketch_mode.cancel_pending_draw()
+	sketch_mode.promise_next_esc_exits()
 	status.emit("First point dropped — Esc again exits the sketch")
 	return true
 

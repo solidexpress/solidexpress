@@ -86,6 +86,11 @@ var _spline_pts: Array[Vector2] = []
 var slot_radius := 5.0
 ## Smart Dimension first pick when it is a centre/point rather than a curve.
 var _smart_dim_pending: Dictionary = {}
+## True after an Esc dropped a pending draw point and the status said the
+## next Esc leaves. A click or a tool change clears it. Without this, a
+## sketch that already holds geometry inserts "Tool dropped" between that
+## promise and the exit (Circle centre, then Esc, Esc).
+var _esc_exit_promised := false
 ## Feature id of the body being sketched on ("" when on the ground plane);
 ## used as the boolean target for cut/fuse finishes.
 var target_fid := ""
@@ -508,6 +513,7 @@ func _setup_plane(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZE
 func _activate_session() -> void:
 	active = true
 	tool = Tool.LINE
+	_esc_exit_promised = false
 	_tool_points.clear()
 	_drag.clear()
 	_smart_dim_pending.clear()
@@ -1220,6 +1226,9 @@ signal preview_distance_changed(distance: float)
 
 
 func set_tool(t: Tool) -> void:
+	# Re-arming a tool spends the "next Esc leaves" promise. The tool-drop
+	# rung applies again until a new pending point is dropped.
+	_esc_exit_promised = false
 	if not _drag.is_empty():
 		end_drag()
 	_jaw_armed = _arming_jaw and t == Tool.RECT
@@ -3846,6 +3855,9 @@ func _redraw_selected() -> void:
 func click(pos2: Vector2) -> void:
 	if not active:
 		return
+	# A new pick means the user kept drawing. The next Esc is the normal
+	# ladder again, not the exit promised by the previous point drop.
+	_esc_exit_promised = false
 	_point_from_length = false
 	_last_commit_text = ""
 	# A dimension label sits a few millimetres off the geometry. Snapping first
@@ -4290,12 +4302,24 @@ func has_pending_dim_pick() -> bool:
 	return tool == Tool.SMART_DIM and not _smart_dim_pending.is_empty()
 
 
+## The status line just told the user the next Esc leaves the sketch.
+func promise_next_esc_exits() -> void:
+	_esc_exit_promised = true
+
+
 ## Esc rungs between "drop a pending point" and "discard the sketch": clear a
 ## selection, then drop a draw tool back to Select once the sketch holds
 ## geometry. Returns the status to show, or "" when nothing is left to drop
 ## and Esc should discard the sketch.
+##
+## A pending-point drop already promised the next Esc leaves. Honour that
+## before the selection and tool rungs, so two presses exit even when the
+## draw tool is still armed and the sketch already has geometry.
 func esc_keep_sketch() -> String:
 	if not active or sketch == null:
+		return ""
+	if _esc_exit_promised:
+		_esc_exit_promised = false
 		return ""
 	if not selected.is_empty():
 		_set_selected([])
