@@ -12,6 +12,7 @@
 #include <BRepGProp.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
+#include <ElCLib.hxx>
 #include <ElSLib.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <GProp_GProps.hxx>
@@ -273,6 +274,12 @@ void note_faulty_contour(BRepFilletAPI_MakeFillet& mk, std::string* fault) {
 
 // Rebuilds mint new ids for edges that an upstream feature recreates. Match
 // the cue captured before regen (midpoint + direction) back onto the body.
+// A line edge that only grows or shrinks along itself (the neck verticals when
+// the base extrude distance changes) keeps the same axis: the old midpoint
+// slides along the line and is no longer within 0.5 mm of the new midpoint.
+// Those edges match by axis, not by midpoint. Every other curve still needs
+// the midpoint within 0.5 mm, so a floor edge that lifts with the top face
+// stays unresolved unless a face cue covers it.
 bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& out) {
     if (!cue.is_object() || !cue.contains("point") || !cue.contains("dir")) return false;
     const auto& pj = cue["point"];
@@ -288,16 +295,39 @@ bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& o
     bool found = false;
     for (int i = 1; i <= map.Extent(); ++i) {
         const TopoDS_Edge edge = TopoDS::Edge(map(i));
+        if (BRep_Tool::Degenerated(edge)) continue;
         BRepAdaptor_Curve curve(edge);
         gp_Pnt p;
         gp_Vec v;
         curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
         if (v.Magnitude() < 1e-12) continue;
         v.Normalize();
-        const double dist = p.Distance(want);
         const double align = std::abs(v.Dot(want_dir));
-        if (dist < 0.5 && align > 0.95 && dist < best) {
-            best = dist;
+        if (align <= 0.95) continue;
+
+        double score = 1e300;
+        if (curve.GetType() == GeomAbs_Line) {
+            const gp_Lin lin = curve.Line();
+            const double perp = lin.Distance(want);
+            // Same 0.5 mm gate, measured to the axis. A parallel edge that
+            // merely translated sideways still misses.
+            if (perp > 0.5) continue;
+            const double u = ElCLib::Parameter(lin, want);
+            const double lo = std::min(curve.FirstParameter(), curve.LastParameter());
+            const double hi = std::max(curve.FirstParameter(), curve.LastParameter());
+            const double gap = u < lo ? (lo - u) : (u > hi ? (u - hi) : 0.0);
+            // The cue was the midpoint of this edge before the edit. A
+            // thickness change keeps that point on the segment, or within a
+            // few millimetres of it when the edge shrinks past the old mid.
+            if (gap > 25.0) continue;
+            score = perp + gap * 1.0e-4;
+        } else {
+            const double dist = p.Distance(want);
+            if (dist >= 0.5) continue;
+            score = dist;
+        }
+        if (score < best) {
+            best = score;
             out = edge;
             found = true;
         }

@@ -204,6 +204,43 @@ TEST_CASE("a fillet whose edges are all lost warns by name and the edit stands",
     CHECK(plate.graph.last_failed_feature().is_null());
 }
 
+TEST_CASE("vertical edges of a two-edge fillet scale with thickness",
+          "[rung01][replan12][fillet][thick]") {
+    Plate plate;
+    json corner;
+    json other;
+    const Body* b = plate.doc.body(plate.body);
+    for (const auto& eid : b->subshape_ids.at(EntityKind::Edge)) {
+        TopoDS_Shape s = plate.doc.resolve(eid);
+        if (s.IsNull() || s.ShapeType() != TopAbs_EDGE) continue;
+        const gp_Pnt m = edge_midpoint(TopoDS::Edge(s));
+        // Outer vertical corners of the 40×30 plate. Slot walls sit at |x|=10.
+        if (std::abs(m.Z() - 5.0) > 0.2) continue;
+        if (std::abs(std::abs(m.X()) - 20.0) > 0.6) continue;
+        if (std::abs(std::abs(m.Y()) - 15.0) > 0.6) continue;
+        if (m.X() > 0.0 && m.Y() > 0.0) corner = eid.str();
+        else if (other.is_null()) other = eid.str();
+    }
+    REQUIRE(corner.is_string());
+    REQUIRE(other.is_string());
+    json two = json::array({corner, other});
+    plate.add_fillet(two, 1.0);
+    REQUIRE(plate.graph.warnings().empty());
+
+    // Midpoints move 2 mm in Z. The axes stay put, so both edges re-resolve.
+    REQUIRE(plate.set_thickness(14.0));
+    INFO(plate.err);
+    CHECK(plate.graph.warnings().empty());
+    CHECK_FALSE(point_inside(plate.shape(), gp_Pnt(19.95, 14.95, 7.0)));
+    CHECK(point_inside(plate.shape(), gp_Pnt(18.5, 13.5, 7.0)));
+
+    // Shorter than the original midpoint (z=5): the cue sits just past the
+    // new top and still names the same corner.
+    REQUIRE(plate.set_thickness(4.0));
+    CHECK(plate.graph.warnings().empty());
+    CHECK_FALSE(point_inside(plate.shape(), gp_Pnt(19.95, 14.95, 2.0)));
+}
+
 TEST_CASE("a fillet that loses some edges still builds and warns",
           "[rung01][replan12][fillet]") {
     Plate plate;
