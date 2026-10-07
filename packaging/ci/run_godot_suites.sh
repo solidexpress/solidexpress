@@ -40,6 +40,9 @@ echo "Running gated Godot suites (workflow, ui, sketch, sketch tools, print, run
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan12_status.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_n12_extrude.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_sx036_rail.gd
+# Outer-stub jaw trim: the GUI drag past the rim must keep the Ø45 head,
+# export a closed 3MF, and pass check_rung01 wrench (face fillets included).
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_jawstub.gd
 
 echo "Gated suites completed."
 

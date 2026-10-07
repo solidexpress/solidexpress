@@ -142,6 +142,13 @@ public:
     // Returns false if any expression fails.
     bool resolve_expressions(const std::map<std::string, double>& env, std::string* err = nullptr);
 
+    // Arc rules are 2π-periodic. A weld that rewrites start/end and leaves
+    // start_angle/end_angle on another branch makes the profile take the
+    // complementary bulge. When the stored angles disagree with the
+    // endpoints, snap them to the CCW sweep of those endpoints. Angles that
+    // already match (including a consistent major arc) are left alone.
+    void reconcile_arc_angles();
+
     // --- parameter access ---
     double param(size_t index) const { return params_[index]; }
     double& param_mut(size_t index) { return params_[index]; }

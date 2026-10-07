@@ -47,6 +47,46 @@
 
 namespace sx {
 
+namespace {
+
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kTwoPi = 2.0 * kPi;
+// Far enough to catch a 2π branch swap, tight enough to keep float noise.
+constexpr double kArcAngleTol = 1e-2;
+
+double wrap_signed_angle(double d) {
+    d = std::fmod(d, kTwoPi);
+    if (d > kPi) d -= kTwoPi;
+    if (d <= -kPi) d += kTwoPi;
+    return d;
+}
+
+double ccw_sweep(double from, double to) {
+    double s = to - from;
+    while (s <= 0.0) s += kTwoPi;
+    while (s > kTwoPi) s -= kTwoPi;
+    return s;
+}
+
+// True when start_angle/end_angle do not name the stored endpoints. Writes
+// the CCW sweep of those endpoints (end = start + sweep, sweep in (0, 2π]).
+bool arc_angles_from_endpoints(double cx, double cy, double sa, double ea,
+                               double sx, double sy, double ex, double ey,
+                               double& sa_out, double& ea_out) {
+    const double sa_pt = std::atan2(sy - cy, sx - cx);
+    const double ea_pt = std::atan2(ey - cy, ex - cx);
+    if (std::abs(wrap_signed_angle(sa - sa_pt)) <= kArcAngleTol &&
+        std::abs(wrap_signed_angle(ea - ea_pt)) <= kArcAngleTol)
+        return false;
+    double sweep = ccw_sweep(sa_pt, ea_pt);
+    if (sweep < 1e-9) sweep = kTwoPi;
+    sa_out = sa_pt;
+    ea_out = sa_pt + sweep;
+    return true;
+}
+
+}  // namespace
+
 const char* to_string(ConstraintType t) {
     switch (t) {
         case ConstraintType::Coincident: return "coincident";
@@ -147,6 +187,25 @@ EntityId Sketch::add_arc(double cx, double cy, double r, double start_angle,
     entities_.push_back(e);
     ++revision_;
     return e.id;
+}
+
+void Sketch::reconcile_arc_angles() {
+    bool changed = false;
+    for (const auto& e : entities_) {
+        if (e.type != SketchEntityType::Arc || e.params.size() < 9) continue;
+        const double cx = param(e.params[0]);
+        const double cy = param(e.params[1]);
+        const double sa = param(e.params[3]);
+        const double ea = param(e.params[4]);
+        double sa_fix = sa, ea_fix = ea;
+        if (!arc_angles_from_endpoints(cx, cy, sa, ea, param(e.params[5]), param(e.params[6]),
+                                       param(e.params[7]), param(e.params[8]), sa_fix, ea_fix))
+            continue;
+        param_mut(e.params[3]) = sa_fix;
+        param_mut(e.params[4]) = ea_fix;
+        changed = true;
+    }
+    if (changed) ++revision_;
 }
 
 EntityId Sketch::add_spline(const std::vector<std::array<double, 2>>& fit_points) {
@@ -640,8 +699,15 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
             segs.push_back({a, b, BRepBuilderAPI_MakeEdge(a, b).Edge()});
         } else if (e.type == SketchEntityType::Arc) {
             gp_Pnt a = to3d(p(e, 5), p(e, 6)), b = to3d(p(e, 7), p(e, 8));
-            double mid_angle = (p(e, 3) + p(e, 4)) / 2.0;
-            if (p(e, 4) < p(e, 3)) mid_angle += 3.14159265358979323846;
+            double sa = p(e, 3), ea = p(e, 4);
+            double sa_fix = sa, ea_fix = ea;
+            if (arc_angles_from_endpoints(p(e, 0), p(e, 1), sa, ea, p(e, 5), p(e, 6),
+                                          p(e, 7), p(e, 8), sa_fix, ea_fix)) {
+                sa = sa_fix;
+                ea = ea_fix;
+            }
+            double mid_angle = (sa + ea) / 2.0;
+            if (ea < sa) mid_angle += kPi;
             gp_Pnt m = to3d(p(e, 0) + p(e, 2) * std::cos(mid_angle),
                             p(e, 1) + p(e, 2) * std::sin(mid_angle));
             GC_MakeArcOfCircle mk(a, m, b);
