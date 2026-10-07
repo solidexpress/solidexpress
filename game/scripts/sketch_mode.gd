@@ -45,15 +45,17 @@ var _auto_close := true
 var polygon_sides := 6:
 	set(v):
 		polygon_sides = clampi(v, 3, 24)
-## Tool variants: rect=corner|center|three_point|parallelogram;
+## Tool variants: rect=corner|center|three_point|center_three_point|parallelogram
+## (SolidWorks rectangle flyout; Corner is the default and the first chip);
 ## circle=center|perimeter|three_point; arc=center|tangent|three_point;
 ## pattern=linear|circular. Polygon uses tool_variant too; the last polygon
 ## choice is kept in `_polygon_variant` so Circle/Rect can reset their own
 ## names and Polygon still comes back as across-flats (or vertex, if chosen).
 var tool_variant := "corner"
 var _polygon_variant := "across_flats"
-## True while the rail Jaw button is the armed rect tool. Limits chips to the
-## Center Three Point variant the checklist names; Rect itself still shows all five.
+## True while the rail Jaw button is the armed rect tool. Jaw has one gesture
+## and shows no variant chips. Rect, when Jaw is not armed, shows all five in
+## SolidWorks flyout order (Corner first).
 var _jaw_armed := false
 var _arming_jaw := false
 ## Construction +X used only as an angle datum. Jaw trim must not pick these
@@ -1738,6 +1740,8 @@ func variants_for_tool(t: Tool = tool) -> Array:
 		Tool.RECT:
 			if _jaw_armed:
 				return []
+			# SolidWorks rectangle flyout: Corner, Center, 3 Point Corner,
+			# 3 Point Center, Parallelogram. Corner is the default (first).
 			return ["corner", "center", "three_point", "center_three_point", "parallelogram"]
 		Tool.CIRCLE:
 			return ["center", "perimeter", "three_point"]

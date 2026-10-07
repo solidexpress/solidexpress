@@ -8,6 +8,10 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const CIRCLE_CENTRE_SET := "Circle — centre set, click the rim or type a radius"
 const CIRCLE_ARM := "Circle — click the centre, then the rim (or type a radius)"
+## SolidWorks rectangle flyout, left to right. Corner is the default.
+const RECT_CHIP_ORDER: Array[String] = [
+	"Corner", "Center", "Three Point", "Center Three Point", "Parallelogram",
+]
 
 var failures := 0
 var checks := 0
@@ -138,6 +142,18 @@ func _visible_chip_labels(main) -> Array[String]:
 	return out
 
 
+func _pressed_chip_labels(main) -> Array[String]:
+	var out: Array[String] = []
+	var bar := _variant_bar(main)
+	if bar == null or not bar.visible:
+		return out
+	for c in bar.get_children():
+		var b := c as Button
+		if b != null and b.is_visible_in_tree() and b.button_pressed:
+			out.append(b.text)
+	return out
+
+
 func _find_visible_chip(main, text: String) -> Button:
 	var bar := _variant_bar(main)
 	if bar == null or not bar.visible:
@@ -245,9 +261,10 @@ func _run() -> void:
 	check(jaw_btn != null and not jaw_btn.button_pressed, "row 1: JawTool is not pressed")
 	var rect_chips := _visible_chip_labels(main)
 	print("  ROW 1 chip labels: %s" % str(rect_chips))
-	check(rect_chips.size() == 5, "row 1: five Rect chips (got %s)" % str(rect_chips))
-	check(rect_chips.has("Corner") and rect_chips.has("Center Three Point"),
-			"row 1: Rect chips include Corner and Center Three Point")
+	check(rect_chips == RECT_CHIP_ORDER,
+			"row 1: Rect chips are Corner, Center, Three Point, Center Three Point, Parallelogram (got %s)" % str(rect_chips))
+	check(_pressed_chip_labels(main) == ["Corner"],
+			"row 1: Corner is the highlighted chip (got %s)" % str(_pressed_chip_labels(main)))
 
 	# 2. Press Jaw: Jaw lit, Rect not, variant center_three_point, JAW_HINT, no chips.
 	jaw_btn = await _click_rail_label(main, "Jaw")
@@ -282,7 +299,10 @@ func _run() -> void:
 	check(not _jaw_armed(sm), "row 4: is_jaw_armed() is false")
 	var chips_back := _visible_chip_labels(main)
 	print("  ROW 4 chip labels: %s" % str(chips_back))
-	check(chips_back.size() == 5, "row 4: five Rect chips are back (got %s)" % str(chips_back))
+	check(chips_back == RECT_CHIP_ORDER,
+			"row 4: after Jaw then Rect, chips are Corner, Center, Three Point, Center Three Point, Parallelogram (got %s)" % str(chips_back))
+	check(_pressed_chip_labels(main) == ["Corner"],
+			"row 4: Corner is highlighted after Rect (got %s)" % str(_pressed_chip_labels(main)))
 	var ctp := await _click_chip(main, "Center Three Point")
 	await process_frame
 	check(ctp != null, "row 4: Center Three Point chip is clickable")
