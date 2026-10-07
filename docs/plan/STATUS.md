@@ -4,7 +4,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 ## Rung 1 replan 14 — sx-034 leftovers
 - Seven real-input suites on main: `run_rung01_replan14_{savelabels,focuskeys,ctxbar,undo,camera,railstatus,polish}.gd`. WP4's only C++ is `SxSketch.snapshot()` / `restore()` (JSON through the existing sketch codec).
-- The wrench walk gained `B14.1`–`B14.13` (re-verify A8 / A9 / A9b / A11a / L3 plus one real-input row per product WP, leftover 16 as the timeline-index body-name rule, leftover 18 as the DIAG note). Final count is whatever `run_rung01_wrench.gd` prints.
+- The wrench walk gained `B14.1`–`B14.13` (re-verify A8 / A9 / A9b / A11a / L3 plus one real-input row per product WP, leftover 16 as the timeline-index body-name rule, leftover 18 as the DIAG note). **646 checks, 0 failures**; nut 7/7, wrench 28/28, thick 7/7.
 - `check_rung01.py wrench` at T = 14 prints a `DIAG:` header; the four by-design failures are `bbox Z (thickness)`, `grip slot present at y=0,z=8.75`, `1mm fillet top outer edge`, and `1mm fillet on jaw top edge`. `thick` is the T-aware pass. Leftover 16 is closed by design (sx-035 rule 37).
 - sx-035 rules 37–40 (body names are timeline indices; read labels not pictures; after a commit the viewport owns the keys; undo reads the status) live in `docs/loop/rung-01-replan-14.md`. Gate: the walk and `tools/lint_rung01_e2e.py`.
 
