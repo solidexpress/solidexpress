@@ -22,11 +22,17 @@ fi
 echo "Warming import cache..."
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --import > /dev/null 2>&1 || true
 
-echo "Running gated Godot suites (workflow, ui, sketch, print)"
+echo "Running gated Godot suites (workflow, ui, sketch, print, rung01 e2e)"
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_workflow_tests.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_ui_tests.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_sketch_tests.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_print_tests.gd
+# Headless wrench walk plus the two suites that regressed with it.
+# Measured on lavapipe: the three together finish in under a minute
+# (wrench ~35s, cut ~3s, status ~1s), well under the 5 minute CI budget.
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_wrench.gd
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan6_cut.gd
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan12_status.gd
 
 echo "Gated suites completed."
 
