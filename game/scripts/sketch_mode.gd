@@ -1632,7 +1632,15 @@ func slot_cc_status(cc: float, typed: bool = false) -> String:
 func slot_cc_status_for_dim(index: int) -> String:
 	if sketch == null or index < 0 or index >= dimensions.size():
 		return ""
-	var dim: Dictionary = dimensions[index]
+	return slot_cc_status_for_record(dimensions[index])
+
+
+## Same readback from a dimension record captured before a label rebuild.
+## #154 collapses duplicate label texts and reindexes `dimensions` inside
+## set_dimension_value, so the index the editor held can point at another dim.
+func slot_cc_status_for_record(dim: Dictionary) -> String:
+	if sketch == null or dim.is_empty():
+		return ""
 	if str(dim.get("type", "")) != "distance":
 		return ""
 	var ids: Array = dim.get("ids", [])
@@ -4228,8 +4236,15 @@ func click(pos2: Vector2) -> void:
 	# glyph must open the editor instead of starting a new gesture. Draw tools
 	# use the on-screen text rect only — the 22 px / 6 mm halo would steal a
 	# Jaw click 2 near a typed-circle radius label.
-	var dhit_raw := dimension_hit(pos2, tool != Tool.SELECT and tool != Tool.SMART_DIM)
-	if dhit_raw >= 0:
+	# Line and Centerline still place the point: the jaw-width "20" label sits
+	# on the 45° ray, and #164's rect hit ate the centreline's second click.
+	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE
+	var dhit_raw := -1
+	if not place_point:
+		dhit_raw = dimension_hit(pos2, tool != Tool.SELECT and tool != Tool.SMART_DIM)
+	# A stacked Ø45 radius label walks onto the top rim. Select still picks
+	# that circle; the editor opens only when the click is not on its rim.
+	if dhit_raw >= 0 and not _radius_label_on_own_rim(dhit_raw, pos2):
 		_emit_dimension_edit(dhit_raw)
 		return
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
@@ -6309,6 +6324,32 @@ func _rebuild_dimension_labels() -> void:
 		_dimension_labels.add_child(label)
 
 
+## True for a radius/diameter on a full circle (not a jaw arc).
+func _full_circle_dimension(dim: Dictionary) -> bool:
+	if sketch == null:
+		return false
+	var ids: Array = dim.get("ids", [])
+	if ids.size() != 1:
+		return false
+	if str(sketch.entity_info(str(ids[0])).get("type", "")) != "circle":
+		return false
+	var t := str(dim.get("type", ""))
+	return t == "radius" or t == "diameter"
+
+
+## Select click on a circle's own radius label that has been stacked onto the rim.
+func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
+	if tool != Tool.SELECT or index < 0 or index >= dimensions.size():
+		return false
+	var dim: Dictionary = dimensions[index]
+	if not _full_circle_dimension(dim):
+		return false
+	var ids: Array = dim.get("ids", [])
+	if ids.is_empty():
+		return false
+	return _nearest_entity_at(pos2) == str(ids[0])
+
+
 ## Nudge labels (never glyphs) along the label_stack axis until no label
 ## rect intersects another label or a constraint glyph. Deterministic by
 ## dimension index so a rebuild yields the same layout.
@@ -6324,6 +6365,13 @@ func _resolve_label_overlaps() -> void:
 	for i in range(dimensions.size()):
 		var dim: Dictionary = dimensions[i]
 		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+			continue
+		# Full-circle radius text is anchored just below the rim. Stacking it
+		# upward (#164, 28 px per step) walks the Ø45 label onto the top rim
+		# that Shaft Lines clicks. Leave it on the anchor.
+		if _full_circle_dimension(dim):
+			dim["label_stack"] = 0
+			dimensions[i] = dim
 			continue
 		var stack := int(dim.get("label_stack", 0))
 		var guard := 0

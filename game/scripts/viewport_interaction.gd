@@ -776,6 +776,11 @@ func _apply_dim_edit(text: String) -> void:
 		status.emit("Dimension must be a positive number")
 		return
 	var dim_index := _dim_edit_index
+	# Capture the record first. set_dimension_value rebuilds labels (#154)
+	# and the index may no longer be this slot's centre-to-centre dim.
+	var edited: Dictionary = {}
+	if dim_index < sketch_mode.dimensions.size():
+		edited = (sketch_mode.dimensions[dim_index] as Dictionary).duplicate(true)
 	var result: String = sketch_mode.set_dimension_value(dim_index, v)
 	_dim_edit_index = -1
 	if result == "failed":
@@ -784,6 +789,9 @@ func _apply_dim_edit(text: String) -> void:
 		var slot_text := ""
 		if sketch_mode.has_method("slot_cc_status_for_dim"):
 			slot_text = str(sketch_mode.slot_cc_status_for_dim(dim_index))
+		if slot_text == "" and sketch_mode.has_method("slot_cc_status_for_record"):
+			edited["value"] = v
+			slot_text = str(sketch_mode.slot_cc_status_for_record(edited))
 		if slot_text != "":
 			status.emit(slot_text)
 		else:
