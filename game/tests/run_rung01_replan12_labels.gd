@@ -66,27 +66,13 @@ func _dim_index(sm: SketchMode, type: String) -> int:
 	return -1
 
 
-## Screen px per font px of a fixed_size Label3D with pixel_size 0.004.
-func _k(cam: Camera3D) -> float:
-	var k := 0.004 * float(cam.get_viewport().get_visible_rect().size.y) * 0.5
-	if cam.projection == Camera3D.PROJECTION_PERSPECTIVE:
-		k /= tan(deg_to_rad(cam.fov) * 0.5)
-	return k
-
-
-## Screen rect of the drawn text, from the numbers the plan fixes (font 18, stack 28).
-func _text_rect(ctx: FilmContext, sm: SketchMode, i: int) -> Rect2:
-	var dim: Dictionary = sm.dimensions[i]
-	var anchor: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(dim["label_pos"] as Vector2))
-	var k := _k(ctx.main.camera)
-	var font: Font = ThemeDB.fallback_font
-	var text := str(dim.get("label_text", ""))
-	var size := Vector2(font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x,
-			font.get_height(18)) * k
-	# Label3D.offset is screen pixels when fixed_size is set — do not scale
-	# the stack by k (same as SketchMode._dimension_label_rect).
-	var centre := anchor - Vector2(0.0, float(dim.get("label_stack", 0)) * 28.0)
-	return Rect2(centre - size * 0.5, size)
+## Screen rect of the drawn text. Uses the same rect the picker uses, which
+## tracks Label3D.offset × the fixed-size scale (stack is not raw screen px).
+func _text_rect(_ctx: FilmContext, sm: SketchMode, i: int) -> Rect2:
+	for entry in sm.dimension_label_screen_rects():
+		if int(entry.get("index", -1)) == i:
+			return entry["rect"]
+	return Rect2()
 
 
 func _push_click(pos: Vector2) -> void:
