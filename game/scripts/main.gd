@@ -3057,6 +3057,27 @@ func _resolve_export_3mf_path(typed: String, dialog_path: String) -> String:
 	return out
 
 
+## The exported file always ends in .3mf: unchanged if it already does
+## (case-insensitive); a partly typed "3mf" extension (".3", ".3m") is
+## completed; anything else gets ".3mf" appended (the Save As rule).
+func _with_3mf_extension(path: String) -> String:
+	var p := path.strip_edges()
+	if p == "":
+		return p
+	var lower := p.to_lower()
+	if lower.ends_with(".3mf"):
+		return p
+	var dot := p.rfind(".")
+	var slash := maxi(p.rfind("/"), p.rfind("\\"))
+	if dot > slash and dot < p.length() - 1:
+		var ext := lower.substr(dot + 1)
+		if "3mf".begins_with(ext):
+			return p.substr(0, dot) + ".3mf"
+	if p.ends_with("."):
+		return p + "3mf"
+	return p + ".3mf"
+
+
 func _glued_absolute_export_path(typed: String) -> String:
 	var marker := ".3mf"
 	var idx := typed.findn(marker)
@@ -3526,6 +3547,7 @@ func _on_file_selected(path: String) -> void:
 			else:
 				_export_3mf_path_dir = ""
 				path = _resolve_export_3mf_path(typed, path)
+			path = _with_3mf_extension(path)
 			if file_dialog != null and path.is_absolute_path():
 				file_dialog.current_dir = path.get_base_dir()
 				file_dialog.current_file = path.get_file()
