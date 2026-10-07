@@ -130,6 +130,10 @@ const _LEFT_STACK_LIMIT := 470.0
 ## Sketch-rail rows at 1280×800 (sx-036 A1). ~30 px keeps Exit Sketch through
 ## Auto Dim inside the rail without scrolling; labels stay on the buttons.
 const _SKETCH_RAIL_ROW_H := 30.0
+## Armed rail tool: this many pixels of UIIcons.ACCENT on the left edge.
+## The fill is a darker accent so the bar is not the same colour as the body.
+const _RAIL_ACCENT_BAR_PX := 3
+const _RAIL_ARMED_FILL_MIX := 0.32
 ## Status bar is offset_top = -30. Leave that strip clear of the sketch rail.
 const _STATUS_BAR_H := 30.0
 ## Keep the labelled rail at least as wide as the 36 px glyph column so the
@@ -1600,6 +1604,7 @@ func _sync_sketch_rail_highlight(tool: int) -> void:
 		jaw = sketch_toolbar.find_child("JawTool", true, false) as Button
 	if jaw != null and is_instance_valid(jaw) and jaw.button_pressed != jaw_armed:
 		jaw.set_pressed_no_signal(jaw_armed)
+	_sync_rail_accent_bars()
 
 
 func _reset_sketch_rail_scroll() -> void:
@@ -2101,16 +2106,29 @@ func _compact_sketch_rail_button(b: Button) -> void:
 		# expand and keep a 1 px content pad. custom_minimum_size then holds 30.
 		if dup is StyleBoxFlat:
 			var flat := dup as StyleBoxFlat
-			flat.set_expand_margin(SIDE_TOP, 0.0)
-			flat.set_expand_margin(SIDE_BOTTOM, 0.0)
+			# Expand draws outside the control. The rail ScrollContainer clips
+			# that, which is how a left border disappears. Keep every edge
+			# inside the button rect.
+			flat.set_expand_margin_all(0.0)
 			flat.set_border_width(SIDE_TOP, 0)
 			flat.set_border_width(SIDE_BOTTOM, 0)
-			# Armed tool: accent fill plus a left bar the hover style lacks.
+			# The focus ring is drawn after the pressed style. A 2 px left
+			# border there would cover the accent bar, so the ring stays empty.
+			if state_name == "focus":
+				flat.set_border_width_all(0)
+			# Armed tool: darker accent fill plus a pure-accent left bar the
+			# hover style lacks. Same colour for both reads as a flat fill.
 			if state_name == "pressed" or state_name == "hover_pressed":
 				var accent := Color.html(UIIcons.ACCENT)
-				flat.bg_color = accent
+				var fill := accent.lerp(Color(0.08, 0.11, 0.16, 1.0), _RAIL_ARMED_FILL_MIX)
+				fill.a = 1.0
+				flat.bg_color = fill
 				flat.border_color = accent
-				flat.set_border_width(SIDE_LEFT, 3)
+				flat.border_blend = false
+				flat.anti_aliasing = false
+				flat.set_corner_radius_all(0)
+				flat.set_border_width(SIDE_LEFT, _RAIL_ACCENT_BAR_PX)
+				flat.set_border_width(SIDE_RIGHT, 0)
 		dup.set_content_margin(SIDE_TOP, 1.0)
 		dup.set_content_margin(SIDE_BOTTOM, 1.0)
 		b.add_theme_stylebox_override(state_name, dup)
@@ -2119,8 +2137,59 @@ func _compact_sketch_rail_button(b: Button) -> void:
 	var armed_box := b.get_theme_stylebox("pressed")
 	if armed_box is StyleBoxFlat:
 		var hover_armed := armed_box.duplicate() as StyleBoxFlat
-		hover_armed.set_border_width(SIDE_LEFT, 3)
+		hover_armed.set_border_width(SIDE_LEFT, _RAIL_ACCENT_BAR_PX)
+		hover_armed.border_color = Color.html(UIIcons.ACCENT)
 		b.add_theme_stylebox_override("hover_pressed", hover_armed)
+	# Button draws the focus ring after the stylebox. A child rect is painted
+	# later, so the 3 px bar stays on top of the fill and of that ring, and
+	# it stays inside the clip rect (no expand margin).
+	_ensure_rail_accent_bar(b)
+
+
+func _ensure_rail_accent_bar(b: Button) -> void:
+	var bar := b.get_node_or_null("RailAccentBar") as ColorRect
+	if bar == null:
+		bar = ColorRect.new()
+		bar.name = "RailAccentBar"
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.anchor_left = 0.0
+		bar.anchor_top = 0.0
+		bar.anchor_right = 0.0
+		bar.anchor_bottom = 1.0
+		bar.offset_left = 0.0
+		bar.offset_top = 0.0
+		bar.offset_right = float(_RAIL_ACCENT_BAR_PX)
+		bar.offset_bottom = 0.0
+		bar.grow_horizontal = Control.GROW_DIRECTION_END
+		bar.grow_vertical = Control.GROW_DIRECTION_BOTH
+		bar.z_index = 1
+		b.clip_contents = false
+		b.add_child(bar)
+		if not b.toggled.is_connected(_on_rail_accent_toggled):
+			b.toggled.connect(_on_rail_accent_toggled.bind(b))
+	bar.color = Color.html(UIIcons.ACCENT)
+	bar.visible = b.button_pressed
+
+
+func _on_rail_accent_toggled(_on: bool, b: Button) -> void:
+	var bar := b.get_node_or_null("RailAccentBar") as ColorRect
+	if bar != null:
+		bar.visible = b.button_pressed
+		bar.color = Color.html(UIIcons.ACCENT)
+
+
+func _sync_rail_accent_bars() -> void:
+	if sketch_toolbar == null:
+		return
+	for c in sketch_toolbar.find_children("*", "Button", true, false):
+		var b := c as Button
+		if b == null:
+			continue
+		var bar := b.get_node_or_null("RailAccentBar") as ColorRect
+		if bar == null:
+			continue
+		bar.color = Color.html(UIIcons.ACCENT)
+		bar.visible = b.button_pressed
 
 
 ## Size the sketch rail to the open column: top of the left stack down to the

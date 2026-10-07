@@ -230,10 +230,23 @@ func _test_c3_rail() -> void:
 		check(false, "C3 pressed and hover styles are StyleBoxFlat")
 	check(_has_accent_bar(hover_pressed), "C3 hover_pressed has the 3 px bar")
 	check(not _has_accent_bar(hover), "C3 hover style lacks the accent bar")
+	await process_frame
+	await process_frame
+	await _assert_accent_columns(jaw, rect, "C3 jaw armed")
 	await _click_control(rect)
+	await process_frame
 	await process_frame
 	print("  C3 rect pressed=%s jaw pressed=%s" % [str(rect.button_pressed), str(jaw.button_pressed)])
 	check(rect.button_pressed and not jaw.button_pressed, "C3 Rect armed shows Rect lit and Jaw not")
+	var circle: Button = main.find_child("ToolCircle", true, false)
+	check(circle != null, "C3 ToolCircle exists")
+	if circle != null:
+		await _click_control(circle)
+		await process_frame
+		await process_frame
+		check(circle.button_pressed and not rect.button_pressed and not jaw.button_pressed,
+				"C3 Circle armed shows only Circle lit")
+		await _assert_accent_columns(circle, jaw, "C3 circle armed")
 	await _shutdown(ctx)
 
 
@@ -545,7 +558,139 @@ func _body_screen_center(ctx: FilmContext, body: String) -> Vector2:
 
 
 func _has_accent_bar(box: StyleBox) -> bool:
-	return box is StyleBoxFlat and (box as StyleBoxFlat).get_border_width(SIDE_LEFT) == 3
+	if not (box is StyleBoxFlat):
+		return false
+	var flat := box as StyleBoxFlat
+	return flat.get_border_width(SIDE_LEFT) == 3 and _is_accent(flat.border_color)
+
+
+func _accent() -> Color:
+	return Color.html(UIIcons.ACCENT)
+
+
+func _is_accent(c: Color) -> bool:
+	var a := _accent()
+	return absf(c.r - a.r) <= 0.05 and absf(c.g - a.g) <= 0.05 \
+			and absf(c.b - a.b) <= 0.05 and c.a >= 0.85
+
+
+## Colour Godot paints in column x of a sharp, non-blended StyleBoxFlat:
+## the left border, then the fill. A visible RailAccentBar child is drawn
+## after the style, so it covers those columns.
+func _painted_column(b: Button, state: String, x: int) -> Color:
+	var box := b.get_theme_stylebox(state) as StyleBoxFlat
+	var col := Color(0, 0, 0, 1)
+	if box != null:
+		col = box.border_color if x < box.get_border_width(SIDE_LEFT) else box.bg_color
+	var bar := b.get_node_or_null("RailAccentBar") as ColorRect
+	if bar != null and bar.visible and float(x) < maxf(bar.size.x, bar.offset_right - bar.offset_left):
+		col = bar.color
+	return col
+
+
+func _assert_accent_columns(armed: Button, other: Button, tag: String) -> void:
+	await process_frame
+	var scroll: ScrollContainer = null
+	var walk: Node = armed
+	while walk != null:
+		if walk is ScrollContainer:
+			scroll = walk as ScrollContainer
+			break
+		walk = walk.get_parent()
+	var bar := armed.get_node_or_null("RailAccentBar") as ColorRect
+	check(bar != null and bar.visible, "%s accent bar is visible" % tag)
+	if bar != null:
+		var width := bar.size.x if bar.size.x > 0.5 else bar.offset_right - bar.offset_left
+		print("  %s bar rect=%s color=%s width=%.2f" % [tag, str(bar.get_global_rect()), str(bar.color), width])
+		check(absf(width - 3.0) <= 0.5, "%s accent bar is 3 px wide (got %.2f)" % [tag, width])
+		check(_is_accent(bar.color), "%s accent bar colour is the accent" % tag)
+		var btn_rect := armed.get_global_rect()
+		var bar_rect := bar.get_global_rect()
+		check(absf(bar_rect.position.x - btn_rect.position.x) <= 1.0,
+				"%s accent bar sits on the button's left edge" % tag)
+		check(bar_rect.size.y >= btn_rect.size.y - 1.0, "%s accent bar covers the row height" % tag)
+		if scroll != null:
+			var clip := scroll.get_global_rect()
+			var inside := clip.position.x <= bar_rect.position.x + 0.5 \
+					and clip.position.y <= bar_rect.position.y + 0.5 \
+					and bar_rect.end.x <= clip.end.x + 0.5 \
+					and bar_rect.end.y <= clip.end.y + 0.5
+			print("  %s clip=%s bar=%s inside=%s" % [tag, str(clip), str(bar_rect), str(inside)])
+			check(inside, "%s accent bar is inside the rail clip" % tag)
+	for x in range(3):
+		var painted := _painted_column(armed, "pressed", x)
+		check(_is_accent(painted), "%s armed left column %d is accent (%s)" % [tag, x, str(painted)])
+	var fill := _painted_column(armed, "pressed", 3)
+	check(not _is_accent(fill), "%s pixel just past the bar is the fill, not the bar (%s)" % [tag, str(fill)])
+	# Hover the other rail button without arming it.
+	if other != null:
+		await _motion(other.get_viewport(), other.get_global_rect().get_center())
+		await process_frame
+		var other_bar := other.get_node_or_null("RailAccentBar") as ColorRect
+		check(not other.button_pressed, "%s hover target stays unarmed" % tag)
+		check(other_bar == null or not other_bar.visible, "%s hover does not show the accent bar" % tag)
+		for x in range(3):
+			var hover_px := _painted_column(other, "hover", x)
+			check(not _is_accent(hover_px),
+					"%s hover left column %d is not accent (%s)" % [tag, x, str(hover_px)])
+	await _assert_viewport_columns(armed, other, tag)
+	var lit := 0
+	var host := armed.get_parent()
+	if host != null:
+		for c in host.get_children():
+			if not (c is Button):
+				continue
+			var rail_bar := (c as Button).get_node_or_null("RailAccentBar") as ColorRect
+			if rail_bar != null and rail_bar.visible:
+				lit += 1
+	check(lit == 1, "%s only one rail accent bar is lit (got %d)" % [tag, lit])
+
+
+func _assert_viewport_columns(armed: Button, other: Button, tag: String) -> void:
+	var driver := DisplayServer.get_name().to_lower()
+	if driver.contains("headless"):
+		print("  %s viewport pixels skipped (headless display)" % tag)
+		return
+	RenderingServer.force_draw(true)
+	await RenderingServer.frame_post_draw
+	var vp := armed.get_viewport()
+	if vp == null or vp.get_texture() == null:
+		check(false, "%s viewport texture exists")
+		return
+	var img := vp.get_texture().get_image()
+	if img == null or img.get_width() < 8 or img.get_height() < 8:
+		check(false, "%s viewport image is readable")
+		return
+	var armed_cols := _sample_left_columns(img, armed.get_global_rect())
+	print("  %s viewport armed columns %s" % [tag, str(armed_cols)])
+	check(armed_cols.size() == 4, "%s sampled 4 viewport columns" % tag)
+	if armed_cols.size() == 4:
+		for x in range(3):
+			check(_is_accent(armed_cols[x]),
+					"%s viewport left column %d is accent (%s)" % [tag, x, str(armed_cols[x])])
+		check(not _is_accent(armed_cols[3]),
+				"%s viewport column past the bar is not accent (%s)" % [tag, str(armed_cols[3])])
+	if other != null and not other.button_pressed:
+		var hover_cols := _sample_left_columns(img, other.get_global_rect())
+		print("  %s viewport hover columns %s" % [tag, str(hover_cols)])
+		if hover_cols.size() == 4:
+			for x in range(3):
+				check(not _is_accent(hover_cols[x]),
+						"%s viewport hover column %d is not accent (%s)" % [tag, x, str(hover_cols[x])])
+
+
+func _sample_left_columns(img: Image, rect: Rect2) -> Array:
+	var out: Array = []
+	if rect.size.x < 6.0 or rect.size.y < 4.0:
+		return out
+	var y := int(clampf(rect.position.y + rect.size.y * 0.5, 0.0, float(img.get_height() - 1)))
+	var x0 := int(ceil(rect.position.x))
+	for i in range(4):
+		var x := x0 + i
+		if x < 0 or x >= img.get_width() or y < 0 or y >= img.get_height():
+			return []
+		out.append(img.get_pixel(x, y))
+	return out
 
 
 func _style_text(box: StyleBox) -> String:
