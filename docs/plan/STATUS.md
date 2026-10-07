@@ -2,8 +2,13 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-035 A9 — Power Trim opens the jaw from a profile Line
+- Face-sketch A9 drew a regular Line across the jaw (not Centerline). `_jaw_cutter_for_click` only accepted construction, `_longest_profile_dir` could treat that Line as a wall, and a drag on the cutter fell through to kernel trim (`Trim failed — this line has no crossing to trim at`, or `Trimmed` that collapsed the rectangle / shortened the cutter). Status never became `Trimmed open jaw`.
+- Open-jaw trim now classifies the two similar-length parallel walls, accepts a profile Line that crosses their interiors, infers the shaft-side discard when the stroke starts on the cutter, and removes that Line from the profile after a successful open.
+- Gate: `run_rung01_replan14_trim.gd` (real pointer drags). Construction-cutter suites `run_rung01_replan10_trim.gd`, `run_rung01_replan11_trim.gd`, `run_rung01_replan13_trim.gd` stay green.
+
 ## Rung 1 replan 14 — sx-034 leftovers
-- Seven real-input suites on main: `run_rung01_replan14_{savelabels,focuskeys,ctxbar,undo,camera,railstatus,polish}.gd`. WP4's only C++ is `SxSketch.snapshot()` / `restore()` (JSON through the existing sketch codec).
+- Eight real-input suites on main: `run_rung01_replan14_{savelabels,focuskeys,ctxbar,undo,camera,railstatus,polish,trim}.gd`. WP4's only C++ is `SxSketch.snapshot()` / `restore()` (JSON through the existing sketch codec).
 - The wrench walk gained `B14.1`–`B14.13` (re-verify A8 / A9 / A9b / A11a / L3 plus one real-input row per product WP, leftover 16 as the timeline-index body-name rule, leftover 18 as the DIAG note). **646 checks, 0 failures**; nut 7/7, wrench 28/28, thick 7/7.
 - `check_rung01.py wrench` at T = 14 prints a `DIAG:` header; the four by-design failures are `bbox Z (thickness)`, `grip slot present at y=0,z=8.75`, `1mm fillet top outer edge`, and `1mm fillet on jaw top edge`. `thick` is the T-aware pass. Leftover 16 is closed by design (sx-035 rule 37).
 - sx-035 rules 37–40 (body names are timeline indices; read labels not pictures; after a commit the viewport owns the keys; undo reads the status) live in `docs/loop/rung-01-replan-14.md`. Gate: the walk and `tools/lint_rung01_e2e.py`.

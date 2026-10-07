@@ -2868,12 +2868,12 @@ func _jaw_no_cap_status(a: Vector2, b: Vector2) -> String:
 			best_d, best_r * 2.0, JAW_CUTTER_MAX_RIM_FRACTION * best_r]
 
 
-## Two longest non-construction lines within 2° of the longest profile line.
+## Two similar-length parallel profile lines that are not collinear.
+## A long regular-Line cutter must not steal the jaw direction from the walls.
 func _jaw_long_sides() -> Array:
-	var dir := _longest_profile_dir()
-	if dir.length_squared() < 1e-8:
+	if sketch == null:
 		return []
-	var sides: Array = []
+	var lines: Array = []
 	for id in sketch.entity_ids():
 		if sketch.is_construction(id):
 			continue
@@ -2883,15 +2883,43 @@ func _jaw_long_sides() -> Array:
 		var a: Vector2 = info["start"]
 		var b: Vector2 = info["end"]
 		var d := b - a
-		if d.length() < 1.0:
+		var L := d.length()
+		if L < 1.0:
 			continue
-		if not _dirs_within_deg(d, dir, 2.0):
-			continue
-		sides.append({"id": id, "a": a, "b": b, "len": d.length()})
-	sides.sort_custom(func(x, y): return float(x["len"]) > float(y["len"]))
-	if sides.size() > 2:
-		sides = sides.slice(0, 2)
-	return sides
+		lines.append({"id": id, "a": a, "b": b, "len": L, "dir": d})
+	var best: Array = []
+	var best_score := 0.0
+	for i in range(lines.size()):
+		for j in range(i + 1, lines.size()):
+			var li: Dictionary = lines[i]
+			var lj: Dictionary = lines[j]
+			var di: Vector2 = li["dir"]
+			var dj: Vector2 = lj["dir"]
+			if not _dirs_within_deg(di, dj, 2.0):
+				continue
+			var n := Vector2(-di.y, di.x)
+			if n.length_squared() < 1e-12:
+				continue
+			n = n.normalized()
+			if absf(((lj["a"] as Vector2) - (li["a"] as Vector2)).dot(n)) < 1.0:
+				continue
+			var l1 := float(li["len"])
+			var l2 := float(lj["len"])
+			var mx := maxf(l1, l2)
+			if mx < 1e-6:
+				continue
+			var score := minf(l1, l2) * (minf(l1, l2) / mx)
+			if score > best_score:
+				best_score = score
+				best = [li, lj]
+	return best
+
+
+func _jaw_profile_dir() -> Vector2:
+	var sides := _jaw_long_sides()
+	if sides.size() == 2:
+		return (sides[0]["b"] as Vector2) - (sides[0]["a"] as Vector2)
+	return _longest_profile_dir()
 
 
 ## Proper segment-segment intersection, or null.
@@ -2913,6 +2941,26 @@ func _cutter_crosses_both_sides(a: Vector2, b: Vector2, sides: Array) -> bool:
 		return false
 	return _segment_intersect(a, b, sides[0]["a"], sides[0]["b"]) != null \
 			and _segment_intersect(a, b, sides[1]["a"], sides[1]["b"]) != null
+
+
+## True when the cutter crosses the interior of both long sides (not a cap
+## that only meets them at the rectangle corners).
+func _cutter_crosses_both_side_interiors(a: Vector2, b: Vector2, sides: Array) -> bool:
+	if sides.size() != 2:
+		return false
+	return _side_interior_hit(a, b, sides[0]["a"], sides[0]["b"]) \
+			and _side_interior_hit(a, b, sides[1]["a"], sides[1]["b"])
+
+
+func _side_interior_hit(cut_a: Vector2, cut_b: Vector2, side_a: Vector2, side_b: Vector2) -> bool:
+	var r := cut_b - cut_a
+	var s := side_b - side_a
+	var denom := r.x * s.y - r.y * s.x
+	if absf(denom) < 1e-9:
+		return false
+	var t := ((side_a.x - cut_a.x) * s.y - (side_a.y - cut_a.y) * s.x) / denom
+	var u := ((side_a.x - cut_a.x) * r.y - (side_a.y - cut_a.y) * r.x) / denom
+	return t >= -1e-4 and t <= 1.0 + 1e-4 and u > 0.02 and u < 0.98
 
 
 func _jaw_aabb_expanded(sides: Array, pad: float) -> Rect2:
@@ -2938,12 +2986,15 @@ func _line_is_jaw_cutter_candidate(a: Vector2, b: Vector2, sides: Array) -> bool
 
 func _jaw_cutter_for_click(pos2: Vector2) -> Dictionary:
 	var sides := _jaw_long_sides()
-	var jaw_dir := _longest_profile_dir()
+	var jaw_dir := _jaw_profile_dir()
 	var best: Dictionary = {}
-	var best_d := 40.0
+	var best_d := INF
+	var side_ids := {}
+	for s in sides:
+		side_ids[str(s["id"])] = true
 	if sides.size() == 2:
 		for id in sketch.entity_ids():
-			if not sketch.is_construction(id) or _angle_datum_lines.has(id):
+			if _angle_datum_lines.has(id) or side_ids.has(str(id)):
 				continue
 			var info: Dictionary = sketch.entity_info(id)
 			if str(info.get("type", "")) != "line":
@@ -2952,15 +3003,64 @@ func _jaw_cutter_for_click(pos2: Vector2) -> Dictionary:
 			var b: Vector2 = info["end"]
 			if jaw_dir.length_squared() > 1e-8 and _dirs_within_deg(b - a, jaw_dir, 2.0):
 				continue
-			if not _cutter_crosses_both_sides(a, b, sides):
+			var is_con := sketch.is_construction(id)
+			if is_con:
+				if not _cutter_crosses_both_sides(a, b, sides):
+					continue
+			elif not _cutter_crosses_both_side_interiors(a, b, sides):
 				continue
 			var d := _point_segment_distance(pos2, a, b)
 			if d < best_d:
 				best_d = d
 				best = {"id": id, "a": a, "b": b}
-	if not best.is_empty():
+	if not best.is_empty() and _jaw_click_reaches_cutter(pos2, best_d, sides):
 		return best
 	return _nearest_construction_line(pos2, 40.0)
+
+
+func _jaw_click_reaches_cutter(pos2: Vector2, cutter_d: float, sides: Array) -> bool:
+	if cutter_d <= 40.0:
+		return true
+	if sides.size() != 2:
+		return false
+	for s in sides:
+		if _point_segment_distance(pos2, s["a"], s["b"]) <= PICK_TOLERANCE * 2.0:
+			return true
+	return _jaw_aabb_expanded(sides, 8.0).has_point(pos2)
+
+
+## When the pointer is on the cutter, discard the shaft-side cap (closer to
+## the origin) so a drag across the line still opens the wrench jaw.
+func _jaw_discard_side_on_cutter(origin_a: Vector2, normal: Vector2) -> float:
+	var sides := _jaw_long_sides()
+	if sides.size() != 2:
+		return 0.0
+	var jaw_dir: Vector2 = (sides[0]["b"] as Vector2) - (sides[0]["a"] as Vector2)
+	var across := Vector2(-jaw_dir.y, jaw_dir.x)
+	var side_ids := {}
+	for s in sides:
+		side_ids[str(s["id"])] = true
+	var best_dist := INF
+	var best_sign := 0.0
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id) or side_ids.has(str(id)):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var s: Vector2 = info["start"]
+		var e: Vector2 = info["end"]
+		if not _dirs_within_deg(e - s, across, 15.0):
+			continue
+		var ss := (s - origin_a).dot(normal)
+		var es := (e - origin_a).dot(normal)
+		if ss * es < 0.0:
+			continue
+		var d := ((s + e) * 0.5).length()
+		if d < best_dist:
+			best_dist = d
+			best_sign = 1.0 if (ss + es) > 0.0 else -1.0
+	return best_sign
 
 
 ## Click on one side of a construction centreline: drop that half, keep the
@@ -2980,21 +3080,28 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		return false
 	dir = dir.normalized()
 	var normal := Vector2(-dir.y, dir.x)
-	var side := (pos2 - a).dot(normal)
-	if absf(side) < 1e-4:
-		return false
-	var discard := 1.0 if side > 0.0 else -1.0
-	var keep_dir := normal * (-discard)
 	const EPS := 0.05
 	const CAP_DEG := 2.0
-	var long_dir := _longest_profile_dir()
+	var long_dir := _jaw_profile_dir()
 	if long_dir.length_squared() > 1e-8 and _dirs_within_deg(dir, long_dir, CAP_DEG):
 		status.emit("Trim failed — the construction line nearest your click runs along the jaw (from %.1f,%.1f to %.1f,%.1f); draw a centreline across the jaw or delete the along-jaw line" % [a.x, a.y, b.x, b.y])
 		return true
 	var cap := _jaw_cap_circle(a, b)
 	if cap.is_empty():
-		status.emit(_jaw_no_cap_status(a, b))
+		if sketch.is_construction(str(cutter["id"])):
+			status.emit(_jaw_no_cap_status(a, b))
+			return true
+		return false
+	var side := (pos2 - a).dot(normal)
+	if absf(side) < 1e-4:
+		side = _jaw_discard_side_on_cutter(a, normal)
+	if absf(side) < 1e-4:
+		# Pointer is on the cutter: do not kernel-trim the line (that shortens
+		# it and then the jaw can no longer open). A later sample of the same
+		# Power Trim stroke still opens the jaw once it leaves the line.
 		return true
+	var discard := 1.0 if side > 0.0 else -1.0
+	var keep_dir := normal * (-discard)
 	var cc: Vector2 = cap["center"]
 	var cr: float = float(cap["radius"])
 	var circ_id: String = str(cap["id"])
@@ -3217,6 +3324,10 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 				continue
 		kept_dims.append(dim)
 	dimensions = kept_dims
+	var cutter_id := str(cutter["id"])
+	if cutter_id != "" and not sketch.is_construction(cutter_id) \
+			and not sketch.entity_info(cutter_id).is_empty():
+		sketch.remove_entity(cutter_id)
 	run_solve()
 	var winfo: Dictionary = sketch.entity_info(str(walls[0]["id"]))
 	var finfo: Dictionary = sketch.entity_info(floor_id)
