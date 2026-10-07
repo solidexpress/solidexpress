@@ -282,16 +282,33 @@ func _on_numeric_canvas_press(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	if _over_chrome(mb.position):
-		return
+	var at := mb.global_position
+	if at == Vector2.ZERO:
+		at = mb.position
+	_release_numeric_if_press_elsewhere(at)
+
+
+## Left press that is not on the focused LineEdit / its SpinBox returns the
+## keys to the viewport. Strip padding is chrome (`_over_chrome`), so the
+## Interaction gui_input hook never sees it — `_input` calls this too.
+func _release_numeric_if_press_elsewhere(at: Vector2) -> void:
 	var vp := get_viewport()
-	if vp == null:
+	if vp == null or not SxUi.numeric_field_focused(vp):
 		return
-	var f := vp.gui_get_focus_owner()
-	if f is LineEdit or f is TextEdit or f is SpinBox \
-			or (f != null and f.get_parent() is SpinBox):
-		vp.gui_release_focus()
-	# Do not accept_event — the part-mode pick still runs on this press.
+	if _press_on_focused_numeric(at, vp.gui_get_focus_owner()):
+		return
+	return_viewport_keys()
+
+
+func _press_on_focused_numeric(at: Vector2, f: Control) -> bool:
+	if f == null:
+		return false
+	if f.get_global_rect().grow(1.0).has_point(at):
+		return true
+	var p := f.get_parent()
+	if p is SpinBox and (p as Control).get_global_rect().grow(1.0).has_point(at):
+		return true
+	return false
 
 
 ## Esc with a first sketch anchor: drop it and print the A6 sentence once.
@@ -4645,6 +4662,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# Strip / other STOP children swallow gui_input; still give the viewport
+	# the keys when the press is not on the focused numeric field.
+	_on_numeric_canvas_press(event)
 	# Camera first — before Control STOP panels so orbit works over docks, and
 	# before place so Alt+drag / two-finger pan don't commit a solid.
 	# Never steal wheel / two-finger pan from ScrollContainers; pinch always zooms.

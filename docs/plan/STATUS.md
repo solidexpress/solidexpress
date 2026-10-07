@@ -4,7 +4,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 ## sx-035 GUI L3 — Fillet strip R shows the committed radius
 - Typing `10` + Tab in the selection-strip `R` field left status at `Fillet r=10.00` while the LineEdit showed `0.0 mm`: Godot formatted `10.000 mm` with the caret at the end, and the 88 px field scrolled to the suffix. A stray `100` was the walker clicking that clipped tail. Tab also moved focus onto the `AF 10` chip; arming grabbed the R field so view keys 3/4 did nothing.
-- Strip `R` is now as wide as the finish-bar dim field, the committed text is compact (`10 mm`) with the caret pinned at the start, Tab/Enter return keys to the viewport, AF chips are click-focus only, and arming no longer steals the caret.
+- Strip `R` is now as wide as the finish-bar dim field, the committed text is compact (`10 mm`) with the caret pinned at the start, Tab/Enter return keys to the viewport, AF chips are click-focus only, and arming no longer steals the caret. A left click that is not on the focused LineEdit / its SpinBox (including wrapped strip padding) also returns the keys, so view digits still work.
 - Gate: `run_rung01_replan13_radius.gd` (strip type 10 Tab), `run_rung01_replan14_focuskeys.gd` (arm then KEY_3; strip 10 Tab then KEY_4), wrench B14.5 `strip 10 Tab`.
 
 ## sx-035 N6 — HUD Frame matches key F / Shift+F
