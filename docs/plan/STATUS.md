@@ -2,6 +2,11 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-036 N12 — second Extrude click does not set jaw_af
+- After a finish-bar Extrude, the selection strip was appearing on the same pixel as the Extrude button, and `AF 10` turned a second click into `jaw_af = 10 (config 10)`. The 600 ms `_ctx_jaw_af` guard expired while a soft-GL frame was still catching up.
+- AF 10/12/14 now show only when the selected body has a feature whose params use `jaw_af`. Until the pointer leaves the Extrude button, a transparent shield eats a same-pixel click and the strip is nudged below that button.
+- Gate: `run_rung01_n12_extrude.gd` (immediate and late second click; chips appear once a hex uses `jaw_af`). `run_rung01_replan15_extrude.gd` A3 expects the chips to stay hidden on a plain body.
+
 ## Rung 1 replan 15 — sx-035 leftovers
 - Six real-input suites on main: `run_rung01_replan15_{armedkeys,contours,chain,export,extrude,strings}.gd` (+ `_chain_<stage>` only if WP3b ran). Enter in a Radius field no longer disarms Fillet / Chamfer (it applies only with edges picked); Contours chips highlight their region (`SxSketch.contour_outlines`, the only C++ change) and name it in the status; the profile-Line jaw → Up To Surface cut → slot → fillets → export chain is a regression net (headless, checker 28/28 and 7/7); Export 3MF always ends in `.3mf`; a second click at the Extrude pixel cannot hit an AF chip (600 ms guard); the chain-break status shows no entity id; key `0` says `No view for key 0 …`; `applied` is the Fillet / Chamfer success wording; a label click with Jaw armed is pinned.
 - The wrench walk gained `B15.*` rows (N2, contours, export without extension, second Extrude click, key 0, `applied`, slot-floor edge lengths) **729 checks, 0 failures**; nut 7/7, wrench 28/28, thick 7/7, blank 5/5. `_press_extrude` now sends a real mouse press (the walk used to call `pressed.emit()`). The walk fails on any status containing a UUID.

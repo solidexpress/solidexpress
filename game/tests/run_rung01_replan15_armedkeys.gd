@@ -527,7 +527,10 @@ func _row_c2() -> void:
 	var main = ctx.main
 	var vp: Viewport = main.get_viewport()
 	await _arm_fillet_strip(ctx)
-	var empty := Vector2(float(ROOT_SIZE.x) - 90.0, 110.0)
+	# Top-right y=110 used to land on the wrapped selection strip (AF chips made
+	# it two rows). Without those chips the pixel is on the solid. The status
+	# bar is chrome, so the click focuses nothing and picks no edge.
+	var empty := Vector2(400.0, float(ROOT_SIZE.y) - 12.0)
 	await _click_at(vp, empty)
 	await process_frame
 	await process_frame
