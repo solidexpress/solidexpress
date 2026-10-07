@@ -504,10 +504,18 @@ func _build_selection_strip() -> void:
 	if strip_le_fit != null:
 		strip_le_fit.custom_minimum_size = Vector2(UiScale.px(110), 0)
 	_strip_radius.value_changed.connect(func(v: float) -> void:
-		if _strip_radius_editing or _strip_radius_syncing:
+		if _strip_radius_syncing:
+			return
+		# Arrow clicks focus the line before the value moves. A partial typed
+		# string must not be overwritten; an arrow step must reach the panel
+		# or focus-exit writes the old panel value back over the step.
+		if _strip_radius_editing and _strip_user_typed():
 			return
 		if ops_panel != null and ops_panel.has_method("set_dressup_radius"):
-			ops_panel.set_dressup_radius(v))
+			ops_panel.set_dressup_radius(v)
+		# Godot's deferred editing toggle reformats the line after reveal.
+		(func() -> void:
+			SxUi.reveal_committed_spin.call_deferred(_strip_radius, v)).call_deferred())
 	var strip_le := _strip_radius.get_line_edit()
 	strip_le.focus_entered.connect(func() -> void:
 		if _strip_radius_syncing:
@@ -522,7 +530,8 @@ func _build_selection_strip() -> void:
 			var parsed := _parse_strip_radius_text(strip_le.text)
 			if is_nan(parsed) or not is_equal_approx(parsed, model):
 				_write_strip_radius(model, true)
-		_strip_focus_text = strip_le.text)
+		_strip_focus_text = strip_le.text
+		SxUi.arm_replace_on_focus(strip_le))
 	strip_le.focus_exited.connect(func() -> void:
 		if _strip_radius_syncing:
 			return
@@ -536,24 +545,38 @@ func _build_selection_strip() -> void:
 		# Tab defaulted onto AF 10 / other strip chips before the gui_input
 		# handler ran; pull the keys back so 3/4/6/8 still orbit.
 		if _strip_focus_landed_on_chip():
-			return_viewport_keys.call_deferred())
+			return_viewport_keys.call_deferred()
+		var shown := _strip_radius.value
+		(func() -> void:
+			SxUi.reveal_committed_spin.call_deferred(_strip_radius, shown)).call_deferred())
 	strip_le.text_submitted.connect(func(_t: String) -> void:
 		_commit_strip_radius()
 		_sync_strip_dressup_radius()
 		if ops_panel != null:
 			ops_panel.commit_radius_field_enter()
-		return_viewport_keys.call_deferred())
+		return_viewport_keys.call_deferred()
+		var shown := _strip_radius.value
+		(func() -> void:
+			SxUi.reveal_committed_spin.call_deferred(_strip_radius, shown)).call_deferred())
 	# Tab commits the number and keeps the keys on the viewport. Default
 	# focus-next lands on the AF 10 chip, which eats Enter (sets jaw_af) and
 	# looks like a stray digit when the walker types again.
 	strip_le.gui_input.connect(func(event: InputEvent) -> void:
 		if not (event is InputEventKey) or not event.pressed or event.echo:
 			return
-		if (event as InputEventKey).keycode != KEY_TAB:
+		var key := event as InputEventKey
+		if key.keycode == KEY_TAB:
+			_commit_strip_radius()
+			_sync_strip_dressup_radius()
+			return_viewport_keys()
+			strip_le.accept_event()
 			return
-		_commit_strip_radius()
-		_sync_strip_dressup_radius()
-		return_viewport_keys()
+		if not SxUi.replace_armed(strip_le):
+			return
+		var ch := SxUi.numeric_key_char(key)
+		if ch == "":
+			return
+		SxUi.write_typed_text(strip_le, ch)
 		strip_le.accept_event())
 	_strip_radius_box.add_child(_strip_radius)
 	# Jaw AF quick configs — wrench path without opening Variables dock.

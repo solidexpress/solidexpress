@@ -3532,7 +3532,10 @@ func _save_current() -> void:
 	var reenter_fid := ""
 	var reenter_pose: Dictionary = {}
 	var kept_dims: Array = []
+	var fin: Dictionary = {}
 	if sketch_mode != null and sketch_mode.active:
+		if sketch_chrome != null:
+			fin = sketch_chrome.finish_snapshot()
 		reenter_pose = camera.capture_pose()
 		kept_dims = sketch_mode.dimensions.duplicate(true)
 		reenter_fid = sketch_mode.exit_sketch()
@@ -3551,6 +3554,8 @@ func _save_current() -> void:
 			sketch_mode.reapply_dimension_records(
 					kept_dims if not kept_dims.is_empty() else sketch_mode.dimensions)
 		_on_sketch_session_started("Editing sketch")
+		if sketch_chrome != null and not fin.is_empty():
+			sketch_chrome.finish_restore(fin)
 		view.refresh_sketch_pads(sketch_mode.editing_fid)
 		sketch_mode.set_tool(SketchMode.Tool.SELECT)
 	if saved:
