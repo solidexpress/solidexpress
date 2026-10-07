@@ -34,6 +34,9 @@ const MIN_SEGMENT_MM := 0.5
 var _sketch_view_radius := 25.0
 ## Invalidates a pending `_reassert_camera` after Save restores the live pose.
 var _camera_reassert_gen := 0
+## Save bumps this so apply_pose's view_changed does not restack at the
+## restored zoom before reapply has put the live stacks back.
+var _label_restack_hold := 0
 ## When true, click/hover positions pass through snap_point().
 var snap_enabled := true
 ## When true, end_chain / Done / Esc auto-adds a closing segment if ends are near.
@@ -560,8 +563,11 @@ func _enter_camera() -> void:
 
 
 ## Drop a pending fit-view reassert (Save restores the live camera pose).
+## Also hold restack until reapply_dimension_records so apply_pose cannot
+## grow fit-view stacks onto 20 / 45° at 150 px (N1b).
 func keep_current_view() -> void:
 	_camera_reassert_gen += 1
+	_label_restack_hold = _camera_reassert_gen
 
 
 func _reassert_camera_if(gen: int) -> void:
@@ -608,6 +614,8 @@ func _leave_camera() -> void:
 ## fit-view overlap again when the head is ~150 px (N1a / N1b).
 func _on_sketch_camera_moved() -> void:
 	if not active or _undo_restoring or sketch == null:
+		return
+	if _label_restack_hold != 0 and _label_restack_hold == _camera_reassert_gen:
 		return
 	if dimensions.is_empty() or _dimension_labels == null:
 		return
@@ -3899,8 +3907,10 @@ func click(pos2: Vector2) -> void:
 	# A dimension label sits a few millimetres off the geometry. Snapping first
 	# pulls that click onto the line and the in-sketch editor never opens.
 	# Jaw / Trim / SMART_DIM stay armed after a commit; a click on the first
-	# glyph must open the editor instead of starting a new gesture.
-	var dhit_raw := dimension_hit(pos2)
+	# glyph must open the editor instead of starting a new gesture. Draw tools
+	# use the on-screen text rect only — the 22 px / 6 mm halo would steal a
+	# Jaw click 2 near a typed-circle radius label.
+	var dhit_raw := dimension_hit(pos2, tool != Tool.SELECT and tool != Tool.SMART_DIM)
 	if dhit_raw >= 0:
 		_emit_dimension_edit(dhit_raw)
 		return
@@ -5473,6 +5483,7 @@ func reapply_dimension_records(kept: Array) -> void:
 		return
 	dimensions = _merge_dimension_records(_dimension_records_from_sketch(), kept)
 	_rebuild_dimension_labels()
+	_label_restack_hold = 0
 
 
 func _sync_missing_radius_records() -> void:
@@ -5807,15 +5818,15 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 		var r: float = float(info.get("radius", 0.0))
 		var reach := r + DIM_LABEL_OFFSET
 		# Keep-side jaw arc: sit on the remaining metal, away from the 20 / 45°
-		# cluster in the opening. Full circles sit above the centre so a pivot
-		# hole label is not buried in the shaft.
+		# cluster in the opening. Full circles sit below the centre so a head
+		# Ø45 label is not in the 45° jaw click fan.
 		if str(info.get("type", "")) == "arc":
 			var sa := float(info.get("start_angle", 0.0))
 			var ea := float(info.get("end_angle", sa + PI))
 			if ea < sa:
 				ea += TAU
 			return c + Vector2.from_angle((sa + ea) * 0.5) * reach
-		return c + Vector2(0.0, reach)
+		return c + Vector2(0.0, -reach)
 	if type == "angle" and ids.size() >= 2:
 		var ia: Dictionary = sketch.entity_info(str(ids[0]))
 		var ib: Dictionary = sketch.entity_info(str(ids[1]))
@@ -5914,10 +5925,19 @@ func _rebuild_dimension_labels() -> void:
 		if pos2 == null:
 			continue
 		var pos := pos2 as Vector2
+		# Save re-entry: keep the live stack when the geometry did not move.
+		# Recomputing from mm-proximity at 150 px parks 45° on 20 (N1b).
+		var prev_pos: Variant = dim.get("label_pos", null)
 		var stack := 0
-		for t in taken:
-			if t.distance_to(pos) < DIM_LABEL_STACK_MM:
-				stack += 1
+		var reuse := prev_pos != null and typeof(prev_pos) == TYPE_VECTOR2 \
+				and (prev_pos as Vector2).distance_to(pos) < 0.5 \
+				and dim.has("label_stack")
+		if reuse:
+			stack = int(dim["label_stack"])
+		else:
+			for t in taken:
+				if t.distance_to(pos) < DIM_LABEL_STACK_MM:
+					stack += 1
 		taken.append(pos)
 		var text := _dimension_label_text(dim)
 		if str(dim.get("type", "")) == "angle":
@@ -6203,7 +6223,9 @@ func delete_selected_constraint() -> bool:
 ## Index of the dimension whose label text is under pos2 (-1 = none). The test is
 ## the label's screen rectangle plus DIM_LABEL_PAD_PX; the 22 px circle around
 ## the stored anchor and the 6 mm sketch-space radius stay as fallbacks.
-func dimension_hit(pos2: Vector2) -> int:
+## `rect_only` skips the halo so an armed Jaw/Trim click on nearby geometry
+## is not stolen by a typed-circle radius label.
+func dimension_hit(pos2: Vector2, rect_only: bool = false) -> int:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var screen := Vector2(INF, INF)
 	var k := 0.0
@@ -6235,16 +6257,20 @@ func dimension_hit(pos2: Vector2) -> int:
 				rect_hit = i
 				rect_gap = gap
 				rect_centre_d = centre_d
-			var dpx := screen.distance_to(sp)
-			if dpx < best_px:
-				best_px = dpx
-				anchor_hit = i
-		var dmm := pos2.distance_to(p)
-		if dmm < best_mm:
-			best_mm = dmm
-			mm_hit = i
+			if not rect_only:
+				var dpx := screen.distance_to(sp)
+				if dpx < best_px:
+					best_px = dpx
+					anchor_hit = i
+		if not rect_only:
+			var dmm := pos2.distance_to(p)
+			if dmm < best_mm:
+				best_mm = dmm
+				mm_hit = i
 	if rect_hit >= 0:
 		return rect_hit
+	if rect_only:
+		return -1
 	if anchor_hit >= 0:
 		return anchor_hit
 	return mm_hit
