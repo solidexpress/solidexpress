@@ -1,0 +1,2 @@
+script=tests/run_sketch_fully_defined_tests.gd
+tier=full

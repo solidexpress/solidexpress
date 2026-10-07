@@ -1,0 +1,2 @@
+script=tests/run_viewcube_tests.gd
+tier=full

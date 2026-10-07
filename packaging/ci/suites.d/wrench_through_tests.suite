@@ -1,0 +1,2 @@
+script=tests/run_wrench_through_tests.gd
+tier=full

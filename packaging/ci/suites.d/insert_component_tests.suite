@@ -1,0 +1,2 @@
+script=tests/run_insert_component_tests.gd
+tier=full

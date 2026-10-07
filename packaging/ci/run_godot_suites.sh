@@ -11,6 +11,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "${ROOT_DIR}"
 GODOT_BIN="${ROOT_DIR}/tools/godot/godot"
 GAME_DIR="${ROOT_DIR}/game"
 
@@ -22,31 +23,5 @@ fi
 echo "Warming import cache..."
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --import > /dev/null 2>&1 || true
 
-echo "Running gated Godot suites (workflow, ui, sketch, sketch tools, print, rung01 e2e)"
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_workflow_tests.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_ui_tests.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_sketch_tests.gd
-# Measured headless on this tree: ~2s, 141 checks. It was red on main and
-# absent from this list, so make test-godot stopped here while CI stayed green.
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_sketch_tools_tests.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_print_tests.gd
-# Headless wrench walk plus the two suites that regressed with it.
-# Measured on lavapipe: the three together finish in under a minute
-# (wrench ~35s, cut ~3s, status ~1s), well under the 5 minute CI budget.
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_wrench.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_sx036_esc.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_sx036_fields.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_jaw_label_hit.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_shaftbadges.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan6_cut.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan12_status.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_n12_extrude.gd
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_sx036_rail.gd
-# Outer-stub jaw trim: the GUI drag past the rim must keep the Ø45 head,
-# export a closed 3MF, and pass check_rung01 wrench (face fillets included).
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_jawstub.gd
-# Thickness edit: neck verticals re-resolve and the slot stays 2.5 deep (thick 7/7).
-"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_thick.gd
-
-echo "Gated suites completed."
-
+python3 "${ROOT_DIR}/tools/lint_suites.py"
+exec "${ROOT_DIR}/packaging/ci/run_suites.sh" --tier ci

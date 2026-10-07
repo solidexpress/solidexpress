@@ -56,9 +56,16 @@ chmod +x tools/godot/godot
 
 ### Building and testing (no display needed)
 - `make build` then `make test` (kernel Catch2 + all headless Godot suites).
-- `make test-godot` runs each `game/tests/run_*.gd` script and **stops at the
-  first failing script**; to see the full picture run the scripts individually
-  (`tools/godot/godot --headless --path game --script tests/<name>.gd`).
+- `make test-godot` runs every manifest in `packaging/ci/suites.d/` (`tier=ci`
+  and `tier=full`) and stops at the first failing suite. Add a suite by adding
+  one `packaging/ci/suites.d/<name>.suite` file (`<name>` is the script basename
+  without `run_` and `.gd`; `script=` is relative to `game/`; `tier=ci` also
+  runs in the godot-smoke gate). Do not edit `packaging/ci/run_godot_suites.sh`
+  or the Makefile `test-godot` recipe. `KEEP_GOING=1 make test-godot` runs every
+  suite and prints every failure. Known-red suites (`run_camera_tests.gd`,
+  `run_place_tests.gd`, `run_howto_tests.gd`, `run_infer_tests.gd`,
+  `run_icon_tests.gd`) stay `tier=full`. `run_film_caption_tests.gd` and
+  `run_ui_scroll_tests.gd` stay unregistered.
 - First run of `make import`/`make run`/`make test-godot` bakes the `game/.godot`
   cache headlessly; this is normal.
 

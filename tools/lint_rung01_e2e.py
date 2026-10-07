@@ -489,43 +489,34 @@ def _lint_replan12(errors: list[str]) -> None:
         _lint_replan11_camera(src, errors, prefix)
 
 
-def _lint_replan13(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan13_*.gd"))
-    if len(paths) < 1:
-        errors.append("expected at least 1 run_rung01_replan13_*.gd")
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        prefix = f"{path.relative_to(ROOT)}:"
-        # Validation suites: same camera needles as replan 12. Script-side
-        # setup is allowed; every press/key/motion under test is real.
-        # WP8's zoom helper is `_zoom_model` (yaw/pitch only there).
-        _lint_replan11_camera(
-            src, errors, prefix, extra_yaw_pitch_ok=("_zoom_model",)
-        )
+def _lint_replan_n(errors: list[str]) -> dict[int, list[Path]]:
+    """Camera needles for run_rung01_replan<N>_*.gd, N >= 13.
 
-
-def _lint_replan14(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan14_*.gd"))
-    if len(paths) < 1:
-        errors.append("expected at least 1 run_rung01_replan14_*.gd")
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        prefix = f"{path.relative_to(ROOT)}:"
-        # Same camera needles as replan 13. `_zoom_model` is the only
-        # script-side yaw/pitch helper the allow-list covers.
-        _lint_replan11_camera(
-            src, errors, prefix, extra_yaw_pitch_ok=("_zoom_model",)
-        )
-
-
-def _lint_replan15(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan15_*.gd"))
-    if len(paths) < 1:
-        errors.append("expected at least 1 run_rung01_replan15_*.gd")
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        prefix = f"{path.relative_to(ROOT)}:"
-        _lint_replan11_camera(src, errors, prefix, extra_yaw_pitch_ok=("_zoom_model",))
+    Requires at least one script for N in {13, 14, 15}. Later rounds
+    (replan 16 and on) are linted when their scripts exist, so registering
+    one is a new file, not an edit here.
+    """
+    by_n: dict[int, list[Path]] = {}
+    pat = re.compile(r"run_rung01_replan(\d+)_.*\.gd$")
+    for path in sorted(TESTS.glob("run_rung01_replan*.gd")):
+        match = pat.match(path.name)
+        if not match:
+            continue
+        n = int(match.group(1))
+        if n < 13:
+            continue
+        by_n.setdefault(n, []).append(path)
+    for n in (13, 14, 15):
+        if len(by_n.get(n, [])) < 1:
+            errors.append(f"expected at least 1 run_rung01_replan{n}_*.gd")
+    for n in sorted(by_n):
+        for path in by_n[n]:
+            src = path.read_text(encoding="utf-8")
+            prefix = f"{path.relative_to(ROOT)}:"
+            _lint_replan11_camera(
+                src, errors, prefix, extra_yaw_pitch_ok=("_zoom_model",)
+            )
+    return by_n
 
 
 def main() -> int:
@@ -545,9 +536,7 @@ def main() -> int:
     _lint_replan10(errors)
     _lint_replan11(errors)
     _lint_replan12(errors)
-    _lint_replan13(errors)
-    _lint_replan14(errors)
-    _lint_replan15(errors)
+    replan_n = _lint_replan_n(errors)
 
     if errors:
         print("lint_rung01_e2e: GUI shortcuts remain:", file=sys.stderr)
@@ -575,12 +564,8 @@ def main() -> int:
     print(f"lint_rung01_e2e: {n11} replan11 scripts are clean")
     n12 = len(list(TESTS.glob("run_rung01_replan12_*.gd")))
     print(f"lint_rung01_e2e: {n12} replan12 scripts are clean")
-    n13 = len(list(TESTS.glob("run_rung01_replan13_*.gd")))
-    print(f"lint_rung01_e2e: {n13} replan13 scripts are clean")
-    n14 = len(list(TESTS.glob("run_rung01_replan14_*.gd")))
-    print(f"lint_rung01_e2e: {n14} replan14 scripts are clean")
-    n15 = len(list(TESTS.glob("run_rung01_replan15_*.gd")))
-    print(f"lint_rung01_e2e: {n15} replan15 scripts are clean")
+    for n, paths in sorted(replan_n.items()):
+        print(f"lint_rung01_e2e: {len(paths)} replan{n} scripts are clean")
     return 0
 
 

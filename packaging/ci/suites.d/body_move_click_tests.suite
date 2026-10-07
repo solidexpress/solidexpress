@@ -1,0 +1,2 @@
+script=tests/run_body_move_click_tests.gd
+tier=full

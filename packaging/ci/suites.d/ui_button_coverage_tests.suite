@@ -1,0 +1,2 @@
+script=tests/run_ui_button_coverage_tests.gd
+tier=full

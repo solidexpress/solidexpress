@@ -1,0 +1,2 @@
+script=tests/run_sketch_tests.gd
+tier=ci

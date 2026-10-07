@@ -1,0 +1,2 @@
+script=tests/run_visual_ux_tests.gd
+tier=full

@@ -1,0 +1,2 @@
+script=tests/run_sketch_expr_dim_tests.gd
+tier=full

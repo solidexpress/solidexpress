@@ -1,0 +1,2 @@
+script=tests/run_triball_hex_polish_tests.gd
+tier=full

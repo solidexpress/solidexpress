@@ -1,0 +1,2 @@
+script=tests/run_rung01_n12_extrude.gd
+tier=ci

@@ -1,0 +1,2 @@
+script=tests/run_ui_tests.gd
+tier=ci

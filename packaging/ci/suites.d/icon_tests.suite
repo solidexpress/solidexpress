@@ -1,0 +1,3 @@
+# known-red on main; tier=full so make test-godot still runs it and CI does not
+script=tests/run_icon_tests.gd
+tier=full
