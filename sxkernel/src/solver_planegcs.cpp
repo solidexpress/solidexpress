@@ -22,6 +22,29 @@ public:
     SolveResult solve(Sketch& sketch) override;
 };
 
+// PlaneGCS line–circle tangency is a signed distance of +radius when the
+// centre lies to the left of p1→p2. A shaft drawn small→large along +X at
+// y = +r has the centre on the right, so the error is −2r. DogLeg then flips
+// the line or the rank check paints that tangent (and its H badge) conflicting.
+// Swap only this constraint's endpoint pointers so the drawn side is the
+// zero-error side. The sketch geometry is not reversed.
+GCS::Line tangent_line_oriented(const GCS::Line& line, const GCS::Point& center) {
+    GCS::Line oriented = line;
+    double x0 = *center.x;
+    double y0 = *center.y;
+    double x1 = *line.p1.x;
+    double y1 = *line.p1.y;
+    double x2 = *line.p2.x;
+    double y2 = *line.p2.y;
+    double dx = x2 - x1;
+    double dy = y2 - y1;
+    double area = -x0 * dy + y0 * dx + x1 * y2 - x2 * y1;
+    if (area < 0.0) {
+        std::swap(oriented.p1, oriented.p2);
+    }
+    return oriented;
+}
+
 // Per-solve translation state.
 struct Xlate {
     Sketch& sketch;
@@ -213,7 +236,8 @@ struct Xlate {
                 auto l = lines.find(c.refs.at(0).entity);
                 auto ci = circles.find(c.refs.at(1).entity);
                 if (l != lines.end() && ci != circles.end()) {
-                    sys.addConstraintTangent(l->second, ci->second, /*ccw=*/true, tag, drv);
+                    GCS::Line oriented = tangent_line_oriented(l->second, ci->second.center);
+                    sys.addConstraintTangent(oriented, ci->second, /*ccw=*/true, tag, drv);
                     return true;
                 }
                 // circle-circle
@@ -242,7 +266,8 @@ struct Xlate {
                 // line-arc
                 auto ai = arcs.find(c.refs.at(1).entity);
                 if (l != lines.end() && ai != arcs.end()) {
-                    sys.addConstraintTangent(l->second, ai->second, /*ccw=*/true, tag, drv);
+                    GCS::Line oriented = tangent_line_oriented(l->second, ai->second.center);
+                    sys.addConstraintTangent(oriented, ai->second, /*ccw=*/true, tag, drv);
                     return true;
                 }
                 return false;
