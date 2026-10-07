@@ -34,6 +34,7 @@ func _init() -> void:
 	print("starting_ref product under test; leftover 8 = part-mode F, leftover 9 = wheel anchor")
 	FilmUI.reset_fail_count()
 	await test_part_mode_f_and_hud()
+	await test_hud_frame_with_timeline()
 	await test_sketch_session_end_f()
 	await test_zoom_anchor_matrix()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
@@ -75,6 +76,47 @@ func test_part_mode_f_and_hud() -> void:
 	_assert_body_in_free_rect(ctx, body, "F all")
 	check(not is_equal_approx(cam.distance, dist_zoomed) or not cam.pivot.is_equal_approx(pivot_zoomed),
 			"1: F changed the zoomed-in pose (d %.4f → %.4f)" % [dist_zoomed, cam.distance])
+
+	# sx-035 N6: HUD Frame must match F / Shift+F (same zoom and center),
+	# including a real mouse click on the button — not only pressed.emit().
+	var pose_f_all := _pose_of(cam)
+	var canvas_f: Rect2 = cam.sketch_fit_canvas_rect()
+	print("  after F all: d=%.4f pivot=%s canvas=%s" % [
+		cam.distance, str(cam.pivot), str(canvas_f)])
+	mark = _status_log.size()
+	await _push_key(vp, KEY_F, true)
+	hits = _framed_since(mark)
+	check(hits.size() == 1 and hits[0] == "Framed all",
+			"1b: Shift+F with nothing selected prints Framed all once (got %s)" % str(hits))
+	check(_pose_near(cam, pose_f_all),
+			"1b: Shift+F pose matches F (d %.4f vs %.4f)" % [
+				cam.distance, pose_f_all["distance"]])
+	var fit_btn_all := _find_labeled_button(main.view_hud, "Frame")
+	check(fit_btn_all != null and fit_btn_all.is_visible_in_tree(),
+			"1b: View HUD has a visible Frame button")
+	if fit_btn_all != null:
+		# Key F while the pointer sits on the HUD (same hover as a Frame click).
+		await _move_pointer(vp, fit_btn_all.get_global_rect().get_center())
+		mark = _status_log.size()
+		await _push_key(vp, KEY_F)
+		check(_pose_near(cam, pose_f_all),
+				"1b: F with pointer on HUD Frame matches canvas F (d %.4f vs %.4f)" % [
+					cam.distance, pose_f_all["distance"]])
+		mark = _status_log.size()
+		await _click_hud_frame(vp, fit_btn_all)
+		await process_frame
+		await process_frame
+	hits = _framed_since(mark)
+	if hits.is_empty() and str(main.status_label.text) == "Framed all":
+		hits.append("Framed all")
+	print("  after real HUD Frame click (no selection): hits=%s d=%.4f want %.4f canvas=%s" % [
+		str(hits), cam.distance, pose_f_all["distance"], str(cam.sketch_fit_canvas_rect())])
+	check(hits.size() == 1 and hits[0] == "Framed all",
+			"1b: HUD Frame prints Framed all once (got %s)" % str(hits))
+	check(_pose_near(cam, pose_f_all),
+			"1b: HUD Frame pose matches F / Shift+F (d %.4f vs %.4f, pivot dist %.4f)" % [
+				cam.distance, pose_f_all["distance"],
+				cam.pivot.distance_to(pose_f_all["pivot"])])
 
 	var end_px2 := _clamp_canvas(ctx, _body_screen_center(ctx, body))
 	await _click_at(vp, end_px2)
@@ -161,6 +203,50 @@ func test_part_mode_f_and_hud() -> void:
 		str(hits), _focus_name(vp), dist_pre, cam.distance])
 	check(hits.size() == 1 and (hits[0] == "Framed selection" or hits[0] == "Framed all"),
 			"5: F after fillet spinner commit frames and says so (got %s)" % str(hits))
+	await _shutdown(ctx)
+
+
+func test_hud_frame_with_timeline() -> void:
+	print("- N6: HUD Frame matches F with Timeline open (real mouse click)")
+	var ctx := await _boot()
+	var main = ctx.main
+	var cam: OrbitCamera = main.camera
+	var vp: Viewport = main.get_viewport()
+	var body := await _place_box(ctx)
+	check(body != "", "timeline case: box placed")
+	main.show_timeline = true
+	if main.has_method("_update_panel_visibility"):
+		main._update_panel_visibility()
+	await process_frame
+	await process_frame
+	check(main.timeline != null and main.timeline.visible, "Timeline is visible")
+	await _push_key(vp, KEY_ESCAPE)
+	await _push_key(vp, KEY_3)
+	var mark := _status_log.size()
+	await _push_key(vp, KEY_F)
+	var hits := _framed_since(mark)
+	check(hits.size() == 1 and hits[0] == "Framed all",
+			"N6: F prints Framed all (got %s)" % str(hits))
+	_assert_body_in_free_rect(ctx, body, "N6 F")
+	var pose_f := _pose_of(cam)
+	var fit_btn := _find_labeled_button(main.view_hud, "Frame")
+	check(fit_btn != null and fit_btn.is_visible_in_tree(), "N6: Frame button visible")
+	mark = _status_log.size()
+	if fit_btn != null:
+		await _click_hud_frame(vp, fit_btn)
+		await process_frame
+		await process_frame
+	hits = _framed_since(mark)
+	if hits.is_empty() and str(main.status_label.text) == "Framed all":
+		hits.append("Framed all")
+	print("  N6 HUD Frame: d=%.4f want %.4f hits=%s" % [
+		cam.distance, pose_f["distance"], str(hits)])
+	check(hits.size() == 1 and hits[0] == "Framed all",
+			"N6: HUD Frame prints Framed all (got %s)" % str(hits))
+	check(_pose_near(cam, pose_f),
+			"N6: HUD Frame pose matches F (d %.4f vs %.4f, pivot dist %.4f)" % [
+				cam.distance, pose_f["distance"],
+				cam.pivot.distance_to(pose_f["pivot"])])
 	await _shutdown(ctx)
 
 
@@ -658,6 +744,12 @@ func _click_at(vp: Viewport, pos: Vector2) -> void:
 	vp.push_input(up)
 	await process_frame
 	await process_frame
+
+
+## Real mouse press on the View HUD Frame button (no pressed.emit() cheat).
+func _click_hud_frame(vp: Viewport, fit_btn: Button) -> void:
+	var pos := fit_btn.get_global_rect().get_center()
+	await _click_at(vp, pos)
 
 
 func _wheel_at(vp: Viewport, pos: Vector2, zoom_in: bool, shift := false) -> void:

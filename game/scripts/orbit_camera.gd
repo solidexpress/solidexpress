@@ -839,14 +839,14 @@ func _frame_world_aabb(united: AABB) -> void:
 	var vp_size := Vector2.ZERO
 	if vp != null:
 		vp_size = vp.get_visible_rect().size
+	var canvas := Rect2()
 	if vp_size.y > 1.0:
-		var canvas := sketch_fit_canvas_rect(vp_size)
+		canvas = sketch_fit_canvas_rect(vp_size)
 		if canvas.size.x > 1.0 and canvas.size.y > 1.0:
 			distance *= maxf(vp_size.x / canvas.size.x, vp_size.y / canvas.size.y)
 	distance = clampf(distance, MIN_DISTANCE, MAX_DISTANCE)
 	_update_transform()
-	if vp_size.y > 1.0:
-		var canvas := sketch_fit_canvas_rect(vp_size)
+	if canvas.size.x > 1.0 and canvas.size.y > 1.0:
 		var dc := canvas.get_center() - vp_size * 0.5
 		if dc.length_squared() >= 1e-8:
 			var ppm := pixels_per_mm_at_pivot()
@@ -1084,6 +1084,9 @@ func _frame_radius_in_chrome_canvas(frame_radius: float) -> void:
 
 ## Visible sketch canvas in viewport pixels: full view minus chrome + a click
 ## margin. Falls back to the full viewport when the remaining rect is tiny.
+## Left inset is `ChromeDock.rail_right` plus the compact LeftStack column —
+## never a stale/expanded `get_global_rect()` that can swallow most of the
+## window (that made HUD Frame zoom out further than key F).
 func sketch_fit_canvas_rect(vp_size: Vector2 = Vector2.ZERO) -> Rect2:
 	if vp_size.y < 1.0:
 		var vp := get_viewport()
@@ -1097,9 +1100,7 @@ func sketch_fit_canvas_rect(vp_size: Vector2 = Vector2.ZERO) -> Rect2:
 	var right := SKETCH_FIT_MARGIN_PX
 	if is_inside_tree():
 		for node in get_tree().get_nodes_in_group("sx_main"):
-			var stack: Variant = node.get("left_stack")
-			if stack is Control and (stack as Control).is_visible_in_tree():
-				left = maxf(left, (stack as Control).get_global_rect().end.x)
+			left = maxf(left, _left_stack_frame_left(node, vp_size))
 			break
 	left += SKETCH_FIT_MARGIN_PX
 	top += SKETCH_FIT_MARGIN_PX
@@ -1109,6 +1110,21 @@ func sketch_fit_canvas_rect(vp_size: Vector2 = Vector2.ZERO) -> Rect2:
 	if w < 64.0 or h < 64.0:
 		return Rect2(Vector2.ZERO, vp_size)
 	return Rect2(left, top, w, h)
+
+
+## Compact left-rail column in viewport X (not a full-window glitch rect).
+func _left_stack_frame_left(main_node: Node, vp_size: Vector2) -> float:
+	var stack: Variant = main_node.get("left_stack")
+	if not (stack is Control) or not (stack as Control).is_visible_in_tree():
+		return 0.0
+	var sc := stack as Control
+	var col_w := sc.get_combined_minimum_size().x
+	# Live size is fine when it is the icon/palette column. A rect that covers
+	# half the window is layout noise (EXPAND_FILL children, pre-reset_size).
+	var max_col := maxf(120.0, vp_size.x * 0.40)
+	if sc.size.x > 4.0 and sc.size.x <= max_col:
+		col_w = maxf(col_w, sc.size.x)
+	return sc.position.x + col_w
 
 
 ## Leave sketch view: unlock orientation and restore the pre-entry pose.
