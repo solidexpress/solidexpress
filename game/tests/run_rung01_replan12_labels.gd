@@ -83,7 +83,9 @@ func _text_rect(ctx: FilmContext, sm: SketchMode, i: int) -> Rect2:
 	var text := str(dim.get("label_text", ""))
 	var size := Vector2(font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x,
 			font.get_height(18)) * k
-	var centre := anchor - Vector2(0.0, float(dim.get("label_stack", 0)) * 28.0 * k)
+	# Label3D.offset is screen pixels when fixed_size is set — do not scale
+	# the stack by k (same as SketchMode._dimension_label_rect).
+	var centre := anchor - Vector2(0.0, float(dim.get("label_stack", 0)) * 28.0)
 	return Rect2(centre - size * 0.5, size)
 
 
