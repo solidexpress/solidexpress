@@ -44,6 +44,8 @@ echo "Running gated Godot suites (workflow, ui, sketch, sketch tools, print, run
 # Outer-stub jaw trim: the GUI drag past the rim must keep the Ø45 head,
 # export a closed 3MF, and pass check_rung01 wrench (face fillets included).
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_jawstub.gd
+# Thickness edit: neck verticals re-resolve and the slot stays 2.5 deep (thick 7/7).
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_thick.gd
 
 echo "Gated suites completed."
 
