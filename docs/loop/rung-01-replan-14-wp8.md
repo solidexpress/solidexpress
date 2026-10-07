@@ -84,6 +84,8 @@ If adding all rows pushes the walk past ~20 min on the CI runner, move the Save 
 
 One entry at the top of `docs/plan/STATUS.md`, newest first, same style: `## Rung 1 replan 14 — sx-034 leftovers`; three or four bullets: the seven suites by name (`run_rung01_replan14_{savelabels,focuskeys,ctxbar,undo,camera,railstatus,polish}.gd`), the `SxSketch.snapshot()` / `restore()` bindings (WP4's only C++), the walk's `B14.*` rows and final count, the DIAG note (the four by-design rows at T = 14), and one sentence: "sx-035 rules 37–40 (body names are timeline indices; read labels not pictures; after a commit the viewport owns the keys; undo reads the status) live in `docs/loop/rung-01-replan-14.md`." Gate: the walk and `tools/lint_rung01_e2e.py`. Do not edit other entries.
 
+GUI testers download the Linux build from the rolling `linux-test-build` prerelease ([`linux-test-build.md`](linux-test-build.md)). Do not use a box-local `/workspace/sx-build` or any other local export. The sx-035 GUI walk is lean: only the re-verify rows plus the new N / A15 rows; everything else is headless/CI.
+
 ## Commands
 
 ```

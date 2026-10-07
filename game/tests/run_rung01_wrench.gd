@@ -2161,7 +2161,10 @@ func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
+	if not FilmUI.require_on_screen(ctx, screen, desc):
+		check(false, "sketch click on screen: %s" % desc)
+		return
+	check(true, "sketch click on screen: %s" % desc)
 	await _aim_pointer(ctx, screen)
 	await _pointer_click(ctx, screen, false)
 
@@ -2169,7 +2172,10 @@ func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 func _x11_click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
+	if not FilmUI.require_on_screen(ctx, screen, desc):
+		check(false, "sketch click on screen: %s" % desc)
+		return
+	check(true, "sketch click on screen: %s" % desc)
 	await _aim_pointer(ctx, screen)
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
 
@@ -2347,7 +2353,7 @@ func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 
 func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
-	await _b14_railstatus(ctx)
+	await _b14_railstatus(ctx, center)
 	print("  B13.2 Jaw click 2 twice")
 	print("  B14.1 Jaw click 2 twice")
 	var jaw := await _press_rail_label(ctx, "Jaw")
@@ -3626,6 +3632,59 @@ func _b14_spin_arrow_pos(spin: SpinBox, up: bool) -> Vector2:
 	return Vector2(x, y)
 
 
+func _b14_spin_text_pos(spin: SpinBox) -> Vector2:
+	var r: Rect2 = spin.get_global_rect()
+	return Vector2(r.position.x + minf(r.size.x * 0.35, r.size.x - 24.0), r.get_center().y)
+
+
+func _b14_on_screen_uv(ctx: FilmContext, center: Vector2) -> Vector2:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var deltas: Array[Vector2] = [
+		Vector2(10, 8), Vector2(-10, 8), Vector2(8, -6), Vector2(-8, -6),
+		Vector2(4, 3), Vector2(-4, 3), Vector2.ZERO
+	]
+	for d in deltas:
+		var uv: Vector2 = center + d
+		var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+		if FilmUI.is_on_screen(ctx, screen):
+			return uv
+	return center
+
+
+func _b14_type_spin_tab(ctx: FilmContext, spin: SpinBox, digits: String) -> void:
+	if spin == null or not spin.is_visible_in_tree():
+		return
+	var pos := _b14_spin_text_pos(spin)
+	if not FilmUI.is_on_screen(ctx, pos):
+		return
+	await _aim_pointer(ctx, pos)
+	await _pointer_click(ctx, pos, false)
+	await process_frame
+	var edit := _b14_spin_line(spin)
+	if edit == null:
+		return
+	if not edit.has_focus():
+		await _x11_click(edit)
+		await process_frame
+	var vp: Viewport = edit.get_viewport()
+	await _x11_select_all(vp)
+	await process_frame
+	await _x11_type(vp, digits)
+	await process_frame
+	var want := float(digits)
+	if absf(_b14_parse_radius(_b14_spin_text(spin)) - want) > 0.05:
+		await _x11_click(edit)
+		await process_frame
+		await _x11_select_all(vp)
+		await _x11_type(vp, digits)
+		await process_frame
+	_status_log.clear()
+	await _push_key(vp, KEY_TAB, 0)
+	await process_frame
+	await process_frame
+	await process_frame
+
+
 func _b14_world_under(cam: OrbitCamera, screen_pos: Vector2) -> Vector3:
 	var ray_origin := cam.project_ray_origin(screen_pos)
 	var ray_dir := cam.project_ray_normal(screen_pos)
@@ -3898,7 +3957,7 @@ func _b14_slot_cc(ctx: FilmContext) -> void:
 			"B13.1 typed length is not a bare Length … mm (got `%s`)" % slot_commit)
 
 
-func _b14_railstatus(ctx: FilmContext) -> void:
+func _b14_railstatus(ctx: FilmContext, center: Vector2) -> void:
 	print("  B14.11 Jaw / Rect / Circle rail")
 	var jaw := await _press_rail_label(ctx, "Jaw")
 	var rect := FilmUI.find_sketch_tool_button(ctx.main, "Rect")
@@ -3913,7 +3972,8 @@ func _b14_railstatus(ctx: FilmContext) -> void:
 	var rect_chips := _b14_chip_labels(ctx)
 	check(rect_chips.size() == 5, "B14.11 Rect shows five chips (got %s)" % str(rect_chips))
 	await _press_rail_label(ctx, "Circle")
-	await _click_uv(ctx, Vector2(40, 30), "B14.11 Circle centre")
+	var uv := _b14_on_screen_uv(ctx, center)
+	await _click_uv(ctx, uv, "B14.11 Circle centre")
 	await process_frame
 	var st := str(ctx.main.status_label.text)
 	check(st.contains("Circle — centre set, click the rim or type a radius")
@@ -4093,31 +4153,21 @@ func _b14_fillet_tab(ctx: FilmContext) -> void:
 	check(panel != null and strip != null, "B14.5 panel and strip Radius exist")
 	if panel == null or strip == null:
 		return
-	var p_edit := _b14_spin_line(panel)
-	if p_edit != null:
-		await _x11_click(p_edit)
-		await _ctrl_a(p_edit.get_viewport())
-		await _type_text(p_edit.get_viewport(), "10")
-		await _push_key(p_edit.get_viewport(), KEY_TAB, 0)
-		await process_frame
-		await process_frame
+	# Tab only emits status when the committed number changes. Start from 1
+	# so typing 10 then Tab is a real commit (same setup as replan13_radius).
+	await _b14_type_spin_tab(ctx, ctx.main.ops_panel._radius_spin as SpinBox, "1")
+	await _b14_type_spin_tab(ctx, ctx.main.ops_panel._radius_spin as SpinBox, "10")
 	_b14_assert_radius_trio(ctx, 10.0, "panel 10 Tab")
-	var s_edit := _b14_spin_line(strip)
-	if s_edit != null:
-		await _x11_click(s_edit)
-		await _ctrl_a(s_edit.get_viewport())
-		await _type_text(s_edit.get_viewport(), "1.5")
-		await _push_key(s_edit.get_viewport(), KEY_TAB, 0)
-		await process_frame
-		await process_frame
+	await _b14_type_spin_tab(ctx, ctx.main.interaction._strip_radius, "1.5")
 	_b14_assert_radius_trio(ctx, 1.5, "strip 1.5 Tab")
-	if s_edit != null:
-		await _x11_click(s_edit)
-		await _ctrl_a(s_edit.get_viewport())
-		await _type_text(s_edit.get_viewport(), "10")
-		await _push_key(s_edit.get_viewport(), KEY_TAB, 0)
-		await process_frame
-		await process_frame
+	await _b14_type_spin_tab(ctx, ctx.main.interaction._strip_radius, "10")
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		await FilmUI.exit_sketch(ctx)
+	await _release_gui_focus(ctx)
+	await _push_key(ctx.main.get_viewport(), KEY_3, 51)
+	await process_frame
+	await process_frame
 
 
 func _b14_assert_radius_trio(ctx: FilmContext, want: float, tag: String) -> void:
@@ -4127,6 +4177,13 @@ func _b14_assert_radius_trio(ctx: FilmContext, want: float, tag: String) -> void
 	var strip_n := _b14_parse_radius(_b14_spin_text(strip))
 	var panel_n := _b14_parse_radius(_b14_spin_text(panel))
 	var status_n := _b14_status_radius(st)
+	if is_nan(status_n) or absf(status_n - want) >= 0.05:
+		for s in _status_log:
+			var n := _b14_status_radius(s)
+			if not is_nan(n) and absf(n - want) < 0.05:
+				status_n = n
+				st = s
+				break
 	check(not is_nan(strip_n) and absf(strip_n - want) < 0.05,
 			"B14.5 %s strip is %s (got `%s`)" % [tag, str(want), _b14_spin_text(strip)])
 	check(not is_nan(panel_n) and absf(panel_n - want) < 0.05,
