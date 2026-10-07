@@ -504,6 +504,20 @@ def _lint_replan13(errors: list[str]) -> None:
         )
 
 
+def _lint_replan14(errors: list[str]) -> None:
+    paths = sorted(TESTS.glob("run_rung01_replan14_*.gd"))
+    if len(paths) < 1:
+        errors.append("expected at least 1 run_rung01_replan14_*.gd")
+    for path in paths:
+        src = path.read_text(encoding="utf-8")
+        prefix = f"{path.relative_to(ROOT)}:"
+        # Same camera needles as replan 13. `_zoom_model` is the only
+        # script-side yaw/pitch helper the allow-list covers.
+        _lint_replan11_camera(
+            src, errors, prefix, extra_yaw_pitch_ok=("_zoom_model",)
+        )
+
+
 def main() -> int:
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
@@ -522,6 +536,7 @@ def main() -> int:
     _lint_replan11(errors)
     _lint_replan12(errors)
     _lint_replan13(errors)
+    _lint_replan14(errors)
 
     if errors:
         print("lint_rung01_e2e: GUI shortcuts remain:", file=sys.stderr)
@@ -551,6 +566,8 @@ def main() -> int:
     print(f"lint_rung01_e2e: {n12} replan12 scripts are clean")
     n13 = len(list(TESTS.glob("run_rung01_replan13_*.gd")))
     print(f"lint_rung01_e2e: {n13} replan13 scripts are clean")
+    n14 = len(list(TESTS.glob("run_rung01_replan14_*.gd")))
+    print(f"lint_rung01_e2e: {n14} replan14 scripts are clean")
     return 0
 
 

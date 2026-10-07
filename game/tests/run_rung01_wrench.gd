@@ -60,6 +60,7 @@ func _init() -> void:
 		_assert_timeline(ctx)
 		await _edit_jaw_to_21(ctx, str(paths.get("jaw_sketch", "")))
 		await _triball_one_esc(ctx)
+		await _b14_polish(ctx)
 
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	print("%d checks, %d failures" % [checks, failures])
@@ -145,6 +146,8 @@ func _walk(ctx: FilmContext) -> Dictionary:
 			"status contains flats horizontal (got %s)" % ctx.main.status_label.text)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, Vector2.ZERO, "Bore centre")
+	await _b14_focuskeys_field(ctx)
+	await _click_uv(ctx, Vector2.ZERO, "Bore centre after B14.7 Esc")
 	await _hover_uv(ctx, Vector2(4, 0))
 	await _type_dim(ctx, "5", false)
 	var bore := _first_of(sm, "circle")
@@ -274,6 +277,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(head_c.x > 0.0, "P2.6 head centre X is positive (got %.3f)" % head_c.x)
 	check(absf(head_c.x - 200.0) <= 5.0,
 			"P2.6 head centre X is near +200 so check_rung01 orientation is not flipX (got %.3f)" % head_c.x)
+	await _b14_body_name(ctx)
+	await _b14_ctxbar(ctx, body)
+	await _b14_camera(ctx, body)
 
 	print("- hole and open jaw, Up To Surface")
 	var top := _face_along(ctx, body, 1)
@@ -301,9 +307,13 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(not sm.active, "Esc again exits the face sketch")
 	await _sketch_on_top(ctx, body, top, 10.0, false)
 	sm = ctx.main.sketch_mode
-	await _zoom_uv(ctx, Vector2.ZERO, 40.0)
+	await _push_key(ctx.main.get_viewport(), KEY_F, 0)
+	await process_frame
+	await process_frame
+	await _b14_frame_origin(ctx)
 	await _rail_click_probe(ctx)
-	await _place_hole_circle(ctx)
+	if _origin_circle_id(sm) == "":
+		await _place_hole_circle(ctx)
 	await _zoom_uv(ctx, Vector2(200, 0), 120.0)
 	print("  B2.8 redraw Ø45 at the head as a sketch circle")
 	await _draw_circle_typed(ctx, Vector2(200, 0), "22.5", true)
@@ -318,7 +328,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _draw_centre_rect(ctx, Vector2(200, 0))
 	await _edit_rect_labels(ctx)
 	await _circle_motions_leave_no_marks(ctx)
-	await _save_as_in_sketch(ctx)
+	await _b14_savelabels(ctx)
 	var first_miss := 12.0
 	check(first_miss > 0.15 * 22.5, "offset cutter misses the Ø45 15% gate")
 	check(first_miss < 0.9 * 22.5, "offset cutter still crosses the Ø45 disc inside the 90% rim limit")
@@ -384,6 +394,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 			and not cut_blob.contains("Open-profile cut needs a line chain"),
 			"jaw cut is not refused with Open-profile cut needs a line chain (got '%s')" % cut_status)
 	print("  jaw cut status: %s" % cut_status)
+	await _b14_uts_status(ctx, cut_status)
 	check(cut_status.contains("Extrude Up To Surface 10.0000 mm")
 			or _status_has("Extrude Up To Surface 10.0000 mm"),
 			"A9b status is Extrude Up To Surface 10.0000 mm (got '%s')" % cut_status)
@@ -425,15 +436,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(absf(sm.slot_radius - 5.0) < 1e-3, "slot radius typed into the dim blank (got %.4f)" % sm.slot_radius)
 	_status_log.clear()
 	await _click_uv(ctx, Vector2(18.5, 0), "Slot first centre")
-	await _hover_uv(ctx, Vector2(168.5, 0))
-	await _type_dim(ctx, "150", false)
-	await process_frame
-	var slot_commit := str(ctx.main.status_label.text)
-	check(slot_commit == "Slot c-c 150.0000 R5.0000 — typed"
-			or slot_commit.contains("Slot c-c 150.0000 R5.0000"),
-			"B13.1 Slot c-c 150.0000 R5.0000 — typed (got `%s`)" % slot_commit)
-	check(not slot_commit.begins_with("Length"),
-			"B13.1 typed length is not a bare Length … mm (got `%s`)" % slot_commit)
+	await _b14_slot_cc(ctx)
 	chrome = ctx.main.sketch_chrome
 	await _pick_op(_finish_op(ctx), 1)
 	await _pick_end(_finish_end(ctx), 0)
@@ -938,7 +941,8 @@ func _walk_empty_pixel(ctx: FilmContext) -> Vector2:
 func _human_fillet_picks(ctx: FilmContext, body: String, neck_x: float) -> void:
 	print("- fillet picks as a human: Top corner, wall click, press off the solid, Esc")
 	await _ensure_body_selected(ctx, body)
-	await _arm_fillet(ctx, 10.0)
+	await _b14_focuskeys_fillet(ctx)
+	await _b14_fillet_tab(ctx)
 	await _view_key(ctx, KEY_3)
 	await _click_model(ctx, Vector3(neck_x - 0.3, 9.7, 10.0), "Top-view neck corner")
 	check(ctx.view.selected_edges.size() == 1, "Top-view corner click arms one edge (got %d)" % ctx.view.selected_edges.size())
@@ -2157,7 +2161,10 @@ func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
+	if not FilmUI.require_on_screen(ctx, screen, desc):
+		check(false, "sketch click on screen: %s" % desc)
+		return
+	check(true, "sketch click on screen: %s" % desc)
 	await _aim_pointer(ctx, screen)
 	await _pointer_click(ctx, screen, false)
 
@@ -2165,7 +2172,10 @@ func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 func _x11_click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
+	if not FilmUI.require_on_screen(ctx, screen, desc):
+		check(false, "sketch click on screen: %s" % desc)
+		return
+	check(true, "sketch click on screen: %s" % desc)
 	await _aim_pointer(ctx, screen)
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
 
@@ -2343,7 +2353,9 @@ func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 
 func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
+	await _b14_railstatus(ctx, center)
 	print("  B13.2 Jaw click 2 twice")
+	print("  B14.1 Jaw click 2 twice")
 	var jaw := await _press_rail_label(ctx, "Jaw")
 	check(jaw != null and jaw.is_visible_in_tree(), "the Jaw button is on the sketch rail")
 	check(sm.tool == SketchMode.Tool.RECT and sm.tool_variant == "center_three_point",
@@ -2369,10 +2381,18 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 				sm.sketch.entity_ids().size(), before_n])
 	check(after_repeat.contains("zero") or after_repeat == SketchMode.JAW_ZERO_WIDTH,
 			"B13.2 status says the repeat did not commit (got `%s`)" % after_repeat)
+	check(not after_repeat.contains("Jaw committed"),
+			"B14.1 repeat does not print Jaw committed (got `%s`)" % after_repeat)
+	check(sm.sketch.entity_ids().size() == before_n,
+			"B14.1 entity count unchanged after repeat click 2 (n=%d was %d)" % [
+				sm.sketch.entity_ids().size(), before_n])
 	await _click_uv(ctx, center + across * 10.0, "Jaw click 3 half width")
 	await process_frame
 	check(str(ctx.main.status_label.text).begins_with("Jaw committed") or _status_has("Jaw committed"),
 			"B13.2 click 3 commits (got `%s`)" % ctx.main.status_label.text)
+	check(str(ctx.main.status_label.text).begins_with("Jaw committed") or _status_has("Jaw committed"),
+			"B14.1 click 3 commits (got `%s`)" % ctx.main.status_label.text)
+	await _b14_undo_jaw(ctx)
 	print("  B13.5 Tool status")
 	for pair in [["Line", "Line"], ["Smart Dim", "Smart Dim"], ["Trim", "Trim"]]:
 		await _press_rail_label(ctx, str(pair[0]))
@@ -2720,13 +2740,15 @@ func _type_text(vp: Viewport, text: String) -> void:
 		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
 
 
-func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
+func _push_key(vp: Viewport, keycode: Key, unicode: int, ctrl := false, shift := false) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = keycode
 	ev.physical_keycode = keycode
 	ev.unicode = unicode
 	ev.pressed = true
 	ev.echo = false
+	ev.ctrl_pressed = ctrl
+	ev.shift_pressed = shift
 	vp.push_input(ev)
 	await process_frame
 	var rel := InputEventKey.new()
@@ -2734,6 +2756,8 @@ func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
 	rel.physical_keycode = keycode
 	rel.pressed = false
 	rel.echo = false
+	rel.ctrl_pressed = ctrl
+	rel.shift_pressed = shift
 	vp.push_input(rel)
 	await process_frame
 
@@ -3516,3 +3540,761 @@ func _first_hit(mesh: Array, origin: Vector3, dir: Vector3) -> float:
 	if hits.is_empty():
 		return -1.0
 	return hits[0]
+
+
+func _origin_circle_id(sm: SketchMode) -> String:
+	if sm == null or sm.sketch == null:
+		return ""
+	for id in sm.sketch.entity_ids():
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		var c: Vector2 = info.get("center", Vector2(999, 999))
+		if c.length() <= 0.5:
+			return str(id)
+	return ""
+
+
+func _b14_label_rects(sm: SketchMode) -> Array:
+	if sm == null or not sm.has_method("dimension_label_screen_rects"):
+		return []
+	return sm.dimension_label_screen_rects()
+
+
+func _b14_glyph_rects(sm: SketchMode) -> Array:
+	if sm == null or not sm.has_method("constraint_glyph_screen_rects"):
+		return []
+	return sm.constraint_glyph_screen_rects()
+
+
+func _b14_label_text_list(rects: Array) -> PackedStringArray:
+	var out := PackedStringArray()
+	for rec in rects:
+		if typeof(rec) == TYPE_DICTIONARY:
+			out.append(str(rec.get("text", "")))
+	return out
+
+
+func _b14_count_text(texts: PackedStringArray, needle: String) -> int:
+	var n := 0
+	for t in texts:
+		if t == needle or t.begins_with(needle):
+			n += 1
+	return n
+
+
+func _b14_spin_line(spin: SpinBox) -> LineEdit:
+	if spin == null:
+		return null
+	return spin.get_line_edit()
+
+
+func _b14_spin_text(spin: SpinBox) -> String:
+	var edit := _b14_spin_line(spin)
+	if edit == null:
+		return ""
+	return str(edit.text).strip_edges()
+
+
+func _b14_parse_radius(text: String) -> float:
+	var t := text.strip_edges().replace("mm", "").replace("MM", "").strip_edges()
+	var i := 0
+	while i < t.length() and not (t[i] >= "0" and t[i] <= "9") and t[i] != "." and t[i] != "-":
+		i += 1
+	var j := i
+	while j < t.length() and ((t[j] >= "0" and t[j] <= "9") or t[j] == "."):
+		j += 1
+	var num := t.substr(i, j - i)
+	if num.is_valid_float():
+		return float(num)
+	return NAN
+
+
+func _b14_status_radius(text: String) -> float:
+	var key := "r="
+	var at := text.find(key)
+	if at < 0:
+		at = text.find("R=")
+	if at < 0:
+		return NAN
+	return _b14_parse_radius(text.substr(at + key.length()))
+
+
+func _b14_spin_arrow_pos(spin: SpinBox, up: bool) -> Vector2:
+	var r: Rect2 = spin.get_global_rect()
+	var le: LineEdit = _b14_spin_line(spin)
+	var x := r.position.x + r.size.x - 8.0
+	if le != null:
+		var lr: Rect2 = le.get_global_rect()
+		x = maxf(lr.position.x + lr.size.x + 6.0, r.position.x + r.size.x - 10.0)
+		x = minf(x, r.position.x + r.size.x - 4.0)
+	var y := r.position.y + r.size.y * (0.22 if up else 0.78)
+	return Vector2(x, y)
+
+
+func _b14_on_screen_uv(ctx: FilmContext, center: Vector2) -> Vector2:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var deltas: Array[Vector2] = [
+		Vector2(10, 8), Vector2(-10, 8), Vector2(8, -6), Vector2(-8, -6),
+		Vector2(4, 3), Vector2(-4, 3), Vector2.ZERO
+	]
+	for d in deltas:
+		var uv: Vector2 = center + d
+		var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+		if FilmUI.is_on_screen(ctx, screen):
+			return uv
+	return center
+
+
+func _b14_type_spin_tab(ctx: FilmContext, spin: SpinBox, digits: String) -> void:
+	if spin == null or not spin.is_visible_in_tree():
+		return
+	FilmUI.ensure_control_visible(spin)
+	await process_frame
+	var edit := _b14_spin_line(spin)
+	if edit == null:
+		return
+	FilmUI.ensure_control_visible(edit)
+	await process_frame
+	# Same click path as B14.7 (Enter). Do not _pointer_click the spin: that
+	# pixel can miss the LineEdit and hit the timeline / viewport.
+	await _x11_click(edit)
+	await process_frame
+	if not edit.has_focus():
+		await _x11_click(edit)
+		await process_frame
+	var vp: Viewport = edit.get_viewport()
+	await _ctrl_a(vp)
+	await process_frame
+	await _x11_type(vp, digits)
+	await process_frame
+	var want := float(digits)
+	if absf(_b14_parse_radius(_b14_spin_text(spin)) - want) > 0.05:
+		await _x11_click(edit)
+		await process_frame
+		await _ctrl_a(vp)
+		await _x11_type(vp, digits)
+		await process_frame
+	_status_log.clear()
+	await _push_key(vp, KEY_TAB, 0)
+	await process_frame
+	await process_frame
+	await process_frame
+
+
+func _b14_world_under(cam: OrbitCamera, screen_pos: Vector2) -> Vector3:
+	var ray_origin := cam.project_ray_origin(screen_pos)
+	var ray_dir := cam.project_ray_normal(screen_pos)
+	var forward := -cam.global_transform.basis.z
+	var denom := ray_dir.dot(forward)
+	if absf(denom) < 1e-12:
+		return cam.pivot
+	var t := (cam.pivot - ray_origin).dot(forward) / denom
+	return ray_origin + ray_dir * t
+
+
+func _b14_wheel_at(vp: Viewport, pos: Vector2, zoom_in: bool) -> void:
+	await _aim_pointer_vp(vp, pos)
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_WHEEL_UP if zoom_in else MOUSE_BUTTON_WHEEL_DOWN
+	ev.pressed = true
+	ev.factor = 1.0
+	ev.position = pos
+	ev.global_position = pos
+	vp.push_input(ev)
+	await process_frame
+
+
+func _aim_pointer_vp(vp: Viewport, screen: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = screen
+	motion.global_position = screen
+	vp.push_input(motion)
+	await process_frame
+
+
+func _b14_chip_labels(ctx: FilmContext) -> Array[String]:
+	var out: Array[String] = []
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	if chrome == null:
+		return out
+	var bar: Control = chrome.find_child("VariantBar", true, false) as Control
+	if bar == null or not bar.visible:
+		return out
+	for c in bar.get_children():
+		var b := c as Button
+		if b != null and b.is_visible_in_tree():
+			out.append(b.text)
+	return out
+
+
+func _b14_focuskeys_field(ctx: FilmContext) -> void:
+	print("  B14.7 Polygon + Circle field Ctrl+A / Esc")
+	var sm: SketchMode = ctx.main.sketch_mode
+	var vp: Viewport = ctx.main.get_viewport()
+	var before: Array = sm.selected.duplicate() if sm != null else []
+	var dim := _dim_edit(ctx)
+	check(dim != null, "B14.7 Radius field exists")
+	if dim == null:
+		return
+	await _x11_click(dim)
+	await process_frame
+	_status_log.clear()
+	await _ctrl_a(dim.get_viewport())
+	await process_frame
+	var sel := dim.get_selected_text()
+	check(sel != "" and sel == dim.text, "B14.7 Ctrl+A selects the field text (sel `%s` text `%s`)" % [sel, dim.text])
+	var after: Array = sm.selected.duplicate() if sm != null else []
+	check(after == before, "B14.7 Ctrl+A leaves sketch selection untouched")
+	check(not _status_has("Selected") and not str(ctx.main.status_label.text).contains("Selected "),
+			"B14.7 Ctrl+A does not select sketch entities (got `%s`)" % ctx.main.status_label.text)
+	_status_log.clear()
+	await _push_key(vp, KEY_ESCAPE, 0)
+	await process_frame
+	var drop := str(ctx.main.status_label.text)
+	check(drop.contains("First point dropped — Esc again exits the sketch")
+			or _status_has("First point dropped — Esc again exits the sketch"),
+			"B14.7 first Esc status First point dropped (got `%s`)" % drop)
+
+
+func _b14_body_name(ctx: FilmContext) -> void:
+	print("  B14.13 first extrude name is timeline index")
+	var feats: Array = ctx.view.doc.graph_features()
+	var found := false
+	for i in feats.size():
+		var f: Dictionary = feats[i]
+		if str(f.get("type", "")) != "extrude":
+			continue
+		var parsed = JSON.parse_string(str(f.get("params", "{}")))
+		if typeof(parsed) == TYPE_DICTIONARY and str(parsed.get("op", "")) == "cut":
+			continue
+		var index := i + 1
+		var want := "extrude %d" % index
+		var got := str(f.get("name", ""))
+		check(got == want, "B14.13 body name is %s (got `%s`)" % [want, got])
+		found = true
+		break
+	check(found, "B14.13 found a new extrude on the timeline")
+
+
+func _b14_ctxbar(ctx: FilmContext, body: String) -> void:
+	print("  B14.8 part context bar")
+	var vp: Viewport = ctx.main.get_viewport()
+	var ix: ViewportInteraction = ctx.main.interaction
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	var pick := FilmUI.model_to_screen(ctx, Vector3(100, 0, 5))
+	await _aim_pointer(ctx, pick)
+	await _pointer_click(ctx, pick, false)
+	await process_frame
+	await process_frame
+	check(ctx.view.selected_body == body, "B14.8 body is selected")
+	var strip: Control = ix._selection_strip
+	check(strip != null and strip.visible, "B14.8 SelectionStrip visible")
+	var fillet: Control = strip.find_child("StripFillet", true, false) as Control
+	var chamfer: Control = strip.find_child("StripChamfer", true, false) as Control
+	check(fillet != null and chamfer != null, "B14.8 Fillet and Chamfer exist")
+	var x_body_f := fillet.get_global_rect().position.x if fillet != null else -1.0
+	var x_body_c := chamfer.get_global_rect().position.x if chamfer != null else -1.0
+	var face_pt := Vector3(100, 0, 9.5)
+	var face_screen := FilmUI.model_to_screen(ctx, face_pt)
+	await _aim_pointer(ctx, face_screen)
+	await _pointer_click(ctx, face_screen, false)
+	await process_frame
+	await process_frame
+	fillet = strip.find_child("StripFillet", true, false) as Control
+	chamfer = strip.find_child("StripChamfer", true, false) as Control
+	var x_face_f := fillet.get_global_rect().position.x if fillet != null else -1.0
+	var x_face_c := chamfer.get_global_rect().position.x if chamfer != null else -1.0
+	if fillet != null:
+		await FilmUI.click_control(ctx, fillet as BaseButton, FilmUICues.alert("Fillet", "Arm fillet"))
+		await process_frame
+		await process_frame
+	fillet = strip.find_child("StripFillet", true, false) as Control
+	chamfer = strip.find_child("StripChamfer", true, false) as Control
+	var x_arm_f := fillet.get_global_rect().position.x if fillet != null else -1.0
+	var x_arm_c := chamfer.get_global_rect().position.x if chamfer != null else -1.0
+	check(absf(x_body_f - x_face_f) <= 1.0 and absf(x_face_f - x_arm_f) <= 1.0,
+			"B14.8 Fillet x identical ±1 px (body %.1f face %.1f armed %.1f)" % [
+				x_body_f, x_face_f, x_arm_f])
+	check(absf(x_body_c - x_face_c) <= 1.0 and absf(x_face_c - x_arm_c) <= 1.0,
+			"B14.8 Chamfer x identical ±1 px (body %.1f face %.1f armed %.1f)" % [
+				x_body_c, x_face_c, x_arm_c])
+	var bar := strip.get_global_rect()
+	var snap: Control = ctx.main.find_child("PlaceSnapBar", true, false) as Control
+	var menu: Control = ctx.main.find_child("FileMenu", true, false) as Control
+	var rail: Control = ctx.main.sketch_toolbar
+	check(snap == null or not bar.intersects(snap.get_global_rect()),
+			"B14.8 bar does not intersect Snap")
+	check(menu == null or not bar.intersects(menu.get_global_rect()),
+			"B14.8 bar does not intersect the top menu row")
+	check(rail == null or not rail.visible or not bar.intersects(rail.get_global_rect()),
+			"B14.8 bar does not intersect the left rail")
+	check(bar.position.x >= 0.0 and bar.position.y >= 0.0
+			and bar.end.x <= 1280.5 and bar.end.y <= 800.5,
+			"B14.8 bar is inside 1280×800 (%s)" % str(bar))
+	await _push_key(vp, KEY_ESCAPE, 0)
+	await process_frame
+	await _push_key(vp, KEY_ESCAPE, 0)
+	await process_frame
+
+
+func _b14_camera(ctx: FilmContext, body: String) -> void:
+	print("  B14.10 wheel zoom and F")
+	var vp: Viewport = ctx.main.get_viewport()
+	var cam: OrbitCamera = ctx.main.camera
+	await _push_key(vp, KEY_ESCAPE, 0)
+	await process_frame
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	if ctx.view.selected_body != body:
+		await _click_model(ctx, Vector3(100, 0, 5), "B14.10 select body")
+		await process_frame
+	var head := FilmUI.model_to_screen(ctx, Vector3(200, 0, 5))
+	check(FilmUI.require_on_screen(ctx, head, "B14.10 head"), "B14.10 head is on screen")
+	await _aim_pointer(ctx, head)
+	for i in 3:
+		var w := _b14_world_under(cam, head)
+		await _b14_wheel_at(vp, head, true)
+		var got := cam.unproject_position(w)
+		check(got.distance_to(head) <= 2.0,
+				"B14.10 wheel-in %d moves the unprojected point ≤ 2 px (err %.3f)" % [
+					i + 1, got.distance_to(head)])
+	for i in 3:
+		var w := _b14_world_under(cam, head)
+		await _b14_wheel_at(vp, head, false)
+		var got := cam.unproject_position(w)
+		check(got.distance_to(head) <= 2.0,
+				"B14.10 wheel-out %d moves the unprojected point ≤ 2 px (err %.3f)" % [
+					i + 1, got.distance_to(head)])
+	_status_log.clear()
+	await _push_key(vp, KEY_F, 0)
+	await process_frame
+	await process_frame
+	var framed_sel := 0
+	for s in _status_log:
+		if s == "Framed selection":
+			framed_sel += 1
+	check(framed_sel == 1 or str(ctx.main.status_label.text) == "Framed selection",
+			"B14.10 F prints Framed selection once (count %d status `%s`)" % [
+				framed_sel, ctx.main.status_label.text])
+	_status_log.clear()
+	await _push_key(vp, KEY_F, 0, false, true)
+	await process_frame
+	await process_frame
+	var framed_all := 0
+	for s in _status_log:
+		if s == "Framed all":
+			framed_all += 1
+	check(framed_all == 1 or str(ctx.main.status_label.text) == "Framed all",
+			"B14.10 Shift+F prints Framed all once (count %d status `%s`)" % [
+				framed_all, ctx.main.status_label.text])
+
+
+func _b14_frame_origin(ctx: FilmContext) -> void:
+	print("  B14.2 origin after F")
+	var sm: SketchMode = ctx.main.sketch_mode
+	var cam: OrbitCamera = ctx.main.camera
+	var origin := FilmUI.model_to_screen(ctx, sm.to_model(Vector2.ZERO))
+	var rail_right := ChromeDock.rail_right
+	check(origin.x >= rail_right + 30.0,
+			"B14.2 origin x %.1f ≥ rail right %.1f + 30" % [origin.x, rail_right])
+	var yaw0 := cam.yaw
+	var pitch0 := cam.pitch
+	var dist0 := cam.distance
+	var pivot0: Vector3 = cam.pivot
+	await _press_rail_label(ctx, "Circle")
+	check(FilmUI.require_on_screen(ctx, origin, "B14.2 pivot centre"),
+			"B14.2 pivot centre is on screen without moving the view")
+	await _aim_pointer(ctx, origin)
+	await _pointer_click(ctx, origin, false)
+	await process_frame
+	await _type_dim(ctx, "5", false)
+	await process_frame
+	var st := str(ctx.main.status_label.text)
+	check(st.contains("Circle r=5.0000") or _status_has("Circle r=5.0000"),
+			"B14.2 click lands Circle r=5.0000 (got `%s`)" % st)
+	check(is_equal_approx(cam.yaw, yaw0) and is_equal_approx(cam.pitch, pitch0)
+			and is_equal_approx(cam.distance, dist0) and cam.pivot.is_equal_approx(pivot0),
+			"B14.2 camera pose unchanged by the click")
+
+
+func _b14_uts_status(ctx: FilmContext, cut_status: String) -> void:
+	print("  B14.3 Up To Surface status")
+	var blind := ""
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	if chrome != null and chrome._extrude_spin != null:
+		blind = "%.4f" % chrome._extrude_spin.value
+	check(cut_status.contains("Up To Surface 10.0000 mm") or _status_has("Up To Surface 10.0000 mm"),
+			"B14.3 status contains Up To Surface 10.0000 mm (got `%s`)" % cut_status)
+	check(not cut_status.contains("20.0000"),
+			"B14.3 status is not the Blind spin value (got `%s` blind `%s`)" % [cut_status, blind])
+
+
+func _b14_slot_cc(ctx: FilmContext) -> void:
+	print("  B14.4 Slot c-c field")
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var lab: Label = chrome.find_child("RadiusLabel", true, false) as Label if chrome != null else null
+	var label_txt := str(lab.text) if lab != null else ""
+	check(lab != null and lab.visible and label_txt == "c-c",
+			"B14.4 entry field label is c-c (got `%s`)" % label_txt)
+	await _hover_uv(ctx, Vector2(168.5, 0))
+	await _type_dim(ctx, "150", false)
+	await process_frame
+	var slot_commit := str(ctx.main.status_label.text)
+	check(slot_commit.begins_with("Slot c-c 150.0000 R5.0000")
+			or slot_commit.contains("Slot c-c 150.0000 R5.0000"),
+			"B14.4 status starts Slot c-c 150.0000 R5.0000 (got `%s`)" % slot_commit)
+	check(slot_commit.contains("Slot c-c 150.0000 R5.0000")
+			or slot_commit == "Slot c-c 150.0000 R5.0000 — typed",
+			"B13.1 Slot c-c 150.0000 R5.0000 — typed (got `%s`)" % slot_commit)
+	check(not slot_commit.begins_with("Length"),
+			"B13.1 typed length is not a bare Length … mm (got `%s`)" % slot_commit)
+
+
+func _b14_railstatus(ctx: FilmContext, center: Vector2) -> void:
+	print("  B14.11 Jaw / Rect / Circle rail")
+	var jaw := await _press_rail_label(ctx, "Jaw")
+	var rect := FilmUI.find_sketch_tool_button(ctx.main, "Rect")
+	check(jaw != null and jaw.button_pressed, "B14.11 JawTool pressed")
+	check(rect != null and not rect.button_pressed, "B14.11 ToolRect not pressed")
+	var jaw_chips := _b14_chip_labels(ctx)
+	check(jaw_chips.is_empty(), "B14.11 chip row hidden (got %s)" % str(jaw_chips))
+	rect = await _press_rail_label(ctx, "Rect")
+	jaw = FilmUI.find_sketch_tool_button(ctx.main, "Jaw")
+	check(rect != null and rect.button_pressed, "B14.11 Rect lights Rect")
+	check(jaw == null or not jaw.button_pressed, "B14.11 Jaw is not lit after Rect")
+	var rect_chips := _b14_chip_labels(ctx)
+	check(rect_chips.size() == 5, "B14.11 Rect shows five chips (got %s)" % str(rect_chips))
+	await _press_rail_label(ctx, "Circle")
+	var uv := _b14_on_screen_uv(ctx, center)
+	await _click_uv(ctx, uv, "B14.11 Circle centre")
+	await process_frame
+	var st := str(ctx.main.status_label.text)
+	check(st.contains("Circle — centre set, click the rim or type a radius")
+			or _status_has("Circle — centre set, click the rim or type a radius"),
+			"B14.11 Circle centre status (got `%s`)" % st)
+	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await process_frame
+
+
+func _b14_undo_jaw(ctx: FilmContext) -> void:
+	print("  B14.9 sketch undo Jaw")
+	var sm: SketchMode = ctx.main.sketch_mode
+	var vp: Viewport = ctx.main.get_viewport()
+	await _release_gui_focus(ctx)
+	var n1: int = sm.sketch.entity_ids().size()
+	_status_log.clear()
+	await _push_key(vp, KEY_Z, 0, true, false)
+	await process_frame
+	check(str(ctx.main.status_label.text) == "Undo: Jaw" or _status_has("Undo: Jaw"),
+			"B14.9 Ctrl+Z status Undo: Jaw (got `%s`)" % ctx.main.status_label.text)
+	check(sm.sketch.entity_ids().size() < n1, "B14.9 jaw entities are gone (n=%d was %d)" % [
+		sm.sketch.entity_ids().size(), n1])
+	_status_log.clear()
+	await _push_key(vp, KEY_Z, 0, true, true)
+	await process_frame
+	check(str(ctx.main.status_label.text) == "Redo: Jaw" or _status_has("Redo: Jaw"),
+			"B14.9 Ctrl+Shift+Z status Redo: Jaw (got `%s`)" % ctx.main.status_label.text)
+	check(sm.sketch.entity_ids().size() == n1, "B14.9 Redo: Jaw restores entities")
+	await _push_key(vp, KEY_Z, 0, true, false)
+	await process_frame
+	_status_log.clear()
+	await _push_key(vp, KEY_Y, 0, true, false)
+	await process_frame
+	check(str(ctx.main.status_label.text) == "Redo: Jaw" or _status_has("Redo: Jaw"),
+			"B14.9 Ctrl+Y status Redo: Jaw (got `%s`)" % ctx.main.status_label.text)
+	var guard := 0
+	while guard < 40:
+		var before_n: int = sm.sketch.entity_ids().size()
+		_status_log.clear()
+		await _push_key(vp, KEY_Z, 0, true, false)
+		await process_frame
+		guard += 1
+		if str(ctx.main.status_label.text) == "Nothing to undo" or _status_has("Nothing to undo"):
+			break
+		if sm.sketch.entity_ids().size() == before_n and str(ctx.main.status_label.text) != "Undo: Jaw":
+			break
+	check(str(ctx.main.status_label.text) == "Nothing to undo" or _status_has("Nothing to undo"),
+			"B14.9 undo to empty: Nothing to undo (got `%s`)" % ctx.main.status_label.text)
+	guard = 0
+	while guard < 40:
+		_status_log.clear()
+		await _push_key(vp, KEY_Z, 0, true, true)
+		await process_frame
+		guard += 1
+		if str(ctx.main.status_label.text) == "Nothing to redo" or _status_has("Nothing to redo"):
+			break
+	check(sm.sketch.entity_ids().size() == n1,
+			"B14.9 redo-all restores the jaw (n=%d want %d)" % [
+				sm.sketch.entity_ids().size(), n1])
+
+
+func _b14_savelabels(ctx: FilmContext) -> void:
+	print("  B14.6 Save As labels")
+	var sm: SketchMode = ctx.main.sketch_mode
+	var before := _b14_label_rects(sm)
+	var before_txt := _b14_label_text_list(before)
+	var glyphs := _b14_glyph_rects(sm)
+	print("  B14.6 labels before: %s" % ", ".join(before_txt))
+	for rec in before:
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var lr: Rect2 = rec.get("rect", Rect2())
+		for g in glyphs:
+			if typeof(g) != TYPE_DICTIONARY:
+				continue
+			var gr: Rect2 = g.get("rect", Rect2())
+			check(not lr.intersects(gr),
+					"B14.6 label `%s` does not overlap a glyph" % str(rec.get("text", "")))
+	await _save_as_in_sketch(ctx)
+	var after := _b14_label_rects(sm)
+	var after_txt := _b14_label_text_list(after)
+	print("  B14.6 labels after: %s" % ", ".join(after_txt))
+	check(after_txt == before_txt, "B14.6 label text list is identical after Save As")
+	check(_b14_count_text(after_txt, "45°") <= 1, "B14.6 no second 45°")
+	var extra_5 := _b14_count_text(after_txt, "5") > _b14_count_text(before_txt, "5")
+	var extra_22 := _b14_count_text(after_txt, "22.5") > _b14_count_text(before_txt, "22.5")
+	check(not extra_5 and not extra_22, "B14.6 no extra 5 / 22.5")
+	var hit := Vector2.INF
+	var open_i := -1
+	for rec in after:
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var t := str(rec.get("text", ""))
+		if t.contains("45") or t == "20":
+			var r: Rect2 = rec.get("rect", Rect2())
+			hit = r.get_center()
+			open_i = int(rec.get("index", -1))
+			break
+	if hit != Vector2.INF and FilmUI.is_on_screen(ctx, hit):
+		await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+		await _aim_pointer(ctx, hit)
+		await _pointer_click(ctx, hit, false)
+		await process_frame
+		await process_frame
+		await _aim_pointer(ctx, hit)
+		await process_frame
+		var overlay: MeasureOverlay = ctx.main.interaction.measure_overlay
+		var has_delta := false
+		if overlay != null:
+			for lab in overlay.labels:
+				if typeof(lab) == TYPE_DICTIONARY and str(lab.get("text", "")).contains("Δ"):
+					has_delta = true
+		check(overlay == null or not overlay.has_anchor() or not has_delta,
+				"B14.6 no Δ overlay while the label editor is open")
+		await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+		await process_frame
+	else:
+		check(open_i >= 0, "B14.6 found a label to hover")
+
+
+func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
+	print("  B14.7 Fillet field gives keys back")
+	var vp: Viewport = ctx.main.get_viewport()
+	var cam: OrbitCamera = ctx.main.camera
+	var btn: Button = ctx.main.interaction._strip_fillet
+	await FilmUI.click_control(ctx, btn, FilmUICues.alert("Fillet", "Arm fillet"))
+	await process_frame
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	var spin: SpinBox = ctx.main.interaction._strip_radius
+	check(spin != null and spin.is_visible_in_tree(), "B14.7 strip R is visible")
+	if spin == null:
+		return
+	await _aim_pointer(ctx, _b14_spin_arrow_pos(spin, true))
+	await _pointer_click(ctx, _b14_spin_arrow_pos(spin, true), false)
+	await process_frame
+	var edit := _b14_spin_line(spin)
+	if edit != null:
+		await _x11_click(edit)
+		await _ctrl_a(edit.get_viewport())
+		await _type_text(edit.get_viewport(), "10")
+		await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+		await process_frame
+		await process_frame
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	check(absf(cam.pitch - deg_to_rad(89.0)) < 0.05, "B14.7 after strip: camera is Top")
+	check(_b14_spin_text(spin).begins_with("10"),
+			"B14.7 after strip: field text 10 (got `%s`)" % _b14_spin_text(spin))
+	var panel: SpinBox = ctx.main.ops_panel._radius_spin as SpinBox
+	check(panel != null, "B14.7 panel Radius exists")
+	if panel == null:
+		return
+	var p_edit := _b14_spin_line(panel)
+	if p_edit != null:
+		await _x11_click(p_edit)
+		await _ctrl_a(p_edit.get_viewport())
+		await _type_text(p_edit.get_viewport(), "10")
+		await _push_key(p_edit.get_viewport(), KEY_ENTER, 0)
+		await process_frame
+		await process_frame
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	check(absf(cam.pitch - deg_to_rad(89.0)) < 0.05, "B14.7 after panel: camera is Top")
+	check(_b14_spin_text(panel).begins_with("10") or _b14_spin_text(spin).begins_with("10"),
+			"B14.7 after panel: field text 10 (strip `%s` panel `%s`)" % [
+				_b14_spin_text(spin), _b14_spin_text(panel)])
+
+
+func _b14_fillet_tab(ctx: FilmContext) -> void:
+	print("  B14.5 Fillet Tab sync")
+	# B14.7 types 10 Enter with no edges selected; that Enter applies/cancels
+	# the pick (`No edges selected — cancelled`). Re-arm so Tab can emit r=.
+	var btn: Button = ctx.main.interaction._strip_fillet
+	if btn != null and btn.is_visible_in_tree():
+		await FilmUI.click_control(ctx, btn, FilmUICues.alert("Fillet", "Arm fillet"))
+		await process_frame
+		await process_frame
+	var panel: SpinBox = ctx.main.ops_panel._radius_spin as SpinBox
+	var strip: SpinBox = ctx.main.interaction._strip_radius
+	check(panel != null and strip != null, "B14.5 panel and strip Radius exist")
+	if panel == null or strip == null:
+		return
+	# Tab only emits status when the committed number changes. Start from 1
+	# so typing 10 then Tab is a real commit (same setup as replan13_radius).
+	await _b14_type_spin_tab(ctx, ctx.main.ops_panel._radius_spin as SpinBox, "1")
+	await _b14_type_spin_tab(ctx, ctx.main.ops_panel._radius_spin as SpinBox, "10")
+	_b14_assert_radius_trio(ctx, 10.0, "panel 10 Tab")
+	await _b14_type_spin_tab(ctx, ctx.main.interaction._strip_radius, "1.5")
+	_b14_assert_radius_trio(ctx, 1.5, "strip 1.5 Tab")
+	await _b14_type_spin_tab(ctx, ctx.main.interaction._strip_radius, "10")
+	await process_frame
+	await process_frame
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		await FilmUI.exit_sketch(ctx)
+		await process_frame
+		await process_frame
+	await _release_gui_focus(ctx)
+	await _push_key(ctx.main.get_viewport(), KEY_3, 51)
+	await process_frame
+	await process_frame
+
+
+func _b14_assert_radius_trio(ctx: FilmContext, want: float, tag: String) -> void:
+	var panel: SpinBox = ctx.main.ops_panel._radius_spin as SpinBox
+	var strip: SpinBox = ctx.main.interaction._strip_radius
+	var st := str(ctx.main.status_label.text)
+	var strip_n := _b14_parse_radius(_b14_spin_text(strip))
+	var panel_n := _b14_parse_radius(_b14_spin_text(panel))
+	var status_n := _b14_status_radius(st)
+	if is_nan(status_n) or absf(status_n - want) >= 0.05:
+		for s in _status_log:
+			var n := _b14_status_radius(s)
+			if not is_nan(n) and absf(n - want) < 0.05:
+				status_n = n
+				st = s
+				break
+	check(not is_nan(strip_n) and absf(strip_n - want) < 0.05,
+			"B14.5 %s strip is %s (got `%s`)" % [tag, str(want), _b14_spin_text(strip)])
+	check(not is_nan(panel_n) and absf(panel_n - want) < 0.05,
+			"B14.5 %s panel is %s (got `%s`)" % [tag, str(want), _b14_spin_text(panel)])
+	check(not is_nan(status_n) and absf(status_n - want) < 0.05,
+			"B14.5 %s status r= is %s (got `%s`)" % [tag, str(want), st])
+	check(is_equal_approx(strip_n, panel_n) and is_equal_approx(panel_n, status_n),
+			"B14.5 %s strip/panel/status match" % tag)
+
+
+func _b14_row_edit_btn(row: Control) -> Button:
+	if row == null:
+		return null
+	var named := row.get_node_or_null("RowEdit") as Button
+	if named != null:
+		return named
+	for c in row.get_children():
+		var b := c as Button
+		if b == null or b is CheckBox:
+			continue
+		var tip := str(b.tooltip_text)
+		if tip == "Rename feature" or tip == "Edit sketch":
+			return b
+	return null
+
+
+func _b14_row_line_edit(row: Control) -> LineEdit:
+	if row == null:
+		return null
+	for c in row.get_children():
+		if c is LineEdit:
+			return c as LineEdit
+	return null
+
+
+func _b14_polish(ctx: FilmContext) -> void:
+	print("  B14.12 timeline pencil and File → Open")
+	var sm0: SketchMode = ctx.main.sketch_mode
+	if sm0 != null and sm0.active:
+		await FilmUI.exit_sketch(ctx)
+	await _show_timeline(ctx)
+	var sketch_fid := ""
+	for f in ctx.view.doc.graph_features():
+		if str(f.get("type", "")) == "sketch":
+			sketch_fid = str(f.get("id", ""))
+			break
+	var tl: TimelinePanel = ctx.main.timeline
+	var row: Control = tl._rows.get(sketch_fid) if tl != null and sketch_fid != "" else null
+	var pencil := _b14_row_edit_btn(row)
+	check(pencil != null, "B14.12 sketch row has a pencil")
+	if pencil != null:
+		_status_log.clear()
+		await FilmUI.click_control(ctx, pencil, FilmUICues.alert("Edit", "timeline pencil"))
+		await process_frame
+		await process_frame
+	var sm: SketchMode = ctx.main.sketch_mode
+	check(sm != null and sm.active, "B14.12 sketch_mode.active after pencil")
+	var st := str(ctx.main.status_label.text)
+	check(st.contains("Editing sketch") or _status_has("Editing sketch"),
+			"B14.12 status Editing sketch (got `%s`)" % st)
+	check(_b14_row_line_edit(row) == null, "B14.12 no rename field")
+	if sm != null and sm.active:
+		var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
+		if exit_btn != null and exit_btn.is_visible_in_tree():
+			await FilmUI.click_control(ctx, exit_btn, FilmUICues.exit_sketch())
+			await process_frame
+			await process_frame
+		if sm.active:
+			await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+			await process_frame
+	var path := "/tmp/sx-rung01-jaw-saveas.sxp"
+	if not FileAccess.file_exists(path):
+		check(false, "B14.12 saved .sxp exists for Open")
+		return
+	var file_btn := _menu_button(ctx.main, "File")
+	await FilmUI.activate_menu_id(ctx, file_btn, 1, FilmUICues.alert("File", "Open"))
+	await process_frame
+	await process_frame
+	var confirm: ConfirmationDialog = ctx.main.confirm_dialog
+	if confirm != null and confirm.visible:
+		var cok := confirm.get_ok_button()
+		if cok != null:
+			await _x11_click_embedded(cok)
+			await process_frame
+	var dlg: FileDialog = ctx.main.file_dialog
+	check(dlg != null and dlg.visible, "B14.12 Open dialog is visible")
+	if dlg == null or not dlg.visible:
+		return
+	var name_edit := _dialog_name_edit(dlg)
+	check(name_edit != null, "B14.12 Open filename field exists")
+	if name_edit != null:
+		await _x11_click_embedded(name_edit)
+		await process_frame
+		await _ctrl_a(name_edit.get_viewport())
+		await _type_text(name_edit.get_viewport(), path)
+		await process_frame
+	var ok := dlg.get_ok_button()
+	check(ok != null and not ok.disabled,
+			"B14.12 Open button is enabled (disabled=%s)" % str(ok.disabled if ok != null else "missing"))
+	if ok != null:
+		await _x11_click_embedded(ok)
+		await process_frame
+		await process_frame
+		await process_frame
+	if dlg.visible:
+		dlg.hide()

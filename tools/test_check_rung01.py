@@ -63,5 +63,19 @@ class ThickJawProbeTests(unittest.TestCase):
         self.assertAlmostEqual(z, 13.92, delta=1e-3)
 
 
+class DiagNoteTests(unittest.TestCase):
+    def test_four_rows_fail_by_design_at_t14(self):
+        want = [
+            'bbox Z (thickness)',
+            'grip slot present at y=0,z=8.75',
+            '1mm fillet top outer edge',
+            '1mm fillet on jaw top edge',
+        ]
+        self.assertEqual(c.diag_expected_failures_at_t(14.0), want)
+        self.assertEqual(c.diag_expected_failures_at_t(10.0), [])
+        self.assertEqual(c.diag_expected_failures_at_t(10.1), [])
+        self.assertEqual(c.TOL, 0.2)
+
+
 if __name__ == "__main__":
     unittest.main()
