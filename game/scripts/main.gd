@@ -2226,6 +2226,8 @@ func cancel_property_panel() -> bool:
 		return false
 	if not timeline.property_panel.visible:
 		return false
+	if not timeline.property_panel.has_pending_edits():
+		return false
 	timeline.property_panel.cancel_edits()
 	_sync_view_menu_checks()
 	_update_panel_visibility()
@@ -3631,7 +3633,7 @@ func _save_current() -> void:
 	if saved:
 		_last_saved_revision = view.doc.revision()
 		_push_recent(current_path)
-	if reenter_fid != "" and sketch_mode.begin_edit(reenter_fid):
+	if reenter_fid != "" and sketch_mode.begin_edit(reenter_fid, false):
 		# Hold restack, then restore the live zoom, then place labels. begin_edit
 		# fits the view; apply_pose without the hold restacks those fit-view
 		# stacks at 150 px and parks 45° on 20 (N1b).
@@ -3641,7 +3643,8 @@ func _save_current() -> void:
 		if sketch_mode.has_method("reapply_dimension_records"):
 			sketch_mode.reapply_dimension_records(
 					kept_dims if not kept_dims.is_empty() else sketch_mode.dimensions)
-		_on_sketch_session_started("Editing sketch")
+		# Save re-entry is not a pencil click. Do not print "Editing sketch".
+		_on_sketch_session_started("")
 		if sketch_chrome != null and not fin.is_empty():
 			sketch_chrome.finish_restore(fin)
 		view.refresh_sketch_pads(sketch_mode.editing_fid)

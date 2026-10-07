@@ -592,6 +592,13 @@ func cancel_edits() -> void:
 	_close()
 
 
+## True while the user has changed a value that Esc must roll back.
+## A panel that is only showing the last feature must not steal Esc from
+## an armed Fillet / Hole pick.
+func has_pending_edits() -> bool:
+	return _edits > 0
+
+
 func dismiss_keep_preview() -> void:
 	_close()
 
