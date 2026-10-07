@@ -1,0 +1,2 @@
+script=tests/run_rung01_jaw_label_hit.gd
+tier=ci

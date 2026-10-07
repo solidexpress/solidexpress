@@ -1,0 +1,2 @@
+script=tests/run_measure_overlay_tests.gd
+tier=full

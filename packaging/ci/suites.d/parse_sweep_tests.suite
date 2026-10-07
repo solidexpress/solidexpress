@@ -1,0 +1,2 @@
+script=tests/run_parse_sweep_tests.gd
+tier=full

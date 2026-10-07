@@ -1,0 +1,2 @@
+script=tests/run_film_manifest_smoke.gd
+tier=full

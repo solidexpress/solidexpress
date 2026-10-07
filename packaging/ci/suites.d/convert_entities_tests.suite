@@ -1,0 +1,2 @@
+script=tests/run_convert_entities_tests.gd
+tier=full

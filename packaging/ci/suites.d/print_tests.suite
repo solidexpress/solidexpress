@@ -1,0 +1,2 @@
+script=tests/run_print_tests.gd
+tier=ci

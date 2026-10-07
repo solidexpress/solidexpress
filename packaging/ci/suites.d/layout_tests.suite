@@ -1,0 +1,2 @@
+script=tests/run_layout_tests.gd
+tier=full

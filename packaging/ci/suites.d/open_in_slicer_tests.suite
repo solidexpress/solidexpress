@@ -1,0 +1,2 @@
+script=tests/run_open_in_slicer_tests.gd
+tier=full

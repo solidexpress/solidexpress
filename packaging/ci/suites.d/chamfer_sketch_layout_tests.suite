@@ -1,0 +1,2 @@
+script=tests/run_chamfer_sketch_layout_tests.gd
+tier=full

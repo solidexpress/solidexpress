@@ -55,7 +55,7 @@ Useful details:
 
 - Default CMake build type is `RelWithDebInfo`.
 - Kernel tests: `build/sxkernel/sxkernel_tests` (also via `make test-kernel`).
-- Godot tests (`make test-godot`): includes sketch suites (`run_sketch_*.gd`, `run_sketch_fully_defined_tests.gd`, `run_sketch_expr_dim_tests.gd`, `run_convert_entities_tests.gd`, sweep/loft, UI, workflow, …).
+- Godot tests (`make test-godot`): every manifest in `packaging/ci/suites.d/`. Add a suite by adding one `.suite` file there; do not edit the Makefile list or `packaging/ci/run_godot_suites.sh`.
 
 ## Architecture
 

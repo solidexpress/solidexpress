@@ -1,0 +1,2 @@
+script=tests/run_wrench_blockers_tests.gd
+tier=full
