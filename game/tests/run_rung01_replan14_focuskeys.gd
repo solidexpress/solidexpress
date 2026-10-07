@@ -324,6 +324,17 @@ func _part_rows() -> void:
 		return
 	_focus_probe(vp, "after arm")
 	_observe_spin(main, "armed strip", spin)
+	var arm_owner := vp.gui_get_focus_owner()
+	check(not (arm_owner is LineEdit),
+			"1b: arm did not leave caret in a LineEdit (got %s)" % [
+				"null" if arm_owner == null else arm_owner.get_class()])
+	_status_log.clear()
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	_assert_top(cam, "1b after arm")
+	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"1b: Fillet still armed after KEY_3")
 
 	print("- 2. strip ▲ then ▼, then KEY_3 is Top")
 	var before_arrows := _strip_text(main)
@@ -381,6 +392,44 @@ func _part_rows() -> void:
 			"3: panel parses to 10 (got `%s`)" % _panel_text(main))
 	check(not _strip_text(main).contains("104") and not _strip_text(main).contains("410"),
 			"3: no stray digit in strip (got `%s`)" % _strip_text(main))
+
+	print("- 3b. click strip, 10 Tab; display is 10 not 0.0; KEY_4 is Back")
+	if main.ops_panel._pending != OpsPanel.Pending.FILLET_EDGES:
+		ctx.view.select_entity(body, "")
+		await process_frame
+		await _arm_fillet_strip(ctx)
+	spin = _strip(main)
+	if spin != null:
+		await _click_at(vp, _spin_text_pos(spin))
+		await process_frame
+		await _push_key(vp, KEY_A, 0, true)
+		await _push_key(vp, KEY_1, 49)
+		await _push_key(vp, KEY_0, 48)
+		await _push_key(vp, KEY_TAB)
+		await process_frame
+		await process_frame
+		await process_frame
+	_focus_probe(vp, "after strip 10 Tab")
+	_observe_spin(main, "after strip 10 Tab", spin)
+	var tab_owner := vp.gui_get_focus_owner()
+	var tab_name := "" if tab_owner == null else str(tab_owner.name)
+	check(tab_name != "StripJaw10",
+			"3b: Tab did not land on AF 10 (owner `%s`)" % tab_name)
+	check(_parses_to(_strip_text(main), 10.0),
+			"3b: strip parses to 10 (got `%s`)" % _strip_text(main))
+	check(_strip_text(main).strip_edges().begins_with("10"),
+			"3b: strip text starts with 10, not clipped 0.0 (got `%s`)" % _strip_text(main))
+	check(_parses_to(_panel_text(main), 10.0),
+			"3b: panel parses to 10 (got `%s`)" % _panel_text(main))
+	_status_log.clear()
+	await _push_key(vp, KEY_4, 52)
+	await process_frame
+	await process_frame
+	_assert_back(cam, "3b strip typed 10 Tab")
+	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"3b: Fillet still armed after Tab + KEY_4")
+	check(not _strip_text(main).contains("104") and not _strip_text(main).contains("410"),
+			"3b: no stray digit in strip (got `%s`)" % _strip_text(main))
 
 	print("- 4. KEY_8 then KEY_3 each change the view")
 	_status_log.clear()

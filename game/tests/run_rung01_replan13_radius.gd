@@ -1,8 +1,9 @@
 # Rung 1 replan 13 WP3 — Fillet Radius in the selection strip and the Modify
 # panel are one value. Validation suite: box via insert_primitive, select_entity,
 # arm through ops_panel.arm_or_apply_fillet(); every key under test is a real
-# pushed event. L3: Tab (not Enter) after typing 10 in the panel, and 1.5 in
-# the strip, keeps strip, panel, and status `r=` on the same number.
+# pushed event. L3: Tab (not Enter) after typing 10 in the panel, 1.5 in the
+# strip, and 10 in the strip, keeps strip, panel, and status `r=` on the same
+# number. Strip text for 10 must start with "10" (not a scrolled "0.0 mm").
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script res://tests/run_rung01_replan13_radius.gd
 extends SceneTree
@@ -81,6 +82,15 @@ func _agree(main, want: float, tag: String) -> void:
 			"%s: panel Radius == %s (got %s)" % [tag, str(want), str(main.ops_panel.dressup_radius())])
 	check(_parses_to(text, want),
 			"%s: strip text parses to %s (got `%s`)" % [tag, str(want), text])
+	if is_equal_approx(want, 10.0):
+		check(text.strip_edges().begins_with("10"),
+				"%s: strip text starts with 10, not a clipped 0.0 (got `%s`)" % [tag, text])
+		if spin != null:
+			var sle: LineEdit = spin.get_line_edit()
+			if sle != null:
+				check(sle.caret_column == 0,
+						"%s: strip caret is at the start (column %s)" % [
+							tag, str(sle.caret_column)])
 
 
 func _agree_armed(main, want: float, tag: String) -> void:
@@ -294,6 +304,52 @@ func _run() -> void:
 	await process_frame
 	_observe(main, "8 after strip Tab")
 	_agree_armed(main, 1.5, "8 strip Tab 1.5")
+
+	print("- 9. L3: type 10 in the strip, Tab; display is 10 not 0.0; KEY_3 is Top")
+	if ops._pending != OpsPanel.Pending.FILLET_EDGES:
+		view.select_entity(body, "")
+		await process_frame
+		ops.arm_or_apply_fillet()
+		await process_frame
+		await process_frame
+	ops.set_dressup_radius(1.0)
+	await process_frame
+	await process_frame
+	spin = _strip(main)
+	check(spin != null and spin.is_visible_in_tree(), "9: StripRadius visible")
+	check(spin.custom_minimum_size.x >= UiScale.px(110) - 0.5,
+			"9: strip R is wide enough (got %s, floor %s)" % [
+				str(spin.custom_minimum_size.x), str(UiScale.px(110))])
+	await _type_into_spin(spin, "10")
+	await process_frame
+	_observe(main, "9 strip typed 10 before Tab")
+	await _push_key(KEY_TAB)
+	await process_frame
+	await process_frame
+	await process_frame
+	_observe(main, "9 after strip Tab")
+	_agree_armed(main, 10.0, "9 strip Tab 10")
+	var focus_owner: Control = root.gui_get_focus_owner()
+	var focus_name := "" if focus_owner == null else str(focus_owner.name)
+	check(focus_name != "StripJaw10",
+			"9: Tab did not land on AF 10 (owner `%s`)" % focus_name)
+	check(not (focus_owner is LineEdit),
+			"9: Tab did not leave caret in a LineEdit (owner `%s`)" % [
+				"null" if focus_owner == null else focus_owner.get_class()])
+	var cam: OrbitCamera = main.camera
+	var pitch_before := cam.pitch if cam != null else 0.0
+	await _push_key(KEY_3, 51)
+	await process_frame
+	await process_frame
+	check(cam != null and absf(cam.pitch - deg_to_rad(89.0)) < 0.05,
+			"9: KEY_3 after strip Tab is Top (pitch %s was %s)" % [
+				str(cam.pitch) if cam != null else "?", str(pitch_before)])
+	check(_st(main).contains("Top view") or absf(cam.pitch - deg_to_rad(89.0)) < 0.05,
+			"9: view key reached the camera (status `%s`)" % _st(main))
+	check(ops._pending == OpsPanel.Pending.FILLET_EDGES,
+			"9: Fillet still armed after KEY_3")
+	check(_parses_to(_strip(main).get_line_edit().text, 10.0),
+			"9: KEY_3 did not append a digit (strip `%s`)" % _strip(main).get_line_edit().text)
 
 	print("- 2. type 1.5 in the strip; Enter applies 1.50")
 	if ops._pending != OpsPanel.Pending.FILLET_EDGES:

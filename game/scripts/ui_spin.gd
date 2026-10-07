@@ -33,6 +33,49 @@ static func labeled_spin(parent: Container, text: String, min_v: float, max_v: f
 	return spin
 
 
+## Compact number for a SpinBox LineEdit: "10" / "1.5" / "0.05", never
+## "10.000" which clips to look like "0.0 mm" in a narrow field.
+static func compact_number(v: float) -> String:
+	if is_equal_approx(v, roundf(v)):
+		return str(int(roundf(v)))
+	var s := "%.4f" % v
+	while s.ends_with("0"):
+		s = s.substr(0, s.length() - 1)
+	if s.ends_with("."):
+		s = s.substr(0, s.length() - 1)
+	return s
+
+
+## Write the committed value into the LineEdit and pin the caret at the start
+## so the leading digits stay visible (suffix "mm" must not scroll "10.0 mm"
+## into a tail that reads "0.0 mm").
+static func reveal_committed_spin(spin: SpinBox, v: float = NAN) -> void:
+	if spin == null:
+		return
+	if is_nan(v):
+		v = spin.value
+	v = clampf(v, spin.min_value, spin.max_value)
+	spin.set_value_no_signal(v)
+	var le := spin.get_line_edit()
+	if le == null:
+		return
+	var shown := compact_number(v)
+	var suffix := str(spin.suffix)
+	if suffix != "":
+		shown += " " + suffix
+	le.text = shown
+	pin_line_start(le)
+	pin_line_start.call_deferred(le)
+
+
+static func pin_line_start(le: LineEdit) -> void:
+	if le == null or not is_instance_valid(le):
+		return
+	le.caret_column = 0
+	# SpinBoxLineEdit has no scroll_horizontal (Godot 4.7). caret_column 0 is
+	# the public way to keep the leading digits in view.
+
+
 ## True when a LineEdit / SpinBox / TextEdit currently owns keyboard focus —
 ## view keys (1/2/3/7/W/H/D/…) must not fire.
 static func numeric_field_focused(vp: Viewport) -> bool:

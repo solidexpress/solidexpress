@@ -4165,6 +4165,10 @@ func _b14_fillet_tab(ctx: FilmContext) -> void:
 	await _b14_type_spin_tab(ctx, ctx.main.interaction._strip_radius, "1.5")
 	_b14_assert_radius_trio(ctx, 1.5, "strip 1.5 Tab")
 	await _b14_type_spin_tab(ctx, ctx.main.interaction._strip_radius, "10")
+	_b14_assert_radius_trio(ctx, 10.0, "strip 10 Tab")
+	var strip_txt := _b14_spin_text(strip)
+	check(strip_txt.strip_edges().begins_with("10"),
+			"B14.5 strip 10 Tab text starts with 10 (got `%s`)" % strip_txt)
 	await process_frame
 	await process_frame
 	var sm: SketchMode = ctx.main.sketch_mode

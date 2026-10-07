@@ -282,16 +282,33 @@ func _on_numeric_canvas_press(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	if _over_chrome(mb.position):
-		return
+	var at := mb.global_position
+	if at == Vector2.ZERO:
+		at = mb.position
+	_release_numeric_if_press_elsewhere(at)
+
+
+## Left press that is not on the focused LineEdit / its SpinBox returns the
+## keys to the viewport. Strip padding is chrome (`_over_chrome`), so the
+## Interaction gui_input hook never sees it — `_input` calls this too.
+func _release_numeric_if_press_elsewhere(at: Vector2) -> void:
 	var vp := get_viewport()
-	if vp == null:
+	if vp == null or not SxUi.numeric_field_focused(vp):
 		return
-	var f := vp.gui_get_focus_owner()
-	if f is LineEdit or f is TextEdit or f is SpinBox \
-			or (f != null and f.get_parent() is SpinBox):
-		vp.gui_release_focus()
-	# Do not accept_event — the part-mode pick still runs on this press.
+	if _press_on_focused_numeric(at, vp.gui_get_focus_owner()):
+		return
+	return_viewport_keys()
+
+
+func _press_on_focused_numeric(at: Vector2, f: Control) -> bool:
+	if f == null:
+		return false
+	if f.get_global_rect().grow(1.0).has_point(at):
+		return true
+	var p := f.get_parent()
+	if p is SpinBox and (p as Control).get_global_rect().grow(1.0).has_point(at):
+		return true
+	return false
 
 
 ## Esc with a first sketch anchor: drop it and print the A6 sentence once.
@@ -441,8 +458,13 @@ func _build_selection_strip() -> void:
 	SxUi.configure_spin(_strip_radius, 0.05, 100.0, 0.5, 0.5)
 	_strip_radius.suffix = "mm"
 	_strip_radius.update_on_text_changed = false
-	_strip_radius.custom_minimum_size = Vector2(88, 0)
-	_strip_radius.tooltip_text = "Fillet radius / Chamfer distance — edit, then Enter"
+	# 88 px clipped "10.0 mm" to a tail that read "0.0 mm" (sx-035 L3).
+	# Floor matches the finish-bar LineEdit so "10 mm" / "100 mm" stay whole.
+	_strip_radius.custom_minimum_size = Vector2(UiScale.px(140), 0)
+	_strip_radius.tooltip_text = "Fillet radius / Chamfer distance — edit, then Tab or Enter"
+	var strip_le_fit := _strip_radius.get_line_edit()
+	if strip_le_fit != null:
+		strip_le_fit.custom_minimum_size = Vector2(UiScale.px(110), 0)
 	_strip_radius.value_changed.connect(func(v: float) -> void:
 		if _strip_radius_editing or _strip_radius_syncing:
 			return
@@ -472,11 +494,29 @@ func _build_selection_strip() -> void:
 		else:
 			_commit_strip_radius()
 			_sync_strip_dressup_radius()
-		_panel_changed_while_strip_focused = false)
+		_panel_changed_while_strip_focused = false
+		# Tab defaulted onto AF 10 / other strip chips before the gui_input
+		# handler ran; pull the keys back so 3/4/6/8 still orbit.
+		if _strip_focus_landed_on_chip():
+			return_viewport_keys.call_deferred())
 	strip_le.text_submitted.connect(func(_t: String) -> void:
 		_commit_strip_radius()
+		_sync_strip_dressup_radius()
 		if ops_panel != null:
-			ops_panel.try_commit_pending())
+			ops_panel.try_commit_pending()
+		return_viewport_keys.call_deferred())
+	# Tab commits the number and keeps the keys on the viewport. Default
+	# focus-next lands on the AF 10 chip, which eats Enter (sets jaw_af) and
+	# looks like a stray digit when the walker types again.
+	strip_le.gui_input.connect(func(event: InputEvent) -> void:
+		if not (event is InputEventKey) or not event.pressed or event.echo:
+			return
+		if (event as InputEventKey).keycode != KEY_TAB:
+			return
+		_commit_strip_radius()
+		_sync_strip_dressup_radius()
+		return_viewport_keys()
+		strip_le.accept_event())
 	_strip_radius_box.add_child(_strip_radius)
 	# Jaw AF quick configs — wrench path without opening Variables dock.
 	_strip_jaw_box = HBoxContainer.new()
@@ -494,6 +534,7 @@ func _build_selection_strip() -> void:
 		jb.text = str(af_size)
 		jb.custom_minimum_size = Vector2(32, 0)
 		jb.tooltip_text = "Set jaw_af = %d (config %d)" % [af_size, af_size]
+		jb.focus_mode = Control.FOCUS_CLICK
 		jb.pressed.connect(_ctx_jaw_af.bind(af_size))
 		_strip_jaw_box.add_child(jb)
 	_strip_sketch = Button.new()
@@ -519,6 +560,7 @@ func _build_selection_strip() -> void:
 	_strip_delete.text = "Delete"
 	_strip_delete.pressed.connect(func() -> void: _ctx_delete())
 	row.add_child(_strip_delete)
+	_strip_click_focus(row)
 	_selection_strip.visibility_changed.connect(_layout_selection_strip)
 	if not resized.is_connected(_layout_selection_strip):
 		resized.connect(_layout_selection_strip)
@@ -4620,6 +4662,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# Strip / other STOP children swallow gui_input; still give the viewport
+	# the keys when the press is not on the focused numeric field.
+	_on_numeric_canvas_press(event)
 	# Camera first — before Control STOP panels so orbit works over docks, and
 	# before place so Alt+drag / two-finger pan don't commit a solid.
 	# Never steal wheel / two-finger pan from ScrollContainers; pinch always zooms.
@@ -5234,14 +5279,39 @@ func _ctx_chamfer() -> void:
 		status.emit("Chamfer: open Modify panel")
 
 
+## After a strip/panel radius commit, the viewport owns 3/4/6/8. Tab must not
+## land on AF chips; arming must not leave the caret in R.
+func return_viewport_keys() -> void:
+	grab_focus()
+
+
+func _strip_focus_landed_on_chip() -> bool:
+	var vp := get_viewport()
+	if vp == null or _selection_strip == null:
+		return false
+	var f := vp.gui_get_focus_owner()
+	if f == null or f == self:
+		return false
+	if not _selection_strip.is_ancestor_of(f):
+		return false
+	return f is Button
+
+
+## Strip chips are clicked, not tab-stops. FOCUS_ALL on AF 10 stole Tab from R.
+func _strip_click_focus(n: Node) -> void:
+	if n is Button:
+		(n as Button).focus_mode = Control.FOCUS_CLICK
+	for c in n.get_children():
+		_strip_click_focus(c)
+
+
 func _on_dressup_armed_changed(armed: bool, _is_fillet: bool) -> void:
 	_ensure_dressup_radius_connected()
 	_sync_strip_dressup_radius()
-	if armed and _strip_radius != null:
-		var le := _strip_radius.get_line_edit()
-		if le != null:
-			le.grab_focus()
-			le.select_all()
+	# Do not grab the R field. N2 / rule 39: after arming, view keys 3/4/6/8
+	# must still work; the walker clicks the field when they want to type.
+	if armed:
+		return_viewport_keys()
 
 
 func _ensure_dressup_radius_connected() -> void:
@@ -5293,21 +5363,8 @@ func _write_strip_radius(v: float, force := false) -> void:
 	if not force and le != null and le.has_focus() and _strip_user_typed():
 		return
 	_strip_radius_syncing = true
-	v = clampf(v, _strip_radius.min_value, _strip_radius.max_value)
-	var already := is_equal_approx(_strip_radius.value, v)
-	_strip_radius.set_value_no_signal(v)
+	SxUi.reveal_committed_spin(_strip_radius, v)
 	if le != null:
-		var parsed := _parse_strip_radius_text(le.text)
-		if already and (is_nan(parsed) or not is_equal_approx(parsed, v)):
-			# Value already matches, so SpinBox will not refresh a stale LineEdit
-			# ("0.0" vs 10). Nudge so the widget formats the text itself.
-			var bump := 0.001 if v + 0.001 <= _strip_radius.max_value else -0.001
-			_strip_radius.set_value_no_signal(v + bump)
-			_strip_radius.set_value_no_signal(v)
-		parsed = _parse_strip_radius_text(le.text)
-		if is_nan(parsed) or not is_equal_approx(parsed, v):
-			var suffix := str(_strip_radius.suffix)
-			le.text = str(_strip_radius.value) + (" " if suffix != "" else "") + suffix
 		_strip_focus_text = le.text
 	_strip_radius_syncing = false
 
@@ -5335,8 +5392,8 @@ func _commit_strip_radius() -> void:
 		return
 	var was_editing := _strip_radius_editing
 	_strip_radius_editing = false
-	_strip_radius.set_value_no_signal(
-			clampf(parsed, _strip_radius.min_value, _strip_radius.max_value))
+	var clamped := clampf(parsed, _strip_radius.min_value, _strip_radius.max_value)
+	SxUi.reveal_committed_spin(_strip_radius, clamped)
 	if ops_panel.has_method("set_dressup_radius"):
 		ops_panel.set_dressup_radius(_strip_radius.value)
 	_strip_radius_editing = was_editing
@@ -5371,6 +5428,7 @@ func _sync_strip_dressup_radius() -> void:
 		var le := _strip_radius.get_line_edit()
 		if le != null:
 			_strip_focus_text = le.text
+			SxUi.pin_line_start(le)
 
 
 func _sync_strip_jaw_af() -> void:
