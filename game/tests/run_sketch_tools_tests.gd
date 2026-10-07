@@ -94,6 +94,10 @@ func test_polygon_tool(main) -> void:
 	main._start_sketch()
 	sm.polygon_sides = 6
 	sm.set_tool(SketchMode.Tool.POLYGON)
+	# 20df3ef (#57) made across-flats the default: the second click is the
+	# flat-to-flat size, so vertices sit on a smaller circle. Vertex keeps
+	# this click on the circumcircle the checks below measure.
+	sm.set_tool_variant("vertex")
 
 	var center := Vector2(0, 0)
 	var vertex := Vector2(20, 0)
@@ -144,6 +148,9 @@ func test_polygon_extrude(main) -> void:
 	main._start_sketch()
 	sm.polygon_sides = 6
 	sm.set_tool(SketchMode.Tool.POLYGON)
+	# Same as the hexagon tool row: vertex, not the across-flats default
+	# (20df3ef / #57), so r stays the circumradius in the prism formula.
+	sm.set_tool_variant("vertex")
 
 	var center := Vector2(0, 0)
 	var r := 10.0
@@ -649,11 +656,18 @@ func test_trim_prunes_dimension_label(main) -> void:
 	var h: String = sm.sketch.add_line(0, 0, 10, 0)
 	sm.sketch.add_line(3, -2, 3, 2)
 	sm.sketch.add_line(7, -2, 7, 2)
-	sm.dimensions.append({"type": "distance", "ids": [h], "value": 10.0})
-	sm._redraw()
+	# 06012ca (#154) rebuilds labels from kernel constraints. A record with
+	# no cid is dropped on redraw, so the dimension has to be a real one.
+	sm.set_tool(SketchMode.Tool.SELECT)
+	sm._set_selected([h])
+	check(sm.constrain("distance", 10.0) == "success", "distance constraint solves")
 	check(sm.dimensions.size() == 1, "dimension stored before trim")
 	check(_dimension_label_texts(sm).size() == 1, "label present before trim")
 	sm.set_tool(SketchMode.Tool.TRIM)
+	# Headless SceneTree viewports are 64×64. The #164 label hit pad is 8 px,
+	# which covers this 10 mm line there, so the click opens the editor
+	# instead of trimming. At a real window size the pad does not.
+	root.size = Vector2i(1280, 800)
 	sm.click(Vector2(5, 0))
 	check(sm.sketch.entity_info(h).is_empty(), "replaced line gone after interior trim")
 	check(sm.dimensions.is_empty(), "orphan dimension pruned from array")
