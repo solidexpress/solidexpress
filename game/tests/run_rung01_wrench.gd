@@ -2077,7 +2077,9 @@ func _esc_box_then_file_menu(ctx: FilmContext) -> void:
 		popup.window_input.emit(esc)
 		await process_frame
 	check(popup == null or not popup.visible, "one Esc hides the File menu")
-	check(ctx.view.selected_body == "", "one Esc from File menu clears the selection")
+	# Menu Esc is consumed by the menu (replan 16 decision 8). A second Esc
+	# with nothing open still clears the selection.
+	check(ctx.view.selected_body != "", "one Esc from File menu keeps the selection")
 
 
 func _assert_contours_stay_on(ctx: FilmContext) -> void:

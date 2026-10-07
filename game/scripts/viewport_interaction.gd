@@ -5,6 +5,7 @@ extends Control
 ## click-to-place for palette button clicks.
 
 signal status(text: String)
+signal hover_hint(text: String)
 ## Emitted when click-to-place arms or disarms (main swaps left-rail chrome).
 signal place_changed(active: bool)
 ## Request sketch-on-selection (main owns SketchMode.begin).
@@ -1935,6 +1936,12 @@ func _is_orbit_event(event: InputEvent) -> bool:
 ## Returns true when at least one of those did something. Sketch Esc does not
 ## call this.
 func cancel_stack() -> bool:
+	# Menu-closing Esc is consumed by the menu (same frame, or while it is
+	# still visible). Do not clear the selection for that key.
+	var main_esc := _find_main()
+	if main_esc != null and main_esc.has_method("_esc_closed_menu") \
+			and bool(main_esc._esc_closed_menu()):
+		return true
 	var acted := false
 	var vp := get_viewport()
 	var main_pp := _find_main()
@@ -2784,13 +2791,13 @@ func _update_hover(screen_pos: Vector2) -> void:
 	_last_hover_key = key
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	if measure_overlay != null and measure_overlay.has_anchor() and not measure_overlay.following:
-		status.emit("Measure — Δ to perpendicular on near body · approach snap to move X · Esc clears")
+		hover_hint.emit("Measure — Δ to perpendicular on near body · approach snap to move X · Esc clears")
 	elif edge != "":
-		status.emit("Edge — click to select · Ctrl/Shift+click adds")
+		hover_hint.emit("Edge — click to select · Ctrl/Shift+click adds")
 	elif face != "":
-		status.emit("Face — click selects body first, click again for face · then Pull arrow")
+		hover_hint.emit("Face — click selects body first, click again for face · then Pull arrow")
 	else:
-		status.emit("Body — click to select · drag empty space / Alt / two-finger to orbit")
+		hover_hint.emit("Body — click to select · drag empty space / Alt / two-finger to orbit")
 
 
 ## Face of the dragged part that will seat on the drop target: the connector

@@ -1025,7 +1025,10 @@ func apply_pose(pose: Dictionary) -> void:
 func enter_sketch_view(
 		normal: Vector3, frame_center: Vector3, frame_radius: float,
 		model_up: Vector3 = Vector3.ZERO) -> void:
-	_sketch_pose = capture_pose()
+	# Keep the pose from the first entry. Fit / reassert call this again while
+	# locked; overwriting _sketch_pose made Extrude restore the zoomed sketch.
+	if not sketch_orientation_locked:
+		_sketch_pose = capture_pose()
 	sketch_orientation_locked = true
 	projection = PROJECTION_ORTHOGONAL
 	var n := normal.normalized()
