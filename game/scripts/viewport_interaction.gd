@@ -333,6 +333,7 @@ func _emit_view_key_status(event: InputEvent) -> void:
 	if ke.ctrl_pressed or ke.meta_pressed or ke.alt_pressed:
 		return
 	match ke.keycode:
+		KEY_0: status.emit("No view for key 0 — use 1 2 3 4 6 7 8")
 		KEY_1: status.emit("Front view")
 		KEY_2: status.emit("Right view")
 		KEY_3: status.emit("Top view")
