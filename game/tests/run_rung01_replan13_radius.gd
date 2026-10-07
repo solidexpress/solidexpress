@@ -82,7 +82,7 @@ func _agree(main, want: float, tag: String) -> void:
 			"%s: panel Radius == %s (got %s)" % [tag, str(want), str(main.ops_panel.dressup_radius())])
 	check(_parses_to(text, want),
 			"%s: strip text parses to %s (got `%s`)" % [tag, str(want), text])
-	if want >= 10.0 - 1e-6:
+	if is_equal_approx(want, 10.0):
 		check(text.strip_edges().begins_with("10"),
 				"%s: strip text starts with 10, not a clipped 0.0 (got `%s`)" % [tag, text])
 		if spin != null:
