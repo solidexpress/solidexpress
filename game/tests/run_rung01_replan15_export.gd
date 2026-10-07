@@ -345,13 +345,18 @@ func _export_bare_via_path_field(dlg: FileDialog, target_dir: String, name: Stri
 	await process_frame
 	await _x11_select_all(path_edit.get_viewport())
 	await process_frame
+	# The walk asserts current_dir is not the typed folder because that dialog
+	# opens in HOME. This suite's dialog is already in OUT after earlier rows,
+	# so the invariant is: typing the path leaves current_dir unchanged.
+	var dir_before := str(dlg.current_dir)
 	await _x11_type(path_edit.get_viewport(), target_dir)
 	await process_frame
 	var typed_dir := str(path_edit.text).strip_edges()
 	check(_dirs_match(typed_dir, target_dir),
 			"Path field shows typed directory %s (got %s)" % [target_dir, typed_dir])
-	check(not _dirs_match(str(dlg.current_dir), target_dir),
-			"current_dir is still not the typed folder (got %s)" % dlg.current_dir)
+	check(_dirs_match(str(dlg.current_dir), dir_before),
+			"typing the Path field leaves current_dir unchanged (before %s, now %s)" % [
+				dir_before, dlg.current_dir])
 	print("  path field before OK: %s  current_dir: %s" % [typed_dir, dlg.current_dir])
 	var name_edit := _dialog_name_edit(dlg)
 	check(name_edit != null, "filename LineEdit exists")
