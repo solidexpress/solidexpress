@@ -89,6 +89,9 @@ var _spline_pts: Array[Vector2] = []
 ## Straight-slot cap radius (mm). The dim blank sets this before the first
 ## centre click; the rubber-band after that click is the centre distance.
 var slot_radius := 5.0
+## Circle radius shown in the dim blank. Separate from slot_radius so a Slot
+## radius of 5 does not become the next Circle's starting Radius.
+var circle_radius := 10.0
 ## Smart Dimension first pick when it is a centre/point rather than a curve.
 var _smart_dim_pending: Dictionary = {}
 ## True after an Esc dropped a pending draw point and the status said the
@@ -439,7 +442,7 @@ func sketch_extents(pad_frac := 0.2) -> Dictionary:
 	var half := (mx - mn) * 0.5
 	var radius := maxf(half.x, half.y) * 1.414
 	return {"min": mn, "max": mx, "center": center3, "radius": maxf(radius, 5.0),
-			"min2": mn, "max2": mx}
+			"half_x": half.x, "half_y": half.y, "min2": mn, "max2": mx}
 
 
 ## Projected 2D AABB of the body this face sketch sits on, in sketch UV.
@@ -591,17 +594,7 @@ func _enter_camera() -> void:
 	if camera == null:
 		return
 	camera.sketch_fit = fit_view
-	var ext := sketch_extents(0.2)
-	var center: Vector3 = plane_origin
-	var radius := 25.0
-	if not ext.is_empty():
-		center = ext["center"]
-		radius = float(ext["radius"])
-	# Floor the working scale: a sketch framed on a 5 mm blank made screen
-	# drags land as sub-millimetre segments (0.15 mm "lines").
-	radius = maxf(radius, MIN_SKETCH_VIEW_RADIUS_MM)
-	camera.enter_sketch_view(plane_normal(), center, radius, plane_y)
-	_sketch_view_radius = radius
+	_apply_sketch_frame(sketch_extents(0.2))
 	if not camera.view_changed.is_connected(_on_sketch_camera_moved):
 		camera.view_changed.connect(_on_sketch_camera_moved)
 	# Re-assert after layout/resize handlers settle so nothing zooms us into
@@ -629,11 +622,31 @@ func _reassert_camera() -> void:
 	if not active or camera == null:
 		return
 	if camera.projection != Camera3D.PROJECTION_ORTHOGONAL or camera.size < MIN_SKETCH_VIEW_MM:
-		var ext := sketch_extents(0.2)
-		var center: Vector3 = ext["center"] if not ext.is_empty() else plane_origin
-		var radius: float = float(ext["radius"]) if not ext.is_empty() else 25.0
-		camera.enter_sketch_view(plane_normal(), center,
-				maxf(radius, MIN_SKETCH_VIEW_RADIUS_MM), plane_y)
+		_apply_sketch_frame(sketch_extents(0.2))
+
+
+## Fit half-extents into the chrome canvas. A wide sketch used to be framed
+## as a circle of radius max(half)*1.414 inside the shorter canvas side, which
+## left the profile in a loose band of the window.
+func _apply_sketch_frame(ext: Dictionary) -> void:
+	if camera == null:
+		return
+	var center: Vector3 = plane_origin
+	var hx := 25.0
+	var hy := 25.0
+	if not ext.is_empty():
+		center = ext["center"]
+		hx = float(ext.get("half_x", 25.0))
+		hy = float(ext.get("half_y", 25.0))
+	# Floor the working scale: a sketch framed on a 5 mm blank made screen
+	# drags land as sub-millimetre segments (0.15 mm "lines").
+	hx = maxf(hx, MIN_SKETCH_VIEW_RADIUS_MM)
+	hy = maxf(hy, MIN_SKETCH_VIEW_RADIUS_MM)
+	_sketch_view_radius = maxf(hx, hy)
+	if camera.has_method("frame_sketch_rect"):
+		camera.frame_sketch_rect(plane_normal(), center, hx, hy, plane_y)
+	else:
+		camera.enter_sketch_view(plane_normal(), center, _sketch_view_radius, plane_y)
 
 
 ## Frame the sketch plane at a workable scale (mechanic "fit sketch").
@@ -1227,20 +1240,51 @@ func up_to_surface_depth() -> float:
 
 
 var _contour_sig := ""
+var _contour_id_sig := ""
 
 
 func _sync_contour_bar() -> void:
 	# The finish bar only listed contours at session start, so a three-region
 	# blank never offered Selected Contours until the next New.
+	# Geometry is part of the signature: a Smart Dim moves a circle without
+	# changing entity ids, and the filled disc must follow.
 	var ids: PackedStringArray = sketch.entity_ids()
-	var sig := ",".join(ids)
-	if sig == _contour_sig:
+	var id_sig := ",".join(ids)
+	var full := id_sig + "|" + _contour_geom_sig()
+	if full == _contour_sig:
 		return
-	_contour_sig = sig
-	var chrome := _sketch_chrome()
-	if chrome != null:
-		chrome.refresh_contours(sketch)
+	var ids_changed := id_sig != _contour_id_sig
+	_contour_id_sig = id_sig
+	_contour_sig = full
+	if ids_changed:
+		var chrome := _sketch_chrome()
+		if chrome != null:
+			chrome.refresh_contours(sketch)
 	_redraw_contour_highlight()
+
+
+func _contour_geom_sig() -> String:
+	if sketch == null:
+		return ""
+	var parts: PackedStringArray = PackedStringArray()
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		var ty := str(info.get("type", ""))
+		match ty:
+			"line":
+				var a: Vector2 = info["start"]
+				var b: Vector2 = info["end"]
+				parts.append("%s:L:%.3f,%.3f,%.3f,%.3f" % [id, a.x, a.y, b.x, b.y])
+			"circle", "arc":
+				var c: Vector2 = info["center"]
+				parts.append("%s:%s:%.3f,%.3f,%.3f" % [
+					id, ty, c.x, c.y, float(info.get("radius", 0.0))])
+			"point":
+				var p: Vector2 = info.get("position", info.get("point", Vector2.ZERO))
+				parts.append("%s:P:%.3f,%.3f" % [id, p.x, p.y])
+			_:
+				parts.append("%s:%s" % [id, ty])
+	return "|".join(parts)
 
 
 func _sketch_chrome() -> SketchContextChrome:
@@ -4546,6 +4590,7 @@ func _click_circle(pos2: Vector2) -> void:
 					var r: float = c.distance_to(p1)
 					if r > 1e-6:
 						sketch.add_circle(c.x, c.y, r)
+						circle_radius = r
 				_tool_points.clear()
 		_:  # center
 			if _tool_points.size() == 1:
@@ -4556,6 +4601,7 @@ func _click_circle(pos2: Vector2) -> void:
 				if r > 1e-6:
 					var typed := _point_from_length
 					var circ_id: String = sketch.add_circle(c.x, c.y, r)
+					circle_radius = r
 					_last_commit_text = "Circle r=%.4f (Ø%.4f)" % [r, r * 2.0]
 					status.emit(_last_commit_text)
 					if typed and circ_id != "":
