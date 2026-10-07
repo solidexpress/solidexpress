@@ -243,6 +243,32 @@ static func _same_number(a: String, b: String) -> bool:
 	return is_equal_approx(float(as_), float(bs_))
 
 
+## Digit, keypad digit, '.', or '-' from a key event. Empty when it is not one.
+static func numeric_key_char(k: InputEventKey) -> String:
+	if k == null:
+		return ""
+	var code := k.keycode
+	if code >= KEY_0 and code <= KEY_9:
+		return str(code - KEY_0)
+	if code >= KEY_KP_0 and code <= KEY_KP_9:
+		return str(code - KEY_KP_0)
+	if code == KEY_PERIOD or code == KEY_KP_PERIOD:
+		return "."
+	if code == KEY_MINUS or code == KEY_KP_SUBTRACT:
+		return "-"
+	var ch := k.unicode
+	if ch >= 48 and ch <= 57:
+		return char(ch)
+	if ch == 46 or ch == 45:
+		return char(ch)
+	return ""
+
+
+## Same committed text in the strip and the Modify panel: "10 mm", "1.5 mm".
+static func fmt_mm(v: float) -> String:
+	return compact_number(v) + " mm"
+
+
 static func _numeric_body(raw: String) -> String:
 	var text := raw.strip_edges()
 	if text.ends_with(" mm"):

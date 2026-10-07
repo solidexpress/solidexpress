@@ -216,22 +216,29 @@ func _build_body_ops() -> void:
 
 	_body_ops.add_child(HSeparator.new())
 	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.05, 100.0, 0.5, 2.0)
+	_radius_spin.suffix = "mm"
 	_radius_spin.update_on_text_changed = false
 	var radius_le := _radius_spin.get_line_edit()
 	_radius_spin.value_changed.connect(func(v: float) -> void:
 		# A focused LineEdit can emit 0 while the user is typing 10 (soft-GL
 		# drops a digit, or SpinBox parses a partial). Skip only incomplete
 		# text — an assignment `.value = 10` must still push the strip.
-		if _radius_committing:
-			return
-		if radius_le != null and radius_le.has_focus():
-			var parsed := _parse_dressup_radius_text(radius_le.text)
-			if is_nan(parsed) or parsed < 0.05 - 1e-9:
-				return
-		_notify_dressup_radius(v))
+		if not _radius_committing:
+			if radius_le != null and radius_le.has_focus():
+				var parsed := _parse_dressup_radius_text(radius_le.text)
+				if is_nan(parsed) or parsed < 0.05 - 1e-9:
+					return
+			_notify_dressup_radius(v)
+		# After Godot's deferred line reformat, show the same "N mm" as the strip.
+		(func() -> void:
+			SxUi.reveal_committed_spin.call_deferred(_radius_spin, v)).call_deferred())
+	radius_le.focus_entered.connect(func() -> void:
+		SxUi.arm_replace_on_focus(radius_le))
 	# Tab (focus-exit) commits the number without applying the fillet.
 	radius_le.focus_exited.connect(func() -> void:
-		_commit_panel_radius())
+		_commit_panel_radius()
+		(func() -> void:
+			SxUi.reveal_committed_spin.call_deferred(_radius_spin)).call_deferred())
 	# Enter in the Radius field commits an armed fillet/chamfer pick (otherwise
 	# SpinBox eats Enter and the mechanic thinks the pick did nothing).
 	radius_le.text_submitted.connect(func(_t: String) -> void:
@@ -241,10 +248,18 @@ func _build_body_ops() -> void:
 	radius_le.gui_input.connect(func(event: InputEvent) -> void:
 		if not (event is InputEventKey) or not event.pressed or event.echo:
 			return
-		if (event as InputEventKey).keycode != KEY_TAB:
+		var key := event as InputEventKey
+		if key.keycode == KEY_TAB:
+			_commit_panel_radius()
+			_return_viewport_keys()
+			radius_le.accept_event()
 			return
-		_commit_panel_radius()
-		_return_viewport_keys()
+		if not SxUi.replace_armed(radius_le):
+			return
+		var ch := SxUi.numeric_key_char(key)
+		if ch == "":
+			return
+		SxUi.write_typed_text(radius_le, ch)
 		radius_le.accept_event())
 	var round_row := HBoxContainer.new()
 	_body_ops.add_child(round_row)

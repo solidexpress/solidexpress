@@ -391,9 +391,11 @@ func focus_distance_for_typing(seed: String = "") -> void:
 	_distance_origin = _extrude_spin.value
 	edit.grab_focus()
 	if seed != "":
-		# Unfocused burst writes the whole seed. Do not replace the next key.
+		# grab_focus armed replace-on-next-key. The seed is the whole burst.
 		_distance_replace_next = false
 		_distance_select_gen += 1
+		edit.set_meta("_sx_replace_armed", false)
+		edit.set_meta("_sx_select_gen", int(edit.get_meta("_sx_select_gen", 0)) + 1)
 	if seed != "" and seed.is_valid_float():
 		var v := float(seed)
 		_distance_line_invalid = false
@@ -814,21 +816,7 @@ func _is_numeric_replace_key(k: InputEventKey, allow_minus: bool) -> bool:
 
 
 func _numeric_key_char(k: InputEventKey) -> String:
-	var code := k.keycode
-	if code >= KEY_0 and code <= KEY_9:
-		return str(code - KEY_0)
-	if code >= KEY_KP_0 and code <= KEY_KP_9:
-		return str(code - KEY_KP_0)
-	if code == KEY_PERIOD or code == KEY_KP_PERIOD:
-		return "."
-	if code == KEY_MINUS or code == KEY_KP_SUBTRACT:
-		return "-"
-	var ch := k.unicode
-	if ch >= 48 and ch <= 57:
-		return char(ch)
-	if ch == 46 or ch == 45:
-		return char(ch)
-	return ""
+	return SxUi.numeric_key_char(k)
 
 
 func _restore_rejected_distance(keep: float, keep_text: String = "") -> void:
@@ -895,6 +883,9 @@ func _on_distance_focus_entered() -> void:
 	if _extrude_spin != null:
 		_distance_origin = _extrude_spin.value
 	_distance_replace_next = true
+	var edit := _extrude_spin.get_line_edit() if _extrude_spin != null else null
+	if edit != null:
+		SxUi.arm_replace_on_focus(edit)
 	# Do not select_all / grab_focus here. That re-enters the root Window
 	# focus_entered / tree_exited connections. Mouse clicks already defer
 	# select from gui_input; keyboard focus uses one deferred select.
@@ -1202,6 +1193,9 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 			_distance_replace_next = true
 			_distance_select_gen += 1
 			var gen := _distance_select_gen
+			var line := _extrude_spin.get_line_edit()
+			if line != null:
+				SxUi.arm_replace_on_focus(line)
 			_select_distance_all_if_gen.call_deferred(gen)
 			_select_distance_all_next_frame(gen)
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1219,6 +1213,15 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 		if not _is_numeric_replace_key(k, true):
 			return
 		_distance_user_key = true
+		var line := _extrude_spin.get_line_edit() if _extrude_spin != null else null
+		if line != null and (_distance_replace_next or SxUi.replace_armed(line)):
+			var ch := SxUi.numeric_key_char(k)
+			if ch != "":
+				_distance_replace_next = false
+				_distance_select_gen += 1
+				SxUi.write_typed_text(line, ch)
+				accept_event()
+				return
 		if _distance_replace_next:
 			_distance_replace_next = false
 			_distance_select_gen += 1
@@ -1339,6 +1342,68 @@ func reset_finish_for_new_sketch() -> void:
 		_dim_syncing = false
 
 
+## Finish bar state Save must put back after exit_sketch / begin_edit.
+## Always returns the keys, including when no contour is selected.
+func finish_snapshot() -> Dictionary:
+	var dist_text := ""
+	var dist_v := 0.0
+	if _extrude_spin != null:
+		dist_v = _extrude_spin.value
+		dist_text = _distance_raw_text()
+	return {
+		"op": _finish_op.selected if _finish_op != null else 0,
+		"end": get_finish_end(),
+		"distance": dist_v,
+		"distance_text": dist_text,
+		"thin_on": _thin_feature.button_pressed if _thin_feature != null else false,
+		"thin": _thin_spin.value if _thin_spin != null else 0.0,
+		"thin_type": _thin_type.selected if _thin_type != null else 0,
+		"flip": _flip_side.button_pressed if _flip_side != null else false,
+		"up_to_face_id": up_to_face_id,
+		"contours": _selected_contours.duplicate(),
+	}
+
+
+## Put a finish_snapshot() back after show_for_session has reset the bar.
+func finish_restore(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	var ops := ["new", "cut", "fuse"]
+	var oi := clampi(int(d.get("op", 0)), 0, ops.size() - 1)
+	set_finish_op(ops[oi])
+	set_finish_end(str(d.get("end", "blind")))
+	if _thin_feature != null:
+		_thin_feature.set_pressed_no_signal(bool(d.get("thin_on", false)))
+	if _thin_spin != null:
+		_thin_spin.set_value_no_signal(float(d.get("thin", 0.0)))
+	if _thin_type != null:
+		_thin_type.select(clampi(int(d.get("thin_type", 0)), 0, 1))
+	if _flip_side != null:
+		_flip_side.set_pressed_no_signal(bool(d.get("flip", false)))
+	_apply_thin_visibility()
+	var face := str(d.get("up_to_face_id", ""))
+	if face != "":
+		set_up_to_face(face)
+	_restore_contour_selection(d.get("contours", []))
+	var dist_text := str(d.get("distance_text", ""))
+	_write_extrude_spin(float(d.get("distance", 20.0)), dist_text)
+	_sync_face_box()
+
+
+func _restore_contour_selection(ids: Variant) -> void:
+	var want: Array = ids if ids is Array else []
+	_selected_contours = want.duplicate()
+	if _contour_bar == null:
+		return
+	var i := 0
+	for c in _contour_bar.get_children():
+		if c is CheckButton:
+			(c as CheckButton).set_pressed_no_signal(_selected_contours.has(i))
+			i += 1
+	if sketch_mode != null:
+		sketch_mode.set_contour_highlight(_selected_contours, -1)
+
+
 func sync_for_tool() -> void:
 	_sync_dim_affordance()
 	if sketch_mode == null or _dim_editing:
@@ -1449,6 +1514,11 @@ func show_for_session(on: bool, fid: String = "") -> void:
 			# New sketch, or begin_edit of a different existing sketch.
 			reset_finish_for_new_sketch()
 			_finish_owner = fid
+			# New session only. Same-owner Save As keeps Distance focus if the
+			# walker is still in that field. main._on_sketch_session_started is
+			# not the place for this: that function is shared with every
+			# re-entry, including Save.
+			release_distance_focus()
 		clear_up_to_face()
 		# Sit to the right of the SketchTools rail (Exit Sketch), under the top row.
 		_place_finish_session()
