@@ -4145,6 +4145,13 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 
 func _b14_fillet_tab(ctx: FilmContext) -> void:
 	print("  B14.5 Fillet Tab sync")
+	# B14.7 types 10 Enter with no edges selected; that Enter applies/cancels
+	# the pick (`No edges selected — cancelled`). Re-arm so Tab can emit r=.
+	var btn: Button = ctx.main.interaction._strip_fillet
+	if btn != null and btn.is_visible_in_tree():
+		await FilmUI.click_control(ctx, btn, FilmUICues.alert("Fillet", "Arm fillet"))
+		await process_frame
+		await process_frame
 	var panel: SpinBox = ctx.main.ops_panel._radius_spin as SpinBox
 	var strip: SpinBox = ctx.main.interaction._strip_radius
 	check(panel != null and strip != null, "B14.5 panel and strip Radius exist")
