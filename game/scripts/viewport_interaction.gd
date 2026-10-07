@@ -705,6 +705,7 @@ func _build_dim_edit_popup() -> void:
 	_dim_edit_line.text_changed.connect(_on_dim_edit_line_text_changed)
 	_dim_edit_line.text_submitted.connect(_apply_dim_edit)
 	row.add_child(_dim_edit_line)
+	_dim_edit_popup.popup_hide.connect(_on_dim_edit_popup_hide)
 
 
 ## Open the in-viewport dimension editor for dimensions[index] (SELECT click
@@ -720,6 +721,10 @@ func _show_dim_edit(index: int) -> void:
 	_dim_edit_index = index
 	_dim_edit_replace = true
 	_dim_edit_typed = ""
+	# The click that opens the editor hovered the label and planted an ✕.
+	# Block further plants until the popup closes.
+	if measure_overlay != null:
+		measure_overlay.set_sketch_measure_blocked(true)
 	var dim: Dictionary = sketch_mode.dimensions[index]
 	_dim_edit_line.text = String.num(sketch_mode._dimension_display_value(dim), 3)
 	var at := Vector2i(get_viewport().get_mouse_position()) + Vector2i(8, 8)
@@ -862,6 +867,12 @@ func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	var ke := event as InputEventKey
+	if ke.keycode == KEY_ESCAPE:
+		# One Esc closes the editor and drops any ✕ it left behind.
+		if _dim_edit_popup != null:
+			_dim_edit_popup.hide()
+		_dim_edit_line.accept_event()
+		return
 	if not _is_length_type_key(ke):
 		return
 	# _input already wrote this character. Swallow it so the LineEdit does
@@ -876,9 +887,18 @@ func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
 	accept_event()
 
 
+func _on_dim_edit_popup_hide() -> void:
+	if measure_overlay == null:
+		return
+	measure_overlay.clear_pair()
+	measure_overlay.set_sketch_measure_blocked(false)
+
+
 func _apply_dim_edit(text: String) -> void:
 	_dim_edit_replace = false
 	_dim_edit_typed = ""
+	if measure_overlay != null:
+		measure_overlay.clear_pair()
 	_dim_edit_popup.hide()
 	if sketch_mode == null or _dim_edit_index < 0:
 		return
@@ -1643,6 +1663,22 @@ func _chrome_wants_face_pick() -> bool:
 			and bool(sketch_chrome.wants_face_pick())
 
 
+func _chrome_face_pick_explicit() -> bool:
+	return sketch_chrome != null \
+			and sketch_chrome.has_method("face_pick_explicit") \
+			and bool(sketch_chrome.face_pick_explicit())
+
+
+## Draw-tool clicks place geometry unless the user pressed Pick face.
+func _sketch_draw_tool_beats_face_pick() -> bool:
+	if _chrome_face_pick_explicit():
+		return false
+	if sketch_mode == null or not sketch_mode.active:
+		return false
+	return sketch_mode.tool != SketchMode.Tool.SELECT \
+			and sketch_mode.tool != SketchMode.Tool.NONE
+
+
 ## True while the finish bar is waiting for the Up To Surface face.
 func _up_to_face_pick_armed() -> bool:
 	if not _chrome_wants_face_pick():
@@ -1838,6 +1874,10 @@ func _input_up_to_face_pick(event: InputEvent) -> bool:
 		get_viewport().set_input_as_handled()
 		return true
 	if not _up_to_face_pick_armed():
+		return false
+	# Selecting Up To Surface shows the face row. It must not eat Circle /
+	# Line / Jaw clicks. Only an explicit Pick face arms that one-shot.
+	if _sketch_draw_tool_beats_face_pick():
 		return false
 	if event is InputEventMouse:
 		var mouse_pos := (event as InputEventMouse).position
@@ -2984,6 +3024,7 @@ func _sketch_input(event: InputEvent) -> void:
 					sketch_mode.commit_at_length(float(typed_len))
 				else:
 					sketch_mode.click(p2)
+					_clear_select_click_measure()
 					if sketch_chrome != null and sketch_chrome.has_method("arm_dim_replace") \
 							and sketch_mode.has_single_dof_preview():
 						var shown := sketch_mode.preview_distance()
@@ -3003,6 +3044,7 @@ func _sketch_input(event: InputEvent) -> void:
 			elif not _sketch_drag_moved and p2_up != null:
 				sketch_mode.end_drag()
 				sketch_mode.click(p2_up)
+				_clear_select_click_measure()
 			else:
 				sketch_mode.end_drag()
 			_sketch_dragging = false
@@ -3024,6 +3066,7 @@ func _sketch_input(event: InputEvent) -> void:
 				if p2_up2 != null and travel >= CLICK_SLOP \
 						and not _sketch_skips_mouse_up_commit():
 					sketch_mode.click(p2_up2)
+					_clear_select_click_measure()
 			accept_event()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
 			sketch_mode.end_chain()
@@ -3115,6 +3158,10 @@ func _sketch_input(event: InputEvent) -> void:
 					var kept := sketch_mode.esc_keep_sketch()
 					if kept != "":
 						status.emit(kept)
+					elif _sketch_has_committed_geometry():
+						# Leave the session the way Exit Sketch does. Cancelling
+						# here threw away a committed Jaw (A8b).
+						sketch_mode.exit_sketch()
 					else:
 						sketch_mode.cancel()
 		accept_event()
@@ -3165,10 +3212,28 @@ func _length_type_seed(ke: InputEventKey) -> String:
 		_: return ""
 
 
+## A Select click selects geometry. The hover that preceded it must not leave
+## a measure ✕, or the next Esc is spent on "Measure cleared".
+func _clear_select_click_measure() -> void:
+	if sketch_mode == null or sketch_mode.tool != SketchMode.Tool.SELECT:
+		return
+	if _dim_edit_owns_keys():
+		return
+	if measure_overlay != null and not measure_overlay.sketch_measure_blocked:
+		measure_overlay.clear_pair()
+
+
+## True when the open sketch already has committed entities. Esc then saves
+## them. An empty sketch (including a dropped first point) still cancels.
+func _sketch_has_committed_geometry() -> bool:
+	return sketch_mode != null and sketch_mode.sketch != null \
+			and not sketch_mode.sketch.entity_ids().is_empty()
+
+
 func _update_sketch_measure(pos2: Vector2) -> void:
 	if measure_overlay == null or sketch_mode == null:
 		return
-	if _dim_edit_owns_keys():
+	if _dim_edit_owns_keys() or measure_overlay.sketch_measure_blocked:
 		measure_overlay.clear_pair()
 		return
 	if sketch_mode.tool != SketchMode.Tool.SELECT:
@@ -4068,9 +4133,10 @@ func _gui_key(event: InputEventKey) -> bool:
 					return true
 				if event.shift_pressed:
 					view.redo()
+					status.emit("Redo")
 				else:
 					view.undo()
-				status.emit("Undo/redo")
+					status.emit("Undo")
 				return true
 		KEY_Y:
 			if event.ctrl_pressed:

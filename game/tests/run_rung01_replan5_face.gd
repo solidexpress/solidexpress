@@ -196,6 +196,8 @@ func test_orbit_then_front_click_and_right_cancel() -> void:
 	check(chrome.wants_face_pick(), "pick stays armed after middle-drag")
 	check(str(chrome.up_to_face_id).strip_edges() == "",
 			"middle-drag did not store a face")
+	# Circle is still the sketch tool. The canvas pick is explicit.
+	chrome.arm_face_pick()
 
 	await _click_front_view(ctx)
 	var face_screen := _screen_for_face(ctx, bottom)
@@ -215,6 +217,7 @@ func test_orbit_then_front_click_and_right_cancel() -> void:
 	await _pick_option(ctx, _finish_end(chrome), 0, "Blind to re-arm")
 	await _pick_option(ctx, _finish_end(chrome), 3, "Up To Surface re-arm")
 	check(chrome.wants_face_pick(), "pick is armed for right-click")
+	chrome.arm_face_pick()
 	_status_log.clear()
 	await _x11_right_click_screen(vp, drag_at)
 	await process_frame

@@ -46,12 +46,20 @@ var prev_entity := ""
 var _last_b: Variant = null
 ## Sketch inspector is Select-only. False skips sketch ✕ / Δ draw.
 var sketch_gate_open := true
+## True while a dimension label editor is open. Hover must not plant an ✕.
+var sketch_measure_blocked := false
 var _sketch_signals_bound := false
 
 ## Screen-draw lists (model-space points); rebuilt on every update.
 var segments: Array = []  # {a: Vector3, b: Vector3, color: Color}
 var marks: Array = []  # {p: Vector3, color: Color}
 var labels: Array = []  # {p: Vector3, text: String, color: Color}
+
+
+func set_sketch_measure_blocked(on: bool) -> void:
+	sketch_measure_blocked = on
+	if on:
+		clear_pair()
 
 
 func set_sketch_tool_gate(open: bool) -> void:
@@ -177,6 +185,8 @@ func update_hover(body: String, hit_point: Vector3) -> void:
 
 ## Sketch-mode hover: entity id "" clears live B / pins A. Hit is model-space.
 func update_sketch_hover(entity_id: String, hit_point: Vector3) -> void:
+	if sketch_measure_blocked:
+		return
 	if sketch_mode == null or not sketch_mode.active:
 		return
 	if not sketch_gate_open:

@@ -86,6 +86,7 @@ func _build_to_face_extrude(ctx: FilmContext) -> void:
 		await process_frame
 		check(end_opt.selected == 3, "End is Up To Surface")
 	check(chrome.wants_face_pick(), "Up To Surface arms a face pick")
+	chrome.arm_face_pick()
 	await _click_bottom_face(ctx, bottom)
 	check(str(chrome.up_to_face_id) == bottom, "viewport click set the bottom face")
 	var ex_btn := chrome.extrude_button()

@@ -62,6 +62,9 @@ var _face_panel: PanelContainer
 var _face_label: Label
 ## One-shot: the next model-face click is the Up To Surface target.
 var _face_pick_armed := false
+## True only after Pick face. Choosing the End condition arms the row
+## without stealing Circle / Line / Jaw clicks.
+var _face_pick_explicit := false
 var _active_kind := ""
 ## True while the dim LineEdit has focus — mouse must not overwrite typed digits.
 var _dim_editing := false
@@ -461,14 +464,17 @@ func _apply_slot_radius(v: float) -> void:
 func set_up_to_face(id: String) -> void:
 	up_to_face_id = id.strip_edges()
 	_face_pick_armed = false
+	_face_pick_explicit = false
 	_sync_face_box()
 	if up_to_face_id != "" and _extrude_btn != null:
 		_extrude_btn.disabled = false
 
 
 ## Remember that the next model-face click is the target. Does not clear the id.
+## This is the explicit Pick face arm: canvas clicks are eaten until one lands.
 func arm_face_pick() -> void:
 	_face_pick_armed = true
+	_face_pick_explicit = true
 	if up_to_face_id == "" and _face_label != null:
 		_face_label.text = "Face: none"
 	if _face_panel != null:
@@ -479,10 +485,16 @@ func wants_face_pick() -> bool:
 	return _face_pick_armed
 
 
+## True after Pick face. The End = Up To Surface row alone is not explicit.
+func face_pick_explicit() -> bool:
+	return _face_pick_explicit
+
+
 ## Empty id, Face: none, and disable Extrude while End is Up To Surface.
 func clear_up_to_face() -> void:
 	up_to_face_id = ""
 	_face_pick_armed = false
+	_face_pick_explicit = false
 	if _face_label != null:
 		_face_label.text = "Face: none"
 	_sync_face_box()
@@ -492,7 +504,14 @@ func _on_finish_end_selected(idx: int) -> void:
 	# OptionButton.select does not emit this. Do not copy view.selected_face.
 	if idx == 3:
 		clear_up_to_face()
-		arm_face_pick()
+		# Show the face row and keep wants_face_pick true, but do not eat
+		# sketch-tool clicks until the user presses Pick face.
+		_face_pick_armed = true
+		_face_pick_explicit = false
+		if _face_label != null:
+			_face_label.text = "Face: none"
+		if _face_panel != null:
+			_face_panel.visible = true
 		if _extrude_btn != null:
 			_extrude_btn.disabled = true
 	else:

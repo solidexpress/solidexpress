@@ -2,6 +2,13 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-036 — Esc keeps a committed sketch; Save keeps undo
+- Final Esc on a sketch that already has entities calls `exit_sketch()` (`Sketch saved`). An empty sketch, including one whose only action was a dropped first point, still cancels. Select on a line does not leave a measure ✕. A dimension editor blocks measure overlays and clears any ✕ on Esc or Enter.
+- Part mode: Ctrl+Shift+Z and Ctrl+Y redo (`Redo`). Ctrl+Z stays undo.
+- Choosing Up To Surface arms the face row but does not eat Circle / Line / Jaw clicks. Only Pick face (`arm_face_pick`) makes the next canvas click a face pick.
+- Save and Save As re-enter the same sketch on the same frame and keep the undo and redo stacks. A later timeline re-entry still starts with an empty sketch history.
+- Gate: `run_rung01_sx036_esc.gd` (70 checks). Wrench walk 729 checks. Replan 15 suites stay green.
+
 ## sx-036 N12 — second Extrude click does not set jaw_af
 - After a finish-bar Extrude, the selection strip was appearing on the same pixel as the Extrude button, and `AF 10` turned a second click into `jaw_af = 10 (config 10)`. The 600 ms `_ctx_jaw_af` guard expired while a soft-GL frame was still catching up.
 - AF 10/12/14 now show only when the selected body has a feature whose params use `jaw_af`. Until the pointer leaves the Extrude button, a transparent shield eats a same-pixel click and the strip is nudged below that button.

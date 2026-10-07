@@ -749,6 +749,8 @@ func exit_sketch() -> String:
 			status.emit("Failed to save sketch" + _graph_error_suffix())
 			return ""
 		_write_sketch_support(fid)
+		# Park undo against the feature Save is about to reopen.
+		editing_fid = fid
 	_end_sketch_session()
 	status.emit("Sketch saved")
 	return fid
@@ -1097,18 +1099,17 @@ func _try_adopt_parked_undo() -> bool:
 	var pfid := str(parked.get("fid", ""))
 	if pfid != "" and pfid != editing_fid:
 		return false
-	if sketch == null or not sketch.has_method("snapshot"):
+	if sketch == null:
 		return false
-	if sketch.snapshot() != str(parked.get("head_json", "")):
-		return false
+	# Save reloads the feature. The snapshot string often differs after that
+	# round-trip even though this is the same session. Dropping the stacks
+	# on that mismatch made Ctrl+Z say "Nothing to undo" after Save As.
 	_undo_stack = parked.get("undo", []).duplicate(true)
 	_redo_stack = parked.get("redo", []).duplicate(true)
-	_undo_head = str(parked.get("head_json", ""))
-	_undo_head_dims = parked.get("head_dims", []).duplicate(true)
-	# Keep user-positioned fields, but never drop kernel radius/angle records
-	# that the live session had already labelled.
+	var parked_dims: Array = parked.get("head_dims", [])
 	dimensions = _merge_dimension_records(
-			_dimension_records_from_sketch(), _undo_head_dims)
+			_dimension_records_from_sketch(), parked_dims)
+	_set_undo_head_from_live()
 	_undo_label = ""
 	return true
 
@@ -4775,10 +4776,11 @@ func promise_next_esc_exits() -> void:
 	_esc_exit_promised = true
 
 
-## Esc rungs between "drop a pending point" and "discard the sketch": clear a
+## Esc rungs between "drop a pending point" and leaving the sketch: clear a
 ## selection, then drop a draw tool back to Select once the sketch holds
-## geometry. Returns the status to show, or "" when nothing is left to drop
-## and Esc should discard the sketch.
+## geometry. Returns the status to show, or "" when nothing is left to drop.
+## The caller then saves a sketch that has committed geometry and cancels
+## only an empty one.
 ##
 ## A pending-point drop already promised the next Esc leaves. Honour that
 ## before the selection and tool rungs, so two presses exit even when the

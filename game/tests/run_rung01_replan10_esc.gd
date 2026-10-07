@@ -29,6 +29,16 @@ func _init() -> void:
 	quit(1 if failures > 0 else 0)
 
 
+func _sketch_feature_count(ctx: FilmContext) -> int:
+	var n := 0
+	if ctx.view == null or ctx.view.doc == null:
+		return 0
+	for f in ctx.view.doc.graph_features():
+		if typeof(f) == TYPE_DICTIONARY and str(f.get("type", "")) == "sketch":
+			n += 1
+	return n
+
+
 func _profile_lines(sm: SketchMode) -> int:
 	var n := 0
 	for id in sm.sketch.entity_ids():
@@ -58,17 +68,16 @@ func test_jaw_esc_ladder() -> void:
 	await process_frame
 	check(sm.selected.size() == 1, "one Jaw line is selected (got %d)" % sm.selected.size())
 
+	var mo: MeasureOverlay = ctx.main.interaction.measure_overlay
+	check(mo == null or not mo.has_anchor(),
+			"selecting a Jaw line does not start a measure")
 	_status_log.clear()
 	await _x11_key(vp, KEY_ESCAPE)
 	check(sm.active, "the first Esc after selecting a Jaw line keeps the sketch open")
-	check(_status_has("Measure cleared"), "the first Esc clears the measure pair (log: %s)" % str(_status_log))
+	check(not _status_has("Measure cleared"),
+			"the first Esc is not spent on a measure (log: %s)" % str(_status_log))
+	check(sm.selected.is_empty(), "the first Esc clears the selection")
 	check(_profile_lines(sm) == 4, "the Jaw lines are all still there (got %d)" % _profile_lines(sm))
-
-	_status_log.clear()
-	await _x11_key(vp, KEY_ESCAPE)
-	check(sm.active, "the second Esc keeps the sketch open")
-	check(sm.selected.is_empty(), "the second Esc clears the selection")
-	check(_profile_lines(sm) == 4, "the Jaw lines survive the selection clear (got %d)" % _profile_lines(sm))
 	check(_status_has("Selection cleared — Esc again exits the sketch"),
 			"Esc names what it dropped (log: %s)" % str(_status_log))
 
@@ -83,8 +92,12 @@ func test_jaw_esc_ladder() -> void:
 	check(_status_has("Tool dropped — Esc again exits the sketch"),
 			"the tool drop is named (log: %s)" % str(_status_log))
 
+	var sketches_before := _sketch_feature_count(ctx)
 	await _x11_key(vp, KEY_ESCAPE)
 	check(not sm.active, "Esc with nothing selected and the Select tool still exits the sketch")
+	check(_sketch_feature_count(ctx) == sketches_before + 1,
+			"the last Esc keeps the Jaw as a sketch feature")
+	check(_status_has("Sketch saved"), "the last Esc saves the sketch (log: %s)" % str(_status_log))
 	await _shutdown(ctx)
 
 
