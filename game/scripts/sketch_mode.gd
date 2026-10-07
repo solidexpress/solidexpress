@@ -107,6 +107,8 @@ var support_normal := Vector3.ZERO
 var support_side := ""
 ## Feature id of the sketch being edited ("" when creating a new sketch).
 var editing_fid := ""
+## Kernel snapshot at begin_edit. An Exit with no change skips the graph write.
+var _edit_baseline := ""
 ## Optional OrbitCamera for enter/leave sketch view locking.
 var camera: OrbitCamera
 ## Pierce / coincident points from other geometry (model-space projected to 2D).
@@ -541,6 +543,7 @@ func begin_edit(fid: String) -> bool:
 	plane_x = (pi["x_dir"] as Vector3).normalized()
 	plane_y = (pi["y_dir"] as Vector3).normalized()
 	sketch = loaded
+	_edit_baseline = loaded.snapshot() if loaded.has_method("snapshot") else ""
 	_clear_support()
 	_activate_session()
 	status.emit("Editing sketch — Exit Sketch to save · Esc discard")
@@ -707,6 +710,7 @@ func cancel() -> void:
 	_redo_stack.clear()
 	active = false
 	editing_fid = ""
+	_edit_baseline = ""
 	_tool_points.clear()
 	_length_override = -1.0
 	_snap_marker = null
@@ -730,6 +734,11 @@ func exit_sketch() -> String:
 		return ""
 	var fid := ""
 	if editing_fid != "":
+		if sketch.has_method("snapshot") and sketch.snapshot() == _edit_baseline:
+			fid = editing_fid
+			_end_sketch_session()
+			status.emit("Sketch saved")
+			return fid
 		if view.doc.graph_update_sketch(editing_fid, sketch):
 			fid = editing_fid
 		else:
@@ -987,6 +996,7 @@ func _end_sketch_session() -> void:
 	_park_undo_history()
 	active = false
 	editing_fid = ""
+	_edit_baseline = ""
 	_tool_points.clear()
 	_snap_marker = null
 	_drag.clear()

@@ -405,8 +405,10 @@ func pick_pad(ray_origin: Vector3, ray_dir: Vector3) -> String:
 ## distance along `ray_dir` (unit length) to the first solid hit, INF when the
 ## ray misses every solid. A pad behind that surface never wins. A pad on that
 ## surface (a face sketch) only wins when the cursor is on its drawn ink, so a
-## click elsewhere on the face still reaches the face.
-func pick_pad_visible(ray_origin: Vector3, ray_dir: Vector3, solid_t: float = INF) -> String:
+## click elsewhere on the face still reaches the face. `strict` always requires
+## the hit to lie within PAD_INK_TOL_MM of the sketch ink, including a miss
+## (`solid_t` INF) and a ray that crosses the pad plane above a deeper solid.
+func pick_pad_visible(ray_origin: Vector3, ray_dir: Vector3, solid_t: float = INF, strict: bool = false) -> String:
 	var d := ray_dir.normalized() if ray_dir.length_squared() > 1e-12 else ray_dir
 	var best_score := INF
 	var best_fid := ""
@@ -431,9 +433,11 @@ func pick_pad_visible(ray_origin: Vector3, ray_dir: Vector3, solid_t: float = IN
 		if is_finite(solid_t):
 			if t > solid_t + PAD_FACE_EPS_MM:
 				continue
-			if t >= solid_t - PAD_FACE_EPS_MM \
+			if not strict and t >= solid_t - PAD_FACE_EPS_MM \
 					and _ink_distance(e["ink"] as Array, Vector2(u, v)) > PAD_INK_TOL_MM:
 				continue
+		if strict and _ink_distance(e["ink"] as Array, Vector2(u, v)) > PAD_INK_TOL_MM:
+			continue
 		var center := (mn2 + mx2) * 0.5
 		var extent := (mx2 - mn2).length()
 		var radial := Vector2(u, v).distance_to(center)

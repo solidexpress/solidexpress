@@ -2161,7 +2161,9 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 	# the FIRST pick. Once an edge is armed, a face click snaps to the nearest
 	# edge within DRESSUP_SNAP_PX or is refused; it never replaces the set.
 	var cam := _dressup_camera()
-	var edge := view.edge_near_point(body, point, 2.5, cam)
+	var edge := ""
+	if cam != null:
+		edge = view.edge_near_screen(body, cam, view.model_to_screen(cam, point), DRESSUP_FIRST_PICK_EDGE_PX)
 	if edge == "" and face != "":
 		if not _dressup_has_edges():
 			_add_dressup_face(body, face)
@@ -2184,6 +2186,7 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 
 
 const DRESSUP_SNAP_PX := 14.0
+const DRESSUP_FIRST_PICK_EDGE_PX := 6.0
 const DRESSUP_SILHOUETTE_PX := 10.0
 ## Re-click of a picked edge: the face-hit can sit a few mm inward, and a
 ## same-length twin can be slightly closer. Stay on the picked edge when it

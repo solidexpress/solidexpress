@@ -3958,10 +3958,13 @@ func _on_release(pos: Vector2) -> void:
 	_press_travel = 0.0
 
 
-## A click that lands on a sketch pad reopens that sketch. An armed
-## fillet/chamfer/hole pick must hit the solid instead. Returns true when the
-## click was consumed by a pad.
+## Ctrl/Cmd (or Shift) click on a sketch pad selects it for Merge sketches.
+## A plain click never reopens a sketch — it falls through to body/face
+## selection. An armed fillet/chamfer/hole pick must hit the solid instead.
+## Returns true when the click was consumed by a pad.
 func _click_hits_pad() -> bool:
+	if not _additive_click:
+		return false
 	var armed_pick := ops_panel != null and ops_panel.consumes_viewport_pick()
 	if armed_pick or view.sketch_pads == null:
 		return false
@@ -3970,7 +3973,7 @@ func _click_hits_pad() -> bool:
 	var pad_ray := _model_ray(_press_pos)
 	var pad_hit: Dictionary = view.pick_info(pad_ray[0], pad_ray[1])
 	var pad_fid: String = view.sketch_pads.pick_pad_visible(
-			pad_ray[0], pad_ray[1], _solid_hit_t(pad_ray, pad_hit))
+			pad_ray[0], pad_ray[1], _solid_hit_t(pad_ray, pad_hit), true)
 	if pad_fid == "":
 		return false
 	sketch_pad_clicked.emit(pad_fid, _additive_click)
