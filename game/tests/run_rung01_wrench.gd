@@ -20,12 +20,16 @@ const HEAD := Vector2(200, 0)
 const JAW := Vector2(sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
 const PERP := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
 
+const _UUID_STATUS_PATTERN := "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
 var failures := 0
 var checks := 0
 var _bad_status: Array[String] = []
 var _status_log: Array[String] = []
 var _slot_floor_refused := false
 var _slot_floor_error := ""
+var _last_extrude_pos := Vector2.ZERO
+static var _uuid_status_re: RegEx
 
 
 func check(cond: bool, what: String) -> void:
@@ -52,7 +56,13 @@ func _init() -> void:
 	ctx.clock = FilmClock.new()
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 for the whole walk (got %s)" % str(root.size))
+	_uuid_status_re = RegEx.new()
+	_uuid_status_re.compile(_UUID_STATUS_PATTERN)
 	main.sketch_mode.status.connect(_on_sketch_status)
+	if main.ops_panel != null and not main.ops_panel.status.is_connected(_on_sketch_status):
+		main.ops_panel.status.connect(_on_sketch_status)
+	if main.interaction != null and not main.interaction.status.is_connected(_on_sketch_status):
+		main.interaction.status.connect(_on_sketch_status)
 
 	var paths := await _walk(ctx)
 	if not paths.is_empty():
@@ -69,7 +79,8 @@ func _init() -> void:
 
 func _on_sketch_status(text: String) -> void:
 	_status_log.append(text)
-	if text.contains("Failed to add") or text.contains("Failed to save") \
+	var uuid_hit := _uuid_status_re != null and _uuid_status_re.search(text) != null
+	if uuid_hit or text.contains("Failed to add") or text.contains("Failed to save") \
 			or text.contains("Failed to update") or text.contains("Extrude failed") \
 			or text.contains("Trim failed"):
 		_bad_status.append(text)
@@ -254,6 +265,18 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _type_distance(ctx, "10")
 	_status_log.clear()
 	await _press_extrude(ctx, "Extrude wrench blank 10")
+	print("  B15.5 Extrude")
+	await _x11_click_screen(ctx.main.get_viewport(), _last_extrude_pos)
+	await process_frame
+	var b15_ex := _count_type(ctx, "extrude")
+	check(b15_ex == 1, "B15.5 still one extrude feature (got %d)" % b15_ex)
+	check(ctx.view.doc.body_ids().size() == 1,
+			"B15.5 still one body (got %d)" % ctx.view.doc.body_ids().size())
+	var b15_status := str(ctx.main.status_label.text)
+	check(not _status_has("jaw_af") and not b15_status.contains("jaw_af"),
+			"B15.5 no jaw_af (status %s)" % b15_status)
+	check(b15_status == "Extrude Blind 10.0000 mm",
+			"B15.5 last status is Extrude Blind 10.0000 mm (got %s)" % b15_status)
 	await process_frame
 	await process_frame
 	err = _take_bad_status()
@@ -280,6 +303,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _b14_body_name(ctx)
 	await _b14_ctxbar(ctx, body)
 	await _b14_camera(ctx, body)
+	await _b15_key0(ctx)
 
 	print("- hole and open jaw, Up To Surface")
 	var top := _face_along(ctx, body, 1)
@@ -361,6 +385,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	err = _take_bad_status()
 	check(err == "", "second trim click status clean" if err == "" else err)
 	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile still closed after the second trim click")
+	print("  B15.3 trim chain")
+	check(FileAccess.file_exists("res://tests/run_rung01_replan15_chain.gd"),
+			"B15.3 the Line-cutter chain suite exists")
 	chrome = ctx.main.sketch_chrome
 	await _pick_op(_finish_op(ctx), 1)
 	await _pick_end(_finish_end(ctx), 3)
@@ -466,6 +493,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 
 	var wrench_path := await _export_via_dialog(ctx, "wrench.3mf")
 	check(wrench_path != "" and FileAccess.file_exists(wrench_path), "exported wrench.3mf through the dialog")
+	await _b15_export_noext(ctx, "wrench-noext")
 	check(root.size == ROOT_SIZE, "thick edit runs at 1280×800 (got %s)" % str(root.size))
 	print("- timeline: base extrude 10 → 14")
 	await _show_timeline(ctx)
@@ -752,7 +780,9 @@ func _fillet_neck(ctx: FilmContext, body: String, neck_x: float) -> void:
 	check(str(ctx.main.status_label.text).contains("removed"),
 			"status contains removed (got %s)" % ctx.main.status_label.text)
 	await _click_model(ctx, first_neck, "Neck edge reselect")
+	_status_log.clear()
 	await _commit_fillet(ctx)
+	_b15_assert_applied(ctx, "neck")
 	check(_count_type(ctx, "fillet") == before + 1, "one fillet on both neck edges")
 	check(ctx.view.doc.last_graph_error() == "", "neck fillet accepted (%s)" % ctx.view.doc.last_graph_error())
 
@@ -792,6 +822,8 @@ func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vec
 		bb0 = ctx.view.doc.measure_bbox(body)
 		_status_log.clear()
 	await _click_model(ctx, point, label)
+	if label == "slot floor":
+		_b15_assert_slot_floor_edges(ctx, body)
 	if label == "bottom face":
 		var screen := FilmUI.model_to_screen(ctx, point)
 		var moved := screen + Vector2(40, 0)
@@ -814,7 +846,9 @@ func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vec
 				"top-face fillet status is not No edges selected (got %s)" % ctx.main.status_label.text)
 	if n < 1:
 		return
+	_status_log.clear()
 	await _commit_fillet(ctx)
+	_b15_assert_applied(ctx, label)
 	check(_count_type(ctx, "fillet") == before + 1, "fillet committed on %s" % label)
 	check(ctx.view.doc.last_graph_error() == "", "%s fillet accepted (%s)" % [label, ctx.view.doc.last_graph_error()])
 
@@ -943,6 +977,7 @@ func _human_fillet_picks(ctx: FilmContext, body: String, neck_x: float) -> void:
 	await _ensure_body_selected(ctx, body)
 	await _b14_focuskeys_fillet(ctx)
 	await _b14_fillet_tab(ctx)
+	await _b15_n2(ctx)
 	await _view_key(ctx, KEY_3)
 	await _click_model(ctx, Vector3(neck_x - 0.3, 9.7, 10.0), "Top-view neck corner")
 	check(ctx.view.selected_edges.size() == 1, "Top-view corner click arms one edge (got %d)" % ctx.view.selected_edges.size())
@@ -2399,6 +2434,7 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 		var st := str(ctx.main.status_label.text)
 		check(st.begins_with(str(pair[1])),
 				"B13.5 %s status starts with %s (got `%s`)" % [pair[0], pair[1], st])
+	await _b15_contours(ctx)
 
 
 func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void:
@@ -2501,10 +2537,12 @@ func _assert_thin_off(ctx: FilmContext) -> void:
 
 func _press_extrude(ctx: FilmContext, desc: String) -> void:
 	var btn: Button = ctx.main.sketch_chrome.extrude_button()
-	await FilmUI.click_control(ctx, btn, FilmUICues.alert("Extrude", desc))
+	_last_extrude_pos = btn.get_global_rect().get_center()
+	await _x11_click_screen(ctx.main.get_viewport(), _last_extrude_pos)
 	await process_frame
 	await process_frame
 	await process_frame
+	print("  extrude click: %s at %s" % [desc, str(_last_extrude_pos)])
 
 
 func _x11_click(ctrl: Control) -> void:
@@ -4305,3 +4343,305 @@ func _b14_polish(ctx: FilmContext) -> void:
 		await process_frame
 	if dlg.visible:
 		dlg.hide()
+
+
+func _b15_assert_applied(ctx: FilmContext, label: String) -> void:
+	var st := str(ctx.main.status_label.text)
+	check(_status_has(" applied"),
+			"B15.7 %s status log contains applied (log tail %s)" % [label, _b15_log_tail()])
+	check(st.contains("applied"), "B15.7 %s status label contains applied (got %s)" % [label, st])
+	check(not _status_has("Feature created") and not st.contains("Feature created"),
+			"B15.7 %s never Feature created (got %s)" % [label, st])
+
+
+func _b15_log_tail() -> String:
+	if _status_log.is_empty():
+		return ""
+	var n := mini(3, _status_log.size())
+	var parts: PackedStringArray = PackedStringArray()
+	for i in n:
+		parts.append(_status_log[_status_log.size() - n + i])
+	return " | ".join(parts)
+
+
+func _b15_segment_length(pts: PackedVector3Array) -> float:
+	if pts.size() < 2:
+		return 0.0
+	var total := 0.0
+	for i in range(1, pts.size()):
+		total += pts[i - 1].distance_to(pts[i])
+	return total
+
+
+func _b15_edge_pts(lines: Dictionary, eid) -> PackedVector3Array:
+	var pts: PackedVector3Array = lines.get(eid, PackedVector3Array())
+	if pts.is_empty():
+		pts = lines.get(str(eid), PackedVector3Array())
+	return pts
+
+
+func _b15_assert_slot_floor_edges(ctx: FilmContext, body: String) -> void:
+	print("  B15.8 slot floor")
+	var lines: Dictionary = ctx.view.doc.get_edge_lines(body)
+	var n150 := 0
+	var bad := 0
+	for eid in ctx.view.selected_edges:
+		var length := _b15_segment_length(_b15_edge_pts(lines, eid))
+		if absf(length - 150.0) <= 1.0:
+			n150 += 1
+		if absf(length - 175.4) <= 1.0 or absf(length - 42.2) <= 1.0:
+			bad += 1
+	check(ctx.view.selected_edges.size() >= 2 and n150 >= 2,
+			"B15.8 ≥ 2 floor edges within 1 mm of 150 (selected %d, near 150 %d)" % [
+				ctx.view.selected_edges.size(), n150])
+	check(bad == 0,
+			"B15.8 no selected edge within 1 mm of 175.4 or 42.2 (got %d)" % bad)
+	var st := str(ctx.main.status_label.text)
+	check(st.contains("150") and st.contains("click more, Enter to apply"),
+			"B15.8 status lists the floor loop (got %s)" % st)
+
+
+func _b15_radius_is_10(spin: SpinBox) -> bool:
+	return absf(_b14_parse_radius(_b14_spin_text(spin)) - 10.0) < 0.05
+
+
+func _b15_n2(ctx: FilmContext) -> void:
+	print("  B15.1 N2")
+	var vp: Viewport = ctx.main.get_viewport()
+	if ctx.main.ops_panel._pending != OpsPanel.Pending.FILLET_EDGES:
+		var arm: Button = ctx.main.interaction._strip_fillet
+		await FilmUI.click_control(ctx, arm, FilmUICues.alert("Fillet", "Arm fillet"))
+		await process_frame
+		await process_frame
+	_status_log.clear()
+	var strip: SpinBox = ctx.main.interaction._strip_radius
+	check(strip != null and strip.is_visible_in_tree(), "B15.1 strip R is visible")
+	if strip == null:
+		return
+	var edit := _b14_spin_line(strip)
+	await _x11_click(edit)
+	await _x11_select_all(edit.get_viewport())
+	await _push_key(vp, KEY_1, 49)
+	await _push_key(vp, KEY_0, 48)
+	await _push_key(vp, KEY_ENTER, 0)
+	await process_frame
+	await process_frame
+	await process_frame
+	var after_enter := str(ctx.main.status_label.text)
+	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"B15.1 pending stays FILLET_EDGES after strip Enter (got %s)" % str(ctx.main.ops_panel._pending))
+	check(after_enter == "Fillet r=10.00 — edit Radius, click edges, Enter"
+			or _status_has("Fillet r=10.00 — edit Radius, click edges, Enter"),
+			"B15.1 status after strip Enter (got `%s`)" % after_enter)
+	var panel: SpinBox = ctx.main.ops_panel._radius_spin as SpinBox
+	check(_b15_radius_is_10(strip) and panel != null and _b15_radius_is_10(panel),
+			"B15.1 strip R and panel read 10 after strip Enter (strip `%s` panel `%s`)" % [
+				_b14_spin_text(strip), _b14_spin_text(panel)])
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"B15.1 pending stays FILLET_EDGES after key 3")
+	check(str(ctx.main.status_label.text) == "Top view" or _status_has("Top view"),
+			"B15.1 Top view printed (got `%s`)" % ctx.main.status_label.text)
+	await _push_key(vp, KEY_4, 52)
+	await process_frame
+	await process_frame
+	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"B15.1 pending stays FILLET_EDGES after key 4")
+	check(str(ctx.main.status_label.text) == "Back view" or _status_has("Back view"),
+			"B15.1 Back view printed (got `%s`)" % ctx.main.status_label.text)
+	check(not _status_has("No edges selected"),
+			"B15.1 no No edges selected in the log (%s)" % _b15_log_tail())
+	panel = ctx.main.ops_panel._radius_spin as SpinBox
+	check(panel != null and panel.is_visible_in_tree(), "B15.1 panel Radius is visible")
+	if panel == null:
+		return
+	var p_edit := _b14_spin_line(panel)
+	await _x11_click(p_edit)
+	await _x11_select_all(p_edit.get_viewport())
+	await _push_key(vp, KEY_1, 49)
+	await _push_key(vp, KEY_0, 48)
+	await _push_key(vp, KEY_ENTER, 0)
+	await process_frame
+	await process_frame
+	await process_frame
+	var after_panel := str(ctx.main.status_label.text)
+	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"B15.1 pending stays FILLET_EDGES after panel Enter (got %s)" % str(ctx.main.ops_panel._pending))
+	check(after_panel == "Fillet r=10.00 — edit Radius, click edges, Enter"
+			or _status_has("Fillet r=10.00 — edit Radius, click edges, Enter"),
+			"B15.1 status after panel Enter (got `%s`)" % after_panel)
+	strip = ctx.main.interaction._strip_radius
+	check(_b15_radius_is_10(strip) and _b15_radius_is_10(panel),
+			"B15.1 strip R and panel read 10 after panel Enter (strip `%s` panel `%s`)" % [
+				_b14_spin_text(strip), _b14_spin_text(panel)])
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"B15.1 pending stays FILLET_EDGES after panel key 3")
+	check(str(ctx.main.status_label.text) == "Top view" or _status_has("Top view"),
+			"B15.1 Top view printed after panel (got `%s`)" % ctx.main.status_label.text)
+	check(not _status_has("No edges selected"),
+			"B15.1 no No edges selected anywhere in the log (%s)" % _b15_log_tail())
+	if ctx.main.ops_panel._pending != OpsPanel.Pending.FILLET_EDGES:
+		var rearm: Button = ctx.main.interaction._strip_fillet
+		await FilmUI.click_control(ctx, rearm, FilmUICues.alert("Fillet", "Re-arm fillet"))
+		await process_frame
+		await process_frame
+	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+			"B15.1 fillet stays armed for the neck click")
+
+
+func _b15_contour_chips(chrome: SketchContextChrome) -> Array:
+	var out: Array = []
+	if chrome == null or chrome._contour_bar == null:
+		return out
+	for c in chrome._contour_bar.get_children():
+		if c is CheckButton and (c as Control).visible:
+			out.append(c)
+	return out
+
+
+func _b15_hover(vp: Viewport, pos: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	await process_frame
+	await process_frame
+
+
+func _b15_contour_row(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var vp: Viewport = ctx.main.get_viewport()
+	await process_frame
+	var chips := _b15_contour_chips(chrome)
+	var bar_on := chrome != null and chrome._contour_bar != null and chrome._contour_bar.visible
+	check(bar_on and chips.size() >= 2,
+			"B15.2 bar visible with ≥ 2 chips (n=%d vis=%s)" % [chips.size(), str(bar_on)])
+	if chips.size() < 2:
+		return
+	await _b15_hover(vp, chips[1].get_global_rect().get_center())
+	var st: Dictionary = sm.contour_highlight_state()
+	var fills: Array = st.get("fills", [])
+	check(int(st.get("focus", -99)) == 1, "B15.2 focus == 1 (got %s)" % str(st.get("focus")))
+	check(fills.size() >= 2 and absf(float(fills[1]) - 0.5) < 0.02 and absf(float(fills[0]) - 0.28) < 0.02,
+			"B15.2 fills[1] ≈ 0.5 and fills[0] ≈ 0.28 (got %s)" % str(fills))
+	_status_log.clear()
+	await _x11_click(chips[0])
+	await process_frame
+	st = sm.contour_highlight_state()
+	fills = st.get("fills", [])
+	check(fills.size() >= 1 and float(fills[0]) == 0.0, "B15.2 fills[0] == 0 after off-click (got %s)" % str(fills))
+	var last := _status_log[_status_log.size() - 1] if not _status_log.is_empty() else ""
+	check(last.begins_with("Contour 1 of") and last.ends_with("— skipped"),
+			"B15.2 off-click status starts Contour 1 of and ends — skipped (got `%s`)" % last)
+	_status_log.clear()
+	chips = _b15_contour_chips(chrome)
+	await _x11_click(chips[0])
+	await process_frame
+	last = _status_log[_status_log.size() - 1] if not _status_log.is_empty() else ""
+	check(last.ends_with("— included"), "B15.2 on-click status ends — included (got `%s`)" % last)
+	var all_on := true
+	for c in _b15_contour_chips(chrome):
+		if not (c as CheckButton).button_pressed:
+			all_on = false
+	check(all_on, "B15.2 every contour chip is on")
+
+
+func _b15_contours(ctx: FilmContext) -> void:
+	print("  B15.2 contours")
+	var sm: SketchMode = ctx.main.sketch_mode
+	var ncont := -1
+	if sm.sketch != null and sm.sketch.has_method("contour_count"):
+		ncont = int(sm.sketch.contour_count())
+	print("  contour_count=%d" % ncont)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	await process_frame
+	var bar_on := chrome != null and chrome._contour_bar != null and chrome._contour_bar.visible
+	if ncont >= 2 and bar_on:
+		await _b15_contour_row(ctx)
+		return
+	print("  B15.2 fallback circle")
+	var before := sm.sketch.entity_ids().size()
+	await _press_rail_label(ctx, "Circle")
+	await _zoom_uv(ctx, Vector2(120, 15), 50.0)
+	await _click_uv(ctx, Vector2(120, 15), "B15.2 circle centre")
+	await _click_uv(ctx, Vector2(128, 15), "B15.2 circle rim")
+	await process_frame
+	await process_frame
+	await _b15_contour_row(ctx)
+	await _press_rail_label(ctx, "Select")
+	await _zoom_uv(ctx, Vector2(128, 15), 40.0)
+	await _click_uv(ctx, Vector2(128, 15), "B15.2 select rim")
+	await _recovery_press_delete(ctx)
+	await process_frame
+	await process_frame
+	check(sm.sketch.entity_ids().size() == before,
+			"B15.2 deleted circle restores entity count (got %d was %d)" % [
+				sm.sketch.entity_ids().size(), before])
+	var left: Dictionary = sm.contour_highlight_state()
+	var left_n := int(left.get("count", -1))
+	check(left_n == 0 or left_n == 1,
+			"B15.2 deleted circle leaves no overlay (count %d)" % left_n)
+
+
+func _b15_export_noext(ctx: FilmContext, name: String) -> void:
+	print("  B15.4 export")
+	var bare_path := "/tmp/sx-rung01-%s" % name
+	var with_ext := bare_path + ".3mf"
+	if FileAccess.file_exists(bare_path):
+		DirAccess.remove_absolute(bare_path)
+	if FileAccess.file_exists(with_ext):
+		DirAccess.remove_absolute(with_ext)
+	var opened: bool = await _click_menu_item(ctx, "File", 11, "File → Export 3MF")
+	await process_frame
+	await process_frame
+	var dlg: FileDialog = ctx.main.file_dialog
+	check(opened and dlg != null and dlg.visible, "B15.4 Export 3MF opens a FileDialog")
+	if dlg == null or not dlg.visible:
+		return
+	for _i in 4:
+		await process_frame
+	await _type_export_name(dlg, bare_path)
+	var ok_btn := dlg.get_ok_button()
+	check(ok_btn != null and ok_btn.is_visible_in_tree(), "B15.4 export OK is visible")
+	if ok_btn != null:
+		await _x11_click_embedded(ok_btn)
+		await process_frame
+		await process_frame
+		await process_frame
+	var status := str(ctx.main.status_label.text)
+	check(FileAccess.file_exists(with_ext), "B15.4 file %s exists" % with_ext)
+	check(not FileAccess.file_exists(bare_path), "B15.4 no extension-less file left (%s)" % bare_path)
+	check(status.begins_with("Exported 3MF → ") and status.ends_with(".3mf"),
+			"B15.4 status begins Exported 3MF → and ends .3mf (got %s)" % status)
+	if dlg.visible:
+		dlg.hide()
+
+
+func _b15_key0(ctx: FilmContext) -> void:
+	print("  B15.6 key 0")
+	await _release_gui_focus(ctx)
+	var vp: Viewport = ctx.main.get_viewport()
+	var cam: OrbitCamera = ctx.main.camera
+	var yaw0 := cam.yaw
+	var pitch0 := cam.pitch
+	_status_log.clear()
+	await _push_key(vp, KEY_0, 48)
+	await process_frame
+	await process_frame
+	var st := str(ctx.main.status_label.text)
+	check(st == "No view for key 0 — use 1 2 3 4 6 7 8" or _status_has("No view for key 0 — use 1 2 3 4 6 7 8"),
+			"B15.6 status No view for key 0 — use 1 2 3 4 6 7 8 (got `%s`)" % st)
+	check(is_equal_approx(cam.yaw, yaw0) and is_equal_approx(cam.pitch, pitch0),
+			"B15.6 key 0 leaves yaw and pitch unchanged")
+	_status_log.clear()
+	await _push_key(vp, KEY_3, 51)
+	await process_frame
+	await process_frame
+	check(str(ctx.main.status_label.text) == "Top view" or _status_has("Top view"),
+			"B15.6 key 3 prints Top view (got `%s`)" % ctx.main.status_label.text)
