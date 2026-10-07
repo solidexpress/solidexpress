@@ -3632,11 +3632,6 @@ func _b14_spin_arrow_pos(spin: SpinBox, up: bool) -> Vector2:
 	return Vector2(x, y)
 
 
-func _b14_spin_text_pos(spin: SpinBox) -> Vector2:
-	var r: Rect2 = spin.get_global_rect()
-	return Vector2(r.position.x + minf(r.size.x * 0.35, r.size.x - 24.0), r.get_center().y)
-
-
 func _b14_on_screen_uv(ctx: FilmContext, center: Vector2) -> Vector2:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var deltas: Array[Vector2] = [
@@ -3654,20 +3649,22 @@ func _b14_on_screen_uv(ctx: FilmContext, center: Vector2) -> Vector2:
 func _b14_type_spin_tab(ctx: FilmContext, spin: SpinBox, digits: String) -> void:
 	if spin == null or not spin.is_visible_in_tree():
 		return
-	var pos := _b14_spin_text_pos(spin)
-	if not FilmUI.is_on_screen(ctx, pos):
-		return
-	await _aim_pointer(ctx, pos)
-	await _pointer_click(ctx, pos, false)
+	FilmUI.ensure_control_visible(spin)
 	await process_frame
 	var edit := _b14_spin_line(spin)
 	if edit == null:
 		return
+	FilmUI.ensure_control_visible(edit)
+	await process_frame
+	# Same click path as B14.7 (Enter). Do not _pointer_click the spin: that
+	# pixel can miss the LineEdit and hit the timeline / viewport.
+	await _x11_click(edit)
+	await process_frame
 	if not edit.has_focus():
 		await _x11_click(edit)
 		await process_frame
 	var vp: Viewport = edit.get_viewport()
-	await _x11_select_all(vp)
+	await _ctrl_a(vp)
 	await process_frame
 	await _x11_type(vp, digits)
 	await process_frame
@@ -3675,7 +3672,7 @@ func _b14_type_spin_tab(ctx: FilmContext, spin: SpinBox, digits: String) -> void
 	if absf(_b14_parse_radius(_b14_spin_text(spin)) - want) > 0.05:
 		await _x11_click(edit)
 		await process_frame
-		await _x11_select_all(vp)
+		await _ctrl_a(vp)
 		await _x11_type(vp, digits)
 		await process_frame
 	_status_log.clear()
@@ -4161,9 +4158,13 @@ func _b14_fillet_tab(ctx: FilmContext) -> void:
 	await _b14_type_spin_tab(ctx, ctx.main.interaction._strip_radius, "1.5")
 	_b14_assert_radius_trio(ctx, 1.5, "strip 1.5 Tab")
 	await _b14_type_spin_tab(ctx, ctx.main.interaction._strip_radius, "10")
+	await process_frame
+	await process_frame
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm != null and sm.active:
 		await FilmUI.exit_sketch(ctx)
+		await process_frame
+		await process_frame
 	await _release_gui_focus(ctx)
 	await _push_key(ctx.main.get_viewport(), KEY_3, 51)
 	await process_frame
