@@ -235,7 +235,7 @@ func _is_nav_key(k: InputEventKey) -> bool:
 	match k.keycode:
 		KEY_F, KEY_HOME:
 			return true
-		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8:
+		KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8:
 			return not k.alt_pressed and not sketch_orientation_locked
 		KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN:
 			return true
@@ -455,6 +455,8 @@ func _handle_nav_key(k: InputEventKey) -> bool:
 				return false
 			apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0))
 			return true
+		KEY_0:
+			return not sketch_orientation_locked
 		KEY_5:
 			if sketch_orientation_locked:
 				return false

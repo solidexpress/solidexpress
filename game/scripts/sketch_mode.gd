@@ -3653,8 +3653,8 @@ func _chain_breaker_status() -> String:
 					breaker_id = id
 					breaker_type = kind
 		if breaker_id != "":
-			return "%s %s at (%.1f, %.1f) breaks the chain" % [
-				breaker_type, breaker_id, pt.x, pt.y]
+			return "%s at (%.1f, %.1f) breaks the chain — delete or trim it" % [
+				breaker_type.capitalize(), pt.x, pt.y]
 		return "open profile at (%.1f, %.1f) breaks the chain" % [pt.x, pt.y]
 	return "open profile breaks the chain"
 
