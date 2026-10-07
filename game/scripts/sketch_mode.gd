@@ -181,7 +181,10 @@ const DIM_LABEL_FONT := 18  # Label3D font px (fixed_size: screen size follows t
 const DIM_LABEL_PIXEL := 0.004  # Label3D.pixel_size
 const DIM_LABEL_PAD_PX := 8.0  # extra screen px around the text that still count as a click
 const DIM_LABEL_STACK_MM := 14.0  # labels anchored closer than this stack upward on screen
-const DIM_LABEL_STACK_PX := 28.0  # label-space px between stacked labels (> the 18 px font height)
+const DIM_LABEL_STACK_PX := 28.0  # Label3D offset px between stacked labels (> the 18 px font)
+## Jaw width / angle callouts stay beside the segment. More than a couple of
+## screen steps walks the text off the jaw (sx-036 A8: 45° under the menu).
+const JAW_LABEL_MAX_STACK := 2
 const COLOR_ENTITY := Color(0.95, 0.95, 1.0)
 const COLOR_CONSTRUCTION := Color(0.45, 0.45, 0.48)  # dimmer/desaturated
 const COLOR_CONSTRAINED := Color(0.35, 0.85, 0.45)  # fully constrained sketch
@@ -677,8 +680,7 @@ func _on_sketch_camera_moved() -> void:
 			break
 		var lab := _dimension_labels.get_child(li) as Label3D
 		if lab != null:
-			var stack := int(dim.get("label_stack", 0))
-			lab.offset = Vector2(0.0, float(stack) * DIM_LABEL_STACK_PX)
+			lab.offset = _dimension_label_offset_px(dim)
 			lab.position = _to3(dim["label_pos"] as Vector2) + plane_normal() * 0.2
 		li += 1
 
@@ -2418,7 +2420,8 @@ func constrain(type: String, value: float = 0.0) -> String:
 	return res["status"]
 
 
-func _record_dimension(type: String, ids: Array, value: float, cid: String = "") -> void:
+func _record_dimension(type: String, ids: Array, value: float, cid: String = "",
+		callout: String = "") -> void:
 	var id_list: Array = []
 	for id in ids:
 		id_list.append(str(id))
@@ -2434,10 +2437,17 @@ func _record_dimension(type: String, ids: Array, value: float, cid: String = "")
 					same = false
 					break
 			if same:
-				dimensions[i] = {"type": type, "ids": id_list, "value": value,
+				var kept_callout := callout if callout != "" else str(d.get("callout", ""))
+				var rec := {"type": type, "ids": id_list, "value": value,
 					"cid": cid if cid != "" else d.get("cid", "")}
+				if kept_callout != "":
+					rec["callout"] = kept_callout
+				dimensions[i] = rec
 				return
-	dimensions.append({"type": type, "ids": id_list, "value": value, "cid": cid})
+	var fresh := {"type": type, "ids": id_list, "value": value, "cid": cid}
+	if callout != "":
+		fresh["callout"] = callout
+	dimensions.append(fresh)
 
 
 ## Fillet the corner shared by two selected lines. Requires exactly two selected
@@ -3374,7 +3384,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var dist_cid: String = sketch.add_constraint("distance", [
 		{"entity": floor_id, "role": "start"},
 		{"entity": floor_id, "role": "end"}], width)
-	_record_dimension("distance", [floor_id], width, dist_cid)
+	_record_dimension("distance", [floor_id], width, dist_cid, "jaw_width")
 	sketch.add_constraint("midpoint", [
 		{"entity": arc_id, "role": "center"},
 		{"entity": floor_id, "role": "self"}], 0.0)
@@ -3407,7 +3417,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var ang_cid: String = sketch.add_constraint("angle", [
 		{"entity": hx, "role": "self"},
 		{"entity": str(walls[0]["id"]), "role": "self"}], ang)
-	_record_dimension("angle", [hx, str(walls[0]["id"])], ang, ang_cid)
+	_record_dimension("angle", [hx, str(walls[0]["id"])], ang, ang_cid, "jaw_angle")
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "circle" or sketch.is_construction(id):
@@ -5455,7 +5465,7 @@ func _add_centre_rect_dimensions(long_id: String, short_id: String, opp_long_id:
 			var cid: String = sketch.add_constraint("distance", [
 				{"entity": short_id, "role": "start"},
 				{"entity": short_id, "role": "end"}], width)
-			_record_dimension("distance", [short_id], width, cid)
+			_record_dimension("distance", [short_id], width, cid, "jaw_width")
 	if pt_id != "" and long_id != "" and opp_long_id != "":
 		var ia: Dictionary = sketch.entity_info(long_id)
 		var ic: Dictionary = sketch.entity_info(opp_long_id)
@@ -5476,14 +5486,15 @@ func _add_centre_rect_dimensions(long_id: String, short_id: String, opp_long_id:
 					{"entity": pt_id, "role": "self"},
 					{"entity": diag, "role": "self"}], 0.0)
 		sketch.add_constraint("fix", [{"entity": pt_id, "role": "self"}], 0.0)
-	_add_angle_to_horizontal(long_id, ctr, pt_id)
+	_add_angle_to_horizontal(long_id, ctr, pt_id, "jaw_angle")
 	run_solve()
 
 
 ## Construction +X through `through`, plus a driving angle to `line_id`.
 ## The construction line stays construction so it is not part of the profile.
 ## `pt_id` when set is kept on that line (the rectangle centre).
-func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String = "") -> void:
+func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String = "",
+		callout: String = "") -> void:
 	if sketch == null or line_id == "" or _line_has_angle_dim(line_id):
 		return
 	var info: Dictionary = sketch.entity_info(line_id)
@@ -5509,7 +5520,7 @@ func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String =
 	var cid: String = sketch.add_constraint("angle", [
 		{"entity": xid, "role": "self"},
 		{"entity": line_id, "role": "self"}], ang, true)
-	_record_dimension("angle", [xid, line_id], ang, cid)
+	_record_dimension("angle", [xid, line_id], ang, cid, callout)
 
 
 func _line_has_angle_dim(line_id: String) -> bool:
@@ -6243,16 +6254,31 @@ func _dimension_label_size_px(text: String) -> Vector2:
 			font.get_height(DIM_LABEL_FONT))
 
 
-## Screen rectangle of the drawn text. `anchor` is the projected label_pos.
+## Label3D.offset in font pixels. fixed_size turns one font pixel into `k`
+## screen pixels (see `_label_px_scale`); +Y is camera-up, so screen Y flips.
+func _dimension_label_offset_px(dim: Dictionary) -> Vector2:
+	var stack := float(dim.get("label_stack", 0))
+	var clamp_off := Vector2.ZERO
+	var raw: Variant = dim.get("label_clamp", Vector2.ZERO)
+	if raw is Vector2:
+		clamp_off = raw
+	return Vector2(clamp_off.x, stack * DIM_LABEL_STACK_PX + clamp_off.y)
+
+
+## World position of a dimension label, matching the Label3D we draw.
+func _dimension_label_world(pos: Vector2) -> Vector3:
+	return to_global(_to3(pos) + plane_normal() * 0.2)
+
+
+## Screen rectangle of the drawn text. `anchor` is the projected label origin.
 func _dimension_label_rect(dim: Dictionary, anchor: Vector2, k: float) -> Rect2:
 	var text := str(dim.get("label_text", ""))
 	if text == "":
 		text = _dimension_label_text(dim)
 	var size := _dimension_label_size_px(text) * k
-	# Label3D.offset is screen pixels when fixed_size is set — do not scale
-	# the stack by k or hit-testing / overlap think labels are farther apart
-	# than they are drawn (N1b: 45° on top of 20 after a zoomed Save).
-	var centre := anchor - Vector2(0.0, float(dim.get("label_stack", 0)) * DIM_LABEL_STACK_PX)
+	var off := _dimension_label_offset_px(dim)
+	# Same shift Label3D applies: offset font-px × k, Y up in the label.
+	var centre := anchor + Vector2(off.x * k, -off.y * k)
 	return Rect2(centre - size * 0.5, size)
 
 
@@ -6308,7 +6334,6 @@ func _rebuild_dimension_labels() -> void:
 		if dim.get("label_pos", null) == null:
 			continue
 		var pos: Vector2 = dim["label_pos"]
-		var stack := int(dim.get("label_stack", 0))
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.fixed_size = true
@@ -6318,7 +6343,7 @@ func _rebuild_dimension_labels() -> void:
 		label.no_depth_test = true
 		label.render_priority = 2
 		label.outline_render_priority = 1
-		label.offset = Vector2(0.0, float(stack) * DIM_LABEL_STACK_PX)
+		label.offset = _dimension_label_offset_px(dim)
 		label.text = str(dim.get("label_text", ""))
 		label.position = _to3(pos) + plane_normal() * 0.2
 		_dimension_labels.add_child(label)
@@ -6335,6 +6360,90 @@ func _full_circle_dimension(dim: Dictionary) -> bool:
 		return false
 	var t := str(dim.get("type", ""))
 	return t == "radius" or t == "diameter"
+
+
+## Jaw width and the 45° long-side angle. These sit on the opening, so a
+## millimetre stack walks them to the top of the view (sx-036 A8).
+func _is_jaw_callout(dim: Dictionary) -> bool:
+	var tag := str(dim.get("callout", ""))
+	if tag == "jaw_width" or tag == "jaw_angle":
+		return true
+	if sketch == null:
+		return false
+	var t := str(dim.get("type", ""))
+	var ids: Array = dim.get("ids", [])
+	if t == "angle":
+		return _is_jaw_angle_ids(ids)
+	if t == "distance":
+		return _is_jaw_width_ids(ids)
+	return false
+
+
+func _is_jaw_angle_ids(ids: Array) -> bool:
+	if sketch == null or ids.size() < 2:
+		return false
+	var profile := ""
+	var datum := ""
+	for id in ids:
+		var info: Dictionary = sketch.entity_info(str(id))
+		if str(info.get("type", "")) != "line":
+			return false
+		if sketch.is_construction(str(id)):
+			datum = str(id)
+		else:
+			profile = str(id)
+	if profile == "" or datum == "":
+		return false
+	var dinfo: Dictionary = sketch.entity_info(datum)
+	var d: Vector2 = dinfo["end"] - dinfo["start"]
+	# The jaw datum is the construction +X through the centre.
+	return d.length_squared() > 1e-8 and absf(d.y) <= maxf(0.05 * absf(d.x), 1e-3)
+
+
+func _is_jaw_width_ids(ids: Array) -> bool:
+	if sketch == null or ids.size() != 1:
+		return false
+	var lid := str(ids[0])
+	var info: Dictionary = sketch.entity_info(lid)
+	if str(info.get("type", "")) != "line" or sketch.is_construction(lid):
+		return false
+	var w: Vector2 = info["end"] - info["start"]
+	if w.length_squared() < 1e-8:
+		return false
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		if not _is_jaw_angle_ids(dim.get("ids", [])):
+			continue
+		var profile := ""
+		for id in dim.get("ids", []):
+			if not sketch.is_construction(str(id)):
+				profile = str(id)
+				break
+		if profile == "":
+			continue
+		var pinfo: Dictionary = sketch.entity_info(profile)
+		if str(pinfo.get("type", "")) != "line":
+			continue
+		var p: Vector2 = pinfo["end"] - pinfo["start"]
+		if p.length_squared() < 1e-8:
+			continue
+		var ang := absf(rad_to_deg(w.angle_to(p)))
+		ang = minf(ang, absf(180.0 - ang))
+		if absf(ang - 90.0) > 8.0:
+			continue
+		if _segments_share_endpoint(info, pinfo):
+			return true
+	return false
+
+
+func _segments_share_endpoint(a: Dictionary, b: Dictionary) -> bool:
+	var pts: Array[Vector2] = [a["start"], a["end"]]
+	for q in [b["start"], b["end"]]:
+		for p in pts:
+			if p.distance_to(q) <= 0.5:
+				return true
+	return false
 
 
 ## Select click on a circle's own radius label that has been stacked onto the rim.
@@ -6373,38 +6482,155 @@ func _resolve_label_overlaps() -> void:
 			dim["label_stack"] = 0
 			dimensions[i] = dim
 			continue
-		var stack := int(dim.get("label_stack", 0))
+		# A previous frame's clamp must not shift the overlap test.
+		dim["label_clamp"] = Vector2.ZERO
+		# Jaw callouts ignore the millimetre seed. That seed stacks every
+		# anchor within 14 mm, which at a 140 px head is enough to park 20
+		# and 45° under the menu bar while the hit rect stays on the segment.
+		var jaw := _is_jaw_callout(dim)
+		var stack := 0 if jaw else int(dim.get("label_stack", 0))
 		var guard := 0
 		while guard < 16:
+			if jaw and stack > JAW_LABEL_MAX_STACK:
+				stack = JAW_LABEL_MAX_STACK
+				break
 			dim["label_stack"] = stack
 			dimensions[i] = dim
-			var rect := _projected_label_rect(dim, cam, k)
-			var hit := false
-			for gr in glyphs:
-				if rect.intersects(gr):
-					hit = true
-					break
-			if not hit:
-				for j in range(dimensions.size()):
-					if j == i:
-						continue
-					var other: Dictionary = dimensions[j]
-					if typeof(other) != TYPE_DICTIONARY or other.get("label_pos", null) == null:
-						continue
-					if rect.intersects(_projected_label_rect(other, cam, k)):
-						hit = true
-						break
-			if not hit:
+			if not _label_rect_hits(dim, i, cam, k, glyphs):
+				break
+			# Past the cap, a sideways nudge keeps the callout on the jaw.
+			# Another upward step is what parked 45° under the menu.
+			if jaw and stack >= JAW_LABEL_MAX_STACK:
 				break
 			stack += 1
 			guard += 1
 		dim["label_stack"] = stack
 		dimensions[i] = dim
+	_clamp_dimension_labels_into_view(cam, k)
+	_separate_capped_jaw_labels(cam, k, glyphs)
+	_clamp_dimension_labels_into_view(cam, k)
+
+
+func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
+		glyphs: Array[Rect2]) -> bool:
+	var rect := _projected_label_rect(dim, cam, k)
+	for gr in glyphs:
+		if rect.intersects(gr):
+			return true
+	for j in range(dimensions.size()):
+		if j == index:
+			continue
+		var other: Dictionary = dimensions[j]
+		if typeof(other) != TYPE_DICTIONARY or other.get("label_pos", null) == null:
+			continue
+		if rect.intersects(_projected_label_rect(other, cam, k)):
+			return true
+	return false
+
+
+## Jaw callouts that still overlap at the stack cap slide sideways, in
+## Label3D offset pixels, so the drawn glyph and the hit rect move together.
+func _separate_capped_jaw_labels(cam: Camera3D, k: float, glyphs: Array[Rect2]) -> void:
+	if k < 1e-6:
+		return
+	var guard := 0
+	while guard < 8:
+		guard += 1
+		var moved := false
+		for i in range(dimensions.size()):
+			var dim: Dictionary = dimensions[i]
+			if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+				continue
+			if not _is_jaw_callout(dim):
+				continue
+			if not _label_rect_hits(dim, i, cam, k, glyphs):
+				continue
+			var rect := _projected_label_rect(dim, cam, k)
+			var push := _jaw_side_push_px(rect, i, cam, k, glyphs)
+			if absf(push) < 0.5:
+				continue
+			var clamp_off := Vector2.ZERO
+			var raw: Variant = dim.get("label_clamp", Vector2.ZERO)
+			if raw is Vector2:
+				clamp_off = raw
+			clamp_off.x += push / k
+			dim["label_clamp"] = clamp_off
+			dimensions[i] = dim
+			moved = true
+		if not moved:
+			break
+
+
+func _jaw_side_push_px(rect: Rect2, index: int, cam: Camera3D, k: float,
+		glyphs: Array[Rect2]) -> float:
+	var gap := 4.0
+	var push_right := 0.0
+	var push_left := 0.0
+	var obstacles: Array[Rect2] = []
+	for gr in glyphs:
+		obstacles.append(gr)
+	# Only earlier labels. The later callout slides on its own pass so the
+	# pair does not chase each other across the jaw.
+	for j in range(index):
+		var other: Dictionary = dimensions[j]
+		if typeof(other) != TYPE_DICTIONARY or other.get("label_pos", null) == null:
+			continue
+		obstacles.append(_projected_label_rect(other, cam, k))
+	for ob in obstacles:
+		if not rect.intersects(ob):
+			continue
+		push_right = maxf(push_right, ob.end.x + gap - rect.position.x)
+		push_left = minf(push_left, ob.position.x - gap - rect.end.x)
+	if push_right <= 0.0 and push_left >= 0.0:
+		return 0.0
+	var safe := _label_safe_screen_rect()
+	if push_right > 0.0 and rect.end.x + push_right <= safe.end.x:
+		return push_right
+	if push_left < 0.0 and rect.position.x + push_left >= safe.position.x:
+		return push_left
+	if push_right > 0.0:
+		return push_right
+	return push_left
 
 
 func _projected_label_anchor(dim: Dictionary, cam: Camera3D) -> Vector2:
 	var lp: Vector2 = dim["label_pos"]
-	return cam.unproject_position(to_global(to_model(lp)))
+	return cam.unproject_position(_dimension_label_world(lp))
+
+
+## Pull any label whose text would clip the menu / window edge back inside.
+## The nudge is stored in Label3D offset pixels so draw and pick share it.
+func _label_safe_screen_rect() -> Rect2:
+	var vp := get_viewport().get_visible_rect().size if is_inside_tree() else Vector2(1280, 800)
+	var top := ChromeDock.top_inset + 2.0
+	var bottom := ChromeDock.bottom_inset + 2.0
+	var margin := 4.0
+	return Rect2(margin, top, maxf(vp.x - margin * 2.0, 32.0), maxf(vp.y - top - bottom, 32.0))
+
+
+func _clamp_dimension_labels_into_view(cam: Camera3D, k: float) -> void:
+	if k < 1e-6:
+		return
+	var safe := _label_safe_screen_rect()
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+			continue
+		var rect := _projected_label_rect(dim, cam, k)
+		var delta := Vector2.ZERO
+		if rect.size.y <= safe.size.y:
+			if rect.position.y < safe.position.y:
+				delta.y += safe.position.y - rect.position.y
+			elif rect.end.y > safe.end.y:
+				delta.y -= rect.end.y - safe.end.y
+		if rect.size.x <= safe.size.x:
+			if rect.position.x < safe.position.x:
+				delta.x += safe.position.x - rect.position.x
+			elif rect.end.x > safe.end.x:
+				delta.x -= rect.end.x - safe.end.x
+		if delta != Vector2.ZERO:
+			dim["label_clamp"] = Vector2(delta.x / k, -delta.y / k)
+			dimensions[i] = dim
 
 
 func _projected_label_rect(dim: Dictionary, cam: Camera3D, k: float) -> Rect2:
@@ -6633,7 +6859,7 @@ func dimension_hit(pos2: Vector2, rect_only: bool = false) -> int:
 			continue
 		var p: Vector2 = lp
 		if cam != null:
-			var sp := cam.unproject_position(to_global(to_model(p)))
+			var sp := cam.unproject_position(_dimension_label_world(p))
 			var rect := _dimension_label_rect(dim, sp, k)
 			var gap := _rect_gap(rect, screen)
 			var centre_d := screen.distance_to(rect.get_center())
