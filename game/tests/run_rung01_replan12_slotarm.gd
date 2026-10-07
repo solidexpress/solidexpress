@@ -115,6 +115,15 @@ func _wheel_at(pos: Vector2, down: bool, notches: int) -> void:
 	await process_frame
 
 
+func _rail_scroll_room(scroll: ScrollContainer) -> int:
+	if scroll == null:
+		return 0
+	var bar := scroll.get_v_scroll_bar()
+	if bar == null:
+		return 0
+	return maxi(0, int(ceil(bar.max_value - bar.page)))
+
+
 func _scroll_btn_to_band(scroll: ScrollContainer, btn: Control, want_y: float) -> void:
 	if scroll == null or btn == null:
 		return
@@ -265,13 +274,20 @@ func _run() -> void:
 	chrome.set_dim_value(38.76)
 	check(chrome.get_finish_end() == "to_face", "setup: End is Up To Surface")
 
-	# Wheel proves the rail scrolls. Do not click a tool in the same gesture:
-	# Godot keeps the ScrollContainer capturing LMB after a wheel.
+	# Wheel proves the rail scrolls when the column is shorter than the tools.
+	# At 1280×800 the rail fits (sx-036 A1), so the wheel stays at 0. Do not
+	# click a tool in the same gesture: Godot keeps the ScrollContainer
+	# capturing LMB after a wheel.
 	if scroll != null:
+		var room := _rail_scroll_room(scroll)
 		var wheel_at := rail.get_global_rect().get_center()
 		await _wheel_at(wheel_at, true, 12)
-		print("  scrolled rail scroll_vertical=%d" % scroll.scroll_vertical)
-		check(scroll.scroll_vertical > 0, "wheel over the rail scrolls it down")
+		print("  scrolled rail scroll_vertical=%d room=%d" % [scroll.scroll_vertical, room])
+		if room > 1:
+			check(scroll.scroll_vertical > 0, "wheel over the rail scrolls it down")
+		else:
+			check(scroll.scroll_vertical == 0,
+					"rail fits at 1280×800 so the wheel leaves scroll at 0")
 
 	# Exit, open a new face sketch: scroll resets, finish bar resets, Slot arms.
 	await FilmUI.exit_sketch(ctx)
@@ -380,7 +396,12 @@ func _run() -> void:
 	if scroll != null:
 		var slot_for_scroll := FilmUI.find_sketch_tool_button(main, "Slot")
 		await _scroll_btn_to_band(scroll, slot_for_scroll, 300.0)
-		check(scroll.scroll_vertical > 0, "second scroll pass moved the rail")
+		if _rail_scroll_room(scroll) > 1:
+			check(scroll.scroll_vertical > 0, "second scroll pass moved the rail")
+		else:
+			var slot_r := slot_for_scroll.get_global_rect() if slot_for_scroll != null else Rect2()
+			check(slot_for_scroll != null and scroll.get_global_rect().encloses(slot_r.grow(-0.5)),
+					"Slot stays fully on the rail without scrolling (%s)" % str(slot_r))
 		await _assert_tool_from_click(main, "Slot", SketchMode.Tool.SLOT, "Slot —")
 		await _assert_tool_from_click(main, "Ellipse", SketchMode.Tool.ELLIPSE, "Ellipse —")
 		await _assert_tool_from_click(main, "Spline", SketchMode.Tool.SPLINE, "Spline —")

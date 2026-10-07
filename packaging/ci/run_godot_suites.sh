@@ -34,10 +34,12 @@ echo "Running gated Godot suites (workflow, ui, sketch, sketch tools, print, run
 # Measured on lavapipe: the three together finish in under a minute
 # (wrench ~35s, cut ~3s, status ~1s), well under the 5 minute CI budget.
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_wrench.gd
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_jaw_label_hit.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_shaftbadges.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan6_cut.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan12_status.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_n12_extrude.gd
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_sx036_rail.gd
 # Thickness edit: neck verticals re-resolve and the slot stays 2.5 deep (thick 7/7).
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_thick.gd
 
