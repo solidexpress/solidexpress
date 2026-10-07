@@ -33,6 +33,8 @@ echo "Running gated Godot suites (workflow, ui, sketch, print, rung01 e2e)"
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_wrench.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan6_cut.gd
 "${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan12_status.gd
+# Thickness edit: neck verticals re-resolve and the slot stays 2.5 deep (thick 7/7).
+"${GODOT_BIN}" --headless --path "${GAME_DIR}" --script tests/run_rung01_replan15_thick.gd
 
 echo "Gated suites completed."
 

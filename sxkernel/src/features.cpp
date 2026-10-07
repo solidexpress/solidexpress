@@ -2065,11 +2065,33 @@ static void remember_live_edges(FeatureGraph& graph, Document& doc) {
     }
 }
 
+// True when `point`/`dir` is the same line the stored cue already names.
+// Topological naming can hand a fillet's old edge id to a different curve
+// after the blend consumes it. That must not replace the pre-fillet cue.
+static bool cue_still_names(const json& cue, const gp_Pnt& point, const gp_Vec& dir) {
+    if (!cue.is_object() || !cue.contains("point") || !cue.contains("dir")) return true;
+    const auto& pj = cue["point"];
+    const auto& dj = cue["dir"];
+    if (!pj.is_array() || pj.size() < 3 || !dj.is_array() || dj.size() < 3) return true;
+    gp_Vec want_dir(dj[0].get<double>(), dj[1].get<double>(), dj[2].get<double>());
+    if (want_dir.Magnitude() < 1e-12 || dir.Magnitude() < 1e-12) return false;
+    want_dir.Normalize();
+    gp_Vec got = dir;
+    got.Normalize();
+    if (std::abs(got.Dot(want_dir)) <= 0.95) return false;
+    const gp_Pnt want(pj[0].get<double>(), pj[1].get<double>(), pj[2].get<double>());
+    const gp_Vec delta(want, point);
+    const gp_Vec along = want_dir * delta.Dot(want_dir);
+    const double perp = (delta - along).Magnitude();
+    return perp <= 0.5;
+}
+
 // A fillet/chamfer edge created by an earlier feature is released when the
 // base body is rebuilt, then minted again by that feature. Copy a cue onto
 // the feature while the id still resolves, or from an edge seen on a
-// previous regen. Cues are not overwritten when the id is already gone, so
-// a later regen keeps the pre-fillet location.
+// previous regen. Cues are not overwritten when the id is already gone, or
+// when the id now resolves to a different curve, so a later regen keeps the
+// pre-fillet location.
 static void remember_dressup_edge_cues(FeatureGraph& graph, Feature& f, Document& doc) {
     if (f.type != FeatureType::Fillet && f.type != FeatureType::Chamfer) return;
     if (!f.params.contains("edges") || !f.params["edges"].is_array()) return;
@@ -2084,6 +2106,7 @@ static void remember_dressup_edge_cues(FeatureGraph& graph, Feature& f, Document
     for (const auto& je : f.params["edges"]) {
         if (!je.is_string()) continue;
         const std::string key = je.get<std::string>();
+        const bool have = cues.contains(key);
         TopoDS_Shape es;
         std::string why;
         if (feature_ops::resolve_topo_shape(doc, *tb, EntityKind::Edge, je, es, &why)) {
@@ -2094,12 +2117,16 @@ static void remember_dressup_edge_cues(FeatureGraph& graph, Feature& f, Document
             curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
             if (v.Magnitude() < 1e-12) continue;
             v.Normalize();
+            if (have && !cue_still_names(cues[key], p, v)) continue;
             cues[key] = {{"point", {p.X(), p.Y(), p.Z()}}, {"dir", {v.X(), v.Y(), v.Z()}}};
             changed = true;
             continue;
         }
         double px, py, pz, dx, dy, dz;
         if (!graph.recall_edge(key, px, py, pz, dx, dy, dz)) continue;
+        gp_Pnt mem_p(px, py, pz);
+        gp_Vec mem_d(dx, dy, dz);
+        if (have && !cue_still_names(cues[key], mem_p, mem_d)) continue;
         cues[key] = {{"point", {px, py, pz}}, {"dir", {dx, dy, dz}}};
         changed = true;
     }
