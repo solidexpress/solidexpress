@@ -97,6 +97,7 @@ test-godot: build import preflight
 	$(GODOT) --headless --path game --script tests/run_rung01_fillet_tests.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_wrench.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_sx036_esc.gd
+	$(GODOT) --headless --path game --script tests/run_rung01_jaw_label_hit.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan_finishbar.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan_sketch.gd
 	$(GODOT) --headless --path game --script tests/run_rung01_replan_input.gd
