@@ -94,6 +94,8 @@ var _strip_focus_text := ""
 var _panel_changed_while_strip_focused := false
 var _strip_radius_syncing := false
 var _strip_jaw_box: HBoxContainer
+const POST_FINISH_CHIP_GUARD_MSEC := 600
+var _post_finish_chip_guard_until_msec := 0
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
@@ -249,6 +251,7 @@ func _ready() -> void:
 	_build_context_menu()
 	_build_selection_strip()
 	_wire_numeric_focus_release()
+	_wire_post_finish_guard()
 	_build_orient_popup()
 	_build_dim_edit_popup()
 	if sketch_mode != null:
@@ -274,6 +277,13 @@ func _wire_numeric_focus_release() -> void:
 	if _strip_radius != null:
 		SxUi.release_focus_on_commit(_strip_radius)
 	gui_input.connect(_on_numeric_canvas_press)
+
+
+func _wire_post_finish_guard() -> void:
+	if sketch_mode == null:
+		return
+	sketch_mode.finished.connect(func(_id: String) -> void:
+		_post_finish_chip_guard_until_msec = Time.get_ticks_msec() + POST_FINISH_CHIP_GUARD_MSEC)
 
 
 func _on_numeric_canvas_press(event: InputEvent) -> void:
@@ -5442,6 +5452,8 @@ func _sync_strip_jaw_af() -> void:
 
 
 func _ctx_jaw_af(size: int) -> void:
+	if Time.get_ticks_msec() < _post_finish_chip_guard_until_msec:
+		return
 	if view == null or view.doc == null:
 		status.emit("Failed to set jaw_af")
 		return
