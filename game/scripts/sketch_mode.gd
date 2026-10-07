@@ -781,6 +781,7 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		run_solve()
 		_restore_flipped_shaft_lines(pre_solve)
 		_weld_on_circle_endpoints()
+		_sync_tangent_pins()
 		_reweld_jaw_profile()
 	# Drop the leftover redrawn Ø45 before seal. Trim that missed the 15%
 	# gate left that full circle; seal would turn it into a second cap and
@@ -1765,7 +1766,10 @@ func shaft_lines_selected() -> int:
 		var lid: String = sketch.add_line(pa.x, pa.y, pb.x, pb.y)
 		if lid == "":
 			continue
-		_infer_line(lid, pa, pb)
+		# pin_tangent: the centre-distance already carries a horizontal, so a
+		# point-on-circle at the tangent contact duplicates the tangent and
+		# the typed radius (PlaneGCS reports that as redundant / conflicting).
+		_infer_line(lid, pa, pb, true)
 		lids.append(lid)
 		geos.append({"start": pa, "end": pb})
 		added += 1
@@ -1787,6 +1791,7 @@ func _pin_shaft_line_pair(lids: Array[String], geos: Array[Dictionary]) -> void:
 	for i in lids.size():
 		sketch.set_entity_geometry(lids[i], geos[i])
 	_weld_on_circle_endpoints()
+	_sync_tangent_pins()
 
 
 func set_snap(on: bool) -> void:
@@ -5037,7 +5042,11 @@ func propose_verbs() -> Array:
 
 ## New line: add horizontal/vertical when near axis-aligned, and coincident
 ## constraints where its endpoints land on existing line endpoints.
-func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
+## `pin_tangent` (Shaft Lines): a tangent plus a point-on-circle of the same
+## radius is one equation twice, and PlaneGCS paints that as a redundant /
+## conflicting H. Pin the contact with a construction radius perpendicular
+## to the line instead of the extra distance.
+func _infer_line(lid: String, a: Vector2, b: Vector2, pin_tangent: bool = false) -> void:
 	if not infer_enabled or lid == "":
 		return
 	var added := false
@@ -5057,11 +5066,14 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 				{"entity": hit[0], "role": hit[1]}], 0.0)
 			added = true
 		else:
-			if _infer_tangent_at(lid, role_pos[1], d):
+			var tang_id := _infer_tangent_at(lid, role_pos[1], d)
+			if tang_id != "":
 				added = true
-			# Keep an endpoint that was placed on a circle on that circle.
-			# Tangent alone lets the contact slide off during solve.
-			if _infer_on_circle(lid, str(role_pos[0]), role_pos[1]):
+				if pin_tangent:
+					_pin_tangent_contact(lid, str(role_pos[0]), tang_id, role_pos[1])
+				elif _infer_on_circle(lid, str(role_pos[0]), role_pos[1]):
+					added = true
+			elif _infer_on_circle(lid, str(role_pos[0]), role_pos[1]):
 				added = true
 	if added:
 		# Snap contacts onto the circles before DogLeg runs — otherwise a
@@ -5082,18 +5094,21 @@ func _infer_line(lid: String, a: Vector2, b: Vector2) -> void:
 					"end": info0["end"],
 				})
 		_weld_on_circle_endpoints(lid)
+		_sync_tangent_pins()
 		# Pin a restored horizontal tangent so a later Extrude solve cannot
-		# jump it to the far side again.
-		if flipped and not _entity_has_constraint(lid, "fix"):
+		# jump it to the far side again. Shaft Lines must not: Fix plus the
+		# horizontal is the redundant lock that paints the H badge red, and
+		# the pair pin already puts both lines back on their constructed sides.
+		if flipped and not pin_tangent and not _entity_has_constraint(lid, "fix"):
 			sketch.add_constraint("fix", [{"entity": lid, "role": "self"}], 0.0)
 
 
 ## Endpoint lying on a circle, with the segment perpendicular to the radius,
 ## is a line–circle tangent (the shaft lines on the Ø20). A secant that merely
-## ends on a larger circle is left alone.
-func _infer_tangent_at(lid: String, p: Vector2, seg: Vector2) -> bool:
+## ends on a larger circle is left alone. Returns the circle id, or "".
+func _infer_tangent_at(lid: String, p: Vector2, seg: Vector2) -> String:
 	if seg.length() <= INFER_TOL:
-		return false
+		return ""
 	var dir := seg.normalized()
 	for id in sketch.entity_ids():
 		if id == lid:
@@ -5117,8 +5132,8 @@ func _infer_tangent_at(lid: String, p: Vector2, seg: Vector2) -> bool:
 		sketch.add_constraint("tangent", [
 			{"entity": lid, "role": "self"},
 			{"entity": id, "role": "self"}], 0.0)
-		return true
-	return false
+		return id
+	return ""
 
 
 func _infer_on_circle(lid: String, role: String, p: Vector2) -> bool:
@@ -5139,6 +5154,120 @@ func _infer_on_circle(lid: String, role: String, p: Vector2) -> bool:
 			{"entity": id, "role": "center"}], r)
 		return true
 	return false
+
+
+## Shaft Lines: keep the tangent, and pin the contact with a construction
+## radius perpendicular to the line. A point-on-circle distance of the same
+## radius is the same equation as the tangent once the contact is the foot of
+## the perpendicular, so PlaneGCS reports one redundant and paints the H
+## badges red. The far end (on the larger circle, not tangent) still gets
+## `_infer_on_circle`.
+func _pin_tangent_contact(lid: String, role: String, circle_id: String, p: Vector2) -> void:
+	if sketch == null or lid == "" or circle_id == "" or _shaft_has_tangent_pin(lid, role):
+		return
+	var info: Dictionary = sketch.entity_info(circle_id)
+	if info.is_empty():
+		return
+	var c: Vector2 = info["center"]
+	var helper: String = sketch.add_line(c.x, c.y, p.x, p.y)
+	if helper == "":
+		return
+	sketch.set_construction(helper, true)
+	sketch.add_constraint("coincident", [
+		{"entity": circle_id, "role": "center"},
+		{"entity": helper, "role": "start"}], 0.0)
+	sketch.add_constraint("coincident", [
+		{"entity": lid, "role": role},
+		{"entity": helper, "role": "end"}], 0.0)
+	sketch.add_constraint("perpendicular", [
+		{"entity": helper, "role": "self"},
+		{"entity": lid, "role": "self"}], 0.0)
+
+
+func _shaft_has_tangent_pin(lid: String, role: String) -> bool:
+	if sketch == null:
+		return false
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if str(info.get("type", "")) != "coincident":
+			continue
+		var refs: Array = info.get("refs", [])
+		if refs.size() != 2:
+			continue
+		var hit := false
+		var other := ""
+		for ref in refs:
+			if typeof(ref) != TYPE_DICTIONARY:
+				continue
+			if str(ref.get("entity", "")) == lid and str(ref.get("role", "")) == role:
+				hit = true
+			else:
+				other = str(ref.get("entity", ""))
+		if not hit or other == "":
+			continue
+		if sketch.is_construction(other):
+			return true
+	return false
+
+
+## Construction radii added by `_pin_tangent_contact` follow the shaft endpoint
+## after a flip restore. Other construction lines (centre dimension) are left
+## alone.
+func _sync_tangent_pins() -> void:
+	if sketch == null:
+		return
+	for id in sketch.entity_ids():
+		if not sketch.is_construction(str(id)):
+			continue
+		var info: Dictionary = sketch.entity_info(str(id))
+		if str(info.get("type", "")) != "line":
+			continue
+		var bound := _tangent_pin_binding(str(id))
+		if bound.is_empty():
+			continue
+		var cinfo: Dictionary = sketch.entity_info(str(bound["circle"]))
+		var linfo: Dictionary = sketch.entity_info(str(bound["shaft"]))
+		if cinfo.is_empty() or linfo.is_empty():
+			continue
+		var c: Vector2 = cinfo["center"]
+		var p: Vector2 = linfo["start"] if str(bound["role"]) == "start" else linfo["end"]
+		sketch.set_entity_geometry(str(id), {"start": c, "end": p})
+
+
+func _tangent_pin_binding(helper_id: String) -> Dictionary:
+	var circle_id := ""
+	var shaft_id := ""
+	var shaft_role := ""
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if str(info.get("type", "")) != "coincident":
+			continue
+		var refs: Array = info.get("refs", [])
+		if refs.size() != 2:
+			continue
+		var mine: Dictionary = {}
+		var other: Dictionary = {}
+		if str(refs[0].get("entity", "")) == helper_id:
+			mine = refs[0]
+			other = refs[1]
+		elif str(refs[1].get("entity", "")) == helper_id:
+			mine = refs[1]
+			other = refs[0]
+		else:
+			continue
+		var oid := str(other.get("entity", ""))
+		var oinfo: Dictionary = sketch.entity_info(oid)
+		var kind := str(oinfo.get("type", ""))
+		if str(mine.get("role", "")) == "start" and str(other.get("role", "")) == "center" \
+				and (kind == "circle" or kind == "arc"):
+			circle_id = oid
+		elif str(mine.get("role", "")) == "end" and kind == "line" \
+				and str(other.get("role", "")) in ["start", "end"]:
+			shaft_id = oid
+			shaft_role = str(other.get("role", ""))
+	if circle_id == "" or shaft_id == "":
+		return {}
+	return {"circle": circle_id, "shaft": shaft_id, "role": shaft_role}
 
 
 ## True when `entity_id` already has a constraint of `type_name`.
@@ -5314,6 +5443,7 @@ func _restore_flipped_shaft_lines(before: Dictionary) -> void:
 		if (_endpoint_on_a_circle(s0, circs, 0.05) and not _endpoint_on_a_circle(s1, circs, 0.05)) \
 				or (_endpoint_on_a_circle(e0, circs, 0.05) and not _endpoint_on_a_circle(e1, circs, 0.05)):
 			sketch.set_entity_geometry(str(id), {"start": s0, "end": e0})
+	_sync_tangent_pins()
 
 
 func _endpoint_on_a_circle(p: Vector2, circs: Array, tol: float) -> bool:
