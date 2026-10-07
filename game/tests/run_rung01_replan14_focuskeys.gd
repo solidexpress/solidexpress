@@ -653,8 +653,10 @@ func _sketch_rows() -> void:
 	check(not sm.active, "10: second Esc exits the sketch")
 	check(not _status_has("Tool dropped"),
 			"10: second Esc does not drop the tool (log=%s)" % str(_status_log))
-	check(_st(main) == "Sketch cancelled",
-			"10: status is Sketch cancelled (got `%s`)" % _st(main))
+	# The polygon committed above is real geometry. The promised second Esc
+	# still leaves, and it keeps that profile.
+	check(_st(main) == "Sketch saved",
+			"10: status is Sketch saved (got `%s`)" % _st(main))
 
 	print("- 11. Esc with the field not focused is the same two-press ladder")
 	if not sm.active:
@@ -693,6 +695,6 @@ func _sketch_rows() -> void:
 	check(not sm.active, "11: second Esc exits the sketch")
 	check(not _status_has("Tool dropped"),
 			"11: second Esc does not drop the tool (log=%s)" % str(_status_log))
-	check(_st(main) == "Sketch cancelled",
-			"11: status is Sketch cancelled (got `%s`)" % _st(main))
+	check(_st(main) == "Sketch saved",
+			"11: committed geometry is kept (got `%s`)" % _st(main))
 	await _shutdown(ctx)

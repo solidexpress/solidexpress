@@ -199,6 +199,8 @@ func test_up_to_surface_face_pick(ctx: FilmContext) -> void:
 			"up_to_face_id is empty before the face click")
 	check(ex_btn != null and ex_btn.disabled, "Extrude is disabled until a face is picked")
 	check(chrome.wants_face_pick(), "Up To Surface arms a face pick")
+	# End = Up To Surface does not steal Circle clicks. Pick face does.
+	chrome.arm_face_pick()
 
 	await _click_bottom_face(ctx, bottom)
 	await process_frame

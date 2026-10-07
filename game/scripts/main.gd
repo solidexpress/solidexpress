@@ -3803,9 +3803,14 @@ func _unhandled_input(event: InputEvent) -> void:
 							var ul := sketch_mode.undo()
 							_on_status("Undo: " + ul if ul != "" else "Nothing to undo")
 						get_viewport().set_input_as_handled()
-					elif view != null and view.doc.can_undo():
-						view.undo()
-						_on_status("Undo")
+					elif view != null:
+						# Ctrl+Shift+Z is Redo in part mode. Ctrl+Z stays Undo.
+						if event.shift_pressed:
+							view.redo()
+							_on_status("Redo")
+						elif view.doc.can_undo():
+							view.undo()
+							_on_status("Undo")
 						get_viewport().set_input_as_handled()
 				KEY_Y:
 					if SxUi.numeric_field_focused(get_viewport()):
@@ -3813,6 +3818,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					if sketch_mode != null and sketch_mode.active:
 						var ry := sketch_mode.redo()
 						_on_status("Redo: " + ry if ry != "" else "Nothing to redo")
+						get_viewport().set_input_as_handled()
+					elif view != null:
+						view.redo()
+						_on_status("Redo")
 						get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_F1:
 			help_overlay.toggle()

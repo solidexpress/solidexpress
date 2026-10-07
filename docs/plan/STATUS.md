@@ -2,6 +2,13 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-036 — Esc keeps a committed sketch; Save keeps undo
+- Final Esc on a sketch that already has entities calls `exit_sketch()` (`Sketch saved`). An empty sketch, including one whose only action was a dropped first point, still cancels. Select on a line does not leave a measure ✕. A dimension editor blocks measure overlays and clears any ✕ on Esc or Enter.
+- Part mode: Ctrl+Shift+Z and Ctrl+Y redo (`Redo`). Ctrl+Z stays undo.
+- Choosing Up To Surface arms the face row but does not eat Circle / Line / Jaw clicks. Only Pick face (`arm_face_pick`) makes the next canvas click a face pick.
+- Save and Save As re-enter the same sketch on the same frame and keep the undo and redo stacks. A later timeline re-entry still starts with an empty sketch history.
+- Gate: `run_rung01_sx036_esc.gd` (70 checks). Wrench walk 729 checks. Replan 15 suites stay green.
+
 ## Rung 1 replan 15 — sx-035 leftovers
 - Six real-input suites on main: `run_rung01_replan15_{armedkeys,contours,chain,export,extrude,strings}.gd` (+ `_chain_<stage>` only if WP3b ran). Enter in a Radius field no longer disarms Fillet / Chamfer (it applies only with edges picked); Contours chips highlight their region (`SxSketch.contour_outlines`, the only C++ change) and name it in the status; the profile-Line jaw → Up To Surface cut → slot → fillets → export chain is a regression net (headless, checker 28/28 and 7/7); Export 3MF always ends in `.3mf`; a second click at the Extrude pixel cannot hit an AF chip (600 ms guard); the chain-break status shows no entity id; key `0` says `No view for key 0 …`; `applied` is the Fillet / Chamfer success wording; a label click with Jaw armed is pinned.
 - The wrench walk gained `B15.*` rows (N2, contours, export without extension, second Extrude click, key 0, `applied`, slot-floor edge lengths) **729 checks, 0 failures**; nut 7/7, wrench 28/28, thick 7/7, blank 5/5. `_press_extrude` now sends a real mouse press (the walk used to call `pressed.emit()`). The walk fails on any status containing a UUID.
