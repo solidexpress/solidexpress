@@ -660,7 +660,7 @@ DressupEdges resolve_dressup_edges(ApplyCtx& ctx, const Body& body, const char* 
         TopoDS_Shape es;
         std::string why;
         if (!resolve_dressup_edge(ctx, body, je, es, &why)) {
-            sx::log::error(std::string(soft_skip_tag) + why);
+            sx::log::debug(std::string(soft_skip_tag) + why);
             continue;
         }
         const TopoDS_Edge edge = TopoDS::Edge(es);
@@ -678,6 +678,9 @@ DressupEdges resolve_dressup_edges(ApplyCtx& ctx, const Body& body, const char* 
         }
     }
     out.lost = std::max(0, out.total - static_cast<int>(out.edges.size()));
+    if (out.lost > 0)
+        sx::log::error(std::string(soft_skip_tag) + std::to_string(out.lost) +
+                       " edges lost on rebuild");
     return out;
 }
 
