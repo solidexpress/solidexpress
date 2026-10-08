@@ -580,6 +580,8 @@ func _build_selection_strip() -> void:
 		SxUi.write_typed_text(strip_le, ch)
 		strip_le.accept_event())
 	_strip_radius_box.add_child(_strip_radius)
+	SxUi.pin_fmt_mm(_strip_radius)
+	SxUi.reveal_committed_spin(_strip_radius, _strip_radius.value)
 	# Jaw AF quick configs — wrench path without opening Variables dock.
 	_strip_jaw_box = HBoxContainer.new()
 	_strip_jaw_box.name = "StripJawAF"
@@ -4054,6 +4056,10 @@ func _gui_key(event: InputEventKey) -> bool:
 				return false
 	match event.keycode:
 		KEY_ENTER, KEY_KP_ENTER:
+			# A Radius / other numeric field owns Enter: commit the number,
+			# do not apply the armed fillet. Viewport focus is what applies.
+			if SxUi.numeric_field_focused(get_viewport()):
+				return false
 			if ops_panel != null and ops_panel.try_commit_pending():
 				return true
 		KEY_ESCAPE:
