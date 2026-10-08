@@ -4537,8 +4537,8 @@ func _b15_contour_row(ctx: FilmContext) -> void:
 	var st: Dictionary = sm.contour_highlight_state()
 	var fills: Array = st.get("fills", [])
 	check(int(st.get("focus", -99)) == 1, "B15.2 focus == 1 (got %s)" % str(st.get("focus")))
-	check(fills.size() >= 2 and absf(float(fills[1]) - 0.5) < 0.02 and absf(float(fills[0]) - 0.28) < 0.02,
-			"B15.2 fills[1] ≈ 0.5 and fills[0] ≈ 0.28 (got %s)" % str(fills))
+	check(fills.size() >= 2 and absf(float(fills[1]) - 0.70) < 0.02 and absf(float(fills[0]) - 0.20) < 0.02,
+			"B15.2 fills[1] ≈ 0.70 and fills[0] ≈ 0.20 (got %s)" % str(fills))
 	_status_log.clear()
 	await _x11_click(chips[0])
 	await process_frame
