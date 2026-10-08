@@ -5441,6 +5441,15 @@ func refresh_dof_state() -> void:
 ## Solve and remember diagnostics; all sketch-mode solves go through here so
 ## DOF coloring stays current.
 func run_solve() -> Dictionary:
+	# An empty profile is not "fully constrained". The chip shows "—", never "OK".
+	if sketch == null or sketch.entity_ids().is_empty():
+		last_dofs = -1
+		last_solve_status = ""
+		last_conflicting.clear()
+		last_redundant.clear()
+		_conflict_entities.clear()
+		solve_updated.emit(-1, "", 0)
+		return {"dofs": -1, "status": "", "conflicting": PackedStringArray(), "redundant": PackedStringArray()}
 	var res: Dictionary = sketch.solve()
 	last_dofs = res["dofs"]
 	last_solve_status = res["status"]
@@ -6276,6 +6285,52 @@ func _dimension_value_for_solver(dim: Dictionary, value: float) -> float:
 
 ## Change the value of a recorded dimensional constraint (by index into
 ## `dimensions`) and re-solve. Returns the solve status ("" on bad index).
+## Move a driving dimension in steps of at most 25 % so a wide jaw does not
+## jump onto another solver branch. A failed step restores the snapshot.
+func _commit_dimension_stepwise(index: int, dim: Dictionary, cid: String, target: float) -> bool:
+	var previous := target
+	if sketch.has_method("constraint_info"):
+		previous = float(sketch.constraint_info(cid).get("value", target))
+	var snap := sketch.snapshot() if sketch.has_method("snapshot") else ""
+	var dims_before: Array = dimensions.duplicate(true)
+	var cur := previous
+	var guard := 0
+	while guard < 48:
+		guard += 1
+		var room := 0.25 * maxf(absf(cur), 1.0)
+		var step := target
+		if absf(target - cur) > room + 1e-6:
+			step = clampf(target, cur - room, cur + room)
+		if not sketch.set_constraint_value(cid, step):
+			_reject_dimension_step(snap, dims_before)
+			return false
+		dim["value"] = step
+		dim.erase("expr")
+		dimensions[index] = dim
+		_keep_angle_dims_driving()
+		var res := run_solve()
+		if str(res.get("status", "")) == "failed":
+			_reject_dimension_step(snap, dims_before)
+			return false
+		cur = step
+		if absf(target - cur) <= 1e-4:
+			break
+	if str(dim.get("type", "")) == "distance":
+		_restore_driving_angles()
+	return true
+
+
+func _reject_dimension_step(snap: String, dims_before: Array) -> void:
+	if snap != "" and sketch != null and sketch.has_method("restore"):
+		sketch.restore(snap)
+	dimensions = dims_before
+	run_solve()
+	_redraw()
+	_redraw_selected()
+	_rebuild_dimension_labels()
+	status.emit("Dimension rejected — constraints could not be satisfied")
+
+
 func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 	if index < 0 or index >= dimensions.size():
 		return ""
@@ -6292,16 +6347,14 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 			dim["expr"] = expr
 		else:
 			var value := _dimension_value_for_solver(dim, float(expr))
-			if not sketch.set_constraint_value(cid, value):
-				return ""
-			dim["value"] = value
-			dim.erase("expr")
+			if not _commit_dimension_stepwise(index, dim, cid, value):
+				return "failed"
+			dim = dimensions[index]
 	else:
 		var value := _dimension_value_for_solver(dim, float(value_or_expr))
-		if not sketch.set_constraint_value(cid, value):
-			return ""
-		dim["value"] = value
-		dim.erase("expr")
+		if not _commit_dimension_stepwise(index, dim, cid, value):
+			return "failed"
+		dim = dimensions[index]
 	# Resolve expressions from document variables before solve.
 	if view != null and view.doc != null:
 		var env2 := {}
@@ -8532,9 +8585,12 @@ func _append_jaw_preview(im: ImmediateMesh, tip: Vector2) -> void:
 	var half_w: float
 	if _tool_points.size() == 1:
 		along = tip - ctr
-		if along.length() <= 1e-6:
-			return
-		half_w = along.length() * JAW_PREVIEW_ASPECT
+		# A pointer still on the centre used to draw nothing (and surface_end
+		# with zero vertices). Keep a 1.5 mm half-length and half-width.
+		if along.length() < JAW_PREVIEW_MIN_HALF_W_MM:
+			along = Vector2(JAW_PREVIEW_MIN_HALF_W_MM, 0.0) if along.length() <= 1e-6 \
+					else along.normalized() * JAW_PREVIEW_MIN_HALF_W_MM
+		half_w = maxf(along.length() * JAW_PREVIEW_ASPECT, JAW_PREVIEW_MIN_HALF_W_MM)
 	else:
 		along = _tool_points[1] - ctr
 		if along.length() <= 1e-6:
