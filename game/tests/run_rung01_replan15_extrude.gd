@@ -236,7 +236,7 @@ func test_invalid_distance() -> void:
 	await _ground_rectangle(ctx)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	var sm: SketchMode = ctx.main.sketch_mode
-	var edit := await _type_distance(ctx, "abc")
+	var edit := await _type_distance(ctx, "1.2.3")
 	print("B1 distance text='%s'" % (edit.text if edit != null else ""))
 	var doc = ctx.view.doc
 	var ex0 := _extrude_count(doc)
