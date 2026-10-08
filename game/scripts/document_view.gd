@@ -1894,6 +1894,26 @@ func clear_selection() -> void:
 	select_entity("", "")
 
 
+## Remove one face from the selection. A lone host face clears the selection.
+## A body selected alongside that face (or a wider face/edge pick) stays.
+func drop_face(face_id: String) -> void:
+	if face_id == "" or (selected_face != face_id and not selected_faces.has(face_id)):
+		return
+	if selected_faces.size() <= 1 and selected_edges.is_empty() and selected_instance == "":
+		if selected_bodies.is_empty():
+			clear_selection()
+		else:
+			var body := selected_body if selected_body != "" else selected_bodies[0]
+			select_entity(body, "")
+		return
+	selected_faces.erase(face_id)
+	if selected_face == face_id:
+		selected_face = selected_faces.back() if not selected_faces.is_empty() else ""
+	_apply_selection_materials()
+	_highlight_edge()
+	selection_changed.emit(selected_body, selected_face)
+
+
 ## Pre-highlight under the pointer. Distinct from selection colors.
 ## Pass empty strings to clear. No-op when the hover target is unchanged.
 func set_hover(body_id: String, face_id: String = "", edge_id: String = "") -> void:
