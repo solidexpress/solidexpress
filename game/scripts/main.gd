@@ -79,9 +79,13 @@ var _esc_menu_frame := -1
 var _esc_menus: Array[Window] = []
 ## Time.get_ticks_msec() until which hover hints must not replace the status.
 var _status_hold_until := 0
-## Hint received during the hold. Flushed once, when the hold ends.
-var _held_hint := ""
-var _held_hint_timer: SceneTreeTimer
+## Last non-empty hover hint while the pointer is on a target. Restored when
+## a result's hold ends, without another pointer event.
+var _current_hint := ""
+## Tests set this to drive the hold without sleeping. -1 uses the real clock.
+var _clock_override_msec := -1
+## [status-trace] lines, kept so a headless test can read the hold gap.
+var status_trace_log: PackedStringArray = []
 ## True while File menu / discard dialog is in the pointer gesture that closes
 ## them, so a mouse-up on Box does not arm place (leftover 3).
 var _palette_insert_blocked := false
@@ -144,6 +148,7 @@ const _STATUS_BAR_H := 30.0
 const _SKETCH_RAIL_MIN_W := 125.0
 ## Command results stay on the status line this long; hover hints yield.
 const STATUS_HOLD_MS := 2500
+const IDLE_STATUS := "empty-drag / Alt-drag / two-finger orbit · middle / 3-finger pan · wheel zoom · F fit · 1/2/3/7 views · click select · drag to move · drag face to push/pull · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
 
 
 func _finish_op_name() -> String:
@@ -833,7 +838,7 @@ func _build_ui() -> void:
 	status_bar.offset_top = -30
 	ui.add_child(status_bar)
 	status_label = Label.new()
-	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle / 3-finger pan · wheel zoom · F fit · 1/2/3/7 views · click select · drag to move · drag face to push/pull · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
+	status_label.text = IDLE_STATUS
 	status_label.add_theme_font_size_override("font_size", UiScale.body())
 	status_bar.add_child(status_label)
 
@@ -2618,10 +2623,47 @@ func _on_datum_offset_confirmed() -> void:
 		_on_status("Datum creation failed")
 
 
+func _now_msec() -> int:
+	if _clock_override_msec >= 0:
+		return _clock_override_msec
+	return Time.get_ticks_msec()
+
+
+func _process(_delta: float) -> void:
+	_hint_tick()
+
+
+func _hint_tick() -> void:
+	if status_label == null or _status_hold_until <= 0:
+		return
+	if _now_msec() < _status_hold_until:
+		return
+	_status_hold_until = 0
+	if _current_hint != "" and status_label.text != _current_hint:
+		_set_status_label(_current_hint, "restore")
+
+
+func _set_status_label(text: String, kind: String) -> void:
+	if status_label == null:
+		return
+	status_label.text = text
+	var trace := OS.get_environment("SX_INPUT_TRACE") == "1"
+	if not trace and SxUi.trace_enabled():
+		trace = true
+	if not trace:
+		return
+	var seconds := Time.get_unix_time_from_system()
+	if _clock_override_msec >= 0:
+		seconds = float(_clock_override_msec) / 1000.0
+	var line := "[status-trace] t=%.3f kind=%s text=%s" % [seconds, kind, text]
+	status_trace_log.append(line)
+	printerr(line)
+
+
 func _on_status(text: String) -> void:
 	if text != "":
-		status_label.text = text
-		_status_hold_until = Time.get_ticks_msec() + STATUS_HOLD_MS
+		_set_status_label(text, "result")
+		_status_hold_until = _now_msec() + STATUS_HOLD_MS
 	# Timeline double-click calls begin_edit without the pad-click path, so
 	# sketch chrome (Exit Sketch, tools) would stay hidden. Show it whenever
 	# a live session has no rail yet.
@@ -2634,34 +2676,17 @@ func _on_status(text: String) -> void:
 ## A hint that arrives during the hold is kept and written when the hold ends.
 func _on_hover_hint(text: String) -> void:
 	if text == "":
-		_held_hint = ""
+		var previous := _current_hint
+		_current_hint = ""
+		if previous != "" and status_label != null and status_label.text == previous:
+			_set_status_label(IDLE_STATUS, "idle")
 		return
-	var now := Time.get_ticks_msec()
-	if now < _status_hold_until:
-		_held_hint = text
-		_arm_hint_flush(_status_hold_until - now)
+	_current_hint = text
+	if _now_msec() < _status_hold_until:
 		return
-	_held_hint = ""
-	status_label.text = text
-
-
-func _arm_hint_flush(ms: int) -> void:
-	if _held_hint_timer != null:
+	if status_label != null and status_label.text == text:
 		return
-	_held_hint_timer = get_tree().create_timer(float(ms) / 1000.0 + 0.02)
-	_held_hint_timer.timeout.connect(_flush_held_hint)
-
-
-func _flush_held_hint() -> void:
-	_held_hint_timer = null
-	if _held_hint == "":
-		return
-	var now := Time.get_ticks_msec()
-	if now < _status_hold_until:
-		_arm_hint_flush(_status_hold_until - now)
-		return
-	status_label.text = _held_hint
-	_held_hint = ""
+	_set_status_label(text, "hint")
 
 
 func _build_paste_special_dialog(parent: Node) -> void:

@@ -1,0 +1,3 @@
+script=tests/run_rung01_replan19_hint.gd
+tier=ci
+timeout=120
