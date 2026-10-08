@@ -161,11 +161,12 @@ func _build_finish_bar() -> void:
 	_dim_spin.step = 0.01
 	_dim_spin.value = 10
 	_dim_spin.suffix = "mm"
-	_dim_spin.select_all_on_focus = true
-	# Typing must not push the SpinBox value on every character. That rewrite
-	# parks the caret at column 0 (digits come out reversed) and restores the
-	# previous value into a cleared line.
-	_dim_spin.update_on_text_changed = false
+	# Select comes from arm_replace_on_focus. The built-in mouse-up select
+	# lands a frame late under soft GL and turns the first typed "10" into "0".
+	_dim_spin.select_all_on_focus = false
+	# true so a trailing "." is kept. The dim key handler owns the string so
+	# SpinBox cannot park the caret at column 0.
+	_dim_spin.update_on_text_changed = true
 	_dim_spin.tooltip_text = "Distance / radius — tracks the rubber-band while drawing; type to lock, Enter commits"
 	_fit_spin(_dim_spin)
 	_radius_label = Label.new()
@@ -187,6 +188,7 @@ func _build_finish_bar() -> void:
 	_finish_dim_row.add_child(_dim_spin)
 	var dim_edit := _dim_spin.get_line_edit()
 	dim_edit.name = "DimLineEdit"
+	SxUi.use_armed_replace_select(dim_edit)
 	dim_edit.focus_entered.connect(_on_dim_focus_entered)
 	dim_edit.focus_exited.connect(_on_dim_focus_exited)
 	dim_edit.text_submitted.connect(_on_dim_text_submitted)
@@ -226,14 +228,16 @@ func _build_finish_bar() -> void:
 	_extrude_spin.value = 20
 	_extrude_spin.suffix = "mm"
 	# A click that focuses D selects the digits, same as the dim blank, so
-	# typing 7.5 replaces 20.0 instead of appending. select_all_on_focus
-	# runs on focus-in, then the click places a caret and clears it; the
-	# deferred select below wins, matching the dim blank.
-	_extrude_spin.select_all_on_focus = true
+	# typing 7.5 replaces 20.0 instead of appending. The select is armed
+	# from focus / click and cancelled once a digit lands. Built-in
+	# select_all_on_focus waits for mouse-up and can select that first digit.
+	_extrude_spin.select_all_on_focus = false
 	_extrude_spin.tooltip_text = "Blind distance (ignored for Through All cuts)"
 	_fit_spin(_extrude_spin)
 	var dist_edit := _extrude_spin.get_line_edit()
 	dist_edit.name = "DistanceLineEdit"
+	SxUi.use_armed_replace_select(dist_edit)
+	SxUi.keep_editing_on_submit(dist_edit)
 	dist_edit.gui_input.connect(_on_distance_edit_gui_input)
 	dist_edit.text_changed.connect(_on_distance_text_changed)
 	dist_edit.text_submitted.connect(_on_distance_text_submitted)
@@ -740,9 +744,15 @@ func _reassert_distance_line(text: String, caret: int, had_sel: bool,
 		sel_from: int, sel_to: int) -> void:
 	if _extrude_spin == null:
 		return
+	var edit := _extrude_spin.get_line_edit()
+	# A digit typed in the same turn already replaced the committed string.
+	# Putting the old text back would drop that digit ("10" → "0" / "1").
+	if edit != null:
+		var typed := str(edit.get_meta("_sx_typed", ""))
+		if typed != "" and typed != text and not SxUi.replace_armed(edit):
+			return
 	_distance_syncing = true
-	_apply_distance_line(_extrude_spin.get_line_edit(), text, caret, had_sel,
-			sel_from, sel_to)
+	_apply_distance_line(edit, text, caret, had_sel, sel_from, sel_to)
 	_distance_syncing = false
 
 
@@ -757,6 +767,17 @@ func _select_distance_all() -> void:
 func _select_distance_all_if_gen(gen: int) -> void:
 	if gen != _distance_select_gen:
 		return
+	# A digit already replaced the committed text. Selecting now would
+	# highlight that digit so the next key turns "10" into "0".
+	var edit := _extrude_spin.get_line_edit() if _extrude_spin != null else null
+	if edit == null:
+		return
+	if not edit.has_focus():
+		return
+	if not _distance_replace_next and not SxUi.replace_armed(edit):
+		return
+	if not edit.is_editing():
+		edit.edit()
 	_select_distance_all()
 
 
@@ -765,9 +786,7 @@ func _select_distance_all_next_frame(gen: int = -1) -> void:
 		gen = _distance_select_gen
 	if is_inside_tree() and get_tree() != null:
 		await get_tree().process_frame
-	if gen != _distance_select_gen:
-		return
-	_select_distance_all()
+	_select_distance_all_if_gen(gen)
 
 
 func _select_dim_all() -> void:
@@ -781,6 +800,15 @@ func _select_dim_all() -> void:
 func _select_dim_all_if_gen(gen: int) -> void:
 	if gen != _dim_select_gen:
 		return
+	var edit := _dim_spin.get_line_edit() if _dim_spin != null else null
+	if edit == null:
+		return
+	if not edit.has_focus():
+		return
+	if not _dim_replace_next and not SxUi.replace_armed(edit):
+		return
+	if not edit.is_editing():
+		edit.edit()
 	_select_dim_all()
 
 
@@ -789,9 +817,7 @@ func _select_dim_all_next_frame(gen: int = -1) -> void:
 		gen = _dim_select_gen
 	if is_inside_tree() and get_tree() != null:
 		await get_tree().process_frame
-	if gen != _dim_select_gen:
-		return
-	_select_dim_all()
+	_select_dim_all_if_gen(gen)
 
 
 ## Digit, keypad digit, '.', and optionally '-' — the keys that start a length.
@@ -877,6 +903,11 @@ func _on_distance_text_submitted(raw: String) -> void:
 	_distance_invalid_raw = ""
 	_write_extrude_spin(float(parsed))
 	_distance_origin = float(parsed)
+	# Enter used to unedit() and leave the focus border up, so the next
+	# digits never inserted. Stay in editing mode with the new text selected.
+	_distance_replace_next = true
+	var committed := _extrude_spin.get_line_edit() if _extrude_spin != null else null
+	SxUi.rearm_replace_after_commit(committed)
 
 
 func _on_distance_focus_entered() -> void:
@@ -897,6 +928,8 @@ func _on_distance_focus_entered() -> void:
 
 func _on_distance_focus_exited() -> void:
 	_distance_replace_next = false
+	if _extrude_spin != null:
+		SxUi.disarm_replace(_extrude_spin.get_line_edit())
 	if _distance_syncing or _distance_rejecting:
 		return
 	var raw := _distance_raw_text()
@@ -934,6 +967,8 @@ func _on_dim_focus_entered() -> void:
 func _on_dim_focus_exited() -> void:
 	_dim_editing = false
 	_dim_replace_next = false
+	if _dim_spin != null:
+		SxUi.disarm_replace(_dim_spin.get_line_edit())
 
 
 func _on_dim_text_submitted(raw: String) -> void:
@@ -1195,7 +1230,7 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 			var gen := _distance_select_gen
 			var line := _extrude_spin.get_line_edit()
 			if line != null:
-				SxUi.arm_replace_on_focus(line)
+				SxUi.claim_keyboard_focus(line)
 			_select_distance_all_if_gen.call_deferred(gen)
 			_select_distance_all_next_frame(gen)
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1214,6 +1249,11 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 			return
 		_distance_user_key = true
 		var line := _extrude_spin.get_line_edit() if _extrude_spin != null else null
+		# Focus border with editing off (Enter's default unedit) swallows
+		# digits. Start editing and replace the committed value.
+		if line != null and line.has_focus() and not line.is_editing():
+			line.edit()
+			_distance_replace_next = true
 		if line != null and (_distance_replace_next or SxUi.replace_armed(line)):
 			var ch := SxUi.numeric_key_char(k)
 			if ch != "":
@@ -1237,6 +1277,9 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 			_dim_replace_next = true
 			_dim_select_gen += 1
 			var gen := _dim_select_gen
+			var dim_line := _dim_spin.get_line_edit()
+			if dim_line != null:
+				SxUi.claim_keyboard_focus(dim_line)
 			_select_dim_all_if_gen.call_deferred(gen)
 			_select_dim_all_next_frame(gen)
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1258,6 +1301,11 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 					edit.select_all()
 			accept_event()
 			return
+		if _is_numeric_replace_key(k, false) and _dim_spin != null:
+			var dim_line := _dim_spin.get_line_edit()
+			if dim_line != null and dim_line.has_focus() and not dim_line.is_editing():
+				dim_line.edit()
+				_dim_replace_next = true
 		if _is_numeric_replace_key(k, false) and _dim_replace_next:
 			var ch := _numeric_key_char(k)
 			if ch != "" and replace_dim_with_char(ch):
@@ -1404,6 +1452,19 @@ func _restore_contour_selection(ids: Variant) -> void:
 		sketch_mode.set_contour_highlight(_selected_contours, -1)
 
 
+func _claim_dim_keyboard() -> void:
+	if _dim_spin == null:
+		return
+	if sketch_mode == null or sketch_mode.tool != SketchMode.Tool.CIRCLE:
+		return
+	if sketch_mode.has_single_dof_preview():
+		return
+	_release_distance_focus()
+	var edit := _dim_spin.get_line_edit()
+	if edit != null:
+		SxUi.claim_keyboard_focus(edit)
+
+
 func sync_for_tool() -> void:
 	_sync_dim_affordance()
 	if sketch_mode == null or _dim_editing:
@@ -1414,6 +1475,13 @@ func sync_for_tool() -> void:
 	elif sketch_mode.tool == SketchMode.Tool.CIRCLE \
 			and not sketch_mode.has_single_dof_preview():
 		set_dim_value(sketch_mode.circle_radius)
+		# The Radius blank is the field on screen. Leave Extrude so the next
+		# digit cannot land in Distance while Radius looks like the target.
+		_release_distance_focus()
+		var edit := _dim_spin.get_line_edit() if _dim_spin != null else null
+		if edit != null:
+			SxUi.claim_keyboard_focus(edit)
+			_claim_dim_keyboard.call_deferred()
 
 
 func set_flip_side(on: bool) -> void:

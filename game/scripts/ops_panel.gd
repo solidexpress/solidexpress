@@ -217,8 +217,10 @@ func _build_body_ops() -> void:
 	_body_ops.add_child(HSeparator.new())
 	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.05, 100.0, 0.5, 2.0)
 	_radius_spin.suffix = "mm"
-	_radius_spin.update_on_text_changed = false
+	# true so a trailing "." survives. Keys go through compose_typed_char.
+	_radius_spin.update_on_text_changed = true
 	var radius_le := _radius_spin.get_line_edit()
+	SxUi.use_armed_replace_select(radius_le)
 	_radius_spin.value_changed.connect(func(v: float) -> void:
 		# A focused LineEdit can emit 0 while the user is typing 10 (soft-GL
 		# drops a digit, or SpinBox parses a partial). Skip only incomplete
@@ -236,6 +238,7 @@ func _build_body_ops() -> void:
 		SxUi.arm_replace_on_focus(radius_le))
 	# Tab (focus-exit) commits the number without applying the fillet.
 	radius_le.focus_exited.connect(func() -> void:
+		SxUi.disarm_replace(radius_le)
 		_commit_panel_radius()
 		(func() -> void:
 			SxUi.reveal_committed_spin.call_deferred(_radius_spin)).call_deferred())
@@ -246,6 +249,11 @@ func _build_body_ops() -> void:
 		commit_radius_field_enter()
 		_return_viewport_keys())
 	radius_le.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+				SxUi.claim_keyboard_focus(radius_le)
+			return
 		if not (event is InputEventKey) or not event.pressed or event.echo:
 			return
 		var key := event as InputEventKey
@@ -254,12 +262,18 @@ func _build_body_ops() -> void:
 			_return_viewport_keys()
 			radius_le.accept_event()
 			return
-		if not SxUi.replace_armed(radius_le):
+		if (key.ctrl_pressed or key.meta_pressed) and not key.alt_pressed \
+				and key.keycode == KEY_A:
+			SxUi.claim_keyboard_focus(radius_le)
+			radius_le.select_all()
+			radius_le.accept_event()
 			return
 		var ch := SxUi.numeric_key_char(key)
 		if ch == "":
 			return
-		SxUi.write_typed_text(radius_le, ch)
+		if not radius_le.has_focus() or not radius_le.is_editing():
+			SxUi.claim_keyboard_focus(radius_le)
+		SxUi.write_typed_text(radius_le, SxUi.compose_typed_char(radius_le, ch))
 		radius_le.accept_event())
 	var round_row := HBoxContainer.new()
 	_body_ops.add_child(round_row)
