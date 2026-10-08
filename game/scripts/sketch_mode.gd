@@ -328,6 +328,8 @@ func _ready() -> void:
 	_contour_tag.pixel_size = DIM_LABEL_PIXEL
 	_contour_tag.font_size = DIM_LABEL_FONT
 	_contour_tag.no_depth_test = true
+	_contour_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_contour_tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_contour_tag.visible = false
 	_contour_tags.add_child(_contour_tag)
 	_dimension_labels = Node3D.new()
@@ -1906,6 +1908,7 @@ const JAW_HINT := "Jaw — click 1 centre, click 2 end of the long side, click 3
 const JAW_PREVIEW_ASPECT := 0.4
 const JAW_PREVIEW_MIN_HALF_W_MM := 1.5
 const CIRCLE_CENTRE_SET := "Circle — centre set, click the rim or type a radius"
+const POLYGON_CENTRE_SET := "Polygon — centre set, click a vertex or type the size"
 const JAW_AFTER_CENTRE := "Jaw — centre set, click 2 end of the long side"
 const JAW_AFTER_LONG := "Jaw — long side set, click 3 half the width"
 const JAW_ZERO_WIDTH := "Jaw — width is zero — click 3 again for half the width"
@@ -4469,6 +4472,98 @@ func contour_highlight_state() -> Dictionary:
 	}
 
 
+func _contour_tag_anchor(region: Dictionary, text: String) -> Vector2:
+	var centre: Vector2 = region["center"]
+	var holes: Array = region.get("holes", [])
+	if holes.is_empty():
+		return centre
+	var outer: PackedVector2Array = region["outer"]
+	var tris := _contour_fill_triangles(outer, holes)
+	var candidates: Array[Vector2] = []
+	var i := 0
+	while i + 2 < tris.size():
+		candidates.append((tris[i] + tris[i + 1] + tris[i + 2]) / 3.0)
+		i += 3
+	if candidates.is_empty():
+		return centre
+	if camera == null or not is_inside_tree():
+		return candidates[0]
+	var best := candidates[0]
+	var best_clear := -1.0
+	for c in candidates:
+		var rect := _contour_tag_screen_rect(c, text)
+		var clear := _hole_screen_clearance(holes, rect)
+		if clear > best_clear:
+			best_clear = clear
+			best = c
+	return best
+
+
+func _contour_tag_screen_rect(anchor: Vector2, text: String) -> Rect2:
+	var sp := camera.unproject_position(to_global(_to3(anchor)))
+	var size := _dimension_label_size_px(text) * _label_px_scale(camera)
+	return Rect2(sp - size * 0.5, size)
+
+
+func _hole_screen_clearance(holes: Array, rect: Rect2) -> float:
+	var best := 1e9
+	for hole in holes:
+		var loop: PackedVector2Array = hole
+		if loop.size() < 2:
+			continue
+		for j in loop.size():
+			var a := _sketch_point_screen(loop[j])
+			var b := _sketch_point_screen(loop[(j + 1) % loop.size()])
+			best = minf(best, _segment_rect_distance(a, b, rect))
+	return best
+
+
+func _sketch_point_screen(p: Vector2) -> Vector2:
+	return camera.unproject_position(to_global(_to3(p)))
+
+
+func _segment_hits_rect(a: Vector2, b: Vector2, rect: Rect2) -> bool:
+	if rect.has_point(a) or rect.has_point(b):
+		return true
+	var corners: Array[Vector2] = [
+		rect.position,
+		Vector2(rect.end.x, rect.position.y),
+		rect.end,
+		Vector2(rect.position.x, rect.end.y),
+	]
+	for i in corners.size():
+		if Geometry2D.segment_intersects_segment(a, b, corners[i], corners[(i + 1) % corners.size()]) != null:
+			return true
+	return false
+
+
+func _segment_rect_distance(a: Vector2, b: Vector2, rect: Rect2) -> float:
+	if _segment_hits_rect(a, b, rect):
+		return 0.0
+	var best := _point_rect_distance(a, rect)
+	best = minf(best, _point_rect_distance(b, rect))
+	var corners: Array[Vector2] = [
+		rect.position,
+		rect.position + Vector2(rect.size.x, 0.0),
+		rect.end,
+		rect.position + Vector2(0.0, rect.size.y),
+	]
+	for c in corners:
+		best = minf(best, _point_segment_distance2(c, a, b))
+	return best
+
+
+func _point_rect_distance(p: Vector2, rect: Rect2) -> float:
+	var c := Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.y, rect.position.y, rect.end.y))
+	return p.distance_to(c)
+
+
+func _point_segment_distance2(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var t := 0.0 if ab.length_squared() < 1e-12 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	return p.distance_to(a + ab * t)
+
+
 func _contour_regions() -> Array:
 	if sketch == null or not sketch.has_method("contour_outlines"):
 		return []
@@ -4565,8 +4660,10 @@ func _redraw_contour_highlight() -> void:
 		mesh.surface_set_material(mesh.get_surface_count() - 1, _contour_line_material)
 	_contour_node.mesh = mesh
 	if _contour_focus >= 0 and _contour_focus < regions.size() and _contour_tag != null:
-		var centre: Vector2 = regions[_contour_focus]["center"]
-		_contour_tag.text = str(_contour_focus + 1)
+		var focused_region: Dictionary = regions[_contour_focus]
+		var tag_text := str(_contour_focus + 1)
+		var centre: Vector2 = _contour_tag_anchor(focused_region, tag_text)
+		_contour_tag.text = tag_text
 		_contour_tag.position = _to3(centre)
 		_contour_tag.modulate = CONTOUR_COLORS[_contour_focus % CONTOUR_COLORS.size()]
 		_contour_tag.visible = true
@@ -4804,6 +4901,8 @@ func click(pos2: Vector2) -> void:
 				status.emit("Too small — drag further (view is %.0f mm across)" % _view_span_mm())
 				return
 			_tool_points.append(pos2)
+			if _tool_points.size() == 1:
+				status.emit(POLYGON_CENTRE_SET)
 			if _tool_points.size() == 2:
 				var c := _tool_points[0]
 				var vertex := _tool_points[1]

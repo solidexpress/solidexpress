@@ -12,7 +12,7 @@ const HEAD := Vector2(36.0, 0.0)
 const HEAD_R := 22.5
 const JAW_DIR := Vector2(0.70710678, 0.70710678)
 const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
-const POLY_ARM := "Polygon — click the centre, then a vertex (or type the size)"
+const POLY_CENTRE := "Polygon — centre set, click a vertex or type the size"
 const POLY_LIVE := "^Polygon AF \\d+\\.\\d{4} — flats horizontal — click to place \\(or type the size\\)$"
 const POLY_COMMIT := "Polygon AF 20.0000 — flats horizontal"
 const NOTHING_TRIMMED := "Nothing trimmed — no crossing at that point"
@@ -235,7 +235,7 @@ func _test_v4(ctx: FilmContext) -> void:
 	await process_frame
 	var before := str(ctx.main.status_label.text)
 	print("  V4 status before first move: %s" % before)
-	check(before == POLY_ARM, "V4 before the first move status is the polygon arm hint (got `%s`)" % before)
+	check(before == POLY_CENTRE, "V4 before the first move status is the centre-set sentence (got `%s`)" % before)
 	var live_re := RegEx.new()
 	live_re.compile(POLY_LIVE)
 	var degs: Array[float] = [20.0, 70.0, 110.0]

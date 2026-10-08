@@ -3103,6 +3103,23 @@ func _over_chrome(global_mouse: Vector2) -> bool:
 	return _over_chrome_who(global_mouse) != ""
 
 
+## Menu bar, status bar, docks, and the sketch rail. Rects, not the hovered
+## control: headless hover lags a frame behind the event position.
+func _pointer_off_model(pos: Vector2) -> bool:
+	if _over_chrome(pos) or _point_on_dock_panel(pos):
+		return true
+	var host := get_parent()
+	if host == null:
+		return false
+	for panel_name in ["TopChrome", "StatusBar", "FileMenu"]:
+		var panel := host.find_child(panel_name, true, false) as Control
+		if panel == null or not panel.visible or not panel.is_visible_in_tree():
+			continue
+		if panel.get_global_rect().has_point(pos):
+			return true
+	return false
+
+
 func _chrome_area_cap() -> float:
 	var vp := get_viewport()
 	var vp_area := 1.0
@@ -3443,9 +3460,14 @@ func _pointer_viewport_pos(event: InputEventMouse) -> Vector2:
 func _update_hover(screen_pos: Vector2) -> void:
 	if view == null or _place_kind != "" or (_drag_mode != DragMode.NONE):
 		return
+	# Chrome, a dock, and empty ground all leave the part. A selected body
+	# and an open sketch used to return before this, so the tan hover stayed.
+	var off_model := _pointer_off_model(screen_pos) or OrbitCamera.pointer_over_scrollable_ui()
 	if sketch_mode != null and sketch_mode.active:
+		if off_model:
+			view.clear_hover()
 		return
-	if OrbitCamera.pointer_over_scrollable_ui():
+	if off_model:
 		view.clear_hover()
 		hover_hint.emit("")
 		_last_hover_key = ""
@@ -3453,18 +3475,25 @@ func _update_hover(screen_pos: Vector2) -> void:
 		_measure_hover_miss()
 		_update_connector_hover("")
 		return
+	var ray := _model_ray(screen_pos)
+	var hit: Dictionary = view.pick_info(ray[0], ray[1])
 	# Selected body (about to move): same marks as place — touch others to
-	# plant X; otherwise dim to the selection's nearest corner.
+	# plant X; otherwise dim to the selection's nearest corner. The face
+	# under the pointer still hovers, and a miss clears that tint.
 	if view.selected_body != "" and view.selection_size() >= 1:
 		_update_transport_measure(screen_pos)
-		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND \
-				if view.hovered_body != "" else Control.CURSOR_ARROW
+		if hit.is_empty():
+			view.clear_hover()
+			hover_hint.emit("")
+			_last_hover_key = ""
+			mouse_default_cursor_shape = Control.CURSOR_ARROW
+			return
+		view.set_hover(str(hit.get("body", "")), str(hit.get("face", "")), str(hit.get("edge", "")))
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		if _last_hover_key != "":
 			hover_hint.emit("")
 			_last_hover_key = ""
 		return
-	var ray := _model_ray(screen_pos)
-	var hit: Dictionary = view.pick_info(ray[0], ray[1])
 	if hit.is_empty():
 		view.clear_hover()
 		_measure_hover_miss()
@@ -5921,6 +5950,16 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	_note_finish_press_outside(event)
+	# Motion onto the menu bar or a dock never reaches `_gui_input`, so the
+	# hover tint has to clear from here. The canvas path still uses `_gui_input`.
+	if event is InputEventMouseMotion and _place_kind == "" and _drag_mode == DragMode.NONE \
+			and not _pressed:
+		var hover_mm := event as InputEventMouseMotion
+		var hover_pos := hover_mm.position
+		if hover_pos == Vector2.ZERO:
+			hover_pos = hover_mm.global_position
+		if _pointer_off_model(hover_pos):
+			_update_hover(hover_pos)
 	# Strip / other STOP children swallow gui_input; still give the viewport
 	# the keys when the press is not on the focused numeric field.
 	_on_numeric_canvas_press(event)

@@ -102,8 +102,8 @@ func _arm_and_centre(ctx: FilmContext, sm: SketchMode, chrome: SketchContextChro
 			"%s size field is not 0.01 after the centre (got '%s')" % [label, text])
 	if label == "Polygon":
 		var hint := str(ctx.main.status_label.text)
-		check(hint.contains("Polygon — click the centre, then a vertex"),
-				"polygon centre keeps the arm hint until the pointer moves (got '%s')" % hint)
+		check(hint == "Polygon — centre set, click a vertex or type the size",
+				"polygon centre status is the centre-set sentence (got '%s')" % hint)
 	if type_size and dim != null:
 		check(dim.has_focus(), "polygon centre focuses the AF field")
 		await _push_char(ctx, "2")

@@ -94,6 +94,7 @@ var _relayout_pending := false
 var _pinned_timeline_y := -1.0
 ## [status-trace] lines, kept so a headless test can read the hold gap.
 var status_trace_log: PackedStringArray = []
+var popup_trace_log: PackedStringArray = []
 ## True while File menu / discard dialog is in the pointer gesture that closes
 ## them, so a mouse-up on Box does not arm place (leftover 3).
 var _palette_insert_blocked := false
@@ -945,14 +946,18 @@ func _build_ui() -> void:
 	dof_label.add_theme_font_size_override("font_size", UiScale.caption())
 	rows.add_child(dof_label)
 	var snap_toggle := CheckBox.new()
-	snap_toggle.text = ""
+	snap_toggle.name = "SnapToggle"
+	snap_toggle.text = "Snap"
+	snap_toggle.clip_text = true
 	snap_toggle.tooltip_text = "Snap to grid / endpoints"
 	snap_toggle.button_pressed = sketch_mode.snap_enabled
 	snap_toggle.custom_minimum_size.y = 22.0
 	snap_toggle.toggled.connect(sketch_mode.set_snap)
 	rows.add_child(snap_toggle)
 	var infer_toggle := CheckBox.new()
-	infer_toggle.text = ""
+	infer_toggle.name = "InferToggle"
+	infer_toggle.text = "Infer"
+	infer_toggle.clip_text = true
 	infer_toggle.tooltip_text = "Infer constraints while drawing"
 	infer_toggle.button_pressed = sketch_mode.infer_enabled
 	infer_toggle.custom_minimum_size.y = 22.0
@@ -1081,6 +1086,37 @@ func _style_popup_menu(popup: PopupMenu) -> void:
 	popup.add_theme_font_size_override("font_size", UiScale.body())
 	_opaque_popup_window(popup)
 	_connect_popup_esc(popup)
+	_trace_popup(popup)
+
+
+func _trace_popup(popup: PopupMenu) -> void:
+	if popup == null or popup.has_meta("_sx_popup_traced"):
+		return
+	popup.set_meta("_sx_popup_traced", true)
+	var shown := str(popup.name)
+	var parent := popup.get_parent()
+	if parent is MenuButton and str((parent as MenuButton).text) != "":
+		if shown == "" or shown.begins_with("@") or shown == "PopupMenu":
+			shown = str((parent as MenuButton).text)
+			popup.name = shown
+	elif shown == "":
+		shown = "PopupMenu"
+	popup.about_to_popup.connect(_on_popup_trace.bind("show", popup))
+	popup.popup_hide.connect(_on_popup_trace.bind("hide", popup))
+
+
+func _on_popup_trace(kind: String, popup: PopupMenu) -> void:
+	if popup == null:
+		return
+	var trace := OS.get_environment("SX_INPUT_TRACE") == "1"
+	if not trace and SxUi.trace_enabled():
+		trace = true
+	if not trace:
+		return
+	var line := "[popup-trace] t=%.3f %s %s" % [
+		Time.get_unix_time_from_system(), kind, str(popup.name)]
+	popup_trace_log.append(line)
+	printerr(line)
 
 
 ## Esc on a menu or dialog this file owns hides that window and runs cancel_stack
@@ -1098,11 +1134,13 @@ func _connect_popup_esc(win: Window) -> void:
 func _install_esc_menu_watch() -> void:
 	for btn in find_children("*", "MenuButton", true, false):
 		var pop: PopupMenu = btn.get_popup()
+		_trace_popup(pop)
 		_watch_esc_popup(pop)
 		if pop == null:
 			continue
 		for child in pop.get_children():
 			if child is PopupMenu:
+				_trace_popup(child)
 				_watch_esc_popup(child)
 	if view_hud == null:
 		return
@@ -1716,6 +1754,12 @@ func _on_sketch_rail_tool(t: int) -> void:
 		sketch_mode.set_tool(t as SketchMode.Tool)
 
 
+func _sync_rail_after_sketch_history() -> void:
+	if sketch_mode == null:
+		return
+	_sync_sketch_rail_highlight(int(sketch_mode.tool))
+
+
 func _sync_sketch_rail_highlight(tool: int) -> void:
 	var jaw_armed := sketch_mode != null and sketch_mode.is_jaw_armed()
 	var armed: Button = null
@@ -2185,7 +2229,18 @@ func _update_left_rail() -> void:
 		ops_panel.visible = false
 		if cam_rail: cam_rail.visible = false
 		if sim_rail: sim_rail.visible = false
-		_reflow_left_stack()
+		# A Timeline pencil press guards chrome docks so the panel cannot jump
+		# under the pointer. That same guard used to skip the left-stack fit,
+		# leaving SketchTools at height 0 for the next 600 ms so Exit / Select
+		# were not clickable. Size the rail now; the pending reflow still runs
+		# when the guard ends, and the timeline pin is unchanged.
+		if _relayout_guarded():
+			_relayout_pending = true
+			_fit_sketch_rail(_left_stack_top())
+			if left_stack != null:
+				left_stack.reset_size()
+		else:
+			_reflow_left_stack()
 		return
 	var placing := interaction != null and interaction.is_placing()
 	var has_body := view.selected_body != ""
@@ -3032,6 +3087,7 @@ func _on_edit_menu(id: int) -> void:
 func edit_undo() -> void:
 	if sketch_mode != null and sketch_mode.active:
 		var label := sketch_mode.undo()
+		_sync_rail_after_sketch_history()
 		_on_status("Undo: " + label if label != "" else "Nothing to undo")
 		return
 	if view == null:
@@ -3047,6 +3103,7 @@ func edit_undo() -> void:
 func edit_redo() -> void:
 	if sketch_mode != null and sketch_mode.active:
 		var label := sketch_mode.redo()
+		_sync_rail_after_sketch_history()
 		_on_status("Redo: " + label if label != "" else "Nothing to redo")
 		return
 	if view == null:
@@ -4427,9 +4484,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					if sketch_mode != null and sketch_mode.active:
 						if event.shift_pressed:
 							var rl := sketch_mode.redo()
+							_sync_rail_after_sketch_history()
 							_on_status("Redo: " + rl if rl != "" else "Nothing to redo")
 						else:
 							var ul := sketch_mode.undo()
+							_sync_rail_after_sketch_history()
 							_on_status("Undo: " + ul if ul != "" else "Nothing to undo")
 						get_viewport().set_input_as_handled()
 					elif view != null:
@@ -4448,6 +4507,7 @@ func _unhandled_input(event: InputEvent) -> void:
 						return
 					if sketch_mode != null and sketch_mode.active:
 						var ry := sketch_mode.redo()
+						_sync_rail_after_sketch_history()
 						_on_status("Redo: " + ry if ry != "" else "Nothing to redo")
 						get_viewport().set_input_as_handled()
 					elif view != null:
