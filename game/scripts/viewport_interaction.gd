@@ -2900,22 +2900,20 @@ func _pointer_hits_control(ctrl: Control, pos: Vector2) -> bool:
 
 
 func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
-	if ctrl == null or not is_instance_valid(ctrl) or not ctrl.visible:
+	if ctrl == null or not is_instance_valid(ctrl) or not ctrl.is_visible_in_tree():
 		return false
 	# Full-rect IGNORE shells (SketchContextChrome, ActionBar) must not eat
 	# the canvas. Buttons and STOP rows still do.
 	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE and not (ctrl is BaseButton):
 		return false
-	var rects: Array[Rect2] = [ctrl.get_global_rect()]
-	var xf := ctrl.get_global_transform_with_canvas()
-	rects.append(Rect2(xf.origin, xf.get_scale() * ctrl.size))
-	for r in rects:
-		var area := r.get_area()
-		if area < 4.0 or area > max_area:
-			continue
-		if r.has_point(pos):
-			return true
-	return false
+	# Global rect only. The canvas-transform rect used for a hovered chip
+	# (`_pointer_hits_control`) is a different space; applying it to every
+	# control marks canvas points as chrome.
+	var r := ctrl.get_global_rect()
+	var area := r.get_area()
+	if area < 4.0 or area > max_area:
+		return false
+	return r.has_point(pos)
 
 
 func _tree_blocks_pointer(node: Node, pos: Vector2, max_area: float) -> bool:
@@ -2938,13 +2936,25 @@ func _tree_blocking_name(node: Node, pos: Vector2, max_area: float) -> String:
 	return ""
 
 
-## Front-most STOP control under `pos` that is not this canvas. Used on a left
-## press when hover is stale so the rail button still receives the click.
+## Front-most palette / rail / finish control under `pos`. Used on a left
+## press when hover is stale so that button still receives the click.
+## The menu bar and other STOP controls stay with `_input`: empty-canvas
+## orbit at the corner is not a drop.
 func _press_blocker_name(pos: Vector2) -> String:
 	var parent := get_parent()
 	if parent == null:
 		return ""
-	return _front_blocker_name(parent, pos, _chrome_area_cap())
+	var max_area := _chrome_area_cap()
+	for root_name in ["Palette", "SketchTools"]:
+		var root := parent.find_child(root_name, true, false)
+		if root == null:
+			continue
+		var hit := _front_blocker_name(root, pos, max_area)
+		if hit != "":
+			return hit
+	if sketch_chrome != null and is_instance_valid(sketch_chrome):
+		return _front_blocker_name(sketch_chrome, pos, max_area)
+	return ""
 
 
 func _front_blocker_name(node: Node, pos: Vector2, max_area: float) -> String:
@@ -3284,11 +3294,22 @@ func _sketch_input(event: InputEvent) -> void:
 			# wins on this press. Missing typed_dim_value (WP1) keeps click().
 			# Only polygon/circle: a leftover dim number must not steal a LINE
 			# click (wrench shaft tangents).
+			# arm_dim_replace focuses the blank and selects the spin minimum
+			# (0.01). That displayed number is not a typed length;
+			# commit_at_length would emit "Too short" and drop the second press.
 			var typed_len: Variant = null
-			if sketch_chrome != null and sketch_chrome.has_method("typed_dim_value") \
-					and sketch_mode.has_single_dof_preview() \
+			var dim_replace_armed := false
+			if sketch_chrome != null and sketch_mode.has_single_dof_preview() \
 					and _sketch_skips_mouse_up_commit():
-				typed_len = sketch_chrome.typed_dim_value()
+				dim_replace_armed = bool(sketch_chrome.get("_dim_replace_next"))
+				if not dim_replace_armed and sketch_chrome.has_method("typed_dim_value"):
+					typed_len = sketch_chrome.typed_dim_value()
+					# Focus can already have left the blank, clearing
+					# _dim_replace_next, while the line still shows the spin
+					# minimum. Typed 0.1 is above that minimum.
+					if _typed_len_is_spin_minimum(typed_len):
+						typed_len = null
+						dim_replace_armed = true
 			# Drop the dim blank before the canvas consumes the click, so the
 			# next key is a sketch hotkey and not another digit in the field.
 			if sketch_chrome != null:
@@ -3339,6 +3360,10 @@ func _sketch_input(event: InputEvent) -> void:
 						_note_click("drop:dim-label:%d" % dim_i, mb.position)
 					else:
 						_note_click("sketch-click:" + tool_key, mb.position)
+					# The armed blank can echo 0.01 into the length override.
+					# That is the same untyped minimum; click() would Too-short.
+					if dim_replace_armed and sketch_mode.has_length_override():
+						sketch_mode.clear_length_override()
 					sketch_mode.click(p2)
 					_clear_select_click_measure()
 					if sketch_chrome != null and sketch_chrome.has_method("arm_dim_replace") \
@@ -3532,6 +3557,19 @@ func _consume_sketch_esc() -> bool:
 		return false
 	_sketch_esc_frame = frame
 	return true
+
+
+## True when `parsed` is the dim spin's minimum (the untyped blank), not a
+## number the user entered. 0.1 is above that minimum.
+func _typed_len_is_spin_minimum(parsed: Variant) -> bool:
+	if typeof(parsed) != TYPE_FLOAT and typeof(parsed) != TYPE_INT:
+		return false
+	if sketch_chrome == null:
+		return false
+	var spin: SpinBox = sketch_chrome.get("_dim_spin") as SpinBox
+	if spin == null:
+		return false
+	return is_equal_approx(float(parsed), spin.min_value)
 
 
 ## Polygon, circle, and multi-click rectangles (Jaw / three-point / parallelogram):
