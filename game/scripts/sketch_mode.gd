@@ -153,6 +153,8 @@ var dimensions_visible := true
 
 var _draw_node: MeshInstance3D
 var _preview_node: MeshInstance3D
+## Snap / pick cross. Hidden after Smart Dim so a centre pick does not leave a dot.
+var _pick_marker: MeshInstance3D
 var _selected_node: MeshInstance3D
 var _contour_node: MeshInstance3D
 var _contour_fill_material: StandardMaterial3D
@@ -271,6 +273,11 @@ func _ready() -> void:
 	_preview_node = MeshInstance3D.new()
 	_preview_node.material_override = _preview_material
 	add_child(_preview_node)
+	_pick_marker = MeshInstance3D.new()
+	_pick_marker.name = "PickMarker"
+	_pick_marker.visible = false
+	_pick_marker.material_override = _preview_material
+	add_child(_pick_marker)
 	_selected_material = StandardMaterial3D.new()
 	_selected_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_selected_material.albedo_color = COLOR_HANDLE
@@ -1510,6 +1517,7 @@ func set_tool(t: Tool) -> void:
 			pass
 	# Do not clear selection on tool switch — completed geometry must stay
 	# visible/selectable (polygon/circle vanishing after another tool was a bug).
+	_snap_marker = null
 	_update_preview()
 	tool_changed.emit(int(t))
 	var hint := tool_arm_hint(t)
@@ -5322,16 +5330,14 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 		_pin_circle_at_sketch_origin(ida, ca)
 		_pin_circle_at_sketch_origin(idb, cb)
 		var dxy: Vector2 = cb - ca
-		if absf(dxy.x) > 1e-9 and absf(dxy.y) <= tan(deg_to_rad(2.0)) * absf(dxy.x):
-			var lid: String = sketch.add_line(ca.x, ca.y, cb.x, cb.y)
-			sketch.set_construction(lid, true)
-			sketch.add_constraint("coincident", [
+		# Nearly level centres stay level when the distance is driven, without
+		# a construction line or a coincident dot inside either circle (T14).
+		if absf(dxy.x) > 1e-9 and absf(dxy.y) <= tan(deg_to_rad(2.0)) * absf(dxy.x) \
+				and not _centers_share_horizontal(ida, idb):
+			sketch.add_constraint("horizontal", [
 				{"entity": ida, "role": "center"},
-				{"entity": lid, "role": "start"}], 0.0)
-			sketch.add_constraint("coincident", [
-				{"entity": idb, "role": "center"},
-				{"entity": lid, "role": "end"}], 0.0)
-			sketch.add_constraint("horizontal", [{"entity": lid, "role": "self"}], 0.0)
+				{"entity": idb, "role": "center"}], 0.0)
+		_snap_marker = null
 		constrain("distance", ca.distance_to(cb))
 		# A failed solve reverts the constraint. Do not open a popup on a
 		# stale index — only emit when that centre distance is still live.
@@ -5774,35 +5780,22 @@ func _lock_sized_circle(id: String) -> void:
 const ORIGIN_PIN_TOL := 0.5
 
 
-## Fixed construction segment at the origin, coincident to `id`'s centre.
-## A circle Fix would also lock the radius.
-func _pin_origin_centre_with_line(id: String) -> void:
-	if sketch == null or id == "":
-		return
-	if _entity_has_constraint(id, "fix"):
-		return
+## True when a two-point horizontal already ties these centres together.
+func _centers_share_horizontal(ida: String, idb: String) -> bool:
+	if sketch == null:
+		return false
 	for cid in sketch.constraint_ids():
 		var info: Dictionary = sketch.constraint_info(cid)
-		if str(info.get("type", "")) != "coincident":
+		if str(info.get("type", "")) != "horizontal":
 			continue
 		var refs: Array = info.get("refs", [])
-		if refs.size() != 2:
+		if refs.size() < 2:
 			continue
-		var other := ""
-		if str(refs[0].get("entity", "")) == id and str(refs[0].get("role", "")) == "center":
-			other = str(refs[1].get("entity", ""))
-		elif str(refs[1].get("entity", "")) == id and str(refs[1].get("role", "")) == "center":
-			other = str(refs[0].get("entity", ""))
-		if other != "" and sketch.is_construction(other) and _entity_has_constraint(other, "fix"):
-			return
-	var lid: String = sketch.add_line(0.0, 0.0, 1.0, 0.0)
-	if lid == "":
-		return
-	sketch.set_construction(lid, true)
-	sketch.add_constraint("fix", [{"entity": lid, "role": "self"}], 0.0)
-	sketch.add_constraint("coincident", [
-		{"entity": id, "role": "center"},
-		{"entity": lid, "role": "start"}], 0.0)
+		var a := str(refs[0].get("entity", ""))
+		var b := str(refs[1].get("entity", ""))
+		if (a == ida and b == idb) or (a == idb and b == ida):
+			return true
+	return false
 
 
 func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
@@ -5812,10 +5805,10 @@ func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
 	if anchor == "":
 		# A distance between two circles is free to slide along the sketch.
 		# Lock a centre that is already on the origin so the pair stays put.
-		# Fix on the circle also locks its radius and paints the radius
-		# dimension redundant, so pin through a fixed construction line.
-		# Do not add a construction point (T14).
-		_pin_origin_centre_with_line(id)
+		# A full Fix also locks the radius. A centre-only Fix does not, and
+		# it adds no point and no construction line (T14).
+		if not _entity_has_constraint(id, "fix"):
+			sketch.add_constraint("fix", [{"entity": id, "role": "center"}], 0.0)
 		return
 	for cid in sketch.constraint_ids():
 		var info: Dictionary = sketch.constraint_info(cid)
@@ -5836,7 +5829,8 @@ func _origin_anchor_point() -> String:
 				and _entity_has_constraint(id, "fix"):
 			return id
 	# Smart Dim between two circles must not invent a construction point at
-	# the origin (T14). Pin only when that point already exists.
+	# the origin (T14). Pin only when that point already exists; otherwise
+	# the centre-only Fix is used.
 	return ""
 
 
@@ -6286,6 +6280,9 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 		dim["value"] = sketch.constraint_info(cid).get("value", dim.get("value", 0.0))
 	dimensions[index] = dim
 	_undo_note("Dimension")
+	# The centre pick cross is not a sketch point. Drop it when the value lands.
+	_snap_marker = null
+	_sync_pick_marker()
 	# A width edit must not drop the centre-rect angle to a reference dim.
 	_keep_angle_dims_driving()
 	var res := run_solve()
@@ -6796,6 +6793,8 @@ func _to3(p: Vector2) -> Vector3:
 func _clear_meshes() -> void:
 	_draw_node.mesh = null
 	_preview_node.mesh = null
+	_snap_marker = null
+	_sync_pick_marker()
 	_selected_node.mesh = null
 	if _contour_node != null:
 		_contour_node.mesh = null
@@ -7642,6 +7641,16 @@ func _tangent_contact(line: Dictionary, circ: Dictionary) -> Variant:
 	return a + ab * t
 
 
+func _constraint_refs_a_line(cinfo: Dictionary) -> bool:
+	for ref in cinfo.get("refs", []):
+		if typeof(ref) != TYPE_DICTIONARY:
+			continue
+		var einfo: Dictionary = sketch.entity_info(str(ref.get("entity", "")))
+		if str(einfo.get("type", "")) == "line":
+			return true
+	return false
+
+
 func _rebuild_constraint_glyphs() -> void:
 	_glyph_anchors.clear()
 	if _constraint_glyphs == null:
@@ -7663,6 +7672,10 @@ func _rebuild_constraint_glyphs() -> void:
 		var cinfo: Dictionary = sketch.constraint_info(cid)
 		var type := str(cinfo.get("type", ""))
 		if not GLYPH_SYMBOLS.has(type):
+			continue
+		# A centre-to-centre horizontal has no line to sit beside. Drawing it
+		# would plant a badge between the circles (T14's stray mark).
+		if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo):
 			continue
 		var anchor: Variant = _constraint_anchor(cinfo)
 		if anchor == null:
@@ -8073,12 +8086,14 @@ func polygon_preview_vertices() -> Array[Vector2]:
 
 
 func _update_preview() -> void:
+	# Smart Dim's centre pick is a status sentence, not a drawn cross.
+	if tool == Tool.SMART_DIM:
+		_snap_marker = null
 	var im := ImmediateMesh.new()
 	var has := false
 	var dragging := not _drag.is_empty()
 	var trim_hover := tool == Tool.TRIM and _trim_hover_id != ""
-	if _tool_points.size() > 0 or _snap_marker != null or dragging or trim_hover \
-			or _spline_pts.size() > 0:
+	if _tool_points.size() > 0 or dragging or trim_hover or _spline_pts.size() > 0:
 		im.surface_begin(Mesh.PRIMITIVE_LINES)
 		has = true
 	if trim_hover and sketch != null:
@@ -8153,13 +8168,6 @@ func _update_preview() -> void:
 					im.surface_add_vertex(_to3(verts[(i + 1) % n]))
 			Tool.SLOT:
 				_append_slot_preview(im, last, tip, slot_radius)
-	if _snap_marker != null:
-		var m: Vector2 = _snap_marker
-		const MARK := 0.6
-		im.surface_add_vertex(_to3(m + Vector2(-MARK, 0)))
-		im.surface_add_vertex(_to3(m + Vector2(MARK, 0)))
-		im.surface_add_vertex(_to3(m + Vector2(0, -MARK)))
-		im.surface_add_vertex(_to3(m + Vector2(0, MARK)))
 	if has:
 		im.surface_end()
 		if trim_hover:
@@ -8169,6 +8177,30 @@ func _update_preview() -> void:
 		_preview_node.mesh = im
 	else:
 		_preview_node.mesh = null
+	_sync_pick_marker()
+
+
+## Cross at the snap point. Smart Dim never shows it: a centre pick is not a
+## sketch point, and the cross used to stay inside the first circle (T14).
+func _sync_pick_marker() -> void:
+	if _pick_marker == null:
+		return
+	var show := _snap_marker != null and tool != Tool.SMART_DIM
+	if not show:
+		_pick_marker.visible = false
+		_pick_marker.mesh = null
+		return
+	var m: Vector2 = _snap_marker
+	const MARK := 0.6
+	var cross := ImmediateMesh.new()
+	cross.surface_begin(Mesh.PRIMITIVE_LINES)
+	cross.surface_add_vertex(_to3(m + Vector2(-MARK, 0)))
+	cross.surface_add_vertex(_to3(m + Vector2(MARK, 0)))
+	cross.surface_add_vertex(_to3(m + Vector2(0, -MARK)))
+	cross.surface_add_vertex(_to3(m + Vector2(0, MARK)))
+	cross.surface_end()
+	_pick_marker.mesh = cross
+	_pick_marker.visible = true
 
 
 ## True when the sketch's non-construction geometry forms one or more closed

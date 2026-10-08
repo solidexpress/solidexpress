@@ -92,6 +92,10 @@ var _dim_select_gen := 0
 ## Next digit / '.' / (Distance) '-' replaces the whole line. Set on focus and
 ## every left click so a caret click that clears select_all still replaces.
 var _dim_replace_next := false
+## True while Circle armed the radius blank itself. A tool key (S/L/…) must
+## leave that blank. A click or a typed character clears it so an expression
+## can keep the letters.
+var _dim_focus_from_tool := false
 ## Bumped when an unfocused key seed writes the line, so a late focus_entered
 ## does not arm replace and select_all the seed (first digit dropped).
 var _dim_seed_gen := 0
@@ -1188,6 +1192,7 @@ func dim_is_editing() -> bool:
 
 ## Focus the blank for typed length (optional seed digit / decimal).
 func focus_dim_for_typing(seed := "") -> void:
+	_dim_focus_from_tool = false
 	if _dim_spin == null:
 		return
 	# Slot radius / c-c must not leave digits in Extrude if Distance was
@@ -1264,6 +1269,7 @@ func replace_dim_with_char(ch: String) -> bool:
 
 
 func release_dim_focus() -> void:
+	_dim_focus_from_tool = false
 	if _dim_spin == null:
 		return
 	var edit := _dim_spin.get_line_edit()
@@ -1271,6 +1277,15 @@ func release_dim_focus() -> void:
 		edit.release_focus()
 	_dim_editing = false
 	_dim_replace_next = false
+
+
+## Circle's own radius claim, still focused, and the user has not clicked or
+## typed into it. Tool hotkeys may take the keyboard back.
+func tool_claimed_dim_focus() -> bool:
+	if not _dim_focus_from_tool or _dim_spin == null:
+		return false
+	var edit := _dim_spin.get_line_edit()
+	return edit != null and edit.has_focus()
 
 
 func release_distance_focus() -> void:
@@ -1298,6 +1313,7 @@ func _on_dim_value_changed(v: float) -> void:
 func _on_dim_text_changed(new_text: String) -> void:
 	if _dim_syncing:
 		return
+	_dim_focus_from_tool = false
 	# Cancel a pending deferred / next-frame select_all once typing starts.
 	_dim_select_gen += 1
 	if _dim_rejecting:
@@ -1379,6 +1395,7 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 		# Every left click, including the one that finds the field already
 		# focused. Deferred so it runs after LineEdit places the caret.
 		if mb.button_index == MOUSE_BUTTON_LEFT and _dim_spin != null:
+			_dim_focus_from_tool = false
 			_dim_replace_next = true
 			_dim_select_gen += 1
 			var gen := _dim_select_gen
@@ -1599,6 +1616,7 @@ func _claim_dim_keyboard() -> void:
 	_release_distance_focus()
 	var edit := _dim_spin.get_line_edit()
 	if edit != null:
+		_dim_focus_from_tool = true
 		SxUi.claim_keyboard_focus(edit)
 
 
@@ -1630,6 +1648,7 @@ func sync_for_tool() -> void:
 	_release_distance_focus()
 	var edit := _dim_spin.get_line_edit() if _dim_spin != null else null
 	if edit != null:
+		_dim_focus_from_tool = true
 		SxUi.claim_keyboard_focus(edit)
 		_claim_dim_keyboard.call_deferred()
 
