@@ -5779,6 +5779,11 @@ func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
 		return
 	var anchor := _origin_anchor_point()
 	if anchor == "":
+		# A distance between two circles is free to slide along the sketch.
+		# Lock a centre that is already on the origin so the pair stays put.
+		# Do not add a construction point (T14).
+		if not _entity_has_constraint(id, "fix"):
+			sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
 		return
 	for cid in sketch.constraint_ids():
 		var info: Dictionary = sketch.constraint_info(cid)
