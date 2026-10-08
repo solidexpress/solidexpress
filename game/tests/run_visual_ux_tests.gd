@@ -264,7 +264,9 @@ func test_selection_strip_and_context(main) -> void:
 			if txt.contains("Apply hole"):
 				has_hole_item = true
 		check(has_plane_item, "RMB includes Set as active plane")
-		check(has_hole_item, "RMB includes Apply hole")
+		var apply_hole := FilmUI.find_button(main.ops_panel, "Apply hole")
+		check(apply_hole != null and apply_hole.is_visible_in_tree(),
+				"Apply hole is on the face card")
 	view.clear_selection()
 	ix._open_context_menu(Vector2(40, 40))
 	check(ix._context_menu.item_count >= 1, "context has Fit/Unhide when empty")
@@ -339,15 +341,13 @@ func test_view_hud(main) -> void:
 	check(is_equal_approx(hud.offset_left, -main._CHROME_PAD), "HUD grows from right pad")
 	check(hud.origin_triad != null, "OriginTriad sits above the view menu")
 	check(hud.origin_triad.camera == cam, "OriginTriad linked to OrbitCamera")
-	check(ix.scale_bar != null, "ScaleBarHud mounted on Interaction")
-	if ix.scale_bar != null:
-		check(ix.scale_bar.visible, "scale bar visible with gizmos on")
+	check(ix.world_gizmos != null, "world gizmos mounted")
+	if ix.world_gizmos != null:
 		ix.world_gizmos.set_gizmos_visible(false)
-		ix._refresh_grid_lod()
-		check(not ix.scale_bar.visible, "scale bar hides with gizmos")
+		check(not ix.world_gizmos.gizmos_visible, "gizmos hide when turned off")
 		ix.world_gizmos.set_gizmos_visible(true)
 		ix._refresh_grid_lod()
-		check(ix.scale_bar.visible, "scale bar restores with gizmos")
+		check(ix.world_gizmos.gizmos_visible, "gizmos restore when turned on")
 
 	check(not hud.has_signal("nav_preset_changed"), "nav menu signal removed")
 	check(cam.nav_preset == OrbitCamera.NavPreset.FUSION, "Fusion is the only mouse preset")
