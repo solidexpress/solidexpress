@@ -2,6 +2,11 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-037 A6 / N4 / N14 — sketch exit drops the host face and the face pick
+- Leaving a sketch, cancel (`Sketch cancelled`) or save (`Sketch saved`), disarms a pending finish-bar Up To Surface pick and clears the sketch host face when that face is the whole selection. The selection card hides and rail Sketch stays reachable. The next part-mode Esc prints nothing unless the user has selected something else, in which case it prints `Selection cleared`.
+- After Extrude refuses and keeps the sketch (open profile, including `Line at (x, y) breaks the chain — delete or trim it`), the next Esc is the exit ladder (`… — Esc again exits the sketch`) and the one after that saves. It is not spent on `Chain ended` or on releasing the Distance field.
+- Gate: `run_rung01_sx037_exit.gd` (`tier=ci`).
+
 ## Rung 1 replan 16 — sx-037 GUI walk replay
 - Headless replay `run_rung01_replan16_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
 - Save re-entry no longer prints `Editing sketch` (that sentence stays on the pencil click). An idle property panel no longer takes Esc away from an armed Fillet (`Edge pick cancelled`).
