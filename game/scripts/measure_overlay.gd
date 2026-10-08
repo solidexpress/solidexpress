@@ -1,10 +1,12 @@
 class_name MeasureOverlay
 extends Node
-## Measure chrome state: AABB size labels on the selection, plus up to two
-## sticky hover ✕ marks (touch A → X sticks; approach a snap on B → second X
-## plants while A is retained). The active mark drives live cardinal + diagonal
-## dims. Drawn in screen space by ViewportInteraction at a DPI-stable font size
-## (not tied to window size — stays readable when the app is resized).
+## Measure chrome state: AABB size labels on the selection, plus a hover ✕.
+## Sketch Select and idle part hover show the ✕ only while the pointer is on
+## that entity (with Δu/Δv for a sketch entity). Leaving the entity, or any
+## camera change, clears it. Place and an in-progress move may still keep a
+## comparison mark. Drawn in screen space by ViewportInteraction at a
+## DPI-stable font size (not tied to window size — stays readable when the
+## app is resized).
 
 signal changed
 
@@ -183,7 +185,10 @@ func update_hover(body: String, hit_point: Vector3) -> void:
 	_rebuild(hit_point)
 
 
-## Sketch-mode hover: entity id "" clears live B / pins A. Hit is model-space.
+## Sketch-mode hover. Empty id clears the ✕ (the pointer left the entity).
+## Hit is model-space. One mark follows the entity under the cursor; Δ labels
+## describe that entity. A second entity replaces the mark instead of pinning
+## the previous one.
 func update_sketch_hover(entity_id: String, hit_point: Vector3) -> void:
 	if sketch_measure_blocked:
 		return
@@ -193,20 +198,17 @@ func update_sketch_hover(entity_id: String, hit_point: Vector3) -> void:
 		return
 	_drop_dead_sketch_anchors()
 	if entity_id == "":
-		if anchor_point == null:
-			return
-		following = false
-		_rebuild()
+		if anchor_point != null or prev_point != null:
+			clear_pair()
 		return
-	if anchor_entity == "" or entity_id == anchor_entity:
-		anchor_entity = entity_id
-		anchor_body = "sketch:" + entity_id
-		anchor_point = hit_point
-		following = true
-		_rebuild()
-		return
-	following = false
-	_rebuild(hit_point)
+	anchor_entity = entity_id
+	anchor_body = "sketch:" + entity_id
+	anchor_point = hit_point
+	prev_point = null
+	prev_body = ""
+	prev_entity = ""
+	following = true
+	_rebuild()
 
 
 ## Plant / move the active ✕ onto `body` at the nearest measure snap to
@@ -340,6 +342,8 @@ func _rebuild(b_point: Variant = null) -> void:
 		elif inter_sticky:
 			var prev: Vector3 = prev_point
 			_append_pair_dims(a, prev)
+		elif following and sketch_mode != null and sketch_mode.active:
+			_append_hovered_sketch_dims()
 
 	changed.emit()
 
@@ -357,20 +361,49 @@ func _append_selection_bounds() -> void:
 		return
 	var pad := maxf(size.length() * BOUND_OFFSET_FRAC, BOUND_OFFSET_MIN)
 
-	var ax0 := Vector3(mn.x, mn.y - pad, mn.z)
-	var ax1 := Vector3(mx.x, mn.y - pad, mn.z)
-	_add_dim_seg(ax0, ax1, COLOR_BOUND)
-	labels.append({"p": (ax0 + ax1) * 0.5, "text": "%.2f" % size.x, "color": COLOR_BOUND, "rank": 10})
+	if size.x > 0.05:
+		var ax0 := Vector3(mn.x, mn.y - pad, mn.z)
+		var ax1 := Vector3(mx.x, mn.y - pad, mn.z)
+		_add_dim_seg(ax0, ax1, COLOR_BOUND)
+		labels.append({"p": (ax0 + ax1) * 0.5, "text": "%.2f" % size.x, "color": COLOR_BOUND, "rank": 10})
 
-	var ay0 := Vector3(mn.x - pad, mn.y, mn.z)
-	var ay1 := Vector3(mn.x - pad, mx.y, mn.z)
-	_add_dim_seg(ay0, ay1, COLOR_BOUND)
-	labels.append({"p": (ay0 + ay1) * 0.5, "text": "%.2f" % size.y, "color": COLOR_BOUND, "rank": 11})
+	if size.y > 0.05:
+		var ay0 := Vector3(mn.x - pad, mn.y, mn.z)
+		var ay1 := Vector3(mn.x - pad, mx.y, mn.z)
+		_add_dim_seg(ay0, ay1, COLOR_BOUND)
+		labels.append({"p": (ay0 + ay1) * 0.5, "text": "%.2f" % size.y, "color": COLOR_BOUND, "rank": 11})
 
-	var az0 := Vector3(mx.x + pad, mn.y, mn.z)
-	var az1 := Vector3(mx.x + pad, mn.y, mx.z)
-	_add_dim_seg(az0, az1, COLOR_BOUND)
-	labels.append({"p": (az0 + az1) * 0.5, "text": "%.2f" % size.z, "color": COLOR_BOUND, "rank": 12})
+	if size.z > 0.05:
+		var az0 := Vector3(mx.x + pad, mn.y, mn.z)
+		var az1 := Vector3(mx.x + pad, mn.y, mx.z)
+		_add_dim_seg(az0, az1, COLOR_BOUND)
+		labels.append({"p": (az0 + az1) * 0.5, "text": "%.2f" % size.z, "color": COLOR_BOUND, "rank": 12})
+
+
+## Δu / Δv (and the length) of the entity under the Select cursor.
+func _append_hovered_sketch_dims() -> void:
+	if anchor_entity == "" or anchor_entity == "pierce":
+		return
+	if sketch_mode.sketch == null:
+		return
+	var info: Dictionary = sketch_mode.sketch.entity_info(anchor_entity)
+	if info.is_empty():
+		return
+	match str(info.get("type", "")):
+		"line":
+			var sa: Vector2 = info["start"]
+			var sb: Vector2 = info["end"]
+			if sa.distance_squared_to(sb) < 1e-8:
+				return
+			_append_sketch_pair_dims(sketch_mode.to_model(sa), sketch_mode.to_model(sb))
+		"circle", "arc":
+			var c: Vector2 = info["center"]
+			var radius := float(info.get("radius", 0.0))
+			if radius < 1e-6:
+				return
+			_append_sketch_pair_dims(
+					sketch_mode.to_model(c),
+					sketch_mode.to_model(c + Vector2(radius, 0.0)))
 
 
 func _append_pair_dims(a: Vector3, b: Vector3) -> void:

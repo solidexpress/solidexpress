@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-037 L12 — Select hover Δ, thin-line pick, Esc, stale ✕
+- Select hover shows the measure ✕ with the entity's Δu/Δv. The mark clears when the pointer leaves, on F / Shift+F / HUD Frame, and on deselect or an empty-ground click (the `0.00` bound label goes with it). A shaft-line click uses a screen-pixel pick radius and still selects through a few pixels of jitter. The next Esc is `Selection cleared — Esc again exits the sketch`.
+- Gate: `run_rung01_l12_measure.gd` (`tier=ci`).
+
 ## Rung 1 replan 16 — sx-037 GUI walk replay
 - Headless replay `run_rung01_replan16_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
 - Save re-entry no longer prints `Editing sketch` (that sentence stays on the pencil click). An idle property panel no longer takes Esc away from an armed Fillet (`Edge pick cancelled`).

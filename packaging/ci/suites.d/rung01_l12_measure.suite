@@ -1,0 +1,2 @@
+script=tests/run_rung01_l12_measure.gd
+tier=ci

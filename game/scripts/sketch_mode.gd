@@ -17,6 +17,11 @@ enum Tool {
 signal selection_changed(ids: Array)
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
+## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
+## under a finger-width, so a click on a shaft line misses. Grow the hit
+## radius with the view, capped so a zoomed-out part does not select everything.
+const PICK_SCREEN_PX := 14.0
+const PICK_TOLERANCE_MAX_MM := 8.0
 const SNAP_RADIUS := 1.25  # tighter magnet (Fusion/Onshape-scale at typical zoom)
 const GLYPH_PICK_RADIUS := 2.0  # constraint badges are small, precise targets
 
@@ -2142,10 +2147,21 @@ func select_all_entities() -> int:
 	return ids.size()
 
 
-## Nearest entity id within PICK_TOLERANCE of pos2, or "" if none.
+## Hit radius in sketch millimetres: at least PICK_TOLERANCE, widened to
+## PICK_SCREEN_PX at the current ortho scale, never past PICK_TOLERANCE_MAX_MM.
+func _pick_tolerance() -> float:
+	var tol := PICK_TOLERANCE
+	if camera != null and camera.has_method("pixels_per_mm_at_pivot"):
+		var ppm := float(camera.pixels_per_mm_at_pivot())
+		if ppm > 1e-4:
+			tol = maxf(tol, minf(PICK_SCREEN_PX / ppm, PICK_TOLERANCE_MAX_MM))
+	return tol
+
+
+## Nearest entity id within the pick radius of pos2, or "" if none.
 func _nearest_entity_at(pos2: Vector2) -> String:
 	var best_id := ""
-	var best_d := PICK_TOLERANCE
+	var best_d := _pick_tolerance()
 	for id in sketch.entity_ids():
 		var d := _entity_distance(sketch.entity_info(id), pos2)
 		if d < best_d:
@@ -2187,18 +2203,42 @@ func _point_segment_distance(p: Vector2, a: Vector2, b: Vector2) -> float:
 	return p.distance_to(a + ab * t)
 
 
+## Closest sketch-plane point on `eid` to `pos2` (the measure ✕ sits here).
+func closest_on_entity(eid: String, pos2: Vector2) -> Vector2:
+	if sketch == null or eid == "":
+		return pos2
+	var info: Dictionary = sketch.entity_info(eid)
+	match str(info.get("type", "")):
+		"line":
+			var a: Vector2 = info["start"]
+			var b: Vector2 = info["end"]
+			var ab := b - a
+			var t := 0.0 if ab.length_squared() < 1e-12 else clampf((pos2 - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+			return a + ab * t
+		"circle", "arc":
+			var c: Vector2 = info["center"]
+			var r := float(info.get("radius", 0.0))
+			var d := pos2 - c
+			if d.length_squared() < 1e-12 or r < 1e-9:
+				return c + Vector2(r, 0.0)
+			return c + d.normalized() * r
+		"point":
+			return info["position"]
+	return pos2
+
+
 # --- drag-to-edit (SELECT tool) ---
 
 ## Hit-test for drag handles. Returns {} or {id, part} where part is
 ## "start"|"end"|"whole"|"center"|"radius". Endpoints/centers win within
-## PICK_TOLERANCE; otherwise the nearest curve within tolerance ("whole" /
+## the pick radius; otherwise the nearest curve within that radius ("whole" /
 ## "radius").
 func drag_hit(pos2: Vector2) -> Dictionary:
 	if sketch == null:
 		return {}
 	var best_id := ""
 	var best_part := ""
-	var best_d := PICK_TOLERANCE
+	var best_d := _pick_tolerance()
 	# Pass 1: endpoints / centers
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
@@ -2219,7 +2259,7 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	if best_id != "":
 		return {"id": best_id, "part": best_part}
 	# Pass 2: whole entity / rim
-	best_d = PICK_TOLERANCE
+	best_d = _pick_tolerance()
 	for id in sketch.entity_ids():
 		var info2: Dictionary = sketch.entity_info(id)
 		var d3 := _entity_distance(info2, pos2)
@@ -2268,6 +2308,20 @@ func update_drag(pos2: Vector2) -> void:
 	_drag["preview_info"] = target
 	sketch.set_entity_geometry(_drag["id"], target)
 	run_solve()
+	_redraw()
+	_rebuild_dimension_labels()
+	_update_preview()
+
+
+## Drop a drag that was only pointer jitter and put the entity back.
+## A Select click inside CLICK_SLOP must not bake that motion.
+func cancel_drag() -> void:
+	if _drag.is_empty():
+		return
+	if sketch != null:
+		sketch.set_entity_geometry(_drag["id"], _drag["orig_info"])
+		run_solve()
+	_drag.clear()
 	_redraw()
 	_rebuild_dimension_labels()
 	_update_preview()
@@ -4336,6 +4390,9 @@ func click(pos2: Vector2) -> void:
 	# A new pick means the user kept drawing. The next Esc is the normal
 	# ladder again, not the exit promised by the previous point drop.
 	_esc_exit_promised = false
+	# Select hit-tests the real cursor. Snapping first pulls a shaft-line
+	# click onto a nearby centre or endpoint and the line reads as a miss.
+	var select_pos := pos2
 	_point_from_length = false
 	_last_commit_text = ""
 	# A dimension label sits a few millimetres off the geometry. Snapping first
@@ -4387,7 +4444,7 @@ func click(pos2: Vector2) -> void:
 			if dhit >= 0:
 				_emit_dimension_edit(dhit)
 				return
-			_select_at(pos2)
+			_select_at(select_pos)
 			selection_actions_needed.emit()
 		Tool.TRIM:
 			trim_at(pos2)
@@ -4793,18 +4850,24 @@ func promise_next_esc_exits() -> void:
 ## The caller then saves a sketch that has committed geometry and cancels
 ## only an empty one.
 ##
-## A pending-point drop already promised the next Esc leaves. Honour that
-## before the selection and tool rungs, so two presses exit even when the
-## draw tool is still armed and the sketch already has geometry.
+## A pending-point drop already promised the next Esc leaves. A live
+## selection still spends the key first (the promise stays armed), so a
+## Select click after a hover measure cannot exit on the same Esc.
 func esc_keep_sketch() -> String:
 	if not active or sketch == null:
 		return ""
+	# A selection (entity or constraint glyph) always spends this Esc.
+	# Honouring the exit promise first left the sketch on the same key that
+	# should have cleared a Select click made after a hover measure.
+	if not selected.is_empty() or selected_constraint != "":
+		if not selected.is_empty():
+			_set_selected([])
+		if selected_constraint != "":
+			select_constraint("")
+		return "Selection cleared — Esc again exits the sketch"
 	if _esc_exit_promised:
 		_esc_exit_promised = false
 		return ""
-	if not selected.is_empty():
-		_set_selected([])
-		return "Selection cleared — Esc again exits the sketch"
 	if tool != Tool.SELECT and tool != Tool.NONE and not sketch.entity_ids().is_empty():
 		set_tool(Tool.SELECT)
 		return "Tool dropped — Esc again exits the sketch"
