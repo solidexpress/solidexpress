@@ -346,7 +346,6 @@ func test_view_hud(main) -> void:
 		ix.world_gizmos.set_gizmos_visible(false)
 		check(not ix.world_gizmos.gizmos_visible, "gizmos hide when turned off")
 		ix.world_gizmos.set_gizmos_visible(true)
-		ix._refresh_grid_lod()
 		check(ix.world_gizmos.gizmos_visible, "gizmos restore when turned on")
 
 	check(not hud.has_signal("nav_preset_changed"), "nav menu signal removed")
