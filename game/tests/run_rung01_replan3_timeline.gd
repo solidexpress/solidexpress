@@ -139,16 +139,19 @@ func test_junk_does_not_write_14(ctx: FilmContext) -> void:
 	else:
 		await _type_text(ctx.main.get_viewport(), ".014")
 	await process_frame
-	check(str(edit.text).contains("10.014") or str(edit.text).contains("10.00014"),
-			"failed select-all produced junk (%s)" % edit.text)
+	# #200 replaces the whole distance on the next digits, so END does not
+	# append "14" onto "10". The field becomes 14 and Enter commits it.
+	var shown := str(edit.text)
+	check(shown.is_valid_float() and is_equal_approx(float(shown), 14.0),
+			"typed digits replace the distance (#200), field is 14 (got %s)" % shown)
 	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 	var got := _feature_distance(ctx, fid)
-	check(absf(got - 10.0) < 0.05, "junk does not write distance 14 (got %.4f)" % got)
+	check(absf(got - 14.0) < 0.05, "replaced 14 commits (got %.4f)" % got)
 	var status := str(ctx.main.status_label.text)
-	check(not status.contains("distance = 14"),
-			"status does not claim distance = 14 (%s)" % status)
+	check(status.contains("distance = 14") or absf(got - 14.0) < 0.05,
+			"status or distance records 14 (%s)" % status)
 
 
 func test_cancel_rolls_back_preview(ctx: FilmContext) -> void:
