@@ -384,7 +384,10 @@ func _stage_s3(ctx: FilmContext) -> void:
 	var ext: Vector3 = bb["max"] - bb["min"]
 	check(absf(ext.x - 232.5) <= 0.3 and absf(ext.y - 45.0) <= 0.3 and absf(ext.z - 10.0) <= 0.3,
 			"body bbox 232.5 × 45.0 × 10.0 (got %.3f × %.3f × %.3f)" % [ext.x, ext.y, ext.z])
-	var head_s := FilmUI.model_to_screen(ctx, Vector3(210, 0, 10))
+	# (210, 0) sits in the open jaw. A straight top view looks through that
+	# slot; the remaining head meat is off the jaw axis (same point as the
+	# later top fillet).
+	var head_s := FilmUI.model_to_screen(ctx, Vector3(200, -16, 10))
 	await _click_screen(ctx.main.get_viewport(), head_s)
 	_grab()
 	check(_grab().begins_with("Selected "), "click inside the head selects (`%s`)" % _grab())
