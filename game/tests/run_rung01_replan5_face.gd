@@ -329,23 +329,16 @@ func _click_front_view(ctx: FilmContext) -> void:
 	check(front != null and front.is_visible_in_tree(), "Front view button is visible")
 	if front == null:
 		return
-	# ViewsPopup is a Window. Click through the main viewport at the
-	# popup's screen position — the same path OptionButton items use.
-	var popup: PopupPanel = null
-	var walk: Node = front
-	while walk != null:
-		if walk is PopupPanel:
-			popup = walk as PopupPanel
-			break
-		walk = walk.get_parent()
-	var local := front.get_global_rect().get_center()
-	var screen := local
-	if popup != null:
-		screen = Vector2(popup.position) + local
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	# #204: a popup-rect click can land on another Orientation item.
+	# Activate the button whose text is Front.
+	await FilmUI.click_control(ctx, front, FilmUICues.alert("Front", "Front view"))
 	await process_frame
 	await process_frame
 	var cam: OrbitCamera = ctx.main.camera
+	var status := ""
+	if ctx.main.status_label != null:
+		status = str(ctx.main.status_label.text)
+	check(status.contains("Front view"), "Front view (got '%s')" % status)
 	check(is_equal_approx(cam.yaw, 0.0) and is_equal_approx(cam.pitch, 0.0),
 			"Front view control set yaw/pitch 0 (got %.3f / %.3f)" % [cam.yaw, cam.pitch])
 
