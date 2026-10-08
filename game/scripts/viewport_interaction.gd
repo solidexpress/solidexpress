@@ -3694,6 +3694,8 @@ func _sketch_input(event: InputEvent) -> void:
 					sketch_chrome.release_distance_focus()
 				sketch_chrome.hide_variants()
 			var screen := _pointer_viewport_pos(mb)
+			if sketch_mode != null:
+				sketch_mode.note_pointer_screen(screen)
 			# A double-click is still a press. Soft-GL delivers it immediately
 			# after the previous click; it must be allowed to start a box.
 			if _sketch_press_inferred and _sketch_lmb_depth >= 1:
@@ -3881,6 +3883,8 @@ func _sketch_input(event: InputEvent) -> void:
 				_box_rect = Rect2(_sketch_box_start, box_at - _sketch_box_start).abs()
 				_sketch_box_crossing = box_at.x < _sketch_box_start.x
 				queue_redraw()
+		if sketch_mode != null:
+			sketch_mode.note_pointer_screen(_pointer_viewport_pos(motion))
 		var ray := _model_ray(event.position)
 		var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 		if p2 != null:
