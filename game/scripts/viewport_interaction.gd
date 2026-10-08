@@ -7116,8 +7116,15 @@ func _note_finish_press_outside(event: InputEvent) -> void:
 	var at := _pointer_viewport_pos(event as InputEventMouse)
 	if _finish_click_rect.size.x >= 2.0 and _finish_click_rect.has_point(at):
 		return
-	# Chip clicks keep the row where it is so the release still hits that chip.
+	# A chip press ends the shield after the click is delivered. The row y
+	# stays where the post-Extrude layout put it.
 	if _press_on_part_chip_row(at):
+		call_deferred("_disarm_finish_click_shield")
+		return
+	# Menu bar, popup, status bar, HUD, docks. A File / View press must not
+	# drop the shield: that relayout used to park the chip row on the Extrude
+	# pixel. A rail tool still disarms (sketch start).
+	if _sketch_rail_button_at(at) == null and _shield_press_is_chrome(at):
 		return
 	call_deferred("_disarm_finish_click_shield")
 
@@ -7145,6 +7152,8 @@ func _arm_finish_click_shield() -> void:
 	shield.size = rect.size
 	shield.visible = true
 	move_child(shield, get_child_count() - 1)
+	if _finish_click_rect.size.y >= 2.0:
+		_finish_strip_floor_y = _finish_click_rect.end.y - get_global_rect().position.y + 6.0
 	_layout_selection_strip()
 
 
@@ -7161,13 +7170,51 @@ func _disarm_finish_click_shield() -> void:
 	if _finish_click_shield != null and is_instance_valid(_finish_click_shield):
 		_finish_click_shield.visible = false
 	_sync_chip_mouse_under_extrude()
-	if not _layout_strip_busy:
-		_layout_selection_strip()
+	# The chip-row y was settled when the shield armed. Laying out again
+	# pulls the row back onto the Extrude pixel.
+
+
+func _shield_press_is_chrome(at: Vector2) -> bool:
+	if _over_chrome(at):
+		return true
+	var tree := get_tree()
+	if tree == null:
+		return false
+	for node_name in ["FileMenu", "StatusBar", "Timeline", "OpsPanel", "Palette", "CardPanel"]:
+		var ctrl := tree.root.find_child(node_name, true, false) as Control
+		if ctrl != null and ctrl.is_visible_in_tree() and ctrl.get_global_rect().has_point(at):
+			return true
+	return _popup_contains_point(tree.root, at)
+
+
+func _popup_contains_point(node: Node, at: Vector2) -> bool:
+	if node == null:
+		return false
+	if node is PopupMenu or node is PopupPanel:
+		var pop := node as Window
+		if pop.visible:
+			var rect := Rect2(Vector2(pop.position), Vector2(pop.size))
+			if rect.has_point(at):
+				return true
+	for child in node.get_children():
+		if _popup_contains_point(child, at):
+			return true
+	return false
+
+
+## Chip-row top, in Interaction space, settled when the Extrude shield arms.
+## Later layouts (including disarm) keep this floor so the row cannot jump
+## back onto the Extrude pixel.
+var _finish_strip_floor_y := -1.0
 
 
 ## While the shield is up, the chip row starts below the Extrude button so
-## Hide (and every other state-changing chip) is not on that pixel.
+## Hide (and every other state-changing chip) is not on that pixel. The floor
+## stays after disarm: a File-menu press used to clear it and park the row
+## on that pixel.
 func _finish_click_strip_y(y_natural: float) -> float:
+	if _finish_strip_floor_y >= 0.0:
+		return maxf(y_natural, _finish_strip_floor_y)
 	if not _finish_click_shield_armed or _selection_strip == null:
 		return y_natural
 	if _finish_click_rect.size.y < 2.0:

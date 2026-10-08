@@ -827,6 +827,7 @@ func _build_ui() -> void:
 
 	# Bottom: status bar.
 	var status_bar := PanelContainer.new()
+	status_bar.name = "StatusBar"
 	status_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	status_bar.anchor_top = 1.0
 	status_bar.offset_top = -30
