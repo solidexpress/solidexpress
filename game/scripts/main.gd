@@ -2794,8 +2794,7 @@ func _do_new() -> void:
 			interaction.triball.cancel()
 	view.new_document()
 	current_path = ""
-	if sketch_chrome != null:
-		sketch_chrome.reset_finish_defaults()
+	_reset_document_tool_state()
 	# Empty part on the Top plane (XY through the origin). The Box primitive
 	# stays on the palette; New must not insert or select a body (that armed
 	# the selection strip and ate the next click).
@@ -2965,11 +2964,25 @@ func _open_document(path: String) -> void:
 		current_path = path
 		_last_saved_revision = view.doc.revision()
 		_push_recent(path)
+		_reset_document_tool_state()
 		if camera != null:
 			camera.frame_contents()
 		_on_status("Opened " + path)
 	else:
 		_on_status("Open failed: " + path)
+
+
+## File → New and a successful Open drop the previous document's tool numbers
+## and put Extrude distance back to the default.
+func _reset_document_tool_state() -> void:
+	if sketch_mode != null and sketch_mode.has_method("reset_tool_numerics"):
+		sketch_mode.reset_tool_numerics()
+	if extrude_distance != null:
+		extrude_distance.value = 20
+	if sketch_chrome != null:
+		sketch_chrome.reset_finish_defaults()
+		if sketch_chrome.has_method("sync_for_tool"):
+			sketch_chrome.sync_for_tool()
 
 
 func _on_insert_menu(id: int) -> void:

@@ -3058,7 +3058,13 @@ func _sketch_input(event: InputEvent) -> void:
 					if sketch_chrome != null and sketch_chrome.has_method("arm_dim_replace") \
 							and sketch_mode.has_single_dof_preview():
 						var shown := sketch_mode.preview_distance()
-						if shown < 0.5:
+						if sketch_mode.tool == SketchMode.Tool.SLOT:
+							# c-c starts at the slot's own last centre distance,
+							# never the cap radius still sitting in the blank.
+							shown = sketch_mode.own_numeric() if sketch_mode.has_method("own_numeric") else -1.0
+							if shown < 0.0 and sketch_chrome.has_method("clear_dim_blank"):
+								sketch_chrome.clear_dim_blank()
+						elif shown < 0.5:
 							if sketch_mode.tool == SketchMode.Tool.CIRCLE:
 								shown = sketch_mode.circle_radius
 							else:
