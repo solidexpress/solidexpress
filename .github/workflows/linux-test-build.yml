@@ -186,4 +186,22 @@ jobs:
           fi
 
           echo "Published prerelease ${TAG} at ${SHA}"
-          gh release view "$TAG" --json isPrerelease,isDraft,isLatest,tagName,targetCommitish,url --jq .
+          gh release view "$TAG" --json isPrerelease,isDraft,tagName,targetCommitish,url --jq .
+
+          # gh release view dropped isLatest. Confirm this tag is not GitHub's
+          # latest release via the REST API. A 404 means there is no stable release.
+          latest_err="$(mktemp)"
+          if latest_tag="$(gh api "repos/${GH_REPO}/releases/latest" --jq .tag_name 2>"$latest_err")"; then
+            :
+          elif grep -q '404' "$latest_err"; then
+            latest_tag=""
+          else
+            cat "$latest_err" >&2
+            exit 1
+          fi
+          rm -f "$latest_err"
+          if [[ "${latest_tag}" == "${TAG}" ]]; then
+            echo "error: ${TAG} is marked as the latest release" >&2
+            exit 1
+          fi
+          echo "GitHub latest release tag: ${latest_tag:-<none>}"
