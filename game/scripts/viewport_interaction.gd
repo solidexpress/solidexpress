@@ -2941,13 +2941,44 @@ func _over_chrome_who(global_mouse: Vector2) -> String:
 
 
 ## True when `pos` lies on `ctrl` in either viewport space GUI and `_input` use.
+## A canvas-transform rect that is far larger than the laid-out widget, or that
+## does not overlap it, is a stale hover (the rail button after arming Polygon).
+## Treating that rect as a hit dropped the first sketch-centre press (sx-038).
 func _pointer_hits_control(ctrl: Control, pos: Vector2) -> bool:
 	if ctrl == null or not is_instance_valid(ctrl):
 		return false
-	if ctrl.get_global_rect().has_point(pos):
+	# IGNORE shells (variant row, action stack) must not own a canvas press.
+	# Their buttons still hit via the global rect below and via chrome walk.
+	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE and not (ctrl is BaseButton):
+		return false
+	var global_r := ctrl.get_global_rect()
+	if _hit_rect_sane(global_r) and global_r.has_point(pos):
 		return true
 	var xf := ctrl.get_global_transform_with_canvas()
-	return Rect2(xf.origin, xf.get_scale() * ctrl.size).has_point(pos)
+	var canvas_r := Rect2(xf.origin, xf.get_scale() * ctrl.size)
+	if not _canvas_rect_trusted(global_r, canvas_r):
+		return false
+	return canvas_r.has_point(pos)
+
+
+func _hit_rect_sane(r: Rect2) -> bool:
+	var area := absf(r.get_area())
+	return area >= 4.0 and area <= _chrome_area_cap()
+
+
+## Canvas space is a second hit test for a chip whose global rect is stale.
+## It is the same widget: reject a rect that dwarfs the global one or sits
+## somewhere else entirely.
+func _canvas_rect_trusted(global_r: Rect2, canvas_r: Rect2) -> bool:
+	if not _hit_rect_sane(canvas_r):
+		return false
+	var g_area := absf(global_r.get_area())
+	var c_area := absf(canvas_r.get_area())
+	if g_area >= 4.0 and c_area > g_area * 2.5:
+		return false
+	if g_area >= 4.0 and not global_r.grow(8.0).intersects(canvas_r):
+		return false
+	return true
 
 
 func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:

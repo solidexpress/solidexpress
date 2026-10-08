@@ -1676,6 +1676,18 @@ func _on_sketch_rail_toggled(on: bool, t: int) -> void:
 
 
 func _on_sketch_rail_tool(t: int) -> void:
+	# The extrude click shield and a focused size blank must not eat the next
+	# canvas press (sx-038 N4: first Polygon centre click).
+	if interaction != null and interaction.has_method("_disarm_finish_click_shield"):
+		interaction._disarm_finish_click_shield()
+	if sketch_chrome != null:
+		# A focused Extrude Distance blank must not take the next canvas press.
+		if sketch_chrome.has_method("release_distance_focus"):
+			sketch_chrome.release_distance_focus()
+		# Circle keeps a radius blank the user already focused. Every other
+		# rail tool drops that focus so the size field cannot eat the centre.
+		if t != int(SketchMode.Tool.CIRCLE) and sketch_chrome.has_method("release_dim_focus"):
+			sketch_chrome.release_dim_focus()
 	if sketch_mode != null:
 		sketch_mode.set_tool(t as SketchMode.Tool)
 
