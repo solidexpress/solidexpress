@@ -1587,7 +1587,14 @@ func _claim_dim_keyboard() -> void:
 
 func sync_for_tool() -> void:
 	_sync_dim_affordance()
-	if sketch_mode == null or _dim_editing:
+	if sketch_mode == null:
+		return
+	# Circle claims the radius blank. A later Select click does not take
+	# keyboard focus, so F / Shift+F / Esc stayed in that LineEdit and the
+	# hover measure never cleared.
+	if sketch_mode.tool != SketchMode.Tool.CIRCLE:
+		release_dim_focus()
+	if _dim_editing:
 		return
 	# c-c (and any in-progress rubber-band) is not the radius field.
 	if sketch_mode.has_single_dof_preview():
