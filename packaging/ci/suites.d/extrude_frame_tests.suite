@@ -1,0 +1,2 @@
+script=tests/run_extrude_frame_tests.gd
+tier=ci

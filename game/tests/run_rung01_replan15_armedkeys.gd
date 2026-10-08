@@ -508,6 +508,17 @@ func _row_c1() -> void:
 		await process_frame
 		await process_frame
 		await process_frame
+		check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
+				"C1: field Enter keeps Fillet armed (pending %s)" % str(main.ops_panel._pending))
+		check(_fillet_count(view) == before,
+				"C1: field Enter does not add a fillet (before %d after %d)" % [before, _fillet_count(view)])
+		main.interaction.return_viewport_keys()
+		await process_frame
+		_status_log.clear()
+		await _push_key(vp, KEY_ENTER)
+		await process_frame
+		await process_frame
+		await process_frame
 	var applied := false
 	for s in _status_log:
 		if s.begins_with("Fillet edge 1.00 applied") or s.begins_with("Fillet 1 edges 1.00 applied"):
