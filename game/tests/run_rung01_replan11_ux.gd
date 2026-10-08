@@ -53,18 +53,18 @@ func _run() -> void:
 	sm.run_solve()
 	var y0: float = float(sm.sketch.entity_info(c0)["center"].y)
 	var y1: float = float(sm.sketch.entity_info(c1)["center"].y)
-	check(absf(y1 - y0) <= 0.05 and _horiz_on_construction(sm) >= 1,
-			"near-X centres get horizontal (dy=%.4f horiz=%d)" % [y1 - y0, _horiz_on_construction(sm)])
+	check(absf(y1 - y0) <= 0.05 and _horiz_between(sm, c0, c1) >= 1,
+			"near-X centres get a two-centre horizontal (dy=%.4f horiz=%d)" % [y1 - y0, _horiz_between(sm, c0, c1)])
 
-	var horiz_before := _horiz_on_construction(sm)
+	var horiz_before := _horiz_total(sm)
 	var c2: String = sm.sketch.add_circle(30.0, 20.0, 4.0)
 	sm._smart_dim_between(
 			{"entity": c0, "role": "center"},
 			{"entity": c2, "role": "center"})
 	sm.run_solve()
-	check(_horiz_on_construction(sm) == horiz_before,
+	check(_horiz_total(sm) == horiz_before,
 			"20° centre pair does not add a horizontal constraint (before=%d after=%d)" % [
-				horiz_before, _horiz_on_construction(sm)])
+				horiz_before, _horiz_total(sm)])
 
 	var lid: String = sm.sketch.add_line(0.0, 40.0, 12.0, 40.0)
 	var sel: Array[String] = []
@@ -204,18 +204,28 @@ func _sxp_text(path: String) -> String:
 	return txt
 
 
-func _horiz_on_construction(sm: SketchMode) -> int:
+func _horiz_total(sm: SketchMode) -> int:
+	var n := 0
+	for cid in sm.sketch.constraint_ids():
+		var info: Dictionary = sm.sketch.constraint_info(str(cid))
+		if str(info.get("type", "")) == "horizontal":
+			n += 1
+	return n
+
+
+func _horiz_between(sm: SketchMode, ida: String, idb: String) -> int:
 	var n := 0
 	for cid in sm.sketch.constraint_ids():
 		var info: Dictionary = sm.sketch.constraint_info(str(cid))
 		if str(info.get("type", "")) != "horizontal":
 			continue
-		for ref in info.get("refs", []):
-			var eid := str(ref.get("entity", ""))
-			if sm.sketch.is_construction(eid) \
-					and str(sm.sketch.entity_info(eid).get("type", "")) == "line":
-				n += 1
-				break
+		var refs: Array = info.get("refs", [])
+		if refs.size() < 2:
+			continue
+		var a := str(refs[0].get("entity", ""))
+		var b := str(refs[1].get("entity", ""))
+		if (a == ida and b == idb) or (a == idb and b == ida):
+			n += 1
 	return n
 
 
