@@ -231,6 +231,11 @@ const GLYPH_SYMBOLS := {
 	"point_on_line": "◇",
 	"tangent": "⌒",
 }
+## Screen de-stack: a glyph stays within the cap of its anchor, grows a leader
+## once it has moved, and yields to dimension labels by this gap.
+const GLYPH_MAX_OFFSET_PX := 40.0
+const GLYPH_LEADER_MIN_PX := 12.0
+const GLYPH_LABEL_GAP_PX := 4.0
 ## Geometry within this distance of exact H/V or an existing endpoint gets an
 ## inferred constraint on creation (SolidWorks-style automatic relations).
 const INFER_TOL := 0.5
@@ -4261,8 +4266,8 @@ const CONTOUR_COLORS := [
 	Color(0.35, 0.85, 0.45),
 	Color(0.85, 0.40, 0.90),
 ]
-const CONTOUR_FILL_ALPHA := 0.28
-const CONTOUR_FOCUS_ALPHA := 0.50
+const CONTOUR_FILL_ALPHA := 0.20
+const CONTOUR_FOCUS_ALPHA := 0.70
 const CONTOUR_OFF_COLOR := Color(0.55, 0.55, 0.55, 0.8)
 const CONTOUR_LIFT_MM := 0.05
 
@@ -4363,8 +4368,10 @@ func _redraw_contour_highlight() -> void:
 				_contour_outline_count += 1
 		if focused:
 			_append_outline(lines, line_cols, _inset_loop(outer, 0.35), outline_col)
+			_append_outline(lines, line_cols, _inset_loop(outer, 0.70), outline_col)
 			for hole in holes:
 				_append_outline(lines, line_cols, _inset_loop(hole, 0.35), outline_col)
+				_append_outline(lines, line_cols, _inset_loop(hole, 0.70), outline_col)
 	if tris.is_empty() and lines.is_empty():
 		_contour_node.mesh = null
 		return
@@ -7073,7 +7080,7 @@ func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
 		glyphs: Array[Rect2]) -> bool:
 	var rect := _projected_label_rect(dim, cam, k)
 	for gr in glyphs:
-		if rect.intersects(gr):
+		if rect.intersects(gr.grow(GLYPH_LABEL_GAP_PX)):
 			return true
 	for j in range(dimensions.size()):
 		if j == index:
@@ -7278,8 +7285,9 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		if frac > 0.20:
 			score += (frac - 0.20) * 100.0
 	for lr in labels:
-		if rect.intersects(lr):
-			var inter := rect.intersection(lr)
+		var lg := lr.grow(GLYPH_LABEL_GAP_PX)
+		if rect.intersects(lg):
+			var inter := rect.intersection(lg)
 			score += 80.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0)
 	var sk: Variant = _sketch_at_screen(cam, centre)
 	if sk == null:
@@ -7300,13 +7308,18 @@ func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2
 	var step := maxf(size.x, size.y) + 2.0
 	var best := natural
 	var best_score := INF
-	for ring in range(16):
+	var max_ring := maxi(1, floori(GLYPH_MAX_OFFSET_PX / step))
+	for ring in range(max_ring + 1):
 		var count := 1 if ring == 0 else ring * 8
 		for i in range(count):
 			var centre := natural
 			if ring > 0:
 				var ang := TAU * float(i) / float(count)
-				centre = natural + Vector2(cos(ang), sin(ang)) * step * float(ring)
+				# Ring 1 is always searched. When the glyph is taller than the
+				# cap, that ring would land past GLYPH_MAX_OFFSET_PX; keep it
+				# on the cap so the badge cannot leave its anchor.
+				var radius := minf(step * float(ring), GLYPH_MAX_OFFSET_PX)
+				centre = natural + Vector2(cos(ang), sin(ang)) * radius
 			var rect := Rect2(centre - size * 0.5, size)
 			var score := _glyph_block_score(rect, centre, placed, labels, cam)
 			if score < best_score:
@@ -7351,7 +7364,13 @@ func _ref_pos(ref: Dictionary) -> Variant:
 			if role == "end":
 				return info["end"]
 			return (info["start"] + info["end"]) * 0.5
-		"circle", "arc":
+		"arc":
+			if role == "start" and info.has("start"):
+				return info["start"]
+			if role == "end" and info.has("end"):
+				return info["end"]
+			return info["center"]
+		"circle":
 			return info["center"]
 		"point":
 			return info["position"]
@@ -7364,6 +7383,36 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 	var refs: Array = cinfo.get("refs", [])
 	if refs.is_empty():
 		return null
+	match str(cinfo.get("type", "")):
+		"tangent":
+			var line_info: Dictionary = {}
+			var circ_info: Dictionary = {}
+			for ref in refs:
+				if typeof(ref) != TYPE_DICTIONARY:
+					continue
+				var info: Dictionary = sketch.entity_info(str(ref.get("entity", "")))
+				var kind := str(info.get("type", ""))
+				if kind == "line":
+					line_info = info
+				elif kind == "circle" or kind == "arc":
+					circ_info = info
+			if not line_info.is_empty() and not circ_info.is_empty():
+				var contact: Variant = _tangent_contact(line_info, circ_info)
+				if contact != null:
+					return contact
+		"point_on_line":
+			return _ref_pos(refs[0])
+		"parallel", "perpendicular", "equal":
+			var p: Variant = _ref_pos(refs[0])
+			if p == null:
+				return null
+			var nudged: Vector2 = p
+			var einfo: Dictionary = sketch.entity_info(str(refs[0].get("entity", "")))
+			if str(einfo.get("type", "")) == "line":
+				var d: Vector2 = einfo["end"] - einfo["start"]
+				if d.length_squared() > 1e-12:
+					nudged += Vector2(-d.y, d.x).normalized() * 2.5
+			return nudged
 	var sum := Vector2.ZERO
 	var n := 0
 	for ref in refs:
@@ -7382,6 +7431,16 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 			if d.length_squared() > 1e-12:
 				anchor += Vector2(-d.y, d.x).normalized() * 2.5
 	return anchor
+
+
+func _tangent_contact(line: Dictionary, circ: Dictionary) -> Variant:
+	var a: Vector2 = line["start"]
+	var ab: Vector2 = (line["end"] as Vector2) - a
+	if ab.length_squared() < 1e-12:
+		return null
+	var c: Vector2 = circ["center"]
+	var t := clampf((c - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	return a + ab * t
 
 
 func _rebuild_constraint_glyphs() -> void:
@@ -7410,12 +7469,15 @@ func _rebuild_constraint_glyphs() -> void:
 		if anchor == null:
 			continue
 		var pos := anchor as Vector2
+		var anchor_sketch := pos
+		var offset_px := 0.0
 		if cam != null:
 			# De-stack in pixels. A 2.5 mm step is ~8 px at a 150 px head,
 			# smaller than the badge, so the pile survives a millimetre nudge.
 			var size := _glyph_symbol_size_px(type, k)
 			var natural := cam.unproject_position(to_global(to_model(pos)))
 			var centre := _separate_glyph_screen(natural, size, placed, label_rects, cam)
+			offset_px = natural.distance_to(centre)
 			placed.append(Rect2(centre - size * 0.5, size))
 			var back: Variant = _sketch_at_screen(cam, centre)
 			if back != null:
@@ -7441,7 +7503,57 @@ func _rebuild_constraint_glyphs() -> void:
 		label.position = _to3(pos)
 		label.set_meta("cid", str(cid))
 		_constraint_glyphs.add_child(label)
-		_glyph_anchors.append({"cid": str(cid), "pos": pos, "type": type})
+		_glyph_anchors.append({
+			"cid": str(cid),
+			"pos": pos,
+			"type": type,
+			"anchor": anchor_sketch,
+			"offset_px": offset_px,
+		})
+	var lead := false
+	for a in _glyph_anchors:
+		if float(a.get("offset_px", 0.0)) >= GLYPH_LEADER_MIN_PX:
+			lead = true
+			break
+	if lead:
+		var leaders := MeshInstance3D.new()
+		leaders.name = "GlyphLeaders"
+		var im := ImmediateMesh.new()
+		im.surface_begin(Mesh.PRIMITIVE_LINES)
+		var col := COLOR_GLYPH
+		col.a = 0.6
+		for a in _glyph_anchors:
+			if float(a.get("offset_px", 0.0)) < GLYPH_LEADER_MIN_PX:
+				continue
+			im.surface_set_color(col)
+			im.surface_add_vertex(_to3(a["anchor"]))
+			im.surface_add_vertex(_to3(a["pos"]))
+		im.surface_end()
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.vertex_color_use_as_albedo = true
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color.WHITE
+		leaders.mesh = im
+		leaders.material_override = mat
+		_constraint_glyphs.add_child(leaders)
+
+
+func glyph_debug() -> Array:
+	var out: Array = []
+	for a in _glyph_anchors:
+		var off := float(a.get("offset_px", 0.0))
+		var anchor: Vector2 = a.get("anchor", Vector2.ZERO)
+		var pos: Vector2 = a.get("pos", Vector2.ZERO)
+		out.append({
+			"cid": str(a.get("cid", "")),
+			"type": str(a.get("type", "")),
+			"offset_px": off,
+			"leader": off >= GLYPH_LEADER_MIN_PX,
+			"anchor": anchor,
+			"pos": pos,
+		})
+	return out
 
 
 ## Constraint whose glyph is within GLYPH_PICK_RADIUS of pos2, or "".

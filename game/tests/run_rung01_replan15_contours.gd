@@ -83,8 +83,8 @@ func _rows_a_and_c2() -> void:
 		var st2: Dictionary = sm.contour_highlight_state()
 		var fills2: Array = st2.get("fills", [])
 		check(int(st2.get("focus", -99)) == 1, "A2 focus == 1 (got %s)" % str(st2.get("focus")))
-		check(fills2.size() >= 2 and absf(float(fills2[1]) - 0.50) < 0.02 and absf(float(fills2[0]) - 0.28) < 0.02,
-				"A2 fills ≈ 0.28 / 0.50 (got %s)" % str(fills2))
+		check(fills2.size() >= 2 and absf(float(fills2[1]) - 0.70) < 0.02 and absf(float(fills2[0]) - 0.20) < 0.02,
+				"A2 fills ≈ 0.20 / 0.70 (got %s)" % str(fills2))
 		check(str(st2.get("tag", "")) == "2", "A2 tag == 2 (got %s)" % str(st2.get("tag")))
 	else:
 		check(false, "A2 focus == 1")
