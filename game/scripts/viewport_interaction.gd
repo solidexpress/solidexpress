@@ -2834,7 +2834,7 @@ func _sketch_keys_blocked() -> bool:
 
 ## Redo / undo stay with the sketch unless the focused line already has a
 ## typed character. An armed or just-opened field must not swallow Ctrl+Shift+Z.
-func _shortcut_blocked_by_numeric_edit() -> bool:
+func _shortcut_blocked_by_numeric_edit(ke: InputEventKey = null) -> bool:
 	var vp := get_viewport()
 	if vp == null:
 		return false
@@ -2844,7 +2844,9 @@ func _shortcut_blocked_by_numeric_edit() -> bool:
 	if focus is LineEdit:
 		var line := focus as LineEdit
 		if _line_is_tracked_numeric(line):
-			return SxUi.mid_entry(line)
+			if SxUi.mid_entry(line):
+				return true
+			return ke != null and ke.keycode == KEY_Z and not ke.shift_pressed
 		return true
 	if focus is TextEdit or focus is CodeEdit:
 		return true
@@ -3868,7 +3870,7 @@ func _sketch_input(event: InputEvent) -> void:
 			if measure_overlay != null:
 				measure_overlay.update_sketch_hover("", Vector3.ZERO)
 	elif event is InputEventKey and event.pressed and event.ctrl_pressed:
-		if _shortcut_blocked_by_numeric_edit():
+		if _shortcut_blocked_by_numeric_edit(event as InputEventKey):
 			return
 		var ke := event as InputEventKey
 		match ke.keycode:
@@ -4974,7 +4976,7 @@ func _gui_key(event: InputEventKey) -> bool:
 				return true
 		KEY_Z:
 			if event.ctrl_pressed:
-				if _shortcut_blocked_by_numeric_edit():
+				if _shortcut_blocked_by_numeric_edit(event):
 					return false
 				if sketch_mode != null and sketch_mode.active:
 					if event.shift_pressed:
