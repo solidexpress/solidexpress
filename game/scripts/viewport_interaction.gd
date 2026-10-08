@@ -4800,10 +4800,6 @@ func _try_route_length_key(event: InputEvent) -> bool:
 	# the finish-bar dim blank or Distance with the same KEY_2 KEY_0 KEY_0.
 	if _dim_edit_owns_keys():
 		return _try_replace_dim_edit_key(event)
-	# Circle / Slot radius is the blank on the finish bar. A digit must not
-	# fall into Extrude just because Distance still owns the keyboard.
-	if _radius_blank_takes_length_key(event):
-		return true
 	if _try_consume_preview_length_key(event):
 		return true
 	if _try_append_focused_dim_length_key(event):
@@ -4811,34 +4807,6 @@ func _try_route_length_key(event: InputEvent) -> bool:
 	if _try_consume_distance_length_key(event):
 		return true
 	if _try_append_focused_distance_length_key(event):
-		return true
-	return false
-
-
-## Circle and Slot show a radius blank. While that tool is armed, a length
-## key goes there even if Extrude Distance is the focus owner.
-func _radius_blank_takes_length_key(event: InputEvent) -> bool:
-	if sketch_mode == null or not sketch_mode.active:
-		return false
-	if sketch_mode.tool != SketchMode.Tool.CIRCLE \
-			and sketch_mode.tool != SketchMode.Tool.SLOT:
-		return false
-	if not sketch_mode.wants_dim_length_keys():
-		return false
-	if not (event is InputEventKey and event.pressed and not event.echo \
-			and not event.ctrl_pressed and not event.meta_pressed):
-		return false
-	var ke := event as InputEventKey
-	if not _is_length_type_key(ke):
-		return false
-	var dim := _dim_line_edit()
-	if dim != null and dim.has_focus():
-		return false
-	var seed := _length_type_seed(ke)
-	if seed == "" or sketch_chrome == null:
-		return false
-	if sketch_chrome.has_method("focus_dim_for_typing"):
-		sketch_chrome.focus_dim_for_typing(seed)
 		return true
 	return false
 
