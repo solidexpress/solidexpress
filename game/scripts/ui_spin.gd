@@ -269,6 +269,38 @@ static func fmt_mm(v: float) -> String:
 	return compact_number(v) + " mm"
 
 
+## Keep a resting SpinBox line on `fmt_mm` ("2 mm", not Godot's "2.0 mm").
+## Skips the line while it has focus so a partial type ("1.") is left alone.
+static func pin_fmt_mm(spin: SpinBox) -> void:
+	if spin == null or spin.has_meta("_sx_fmt_mm"):
+		return
+	spin.set_meta("_sx_fmt_mm", true)
+	if str(spin.suffix).strip_edges() == "":
+		spin.suffix = "mm"
+	var line := spin.get_line_edit()
+	if line == null:
+		return
+	line.text_changed.connect(func(new_text: String) -> void:
+		_reassert_fmt_mm(spin, line, new_text))
+	_reassert_fmt_mm(spin, line, line.text)
+
+
+static func _reassert_fmt_mm(spin: SpinBox, line: LineEdit, new_text: String) -> void:
+	if spin == null or line == null or not is_instance_valid(line):
+		return
+	if bool(spin.get_meta("_sx_fmt_mm_writing", false)):
+		return
+	if line.has_focus():
+		return
+	var want := fmt_mm(spin.value)
+	if new_text == want:
+		return
+	spin.set_meta("_sx_fmt_mm_writing", true)
+	line.text = want
+	pin_line_start(line)
+	spin.set_meta("_sx_fmt_mm_writing", false)
+
+
 static func _numeric_body(raw: String) -> String:
 	var text := raw.strip_edges()
 	if text.ends_with(" mm"):

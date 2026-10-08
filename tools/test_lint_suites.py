@@ -63,7 +63,7 @@ class LintSuitesTests(unittest.TestCase):
     def test_repo_tree_is_155(self):
         proc = _run_lint()
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn("lint_suites: 161 suites ok (23 ci, 138 full)", proc.stdout)
+        self.assertIn("lint_suites: 167 suites ok (29 ci, 138 full)", proc.stdout)
 
     def test_old_ci_stays_ci_and_known_red_stays_full(self):
         _errors, suites = lint_suites.collect_errors(lint_suites.DEFAULT_SUITES)
@@ -114,7 +114,7 @@ class LintSuitesTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
-        self.assertEqual(len(lines), 23)
+        self.assertEqual(len(lines), 29)
         got = {Path(ln).name for ln in lines}
         self.assertEqual(got, set(OLD_CI) | {
             "run_rung01_replan16_suites.gd",
@@ -123,6 +123,12 @@ class LintSuitesTests(unittest.TestCase):
             "run_rung01_replan16_picks.gd",
             "run_rung01_replan16_sketchvis.gd",
             "run_rung01_replan16_walk.gd",
+            "run_rung01_replan16_n2.gd",
+            "run_rung01_l12_measure.gd",
+            "run_rung01_preview_rebuild.gd",
+            "run_rung01_sx037_faceframe.gd",
+            "run_rung01_sx037_fields.gd",
+            "run_extrude_frame_tests.gd",
             "run_view_orientation_tests.gd",
         })
 

@@ -351,7 +351,7 @@ func _run() -> void:
 	check(_parses_to(_strip(main).get_line_edit().text, 10.0),
 			"9: KEY_3 did not append a digit (strip `%s`)" % _strip(main).get_line_edit().text)
 
-	print("- 2. type 1.5 in the strip; Enter applies 1.50")
+	print("- 2. type 1.5 in the strip; field Enter commits, viewport Enter applies 1.50")
 	if ops._pending != OpsPanel.Pending.FILLET_EDGES:
 		ops.arm_or_apply_fillet()
 		await process_frame
@@ -368,8 +368,20 @@ func _run() -> void:
 	_observe(main, "after strip typed 1.5 Enter")
 	check(is_equal_approx(ops.dressup_radius(), 1.5),
 			"2: panel Radius is 1.5 after typing in the strip (got %s)" % str(ops.dressup_radius()))
+	check(ops._pending == OpsPanel.Pending.FILLET_EDGES,
+			"2: field Enter keeps Fillet armed")
+	check(not _st(main).contains("applied"),
+			"2: field Enter does not apply (got `%s`)" % _st(main))
+	if spin.get_line_edit() != null and spin.get_line_edit().has_focus():
+		spin.get_line_edit().release_focus()
+	main.interaction.return_viewport_keys()
+	await process_frame
+	await _push_key(KEY_ENTER)
+	await process_frame
+	await process_frame
+	_observe(main, "after viewport Enter at 1.5")
 	check(_st(main).contains("1.50 applied"),
-			"2: applied status names 1.50 (got `%s`)" % _st(main))
+			"2: viewport Enter applies 1.50 (got `%s`)" % _st(main))
 
 	print("- 3. Esc cancels the pick; re-arm, strip and panel still 1.5")
 	view.select_entity(body, "")

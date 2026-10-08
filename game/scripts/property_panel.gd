@@ -162,6 +162,8 @@ func _ready() -> void:
 	# Live preview already wrote changes — Esc cancels; deselect keeps.
 	# No OK button (redundant with deselect). Cancel stays for discoverability.
 	var cancel := UIIcons.button("cancel", "Cancel", "Undo all changes (Esc)")
+	cancel.name = "PropertyCancel"
+	cancel.mouse_filter = Control.MOUSE_FILTER_STOP
 	cancel.pressed.connect(cancel_edits)
 	buttons.add_child(cancel)
 	var hint := Label.new()
@@ -326,6 +328,11 @@ func _add_spin_row(field: Dictionary, value) -> void:
 		float(field.get("step", 1.0)),
 		display,
 		field["kind"] == "int")
+	# Distance commits on Enter / focus-exit. A live rewrite on each character
+	# turns the first digit of "14" into its own rebuild (and a deferred
+	# select-all between the keys replaces that digit).
+	if key == "distance":
+		spin.update_on_text_changed = false
 	spin.value_changed.connect(func(v: float) -> void:
 		if key == "distance" and not _distance_line_parses(spin):
 			return
@@ -335,12 +342,55 @@ func _add_spin_row(field: Dictionary, value) -> void:
 		_set_param(key, store))
 	var edit := spin.get_line_edit()
 	if edit != null and key == "distance":
-		# Every click, including a second click on an already-focused field,
-		# reselects the digits so typing 14 replaces 10 instead of appending.
 		edit.gui_input.connect(_on_distance_edit_gui_input.bind(spin))
 		edit.text_submitted.connect(_on_distance_submitted.bind(spin))
 		edit.focus_exited.connect(_on_distance_focus_exited.bind(spin))
+	# Fillet / chamfer size: Enter commits the number and returns keys to the
+	# viewport. Extrude Distance keeps focus (its own Enter path above).
+	if edit != null and _editor_size_key(key):
+		edit.focus_entered.connect(func() -> void:
+			SxUi.arm_replace_on_focus(edit))
+		edit.gui_input.connect(_on_editor_size_gui_input.bind(edit))
+		edit.text_submitted.connect(func(_t: String) -> void:
+			_release_editor_keys(edit))
+		SxUi.release_focus_on_commit(spin)
 	row.add_child(spin)
+
+
+func _editor_size_key(key: String) -> bool:
+	return (_type == "fillet" and key == "radius") \
+			or (_type == "chamfer" and key == "distance")
+
+
+func _on_editor_size_gui_input(event: InputEvent, edit: LineEdit) -> void:
+	if edit == null or not is_instance_valid(edit):
+		return
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	var key := event as InputEventKey
+	if not SxUi.replace_armed(edit):
+		return
+	var ch := SxUi.numeric_key_char(key)
+	if ch == "":
+		return
+	SxUi.write_typed_text(edit, ch)
+	edit.accept_event()
+
+
+## Enter in the fillet/chamfer size field must not swallow the next view key.
+func _release_editor_keys(edit: LineEdit) -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	tree.process_frame.connect(func() -> void:
+		if edit != null and is_instance_valid(edit) and edit.has_focus():
+			edit.release_focus()
+		if tree.root == null:
+			return
+		var ix := tree.root.find_child("Interaction", true, false)
+		if ix != null and ix.has_method("return_viewport_keys"):
+			ix.return_viewport_keys()
+	, CONNECT_ONE_SHOT)
 
 
 ## Focus the spin whose schema key is `key` (extrude Distance, not W/H/D).
@@ -351,7 +401,10 @@ func focus_schema_key(key: String) -> void:
 	var edit := spin.get_line_edit()
 	if edit != null:
 		edit.grab_focus()
-		_queue_select_all(edit)
+		if key == "distance":
+			SxUi.arm_replace_on_focus(edit)
+		else:
+			edit.call_deferred("select_all")
 	else:
 		spin.grab_focus()
 
@@ -372,28 +425,26 @@ func _spin_for_key(key: String) -> SpinBox:
 func _on_distance_edit_gui_input(event: InputEvent, spin: SpinBox) -> void:
 	if spin == null or not is_instance_valid(spin):
 		return
+	var edit := spin.get_line_edit()
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT:
-			var edit := spin.get_line_edit()
-			if edit != null:
-				_queue_select_all(edit)
-
-
-func _queue_select_all(edit: LineEdit) -> void:
-	if edit == null or not is_instance_valid(edit):
+		if mb.button_index == MOUSE_BUTTON_LEFT and edit != null:
+			# A click, including one on an already-focused field, arms replace
+			# so the next digit stands in for the whole Distance.
+			SxUi.arm_replace_on_focus(edit)
 		return
-	# After the caret click, then once more next frame so the caret cannot win.
-	edit.call_deferred("select_all")
-	if not is_inside_tree():
+	if edit == null or not (event is InputEventKey):
 		return
-	var tree := get_tree()
-	if tree == null:
+	var key := event as InputEventKey
+	if not key.pressed or key.echo:
 		return
-	tree.process_frame.connect(func() -> void:
-		if is_instance_valid(edit):
-			edit.call_deferred("select_all")
-	, CONNECT_ONE_SHOT)
+	var ch := SxUi.numeric_key_char(key)
+	if ch == "" or not SxUi.replace_armed(edit):
+		return
+	# Own the first digit. A deferred select-all must not run afterwards and
+	# highlight that digit so the next key replaces it ("14" becoming "4").
+	SxUi.write_typed_text(edit, ch)
+	edit.accept_event()
 
 
 func _on_distance_submitted(_raw: String, spin: SpinBox) -> void:

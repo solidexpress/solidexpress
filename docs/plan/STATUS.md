@@ -7,6 +7,14 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 - Cardinal views are orthographic and axis-aligned (Top/Bottom at ±90°, not ±89°) with the pivot on the part. A straight top view looks through the open jaw, so a click in that slot does not select; the head click is on the remaining meat. Isometric stays the angled view and uses the same framing path. An empty New document keeps the biased grid aim.
 - Gate: `run_view_orientation_tests.gd` (`tier=ci`).
 
+## sx-037 L12 — Select hover Δ, thin-line pick, Esc, stale ✕
+- Select hover shows the measure ✕ with the entity's Δu/Δv. The mark clears when the pointer leaves, on F / Shift+F / HUD Frame, and on deselect or an empty-ground click (the `0.00` bound label goes with it). A shaft-line click uses a screen-pixel pick radius and still selects through a few pixels of jitter. The next Esc is `Selection cleared — Esc again exits the sketch`.
+- Gate: `run_rung01_l12_measure.gd` (`tier=ci`).
+
+## sx-037 N7 — armed rail tool shows a 3 px accent bar
+- The pressed fill was the same accent as the 3 px left border, so the armed Jaw / Rect / Circle button read as a flat blue fill. The fill is now a darker accent, the border is pure accent with square corners and no blend, and a 3 px `RailAccentBar` is drawn on top inside the button (the rail scroll clips anything that uses an expand margin).
+- Gate: `run_rung01_replan16_chrome.gd` C3 (left 3 px column is accent, the next pixel is not, hover is not, only one bar lit).
+
 ## Rung 1 replan 16 — sx-037 GUI walk replay
 - Headless replay `run_rung01_replan16_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
 - Save re-entry no longer prints `Editing sketch` (that sentence stays on the pencil click). An idle property panel no longer takes Esc away from an armed Fillet (`Edge pick cancelled`).

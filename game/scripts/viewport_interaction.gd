@@ -63,6 +63,9 @@ var _additive_click := false
 var _sketch_dragging := false
 var _sketch_drag_moved := false
 var _sketch_press_pos := Vector2.ZERO
+## One physical Esc must run the sketch ladder once. `_input` and `_gui_input`
+## can both see the same key in a frame; the second pass would exit.
+var _sketch_esc_frame := -1
 ## Digits routed to the dim blank while a single-DOF preview is up, or while
 ## Slot is waiting for its radius (no rubber-band yet). Kept so KEY_0 after
 ## KEY_2 calls focus_dim_for_typing("20") instead of replacing.
@@ -382,6 +385,10 @@ func _on_camera_view_changed() -> void:
 	# The work grid sheet is authored at ±50 mm until LOD runs. Zooming out to
 	# a sketch leaves that sheet as a grey patch unless the step grows.
 	_refresh_work_grid()
+	# A hover ✕ is a pointer cue. F / Shift+F / HUD Frame move the camera
+	# without a leave event, so the mark would stay at the old spot.
+	if measure_overlay != null and measure_overlay.has_anchor():
+		measure_overlay.clear_pair()
 	# Gizmo screen projections only need a redraw when the camera moves.
 	if view != null and view.selected_body != "" and _place_kind == "":
 		queue_redraw()
@@ -580,6 +587,8 @@ func _build_selection_strip() -> void:
 		SxUi.write_typed_text(strip_le, ch)
 		strip_le.accept_event())
 	_strip_radius_box.add_child(_strip_radius)
+	SxUi.pin_fmt_mm(_strip_radius)
+	SxUi.reveal_committed_spin(_strip_radius, _strip_radius.value)
 	# Jaw AF quick configs — wrench path without opening Variables dock.
 	_strip_jaw_box = HBoxContainer.new()
 	_strip_jaw_box.name = "StripJawAF"
@@ -2434,6 +2443,14 @@ func _update_transport_measure(screen_pos: Vector2 = Vector2.INF) -> void:
 		status.emit("Measure — perpendicular to near body · approach snap to move X")
 		return
 	view.clear_hover()
+	# Idle part mode: leaving the hovered body drops the ✕. Place and an
+	# in-progress move still compare against the pinned mark.
+	var live_measure := _place_kind != "" or _drag_mode == DragMode.MOVE_BODY \
+			or _drag_mode == DragMode.MOVE_INSTANCE
+	if not live_measure:
+		if measure_overlay.has_anchor():
+			measure_overlay.clear_pair()
+		return
 	if not measure_overlay.has_anchor():
 		return
 	var corners := _transport_subject_corners()
@@ -2971,12 +2988,15 @@ func _update_measure_hover(body: String, hit_point: Vector3) -> void:
 func _measure_hover_miss() -> void:
 	if measure_overlay == null:
 		return
-	# With a selection, miss still dims to the selection corners (place-like).
-	if view != null and view.selected_body != "" and view.selection_size() >= 1 \
-			and _drag_mode == DragMode.NONE and _place_kind == "":
+	# Place / move keep the comparison mark. Idle hover (selected or not)
+	# clears it as soon as the pointer leaves the body.
+	if (_place_kind != "" or _drag_mode == DragMode.MOVE_BODY \
+			or _drag_mode == DragMode.MOVE_INSTANCE) \
+			and view != null and view.selected_body != "" and view.selection_size() >= 1:
 		_update_transport_measure(Vector2.INF)
 		return
-	measure_overlay.update_hover("", Vector3.ZERO)
+	if measure_overlay.has_anchor():
+		measure_overlay.clear_pair()
 
 
 ## Collect pierce points where body edges meet the active sketch plane.
@@ -3058,7 +3078,13 @@ func _sketch_input(event: InputEvent) -> void:
 					if sketch_chrome != null and sketch_chrome.has_method("arm_dim_replace") \
 							and sketch_mode.has_single_dof_preview():
 						var shown := sketch_mode.preview_distance()
-						if shown < 0.5:
+						if sketch_mode.tool == SketchMode.Tool.SLOT:
+							# c-c starts at the slot's own last centre distance,
+							# never the cap radius still sitting in the blank.
+							shown = sketch_mode.own_numeric() if sketch_mode.has_method("own_numeric") else -1.0
+							if shown < 0.0 and sketch_chrome.has_method("clear_dim_blank"):
+								sketch_chrome.clear_dim_blank()
+						elif shown < 0.5:
 							if sketch_mode.tool == SketchMode.Tool.CIRCLE:
 								shown = sketch_mode.circle_radius
 							else:
@@ -3069,10 +3095,13 @@ func _sketch_input(event: InputEvent) -> void:
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_dragging:
 			var ray_up := _model_ray(mb.position)
 			var p2_up = sketch_mode.ray_to_sketch(ray_up[0], ray_up[1])
+			var travel_up := mb.position.distance_to(_sketch_press_pos)
 			if sketch_mode.tool == SketchMode.Tool.TRIM:
 				sketch_mode.end_trim_drag()
-			elif not _sketch_drag_moved and p2_up != null:
-				sketch_mode.end_drag()
+			elif travel_up < CLICK_SLOP and p2_up != null:
+				# Jitter on a thin line used to count as a drag, so the release
+				# never selected and the next Esc left the sketch.
+				sketch_mode.cancel_drag()
 				sketch_mode.click(p2_up)
 				_clear_select_click_measure()
 			else:
@@ -3170,7 +3199,9 @@ func _sketch_input(event: InputEvent) -> void:
 					else:
 						status.emit("Deleted %d" % n)
 			KEY_ESCAPE:
-				if drop_pending_draw_esc():
+				if not _consume_sketch_esc():
+					pass
+				elif drop_pending_draw_esc():
 					pass
 				elif measure_overlay != null and measure_overlay.has_anchor():
 					measure_overlay.clear_pair()
@@ -3195,6 +3226,15 @@ func _sketch_input(event: InputEvent) -> void:
 					else:
 						sketch_mode.cancel()
 		accept_event()
+
+
+## True the first time this frame handles sketch Esc.
+func _consume_sketch_esc() -> bool:
+	var frame := Engine.get_process_frames()
+	if _sketch_esc_frame == frame:
+		return false
+	_sketch_esc_frame = frame
+	return true
 
 
 ## Polygon, circle, and multi-click rectangles (Jaw / three-point / parallelogram):
@@ -3283,17 +3323,7 @@ func _update_sketch_measure(pos2: Vector2) -> void:
 		else:
 			measure_overlay.update_sketch_hover("", Vector3.ZERO)
 		return
-	var snap2 := sketch_mode.snap_point(pos2)
-	# Prefer nearest endpoint of the hovered entity for the ✕ mark.
-	var mark2 := snap2
-	var eps: Array = sketch_mode._snap_endpoints(eid)
-	if not eps.is_empty():
-		var bd := INF
-		for ep in eps:
-			var d2: float = pos2.distance_to(ep)
-			if d2 < bd:
-				bd = d2
-				mark2 = ep
+	var mark2: Vector2 = sketch_mode.closest_on_entity(eid, pos2)
 	measure_overlay.update_sketch_hover(eid, sketch_mode.to_model(mark2))
 
 
@@ -4048,6 +4078,10 @@ func _gui_key(event: InputEventKey) -> bool:
 				return false
 	match event.keycode:
 		KEY_ENTER, KEY_KP_ENTER:
+			# A Radius / other numeric field owns Enter: commit the number,
+			# do not apply the armed fillet. Viewport focus is what applies.
+			if SxUi.numeric_field_focused(get_viewport()):
+				return false
 			if ops_panel != null and ops_panel.try_commit_pending():
 				return true
 		KEY_ESCAPE:
@@ -4288,8 +4322,10 @@ func _select_all() -> bool:
 func _on_view_selection_changed(_body: String, _face: String) -> void:
 	_refresh_transform_hud()
 	_refresh_selection_strip()
+	# Empty-ground click and deselect both come through here. A hover ✕
+	# on the head rim and a leftover 0.00 bound label must not survive.
 	if measure_overlay != null:
-		measure_overlay.refresh_bounds()
+		measure_overlay.clear_pair()
 	queue_redraw()
 
 
