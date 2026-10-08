@@ -74,9 +74,9 @@ func run_film(ctx: FilmContext) -> void:
 			return
 		if ctx.view.selected_face != top:
 			await FilmUI.select_face(ctx, body, top)
-		var place_btn := FilmUI.find_button(ops, "Arm: click a point")
+		var place_btn := FilmUI.find_button(ops, "Place hole…")
 		if place_btn == null:
-			place_btn = FilmUI.find_button(ops, "near corner")
+			place_btn = FilmUI.find_button(ops, "Arm: click a point")
 		if not await FilmUI.click_control(ctx, place_btn,
 				FilmUICues.alert("Place hole…", "Arm — click near corner %d" % n)):
 			return

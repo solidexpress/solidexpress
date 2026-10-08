@@ -151,8 +151,8 @@ func test_perpendicular_then_parallel_trim() -> void:
 	await process_frame
 	await process_frame
 	status_text = str(ctx.main.status_label.text)
-	check(status_text.contains("Trim failed — draw the centreline across the jaw")
-			or _status_has("Trim failed — draw the centreline across the jaw"),
+	check(status_text.contains("draw a centreline across the jaw")
+			or _status_has("draw a centreline across the jaw"),
 			"status names the across-the-jaw mismatch (got '%s')" % status_text)
 	check(_count_profile_lines(sm) >= 4, "four rectangle edges remain after the failed trim")
 	check(sm.active, "failed trim leaves the session active")

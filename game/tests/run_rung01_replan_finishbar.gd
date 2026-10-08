@@ -199,12 +199,24 @@ func test_dim_typing(main) -> void:
 	await _click(edit)
 	await _click(edit)
 	await _type(edit, "23.22.5")
+	await process_frame
+	var shown := str(edit.text)
 	await _key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
-	check(rejected.size() == 1 and str(rejected[0]).contains("23.22.5"),
-			"23.22.5 emits dim_rejected (%s)" % str(rejected))
-	check(submitted.size() == 1, "23.22.5 does not emit dim_submitted")
-	check(is_equal_approx(chrome.dim_value(), 22.5), "rejected text leaves the previous value")
+	# #200 drops a second dot, so the blank never holds "23.22.5". A float commits.
+	# A field that still shows two dots must reject and keep 22.5.
+	if shown.is_valid_float():
+		check(rejected.is_empty(),
+				"second dot never entered (field '%s')" % shown)
+		check(submitted.size() == 2,
+				"truncated float commits (submitted %s)" % str(submitted))
+		check(is_equal_approx(chrome.dim_value(), float(shown)),
+				"dim value follows the field (got %.4f, field %s)" % [chrome.dim_value(), shown])
+	else:
+		check(rejected.size() == 1 and str(rejected[0]).contains("23.22.5"),
+				"23.22.5 emits dim_rejected (%s, field '%s')" % [str(rejected), shown])
+		check(submitted.size() == 1, "23.22.5 does not emit dim_submitted")
+		check(is_equal_approx(chrome.dim_value(), 22.5), "rejected text leaves the previous value")
 
 
 func test_across_flats_suffix(main) -> void:

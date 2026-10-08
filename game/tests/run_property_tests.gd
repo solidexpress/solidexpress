@@ -23,6 +23,9 @@ func _init() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
+	main.show_timeline = true
+	main._update_panel_visibility()
+	await process_frame
 
 	test_open_and_fields(main)
 	test_live_preview_and_ok(main)
@@ -36,6 +39,11 @@ func _init() -> void:
 
 func _panel(main) -> PropertyPanel:
 	return main.timeline.property_panel
+
+
+func _show_timeline(main) -> void:
+	main.show_timeline = true
+	main._update_panel_visibility()
 
 
 func _spin_for(panel: PropertyPanel, label: String) -> SpinBox:
@@ -52,6 +60,7 @@ func test_open_and_fields(main) -> void:
 	view.new_document()
 	var fid: String = view.doc.graph_add_primitive("box", 40, 30, 20, Vector3.ZERO)
 	view.graph_changed()
+	_show_timeline(main)
 	var panel := _panel(main)
 	main.timeline._select_feature(fid)
 	check(panel.visible, "panel opens for primitive")
@@ -67,6 +76,7 @@ func test_live_preview_and_ok(main) -> void:
 	view.new_document()
 	var fid: String = view.doc.graph_add_primitive("box", 40, 30, 20, Vector3.ZERO)
 	view.graph_changed()
+	_show_timeline(main)
 	var body := view.body_of_feature(fid)
 	var panel := _panel(main)
 	main.timeline._select_feature(fid)
@@ -85,6 +95,7 @@ func test_cancel_restores(main) -> void:
 	view.new_document()
 	var fid: String = view.doc.graph_add_primitive("box", 40, 30, 20, Vector3.ZERO)
 	view.graph_changed()
+	_show_timeline(main)
 	var body := view.body_of_feature(fid)
 	var panel := _panel(main)
 	main.timeline._select_feature(fid)
@@ -107,6 +118,7 @@ func test_expression_field(main) -> void:
 	view.doc.graph_set_params(fid, JSON.stringify(
 		{"kind": "box", "a": "=w", "b": 30, "c": 20, "origin": [0, 0, 0]}))
 	view.graph_changed()
+	_show_timeline(main)
 	var body := view.body_of_feature(fid)
 	check(absf(view.doc.body_volume(body) - 30000.0) < 1.0, "=w drives size (50x30x20)")
 	var panel := _panel(main)
@@ -129,6 +141,7 @@ func test_json_editor_still_works(main) -> void:
 	view.new_document()
 	var fid: String = view.doc.graph_add_primitive("box", 10, 10, 10, Vector3.ZERO)
 	view.graph_changed()
+	_show_timeline(main)
 	var body := view.body_of_feature(fid)
 	var tl = main.timeline
 	tl._select_feature(fid)

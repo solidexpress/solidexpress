@@ -154,6 +154,11 @@ func test_jaw_undo_redo_line_save() -> void:
 	await _click_uv(ctx, Vector2(-8.0, -8.0), "Line start")
 	await _click_uv(ctx, Vector2(-8.0, 8.0), "Line end")
 	await process_frame
+	# A focused numeric blank swallows Ctrl+Z (#200). Hand the keys back.
+	var focus_owner := vp.gui_get_focus_owner()
+	if focus_owner != null and focus_owner.has_method("release_focus"):
+		focus_owner.release_focus()
+		await process_frame
 	_status_log.clear()
 	await _push_key(vp, KEY_Z, true, true)
 	print("  observed redo after new Line: `%s`" % _status_text(ctx))

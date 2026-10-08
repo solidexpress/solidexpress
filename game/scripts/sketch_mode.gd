@@ -231,6 +231,11 @@ const GLYPH_SYMBOLS := {
 	"point_on_line": "◇",
 	"tangent": "⌒",
 }
+## Screen de-stack: a glyph stays within the cap of its anchor, grows a leader
+## once it has moved, and yields to dimension labels by this gap.
+const GLYPH_MAX_OFFSET_PX := 40.0
+const GLYPH_LEADER_MIN_PX := 12.0
+const GLYPH_LABEL_GAP_PX := 4.0
 ## Geometry within this distance of exact H/V or an existing endpoint gets an
 ## inferred constraint on creation (SolidWorks-style automatic relations).
 const INFER_TOL := 0.5
@@ -1129,6 +1134,12 @@ func _restore_undo_entry(entry: Dictionary) -> String:
 	_jaw_wall_ids.clear()
 	_drag.clear()
 	_trim_dragging = false
+	if sketch.entity_ids().is_empty():
+		last_dofs = -1
+		last_solve_status = ""
+		solve_updated.emit(-1, "", 0)
+	else:
+		run_solve()
 	_redraw()
 	_undo_head = json
 	if _undo_head == "" and sketch.has_method("snapshot"):
@@ -1711,6 +1722,8 @@ func preview_distance() -> float:
 		return 0.0
 	if _length_override >= 0.0:
 		return _length_override
+	if tool == Tool.POLYGON and tool_variant == "across_flats":
+		return _tool_points[0].distance_to(_polygon_pointer_tip(_tool_points[0], _hover))
 	return _tool_points[_tool_points.size() - 1].distance_to(_hover)
 
 
@@ -1792,6 +1805,8 @@ func has_length_override() -> bool:
 ## Hover / preview endpoint: mouse when free; last + dir×override when locked.
 func effective_hover() -> Vector2:
 	if _length_override < 0.0 or not has_single_dof_preview():
+		if tool == Tool.POLYGON and _tool_points.size() == 1:
+			return _polygon_pointer_tip(_tool_points[0], _hover)
 		return _hover
 	var last: Vector2 = _tool_points[_tool_points.size() - 1]
 	var d := _hover - last
@@ -1862,6 +1877,8 @@ func is_empty_new_sketch() -> bool:
 
 
 const JAW_HINT := "Jaw — click 1 centre, click 2 end of the long side, click 3 half the width"
+const JAW_PREVIEW_ASPECT := 0.4
+const JAW_PREVIEW_MIN_HALF_W_MM := 1.5
 const CIRCLE_CENTRE_SET := "Circle — centre set, click the rim or type a radius"
 const JAW_AFTER_CENTRE := "Jaw — centre set, click 2 end of the long side"
 const JAW_AFTER_LONG := "Jaw — long side set, click 3 half the width"
@@ -4386,8 +4403,8 @@ const CONTOUR_COLORS := [
 	Color(0.35, 0.85, 0.45),
 	Color(0.85, 0.40, 0.90),
 ]
-const CONTOUR_FILL_ALPHA := 0.28
-const CONTOUR_FOCUS_ALPHA := 0.50
+const CONTOUR_FILL_ALPHA := 0.20
+const CONTOUR_FOCUS_ALPHA := 0.70
 const CONTOUR_OFF_COLOR := Color(0.55, 0.55, 0.55, 0.8)
 const CONTOUR_LIFT_MM := 0.05
 
@@ -4488,8 +4505,10 @@ func _redraw_contour_highlight() -> void:
 				_contour_outline_count += 1
 		if focused:
 			_append_outline(lines, line_cols, _inset_loop(outer, 0.35), outline_col)
+			_append_outline(lines, line_cols, _inset_loop(outer, 0.70), outline_col)
 			for hole in holes:
 				_append_outline(lines, line_cols, _inset_loop(hole, 0.35), outline_col)
+				_append_outline(lines, line_cols, _inset_loop(hole, 0.70), outline_col)
 	if tris.is_empty() and lines.is_empty():
 		_contour_node.mesh = null
 		return
@@ -4692,6 +4711,8 @@ func click(pos2: Vector2) -> void:
 		else:
 			pos2 = last + d.normalized() * _length_override
 		_length_override = -1.0
+	elif tool == Tool.POLYGON and _tool_points.size() == 1 and not _point_from_length:
+		pos2 = _polygon_pointer_tip(_tool_points[0], pos2)
 	match tool:
 		Tool.SELECT:
 			var chit := constraint_hit(pos2)
@@ -7195,7 +7216,7 @@ func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
 		glyphs: Array[Rect2]) -> bool:
 	var rect := _projected_label_rect(dim, cam, k)
 	for gr in glyphs:
-		if rect.intersects(gr):
+		if rect.intersects(gr.grow(GLYPH_LABEL_GAP_PX)):
 			return true
 	for j in range(dimensions.size()):
 		if j == index:
@@ -7397,22 +7418,21 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 	var score := 0.0
 	for prev in placed:
 		var frac := _glyph_overlap_fraction(rect, prev)
+		# A small term so the search prefers the least overlap. Above 20% it
+		# outweighs sitting on the curve, which the 40 px cap cannot spread.
+		score += frac * 8.0
 		if frac > 0.20:
-			score += (frac - 0.20) * 100.0
+			score += 50.0 + (frac - 0.20) * 100.0
 	for lr in labels:
-		if rect.intersects(lr):
-			var inter := rect.intersection(lr)
+		var lg := lr.grow(GLYPH_LABEL_GAP_PX)
+		if rect.intersects(lg):
+			var inter := rect.intersection(lg)
 			score += 80.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0)
-	var sk: Variant = _sketch_at_screen(cam, centre)
-	if sk == null:
+	# No on-curve penalty. With the offset capped at 40 px that penalty put
+	# every badge on the same ring and they overlapped. Labels and other
+	# badges still push a glyph off its vertex.
+	if _sketch_at_screen(cam, centre) == null:
 		score += 40.0
-	else:
-		var near := _nearest_entity_at(sk)
-		if near != "":
-			var gap := _entity_distance(sketch.entity_info(near), sk)
-			# A click on the badge centre must not lose to the geometry-wins rule.
-			if gap < 0.5:
-				score += 30.0 + (0.5 - gap) * 10.0
 	return score
 
 
@@ -7422,20 +7442,53 @@ func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2
 	var step := maxf(size.x, size.y) + 2.0
 	var best := natural
 	var best_score := INF
-	for ring in range(16):
-		var count := 1 if ring == 0 else ring * 8
+	var max_ring := maxi(1, floori(GLYPH_MAX_OFFSET_PX / step))
+	var radii: Array[float] = [0.0]
+	var fine := 4.0
+	while fine <= GLYPH_MAX_OFFSET_PX + 0.01:
+		radii.append(minf(fine, GLYPH_MAX_OFFSET_PX))
+		fine += 4.0
+	for ring in range(1, max_ring + 1):
+		var capped := minf(step * float(ring), GLYPH_MAX_OFFSET_PX)
+		if not radii.has(capped):
+			radii.append(capped)
+	for radius in radii:
+		var count := 1 if radius < 1.0 else 24
 		for i in range(count):
 			var centre := natural
-			if ring > 0:
+			if radius >= 1.0:
 				var ang := TAU * float(i) / float(count)
-				centre = natural + Vector2(cos(ang), sin(ang)) * step * float(ring)
+				centre = natural + Vector2(cos(ang), sin(ang)) * radius
 			var rect := Rect2(centre - size * 0.5, size)
 			var score := _glyph_block_score(rect, centre, placed, labels, cam)
 			if score < best_score:
 				best_score = score
 				best = centre
-			if score <= 0.0:
-				return centre
+	var guard := 0
+	while guard < 12:
+		guard += 1
+		var rect := Rect2(best - size * 0.5, size)
+		var worst := 0.0
+		var worst_prev := Rect2()
+		for prev in placed:
+			var frac := _glyph_overlap_fraction(rect, prev)
+			if frac > worst:
+				worst = frac
+				worst_prev = prev
+		if worst <= 0.12:
+			break
+		var away := best - worst_prev.get_center()
+		if away.length_squared() < 1.0:
+			away = Vector2(1.0, 0.0)
+		var nudged := best + away.normalized() * 3.0
+		if nudged.distance_to(natural) > GLYPH_MAX_OFFSET_PX:
+			nudged = natural + (nudged - natural).normalized() * GLYPH_MAX_OFFSET_PX
+		var nscore := _glyph_block_score(Rect2(nudged - size * 0.5, size), nudged, placed, labels, cam)
+		if nscore <= best_score + 0.01:
+			best = nudged
+			best_score = nscore
+		else:
+			break
 	return best
 
 
@@ -7473,7 +7526,13 @@ func _ref_pos(ref: Dictionary) -> Variant:
 			if role == "end":
 				return info["end"]
 			return (info["start"] + info["end"]) * 0.5
-		"circle", "arc":
+		"arc":
+			if role == "start" and info.has("start"):
+				return info["start"]
+			if role == "end" and info.has("end"):
+				return info["end"]
+			return info["center"]
+		"circle":
 			return info["center"]
 		"point":
 			return info["position"]
@@ -7486,6 +7545,36 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 	var refs: Array = cinfo.get("refs", [])
 	if refs.is_empty():
 		return null
+	match str(cinfo.get("type", "")):
+		"tangent":
+			var line_info: Dictionary = {}
+			var circ_info: Dictionary = {}
+			for ref in refs:
+				if typeof(ref) != TYPE_DICTIONARY:
+					continue
+				var info: Dictionary = sketch.entity_info(str(ref.get("entity", "")))
+				var kind := str(info.get("type", ""))
+				if kind == "line":
+					line_info = info
+				elif kind == "circle" or kind == "arc":
+					circ_info = info
+			if not line_info.is_empty() and not circ_info.is_empty():
+				var contact: Variant = _tangent_contact(line_info, circ_info)
+				if contact != null:
+					return contact
+		"point_on_line":
+			return _ref_pos(refs[0])
+		"parallel", "perpendicular", "equal":
+			var p: Variant = _ref_pos(refs[0])
+			if p == null:
+				return null
+			var nudged: Vector2 = p
+			var einfo: Dictionary = sketch.entity_info(str(refs[0].get("entity", "")))
+			if str(einfo.get("type", "")) == "line":
+				var d: Vector2 = einfo["end"] - einfo["start"]
+				if d.length_squared() > 1e-12:
+					nudged += Vector2(-d.y, d.x).normalized() * 2.5
+			return nudged
 	var sum := Vector2.ZERO
 	var n := 0
 	for ref in refs:
@@ -7504,6 +7593,16 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 			if d.length_squared() > 1e-12:
 				anchor += Vector2(-d.y, d.x).normalized() * 2.5
 	return anchor
+
+
+func _tangent_contact(line: Dictionary, circ: Dictionary) -> Variant:
+	var a: Vector2 = line["start"]
+	var ab: Vector2 = (line["end"] as Vector2) - a
+	if ab.length_squared() < 1e-12:
+		return null
+	var c: Vector2 = circ["center"]
+	var t := clampf((c - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	return a + ab * t
 
 
 func _rebuild_constraint_glyphs() -> void:
@@ -7532,12 +7631,15 @@ func _rebuild_constraint_glyphs() -> void:
 		if anchor == null:
 			continue
 		var pos := anchor as Vector2
+		var anchor_sketch := pos
+		var offset_px := 0.0
 		if cam != null:
 			# De-stack in pixels. A 2.5 mm step is ~8 px at a 150 px head,
 			# smaller than the badge, so the pile survives a millimetre nudge.
 			var size := _glyph_symbol_size_px(type, k)
 			var natural := cam.unproject_position(to_global(to_model(pos)))
 			var centre := _separate_glyph_screen(natural, size, placed, label_rects, cam)
+			offset_px = natural.distance_to(centre)
 			placed.append(Rect2(centre - size * 0.5, size))
 			var back: Variant = _sketch_at_screen(cam, centre)
 			if back != null:
@@ -7563,7 +7665,57 @@ func _rebuild_constraint_glyphs() -> void:
 		label.position = _to3(pos)
 		label.set_meta("cid", str(cid))
 		_constraint_glyphs.add_child(label)
-		_glyph_anchors.append({"cid": str(cid), "pos": pos, "type": type})
+		_glyph_anchors.append({
+			"cid": str(cid),
+			"pos": pos,
+			"type": type,
+			"anchor": anchor_sketch,
+			"offset_px": offset_px,
+		})
+	var lead := false
+	for a in _glyph_anchors:
+		if float(a.get("offset_px", 0.0)) >= GLYPH_LEADER_MIN_PX:
+			lead = true
+			break
+	if lead:
+		var leaders := MeshInstance3D.new()
+		leaders.name = "GlyphLeaders"
+		var im := ImmediateMesh.new()
+		im.surface_begin(Mesh.PRIMITIVE_LINES)
+		var col := COLOR_GLYPH
+		col.a = 0.6
+		for a in _glyph_anchors:
+			if float(a.get("offset_px", 0.0)) < GLYPH_LEADER_MIN_PX:
+				continue
+			im.surface_set_color(col)
+			im.surface_add_vertex(_to3(a["anchor"]))
+			im.surface_add_vertex(_to3(a["pos"]))
+		im.surface_end()
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.vertex_color_use_as_albedo = true
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color.WHITE
+		leaders.mesh = im
+		leaders.material_override = mat
+		_constraint_glyphs.add_child(leaders)
+
+
+func glyph_debug() -> Array:
+	var out: Array = []
+	for a in _glyph_anchors:
+		var off := float(a.get("offset_px", 0.0))
+		var anchor: Vector2 = a.get("anchor", Vector2.ZERO)
+		var pos: Vector2 = a.get("pos", Vector2.ZERO)
+		out.append({
+			"cid": str(a.get("cid", "")),
+			"type": str(a.get("type", "")),
+			"offset_px": off,
+			"leader": off >= GLYPH_LEADER_MIN_PX,
+			"anchor": anchor,
+			"pos": pos,
+		})
+	return out
 
 
 ## Constraint whose glyph is within GLYPH_PICK_RADIUS of pos2, or "".
@@ -7792,24 +7944,27 @@ func _append_preview_seg(im: ImmediateMesh, a: Vector2, b: Vector2) -> void:
 	im.surface_add_vertex(_to3(b))
 
 
-## Jaw (center three-point rect): after click 1 a long-side line; after click 2
-## the rotated rectangle whose width follows the pointer.
 func _append_jaw_preview(im: ImmediateMesh, tip: Vector2) -> void:
 	if _tool_points.is_empty():
 		return
 	var ctr: Vector2 = _tool_points[0]
+	var along: Vector2
+	var half_w: float
 	if _tool_points.size() == 1:
-		_append_preview_seg(im, ctr, tip)
-		return
-	var along: Vector2 = _tool_points[1] - ctr
-	if along.length() <= 1e-6:
-		_append_preview_seg(im, ctr, tip)
-		return
+		along = tip - ctr
+		if along.length() <= 1e-6:
+			return
+		half_w = along.length() * JAW_PREVIEW_ASPECT
+	else:
+		along = _tool_points[1] - ctr
+		if along.length() <= 1e-6:
+			_append_preview_seg(im, ctr, tip)
+			return
+		var n0 := Vector2(-along.y, along.x).normalized()
+		half_w = maxf(absf((tip - ctr).dot(n0)), JAW_PREVIEW_MIN_HALF_W_MM)
 	var dir := along.normalized()
-	var half_len := along.length()
 	var nrm := Vector2(-dir.y, dir.x)
-	var half_w := absf((tip - ctr).dot(nrm))
-	var u := dir * half_len
+	var u := dir * along.length()
 	var v := nrm * half_w
 	var ra := ctr - u - v
 	var rb := ctr + u - v
@@ -7842,6 +7997,15 @@ func _append_slot_preview(im: ImmediateMesh, a: Vector2, b: Vector2, r: float) -
 		"start_angle": out_a.angle() - PI * 0.5,
 		"end_angle": out_a.angle() + PI * 0.5,
 	})
+
+
+## Pointer -> the across-flats "tip" `_polygon_ring_vertices` expects: its
+## distance from the centre is the AF, so the circumscribed circle passes
+## through the pointer. A typed length bypasses this (effective_hover()).
+func _polygon_pointer_tip(c: Vector2, p: Vector2) -> Vector2:
+	if tool_variant != "across_flats":
+		return p
+	return c + (p - c) * sqrt(3.0)
 
 
 ## Across-flats is always a flats-horizontal hex (start angle 0). The drag

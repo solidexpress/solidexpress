@@ -345,13 +345,16 @@ func test_esc_closes_file_menu_and_selection() -> void:
 	await _push_key(vp, KEY_ESCAPE, 0)
 	await process_frame
 	check(popup == null or not popup.visible, "one Esc hides the File menu")
-	check(main.view.selected_body == "", "one Esc clears selected_body")
+	check(main.view.selected_body != "", "Esc that closes the menu keeps the selected body")
+	await _push_key(main.get_viewport(), KEY_ESCAPE, 0)
+	await process_frame
+	check(main.view.selected_body == "", "second Esc clears selected_body")
 	var ix: ViewportInteraction = main.interaction
 	check(ix.triball == null or (not ix.triball.active and not ix.triball.visible),
 			"TriBall is inactive after menu Esc")
 	await _push_key(main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
-	check(main.view.selected_body == "", "second Esc is a no-op on selection")
+	check(main.view.selected_body == "", "third Esc is a no-op on selection")
 	main.queue_free()
 	await process_frame
 

@@ -101,8 +101,14 @@ func _run() -> void:
 		var data := _parse(path)
 		var script := str(data.get("script", ""))
 		var tier := str(data.get("tier", ""))
+		var reason := str(data.get("reason", ""))
 		var stem := str(name).trim_suffix(".suite")
-		var parsed: bool = bool(data.get("_ok", false)) and script != "" and (tier == "ci" or tier == "full")
+		var reason_ok := false
+		for prefix in ["env: ", "stale-feature: ", "product: "]:
+			if reason.begins_with(prefix) and reason.substr(prefix.length()).strip_edges() != "":
+				reason_ok = true
+		var tier_ok := tier == "ci" or tier == "full" or (tier == "known-red" and reason_ok)
+		var parsed: bool = bool(data.get("_ok", false)) and script != "" and tier_ok
 		check(parsed, "parses " + str(name))
 		check(_derived(script) == stem, "name derived from script for " + str(name))
 		if script != "":

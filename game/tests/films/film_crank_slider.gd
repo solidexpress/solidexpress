@@ -18,7 +18,7 @@ func run_film(ctx: FilmContext) -> void:
 
 	await ctx.beat("Instance the slider, then joint it to the frame", 0.5)
 	ctx.view.select_entity(slider_body, "")
-	await FilmUI.click_button(ctx, "Place instance of selection")
+	await FilmUI.place_instance(ctx)
 	var insts: Array = doc.instance_list()
 	if insts.is_empty() or frame_body == "":
 		await ctx.beat("Slider did not instance", 0.6)

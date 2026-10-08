@@ -19,7 +19,7 @@ func run_film(ctx: FilmContext) -> void:
 
 	await ctx.beat("Instance the bolt and pick Fastened", 0.45)
 	ctx.view.select_entity(bodies[1], "")
-	await FilmUI.click_button(ctx, "Place instance of selection")
+	await FilmUI.place_instance(ctx)
 	var type_btn := ctx.main.find_child("MateType", true, false) as OptionButton
 	if type_btn != null and type_btn.is_visible_in_tree():
 		type_btn.select(0)  # fastened is first

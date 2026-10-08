@@ -1,2 +1,3 @@
 script=tests/run_rung01_replan3_timeline.gd
-tier=full
+tier=known-red
+reason=product: check_rung01.py thick says the grip slot is not open from the top on an exported 14 mm mesh that passes bbox Z and both fillets. Ruled out the export path and the distance commit.

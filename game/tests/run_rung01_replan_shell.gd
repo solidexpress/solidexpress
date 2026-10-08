@@ -168,6 +168,18 @@ func test_export_dialog() -> void:
 	if FileAccess.file_exists(dest):
 		DirAccess.remove_absolute(dest)
 	dlg.current_path = dest
+	# OK reads the filename LineEdit, not current_path alone.
+	var name_edit: LineEdit = null
+	if dlg.has_method("get_line_edit"):
+		var le: Variant = dlg.get_line_edit()
+		if le is LineEdit:
+			name_edit = le
+	if name_edit != null:
+		name_edit.text = dest.get_file()
+	# OK snapshots the filename on button_down, while the dialog is visible.
+	var ok_pre := dlg.get_ok_button()
+	if ok_pre != null:
+		ok_pre.button_down.emit()
 	check(_dirs_match(str(dlg.current_path), dest) or str(dlg.current_file) == dest.get_file(),
 			"dialog current_path points at the globalized user file (got %s)" % dlg.current_path)
 	confirmed = await _confirm_dialog(ctx, dlg)

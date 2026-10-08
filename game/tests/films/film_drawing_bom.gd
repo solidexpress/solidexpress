@@ -11,8 +11,8 @@ func run_film(ctx: FilmContext) -> void:
 	var bodies: PackedStringArray = doc.body_ids()
 	if bodies.size() > 0:
 		ctx.view.select_entity(bodies[0], "")
-		await FilmUI.click_button(ctx, "Place instance of selection")
-		await FilmUI.click_button(ctx, "Place instance of selection")
+		await FilmUI.place_instance(ctx)
+		await FilmUI.place_instance(ctx)
 	doc.ensure_drawing_sheet()
 	var rows: Array = doc.bom_rows()
 	var qty := 0

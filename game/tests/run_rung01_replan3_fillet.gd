@@ -262,6 +262,12 @@ func _commit_strip_radius(ctx: FilmContext) -> void:
 	await process_frame
 	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
+	if edit.has_focus():
+		edit.release_focus()
+	await process_frame
+	# #205: Enter in the strip commits the radius only. Viewport Enter applies.
+	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
+	await process_frame
 	await process_frame
 
 

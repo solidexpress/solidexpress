@@ -143,9 +143,27 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 			await process_frame
 	var coinc_before := _coincident_ids(sm)
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Coincident")
-	check(chip != null and chip.is_visible_in_tree(), "Coincident chip is visible")
+	var more: MenuButton = null
+	var more_id := -1
+	if chip == null:
+		var more_btn := FilmUI.find_button(ctx.main.sketch_chrome, "… More")
+		if more_btn is MenuButton:
+			more = more_btn as MenuButton
+			var popup := more.get_popup()
+			if popup != null:
+				for i in popup.item_count:
+					if str(popup.get_item_text(i)) == "Coincident":
+						more_id = i
+						break
+	check((chip != null and chip.is_visible_in_tree()) or more_id >= 0,
+			"Coincident chip is visible")
 	if chip != null:
 		await FilmUI.click_control(ctx, chip, {"keys": "Click", "desc": "Coincident"})
+		await process_frame
+		await process_frame
+	elif more != null and more_id >= 0:
+		await FilmUI.activate_menu_id(ctx, more, more_id,
+				{"keys": "Click", "desc": "Coincident"})
 		await process_frame
 		await process_frame
 	check(sm.last_solve_status != "failed",

@@ -10,7 +10,7 @@ func run_film(ctx: FilmContext) -> void:
 	var doc: SxDocument = ctx.view.doc
 	var bolt: String = doc.add_cylinder(4.0, 16.0, Vector3(40, 0, 0))
 	ctx.view.select_entity(bolt, "")
-	await FilmUI.click_button(ctx, "Place instance of selection")
+	await FilmUI.place_instance(ctx)
 	if ctx.main.voice_executor != null:
 		ctx.main.voice_executor.handle_text("make these flush")
 	await ctx.beat("Intent → fastened offset 0", 0.8)

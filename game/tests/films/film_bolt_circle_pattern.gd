@@ -14,7 +14,7 @@ func run_film(ctx: FilmContext) -> void:
 	ctx.view.refresh()
 	await FilmUI.wait_frames(ctx.tree, 2)
 	ctx.view.select_entity(bolt, "")
-	await FilmUI.click_button(ctx, "Place instance of selection")
+	await FilmUI.place_instance(ctx)
 
 	var insts: Array = doc.instance_list()
 	if not insts.is_empty():
