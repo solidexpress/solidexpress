@@ -39,9 +39,9 @@ func _run() -> void:
 	await _tap(main, KEY_6)
 	check(absf(wrapf(cam.yaw - deg_to_rad(-90.0), -PI, PI)) < 0.05, "key 6 is Left yaw")
 	await _tap(main, KEY_8)
-	check(absf(cam.pitch - deg_to_rad(-89.0)) < 0.02, "key 8 is Bottom pitch")
+	check(absf(cam.pitch - deg_to_rad(-90.0)) < 0.01, "key 8 is Bottom pitch")
 	await _tap(main, KEY_3)
-	check(absf(cam.pitch - deg_to_rad(89.0)) < 0.02, "key 3 still Top")
+	check(absf(cam.pitch - deg_to_rad(90.0)) < 0.01, "key 3 still Top")
 	var before_pitch := cam.pitch
 	var before_yaw := cam.yaw
 	cam._orbit_by(0.0, 40.0)

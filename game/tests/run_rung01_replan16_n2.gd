@@ -8,7 +8,7 @@ extends SceneTree
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-const TOP_PITCH := deg_to_rad(89.0)
+const TOP_PITCH := deg_to_rad(90.0)
 const APPLIED := "Fillet 2 edges 10.00 applied — View ▸ Timeline to edit parameters"
 
 var failures := 0
@@ -108,7 +108,7 @@ func _run() -> void:
 	await process_frame
 	check(_label(main).contains("Top view") or _status_has("Top view"),
 			"key 3 after strip Enter is Top view (label `%s`)" % _label(main))
-	check(absf(main.camera.pitch - TOP_PITCH) < 0.05, "camera is Top after key 3")
+	check(absf(main.camera.pitch - TOP_PITCH) < 0.01, "camera is Top after key 3")
 	check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES, "Fillet still armed after key 3")
 	check(view.selected_edges.size() == 2, "2 edges still pending after key 3")
 

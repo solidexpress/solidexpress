@@ -61,32 +61,19 @@ func click_zone(zone: String) -> void:
 		return
 	if camera.sketch_orientation_locked:
 		return
-	var angles: Vector2 = angles_for(zone)
-	camera.apply_standard_view(angles.x, angles.y, not snap)
+	camera.apply_standard_view_id(zone, not snap)
 
 
 func has_zone(zone: String) -> bool:
 	return zone in ["front", "back", "right", "left", "top", "bottom", "iso"]
 
 
-## Standard view angles matching OrbitCamera keys 1/2/3/7 (and opposites).
+## Standard view angles — same table as the number keys and the View menu.
 func angles_for(zone: String) -> Vector2:
-	match zone:
-		"front":
-			return Vector2(deg_to_rad(0.0), deg_to_rad(0.0))
-		"back":
-			return Vector2(PI, deg_to_rad(0.0))
-		"right":
-			return Vector2(deg_to_rad(90.0), deg_to_rad(0.0))
-		"left":
-			return Vector2(deg_to_rad(-90.0), deg_to_rad(0.0))
-		"top":
-			return Vector2(deg_to_rad(0.0), deg_to_rad(89.0))
-		"bottom":
-			return Vector2(deg_to_rad(0.0), deg_to_rad(-89.0))
-		"iso":
-			return Vector2(deg_to_rad(-35.0), deg_to_rad(40.0))
-	return Vector2.ZERO
+	var spec := OrbitCamera.standard_view_by_id(zone)
+	if spec.is_empty():
+		return Vector2.ZERO
+	return Vector2(deg_to_rad(float(spec["yaw"])), deg_to_rad(float(spec["pitch"])))
 
 
 func _gui_input(event: InputEvent) -> void:

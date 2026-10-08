@@ -65,8 +65,8 @@ func test_click_zone_top(cam: OrbitCamera, widget: ViewWidget) -> void:
 	cam.pitch = deg_to_rad(40.0)
 	cam._update_transform()
 	widget.click_zone("top")
-	# KEY_3 / standard top uses pitch ≈ +89° (+1.55 rad).
-	check(absf(cam.pitch - deg_to_rad(89.0)) < 0.02, "top pitch near +1.55 (KEY_3)")
+	# KEY_3 / standard top is exactly +90° (straight down model +Z).
+	check(absf(cam.pitch - deg_to_rad(90.0)) < 0.01, "top pitch is +90° (KEY_3)")
 	check(absf(wrapf(cam.yaw, -PI, PI)) < 0.02, "top yaw near 0")
 
 

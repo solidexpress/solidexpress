@@ -1,0 +1,3 @@
+script=tests/run_rung01_preview_rebuild.gd
+tier=ci
+timeout=180

@@ -8,7 +8,7 @@ extends SceneTree
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-const TOP_PITCH := deg_to_rad(89.0)
+const TOP_PITCH := deg_to_rad(90.0)
 const FILLET_IDLE := "Fillet r=1.50 — edit Radius, click edges, Enter"
 
 var failures := 0
