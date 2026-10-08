@@ -24,10 +24,47 @@ var _refreshing := false
 var _renaming_fid := ""
 var property_panel: PropertyPanel
 var rollback_bar: Control
+## Milliseconds of the last left press on this panel (main's clock).
+var last_left_press_msec := -1
 
 
 func selected_feature_id() -> String:
 	return _selected_fid
+
+
+## Left presses on a row (and the panel chrome) stamp the relayout guard
+## before Button.pressed selects the feature and asks main to move us.
+func _input(event: InputEvent) -> void:
+	if not visible or not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var pos := mb.global_position
+	if pos == Vector2.ZERO:
+		pos = mb.position
+	if not get_global_rect().has_point(pos):
+		return
+	var host := _relayout_host()
+	if mb.pressed:
+		var at := Time.get_ticks_msec()
+		if host != null:
+			at = host._now_msec()
+		last_left_press_msec = at
+		if host != null:
+			host.pin_timeline_top(get_global_rect().position.y)
+			host.note_relayout_press(at)
+	elif host != null:
+		host.note_relayout_release()
+
+
+func _relayout_host() -> Node:
+	var n: Node = self
+	while n != null:
+		if n.has_method("note_relayout_press") and n.has_method("_now_msec"):
+			return n
+		n = n.get_parent()
+	return null
 
 ## Feature type -> UIIcons glyph. Primitives resolve their kind from params.
 const TYPE_ICONS := {
@@ -52,7 +89,9 @@ func _ready() -> void:
 	custom_minimum_size = Vector2(260, 0)
 	clip_contents = true
 	grow_horizontal = Control.GROW_DIRECTION_END
-	grow_vertical = Control.GROW_DIRECTION_BEGIN
+	# Grow downward. BEGIN slides the top up when the Distance editor opens,
+	# which pulls the row out from under a double-click.
+	grow_vertical = Control.GROW_DIRECTION_END
 	var outer := VBoxContainer.new()
 	outer.name = "TimelineOuter"
 	outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -164,6 +203,15 @@ func _clamp_height() -> void:
 	var max_bottom := vp_size.y - ChromeDock.bottom_inset
 	if top + h > max_bottom:
 		h = maxf(120.0, max_bottom - top)
+	var host := _relayout_host()
+	if host != null and host.has_method("_relayout_guarded") and host._relayout_guarded():
+		# The press that opened Distance must not move the row. Height may
+		# change; the top stays where the click landed.
+		top = get_global_rect().position.y
+		if host.has_method("pinned_timeline_top"):
+			var pinned: float = host.pinned_timeline_top()
+			if pinned >= 0.0:
+				top = pinned
 	custom_minimum_size = Vector2(PANEL_WIDTH, h)
 	size = Vector2(PANEL_WIDTH, h)
 	position = Vector2(left, top)

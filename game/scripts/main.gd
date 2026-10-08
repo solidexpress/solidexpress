@@ -84,6 +84,14 @@ var _status_hold_until := 0
 var _current_hint := ""
 ## Tests set this to drive the hold without sleeping. -1 uses the real clock.
 var _clock_override_msec := -1
+## N23 may not move the Timeline or the Modify column while a left press is
+## down on either, or for this long after the last such press. The pending
+## dock is applied once the guard ends.
+const TIMELINE_RELAYOUT_GUARD_MSEC := 600
+var _relayout_press_msec := -1
+var _relayout_button_down := false
+var _relayout_pending := false
+var _pinned_timeline_y := -1.0
 ## [status-trace] lines, kept so a headless test can read the hold gap.
 var status_trace_log: PackedStringArray = []
 ## True while File menu / discard dialog is in the pointer gesture that closes
@@ -1975,6 +1983,9 @@ func _update_panel_visibility() -> void:
 func _apply_chrome_docks() -> void:
 	if timeline == null or variables_panel == null:
 		return
+	if _relayout_guarded():
+		_relayout_pending = true
+		return
 	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
 	if left_stack != null:
 		var stack_w := maxf(left_stack.size.x, left_stack.get_combined_minimum_size().x)
@@ -2430,6 +2441,9 @@ func _fit_sketch_rail(stack_top: float) -> void:
 func _reflow_left_stack() -> void:
 	if left_stack == null or not is_instance_valid(left_stack):
 		return
+	if _relayout_guarded():
+		_relayout_pending = true
+		return
 	var top := _left_stack_top()
 	left_stack.position = Vector2(_CHROME_PAD, top)
 	_fit_sketch_rail(top)
@@ -2631,6 +2645,78 @@ func _now_msec() -> int:
 
 func _process(_delta: float) -> void:
 	_hint_tick()
+	_pin_guarded_timeline()
+	_flush_relayout_guard()
+
+
+## A left press on the Timeline or the Modify column. `down` stays true until
+## the matching release so a held button cannot relayout under the pointer.
+func note_relayout_press(at_msec: int) -> void:
+	_relayout_press_msec = at_msec
+	_relayout_button_down = true
+
+
+func pin_timeline_top(y: float) -> void:
+	_pinned_timeline_y = y
+
+
+func pinned_timeline_top() -> float:
+	return _pinned_timeline_y
+
+
+func _pin_guarded_timeline() -> void:
+	if not _relayout_guarded():
+		_pinned_timeline_y = -1.0
+		return
+	if timeline == null or _pinned_timeline_y < 0.0 or not timeline.visible:
+		return
+	var gy: float = timeline.get_global_rect().position.y
+	if absf(gy - _pinned_timeline_y) <= 0.5:
+		return
+	var dy := _pinned_timeline_y - gy
+	timeline.position.y += dy
+	timeline.offset_top += dy
+	timeline.offset_bottom += dy
+
+
+func note_relayout_release() -> void:
+	_relayout_button_down = false
+	_flush_relayout_guard()
+
+
+func _relayout_guarded() -> bool:
+	if _relayout_button_down:
+		return true
+	if _relayout_press_msec < 0:
+		return false
+	return _now_msec() < _relayout_press_msec + TIMELINE_RELAYOUT_GUARD_MSEC
+
+
+func _flush_relayout_guard() -> void:
+	if _relayout_guarded() or not _relayout_pending:
+		return
+	_relayout_pending = false
+	_apply_chrome_docks()
+	_update_left_rail()
+
+
+func _input(event: InputEvent) -> void:
+	if ops_panel == null or not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if not ops_panel.visible or not ops_panel.is_visible_in_tree():
+		return
+	var pos := mb.global_position
+	if pos == Vector2.ZERO:
+		pos = mb.position
+	if not ops_panel.get_global_rect().has_point(pos):
+		return
+	if mb.pressed:
+		note_relayout_press(_now_msec())
+	else:
+		note_relayout_release()
 
 
 func _hint_tick() -> void:

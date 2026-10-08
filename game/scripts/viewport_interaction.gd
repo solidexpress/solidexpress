@@ -35,6 +35,9 @@ var _drag_accum := Vector3.ZERO         # applied translation so far (move)
 var _drag_pp_applied := 0.0
 var _press_pos := Vector2.ZERO
 var _pressed := false
+## Left press landed on the Timeline or the Modify column. The matching
+## release must not become a model click if the panel moves before mouse-up.
+var _suppress_dock_release := false
 var _last_drag_pos := Vector2.ZERO
 ## Move drag: pre-drag selection center + body node transform for live preview.
 var _move_start_center := Vector3.ZERO
@@ -2986,6 +2989,11 @@ func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
 	# press is a canvas click — hide_variants, LINE rubber-band, no set_tool.
 	if event_pos != Vector2.INF and _over_chrome(event_pos):
 		return false
+	# Timeline and the Modify column sit above the plate. A stale hover (the
+	# Interaction itself) used to treat a press on a row or the Radius field
+	# as a canvas click, so the second press of a double-click selected a face.
+	if event_pos != Vector2.INF and _point_on_dock_panel(event_pos):
+		return false
 	var vp := get_viewport()
 	if vp == null:
 		return true
@@ -3270,6 +3278,27 @@ func _front_blocker_name(node: Node, pos: Vector2, max_area: float) -> String:
 	if ctrl == null or not _control_blocks_at(ctrl, pos, max_area):
 		return ""
 	return _control_block_name(ctrl)
+
+
+## Timeline or OpsPanel (the Modify column) contains `pos`.
+func _point_on_dock_panel(pos: Vector2) -> bool:
+	return _dock_panel_at(pos) != null
+
+
+func _dock_panel_at(pos: Vector2) -> Control:
+	var host := get_parent()
+	if host == null:
+		return null
+	for panel_name in ["Timeline", "OpsPanel"]:
+		var panel := host.find_child(panel_name, true, false) as Control
+		if panel == null or not panel.visible or not panel.is_visible_in_tree():
+			continue
+		var rect := panel.get_global_rect()
+		if rect.size.x < 2.0 or rect.size.y < 2.0:
+			continue
+		if rect.has_point(pos):
+			return panel
+	return null
 
 
 func _is_left_press(event: InputEvent) -> bool:
@@ -6098,11 +6127,22 @@ func _input(event: InputEvent) -> void:
 	var event_pos := Vector2.INF
 	if event is InputEventMouse:
 		event_pos = (event as InputEventMouse).position
+	# A press that started on the Timeline (or the Modify column) keeps its
+	# release. Otherwise the mouse-up, now over empty plate, is a model click
+	# and the row button never sees it.
+	if event is InputEventMouseButton:
+		var dock_up := event as InputEventMouseButton
+		if not dock_up.pressed and dock_up.button_index == MOUSE_BUTTON_LEFT \
+				and _suppress_dock_release:
+			_suppress_dock_release = false
+			return
 	if _is_left_press(event) and not _pressed:
 		var who2 := _over_chrome_who(event_pos)
 		if who2 == "":
 			who2 = _press_blocker_name(event_pos)
 		if who2 != "" or not _viewport_owns_pointer(event_pos):
+			if _point_on_dock_panel(event_pos):
+				_suppress_dock_release = true
 			_note_press_drop(who2, event_pos)
 			return
 	if _pressed or _viewport_owns_pointer(event_pos):
