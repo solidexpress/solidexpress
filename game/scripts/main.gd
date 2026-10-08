@@ -1598,9 +1598,9 @@ func _on_sketch_session_started(msg: String) -> void:
 	_sync_world_background()
 	interaction.refresh_selection_chrome()
 	interaction.refresh_sketch_intersections()
-	if dof_label != null:
-		dof_label.text = "— DOF"
-		dof_label.remove_theme_color_override("font_color")
+	# begin / begin_edit already published the chip via refresh_dof_state.
+	# Leave that text alone: a reopened jaw keeps its number, an empty sketch
+	# stays "—". A placeholder here used to wipe the count on every reopen.
 	view.refresh_sketch_pads(sketch_mode.editing_fid if sketch_mode.editing_fid != "" else "_active")
 	_reset_sketch_rail_scroll()
 	if sketch_mode != null:
@@ -2815,12 +2815,7 @@ func edit_undo() -> void:
 	if view == null:
 		return
 	view.undo()
-	# Reload the live sketch from the feature that still exists, or drop the
-	# session when undo removed it. Do not push the in-memory sketch (that
-	# would re-emit Failed to update sketch after an open-loop edit).
-	if sketch_mode != null and sketch_mode.active and str(sketch_mode.editing_fid) != "":
-		if not sketch_mode.begin_edit(sketch_mode.editing_fid):
-			sketch_mode.cancel()
+	_sync_dof_after_part_history()
 	_on_status("Undo")
 	if interaction != null:
 		interaction._refresh_transform_hud()
@@ -2835,10 +2830,34 @@ func edit_redo() -> void:
 	if view == null:
 		return
 	view.redo()
+	_sync_dof_after_part_history()
 	_on_status("Redo")
 	if interaction != null:
 		interaction._refresh_transform_hud()
 		interaction._refresh_selection_strip()
+
+
+## Part-level undo/redo can delete and restore a sketch feature. An editor that
+## is already open reloads that profile and recomputes the DOF chip. A closed
+## editor recomputes when the sketch is opened again (pencil, Timeline
+## double-click, or rail Sketch on the pad) via refresh_dof_state.
+func _sync_dof_after_part_history() -> void:
+	if sketch_mode == null or not sketch_mode.active:
+		return
+	var fid := str(sketch_mode.editing_fid)
+	if fid != "":
+		var loaded: Variant = null
+		if view != null and view.doc != null and view.doc.has_method("graph_get_sketch"):
+			loaded = view.doc.graph_get_sketch(fid)
+		if loaded == null:
+			sketch_mode.cancel()
+			return
+		# Reload without a second "Editing sketch" line. Do not push the
+		# in-memory sketch back (that re-emits Failed to update sketch).
+		if not sketch_mode.begin_edit(fid, false):
+			sketch_mode.cancel()
+			return
+	sketch_mode.refresh_dof_state()
 
 
 func edit_cut() -> void:
@@ -4195,9 +4214,11 @@ func _unhandled_input(event: InputEvent) -> void:
 						# Ctrl+Shift+Z is Redo in part mode. Ctrl+Z stays Undo.
 						if event.shift_pressed:
 							view.redo()
+							_sync_dof_after_part_history()
 							_on_status("Redo")
 						elif view.doc.can_undo():
 							view.undo()
+							_sync_dof_after_part_history()
 							_on_status("Undo")
 						get_viewport().set_input_as_handled()
 				KEY_Y:
@@ -4209,6 +4230,7 @@ func _unhandled_input(event: InputEvent) -> void:
 						get_viewport().set_input_as_handled()
 					elif view != null:
 						view.redo()
+						_sync_dof_after_part_history()
 						_on_status("Redo")
 						get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_F1:

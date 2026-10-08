@@ -643,6 +643,9 @@ func _activate_session() -> void:
 	var adopted := _try_adopt_parked_undo()
 	_undo_restoring = true
 	_enter_camera()
+	# Publish the chip before the first redraw. Restoring stays true so this
+	# solve does not pop relation chips; the label still updates.
+	refresh_dof_state()
 	_redraw()
 	if not adopted:
 		_reset_undo_history()
@@ -5400,6 +5403,21 @@ func _point_line_distance(p: Vector2, a: Vector2, b: Vector2) -> float:
 
 
 # --- constraint inference (automatic relations on creation) ---
+
+## Toolbar DOF chip for the live profile. Empty (no entities) emits dofs < 0,
+## which the chip shows as "—". Anything drawn is solved, including a sketch
+## just opened for edit or reloaded after part-level undo/redo.
+func refresh_dof_state() -> void:
+	if sketch == null or sketch.entity_ids().is_empty():
+		last_dofs = -1
+		last_solve_status = ""
+		last_conflicting.clear()
+		last_redundant.clear()
+		_conflict_entities.clear()
+		solve_updated.emit(-1, "", 0)
+		return
+	run_solve()
+
 
 ## Solve and remember diagnostics; all sketch-mode solves go through here so
 ## DOF coloring stays current.
