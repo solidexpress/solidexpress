@@ -201,6 +201,14 @@ struct Xlate {
                 return true;
             }
             case ConstraintType::Horizontal: {
+                // Two centres (or other points): same Y, no construction line.
+                if (c.refs.size() >= 2) {
+                    GCS::Point a = point_of(c.refs[0], ok1);
+                    GCS::Point b = point_of(c.refs[1], ok2);
+                    if (!ok1 || !ok2) return false;
+                    sys.addConstraintHorizontal(a, b, tag, drv);
+                    return true;
+                }
                 auto it = lines.find(c.refs.at(0).entity);
                 if (it == lines.end()) return false;
                 sys.addConstraintHorizontal(it->second, tag, drv);
@@ -400,13 +408,16 @@ struct Xlate {
                     return true;
                 }
                 auto cit = circles.find(c.refs[0].entity);
-                if (cit != circles.end() && c.locked.size() >= 3) {
+                if (cit != circles.end() && c.locked.size() >= 2) {
                     dim_values.push_back(c.locked[0]);
                     sys.addConstraintCoordinateX(cit->second.center, &dim_values.back(), tag, drv);
                     dim_values.push_back(c.locked[1]);
                     sys.addConstraintCoordinateY(cit->second.center, &dim_values.back(), tag, drv);
-                    dim_values.push_back(c.locked[2]);
-                    sys.addConstraintCircleRadius(cit->second, &dim_values.back(), tag, drv);
+                    // Two locked values are a centre pin. Three also lock radius.
+                    if (c.locked.size() >= 3) {
+                        dim_values.push_back(c.locked[2]);
+                        sys.addConstraintCircleRadius(cit->second, &dim_values.back(), tag, drv);
+                    }
                     return true;
                 }
                 return false;

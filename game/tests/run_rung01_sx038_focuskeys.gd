@@ -183,8 +183,8 @@ func _test_circle_shortcut() -> void:
 	await process_frame
 	var dim := _dim_edit(ctx.main.sketch_chrome)
 	check(dim != null and dim.is_visible_in_tree(), "Circle radius field is visible")
-	check(dim == null or not dim.has_focus(),
-			"arming Circle does not focus Radius (focus %s)" % str(dim.has_focus() if dim != null else false))
+	check(dim != null and dim.has_focus(),
+			"arming Circle focuses Radius (focus %s)" % str(dim.has_focus() if dim != null else false))
 	_status_log.clear()
 	await _push_key(ctx.main.get_viewport(), KEY_S)
 	await process_frame

@@ -1229,9 +1229,11 @@ func _on_sketch_selection(ids: Array) -> void:
 	if v > 0.0:
 		dim_value.value = v
 	if ids.is_empty():
-		_on_status("Sketch selection cleared")
+		_on_status("No sketch entities")
+	elif ids.size() == 1:
+		_on_status("Selected 1 sketch entity")
 	else:
-		_on_status("%d sketch entities selected" % ids.size())
+		_on_status("Selected %d sketch entities" % ids.size())
 
 
 func _build_autosave() -> void:
@@ -1598,9 +1600,9 @@ func _on_sketch_session_started(msg: String) -> void:
 	_sync_world_background()
 	interaction.refresh_selection_chrome()
 	interaction.refresh_sketch_intersections()
-	if dof_label != null:
-		dof_label.text = "— DOF"
-		dof_label.remove_theme_color_override("font_color")
+	# begin / begin_edit already published the chip via refresh_dof_state.
+	# Leave that text alone: a reopened jaw keeps its number, an empty sketch
+	# stays "—". A placeholder here used to wipe the count on every reopen.
 	view.refresh_sketch_pads(sketch_mode.editing_fid if sketch_mode.editing_fid != "" else "_active")
 	_reset_sketch_rail_scroll()
 	if sketch_mode != null:
@@ -1674,25 +1676,55 @@ func _on_sketch_rail_toggled(on: bool, t: int) -> void:
 
 
 func _on_sketch_rail_tool(t: int) -> void:
+	# The extrude click shield and a focused size blank must not eat the next
+	# canvas press (sx-038 N4: first Polygon centre click).
+	if interaction != null and interaction.has_method("_disarm_finish_click_shield"):
+		interaction._disarm_finish_click_shield()
+	if sketch_chrome != null:
+		# A focused Extrude Distance blank must not take the next canvas press.
+		if sketch_chrome.has_method("release_distance_focus"):
+			sketch_chrome.release_distance_focus()
+		# Circle keeps a radius blank the user already focused. Every other
+		# rail tool drops that focus so the size field cannot eat the centre.
+		if t != int(SketchMode.Tool.CIRCLE) and sketch_chrome.has_method("release_dim_focus"):
+			sketch_chrome.release_dim_focus()
 	if sketch_mode != null:
 		sketch_mode.set_tool(t as SketchMode.Tool)
 
 
 func _sync_sketch_rail_highlight(tool: int) -> void:
 	var jaw_armed := sketch_mode != null and sketch_mode.is_jaw_armed()
+	var armed: Button = null
+	var buttons: Array[Button] = []
 	for b in _sketch_rail_buttons:
 		if b == null or not is_instance_valid(b):
 			continue
-		var want := int(b.get_meta("sx_tool", -1)) == tool
-		if jaw_armed and int(b.get_meta("sx_tool", -1)) == int(SketchMode.Tool.RECT):
+		buttons.append(b)
+		var id := int(b.get_meta("sx_tool", -1))
+		var want := id == tool
+		if jaw_armed and id == int(SketchMode.Tool.RECT):
 			want = false
-		if b.button_pressed != want:
-			b.set_pressed_no_signal(want)
+		if want:
+			armed = b
 	var jaw: Button = null
 	if sketch_toolbar != null:
 		jaw = sketch_toolbar.find_child("JawTool", true, false) as Button
-	if jaw != null and is_instance_valid(jaw) and jaw.button_pressed != jaw_armed:
-		jaw.set_pressed_no_signal(jaw_armed)
+	if jaw != null and is_instance_valid(jaw):
+		buttons.append(jaw)
+		if jaw_armed:
+			armed = jaw
+	# set_pressed_no_signal does not unpress the rest of the group. Clear every
+	# button first, then press the armed one, so a rail click and a key (L/D/T/C/S)
+	# cannot leave the previous button's pressed flag set.
+	for b in buttons:
+		if b.button_pressed:
+			b.set_pressed_no_signal(false)
+	if armed != null:
+		armed.set_pressed_no_signal(true)
+	for b in buttons:
+		if b != armed:
+			_relax_stuck_rail_press(b)
+			_split_rail_hover_from_armed(b)
 	_sync_rail_accent_bars()
 
 
@@ -1739,7 +1771,9 @@ func _on_sketch_selection_chips() -> void:
 		return
 	# Undo/redo clears the selection. Rebuilding Parallel? / Equal? /
 	# Perpendicular? here left those chips up through the next redo (sx-037 N20).
-	if sketch_mode.is_undo_restoring():
+	# propose_verbs() scans every line in the sketch, so an empty selection
+	# (Esc, empty click, Delete, undo) must hide the chips before that scan.
+	if sketch_mode.is_undo_restoring() or sketch_mode.selected.is_empty():
 		sketch_chrome.hide_selection_actions()
 		return
 	var acts: Array = sketch_mode.selection_actions()
@@ -1952,11 +1986,17 @@ func _apply_chrome_docks() -> void:
 	var max_w := minf(220.0, vp.x * 0.28)
 	var top := ChromeDock.top_inset
 	# Part chip row keeps its fixed x (N3). When it overlaps this column,
-	# drop the Timeline under the row instead of covering the left chips.
+	# drop the Timeline under the row's real bottom (wrap included) plus a
+	# fixed physical gap, instead of covering the left chips.
 	var timeline_top := top
 	var strip := interaction.selection_strip_global_rect() if interaction != null else Rect2()
-	if strip.size != Vector2.ZERO and strip.end.x > dock_left and strip.position.x < dock_left + max_w:
-		timeline_top = maxf(top, strip.end.y + 4.0)
+	var chip_bottom := -1.0
+	if interaction != null and interaction.has_method("selection_strip_content_bottom"):
+		chip_bottom = interaction.selection_strip_content_bottom()
+	if chip_bottom >= 0.0 and strip.size != Vector2.ZERO \
+			and strip.end.x > dock_left and strip.position.x < dock_left + max_w:
+		timeline_top = maxf(top, chip_bottom + ChromeDock.TIMELINE_CHIP_GAP)
+	ChromeDock.timeline_min_top = timeline_top
 	var max_h := maxf(120.0, vp.y - timeline_top - ChromeDock.bottom_inset - 8.0)
 	if timeline.visible:
 		timeline.set_anchors_preset(Control.PRESET_TOP_LEFT)
@@ -2198,7 +2238,9 @@ func _compact_sketch_rail_button(b: Button) -> void:
 		var src := b.get_theme_stylebox(state_name)
 		if src == null:
 			continue
-		var dup := src.duplicate() as StyleBox
+		# duplicate(true) so border widths are not shared with the theme style
+		# the next state (or the next button) still reads.
+		var dup := src.duplicate(true) as StyleBox
 		if dup == null:
 			continue
 		# Style margin (border / expand) is what makes the default button ~38 px.
@@ -2231,12 +2273,15 @@ func _compact_sketch_rail_button(b: Button) -> void:
 				flat.set_border_width(SIDE_RIGHT, 0)
 		dup.set_content_margin(SIDE_TOP, 1.0)
 		dup.set_content_margin(SIDE_BOTTOM, 1.0)
+		# Deep copy. A shallow duplicate can alias the theme style, so painting
+		# the armed fill onto "pressed" also paints "hover" and the previous
+		# tool stays lit after the pointer moves on.
 		b.add_theme_stylebox_override(state_name, dup)
 	# Theme types often omit hover_pressed; the armed bar has to exist on
 	# that state too, not only on pressed.
 	var armed_box := b.get_theme_stylebox("pressed")
 	if armed_box is StyleBoxFlat:
-		var hover_armed := armed_box.duplicate() as StyleBoxFlat
+		var hover_armed := armed_box.duplicate(true) as StyleBoxFlat
 		hover_armed.set_border_width(SIDE_LEFT, _RAIL_ACCENT_BAR_PX)
 		hover_armed.border_color = Color.html(UIIcons.ACCENT)
 		b.add_theme_stylebox_override("hover_pressed", hover_armed)
@@ -2244,6 +2289,7 @@ func _compact_sketch_rail_button(b: Button) -> void:
 	# later, so the 3 px bar stays on top of the fill and of that ring, and
 	# it stays inside the clip rect (no expand margin).
 	_ensure_rail_accent_bar(b)
+	_split_rail_hover_from_armed(b)
 
 
 func _ensure_rail_accent_bar(b: Button) -> void:
@@ -2276,6 +2322,60 @@ func _on_rail_accent_toggled(_on: bool, b: Button) -> void:
 	if bar != null:
 		bar.visible = b.button_pressed
 		bar.color = Color.html(UIIcons.ACCENT)
+	if not b.button_pressed:
+		_relax_stuck_rail_press(b)
+
+
+## Hover must not keep the armed fill. A lost mouse-up leaves press_attempt
+## set, and Godot then draws DRAW_PRESSED while the pointer is over the button
+## even though it is no longer the armed tool.
+func _relax_stuck_rail_press(b: Button) -> void:
+	if b == null or not is_instance_valid(b) or not b.toggle_mode:
+		return
+	if b.button_pressed:
+		return
+	var mode := b.get_draw_mode()
+	if mode != BaseButton.DRAW_PRESSED and mode != BaseButton.DRAW_HOVER_PRESSED:
+		return
+	b.disabled = true
+	b.disabled = false
+	b.set_pressed_no_signal(false)
+	b.queue_redraw()
+
+
+func _rail_style_is_armed(box: StyleBox) -> bool:
+	if not (box is StyleBoxFlat):
+		return false
+	var flat := box as StyleBoxFlat
+	if flat.get_border_width(SIDE_LEFT) < _RAIL_ACCENT_BAR_PX:
+		return false
+	var accent := Color.html(UIIcons.ACCENT)
+	var c := flat.border_color
+	return absf(c.r - accent.r) <= 0.05 and absf(c.g - accent.g) <= 0.05 \
+			and absf(c.b - accent.b) <= 0.05 and c.a >= 0.85
+
+
+## The hover style is the unarmed look. If it aliases the pressed style, or
+## it picked up the 3 px accent bar, replace it from the normal style.
+func _split_rail_hover_from_armed(b: Button) -> void:
+	if b == null or not is_instance_valid(b):
+		return
+	var hover := b.get_theme_stylebox("hover")
+	var pressed := b.get_theme_stylebox("pressed")
+	if hover != pressed and not _rail_style_is_armed(hover):
+		return
+	var normal := b.get_theme_stylebox("normal")
+	if normal == null:
+		return
+	var clean := normal.duplicate(true) as StyleBox
+	if clean == null:
+		return
+	if clean is StyleBoxFlat:
+		var flat := clean as StyleBoxFlat
+		flat.set_border_width(SIDE_LEFT, 0)
+		flat.set_border_width(SIDE_RIGHT, 0)
+		flat.set_expand_margin_all(0.0)
+	b.add_theme_stylebox_override("hover", clean)
 
 
 func _sync_rail_accent_bars() -> void:
@@ -2815,12 +2915,7 @@ func edit_undo() -> void:
 	if view == null:
 		return
 	view.undo()
-	# Reload the live sketch from the feature that still exists, or drop the
-	# session when undo removed it. Do not push the in-memory sketch (that
-	# would re-emit Failed to update sketch after an open-loop edit).
-	if sketch_mode != null and sketch_mode.active and str(sketch_mode.editing_fid) != "":
-		if not sketch_mode.begin_edit(sketch_mode.editing_fid):
-			sketch_mode.cancel()
+	_sync_dof_after_part_history()
 	_on_status("Undo")
 	if interaction != null:
 		interaction._refresh_transform_hud()
@@ -2835,10 +2930,34 @@ func edit_redo() -> void:
 	if view == null:
 		return
 	view.redo()
+	_sync_dof_after_part_history()
 	_on_status("Redo")
 	if interaction != null:
 		interaction._refresh_transform_hud()
 		interaction._refresh_selection_strip()
+
+
+## Part-level undo/redo can delete and restore a sketch feature. An editor that
+## is already open reloads that profile and recomputes the DOF chip. A closed
+## editor recomputes when the sketch is opened again (pencil, Timeline
+## double-click, or rail Sketch on the pad) via refresh_dof_state.
+func _sync_dof_after_part_history() -> void:
+	if sketch_mode == null or not sketch_mode.active:
+		return
+	var fid := str(sketch_mode.editing_fid)
+	if fid != "":
+		var loaded: Variant = null
+		if view != null and view.doc != null and view.doc.has_method("graph_get_sketch"):
+			loaded = view.doc.graph_get_sketch(fid)
+		if loaded == null:
+			sketch_mode.cancel()
+			return
+		# Reload without a second "Editing sketch" line. Do not push the
+		# in-memory sketch back (that re-emits Failed to update sketch).
+		if not sketch_mode.begin_edit(fid, false):
+			sketch_mode.cancel()
+			return
+	sketch_mode.refresh_dof_state()
 
 
 func edit_cut() -> void:
@@ -4195,9 +4314,11 @@ func _unhandled_input(event: InputEvent) -> void:
 						# Ctrl+Shift+Z is Redo in part mode. Ctrl+Z stays Undo.
 						if event.shift_pressed:
 							view.redo()
+							_sync_dof_after_part_history()
 							_on_status("Redo")
 						elif view.doc.can_undo():
 							view.undo()
+							_sync_dof_after_part_history()
 							_on_status("Undo")
 						get_viewport().set_input_as_handled()
 				KEY_Y:
@@ -4209,6 +4330,7 @@ func _unhandled_input(event: InputEvent) -> void:
 						get_viewport().set_input_as_handled()
 					elif view != null:
 						view.redo()
+						_sync_dof_after_part_history()
 						_on_status("Redo")
 						get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_F1:

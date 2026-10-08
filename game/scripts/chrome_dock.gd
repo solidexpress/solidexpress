@@ -11,6 +11,13 @@ const CORNERS := ["tl", "tr", "bl", "br"]
 static var rail_right: float = 56.0
 static var top_inset: float = 48.0
 static var bottom_inset: float = 42.0
+## Lowest y `_apply_chrome_docks` allows for the Timeline top. Clamp must
+## not pull the panel back up through the part chip row.
+static var timeline_min_top: float = 0.0
+## Window pixels between the chip row's real bottom (wrapped chips and the
+## panel's drawn edge) and the Timeline top. 8 px is ≥ 6 px on the window,
+## and still ≥ 4 px when a 1920×1200 frame is scaled to 1280×800.
+const TIMELINE_CHIP_GAP := 8.0
 
 
 static func load_cfg() -> ConfigFile:

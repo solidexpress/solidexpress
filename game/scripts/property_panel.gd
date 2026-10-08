@@ -138,6 +138,10 @@ var _edits := 0
 var _fields: VBoxContainer
 var _title: Label
 var _building := false
+## Bumped every time Distance (or another schema key) is asked to take the
+## keyboard. A newer open cancels a select that would otherwise land on the
+## first typed digit.
+var _schema_focus_gen := 0
 
 
 func _ready() -> void:
@@ -203,6 +207,10 @@ func open(fid: String) -> bool:
 			focus_schema_key("distance")
 		return true
 	return false
+
+
+func editing_feature_id() -> String:
+	return _fid
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -394,19 +402,86 @@ func _release_editor_keys(edit: LineEdit) -> void:
 
 
 ## Focus the spin whose schema key is `key` (extrude Distance, not W/H/D).
+## The grab is deferred: a Timeline row click assigns focus to the row button
+## around this call (before the handler, and again on the double-click
+## release). A synchronous grab is overwritten, and SpinBox then clears a
+## select that happened while the mouse was still down. Focus and select run
+## once the panel is on screen, then again for a couple of frames so the row
+## cannot keep the keys.
 func focus_schema_key(key: String) -> void:
+	_schema_focus_gen += 1
+	var gen := _schema_focus_gen
+	_focus_schema_key_when_shown.call_deferred(key, gen)
+
+
+func _focus_schema_key_when_shown(key: String, gen: int) -> void:
+	if gen != _schema_focus_gen or not is_inside_tree():
+		return
+	if not visible or not is_visible_in_tree():
+		return
+	_apply_schema_focus(key, gen)
+	_reassert_schema_focus(key, gen, 0)
+
+
+func _reassert_schema_focus(key: String, gen: int, tries: int) -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	await tree.process_frame
+	if gen != _schema_focus_gen or not is_inside_tree():
+		return
+	if not visible or not is_visible_in_tree():
+		return
+	if _distance_typing_started(key):
+		return
+	_apply_schema_focus(key, gen)
+	# SpinBox applies editing_toggled deferred and that refresh clears the
+	# selection. One more frame after the mouse is up puts it back, and stops
+	# once a digit has replaced the text.
+	if tries < 2 and not _distance_typing_started(key):
+		_reassert_schema_focus(key, gen, tries + 1)
+
+
+func _distance_typing_started(key: String) -> bool:
+	if key != "distance":
+		return false
 	var spin := _spin_for_key(key)
 	if spin == null:
+		return false
+	var edit := spin.get_line_edit()
+	if edit == null or not edit.has_focus():
+		return false
+	return not SxUi.replace_armed(edit)
+
+
+func _apply_schema_focus(key: String, gen: int) -> void:
+	if gen != _schema_focus_gen:
+		return
+	var spin := _spin_for_key(key)
+	if spin == null or not spin.is_visible_in_tree():
 		return
 	var edit := spin.get_line_edit()
-	if edit != null:
-		edit.grab_focus()
-		if key == "distance":
-			SxUi.arm_replace_on_focus(edit)
-		else:
-			edit.call_deferred("select_all")
-	else:
+	if edit == null:
 		spin.grab_focus()
+		return
+	if _distance_typing_started(key):
+		return
+	if not edit.has_focus():
+		edit.grab_focus()
+	if not edit.has_focus():
+		return
+	if not edit.is_editing():
+		edit.edit()
+	if key == "distance":
+		if not SxUi.replace_armed(edit):
+			SxUi.arm_replace_on_focus(edit)
+		# select_all_on_focus waits for a mouse-up on this LineEdit. The
+		# opening click was on the Timeline row, so that mouse-up never
+		# arrives. Select once the button is up.
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			edit.select_all()
+	else:
+		edit.select_all()
 
 
 func _spin_for_key(key: String) -> SpinBox:

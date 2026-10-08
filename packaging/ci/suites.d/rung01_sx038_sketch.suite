@@ -1,0 +1,3 @@
+script=tests/run_rung01_sx038_sketch.gd
+tier=ci
+timeout=180

@@ -1,0 +1,2 @@
+script=tests/run_rung01_sx038_polypress.gd
+tier=ci

@@ -443,6 +443,12 @@ func _reopen_sketch_from_timeline(ctx: FilmContext) -> void:
 	var pos := btn.get_global_rect().get_center()
 	await _x11_click_screen(ctx.main.get_viewport(), pos)
 	await process_frame
+	# The first click selects the feature. Timeline docks under the chip row
+	# while a body is selected, so the sketch row can move before the second
+	# press. Sample the row again or the double-click lands on Extrude.
+	btn = _row_name_button(tl, fid)
+	if btn != null:
+		pos = btn.get_global_rect().get_center()
 	await _x11_click_screen(ctx.main.get_viewport(), pos, true)
 	await process_frame
 	await process_frame

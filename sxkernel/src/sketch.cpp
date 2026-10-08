@@ -307,7 +307,12 @@ EntityId Sketch::add_constraint(ConstraintType type, std::vector<PointRef> refs,
                 c.locked = {params_[e->params[0]], params_[e->params[1]],
                             params_[e->params[2]], params_[e->params[3]]};
             } else if (e->type == SketchEntityType::Circle) {
-                c.locked = {params_[e->params[0]], params_[e->params[1]], params_[e->params[2]]};
+                // role center locks the centre only. A full Fix also locks the
+                // radius and makes a driving radius dimension redundant.
+                if (c.refs[0].role == PointRole::Center)
+                    c.locked = {params_[e->params[0]], params_[e->params[1]]};
+                else
+                    c.locked = {params_[e->params[0]], params_[e->params[1]], params_[e->params[2]]};
             }
         }
     }

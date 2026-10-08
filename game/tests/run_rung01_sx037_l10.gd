@@ -250,8 +250,9 @@ func _circle_radius_not_extrude() -> void:
 		await _shutdown(ctx)
 		return
 	var dist_before := _parsed(dist)
-	check(not dim.has_focus(),
-			"Circle radius does not take the keyboard just by arming the tool (owner %s)" % _owner_name(dim))
+	check(dim.has_focus() and dim.is_editing(),
+			"Circle radius owns the keyboard (focus %s editing %s owner %s)" % [
+				str(dim.has_focus()), str(dim.is_editing()), _owner_name(dim)])
 	await _type_gap(dim, "5")
 	check(_near(_parsed(dim), 5.0),
 			"Circle radius typed 5 (got '%s')" % dim.text)

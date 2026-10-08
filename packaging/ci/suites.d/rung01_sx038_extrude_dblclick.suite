@@ -1,0 +1,2 @@
+script=tests/run_rung01_sx038_extrude_dblclick.gd
+tier=ci

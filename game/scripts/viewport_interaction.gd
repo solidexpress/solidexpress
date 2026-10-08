@@ -74,6 +74,22 @@ var _additive_click := false
 var _sketch_dragging := false
 var _sketch_drag_moved := false
 var _sketch_press_pos := Vector2.ZERO
+## Unmatched left presses. A release that arrives after a newer press (the
+## mouse-up of a click, delivered late under soft-GL) must not finish that
+## newer press. Depth > 1 means the release closes an older press only.
+var _sketch_lmb_depth := 0
+var _sketch_press_frame := -1
+var _sketch_release_frame := -1
+## Motion with the button already down arrived before its press. The press
+## that follows is the same gesture and must not restart it.
+var _sketch_press_inferred := false
+## A newer press replaced an open one. The next mouse-up that is still at
+## the abandoned click is swallowed. A release on the new press is that
+## gesture's own mouse-up and must still click or finish the box.
+var _sketch_swallow_release := false
+var _sketch_abandoned_pos := Vector2.INF
+## Shift/Ctrl at the marquee press. The release event sometimes drops them.
+var _sketch_box_additive := false
 ## One physical Esc must run the sketch ladder once. `_input` and `_gui_input`
 ## can both see the same key in a frame; the second pass would exit.
 var _sketch_esc_frame := -1
@@ -98,6 +114,7 @@ var _cached_top_chrome: Control
 var _layout_strip_busy := false
 var _strip_layout_again := false
 var _last_strip_rect := Rect2()
+var _last_strip_bottom := -1.0
 var _strip_x_floor := 0.0
 var _left_stack_wired: Control
 var _strip_fillet: Button
@@ -111,14 +128,26 @@ var _panel_changed_while_strip_focused := false
 var _strip_radius_syncing := false
 var _strip_jaw_box: HBoxContainer
 const POST_FINISH_CHIP_GUARD_MSEC := 600
+## Left presses on the part chip row are ignored for this long after a
+## sketch→part transition, and until the button is up and the pointer has
+## left the Extrude rect. A double-click must not land on Hide.
+const POST_FINISH_PRESS_GUARD_MSEC := 400
 var _post_finish_chip_guard_until_msec := 0
-## Global rect of the finish-bar Extrude button at the moment the sketch
-## committed. A second click there (a double-click, or a late click that never
-## moved off the button) must not land on the selection strip.
+var _finish_press_guard_on := false
+var _finish_press_guard_until_msec := 0
+var _finish_press_released := true
+var _finish_press_moved := false
+## Global rect of the finish-bar Extrude button (grown). Cached while the
+## button is on screen so the shield still has a rect if the bar hides in
+## the same signal that arms it.
+var _extrude_button_rect := Rect2()
+## Rect covered after the sketch commits. A second click there must not
+## reach a part-mode chip or clear the selection.
 var _finish_click_rect := Rect2()
 var _finish_click_global := Vector2.ZERO
 var _finish_click_shield_armed := false
 var _finish_click_shield: Control
+var _extrude_button: Control
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
@@ -316,6 +345,7 @@ func _wire_post_finish_guard() -> void:
 		return
 	sketch_mode.finished.connect(func(_id: String) -> void:
 		_post_finish_chip_guard_until_msec = Time.get_ticks_msec() + POST_FINISH_CHIP_GUARD_MSEC
+		_begin_finish_press_guard()
 		_arm_finish_click_shield())
 
 
@@ -2829,6 +2859,24 @@ func note_dim_focus_released() -> void:
 	_preview_length_typed = ""
 
 
+## Circle focuses the radius blank on arm. Until the user clicks or types in
+## that blank, L/D/T/C/S (and the other tool keys) still switch tools.
+func _release_tool_claimed_dim_for_hotkey(ke: InputEventKey) -> bool:
+	if ke.echo or ke.ctrl_pressed or ke.alt_pressed or ke.meta_pressed:
+		return false
+	match ke.keycode:
+		KEY_S, KEY_L, KEY_R, KEY_C, KEY_A, KEY_T, KEY_D, KEY_E:
+			pass
+		_:
+			return false
+	if sketch_chrome == null or not sketch_chrome.has_method("tool_claimed_dim_focus"):
+		return false
+	if not sketch_chrome.tool_claimed_dim_focus():
+		return false
+	sketch_chrome.release_dim_focus()
+	return true
+
+
 ## Cached SketchTools rail; clicks there must never be stolen as sketch canvas.
 var _cached_sketch_tools: Control
 
@@ -3081,13 +3129,44 @@ func _over_chrome_who(global_mouse: Vector2) -> String:
 
 
 ## True when `pos` lies on `ctrl` in either viewport space GUI and `_input` use.
+## A canvas-transform rect that is far larger than the laid-out widget, or that
+## does not overlap it, is a stale hover (the rail button after arming Polygon).
+## Treating that rect as a hit dropped the first sketch-centre press (sx-038).
 func _pointer_hits_control(ctrl: Control, pos: Vector2) -> bool:
 	if ctrl == null or not is_instance_valid(ctrl):
 		return false
-	if ctrl.get_global_rect().has_point(pos):
+	# IGNORE shells (variant row, action stack) must not own a canvas press.
+	# Their buttons still hit via the global rect below and via chrome walk.
+	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE and not (ctrl is BaseButton):
+		return false
+	var global_r := ctrl.get_global_rect()
+	if _hit_rect_sane(global_r) and global_r.has_point(pos):
 		return true
 	var xf := ctrl.get_global_transform_with_canvas()
-	return Rect2(xf.origin, xf.get_scale() * ctrl.size).has_point(pos)
+	var canvas_r := Rect2(xf.origin, xf.get_scale() * ctrl.size)
+	if not _canvas_rect_trusted(global_r, canvas_r):
+		return false
+	return canvas_r.has_point(pos)
+
+
+func _hit_rect_sane(r: Rect2) -> bool:
+	var area := absf(r.get_area())
+	return area >= 4.0 and area <= _chrome_area_cap()
+
+
+## Canvas space is a second hit test for a chip whose global rect is stale.
+## It is the same widget: reject a rect that dwarfs the global one or sits
+## somewhere else entirely.
+func _canvas_rect_trusted(global_r: Rect2, canvas_r: Rect2) -> bool:
+	if not _hit_rect_sane(canvas_r):
+		return false
+	var g_area := absf(global_r.get_area())
+	var c_area := absf(canvas_r.get_area())
+	if g_area >= 4.0 and c_area > g_area * 2.5:
+		return false
+	if g_area >= 4.0 and not global_r.grow(8.0).intersects(canvas_r):
+		return false
+	return true
 
 
 func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
@@ -3219,8 +3298,78 @@ func _clear_sketch_box() -> void:
 	_sketch_box_active = false
 	_sketch_box_start = Vector2.ZERO
 	_sketch_box_crossing = false
+	_sketch_box_additive = false
 	_box_rect = Rect2()
 	queue_redraw()
+
+
+## Drop an open press without selecting. Used when a newer press arrives
+## before the previous mouse-up, and when Esc cancels a marquee.
+func _sketch_release_is_stale(mb: InputEventMouseButton) -> bool:
+	if not _sketch_swallow_release or _sketch_lmb_depth < 1:
+		return false
+	if _sketch_box_active or _sketch_dragging:
+		return false
+	# The new press's own mouse-up is within CLICK_SLOP of _sketch_press_pos.
+	# Swallowing that left every later click open, so an empty click never
+	# cleared and the next edge clicks toggled the selection off.
+	if _sketch_abandoned_pos == Vector2.INF:
+		return false
+	var at := _pointer_viewport_pos(mb)
+	return at.distance_to(_sketch_abandoned_pos) <= CLICK_SLOP
+
+
+func _abandon_open_sketch_press() -> void:
+	if _sketch_dragging and sketch_mode != null:
+		sketch_mode.cancel_drag()
+	_sketch_dragging = false
+	_sketch_drag_moved = false
+	_sketch_press_inferred = false
+	_clear_sketch_box()
+
+
+## Button-down motion that beat its press: arm Select at where that motion
+## started so the first empty-canvas drag still becomes a box.
+func _infer_sketch_press_from_motion(mm: InputEventMouseMotion) -> void:
+	if sketch_mode == null or sketch_mode.tool != SketchMode.Tool.SELECT:
+		return
+	if _sketch_box_pending or _sketch_dragging or _sketch_lmb_depth > 0:
+		return
+	# A click's mouse-up can land before the drag motions, in the same frame,
+	# and close the box. Button-down motion after that release re-arms it.
+	if (mm.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0:
+		return
+	if mm.relative.length_squared() <= 0.01:
+		return
+	var screen := _pointer_viewport_pos(mm)
+	_sketch_lmb_depth = 1
+	_sketch_press_inferred = true
+	_sketch_press_frame = Engine.get_process_frames()
+	_begin_select_gesture(screen - mm.relative, mm.shift_pressed or mm.ctrl_pressed)
+
+
+func _begin_select_gesture(screen: Vector2, additive: bool) -> void:
+	_sketch_press_pos = screen
+	var ray := _model_ray(screen)
+	var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
+	if p2 == null:
+		return
+	if sketch_mode.constraint_hit(p2) == "" and sketch_mode.dimension_hit(p2) < 0 \
+			and not sketch_mode.drag_hit(p2).is_empty():
+		_note_click("sketch-drag:SELECT", screen)
+		sketch_mode.begin_drag(p2)
+		_sketch_dragging = true
+	elif sketch_mode.constraint_hit(p2) == "" and sketch_mode.dimension_hit(p2) < 0 \
+			and sketch_mode.entity_at(p2) == "":
+		_sketch_box_pending = true
+		_sketch_box_active = false
+		_sketch_box_start = screen
+		_sketch_box_additive = additive
+		_note_click("sketch-box:SELECT", screen)
+	else:
+		_note_click("sketch-click:SELECT", screen)
+		sketch_mode.click(p2)
+		_clear_select_click_measure()
 
 
 func _pointer_viewport_pos(event: InputEventMouse) -> Vector2:
@@ -3515,8 +3664,33 @@ func _sketch_input(event: InputEvent) -> void:
 				if sketch_chrome.has_method("release_distance_focus"):
 					sketch_chrome.release_distance_focus()
 				sketch_chrome.hide_variants()
-			_sketch_press_pos = mb.position
-			var ray := _model_ray(mb.position)
+			var screen := _pointer_viewport_pos(mb)
+			# A double-click is still a press. Soft-GL delivers it immediately
+			# after the previous click; it must be allowed to start a box.
+			if _sketch_press_inferred and _sketch_lmb_depth >= 1:
+				_sketch_press_inferred = false
+				accept_event()
+				return
+			if _sketch_lmb_depth >= 1 \
+					and screen.distance_to(_sketch_press_pos) <= 2.0 \
+					and Engine.get_process_frames() == _sketch_press_frame:
+				accept_event()
+				return
+			if _sketch_lmb_depth >= 1:
+				_sketch_abandoned_pos = _sketch_press_pos
+				_abandon_open_sketch_press()
+				_sketch_swallow_release = true
+				# The new press is the open gesture. Do not bump depth: the
+				# late mouse-up of the click we just replaced is swallowed,
+				# and this press stays armed for the drag.
+				_sketch_lmb_depth = 1
+			else:
+				_sketch_lmb_depth = 1
+				_sketch_swallow_release = false
+				_sketch_abandoned_pos = Vector2.INF
+			_sketch_press_frame = Engine.get_process_frames()
+			_sketch_press_pos = screen
+			var ray := _model_ray(screen)
 			var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 			if p2 != null:
 				var tool_key := _active_tool_key()
@@ -3541,8 +3715,9 @@ func _sketch_input(event: InputEvent) -> void:
 						and sketch_mode.entity_at(p2) == "":
 					_sketch_box_pending = true
 					_sketch_box_active = false
-					_sketch_box_start = mb.position
-					_note_click("sketch-box:SELECT", mb.position)
+					_sketch_box_start = screen
+					_sketch_box_additive = mb.shift_pressed or mb.ctrl_pressed or mb.meta_pressed
+					_note_click("sketch-box:SELECT", screen)
 				else:
 					# Line and Centerline place through a label (click skips the
 					# hit). Every other non-Select tool records a text-rect hit
@@ -3581,10 +3756,26 @@ func _sketch_input(event: InputEvent) -> void:
 						sketch_chrome.arm_dim_replace(shown)
 						_preview_length_typed = ""
 			accept_event()
+		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_release_is_stale(mb):
+			# Previous click's mouse-up. The open press keeps its box.
+			_sketch_swallow_release = false
+			_sketch_release_frame = Engine.get_process_frames()
+			accept_event()
+		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_lmb_depth > 1:
+			# Mouse-up of an older click, arriving after the next press.
+			_sketch_lmb_depth -= 1
+			_sketch_release_frame = Engine.get_process_frames()
+			accept_event()
+		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_lmb_depth <= 0:
+			accept_event()
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_dragging:
-			var ray_up := _model_ray(mb.position)
+			_sketch_lmb_depth = 0
+			_sketch_swallow_release = false
+			_sketch_release_frame = Engine.get_process_frames()
+			_sketch_press_inferred = false
+			var ray_up := _model_ray(_pointer_viewport_pos(mb))
 			var p2_up = sketch_mode.ray_to_sketch(ray_up[0], ray_up[1])
-			var travel_up := mb.position.distance_to(_sketch_press_pos)
+			var travel_up := _pointer_viewport_pos(mb).distance_to(_sketch_press_pos)
 			if sketch_mode.tool == SketchMode.Tool.TRIM:
 				sketch_mode.end_trim_drag()
 			elif travel_up < CLICK_SLOP and p2_up != null:
@@ -3599,14 +3790,26 @@ func _sketch_input(event: InputEvent) -> void:
 			_sketch_drag_moved = false
 			accept_event()
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_box_pending:
+			_sketch_lmb_depth = 0
+			_sketch_swallow_release = false
+			_sketch_release_frame = Engine.get_process_frames()
+			_sketch_press_inferred = false
+			var end := _pointer_viewport_pos(mb)
+			var travel_box := end.distance_to(_sketch_box_start)
+			# Motions can be coalesced away. A release far from the press is
+			# still a box, on the first try.
+			if travel_box >= CLICK_SLOP:
+				_sketch_box_active = true
 			if _sketch_box_active:
-				_box_rect = Rect2(_sketch_box_start, mb.position - _sketch_box_start).abs()
-				_sketch_box_crossing = mb.position.x < _sketch_box_start.x
-				var n_box := sketch_mode.select_in_screen_rect(_box_rect, _sketch_box_crossing, \
-						mb.shift_pressed or mb.ctrl_pressed)
+				_box_rect = Rect2(_sketch_box_start, end - _sketch_box_start).abs()
+				_sketch_box_crossing = end.x < _sketch_box_start.x
+				var additive := _sketch_box_additive or mb.shift_pressed or mb.ctrl_pressed \
+						or mb.meta_pressed or Input.is_key_pressed(KEY_SHIFT) \
+						or Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META)
+				var n_box := sketch_mode.select_in_screen_rect(_box_rect, _sketch_box_crossing, additive)
 				_emit_sketch_select_status(n_box)
 			else:
-				var ray_box := _model_ray(mb.position)
+				var ray_box := _model_ray(end)
 				var p2_box = sketch_mode.ray_to_sketch(ray_box[0], ray_box[1])
 				if p2_box != null:
 					sketch_mode.click(p2_box)
@@ -3614,6 +3817,10 @@ func _sketch_input(event: InputEvent) -> void:
 			_clear_sketch_box()
 			accept_event()
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and not _sketch_dragging:
+			_sketch_lmb_depth = 0
+			_sketch_swallow_release = false
+			_sketch_release_frame = Engine.get_process_frames()
+			_sketch_press_inferred = false
 			# Drag-draw completion only when the pointer moved — pure click-click
 			# must not double-fire the same anchor (zero-length segment).
 			if sketch_mode.has_pending_draw_point():
@@ -3635,8 +3842,10 @@ func _sketch_input(event: InputEvent) -> void:
 			sketch_mode.end_chain()
 			accept_event()
 	elif event is InputEventMouseMotion:
+		var motion := event as InputEventMouseMotion
+		_infer_sketch_press_from_motion(motion)
 		if _sketch_box_pending:
-			var box_at: Vector2 = (event as InputEventMouseMotion).position
+			var box_at := _pointer_viewport_pos(motion)
 			if box_at.distance_to(_sketch_box_start) >= CLICK_SLOP:
 				_sketch_box_active = true
 			if _sketch_box_active:
@@ -3712,10 +3921,12 @@ func _sketch_input(event: InputEvent) -> void:
 						status.emit("Deleted %d" % n)
 			KEY_ESCAPE:
 				if _sketch_box_active:
+					_sketch_lmb_depth = 0
 					_clear_sketch_box()
 					accept_event()
 					return
 				if _sketch_box_pending:
+					_sketch_lmb_depth = 0
 					_clear_sketch_box()
 				if not _consume_sketch_esc():
 					pass
@@ -4621,6 +4832,12 @@ func _commit_property_panel_on_deselect() -> void:
 	pp.dismiss_keep_preview()
 
 
+func _sync_dof_after_part_history() -> void:
+	var main_n := _find_main()
+	if main_n != null and main_n.has_method("_sync_dof_after_part_history"):
+		main_n._sync_dof_after_part_history()
+
+
 func _status_sketch_undo() -> void:
 	var label := sketch_mode.undo()
 	status.emit("Nothing to undo" if label == "" else "Undo: " + label)
@@ -4767,9 +4984,11 @@ func _gui_key(event: InputEventKey) -> bool:
 					return true
 				if event.shift_pressed:
 					view.redo()
+					_sync_dof_after_part_history()
 					status.emit("Redo")
 				else:
 					view.undo()
+					_sync_dof_after_part_history()
 					status.emit("Undo")
 				return true
 		KEY_Y:
@@ -4780,6 +4999,7 @@ func _gui_key(event: InputEventKey) -> bool:
 					_status_sketch_redo()
 					return true
 				view.redo()
+				_sync_dof_after_part_history()
 				status.emit("Redo")
 				return true
 		KEY_W:
@@ -5542,7 +5762,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	_release_finish_click_shield_on_motion(event)
+	if sketch_mode != null and sketch_mode.active:
+		_remember_extrude_rect()
+	_track_finish_press_guard(event)
+	if _swallow_finish_press(event):
+		get_viewport().set_input_as_handled()
+		return
+	_note_finish_press_outside(event)
 	# Strip / other STOP children swallow gui_input; still give the viewport
 	# the keys when the press is not on the focused numeric field.
 	_on_numeric_canvas_press(event)
@@ -5707,7 +5933,7 @@ func _input(event: InputEvent) -> void:
 			if ke_tab.keycode == KEY_TAB and not ke_tab.ctrl_pressed \
 					and not ke_tab.alt_pressed and not ke_tab.meta_pressed:
 				return
-			if _sketch_keys_blocked():
+			if _sketch_keys_blocked() and not _release_tool_claimed_dim_for_hotkey(event as InputEventKey):
 				return
 			var ke_len := event as InputEventKey
 			# A focused length field that has not been typed in yet must still
@@ -5957,6 +6183,34 @@ func selection_strip_global_rect() -> Rect2:
 	return _selection_strip.get_global_rect()
 
 
+## Bottom of the part chip row in viewport pixels, including a wrapped second
+## line and any panel shadow drawn outside the control rect. -1 when hidden.
+func selection_strip_content_bottom() -> float:
+	if _selection_strip == null or not _selection_strip.visible:
+		return -1.0
+	var bottom := _control_visual_end_y(_selection_strip)
+	var row := _selection_strip_row()
+	if row == null:
+		return bottom
+	for child in row.get_children():
+		var c := child as Control
+		if c == null or not c.visible:
+			continue
+		var r := c.get_global_rect()
+		if r.size.x < 1.0 or r.size.y < 1.0:
+			continue
+		bottom = maxf(bottom, r.end.y)
+	return bottom
+
+
+func _control_visual_end_y(ctrl: Control) -> float:
+	var end_y := ctrl.get_global_rect().end.y
+	var sb := ctrl.get_theme_stylebox("panel")
+	if sb is StyleBoxFlat:
+		end_y += (sb as StyleBoxFlat).expand_margin_bottom
+	return end_y
+
+
 ## Left-anchor SelectionStrip below the menu row and wrap it inside the window.
 func _layout_selection_strip() -> void:
 	if _selection_strip == null:
@@ -5965,8 +6219,9 @@ func _layout_selection_strip() -> void:
 		_strip_layout_again = true
 		return
 	if not _selection_strip.visible:
-		if _last_strip_rect != Rect2():
+		if _last_strip_rect != Rect2() or _last_strip_bottom >= 0.0:
 			_last_strip_rect = Rect2()
+			_last_strip_bottom = -1.0
 			selection_strip_laid_out.emit()
 		return
 	_layout_strip_busy = true
@@ -5994,13 +6249,50 @@ func _layout_selection_strip() -> void:
 	var wrapped_h := _selection_strip_wrapped_height(inner_w) + pad_v
 	var h := maxf(_selection_strip.size.y, wrapped_h)
 	_selection_strip.size = Vector2(w, h)
+	_fit_selection_strip_to_chips()
 	_layout_strip_busy = false
 	if _strip_layout_again:
 		_layout_selection_strip()
+	_sync_chip_mouse_under_extrude()
 	var r := selection_strip_global_rect()
-	if r != _last_strip_rect:
+	var bottom := selection_strip_content_bottom()
+	if r != _last_strip_rect or not is_equal_approx(bottom, _last_strip_bottom):
 		_last_strip_rect = r
+		_last_strip_bottom = bottom
 		selection_strip_laid_out.emit()
+
+
+## Grow the strip so a wrapped HFlow line is inside the panel, not drawn
+## past the rect the Timeline uses as the chip-row bottom.
+func _fit_selection_strip_to_chips() -> void:
+	if _selection_strip == null:
+		return
+	var row := _selection_strip_row()
+	if row == null:
+		return
+	_selection_strip.notification(Container.NOTIFICATION_SORT_CHILDREN)
+	row.notification(Container.NOTIFICATION_SORT_CHILDREN)
+	var pad_bottom := 0.0
+	var sb := _selection_strip.get_theme_stylebox("panel")
+	if sb != null:
+		pad_bottom = sb.get_margin(SIDE_BOTTOM)
+	var origin_y := _selection_strip.get_global_rect().position.y
+	var chips_bottom := origin_y
+	for child in row.get_children():
+		var c := child as Control
+		if c == null or not c.visible:
+			continue
+		var cr := c.get_global_rect()
+		if cr.size.y < 1.0:
+			continue
+		chips_bottom = maxf(chips_bottom, cr.end.y)
+	var inner_w := maxf(8.0, _selection_strip.size.x - _selection_strip_panel_pad_h())
+	var wrapped := _selection_strip_wrapped_height(inner_w) + _selection_strip_panel_pad_v()
+	var want := maxf(wrapped, chips_bottom - origin_y + pad_bottom)
+	if want > _selection_strip.size.y + 0.5:
+		_selection_strip.size.y = want
+		_selection_strip.notification(Container.NOTIFICATION_SORT_CHILDREN)
+		row.notification(Container.NOTIFICATION_SORT_CHILDREN)
 
 
 func _selection_strip_row() -> Container:
@@ -6524,17 +6816,121 @@ func _ensure_finish_click_shield() -> Control:
 	return shield
 
 
-## Cover the Extrude button's rect so a same-pixel follow-up click is eaten.
-## Stays up until the pointer leaves that spot, which is longer than the 600 ms
-## jaw guard: a soft-GL screenshot can land the second click well after 600 ms.
-func _arm_finish_click_shield() -> void:
+func _visible_extrude_button() -> Control:
+	if _extrude_button != null and is_instance_valid(_extrude_button):
+		if _extrude_button.is_visible_in_tree():
+			return _extrude_button
+		return null
 	if not is_inside_tree():
-		return
-	var btn := get_tree().root.find_child("ExtrudeButton", true, false) as Control
-	if btn == null or not btn.is_visible_in_tree():
+		return null
+	_extrude_button = get_tree().root.find_child("ExtrudeButton", true, false) as Control
+	if _extrude_button != null and _extrude_button.is_visible_in_tree():
+		return _extrude_button
+	return null
+
+
+## Last on-screen Extrude button rect. The finish bar may already be hidden
+## by the time a later handler runs; the press that committed is enough.
+func _remember_extrude_rect() -> void:
+	var btn := _visible_extrude_button()
+	if btn == null:
 		return
 	var rect := btn.get_global_rect().grow(4.0)
 	if rect.size.x < 2.0 or rect.size.y < 2.0:
+		return
+	_extrude_button_rect = rect
+
+
+func _begin_finish_press_guard() -> void:
+	_remember_extrude_rect()
+	_finish_press_guard_on = true
+	_finish_press_guard_until_msec = Time.get_ticks_msec() + POST_FINISH_PRESS_GUARD_MSEC
+	# finished fires on the Extrude button's release, so that click is already up.
+	_finish_press_released = true
+	_finish_press_moved = false
+
+
+## True while a left press on the part chip row must not run a chip action.
+## Holds for ~400 ms and until the pointer has been released outside the
+## Extrude rect, so a second press in the same gesture cannot hit Hide.
+func _part_chip_guard_active() -> bool:
+	if not _finish_press_guard_on:
+		return false
+	if Time.get_ticks_msec() < _finish_press_guard_until_msec:
+		return true
+	return not _finish_press_released or not _finish_press_moved
+
+
+func _press_on_part_chip_row(at: Vector2) -> bool:
+	if _selection_strip == null or not _selection_strip.visible:
+		return false
+	var r := _selection_strip.get_global_rect()
+	if r.get_area() < 4.0 or r.get_area() > _chrome_area_cap():
+		return false
+	return r.has_point(at)
+
+
+func _track_finish_press_guard(event: InputEvent) -> void:
+	if not _finish_press_guard_on:
+		return
+	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		_finish_press_released = not (event as InputEventMouseButton).pressed
+		return
+	if event is InputEventMouseMotion and _finish_click_rect.size.x >= 2.0:
+		var at := _pointer_viewport_pos(event as InputEventMouse)
+		if not _finish_click_rect.has_point(at):
+			_finish_press_moved = true
+
+
+## Eat a left press that would repeat the Extrude click onto the part chips.
+func _swallow_finish_press(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton):
+		return false
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT:
+		return false
+	if not _finish_click_shield_armed and not _part_chip_guard_active():
+		return false
+	var at := _pointer_viewport_pos(mb)
+	var on_extrude := _finish_click_shield_armed and _finish_click_rect.size.x >= 2.0 \
+			and _finish_click_rect.has_point(at)
+	# Whole chip row only while the pointer is still on the Extrude rect.
+	# A motion onto Fillet (or any other chip) is a new gesture and must land.
+	var on_row := _part_chip_guard_active() and not _finish_press_moved \
+			and _press_on_part_chip_row(at)
+	if not on_extrude and not on_row:
+		return false
+	if mb.pressed:
+		_note_click("drop:shield", at)
+	return true
+
+
+## A later click that is not the Extrude follow-up ends the dead zone.
+func _note_finish_press_outside(event: InputEvent) -> void:
+	if not _finish_click_shield_armed or not _is_left_press(event):
+		return
+	var at := _pointer_viewport_pos(event as InputEventMouse)
+	if _finish_click_rect.size.x >= 2.0 and _finish_click_rect.has_point(at):
+		return
+	# Chip clicks keep the row where it is so the release still hits that chip.
+	if _press_on_part_chip_row(at):
+		return
+	call_deferred("_disarm_finish_click_shield")
+
+
+## Cover the Extrude button so a same-pixel follow-up is eaten, and keep the
+## part chip row off that rect. Motion inside or away from the button does
+## not drop the cover: sx-038's second click comes back to the same pixel
+## after the pointer has moved. A new sketch, or a left press elsewhere,
+## drops it.
+func _arm_finish_click_shield() -> void:
+	if not is_inside_tree():
+		return
+	_remember_extrude_rect()
+	var rect := _extrude_button_rect
+	if rect.size.x < 2.0 or rect.size.y < 2.0:
+		# No rect to hold. The chip-row window is the 400 ms timer only.
+		_finish_press_moved = true
 		return
 	_finish_click_rect = rect
 	_finish_click_global = rect.get_center()
@@ -6549,40 +6945,48 @@ func _arm_finish_click_shield() -> void:
 
 
 func _disarm_finish_click_shield() -> void:
-	if not _finish_click_shield_armed and (_finish_click_shield == null or not _finish_click_shield.visible):
+	if not _finish_click_shield_armed and not _finish_press_guard_on \
+			and (_finish_click_shield == null or not _finish_click_shield.visible):
 		return
 	_finish_click_shield_armed = false
+	_finish_press_guard_on = false
+	_finish_press_guard_until_msec = 0
+	_finish_press_released = true
+	_finish_press_moved = true
+	_finish_click_rect = Rect2()
 	if _finish_click_shield != null and is_instance_valid(_finish_click_shield):
 		_finish_click_shield.visible = false
+	_sync_chip_mouse_under_extrude()
 	if not _layout_strip_busy:
 		_layout_selection_strip()
 
 
-func _release_finish_click_shield_on_motion(event: InputEvent) -> void:
-	if not _finish_click_shield_armed or not (event is InputEventMouseMotion):
-		return
-	var mot := event as InputEventMouseMotion
-	var at := mot.global_position
-	if at == Vector2.ZERO:
-		at = mot.position
-	if at.distance_to(_finish_click_global) <= CLICK_SLOP:
-		return
-	_disarm_finish_click_shield()
-
-
-## While the shield is up, place the chip row below the Extrude button so the
-## row is not drawn on the pixel that was just clicked. Same y every layout.
+## While the shield is up, the chip row starts below the Extrude button so
+## Hide (and every other state-changing chip) is not on that pixel.
 func _finish_click_strip_y(y_natural: float) -> float:
 	if not _finish_click_shield_armed or _selection_strip == null:
 		return y_natural
-	var origin := get_global_rect().position
-	var local_y := _finish_click_global.y - origin.y
-	var floor_y := _finish_click_rect.end.y - origin.y + 6.0
-	var band_h := maxf(_selection_strip.size.y, _selection_strip.get_combined_minimum_size().y)
-	band_h = maxf(band_h, 28.0)
-	if local_y >= y_natural - 1.0 and local_y <= y_natural + band_h + 1.0:
-		return maxf(y_natural, floor_y)
-	return y_natural
+	if _finish_click_rect.size.y < 2.0:
+		return y_natural
+	var floor_y := _finish_click_rect.end.y - get_global_rect().position.y + 6.0
+	return maxf(y_natural, floor_y)
+
+
+## A chip that still intersects the Extrude rect cannot take a click.
+func _sync_chip_mouse_under_extrude() -> void:
+	if _selection_strip == null:
+		return
+	var block := _finish_click_shield_armed and _finish_click_rect.size.x >= 2.0
+	_set_chip_mouse_under_extrude(_selection_strip, block)
+
+
+func _set_chip_mouse_under_extrude(node: Node, block: bool) -> void:
+	if node is BaseButton:
+		var b := node as BaseButton
+		var hit := block and b.get_global_rect().intersects(_finish_click_rect)
+		b.mouse_filter = Control.MOUSE_FILTER_IGNORE if hit else Control.MOUSE_FILTER_STOP
+	for child in node.get_children():
+		_set_chip_mouse_under_extrude(child, block)
 
 
 func _ctx_jaw_af(size: int) -> void:

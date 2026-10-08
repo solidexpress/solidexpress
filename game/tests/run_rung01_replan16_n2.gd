@@ -1,6 +1,6 @@
 # sx-037 N2 / A11c: Enter in strip R or panel Radius commits the number and
 # returns the keys. Viewport Enter applies the fillet as a committed feature
-# (`Fillet N edges R applied — View ▸ Timeline to edit parameters`) and does
+# (`Fillet N edges R applied — View ▸ Timeline to edit parameters — Fillet no longer armed`) and does
 # not open the editor. Timeline → parameters → Cancel undoes a radius edit.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan16_n2.gd
@@ -9,7 +9,7 @@ extends SceneTree
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOP_PITCH := deg_to_rad(90.0)
-const APPLIED := "Fillet 2 edges 10.00 applied — View ▸ Timeline to edit parameters"
+const APPLIED := "Fillet 2 edges 10.00 applied — View ▸ Timeline to edit parameters — Fillet no longer armed"
 
 var failures := 0
 var checks := 0
