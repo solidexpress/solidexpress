@@ -57,6 +57,14 @@ const SKETCH_FIT_MARGIN_PX := 24.0
 const ZOOM_OUT_RECENTER_START := 1.5
 ## Soft cap on how far past fit-distance a wheel zoom-out may go.
 const ZOOM_OUT_MAX_FIT_MULT := 10.0
+## Pixels of body-AABB overflow past the chrome canvas before sketch zoom-out
+## starts recentring. A framed body that clips a few pixels after a notch stays
+## cursor-anchored; the blank's head (hundreds of pixels off the right edge)
+## does not.
+const SKETCH_REVEAL_OVERFLOW_PX := 24.0
+## Extra zoom-out per notch while the body still escapes the canvas, so a
+## short wheel flick reaches fit instead of growing only 6% around the cursor.
+const SKETCH_REVEAL_GROW := 1.35
 const ORBIT_SPEED := 0.008
 ## Two-finger orbit sensitivity (trackpad PanGesture). Kept modest — libinput
 ## already sends large per-frame deltas on a normal swipe.
@@ -570,8 +578,10 @@ func _want_alt_pan(shift_held: bool) -> bool:
 ## fixed: intersect the cursor ray with the plane through the pivot
 ## perpendicular to the view axis, clamp distance first, then shift the pivot
 ## by (1 - effective_factor) of that in-plane pivot→anchor vector so a clamp
-## cannot drag the anchor. Zoom-out does not pull toward content while any
-## body is on screen; `_nudge_pivot_on_zoom_out` is the off-screen safety net.
+## cannot drag the anchor. Part-mode zoom-out does not pull toward content
+## while any body is on screen (`_nudge_pivot_on_zoom_out` is the off-screen
+## safety net). A locked sketch whose body escapes the canvas recentres on
+## zoom-out so the far end can come back into view.
 func zoom_at(screen_pos: Vector2, factor: float) -> void:
 	var old_distance := distance
 	if old_distance < 1e-12:
@@ -595,7 +605,11 @@ func zoom_at(screen_pos: Vector2, factor: float) -> void:
 	pivot += (1.0 - eff) * plane_delta
 	_update_transform()
 	if factor > 1.0:
-		_nudge_pivot_on_zoom_out(factor)
+		# Face-sketch zoom-out: a head past the cursor stays off the window
+		# edge under pure cursor-anchor. Reveal that body first; the off-screen
+		# safety net still runs when the sketch path has nothing to pull.
+		if not _reveal_offscreen_sketch_body(factor):
+			_nudge_pivot_on_zoom_out(factor)
 
 
 func _zoom_anchor(screen_pos: Vector2) -> Vector3:
@@ -909,6 +923,92 @@ func _fit_distance_for_world_aabb(united: AABB) -> float:
 		var radius: float = united.size.length() * 0.5
 		d_needed = radius / maxf(half_v, 1e-6)
 	return clampf(d_needed * FRAME_PADDING, MIN_DISTANCE, MAX_DISTANCE)
+
+
+## True when this notch pulled an escaping sketch body toward the canvas.
+## Cursor-anchored zoom-out keeps the point under the pointer, so content
+## past that pointer (the Ø45 head, just off the right edge) barely moves.
+## While the visible body sticks out of the chrome-free canvas, grow toward
+## the fit distance and walk the pivot toward the body centre. A body that
+## already sits in the canvas is left alone so wheel zoom stays anchored.
+func _reveal_offscreen_sketch_body(factor: float) -> bool:
+	if not sketch_orientation_locked or factor <= 1.0:
+		return false
+	if not _has_visible_body():
+		return false
+	var united := _visible_contents_aabb()
+	if united.size.length_squared() < 1e-12:
+		return false
+	var vp := get_viewport()
+	var vp_size := Vector2.ZERO
+	if vp != null:
+		vp_size = vp.get_visible_rect().size
+	var canvas := sketch_fit_canvas_rect(vp_size)
+	if canvas.size.x < 1.0 or canvas.size.y < 1.0:
+		return false
+	var overflow := _aabb_canvas_overflow(united, canvas)
+	if overflow.length() <= SKETCH_REVEAL_OVERFLOW_PX:
+		return false
+	var fit_d := _fit_distance_for_world_aabb(united)
+	if vp_size.y > 1.0:
+		fit_d *= maxf(vp_size.x / canvas.size.x, vp_size.y / canvas.size.y)
+	fit_d = clampf(fit_d, MIN_DISTANCE, MAX_DISTANCE)
+	if distance < fit_d - 1e-3:
+		distance = minf(maxf(distance * maxf(factor, SKETCH_REVEAL_GROW), distance), fit_d)
+		_update_transform()
+	var center := united.get_center()
+	if is_inside_tree() and is_position_behind(center):
+		var t_behind := clampf((factor - 1.0) * 6.0, 0.2, 0.5)
+		pivot = pivot.lerp(center, t_behind)
+		_update_transform()
+		return true
+	var sp := unproject_position(center) if is_inside_tree() else Vector2.ZERO
+	var err := sp - canvas.get_center()
+	if err.length() < 1.0:
+		return true
+	var t := clampf((factor - 1.0) * 10.0, 0.25, 0.6)
+	var step := err * t
+	var cap := 0.45 * maxf(canvas.size.x, canvas.size.y)
+	if step.length() > cap:
+		step = step.normalized() * cap
+	var ppm := pixels_per_mm_at_pivot()
+	var mm := 1.0 / maxf(ppm, 1e-9)
+	var basis := global_transform.basis if is_inside_tree() else transform.basis
+	# Screen +X is camera right; screen +Y is down, camera +Y is up.
+	pivot += basis.x * (step.x * mm)
+	pivot -= basis.y * (step.y * mm)
+	_update_transform()
+	return true
+
+
+## How far `united` sticks out of `canvas`, in pixels (x and y summed on each
+## axis). A corner behind the camera counts as a full-canvas escape.
+func _aabb_canvas_overflow(united: AABB, canvas: Rect2) -> Vector2:
+	if not is_inside_tree():
+		return Vector2.ZERO
+	var min_s := Vector2(INF, INF)
+	var max_s := Vector2(-INF, -INF)
+	var corners: Array[Vector3] = [
+		united.position,
+		united.position + Vector3(united.size.x, 0, 0),
+		united.position + Vector3(0, united.size.y, 0),
+		united.position + Vector3(0, 0, united.size.z),
+		united.position + Vector3(united.size.x, united.size.y, 0),
+		united.position + Vector3(united.size.x, 0, united.size.z),
+		united.position + Vector3(0, united.size.y, united.size.z),
+		united.position + united.size,
+	]
+	for c in corners:
+		if is_position_behind(c):
+			return canvas.size
+		var p := unproject_position(c)
+		min_s.x = minf(min_s.x, p.x)
+		min_s.y = minf(min_s.y, p.y)
+		max_s.x = maxf(max_s.x, p.x)
+		max_s.y = maxf(max_s.y, p.y)
+	return Vector2(
+		maxf(0.0, canvas.position.x - min_s.x) + maxf(0.0, max_s.x - canvas.end.x),
+		maxf(0.0, canvas.position.y - min_s.y) + maxf(0.0, max_s.y - canvas.end.y))
 
 
 ## Off-screen safety net: when every visible body is outside the viewport,

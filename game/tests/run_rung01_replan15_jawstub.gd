@@ -1383,6 +1383,13 @@ func _commit_fillet(ctx: FilmContext) -> void:
 	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
+	# Field Enter commits the radius only. Viewport Enter applies.
+	if ctx.main.ops_panel._pending != OpsPanel.Pending.NONE:
+		ctx.main.interaction.return_viewport_keys()
+		await process_frame
+		await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
+		await process_frame
+		await process_frame
 	var applied := spin.value
 	if is_equal_approx(applied, 10.0) or is_equal_approx(applied, 1.0):
 		print("  B13.8 Fillet radius %s" % _radius_digits(applied))
