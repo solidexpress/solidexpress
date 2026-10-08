@@ -55,7 +55,7 @@ func test_part_mode_f_and_hud() -> void:
 	check(ctx.view.selected_body == "", "no body selected after Esc")
 
 	await _push_key(vp, KEY_3)
-	check(absf(cam.pitch - deg_to_rad(89.0)) < 0.05, "key 3 is Top view (pitch %.4f)" % cam.pitch)
+	check(absf(cam.pitch - deg_to_rad(90.0)) < 0.05, "key 3 is Top view (pitch %.4f)" % cam.pitch)
 
 	var end_px := _clamp_canvas(ctx, _end_screen(ctx, body))
 	check(end_px != Vector2.INF, "one end of the body projects on screen (px %s)" % str(end_px))
