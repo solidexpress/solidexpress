@@ -328,6 +328,9 @@ func _release_numeric_if_press_elsewhere(at: Vector2) -> void:
 		return
 	if _press_on_focused_numeric(at, vp.gui_get_focus_owner()):
 		return
+	var f := vp.gui_get_focus_owner()
+	if f is LineEdit:
+		SxUi.disarm_replace(f as LineEdit)
 	return_viewport_keys()
 
 
@@ -518,7 +521,9 @@ func _build_selection_strip() -> void:
 	_strip_radius.name = "StripRadius"
 	SxUi.configure_spin(_strip_radius, 0.05, 100.0, 0.5, 0.5)
 	_strip_radius.suffix = "mm"
-	_strip_radius.update_on_text_changed = false
+	# true so a trailing "." is kept (Godot only preserves it in that mode).
+	# Keys are applied by compose_typed_char so the caret is not parked at 0.
+	_strip_radius.update_on_text_changed = true
 	# 88 px clipped "10.0 mm" to a tail that read "0.0 mm" (sx-035 L3).
 	# Floor matches the finish-bar LineEdit so "10 mm" / "100 mm" stay whole.
 	_strip_radius.custom_minimum_size = Vector2(UiScale.px(140), 0)
@@ -540,6 +545,7 @@ func _build_selection_strip() -> void:
 		(func() -> void:
 			SxUi.reveal_committed_spin.call_deferred(_strip_radius, v)).call_deferred())
 	var strip_le := _strip_radius.get_line_edit()
+	SxUi.use_armed_replace_select(strip_le)
 	strip_le.focus_entered.connect(func() -> void:
 		if _strip_radius_syncing:
 			return
@@ -556,6 +562,7 @@ func _build_selection_strip() -> void:
 		_strip_focus_text = strip_le.text
 		SxUi.arm_replace_on_focus(strip_le))
 	strip_le.focus_exited.connect(func() -> void:
+		SxUi.disarm_replace(strip_le)
 		if _strip_radius_syncing:
 			return
 		_strip_radius_editing = false
@@ -585,6 +592,11 @@ func _build_selection_strip() -> void:
 	# focus-next lands on the AF 10 chip, which eats Enter (sets jaw_af) and
 	# looks like a stray digit when the walker types again.
 	strip_le.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+				SxUi.claim_keyboard_focus(strip_le)
+			return
 		if not (event is InputEventKey) or not event.pressed or event.echo:
 			return
 		var key := event as InputEventKey
@@ -594,12 +606,18 @@ func _build_selection_strip() -> void:
 			return_viewport_keys()
 			strip_le.accept_event()
 			return
-		if not SxUi.replace_armed(strip_le):
+		if (key.ctrl_pressed or key.meta_pressed) and not key.alt_pressed \
+				and key.keycode == KEY_A:
+			SxUi.claim_keyboard_focus(strip_le)
+			strip_le.select_all()
+			strip_le.accept_event()
 			return
 		var ch := SxUi.numeric_key_char(key)
 		if ch == "":
 			return
-		SxUi.write_typed_text(strip_le, ch)
+		if not strip_le.has_focus() or not strip_le.is_editing():
+			SxUi.claim_keyboard_focus(strip_le)
+		SxUi.write_typed_text(strip_le, SxUi.compose_typed_char(strip_le, ch))
 		strip_le.accept_event())
 	_strip_radius_box.add_child(_strip_radius)
 	SxUi.pin_fmt_mm(_strip_radius)
@@ -747,7 +765,8 @@ func _build_dim_edit_popup() -> void:
 	# Wide enough for "45.0" (and a short suffix) without scrolling the tail.
 	_dim_edit_line.name = "DimEditLine"
 	_dim_edit_line.custom_minimum_size = Vector2(160, 0)
-	_dim_edit_line.select_all_on_focus = true
+	_dim_edit_line.select_all_on_focus = false
+	SxUi.use_armed_replace_select(_dim_edit_line)
 	_dim_edit_line.focus_entered.connect(_on_dim_edit_line_focus_entered)
 	_dim_edit_line.gui_input.connect(_on_dim_edit_line_gui_input)
 	_dim_edit_line.text_changed.connect(_on_dim_edit_line_text_changed)
@@ -896,6 +915,9 @@ func _select_dim_edit_all_if_gen(gen: int) -> void:
 		return
 	if _dim_edit_line == null:
 		return
+	# Skip once a digit has replaced the value, or the next key deletes it.
+	if not _dim_edit_replace and not SxUi.replace_armed(_dim_edit_line):
+		return
 	_dim_edit_line.select_all()
 
 
@@ -923,6 +945,9 @@ func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
 		return
 	if not _is_length_type_key(ke):
 		return
+	if _dim_edit_line != null and _dim_edit_line.has_focus() and not _dim_edit_line.is_editing():
+		_dim_edit_line.edit()
+		_dim_edit_replace = true
 	# _input already wrote this character. Swallow it so the LineEdit does
 	# not insert a second copy at column 0.
 	if _dim_edit_line != null and _dim_edit_typed != "" \
@@ -2595,8 +2620,15 @@ func _gui_input(event: InputEvent) -> void:
 	# Length keys during a rubber-band must beat camera nav here too: a canvas
 	# click focuses this Control, so Godot delivers the next keys to _gui_input.
 	# Unfocused Distance 7.5 (no preview) uses the same gate.
+	if event is InputEventKey and event.pressed and not event.echo:
+		if _consume_numeric_select_all(event as InputEventKey):
+			accept_event()
+			return
+		_promote_visible_numeric_line()
 	if _try_route_length_key(event):
 		accept_event()
+		return
+	if event is InputEventKey and (_text_field_has_focus() or _sketch_keys_blocked()):
 		return
 	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
 	if camera != null and camera.is_nav_event(event, allow_scroll):
@@ -4979,6 +5011,13 @@ func _input(event: InputEvent) -> void:
 	# Strip / other STOP children swallow gui_input; still give the viewport
 	# the keys when the press is not on the focused numeric field.
 	_on_numeric_canvas_press(event)
+	if event is InputEventKey and event.pressed and not event.echo:
+		var early := event as InputEventKey
+		if _consume_numeric_select_all(early):
+			return
+		# A field can still show a selection after focus was stolen. Put the
+		# keyboard back before camera / select-all see the key.
+		_promote_visible_numeric_line()
 	# Camera first — before Control STOP panels so orbit works over docks, and
 	# before place so Alt+drag / two-finger pan don't commit a solid.
 	# Never steal wheel / two-finger pan from ScrollContainers; pinch always zooms.
@@ -5178,6 +5217,83 @@ func _text_field_has_focus() -> bool:
 		return false
 	var f := vp.gui_get_focus_owner()
 	return f is LineEdit or f is TextEdit or f is CodeEdit
+
+
+## Ctrl+A selects the numeric field's text. A selection drawn without keyboard
+## focus used to fall through and select every face (and disarm Fillet).
+func _consume_numeric_select_all(ke: InputEventKey) -> bool:
+	if ke == null or ke.keycode != KEY_A:
+		return false
+	if not (ke.ctrl_pressed or ke.meta_pressed) or ke.alt_pressed:
+		return false
+	var vp := get_viewport()
+	var owner: Control = vp.gui_get_focus_owner() if vp != null else null
+	if owner is LineEdit:
+		var line := owner as LineEdit
+		line.select_all()
+		if _line_is_tracked_numeric(line):
+			SxUi.arm_replace_on_focus(line)
+		if vp != null:
+			vp.set_input_as_handled()
+		return true
+	var armed := _armed_numeric_line()
+	if armed == null:
+		return false
+	SxUi.claim_keyboard_focus(armed)
+	armed.select_all()
+	if vp != null:
+		vp.set_input_as_handled()
+	return true
+
+
+## If a numeric line is showing a selection / replace-arm but does not own
+## the keyboard, grab it before this key reaches the camera.
+func _promote_visible_numeric_line() -> void:
+	var vp := get_viewport()
+	if vp != null and vp.gui_get_focus_owner() is LineEdit:
+		return
+	var line := _armed_numeric_line()
+	if line == null or (line.has_focus() and line.is_editing()):
+		return
+	SxUi.claim_keyboard_focus(line)
+
+
+func _armed_numeric_line() -> LineEdit:
+	var armed: LineEdit = null
+	for line in _numeric_lines():
+		if line == null or not is_instance_valid(line) or not line.is_visible_in_tree():
+			continue
+		if SxUi.replace_armed(line) or line.has_selection():
+			armed = line
+	return armed
+
+
+func _line_is_tracked_numeric(line: LineEdit) -> bool:
+	for candidate in _numeric_lines():
+		if candidate == line:
+			return true
+	return false
+
+
+func _numeric_lines() -> Array[LineEdit]:
+	var out: Array[LineEdit] = []
+	if _strip_radius != null:
+		var strip := _strip_radius.get_line_edit()
+		if strip != null:
+			out.append(strip)
+	if ops_panel != null and ops_panel._radius_spin != null:
+		var panel := ops_panel._radius_spin.get_line_edit()
+		if panel != null:
+			out.append(panel)
+	var dim := _dim_line_edit()
+	if dim != null:
+		out.append(dim)
+	var dist := _distance_line_edit()
+	if dist != null:
+		out.append(dist)
+	if _dim_edit_line != null:
+		out.append(_dim_edit_line)
+	return out
 
 
 ## Delete selected bodies / instance. Returns false when there was nothing to delete.

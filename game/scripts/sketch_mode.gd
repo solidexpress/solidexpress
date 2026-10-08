@@ -1689,14 +1689,14 @@ func has_single_dof_preview() -> bool:
 			return false
 
 
-## Digits type into the dim blank, not Extrude Distance. Slot radius is typed
-## before the first centre, so there is no rubber-band yet.
+## Digits type into the dim blank, not Extrude Distance. Slot and Circle
+## radius are typed as soon as the tool is armed, before the first centre.
 func wants_dim_length_keys() -> bool:
 	if not active:
 		return false
 	if has_single_dof_preview():
 		return true
-	return tool == Tool.SLOT
+	return tool == Tool.SLOT or tool == Tool.CIRCLE
 
 
 ## Rubber-band length currently shown (override or mouse distance).
