@@ -79,7 +79,8 @@ func test_explode_and_pattern(main) -> void:
 	await process_frame
 	check(doc.joint_list().size() == 1, "seed joint added")
 	view.select_instance(seed)
-	panel._offset_spin.value = 6
+	# Copies includes the seed. Offset is the mate distance, not the count.
+	panel._pattern_count.value = 6
 	panel._pattern_instance()
 	await process_frame
 	check(doc.instance_list().size() == 6, "six components after the pattern")
@@ -511,21 +512,37 @@ func test_place_and_remove(main) -> void:
 	var id: String = view.insert_primitive("box", Vector3.ZERO)
 	check(id != "", "box inserted")
 	view.select_entity(id, "")
+	main._update_panel_visibility()
 	await process_frame
-	# Selecting a body is what makes "Place instance" reachable in the first place.
-	check(panel.visible, "panel visible with a body selected")
-	panel._place_instance()
+	# #39: the assembly panel stays hidden until an instance exists.
+	check(not panel.visible, "panel hidden with a body selected and no instance")
+	var place_btn: Button = null
+	if main.ops_panel != null:
+		for c in main.ops_panel.find_children("*", "Button", true, false):
+			var b := c as Button
+			if b != null and str(b.text) == "Place":
+				place_btn = b
+				break
+	check(place_btn != null and place_btn.is_visible_in_tree(),
+			"Modify Place is visible for the selected body")
+	if place_btn != null:
+		var ctx := FilmContext.new()
+		ctx.main = main
+		ctx.view = view
+		ctx.tree = self
+		await FilmUI.click_control(ctx, place_btn, FilmUICues.alert("Place", "Place"))
 	await process_frame
+	panel.refresh_lists()
 
 	check(view.doc.instance_list().size() == 1, "instance exists")
-	check(panel.visible, "panel visible after place")
+	check(panel.visible, "panel visible once an instance exists")
 	check(panel._instances_list.get_child_count() == 1, "instance row present")
 
 	var iid: String = view.doc.instance_list()[0]["id"]
 	panel._remove_instance(iid)
 	await process_frame
 	check(view.doc.instance_list().is_empty(), "instance removed")
-	check(panel.visible, "still reachable while the source stays selected")
+	check(not panel.visible, "hidden after remove while the source stays selected")
 	view.clear_selection()
 	await process_frame
 	check(not panel.visible, "panel hides with no instances and nothing selected")
