@@ -2297,6 +2297,131 @@ func select_all_entities() -> int:
 	return ids.size()
 
 
+## Public pick used by the viewport marquee press (empty canvas starts a box).
+func entity_at(pos2: Vector2) -> String:
+	if sketch == null:
+		return ""
+	return _nearest_entity_at(pos2)
+
+
+## Window or crossing select in screen pixels. Returns the selection size.
+## Window: every sample inside `rect`. Crossing: any sample inside, or a
+## consecutive sample pair that crosses the rectangle. No 8-entity cap.
+func select_in_screen_rect(rect: Rect2, crossing: bool, additive: bool) -> int:
+	if sketch == null or camera == null:
+		return 0
+	var ids: Array[String] = []
+	if additive:
+		ids = selected.duplicate()
+	for id in sketch.entity_ids():
+		var sid := str(id)
+		if ids.has(sid):
+			continue
+		var info: Dictionary = sketch.entity_info(sid)
+		var pts := _entity_screen_samples(info)
+		if pts.is_empty():
+			continue
+		var hit := false
+		if crossing:
+			for p in pts:
+				if rect.has_point(p):
+					hit = true
+					break
+			if not hit and _samples_cross_rect(pts, rect, str(info.get("type", "")) == "circle"):
+				hit = true
+		else:
+			hit = true
+			for p in pts:
+				if not rect.has_point(p):
+					hit = false
+					break
+		if hit:
+			ids.append(sid)
+	_set_selected(ids)
+	return ids.size()
+
+
+func _entity_screen_samples(info: Dictionary) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if camera == null:
+		return out
+	match str(info.get("type", "")):
+		"line":
+			var a: Vector2 = info["start"]
+			var b: Vector2 = info["end"]
+			var sa := camera.unproject_position(to_global(to_model(a)))
+			var sb := camera.unproject_position(to_global(to_model(b)))
+			out.append(sa)
+			var dist := sa.distance_to(sb)
+			var n := int(ceil(dist / 8.0))
+			for i in range(1, n):
+				out.append(sa.lerp(sb, float(i) / float(n)))
+			out.append(sb)
+		"circle":
+			var c: Vector2 = info["center"]
+			var r: float = info["radius"]
+			for i in 48:
+				var ang := TAU * float(i) / 48.0
+				var p := c + Vector2.from_angle(ang) * r
+				out.append(camera.unproject_position(to_global(to_model(p))))
+		"arc":
+			var c2: Vector2 = info["center"]
+			var r2: float = info["radius"]
+			var a0: float = info["start_angle"]
+			var a1: float = info["end_angle"]
+			if a1 < a0:
+				a1 += TAU
+			for i in 48:
+				var ang2 := lerpf(a0, a1, float(i) / 47.0)
+				var p2 := c2 + Vector2.from_angle(ang2) * r2
+				out.append(camera.unproject_position(to_global(to_model(p2))))
+		"point":
+			var pt: Vector2 = info["position"]
+			out.append(camera.unproject_position(to_global(to_model(pt))))
+	return out
+
+
+func _samples_cross_rect(pts: PackedVector2Array, rect: Rect2, wrap: bool) -> bool:
+	var n := pts.size()
+	if n < 2:
+		return false
+	var pairs := n if wrap else n - 1
+	for i in pairs:
+		if _segment_crosses_rect(pts[i], pts[(i + 1) % n], rect):
+			return true
+	return false
+
+
+## True when the segment intersects the rectangle (Liang-Barsky).
+func _segment_crosses_rect(a: Vector2, b: Vector2, rect: Rect2) -> bool:
+	var dx := b.x - a.x
+	var dy := b.y - a.y
+	var t0 := 0.0
+	var t1 := 1.0
+	var p := PackedFloat64Array([-dx, dx, -dy, dy])
+	var q := PackedFloat64Array([
+		a.x - rect.position.x,
+		rect.end.x - a.x,
+		a.y - rect.position.y,
+		rect.end.y - a.y,
+	])
+	for i in 4:
+		if absf(p[i]) < 1e-9:
+			if q[i] < 0.0:
+				return false
+		else:
+			var t := q[i] / p[i]
+			if p[i] < 0.0:
+				if t > t1:
+					return false
+				t0 = maxf(t0, t)
+			else:
+				if t < t0:
+					return false
+				t1 = minf(t1, t)
+	return t0 <= t1
+
+
 ## Hit radius in sketch millimetres: at least PICK_TOLERANCE, widened to
 ## PICK_SCREEN_PX at the current ortho scale, never past PICK_TOLERANCE_MAX_MM.
 func _pick_tolerance() -> float:
@@ -5649,11 +5774,48 @@ func _lock_sized_circle(id: String) -> void:
 const ORIGIN_PIN_TOL := 0.5
 
 
+## Fixed construction segment at the origin, coincident to `id`'s centre.
+## A circle Fix would also lock the radius.
+func _pin_origin_centre_with_line(id: String) -> void:
+	if sketch == null or id == "":
+		return
+	if _entity_has_constraint(id, "fix"):
+		return
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if str(info.get("type", "")) != "coincident":
+			continue
+		var refs: Array = info.get("refs", [])
+		if refs.size() != 2:
+			continue
+		var other := ""
+		if str(refs[0].get("entity", "")) == id and str(refs[0].get("role", "")) == "center":
+			other = str(refs[1].get("entity", ""))
+		elif str(refs[1].get("entity", "")) == id and str(refs[1].get("role", "")) == "center":
+			other = str(refs[0].get("entity", ""))
+		if other != "" and sketch.is_construction(other) and _entity_has_constraint(other, "fix"):
+			return
+	var lid: String = sketch.add_line(0.0, 0.0, 1.0, 0.0)
+	if lid == "":
+		return
+	sketch.set_construction(lid, true)
+	sketch.add_constraint("fix", [{"entity": lid, "role": "self"}], 0.0)
+	sketch.add_constraint("coincident", [
+		{"entity": id, "role": "center"},
+		{"entity": lid, "role": "start"}], 0.0)
+
+
 func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
 	if center.length() > ORIGIN_PIN_TOL:
 		return
 	var anchor := _origin_anchor_point()
 	if anchor == "":
+		# A distance between two circles is free to slide along the sketch.
+		# Lock a centre that is already on the origin so the pair stays put.
+		# Fix on the circle also locks its radius and paints the radius
+		# dimension redundant, so pin through a fixed construction line.
+		# Do not add a construction point (T14).
+		_pin_origin_centre_with_line(id)
 		return
 	for cid in sketch.constraint_ids():
 		var info: Dictionary = sketch.constraint_info(cid)
@@ -5673,12 +5835,9 @@ func _origin_anchor_point() -> String:
 		if str(info.get("type", "")) == "point" and sketch.is_construction(id) \
 				and _entity_has_constraint(id, "fix"):
 			return id
-	var pt: String = sketch.add_point(0.0, 0.0)
-	if pt == "":
-		return ""
-	sketch.set_construction(pt, true)
-	sketch.add_constraint("fix", [{"entity": pt, "role": "self"}], 0.0)
-	return pt
+	# Smart Dim between two circles must not invent a construction point at
+	# the origin (T14). Pin only when that point already exists.
+	return ""
 
 
 ## Lock every sized circle (typed radius on the wrench bosses).

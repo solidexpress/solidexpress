@@ -57,6 +57,15 @@ var _press_empty := false
 var _press_travel := 0.0
 ## Screen-space rubber-band rect while in BOX_SELECT (drawn via _draw).
 var _box_rect := Rect2()
+## Last left-press outcome (sketch tool, marquee, or why the press was dropped).
+var last_click_disposition := ""
+signal click_disposition(text: String)
+## Sketch Select marquee: pending until the pointer travels, then a window
+## (left-to-right) or crossing (right-to-left) box.
+var _sketch_box_pending := false
+var _sketch_box_active := false
+var _sketch_box_start := Vector2.ZERO
+var _sketch_box_crossing := false
 ## Ctrl held on the last LMB press: empty-drag becomes rubber-band box select.
 var _box_drag := false
 ## Shift or Ctrl held on press: additive select; empty click will not clear.
@@ -2718,7 +2727,8 @@ func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
 	var h: Control = vp.gui_get_hovered_control()
 	if h == null:
 		# Nothing under the cursor (or Interaction size not hit-tested) → allow
-		# viewport gestures from `_input`.
+		# viewport gestures from `_input`. A left press still checks
+		# `_press_blocker_name` in `_input` so a rail button is not stolen.
 		return true
 	if _dim_edit_owns_keys():
 		var n: Node = h
@@ -2771,6 +2781,7 @@ func _handle_model_pointer(event: InputEvent) -> bool:
 			return true
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
+				_note_click("model-click", mb.position)
 				_box_drag = mb.ctrl_pressed
 				_additive_click = mb.shift_pressed or mb.ctrl_pressed
 				_on_press(mb.position)
@@ -2816,23 +2827,40 @@ func _handle_model_pointer(event: InputEvent) -> bool:
 
 
 func _over_chrome(global_mouse: Vector2) -> bool:
-	if _dim_edit_owns_keys():
-		if _dim_edit_line != null:
-			var lr: Rect2 = _dim_edit_line.get_global_rect()
-			if lr.has_point(global_mouse):
-				return true
-		if _dim_edit_popup != null:
-			var wr := Rect2(Vector2(_dim_edit_popup.position), Vector2(_dim_edit_popup.size))
-			if wr.has_point(global_mouse):
-				return true
-	# Ignore absurd chrome rects (headless / layout-before-size can make
-	# CENTER_BOTTOM HUD cover most of a tiny viewport and freeze place/select).
+	return _over_chrome_who(global_mouse) != ""
+
+
+func _chrome_area_cap() -> float:
 	var vp := get_viewport()
 	var vp_area := 1.0
 	if vp != null:
 		var s := vp.get_visible_rect().size
 		vp_area = maxf(s.x * s.y, 1.0)
-	var max_area := vp_area * 0.25
+	return vp_area * 0.25
+
+
+func _control_block_name(node: Node) -> String:
+	if node == null:
+		return "rect"
+	var n := str(node.name)
+	return n if n != "" else "rect"
+
+
+## First chrome control whose rect contains `pos`, or "" if the canvas owns it.
+## `_over_chrome` is this test, so the two cannot disagree.
+func _over_chrome_who(global_mouse: Vector2) -> String:
+	if _dim_edit_owns_keys():
+		if _dim_edit_line != null:
+			var lr: Rect2 = _dim_edit_line.get_global_rect()
+			if lr.has_point(global_mouse):
+				return _control_block_name(_dim_edit_line)
+		if _dim_edit_popup != null:
+			var wr := Rect2(Vector2(_dim_edit_popup.position), Vector2(_dim_edit_popup.size))
+			if wr.has_point(global_mouse):
+				return _control_block_name(_dim_edit_popup)
+	# Ignore absurd chrome rects (headless / layout-before-size can make
+	# CENTER_BOTTOM HUD cover most of a tiny viewport and freeze place/select).
+	var max_area := _chrome_area_cap()
 	var move_delta: Control = transform_hud.move_delta_panel() if transform_hud != null else null
 	var view_hud := _named_chrome_control("ViewHud")
 	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip, _finish_click_shield, view_hud]:
@@ -2844,21 +2872,24 @@ func _over_chrome(global_mouse: Vector2) -> bool:
 		if r.get_area() < 4.0 or r.get_area() > max_area:
 			continue
 		if r.has_point(global_mouse):
-			return true
+			return _control_block_name(ctrl)
 	if _over_sketch_rail(global_mouse):
-		return true
+		var rail := _sketch_tools_control()
+		return _control_block_name(rail) if rail != null else "SketchTools"
 	# Every chip row, the finish bar, and the view HUD — not only VariantBar.
 	# A container rect that is zero (not laid out yet) or larger than the area
 	# cap used to let the Centerline chip click through as a line point.
 	# IGNORE parents (the full-rect chrome, the action-bar stack) are skipped;
 	# their buttons are not.
 	if sketch_chrome != null and sketch_chrome.is_visible_in_tree():
-		if _tree_blocks_pointer(sketch_chrome, global_mouse, max_area):
-			return true
+		var chrome_who := _tree_blocking_name(sketch_chrome, global_mouse, max_area)
+		if chrome_who != "":
+			return chrome_who
 	if view_hud != null and view_hud.is_visible_in_tree():
-		if _tree_blocks_pointer(view_hud, global_mouse, max_area):
-			return true
-	return false
+		var hud_who := _tree_blocking_name(view_hud, global_mouse, max_area)
+		if hud_who != "":
+			return hud_who
+	return ""
 
 
 ## True when `pos` lies on `ctrl` in either viewport space GUI and `_input` use.
@@ -2872,37 +2903,133 @@ func _pointer_hits_control(ctrl: Control, pos: Vector2) -> bool:
 
 
 func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
-	if ctrl == null or not is_instance_valid(ctrl) or not ctrl.visible:
+	if ctrl == null or not is_instance_valid(ctrl) or not ctrl.is_visible_in_tree():
 		return false
 	# Full-rect IGNORE shells (SketchContextChrome, ActionBar) must not eat
 	# the canvas. Buttons and STOP rows still do.
 	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE and not (ctrl is BaseButton):
 		return false
-	var rects: Array[Rect2] = [ctrl.get_global_rect()]
-	var xf := ctrl.get_global_transform_with_canvas()
-	rects.append(Rect2(xf.origin, xf.get_scale() * ctrl.size))
-	for r in rects:
-		var area := r.get_area()
-		if area < 4.0 or area > max_area:
-			continue
-		if r.has_point(pos):
-			return true
-	return false
+	# Global rect only. The canvas-transform rect used for a hovered chip
+	# (`_pointer_hits_control`) is a different space; applying it to every
+	# control marks canvas points as chrome.
+	var r := ctrl.get_global_rect()
+	var area := r.get_area()
+	if area < 4.0 or area > max_area:
+		return false
+	return r.has_point(pos)
 
 
 func _tree_blocks_pointer(node: Node, pos: Vector2, max_area: float) -> bool:
+	return _tree_blocking_name(node, pos, max_area) != ""
+
+
+func _tree_blocking_name(node: Node, pos: Vector2, max_area: float) -> String:
 	if node == null or not is_instance_valid(node):
-		return false
+		return ""
 	var ctrl := node as Control
 	if ctrl != null:
 		if not ctrl.is_visible_in_tree():
-			return false
+			return ""
 		if _control_blocks_at(ctrl, pos, max_area):
-			return true
+			return _control_block_name(ctrl)
 	for child in node.get_children():
-		if _tree_blocks_pointer(child, pos, max_area):
-			return true
-	return false
+		var hit := _tree_blocking_name(child, pos, max_area)
+		if hit != "":
+			return hit
+	return ""
+
+
+## Front-most palette / rail / finish control under `pos`. Used on a left
+## press when hover is stale so that button still receives the click.
+## The menu bar and other STOP controls stay with `_input`: empty-canvas
+## orbit at the corner is not a drop.
+func _press_blocker_name(pos: Vector2) -> String:
+	var parent := get_parent()
+	if parent == null:
+		return ""
+	var max_area := _chrome_area_cap()
+	for root_name in ["Palette", "SketchTools"]:
+		var root := parent.find_child(root_name, true, false)
+		if root == null:
+			continue
+		var hit := _front_blocker_name(root, pos, max_area)
+		if hit != "":
+			return hit
+	if sketch_chrome != null and is_instance_valid(sketch_chrome):
+		return _front_blocker_name(sketch_chrome, pos, max_area)
+	return ""
+
+
+func _front_blocker_name(node: Node, pos: Vector2, max_area: float) -> String:
+	if node == null or not is_instance_valid(node):
+		return ""
+	var kids := node.get_children()
+	for i in range(kids.size() - 1, -1, -1):
+		var hit := _front_blocker_name(kids[i], pos, max_area)
+		if hit != "":
+			return hit
+	if node == self:
+		return ""
+	var ctrl := node as Control
+	if ctrl == null or not _control_blocks_at(ctrl, pos, max_area):
+		return ""
+	return _control_block_name(ctrl)
+
+
+func _is_left_press(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton):
+		return false
+	var mb := event as InputEventMouseButton
+	return mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT
+
+
+func _note_click(text: String, pos: Vector2) -> void:
+	last_click_disposition = text
+	click_disposition.emit(text)
+	if OS.get_environment("SX_INPUT_TRACE") == "1":
+		print("[input-trace] press (%d,%d) %s" % [int(pos.x), int(pos.y), text])
+
+
+func _note_press_drop(who: String, pos: Vector2) -> void:
+	var shield_name := ""
+	if _finish_click_shield != null and is_instance_valid(_finish_click_shield):
+		shield_name = str(_finish_click_shield.name)
+	if who == shield_name and shield_name != "":
+		_note_click("drop:shield", pos)
+	elif who != "":
+		_note_click("drop:over-chrome:" + who, pos)
+	else:
+		var h: Control = get_viewport().gui_get_hovered_control() if get_viewport() != null else null
+		var hn := str(h.name) if h != null else ""
+		_note_click("drop:not-owner:" + hn, pos)
+
+
+func _active_tool_key() -> String:
+	if sketch_mode == null:
+		return "NONE"
+	var keys := SketchMode.Tool.keys()
+	var idx := int(sketch_mode.tool)
+	if idx < 0 or idx >= keys.size():
+		return "NONE"
+	return str(keys[idx])
+
+
+func _emit_sketch_select_status(n: int) -> void:
+	if n <= 0:
+		status.emit("No sketch entities")
+	elif n == 1:
+		status.emit("Selected 1 sketch entity")
+	else:
+		status.emit("Selected %d sketch entities" % n)
+
+
+func _clear_sketch_box() -> void:
+	_sketch_box_pending = false
+	_sketch_box_active = false
+	_sketch_box_start = Vector2.ZERO
+	_sketch_box_crossing = false
+	_box_rect = Rect2()
+	queue_redraw()
 
 
 func _pointer_viewport_pos(event: InputEventMouse) -> Vector2:
@@ -3174,11 +3301,22 @@ func _sketch_input(event: InputEvent) -> void:
 			# wins on this press. Missing typed_dim_value (WP1) keeps click().
 			# Only polygon/circle: a leftover dim number must not steal a LINE
 			# click (wrench shaft tangents).
+			# arm_dim_replace focuses the blank and selects the spin minimum
+			# (0.01). That displayed number is not a typed length;
+			# commit_at_length would emit "Too short" and drop the second press.
 			var typed_len: Variant = null
-			if sketch_chrome != null and sketch_chrome.has_method("typed_dim_value") \
-					and sketch_mode.has_single_dof_preview() \
+			var dim_replace_armed := false
+			if sketch_chrome != null and sketch_mode.has_single_dof_preview() \
 					and _sketch_skips_mouse_up_commit():
-				typed_len = sketch_chrome.typed_dim_value()
+				dim_replace_armed = bool(sketch_chrome.get("_dim_replace_next"))
+				if not dim_replace_armed and sketch_chrome.has_method("typed_dim_value"):
+					typed_len = sketch_chrome.typed_dim_value()
+					# Focus can already have left the blank, clearing
+					# _dim_replace_next, while the line still shows the spin
+					# minimum. Typed 0.1 is above that minimum.
+					if _typed_len_is_spin_minimum(typed_len):
+						typed_len = null
+						dim_replace_armed = true
 			# Drop the dim blank before the canvas consumes the click, so the
 			# next key is a sketch hotkey and not another digit in the field.
 			if sketch_chrome != null:
@@ -3190,19 +3328,49 @@ func _sketch_input(event: InputEvent) -> void:
 			var ray := _model_ray(mb.position)
 			var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 			if p2 != null:
+				var tool_key := _active_tool_key()
 				if sketch_mode.tool == SketchMode.Tool.TRIM:
+					_note_click("sketch-drag:" + tool_key, mb.position)
 					sketch_mode.begin_trim_drag(p2)
 					_sketch_dragging = true
 				elif sketch_mode.tool == SketchMode.Tool.SELECT \
 						and sketch_mode.constraint_hit(p2) == "" \
 						and sketch_mode.dimension_hit(p2) < 0 \
 						and not sketch_mode.drag_hit(p2).is_empty():
+					_note_click("sketch-drag:" + tool_key, mb.position)
 					sketch_mode.begin_drag(p2)
 					_sketch_dragging = true
 				elif typeof(typed_len) == TYPE_FLOAT or typeof(typed_len) == TYPE_INT:
+					_note_click("sketch-click:" + tool_key, mb.position)
 					sketch_mode.hover(p2)
 					sketch_mode.commit_at_length(float(typed_len))
+				elif sketch_mode.tool == SketchMode.Tool.SELECT \
+						and sketch_mode.constraint_hit(p2) == "" \
+						and sketch_mode.dimension_hit(p2) < 0 \
+						and sketch_mode.entity_at(p2) == "":
+					_sketch_box_pending = true
+					_sketch_box_active = false
+					_sketch_box_start = mb.position
+					_note_click("sketch-box:SELECT", mb.position)
 				else:
+					# Line and Centerline place through a label (click skips the
+					# hit). Every other non-Select tool records a text-rect hit
+					# as drop:dim-label; the 22 px halo stays for Select / Smart Dim.
+					var dim_i := -1
+					if sketch_mode.tool != SketchMode.Tool.SELECT \
+							and sketch_mode.tool != SketchMode.Tool.LINE \
+							and sketch_mode.tool != SketchMode.Tool.CENTERLINE:
+						dim_i = sketch_mode.dimension_hit(p2, \
+								sketch_mode.tool != SketchMode.Tool.SELECT \
+								and sketch_mode.tool != SketchMode.Tool.SMART_DIM)
+					if dim_i >= 0:
+						_note_click("drop:dim-label:%d" % dim_i, mb.position)
+					else:
+						_note_click("sketch-click:" + tool_key, mb.position)
+					# The armed blank can echo 0.01 into the length override.
+					# That is the same untyped minimum; click() would Too-short.
+					if dim_replace_armed and sketch_mode.has_length_override():
+						sketch_mode.clear_length_override()
 					sketch_mode.click(p2)
 					_clear_select_click_measure()
 					if sketch_chrome != null and sketch_chrome.has_method("arm_dim_replace") \
@@ -3239,6 +3407,21 @@ func _sketch_input(event: InputEvent) -> void:
 			_sketch_dragging = false
 			_sketch_drag_moved = false
 			accept_event()
+		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_box_pending:
+			if _sketch_box_active:
+				_box_rect = Rect2(_sketch_box_start, mb.position - _sketch_box_start).abs()
+				_sketch_box_crossing = mb.position.x < _sketch_box_start.x
+				var n_box := sketch_mode.select_in_screen_rect(_box_rect, _sketch_box_crossing, \
+						mb.shift_pressed or mb.ctrl_pressed)
+				_emit_sketch_select_status(n_box)
+			else:
+				var ray_box := _model_ray(mb.position)
+				var p2_box = sketch_mode.ray_to_sketch(ray_box[0], ray_box[1])
+				if p2_box != null:
+					sketch_mode.click(p2_box)
+					_clear_select_click_measure()
+			_clear_sketch_box()
+			accept_event()
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and not _sketch_dragging:
 			# Drag-draw completion only when the pointer moved — pure click-click
 			# must not double-fire the same anchor (zero-length segment).
@@ -3261,6 +3444,14 @@ func _sketch_input(event: InputEvent) -> void:
 			sketch_mode.end_chain()
 			accept_event()
 	elif event is InputEventMouseMotion:
+		if _sketch_box_pending:
+			var box_at: Vector2 = (event as InputEventMouseMotion).position
+			if box_at.distance_to(_sketch_box_start) >= CLICK_SLOP:
+				_sketch_box_active = true
+			if _sketch_box_active:
+				_box_rect = Rect2(_sketch_box_start, box_at - _sketch_box_start).abs()
+				_sketch_box_crossing = box_at.x < _sketch_box_start.x
+				queue_redraw()
 		var ray := _model_ray(event.position)
 		var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 		if p2 != null:
@@ -3283,7 +3474,7 @@ func _sketch_input(event: InputEvent) -> void:
 		match ke.keycode:
 			KEY_A:
 				var n := sketch_mode.select_all_entities()
-				status.emit("Selected %d sketch entities" % n if n > 0 else "No sketch entities")
+				_emit_sketch_select_status(n)
 				accept_event()
 			KEY_C:
 				var nc := sketch_mode.copy_selected_entities()
@@ -3329,6 +3520,12 @@ func _sketch_input(event: InputEvent) -> void:
 					else:
 						status.emit("Deleted %d" % n)
 			KEY_ESCAPE:
+				if _sketch_box_active:
+					_clear_sketch_box()
+					accept_event()
+					return
+				if _sketch_box_pending:
+					_clear_sketch_box()
 				if not _consume_sketch_esc():
 					pass
 				elif consume_refusal_exit_ladder():
@@ -3367,6 +3564,19 @@ func _consume_sketch_esc() -> bool:
 		return false
 	_sketch_esc_frame = frame
 	return true
+
+
+## True when `parsed` is the dim spin's minimum (the untyped blank), not a
+## number the user entered. 0.1 is above that minimum.
+func _typed_len_is_spin_minimum(parsed: Variant) -> bool:
+	if typeof(parsed) != TYPE_FLOAT and typeof(parsed) != TYPE_INT:
+		return false
+	if sketch_chrome == null:
+		return false
+	var spin: SpinBox = sketch_chrome.get("_dim_spin") as SpinBox
+	if spin == null:
+		return false
+	return is_equal_approx(float(parsed), spin.min_value)
 
 
 ## Polygon, circle, and multi-click rectangles (Jaw / three-point / parallelogram):
@@ -3781,8 +3991,11 @@ func _on_drag(pos: Vector2) -> void:
 
 
 func _draw() -> void:
-	if _drag_mode == DragMode.BOX_SELECT and _box_rect.size != Vector2.ZERO:
-		draw_rect(_box_rect, Color(0.35, 0.6, 0.95, 0.18), true)
+	if (_drag_mode == DragMode.BOX_SELECT or _sketch_box_active) and _box_rect.size != Vector2.ZERO:
+		var fill := Color(0.35, 0.6, 0.95, 0.18)
+		if _sketch_box_active and _sketch_box_crossing:
+			fill = Color(0.35, 0.85, 0.45, 0.18)
+		draw_rect(_box_rect, fill, true)
 		draw_rect(_box_rect, Color(0.35, 0.6, 0.95, 0.85), false, 1.0)
 	_draw_selection_gizmos()
 	if _drag_mode == DragMode.PUSH_PULL and absf(_pp_preview_dist) > 1e-3:
@@ -3954,7 +4167,7 @@ func _on_release(pos: Vector2) -> void:
 			if view.selection_size() > 1:
 				status.emit("%d selected" % view.selection_size())
 			elif view.selection_size() == 1:
-				status.emit("Selected " + view.selected_body.left(8))
+				status.emit("Selected body " + view.selected_body.left(8))
 			else:
 				status.emit("")
 			_clear_box_band()
@@ -4018,20 +4231,43 @@ func _on_release(pos: Vector2) -> void:
 			_press_travel = 0.0
 			return
 		DragMode.PUSH_PULL:
-			if not was_click:
-				var dist := _push_pull_distance(pos)
-				if absf(dist) > 1e-3:
-					if view.push_pull_selected(dist):
-						status.emit("Push/pull %.1f mm applied" % dist)
-						_show_precision_after_drag(dist, "Δ push")
-					else:
-						status.emit("Push/pull failed (planar faces only for now)")
-			_pp_preview_dist = 0.0
-			_drag_mode = DragMode.NONE
-			if was_click and _click_hits_pad():
-				_refresh_transform_hud()
+			# A still click on the selected face is drill-select, not a push.
+			# Near an edge (2.5 mm) that becomes the edge; otherwise the face stays.
+			if was_click:
+				var edge_ray := _model_ray(_press_pos)
+				var edge_hit: Dictionary = view.pick_info(edge_ray[0], edge_ray[1])
+				if not edge_hit.is_empty():
+					var edge_id := view.edge_near_point(str(edge_hit.get("body", "")), \
+							edge_hit.get("point", Vector3.ZERO), 2.5, camera)
+					if edge_id != "" and edge_id != view.selected_edge:
+						view.select_edge(str(edge_hit.get("body", "")), edge_id)
+						status.emit("Selected edge " + edge_id.left(8))
+						_pp_preview_dist = 0.0
+						_drag_mode = DragMode.NONE
+						_box_drag = false
+						_additive_click = false
+						_press_empty = false
+						_press_travel = 0.0
+						_refresh_transform_hud()
+						queue_redraw()
+						return
+				_pp_preview_dist = 0.0
+				_drag_mode = DragMode.NONE
+				_box_drag = false
+				_additive_click = false
+				_press_empty = false
+				_press_travel = 0.0
 				queue_redraw()
 				return
+			var dist := _push_pull_distance(pos)
+			if absf(dist) > 1e-3:
+				if view.push_pull_selected(dist):
+					status.emit("Push/pull %.1f mm applied" % dist)
+					_show_precision_after_drag(dist, "Δ push")
+				else:
+					status.emit("Push/pull failed (planar faces only for now)")
+			_pp_preview_dist = 0.0
+			_drag_mode = DragMode.NONE
 			_box_drag = false
 			_additive_click = false
 			_refresh_transform_hud()
@@ -4139,7 +4375,15 @@ func _on_release(pos: Vector2) -> void:
 		if view.selection_size() > 1:
 			status.emit("%d selected" % view.selection_size())
 		else:
-			status.emit("Selected " + (view.selected_face if view.selected_face != "" else view.selected_body).left(8))
+			var level := "body"
+			var picked_id := view.selected_body
+			if view.selected_edge != "":
+				level = "edge"
+				picked_id = view.selected_edge
+			elif view.selected_face != "":
+				level = "face"
+				picked_id = view.selected_face
+			status.emit("Selected %s %s" % [level, picked_id.left(8)])
 	elif not _additive_click:
 		# Deselect keeps PropertyPanel live-preview edits (no OK button).
 		_commit_property_panel_on_deselect()
@@ -4425,7 +4669,7 @@ func _selected_body_ids() -> Array:
 func _select_all() -> bool:
 	if sketch_mode != null and sketch_mode.active:
 		var n := sketch_mode.select_all_entities()
-		status.emit("Selected %d sketch entities" % n if n > 0 else "No sketch entities")
+		_emit_sketch_select_status(n)
 		return true
 	if view.selected_body != "":
 		if view.is_import_body(view.selected_body):
@@ -5211,7 +5455,13 @@ func _input(event: InputEvent) -> void:
 	if sketch_mode != null and sketch_mode.active:
 		if event is InputEventMouse:
 			var mouse_pos := (event as InputEventMouse).position
-			if _over_chrome(mouse_pos) or not _viewport_owns_pointer(mouse_pos):
+			var left_press := _is_left_press(event)
+			var who := _over_chrome_who(mouse_pos)
+			if who == "" and left_press:
+				who = _press_blocker_name(mouse_pos)
+			if who != "" or not _viewport_owns_pointer(mouse_pos):
+				if left_press:
+					_note_press_drop(who, mouse_pos)
 				return
 			_sketch_input(event)
 			get_viewport().set_input_as_handled()
@@ -5230,6 +5480,13 @@ func _input(event: InputEvent) -> void:
 	var event_pos := Vector2.INF
 	if event is InputEventMouse:
 		event_pos = (event as InputEventMouse).position
+	if _is_left_press(event) and not _pressed:
+		var who2 := _over_chrome_who(event_pos)
+		if who2 == "":
+			who2 = _press_blocker_name(event_pos)
+		if who2 != "" or not _viewport_owns_pointer(event_pos):
+			_note_press_drop(who2, event_pos)
+			return
 	if _pressed or _viewport_owns_pointer(event_pos):
 		if _handle_model_pointer(event):
 			get_viewport().set_input_as_handled()
