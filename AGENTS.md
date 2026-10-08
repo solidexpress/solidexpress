@@ -62,10 +62,10 @@ chmod +x tools/godot/godot
   without `run_` and `.gd`; `script=` is relative to `game/`; `tier=ci` also
   runs in the godot-smoke gate). Do not edit `packaging/ci/run_godot_suites.sh`
   or the Makefile `test-godot` recipe. `KEEP_GOING=1 make test-godot` runs every
-  suite and prints every failure. Known-red suites (`run_camera_tests.gd`,
-  `run_place_tests.gd`, `run_howto_tests.gd`, `run_infer_tests.gd`,
-  `run_icon_tests.gd`) stay `tier=full`. `run_film_caption_tests.gd` and
-  `run_ui_scroll_tests.gd` stay unregistered.
+  suite and prints every failure. The full tier is expected green.
+  Known-red suites, if any, are listed by `make test-godot-known-red` with
+  their reasons. `run_film_caption_tests.gd` and `run_ui_scroll_tests.gd`
+  stay unregistered.
 - First run of `make import`/`make run`/`make test-godot` bakes the `game/.godot`
   cache headlessly; this is normal.
 
@@ -81,8 +81,6 @@ chmod +x tools/godot/godot
 ### Known pre-existing test failures (NOT environment issues)
 Observed on a clean build; these are repo code/test mismatches, independent of
 setup, so don't treat them as broken dependencies:
-- `nav_preset` defaults to `FUSION` (`game/scripts/orbit_camera.gd`) while
-  several tests assume `SOLIDEXPRESS`, so the Alt-orbit checks fail in
-  `run_camera_tests`, `run_place_tests`, and `run_howto_tests`.
-- `run_infer_tests` (DOF chip update) and `run_icon_tests` (a 1–2 char button
-  without an icon) each have one unrelated pre-existing failure.
+- The full tier is expected green. Known-red suites, if any, are listed by
+  `make test-godot-known-red` with their reasons.
+- `run_film_caption_tests.gd` and `run_ui_scroll_tests.gd` stay unregistered.

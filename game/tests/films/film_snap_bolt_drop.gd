@@ -17,7 +17,7 @@ func run_film(ctx: FilmContext) -> void:
 
 	await ctx.beat("Instance the bolt so it can be assembled", 0.45)
 	ctx.view.select_entity(bolt, "")
-	await FilmUI.click_button(ctx, "Place instance of selection")
+	await FilmUI.place_instance(ctx)
 	var insts: Array = doc.instance_list()
 	if insts.is_empty() or plate == "":
 		await ctx.beat("Bolt did not instance", 0.6)

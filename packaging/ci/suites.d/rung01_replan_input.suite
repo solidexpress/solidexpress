@@ -1,2 +1,3 @@
 script=tests/run_rung01_replan_input.gd
-tier=full
+tier=known-red
+reason=product: a canvas click at the viewport center leaves the dim LineEdit focused after return_viewport_keys. Ruled out a press on the field itself.

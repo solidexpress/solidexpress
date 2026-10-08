@@ -309,6 +309,33 @@ static func click_button(ctx: FilmContext, text: String, cue: Dictionary = {}) -
 	await click_control(ctx, b, c)
 
 
+## Modify-panel Place. The Assembly panel's "Place instance of selection"
+## exists only after an instance does (#39), so films cannot click that label.
+static func place_instance(ctx) -> void:
+	var hit := find_button(ctx.main, "Place") if ctx != null and ctx.main != null else null
+	if hit != null and str(hit.text) == "Place" and _node_under(hit, ctx.main.ops_panel):
+		await click_button(ctx, "Place")
+		return
+	if ctx != null and ctx.main != null and ctx.main.ops_panel != null:
+		for c in ctx.main.ops_panel.find_children("*", "Button", true, false):
+			var btn := c as Button
+			if btn != null and str(btn.text) == "Place":
+				await click_control(ctx, btn, FilmUICues.alert("Place", "Place"))
+				return
+	await click_button(ctx, "Place")
+
+
+static func _node_under(node: Node, ancestor: Node) -> bool:
+	if node == null or ancestor == null:
+		return false
+	var n := node
+	while n != null:
+		if n == ancestor:
+			return true
+		n = n.get_parent()
+	return false
+
+
 ## Shift+drag a window/crossing box that covers the given pads (multi-select).
 ## Uses Shift+right-drag crossing mode so partial pad capture counts.
 static func select_sketch_pads_box_ui(ctx: FilmContext, feature_ids: Array) -> void:
@@ -766,6 +793,20 @@ static func merge_sketches_ui(ctx: FilmContext, mode: String) -> void:
 		_fail("sketch chrome not visible for merge chips")
 		return
 	var merge_btn := find_button(sk_chrome, chip_label)
+	if merge_btn == null:
+		var more := find_button(sk_chrome, "… More")
+		if more is MenuButton:
+			var popup := (more as MenuButton).get_popup()
+			var item_id := -1
+			if popup != null:
+				for i in popup.item_count:
+					if str(popup.get_item_text(i)) == chip_label:
+						item_id = i
+						break
+			if item_id >= 0:
+				await activate_menu_id(ctx, more as MenuButton, item_id, FilmUICues.merge_join())
+				await wait_frames(ctx.tree, 4)
+				return
 	if not await click_control(ctx, merge_btn, FilmUICues.merge_join()):
 		return
 	await wait_frames(ctx.tree, 4)
@@ -1117,6 +1158,13 @@ static func select_face(ctx: FilmContext, body_id: String, face_id: String) -> v
 static func edit_sketch_pad(ctx: FilmContext, fid: String) -> void:
 	if fid.is_empty():
 		return
+	# A plain pad click no longer edits (#193). Rail Sketch, then the pad.
+	var sketch_btn := find_palette_sketch_button(ctx.main)
+	if sketch_btn == null:
+		sketch_btn = find_button(ctx.main, "Sketch")
+	if sketch_btn != null:
+		await click_control(ctx, sketch_btn, FilmUICues.toolbar_sketch())
+		await wait_frames(ctx.tree, 2)
 	var screen_pos := pad_screen_center(ctx, fid)
 	if screen_pos == Vector2.ZERO:
 		_fail("could not project pad %s for edit" % fid)
@@ -1130,6 +1178,13 @@ static func edit_sketch_pad(ctx: FilmContext, fid: String) -> void:
 static func face_pick_point(view: DocumentView, body_id: String, face_id: String) -> Vector3:
 	if view == null or body_id == "" or face_id == "":
 		return Vector3.INF
+	# Mesh surface order is not the face-id order, so a vertex average can
+	# land off the face the film asked for. The kernel midpoint is that face.
+	if view.doc != null and view.doc.has_method("face_midpoint") \
+			and view.doc.get_face_ids(body_id).has(face_id):
+		var mid: Variant = view.doc.face_midpoint(face_id)
+		if mid is Vector3:
+			return mid
 	var node: MeshInstance3D = view.body_node(body_id)
 	var faces: PackedStringArray = view.doc.get_face_ids(body_id)
 	var idx := faces.find(face_id)

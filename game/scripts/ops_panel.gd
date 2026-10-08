@@ -426,8 +426,11 @@ func _build_face_ops() -> void:
 			ah.name = "ApplyHole"
 	_op_button(hole_row, "Place hole…", _arm_hole, "hole",
 		"Arm: click a point on a face (near corner → inset; near mid → snap; else free)")
-	_op_button(hole_row, "Move", _arm_selected_hole_move, "",
+	var hole_move := _op_button(hole_row, "Move", _arm_selected_hole_move, "offset",
 		"Move the selected hole/hex — click a new point on the placement face")
+	# No "move" glyph exists; offset is the translated-shape icon. Keep the label.
+	hole_move.text = "Move"
+	hole_move.name = "Move"
 	var wizard_row := HBoxContainer.new()
 	_face_ops.add_child(wizard_row)
 	_op_button(wizard_row, "Hole Wizard…", _arm_hole_wizard, "hole",

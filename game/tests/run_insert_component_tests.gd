@@ -219,7 +219,10 @@ func test_reference_geometry_after_insert(main) -> void:
 	view.new_document()
 	check(main.insert_components_from(path), "insert component first")
 	var before: int = view.doc.datum_list().size()
-	main._on_insert_menu(0)  # XY plane
+	main._on_insert_menu(0)  # XY plane opens the offset dialog (#195)
+	check(main._datum_dialog != null and main._datum_dialog.visible,
+			"XY plane opens the offset dialog")
+	main._datum_dialog.confirmed.emit()
 	main._on_insert_menu(5)  # Z axis
 	main._on_insert_menu(6)  # origin point
 	var datums: Array = view.doc.datum_list()

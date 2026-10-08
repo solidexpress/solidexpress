@@ -11,7 +11,7 @@ func run_film(ctx: FilmContext) -> void:
 	var bodies: PackedStringArray = doc.body_ids()
 	if not bodies.is_empty():
 		ctx.view.select_entity(bodies[0], "")
-		await FilmUI.click_button(ctx, "Place instance of selection")
+		await FilmUI.place_instance(ctx)
 	var rows: Array = doc.bom_rows()
 	await ctx.beat("Config-aware BOM: %d row(s)" % rows.size(), 0.7)
 	await ctx.camera.showcase_smooth(0.6, 12.0)

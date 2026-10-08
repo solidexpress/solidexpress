@@ -675,6 +675,9 @@ func test_ops_shell_draft_hole(ctx: FilmContext, main) -> void:
 func test_timeline_suppress_rollback(ctx: FilmContext, main) -> void:
 	print("-- Timeline suppress / rollback")
 	var doc := _fresh(main)
+	main.show_timeline = true
+	if main.has_method("_update_panel_visibility"):
+		main._update_panel_visibility()
 	doc.graph_add_primitive("box", 20, 20, 20, Vector3(0, 0, 0))
 	doc.graph_add_primitive("box", 20, 20, 20, Vector3(40, 0, 0))
 	await ctx.after_regen()

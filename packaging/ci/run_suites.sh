@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Run Godot headless suites declared in packaging/ci/suites.d/*.suite.
 #
-#   --tier ci|full   ci = tier ci only; full = tier ci and tier full (default)
+#   --tier ci|full|known-red
+#                    ci = tier ci only; full = tier ci and tier full (default);
+#                    known-red = tier known-red only (listed, not run, unless
+#                    --run)
+#   --run            with --tier known-red, run those suites (exit 1 only if
+#                    one is now green)
 #   --keep-going     do not stop at the first failure (or KEEP_GOING=1)
 #   --only <glob>    limit to suites whose script, script basename, or
 #                    manifest filename matches the shell glob
@@ -27,6 +32,7 @@ fi
 TIER_ARG="full"
 LIST=0
 ONLY=""
+RUN=0
 case "${KEEP_GOING:-0}" in
   1|true|yes) KEEP_GOING=1 ;;
   *) KEEP_GOING=0 ;;
@@ -54,6 +60,10 @@ while [[ $# -gt 0 ]]; do
       LIST=1
       shift
       ;;
+    --run)
+      RUN=1
+      shift
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 2
@@ -62,7 +72,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "${TIER_ARG}" in
-  ci|full) ;;
+  ci|full|known-red) ;;
   *)
     echo "bad tier: ${TIER_ARG}" >&2
     exit 2
@@ -81,14 +91,15 @@ trim() {
   printf '%s' "${s}"
 }
 
-# Parse one manifest. Sets SCRIPT, TIER, TIMEOUT. Echoes errors and returns 2.
+# Parse one manifest. Sets SCRIPT, TIER, TIMEOUT, REASON. Echoes errors and returns 2.
 parse_manifest() {
   local file="$1"
   local line key val
   SCRIPT=""
   TIER=""
   TIMEOUT="900"
-  local seen_script=0 seen_tier=0 seen_timeout=0
+  REASON=""
+  local seen_script=0 seen_tier=0 seen_timeout=0 seen_reason=0
   while IFS= read -r line || [[ -n "${line}" ]]; do
     line="${line%$'\r'}"
     line="${line%%#*}"
@@ -125,6 +136,14 @@ parse_manifest() {
         seen_timeout=1
         TIMEOUT="${val}"
         ;;
+      reason)
+        if [[ "${seen_reason}" -eq 1 ]]; then
+          echo "duplicate reason key in $(basename "${file}")" >&2
+          return 2
+        fi
+        seen_reason=1
+        REASON="${val}"
+        ;;
       *)
         echo "unknown key ${key} in $(basename "${file}")" >&2
         return 2
@@ -135,8 +154,21 @@ parse_manifest() {
     echo "missing script in $(basename "${file}")" >&2
     return 2
   fi
-  if [[ "${TIER}" != ci && "${TIER}" != full ]]; then
+  if [[ "${TIER}" != ci && "${TIER}" != full && "${TIER}" != known-red ]]; then
     echo "bad tier ${TIER:-<empty>} in $(basename "${file}")" >&2
+    return 2
+  fi
+  if [[ "${TIER}" == known-red ]]; then
+    if [[ -z "${REASON}" ]]; then
+      echo "missing reason in $(basename "${file}")" >&2
+      return 2
+    fi
+    if ! [[ "${REASON}" =~ ^(env|stale-feature|product):\ .+ ]]; then
+      echo "bad reason class in $(basename "${file}")" >&2
+      return 2
+    fi
+  elif [[ -n "${REASON}" ]]; then
+    echo "reason only allowed on known-red in $(basename "${file}")" >&2
     return 2
   fi
   if ! [[ "${TIMEOUT}" =~ ^[0-9]+$ ]] || [[ "${TIMEOUT}" -lt 1 ]]; then
@@ -158,12 +190,20 @@ done < <(find "${SUITES_DIR}" -maxdepth 1 -name '*.suite' -printf '%f\n' | LC_AL
 
 selected_scripts=()
 selected_timeouts=()
+selected_reasons=()
 for f in "${files_sorted[@]}"; do
   SCRIPT=""
   TIER=""
   TIMEOUT=""
+  REASON=""
   parse_manifest "${f}" || exit 2
   if [[ "${TIER_ARG}" == ci && "${TIER}" != ci ]]; then
+    continue
+  fi
+  if [[ "${TIER_ARG}" == full && "${TIER}" == known-red ]]; then
+    continue
+  fi
+  if [[ "${TIER_ARG}" == known-red && "${TIER}" != known-red ]]; then
     continue
   fi
   if [[ -n "${ONLY}" ]]; then
@@ -175,12 +215,23 @@ for f in "${files_sorted[@]}"; do
   fi
   selected_scripts+=("${SCRIPT}")
   selected_timeouts+=("${TIMEOUT}")
+  selected_reasons+=("${REASON}")
 done
 
 if [[ "${LIST}" -eq 1 ]]; then
   if [[ ${#selected_scripts[@]} -gt 0 ]]; then
     printf '%s\n' "${selected_scripts[@]}"
   fi
+  exit 0
+fi
+
+if [[ "${TIER_ARG}" == known-red && "${RUN}" -eq 0 ]]; then
+  if [[ ${#selected_scripts[@]} -gt 0 ]]; then
+    for i in "${!selected_scripts[@]}"; do
+      printf '%s — %s\n' "${selected_scripts[$i]}" "${selected_reasons[$i]}"
+    done
+  fi
+  echo "suites: ${#selected_scripts[@]} known-red"
   exit 0
 fi
 
@@ -201,7 +252,17 @@ if [[ ${#selected_scripts[@]} -gt 0 ]]; then
     rc=$?
     set -e
     run=$((run + 1))
-    if [[ "${rc}" -ne 0 ]]; then
+    if [[ "${TIER_ARG}" == known-red && "${RUN}" -eq 1 ]]; then
+      if [[ "${rc}" -eq 0 ]]; then
+        echo "NOW GREEN: ${script} (re-tier it)"
+        failed=$((failed + 1))
+      else
+        if [[ "${rc}" -eq 124 ]]; then
+          echo "timeout ${secs}s: ${script}" >&2
+        fi
+        echo "still red: ${script}"
+      fi
+    elif [[ "${rc}" -ne 0 ]]; then
       if [[ "${rc}" -eq 124 ]]; then
         echo "timeout ${secs}s: ${script}" >&2
       fi

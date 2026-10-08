@@ -1364,6 +1364,11 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 			_distance_replace_next = false
 			_distance_select_gen += 1
 			SxUi.write_typed_text(line, next)
+			var typed: Variant = _parse_spin_text(_extrude_spin, next)
+			if typed != null:
+				_distance_line_invalid = false
+				_distance_invalid_raw = ""
+				_write_extrude_spin(float(typed), next)
 			accept_event()
 			return
 
@@ -1424,7 +1429,7 @@ func set_extrude_distance(v: float) -> void:
 	if _extrude_spin:
 		_distance_line_invalid = false
 		_distance_invalid_raw = ""
-		_write_extrude_spin(v)
+		_write_extrude_spin(v, "%s mm" % _plain_num(v))
 		_distance_origin = v
 
 

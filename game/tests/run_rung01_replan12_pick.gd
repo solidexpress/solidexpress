@@ -280,13 +280,19 @@ func _run() -> void:
 		var mid_a := _mid_of(view, thin, a)
 		var mid_b := _mid_of(view, thin, b)
 		await _push_click(FilmUI.model_to_screen(ctx, mid_a))
-		check(view.selected_edges.size() == 1 and view.selected_edges.has(a),
+		var picked := ""
+		if view.selected_edges.size() == 1:
+			picked = str(view.selected_edges[0])
+		# #204 exact top view can land on either of the two 50 mm edges.
+		check(view.selected_edges.size() == 1 and (picked == a or picked == b),
 				"Top-view click arms one 50 mm edge (got %s)" % str(view.selected_edges))
-		var between := mid_a.lerp(mid_b, 0.52)
+		var mid_picked: Vector3 = mid_a if picked == a else mid_b
+		var mid_other: Vector3 = mid_b if picked == a else mid_a
+		var between := mid_picked.lerp(mid_other, 0.52)
 		await _push_click(FilmUI.model_to_screen(ctx, between))
-		check(not view.selected_edges.has(a),
+		check(picked == "" or not view.selected_edges.has(picked),
 				"re-click near the picked edge removes it (edges %s)" % str(view.selected_edges))
-		check(not view.selected_edges.has(b),
+		check(not view.selected_edges.has(a) and not view.selected_edges.has(b),
 				"the same-length twin was not added (edges %s)" % str(view.selected_edges))
 		check(_st(main).contains("removed"), "status names the removal (got `%s`)" % _st(main))
 		check(ops._pending == OpsPanel.Pending.FILLET_EDGES, "toggle-off keeps Fillet armed")

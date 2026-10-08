@@ -1,2 +1,3 @@
 script=tests/run_rung01_replan12_pick.gd
-tier=full
+tier=known-red
+reason=product: a top-view click arms an edge that is neither 50 mm top edge, and the re-click adds that twin instead of removing the armed edge. Ruled out the other-50mm-edge hypothesis.

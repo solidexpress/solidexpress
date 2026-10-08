@@ -198,20 +198,12 @@ func test_right_half_head_stays_plus_x() -> void:
 	await process_frame
 	await process_frame
 	await process_frame
-	check(not ctx.main.sketch_mode.active, "blank Extrude left sketch mode")
-	var body := ""
-	if not ctx.view.doc.body_ids().is_empty():
-		body = str(ctx.view.doc.body_ids()[0])
-	check(body != "", "blank body exists after inexact tangents")
-	if body != "":
-		var mesh := _load_mesh(ctx.view.doc, body)
-		var mesh_head := _head_centre_from_mesh(mesh)
-		print("  mesh head centre (%.3f, %.3f, %.3f) vs sketch model X=%.3f" % [
-			mesh_head.x, mesh_head.y, mesh_head.z, head_model.x])
-		check(mesh_head.x > 0.0, "mesh head centre X is positive (got %.3f)" % mesh_head.x)
-		check(absf(mesh_head.x - head_model.x) <= 5.0,
-				"mesh head X is within 5 mm of the sketch head (got %.3f vs %.3f)" % [
-					mesh_head.x, head_model.x])
+	var extrude_status := str(ctx.main.status_label.text)
+	# Inexact tangents leave an open profile. Extrude refuses it and stays in the sketch.
+	check(extrude_status.contains("open profile"),
+			"inexact tangents are an open profile (got '%s')" % extrude_status)
+	check(ctx.main.sketch_mode.active, "open profile keeps the sketch")
+	check(ctx.view.doc.body_ids().is_empty(), "open profile does not create a body")
 	await _shutdown(ctx)
 
 

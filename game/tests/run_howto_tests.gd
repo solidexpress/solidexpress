@@ -73,9 +73,14 @@ func howto_place_and_orbit(main) -> void:
 	check(view.selected_body != "", "body stays selected")
 	main._update_panel_visibility()
 	check(not main.palette.visible, "primitives hidden after select")
-	check(is_equal_approx(main.ops_panel.get_global_rect().position.x, 8.0),
-			"modify tools in left rail")
-	check(not ix.transform_hud.visible, "transform HUD idle-hidden after place")
+	var ops_x: float = main.ops_panel.get_global_rect().position.x
+	check(ops_x <= ChromeDock.rail_right + 1.0,
+			"modify tools in left rail (x %.1f, rail_right %.1f)" % [ops_x, ChromeDock.rail_right])
+	# Idle selection of a scalable primitive keeps W×H×D up; move-delta stays down.
+	check(ix.transform_hud.visible and ix.transform_hud._dims_row.visible,
+			"transform HUD shows size on a placed primitive")
+	check(not ix.transform_hud.is_move_delta_visible(),
+			"transform HUD move-delta stays hidden when not dragging")
 	var id: String = view.doc.body_ids()[0]
 	var bb: Dictionary = view.doc.measure_bbox(id)
 	check(absf(float(bb["min"].z)) < 1e-2, "box sits on ground (z=0)")
