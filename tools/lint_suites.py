@@ -7,6 +7,7 @@ Honours SX_SUITES_DIR (default packaging/ci/suites.d). Exits 1 and prints
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -14,8 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SUITES = ROOT / "packaging" / "ci" / "suites.d"
 BASELINE = ROOT / "packaging" / "ci" / "suites.baseline"
 GAME = ROOT / "game"
-ALLOWED_KEYS = {"script", "tier", "timeout"}
-TIERS = {"ci", "full"}
+ALLOWED_KEYS = {"script", "tier", "timeout", "reason"}
+TIERS = {"ci", "full", "known-red"}
+REASON_RE = re.compile(r"^(env|stale-feature|product): .+")
 
 
 def suites_dir() -> Path:
@@ -64,6 +66,15 @@ def parse_manifest(path: Path) -> tuple[dict[str, str], list[str]]:
         errors.append(f"{path.name}: bad tier {data['tier']}")
     if "timeout" in data and (not data["timeout"].isdigit() or int(data["timeout"]) < 1):
         errors.append(f"{path.name}: bad timeout {data['timeout']}")
+    reason = data.get("reason", "")
+    tier = data.get("tier", "")
+    if tier == "known-red":
+        if "reason" not in data or reason == "":
+            errors.append(f"{path.name}: missing reason")
+        elif REASON_RE.match(reason) is None:
+            errors.append(f"{path.name}: bad reason class")
+    elif "reason" in data:
+        errors.append(f"{path.name}: reason only allowed on known-red")
     return data, errors
 
 
@@ -123,7 +134,9 @@ def main() -> int:
         return 1
     n_ci = sum(1 for s in suites if s["tier"] == "ci")
     n_full = sum(1 for s in suites if s["tier"] == "full")
-    print(f"lint_suites: {len(suites)} suites ok ({n_ci} ci, {n_full} full)")
+    n_red = sum(1 for s in suites if s["tier"] == "known-red")
+    extra = f", {n_red} known-red" if n_red else ""
+    print(f"lint_suites: {len(suites)} suites ok ({n_ci} ci, {n_full} full{extra})")
     return 0
 
 

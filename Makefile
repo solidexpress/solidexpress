@@ -2,7 +2,7 @@ BUILD_DIR := build
 GODOT := tools/godot/godot
 JOBS := $(shell nproc)
 
-.PHONY: all configure build test test-kernel test-godot preflight test-tools lint-rung01-e2e clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
+.PHONY: all configure build test test-kernel test-godot test-godot-known-red preflight test-tools lint-rung01-e2e clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 
@@ -37,12 +37,16 @@ preflight: build import
 test-godot: build import preflight
 	GODOT_BIN=$(GODOT) packaging/ci/run_suites.sh --tier full $(if $(KEEP_GOING),--keep-going)
 
+test-godot-known-red:
+	GODOT_BIN=$(GODOT) packaging/ci/run_suites.sh --tier known-red $(if $(RUN),--run)
+
 lint-rung01-e2e:
 	python3 tools/lint_rung01_e2e.py
 
 test-tools:
 	@if [ -f tools/test_check_rung01.py ]; then python3 tools/test_check_rung01.py; fi
 	python3 tools/lint_suites.py
+	python3 tools/test_lint_suites.py
 
 test: test-kernel
 	python3 tools/lint_rung01_e2e.py
