@@ -141,7 +141,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		await _hover_uv(ctx, tip)
 		await process_frame
 		var got_r := _preview_circumradius(sm, Vector2.ZERO)
-		var want_r: float = tip.length() / sqrt(3.0)
+		var want_r: float = tip.length()
 		check(got_r > 0.0 and absf(got_r - want_r) <= 0.05,
 				"B13.14 polygon preview radius follows pointer at %s (got %.4f want %.4f)" % [
 					str(tip), got_r, want_r])

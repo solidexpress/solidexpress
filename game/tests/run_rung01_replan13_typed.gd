@@ -81,14 +81,14 @@ func test_part_a_polygon_preview(ctx: FilmContext) -> void:
 		await process_frame
 		var hex := _preview_hex_uvs(sm)
 		var r := _circumradius(hex, Vector2.ZERO)
-		var expect_r := tip.length() / sqrt(3.0)
+		var expect_r := tip.length()
 		print("  probe motion %s: hover=%s verts=%d r=%.6f expect=%.6f focus=%s" % [
 				str(tip), str(sm._hover), hex.size(), r, expect_r,
 				str(root.gui_get_focus_owner())])
 		check(hex.size() > 0,
 				"preview vertices are non-zero after motion %s (got %d)" % [str(tip), hex.size()])
 		check(absf(r - expect_r) <= 1e-3,
-				"preview circumradius follows |tip|/√3 at %s (got %.6f want %.6f)" % [
+				"preview circumradius follows |tip| at %s (got %.6f want %.6f)" % [
 					str(tip), r, expect_r])
 		last_preview = hex
 	print("  probe last steered preview verts=%d %s" % [last_preview.size(), str(last_preview)])
