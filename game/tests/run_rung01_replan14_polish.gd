@@ -131,7 +131,7 @@ func _test_timeline_pencil(ctx: FilmContext) -> void:
 	if sketch_pencil == null:
 		return
 	_status_log.clear()
-	await _x11_click(sketch_pencil)
+	await _click_settled(sketch_pencil)
 	await process_frame
 	await process_frame
 	var sm: SketchMode = ctx.main.sketch_mode
@@ -159,7 +159,7 @@ func _test_timeline_pencil(ctx: FilmContext) -> void:
 	if extrude_pencil != null:
 		check(str(extrude_pencil.tooltip_text) == "Rename feature",
 				"2/4: extrude pencil tooltip is Rename feature (got `%s`)" % extrude_pencil.tooltip_text)
-		await _x11_click(extrude_pencil)
+		await _click_settled(extrude_pencil)
 		await process_frame
 		await process_frame
 	extrude_row = _row_for_fid(ctx, extrude_fid)
@@ -651,6 +651,29 @@ func _click_dialog_row_once(dlg: FileDialog, needle: String) -> bool:
 				return true
 			item = item.get_next_in_tree()
 	return false
+
+
+## Motion, let the timeline dock, then click the button where it settled.
+## A same-frame click is stolen when headless hover still names a neighbour.
+func _click_settled(ctrl: Control) -> void:
+	if ctrl == null:
+		return
+	var vp := ctrl.get_viewport()
+	var pos := ctrl.get_global_rect().get_center()
+	for _i in 4:
+		var motion := InputEventMouseMotion.new()
+		motion.position = pos
+		motion.global_position = pos
+		vp.push_input(motion)
+		await process_frame
+		if not is_instance_valid(ctrl):
+			return
+		var now := ctrl.get_global_rect().get_center()
+		if now.distance_to(pos) < 0.5:
+			pos = now
+			break
+		pos = now
+	await _x11_click_screen(vp, pos)
 
 
 func _x11_click(ctrl: Control, double_click: bool = false) -> void:
