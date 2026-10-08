@@ -140,6 +140,9 @@ double corner_radius_at(const TopoDS_Shape& body, const TopoDS_Vertex& vertex,
     return best;
 }
 
+double restored_blend_at(const TopoDS_Shape& body, const TopoDS_Vertex& vertex,
+                         const TopoDS_Edge& edge, double edge_len);
+
 // After a floor fillet the sharp wall edge is gone. The departure from the
 // new floor boundary is the blend's quarter-circle; the original wall is
 // that radius plus the straight remnant plus a blend on the far end.
@@ -177,7 +180,67 @@ double continuation_past_blend(const TopoDS_Shape& body, const TopoDS_Vertex& fa
     const gp_Pnt farp = BRep_Tool::Pnt(far);
     const TopoDS_Vertex other =
         BRep_Tool::Pnt(v1).Distance(farp) >= BRep_Tool::Pnt(v2).Distance(farp) ? v1 : v2;
-    return len + std::max(blend_radius_at(body, other, len), corner_radius_at(body, other, chosen));
+    return len + restored_blend_at(body, other, chosen, len);
+}
+
+// Radius of a fillet face meeting `edge` at `vertex` when the straight
+// remnant is shorter than the blend (R1 on both ends of a 2.5 mm wall
+// leaves 0.5 mm). blend_radius_at drops that face because r > edge length,
+// and the quarter-circle may not be the departure edge after a rebuild.
+// A profile cylinder (slot end, axis along this edge) is not that blend.
+double transverse_fillet_radius(const TopoDS_Shape& body, const TopoDS_Vertex& vertex,
+                                const TopoDS_Edge& edge, double edge_len) {
+    const gp_Vec along = tangent_at_vertex(edge, vertex);
+    if (along.SquareMagnitude() < 1e-12) return 0.0;
+    sx::occt::ShapeIndexedDataMapOfList ancestors;
+    TopExp::MapShapesAndAncestors(body, TopAbs_VERTEX, TopAbs_FACE, ancestors);
+    const int idx = ancestors.FindIndex(vertex);
+    if (idx < 1) return 0.0;
+    double best = 0.0;
+    bool found = false;
+    const sx::occt::ShapeList& faces = ancestors.FindFromIndex(idx);
+    for (const TopoDS_Shape& face_shape : faces) {
+        if (face_shape.ShapeType() != TopAbs_FACE) continue;
+        BRepAdaptor_Surface surf(TopoDS::Face(face_shape));
+        double r = 0.0;
+        gp_Vec axis(0, 0, 0);
+        if (surf.GetType() == GeomAbs_Cylinder) {
+            r = surf.Cylinder().Radius();
+            axis = gp_Vec(surf.Cylinder().Axis().Direction());
+        } else if (surf.GetType() == GeomAbs_Torus) {
+            r = surf.Torus().MinorRadius();
+            axis = gp_Vec(surf.Torus().Axis().Direction());
+        } else if (surf.GetType() == GeomAbs_Sphere) {
+            r = surf.Sphere().Radius();
+        } else {
+            continue;
+        }
+        if (r <= edge_len + 1e-4) continue;
+        // Larger than a corner that could have left this remnant (an R5
+        // slot end against a 0.5 mm wall). The R1 blend is about twice
+        // the remnant; a profile radius is many times larger.
+        if (r > edge_len * 4.0 + 1e-6) continue;
+        if (axis.SquareMagnitude() > 1e-12 && std::abs(axis.Normalized().Dot(along)) > 0.95)
+            continue;
+        if (!found || r < best) {
+            best = r;
+            found = true;
+        }
+    }
+    return found ? best : 0.0;
+}
+
+// Put back the blend that already ate this end of `edge`. The straight
+// remnant between an R1 floor fillet and an R1 top fillet is 0.5 mm, so
+// the radius lives on the fillet face rather than on a longer edge.
+double restored_blend_at(const TopoDS_Shape& body, const TopoDS_Vertex& vertex,
+                         const TopoDS_Edge& edge, double edge_len) {
+    const double blended = blend_radius_at(body, vertex, edge_len);
+    const double corner = corner_radius_at(body, vertex, edge);
+    double transverse = 0.0;
+    if (blended <= 1e-6 && corner <= 1e-6)
+        transverse = transverse_fillet_radius(body, vertex, edge, edge_len);
+    return std::max(blended, std::max(corner, transverse));
 }
 
 // Shortest edge that leaves `fillet_edge` across either adjacent face.
@@ -211,9 +274,15 @@ double min_departure_length(const TopoDS_Shape& body, const TopoDS_Edge& fillet_
             const double len = linear_length(edge);
             if (len <= 1e-6) continue;
             double span = len;
-            span += blend_radius_at(body, TopoDS::Vertex(verts(1)), len);
+            // A 0.5 mm remnant between an R1 floor fillet and an R1 top fillet
+            // is still the original 2.5 mm wall. blend_radius_at ignores a
+            // blend larger than that remnant; restored_blend_at reads it off
+            // the fillet face. After a thickness rebuild that remnant is the
+            // departure, so the slot floor's 150 mm line must not report
+            // limit 0.250.
+            span += restored_blend_at(body, TopoDS::Vertex(verts(1)), edge, len);
             if (verts.Extent() > 1)
-                span += blend_radius_at(body, TopoDS::Vertex(verts(verts.Extent())), len);
+                span += restored_blend_at(body, TopoDS::Vertex(verts(verts.Extent())), edge, len);
             double blend_r = 0.0;
             if (corner_blend_arc(edge, blend_r)) {
                 TopoDS_Vertex ev1, ev2;

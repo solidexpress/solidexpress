@@ -1652,22 +1652,32 @@ func _remember_sketch_host_face() -> void:
 		sketch_mode.host_face_id = face
 
 
-## The face used to enter the sketch is not a part-mode selection. Clear it
-## when it is the whole selection. Leave a broader pick the user made.
+## The face used to enter the sketch is not a part-mode selection. Drop that
+## face even when a body is also selected, and drop hover frozen while the
+## sketch camera owned the pointer. A finished extrude selects the body with
+## no face; that body stays. A multi-face or edge pick keeps everything except
+## the host face.
 func _release_sketch_host_face() -> void:
 	if view == null or sketch_mode == null:
 		return
 	var host := str(sketch_mode.host_face_id)
 	sketch_mode.host_face_id = ""
-	if host == "" or view.selected_face != host:
-		return
-	if view.selected_faces.size() > 1:
-		return
-	if not view.selected_edges.is_empty() or not view.selected_bodies.is_empty():
-		return
-	if view.selected_instance != "":
-		return
-	view.clear_selection()
+	var face := host
+	if face == "" or (view.selected_face != face and not view.selected_faces.has(face)):
+		# Naming can replace the id. A lone selected face that still lies on
+		# the sketch plane is that host.
+		if view.selected_faces.size() == 1 and view.selected_edges.is_empty() \
+				and view.selected_bodies.is_empty() and view.selected_instance == "" \
+				and sketch_mode.face_lies_on_plane(view.selected_face):
+			face = view.selected_face
+		else:
+			face = ""
+	if face != "":
+		view.drop_face(face)
+	# Hover is not updated while the sketch is active, so the pre-sketch
+	# highlight (tan/gold) is still painted after Exit. The restored camera
+	# makes that screen point a different model hit.
+	view.clear_hover()
 
 
 func _on_sketch_rail_toggled(on: bool, t: int) -> void:

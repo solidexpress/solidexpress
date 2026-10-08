@@ -49,6 +49,11 @@ func check(cond: bool, what: String) -> void:
 
 
 func _init() -> void:
+	# A subclass (sx-038) runs its own _init. Parent construction still enters
+	# here first; get_script() is the script attached to this SceneTree.
+	var attached: Script = get_script()
+	if attached != null and str(attached.resource_path).ends_with("run_rung01_sx038_regress.gd"):
+		return
 	print("rung01 replan17 GUI-order walk")
 	_only = OS.get_environment("SX_WALK_ONLY").strip_edges()
 	_uuid = RegEx.new()
