@@ -5774,6 +5774,37 @@ func _lock_sized_circle(id: String) -> void:
 const ORIGIN_PIN_TOL := 0.5
 
 
+## Fixed construction segment at the origin, coincident to `id`'s centre.
+## A circle Fix would also lock the radius.
+func _pin_origin_centre_with_line(id: String) -> void:
+	if sketch == null or id == "":
+		return
+	if _entity_has_constraint(id, "fix"):
+		return
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if str(info.get("type", "")) != "coincident":
+			continue
+		var refs: Array = info.get("refs", [])
+		if refs.size() != 2:
+			continue
+		var other := ""
+		if str(refs[0].get("entity", "")) == id and str(refs[0].get("role", "")) == "center":
+			other = str(refs[1].get("entity", ""))
+		elif str(refs[1].get("entity", "")) == id and str(refs[1].get("role", "")) == "center":
+			other = str(refs[0].get("entity", ""))
+		if other != "" and sketch.is_construction(other) and _entity_has_constraint(other, "fix"):
+			return
+	var lid: String = sketch.add_line(0.0, 0.0, 1.0, 0.0)
+	if lid == "":
+		return
+	sketch.set_construction(lid, true)
+	sketch.add_constraint("fix", [{"entity": lid, "role": "self"}], 0.0)
+	sketch.add_constraint("coincident", [
+		{"entity": id, "role": "center"},
+		{"entity": lid, "role": "start"}], 0.0)
+
+
 func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
 	if center.length() > ORIGIN_PIN_TOL:
 		return
@@ -5781,9 +5812,10 @@ func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
 	if anchor == "":
 		# A distance between two circles is free to slide along the sketch.
 		# Lock a centre that is already on the origin so the pair stays put.
+		# Fix on the circle also locks its radius and paints the radius
+		# dimension redundant, so pin through a fixed construction line.
 		# Do not add a construction point (T14).
-		if not _entity_has_constraint(id, "fix"):
-			sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
+		_pin_origin_centre_with_line(id)
 		return
 	for cid in sketch.constraint_ids():
 		var info: Dictionary = sketch.constraint_info(cid)
