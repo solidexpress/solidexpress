@@ -1178,6 +1178,13 @@ static func edit_sketch_pad(ctx: FilmContext, fid: String) -> void:
 static func face_pick_point(view: DocumentView, body_id: String, face_id: String) -> Vector3:
 	if view == null or body_id == "" or face_id == "":
 		return Vector3.INF
+	# Mesh surface order is not the face-id order, so a vertex average can
+	# land off the face the film asked for. The kernel midpoint is that face.
+	if view.doc != null and view.doc.has_method("face_midpoint") \
+			and view.doc.get_face_ids(body_id).has(face_id):
+		var mid: Variant = view.doc.face_midpoint(face_id)
+		if mid is Vector3:
+			return mid
 	var node: MeshInstance3D = view.body_node(body_id)
 	var faces: PackedStringArray = view.doc.get_face_ids(body_id)
 	var idx := faces.find(face_id)
