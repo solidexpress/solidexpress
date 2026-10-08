@@ -1129,6 +1129,12 @@ func _restore_undo_entry(entry: Dictionary) -> String:
 	_jaw_wall_ids.clear()
 	_drag.clear()
 	_trim_dragging = false
+	if sketch.entity_ids().is_empty():
+		last_dofs = -1
+		last_solve_status = ""
+		solve_updated.emit(-1, "", 0)
+	else:
+		run_solve()
 	_redraw()
 	_undo_head = json
 	if _undo_head == "" and sketch.has_method("snapshot"):
@@ -1711,6 +1717,8 @@ func preview_distance() -> float:
 		return 0.0
 	if _length_override >= 0.0:
 		return _length_override
+	if tool == Tool.POLYGON and tool_variant == "across_flats":
+		return _tool_points[0].distance_to(_polygon_pointer_tip(_tool_points[0], _hover))
 	return _tool_points[_tool_points.size() - 1].distance_to(_hover)
 
 
@@ -1792,6 +1800,8 @@ func has_length_override() -> bool:
 ## Hover / preview endpoint: mouse when free; last + dir×override when locked.
 func effective_hover() -> Vector2:
 	if _length_override < 0.0 or not has_single_dof_preview():
+		if tool == Tool.POLYGON and _tool_points.size() == 1:
+			return _polygon_pointer_tip(_tool_points[0], _hover)
 		return _hover
 	var last: Vector2 = _tool_points[_tool_points.size() - 1]
 	var d := _hover - last
@@ -1862,6 +1872,8 @@ func is_empty_new_sketch() -> bool:
 
 
 const JAW_HINT := "Jaw — click 1 centre, click 2 end of the long side, click 3 half the width"
+const JAW_PREVIEW_ASPECT := 0.4
+const JAW_PREVIEW_MIN_HALF_W_MM := 1.5
 const CIRCLE_CENTRE_SET := "Circle — centre set, click the rim or type a radius"
 const JAW_AFTER_CENTRE := "Jaw — centre set, click 2 end of the long side"
 const JAW_AFTER_LONG := "Jaw — long side set, click 3 half the width"
@@ -4567,6 +4579,8 @@ func click(pos2: Vector2) -> void:
 		else:
 			pos2 = last + d.normalized() * _length_override
 		_length_override = -1.0
+	elif tool == Tool.POLYGON and _tool_points.size() == 1 and not _point_from_length:
+		pos2 = _polygon_pointer_tip(_tool_points[0], pos2)
 	match tool:
 		Tool.SELECT:
 			var chit := constraint_hit(pos2)
@@ -7670,24 +7684,27 @@ func _append_preview_seg(im: ImmediateMesh, a: Vector2, b: Vector2) -> void:
 	im.surface_add_vertex(_to3(b))
 
 
-## Jaw (center three-point rect): after click 1 a long-side line; after click 2
-## the rotated rectangle whose width follows the pointer.
 func _append_jaw_preview(im: ImmediateMesh, tip: Vector2) -> void:
 	if _tool_points.is_empty():
 		return
 	var ctr: Vector2 = _tool_points[0]
+	var along: Vector2
+	var half_w: float
 	if _tool_points.size() == 1:
-		_append_preview_seg(im, ctr, tip)
-		return
-	var along: Vector2 = _tool_points[1] - ctr
-	if along.length() <= 1e-6:
-		_append_preview_seg(im, ctr, tip)
-		return
+		along = tip - ctr
+		if along.length() <= 1e-6:
+			return
+		half_w = along.length() * JAW_PREVIEW_ASPECT
+	else:
+		along = _tool_points[1] - ctr
+		if along.length() <= 1e-6:
+			_append_preview_seg(im, ctr, tip)
+			return
+		var n0 := Vector2(-along.y, along.x).normalized()
+		half_w = maxf(absf((tip - ctr).dot(n0)), JAW_PREVIEW_MIN_HALF_W_MM)
 	var dir := along.normalized()
-	var half_len := along.length()
 	var nrm := Vector2(-dir.y, dir.x)
-	var half_w := absf((tip - ctr).dot(nrm))
-	var u := dir * half_len
+	var u := dir * along.length()
 	var v := nrm * half_w
 	var ra := ctr - u - v
 	var rb := ctr + u - v
@@ -7720,6 +7737,15 @@ func _append_slot_preview(im: ImmediateMesh, a: Vector2, b: Vector2, r: float) -
 		"start_angle": out_a.angle() - PI * 0.5,
 		"end_angle": out_a.angle() + PI * 0.5,
 	})
+
+
+## Pointer -> the across-flats "tip" `_polygon_ring_vertices` expects: its
+## distance from the centre is the AF, so the circumscribed circle passes
+## through the pointer. A typed length bypasses this (effective_hover()).
+func _polygon_pointer_tip(c: Vector2, p: Vector2) -> Vector2:
+	if tool_variant != "across_flats":
+		return p
+	return c + (p - c) * sqrt(3.0)
 
 
 ## Across-flats is always a flats-horizontal hex (start angle 0). The drag

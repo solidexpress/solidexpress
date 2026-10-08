@@ -1156,6 +1156,11 @@ func _on_save_named_view(view_name: String) -> void:
 func _on_sketch_solve(dofs: int, solve_status: String, conflicts: int) -> void:
 	if dof_label == null:
 		return
+	if dofs < 0:
+		dof_label.text = "—"
+		dof_label.remove_theme_color_override("font_color")
+		_on_sketch_selection_chips()
+		return
 	if conflicts > 0 or solve_status == "failed":
 		dof_label.text = "!"
 		dof_label.add_theme_color_override("font_color", Color(0.95, 0.3, 0.25))
