@@ -376,6 +376,7 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 
 	if PropertyPanel.has_schema(str(f["type"])):
 		var params_btn := UIIcons.button("dimension", "", "Edit this feature's parameters")
+		params_btn.name = "RowParams"
 		params_btn.pressed.connect(func() -> void: _select_feature(fid))
 		row.add_child(params_btn)
 
