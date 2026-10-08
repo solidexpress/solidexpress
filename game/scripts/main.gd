@@ -1229,9 +1229,11 @@ func _on_sketch_selection(ids: Array) -> void:
 	if v > 0.0:
 		dim_value.value = v
 	if ids.is_empty():
-		_on_status("Sketch selection cleared")
+		_on_status("No sketch entities")
+	elif ids.size() == 1:
+		_on_status("Selected 1 sketch entity")
 	else:
-		_on_status("%d sketch entities selected" % ids.size())
+		_on_status("Selected %d sketch entities" % ids.size())
 
 
 func _build_autosave() -> void:
@@ -1757,7 +1759,9 @@ func _on_sketch_selection_chips() -> void:
 		return
 	# Undo/redo clears the selection. Rebuilding Parallel? / Equal? /
 	# Perpendicular? here left those chips up through the next redo (sx-037 N20).
-	if sketch_mode.is_undo_restoring():
+	# propose_verbs() scans every line in the sketch, so an empty selection
+	# (Esc, empty click, Delete, undo) must hide the chips before that scan.
+	if sketch_mode.is_undo_restoring() or sketch_mode.selected.is_empty():
 		sketch_chrome.hide_selection_actions()
 		return
 	var acts: Array = sketch_mode.selection_actions()
