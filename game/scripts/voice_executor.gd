@@ -336,28 +336,12 @@ func _do_view(intent: Dictionary) -> void:
 	if camera == null:
 		return
 	var verb: String = intent["verb"]
+	var spec := OrbitCamera.standard_view_by_id(verb)
+	if not spec.is_empty():
+		camera.apply_standard_view_id(verb, true)
+		status.emit("%s view" % str(spec["label"]))
+		return
 	match verb:
-		"front":
-			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0), true)
-			status.emit("Front view")
-		"right":
-			camera.apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
-			status.emit("Right view")
-		"left":
-			camera.apply_standard_view(deg_to_rad(-90.0), deg_to_rad(0.0), true)
-			status.emit("Left view")
-		"top":
-			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
-			status.emit("Top view")
-		"bottom":
-			camera.apply_standard_view(deg_to_rad(0.0), deg_to_rad(-89.0), true)
-			status.emit("Bottom view")
-		"back":
-			camera.apply_standard_view(deg_to_rad(180.0), deg_to_rad(0.0), true)
-			status.emit("Back view")
-		"iso":
-			camera.apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
-			status.emit("Isometric view")
 		"zoom_fit":
 			camera.frame_contents()
 			status.emit("Zoomed to fit")

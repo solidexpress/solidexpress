@@ -2,6 +2,11 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## View menu Orientation — sx-037 A16
+- Menu-bar View → Orientation lists Front, Back, Left, Right, Top, Bottom, Isometric with shortcuts 1, 4, 6, 2, 3, 8, 7. The menu, the HUD View list, and those number keys call `OrbitCamera.apply_standard_view_id`.
+- Cardinal views are orthographic and axis-aligned (Top/Bottom at ±90°, not ±89°) with the pivot on the part. Isometric stays the angled view and uses the same framing path.
+- Gate: `run_view_orientation_tests.gd` (`tier=ci`).
+
 ## Rung 1 replan 16 — sx-037 GUI walk replay
 - Headless replay `run_rung01_replan16_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
 - Save re-entry no longer prints `Editing sketch` (that sentence stays on the pencil click). An idle property panel no longer takes Esc away from an armed Fillet (`Edge pick cancelled`).

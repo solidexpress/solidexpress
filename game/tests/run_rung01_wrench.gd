@@ -4161,7 +4161,7 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 	await _push_key(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
-	check(absf(cam.pitch - deg_to_rad(89.0)) < 0.05, "B14.7 after strip: camera is Top")
+	check(absf(cam.pitch - deg_to_rad(90.0)) < 0.05, "B14.7 after strip: camera is Top")
 	check(_b14_spin_text(spin).begins_with("10"),
 			"B14.7 after strip: field text 10 (got `%s`)" % _b14_spin_text(spin))
 	var panel: SpinBox = ctx.main.ops_panel._radius_spin as SpinBox
@@ -4181,7 +4181,7 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 	await _push_key(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
-	check(absf(cam.pitch - deg_to_rad(89.0)) < 0.05, "B14.7 after panel: camera is Top")
+	check(absf(cam.pitch - deg_to_rad(90.0)) < 0.05, "B14.7 after panel: camera is Top")
 	check(_b14_spin_text(panel).begins_with("10") or _b14_spin_text(spin).begins_with("10"),
 			"B14.7 after panel: field text 10 (strip `%s` panel `%s`)" % [
 				_b14_spin_text(spin), _b14_spin_text(panel)])

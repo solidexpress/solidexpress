@@ -341,10 +341,10 @@ func _run() -> void:
 	await _push_key(KEY_3, 51)
 	await process_frame
 	await process_frame
-	check(cam != null and absf(cam.pitch - deg_to_rad(89.0)) < 0.05,
+	check(cam != null and absf(cam.pitch - deg_to_rad(90.0)) < 0.05,
 			"9: KEY_3 after strip Tab is Top (pitch %s was %s)" % [
 				str(cam.pitch) if cam != null else "?", str(pitch_before)])
-	check(_st(main).contains("Top view") or absf(cam.pitch - deg_to_rad(89.0)) < 0.05,
+	check(_st(main).contains("Top view") or absf(cam.pitch - deg_to_rad(90.0)) < 0.05,
 			"9: view key reached the camera (status `%s`)" % _st(main))
 	check(ops._pending == OpsPanel.Pending.FILLET_EDGES,
 			"9: Fillet still armed after KEY_3")

@@ -436,6 +436,7 @@ func _build_ui() -> void:
 	_view_popup.add_item("Set Active Plane…", 1)
 	_view_popup.add_item("Reset Active Plane (ground)", 2)
 	_view_popup.add_item("Unhide all", 3)
+	_install_orientation_menu()
 	_sync_view_menu_checks()
 	_view_popup.id_pressed.connect(func(id: int) -> void:
 		if id == 4:
@@ -466,7 +467,11 @@ func _build_ui() -> void:
 		elif id == 3:
 			if view != null:
 				view.unhide_all()
-				_on_status("All shown"))
+				_on_status("All shown")
+		elif id >= 100:
+			var idx := _view_popup.get_item_index(id)
+			if idx >= 0:
+				_apply_named_standard_view(str(_view_popup.get_item_metadata(idx))))
 
 	print_strip = _PrintStrip.new()
 	print_strip.name = "PrintStrip"
@@ -1101,32 +1106,38 @@ func _on_viewport_resized() -> void:
 	_apply_chrome_docks()
 
 
+## View menu Orientation section. Same ids and keys as OrbitCamera.standard_view_table.
+func _install_orientation_menu() -> void:
+	_view_popup.add_separator("Orientation")
+	var n := 0
+	for entry in OrbitCamera.standard_view_table():
+		var id := 100 + n
+		n += 1
+		_view_popup.add_item(str(entry["label"]), id)
+		var idx := _view_popup.get_item_index(id)
+		_view_popup.set_item_metadata(idx, str(entry["id"]))
+		var ev := InputEventKey.new()
+		ev.keycode = int(entry["key"]) as Key
+		var sc := Shortcut.new()
+		sc.events.append(ev)
+		_view_popup.set_item_shortcut(idx, sc, false)
+	_view_popup.add_separator()
+
+
+## Menu bar, HUD View list, and the number keys share this.
+func _apply_named_standard_view(view_id: String) -> void:
+	if camera == null:
+		return
+	if camera.apply_standard_view_id(view_id):
+		var spec := OrbitCamera.standard_view_by_id(view_id)
+		_on_status("%s view" % str(spec["label"]))
+	else:
+		_on_status("Unknown view “%s”" % view_id)
+
+
 func _on_default_view(view_id: String) -> void:
 	# Immediate apply (no tween) so UI / tests see the pose right away.
-	match view_id:
-		"front":
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(0.0), false)
-			_on_status("Front view")
-		"right":
-			camera.set_view(deg_to_rad(90.0), deg_to_rad(0.0), false)
-			_on_status("Right view")
-		"top":
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(89.0), false)
-			_on_status("Top view")
-		"iso":
-			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
-			_on_status("Isometric view")
-		"back":
-			camera.set_view(deg_to_rad(180.0), deg_to_rad(0.0), false)
-			_on_status("Back view")
-		"left":
-			camera.set_view(deg_to_rad(-90.0), deg_to_rad(0.0), false)
-			_on_status("Left view")
-		"bottom":
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(-89.0), false)
-			_on_status("Bottom view")
-		_:
-			_on_status("Unknown view “%s”" % view_id)
+	_apply_named_standard_view(view_id)
 
 
 func _on_save_named_view(view_name: String) -> void:
@@ -2807,7 +2818,7 @@ func _do_new() -> void:
 			interaction.triball.cancel()
 	if camera != null:
 		# Top: looking down model +Z. Same pose as the 3 key, without a sketch lock.
-		camera.apply_standard_view(0.0, deg_to_rad(89.0), false, true)
+		camera.apply_standard_view_id("top")
 	_last_saved_revision = view.doc.revision()
 	show_timeline = false
 	show_variables = false

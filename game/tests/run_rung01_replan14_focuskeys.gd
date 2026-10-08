@@ -9,7 +9,7 @@ extends SceneTree
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const FIRST_DROP := "First point dropped — Esc again exits the sketch"
-const TOP_PITCH := deg_to_rad(89.0)
+const TOP_PITCH := deg_to_rad(90.0)
 const BACK_PITCH := 0.0
 const ISO_PITCH := deg_to_rad(40.0)
 const ISO_YAW := deg_to_rad(-35.0)
@@ -445,7 +445,7 @@ func _part_rows() -> void:
 	_status_log.clear()
 	await _push_key(vp, KEY_8, 56)
 	await process_frame
-	check(absf(cam.pitch - deg_to_rad(-89.0)) < VIEW_EPS,
+	check(absf(cam.pitch - deg_to_rad(-90.0)) < VIEW_EPS,
 			"4: KEY_8 is Bottom (pitch %.4f)" % cam.pitch)
 	_status_log.clear()
 	await _push_key(vp, KEY_3, 51)
@@ -546,7 +546,7 @@ func _part_rows() -> void:
 		_status_log.clear()
 		await _push_key(vp, KEY_8, 56)
 		await process_frame
-		check(absf(cam.pitch - deg_to_rad(-89.0)) < VIEW_EPS, "7: KEY_8 Bottom")
+		check(absf(cam.pitch - deg_to_rad(-90.0)) < VIEW_EPS, "7: KEY_8 Bottom")
 		await _push_key(vp, KEY_3, 51)
 		await process_frame
 		_assert_top(cam, "7 KEY_3 after panel")
