@@ -109,7 +109,13 @@ func test_empty_sketch_esc_exits() -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	check(sm.sketch.entity_ids().is_empty(), "the sketch is empty")
 	await _x11_key(vp, KEY_ESCAPE)
-	check(not sm.active, "Esc in an empty sketch with a tool active exits at once")
+	check(sm.active, "first Esc with a tool active stays in the sketch")
+	check(_status_has("Tool dropped — Esc again exits the sketch"),
+			"first Esc drops the tool (log: %s)" % str(_status_log))
+	await _x11_key(vp, KEY_ESCAPE)
+	check(not sm.active, "second Esc exits the empty sketch")
+	check(_status_has("Sketch cancelled"),
+			"second Esc cancels the empty sketch (log: %s)" % str(_status_log))
 	await _shutdown(ctx)
 
 func _status_has(needle: String) -> bool:
