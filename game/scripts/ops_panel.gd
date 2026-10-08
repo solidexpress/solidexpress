@@ -218,7 +218,10 @@ func _build_body_ops() -> void:
 	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.05, 100.0, 0.5, 2.0)
 	_radius_spin.suffix = "mm"
 	# true so a trailing "." survives. Keys go through compose_typed_char.
+	# pin_fmt_mm still writes "N mm" once the line is not focused.
 	_radius_spin.update_on_text_changed = true
+	SxUi.pin_fmt_mm(_radius_spin)
+	SxUi.reveal_committed_spin(_radius_spin, _radius_spin.value)
 	var radius_le := _radius_spin.get_line_edit()
 	SxUi.use_armed_replace_select(radius_le)
 	_radius_spin.value_changed.connect(func(v: float) -> void:
@@ -242,8 +245,7 @@ func _build_body_ops() -> void:
 		_commit_panel_radius()
 		(func() -> void:
 			SxUi.reveal_committed_spin.call_deferred(_radius_spin)).call_deferred())
-	# Enter in the Radius field commits an armed fillet/chamfer pick (otherwise
-	# SpinBox eats Enter and the mechanic thinks the pick did nothing).
+	# Enter stores the radius and returns the keys. Viewport Enter applies.
 	radius_le.text_submitted.connect(func(_t: String) -> void:
 		_commit_panel_radius()
 		commit_radius_field_enter()
@@ -858,6 +860,7 @@ func _reveal_radius(fillet: bool) -> void:
 		await get_tree().process_frame
 		if is_instance_valid(_scroll) and is_instance_valid(_radius_spin):
 			_scroll.ensure_control_visible(_radius_spin)
+	SxUi.reveal_committed_spin(_radius_spin, _radius_spin.value)
 	# Do not grab_focus — that stole 3/4/6/8 after arming (sx-035 N2). The
 	# strip R and this field stay in sync; the walker clicks to type.
 
@@ -1010,12 +1013,12 @@ func _apply_dressup(fillet: bool) -> void:
 	if ok:
 		_dressup_from_face = false
 		view.graph_changed()
-		var applied := "%s %s %.2f applied" % [name, scope, value]
+		# Committed. Do not open the feature editor — the next Esc must not
+		# look like it can undo this fillet. Re-edit from View ▸ Timeline.
+		var applied := "%s %s %.2f applied — View ▸ Timeline to edit parameters" % [name, scope, value]
 		status.emit(applied)
 		_pending = Pending.NONE
 		dressup_armed_changed.emit(false, fillet)
-		if new_fid != "":
-			_open_last_feature("fillet" if fillet else "chamfer", applied)
 	else:
 		if fillet:
 			status.emit(_fillet_refusal_status(value, targets.size()))
@@ -2038,15 +2041,13 @@ func try_commit_pending() -> bool:
 
 
 ## Enter inside the strip / panel Radius field. Commits the number the caller
-## already pushed, and applies only when edges are already picked. With nothing
-## picked the fillet stays armed so the next view key / edge click works.
+## already pushed and leaves the pick armed, edges included. Applying is Enter
+## with the viewport focused (`try_commit_pending`), not this field.
 func commit_radius_field_enter() -> bool:
 	if _pending != Pending.FILLET_EDGES and _pending != Pending.CHAMFER_EDGES:
 		return false
-	if view != null and (not view.selected_edges.is_empty() or view.selected_edge != ""):
-		return try_commit_pending()
 	_emit_armed_dressup_status()
-	return false
+	return true
 
 
 func _commit_holes(body: String, face: String, positions: PackedVector3Array,

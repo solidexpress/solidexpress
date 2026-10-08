@@ -598,6 +598,8 @@ func _build_selection_strip() -> void:
 		SxUi.write_typed_text(strip_le, SxUi.compose_typed_char(strip_le, ch))
 		strip_le.accept_event())
 	_strip_radius_box.add_child(_strip_radius)
+	SxUi.pin_fmt_mm(_strip_radius)
+	SxUi.reveal_committed_spin(_strip_radius, _strip_radius.value)
 	# Jaw AF quick configs — wrench path without opening Variables dock.
 	_strip_jaw_box = HBoxContainer.new()
 	_strip_jaw_box.name = "StripJawAF"
@@ -3090,7 +3092,13 @@ func _sketch_input(event: InputEvent) -> void:
 					if sketch_chrome != null and sketch_chrome.has_method("arm_dim_replace") \
 							and sketch_mode.has_single_dof_preview():
 						var shown := sketch_mode.preview_distance()
-						if shown < 0.5:
+						if sketch_mode.tool == SketchMode.Tool.SLOT:
+							# c-c starts at the slot's own last centre distance,
+							# never the cap radius still sitting in the blank.
+							shown = sketch_mode.own_numeric() if sketch_mode.has_method("own_numeric") else -1.0
+							if shown < 0.0 and sketch_chrome.has_method("clear_dim_blank"):
+								sketch_chrome.clear_dim_blank()
+						elif shown < 0.5:
 							if sketch_mode.tool == SketchMode.Tool.CIRCLE:
 								shown = sketch_mode.circle_radius
 							else:
@@ -4080,6 +4088,10 @@ func _gui_key(event: InputEventKey) -> bool:
 				return false
 	match event.keycode:
 		KEY_ENTER, KEY_KP_ENTER:
+			# A Radius / other numeric field owns Enter: commit the number,
+			# do not apply the armed fillet. Viewport focus is what applies.
+			if SxUi.numeric_field_focused(get_viewport()):
+				return false
 			if ops_panel != null and ops_panel.try_commit_pending():
 				return true
 		KEY_ESCAPE:

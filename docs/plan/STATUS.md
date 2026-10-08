@@ -2,6 +2,14 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-037 N7 — armed rail tool shows a 3 px accent bar
+- The pressed fill was the same accent as the 3 px left border, so the armed Jaw / Rect / Circle button read as a flat blue fill. The fill is now a darker accent, the border is pure accent with square corners and no blend, and a 3 px `RailAccentBar` is drawn on top inside the button (the rail scroll clips anything that uses an expand margin).
+- Gate: `run_rung01_replan16_chrome.gd` C3 (left 3 px column is accent, the next pixel is not, hover is not, only one bar lit).
+
+## Rung 1 replan 16 — sx-037 GUI walk replay
+- Headless replay `run_rung01_replan16_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
+- Save re-entry no longer prints `Editing sketch` (that sentence stays on the pencil click). An idle property panel no longer takes Esc away from an armed Fillet (`Edge pick cancelled`).
+
 ## sx-036 — Esc keeps a committed sketch; Save keeps undo
 - Final Esc on a sketch that already has entities calls `exit_sketch()` (`Sketch saved`). An empty sketch, including one whose only action was a dropped first point, still cancels. Select on a line does not leave a measure ✕. A dimension editor blocks measure overlays and clears any ✕ on Esc or Enter.
 - Part mode: Ctrl+Shift+Z and Ctrl+Y redo (`Redo`). Ctrl+Z stays undo.

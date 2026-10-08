@@ -163,6 +163,16 @@ func _spin_text_pos(spin: SpinBox) -> Vector2:
 	return Vector2(r.position.x + minf(r.size.x * 0.35, r.size.x - 24.0), r.get_center().y)
 
 
+func _finish_label_point(main) -> Vector2:
+	var chrome: SketchContextChrome = main.sketch_chrome
+	var lbl: Control = null
+	if chrome != null:
+		lbl = chrome.find_child("DistanceLabel", true, false) as Control
+	if lbl != null and lbl.is_visible_in_tree():
+		return lbl.get_global_rect().get_center()
+	return Vector2(80.0, float(ROOT_SIZE.y) - 36.0)
+
+
 func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
 	if chrome == null:
 		return null
@@ -671,11 +681,15 @@ func _sketch_rows() -> void:
 	check(sm.sketch.entity_ids().size() >= 1,
 			"11: sketch holds geometry so a tool drop could steal the exit")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2(8, 0), "Circle centre unfocused")
+	check(sm.tool == SketchMode.Tool.CIRCLE, "11: Circle is armed")
+	await _click_uv(ctx, Vector2(0, 18), "Circle centre unfocused")
 	await process_frame
 	dim = _dim_edit(main.sketch_chrome)
 	if dim != null and dim.has_focus():
-		await _click_at(vp, Vector2(float(ROOT_SIZE.x) - 90.0, 110.0))
+		# A canvas click is the circle's second point (the blank already
+		# shows a radius, so it commits). Blur on the finish-bar label,
+		# which is chrome and does not place geometry.
+		await _click_at(vp, _finish_label_point(main))
 		await process_frame
 	_focus_probe(vp, "unfocused before Esc")
 	check(sm.has_pending_draw_point(), "11: pending point with field not focused")
