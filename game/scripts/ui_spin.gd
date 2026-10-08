@@ -3,6 +3,180 @@ extends RefCounted
 ## Shared UI helpers. SpinBoxes use a fine step so typed values are not snapped
 ## to min+k*step (Godot Range default); arrows still move by `arrow_step`.
 
+## A same-keycode echo within this window is a burst (X11 delivers the second
+## identical digit as echo=true in the same millisecond), not auto-repeat.
+const ECHO_BURST_MSEC := 80
+
+## Tests assign a Callable that returns msec. Empty uses Time.get_ticks_msec().
+static var _now_msec_override: Callable = Callable()
+## -1 reads SX_INPUT_TRACE; tests set true/false to flip trace_enabled().
+static var trace_enabled_override: Variant = null
+static var key_trace_log: PackedStringArray = PackedStringArray()
+
+static var _accept_memo: Dictionary = {}
+static var _last_accepted_code: int = -1
+static var _last_accepted_msec: int = -100000
+
+
+static func _now_msec() -> int:
+	if _now_msec_override.is_valid():
+		return int(_now_msec_override.call())
+	return Time.get_ticks_msec()
+
+
+static func trace_enabled() -> bool:
+	if trace_enabled_override is bool:
+		return bool(trace_enabled_override)
+	return OS.get_environment("SX_INPUT_TRACE") == "1"
+
+
+## True when this key press should be typed. Non-echo presses are accepted.
+## An echo is accepted only as a burst: same keycode as the previous accepted
+## press, within ECHO_BURST_MSEC, and only for digits / . , - + / tool letters.
+## Memoised per event id so every _input handler shares one decision.
+static func press_accepted(event: InputEvent) -> bool:
+	if not (event is InputEventKey):
+		return false
+	var k := event as InputEventKey
+	if not k.pressed:
+		return false
+	var id := k.get_instance_id()
+	if _accept_memo.has(id):
+		return bool(_accept_memo[id])
+	var ok := (not k.echo) or _echo_burst_ok(k)
+	if ok:
+		_last_accepted_code = int(k.keycode)
+		_last_accepted_msec = _now_msec()
+	_accept_memo[id] = ok
+	if _accept_memo.size() > 64:
+		_accept_memo.clear()
+		_accept_memo[id] = ok
+	return ok
+
+
+static func _echo_burst_ok(k: InputEventKey) -> bool:
+	if k.ctrl_pressed or k.alt_pressed or k.meta_pressed:
+		return false
+	if not _is_burst_key(k):
+		return false
+	if int(k.keycode) != _last_accepted_code:
+		return false
+	var dt := _now_msec() - _last_accepted_msec
+	if dt < 0 or dt > ECHO_BURST_MSEC:
+		return false
+	return true
+
+
+## Digits, decimal punctuation, signs, and the sketch tool letters. Enter, Esc,
+## Tab, arrows, Delete and any Ctrl / Alt / Meta chord are not burst keys.
+static func _is_burst_key(k: InputEventKey) -> bool:
+	var code := int(k.keycode)
+	if code >= KEY_0 and code <= KEY_9:
+		return true
+	if code >= KEY_KP_0 and code <= KEY_KP_9:
+		return true
+	if code == KEY_PERIOD or code == KEY_KP_PERIOD or code == KEY_COMMA:
+		return true
+	if code == KEY_MINUS or code == KEY_KP_SUBTRACT or code == KEY_PLUS or code == KEY_KP_ADD:
+		return true
+	if k.shift_pressed:
+		var ch := k.unicode
+		return ch == 43 or ch == 44
+	match code:
+		KEY_L, KEY_D, KEY_T, KEY_C, KEY_S:
+			return true
+	return k.unicode == 43 or k.unicode == 44
+
+
+## A rejected echo of a character we type must not fall through to LineEdit,
+## which would insert the auto-repeat. Burst echoes are accepted and not swallowed.
+static func swallow_rejected_echo(event: InputEvent) -> bool:
+	if not (event is InputEventKey):
+		return false
+	var k := event as InputEventKey
+	if not k.pressed or not k.echo:
+		return false
+	if press_accepted(k):
+		return false
+	if k.ctrl_pressed or k.alt_pressed or k.meta_pressed:
+		return false
+	if numeric_key_char(k) != "":
+		return true
+	if k.shift_pressed:
+		return false
+	match int(k.keycode):
+		KEY_L, KEY_D, KEY_T, KEY_C, KEY_S:
+			return true
+	return false
+
+
+static func bump_type_gen(line: LineEdit) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	line.set_meta("_sx_type_gen", int(line.get_meta("_sx_type_gen", 0)) + 1)
+
+
+static func type_gen(line: LineEdit) -> int:
+	if line == null or not is_instance_valid(line):
+		return 0
+	return int(line.get_meta("_sx_type_gen", 0))
+
+
+## Snapshot the type counter when a click aims at this line. A later
+## focus-entry write does nothing if a character landed first.
+static func note_focus_intent(line: LineEdit) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	line.set_meta("_sx_intent_gen", type_gen(line))
+
+
+static func typed_since_intent(line: LineEdit) -> bool:
+	if line == null or not is_instance_valid(line):
+		return false
+	if not line.has_meta("_sx_intent_gen"):
+		return false
+	return type_gen(line) != int(line.get_meta("_sx_intent_gen"))
+
+
+static func capture_select_type_gen(line: LineEdit) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	line.set_meta("_sx_select_type_gen", type_gen(line))
+
+
+static func select_type_stale(line: LineEdit) -> bool:
+	if line == null or not is_instance_valid(line):
+		return false
+	if not line.has_meta("_sx_select_type_gen"):
+		return false
+	return type_gen(line) != int(line.get_meta("_sx_select_type_gen"))
+
+
+## Schedule a committed-text rewrite that no-ops if the user typed first.
+## Two defers match the old call_deferred(call_deferred) timing.
+static func defer_reveal_committed_spin(spin: SpinBox, v: float = NAN) -> void:
+	var le := spin.get_line_edit() if spin != null else null
+	var gen := type_gen(le)
+	_defer_reveal_outer.call_deferred(spin, v, gen)
+
+
+static func _defer_reveal_outer(spin: SpinBox, v: float, gen: int) -> void:
+	if spin == null or not is_instance_valid(spin):
+		return
+	var le := spin.get_line_edit()
+	if le != null and type_gen(le) != gen:
+		return
+	_reveal_if_type_gen.call_deferred(spin, v, gen)
+
+
+static func _reveal_if_type_gen(spin: SpinBox, v: float, gen: int) -> void:
+	if spin == null or not is_instance_valid(spin):
+		return
+	var le := spin.get_line_edit()
+	if le != null and type_gen(le) != gen:
+		return
+	reveal_committed_spin(spin, v)
+
 static func configure_spin(spin: SpinBox, min_v: float, max_v: float, arrow_step: float,
 		value: float, as_int := false) -> SpinBox:
 	spin.min_value = min_v
@@ -184,24 +358,32 @@ static func _queue_release_line(line: LineEdit) -> void:
 	if line == null:
 		return
 	var gen := int(line.get_meta("_sx_focus_claim", 0))
-	_release_line_if_claim.call_deferred(line, gen)
+	var tgen := type_gen(line)
+	_release_line_if_claim.call_deferred(line, gen, tgen)
 
 
-static func _release_line_if_claim(line: LineEdit, gen: int) -> void:
+static func _release_line_if_claim(line: LineEdit, gen: int, tgen: int) -> void:
 	if line == null or not is_instance_valid(line):
 		return
 	if int(line.get_meta("_sx_focus_claim", 0)) != gen:
 		return
-	release_line_now(line)
+	release_line_now(line, tgen)
 
 
 ## Drop keyboard focus and the selection together. A leftover select_all
 ## draws the "focused" look after the viewport has taken the keys back.
-static func release_line_now(line: LineEdit) -> void:
+## `scheduled_gen` (captured when the release was queued) skips the release
+## when a character was typed after it was scheduled.
+static func release_line_now(line: LineEdit, scheduled_gen: int = -1) -> void:
 	if line == null or not is_instance_valid(line):
+		return
+	if scheduled_gen >= 0 and type_gen(line) != scheduled_gen:
 		return
 	line.set_meta("_sx_focus_claim", int(line.get_meta("_sx_focus_claim", 0)) + 1)
 	disarm_replace(line)
+	var parent := line.get_parent()
+	if parent is SpinBox:
+		(parent as SpinBox).update_on_text_changed = true
 	if line.has_focus():
 		line.release_focus()
 
@@ -211,6 +393,7 @@ static func release_line_now(line: LineEdit) -> void:
 static func claim_keyboard_focus(line: LineEdit) -> void:
 	if line == null or not is_instance_valid(line):
 		return
+	note_focus_intent(line)
 	line.set_meta("_sx_focus_claim", int(line.get_meta("_sx_focus_claim", 0)) + 1)
 	if not line.has_focus():
 		line.grab_focus()
@@ -283,6 +466,7 @@ static func arm_replace_on_focus(line: LineEdit) -> void:
 	if line == null:
 		return
 	line.set_meta("_sx_replace_armed", true)
+	capture_select_type_gen(line)
 	var gen := int(line.get_meta("_sx_select_gen", 0)) + 1
 	line.set_meta("_sx_select_gen", gen)
 	_select_line_if_gen.call_deferred(line, gen)
@@ -299,6 +483,7 @@ static func replace_armed(line: LineEdit) -> bool:
 static func write_typed_text(line: LineEdit, text: String) -> void:
 	if line == null or not is_instance_valid(line):
 		return
+	bump_type_gen(line)
 	line.set_meta("_sx_replace_armed", false)
 	var gen := int(line.get_meta("_sx_select_gen", 0)) + 1
 	line.set_meta("_sx_select_gen", gen)
@@ -312,15 +497,55 @@ static func write_typed_text(line: LineEdit, text: String) -> void:
 		line.text = text
 	line.caret_column = text.length()
 	line.deselect()
+	# SpinBox keeps its own value and, a frame later, writes that number back
+	# over the line ("22.5" becomes the armed "2.0"). Track the typed number
+	# without a signal, then put the owned characters back if the spin rewrote
+	# them ("22." must not collapse to "22").
+	_sync_spin_value_no_signal(line, text)
+	if str(line.text) != text:
+		line.text = text
+		line.caret_column = text.length()
+		line.deselect()
 	# A text_changed handler may have disarmed the line while applying `text`.
 	mark_mid_entry(line, true)
-	_reassert_typed.call_deferred(line, text)
+	# Two defers: SpinBox applies its own line rewrite on the first idle.
+	_reassert_typed_outer.call_deferred(line)
+
+
+## Parent SpinBox follows a parseable typed body. Incomplete prefixes ("." / "-")
+## leave the previous value alone so a trailing dot is not committed as a whole.
+static func _sync_spin_value_no_signal(line: LineEdit, text: String) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	var parent := line.get_parent()
+	if not (parent is SpinBox):
+		return
+	var spin := parent as SpinBox
+	# While the user owns the characters, SpinBox must not parse-and-clamp the
+	# line back to the previous in-range value ("200" → "20.0").
+	spin.update_on_text_changed = false
+	var body := _numeric_body(text)
+	if body == "" or body == "." or body == "-" or body == "-." or not body.is_valid_float():
+		return
+	# A value outside the spin's range must stay on the line ("200" in a
+	# 0.05–100 radius). Clamping here makes SpinBox rewrite the text to the
+	# cap on the next frame.
+	var v := float(body)
+	if v < spin.min_value - 1e-9 or v > spin.max_value + 1e-9:
+		return
+	if is_equal_approx(spin.value, v):
+		return
+	# Emit value_changed. The fillet editor previews from that signal;
+	# set_value_no_signal left the feature at the old radius after Enter.
+	spin.value = v
 
 
 static func _select_line_if_gen(line: LineEdit, gen: int) -> void:
 	if line == null or not is_instance_valid(line):
 		return
 	if int(line.get_meta("_sx_select_gen", 0)) != gen:
+		return
+	if select_type_stale(line):
 		return
 	if not bool(line.get_meta("_sx_replace_armed", false)):
 		return
@@ -331,6 +556,10 @@ static func _select_line_if_gen(line: LineEdit, gen: int) -> void:
 	if not line.is_editing():
 		line.edit()
 	line.select_all()
+
+
+static func _reassert_typed_outer(line: LineEdit) -> void:
+	_reassert_typed.call_deferred(line, "")
 
 
 static func _reassert_typed(line: LineEdit, _text: String) -> void:
@@ -352,9 +581,16 @@ static func _reassert_typed(line: LineEdit, _text: String) -> void:
 	# Putting "1" back is how a typed 1.5 turns into 15.
 	if _user_continued(current, text):
 		return
-	if not _is_reformat_of(current, text):
-		return
+	# SpinBox rewrites a typed "200" (above max) to "20.0" / "100" a frame
+	# later. The owned characters win; a real extra digit is _user_continued.
 	line.text = text
+	line.caret_column = text.length()
+	line.deselect()
+	_sync_spin_value_no_signal(line, text)
+	if str(line.text) != text:
+		line.text = text
+		line.caret_column = text.length()
+		line.deselect()
 	line.caret_column = text.length()
 	line.deselect()
 
@@ -399,6 +635,7 @@ static func _is_zero_padded(current: String, typed: String) -> bool:
 static func compose_typed_char(line: LineEdit, ch: String) -> String:
 	if line == null or ch == "":
 		return ch
+	bump_type_gen(line)
 	if replace_armed(line):
 		return ch
 	if line.has_selection():

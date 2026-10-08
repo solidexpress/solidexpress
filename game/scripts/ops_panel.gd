@@ -261,16 +261,14 @@ func _build_body_ops() -> void:
 					return
 			_notify_dressup_radius(v)
 		# After Godot's deferred line reformat, show the same "N mm" as the strip.
-		(func() -> void:
-			SxUi.reveal_committed_spin.call_deferred(_radius_spin, v)).call_deferred())
+		SxUi.defer_reveal_committed_spin(_radius_spin, v))
 	radius_le.focus_entered.connect(func() -> void:
 		SxUi.arm_replace_on_focus(radius_le))
 	# Tab (focus-exit) commits the number without applying the fillet.
 	radius_le.focus_exited.connect(func() -> void:
 		SxUi.disarm_replace(radius_le)
 		_commit_panel_radius()
-		(func() -> void:
-			SxUi.reveal_committed_spin.call_deferred(_radius_spin)).call_deferred())
+		SxUi.defer_reveal_committed_spin(_radius_spin))
 	# Enter stores the radius and returns the keys. Viewport Enter applies.
 	radius_le.text_submitted.connect(func(_t: String) -> void:
 		_commit_panel_radius()
@@ -282,7 +280,10 @@ func _build_body_ops() -> void:
 			if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 				SxUi.claim_keyboard_focus(radius_le)
 			return
-		if not (event is InputEventKey) or not event.pressed or event.echo:
+		if SxUi.swallow_rejected_echo(event):
+			radius_le.accept_event()
+			return
+		if not SxUi.press_accepted(event):
 			return
 		var key := event as InputEventKey
 		if key.keycode == KEY_TAB:
