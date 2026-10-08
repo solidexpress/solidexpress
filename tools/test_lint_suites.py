@@ -143,6 +143,15 @@ class LintSuitesTests(unittest.TestCase):
         lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
         self.assertGreaterEqual(len(lines), 155)
         got = {Path(ln).name for ln in lines}
+        red = subprocess.run(
+            ["bash", str(ROOT / "packaging" / "ci" / "run_suites.sh"), "--tier", "known-red", "--list"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(red.returncode, 0, red.stderr)
+        got |= {Path(ln).name for ln in red.stdout.splitlines() if ln.strip()}
         baseline = [
             ln.strip()
             for ln in (ROOT / "packaging" / "ci" / "suites.baseline").read_text().splitlines()
