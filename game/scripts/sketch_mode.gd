@@ -7282,23 +7282,21 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 	var score := 0.0
 	for prev in placed:
 		var frac := _glyph_overlap_fraction(rect, prev)
+		# A small term so the search prefers the least overlap. Above 20% it
+		# outweighs sitting on the curve, which the 40 px cap cannot spread.
+		score += frac * 8.0
 		if frac > 0.20:
-			score += (frac - 0.20) * 100.0
+			score += 50.0 + (frac - 0.20) * 100.0
 	for lr in labels:
 		var lg := lr.grow(GLYPH_LABEL_GAP_PX)
 		if rect.intersects(lg):
 			var inter := rect.intersection(lg)
 			score += 80.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0)
-	var sk: Variant = _sketch_at_screen(cam, centre)
-	if sk == null:
+	# No on-curve penalty. With the offset capped at 40 px that penalty put
+	# every badge on the same ring and they overlapped. Labels and other
+	# badges still push a glyph off its vertex.
+	if _sketch_at_screen(cam, centre) == null:
 		score += 40.0
-	else:
-		var near := _nearest_entity_at(sk)
-		if near != "":
-			var gap := _entity_distance(sketch.entity_info(near), sk)
-			# A click on the badge centre must not lose to the geometry-wins rule.
-			if gap < 0.5:
-				score += 30.0 + (0.5 - gap) * 10.0
 	return score
 
 
@@ -7309,24 +7307,52 @@ func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2
 	var best := natural
 	var best_score := INF
 	var max_ring := maxi(1, floori(GLYPH_MAX_OFFSET_PX / step))
-	for ring in range(max_ring + 1):
-		var count := 1 if ring == 0 else ring * 8
+	var radii: Array[float] = [0.0]
+	var fine := 4.0
+	while fine <= GLYPH_MAX_OFFSET_PX + 0.01:
+		radii.append(minf(fine, GLYPH_MAX_OFFSET_PX))
+		fine += 4.0
+	for ring in range(1, max_ring + 1):
+		var capped := minf(step * float(ring), GLYPH_MAX_OFFSET_PX)
+		if not radii.has(capped):
+			radii.append(capped)
+	for radius in radii:
+		var count := 1 if radius < 1.0 else 24
 		for i in range(count):
 			var centre := natural
-			if ring > 0:
+			if radius >= 1.0:
 				var ang := TAU * float(i) / float(count)
-				# Ring 1 is always searched. When the glyph is taller than the
-				# cap, that ring would land past GLYPH_MAX_OFFSET_PX; keep it
-				# on the cap so the badge cannot leave its anchor.
-				var radius := minf(step * float(ring), GLYPH_MAX_OFFSET_PX)
 				centre = natural + Vector2(cos(ang), sin(ang)) * radius
 			var rect := Rect2(centre - size * 0.5, size)
 			var score := _glyph_block_score(rect, centre, placed, labels, cam)
 			if score < best_score:
 				best_score = score
 				best = centre
-			if score <= 0.0:
-				return centre
+	var guard := 0
+	while guard < 12:
+		guard += 1
+		var rect := Rect2(best - size * 0.5, size)
+		var worst := 0.0
+		var worst_prev := Rect2()
+		for prev in placed:
+			var frac := _glyph_overlap_fraction(rect, prev)
+			if frac > worst:
+				worst = frac
+				worst_prev = prev
+		if worst <= 0.12:
+			break
+		var away := best - worst_prev.get_center()
+		if away.length_squared() < 1.0:
+			away = Vector2(1.0, 0.0)
+		var nudged := best + away.normalized() * 3.0
+		if nudged.distance_to(natural) > GLYPH_MAX_OFFSET_PX:
+			nudged = natural + (nudged - natural).normalized() * GLYPH_MAX_OFFSET_PX
+		var nscore := _glyph_block_score(Rect2(nudged - size * 0.5, size), nudged, placed, labels, cam)
+		if nscore <= best_score + 0.01:
+			best = nudged
+			best_score = nscore
+		else:
+			break
 	return best
 
 
