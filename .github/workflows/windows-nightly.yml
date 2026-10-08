@@ -1,6 +1,8 @@
 name: windows-nightly
 
 on:
+  # GitHub schedules are best-effort and can be late or dropped. This cron is
+  # the primary trigger. A manual workflow_dispatch may cover a missed day.
   schedule:
     - cron: "17 8 * * *"
   workflow_dispatch:
@@ -9,6 +11,15 @@ on:
         description: "Build even if main has not changed since the last green nightly"
         type: boolean
         default: false
+
+# A late scheduled run queues behind an in-flight manual dispatch for the same
+# ref instead of building in parallel. cancel-in-progress is false so the
+# manual build is not killed. The queued run starts only after that run has
+# completed; `changes` then compares github.sha to the last green run's
+# head_sha and sets build=false when that run already built this commit.
+concurrency:
+  group: windows-nightly-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   # Keep in sync with ci.yml / release.yml / packaging/occt.version.
@@ -58,6 +69,9 @@ jobs:
           fi
 
           echo "Last green nightly head_sha=${last_sha} url=${last_url}"
+          # A late cron queued behind a manual dispatch starts only after that
+          # run has completed, so a green build of this sha is already listed
+          # above and this run skips.
           if [[ "${last_sha}" == "${CURRENT_SHA}" ]]; then
             echo "Decision: build=false (main unchanged since last green nightly)"
             echo "build=false" >> "$GITHUB_OUTPUT"
