@@ -5771,10 +5771,15 @@ func _lock_sized_circle(id: String) -> void:
 		return
 	if _entity_has_constraint(id, "fix"):
 		return
-	# A3 already pins the bosses. A second Fix makes one shaft tangent redundant.
+	# A3 already pins the bosses (coincident, or a centre-to-centre distance).
+	# A second Fix makes one shaft tangent redundant and paints the H badge.
 	if _entity_has_constraint(id, "coincident"):
 		return
-	sketch.add_constraint("fix", [{"entity": id, "role": "self"}], 0.0)
+	if _entity_has_constraint(id, "distance"):
+		return
+	# Centre only. A full Fix also locks the radius and duplicates the driving
+	# radius dimension.
+	sketch.add_constraint("fix", [{"entity": id, "role": "center"}], 0.0)
 
 
 const ORIGIN_PIN_TOL := 0.5
