@@ -189,6 +189,9 @@ func test_rail_never_covered() -> void:
 	check(main.timeline.size.x <= 270.0,
 			"timeline rendered width <= 270 (got %.0f)" % main.timeline.size.x)
 	var vp: Vector2 = main.get_viewport().get_visible_rect().size
+	# Same fallback as main._apply_chrome_docks: headless visible rect is tiny.
+	if vp.x < 400.0:
+		vp = Vector2(1280, 720)
 	check(main.timeline.get_global_rect().end.x <= vp.x * 0.5,
 			"timeline stays in the left half (right %.0f of %.0f)" % [
 				main.timeline.get_global_rect().end.x, vp.x])
