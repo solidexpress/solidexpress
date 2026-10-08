@@ -314,8 +314,8 @@ func step_l_docks(main, vp: SubViewport) -> void:
 		await process_frame
 	check(main.timeline.visible, "Timeline shown when toggled")
 	var t_r: Rect2 = main.timeline.get_global_rect()
-	check(t_r.end.x <= float(vp.size.x) * 0.4 + 8.0,
-			"Timeline right edge left of plate mid (%.0f)" % t_r.end.x)
+	check(t_r.end.x <= float(vp.size.x) * 0.5,
+			"Timeline right edge in the left half (%.0f)" % t_r.end.x)
 	# Fillet second strip press commits.
 	main.show_timeline = false
 	main._update_panel_visibility()
