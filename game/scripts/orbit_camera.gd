@@ -819,7 +819,9 @@ func frame_contents(center_on_bounds := false) -> void:
 		return
 	_clear_stale_sketch_fit()
 	if not _has_visible_body():
-		_look_at_content = center_on_bounds
+		# No part to centre on. Keep the empty-grid aim (origin low in the
+		# window) so a New document's ground stays clickable.
+		_look_at_content = false
 		pivot = Vector3.ZERO
 		distance = DEFAULT_DISTANCE
 		_update_transform()
