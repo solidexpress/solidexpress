@@ -2706,6 +2706,24 @@ func _sketch_keys_blocked() -> bool:
 	return false
 
 
+## Circle focuses the radius blank on arm. Until the user clicks or types in
+## that blank, L/D/T/C/S (and the other tool keys) still switch tools.
+func _release_tool_claimed_dim_for_hotkey(ke: InputEventKey) -> bool:
+	if ke.echo or ke.ctrl_pressed or ke.alt_pressed or ke.meta_pressed:
+		return false
+	match ke.keycode:
+		KEY_S, KEY_L, KEY_R, KEY_C, KEY_A, KEY_T, KEY_D, KEY_E:
+			pass
+		_:
+			return false
+	if sketch_chrome == null or not sketch_chrome.has_method("tool_claimed_dim_focus"):
+		return false
+	if not sketch_chrome.tool_claimed_dim_focus():
+		return false
+	sketch_chrome.release_dim_focus()
+	return true
+
+
 ## Cached SketchTools rail; clicks there must never be stolen as sketch canvas.
 var _cached_sketch_tools: Control
 
@@ -5495,7 +5513,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event is InputEventKey and event.pressed:
-			if _sketch_keys_blocked():
+			if _sketch_keys_blocked() and not _release_tool_claimed_dim_for_hotkey(event as InputEventKey):
 				return
 			_sketch_input(event)
 			get_viewport().set_input_as_handled()
