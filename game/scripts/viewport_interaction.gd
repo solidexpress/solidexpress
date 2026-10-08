@@ -199,9 +199,9 @@ var _dim_edit_replace := false
 var _dim_edit_typed := ""
 var _dim_edit_seed_gen := 0
 var _dim_edit_seed_seen := 0
-## Popup windows receive the same key in gui_input and again in _input.
-## One write per key; the duplicate in the same idle frame is swallowed.
-var _dim_edit_guard_usec := 0
+## The same InputEvent can reach the popup LineEdit and `_input`. A second
+## different key in the same millisecond must still count ("45", "00").
+var _dim_edit_event_id := 0
 ## Bumped on click and on typed text so a pending deferred select_all cannot
 ## re-select the first digit and let the second key replace it.
 var _dim_edit_select_gen := 0
@@ -358,6 +358,11 @@ func _on_numeric_canvas_press(event: InputEvent) -> void:
 	var at := mb.global_position
 	if at == Vector2.ZERO:
 		at = mb.position
+	# grab_focus() here runs before the rail button sees the press. That
+	# releases the length field, shifts the finish bar, and the Select
+	# click never lands (sx-038: Line stayed armed, Dim showed 38.76).
+	if _sketch_rail_button_at(at) != null:
+		return
 	_release_numeric_if_press_elsewhere(at)
 
 
@@ -854,19 +859,21 @@ func _dim_edit_owns_keys() -> bool:
 ## Write one length character into the dimension editor, replacing on the
 ## first key after arm and appending after that. The whole string is assigned
 ## so a caret stuck at column 0 cannot reverse "45" into "54".
-func _apply_dim_edit_char(ch: String) -> void:
+func _dim_edit_take_event(event: InputEvent) -> bool:
+	if event == null:
+		return true
+	var id := event.get_instance_id()
+	if id == _dim_edit_event_id:
+		return false
+	_dim_edit_event_id = id
+	return true
+
+
+func _apply_dim_edit_char(ch: String, event: InputEvent = null) -> void:
 	if _dim_edit_line == null or ch == "":
 		return
-	# Popup focus delivers one key twice. The duplicate sees the post-write
-	# state; a later real key does not arrive in the same few milliseconds.
-	var here := "%s|%d|%s" % [ch, _dim_edit_typed.length(), str(_dim_edit_replace)]
-	var now := Time.get_ticks_usec()
-	if str(_dim_edit_line.get_meta("_sx_key_token", "")) == here \
-			and now - _dim_edit_guard_usec < 4000:
+	if event != null and not _dim_edit_take_event(event):
 		return
-	var after_len := 1 if (_dim_edit_replace or _dim_edit_typed == "") else _dim_edit_typed.length() + 1
-	_dim_edit_line.set_meta("_sx_key_token", "%s|%d|false" % [ch, after_len])
-	_dim_edit_guard_usec = now
 	if _dim_edit_replace or _dim_edit_typed == "":
 		_dim_edit_typed = ch
 	else:
@@ -875,10 +882,10 @@ func _apply_dim_edit_char(ch: String) -> void:
 	_dim_edit_seed_gen += 1
 	_dim_edit_select_gen += 1
 	SxUi.write_typed_text(_dim_edit_line, _dim_edit_typed)
+	# grab_focus without edit(). edit() lets LineEdit insert the next key
+	# before this handler, and the deferred reassert then keeps only "4".
 	if not _dim_edit_line.has_focus():
 		_dim_edit_line.grab_focus()
-	# The popup LineEdit still inserts the key after this write ("4" → "44").
-	# Put the owned string back once that insert has landed.
 	_reassert_dim_edit_text.call_deferred(_dim_edit_typed)
 
 
@@ -888,6 +895,8 @@ func _try_replace_dim_edit_key(event: InputEvent) -> bool:
 		return false
 	var ke := event as InputEventKey
 	if ke.keycode == KEY_ENTER or ke.keycode == KEY_KP_ENTER:
+		if not _dim_edit_take_event(event):
+			return true
 		# The popup is its own window, so Enter on the main viewport does not
 		# reach LineEdit.text_submitted. Commit the owned text from here.
 		var text := str(_dim_edit_line.text) if _dim_edit_line != null else ""
@@ -895,30 +904,48 @@ func _try_replace_dim_edit_key(event: InputEvent) -> bool:
 			text = _dim_edit_typed
 		_apply_dim_edit(text)
 		return true
+	if _forward_dim_edit_shortcut(ke):
+		return true
+	if ke.keycode == KEY_BACKSPACE and not ke.ctrl_pressed and not ke.meta_pressed:
+		_apply_dim_edit_backspace(event)
+		return true
 	if not _is_length_type_key(ke):
-		# Backspace belongs to the LineEdit. Drop the owned buffer so the
-		# next digit does not resurrect the pre-edit string.
-		_dim_edit_typed = ""
 		return false
 	if _dim_edit_line == null:
 		return false
-	if _dim_edit_line.has_focus() and not _dim_edit_replace and _dim_edit_typed == "":
-		return false
-	_apply_dim_edit_char(_length_type_seed(ke))
+	_apply_dim_edit_char(_length_type_seed(ke), event)
 	return true
 
 
-func _reassert_dim_edit_text(expected: String) -> void:
+func _apply_dim_edit_backspace(event: InputEvent = null) -> void:
+	if _dim_edit_line == null:
+		return
+	if event != null and not _dim_edit_take_event(event):
+		return
+	var cur := _dim_edit_typed if _dim_edit_typed != "" else str(_dim_edit_line.text)
+	if _dim_edit_replace:
+		cur = ""
+	elif cur.length() > 0:
+		cur = cur.substr(0, cur.length() - 1)
+	_dim_edit_replace = false
+	_dim_edit_typed = cur
+	_dim_edit_select_gen += 1
+	SxUi.write_typed_text(_dim_edit_line, cur)
+
+
+func _reassert_dim_edit_text(_expected: String) -> void:
 	if _dim_edit_line == null or not is_instance_valid(_dim_edit_line):
 		return
-	if _dim_edit_typed != expected:
-		return
-	if str(_dim_edit_line.text) == expected:
-		_dim_edit_line.caret_column = expected.length()
+	# The call was scheduled with the first key of a burst. Later keys in
+	# that same frame already extended `_dim_edit_typed`; putting the old
+	# snapshot back is how "45" becomes "4".
+	var text := _dim_edit_typed
+	if str(_dim_edit_line.text) == text:
+		_dim_edit_line.caret_column = text.length()
 		_dim_edit_line.deselect()
 		return
-	_dim_edit_line.text = expected
-	_dim_edit_line.caret_column = expected.length()
+	_dim_edit_line.text = text
+	_dim_edit_line.caret_column = text.length()
 	_dim_edit_line.deselect()
 
 
@@ -943,7 +970,10 @@ func _on_dim_edit_line_focus_entered() -> void:
 	_dim_edit_typed = ""
 	if _dim_edit_line == null:
 		return
-	SxUi.arm_replace_on_focus(_dim_edit_line)
+	# Do not arm_replace_on_focus: its deferred select calls edit(), and the
+	# next key is then inserted by LineEdit before this handler runs.
+	_dim_edit_select_gen += 1
+	_select_dim_edit_all_if_gen.call_deferred(_dim_edit_select_gen)
 
 
 func _on_dim_edit_line_text_changed(_new_text: String) -> void:
@@ -972,34 +1002,37 @@ func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			_dim_edit_replace = true
 			_dim_edit_typed = ""
+			SxUi.mark_mid_entry(_dim_edit_line, false)
 			_dim_edit_select_gen += 1
-			if _dim_edit_line != null:
-				SxUi.arm_replace_on_focus(_dim_edit_line)
+			_select_dim_edit_all_if_gen.call_deferred(_dim_edit_select_gen)
 		return
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	var ke := event as InputEventKey
 	if ke.keycode == KEY_ESCAPE:
 		# One Esc closes the editor and drops any ✕ it left behind.
-		if _dim_edit_popup != null:
-			_dim_edit_popup.hide()
+		_hide_dim_edit_popup()
+		_dim_edit_line.accept_event()
+		return
+	if ke.keycode == KEY_ENTER or ke.keycode == KEY_KP_ENTER:
+		if _dim_edit_take_event(event):
+			var text := _dim_edit_typed if _dim_edit_typed != "" else str(_dim_edit_line.text)
+			_apply_dim_edit(text)
+		_dim_edit_line.accept_event()
+		return
+	if _forward_dim_edit_shortcut(ke):
+		_dim_edit_line.accept_event()
+		return
+	if ke.keycode == KEY_BACKSPACE and not ke.ctrl_pressed and not ke.meta_pressed:
+		_apply_dim_edit_backspace(event)
 		_dim_edit_line.accept_event()
 		return
 	if not _is_length_type_key(ke):
 		return
-	if _dim_edit_line != null and _dim_edit_line.has_focus() and not _dim_edit_line.is_editing():
-		_dim_edit_line.edit()
-		_dim_edit_replace = true
-	# _input already wrote this character. Swallow it so the LineEdit does
-	# not insert a second copy at column 0.
-	if _dim_edit_line != null and _dim_edit_typed != "" \
-			and str(_dim_edit_line.text) == _dim_edit_typed:
-		accept_event()
-		return
-	if not _dim_edit_replace and _dim_edit_line != null and _dim_edit_line.has_focus():
-		return
-	_apply_dim_edit_char(_length_type_seed(ke))
-	accept_event()
+	# Own every digit. edit() plus a deferred reassert of the first character
+	# drops the rest of a fast "45" when the popup steals the key from _input.
+	_apply_dim_edit_char(_length_type_seed(ke), event)
+	_dim_edit_line.accept_event()
 
 
 func _on_dim_edit_popup_hide() -> void:
@@ -1009,12 +1042,81 @@ func _on_dim_edit_popup_hide() -> void:
 	measure_overlay.set_sketch_measure_blocked(false)
 
 
+## Close the label editor without the Godot 4.7 double disconnect of the
+## parent window's focus_entered / tree_exited (embedded FLAG_POPUP hide).
+func _hide_dim_edit_popup() -> void:
+	_dim_edit_replace = false
+	_dim_edit_typed = ""
+	_dim_edit_select_gen += 1
+	_dim_edit_seed_gen += 1
+	if _dim_edit_line != null and is_instance_valid(_dim_edit_line):
+		SxUi.release_line_now(_dim_edit_line)
+	if _dim_edit_popup != null and is_instance_valid(_dim_edit_popup):
+		var was_popup := _dim_edit_popup.get_flag(Window.FLAG_POPUP)
+		if was_popup:
+			_dim_edit_popup.set_flag(Window.FLAG_POPUP, false)
+		if _dim_edit_popup.visible:
+			_dim_edit_popup.hide()
+		if was_popup:
+			_dim_edit_popup.set_flag(Window.FLAG_POPUP, true)
+	if measure_overlay != null:
+		measure_overlay.clear_pair()
+		measure_overlay.set_sketch_measure_blocked(false)
+	return_viewport_keys()
+
+
+## Undo / redo / tool keys while the label editor is open but the user has
+## not typed. The popup eats the key, so main `_unhandled_input` never sees it.
+func _forward_dim_edit_shortcut(ke: InputEventKey) -> bool:
+	if ke == null or _dim_edit_line == null:
+		return false
+	if SxUi.mid_entry(_dim_edit_line):
+		return false
+	var redo := false
+	var undo := false
+	var tool := -1
+	if ke.ctrl_pressed and not ke.alt_pressed and not ke.meta_pressed:
+		if ke.keycode == KEY_Z:
+			if ke.shift_pressed:
+				redo = true
+			else:
+				undo = true
+		elif ke.keycode == KEY_Y and not ke.shift_pressed:
+			redo = true
+		else:
+			return false
+	elif ke.ctrl_pressed or ke.meta_pressed or ke.alt_pressed:
+		return false
+	else:
+		match ke.keycode:
+			KEY_S: tool = SketchMode.Tool.SELECT
+			KEY_L: tool = SketchMode.Tool.LINE
+			KEY_R: tool = SketchMode.Tool.RECT
+			KEY_C: tool = SketchMode.Tool.CIRCLE
+			KEY_A: tool = SketchMode.Tool.ARC
+			KEY_T: tool = SketchMode.Tool.TRIM
+			KEY_D: tool = SketchMode.Tool.SMART_DIM
+			KEY_E: tool = SketchMode.Tool.EXTEND
+			_:
+				return false
+	if not _dim_edit_take_event(ke):
+		return true
+	_hide_dim_edit_popup()
+	if redo:
+		_status_sketch_redo()
+	elif undo:
+		_status_sketch_undo()
+	elif sketch_mode != null and tool >= 0:
+		sketch_mode.set_tool(tool as SketchMode.Tool)
+	return true
+
+
 func _apply_dim_edit(text: String) -> void:
 	_dim_edit_replace = false
 	_dim_edit_typed = ""
 	if measure_overlay != null:
 		measure_overlay.clear_pair()
-	_dim_edit_popup.hide()
+	_hide_dim_edit_popup()
 	if sketch_mode == null or _dim_edit_index < 0:
 		return
 	var v := text.to_float()
@@ -2712,7 +2814,14 @@ func _sketch_keys_blocked() -> bool:
 	var focus: Control = vp.gui_get_focus_owner()
 	if focus == null:
 		return false
-	if focus is LineEdit or focus is TextEdit:
+	if focus is LineEdit:
+		# Armed / just-opened numeric fields keep focus without a typed
+		# character. S, redo, and view keys still belong to the viewport.
+		if _line_is_tracked_numeric(focus as LineEdit) \
+				and not SxUi.mid_entry(focus as LineEdit):
+			return false
+		return true
+	if focus is TextEdit:
 		return true
 	# SpinBox focuses its internal LineEdit; also treat the SpinBox itself.
 	var p: Node = focus
@@ -2721,6 +2830,33 @@ func _sketch_keys_blocked() -> bool:
 			return true
 		p = p.get_parent()
 	return false
+
+
+## Redo / undo stay with the sketch unless the focused line already has a
+## typed character. An armed or just-opened field must not swallow Ctrl+Shift+Z.
+func _shortcut_blocked_by_numeric_edit() -> bool:
+	var vp := get_viewport()
+	if vp == null:
+		return false
+	var focus: Control = vp.gui_get_focus_owner()
+	if focus == null:
+		return false
+	if focus is LineEdit:
+		var line := focus as LineEdit
+		if _line_is_tracked_numeric(line):
+			return SxUi.mid_entry(line)
+		return true
+	if focus is TextEdit or focus is CodeEdit:
+		return true
+	return false
+
+
+func note_distance_focus_released() -> void:
+	_distance_length_typed = ""
+
+
+func note_dim_focus_released() -> void:
+	_preview_length_typed = ""
 
 
 ## Circle focuses the radius blank on arm. Until the user clicks or types in
@@ -2759,6 +2895,58 @@ func _over_sketch_rail(global_mouse: Vector2) -> bool:
 	if rail == null or not rail.visible or not rail.is_visible_in_tree():
 		return false
 	return rail.get_global_rect().has_point(global_mouse)
+
+
+## Front-most sketch-rail button under `pos`, or null. Used so a press on
+## Select switches tools even when the length field owns the keyboard.
+func _sketch_rail_button_at(pos: Vector2) -> Button:
+	var rail := _sketch_tools_control()
+	if rail == null or not rail.visible or not rail.is_visible_in_tree():
+		return null
+	if not rail.get_global_rect().grow(1.0).has_point(pos):
+		return null
+	return _front_rail_button(rail, pos)
+
+
+func _front_rail_button(node: Node, pos: Vector2) -> Button:
+	if node == null or not is_instance_valid(node):
+		return null
+	var kids := node.get_children()
+	for i in range(kids.size() - 1, -1, -1):
+		var hit := _front_rail_button(kids[i], pos)
+		if hit != null:
+			return hit
+	var btn := node as Button
+	if btn == null or not btn.visible or not btn.is_visible_in_tree():
+		return null
+	if btn.mouse_filter == Control.MOUSE_FILTER_IGNORE:
+		return null
+	var r := btn.get_global_rect()
+	if r.get_area() < 4.0 or not r.has_point(pos):
+		return null
+	return btn
+
+
+## Rail press: switch the tool now and drop the length field. Waiting for
+## Button.pressed loses the click when that field's focus exit moves the bar.
+func _activate_sketch_rail_button(btn: Button) -> void:
+	if sketch_chrome != null:
+		if sketch_chrome.has_method("release_dim_focus"):
+			sketch_chrome.release_dim_focus()
+		if sketch_chrome.has_method("release_distance_focus"):
+			sketch_chrome.release_distance_focus()
+	var vp := get_viewport()
+	if vp != null:
+		var focus: Control = vp.gui_get_focus_owner()
+		if focus is LineEdit and _line_is_tracked_numeric(focus as LineEdit):
+			SxUi.release_line_now(focus as LineEdit)
+	if btn == null or sketch_mode == null:
+		return
+	if str(btn.name) == "JawTool":
+		sketch_mode.start_jaw_tool()
+		return
+	if btn.has_meta("sx_tool"):
+		sketch_mode.set_tool(int(btn.get_meta("sx_tool")) as SketchMode.Tool)
 
 
 ## True when model LMB/motion should run from `_input`, not blocked by chrome/docks.
@@ -3066,7 +3254,10 @@ func _note_click(text: String, pos: Vector2) -> void:
 	last_click_disposition = text
 	click_disposition.emit(text)
 	if OS.get_environment("SX_INPUT_TRACE") == "1":
-		print("[input-trace] press (%d,%d) %s" % [int(pos.x), int(pos.y), text])
+		# Release exports block-buffer stdout when it is a pipe, so a walker
+		# `2>&1 | tee` never saw print(). printerr writes stderr, which stays
+		# unbuffered under glibc even when redirected.
+		printerr("[input-trace] press (%d,%d) %s" % [int(pos.x), int(pos.y), text])
 
 
 func _note_press_drop(who: String, pos: Vector2) -> void:
@@ -3677,7 +3868,7 @@ func _sketch_input(event: InputEvent) -> void:
 			if measure_overlay != null:
 				measure_overlay.update_sketch_hover("", Vector3.ZERO)
 	elif event is InputEventKey and event.pressed and event.ctrl_pressed:
-		if SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus():
+		if _shortcut_blocked_by_numeric_edit():
 			return
 		var ke := event as InputEventKey
 		match ke.keycode:
@@ -4783,7 +4974,7 @@ func _gui_key(event: InputEventKey) -> bool:
 				return true
 		KEY_Z:
 			if event.ctrl_pressed:
-				if SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus():
+				if _shortcut_blocked_by_numeric_edit():
 					return false
 				if sketch_mode != null and sketch_mode.active:
 					if event.shift_pressed:
@@ -4802,7 +4993,7 @@ func _gui_key(event: InputEventKey) -> bool:
 				return true
 		KEY_Y:
 			if event.ctrl_pressed:
-				if SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus():
+				if _shortcut_blocked_by_numeric_edit():
 					return false
 				if sketch_mode != null and sketch_mode.active:
 					_status_sketch_redo()
@@ -5400,6 +5591,10 @@ func _try_route_length_key(event: InputEvent) -> bool:
 	# the finish-bar dim blank or Distance with the same KEY_2 KEY_0 KEY_0.
 	if _dim_edit_owns_keys():
 		return _try_replace_dim_edit_key(event)
+	# Distance is editing after click / Tab, so LineEdit would insert the key
+	# and this signal path would never see it. Own the character first.
+	if _try_own_focused_distance_key(event):
+		return true
 	if _try_consume_preview_length_key(event):
 		return true
 	if _try_append_focused_dim_length_key(event):
@@ -5494,6 +5689,31 @@ func _try_consume_distance_length_key(event: InputEvent) -> bool:
 	if sketch_chrome != null:
 		if sketch_chrome.has_method("focus_distance_for_typing"):
 			sketch_chrome.focus_distance_for_typing(_distance_length_typed)
+	return true
+
+
+func _try_own_focused_distance_key(event: InputEvent) -> bool:
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if not _is_length_type_key(ke):
+		return false
+	var edit := _distance_line_edit()
+	if edit == null or not edit.has_focus():
+		return false
+	# An unfocused burst already seeded this string. The next keys extend
+	# that seed; owning them here would append to the previous commit.
+	if not _distance_length_typed.is_empty():
+		return false
+	if sketch_chrome == null or not sketch_chrome.has_method("apply_distance_typed_char"):
+		return false
+	var ch := _length_type_seed(ke)
+	if ch.is_empty():
+		return false
+	# This burst is the field's, not a leftover unfocused seed.
+	_distance_length_typed = ""
+	sketch_chrome.apply_distance_typed_char(ch)
 	return true
 
 
@@ -5682,6 +5902,19 @@ func _input(event: InputEvent) -> void:
 		if event is InputEventMouse:
 			var mouse_pos := (event as InputEventMouse).position
 			var left_press := _is_left_press(event)
+			if left_press:
+				var rail_at := mouse_pos
+				if event is InputEventMouseButton:
+					var rail_gp := (event as InputEventMouseButton).global_position
+					if rail_gp != Vector2.ZERO:
+						rail_at = rail_gp
+				var rail_btn := _sketch_rail_button_at(rail_at)
+				if rail_btn != null:
+					# Switch before Button.pressed. A focused Dim field used
+					# to eat the first Select click and keep Line armed.
+					_activate_sketch_rail_button(rail_btn)
+					_note_press_drop(str(rail_btn.name), mouse_pos)
+					return
 			var who := _over_chrome_who(mouse_pos)
 			if who == "" and left_press:
 				who = _press_blocker_name(mouse_pos)
@@ -5693,7 +5926,24 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event is InputEventKey and event.pressed:
+			# Tab moves focus. Swallowing it here kept the Extrude Distance
+			# field from ever gaining focus that way, so the first key could
+			# not replace its value.
+			var ke_tab := event as InputEventKey
+			if ke_tab.keycode == KEY_TAB and not ke_tab.ctrl_pressed \
+					and not ke_tab.alt_pressed and not ke_tab.meta_pressed:
+				return
 			if _sketch_keys_blocked() and not _release_tool_claimed_dim_for_hotkey(event as InputEventKey):
+				return
+			var ke_len := event as InputEventKey
+			# A focused length field that has not been typed in yet must still
+			# receive digits. Falling into _sketch_input would accept the key
+			# and the LineEdit would never see it.
+			if ke_len != null and not ke_len.echo and not ke_len.ctrl_pressed \
+					and not ke_len.meta_pressed and _focused_tracked_numeric() != null \
+					and (_is_length_type_key(ke_len) \
+						or ke_len.keycode == KEY_ENTER or ke_len.keycode == KEY_KP_ENTER \
+						or ke_len.keycode == KEY_ESCAPE):
 				return
 			_sketch_input(event)
 			get_viewport().set_input_as_handled()
@@ -5787,6 +6037,9 @@ func _consume_numeric_select_all(ke: InputEventKey) -> bool:
 		line.select_all()
 		if _line_is_tracked_numeric(line):
 			SxUi.arm_replace_on_focus(line)
+		if line == _distance_line_edit() and sketch_chrome != null \
+				and sketch_chrome.has_method("note_distance_select_all"):
+			sketch_chrome.note_distance_select_all()
 		if vp != null:
 			vp.set_input_as_handled()
 		return true
@@ -5827,6 +6080,16 @@ func _line_is_tracked_numeric(line: LineEdit) -> bool:
 		if candidate == line:
 			return true
 	return false
+
+
+func _focused_tracked_numeric() -> LineEdit:
+	var vp := get_viewport()
+	if vp == null:
+		return null
+	var focus: Control = vp.gui_get_focus_owner()
+	if focus is LineEdit and _line_is_tracked_numeric(focus as LineEdit):
+		return focus as LineEdit
+	return null
 
 
 func _numeric_lines() -> Array[LineEdit]:

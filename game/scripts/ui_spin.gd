@@ -224,7 +224,29 @@ static func disarm_replace(line: LineEdit) -> void:
 		return
 	line.set_meta("_sx_replace_armed", false)
 	line.set_meta("_sx_select_gen", int(line.get_meta("_sx_select_gen", 0)) + 1)
+	mark_mid_entry(line, false)
 	line.deselect()
+
+
+## True after a digit has landed in this focus session. Tool shortcuts and
+## sketch redo must keep working until that happens (the field may already
+## own focus because a tool armed it, or because a label editor just opened).
+static func mark_mid_entry(line: LineEdit, on: bool) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	line.set_meta("_sx_mid_entry", on)
+
+
+static func mid_entry(line: LineEdit) -> bool:
+	return line != null and is_instance_valid(line) \
+			and bool(line.get_meta("_sx_mid_entry", false))
+
+
+static func focus_owner_mid_entry(vp: Viewport) -> bool:
+	if vp == null:
+		return false
+	var f := vp.gui_get_focus_owner()
+	return f is LineEdit and mid_entry(f as LineEdit)
 
 
 ## Built-in select_all_on_focus applies on mouse-up. That select can land
@@ -281,9 +303,17 @@ static func write_typed_text(line: LineEdit, text: String) -> void:
 	var gen := int(line.get_meta("_sx_select_gen", 0)) + 1
 	line.set_meta("_sx_select_gen", gen)
 	line.set_meta("_sx_typed", text)
+	mark_mid_entry(line, true)
+	# SpinBox may rewrite "22." to "22" inside the text assignment. Put the
+	# owned characters back before the function returns so the next key in
+	# this same frame appends to "22." and not to "22".
 	line.text = text
+	if str(line.text) != text:
+		line.text = text
 	line.caret_column = text.length()
 	line.deselect()
+	# A text_changed handler may have disarmed the line while applying `text`.
+	mark_mid_entry(line, true)
 	_reassert_typed.call_deferred(line, text)
 
 
@@ -303,10 +333,14 @@ static func _select_line_if_gen(line: LineEdit, gen: int) -> void:
 	line.select_all()
 
 
-static func _reassert_typed(line: LineEdit, text: String) -> void:
+static func _reassert_typed(line: LineEdit, _text: String) -> void:
 	if line == null or not is_instance_valid(line):
 		return
-	if str(line.get_meta("_sx_typed", "")) != text:
+	# Later keys in the same frame already replaced the snapshot this call
+	# was scheduled with. Restoring that snapshot is how a fast "45" / "22.5"
+	# collapses back to the first character.
+	var text := str(line.get_meta("_sx_typed", ""))
+	if text == "":
 		return
 	var current := str(line.text)
 	if current == text:
