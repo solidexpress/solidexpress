@@ -261,6 +261,8 @@ func step_i_jaw_af(main) -> void:
 	if top != "":
 		main.ops_panel.handle_viewport_pick(id, top, Vector3(12, 0, 5))
 	var vol0: float = view.doc.body_volume(id)
+	# Strip chips ignore jaw_af for 600 ms after a sketch finish.
+	OS.delay_msec(700)
 	main.interaction._ctx_jaw_af(14)
 	await process_frame
 	var jaw := 0.0
@@ -323,7 +325,8 @@ func step_l_docks(main, vp: SubViewport) -> void:
 	var edges = main.view.doc.get_edge_ids(id)
 	if edges.size() > 0:
 		main.view.select_edge(id, str(edges[0]))
-		main.ops_panel.set_dressup_radius(1.0)
+		# 1 mm exceeds the edge limit on this plate; a fitting radius can commit.
+		main.ops_panel.set_dressup_radius(0.2)
 		main.ops_panel.arm_or_apply_fillet()
 		main.ops_panel.arm_or_apply_fillet()
 		check(main.ops_panel._pending == main.ops_panel.Pending.NONE,
