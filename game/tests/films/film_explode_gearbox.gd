@@ -14,7 +14,7 @@ func run_film(ctx: FilmContext) -> void:
 	ctx.view.refresh()
 	await FilmUI.wait_frames(ctx.tree, 2)
 	ctx.view.select_entity(shaft, "")
-	await FilmUI.click_button(ctx, "Place instance of selection")
+	await FilmUI.place_instance(ctx)
 	await ctx.after_regen()
 
 	await ctx.beat("Explode — parts travel along their joints", 0.45)
