@@ -87,8 +87,10 @@ func test_button_language(main) -> void:
 		if has_icon and text.strip_edges() == "" and str(b.tooltip_text).strip_edges() == "":
 			mute_icons += 1
 			printerr("    icon button without tooltip: " + str(b.get_path()))
-		if not has_icon and text.strip_edges().length() > 0 \
-				and text.strip_edges().length() <= 2:
+		var label := text.strip_edges()
+		# Value chips (Jaw 10 / 12 / 14, preset numbers) are not cryptic labels.
+		if not has_icon and label.length() > 0 and label.length() <= 2 \
+				and not label.is_valid_float():
 			cryptic += 1
 			printerr("    cryptic text button '%s': %s" % [text, b.get_path()])
 	check(blank == 0, "no blank buttons (%d found)" % blank)
