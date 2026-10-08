@@ -98,6 +98,7 @@ var _cached_top_chrome: Control
 var _layout_strip_busy := false
 var _strip_layout_again := false
 var _last_strip_rect := Rect2()
+var _last_strip_bottom := -1.0
 var _strip_x_floor := 0.0
 var _left_stack_wired: Control
 var _strip_fillet: Button
@@ -5694,6 +5695,34 @@ func selection_strip_global_rect() -> Rect2:
 	return _selection_strip.get_global_rect()
 
 
+## Bottom of the part chip row in viewport pixels, including a wrapped second
+## line and any panel shadow drawn outside the control rect. -1 when hidden.
+func selection_strip_content_bottom() -> float:
+	if _selection_strip == null or not _selection_strip.visible:
+		return -1.0
+	var bottom := _control_visual_end_y(_selection_strip)
+	var row := _selection_strip_row()
+	if row == null:
+		return bottom
+	for child in row.get_children():
+		var c := child as Control
+		if c == null or not c.visible:
+			continue
+		var r := c.get_global_rect()
+		if r.size.x < 1.0 or r.size.y < 1.0:
+			continue
+		bottom = maxf(bottom, r.end.y)
+	return bottom
+
+
+func _control_visual_end_y(ctrl: Control) -> float:
+	var end_y := ctrl.get_global_rect().end.y
+	var sb := ctrl.get_theme_stylebox("panel")
+	if sb is StyleBoxFlat:
+		end_y += (sb as StyleBoxFlat).expand_margin_bottom
+	return end_y
+
+
 ## Left-anchor SelectionStrip below the menu row and wrap it inside the window.
 func _layout_selection_strip() -> void:
 	if _selection_strip == null:
@@ -5702,8 +5731,9 @@ func _layout_selection_strip() -> void:
 		_strip_layout_again = true
 		return
 	if not _selection_strip.visible:
-		if _last_strip_rect != Rect2():
+		if _last_strip_rect != Rect2() or _last_strip_bottom >= 0.0:
 			_last_strip_rect = Rect2()
+			_last_strip_bottom = -1.0
 			selection_strip_laid_out.emit()
 		return
 	_layout_strip_busy = true
@@ -5731,13 +5761,49 @@ func _layout_selection_strip() -> void:
 	var wrapped_h := _selection_strip_wrapped_height(inner_w) + pad_v
 	var h := maxf(_selection_strip.size.y, wrapped_h)
 	_selection_strip.size = Vector2(w, h)
+	_fit_selection_strip_to_chips()
 	_layout_strip_busy = false
 	if _strip_layout_again:
 		_layout_selection_strip()
 	var r := selection_strip_global_rect()
-	if r != _last_strip_rect:
+	var bottom := selection_strip_content_bottom()
+	if r != _last_strip_rect or not is_equal_approx(bottom, _last_strip_bottom):
 		_last_strip_rect = r
+		_last_strip_bottom = bottom
 		selection_strip_laid_out.emit()
+
+
+## Grow the strip so a wrapped HFlow line is inside the panel, not drawn
+## past the rect the Timeline uses as the chip-row bottom.
+func _fit_selection_strip_to_chips() -> void:
+	if _selection_strip == null:
+		return
+	var row := _selection_strip_row()
+	if row == null:
+		return
+	_selection_strip.notification(Container.NOTIFICATION_SORT_CHILDREN)
+	row.notification(Container.NOTIFICATION_SORT_CHILDREN)
+	var pad_bottom := 0.0
+	var sb := _selection_strip.get_theme_stylebox("panel")
+	if sb != null:
+		pad_bottom = sb.get_margin(SIDE_BOTTOM)
+	var origin_y := _selection_strip.get_global_rect().position.y
+	var chips_bottom := origin_y
+	for child in row.get_children():
+		var c := child as Control
+		if c == null or not c.visible:
+			continue
+		var cr := c.get_global_rect()
+		if cr.size.y < 1.0:
+			continue
+		chips_bottom = maxf(chips_bottom, cr.end.y)
+	var inner_w := maxf(8.0, _selection_strip.size.x - _selection_strip_panel_pad_h())
+	var wrapped := _selection_strip_wrapped_height(inner_w) + _selection_strip_panel_pad_v()
+	var want := maxf(wrapped, chips_bottom - origin_y + pad_bottom)
+	if want > _selection_strip.size.y + 0.5:
+		_selection_strip.size.y = want
+		_selection_strip.notification(Container.NOTIFICATION_SORT_CHILDREN)
+		row.notification(Container.NOTIFICATION_SORT_CHILDREN)
 
 
 func _selection_strip_row() -> Container:
