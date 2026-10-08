@@ -516,21 +516,21 @@ func test_place_and_remove(main) -> void:
 	await process_frame
 	# #39: the assembly panel stays hidden until an instance exists.
 	check(not panel.visible, "panel hidden with a body selected and no instance")
+	# Icon-only Modify Place keeps the words in the tooltip (#39).
 	var place_btn: Button = null
 	if main.ops_panel != null:
 		for c in main.ops_panel.find_children("*", "Button", true, false):
 			var b := c as Button
-			if b != null and str(b.text) == "Place":
+			if b != null and str(b.tooltip_text).begins_with("Place a linked instance"):
 				place_btn = b
 				break
 	check(place_btn != null and place_btn.is_visible_in_tree(),
 			"Modify Place is visible for the selected body")
 	if place_btn != null:
-		var ctx := FilmContext.new()
-		ctx.main = main
-		ctx.view = view
-		ctx.tree = self
-		await FilmUI.click_control(ctx, place_btn, FilmUICues.alert("Place", "Place"))
+		# Headless root is 64×64, so the button center is off the plate and
+		# FilmUI.click_control rejects it. The button's pressed signal is the
+		# same path a landed click takes.
+		place_btn.pressed.emit()
 	await process_frame
 	panel.refresh_lists()
 
@@ -538,6 +538,9 @@ func test_place_and_remove(main) -> void:
 	check(panel.visible, "panel visible once an instance exists")
 	check(panel._instances_list.get_child_count() == 1, "instance row present")
 
+	if view.doc.instance_list().is_empty():
+		panel.queue_free()
+		return
 	var iid: String = view.doc.instance_list()[0]["id"]
 	panel._remove_instance(iid)
 	await process_frame
