@@ -144,7 +144,7 @@ func test_typed_circle_radius_5(ctx: FilmContext) -> void:
 
 
 func test_pointer_af_control(ctx: FilmContext) -> void:
-	print("- no override: pointer click at 10.438 mm is AF 10.438")
+	print("- no override: pointer on the circumcircle; distance 10.438 mm is AF √3×10.438")
 	await _file_new(ctx)
 	await _ground_sketch(ctx)
 	var sm: SketchMode = ctx.main.sketch_mode
@@ -157,7 +157,8 @@ func test_pointer_af_control(ctx: FilmContext) -> void:
 	await _click_uv(ctx, Vector2(POINTER_AF, 0), "Pointer 10.438 mm along +X")
 	await process_frame
 	await process_frame
-	_assert_hex_af(sm, POINTER_AF, 0.05)
+	# D3: the pointer sits on the circumscribed circle, so AF = √3 × distance.
+	_assert_hex_af(sm, POINTER_AF * sqrt(3.0), 0.05)
 
 
 func test_typed_too_short(ctx: FilmContext) -> void:
