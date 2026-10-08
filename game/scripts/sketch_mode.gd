@@ -1361,6 +1361,22 @@ func _finish_feature(sk_fid: String, feat_fid: String, op: String, fail_msg: Str
 	view.document_changed.emit()
 	view.select_entity(body_id, "")
 	finished.emit(body_id)
+	# The pose restored above is the view from before the sketch. On a new
+	# part that pose is still the empty-scene orbit (~15 mm), which sits
+	# inside a blank the size of the wrench. Frame the new body the way F
+	# does. Cuts and fuses keep the restored pose (the part was already in
+	# view). Do not emit "Framed …" — the Extrude sentence owns the status.
+	if op == "new":
+		_frame_new_body()
+
+
+## Fit the body just created. Selection is the new body; fall back to all.
+func _frame_new_body() -> void:
+	if camera == null:
+		return
+	if camera.frame_selection():
+		return
+	camera.frame_contents()
 
 
 ## Model-space ray -> sketch 2D coords (null if parallel to plane).
@@ -7320,6 +7336,11 @@ func _prune_orphan_dimensions() -> void:
 
 
 func _redraw() -> void:
+	# A commit that ends the session has already dropped the strokes. A late
+	# redraw must not put the construction overlay back on the solid.
+	if not active:
+		_clear_meshes()
+		return
 	if sketch == null:
 		return
 	_sync_contour_bar()
