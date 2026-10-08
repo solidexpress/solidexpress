@@ -35,6 +35,9 @@ var _drag_accum := Vector3.ZERO         # applied translation so far (move)
 var _drag_pp_applied := 0.0
 var _press_pos := Vector2.ZERO
 var _pressed := false
+## Left press landed on the Timeline or the Modify column. The matching
+## release must not become a model click if the panel moves before mouse-up.
+var _suppress_dock_release := false
 var _last_drag_pos := Vector2.ZERO
 ## Move drag: pre-drag selection center + body node transform for live preview.
 var _move_start_center := Vector3.ZERO
@@ -206,6 +209,16 @@ var _dim_edit_event_id := 0
 ## re-select the first digit and let the second key replace it.
 var _dim_edit_select_gen := 0
 var _last_hover_key := ""
+## Numeric line under the last left press. Keys in the same frame as the
+## click are routed here when focus has not landed yet.
+var _press_numeric_target: LineEdit = null
+## Frame of the click that aimed a digit at `_press_numeric_target`. A later
+## view key (arrow click, then 3) must not be typed into that field.
+var _press_numeric_frame := -1
+## Frame id of the Enter that committed a numeric line. A view key pushed in
+## that same frame must not be routed back into the line. The next frame may
+## still seed an unfocused Distance ("14" after Enter).
+var _viewport_keys_frame := -1
 
 ## Armed click-to-place kind, or "" when idle.
 var _place_kind := ""
@@ -423,7 +436,7 @@ func drop_pending_draw_esc() -> bool:
 
 
 func _emit_view_key_status(event: InputEvent) -> void:
-	if not (event is InputEventKey) or not event.pressed or event.echo:
+	if not SxUi.press_accepted(event):
 		return
 	var ke := event as InputEventKey
 	if ke.ctrl_pressed or ke.meta_pressed or ke.alt_pressed:
@@ -589,8 +602,7 @@ func _build_selection_strip() -> void:
 		if ops_panel != null and ops_panel.has_method("set_dressup_radius"):
 			ops_panel.set_dressup_radius(v)
 		# Godot's deferred editing toggle reformats the line after reveal.
-		(func() -> void:
-			SxUi.reveal_committed_spin.call_deferred(_strip_radius, v)).call_deferred())
+		SxUi.defer_reveal_committed_spin(_strip_radius, v))
 	var strip_le := _strip_radius.get_line_edit()
 	SxUi.use_armed_replace_select(strip_le)
 	strip_le.focus_entered.connect(func() -> void:
@@ -601,12 +613,18 @@ func _build_selection_strip() -> void:
 		# Tab onto a latched partial ("0.0" from typing 10 in the panel) must
 		# not become the model. The panel value is source of truth until the
 		# user types here.
-		if ops_panel != null and ops_panel.has_method("dressup_radius"):
+		# A same-frame burst already changed the type counter. Do not put the
+		# model number back over those characters.
+		if not SxUi.typed_since_intent(strip_le) \
+				and ops_panel != null and ops_panel.has_method("dressup_radius"):
 			var model: float = ops_panel.dressup_radius()
 			var parsed := _parse_strip_radius_text(strip_le.text)
 			if is_nan(parsed) or not is_equal_approx(parsed, model):
 				_write_strip_radius(model, true)
-		_strip_focus_text = strip_le.text
+		if SxUi.typed_since_intent(strip_le):
+			_strip_focus_text = ""
+		else:
+			_strip_focus_text = strip_le.text
 		SxUi.arm_replace_on_focus(strip_le))
 	strip_le.focus_exited.connect(func() -> void:
 		SxUi.disarm_replace(strip_le)
@@ -624,17 +642,15 @@ func _build_selection_strip() -> void:
 		if _strip_focus_landed_on_chip():
 			return_viewport_keys.call_deferred()
 		var shown := _strip_radius.value
-		(func() -> void:
-			SxUi.reveal_committed_spin.call_deferred(_strip_radius, shown)).call_deferred())
+		SxUi.defer_reveal_committed_spin(_strip_radius, shown))
 	strip_le.text_submitted.connect(func(_t: String) -> void:
 		_commit_strip_radius()
 		_sync_strip_dressup_radius()
 		if ops_panel != null:
 			ops_panel.commit_radius_field_enter()
-		return_viewport_keys.call_deferred()
+		return_viewport_keys()
 		var shown := _strip_radius.value
-		(func() -> void:
-			SxUi.reveal_committed_spin.call_deferred(_strip_radius, shown)).call_deferred())
+		SxUi.defer_reveal_committed_spin(_strip_radius, shown))
 	# Tab commits the number and keeps the keys on the viewport. Default
 	# focus-next lands on the AF 10 chip, which eats Enter (sets jaw_af) and
 	# looks like a stray digit when the walker types again.
@@ -644,7 +660,10 @@ func _build_selection_strip() -> void:
 			if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 				SxUi.claim_keyboard_focus(strip_le)
 			return
-		if not (event is InputEventKey) or not event.pressed or event.echo:
+		if SxUi.swallow_rejected_echo(event):
+			strip_le.accept_event()
+			return
+		if not SxUi.press_accepted(event):
 			return
 		var key := event as InputEventKey
 		if key.keycode == KEY_TAB:
@@ -890,7 +909,7 @@ func _apply_dim_edit_char(ch: String, event: InputEvent = null) -> void:
 
 
 func _try_replace_dim_edit_key(event: InputEvent) -> bool:
-	if not (event is InputEventKey and event.pressed and not event.echo \
+	if not (SxUi.press_accepted(event) \
 			and not event.ctrl_pressed and not event.meta_pressed):
 		return false
 	var ke := event as InputEventKey
@@ -1006,7 +1025,10 @@ func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
 			_dim_edit_select_gen += 1
 			_select_dim_edit_all_if_gen.call_deferred(_dim_edit_select_gen)
 		return
-	if not (event is InputEventKey and event.pressed and not event.echo):
+	if SxUi.swallow_rejected_echo(event):
+		_dim_edit_line.accept_event()
+		return
+	if not SxUi.press_accepted(event):
 		return
 	var ke := event as InputEventKey
 	if ke.keycode == KEY_ESCAPE:
@@ -2125,7 +2147,7 @@ func _input_up_to_face_pick(event: InputEvent) -> bool:
 			get_viewport().set_input_as_handled()
 			return true
 		return false
-	if event is InputEventKey and event.pressed and not event.echo:
+	if SxUi.press_accepted(event):
 		if (event as InputEventKey).keycode == KEY_ESCAPE:
 			_disarm_up_to_face_pick()
 			status.emit("Up To Surface face pick cancelled")
@@ -2764,8 +2786,16 @@ func _gui_input(event: InputEvent) -> void:
 	# Length keys during a rubber-band must beat camera nav here too: a canvas
 	# click focuses this Control, so Godot delivers the next keys to _gui_input.
 	# Unfocused Distance 7.5 (no preview) uses the same gate.
-	if event is InputEventKey and event.pressed and not event.echo:
-		if _consume_numeric_select_all(event as InputEventKey):
+	_note_numeric_press_target(event)
+	if SxUi.swallow_rejected_echo(event):
+		accept_event()
+		return
+	if SxUi.press_accepted(event):
+		var early_key := event as InputEventKey
+		if _consume_numeric_select_all(early_key):
+			accept_event()
+			return
+		if _route_prefocus_numeric_key(early_key):
 			accept_event()
 			return
 		_promote_visible_numeric_line()
@@ -2864,7 +2894,7 @@ func note_dim_focus_released() -> void:
 ## Circle focuses the radius blank on arm. Until the user clicks or types in
 ## that blank, L/D/T/C/S (and the other tool keys) still switch tools.
 func _release_tool_claimed_dim_for_hotkey(ke: InputEventKey) -> bool:
-	if ke.echo or ke.ctrl_pressed or ke.alt_pressed or ke.meta_pressed:
+	if not SxUi.press_accepted(ke) or ke.ctrl_pressed or ke.alt_pressed or ke.meta_pressed:
 		return false
 	match ke.keycode:
 		KEY_S, KEY_L, KEY_R, KEY_C, KEY_A, KEY_T, KEY_D, KEY_E:
@@ -2958,6 +2988,11 @@ func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
 	# the rail. Slot (and every other rail button) then looks painted but the
 	# press is a canvas click — hide_variants, LINE rubber-band, no set_tool.
 	if event_pos != Vector2.INF and _over_chrome(event_pos):
+		return false
+	# Timeline and the Modify column sit above the plate. A stale hover (the
+	# Interaction itself) used to treat a press on a row or the Radius field
+	# as a canvas click, so the second press of a double-click selected a face.
+	if event_pos != Vector2.INF and _point_on_dock_panel(event_pos):
 		return false
 	var vp := get_viewport()
 	if vp == null:
@@ -3066,6 +3101,23 @@ func _handle_model_pointer(event: InputEvent) -> bool:
 
 func _over_chrome(global_mouse: Vector2) -> bool:
 	return _over_chrome_who(global_mouse) != ""
+
+
+## Menu bar, status bar, docks, and the sketch rail. Rects, not the hovered
+## control: headless hover lags a frame behind the event position.
+func _pointer_off_model(pos: Vector2) -> bool:
+	if _over_chrome(pos) or _point_on_dock_panel(pos):
+		return true
+	var host := get_parent()
+	if host == null:
+		return false
+	for panel_name in ["TopChrome", "StatusBar", "FileMenu"]:
+		var panel := host.find_child(panel_name, true, false) as Control
+		if panel == null or not panel.visible or not panel.is_visible_in_tree():
+			continue
+		if panel.get_global_rect().has_point(pos):
+			return true
+	return false
 
 
 func _chrome_area_cap() -> float:
@@ -3245,6 +3297,27 @@ func _front_blocker_name(node: Node, pos: Vector2, max_area: float) -> String:
 	return _control_block_name(ctrl)
 
 
+## Timeline or OpsPanel (the Modify column) contains `pos`.
+func _point_on_dock_panel(pos: Vector2) -> bool:
+	return _dock_panel_at(pos) != null
+
+
+func _dock_panel_at(pos: Vector2) -> Control:
+	var host := get_parent()
+	if host == null:
+		return null
+	for panel_name in ["Timeline", "OpsPanel"]:
+		var panel := host.find_child(panel_name, true, false) as Control
+		if panel == null or not panel.visible or not panel.is_visible_in_tree():
+			continue
+		var rect := panel.get_global_rect()
+		if rect.size.x < 2.0 or rect.size.y < 2.0:
+			continue
+		if rect.has_point(pos):
+			return panel
+	return null
+
+
 func _is_left_press(event: InputEvent) -> bool:
 	if not (event is InputEventMouseButton):
 		return false
@@ -3387,9 +3460,14 @@ func _pointer_viewport_pos(event: InputEventMouse) -> Vector2:
 func _update_hover(screen_pos: Vector2) -> void:
 	if view == null or _place_kind != "" or (_drag_mode != DragMode.NONE):
 		return
+	# Chrome, a dock, and empty ground all leave the part. A selected body
+	# and an open sketch used to return before this, so the tan hover stayed.
+	var off_model := _pointer_off_model(screen_pos) or OrbitCamera.pointer_over_scrollable_ui()
 	if sketch_mode != null and sketch_mode.active:
+		if off_model:
+			view.clear_hover()
 		return
-	if OrbitCamera.pointer_over_scrollable_ui():
+	if off_model:
 		view.clear_hover()
 		hover_hint.emit("")
 		_last_hover_key = ""
@@ -3397,18 +3475,25 @@ func _update_hover(screen_pos: Vector2) -> void:
 		_measure_hover_miss()
 		_update_connector_hover("")
 		return
+	var ray := _model_ray(screen_pos)
+	var hit: Dictionary = view.pick_info(ray[0], ray[1])
 	# Selected body (about to move): same marks as place — touch others to
-	# plant X; otherwise dim to the selection's nearest corner.
+	# plant X; otherwise dim to the selection's nearest corner. The face
+	# under the pointer still hovers, and a miss clears that tint.
 	if view.selected_body != "" and view.selection_size() >= 1:
 		_update_transport_measure(screen_pos)
-		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND \
-				if view.hovered_body != "" else Control.CURSOR_ARROW
+		if hit.is_empty():
+			view.clear_hover()
+			hover_hint.emit("")
+			_last_hover_key = ""
+			mouse_default_cursor_shape = Control.CURSOR_ARROW
+			return
+		view.set_hover(str(hit.get("body", "")), str(hit.get("face", "")), str(hit.get("edge", "")))
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		if _last_hover_key != "":
 			hover_hint.emit("")
 			_last_hover_key = ""
 		return
-	var ray := _model_ray(screen_pos)
-	var hit: Dictionary = view.pick_info(ray[0], ray[1])
 	if hit.is_empty():
 		view.clear_hover()
 		_measure_hover_miss()
@@ -3667,6 +3752,8 @@ func _sketch_input(event: InputEvent) -> void:
 					sketch_chrome.release_distance_focus()
 				sketch_chrome.hide_variants()
 			var screen := _pointer_viewport_pos(mb)
+			if sketch_mode != null:
+				sketch_mode.note_pointer_screen(screen)
 			# A double-click is still a press. Soft-GL delivers it immediately
 			# after the previous click; it must be allowed to start a box.
 			if _sketch_press_inferred and _sketch_lmb_depth >= 1:
@@ -3854,6 +3941,8 @@ func _sketch_input(event: InputEvent) -> void:
 				_box_rect = Rect2(_sketch_box_start, box_at - _sketch_box_start).abs()
 				_sketch_box_crossing = box_at.x < _sketch_box_start.x
 				queue_redraw()
+		if sketch_mode != null:
+			sketch_mode.note_pointer_screen(_pointer_viewport_pos(motion))
 		var ray := _model_ray(event.position)
 		var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 		if p2 != null:
@@ -5589,6 +5678,10 @@ func _distance_line_edit() -> LineEdit:
 ## Dim-blank digits (rubber-band length, Slot radius) beat Extrude Distance.
 ## Runs before OrbitCamera so KEY_1/2/3/5/7 cannot steal 7.5 while sketching.
 func _try_route_length_key(event: InputEvent) -> bool:
+	# Enter just handed the keys to the viewport. A same-frame "3" is Top view,
+	# not another digit in the field we released.
+	if _viewport_keys_held():
+		return false
 	# The in-sketch dimension popup owns digits while it is open — do not seed
 	# the finish-bar dim blank or Distance with the same KEY_2 KEY_0 KEY_0.
 	if _dim_edit_owns_keys():
@@ -5613,7 +5706,7 @@ func _try_consume_preview_length_key(event: InputEvent) -> bool:
 		_preview_length_typed = ""
 		_dim_keys_had_preview = false
 		return false
-	if not (event is InputEventKey and event.pressed and not event.echo \
+	if not (SxUi.press_accepted(event) \
 			and not event.ctrl_pressed and not event.meta_pressed):
 		return false
 	var ke := event as InputEventKey
@@ -5647,7 +5740,7 @@ func _try_consume_preview_length_key(event: InputEvent) -> bool:
 
 
 func _try_append_focused_dim_length_key(event: InputEvent) -> bool:
-	if not (event is InputEventKey and event.pressed and not event.echo \
+	if not (SxUi.press_accepted(event) \
 			and not event.ctrl_pressed and not event.meta_pressed):
 		return false
 	var ke := event as InputEventKey
@@ -5675,7 +5768,7 @@ func _try_consume_distance_length_key(event: InputEvent) -> bool:
 			or sketch_mode.wants_dim_length_keys():
 		_distance_length_typed = ""
 		return false
-	if not (event is InputEventKey and event.pressed and not event.echo \
+	if not (SxUi.press_accepted(event) \
 			and not event.ctrl_pressed and not event.meta_pressed):
 		return false
 	var ke := event as InputEventKey
@@ -5695,7 +5788,7 @@ func _try_consume_distance_length_key(event: InputEvent) -> bool:
 
 
 func _try_own_focused_distance_key(event: InputEvent) -> bool:
-	if not (event is InputEventKey and event.pressed and not event.echo \
+	if not (SxUi.press_accepted(event) \
 			and not event.ctrl_pressed and not event.meta_pressed):
 		return false
 	var ke := event as InputEventKey
@@ -5720,7 +5813,7 @@ func _try_own_focused_distance_key(event: InputEvent) -> bool:
 
 
 func _try_append_focused_distance_length_key(event: InputEvent) -> bool:
-	if not (event is InputEventKey and event.pressed and not event.echo \
+	if not (SxUi.press_accepted(event) \
 			and not event.ctrl_pressed and not event.meta_pressed):
 		return false
 	var ke := event as InputEventKey
@@ -5763,7 +5856,93 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 
+func _trace_key_press(event: InputEvent) -> void:
+	if not (event is InputEventKey):
+		return
+	var k := event as InputEventKey
+	if not k.pressed:
+		return
+	var accepted := SxUi.press_accepted(k)
+	if not SxUi.trace_enabled():
+		return
+	var focus := ""
+	var vp := get_viewport()
+	var owner: Node = vp.gui_get_focus_owner() if vp != null else null
+	if owner != null:
+		focus = str(owner.get_path())
+	var line := "[key-trace] t=%.3f key=%s unicode=%d pressed=1 echo=%d accepted=%d focus=%s" % [
+		Time.get_unix_time_from_system(),
+		OS.get_keycode_string(k.keycode),
+		int(k.unicode),
+		1 if k.echo else 0,
+		1 if accepted else 0,
+		focus,
+	]
+	printerr(line)
+	SxUi.key_trace_log.append(line)
+
+
+func _note_numeric_press_target(event: InputEvent) -> void:
+	if not _is_left_press(event):
+		return
+	var mb := event as InputEventMouseButton
+	var at := mb.global_position
+	if at == Vector2.ZERO:
+		at = mb.position
+	var hit: LineEdit = null
+	for line in _numeric_lines():
+		if line == null or not is_instance_valid(line) or not line.is_visible_in_tree():
+			continue
+		if line.get_global_rect().grow(3.0).has_point(at):
+			hit = line
+			break
+		var parent := line.get_parent()
+		if parent is SpinBox and (parent as Control).get_global_rect().grow(3.0).has_point(at):
+			hit = line
+			break
+	_press_numeric_target = hit
+	_press_numeric_frame = Engine.get_process_frames() if hit != null else -1
+	if hit != null:
+		SxUi.note_focus_intent(hit)
+
+
+## A digit that arrives in the same frame as the click, before the line owns
+## focus, is typed into that line. It must not become a view key.
+func _route_prefocus_numeric_key(ke: InputEventKey) -> bool:
+	if _viewport_keys_held():
+		return false
+	if _press_numeric_frame != Engine.get_process_frames():
+		return false
+	if ke == null or _text_field_has_focus():
+		return false
+	if ke.ctrl_pressed or ke.alt_pressed or ke.meta_pressed:
+		return false
+	var ch := SxUi.numeric_key_char(ke)
+	if ch == "":
+		return false
+	var line := _press_numeric_target
+	if line == null or not is_instance_valid(line) or not line.is_visible_in_tree():
+		return false
+	SxUi.claim_keyboard_focus(line)
+	var next := SxUi.compose_typed_char(line, ch)
+	SxUi.write_typed_text(line, next)
+	var parent := line.get_parent()
+	if parent is SpinBox:
+		var spin := parent as SpinBox
+		var body := next.strip_edges().replace("mm", "").replace("MM", "").strip_edges()
+		if body.is_valid_float():
+			spin.set_value_no_signal(clampf(float(body), spin.min_value, spin.max_value))
+	return true
+
+
 func _input(event: InputEvent) -> void:
+	_trace_key_press(event)
+	_note_numeric_press_target(event)
+	if SxUi.swallow_rejected_echo(event):
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and _commit_enter_on_focused_numeric(event as InputEventKey):
+		return
 	if sketch_mode != null and sketch_mode.active:
 		_remember_extrude_rect()
 	_track_finish_press_guard(event)
@@ -5771,12 +5950,26 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	_note_finish_press_outside(event)
+	# Motion onto the menu bar or a dock never reaches `_gui_input`, so the
+	# hover tint has to clear from here. The canvas path still uses `_gui_input`.
+	if event is InputEventMouseMotion and _place_kind == "" and _drag_mode == DragMode.NONE \
+			and not _pressed:
+		var hover_mm := event as InputEventMouseMotion
+		var hover_pos := hover_mm.position
+		if hover_pos == Vector2.ZERO:
+			hover_pos = hover_mm.global_position
+		if _pointer_off_model(hover_pos):
+			_update_hover(hover_pos)
 	# Strip / other STOP children swallow gui_input; still give the viewport
 	# the keys when the press is not on the focused numeric field.
 	_on_numeric_canvas_press(event)
-	if event is InputEventKey and event.pressed and not event.echo:
+	if SxUi.press_accepted(event):
 		var early := event as InputEventKey
 		if _consume_numeric_select_all(early):
+			return
+		# Click and keys in one frame: the line may not own focus yet.
+		if _route_prefocus_numeric_key(early):
+			get_viewport().set_input_as_handled()
 			return
 		# A field can still show a selection after focus was stolen. Put the
 		# keyboard back before camera / select-all see the key.
@@ -5788,6 +5981,21 @@ func _input(event: InputEvent) -> void:
 	# Magnify must never fall through place/sketch even if scroll gating diffs.
 	if event is InputEventMagnifyGesture and camera != null:
 		if camera.handle_input(event, true):
+			get_viewport().set_input_as_handled()
+			return
+	# Enter in this frame released a numeric line. A view key is the camera's
+	# even while a sketch has orientation locked (that lock is what made "3"
+	# a no-op after Distance Enter). The lock is restored so the sketch view
+	# is not left orbitable.
+	if _viewport_keys_held() and camera != null and event is InputEventKey \
+			and SxUi.press_accepted(event):
+		var vk := event as InputEventKey
+		var was_locked := camera.sketch_orientation_locked
+		camera.sketch_orientation_locked = false
+		var took := camera.is_nav_event(vk, allow_scroll) and camera.handle_input(vk, allow_scroll)
+		camera.sketch_orientation_locked = was_locked
+		if took:
+			_emit_view_key_status(vk)
 			get_viewport().set_input_as_handled()
 			return
 	# Length keys during a single-DOF rubber-band seed the dim blank before
@@ -5830,7 +6038,7 @@ func _input(event: InputEvent) -> void:
 				cancel_pick_active_plane()
 				get_viewport().set_input_as_handled()
 				return
-		if event is InputEventKey and event.pressed and not event.echo:
+		if SxUi.press_accepted(event):
 			if (event as InputEventKey).keycode == KEY_ESCAPE:
 				cancel_pick_active_plane()
 				get_viewport().set_input_as_handled()
@@ -5855,7 +6063,7 @@ func _input(event: InputEvent) -> void:
 				cancel_pick_sketch_host()
 				get_viewport().set_input_as_handled()
 				return
-		if event is InputEventKey and event.pressed and not event.echo:
+		if SxUi.press_accepted(event):
 			if (event as InputEventKey).keycode == KEY_ESCAPE:
 				cancel_pick_sketch_host()
 				get_viewport().set_input_as_handled()
@@ -5889,7 +6097,7 @@ func _input(event: InputEvent) -> void:
 				_disarm_place(true)
 				get_viewport().set_input_as_handled()
 				return
-		if event is InputEventKey and event.pressed and not event.echo:
+		if SxUi.press_accepted(event):
 			if (event as InputEventKey).keycode == KEY_ESCAPE:
 				_disarm_place(true)
 				get_viewport().set_input_as_handled()
@@ -5941,7 +6149,7 @@ func _input(event: InputEvent) -> void:
 			# A focused length field that has not been typed in yet must still
 			# receive digits. Falling into _sketch_input would accept the key
 			# and the LineEdit would never see it.
-			if ke_len != null and not ke_len.echo and not ke_len.ctrl_pressed \
+			if ke_len != null and SxUi.press_accepted(ke_len) and not ke_len.ctrl_pressed \
 					and not ke_len.meta_pressed and _focused_tracked_numeric() != null \
 					and (_is_length_type_key(ke_len) \
 						or ke_len.keycode == KEY_ENTER or ke_len.keycode == KEY_KP_ENTER \
@@ -5958,11 +6166,22 @@ func _input(event: InputEvent) -> void:
 	var event_pos := Vector2.INF
 	if event is InputEventMouse:
 		event_pos = (event as InputEventMouse).position
+	# A press that started on the Timeline (or the Modify column) keeps its
+	# release. Otherwise the mouse-up, now over empty plate, is a model click
+	# and the row button never sees it.
+	if event is InputEventMouseButton:
+		var dock_up := event as InputEventMouseButton
+		if not dock_up.pressed and dock_up.button_index == MOUSE_BUTTON_LEFT \
+				and _suppress_dock_release:
+			_suppress_dock_release = false
+			return
 	if _is_left_press(event) and not _pressed:
 		var who2 := _over_chrome_who(event_pos)
 		if who2 == "":
 			who2 = _press_blocker_name(event_pos)
 		if who2 != "" or not _viewport_owns_pointer(event_pos):
+			if _point_on_dock_panel(event_pos):
+				_suppress_dock_release = true
 			_note_press_drop(who2, event_pos)
 			return
 	if _pressed or _viewport_owns_pointer(event_pos):
@@ -5973,7 +6192,7 @@ func _input(event: InputEvent) -> void:
 	# Tap X / Y / Z mid body-move to lock the drag to that axis (tap again to free).
 	# Handled here (not _gui_key) so it works regardless of Control focus.
 	# Plain Z only — Ctrl+Z still reaches undo via _gui_key when not dragging.
-	if event is InputEventKey and event.pressed and not event.echo \
+	if SxUi.press_accepted(event) \
 			and not event.ctrl_pressed and _drag_mode == DragMode.MOVE_BODY:
 		var kc := (event as InputEventKey).keycode
 		var axis := -1
@@ -5988,7 +6207,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 
-	if event is InputEventKey and event.pressed and not event.echo:
+	if SxUi.press_accepted(event):
 		var ke := event as InputEventKey
 		var sketching := sketch_mode != null and sketch_mode.active
 		# Outside a sketch, Esc clears the focused field, TriBall, and the
@@ -6046,10 +6265,13 @@ func _consume_numeric_select_all(ke: InputEventKey) -> bool:
 			vp.set_input_as_handled()
 		return true
 	var armed := _armed_numeric_line()
-	if armed == null:
+	if armed == null and _press_numeric_frame == Engine.get_process_frames():
+		armed = _press_numeric_target
+	if armed == null or not is_instance_valid(armed):
 		return false
 	SxUi.claim_keyboard_focus(armed)
 	armed.select_all()
+	SxUi.arm_replace_on_focus(armed)
 	if vp != null:
 		vp.set_input_as_handled()
 	return true
@@ -6058,11 +6280,17 @@ func _consume_numeric_select_all(ke: InputEventKey) -> bool:
 ## If a numeric line is showing a selection / replace-arm but does not own
 ## the keyboard, grab it before this key reaches the camera.
 func _promote_visible_numeric_line() -> void:
+	if _viewport_keys_held():
+		return
 	var vp := get_viewport()
 	if vp != null and vp.gui_get_focus_owner() is LineEdit:
 		return
 	var line := _armed_numeric_line()
-	if line == null or (line.has_focus() and line.is_editing()):
+	if line == null and _press_numeric_frame == Engine.get_process_frames():
+		line = _press_numeric_target
+	if line == null or not is_instance_valid(line):
+		return
+	if line.has_focus() and line.is_editing():
 		return
 	SxUi.claim_keyboard_focus(line)
 
@@ -6613,8 +6841,68 @@ func _ctx_chamfer() -> void:
 
 ## After a strip/panel radius commit, the viewport owns 3/4/6/8. Tab must not
 ## land on AF chips; arming must not leave the caret in R.
+## gui_release_focus runs first: grab_focus during the LineEdit's own Enter
+## is undone when that control finishes the key, so a same-frame "3" still
+## types into the field.
+func _viewport_keys_held() -> bool:
+	return _viewport_keys_frame == Engine.get_process_frames()
+
+
 func return_viewport_keys() -> void:
+	# The click that focused the field must not keep catching later digits
+	# once the viewport owns the keys (Tab / Enter, then key 3 → Top view).
+	_press_numeric_target = null
+	var vp := get_viewport()
+	if vp != null:
+		var owner := vp.gui_get_focus_owner()
+		if owner is LineEdit:
+			SxUi.note_edit_released(owner as LineEdit)
+		vp.gui_release_focus()
 	grab_focus()
+
+
+## Enter on a tracked numeric line commits that line and moves the keys here
+## before LineEdit sees the key. A same-frame view key then hits the viewport.
+func _commit_enter_on_focused_numeric(ke: InputEventKey) -> bool:
+	if ke == null or not ke.pressed or ke.echo:
+		return false
+	if ke.keycode != KEY_ENTER and ke.keycode != KEY_KP_ENTER:
+		return false
+	if ke.ctrl_pressed or ke.alt_pressed or ke.meta_pressed:
+		return false
+	var line := _focused_tracked_numeric()
+	if line == null or not is_instance_valid(line):
+		return false
+	var strip_le := _strip_radius.get_line_edit() if _strip_radius != null else null
+	var panel_le: LineEdit = null
+	if ops_panel != null and ops_panel._radius_spin != null:
+		panel_le = ops_panel._radius_spin.get_line_edit()
+	var dist_le := _distance_line_edit()
+	if line == strip_le:
+		_commit_strip_radius()
+		_sync_strip_dressup_radius()
+		if ops_panel != null:
+			ops_panel.commit_radius_field_enter()
+	elif panel_le != null and line == panel_le:
+		if ops_panel.has_method("_commit_panel_radius"):
+			ops_panel._commit_panel_radius()
+		ops_panel.commit_radius_field_enter()
+	elif dist_le != null and line == dist_le and sketch_chrome != null \
+			and sketch_chrome.has_method("_on_distance_text_submitted"):
+		sketch_chrome._on_distance_text_submitted(line.text)
+	elif line == _dim_edit_line:
+		var text := _dim_edit_typed if _dim_edit_typed != "" else str(line.text)
+		_apply_dim_edit(text)
+	else:
+		return false
+	SxUi.release_line_now(line)
+	_press_numeric_target = null
+	_viewport_keys_frame = Engine.get_process_frames()
+	return_viewport_keys()
+	var vp := get_viewport()
+	if vp != null:
+		vp.set_input_as_handled()
+	return true
 
 
 func _strip_focus_landed_on_chip() -> bool:
@@ -6914,8 +7202,15 @@ func _note_finish_press_outside(event: InputEvent) -> void:
 	var at := _pointer_viewport_pos(event as InputEventMouse)
 	if _finish_click_rect.size.x >= 2.0 and _finish_click_rect.has_point(at):
 		return
-	# Chip clicks keep the row where it is so the release still hits that chip.
+	# A chip press ends the shield after the click is delivered. The row y
+	# stays where the post-Extrude layout put it.
 	if _press_on_part_chip_row(at):
+		call_deferred("_disarm_finish_click_shield")
+		return
+	# Menu bar, popup, status bar, HUD, docks. A File / View press must not
+	# drop the shield: that relayout used to park the chip row on the Extrude
+	# pixel. A rail tool still disarms (sketch start).
+	if _sketch_rail_button_at(at) == null and _shield_press_is_chrome(at):
 		return
 	call_deferred("_disarm_finish_click_shield")
 
@@ -6943,6 +7238,8 @@ func _arm_finish_click_shield() -> void:
 	shield.size = rect.size
 	shield.visible = true
 	move_child(shield, get_child_count() - 1)
+	if _finish_click_rect.size.y >= 2.0:
+		_finish_strip_floor_y = _finish_click_rect.end.y - get_global_rect().position.y + 6.0
 	_layout_selection_strip()
 
 
@@ -6959,13 +7256,51 @@ func _disarm_finish_click_shield() -> void:
 	if _finish_click_shield != null and is_instance_valid(_finish_click_shield):
 		_finish_click_shield.visible = false
 	_sync_chip_mouse_under_extrude()
-	if not _layout_strip_busy:
-		_layout_selection_strip()
+	# The chip-row y was settled when the shield armed. Laying out again
+	# pulls the row back onto the Extrude pixel.
+
+
+func _shield_press_is_chrome(at: Vector2) -> bool:
+	if _over_chrome(at):
+		return true
+	var tree := get_tree()
+	if tree == null:
+		return false
+	for node_name in ["FileMenu", "StatusBar", "Timeline", "OpsPanel", "Palette", "CardPanel"]:
+		var ctrl := tree.root.find_child(node_name, true, false) as Control
+		if ctrl != null and ctrl.is_visible_in_tree() and ctrl.get_global_rect().has_point(at):
+			return true
+	return _popup_contains_point(tree.root, at)
+
+
+func _popup_contains_point(node: Node, at: Vector2) -> bool:
+	if node == null:
+		return false
+	if node is PopupMenu or node is PopupPanel:
+		var pop := node as Window
+		if pop.visible:
+			var rect := Rect2(Vector2(pop.position), Vector2(pop.size))
+			if rect.has_point(at):
+				return true
+	for child in node.get_children():
+		if _popup_contains_point(child, at):
+			return true
+	return false
+
+
+## Chip-row top, in Interaction space, settled when the Extrude shield arms.
+## Later layouts (including disarm) keep this floor so the row cannot jump
+## back onto the Extrude pixel.
+var _finish_strip_floor_y := -1.0
 
 
 ## While the shield is up, the chip row starts below the Extrude button so
-## Hide (and every other state-changing chip) is not on that pixel.
+## Hide (and every other state-changing chip) is not on that pixel. The floor
+## stays after disarm: a File-menu press used to clear it and park the row
+## on that pixel.
 func _finish_click_strip_y(y_natural: float) -> float:
+	if _finish_strip_floor_y >= 0.0:
+		return maxf(y_natural, _finish_strip_floor_y)
 	if not _finish_click_shield_armed or _selection_strip == null:
 		return y_natural
 	if _finish_click_rect.size.y < 2.0:

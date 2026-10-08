@@ -2745,16 +2745,16 @@ func _apply_selection_materials() -> void:
 					mat = _selected_face_material
 			elif face_here != "" and face_here == mate_anchor_face:
 				mat = _mate_anchor_material
-			elif whole_body_selected:
-				if clip:
-					mat = _make_section_material(SELECTED_BODY_COLOR)
-				else:
-					mat = _selected_body_material
 			elif face_hovered:
 				if clip:
 					mat = _make_section_material(HOVER_FACE_COLOR)
 				else:
 					mat = _hover_face_material
+			elif whole_body_selected:
+				if clip:
+					mat = _make_section_material(SELECTED_BODY_COLOR)
+				else:
+					mat = _selected_body_material
 			elif body_hovered:
 				if clip:
 					mat = _make_section_material(HOVER_BODY_COLOR)

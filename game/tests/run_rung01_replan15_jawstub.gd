@@ -456,6 +456,7 @@ func _fillet_slot_floor(ctx: FilmContext, body: String) -> void:
 	var log_at := _status_log.size()
 	await _arm_fillet(ctx, 1.0)
 	await _view_key(ctx, KEY_3)
+	await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
 	await _click_model(ctx, point, "slot floor")
 	_capture()
 	_print_edge_pick(ctx, body)
@@ -1313,6 +1314,8 @@ func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vec
 		print("  B13.4 Bottom-face pick")
 		bb0 = ctx.view.doc.measure_bbox(body)
 		_status_log.clear()
+	if label == "slot floor":
+		await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
 	await _click_model(ctx, point, label)
 	if label == "bottom face":
 		var screen := FilmUI.model_to_screen(ctx, point)
@@ -1348,6 +1351,7 @@ func _refuse_slot_floor(ctx: FilmContext, body: String) -> void:
 	var vol0: float = ctx.view.doc.body_volume(body)
 	await _arm_fillet(ctx, 1.5)
 	await _view_key(ctx, KEY_3)
+	await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
 	await _click_model(ctx, point, "Slot floor")
 	if ctx.view.selected_edges.is_empty():
 		_slot_floor_error = str(ctx.view.doc.last_graph_error())

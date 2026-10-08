@@ -96,6 +96,8 @@ const VIEWS_CFG := "user://views.cfg"
 ## name -> {yaw, pitch, distance, pivot, projection}
 var _named_views: Dictionary = {}
 var _view_tween: Tween
+## Pose a running view tween is heading for. Wheel / pinch snap here first.
+var _tween_end_pose: Dictionary = {}
 ## When true, orientation changes (orbit / view snaps / ortho toggle) are blocked;
 ## pan and zoom still work. Set by sketch enter/leave.
 var sketch_orientation_locked := false
@@ -559,6 +561,11 @@ func _want_alt_pan(shift_held: bool) -> bool:
 ## safety net). A locked sketch whose body escapes the canvas recentres on
 ## zoom-out so the far end can come back into view.
 func zoom_at(screen_pos: Vector2, factor: float) -> void:
+	# Wheel and pinch (magnify, Ctrl+pan, two-finger separation) all arrive
+	# here. A view tween must be the finished pose before the anchor ray,
+	# or the notch is solved against the in-between frame and the tween
+	# then walks the point off the cursor.
+	_finish_pose_tween()
 	var old_distance := distance
 	if old_distance < 1e-12:
 		old_distance = MIN_DISTANCE
@@ -725,6 +732,9 @@ func animate_to(new_yaw: float, new_pitch: float, duration := 0.25) -> void:
 	var start_pitch := pitch
 	var yaw_delta := wrapf(new_yaw - start_yaw, -PI, PI)
 	var target_yaw := start_yaw + yaw_delta
+	_tween_end_pose = capture_pose()
+	_tween_end_pose["yaw"] = new_yaw
+	_tween_end_pose["pitch"] = new_pitch
 	_view_tween = create_tween()
 	_view_tween.tween_method(
 		func(t: float) -> void:
@@ -743,6 +753,7 @@ func _animate_pose(to: Dictionary, duration := 0.25) -> void:
 	if _view_tween != null and _view_tween.is_valid():
 		_view_tween.kill()
 		_view_tween = null
+	_tween_end_pose = to.duplicate(true)
 	var end_yaw := float(to.get("yaw", yaw))
 	var end_pitch := clampf(float(to.get("pitch", pitch)), -STANDARD_PITCH_LIMIT, STANDARD_PITCH_LIMIT)
 	var end_dist := float(to.get("distance", distance))
@@ -777,10 +788,25 @@ func _animate_pose(to: Dictionary, duration := 0.25) -> void:
 		0.0, 1.0, duration
 	)
 	_view_tween.finished.connect(func() -> void:
+		_tween_end_pose = {}
 		projection = end_proj
 		_look_at_content = end_look
 		_update_transform(),
 		CONNECT_ONE_SHOT)
+
+
+## Snap a running view tween to its target so the next zoom anchor is solved
+## on the pose the user asked for, not the in-between frame.
+func _finish_pose_tween() -> void:
+	var running := _view_tween != null and _view_tween.is_valid()
+	var end := _tween_end_pose
+	if _view_tween != null and _view_tween.is_valid():
+		_view_tween.kill()
+	_view_tween = null
+	_tween_end_pose = {}
+	if not running or end.is_empty():
+		return
+	apply_pose(end)
 
 
 ## Frame selection when anything is selected; otherwise all bodies.

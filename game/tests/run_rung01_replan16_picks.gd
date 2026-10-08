@@ -1,6 +1,7 @@
 # Rung 1 replan 16 WP2 — a plain click never opens a sketch, an unchanged
 # Exit Sketch does not dirty the document, and the first fillet click selects
-# the face unless the pointer is within 6 px of an edge.
+# the face unless the pointer is inside the 12 px first-pick band. The
+# interior sample sits outside that band.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan16_picks.gd
 extends SceneTree
@@ -181,7 +182,7 @@ func _phase_p4(ctx: FilmContext) -> void:
 			str(face_pt), float(zoomed["face_mm"]), float(zoomed["face_px"])])
 	print("  P4 edge pt %s mm=%.2f px=%.1f" % [
 			str(edge_pt), float(zoomed["edge_mm"]), float(zoomed["edge_px"])])
-	check(float(zoomed["face_px"]) >= 8.0, "P4: interior sample is at least 8 px from every edge")
+	check(float(zoomed["face_px"]) >= 14.0, "P4: interior sample is at least 14 px from every edge")
 	check(float(zoomed["edge_px"]) <= 3.0, "P4: edge sample is at most 3 px from an edge")
 	ctx.main.ops_panel.arm_or_apply_fillet()
 	ctx.main.ops_panel.set_dressup_radius(1.0)
@@ -386,12 +387,12 @@ func _frame_face_and_edge(ctx: FilmContext, body: String) -> Dictionary:
 	var edge_pt := Vector3(40.0, 9.92, 10.0)
 	var face_px := 0.0
 	var edge_px := 99.0
-	for _i in 14:
+	for _i in 24:
 		face_px = _nearest_edge_px(ctx, body, face_pt)
 		edge_px = _nearest_edge_px(ctx, body, edge_pt)
-		if face_px >= 8.0 and edge_px <= 3.0:
+		if face_px >= 14.0 and edge_px <= 3.0:
 			break
-		if face_px < 8.0:
+		if face_px < 14.0:
 			await _wheel(ctx, face_pt, true)
 		elif edge_px > 3.0:
 			edge_pt.y = minf(edge_pt.y + 0.03, 9.99)

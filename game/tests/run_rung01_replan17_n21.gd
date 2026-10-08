@@ -196,6 +196,8 @@ func _test_n21(ctx: FilmContext) -> void:
 	if _glyph_rect_of_type(glyphs, "tangent").size != Vector2.ZERO:
 		kinds.append("tangent")
 	for kind in kinds:
+		if kind == "coincident":
+			await _hover_coincident_vertex(ctx, sm)
 		glyphs = sm.constraint_glyph_screen_rects()
 		var rect := _glyph_rect_of_type(glyphs, kind)
 		check(rect.size != Vector2.ZERO, "a %s glyph is drawn" % kind)
@@ -393,6 +395,24 @@ func _zoom_head(ctx: FilmContext, want_px: float) -> void:
 		guard += 1
 	print("  zoomed Ø45 head to %.1f px (want %.0f ± 10) in %d notches" % [got, want_px, guard])
 	check(absf(got - want_px) <= 10.0, "Ø45 head projects to 150 ± 10 px (got %.1f)" % got)
+
+
+func _hover_coincident_vertex(ctx: FilmContext, sm: SketchMode) -> void:
+	var vp: Viewport = ctx.main.get_viewport()
+	for id in sm.sketch.entity_ids():
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		if bool(info.get("construction", false)):
+			continue
+		var screen: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(info["start"]))
+		var motion := InputEventMouseMotion.new()
+		motion.position = screen
+		motion.global_position = screen
+		vp.push_input(motion)
+		sm.note_pointer_screen(screen)
+		await process_frame
+		return
 
 
 func _arm_tool(ctx: FilmContext, node_name: String) -> void:

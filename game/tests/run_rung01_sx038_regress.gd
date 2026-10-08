@@ -80,6 +80,7 @@ func _l7b_exact_limit(ctx: FilmContext) -> void:
 	await _release_focus(ctx)
 	await _key(ctx, KEY_3)
 	_status_log.clear()
+	await _zoom_slot_pick(ctx, body, Vector3(93.5, 0.0, 11.5))
 	await _click_model(ctx, Vector3(93.5, 0.0, 11.5))
 	await _key(ctx, KEY_ENTER)
 	await process_frame

@@ -79,9 +79,22 @@ var _esc_menu_frame := -1
 var _esc_menus: Array[Window] = []
 ## Time.get_ticks_msec() until which hover hints must not replace the status.
 var _status_hold_until := 0
-## Hint received during the hold. Flushed once, when the hold ends.
-var _held_hint := ""
-var _held_hint_timer: SceneTreeTimer
+## Last non-empty hover hint while the pointer is on a target. Restored when
+## a result's hold ends, without another pointer event.
+var _current_hint := ""
+## Tests set this to drive the hold without sleeping. -1 uses the real clock.
+var _clock_override_msec := -1
+## N23 may not move the Timeline or the Modify column while a left press is
+## down on either, or for this long after the last such press. The pending
+## dock is applied once the guard ends.
+const TIMELINE_RELAYOUT_GUARD_MSEC := 600
+var _relayout_press_msec := -1
+var _relayout_button_down := false
+var _relayout_pending := false
+var _pinned_timeline_y := -1.0
+## [status-trace] lines, kept so a headless test can read the hold gap.
+var status_trace_log: PackedStringArray = []
+var popup_trace_log: PackedStringArray = []
 ## True while File menu / discard dialog is in the pointer gesture that closes
 ## them, so a mouse-up on Box does not arm place (leftover 3).
 var _palette_insert_blocked := false
@@ -144,6 +157,7 @@ const _STATUS_BAR_H := 30.0
 const _SKETCH_RAIL_MIN_W := 125.0
 ## Command results stay on the status line this long; hover hints yield.
 const STATUS_HOLD_MS := 2500
+const IDLE_STATUS := "empty-drag / Alt-drag / two-finger orbit · middle / 3-finger pan · wheel zoom · F fit · 1/2/3/7 views · click select · drag to move · drag face to push/pull · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
 
 
 func _finish_op_name() -> String:
@@ -827,12 +841,13 @@ func _build_ui() -> void:
 
 	# Bottom: status bar.
 	var status_bar := PanelContainer.new()
+	status_bar.name = "StatusBar"
 	status_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	status_bar.anchor_top = 1.0
 	status_bar.offset_top = -30
 	ui.add_child(status_bar)
 	status_label = Label.new()
-	status_label.text = "empty-drag / Alt-drag / two-finger orbit · middle / 3-finger pan · wheel zoom · F fit · 1/2/3/7 views · click select · drag to move · drag face to push/pull · Del delete · Ctrl+Z/Y undo · Ctrl+S save"
+	status_label.text = IDLE_STATUS
 	status_label.add_theme_font_size_override("font_size", UiScale.body())
 	status_bar.add_child(status_label)
 
@@ -931,14 +946,18 @@ func _build_ui() -> void:
 	dof_label.add_theme_font_size_override("font_size", UiScale.caption())
 	rows.add_child(dof_label)
 	var snap_toggle := CheckBox.new()
-	snap_toggle.text = ""
+	snap_toggle.name = "SnapToggle"
+	snap_toggle.text = "Snap"
+	snap_toggle.clip_text = true
 	snap_toggle.tooltip_text = "Snap to grid / endpoints"
 	snap_toggle.button_pressed = sketch_mode.snap_enabled
 	snap_toggle.custom_minimum_size.y = 22.0
 	snap_toggle.toggled.connect(sketch_mode.set_snap)
 	rows.add_child(snap_toggle)
 	var infer_toggle := CheckBox.new()
-	infer_toggle.text = ""
+	infer_toggle.name = "InferToggle"
+	infer_toggle.text = "Infer"
+	infer_toggle.clip_text = true
 	infer_toggle.tooltip_text = "Infer constraints while drawing"
 	infer_toggle.button_pressed = sketch_mode.infer_enabled
 	infer_toggle.custom_minimum_size.y = 22.0
@@ -1067,6 +1086,37 @@ func _style_popup_menu(popup: PopupMenu) -> void:
 	popup.add_theme_font_size_override("font_size", UiScale.body())
 	_opaque_popup_window(popup)
 	_connect_popup_esc(popup)
+	_trace_popup(popup)
+
+
+func _trace_popup(popup: PopupMenu) -> void:
+	if popup == null or popup.has_meta("_sx_popup_traced"):
+		return
+	popup.set_meta("_sx_popup_traced", true)
+	var shown := str(popup.name)
+	var parent := popup.get_parent()
+	if parent is MenuButton and str((parent as MenuButton).text) != "":
+		if shown == "" or shown.begins_with("@") or shown == "PopupMenu":
+			shown = str((parent as MenuButton).text)
+			popup.name = shown
+	elif shown == "":
+		shown = "PopupMenu"
+	popup.about_to_popup.connect(_on_popup_trace.bind("show", popup))
+	popup.popup_hide.connect(_on_popup_trace.bind("hide", popup))
+
+
+func _on_popup_trace(kind: String, popup: PopupMenu) -> void:
+	if popup == null:
+		return
+	var trace := OS.get_environment("SX_INPUT_TRACE") == "1"
+	if not trace and SxUi.trace_enabled():
+		trace = true
+	if not trace:
+		return
+	var line := "[popup-trace] t=%.3f %s %s" % [
+		Time.get_unix_time_from_system(), kind, str(popup.name)]
+	popup_trace_log.append(line)
+	printerr(line)
 
 
 ## Esc on a menu or dialog this file owns hides that window and runs cancel_stack
@@ -1084,11 +1134,13 @@ func _connect_popup_esc(win: Window) -> void:
 func _install_esc_menu_watch() -> void:
 	for btn in find_children("*", "MenuButton", true, false):
 		var pop: PopupMenu = btn.get_popup()
+		_trace_popup(pop)
 		_watch_esc_popup(pop)
 		if pop == null:
 			continue
 		for child in pop.get_children():
 			if child is PopupMenu:
+				_trace_popup(child)
 				_watch_esc_popup(child)
 	if view_hud == null:
 		return
@@ -1702,6 +1754,12 @@ func _on_sketch_rail_tool(t: int) -> void:
 		sketch_mode.set_tool(t as SketchMode.Tool)
 
 
+func _sync_rail_after_sketch_history() -> void:
+	if sketch_mode == null:
+		return
+	_sync_sketch_rail_highlight(int(sketch_mode.tool))
+
+
 func _sync_sketch_rail_highlight(tool: int) -> void:
 	var jaw_armed := sketch_mode != null and sketch_mode.is_jaw_armed()
 	var armed: Button = null
@@ -1969,6 +2027,9 @@ func _update_panel_visibility() -> void:
 func _apply_chrome_docks() -> void:
 	if timeline == null or variables_panel == null:
 		return
+	if _relayout_guarded():
+		_relayout_pending = true
+		return
 	var rail_right := _CHROME_PAD + _RAIL_ICON_W + 8.0
 	if left_stack != null:
 		var stack_w := maxf(left_stack.size.x, left_stack.get_combined_minimum_size().x)
@@ -2168,7 +2229,18 @@ func _update_left_rail() -> void:
 		ops_panel.visible = false
 		if cam_rail: cam_rail.visible = false
 		if sim_rail: sim_rail.visible = false
-		_reflow_left_stack()
+		# A Timeline pencil press guards chrome docks so the panel cannot jump
+		# under the pointer. That same guard used to skip the left-stack fit,
+		# leaving SketchTools at height 0 for the next 600 ms so Exit / Select
+		# were not clickable. Size the rail now; the pending reflow still runs
+		# when the guard ends, and the timeline pin is unchanged.
+		if _relayout_guarded():
+			_relayout_pending = true
+			_fit_sketch_rail(_left_stack_top())
+			if left_stack != null:
+				left_stack.reset_size()
+		else:
+			_reflow_left_stack()
 		return
 	var placing := interaction != null and interaction.is_placing()
 	var has_body := view.selected_body != ""
@@ -2424,6 +2496,9 @@ func _fit_sketch_rail(stack_top: float) -> void:
 func _reflow_left_stack() -> void:
 	if left_stack == null or not is_instance_valid(left_stack):
 		return
+	if _relayout_guarded():
+		_relayout_pending = true
+		return
 	var top := _left_stack_top()
 	left_stack.position = Vector2(_CHROME_PAD, top)
 	_fit_sketch_rail(top)
@@ -2617,10 +2692,125 @@ func _on_datum_offset_confirmed() -> void:
 		_on_status("Datum creation failed")
 
 
+func _now_msec() -> int:
+	if _clock_override_msec >= 0:
+		return _clock_override_msec
+	return Time.get_ticks_msec()
+
+
+func _process(_delta: float) -> void:
+	_hint_tick()
+	_pin_guarded_timeline()
+	_flush_relayout_guard()
+
+
+## A left press on the Timeline or the Modify column. `down` stays true until
+## the matching release so a held button cannot relayout under the pointer.
+func note_relayout_press(at_msec: int) -> void:
+	_relayout_press_msec = at_msec
+	_relayout_button_down = true
+
+
+func pin_timeline_top(y: float) -> void:
+	_pinned_timeline_y = y
+
+
+func pinned_timeline_top() -> float:
+	return _pinned_timeline_y
+
+
+func _pin_guarded_timeline() -> void:
+	if not _relayout_guarded():
+		_pinned_timeline_y = -1.0
+		return
+	if timeline == null or _pinned_timeline_y < 0.0 or not timeline.visible:
+		return
+	var gy: float = timeline.get_global_rect().position.y
+	if absf(gy - _pinned_timeline_y) <= 0.5:
+		return
+	var dy := _pinned_timeline_y - gy
+	timeline.position.y += dy
+	timeline.offset_top += dy
+	timeline.offset_bottom += dy
+
+
+func note_relayout_release() -> void:
+	_relayout_button_down = false
+	_flush_relayout_guard()
+
+
+func _relayout_guarded() -> bool:
+	if _relayout_button_down:
+		return true
+	if _relayout_press_msec < 0:
+		return false
+	return _now_msec() < _relayout_press_msec + TIMELINE_RELAYOUT_GUARD_MSEC
+
+
+func _flush_relayout_guard() -> void:
+	if _relayout_guarded() or not _relayout_pending:
+		return
+	_relayout_pending = false
+	_apply_chrome_docks()
+	_update_left_rail()
+
+
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	# A press on Modify / Timeline sets the guard. The release often lands
+	# outside that rect (the next click, or a headless event whose position
+	# is not inside the panel), and the guard used to stay down so
+	# ChromeDock.rail_right kept the wide Modify column. Frame then shoved
+	# the sketch off the right edge.
+	if not mb.pressed:
+		if _relayout_button_down:
+			note_relayout_release()
+		return
+	if ops_panel == null or not ops_panel.visible or not ops_panel.is_visible_in_tree():
+		return
+	var pos := mb.global_position
+	if pos == Vector2.ZERO:
+		pos = mb.position
+	if not ops_panel.get_global_rect().has_point(pos):
+		return
+	note_relayout_press(_now_msec())
+
+
+func _hint_tick() -> void:
+	if status_label == null or _status_hold_until <= 0:
+		return
+	if _now_msec() < _status_hold_until:
+		return
+	_status_hold_until = 0
+	if _current_hint != "" and status_label.text != _current_hint:
+		_set_status_label(_current_hint, "restore")
+
+
+func _set_status_label(text: String, kind: String) -> void:
+	if status_label == null:
+		return
+	status_label.text = text
+	var trace := OS.get_environment("SX_INPUT_TRACE") == "1"
+	if not trace and SxUi.trace_enabled():
+		trace = true
+	if not trace:
+		return
+	var seconds := Time.get_unix_time_from_system()
+	if _clock_override_msec >= 0:
+		seconds = float(_clock_override_msec) / 1000.0
+	var line := "[status-trace] t=%.3f kind=%s text=%s" % [seconds, kind, text]
+	status_trace_log.append(line)
+	printerr(line)
+
+
 func _on_status(text: String) -> void:
 	if text != "":
-		status_label.text = text
-		_status_hold_until = Time.get_ticks_msec() + STATUS_HOLD_MS
+		_set_status_label(text, "result")
+		_status_hold_until = _now_msec() + STATUS_HOLD_MS
 	# Timeline double-click calls begin_edit without the pad-click path, so
 	# sketch chrome (Exit Sketch, tools) would stay hidden. Show it whenever
 	# a live session has no rail yet.
@@ -2633,34 +2823,17 @@ func _on_status(text: String) -> void:
 ## A hint that arrives during the hold is kept and written when the hold ends.
 func _on_hover_hint(text: String) -> void:
 	if text == "":
-		_held_hint = ""
+		var previous := _current_hint
+		_current_hint = ""
+		if previous != "" and status_label != null and status_label.text == previous:
+			_set_status_label(IDLE_STATUS, "idle")
 		return
-	var now := Time.get_ticks_msec()
-	if now < _status_hold_until:
-		_held_hint = text
-		_arm_hint_flush(_status_hold_until - now)
+	_current_hint = text
+	if _now_msec() < _status_hold_until:
 		return
-	_held_hint = ""
-	status_label.text = text
-
-
-func _arm_hint_flush(ms: int) -> void:
-	if _held_hint_timer != null:
+	if status_label != null and status_label.text == text:
 		return
-	_held_hint_timer = get_tree().create_timer(float(ms) / 1000.0 + 0.02)
-	_held_hint_timer.timeout.connect(_flush_held_hint)
-
-
-func _flush_held_hint() -> void:
-	_held_hint_timer = null
-	if _held_hint == "":
-		return
-	var now := Time.get_ticks_msec()
-	if now < _status_hold_until:
-		_arm_hint_flush(_status_hold_until - now)
-		return
-	status_label.text = _held_hint
-	_held_hint = ""
+	_set_status_label(text, "hint")
 
 
 func _build_paste_special_dialog(parent: Node) -> void:
@@ -2920,6 +3093,7 @@ func _on_edit_menu(id: int) -> void:
 func edit_undo() -> void:
 	if sketch_mode != null and sketch_mode.active:
 		var label := sketch_mode.undo()
+		_sync_rail_after_sketch_history()
 		_on_status("Undo: " + label if label != "" else "Nothing to undo")
 		return
 	if view == null:
@@ -2935,6 +3109,7 @@ func edit_undo() -> void:
 func edit_redo() -> void:
 	if sketch_mode != null and sketch_mode.active:
 		var label := sketch_mode.redo()
+		_sync_rail_after_sketch_history()
 		_on_status("Redo: " + label if label != "" else "Nothing to redo")
 		return
 	if view == null:
@@ -4315,9 +4490,11 @@ func _unhandled_input(event: InputEvent) -> void:
 					if sketch_mode != null and sketch_mode.active:
 						if event.shift_pressed:
 							var rl := sketch_mode.redo()
+							_sync_rail_after_sketch_history()
 							_on_status("Redo: " + rl if rl != "" else "Nothing to redo")
 						else:
 							var ul := sketch_mode.undo()
+							_sync_rail_after_sketch_history()
 							_on_status("Undo: " + ul if ul != "" else "Nothing to undo")
 						get_viewport().set_input_as_handled()
 					elif view != null:
@@ -4336,6 +4513,7 @@ func _unhandled_input(event: InputEvent) -> void:
 						return
 					if sketch_mode != null and sketch_mode.active:
 						var ry := sketch_mode.redo()
+						_sync_rail_after_sketch_history()
 						_on_status("Redo: " + ry if ry != "" else "Nothing to redo")
 						get_viewport().set_input_as_handled()
 					elif view != null:

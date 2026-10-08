@@ -584,6 +584,7 @@ func _stage_s5(ctx: FilmContext) -> void:
 	await _arm_fillet(ctx)
 	await _type_strip(ctx, "1.5")
 	await _key(ctx, KEY_3)
+	await _zoom_slot_pick(ctx, body, Vector3(93.5, 0, 7.5))
 	await _click_model(ctx, Vector3(93.5, 0, 7.5))
 	await _key(ctx, KEY_ENTER)
 	await process_frame
@@ -674,6 +675,7 @@ func _stage_s7(ctx: FilmContext) -> void:
 	await _arm_fillet(ctx)
 	await _type_strip(ctx, "1.5")
 	await _key(ctx, KEY_3)
+	await _zoom_slot_pick(ctx, body, Vector3(93.5, 0, 7.5))
 	await _click_model(ctx, Vector3(93.5, 0, 7.5))
 	await _key(ctx, KEY_ENTER)
 	await process_frame
@@ -773,12 +775,18 @@ func _stage_s8(ctx: FilmContext) -> void:
 		_dump_log()
 
 
+func _zoom_slot_pick(ctx: FilmContext, body: String, point: Vector3) -> void:
+	await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
+
+
 func _fillet_face(ctx: FilmContext, body: String, view_key: int, point: Vector3, digits: String, tag: String) -> void:
 	await _select_body(ctx, body)
 	await _arm_fillet(ctx)
 	await _type_strip(ctx, digits)
 	await _release_focus(ctx)
 	await _key(ctx, view_key)
+	if tag == "slot floor":
+		await _zoom_slot_pick(ctx, body, point)
 	await _click_model(ctx, point)
 	await _key(ctx, KEY_ENTER)
 	await process_frame

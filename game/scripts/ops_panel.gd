@@ -261,16 +261,14 @@ func _build_body_ops() -> void:
 					return
 			_notify_dressup_radius(v)
 		# After Godot's deferred line reformat, show the same "N mm" as the strip.
-		(func() -> void:
-			SxUi.reveal_committed_spin.call_deferred(_radius_spin, v)).call_deferred())
+		SxUi.defer_reveal_committed_spin(_radius_spin, v))
 	radius_le.focus_entered.connect(func() -> void:
 		SxUi.arm_replace_on_focus(radius_le))
 	# Tab (focus-exit) commits the number without applying the fillet.
 	radius_le.focus_exited.connect(func() -> void:
 		SxUi.disarm_replace(radius_le)
 		_commit_panel_radius()
-		(func() -> void:
-			SxUi.reveal_committed_spin.call_deferred(_radius_spin)).call_deferred())
+		SxUi.defer_reveal_committed_spin(_radius_spin))
 	# Enter stores the radius and returns the keys. Viewport Enter applies.
 	radius_le.text_submitted.connect(func(_t: String) -> void:
 		_commit_panel_radius()
@@ -282,7 +280,10 @@ func _build_body_ops() -> void:
 			if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 				SxUi.claim_keyboard_focus(radius_le)
 			return
-		if not (event is InputEventKey) or not event.pressed or event.echo:
+		if SxUi.swallow_rejected_echo(event):
+			radius_le.accept_event()
+			return
+		if not SxUi.press_accepted(event):
 			return
 		var key := event as InputEventKey
 		if key.keycode == KEY_TAB:
@@ -2298,9 +2299,12 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 	var first_pick := not _dressup_has_edges()
 	var edge := ""
 	if first_pick:
-		# Face interior (farther than 6 px from every edge) selects the loop.
-		# A pointer that is within 6 px keeps today's 3D nearest edge when one
+		# Face interior (farther than 12 px from every edge) selects the loop.
+		# A pointer that is within 12 px keeps the 3D nearest edge when one
 		# is inside 2.5 mm, so a corner click still arms the vertical.
+		# A face that was already selected is not an edge pick: only the
+		# face under this press counts, and only when the pointer is outside
+		# the edge band.
 		var screen_edge := ""
 		if cam != null:
 			screen_edge = view.edge_near_screen(body, cam, view.model_to_screen(cam, point), DRESSUP_FIRST_PICK_EDGE_PX)
@@ -2331,7 +2335,7 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 
 
 const DRESSUP_SNAP_PX := 14.0
-const DRESSUP_FIRST_PICK_EDGE_PX := 6.0
+const DRESSUP_FIRST_PICK_EDGE_PX := 12.0
 const DRESSUP_SILHOUETTE_PX := 10.0
 ## Re-click of a picked edge: the face-hit can sit a few mm inward, and a
 ## same-length twin can be slightly closer. Stay on the picked edge when it

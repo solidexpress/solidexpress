@@ -71,6 +71,47 @@ static func wait_frames(tree: SceneTree, n: int = 1) -> void:
 		await tree.process_frame
 
 
+## Pull the camera in until `world` is at least `min_px` from every edge.
+## A face-centre click that is only a few millimetres from a long edge sits
+## inside the 12 px first-pick band at the walk's framing, so the pick keeps
+## that edge instead of the face loop. Stop if the point leaves the window.
+static func zoom_point_clear_of_edges(ctx: FilmContext, body: String, world: Vector3,
+		min_px: float = 14.0) -> void:
+	if ctx == null or ctx.view == null or ctx.main == null or body == "":
+		return
+	var cam = ctx.main.camera
+	var doc = ctx.view.doc
+	if cam == null or doc == null or not doc.has_method("get_edge_ids"):
+		return
+	var edges: PackedStringArray = doc.get_edge_ids(body)
+	if edges.is_empty():
+		return
+	# Wheel zoom orbits the current pivot, so the slot walks off the window
+	# before its long edges clear 12 px. Park the pivot on the click first.
+	var ms: Node3D = ctx.main.model_space
+	cam.pivot = ms.to_global(world) if ms != null else world
+	cam._look_at_content = true
+	if cam.has_method("_finish_pose_tween"):
+		cam._finish_pose_tween()
+	if cam.has_method("_update_transform"):
+		cam._update_transform()
+	await wait_frames(ctx.tree, 1)
+	for _step in 12:
+		var screen := model_to_screen(ctx, world)
+		if not is_on_screen(ctx, screen, 8.0):
+			return
+		var nearest := INF
+		for eid in edges:
+			nearest = minf(nearest, float(ctx.view.edge_screen_distance(
+					body, str(eid), cam, screen)))
+		if nearest >= min_px or cam.distance <= 8.0 + 0.01:
+			return
+		cam.distance = maxf(cam.distance * 0.7, 8.0)
+		if cam.has_method("_update_transform"):
+			cam._update_transform()
+		await wait_frames(ctx.tree, 1)
+
+
 static func _fail(msg: String) -> void:
 	fail_count += 1
 	push_error("FilmUI: " + msg)

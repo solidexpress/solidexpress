@@ -1,8 +1,15 @@
 #include <catch.hpp>
 
+#include <cstdio>
+#include <fstream>
+#include <string>
+
 #include "sx/commands_dress.hpp"
 #include "sx/document.hpp"
+#include "sx/features.hpp"
+#include "sx/log.hpp"
 #include "sx/shape_utils.hpp"
+#include "sx/sketch.hpp"
 
 using namespace sx;
 
@@ -95,4 +102,73 @@ TEST_CASE("fillet rejects non-edge and oversized radius", "[dress]") {
     REQUIRE_THROWS(too_big.execute(doc));
     REQUIRE(doc.body(body_id) != nullptr);
     REQUIRE(shape::volume(doc.body(body_id)->shape) == Approx(1000.0).epsilon(1e-6));
+}
+
+namespace {
+
+int count_log_level(const std::string& path, const std::string& level) {
+    std::ifstream in(path);
+    int n = 0;
+    std::string line;
+    const std::string tag = "[" + level + "]";
+    while (std::getline(in, line)) {
+        if (line.find(tag) != std::string::npos) ++n;
+    }
+    return n;
+}
+
+}  // namespace
+
+TEST_CASE("stale fillet edges log one error only when face cues cannot recover them", "[dress]") {
+    Document doc;
+    FeatureGraph graph;
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("Box");
+    skf.sketch->add_line(-5, -5, 5, -5);
+    skf.sketch->add_line(5, -5, 5, 5);
+    skf.sketch->add_line(5, 5, -5, 5);
+    skf.sketch->add_line(-5, 5, -5, -5);
+    const auto sk_id = graph.add(std::move(skf));
+    Feature ext;
+    ext.type = FeatureType::Extrude;
+    ext.params = {{"sketch", sk_id.str()}, {"distance", 10.0}, {"op", "new"}, {"end", "blind"}};
+    const auto ext_id = graph.add(std::move(ext));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    const auto body = graph.feature(ext_id)->output_body;
+    const auto& edge_ids = doc.body(body)->subshape_ids.at(EntityKind::Edge);
+    REQUIRE(edge_ids.size() == 12);
+    // A cue is stored only for a face whose every edge is in the fillet.
+    nlohmann::json edges = nlohmann::json::array();
+    for (const auto& edge : edge_ids) edges.push_back(edge.str());
+
+    Feature fil;
+    fil.type = FeatureType::Fillet;
+    fil.params = {{"target", ext_id.str()}, {"radius", 1.0}, {"edges", edges}};
+    const auto fid = graph.add(std::move(fil));
+    REQUIRE(graph.regenerate(doc, &err));
+    Feature* feat = graph.feature(fid);
+    REQUIRE(feat != nullptr);
+    REQUIRE(feat->params.contains("face_cues"));
+    REQUIRE(feat->params["face_cues"].is_array());
+    REQUIRE_FALSE(feat->params["face_cues"].empty());
+
+    const std::string path = "/tmp/sx-dress-stale-cues.log";
+    feat->params["edges"] = nlohmann::json::array({"00000000-0000-4000-8000-000000000001"});
+    std::remove(path.c_str());
+    sx::log::set_file_sink(path);
+    REQUIRE(graph.regenerate(doc, &err));
+    sx::log::set_file_sink("");
+    CHECK(count_log_level(path, "ERROR") == 0);
+
+    feat = graph.feature(fid);
+    REQUIRE(feat != nullptr);
+    feat->params["edges"] = nlohmann::json::array({"00000000-0000-4000-8000-000000000002"});
+    feat->params["face_cues"] = nlohmann::json::array();
+    std::remove(path.c_str());
+    sx::log::set_file_sink(path);
+    REQUIRE(graph.regenerate(doc, &err));
+    sx::log::set_file_sink("");
+    CHECK(count_log_level(path, "ERROR") == 1);
 }
