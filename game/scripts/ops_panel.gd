@@ -27,6 +27,12 @@ var _face_ops: VBoxContainer
 var _name_edit: LineEdit
 var _color_picker: ColorPickerButton
 var _radius_spin: SpinBox
+## HBox that holds the Radius / Distance label and spin. Hidden unless
+## fillet or chamfer edge-pick is armed, so a disarmed Modify panel has no
+## orphan size field.
+var _radius_row: Control
+## Locked Modify width (armed and idle). 0 until the first layout measures it.
+var _modify_width := 0.0
 ## True while Tab/Enter is applying the Radius LineEdit so a partial digit
 ## cannot emit `dressup_radius_changed` (typing 10 must not latch 0).
 var _radius_committing := false
@@ -115,6 +121,9 @@ func _ready() -> void:
 	view.picked.connect(_on_picked)
 	if view.has_signal("hole_feature_picked"):
 		view.hole_feature_picked.connect(_on_hole_feature_picked)
+	clip_contents = true
+	_lock_modify_width()
+	call_deferred("_remeasure_modify_width")
 	_on_selection_changed(view.selected_body, view.selected_face)
 
 
@@ -142,8 +151,10 @@ func _build_body_ops() -> void:
 	var name_row := HBoxContainer.new()
 	_body_ops.add_child(name_row)
 	var name_lbl := Label.new()
+	name_lbl.name = "NameLabel"
 	name_lbl.text = "Name"
-	name_lbl.custom_minimum_size = Vector2(64, 0)
+	name_lbl.clip_text = true
+	name_lbl.custom_minimum_size = Vector2(76, 0)
 	name_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	name_row.add_child(name_lbl)
 	_name_edit = LineEdit.new()
@@ -155,7 +166,8 @@ func _build_body_ops() -> void:
 	_body_ops.add_child(color_row)
 	var color_lbl := Label.new()
 	color_lbl.text = "Color"
-	color_lbl.custom_minimum_size = Vector2(64, 0)
+	color_lbl.clip_text = true
+	color_lbl.custom_minimum_size = Vector2(76, 0)
 	color_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	color_row.add_child(color_lbl)
 	_color_picker = ColorPickerButton.new()
@@ -169,7 +181,8 @@ func _build_body_ops() -> void:
 	_body_ops.add_child(mat_row)
 	var mat_lbl := Label.new()
 	mat_lbl.text = "Material"
-	mat_lbl.custom_minimum_size = Vector2(64, 0)
+	mat_lbl.clip_text = true
+	mat_lbl.custom_minimum_size = Vector2(76, 0)
 	mat_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	mat_row.add_child(mat_lbl)
 	_material_option = OptionButton.new()
@@ -216,6 +229,16 @@ func _build_body_ops() -> void:
 
 	_body_ops.add_child(HSeparator.new())
 	_radius_spin = _labeled_spin(_body_ops, "Radius", 0.05, 100.0, 0.5, 2.0)
+	_radius_row = _radius_spin.get_parent() as Control
+	_radius_row.name = "DressupRadiusRow"
+	_radius_row.visible = false
+	var radius_lbl := _radius_row.get_child(0) as Label
+	if radius_lbl != null:
+		radius_lbl.name = "DressupRadiusLabel"
+		radius_lbl.clip_text = true
+		# "Distance" must fit; a short box draws over the Name row when the
+		# panel scrolls the dress-up field up.
+		radius_lbl.custom_minimum_size = Vector2(76, 0)
 	_radius_spin.suffix = "mm"
 	# true so a trailing "." survives. Keys go through compose_typed_char.
 	# pin_fmt_mm still writes "N mm" once the line is not focused.
@@ -223,6 +246,9 @@ func _build_body_ops() -> void:
 	SxUi.pin_fmt_mm(_radius_spin)
 	SxUi.reveal_committed_spin(_radius_spin, _radius_spin.value)
 	var radius_le := _radius_spin.get_line_edit()
+	if radius_le != null:
+		# Fixed floor so "10 mm" / "1.5 mm" cannot change the Modify width.
+		radius_le.custom_minimum_size.x = maxf(radius_le.custom_minimum_size.x, 96.0)
 	SxUi.use_armed_replace_select(radius_le)
 	_radius_spin.value_changed.connect(func(v: float) -> void:
 		# A focused LineEdit can emit 0 while the user is typing 10 (soft-GL
@@ -770,13 +796,56 @@ static func suggested_hole_inset(diameter: float, thickness: float, material_nam
 
 
 func _clamp_height() -> void:
-	# Shrink-to-fit up to MAX_HEIGHT, then scroll.
+	# Shrink-to-fit up to MAX_HEIGHT, then scroll. Width stays at the locked
+	# column so arming Fillet cannot widen Modify or shove the chip row.
 	await get_tree().process_frame
 	if _scroll == null or _content == null:
 		return
+	_lock_modify_width()
 	var want := _content.get_combined_minimum_size().y
-	_scroll.custom_minimum_size = Vector2(240, minf(want, MAX_HEIGHT))
+	var inner_w := maxf(200.0, _modify_width - _panel_chrome_x())
+	_content.custom_minimum_size.x = inner_w
+	_scroll.custom_minimum_size = Vector2(inner_w, minf(want, MAX_HEIGHT))
+	custom_minimum_size.x = _modify_width
+	size.x = _modify_width
 	reset_size()
+
+
+func _panel_chrome_x() -> float:
+	var sb := get_theme_stylebox("panel")
+	if sb == null:
+		return 16.0
+	return sb.get_margin(SIDE_LEFT) + sb.get_margin(SIDE_RIGHT)
+
+
+## Measure the dress-up row once (it is hidden while idle) and keep that
+## width for every later arm / disarm.
+func _lock_modify_width() -> void:
+	if _modify_width > 1.0 or _content == null:
+		return
+	var was := false
+	if _radius_row != null:
+		was = _radius_row.visible
+		_radius_row.visible = true
+	var inner := maxf(220.0, _content.get_combined_minimum_size().x)
+	if _radius_row != null:
+		_radius_row.visible = was
+	_modify_width = maxf(240.0, inner + _panel_chrome_x())
+	_content.custom_minimum_size.x = inner
+	custom_minimum_size.x = _modify_width
+
+
+## Theme margins are not ready on the first _ready pass. Measure again once
+## the control is in the tree, then keep that width forever.
+func _remeasure_modify_width() -> void:
+	if not is_inside_tree() or _content == null:
+		return
+	_modify_width = 0.0
+	_lock_modify_width()
+	var inner_w := maxf(200.0, _modify_width - _panel_chrome_x())
+	_content.custom_minimum_size.x = inner_w
+	custom_minimum_size.x = _modify_width
+	size.x = _modify_width
 
 
 func _on_name_submitted(text: String) -> void:
@@ -840,14 +909,40 @@ func _arm_dressup(fillet: bool) -> void:
 	_pending_body = view.selected_body
 	_pending_fid = view.feature_of_body(view.selected_body)
 	dressup_armed_changed.emit(true, fillet)
+	_sync_dressup_row()
 	_reveal_radius(fillet)
 	_emit_armed_dressup_status()
+
+
+## Show Radius while fillet is armed and Distance while chamfer is armed.
+## Hidden otherwise — Esc and a successful apply must not leave the field up.
+func _sync_dressup_row() -> void:
+	var fillet := _pending == Pending.FILLET_EDGES
+	var chamfer := _pending == Pending.CHAMFER_EDGES
+	var on := fillet or chamfer
+	if _radius_row != null:
+		_radius_row.visible = on
+	if _radius_row != null and _radius_row.get_child_count() > 0:
+		var lbl := _radius_row.get_child(0) as Label
+		if lbl != null:
+			lbl.text = "Distance" if chamfer else "Radius"
+	if _radius_spin != null:
+		_radius_spin.tooltip_text = ("Fillet radius (mm)" if fillet else "Chamfer distance (mm)") \
+				+ " — edit, then Enter to apply" if on else ""
+	if not on:
+		if _radius_spin != null:
+			var le := _radius_spin.get_line_edit()
+			if le != null and le.has_focus():
+				le.release_focus()
+		if _scroll != null:
+			_scroll.scroll_vertical = 0
 
 
 ## Scroll/focus the Radius spin and keep body ops visible while armed.
 func _reveal_radius(fillet: bool) -> void:
 	visible = true
 	_body_ops.visible = true
+	_sync_dressup_row()
 	if _radius_spin == null:
 		return
 	# Arrow step stays coarse; the stored step is fine so a typed 1.5 or 10 sticks.
@@ -971,6 +1066,7 @@ func _commit_armed_dressup() -> bool:
 			_add_dressup_face(view.selected_body, view.selected_face)
 		if view.selected_edges.is_empty() and view.selected_edge == "":
 			_pending = Pending.NONE
+			_sync_dressup_row()
 			dressup_armed_changed.emit(false, fillet)
 			if view.selected_face == "":
 				status.emit("No edges selected — cancelled")
@@ -1018,9 +1114,12 @@ func _apply_dressup(fillet: bool) -> void:
 		view.graph_changed()
 		# Committed. Do not open the feature editor — the next Esc must not
 		# look like it can undo this fillet. Re-edit from View ▸ Timeline.
-		var applied := "%s %s %.2f applied — View ▸ Timeline to edit parameters" % [name, scope, value]
+		# "no longer armed" is the A11d cue: Enter applied the feature and
+		# closed the tool. The sentence up to "parameters" stays stable.
+		var applied := "%s %s %.2f applied — View ▸ Timeline to edit parameters — %s no longer armed" % [name, scope, value, name]
 		status.emit(applied)
 		_pending = Pending.NONE
+		_sync_dressup_row()
 		dressup_armed_changed.emit(false, fillet)
 	else:
 		if fillet:
@@ -1031,6 +1130,7 @@ func _apply_dressup(fillet: bool) -> void:
 		_pending_body = view.selected_body
 		_pending_fid = view.feature_of_body(view.selected_body)
 		dressup_armed_changed.emit(true, fillet)
+		_sync_dressup_row()
 		_reveal_radius(fillet)
 
 
@@ -1961,6 +2061,7 @@ func cancel_pending_pick() -> bool:
 		if view.selected_body != "" and (view.selected_edges.size() > 0 or view.selected_edge != ""):
 			view.select_entity(view.selected_body, "")
 		_dressup_from_face = false
+		_sync_dressup_row()
 		dressup_armed_changed.emit(false, was_fillet)
 	if was_wizard:
 		status.emit("Hole Wizard cancelled")

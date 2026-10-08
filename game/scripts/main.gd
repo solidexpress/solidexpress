@@ -1970,11 +1970,17 @@ func _apply_chrome_docks() -> void:
 	var max_w := minf(220.0, vp.x * 0.28)
 	var top := ChromeDock.top_inset
 	# Part chip row keeps its fixed x (N3). When it overlaps this column,
-	# drop the Timeline under the row instead of covering the left chips.
+	# drop the Timeline under the row's real bottom (wrap included) plus a
+	# fixed physical gap, instead of covering the left chips.
 	var timeline_top := top
 	var strip := interaction.selection_strip_global_rect() if interaction != null else Rect2()
-	if strip.size != Vector2.ZERO and strip.end.x > dock_left and strip.position.x < dock_left + max_w:
-		timeline_top = maxf(top, strip.end.y + 4.0)
+	var chip_bottom := -1.0
+	if interaction != null and interaction.has_method("selection_strip_content_bottom"):
+		chip_bottom = interaction.selection_strip_content_bottom()
+	if chip_bottom >= 0.0 and strip.size != Vector2.ZERO \
+			and strip.end.x > dock_left and strip.position.x < dock_left + max_w:
+		timeline_top = maxf(top, chip_bottom + ChromeDock.TIMELINE_CHIP_GAP)
+	ChromeDock.timeline_min_top = timeline_top
 	var max_h := maxf(120.0, vp.y - timeline_top - ChromeDock.bottom_inset - 8.0)
 	if timeline.visible:
 		timeline.set_anchors_preset(Control.PRESET_TOP_LEFT)

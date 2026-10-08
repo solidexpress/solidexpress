@@ -156,10 +156,13 @@ func _clamp_height() -> void:
 	var top := offset_top
 	if top < 1.0 and position.y > 1.0:
 		top = position.y
-	# Grow upward from the bottom inset so the panel never leaves the screen.
+	# Stay under the part chip row. Shrink instead of sliding up through it.
+	var min_top := maxf(ChromeDock.top_inset, ChromeDock.timeline_min_top)
+	if top < min_top:
+		top = min_top
 	var max_bottom := vp_size.y - ChromeDock.bottom_inset
 	if top + h > max_bottom:
-		top = maxf(ChromeDock.top_inset, max_bottom - h)
+		h = maxf(120.0, max_bottom - top)
 	custom_minimum_size = Vector2(PANEL_WIDTH, h)
 	size = Vector2(PANEL_WIDTH, h)
 	position = Vector2(left, top)
