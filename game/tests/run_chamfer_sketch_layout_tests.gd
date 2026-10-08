@@ -40,8 +40,10 @@ func test_chamfer_enter_applies() -> void:
 	var lines = view.doc.get_edge_ids(id)
 	view.select_edge(id, str(lines[0]))
 	ops._radius_spin.value = 0.5
-	# Simulate Enter in the radius field.
+	# Field Enter commits the radius. Viewport Enter (try_commit_pending) applies.
 	ops._radius_spin.get_line_edit().text_submitted.emit("0.5")
+	await process_frame
+	ops.try_commit_pending()
 	await process_frame
 	var has_ch := false
 	for f in view.doc.graph_features():

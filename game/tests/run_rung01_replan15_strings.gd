@@ -463,6 +463,13 @@ func _dressup_face(kind: String, button_name: String, re: RegEx, feat: String) -
 		print("  %s radius field `%s`" % [kind, edit.text])
 		_status_log.clear()
 		await _push_key(vp, KEY_ENTER, 0)
+		await process_frame
+		await process_frame
+		# Field Enter commits the radius. A second Enter, viewport focused, applies.
+		if ctx_ok.main.ops_panel._pending != OpsPanel.Pending.NONE:
+			ctx_ok.main.interaction.return_viewport_keys()
+			await process_frame
+			await _push_key(vp, KEY_ENTER, 0)
 		for _i in 12:
 			await process_frame
 		_capture(ctx_ok.main)

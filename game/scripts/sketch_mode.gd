@@ -45,15 +45,17 @@ var _auto_close := true
 var polygon_sides := 6:
 	set(v):
 		polygon_sides = clampi(v, 3, 24)
-## Tool variants: rect=corner|center|three_point|parallelogram;
+## Tool variants: rect=corner|center|three_point|center_three_point|parallelogram
+## (SolidWorks rectangle flyout; Corner is the default and the first chip);
 ## circle=center|perimeter|three_point; arc=center|tangent|three_point;
 ## pattern=linear|circular. Polygon uses tool_variant too; the last polygon
 ## choice is kept in `_polygon_variant` so Circle/Rect can reset their own
 ## names and Polygon still comes back as across-flats (or vertex, if chosen).
 var tool_variant := "corner"
 var _polygon_variant := "across_flats"
-## True while the rail Jaw button is the armed rect tool. Limits chips to the
-## Center Three Point variant the checklist names; Rect itself still shows all five.
+## True while the rail Jaw button is the armed rect tool. Jaw has one gesture
+## and shows no variant chips. Rect, when Jaw is not armed, shows all five in
+## SolidWorks flyout order (Corner first).
 var _jaw_armed := false
 var _arming_jaw := false
 ## Construction +X used only as an angle datum. Jaw trim must not pick these
@@ -70,6 +72,9 @@ var draw_construction := false
 ## Power-trim drag state: list of already-trimmed entity ids this stroke.
 var _trim_drag_ids: Array[String] = []
 var _trim_dragging := false
+## Faint red polyline of a Power Trim drag. Freed when the drag ends.
+var _trim_trail: MeshInstance3D
+var _trim_trail_pts: PackedVector2Array
 var _trim_jaw_done_in_drag := false
 ## Highlight entity under trim hover (red).
 var _trim_hover_id := ""
@@ -88,10 +93,15 @@ var _picture_node: MeshInstance3D
 var _spline_pts: Array[Vector2] = []
 ## Straight-slot cap radius (mm). The dim blank sets this before the first
 ## centre click; the rubber-band after that click is the centre distance.
-var slot_radius := 5.0
+const DEFAULT_SLOT_RADIUS := 5.0
+var slot_radius := DEFAULT_SLOT_RADIUS
 ## Circle radius shown in the dim blank. Separate from slot_radius so a Slot
 ## radius of 5 does not become the next Circle's starting Radius.
-var circle_radius := 10.0
+const DEFAULT_CIRCLE_RADIUS := 10.0
+var circle_radius := DEFAULT_CIRCLE_RADIUS
+## Last committed length / AF / c-c for each numeric field. Missing key means
+## the blank is empty. Never copy one tool's number into another field.
+var _tool_numeric: Dictionary = {}
 ## Smart Dimension first pick when it is a centre/point rather than a curve.
 var _smart_dim_pending: Dictionary = {}
 ## True after an Esc dropped a pending draw point and the status said the
@@ -405,18 +415,18 @@ func plane_normal() -> Vector3:
 
 
 ## 2D AABB of all entities inflated by `pad_frac` (0.2 = 20% past extents).
-## Returns {min, max, center, radius} or empty if no entities.
-## Face sketches also keep the part origin (0,0) and the host body in the
-## fit so Frame cannot bury the ground origin under the left rail.
+## Returns {min, max, center, radius} or empty when there is nothing to fit.
+## An empty ground sketch stays empty (the caller uses a small default).
+## Face sketches — including an empty one just opened on a face — keep the
+## part origin (0,0) and the host body so entry / F / Frame show the whole
+## face, not a 25 mm window on the origin that hides the far end.
 func sketch_extents(pad_frac := 0.2) -> Dictionary:
 	if sketch == null:
 		return {}
-	var ids: PackedStringArray = sketch.entity_ids()
-	if ids.is_empty():
-		return {}
 	var mn := Vector2(INF, INF)
 	var mx := Vector2(-INF, -INF)
-	for id in ids:
+	var have := false
+	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match str(info.get("type", "")):
 			"line":
@@ -424,24 +434,33 @@ func sketch_extents(pad_frac := 0.2) -> Dictionary:
 				var b: Vector2 = info["end"]
 				mn = mn.min(a).min(b)
 				mx = mx.max(a).max(b)
+				have = true
 			"circle", "arc":
 				var c: Vector2 = info["center"]
 				var r: float = float(info.get("radius", 0.0))
 				mn = mn.min(c - Vector2(r, r))
 				mx = mx.max(c + Vector2(r, r))
+				have = true
 			"point":
 				var p: Vector2 = info.get("position", info.get("point", Vector2.ZERO))
 				mn = mn.min(p)
 				mx = mx.max(p)
-	if not is_finite(mn.x):
-		return {}
+				have = true
 	if target_fid != "" or support_host != "":
-		mn = mn.min(Vector2.ZERO)
-		mx = mx.max(Vector2.ZERO)
+		if not have:
+			mn = Vector2.ZERO
+			mx = Vector2.ZERO
+			have = true
+		else:
+			mn = mn.min(Vector2.ZERO)
+			mx = mx.max(Vector2.ZERO)
 		var host := _host_body_uv_aabb()
 		if not host.is_empty():
 			mn = mn.min(host["min"])
 			mx = mx.max(host["max"])
+			have = true
+	if not have or not is_finite(mn.x):
+		return {}
 	var size := mx - mn
 	var pad := size * pad_frac * 0.5
 	pad.x = maxf(pad.x, 2.0)
@@ -465,6 +484,8 @@ func _host_body_uv_aabb() -> Dictionary:
 		body = view.body_of_feature(target_fid)
 	if body == "" and view.selected_body != "":
 		body = view.selected_body
+	if body == "" and view.doc.body_ids().size() == 1:
+		body = view.doc.body_ids()[0]
 	if body == "":
 		return {}
 	var bb: Dictionary = view.doc.measure_bbox(body)
@@ -648,7 +669,12 @@ func keep_current_view() -> void:
 func _reassert_camera_if(gen: int) -> void:
 	if gen != _camera_reassert_gen:
 		return
-	_reassert_camera()
+	if not active or camera == null:
+		return
+	# The first fit runs inside begin(), before the sketch rail is shown.
+	# Refit once layout has settled so the whole face lands in the canvas
+	# that is actually left of the rail, not the pre-rail column.
+	_apply_sketch_frame(sketch_extents(0.2))
 
 
 func _reassert_camera() -> void:
@@ -1386,6 +1412,22 @@ func _finish_feature(sk_fid: String, feat_fid: String, op: String, fail_msg: Str
 	view.document_changed.emit()
 	view.select_entity(body_id, "")
 	finished.emit(body_id)
+	# The pose restored above is the view from before the sketch. On a new
+	# part that pose is still the empty-scene orbit (~15 mm), which sits
+	# inside a blank the size of the wrench. Frame the new body the way F
+	# does. Cuts and fuses keep the restored pose (the part was already in
+	# view). Do not emit "Framed …" — the Extrude sentence owns the status.
+	if op == "new":
+		_frame_new_body()
+
+
+## Fit the body just created. Selection is the new body; fall back to all.
+func _frame_new_body() -> void:
+	if camera == null:
+		return
+	if camera.frame_selection():
+		return
+	camera.frame_contents()
 
 
 ## Model-space ray -> sketch 2D coords (null if parallel to plane).
@@ -1427,6 +1469,7 @@ func set_tool(t: Tool) -> void:
 	_trim_hover_id = ""
 	_trim_dragging = false
 	_trim_drag_ids.clear()
+	_free_trim_trail()
 	draw_construction = (t == Tool.CENTERLINE)
 	# Default variants per tool family (reset on tool switch so prior family
 	# names like circle "center" don't silently become rect "center").
@@ -1663,8 +1706,63 @@ func preview_distance() -> float:
 ## Lock rubber-band length; mouse keeps steering direction.
 func set_length_override(v: float) -> void:
 	_length_override = maxf(v, 0.01)
+	if tool == Tool.CIRCLE:
+		circle_radius = _length_override
+	elif tool == Tool.SLOT and not has_single_dof_preview():
+		slot_radius = _length_override
+	else:
+		remember_numeric(_length_override)
 	_update_preview()
 	preview_distance_changed.emit(_length_override)
+
+
+## Dim-blank identity. Slot radius and Slot c-c are different fields.
+func numeric_field_key() -> String:
+	match tool:
+		Tool.LINE:
+			return "line"
+		Tool.CENTERLINE:
+			return "centerline"
+		Tool.CIRCLE:
+			return "circle"
+		Tool.SLOT:
+			return "slot_cc" if has_single_dof_preview() else "slot_radius"
+		Tool.ARC:
+			return "arc"
+		Tool.POLYGON:
+			return "polygon:" + tool_variant
+		Tool.ELLIPSE:
+			return "ellipse"
+		_:
+			return "tool:%d" % int(tool)
+
+
+## This field's own number, or -1 when the blank should be empty.
+func own_numeric() -> float:
+	if tool == Tool.CIRCLE:
+		return circle_radius
+	if tool == Tool.SLOT and not has_single_dof_preview():
+		return slot_radius
+	var key := numeric_field_key()
+	if _tool_numeric.has(key):
+		return float(_tool_numeric[key])
+	return -1.0
+
+
+func remember_numeric(v: float, key: String = "") -> void:
+	if is_nan(v) or is_inf(v) or v < 0.01:
+		return
+	if key == "":
+		key = numeric_field_key()
+	_tool_numeric[key] = v
+
+
+## File → New / Open. Tool numbers belong to the document that set them.
+func reset_tool_numerics() -> void:
+	circle_radius = DEFAULT_CIRCLE_RADIUS
+	slot_radius = DEFAULT_SLOT_RADIUS
+	_tool_numeric.clear()
+	_length_override = -1.0
 
 
 func clear_length_override() -> void:
@@ -1765,6 +1863,8 @@ func variants_for_tool(t: Tool = tool) -> Array:
 		Tool.RECT:
 			if _jaw_armed:
 				return []
+			# SolidWorks rectangle flyout: Corner, Center, 3 Point Corner,
+			# 3 Point Center, Parallelogram. Corner is the default (first).
 			return ["corner", "center", "three_point", "center_three_point", "parallelogram"]
 		Tool.CIRCLE:
 			return ["center", "perimeter", "three_point"]
@@ -4436,6 +4536,7 @@ func click(pos2: Vector2) -> void:
 				if as_centreline:
 					_delete_other_non_datum_construction_lines()
 				var lid: String = sketch.add_line(a.x, a.y, b.x, b.y)
+				remember_numeric(a.distance_to(b))
 				if as_centreline:
 					sketch.set_construction(lid, true)
 					# Two-point centreline: do not extend the next click.
@@ -4492,6 +4593,7 @@ func click(pos2: Vector2) -> void:
 								sketch.add_constraint("horizontal", [{"entity": lid, "role": "self"}], 0.0)
 					run_solve()
 					_weld_loop(lids)
+					remember_numeric(drag)
 					if tool_variant == "across_flats":
 						_last_commit_text = "Polygon AF %.4f — flats horizontal" % drag
 						status.emit(_last_commit_text)
@@ -4511,6 +4613,7 @@ func click(pos2: Vector2) -> void:
 				var corner := _tool_points[1]
 				var rx := absf(corner.x - c.x)
 				var ry := absf(corner.y - c.y)
+				remember_numeric(maxf(rx, ry))
 				if rx > 1e-6 and ry > 1e-6:
 					var prev: Vector2
 					for i in range(33):
@@ -4524,10 +4627,10 @@ func click(pos2: Vector2) -> void:
 		Tool.SLOT:
 			_tool_points.append(pos2)
 			if _tool_points.size() == 2:
+				var cc := _tool_points[0].distance_to(_tool_points[1])
+				remember_numeric(cc, "slot_cc")
 				_add_slot(_tool_points[0], _tool_points[1], slot_radius)
-				_last_commit_text = slot_cc_status(
-						_tool_points[0].distance_to(_tool_points[1]),
-						_point_from_length)
+				_last_commit_text = slot_cc_status(cc, _point_from_length)
 				status.emit(_last_commit_text)
 				_tool_points.clear()
 				_redraw()
@@ -4718,6 +4821,7 @@ func _click_arc(pos2: Vector2) -> void:
 					var ctr: Vector2 = c_v
 					var r := ctr.distance_to(p1)
 					if r > 1e-6:
+						remember_numeric(r)
 						sketch.add_arc(ctr.x, ctr.y, r, (p1 - ctr).angle(), (p3 - ctr).angle())
 				_tool_points.clear()
 		"tangent":
@@ -4730,6 +4834,7 @@ func _click_arc(pos2: Vector2) -> void:
 				var c := mid + n * start_pt.distance_to(end_pt) * 0.5
 				var r := c.distance_to(start_pt)
 				if r > 1e-6:
+					remember_numeric(r)
 					sketch.add_arc(c.x, c.y, r, (start_pt - c).angle(), (end_pt - c).angle())
 				_tool_points.clear()
 		_:  # center
@@ -4739,6 +4844,7 @@ func _click_arc(pos2: Vector2) -> void:
 				var end_pt := _tool_points[2]
 				var r := c.distance_to(start_pt)
 				if r > 1e-6:
+					remember_numeric(r)
 					sketch.add_arc(c.x, c.y, r, (start_pt - c).angle(), (end_pt - c).angle())
 				_tool_points.clear()
 	_redraw()
@@ -6172,9 +6278,12 @@ func hover(pos2: Vector2) -> void:
 
 ## Power-trim drag: trim every entity the cursor crosses.
 func begin_trim_drag(pos2: Vector2) -> void:
+	_free_trim_trail()
 	_trim_dragging = true
 	_trim_jaw_done_in_drag = false
 	_trim_drag_ids.clear()
+	_trim_trail_pts.append(pos2)
+	_rebuild_trim_trail()
 	trim_at(pos2)
 	var id := _nearest_entity_at(pos2)
 	if id != "":
@@ -6182,6 +6291,9 @@ func begin_trim_drag(pos2: Vector2) -> void:
 
 
 func update_trim_drag(pos2: Vector2) -> void:
+	if _trim_dragging:
+		_trim_trail_pts.append(pos2)
+		_rebuild_trim_trail()
 	if not _trim_dragging or _trim_jaw_done_in_drag:
 		return
 	var id := _nearest_entity_at(pos2)
@@ -6197,6 +6309,50 @@ func end_trim_drag() -> void:
 	_trim_jaw_done_in_drag = false
 	_trim_drag_ids.clear()
 	_trim_hover_id = ""
+	_free_trim_trail()
+	if _preview_material != null:
+		_preview_material.albedo_color = Color(0.5, 0.8, 1.0, 0.8)
+	_update_preview()
+
+
+func _rebuild_trim_trail() -> void:
+	var node := _trim_trail_node()
+	node.visible = true
+	if _trim_trail_pts.size() < 2:
+		node.mesh = null
+		return
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	for i in range(_trim_trail_pts.size() - 1):
+		im.surface_add_vertex(_to3(_trim_trail_pts[i]))
+		im.surface_add_vertex(_to3(_trim_trail_pts[i + 1]))
+	im.surface_end()
+	node.mesh = im
+
+
+func _trim_trail_node() -> MeshInstance3D:
+	if _trim_trail != null and is_instance_valid(_trim_trail):
+		return _trim_trail
+	var node := MeshInstance3D.new()
+	node.name = "TrimDragTrail"
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(1.0, 0.25, 0.2, 0.35)
+	mat.no_depth_test = true
+	node.material_override = mat
+	add_child(node)
+	_trim_trail = node
+	return node
+
+
+func _free_trim_trail() -> void:
+	_trim_trail_pts = PackedVector2Array()
+	if _trim_trail != null and is_instance_valid(_trim_trail):
+		_trim_trail.visible = false
+		_trim_trail.mesh = null
+		_trim_trail.queue_free()
+		_trim_trail = null
 
 
 ## Split the nearest line at pos2 into two collinear segments.
@@ -7378,6 +7534,11 @@ func _prune_orphan_dimensions() -> void:
 
 
 func _redraw() -> void:
+	# A commit that ends the session has already dropped the strokes. A late
+	# redraw must not put the construction overlay back on the solid.
+	if not active:
+		_clear_meshes()
+		return
 	if sketch == null:
 		return
 	_sync_contour_bar()
