@@ -2,10 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
-## sx-037 A6 / N4 / N14 — sketch exit drops the host face and the face pick
-- Leaving a sketch, cancel (`Sketch cancelled`) or save (`Sketch saved`), disarms a pending finish-bar Up To Surface pick and clears the sketch host face when that face is the whole selection. The selection card hides and rail Sketch stays reachable. The next part-mode Esc prints nothing unless the user has selected something else, in which case it prints `Selection cleared`.
-- After Extrude refuses and keeps the sketch (open profile, including `Line at (x, y) breaks the chain — delete or trim it`), the next Esc is the exit ladder (`… — Esc again exits the sketch`) and the one after that saves. It is not spent on `Chain ended` or on releasing the Distance field.
-- Gate: `run_rung01_sx037_exit.gd` (`tier=ci`).
+## View menu Orientation — sx-037 A16
+- Menu-bar View → Orientation lists Front, Back, Left, Right, Top, Bottom, Isometric with shortcuts 1, 4, 6, 2, 3, 8, 7. The menu, the HUD View list, and those number keys call `OrbitCamera.apply_standard_view_id`.
+- Cardinal views are orthographic and axis-aligned (Top/Bottom at ±90°, not ±89°) with the pivot on the part. A straight top view looks through the open jaw, so a click in that slot does not select; the head click is on the remaining meat. Isometric stays the angled view and uses the same framing path. An empty New document keeps the biased grid aim.
+- Gate: `run_view_orientation_tests.gd` (`tier=ci`).
 
 ## sx-037 L12 — Select hover Δ, thin-line pick, Esc, stale ✕
 - Select hover shows the measure ✕ with the entity's Δu/Δv. The mark clears when the pointer leaves, on F / Shift+F / HUD Frame, and on deselect or an empty-ground click (the `0.00` bound label goes with it). A shaft-line click uses a screen-pixel pick radius and still selects through a few pixels of jitter. The next Esc is `Selection cleared — Esc again exits the sketch`.

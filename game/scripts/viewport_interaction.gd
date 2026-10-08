@@ -6023,21 +6023,18 @@ func _show_orient_popup() -> void:
 func _on_orient_id(id: int) -> void:
 	if camera == null:
 		return
+	var orient_id := {
+		1: "front", 2: "right", 3: "top", 4: "back",
+		6: "left", 7: "iso", 8: "bottom",
+	}
+	if orient_id.has(id):
+		var vid := str(orient_id[id])
+		camera.apply_standard_view_id(vid)
+		var spec := OrbitCamera.standard_view_by_id(vid)
+		if not spec.is_empty():
+			status.emit("%s view" % str(spec["label"]))
+		return
 	match id:
-		1:
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(0.0), true)
-		2:
-			camera.set_view(deg_to_rad(90.0), deg_to_rad(0.0), true)
-		3:
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(89.0), true)
-		4:
-			camera.set_view(deg_to_rad(180.0), deg_to_rad(0.0), true)
-		6:
-			camera.set_view(deg_to_rad(-90.0), deg_to_rad(0.0), true)
-		7:
-			camera.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), true)
-		8:
-			camera.set_view(deg_to_rad(0.0), deg_to_rad(-89.0), true)
 		5:
 			camera.toggle_projection()
 			status.emit("Projection toggled")
