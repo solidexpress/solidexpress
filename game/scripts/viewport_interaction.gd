@@ -74,6 +74,21 @@ var _additive_click := false
 var _sketch_dragging := false
 var _sketch_drag_moved := false
 var _sketch_press_pos := Vector2.ZERO
+## Unmatched left presses. A release that arrives after a newer press (the
+## mouse-up of a click, delivered late under soft-GL) must not finish that
+## newer press. Depth > 1 means the release closes an older press only.
+var _sketch_lmb_depth := 0
+var _sketch_press_frame := -1
+var _sketch_release_frame := -1
+## Motion with the button already down arrived before its press. The press
+## that follows is the same gesture and must not restart it.
+var _sketch_press_inferred := false
+## A newer press replaced an open one. The next mouse-up that is still the
+## old click (near that point, or no drag yet) is swallowed.
+var _sketch_swallow_release := false
+var _sketch_abandoned_pos := Vector2.INF
+## Shift/Ctrl at the marquee press. The release event sometimes drops them.
+var _sketch_box_additive := false
 ## One physical Esc must run the sketch ladder once. `_input` and `_gui_input`
 ## can both see the same key in a frame; the second pass would exit.
 var _sketch_esc_frame := -1
@@ -3028,8 +3043,76 @@ func _clear_sketch_box() -> void:
 	_sketch_box_active = false
 	_sketch_box_start = Vector2.ZERO
 	_sketch_box_crossing = false
+	_sketch_box_additive = false
 	_box_rect = Rect2()
 	queue_redraw()
+
+
+## Drop an open press without selecting. Used when a newer press arrives
+## before the previous mouse-up, and when Esc cancels a marquee.
+func _sketch_release_is_stale(mb: InputEventMouseButton) -> bool:
+	if not _sketch_swallow_release or _sketch_lmb_depth < 1:
+		return false
+	if _sketch_box_active or _sketch_dragging:
+		return false
+	var at := _pointer_viewport_pos(mb)
+	var travel := at.distance_to(_sketch_press_pos)
+	var near_abandoned := _sketch_abandoned_pos != Vector2.INF \
+			and at.distance_to(_sketch_abandoned_pos) <= CLICK_SLOP
+	return travel < CLICK_SLOP or near_abandoned
+
+
+func _abandon_open_sketch_press() -> void:
+	if _sketch_dragging and sketch_mode != null:
+		sketch_mode.cancel_drag()
+	_sketch_dragging = false
+	_sketch_drag_moved = false
+	_sketch_press_inferred = false
+	_clear_sketch_box()
+
+
+## Button-down motion that beat its press: arm Select at where that motion
+## started so the first empty-canvas drag still becomes a box.
+func _infer_sketch_press_from_motion(mm: InputEventMouseMotion) -> void:
+	if sketch_mode == null or sketch_mode.tool != SketchMode.Tool.SELECT:
+		return
+	if _sketch_box_pending or _sketch_dragging or _sketch_lmb_depth > 0:
+		return
+	if _sketch_release_frame == Engine.get_process_frames():
+		return
+	if (mm.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0:
+		return
+	if mm.relative.length_squared() <= 0.01:
+		return
+	var screen := _pointer_viewport_pos(mm)
+	_sketch_lmb_depth = 1
+	_sketch_press_inferred = true
+	_sketch_press_frame = Engine.get_process_frames()
+	_begin_select_gesture(screen - mm.relative, mm.shift_pressed or mm.ctrl_pressed)
+
+
+func _begin_select_gesture(screen: Vector2, additive: bool) -> void:
+	_sketch_press_pos = screen
+	var ray := _model_ray(screen)
+	var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
+	if p2 == null:
+		return
+	if sketch_mode.constraint_hit(p2) == "" and sketch_mode.dimension_hit(p2) < 0 \
+			and not sketch_mode.drag_hit(p2).is_empty():
+		_note_click("sketch-drag:SELECT", screen)
+		sketch_mode.begin_drag(p2)
+		_sketch_dragging = true
+	elif sketch_mode.constraint_hit(p2) == "" and sketch_mode.dimension_hit(p2) < 0 \
+			and sketch_mode.entity_at(p2) == "":
+		_sketch_box_pending = true
+		_sketch_box_active = false
+		_sketch_box_start = screen
+		_sketch_box_additive = additive
+		_note_click("sketch-box:SELECT", screen)
+	else:
+		_note_click("sketch-click:SELECT", screen)
+		sketch_mode.click(p2)
+		_clear_select_click_measure()
 
 
 func _pointer_viewport_pos(event: InputEventMouse) -> Vector2:
@@ -3324,8 +3407,33 @@ func _sketch_input(event: InputEvent) -> void:
 				if sketch_chrome.has_method("release_distance_focus"):
 					sketch_chrome.release_distance_focus()
 				sketch_chrome.hide_variants()
-			_sketch_press_pos = mb.position
-			var ray := _model_ray(mb.position)
+			var screen := _pointer_viewport_pos(mb)
+			# A double-click is still a press. Soft-GL delivers it immediately
+			# after the previous click; it must be allowed to start a box.
+			if _sketch_press_inferred and _sketch_lmb_depth >= 1:
+				_sketch_press_inferred = false
+				accept_event()
+				return
+			if _sketch_lmb_depth >= 1 \
+					and screen.distance_to(_sketch_press_pos) <= 2.0 \
+					and Engine.get_process_frames() == _sketch_press_frame:
+				accept_event()
+				return
+			if _sketch_lmb_depth >= 1:
+				_sketch_abandoned_pos = _sketch_press_pos
+				_abandon_open_sketch_press()
+				_sketch_swallow_release = true
+				# The new press is the open gesture. Do not bump depth: the
+				# late mouse-up of the click we just replaced is swallowed,
+				# and this press stays armed for the drag.
+				_sketch_lmb_depth = 1
+			else:
+				_sketch_lmb_depth = 1
+				_sketch_swallow_release = false
+				_sketch_abandoned_pos = Vector2.INF
+			_sketch_press_frame = Engine.get_process_frames()
+			_sketch_press_pos = screen
+			var ray := _model_ray(screen)
 			var p2 = sketch_mode.ray_to_sketch(ray[0], ray[1])
 			if p2 != null:
 				var tool_key := _active_tool_key()
@@ -3350,8 +3458,9 @@ func _sketch_input(event: InputEvent) -> void:
 						and sketch_mode.entity_at(p2) == "":
 					_sketch_box_pending = true
 					_sketch_box_active = false
-					_sketch_box_start = mb.position
-					_note_click("sketch-box:SELECT", mb.position)
+					_sketch_box_start = screen
+					_sketch_box_additive = mb.shift_pressed or mb.ctrl_pressed or mb.meta_pressed
+					_note_click("sketch-box:SELECT", screen)
 				else:
 					# Line and Centerline place through a label (click skips the
 					# hit). Every other non-Select tool records a text-rect hit
@@ -3390,10 +3499,26 @@ func _sketch_input(event: InputEvent) -> void:
 						sketch_chrome.arm_dim_replace(shown)
 						_preview_length_typed = ""
 			accept_event()
+		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_release_is_stale(mb):
+			# Previous click's mouse-up. The open press keeps its box.
+			_sketch_swallow_release = false
+			_sketch_release_frame = Engine.get_process_frames()
+			accept_event()
+		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_lmb_depth > 1:
+			# Mouse-up of an older click, arriving after the next press.
+			_sketch_lmb_depth -= 1
+			_sketch_release_frame = Engine.get_process_frames()
+			accept_event()
+		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_lmb_depth <= 0:
+			accept_event()
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_dragging:
-			var ray_up := _model_ray(mb.position)
+			_sketch_lmb_depth = 0
+			_sketch_swallow_release = false
+			_sketch_release_frame = Engine.get_process_frames()
+			_sketch_press_inferred = false
+			var ray_up := _model_ray(_pointer_viewport_pos(mb))
 			var p2_up = sketch_mode.ray_to_sketch(ray_up[0], ray_up[1])
-			var travel_up := mb.position.distance_to(_sketch_press_pos)
+			var travel_up := _pointer_viewport_pos(mb).distance_to(_sketch_press_pos)
 			if sketch_mode.tool == SketchMode.Tool.TRIM:
 				sketch_mode.end_trim_drag()
 			elif travel_up < CLICK_SLOP and p2_up != null:
@@ -3408,14 +3533,26 @@ func _sketch_input(event: InputEvent) -> void:
 			_sketch_drag_moved = false
 			accept_event()
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and _sketch_box_pending:
+			_sketch_lmb_depth = 0
+			_sketch_swallow_release = false
+			_sketch_release_frame = Engine.get_process_frames()
+			_sketch_press_inferred = false
+			var end := _pointer_viewport_pos(mb)
+			var travel_box := end.distance_to(_sketch_box_start)
+			# Motions can be coalesced away. A release far from the press is
+			# still a box, on the first try.
+			if travel_box >= CLICK_SLOP:
+				_sketch_box_active = true
 			if _sketch_box_active:
-				_box_rect = Rect2(_sketch_box_start, mb.position - _sketch_box_start).abs()
-				_sketch_box_crossing = mb.position.x < _sketch_box_start.x
-				var n_box := sketch_mode.select_in_screen_rect(_box_rect, _sketch_box_crossing, \
-						mb.shift_pressed or mb.ctrl_pressed)
+				_box_rect = Rect2(_sketch_box_start, end - _sketch_box_start).abs()
+				_sketch_box_crossing = end.x < _sketch_box_start.x
+				var additive := _sketch_box_additive or mb.shift_pressed or mb.ctrl_pressed \
+						or mb.meta_pressed or Input.is_key_pressed(KEY_SHIFT) \
+						or Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META)
+				var n_box := sketch_mode.select_in_screen_rect(_box_rect, _sketch_box_crossing, additive)
 				_emit_sketch_select_status(n_box)
 			else:
-				var ray_box := _model_ray(mb.position)
+				var ray_box := _model_ray(end)
 				var p2_box = sketch_mode.ray_to_sketch(ray_box[0], ray_box[1])
 				if p2_box != null:
 					sketch_mode.click(p2_box)
@@ -3423,6 +3560,10 @@ func _sketch_input(event: InputEvent) -> void:
 			_clear_sketch_box()
 			accept_event()
 		elif not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and not _sketch_dragging:
+			_sketch_lmb_depth = 0
+			_sketch_swallow_release = false
+			_sketch_release_frame = Engine.get_process_frames()
+			_sketch_press_inferred = false
 			# Drag-draw completion only when the pointer moved — pure click-click
 			# must not double-fire the same anchor (zero-length segment).
 			if sketch_mode.has_pending_draw_point():
@@ -3444,8 +3585,10 @@ func _sketch_input(event: InputEvent) -> void:
 			sketch_mode.end_chain()
 			accept_event()
 	elif event is InputEventMouseMotion:
+		var motion := event as InputEventMouseMotion
+		_infer_sketch_press_from_motion(motion)
 		if _sketch_box_pending:
-			var box_at: Vector2 = (event as InputEventMouseMotion).position
+			var box_at := _pointer_viewport_pos(motion)
 			if box_at.distance_to(_sketch_box_start) >= CLICK_SLOP:
 				_sketch_box_active = true
 			if _sketch_box_active:
@@ -3521,10 +3664,12 @@ func _sketch_input(event: InputEvent) -> void:
 						status.emit("Deleted %d" % n)
 			KEY_ESCAPE:
 				if _sketch_box_active:
+					_sketch_lmb_depth = 0
 					_clear_sketch_box()
 					accept_event()
 					return
 				if _sketch_box_pending:
+					_sketch_lmb_depth = 0
 					_clear_sketch_box()
 				if not _consume_sketch_esc():
 					pass
