@@ -793,6 +793,20 @@ static func merge_sketches_ui(ctx: FilmContext, mode: String) -> void:
 		_fail("sketch chrome not visible for merge chips")
 		return
 	var merge_btn := find_button(sk_chrome, chip_label)
+	if merge_btn == null:
+		var more := find_button(sk_chrome, "… More")
+		if more is MenuButton:
+			var popup := (more as MenuButton).get_popup()
+			var item_id := -1
+			if popup != null:
+				for i in popup.item_count:
+					if str(popup.get_item_text(i)) == chip_label:
+						item_id = i
+						break
+			if item_id >= 0:
+				await activate_menu_id(ctx, more as MenuButton, item_id, FilmUICues.merge_join())
+				await wait_frames(ctx.tree, 4)
+				return
 	if not await click_control(ctx, merge_btn, FilmUICues.merge_join()):
 		return
 	await wait_frames(ctx.tree, 4)
