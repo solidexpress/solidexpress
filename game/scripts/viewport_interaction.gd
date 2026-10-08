@@ -6854,6 +6854,9 @@ func return_viewport_keys() -> void:
 	_press_numeric_target = null
 	var vp := get_viewport()
 	if vp != null:
+		var owner := vp.gui_get_focus_owner()
+		if owner is LineEdit:
+			SxUi.note_edit_released(owner as LineEdit)
 		vp.gui_release_focus()
 	grab_focus()
 

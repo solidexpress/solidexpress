@@ -2756,22 +2756,28 @@ func _flush_relayout_guard() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if ops_panel == null or not (event is InputEventMouseButton):
+	if not (event is InputEventMouseButton):
 		return
 	var mb := event as InputEventMouseButton
 	if mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	if not ops_panel.visible or not ops_panel.is_visible_in_tree():
+	# A press on Modify / Timeline sets the guard. The release often lands
+	# outside that rect (the next click, or a headless event whose position
+	# is not inside the panel), and the guard used to stay down so
+	# ChromeDock.rail_right kept the wide Modify column. Frame then shoved
+	# the sketch off the right edge.
+	if not mb.pressed:
+		if _relayout_button_down:
+			note_relayout_release()
+		return
+	if ops_panel == null or not ops_panel.visible or not ops_panel.is_visible_in_tree():
 		return
 	var pos := mb.global_position
 	if pos == Vector2.ZERO:
 		pos = mb.position
 	if not ops_panel.get_global_rect().has_point(pos):
 		return
-	if mb.pressed:
-		note_relayout_press(_now_msec())
-	else:
-		note_relayout_release()
+	note_relayout_press(_now_msec())
 
 
 func _hint_tick() -> void:

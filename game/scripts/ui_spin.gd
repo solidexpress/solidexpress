@@ -331,6 +331,12 @@ static func _note_arrow_press(spin: SpinBox, line: LineEdit, event: InputEvent) 
 static func _is_arrow_commit(spin: SpinBox, line: LineEdit) -> bool:
 	if spin == null:
 		return false
+	# A typed digit sets the spin value while the pointer is still parked on
+	# the arrows from the previous click. That is not an arrow commit, and
+	# releasing focus here turns the next digit into a view key ("10" → "1",
+	# status "No view for key 0").
+	if line != null and mid_entry(line):
+		return false
 	var marked := bool(spin.get_meta("_sx_arrow_press", false))
 	if marked:
 		spin.set_meta("_sx_arrow_press", false)
@@ -380,6 +386,7 @@ static func release_line_now(line: LineEdit, scheduled_gen: int = -1) -> void:
 	if scheduled_gen >= 0 and type_gen(line) != scheduled_gen:
 		return
 	line.set_meta("_sx_focus_claim", int(line.get_meta("_sx_focus_claim", 0)) + 1)
+	note_edit_released(line)
 	disarm_replace(line)
 	var parent := line.get_parent()
 	if parent is SpinBox:
@@ -483,6 +490,7 @@ static func replace_armed(line: LineEdit) -> bool:
 static func write_typed_text(line: LineEdit, text: String) -> void:
 	if line == null or not is_instance_valid(line):
 		return
+	var had_focus := line.has_focus()
 	bump_type_gen(line)
 	line.set_meta("_sx_replace_armed", false)
 	var gen := int(line.get_meta("_sx_select_gen", 0)) + 1
@@ -508,6 +516,26 @@ static func write_typed_text(line: LineEdit, text: String) -> void:
 		line.deselect()
 	# A text_changed handler may have disarmed the line while applying `text`.
 	mark_mid_entry(line, true)
+	# Setting SpinBox.value leaves edit mode, so the next digit of "10" is a
+	# view key ("No view for key 0") instead of a character. Take the keys
+	# back. focus_entered arms replace-all; a burst already in progress appends.
+	if had_focus and not line.has_focus():
+		line.grab_focus()
+		if line.has_focus() and not line.is_editing():
+			line.edit()
+		if typed_since_intent(line):
+			line.set_meta("_sx_replace_armed", false)
+		if str(line.text) != text:
+			line.text = text
+			line.caret_column = text.length()
+			line.deselect()
+	# SpinBox leaves edit mode when the key finishes, after this function
+	# returns. A same-frame grab is undone; take the keys back on the idle
+	# after that, and once more after the committed-text rewrite. Enter bumps
+	# the claim so this restore does not run after the viewport takes the keys.
+	var edit_claim := int(line.get_meta("_sx_edit_claim", 0))
+	_keep_line_editing_if.call_deferred(line, edit_claim)
+	_keep_line_editing_outer.call_deferred(line, edit_claim)
 	# Two defers: SpinBox applies its own line rewrite on the first idle.
 	_reassert_typed_outer.call_deferred(line)
 
@@ -556,6 +584,44 @@ static func _select_line_if_gen(line: LineEdit, gen: int) -> void:
 	if not line.is_editing():
 		line.edit()
 	line.select_all()
+
+
+## Enter / arrow-release bumps this so a deferred edit-restore from the last
+## digit does not grab the keys back after the viewport owns them.
+static func note_edit_released(line: LineEdit) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	line.set_meta("_sx_edit_claim", int(line.get_meta("_sx_edit_claim", 0)) + 1)
+
+
+static func _keep_line_editing_outer(line: LineEdit, claim: int) -> void:
+	_keep_line_editing_if.call_deferred(line, claim)
+
+
+static func _keep_line_editing_if(line: LineEdit, claim: int) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	if int(line.get_meta("_sx_edit_claim", 0)) != claim:
+		return
+	_keep_line_editing(line)
+
+
+static func _keep_line_editing(line: LineEdit) -> void:
+	if line == null or not is_instance_valid(line):
+		return
+	var text := str(line.get_meta("_sx_typed", ""))
+	if text == "":
+		return
+	if not line.has_focus():
+		line.grab_focus()
+	if line.has_focus() and not line.is_editing():
+		line.edit()
+	if typed_since_intent(line):
+		line.set_meta("_sx_replace_armed", false)
+	if str(line.text) != text and not _user_continued(str(line.text), text):
+		line.text = text
+		line.caret_column = text.length()
+		line.deselect()
 
 
 static func _reassert_typed_outer(line: LineEdit) -> void:

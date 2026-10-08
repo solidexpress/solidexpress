@@ -75,6 +75,9 @@ var _dim_blank_empty := false
 var _shown_numeric_key := ""
 ## SpinBox's deferred submit treats "23.22.5" as 23.22. Hold the previous value.
 var _dim_rejecting := false
+## Last value written by a rubber-band sync or a successful Enter. A rejected
+## string must restore this, not the spin value typing already truncated.
+var _dim_last_good := -1.0
 ## Distance LineEdit: ignore our own value/text writes, and hold the spin
 ## value from focus-in so an unparseable string cannot leave a truncated .value.
 var _distance_syncing := false
@@ -467,6 +470,7 @@ func set_dim_value(v: float) -> void:
 	if _dim_spin == null or _dim_editing:
 		return
 	_dim_blank_empty = false
+	_dim_last_good = v
 	_apply_slot_radius(v)
 	_dim_syncing = true
 	_dim_spin.value = v
@@ -481,9 +485,16 @@ func clear_dim_blank() -> void:
 	_dim_blank_empty = true
 	_dim_syncing = true
 	_dim_spin.set_value_no_signal(_dim_spin.min_value)
+	_dim_last_good = -1.0
 	var edit := _dim_spin.get_line_edit()
 	if edit != null:
 		edit.text = _empty_dim_text()
+		# The previous tool's digits still count as "typed since intent" on
+		# this same LineEdit, so the empty-blank reassert bailed and focus
+		# left the spin minimum ("0.01") on screen.
+		edit.set_meta("_sx_typed", "")
+		SxUi.note_focus_intent(edit)
+		SxUi.mark_mid_entry(edit, false)
 	_dim_syncing = false
 
 
@@ -1075,13 +1086,15 @@ func _on_dim_text_submitted(raw: String) -> void:
 		# Do not call apply() and do not emit dim_submitted. SpinBox still
 		# parses the same signal on a deferred connection and would store a
 		# truncated number; put the previous value back after that.
-		var keep := _dim_spin.value if _dim_spin != null else 0.0
+		var keep := _dim_last_good if _dim_last_good >= 0.0 else (
+				_dim_spin.value if _dim_spin != null else 0.0)
 		_dim_rejecting = true
 		dim_rejected.emit(raw)
 		_restore_rejected_dim.call_deferred(keep)
 		return
 	if _dim_spin == null:
 		return
+	_dim_last_good = float(parsed)
 	_dim_syncing = true
 	_dim_spin.value = float(parsed)
 	_dim_syncing = false

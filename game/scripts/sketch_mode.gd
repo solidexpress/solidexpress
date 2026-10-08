@@ -7630,8 +7630,14 @@ func _seat_full_circle_labels(cam: Camera3D, k: float) -> void:
 	var shaft_y := _shaft_lower_screen_y(cam)
 	var glyphs: Array[Rect2] = []
 	for g in constraint_glyph_screen_rects():
-		if typeof(g) == TYPE_DICTIONARY:
-			glyphs.append(g["rect"] as Rect2)
+		if typeof(g) != TYPE_DICTIONARY:
+			continue
+		# Coincident badges appear only while the pointer is on them. Seating
+		# the circle callout against that hover pile walks `22.5` off the rim
+		# between a label click and the next save.
+		if str(g.get("type", "")) == "coincident":
+			continue
+		glyphs.append(g["rect"] as Rect2)
 	for i in range(dimensions.size()):
 		var dim: Dictionary = dimensions[i]
 		if typeof(dim) != TYPE_DICTIONARY or not _seated_curve_dimension(dim):

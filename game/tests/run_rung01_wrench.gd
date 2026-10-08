@@ -750,7 +750,14 @@ func _ensure_body_selected(ctx: FilmContext, body: String) -> void:
 		return
 	# Back view (key 4): a top-down click lands on the sketch pad and reopens the sketch.
 	await _view_key(ctx, KEY_4)
-	await _click_model(ctx, Vector3(100, 10, 5), "Select wrench")
+	# y=10 is the shaft side. After the thickness edit that edge is a silhouette
+	# in Back view and the ray misses. Fall back to the bbox centre.
+	await _click_model(ctx, Vector3(100, 0, 7), "Select wrench")
+	if ctx.view.selected_body != body:
+		var bb: Dictionary = ctx.view.doc.measure_bbox(body)
+		if not bb.is_empty():
+			var mid: Vector3 = (bb["min"] as Vector3 + bb["max"] as Vector3) * 0.5
+			await _click_model(ctx, mid, "Select wrench centre")
 	ctx.main.interaction._refresh_selection_strip()
 	await process_frame
 
@@ -821,6 +828,8 @@ func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vec
 		print("  B13.4 Bottom-face pick")
 		bb0 = ctx.view.doc.measure_bbox(body)
 		_status_log.clear()
+	if label == "slot floor":
+		await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
 	await _click_model(ctx, point, label)
 	if label == "slot floor":
 		_b15_assert_slot_floor_edges(ctx, body)
@@ -862,6 +871,7 @@ func _refuse_slot_floor(ctx: FilmContext, body: String) -> void:
 	print("  B13.9 Refused fillet is clean")
 	await _arm_fillet(ctx, 1.5)
 	await _view_key(ctx, KEY_3)
+	await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
 	await _click_model(ctx, point, "Slot floor")
 	if ctx.view.selected_edges.is_empty():
 		_slot_floor_error = str(ctx.view.doc.last_graph_error())
