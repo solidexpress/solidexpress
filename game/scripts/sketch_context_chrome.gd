@@ -1341,18 +1341,19 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 		if line != null and line.has_focus() and not line.is_editing():
 			line.edit()
 			_distance_replace_next = true
-		if line != null and (_distance_replace_next or SxUi.replace_armed(line)):
-			var ch := SxUi.numeric_key_char(k)
-			if ch != "":
-				_distance_replace_next = false
-				_distance_select_gen += 1
-				SxUi.write_typed_text(line, ch)
-				accept_event()
-				return
-		if _distance_replace_next:
+		# Every digit, not only the first. Setting Distance .value reformats
+		# "2" to "2.0" (step 0.5); a native "." then "5" becomes "2.05".
+		var ch := SxUi.numeric_key_char(k)
+		if ch != "" and line != null:
+			var next := ch
+			if not _distance_replace_next and not SxUi.replace_armed(line) \
+					and not line.has_selection():
+				next = SxUi.compose_typed_char(line, ch)
 			_distance_replace_next = false
 			_distance_select_gen += 1
-			_select_distance_all()
+			SxUi.write_typed_text(line, next)
+			accept_event()
+			return
 
 
 func _on_dim_edit_gui_input(event: InputEvent) -> void:

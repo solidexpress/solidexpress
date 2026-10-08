@@ -360,6 +360,8 @@ static func _is_zero_padded(current: String, typed: String) -> bool:
 
 ## Next line body after one numeric key. Armed replace (or an existing
 ## selection) becomes just `ch`; otherwise `ch` is appended. Suffix stripped.
+## A SpinBox may have padded the snapshot ("2" or "2." shown as "2.0"). Append
+## to that snapshot so the next key makes "2.5", not "2.05".
 static func compose_typed_char(line: LineEdit, ch: String) -> String:
 	if line == null or ch == "":
 		return ch
@@ -368,7 +370,22 @@ static func compose_typed_char(line: LineEdit, ch: String) -> String:
 	if line.has_selection():
 		return ch
 	var body := _numeric_body(line.text)
-	return body + ch
+	var typed := _numeric_body(str(line.get_meta("_sx_typed", "")))
+	var base := body
+	if typed != "" and _display_follows_typed(body, typed):
+		base = typed
+	return base + ch
+
+
+## True when the visible body is the typed snapshot, a zero-pad of it
+## ("2" / "2." → "2.0"), or a dropped trailing dot ("2." → "2").
+static func _display_follows_typed(display: String, typed: String) -> bool:
+	if display == typed or _is_zero_padded(display, typed):
+		return true
+	if typed.ends_with("."):
+		var stem := typed.substr(0, typed.length() - 1)
+		return display == stem or _is_zero_padded(display, stem)
+	return false
 
 
 ## Digit, keypad digit, '.', or '-' from a key event. Empty when it is not one.
