@@ -172,7 +172,12 @@ func test_first_drag_and_nearest() -> void:
 	await _click_at(vp, stray)
 	await process_frame
 	await _press(vp, on_near, false)
-	var jitter := on_near + Vector2(4.0, 0.0)
+	# Stay under CLICK_SLOP (12 px) and step along the line, not toward its neighbor.
+	var along := _uv(ctx, sm, Vector2(29.0, -50.0))
+	var step: Vector2 = along - on_near
+	if step.length() > 8.0:
+		step = step.normalized() * 8.0
+	var jitter := on_near + step
 	await _motions(vp, on_near, jitter, false)
 	await _release(vp, jitter, false)
 	await process_frame
