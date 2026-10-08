@@ -88,6 +88,9 @@ const WHEEL_ORBIT_PX := 24.0
 const KEY_ZOOM_FACTOR := 0.9
 const MIN_PITCH := deg_to_rad(-89.0)
 const MAX_PITCH := deg_to_rad(89.0)
+## Standard Top/Bottom sit on the pole. Orbit still stops at ±89 so a drag
+## can fold over the pole instead of hitting a dead look_at.
+const STANDARD_PITCH_LIMIT := PI * 0.5
 const VIEWS_CFG := "user://views.cfg"
 
 ## name -> {yaw, pitch, distance, pivot, projection}
@@ -428,40 +431,13 @@ func _handle_nav_key(k: InputEventKey) -> bool:
 			# F / Home → selection (or all); Shift+F / Shift+Home → always all.
 			frame_selection_or_all(k.shift_pressed)
 			return true
-		KEY_1:  # front: looking along -Y in model space (Z-up kernel)
+		KEY_1, KEY_2, KEY_3, KEY_4, KEY_6, KEY_7, KEY_8:
 			if sketch_orientation_locked:
 				return false
-			apply_standard_view(deg_to_rad(0.0), deg_to_rad(0.0))
-			return true
-		KEY_2:  # right: looking along -X
-			if sketch_orientation_locked:
+			var spec := standard_view_for_key(k.keycode)
+			if spec.is_empty():
 				return false
-			apply_standard_view(deg_to_rad(90.0), deg_to_rad(0.0))
-			return true
-		KEY_3:  # top: looking down model +Z (world +Y)
-			if sketch_orientation_locked:
-				return false
-			apply_standard_view(deg_to_rad(0.0), deg_to_rad(89.0))
-			return true
-		KEY_4:  # back: looking along +Y
-			if sketch_orientation_locked:
-				return false
-			apply_standard_view(deg_to_rad(180.0), deg_to_rad(0.0))
-			return true
-		KEY_6:  # left: looking along +X
-			if sketch_orientation_locked:
-				return false
-			apply_standard_view(deg_to_rad(-90.0), deg_to_rad(0.0))
-			return true
-		KEY_8:  # bottom: looking up model +Z
-			if sketch_orientation_locked:
-				return false
-			apply_standard_view(deg_to_rad(0.0), deg_to_rad(-89.0))
-			return true
-		KEY_7:  # isometric
-			if sketch_orientation_locked:
-				return false
-			apply_standard_view(deg_to_rad(-35.0), deg_to_rad(40.0))
+			apply_standard_view_id(str(spec["id"]))
 			return true
 		KEY_0:
 			return not sketch_orientation_locked
@@ -668,18 +644,66 @@ func set_view(new_yaw: float, new_pitch: float, animated := false) -> void:
 	_update_transform()
 
 
-## Standard view (Front / Right / Top / Iso): set orientation, then zoom-extents
-## so the objects stay framed. No-op while sketch orientation is locked.
+## Number-key views. Menu bar, HUD View list, and keys 1/2/3/4/6/7/8 all call
+## apply_standard_view_id so the framing cannot drift.
+## `ortho` is true for the six axis-aligned views (Front…Bottom).
+static func standard_view_table() -> Array:
+	return [
+		{"id": "front", "label": "Front", "key": KEY_1, "yaw": 0.0, "pitch": 0.0, "ortho": true},
+		{"id": "back", "label": "Back", "key": KEY_4, "yaw": 180.0, "pitch": 0.0, "ortho": true},
+		{"id": "left", "label": "Left", "key": KEY_6, "yaw": -90.0, "pitch": 0.0, "ortho": true},
+		{"id": "right", "label": "Right", "key": KEY_2, "yaw": 90.0, "pitch": 0.0, "ortho": true},
+		{"id": "top", "label": "Top", "key": KEY_3, "yaw": 0.0, "pitch": 90.0, "ortho": true},
+		{"id": "bottom", "label": "Bottom", "key": KEY_8, "yaw": 0.0, "pitch": -90.0, "ortho": true},
+		{"id": "iso", "label": "Isometric", "key": KEY_7, "yaw": -35.0, "pitch": 40.0, "ortho": false},
+	]
+
+
+static func standard_view_by_id(id: String) -> Dictionary:
+	for entry in standard_view_table():
+		if str(entry["id"]) == id:
+			return entry
+	return {}
+
+
+static func standard_view_for_key(keycode: Key) -> Dictionary:
+	for entry in standard_view_table():
+		if int(entry["key"]) == int(keycode):
+			return entry
+	return {}
+
+
+## Same pose the number key, the HUD list, and View → Orientation use.
+func apply_standard_view_id(id: String, animated := false) -> bool:
+	var spec := standard_view_by_id(id)
+	if spec.is_empty():
+		return false
+	apply_standard_view(
+		deg_to_rad(float(spec["yaw"])),
+		deg_to_rad(float(spec["pitch"])),
+		animated,
+		true,
+		bool(spec["ortho"]))
+	return true
+
+
+## Standard view: exact yaw/pitch (Top/Bottom on the pole), optional ortho,
+## then zoom-extents with the pivot on the part. No-op while sketch
+## orientation is locked.
 func apply_standard_view(
-		new_yaw: float, new_pitch: float, animated := false, fit := true) -> void:
+		new_yaw: float, new_pitch: float, animated := false, fit := true,
+		orthogonal := false) -> void:
 	if sketch_orientation_locked:
 		return
 	var from := capture_pose()
 	yaw = new_yaw
-	pitch = clampf(new_pitch, MIN_PITCH, MAX_PITCH)
+	pitch = clampf(new_pitch, -STANDARD_PITCH_LIMIT, STANDARD_PITCH_LIMIT)
+	if orthogonal:
+		projection = PROJECTION_ORTHOGONAL
+	_look_at_content = true
 	_update_transform()
 	if fit:
-		frame_selection_or_all(false)
+		frame_selection_or_all(false, true)
 	if animated and is_inside_tree():
 		var to := capture_pose()
 		apply_pose(from)
@@ -720,7 +744,7 @@ func _animate_pose(to: Dictionary, duration := 0.25) -> void:
 		_view_tween.kill()
 		_view_tween = null
 	var end_yaw := float(to.get("yaw", yaw))
-	var end_pitch := clampf(float(to.get("pitch", pitch)), MIN_PITCH, MAX_PITCH)
+	var end_pitch := clampf(float(to.get("pitch", pitch)), -STANDARD_PITCH_LIMIT, STANDARD_PITCH_LIMIT)
 	var end_dist := float(to.get("distance", distance))
 	var end_pivot: Vector3 = to.get("pivot", pivot) as Vector3
 	var end_proj := int(to.get("projection", projection)) as ProjectionType
@@ -761,21 +785,21 @@ func _animate_pose(to: Dictionary, duration := 0.25) -> void:
 
 ## Frame selection when anything is selected; otherwise all bodies.
 ## Pass `force_all=true` for Shift+F / “fit whole model”.
-func frame_selection_or_all(force_all := false) -> void:
+func frame_selection_or_all(force_all := false, center_on_bounds := false) -> void:
 	if _sketch_fit_should_run():
 		sketch_fit.call()
 		return
 	_clear_stale_sketch_fit()
 	if not force_all and view != null and view.selected_body != "":
-		if frame_selection():
+		if frame_selection(center_on_bounds):
 			framed.emit("Framed selection")
 			return
-	frame_contents()
+	frame_contents(center_on_bounds)
 	framed.emit("Framed all")
 
 
 ## Frames the current selection AABB (model → world). Returns false if empty.
-func frame_selection() -> bool:
+func frame_selection(center_on_bounds := false) -> bool:
 	if view == null:
 		return false
 	var bb: Dictionary = view.selection_bbox()
@@ -796,23 +820,27 @@ func frame_selection() -> bool:
 		var a := AABB(w, Vector3.ZERO)
 		united = a if first else united.merge(a)
 		first = false
-	_frame_world_aabb(united)
+	_frame_world_aabb(united, center_on_bounds)
 	return true
 
 
 ## Frames all visible bodies (world-space AABB union); origin fallback when empty.
-func frame_contents() -> void:
+## `center_on_bounds` keeps the pivot on the AABB center (standard views).
+## Frame / F still shifts the pivot into the chrome-free canvas.
+func frame_contents(center_on_bounds := false) -> void:
 	if _sketch_fit_should_run():
 		sketch_fit.call()
 		return
 	_clear_stale_sketch_fit()
 	if not _has_visible_body():
+		# No part to centre on. Keep the empty-grid aim (origin low in the
+		# window) so a New document's ground stays clickable.
 		_look_at_content = false
 		pivot = Vector3.ZERO
 		distance = DEFAULT_DISTANCE
 		_update_transform()
 		return
-	_frame_world_aabb(_visible_contents_aabb())
+	_frame_world_aabb(_visible_contents_aabb(), center_on_bounds)
 
 
 func _has_visible_body() -> bool:
@@ -847,7 +875,7 @@ func _visible_contents_aabb() -> AABB:
 ## distance so every corner fits the chrome-free canvas (same free rect as
 ## sketch fit), then pan so the AABB sits in that rect rather than under the
 ## left rail.
-func _frame_world_aabb(united: AABB) -> void:
+func _frame_world_aabb(united: AABB, center_on_bounds := false) -> void:
 	_look_at_content = true
 	pivot = united.get_center()
 	distance = _fit_distance_for_world_aabb(united)
@@ -859,9 +887,15 @@ func _frame_world_aabb(united: AABB) -> void:
 	if vp_size.y > 1.0:
 		canvas = sketch_fit_canvas_rect(vp_size)
 		if canvas.size.x > 1.0 and canvas.size.y > 1.0:
-			distance *= maxf(vp_size.x / canvas.size.x, vp_size.y / canvas.size.y)
+			if center_on_bounds:
+				distance *= _centered_fit_scale(vp_size, canvas)
+			else:
+				distance *= maxf(vp_size.x / canvas.size.x, vp_size.y / canvas.size.y)
 	distance = clampf(distance, MIN_DISTANCE, MAX_DISTANCE)
 	_update_transform()
+	# Standard views look at the part. Frame / F shifts into the free canvas.
+	if center_on_bounds:
+		return
 	if canvas.size.x > 1.0 and canvas.size.y > 1.0:
 		var dc := canvas.get_center() - vp_size * 0.5
 		if dc.length_squared() >= 1e-8:
@@ -871,6 +905,19 @@ func _frame_world_aabb(united: AABB) -> void:
 			pivot -= basis.x * (dc.x * mm_per_px)
 			pivot += basis.y * (dc.y * mm_per_px)
 			_update_transform()
+
+
+## Zoom so a viewport-centered part still clears the left rail. The pivot
+## stays on the bounds center, so the part stays in the middle of the window.
+func _centered_fit_scale(vp_size: Vector2, canvas: Rect2) -> float:
+	var vp_c := vp_size * 0.5
+	var left_room := vp_c.x - canvas.position.x
+	var right_room := canvas.end.x - vp_c.x
+	var top_room := vp_c.y - canvas.position.y
+	var bot_room := canvas.end.y - vp_c.y
+	var half_w := maxf(minf(left_room, right_room), 32.0)
+	var half_h := maxf(minf(top_room, bot_room), 32.0)
+	return maxf(vp_size.x / (half_w * 2.0), vp_size.y / (half_h * 2.0))
 
 
 ## Minimum orbit distance so `united` fills the view with FRAME_PADDING margin.
@@ -1375,6 +1422,15 @@ func _load_named_views() -> void:
 func _view_up() -> Vector3:
 	if sketch_orientation_locked and _sketch_view_up.length_squared() > 1e-8:
 		return _sketch_view_up
+	# At Top/Bottom, world up is the view axis and look_at collapses.
+	# Screen-up is the pitch-0 look direction (the far edge of Front),
+	# flipped for Bottom so the two poles don't share a dead basis.
+	if absf(absf(pitch) - STANDARD_PITCH_LIMIT) < 1e-4:
+		var into := Vector3(-sin(yaw), 0.0, -cos(yaw))
+		if pitch < 0.0:
+			into = -into
+		if into.length_squared() > 1e-8:
+			return into.normalized()
 	return Vector3.UP
 
 
@@ -1383,11 +1439,12 @@ func _update_transform() -> void:
 		# Keep apparent size consistent with perspective: frustum height at the
 		# pivot for the current fov. Wheel zoom then works in ortho too.
 		size = 2.0 * distance * tan(deg_to_rad(fov) / 2.0)
-	var offset := Vector3(
-		cos(pitch) * sin(yaw),
-		sin(pitch),
-		cos(pitch) * cos(yaw)
-	) * distance
+	var sp := sin(pitch)
+	var cp := cos(pitch)
+	if absf(absf(pitch) - STANDARD_PITCH_LIMIT) < 1e-5:
+		sp = signf(pitch)
+		cp = 0.0
+	var offset := Vector3(cp * sin(yaw), sp, cp * cos(yaw)) * distance
 	var pos := pivot + offset
 	var look_target := _look_target_for(pos)
 	var up := _view_up()

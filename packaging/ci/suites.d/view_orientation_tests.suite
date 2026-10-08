@@ -1,0 +1,2 @@
+script=tests/run_view_orientation_tests.gd
+tier=ci

@@ -8,9 +8,9 @@ extends SceneTree
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-const TOP_PITCH := deg_to_rad(89.0)
+const TOP_PITCH := deg_to_rad(90.0)
 const BACK_PITCH := 0.0
-const BOTTOM_PITCH := deg_to_rad(-89.0)
+const BOTTOM_PITCH := deg_to_rad(-90.0)
 const VIEW_EPS := 0.01
 const ARMED_ENTER := "Fillet r=10.00 — edit Radius, click edges, Enter"
 const CANCELLED := "No edges selected — cancelled"

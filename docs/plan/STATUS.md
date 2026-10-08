@@ -2,10 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
-## sx-037 A17 / N20 — chip clicks stay off the sketch; undo clears suggestions
-- A Line-tool click on the Centerline chip (and any other chip row, finish-bar, or HUD control) is consumed by the UI. It does not start a line, so Ctrl+Shift+Z cannot bring back a phantom segment from that click.
-- Undo and redo clear `Parallel?` / `Equal?` / `Perpendicular?` instead of leaving them up after a restored centerline.
-- Gate: `run_rung01_sx037_chipclick.gd` (`tier=ci`).
+## View menu Orientation — sx-037 A16
+- Menu-bar View → Orientation lists Front, Back, Left, Right, Top, Bottom, Isometric with shortcuts 1, 4, 6, 2, 3, 8, 7. The menu, the HUD View list, and those number keys call `OrbitCamera.apply_standard_view_id`.
+- Cardinal views are orthographic and axis-aligned (Top/Bottom at ±90°, not ±89°) with the pivot on the part. A straight top view looks through the open jaw, so a click in that slot does not select; the head click is on the remaining meat. Isometric stays the angled view and uses the same framing path. An empty New document keeps the biased grid aim.
+- Gate: `run_view_orientation_tests.gd` (`tier=ci`).
 
 ## sx-037 L12 — Select hover Δ, thin-line pick, Esc, stale ✕
 - Select hover shows the measure ✕ with the entity's Δu/Δv. The mark clears when the pointer leaves, on F / Shift+F / HUD Frame, and on deselect or an empty-ground click (the `0.00` bound label goes with it). A shaft-line click uses a screen-pixel pick radius and still selects through a few pixels of jitter. The next Esc is `Selection cleared — Esc again exits the sketch`.
