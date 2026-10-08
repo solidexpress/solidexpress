@@ -83,6 +83,7 @@ func _ready() -> void:
 	property_panel = PropertyPanel.new()
 	property_panel.view = view
 	property_panel.status.connect(func(t: String) -> void: status.emit(t))
+	property_panel.closed.connect(_on_property_panel_closed)
 	outer.add_child(property_panel)
 
 	_editor_box = VBoxContainer.new()
@@ -286,6 +287,10 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	if f["suppressed"]:
 		name_btn.modulate = Color(1, 1, 1, 0.45)
 	name_btn.pressed.connect(_select_feature.bind(fid))
+	# A left press focuses this button before gui_input runs, and the
+	# double-click release focuses it again. While Distance is open that
+	# steals the keys (1/4 become Front/Back). Hand them back.
+	name_btn.focus_entered.connect(_on_row_focus_entered.bind(fid))
 	name_btn.gui_input.connect(func(ev: InputEvent) -> void:
 		if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F2:
 			var focused := get_viewport().gui_get_focus_owner() if get_viewport() != null else null
@@ -491,10 +496,29 @@ func _edit_sketch_feature(fid: String) -> void:
 
 ## Distance is the schema key `distance`, not whichever spin happens to be first
 ## (a primitive's first spin is W). End is the enum beside it.
+## The actual grab is deferred inside the property panel so it lands after
+## this click's focus assignment.
 func _focus_extrude_distance() -> void:
 	if property_panel == null or not property_panel.visible:
 		return
 	property_panel.focus_schema_key("distance")
+
+
+func _on_row_focus_entered(fid: String) -> void:
+	if property_panel == null or not property_panel.visible:
+		return
+	if property_panel.editing_feature_id() != fid:
+		return
+	_focus_extrude_distance()
+
+
+## The JSON toggle lives outside the property panel. Closing Distance (Esc
+## or an empty-viewport click) must hide it too, or it stays drawn under
+## the feature list.
+func _on_property_panel_closed() -> void:
+	if _editor_box != null:
+		_editor_box.visible = false
+	_clamp_height()
 
 
 func _begin_rename(fid: String, row: HBoxContainer, name_btn: Button) -> void:
