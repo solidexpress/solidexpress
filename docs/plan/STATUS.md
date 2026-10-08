@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## sx-037 L12 — Select hover Δ, thin-line pick, Esc, stale ✕
+- Select hover shows the measure ✕ with the entity's Δu/Δv. The mark clears when the pointer leaves, on F / Shift+F / HUD Frame, and on deselect or an empty-ground click (the `0.00` bound label goes with it). A shaft-line click uses a screen-pixel pick radius and still selects through a few pixels of jitter. The next Esc is `Selection cleared — Esc again exits the sketch`.
+- Gate: `run_rung01_l12_measure.gd` (`tier=ci`).
+
 ## sx-037 N7 — armed rail tool shows a 3 px accent bar
 - The pressed fill was the same accent as the 3 px left border, so the armed Jaw / Rect / Circle button read as a flat blue fill. The fill is now a darker accent, the border is pure accent with square corners and no blend, and a 3 px `RailAccentBar` is drawn on top inside the button (the rail scroll clips anything that uses an expand margin).
 - Gate: `run_rung01_replan16_chrome.gd` C3 (left 3 px column is accent, the next pixel is not, hover is not, only one bar lit).

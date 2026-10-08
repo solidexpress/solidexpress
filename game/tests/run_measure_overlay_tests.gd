@@ -295,6 +295,13 @@ func test_esc_clears_pair(main) -> void:
 	check(view.selected_body == a, "Esc cleared measure before selection")
 
 
+func _overlay_has_zero(mo: MeasureOverlay) -> bool:
+	for lab in mo.labels:
+		if str(lab["text"]) == "0.00" or str(lab["text"]).begins_with("0.00"):
+			return true
+	return false
+
+
 func test_screen_font_stable() -> void:
 	print("- measure font is DPI-stable (not viewport-tied)")
 	check(MeasureOverlay.FONT_PX == 14, "FONT_PX == 14")
@@ -322,6 +329,10 @@ func test_place_ghost_nearest_corner(main) -> void:
 	ix.insert_at_center("box")
 	await process_frame
 	check(ix.is_placing(), "place armed")
+	# Arming place deselects, which drops a hover ✕. Plant again for the comparison.
+	mo.update_hover(a, bb_a["max"] as Vector3)
+	mo.update_hover("", Vector3.ZERO)
+	check(mo.has_anchor(), "comparison ✕ planted after place cleared the selection")
 	# Put the ghost well to the +X of the anchor (empty ground).
 	ix._update_ghost(ix._model_to_screen(Vector3(40, 0, 0)))
 	check(mo.is_showing_pair(), "pair dims while placing with anchor")
@@ -366,24 +377,27 @@ func test_move_uses_transport_measure(main) -> void:
 	var side: String = view.insert_primitive("box", Vector3(0, 80, 0))
 	var mo: MeasureOverlay = ix.measure_overlay
 	mo.clear_all()
-	# Plant X on B, select A (the body we'll move).
+	# A hover ✕ does not survive selecting a body, and an idle miss does not
+	# leave one behind.
 	var bb_b: Dictionary = view.doc.measure_bbox(b)
-	mo.relocate_anchor(b, (bb_b["min"] as Vector3 + bb_b["max"] as Vector3) * 0.5)
+	var b_mid_idle := (bb_b["min"] as Vector3 + bb_b["max"] as Vector3) * 0.5
+	mo.relocate_anchor(b, b_mid_idle)
 	mo.update_hover("", Vector3.ZERO)
+	check(mo.has_anchor(), "hover ✕ planted before select")
 	view.select_entity(a, "")
 	await process_frame
+	check(not mo.has_anchor() and mo.marks.is_empty(), "selecting clears the hover ✕")
 	ix._update_transport_measure(ix._model_to_screen(Vector3(0, 0, 0)))
-	check(mo.has_anchor(), "anchor kept with selection")
-	check(mo.is_showing_pair(), "idle selection dims to perpendicular on subject")
-	var idle_b: Vector3 = mo._last_b as Vector3
-	var expected_idle := view.closest_surface_point(a, mo.anchor_point as Vector3)
-	check(idle_b.distance_to(expected_idle) < 1e-3,
-			"idle B is perpendicular foot onto selected body")
+	check(not mo.has_anchor(), "idle miss does not restore an ✕")
+	check(not _overlay_has_zero(mo), "idle miss leaves no 0.00 label")
 
 	# Begin move and drag — measure stays visible; dims track live corners.
+	mo.relocate_anchor(b, b_mid_idle)
+	mo.update_hover("", Vector3.ZERO)
 	ix._begin_move_body(ix._model_to_screen(Vector3(-40, 0, 2.5)), Vector3(-40, 0, 2.5))
 	check(ix._drag_mode == ViewportInteraction.DragMode.MOVE_BODY, "move armed")
 	check(not ix._hide_measure_chrome(), "measure chrome visible during move")
+	var before_pt: Vector3 = ix._closest_corner_of(ix._transport_subject_corners(), mo.anchor_point as Vector3)
 	ix._apply_live_move(Vector3(10, 0, 0))
 	ix._update_transport_measure(ix._model_to_screen(Vector3(0, 0, 0)))
 	check(mo.is_showing_pair(), "pair dims while moving")
@@ -391,7 +405,7 @@ func test_move_uses_transport_measure(main) -> void:
 	var live_b: Vector3 = mo._last_b as Vector3
 	check(live_b.distance_to(ix._closest_corner_of(live_corners, mo.anchor_point as Vector3) as Vector3) < 1e-3,
 			"live B tracks moved corners")
-	check(live_b.x > idle_b.x + 1.0, "moved corner advanced in +X")
+	check(live_b.x > before_pt.x + 1.0, "moved corner advanced in +X")
 
 	# Plant a second mark on side (keeps B as prev), then touch B to promote.
 	var b_mid: Vector3 = Vector3(
