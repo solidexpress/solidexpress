@@ -2646,6 +2646,13 @@ func _gui_input(event: InputEvent) -> void:
 		# Dim / distance already own the key; do not re-seed a single digit.
 		if event is InputEventKey and _sketch_keys_blocked():
 			return
+		# `_gui_input` position is local. A chip that `_input` already treated
+		# as chrome must not fall through here and become a line point.
+		if event is InputEventMouse:
+			var gp := _pointer_viewport_pos(event as InputEventMouse)
+			if _over_chrome(gp) or not _viewport_owns_pointer(gp):
+				accept_event()
+				return
 		_sketch_input(event)
 		return
 	if _handle_model_pointer(event):
@@ -2731,9 +2738,11 @@ func _viewport_owns_pointer(event_pos: Vector2 = Vector2.INF) -> bool:
 	# Stale hover (toolbar / dim blank from a previous click) must not drop a
 	# later canvas click whose event position is no longer on that sibling —
 	# WP5 push_input parks the pointer, but headless hover can lag.
+	# Hit both rect spaces: GUI picking uses the canvas transform, and a chip
+	# can contain the pointer in only one of them. Missing that hit used to
+	# start a line and mark the event handled, so the chip never saw it.
 	if event_pos != Vector2.INF:
-		var hr: Rect2 = h.get_global_rect()
-		if hr.has_point(event_pos):
+		if _pointer_hits_control(h, event_pos):
 			return false
 		return true
 	return false
@@ -2835,17 +2844,72 @@ func _over_chrome(global_mouse: Vector2) -> bool:
 			return true
 	if _over_sketch_rail(global_mouse):
 		return true
-	if sketch_chrome != null and sketch_chrome.visible:
-		for child_name in ["FinishBar", "VariantBar"]:
-			var bar := sketch_chrome.find_child(child_name, true, false) as Control
-			if bar == null or not bar.visible:
-				continue
-			var br: Rect2 = bar.get_global_rect()
-			if br.get_area() < 4.0 or br.get_area() > max_area:
-				continue
-			if br.has_point(global_mouse):
-				return true
+	# Every chip row, the finish bar, and the view HUD — not only VariantBar.
+	# A container rect that is zero (not laid out yet) or larger than the area
+	# cap used to let the Centerline chip click through as a line point.
+	# IGNORE parents (the full-rect chrome, the action-bar stack) are skipped;
+	# their buttons are not.
+	if sketch_chrome != null and sketch_chrome.is_visible_in_tree():
+		if _tree_blocks_pointer(sketch_chrome, global_mouse, max_area):
+			return true
+	if view_hud != null and view_hud.is_visible_in_tree():
+		if _tree_blocks_pointer(view_hud, global_mouse, max_area):
+			return true
 	return false
+
+
+## True when `pos` lies on `ctrl` in either viewport space GUI and `_input` use.
+func _pointer_hits_control(ctrl: Control, pos: Vector2) -> bool:
+	if ctrl == null or not is_instance_valid(ctrl):
+		return false
+	if ctrl.get_global_rect().has_point(pos):
+		return true
+	var xf := ctrl.get_global_transform_with_canvas()
+	return Rect2(xf.origin, xf.get_scale() * ctrl.size).has_point(pos)
+
+
+func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
+	if ctrl == null or not is_instance_valid(ctrl) or not ctrl.visible:
+		return false
+	# Full-rect IGNORE shells (SketchContextChrome, ActionBar) must not eat
+	# the canvas. Buttons and STOP rows still do.
+	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE and not (ctrl is BaseButton):
+		return false
+	var rects: Array[Rect2] = [ctrl.get_global_rect()]
+	var xf := ctrl.get_global_transform_with_canvas()
+	rects.append(Rect2(xf.origin, xf.get_scale() * ctrl.size))
+	for r in rects:
+		var area := r.get_area()
+		if area < 4.0 or area > max_area:
+			continue
+		if r.has_point(pos):
+			return true
+	return false
+
+
+func _tree_blocks_pointer(node: Node, pos: Vector2, max_area: float) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var ctrl := node as Control
+	if ctrl != null:
+		if not ctrl.is_visible_in_tree():
+			return false
+		if _control_blocks_at(ctrl, pos, max_area):
+			return true
+	for child in node.get_children():
+		if _tree_blocks_pointer(child, pos, max_area):
+			return true
+	return false
+
+
+func _pointer_viewport_pos(event: InputEventMouse) -> Vector2:
+	# `_input` fills both fields with viewport coordinates. `_gui_input`
+	# rewrites `position` into Control-local space. Headless push_input
+	# sometimes sets only `position`.
+	var gp := event.global_position
+	if gp == Vector2.ZERO and event.position != Vector2.ZERO:
+		return event.position
+	return gp
 
 
 func _update_hover(screen_pos: Vector2) -> void:

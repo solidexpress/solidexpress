@@ -1084,6 +1084,12 @@ func can_redo() -> bool:
 	return not _redo_stack.is_empty()
 
 
+## True while undo() / redo() is applying a snapshot. Selection-chip refresh
+## during that window must hide relation suggestions instead of rebuilding them.
+func is_undo_restoring() -> bool:
+	return _undo_restoring
+
+
 func undo() -> String:
 	if _undo_stack.is_empty() or sketch == null:
 		return ""

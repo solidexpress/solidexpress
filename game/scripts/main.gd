@@ -1698,6 +1698,11 @@ func _variant_kind_for(tool: int) -> String:
 func _on_sketch_selection_chips() -> void:
 	if sketch_chrome == null or not sketch_mode.active:
 		return
+	# Undo/redo clears the selection. Rebuilding Parallel? / Equal? /
+	# Perpendicular? here left those chips up through the next redo (sx-037 N20).
+	if sketch_mode.is_undo_restoring():
+		sketch_chrome.hide_selection_actions()
+		return
 	var acts: Array = sketch_mode.selection_actions()
 	for verb in sketch_mode.propose_verbs():
 		if verb not in acts:
