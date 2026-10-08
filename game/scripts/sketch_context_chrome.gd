@@ -519,6 +519,13 @@ func face_pick_explicit() -> bool:
 	return _face_pick_explicit
 
 
+## Drop a pending Up To Surface pick. A face id already stored stays so Save
+## can put it back; only the one-shot that Esc would cancel is cleared.
+func disarm_face_pick() -> void:
+	_face_pick_armed = false
+	_face_pick_explicit = false
+
+
 ## Empty id, Face: none, and disable Extrude while End is Up To Surface.
 func clear_up_to_face() -> void:
 	up_to_face_id = ""
@@ -1295,6 +1302,11 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 				var line := _extrude_spin.get_line_edit()
 				if line != null and line.has_focus():
 					line.release_focus()
+			# After a refusal the Distance field must not spend this Esc on
+			# blur alone. Same ladder the canvas uses.
+			var ix := _host_interaction()
+			if ix != null and ix.has_method("consume_refusal_exit_ladder"):
+				ix.consume_refusal_exit_ladder()
 			accept_event()
 			return
 		if not _is_numeric_replace_key(k, true):
@@ -1652,6 +1664,9 @@ func show_for_session(on: bool, fid: String = "") -> void:
 			refresh_contours(sketch_mode.sketch)
 	else:
 		_finish_hidden_frame = Engine.get_process_frames()
+		# Hide must not leave the one-shot armed. Part-mode Esc would otherwise
+		# print "Up To Surface face pick cancelled" after the sketch is gone.
+		disarm_face_pick()
 		_variant_bar.visible = false
 		hide_selection_actions()
 		_contour_bar.visible = false

@@ -1539,6 +1539,7 @@ func _start_sketch_on_face(face_id: String, body_id: String) -> void:
 			"host": sketch_mode.target_fid,
 			"normal": normal,
 			"side": side,
+			"face": face_id,
 		})
 		_on_sketch_session_started(plane_msg)
 		return
@@ -1553,6 +1554,7 @@ func _start_sketch_on_ground() -> void:
 
 
 func _on_sketch_session_started(msg: String) -> void:
+	_remember_sketch_host_face()
 	_update_panel_visibility()
 	_sync_world_background()
 	interaction.refresh_selection_chrome()
@@ -1579,6 +1581,13 @@ func _on_sketch_session_started(msg: String) -> void:
 
 
 func _on_sketch_session_ended() -> void:
+	# Cancel and save both land here. End the finish-bar face pick before the
+	# next part-mode Esc, and drop the host face so its card does not cover
+	# the rail. A body the extrude finish just selected is not the host face
+	# and stays.
+	if interaction != null and interaction.has_method("drop_up_to_face_pick"):
+		interaction.drop_up_to_face_pick()
+	_release_sketch_host_face()
 	_update_panel_visibility()
 	_sync_world_background()
 	interaction.refresh_selection_chrome()
@@ -1588,6 +1597,36 @@ func _on_sketch_session_ended() -> void:
 		sketch_chrome.hide_variants()
 		sketch_chrome.hide_selection_actions()
 		sketch_chrome.visible = false
+
+
+## Face sketches opened from a selected face remember that face. Ground and
+## plane sketches do not, unless the current face already lies on the plane.
+func _remember_sketch_host_face() -> void:
+	if sketch_mode == null or view == null:
+		return
+	if sketch_mode.host_face_id != "":
+		return
+	var face := view.selected_face
+	if face != "" and sketch_mode.face_lies_on_plane(face):
+		sketch_mode.host_face_id = face
+
+
+## The face used to enter the sketch is not a part-mode selection. Clear it
+## when it is the whole selection. Leave a broader pick the user made.
+func _release_sketch_host_face() -> void:
+	if view == null or sketch_mode == null:
+		return
+	var host := str(sketch_mode.host_face_id)
+	sketch_mode.host_face_id = ""
+	if host == "" or view.selected_face != host:
+		return
+	if view.selected_faces.size() > 1:
+		return
+	if not view.selected_edges.is_empty() or not view.selected_bodies.is_empty():
+		return
+	if view.selected_instance != "":
+		return
+	view.clear_selection()
 
 
 func _on_sketch_rail_toggled(on: bool, t: int) -> void:

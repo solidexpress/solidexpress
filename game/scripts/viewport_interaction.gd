@@ -342,6 +342,21 @@ func _press_on_focused_numeric(at: Vector2, f: Control) -> bool:
 	return false
 
 
+## Esc right after an Extrude refusal: one ladder sentence, then the next Esc
+## leaves. A focused Distance field calls this too, so that press is not spent
+## only on releasing the field.
+func consume_refusal_exit_ladder() -> bool:
+	if sketch_mode == null or not sketch_mode.has_method("take_refusal_exit_ladder"):
+		return false
+	var msg: String = sketch_mode.take_refusal_exit_ladder()
+	if msg == "":
+		return false
+	if measure_overlay != null and measure_overlay.has_anchor():
+		measure_overlay.clear_pair()
+	status.emit(msg)
+	return true
+
+
 ## Esc with a first sketch anchor: drop it and print the A6 sentence once.
 ## The draw tool stays armed so the next click can start again. The status
 ## promise is recorded so the following Esc leaves the sketch instead of
@@ -1906,6 +1921,10 @@ func _input_up_to_face_pick(event: InputEvent) -> bool:
 		_up_to_face_swallow_release = false
 		get_viewport().set_input_as_handled()
 		return true
+	# The one-shot belongs to the sketch. After cancel or save, Esc is part
+	# mode even if the finish bar forgot to disarm.
+	if sketch_mode == null or not sketch_mode.active:
+		return false
 	if not _up_to_face_pick_armed():
 		return false
 	# Selecting Up To Surface shows the face row. It must not eat Circle /
@@ -1944,6 +1963,14 @@ func _input_up_to_face_pick(event: InputEvent) -> bool:
 			get_viewport().set_input_as_handled()
 			return true
 	return false
+
+
+## Sketch exit: the finish-bar face pick does not outlive the session.
+func drop_up_to_face_pick() -> void:
+	_up_to_face_pick_consumed = false
+	_up_to_face_swallow_release = false
+	if sketch_chrome != null and sketch_chrome.has_method("disarm_face_pick"):
+		sketch_chrome.disarm_face_pick()
 
 
 func _is_orbit_event(event: InputEvent) -> bool:
@@ -3200,6 +3227,8 @@ func _sketch_input(event: InputEvent) -> void:
 						status.emit("Deleted %d" % n)
 			KEY_ESCAPE:
 				if not _consume_sketch_esc():
+					pass
+				elif consume_refusal_exit_ladder():
 					pass
 				elif drop_pending_draw_esc():
 					pass

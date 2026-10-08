@@ -114,12 +114,18 @@ var _smart_dim_pending: Dictionary = {}
 ## sketch that already holds geometry inserts "Tool dropped" between that
 ## promise and the exit (Circle centre, then Esc, Esc).
 var _esc_exit_promised := false
+## Set when Extrude refuses and keeps the sketch. The next Esc is the exit
+## ladder (`… — Esc again exits the sketch`), not a chain / field press.
+var _refusal_esc_ladder := false
 ## Feature id of the body being sketched on ("" when on the ground plane);
 ## used as the boolean target for cut/fuse finishes.
 var target_fid := ""
 var support_host := ""
 var support_normal := Vector3.ZERO
 var support_side := ""
+## Face the session was opened on. Cleared when the session ends so part mode
+## does not keep that face's selection card over the rail.
+var host_face_id := ""
 ## Feature id of the sketch being edited ("" when creating a new sketch).
 var editing_fid := ""
 ## Kernel snapshot at begin_edit. An Exit with no change skips the graph write.
@@ -515,6 +521,22 @@ func _clear_support() -> void:
 	support_host = ""
 	support_normal = Vector3.ZERO
 	support_side = ""
+	host_face_id = ""
+
+
+## True when `face_id`'s midpoint sits on the active sketch plane.
+func face_lies_on_plane(face_id: String) -> bool:
+	if face_id == "" or view == null or view.doc == null:
+		return false
+	if not view.doc.has_method("face_midpoint"):
+		return false
+	var mid: Variant = view.doc.face_midpoint(face_id)
+	if not (mid is Vector3):
+		return false
+	var n := plane_normal()
+	if n.length_squared() < 1e-12:
+		return false
+	return absf(((mid as Vector3) - plane_origin).dot(n)) <= 0.75
 
 
 ## Begin a sketch on the model-space plane (origin + normal). x_hint picks the
@@ -528,6 +550,7 @@ func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO,
 		support_host = str(support.get("host", ""))
 		support_normal = support.get("normal", Vector3.ZERO)
 		support_side = str(support.get("side", "max"))
+		host_face_id = str(support.get("face", ""))
 	_setup_plane(origin, normal, x_hint)
 	sketch = SxSketch.new()
 	sketch.set_plane(origin, plane_x, plane_y)
@@ -600,6 +623,7 @@ func _activate_session() -> void:
 	active = true
 	tool = Tool.LINE
 	_esc_exit_promised = false
+	_refusal_esc_ladder = false
 	_tool_points.clear()
 	_drag.clear()
 	_smart_dim_pending.clear()
@@ -853,26 +877,25 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	var open_prof := not profile_is_closed(sketch)
 	if thin_thickness <= 0.0 and open_prof:
 		if op == "cut" or op == "fuse":
-			status.emit(_chain_breaker_status())
+			_refuse_extrude(_chain_breaker_status())
 		else:
-			status.emit(_open_profile_status())
-		# Keep the sketch session alive so the mechanic can finish the outline.
-		_reassert_camera()
+			_refuse_extrude(_open_profile_status())
 		return
 	if op != "new" and target_fid == "":
-		status.emit("No target body — sketch on a face to cut/fuse")
+		_refuse_extrude("No target body — sketch on a face to cut/fuse")
 		return
 	if op == "cut":
 		distance = -absf(distance)
 	# Up To Surface with nothing picked must not extrude the host face.
 	# Do not read view.selected_face — that face is the sketch itself.
 	if end == "to_face" and _up_to_face_id() == "":
-		status.emit("Up To Surface needs a face")
-		_reassert_camera()
+		_refuse_extrude("Up To Surface needs a face")
 		return
 	var symmetric := end == "midplane"
 	var sk_fid := _ensure_sketch_feature()
 	if sk_fid == "":
+		arm_refusal_exit_ladder()
+		_reassert_camera()
 		return
 	var vol_before := _body_volume(view.body_of_feature(target_fid)) if op == "cut" else -1.0
 	var to_face_id := _up_to_face_id() if end == "to_face" else ""
@@ -880,8 +903,7 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
 		thin_thickness, thin_type, flip_side, selected_contours, to_face_id)
 	if ex_fid == "" and _graph_error_text().contains("Thin wall"):
-		status.emit(_graph_error_text())
-		_reassert_camera()
+		_refuse_extrude(_graph_error_text())
 		return
 	if ex_fid != "" and op == "cut" and vol_before > 0.0:
 		var vol_after := _body_volume(view.body_of_feature(target_fid))
@@ -889,19 +911,25 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		if refuse != "":
 			view.doc.graph_remove(ex_fid)
 			view.refresh()
-			status.emit(refuse)
-			_reassert_camera()
+			_refuse_extrude(refuse)
 			return
 	if ex_fid != "" and op != "new":
 		var open_reason := _open_shell_reason(view.body_of_feature(target_fid))
 		if open_reason != "":
 			view.doc.graph_remove(ex_fid)
 			view.refresh()
-			status.emit(_open_shell_refusal(op, open_reason))
-			_reassert_camera()
+			_refuse_extrude(_open_shell_refusal(op, open_reason))
 			return
 	var fail_msg := "Extrude failed — is the profile closed?"
 	_finish_feature(sk_fid, ex_fid, op, fail_msg)
+
+
+## Refusal kept the sketch open. Say why, and make the next Esc the exit ladder.
+func _refuse_extrude(msg: String) -> void:
+	if msg != "":
+		status.emit(msg)
+	arm_refusal_exit_ladder()
+	_reassert_camera()
 
 
 const CUT_MAX_REMOVED_FRACTION := 0.5
@@ -1372,8 +1400,7 @@ func _finish_feature(sk_fid: String, feat_fid: String, op: String, fail_msg: Str
 	if feat_fid == "":
 		# Kernel rejected the feature. Keep the sketch feature and the session
 		# so the next attempt does not start over, and surface last_graph_error.
-		status.emit(fail_msg + _graph_error_suffix())
-		_reassert_camera()
+		_refuse_extrude(fail_msg + _graph_error_suffix())
 		return
 	_store_up_to_face(feat_fid)
 	var body_id: String
@@ -4488,8 +4515,10 @@ func click(pos2: Vector2) -> void:
 	if not active:
 		return
 	# A new pick means the user kept drawing. The next Esc is the normal
-	# ladder again, not the exit promised by the previous point drop.
+	# ladder again, not the exit promised by the previous point drop or by
+	# an Extrude refusal.
 	_esc_exit_promised = false
+	_refusal_esc_ladder = false
 	# Select hit-tests the real cursor. Snapping first pulls a shaft-line
 	# click onto a nearby centre or endpoint and the line reads as a miss.
 	var select_pos := pos2
@@ -4948,6 +4977,39 @@ func has_pending_dim_pick() -> bool:
 ## The status line just told the user the next Esc leaves the sketch.
 func promise_next_esc_exits() -> void:
 	_esc_exit_promised = true
+
+
+## Extrude refused and left the sketch open. The next Esc must be the exit
+## ladder, not `Chain ended` or a silent focus release.
+func arm_refusal_exit_ladder() -> void:
+	_refusal_esc_ladder = true
+
+
+## One status for the Esc that follows a refusal, or "" when that ladder is
+## not armed. Ends an open line chain in the same press and promises the
+## following Esc leaves.
+func take_refusal_exit_ladder() -> String:
+	if not _refusal_esc_ladder or not active:
+		return ""
+	_refusal_esc_ladder = false
+	if has_length_override():
+		clear_length_override()
+	if has_pending_draw_point():
+		cancel_pending_draw()
+		promise_next_esc_exits()
+		return "First point dropped — Esc again exits the sketch"
+	if has_open_chain():
+		end_chain()
+	if not selected.is_empty():
+		_set_selected([])
+		if tool != Tool.SELECT and tool != Tool.NONE:
+			set_tool(Tool.SELECT)
+		promise_next_esc_exits()
+		return "Selection cleared — Esc again exits the sketch"
+	if tool != Tool.SELECT and tool != Tool.NONE:
+		set_tool(Tool.SELECT)
+	promise_next_esc_exits()
+	return "Tool dropped — Esc again exits the sketch"
 
 
 ## Esc rungs between "drop a pending point" and leaving the sketch: clear a
