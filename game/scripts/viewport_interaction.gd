@@ -4430,6 +4430,12 @@ func _commit_property_panel_on_deselect() -> void:
 	pp.dismiss_keep_preview()
 
 
+func _sync_dof_after_part_history() -> void:
+	var main_n := _find_main()
+	if main_n != null and main_n.has_method("_sync_dof_after_part_history"):
+		main_n._sync_dof_after_part_history()
+
+
 func _status_sketch_undo() -> void:
 	var label := sketch_mode.undo()
 	status.emit("Nothing to undo" if label == "" else "Undo: " + label)
@@ -4576,9 +4582,11 @@ func _gui_key(event: InputEventKey) -> bool:
 					return true
 				if event.shift_pressed:
 					view.redo()
+					_sync_dof_after_part_history()
 					status.emit("Redo")
 				else:
 					view.undo()
+					_sync_dof_after_part_history()
 					status.emit("Undo")
 				return true
 		KEY_Y:
@@ -4589,6 +4597,7 @@ func _gui_key(event: InputEventKey) -> bool:
 					_status_sketch_redo()
 					return true
 				view.redo()
+				_sync_dof_after_part_history()
 				status.emit("Redo")
 				return true
 		KEY_W:
