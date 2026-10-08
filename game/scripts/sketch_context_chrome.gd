@@ -69,6 +69,10 @@ var _active_kind := ""
 ## True while the dim LineEdit has focus — mouse must not overwrite typed digits.
 var _dim_editing := false
 var _dim_syncing := false
+## True while the dim blank is intentionally empty (no number of its own).
+var _dim_blank_empty := false
+## Last numeric_field_key applied to the dim blank.
+var _shown_numeric_key := ""
 ## SpinBox's deferred submit treats "23.22.5" as 23.22. Hold the previous value.
 var _dim_rejecting := false
 ## Distance LineEdit: ignore our own value/text writes, and hold the spin
@@ -79,6 +83,9 @@ var _distance_origin := 20.0
 ## Bumped on click and on typed text so a pending next-frame select_all cannot
 ## re-select the first digit and let the second key replace it.
 var _distance_select_gen := 0
+## Bumped when Distance is replaced outright (File → New / Open). A deferred
+## reassert of the previous document's "5" must not land after that reset.
+var _distance_line_gen := 0
 ## Same generation gate for the dim blank (it previously only deferred
 ## select_all, so a late select re-selected the first digit).
 var _dim_select_gen := 0
@@ -444,11 +451,31 @@ func typed_dim_value() -> Variant:
 func set_dim_value(v: float) -> void:
 	if _dim_spin == null or _dim_editing:
 		return
+	_dim_blank_empty = false
 	_apply_slot_radius(v)
 	_dim_syncing = true
 	_dim_spin.value = v
 	_dim_syncing = false
 	_sync_dim_affordance()
+
+
+## No number of this tool's own. The suffix stays so an AF blank still reads AF.
+func clear_dim_blank() -> void:
+	if _dim_spin == null:
+		return
+	_dim_blank_empty = true
+	_dim_syncing = true
+	_dim_spin.set_value_no_signal(_dim_spin.min_value)
+	var edit := _dim_spin.get_line_edit()
+	if edit != null:
+		edit.text = _empty_dim_text()
+	_dim_syncing = false
+
+
+func _empty_dim_text() -> String:
+	if _dim_spin == null:
+		return ""
+	return str(_dim_spin.prefix) + str(_dim_spin.suffix)
 
 
 ## Slot has no single-DOF preview until the first centre is down, so the blank
@@ -641,6 +668,20 @@ func _refresh_thin_badge() -> void:
 		_thin_badge.text = "Thin %s mm" % _plain_num(_thin_spin.value)
 
 
+## Digits plus the Distance prefix/suffix, so a reset replaces a leftover "5".
+func _format_distance_text(v: float) -> String:
+	var text := _plain_num(v)
+	if _extrude_spin == null:
+		return text
+	var prefix := str(_extrude_spin.prefix)
+	var suffix := str(_extrude_spin.suffix)
+	if prefix != "":
+		text = prefix + " " + text
+	if suffix != "":
+		text += " " + suffix
+	return text
+
+
 func _plain_num(v: float) -> String:
 	var s := String.num(v, 4)
 	if s.contains("."):
@@ -714,6 +755,8 @@ func _write_extrude_spin(v: float, keep_text: String = "") -> void:
 		if had_sel:
 			sel_from = edit.get_selection_from_column()
 			sel_to = edit.get_selection_to_column()
+	_distance_line_gen += 1
+	var gen := _distance_line_gen
 	_distance_syncing = true
 	_extrude_spin.value = v
 	_apply_distance_line(edit, text, caret, had_sel, sel_from, sel_to)
@@ -722,7 +765,7 @@ func _write_extrude_spin(v: float, keep_text: String = "") -> void:
 	# SpinBox formats the line on a deferred update ("7" → "7.0"). Re-assert
 	# the typed string so the next key can still make 7.5.
 	if text != "":
-		_reassert_distance_line.call_deferred(text, caret, had_sel, sel_from, sel_to)
+		_reassert_distance_line.call_deferred(gen, text, caret, had_sel, sel_from, sel_to)
 
 
 func _apply_distance_line(edit: LineEdit, text: String, caret: int, had_sel: bool,
@@ -736,9 +779,9 @@ func _apply_distance_line(edit: LineEdit, text: String, caret: int, had_sel: boo
 		edit.select(sel_from, sel_to)
 
 
-func _reassert_distance_line(text: String, caret: int, had_sel: bool,
+func _reassert_distance_line(gen: int, text: String, caret: int, had_sel: bool,
 		sel_from: int, sel_to: int) -> void:
-	if _extrude_spin == null:
+	if gen != _distance_line_gen or _extrude_spin == null:
 		return
 	_distance_syncing = true
 	_apply_distance_line(_extrude_spin.get_line_edit(), text, caret, had_sel,
@@ -823,8 +866,11 @@ func _restore_rejected_distance(keep: float, keep_text: String = "") -> void:
 	# SpinBox applies a truncated parse on a deferred text_submitted / focus
 	# exit. Wait one frame so this write wins, then restore the junk string
 	# so Extrude still sees an unparseable line.
+	var gen := _distance_line_gen
 	if is_inside_tree() and get_tree() != null:
 		await get_tree().process_frame
+	if gen != _distance_line_gen:
+		return
 	_distance_rejecting = false
 	var raw := keep_text if keep_text != "" else _distance_raw_text()
 	_write_extrude_spin(keep, raw)
@@ -1036,6 +1082,7 @@ func _sync_dim_affordance() -> void:
 			# the radius back so the Radius label does not sit over 150 mm.
 			if not _dim_editing and _dim_spin != null \
 					and not is_equal_approx(_dim_spin.value, sketch_mode.slot_radius):
+				_dim_blank_empty = false
 				_dim_syncing = true
 				_dim_spin.value = sketch_mode.slot_radius
 				_dim_syncing = false
@@ -1054,6 +1101,43 @@ func _sync_dim_affordance() -> void:
 		_radius_label.visible = show_label
 		_radius_label.text = label_text
 		_radius_label.tooltip_text = tip
+	_apply_field_numeric()
+	_reassert_empty_dim()
+
+
+## Switching tools, or Slot radius → c-c, shows that field's own number.
+## A missing number is an empty blank, never the previous field's digits.
+func _apply_field_numeric() -> void:
+	if sketch_mode == null or _dim_spin == null:
+		return
+	if not sketch_mode.has_method("numeric_field_key"):
+		return
+	var key := str(sketch_mode.numeric_field_key())
+	if key == _shown_numeric_key:
+		return
+	_shown_numeric_key = key
+	var was := _dim_editing
+	_dim_editing = false
+	var own := float(sketch_mode.own_numeric()) if sketch_mode.has_method("own_numeric") else -1.0
+	if own >= 0.0:
+		set_dim_value(own)
+	else:
+		clear_dim_blank()
+	_dim_editing = was
+
+
+func _reassert_empty_dim() -> void:
+	if not _dim_blank_empty or _dim_editing or _dim_spin == null:
+		return
+	var edit := _dim_spin.get_line_edit()
+	if edit == null:
+		return
+	var want := _empty_dim_text()
+	if edit.text == want:
+		return
+	_dim_syncing = true
+	edit.text = want
+	_dim_syncing = false
 
 
 func dim_is_editing() -> bool:
@@ -1073,6 +1157,7 @@ func focus_dim_for_typing(seed := "") -> void:
 	edit.grab_focus()
 	_dim_editing = true
 	if seed != "":
+		_dim_blank_empty = false
 		# Unfocused burst writes the whole seed. Do not replace the next key.
 		_dim_replace_next = false
 		_dim_select_gen += 1
@@ -1124,6 +1209,7 @@ func replace_dim_with_char(ch: String) -> bool:
 		return false
 	# Set before the text write so a preview echo cannot put the old value back.
 	_dim_editing = true
+	_dim_blank_empty = false
 	_dim_replace_next = false
 	_dim_select_gen += 1
 	SxUi.write_typed_text(edit, ch)
@@ -1177,6 +1263,7 @@ func _on_dim_text_changed(new_text: String) -> void:
 	var parsed: Variant = _parse_spin_text(_dim_spin, new_text)
 	if parsed == null:
 		return
+	_dim_blank_empty = false
 	_apply_slot_radius(float(parsed))
 	if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
 		sketch_mode.set_length_override(float(parsed))
@@ -1326,6 +1413,38 @@ func reset_finish_defaults() -> void:
 		_flip_side.set_pressed_no_signal(false)
 	_apply_thin_visibility()
 	clear_up_to_face()
+	# Distance and the dim blank are per document. A Cut of 5 mm must not be
+	# the next part's Extrude field, and the dim key must re-read defaults.
+	_shown_numeric_key = ""
+	_dim_blank_empty = false
+	_distance_line_invalid = false
+	_distance_invalid_raw = ""
+	_distance_line_gen += 1
+	if _extrude_spin != null:
+		_distance_syncing = true
+		_extrude_spin.value = 20
+		var dist_edit := _extrude_spin.get_line_edit()
+		if dist_edit != null:
+			var parsed: Variant = _parse_spin_text(_extrude_spin, dist_edit.text)
+			if typeof(parsed) != TYPE_FLOAT or not is_equal_approx(float(parsed), 20.0):
+				# Setting .value does not replace a LineEdit that still shows the
+				# previous document's digits. Write the same "20.0" form SpinBox
+				# uses for step 0.5, and keep prefix/suffix.
+				var text := "20.0"
+				var prefix := str(_extrude_spin.prefix)
+				var suffix := str(_extrude_spin.suffix)
+				if prefix != "":
+					text = prefix + " " + text
+				if suffix != "":
+					text += " " + suffix
+				dist_edit.text = text
+		_distance_syncing = false
+		_distance_origin = 20.0
+		_refresh_extrude_readout(20)
+	if _dim_spin != null:
+		_dim_syncing = true
+		_dim_spin.value = 10
+		_dim_syncing = false
 
 
 ## New face/plane sketch (not File > New, not begin_edit): Blind, New, default D.
@@ -1408,12 +1527,16 @@ func sync_for_tool() -> void:
 	_sync_dim_affordance()
 	if sketch_mode == null or _dim_editing:
 		return
-	if sketch_mode.tool == SketchMode.Tool.SLOT \
-			and not sketch_mode.has_single_dof_preview():
-		set_dim_value(sketch_mode.slot_radius)
-	elif sketch_mode.tool == SketchMode.Tool.CIRCLE \
-			and not sketch_mode.has_single_dof_preview():
-		set_dim_value(sketch_mode.circle_radius)
+	# c-c (and any in-progress rubber-band) is not the radius field.
+	if sketch_mode.has_single_dof_preview():
+		return
+	if not sketch_mode.has_method("own_numeric"):
+		return
+	var own := float(sketch_mode.own_numeric())
+	if own >= 0.0:
+		set_dim_value(own)
+	else:
+		clear_dim_blank()
 
 
 func set_flip_side(on: bool) -> void:
