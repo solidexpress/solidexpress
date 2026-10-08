@@ -125,23 +125,29 @@ func _seg_is_axis_aligned(a: Vector2, b: Vector2, tol: float = 0.4) -> bool:
 	return absf(a.x - b.x) <= tol or absf(a.y - b.y) <= tol
 
 
-func _has_long_side_preview(sm: SketchMode, ctr: Vector2, tip: Vector2) -> bool:
-	var along := tip - ctr
-	if along.length() < 1.0:
-		return false
-	var dir := along.normalized()
+## Stage 1 (re-PLAN 17 WP2) is a rotated rectangle centred on click 1, long axis
+## toward the pointer, half-width 0.4 of the half-length. It is not a single
+## segment that touches the centre.
+func _has_stage1_rect_preview(sm: SketchMode, ctr: Vector2) -> bool:
+	var long: Array = []
 	for seg in _preview_segs(sm):
 		var a: Vector2 = seg[0]
 		var b: Vector2 = seg[1]
-		if a.distance_to(b) < 1.0:
+		if a.distance_to(b) <= 0.05:
 			continue
 		if _seg_is_axis_aligned(a, b):
-			continue
-		var sdir := (b - a).normalized()
-		if absf(sdir.dot(dir)) > 0.97 \
-				and (a.distance_to(ctr) < 1.5 or b.distance_to(ctr) < 1.5):
-			return true
-	return false
+			return false
+		long.append(seg)
+	if long.size() != 4:
+		return false
+	var acc := Vector2.ZERO
+	for seg in long:
+		acc += seg[0]
+	var centre := acc / 4.0
+	var stored := ctr
+	if sm._tool_points.size() >= 1:
+		stored = sm._tool_points[0]
+	return centre.distance_to(stored) <= 0.05
 
 
 func _has_axis_aligned_box_preview(sm: SketchMode) -> bool:
@@ -313,8 +319,8 @@ func _run() -> void:
 	await _push_motion(s2)
 	check(not _has_axis_aligned_box_preview(sm),
 			"after click 1 the preview is not an axis-aligned box (segs=%s)" % str(_preview_segs(sm)))
-	check(_has_long_side_preview(sm, p1, p2),
-			"after click 1 the preview is the long-side line")
+	check(_has_stage1_rect_preview(sm, p1),
+			"after click 1 the preview is a rotated rectangle centred on the click")
 
 	# Click 2 as a press plus a >CLICK_SLOP drag along the long side. A mouse-up
 	# must not become click 3 (zero-width jaw).
