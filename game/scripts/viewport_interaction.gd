@@ -111,14 +111,26 @@ var _panel_changed_while_strip_focused := false
 var _strip_radius_syncing := false
 var _strip_jaw_box: HBoxContainer
 const POST_FINISH_CHIP_GUARD_MSEC := 600
+## Left presses on the part chip row are ignored for this long after a
+## sketch→part transition, and until the button is up and the pointer has
+## left the Extrude rect. A double-click must not land on Hide.
+const POST_FINISH_PRESS_GUARD_MSEC := 400
 var _post_finish_chip_guard_until_msec := 0
-## Global rect of the finish-bar Extrude button at the moment the sketch
-## committed. A second click there (a double-click, or a late click that never
-## moved off the button) must not land on the selection strip.
+var _finish_press_guard_on := false
+var _finish_press_guard_until_msec := 0
+var _finish_press_released := true
+var _finish_press_moved := false
+## Global rect of the finish-bar Extrude button (grown). Cached while the
+## button is on screen so the shield still has a rect if the bar hides in
+## the same signal that arms it.
+var _extrude_button_rect := Rect2()
+## Rect covered after the sketch commits. A second click there must not
+## reach a part-mode chip or clear the selection.
 var _finish_click_rect := Rect2()
 var _finish_click_global := Vector2.ZERO
 var _finish_click_shield_armed := false
 var _finish_click_shield: Control
+var _extrude_button: Control
 var _strip_hide: Button
 var _strip_delete: Button
 var _strip_sketch: Button
@@ -316,6 +328,7 @@ func _wire_post_finish_guard() -> void:
 		return
 	sketch_mode.finished.connect(func(_id: String) -> void:
 		_post_finish_chip_guard_until_msec = Time.get_ticks_msec() + POST_FINISH_CHIP_GUARD_MSEC
+		_begin_finish_press_guard()
 		_arm_finish_click_shield())
 
 
@@ -5322,7 +5335,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	_release_finish_click_shield_on_motion(event)
+	if sketch_mode != null and sketch_mode.active:
+		_remember_extrude_rect()
+	_track_finish_press_guard(event)
+	if _swallow_finish_press(event):
+		get_viewport().set_input_as_handled()
+		return
+	_note_finish_press_outside(event)
 	# Strip / other STOP children swallow gui_input; still give the viewport
 	# the keys when the press is not on the focused numeric field.
 	_on_numeric_canvas_press(event)
@@ -5734,6 +5753,7 @@ func _layout_selection_strip() -> void:
 	_layout_strip_busy = false
 	if _strip_layout_again:
 		_layout_selection_strip()
+	_sync_chip_mouse_under_extrude()
 	var r := selection_strip_global_rect()
 	if r != _last_strip_rect:
 		_last_strip_rect = r
@@ -6261,17 +6281,121 @@ func _ensure_finish_click_shield() -> Control:
 	return shield
 
 
-## Cover the Extrude button's rect so a same-pixel follow-up click is eaten.
-## Stays up until the pointer leaves that spot, which is longer than the 600 ms
-## jaw guard: a soft-GL screenshot can land the second click well after 600 ms.
-func _arm_finish_click_shield() -> void:
+func _visible_extrude_button() -> Control:
+	if _extrude_button != null and is_instance_valid(_extrude_button):
+		if _extrude_button.is_visible_in_tree():
+			return _extrude_button
+		return null
 	if not is_inside_tree():
-		return
-	var btn := get_tree().root.find_child("ExtrudeButton", true, false) as Control
-	if btn == null or not btn.is_visible_in_tree():
+		return null
+	_extrude_button = get_tree().root.find_child("ExtrudeButton", true, false) as Control
+	if _extrude_button != null and _extrude_button.is_visible_in_tree():
+		return _extrude_button
+	return null
+
+
+## Last on-screen Extrude button rect. The finish bar may already be hidden
+## by the time a later handler runs; the press that committed is enough.
+func _remember_extrude_rect() -> void:
+	var btn := _visible_extrude_button()
+	if btn == null:
 		return
 	var rect := btn.get_global_rect().grow(4.0)
 	if rect.size.x < 2.0 or rect.size.y < 2.0:
+		return
+	_extrude_button_rect = rect
+
+
+func _begin_finish_press_guard() -> void:
+	_remember_extrude_rect()
+	_finish_press_guard_on = true
+	_finish_press_guard_until_msec = Time.get_ticks_msec() + POST_FINISH_PRESS_GUARD_MSEC
+	# finished fires on the Extrude button's release, so that click is already up.
+	_finish_press_released = true
+	_finish_press_moved = false
+
+
+## True while a left press on the part chip row must not run a chip action.
+## Holds for ~400 ms and until the pointer has been released outside the
+## Extrude rect, so a second press in the same gesture cannot hit Hide.
+func _part_chip_guard_active() -> bool:
+	if not _finish_press_guard_on:
+		return false
+	if Time.get_ticks_msec() < _finish_press_guard_until_msec:
+		return true
+	return not _finish_press_released or not _finish_press_moved
+
+
+func _press_on_part_chip_row(at: Vector2) -> bool:
+	if _selection_strip == null or not _selection_strip.visible:
+		return false
+	var r := _selection_strip.get_global_rect()
+	if r.get_area() < 4.0 or r.get_area() > _chrome_area_cap():
+		return false
+	return r.has_point(at)
+
+
+func _track_finish_press_guard(event: InputEvent) -> void:
+	if not _finish_press_guard_on:
+		return
+	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		_finish_press_released = not (event as InputEventMouseButton).pressed
+		return
+	if event is InputEventMouseMotion and _finish_click_rect.size.x >= 2.0:
+		var at := _pointer_viewport_pos(event as InputEventMouse)
+		if not _finish_click_rect.has_point(at):
+			_finish_press_moved = true
+
+
+## Eat a left press that would repeat the Extrude click onto the part chips.
+func _swallow_finish_press(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton):
+		return false
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT:
+		return false
+	if not _finish_click_shield_armed and not _part_chip_guard_active():
+		return false
+	var at := _pointer_viewport_pos(mb)
+	var on_extrude := _finish_click_shield_armed and _finish_click_rect.size.x >= 2.0 \
+			and _finish_click_rect.has_point(at)
+	# Whole chip row only while the pointer is still on the Extrude rect.
+	# A motion onto Fillet (or any other chip) is a new gesture and must land.
+	var on_row := _part_chip_guard_active() and not _finish_press_moved \
+			and _press_on_part_chip_row(at)
+	if not on_extrude and not on_row:
+		return false
+	if mb.pressed:
+		_note_click("drop:shield", at)
+	return true
+
+
+## A later click that is not the Extrude follow-up ends the dead zone.
+func _note_finish_press_outside(event: InputEvent) -> void:
+	if not _finish_click_shield_armed or not _is_left_press(event):
+		return
+	var at := _pointer_viewport_pos(event as InputEventMouse)
+	if _finish_click_rect.size.x >= 2.0 and _finish_click_rect.has_point(at):
+		return
+	# Chip clicks keep the row where it is so the release still hits that chip.
+	if _press_on_part_chip_row(at):
+		return
+	call_deferred("_disarm_finish_click_shield")
+
+
+## Cover the Extrude button so a same-pixel follow-up is eaten, and keep the
+## part chip row off that rect. Motion inside or away from the button does
+## not drop the cover: sx-038's second click comes back to the same pixel
+## after the pointer has moved. A new sketch, or a left press elsewhere,
+## drops it.
+func _arm_finish_click_shield() -> void:
+	if not is_inside_tree():
+		return
+	_remember_extrude_rect()
+	var rect := _extrude_button_rect
+	if rect.size.x < 2.0 or rect.size.y < 2.0:
+		# No rect to hold. The chip-row window is the 400 ms timer only.
+		_finish_press_moved = true
 		return
 	_finish_click_rect = rect
 	_finish_click_global = rect.get_center()
@@ -6286,40 +6410,48 @@ func _arm_finish_click_shield() -> void:
 
 
 func _disarm_finish_click_shield() -> void:
-	if not _finish_click_shield_armed and (_finish_click_shield == null or not _finish_click_shield.visible):
+	if not _finish_click_shield_armed and not _finish_press_guard_on \
+			and (_finish_click_shield == null or not _finish_click_shield.visible):
 		return
 	_finish_click_shield_armed = false
+	_finish_press_guard_on = false
+	_finish_press_guard_until_msec = 0
+	_finish_press_released = true
+	_finish_press_moved = true
+	_finish_click_rect = Rect2()
 	if _finish_click_shield != null and is_instance_valid(_finish_click_shield):
 		_finish_click_shield.visible = false
+	_sync_chip_mouse_under_extrude()
 	if not _layout_strip_busy:
 		_layout_selection_strip()
 
 
-func _release_finish_click_shield_on_motion(event: InputEvent) -> void:
-	if not _finish_click_shield_armed or not (event is InputEventMouseMotion):
-		return
-	var mot := event as InputEventMouseMotion
-	var at := mot.global_position
-	if at == Vector2.ZERO:
-		at = mot.position
-	if at.distance_to(_finish_click_global) <= CLICK_SLOP:
-		return
-	_disarm_finish_click_shield()
-
-
-## While the shield is up, place the chip row below the Extrude button so the
-## row is not drawn on the pixel that was just clicked. Same y every layout.
+## While the shield is up, the chip row starts below the Extrude button so
+## Hide (and every other state-changing chip) is not on that pixel.
 func _finish_click_strip_y(y_natural: float) -> float:
 	if not _finish_click_shield_armed or _selection_strip == null:
 		return y_natural
-	var origin := get_global_rect().position
-	var local_y := _finish_click_global.y - origin.y
-	var floor_y := _finish_click_rect.end.y - origin.y + 6.0
-	var band_h := maxf(_selection_strip.size.y, _selection_strip.get_combined_minimum_size().y)
-	band_h = maxf(band_h, 28.0)
-	if local_y >= y_natural - 1.0 and local_y <= y_natural + band_h + 1.0:
-		return maxf(y_natural, floor_y)
-	return y_natural
+	if _finish_click_rect.size.y < 2.0:
+		return y_natural
+	var floor_y := _finish_click_rect.end.y - get_global_rect().position.y + 6.0
+	return maxf(y_natural, floor_y)
+
+
+## A chip that still intersects the Extrude rect cannot take a click.
+func _sync_chip_mouse_under_extrude() -> void:
+	if _selection_strip == null:
+		return
+	var block := _finish_click_shield_armed and _finish_click_rect.size.x >= 2.0
+	_set_chip_mouse_under_extrude(_selection_strip, block)
+
+
+func _set_chip_mouse_under_extrude(node: Node, block: bool) -> void:
+	if node is BaseButton:
+		var b := node as BaseButton
+		var hit := block and b.get_global_rect().intersects(_finish_click_rect)
+		b.mouse_filter = Control.MOUSE_FILTER_IGNORE if hit else Control.MOUSE_FILTER_STOP
+	for child in node.get_children():
+		_set_chip_mouse_under_extrude(child, block)
 
 
 func _ctx_jaw_af(size: int) -> void:
