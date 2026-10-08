@@ -285,6 +285,16 @@ func _suggestion_labels(ctx: FilmContext) -> Array[String]:
 			continue
 		if str(b.text).ends_with("?"):
 			out.append(b.text)
+		var more := node as MenuButton
+		if more == null:
+			continue
+		var popup := more.get_popup()
+		if popup == null:
+			continue
+		for i in popup.item_count:
+			var item := popup.get_item_text(i)
+			if item.ends_with("?"):
+				out.append(item)
 	return out
 
 

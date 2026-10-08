@@ -83,8 +83,9 @@ var _sketch_release_frame := -1
 ## Motion with the button already down arrived before its press. The press
 ## that follows is the same gesture and must not restart it.
 var _sketch_press_inferred := false
-## A newer press replaced an open one. The next mouse-up that is still the
-## old click (near that point, or no drag yet) is swallowed.
+## A newer press replaced an open one. The next mouse-up that is still at
+## the abandoned click is swallowed. A release on the new press is that
+## gesture's own mouse-up and must still click or finish the box.
 var _sketch_swallow_release := false
 var _sketch_abandoned_pos := Vector2.INF
 ## Shift/Ctrl at the marquee press. The release event sometimes drops them.
@@ -3055,11 +3056,13 @@ func _sketch_release_is_stale(mb: InputEventMouseButton) -> bool:
 		return false
 	if _sketch_box_active or _sketch_dragging:
 		return false
+	# The new press's own mouse-up is within CLICK_SLOP of _sketch_press_pos.
+	# Swallowing that left every later click open, so an empty click never
+	# cleared and the next edge clicks toggled the selection off.
+	if _sketch_abandoned_pos == Vector2.INF:
+		return false
 	var at := _pointer_viewport_pos(mb)
-	var travel := at.distance_to(_sketch_press_pos)
-	var near_abandoned := _sketch_abandoned_pos != Vector2.INF \
-			and at.distance_to(_sketch_abandoned_pos) <= CLICK_SLOP
-	return travel < CLICK_SLOP or near_abandoned
+	return at.distance_to(_sketch_abandoned_pos) <= CLICK_SLOP
 
 
 func _abandon_open_sketch_press() -> void:
@@ -3078,8 +3081,8 @@ func _infer_sketch_press_from_motion(mm: InputEventMouseMotion) -> void:
 		return
 	if _sketch_box_pending or _sketch_dragging or _sketch_lmb_depth > 0:
 		return
-	if _sketch_release_frame == Engine.get_process_frames():
-		return
+	# A click's mouse-up can land before the drag motions, in the same frame,
+	# and close the box. Button-down motion after that release re-arms it.
 	if (mm.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0:
 		return
 	if mm.relative.length_squared() <= 0.01:
