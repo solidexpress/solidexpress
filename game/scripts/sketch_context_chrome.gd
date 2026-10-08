@@ -118,6 +118,10 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_variant_bar = _make_bar()
 	_variant_bar.name = "VariantBar"
+	# The row's box used to be STOP. A wide rect (padding past the chips, or a
+	# layout pass that had not shrunk yet) then ate the first canvas press
+	# after a rail Polygon / Circle / Slot click. Buttons still block.
+	_variant_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_action_bar = VBoxContainer.new()
 	_action_bar.name = "ActionBar"
 	_action_bar.add_theme_constant_override("separation", 4)
@@ -1173,17 +1177,36 @@ func _apply_field_numeric() -> void:
 
 
 func _reassert_empty_dim() -> void:
-	if not _dim_blank_empty or _dim_editing or _dim_spin == null:
+	if not _dim_blank_empty or _dim_spin == null:
 		return
 	var edit := _dim_spin.get_line_edit()
 	if edit == null:
 		return
 	var want := _empty_dim_text()
-	if edit.text == want:
-		return
-	_dim_syncing = true
-	edit.text = want
-	_dim_syncing = false
+	# Focus makes SpinBox paint its minimum (0.01). That is not a typed AF.
+	if edit.text != want:
+		_dim_syncing = true
+		edit.text = want
+		_dim_syncing = false
+	if _dim_editing and edit.has_focus() \
+			and (_dim_replace_next or SxUi.replace_armed(edit)):
+		edit.select_all()
+
+
+func _reassert_empty_dim_next_frame() -> void:
+	if is_inside_tree() and get_tree() != null:
+		await get_tree().process_frame
+	_reassert_empty_dim()
+
+
+## True when `raw` is only the spin minimum (the focused-blank echo).
+func _is_spin_minimum_text(raw: String) -> bool:
+	if _dim_spin == null:
+		return false
+	var parsed: Variant = _parse_spin_text(_dim_spin, raw)
+	if parsed == null:
+		return false
+	return is_equal_approx(float(parsed), _dim_spin.min_value)
 
 
 func dim_is_editing() -> bool:
@@ -1235,12 +1258,20 @@ func arm_dim_replace(shown: float = -1.0) -> void:
 		_dim_editing = false
 		set_dim_value(shown)
 		_dim_editing = was
+	else:
+		# No rubber-band size yet. Leave the placeholder (" AF" / "mm"), never
+		# the spin minimum 0.01 that focus would otherwise display.
+		clear_dim_blank()
 	_dim_editing = true
 	_dim_replace_next = true
 	var edit := _dim_spin.get_line_edit()
 	if edit == null:
 		return
 	edit.grab_focus()
+	if _dim_blank_empty:
+		_reassert_empty_dim()
+		_reassert_empty_dim.call_deferred()
+		_reassert_empty_dim_next_frame()
 	SxUi.arm_replace_on_focus(edit)
 
 
@@ -1304,6 +1335,10 @@ func _release_distance_focus() -> void:
 func _on_dim_value_changed(v: float) -> void:
 	if _dim_syncing or _dim_rejecting or not _dim_editing:
 		return
+	# Focusing an empty blank echoes min_value. That is not a typed length.
+	if _dim_blank_empty and _dim_spin != null and is_equal_approx(v, _dim_spin.min_value):
+		_reassert_empty_dim()
+		return
 	_apply_slot_radius(v)
 	# Live lock rubber-band while digits change (Enter still commits via signal).
 	if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
@@ -1313,11 +1348,17 @@ func _on_dim_value_changed(v: float) -> void:
 func _on_dim_text_changed(new_text: String) -> void:
 	if _dim_syncing:
 		return
+	if _dim_rejecting:
+		return
+	# SpinBox rewrites an empty focused blank to "0.01" (its minimum). Put the
+	# placeholder back and do not lock that as the polygon / slot length.
+	# That echo is not typing, so Circle's tool-claimed focus stays.
+	if _dim_blank_empty and _is_spin_minimum_text(new_text):
+		_reassert_empty_dim()
+		return
 	_dim_focus_from_tool = false
 	# Cancel a pending deferred / next-frame select_all once typing starts.
 	_dim_select_gen += 1
-	if _dim_rejecting:
-		return
 	var parsed: Variant = _parse_spin_text(_dim_spin, new_text)
 	if parsed == null:
 		return
@@ -1624,9 +1665,9 @@ func sync_for_tool() -> void:
 	_sync_dim_affordance()
 	if sketch_mode == null:
 		return
-	# Circle claims the radius blank. A later Select click does not take
-	# keyboard focus, so F / Shift+F / Esc stayed in that LineEdit and the
-	# hover measure never cleared.
+	# Select does not take keyboard focus. Release a blank left over from
+	# Circle / Polygon / Slot so F / Shift+F / Esc are not stuck in that
+	# LineEdit and the hover measure can clear.
 	if sketch_mode.tool != SketchMode.Tool.CIRCLE:
 		release_dim_focus()
 	if _dim_editing:
@@ -1641,8 +1682,10 @@ func sync_for_tool() -> void:
 		set_dim_value(own)
 	else:
 		clear_dim_blank()
-	# The Circle radius blank is the field on screen. Leave Extrude so the
-	# next digit cannot land in Distance while Radius looks like the target.
+	# Circle's radius blank owns the keyboard as soon as the tool is armed
+	# (sx-037 L10: a digit is Radius, not Extrude). The grab must not eat the
+	# next canvas press: `_input` places the centre before GUI, and a stale
+	# canvas-transform rect is not treated as a hit (sx-038).
 	if sketch_mode.tool != SketchMode.Tool.CIRCLE:
 		return
 	_release_distance_focus()
