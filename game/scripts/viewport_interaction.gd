@@ -5678,8 +5678,10 @@ func _input(event: InputEvent) -> void:
 			# receive digits. Falling into _sketch_input would accept the key
 			# and the LineEdit would never see it.
 			if ke_len != null and not ke_len.echo and not ke_len.ctrl_pressed \
-					and not ke_len.meta_pressed and _is_length_type_key(ke_len) \
-					and _focused_tracked_numeric() != null:
+					and not ke_len.meta_pressed and _focused_tracked_numeric() != null \
+					and (_is_length_type_key(ke_len) \
+						or ke_len.keycode == KEY_ENTER or ke_len.keycode == KEY_KP_ENTER \
+						or ke_len.keycode == KEY_ESCAPE):
 				return
 			_sketch_input(event)
 			get_viewport().set_input_as_handled()

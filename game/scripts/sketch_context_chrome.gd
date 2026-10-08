@@ -435,6 +435,9 @@ func focus_distance_for_typing(seed: String = "") -> void:
 			_distance_line_invalid = true
 			_distance_invalid_raw = seed
 			_write_extrude_spin(_distance_origin, seed)
+		# The burst is a real edit. Until Enter, S / redo must not treat the
+		# field as idle, and Enter itself must reach this LineEdit.
+		SxUi.mark_mid_entry(edit, true)
 	else:
 		_select_distance_all()
 		_select_distance_all_if_gen.call_deferred(_distance_select_gen)
