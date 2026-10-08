@@ -763,6 +763,7 @@ func _on_sketch_camera_moved() -> void:
 		return
 	var hold := _label_restack_hold != 0 and _label_restack_hold == _camera_reassert_gen
 	if not hold and not dimensions.is_empty() and _dimension_labels != null:
+		_rebuild_constraint_glyphs()
 		_resolve_label_overlaps()
 		var li := 0
 		for dim in dimensions:
