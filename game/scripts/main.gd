@@ -79,6 +79,9 @@ var _esc_menu_frame := -1
 var _esc_menus: Array[Window] = []
 ## Time.get_ticks_msec() until which hover hints must not replace the status.
 var _status_hold_until := 0
+## Hint received during the hold. Flushed once, when the hold ends.
+var _held_hint := ""
+var _held_hint_timer: SceneTreeTimer
 ## True while File menu / discard dialog is in the pointer gesture that closes
 ## them, so a mouse-up on Box does not arm place (leftover 3).
 var _palette_insert_blocked := false
@@ -162,6 +165,8 @@ func _ready() -> void:
 	_apply_ui_theme()
 	_build_world()
 	_build_ui()
+	if interaction != null and not interaction.selection_strip_laid_out.is_connected(_apply_chrome_docks):
+		interaction.selection_strip_laid_out.connect(_apply_chrome_docks)
 	_build_autosave()
 	# OS file drops (STL / SVG / STEP / .sxp) onto the viewport.
 	get_window().files_dropped.connect(_on_files_dropped)
@@ -185,6 +190,35 @@ func _ready() -> void:
 	voice_capture.utterance_ready.connect(func(path: String) -> void:
 		if path != "":
 			voice_executor.handle_wav(path))
+	_fit_window_to_screen()
+
+
+## Empty when `win_size` is already within 8 px of the usable rect minus
+## decorations. Otherwise the rect the window should occupy.
+static func window_fit_rect(usable: Rect2i, win_size: Vector2i, decor: Vector2i) -> Rect2i:
+	var want := usable.size - decor
+	if win_size.x >= want.x - 8 and win_size.y >= want.y - 8:
+		return Rect2i()
+	return Rect2i(usable.position, want)
+
+
+func _fit_window_to_screen() -> void:
+	if DisplayServer.get_name() == "headless" or OS.get_environment("SX_TEST_WINDOW") != "":
+		return
+	var win := get_window()
+	if win == null or win.mode == Window.MODE_FULLSCREEN or win.mode == Window.MODE_EXCLUSIVE_FULLSCREEN:
+		return
+	win.mode = Window.MODE_MAXIMIZED
+	for _i in 3:
+		await get_tree().process_frame
+	var id := win.get_window_id()
+	var usable := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen(id))
+	var decor := DisplayServer.window_get_size_with_decorations(id) - DisplayServer.window_get_size(id)
+	var r := window_fit_rect(usable, win.size, decor)
+	if r.size != Vector2i.ZERO:
+		win.mode = Window.MODE_WINDOWED
+		win.position = r.position
+		win.size = r.size
 
 
 func _build_world() -> void:
@@ -1917,16 +1951,22 @@ func _apply_chrome_docks() -> void:
 		dock_left = maxf(dock_left, stack_right + 8.0)
 	var max_w := minf(220.0, vp.x * 0.28)
 	var top := ChromeDock.top_inset
-	var max_h := maxf(120.0, vp.y - top - ChromeDock.bottom_inset - 8.0)
+	# Part chip row keeps its fixed x (N3). When it overlaps this column,
+	# drop the Timeline under the row instead of covering the left chips.
+	var timeline_top := top
+	var strip := interaction.selection_strip_global_rect() if interaction != null else Rect2()
+	if strip.size != Vector2.ZERO and strip.end.x > dock_left and strip.position.x < dock_left + max_w:
+		timeline_top = maxf(top, strip.end.y + 4.0)
+	var max_h := maxf(120.0, vp.y - timeline_top - ChromeDock.bottom_inset - 8.0)
 	if timeline.visible:
 		timeline.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		timeline.custom_minimum_size = Vector2(max_w, 120)
 		timeline.size = Vector2(max_w, minf(200.0, max_h * 0.45))
-		timeline.position = Vector2(dock_left, top)
+		timeline.position = Vector2(dock_left, timeline_top)
 		timeline.offset_left = dock_left
-		timeline.offset_top = top
+		timeline.offset_top = timeline_top
 		timeline.offset_right = dock_left + max_w
-		timeline.offset_bottom = top + timeline.size.y
+		timeline.offset_bottom = timeline_top + timeline.size.y
 	if variables_panel.visible:
 		var vtop := top
 		if timeline.visible:
@@ -2480,12 +2520,37 @@ func _on_status(text: String) -> void:
 
 
 ## Hover copy yields while a command result is still on the hold timer.
+## A hint that arrives during the hold is kept and written when the hold ends.
 func _on_hover_hint(text: String) -> void:
 	if text == "":
+		_held_hint = ""
 		return
-	if Time.get_ticks_msec() < _status_hold_until:
+	var now := Time.get_ticks_msec()
+	if now < _status_hold_until:
+		_held_hint = text
+		_arm_hint_flush(_status_hold_until - now)
 		return
+	_held_hint = ""
 	status_label.text = text
+
+
+func _arm_hint_flush(ms: int) -> void:
+	if _held_hint_timer != null:
+		return
+	_held_hint_timer = get_tree().create_timer(float(ms) / 1000.0 + 0.02)
+	_held_hint_timer.timeout.connect(_flush_held_hint)
+
+
+func _flush_held_hint() -> void:
+	_held_hint_timer = null
+	if _held_hint == "":
+		return
+	var now := Time.get_ticks_msec()
+	if now < _status_hold_until:
+		_arm_hint_flush(_status_hold_until - now)
+		return
+	status_label.text = _held_hint
+	_held_hint = ""
 
 
 func _build_paste_special_dialog(parent: Node) -> void:

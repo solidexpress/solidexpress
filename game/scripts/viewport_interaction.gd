@@ -6,6 +6,8 @@ extends Control
 
 signal status(text: String)
 signal hover_hint(text: String)
+## Selection strip moved or hid. Main redocks the Timeline under the chips.
+signal selection_strip_laid_out
 ## Emitted when click-to-place arms or disarms (main swaps left-rail chrome).
 signal place_changed(active: bool)
 ## Request sketch-on-selection (main owns SketchMode.begin).
@@ -86,6 +88,7 @@ var _selection_strip: PanelContainer
 var _cached_top_chrome: Control
 var _layout_strip_busy := false
 var _strip_layout_again := false
+var _last_strip_rect := Rect2()
 var _strip_x_floor := 0.0
 var _left_stack_wired: Control
 var _strip_fillet: Button
@@ -2919,6 +2922,7 @@ func _update_hover(screen_pos: Vector2) -> void:
 		return
 	if OrbitCamera.pointer_over_scrollable_ui():
 		view.clear_hover()
+		hover_hint.emit("")
 		_last_hover_key = ""
 		mouse_default_cursor_shape = Control.CURSOR_ARROW
 		_measure_hover_miss()
@@ -2930,6 +2934,9 @@ func _update_hover(screen_pos: Vector2) -> void:
 		_update_transport_measure(screen_pos)
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND \
 				if view.hovered_body != "" else Control.CURSOR_ARROW
+		if _last_hover_key != "":
+			hover_hint.emit("")
+			_last_hover_key = ""
 		return
 	var ray := _model_ray(screen_pos)
 	var hit: Dictionary = view.pick_info(ray[0], ray[1])
@@ -2937,9 +2944,9 @@ func _update_hover(screen_pos: Vector2) -> void:
 		view.clear_hover()
 		_measure_hover_miss()
 		_update_connector_hover("")
-		if _last_hover_key != "":
-			_last_hover_key = ""
-			mouse_default_cursor_shape = Control.CURSOR_ARROW
+		hover_hint.emit("")
+		_last_hover_key = ""
+		mouse_default_cursor_shape = Control.CURSOR_ARROW
 		return
 	var body := str(hit.get("body", ""))
 	var face := str(hit.get("face", ""))
@@ -5424,6 +5431,12 @@ func _refresh_selection_strip() -> void:
 	call_deferred("_layout_selection_strip")
 
 
+func selection_strip_global_rect() -> Rect2:
+	if _selection_strip == null or not _selection_strip.visible:
+		return Rect2()
+	return _selection_strip.get_global_rect()
+
+
 ## Left-anchor SelectionStrip below the menu row and wrap it inside the window.
 func _layout_selection_strip() -> void:
 	if _selection_strip == null:
@@ -5432,6 +5445,9 @@ func _layout_selection_strip() -> void:
 		_strip_layout_again = true
 		return
 	if not _selection_strip.visible:
+		if _last_strip_rect != Rect2():
+			_last_strip_rect = Rect2()
+			selection_strip_laid_out.emit()
 		return
 	_layout_strip_busy = true
 	_strip_layout_again = false
@@ -5461,6 +5477,10 @@ func _layout_selection_strip() -> void:
 	_layout_strip_busy = false
 	if _strip_layout_again:
 		_layout_selection_strip()
+	var r := selection_strip_global_rect()
+	if r != _last_strip_rect:
+		_last_strip_rect = r
+		selection_strip_laid_out.emit()
 
 
 func _selection_strip_row() -> Container:
