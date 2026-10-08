@@ -956,11 +956,12 @@ func _on_distance_text_submitted(raw: String) -> void:
 	_distance_invalid_raw = ""
 	_write_extrude_spin(float(parsed))
 	_distance_origin = float(parsed)
-	# Enter used to unedit() and leave the focus border up, so the next
-	# digits never inserted. Stay in editing mode with the new text selected.
-	_distance_replace_next = true
+	# Enter commits and gives the next key to the viewport. Keeping focus
+	# here swallowed tool shortcuts and sketch redo (#200, sx-038 L10).
+	_distance_replace_next = false
 	var committed := _extrude_spin.get_line_edit() if _extrude_spin != null else null
-	SxUi.rearm_replace_after_commit(committed)
+	SxUi.release_line_now(committed)
+	_hand_keys_to_viewport()
 
 
 func _on_distance_focus_entered() -> void:
@@ -983,6 +984,9 @@ func _on_distance_focus_exited() -> void:
 	_distance_replace_next = false
 	if _extrude_spin != null:
 		SxUi.disarm_replace(_extrude_spin.get_line_edit())
+	var ix := _host_interaction()
+	if ix != null and ix.has_method("note_distance_focus_released"):
+		ix.note_distance_focus_released()
 	if _distance_syncing or _distance_rejecting:
 		return
 	var raw := _distance_raw_text()
@@ -1022,6 +1026,9 @@ func _on_dim_focus_exited() -> void:
 	_dim_replace_next = false
 	if _dim_spin != null:
 		SxUi.disarm_replace(_dim_spin.get_line_edit())
+	var ix := _host_interaction()
+	if ix != null and ix.has_method("note_dim_focus_released"):
+		ix.note_dim_focus_released()
 
 
 func _on_dim_text_submitted(raw: String) -> void:
@@ -1045,6 +1052,7 @@ func _on_dim_text_submitted(raw: String) -> void:
 	_apply_slot_radius(float(parsed))
 	dim_submitted.emit(_dim_spin.value)
 	release_dim_focus()
+	_hand_keys_to_viewport()
 
 
 func _restore_rejected_dim(keep: float) -> void:
@@ -1329,6 +1337,15 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 			_select_distance_all_next_frame(gen)
 	if event is InputEventKey and event.pressed and not event.echo:
 		var k := event as InputEventKey
+		if k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER:
+			# Enter commits even when the line is not yet editing. A fast
+			# burst can land before the deferred edit(), and LineEdit then
+			# drops the key.
+			var enter_line := _extrude_spin.get_line_edit() if _extrude_spin != null else null
+			var entered := enter_line.text if enter_line != null else _distance_raw_text()
+			_on_distance_text_submitted(entered)
+			accept_event()
+			return
 		if k.keycode == KEY_ESCAPE:
 			_distance_line_invalid = false
 			_distance_invalid_raw = ""
@@ -1389,6 +1406,12 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 			_select_dim_all_next_frame(gen)
 	if event is InputEventKey and event.pressed and not event.echo:
 		var k := event as InputEventKey
+		if k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER:
+			var dim_line := _dim_spin.get_line_edit() if _dim_spin != null else null
+			var entered := dim_line.text if dim_line != null else ""
+			_on_dim_text_submitted(entered)
+			accept_event()
+			return
 		if k.keycode == KEY_ESCAPE:
 			if sketch_mode != null:
 				sketch_mode.clear_length_override()
@@ -1408,14 +1431,35 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 			return
 		if _is_numeric_replace_key(k, false) and _dim_spin != null:
 			var dim_line := _dim_spin.get_line_edit()
-			if dim_line != null and dim_line.has_focus() and not dim_line.is_editing():
-				dim_line.edit()
-				_dim_replace_next = true
-		if _is_numeric_replace_key(k, false) and _dim_replace_next:
 			var ch := _numeric_key_char(k)
-			if ch != "" and replace_dim_with_char(ch):
+			if ch != "" and dim_line != null:
+				# Own every key. Native LineEdit insert plus a deferred
+				# reassert of the first character drops the rest of a fast
+				# "22.5" when the keys share one frame.
+				if not dim_line.has_focus():
+					dim_line.grab_focus()
+				if _dim_replace_next or SxUi.replace_armed(dim_line):
+					replace_dim_with_char(ch)
+				else:
+					_dim_editing = true
+					_dim_blank_empty = false
+					_dim_select_gen += 1
+					var next := SxUi.compose_typed_char(dim_line, ch)
+					SxUi.write_typed_text(dim_line, next)
+					var parsed: Variant = _parse_spin_text(_dim_spin, next)
+					if parsed != null:
+						_apply_slot_radius(float(parsed))
+						if sketch_mode != null and sketch_mode.active \
+								and sketch_mode.has_single_dof_preview():
+							sketch_mode.set_length_override(float(parsed))
 				accept_event()
 				return
+
+
+func _hand_keys_to_viewport() -> void:
+	var ix := _host_interaction()
+	if ix != null and ix.has_method("return_viewport_keys"):
+		ix.return_viewport_keys()
 
 
 func _host_interaction() -> ViewportInteraction:
@@ -1625,13 +1669,12 @@ func sync_for_tool() -> void:
 		clear_dim_blank()
 	# The Circle radius blank is the field on screen. Leave Extrude so the
 	# next digit cannot land in Distance while Radius looks like the target.
+	# Do not grab the Radius blank just because Circle is armed. A field the
+	# user never clicked into must not swallow S / L / redo (sx-038 L1).
+	# Digits still land here through wants_dim_length_keys.
 	if sketch_mode.tool != SketchMode.Tool.CIRCLE:
 		return
 	_release_distance_focus()
-	var edit := _dim_spin.get_line_edit() if _dim_spin != null else null
-	if edit != null:
-		SxUi.claim_keyboard_focus(edit)
-		_claim_dim_keyboard.call_deferred()
 
 
 func set_flip_side(on: bool) -> void:

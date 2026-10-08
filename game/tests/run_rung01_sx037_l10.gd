@@ -1,7 +1,7 @@
-# sx-037 L10 — finish-bar Distance stays editable after Enter.
+# sx-037 L10 — finish-bar Distance commits on Enter and releases the keyboard.
 # type 10 Enter, type 14 Enter → 14, click again, type 10 → 10.
-# A frame between digits must not turn "10" into "0", and Enter must not
-# leave the field looking focused while the next key is swallowed.
+# A frame between digits must not turn "10" into "0". Enter gives the next
+# key to the viewport; the following number still replaces the committed value.
 # Circle radius, Slot (same blank), Smart Dim, and Fillet R share the
 # select / submit path and are checked the same way.
 # A fresh click must own the keyboard: 1.5 stays 1.5, Ctrl+A selects the
@@ -250,9 +250,8 @@ func _circle_radius_not_extrude() -> void:
 		await _shutdown(ctx)
 		return
 	var dist_before := _parsed(dist)
-	check(dim.has_focus() and dim.is_editing(),
-			"Circle radius owns the keyboard (focus %s editing %s owner %s)" % [
-				str(dim.has_focus()), str(dim.is_editing()), _owner_name(dim)])
+	check(not dim.has_focus(),
+			"Circle radius does not take the keyboard just by arming the tool (owner %s)" % _owner_name(dim))
 	await _type_gap(dim, "5")
 	check(_near(_parsed(dim), 5.0),
 			"Circle radius typed 5 (got '%s')" % dim.text)
@@ -269,8 +268,8 @@ func _assert_committed(edit: LineEdit, want: float, previous: float, tag: String
 	check(not _near(now, previous),
 			"%s does not still show %s (got '%s')" % [tag, _num(previous), edit.text])
 	_assert_not_half_focused(edit, tag)
-	check(edit.has_focus() and edit.is_editing(),
-			"%s keeps real keyboard focus (focus %s editing %s text '%s')" % [
+	check(not edit.has_focus(),
+			"%s releases the keyboard (focus %s editing %s text '%s')" % [
 				tag, str(edit.has_focus()), str(edit.is_editing()), edit.text])
 	await process_frame
 	var later := _parsed(edit)

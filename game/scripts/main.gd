@@ -4181,7 +4181,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					_confirm_discard(_do_open_dialog)
 					get_viewport().set_input_as_handled()
 				KEY_Z:
-					if SxUi.numeric_field_focused(get_viewport()):
+					if SxUi.focus_owner_mid_entry(get_viewport()):
 						return
 					if sketch_mode != null and sketch_mode.active:
 						if event.shift_pressed:
@@ -4201,7 +4201,7 @@ func _unhandled_input(event: InputEvent) -> void:
 							_on_status("Undo")
 						get_viewport().set_input_as_handled()
 				KEY_Y:
-					if SxUi.numeric_field_focused(get_viewport()):
+					if SxUi.focus_owner_mid_entry(get_viewport()):
 						return
 					if sketch_mode != null and sketch_mode.active:
 						var ry := sketch_mode.redo()
