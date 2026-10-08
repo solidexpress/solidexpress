@@ -231,11 +231,16 @@ const GLYPH_SYMBOLS := {
 	"point_on_line": "◇",
 	"tangent": "⌒",
 }
-## Screen de-stack: a glyph stays within the cap of its anchor, grows a leader
-## once it has moved, and yields to dimension labels by this gap.
+## Screen de-stack: a glyph stays within the cap of its anchor and grows a
+## leader once it has moved. Badges separate from each other and stay above
+## the shaft first; dimension labels then keep this gap from the badges.
+const GLYPH_FONT_PX := 16
 const GLYPH_MAX_OFFSET_PX := 40.0
 const GLYPH_LEADER_MIN_PX := 12.0
-const GLYPH_LABEL_GAP_PX := 4.0
+const GLYPH_LABEL_GAP_PX := 12.0
+## Full-circle radius text stays this many pixels outside the rim, and never
+## farther than GLYPH_MAX_OFFSET_PX, so Ø / radius callouts stay on the circle.
+const CIRCLE_LABEL_RIM_GAP_PX := 10.0
 ## Geometry within this distance of exact H/V or an existing endpoint gets an
 ## inferred constraint on creation (SolidWorks-style automatic relations).
 const INFER_TOL := 0.5
@@ -4683,6 +4688,13 @@ func click(pos2: Vector2) -> void:
 	# Line and Centerline still place the point: the jaw-width "20" label sits
 	# on the 45° ray, and #164's rect hit ate the centreline's second click.
 	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE
+	# A badge's drawn rect wins over the entity underneath it. Snap would
+	# pull this press onto the head circle and the glyph would never select.
+	if tool == Tool.SELECT:
+		var glyph_id := constraint_hit(select_pos)
+		if glyph_id != "":
+			select_constraint(glyph_id)
+			return
 	var dhit_raw := -1
 	if not place_point:
 		dhit_raw = dimension_hit(pos2, tool != Tool.SELECT and tool != Tool.SMART_DIM)
@@ -6814,12 +6826,21 @@ func _clear_meshes() -> void:
 
 
 func _clear_dimension_labels() -> void:
+	_free_direct_child("CircleLabelLeaders")
 	if _dimension_labels == null:
 		return
 	while _dimension_labels.get_child_count() > 0:
 		var child := _dimension_labels.get_child(0)
 		_dimension_labels.remove_child(child)
 		child.free()
+
+
+func _free_direct_child(node_name: String) -> void:
+	var node := get_node_or_null(node_name)
+	if node == null:
+		return
+	remove_child(node)
+	node.free()
 
 
 func _entity_draw_color(info: Dictionary, id: String = "") -> Color:
@@ -7216,7 +7237,7 @@ func _resolve_label_overlaps() -> void:
 		# Full-circle radius text is anchored just below the rim. Stacking it
 		# upward (#164, 28 px per step) walks the Ø45 label onto the top rim
 		# that Shaft Lines clicks. Leave it on the anchor.
-		if _full_circle_dimension(dim) or _is_slot_cap_radius(dim):
+		if _seated_curve_dimension(dim) or _is_slot_cap_radius(dim):
 			dim["label_stack"] = 0
 			dimensions[i] = dim
 			continue
@@ -7247,6 +7268,9 @@ func _resolve_label_overlaps() -> void:
 	_clamp_dimension_labels_into_view(cam, k)
 	_separate_capped_jaw_labels(cam, k, glyphs)
 	_clamp_dimension_labels_into_view(cam, k)
+	_seat_full_circle_labels(cam, k)
+	_open_label_glyph_gap(cam, k)
+	_rebuild_circle_label_leaders(cam)
 
 
 func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
@@ -7301,7 +7325,7 @@ func _separate_capped_jaw_labels(cam: Camera3D, k: float, glyphs: Array[Rect2]) 
 
 func _jaw_side_push_px(rect: Rect2, index: int, cam: Camera3D, k: float,
 		glyphs: Array[Rect2]) -> float:
-	var gap := 4.0
+	var gap := GLYPH_LABEL_GAP_PX
 	var push_right := 0.0
 	var push_left := 0.0
 	var obstacles: Array[Rect2] = []
@@ -7371,6 +7395,270 @@ func _clamp_dimension_labels_into_view(cam: Camera3D, k: float) -> void:
 			dimensions[i] = dim
 
 
+## Radius/diameter on a full circle, or on the head arc left after a jaw trim.
+## Slot-cap radii stay on their own placement.
+func _seated_curve_dimension(dim: Dictionary) -> bool:
+	if _full_circle_dimension(dim):
+		return true
+	if sketch == null or _is_slot_cap_radius(dim):
+		return false
+	var ids: Array = dim.get("ids", [])
+	if ids.size() != 1:
+		return false
+	var t := str(dim.get("type", ""))
+	if t != "radius" and t != "diameter":
+		return false
+	var info: Dictionary = sketch.entity_info(str(ids[0]))
+	if str(info.get("type", "")) != "arc":
+		return false
+	return float(info.get("radius", 0.0)) >= 10.0
+
+
+func _curve_center_radius(dim: Dictionary) -> Variant:
+	var ids: Array = dim.get("ids", [])
+	if ids.is_empty() or sketch == null:
+		return null
+	var info: Dictionary = sketch.entity_info(str(ids[0]))
+	var kind := str(info.get("type", ""))
+	if kind != "circle" and kind != "arc":
+		return null
+	if not info.has("center"):
+		return null
+	return {"center": info["center"], "radius": float(info.get("radius", 0.0))}
+
+
+## Park a circle or head-arc radius/diameter just outside its rim. A millimetre
+## stack walks `22.5` a hundred pixels off the head; the callout has to stay
+## on the circle, with a leader when it is not touching the rim.
+func _seat_full_circle_labels(cam: Camera3D, k: float) -> void:
+	if k < 1e-6 or sketch == null:
+		return
+	var shaft_y := _shaft_lower_screen_y(cam)
+	var glyphs: Array[Rect2] = []
+	for g in constraint_glyph_screen_rects():
+		if typeof(g) == TYPE_DICTIONARY:
+			glyphs.append(g["rect"] as Rect2)
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY or not _seated_curve_dimension(dim):
+			continue
+		var curve: Variant = _curve_center_radius(dim)
+		if curve == null:
+			continue
+		var info: Dictionary = curve
+		dim["label_stack"] = 0
+		dim["label_clamp"] = Vector2.ZERO
+		dimensions[i] = dim
+		var c: Vector2 = info["center"]
+		var radius := float(info.get("radius", 0.0))
+		var c_s := cam.unproject_position(to_global(to_model(c)))
+		var rim_s := cam.unproject_position(to_global(to_model(c + Vector2(radius, 0.0))))
+		var radius_px := c_s.distance_to(rim_s)
+		var natural := _projected_label_anchor(dim, cam)
+		var prefer := natural - c_s
+		if prefer.length_squared() < 1.0:
+			prefer = Vector2(0.0, 1.0)
+		prefer = prefer.normalized()
+		var rect0 := _projected_label_rect(dim, cam, k)
+		var half := rect0.size * 0.5
+		var best_dir := prefer
+		var best_gap := CIRCLE_LABEL_RIM_GAP_PX
+		var best_score := INF
+		for step in 16:
+			var ang := TAU * float(step) / 16.0
+			var dir := Vector2(cos(ang), sin(ang))
+			var gap := CIRCLE_LABEL_RIM_GAP_PX
+			var guard := 0
+			var trial := Rect2()
+			var hits := true
+			while guard < 5:
+				var along := half.x * absf(dir.x) + half.y * absf(dir.y)
+				var centre := c_s + dir * (radius_px + gap + along)
+				trial = Rect2(centre - half, rect0.size)
+				hits = _circle_label_trial_hits(trial, i, cam, k, glyphs, shaft_y)
+				if not hits or gap >= 34.0:
+					break
+				gap += 6.0
+				guard += 1
+			var score := dir.distance_to(prefer) * 6.0
+			var near := _label_glyph_separation(trial, glyphs)
+			if hits:
+				score += 80.0 + maxf(GLYPH_LABEL_GAP_PX - near, 0.0) * 40.0
+			elif near < GLYPH_LABEL_GAP_PX:
+				score += (GLYPH_LABEL_GAP_PX - near) * 40.0
+			score += maxf(gap - CIRCLE_LABEL_RIM_GAP_PX, 0.0) * 0.15
+			if score < best_score:
+				best_score = score
+				best_dir = dir
+				best_gap = gap
+		var along_best := half.x * absf(best_dir.x) + half.y * absf(best_dir.y)
+		var seated := c_s + best_dir * (radius_px + best_gap + along_best)
+		var delta := seated - natural
+		dim["label_clamp"] = Vector2(delta.x / k, -delta.y / k)
+		dim["label_stack"] = 0
+		dimensions[i] = dim
+
+
+func _label_glyph_separation(rect: Rect2, glyphs: Array[Rect2]) -> float:
+	var best := INF
+	for gr in glyphs:
+		best = minf(best, _rect_separation(rect, gr))
+	return best
+
+
+func _rect_separation(a: Rect2, b: Rect2) -> float:
+	var dx := 0.0
+	if a.end.x < b.position.x:
+		dx = b.position.x - a.end.x
+	elif b.end.x < a.position.x:
+		dx = a.position.x - b.end.x
+	var dy := 0.0
+	if a.end.y < b.position.y:
+		dy = b.position.y - a.end.y
+	elif b.end.y < a.position.y:
+		dy = a.position.y - b.end.y
+	if dx > 0.0 and dy > 0.0:
+		return sqrt(dx * dx + dy * dy)
+	if dx == 0.0 and dy == 0.0:
+		return 0.0
+	return maxf(dx, dy)
+
+
+## Labels that are still grazing a badge slide away. Seated radius callouts
+## stay on the circle; the seat search owns their gap.
+func _open_label_glyph_gap(cam: Camera3D, k: float) -> void:
+	if k < 1e-6:
+		return
+	var min_gap := GLYPH_LABEL_GAP_PX
+	for _pass in 8:
+		var glyphs: Array[Rect2] = []
+		for g in constraint_glyph_screen_rects():
+			if typeof(g) == TYPE_DICTIONARY:
+				glyphs.append(g["rect"] as Rect2)
+		var moved := false
+		for i in range(dimensions.size()):
+			var dim: Dictionary = dimensions[i]
+			if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+				continue
+			if _seated_curve_dimension(dim):
+				continue
+			var rect := _projected_label_rect(dim, cam, k)
+			var push := Vector2.ZERO
+			for gr in glyphs:
+				var sep := _rect_separation(rect, gr)
+				if sep >= min_gap:
+					continue
+				var away := rect.get_center() - gr.get_center()
+				if away.length_squared() < 1.0:
+					away = Vector2(0.0, -1.0)
+				push += away.normalized() * (min_gap - sep + 1.5)
+			if push.length_squared() < 0.25:
+				continue
+			var clamp_off := Vector2.ZERO
+			var raw: Variant = dim.get("label_clamp", Vector2.ZERO)
+			if raw is Vector2:
+				clamp_off = raw
+			var trial_off := clamp_off + Vector2(push.x / k, -push.y / k)
+			dim["label_clamp"] = trial_off
+			dimensions[i] = dim
+			var trial := _projected_label_rect(dim, cam, k)
+			var blocked := false
+			for j in range(dimensions.size()):
+				if j == i:
+					continue
+				var other: Dictionary = dimensions[j]
+				if typeof(other) != TYPE_DICTIONARY or other.get("label_pos", null) == null:
+					continue
+				if trial.intersects(_projected_label_rect(other, cam, k)):
+					blocked = true
+					break
+			if blocked or not _label_safe_screen_rect().encloses(trial):
+				dim["label_clamp"] = clamp_off
+				dimensions[i] = dim
+				continue
+			moved = true
+		if not moved:
+			break
+	_clamp_dimension_labels_into_view(cam, k)
+
+
+func _circle_label_trial_hits(trial: Rect2, index: int, cam: Camera3D, k: float,
+		glyphs: Array[Rect2], shaft_y: float) -> bool:
+	if _glyph_below_part(trial, shaft_y):
+		return true
+	var safe := _label_safe_screen_rect()
+	if not safe.encloses(trial):
+		return true
+	for j in range(dimensions.size()):
+		if j == index:
+			continue
+		var other: Dictionary = dimensions[j]
+		if typeof(other) != TYPE_DICTIONARY or other.get("label_pos", null) == null:
+			continue
+		if trial.intersects(_projected_label_rect(other, cam, k)):
+			return true
+	for gr in glyphs:
+		if trial.intersects(gr.grow(GLYPH_LABEL_GAP_PX)):
+			return true
+	return false
+
+
+func _rebuild_circle_label_leaders(cam: Camera3D) -> void:
+	_free_direct_child("CircleLabelLeaders")
+	if cam == null or sketch == null or not active:
+		return
+	var k := _label_px_scale(cam)
+	var im := ImmediateMesh.new()
+	var any := false
+	var col := Color(0.92, 0.94, 0.98, 0.85)
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY or not _seated_curve_dimension(dim):
+			continue
+		if dim.get("label_pos", null) == null:
+			continue
+		var curve: Variant = _curve_center_radius(dim)
+		if curve == null:
+			continue
+		var info: Dictionary = curve
+		var c: Vector2 = info["center"]
+		var radius := float(info.get("radius", 0.0))
+		var c_s := cam.unproject_position(to_global(to_model(c)))
+		var radius_px := c_s.distance_to(cam.unproject_position(to_global(to_model(c + Vector2(radius, 0.0)))))
+		var rect := _projected_label_rect(dim, cam, k)
+		var centre := rect.get_center()
+		var away := centre - c_s
+		if away.length_squared() < 1.0:
+			continue
+		var dir := away.normalized()
+		var rim_s := c_s + dir * radius_px
+		var half := rect.size * 0.5
+		var along := half.x * absf(dir.x) + half.y * absf(dir.y)
+		var edge_s := centre - dir * along
+		if rim_s.distance_to(edge_s) < 2.0:
+			continue
+		_append_leader_ribbon(im, cam, _sketch_from_screen(cam, rim_s, c),
+				_sketch_from_screen(cam, edge_s, c), 1.4, col)
+		any = true
+	if not any:
+		return
+	im.surface_end()
+	var leaders := MeshInstance3D.new()
+	leaders.name = "CircleLabelLeaders"
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.no_depth_test = true
+	mat.render_priority = 4
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.albedo_color = Color.WHITE
+	leaders.mesh = im
+	leaders.material_override = mat
+	add_child(leaders)
+
+
 func _projected_label_rect(dim: Dictionary, cam: Camera3D, k: float) -> Rect2:
 	return _dimension_label_rect(dim, _projected_label_anchor(dim, cam), k)
 
@@ -7408,9 +7696,14 @@ func dimension_label_screen_rects() -> Array:
 func _glyph_symbol_size_px(type: String, k: float) -> Vector2:
 	var font: Font = ThemeDB.fallback_font
 	var symbol := str(GLYPH_SYMBOLS.get(type, type))
-	return Vector2(
-			font.get_string_size(symbol, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x,
-			font.get_height(22)) * k
+	# Label3D draws one em. get_height() adds leading, so the hit box is
+	# taller than the ink and a legal pack fails the overlap check.
+	var em := float(GLYPH_FONT_PX)
+	var raw := Vector2(
+			font.get_string_size(symbol, HORIZONTAL_ALIGNMENT_LEFT, -1, int(em)).x,
+			em)
+	var side := maxf(raw.x, raw.y)
+	return Vector2(side, side) * k
 
 
 func _glyph_screen_rect(pos: Vector2, type: String, cam: Camera3D, k: float) -> Rect2:
@@ -7425,6 +7718,56 @@ func _sketch_at_screen(cam: Camera3D, screen: Vector2) -> Variant:
 	var origin: Vector3 = inv * cam.project_ray_origin(screen)
 	var direction: Vector3 = inv.basis * cam.project_ray_normal(screen)
 	return ray_to_sketch(origin, direction)
+
+
+## Screen pixel → sketch plane, using the anchor's own projection so a 40 px
+## nudge lands on the pixel the layout chose. A ray that misses the plane
+## (or comes back on a different pixel) must not leave the badge on the pile.
+func _sketch_from_screen(cam: Camera3D, screen: Vector2, anchor_sketch: Vector2) -> Vector2:
+	var origin_s := cam.unproject_position(to_global(to_model(anchor_sketch)))
+	var x_s := cam.unproject_position(to_global(to_model(anchor_sketch + Vector2(1.0, 0.0)))) - origin_s
+	var y_s := cam.unproject_position(to_global(to_model(anchor_sketch + Vector2(0.0, 1.0)))) - origin_s
+	var delta := screen - origin_s
+	var det := x_s.x * y_s.y - x_s.y * y_s.x
+	if absf(det) < 1e-4:
+		var hit: Variant = _sketch_at_screen(cam, screen)
+		if hit is Vector2:
+			return hit
+		return anchor_sketch
+	var dx := (delta.x * y_s.y - delta.y * y_s.x) / det
+	var dy := (x_s.x * delta.y - x_s.y * delta.x) / det
+	return anchor_sketch + Vector2(dx, dy)
+
+
+## Screen Y of the shaft's lower edge (Y grows downward). INF when the sketch
+## has no long near-horizontal wall to measure.
+func _shaft_lower_screen_y(cam: Camera3D) -> float:
+	if sketch == null:
+		return INF
+	var best := -INF
+	var found := false
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var a := cam.unproject_position(to_global(to_model(info["start"])))
+		var b := cam.unproject_position(to_global(to_model(info["end"])))
+		var span := a.distance_to(b)
+		if span < 36.0:
+			continue
+		if absf(a.y - b.y) > maxf(8.0, span * 0.18):
+			continue
+		var y := (a.y + b.y) * 0.5
+		if y > best:
+			best = y
+			found = true
+	return best if found else INF
+
+
+func _glyph_below_part(rect: Rect2, shaft_y: float) -> bool:
+	if shaft_y > 1.0e8:
+		return false
+	return rect.end.y > shaft_y + 1.5
 
 
 func _label_rects_for_glyphs(cam: Camera3D) -> Array[Rect2]:
@@ -7451,23 +7794,23 @@ func _glyph_overlap_fraction(a: Rect2, b: Rect2) -> float:
 
 ## 0 when the badge is clear of other glyphs, labels, and sketch geometry.
 func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
-		labels: Array[Rect2], cam: Camera3D) -> float:
+		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF) -> float:
 	var score := 0.0
 	for prev in placed:
 		var frac := _glyph_overlap_fraction(rect, prev)
-		# A small term so the search prefers the least overlap. Above 20% it
-		# outweighs sitting on the curve, which the 40 px cap cannot spread.
-		score += frac * 8.0
-		if frac > 0.20:
-			score += 50.0 + (frac - 0.20) * 100.0
+		# Overlap above ~30% is a hard miss: the badge has to stay readable.
+		# Label clearance is soft — dimension text moves after the glyphs do.
+		score += frac * 40.0
+		if frac > 0.16:
+			score += 8000.0 + (frac - 0.16) * 4000.0
 	for lr in labels:
-		var lg := lr.grow(GLYPH_LABEL_GAP_PX)
+		var lg := lr.grow(4.0)
 		if rect.intersects(lg):
 			var inter := rect.intersection(lg)
-			score += 80.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0)
-	# No on-curve penalty. With the offset capped at 40 px that penalty put
-	# every badge on the same ring and they overlapped. Labels and other
-	# badges still push a glyph off its vertex.
+			score += 12.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0) * 0.02
+	# Hanging off the part outranks a label or glyph collision.
+	if _glyph_below_part(rect, shaft_y):
+		score += 20000.0 + (rect.end.y - shaft_y) * 40.0
 	if _sketch_at_screen(cam, centre) == null:
 		score += 40.0
 	return score
@@ -7475,34 +7818,28 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 
 ## Screen centre of a glyph pushed off the pile, the labels, and the curves.
 func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2],
-		labels: Array[Rect2], cam: Camera3D) -> Vector2:
-	var step := maxf(size.x, size.y) + 2.0
+		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF) -> Vector2:
 	var best := natural
 	var best_score := INF
-	var max_ring := maxi(1, floori(GLYPH_MAX_OFFSET_PX / step))
 	var radii: Array[float] = [0.0]
-	var fine := 4.0
+	var fine := 5.0
 	while fine <= GLYPH_MAX_OFFSET_PX + 0.01:
 		radii.append(minf(fine, GLYPH_MAX_OFFSET_PX))
-		fine += 4.0
-	for ring in range(1, max_ring + 1):
-		var capped := minf(step * float(ring), GLYPH_MAX_OFFSET_PX)
-		if not radii.has(capped):
-			radii.append(capped)
+		fine += 5.0
 	for radius in radii:
-		var count := 1 if radius < 1.0 else 24
+		var count := 1 if radius < 1.0 else 32
 		for i in range(count):
 			var centre := natural
 			if radius >= 1.0:
 				var ang := TAU * float(i) / float(count)
 				centre = natural + Vector2(cos(ang), sin(ang)) * radius
 			var rect := Rect2(centre - size * 0.5, size)
-			var score := _glyph_block_score(rect, centre, placed, labels, cam)
-			if score < best_score:
+			var score := _glyph_block_score(rect, centre, placed, labels, cam, shaft_y)
+			if score < best_score - 0.01:
 				best_score = score
 				best = centre
 	var guard := 0
-	while guard < 12:
+	while guard < 16:
 		guard += 1
 		var rect := Rect2(best - size * 0.5, size)
 		var worst := 0.0
@@ -7512,15 +7849,21 @@ func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2
 			if frac > worst:
 				worst = frac
 				worst_prev = prev
-		if worst <= 0.12:
+		var below := _glyph_below_part(rect, shaft_y)
+		if worst <= 0.16 and not below:
 			break
-		var away := best - worst_prev.get_center()
+		var away := Vector2.UP
+		if worst > 0.12:
+			away = best - worst_prev.get_center()
+		elif below:
+			away = Vector2(0.0, -1.0)
 		if away.length_squared() < 1.0:
-			away = Vector2(1.0, 0.0)
-		var nudged := best + away.normalized() * 3.0
+			away = Vector2(0.0, -1.0)
+		var nudged := best + away.normalized() * 4.0
 		if nudged.distance_to(natural) > GLYPH_MAX_OFFSET_PX:
 			nudged = natural + (nudged - natural).normalized() * GLYPH_MAX_OFFSET_PX
-		var nscore := _glyph_block_score(Rect2(nudged - size * 0.5, size), nudged, placed, labels, cam)
+		var nrect := Rect2(nudged - size * 0.5, size)
+		var nscore := _glyph_block_score(nrect, nudged, placed, labels, cam, shaft_y)
 		if nscore <= best_score + 0.01:
 			best = nudged
 			best_score = nscore
@@ -7657,8 +8000,10 @@ func _rebuild_constraint_glyphs() -> void:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var k := _label_px_scale(cam) if cam != null else 1.0
 	var label_rects: Array[Rect2] = _label_rects_for_glyphs(cam) if cam != null else []
+	var shaft_y := _shaft_lower_screen_y(cam) if cam != null else INF
 	var placed: Array[Rect2] = []
 	var taken: Array[Vector2] = []
+	var pending: Array = []
 	for cid in sketch.constraint_ids():
 		var cinfo: Dictionary = sketch.constraint_info(cid)
 		var type := str(cinfo.get("type", ""))
@@ -7667,71 +8012,91 @@ func _rebuild_constraint_glyphs() -> void:
 		var anchor: Variant = _constraint_anchor(cinfo)
 		if anchor == null:
 			continue
-		var pos := anchor as Vector2
-		var anchor_sketch := pos
+		var anchor_sketch := anchor as Vector2
+		var pos := anchor_sketch
 		var offset_px := 0.0
+		var centre := Vector2.ZERO
+		var natural := Vector2.ZERO
+		var size := Vector2.ZERO
 		if cam != null:
 			# De-stack in pixels. A 2.5 mm step is ~8 px at a 150 px head,
 			# smaller than the badge, so the pile survives a millimetre nudge.
-			var size := _glyph_symbol_size_px(type, k)
-			var natural := cam.unproject_position(to_global(to_model(pos)))
-			var centre := _separate_glyph_screen(natural, size, placed, label_rects, cam)
+			size = _glyph_symbol_size_px(type, k)
+			natural = cam.unproject_position(to_global(to_model(anchor_sketch)))
+			centre = _separate_glyph_screen(natural, size, placed, label_rects, cam, shaft_y)
 			offset_px = natural.distance_to(centre)
 			placed.append(Rect2(centre - size * 0.5, size))
-			var back: Variant = _sketch_at_screen(cam, centre)
-			if back != null:
-				pos = back
+			pos = _sketch_from_screen(cam, centre, anchor_sketch)
 		else:
 			var guard := 0
 			while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
 				pos += Vector2(0, 2.5)
 				guard += 1
 			taken.append(pos)
+		pending.append({
+			"cid": str(cid),
+			"type": type,
+			"anchor": anchor_sketch,
+			"pos": pos,
+			"natural": natural,
+			"centre": centre,
+			"size": size,
+			"offset_px": offset_px,
+		})
+	if cam != null and pending.size() > 1:
+		_relax_glyph_layout(pending, label_rects, cam, shaft_y)
+	for item in pending:
+		var gtype := str(item["type"])
+		var gcid := str(item["cid"])
+		var gpos: Vector2 = item["pos"]
 		var label := Label3D.new()
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.fixed_size = true
 		label.pixel_size = 0.004
-		label.font_size = 22
-		label.text = GLYPH_SYMBOLS[type]
-		if str(cid) == selected_constraint:
+		label.font_size = GLYPH_FONT_PX
+		label.no_depth_test = true
+		label.render_priority = 3
+		label.text = GLYPH_SYMBOLS[gtype]
+		if gcid == selected_constraint:
 			label.modulate = COLOR_GLYPH_SELECTED
-		elif last_conflicting.has(str(cid)):
+		elif last_conflicting.has(gcid):
 			label.modulate = COLOR_CONFLICT
 		else:
 			label.modulate = COLOR_GLYPH
-		label.position = _to3(pos)
-		label.set_meta("cid", str(cid))
+		label.position = _to3(gpos) + plane_normal() * 0.25
+		label.set_meta("cid", gcid)
 		_constraint_glyphs.add_child(label)
 		_glyph_anchors.append({
-			"cid": str(cid),
-			"pos": pos,
-			"type": type,
-			"anchor": anchor_sketch,
-			"offset_px": offset_px,
+			"cid": gcid,
+			"pos": gpos,
+			"type": gtype,
+			"anchor": item["anchor"],
+			"offset_px": float(item["offset_px"]),
 		})
 	var lead := false
 	for a in _glyph_anchors:
 		if float(a.get("offset_px", 0.0)) >= GLYPH_LEADER_MIN_PX:
 			lead = true
 			break
-	if lead:
+	if lead and cam != null:
 		var leaders := MeshInstance3D.new()
 		leaders.name = "GlyphLeaders"
 		var im := ImmediateMesh.new()
-		im.surface_begin(Mesh.PRIMITIVE_LINES)
+		im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 		var col := COLOR_GLYPH
-		col.a = 0.6
+		col.a = 0.9
 		for a in _glyph_anchors:
 			if float(a.get("offset_px", 0.0)) < GLYPH_LEADER_MIN_PX:
 				continue
-			im.surface_set_color(col)
-			im.surface_add_vertex(_to3(a["anchor"]))
-			im.surface_add_vertex(_to3(a["pos"]))
+			_append_leader_ribbon(im, cam, a["anchor"], a["pos"], 1.6, col)
 		im.surface_end()
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.vertex_color_use_as_albedo = true
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.no_depth_test = true
+		mat.render_priority = 4
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		mat.albedo_color = Color.WHITE
 		leaders.mesh = im
 		leaders.material_override = mat
@@ -7755,23 +8120,164 @@ func glyph_debug() -> Array:
 	return out
 
 
-## Constraint whose glyph is within GLYPH_PICK_RADIUS of pos2, or "".
-## Geometry wins ties: a click closer to an entity than to the badge selects
-## the entity, so badges beside a line never steal clicks aimed at it.
+## Constraint whose drawn glyph rect contains pos2, or "".
+## The badge wins over the entity under it. A press that misses the rect
+## still selects the curve. Without a camera, fall back to GLYPH_PICK_RADIUS.
 func constraint_hit(pos2: Vector2) -> String:
-	var best := ""
-	var best_d := GLYPH_PICK_RADIUS
+	if sketch == null:
+		return ""
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam != null:
+		var screen := cam.unproject_position(to_global(to_model(pos2)))
+		var best := ""
+		var best_d := INF
+		var k := _label_px_scale(cam)
+		for a in _glyph_anchors:
+			var type := str(a.get("type", ""))
+			var rect := _glyph_screen_rect(a["pos"], type, cam, k)
+			if not rect.has_point(screen):
+				continue
+			var d := screen.distance_to(rect.get_center())
+			if d < best_d:
+				best_d = d
+				best = str(a.get("cid", ""))
+		return best
+	var best2 := ""
+	var best_mm := GLYPH_PICK_RADIUS
 	for a in _glyph_anchors:
-		var d: float = pos2.distance_to(a["pos"])
-		if d < best_d:
-			best_d = d
-			best = a["cid"]
-	if best == "":
-		return ""
-	var eid := _nearest_entity_at(pos2)
-	if eid != "" and _entity_distance(sketch.entity_info(eid), pos2) < best_d:
-		return ""
-	return best
+		var d2: float = pos2.distance_to(a["pos"])
+		if d2 < best_mm:
+			best_mm = d2
+			best2 = str(a.get("cid", ""))
+	return best2
+
+
+func _relax_glyph_layout(items: Array, labels: Array[Rect2], cam: Camera3D,
+		shaft_y: float) -> void:
+	for _pass in 10:
+		var moved := false
+		for i in items.size():
+			var it: Dictionary = items[i]
+			var natural: Vector2 = it["natural"]
+			var size: Vector2 = it["size"]
+			var centre: Vector2 = it["centre"]
+			if size == Vector2.ZERO:
+				continue
+			var others: Array[Rect2] = []
+			for j in items.size():
+				if j == i:
+					continue
+				var oc: Vector2 = items[j]["centre"]
+				var os: Vector2 = items[j]["size"]
+				others.append(Rect2(oc - os * 0.5, os))
+			var rect := Rect2(centre - size * 0.5, size)
+			var score := _glyph_block_score(rect, centre, others, labels, cam, shaft_y)
+			if score < 1.0:
+				continue
+			var better := _separate_glyph_screen(natural, size, others, labels, cam, shaft_y)
+			if better.distance_to(centre) <= 0.5:
+				continue
+			it["centre"] = better
+			it["offset_px"] = natural.distance_to(better)
+			it["pos"] = _sketch_from_screen(cam, better, it["anchor"])
+			items[i] = it
+			moved = true
+		if not moved:
+			break
+	_repel_glyph_items(items, cam, shaft_y)
+
+
+## Push overlapping badges apart inside the 40 px cap, and lift any badge
+## whose box crosses the shaft's lower edge.
+func _repel_glyph_items(items: Array, cam: Camera3D, shaft_y: float) -> void:
+	for _pass in 28:
+		var moved := false
+		for i in range(items.size()):
+			var it: Dictionary = items[i]
+			var size: Vector2 = it["size"]
+			var centre: Vector2 = it["centre"]
+			if size == Vector2.ZERO:
+				continue
+			var rect := Rect2(centre - size * 0.5, size)
+			var push := Vector2.ZERO
+			if _glyph_below_part(rect, shaft_y):
+				push.y -= (rect.end.y - shaft_y) + 2.0
+			for j in range(items.size()):
+				if j == i:
+					continue
+				var other: Dictionary = items[j]
+				var oc: Vector2 = other["centre"]
+				var os: Vector2 = other["size"]
+				var orect := Rect2(oc - os * 0.5, os)
+				var frac := _glyph_overlap_fraction(rect, orect)
+				if frac <= 0.16:
+					continue
+				var away := centre - oc
+				if away.length_squared() < 1.0:
+					away = Vector2(cos(float(i) * 0.9), sin(float(i) * 0.9))
+				push += away.normalized() * (4.0 + frac * 10.0)
+			if push.length_squared() < 0.25:
+				continue
+			var next := _clamp_glyph_centre(centre + push, it["natural"], size, shaft_y)
+			if next.distance_to(centre) <= 0.4:
+				continue
+			it["centre"] = next
+			it["offset_px"] = (it["natural"] as Vector2).distance_to(next)
+			it["pos"] = _sketch_from_screen(cam, next, it["anchor"])
+			items[i] = it
+			moved = true
+		if not moved:
+			break
+
+
+func _clamp_glyph_centre(centre: Vector2, natural: Vector2, size: Vector2, shaft_y: float) -> Vector2:
+	var delta := centre - natural
+	if delta.length() > GLYPH_MAX_OFFSET_PX:
+		delta = delta.normalized() * GLYPH_MAX_OFFSET_PX
+	var clamped := natural + delta
+	if shaft_y > 1.0e8:
+		return clamped
+	var limit := shaft_y - size.y * 0.5 - 1.5
+	if clamped.y <= limit:
+		return clamped
+	# Highest point of the cap at this x. If that still hangs below the
+	# shaft, slide toward the anchor (the cap's top) until it clears.
+	var room := GLYPH_MAX_OFFSET_PX * GLYPH_MAX_OFFSET_PX - delta.x * delta.x
+	var y_lo := natural.y - sqrt(maxf(room, 0.0))
+	if y_lo <= limit:
+		clamped.y = limit
+		return clamped
+	var top := natural + Vector2(0.0, -GLYPH_MAX_OFFSET_PX)
+	if top.y <= limit:
+		return top
+	return clamped
+
+
+## 1 px-ish ribbon in screen space. GL compatibility drops PRIMITIVE_LINES.
+func _append_leader_ribbon(im: ImmediateMesh, cam: Camera3D, a_sketch: Vector2,
+		b_sketch: Vector2, width_px: float, col: Color) -> void:
+	var sa := cam.unproject_position(to_global(to_model(a_sketch)))
+	var sb := cam.unproject_position(to_global(to_model(b_sketch)))
+	if sa.distance_to(sb) < 1.5:
+		return
+	var dir := (sb - sa).normalized()
+	var n := Vector2(-dir.y, dir.x) * (width_px * 0.5)
+	var p0 := _sketch_from_screen(cam, sa + n, a_sketch)
+	var p1 := _sketch_from_screen(cam, sa - n, a_sketch)
+	var p2 := _sketch_from_screen(cam, sb - n, b_sketch)
+	var p3 := _sketch_from_screen(cam, sb + n, b_sketch)
+	var lift := plane_normal() * 0.35
+	var v0 := _to3(p0) + lift
+	var v1 := _to3(p1) + lift
+	var v2 := _to3(p2) + lift
+	var v3 := _to3(p3) + lift
+	im.surface_set_color(col)
+	im.surface_add_vertex(v0)
+	im.surface_add_vertex(v1)
+	im.surface_add_vertex(v2)
+	im.surface_add_vertex(v0)
+	im.surface_add_vertex(v2)
+	im.surface_add_vertex(v3)
 
 
 func select_constraint(cid: String) -> void:
