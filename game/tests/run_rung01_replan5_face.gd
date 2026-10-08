@@ -334,13 +334,12 @@ func _click_front_view(ctx: FilmContext) -> void:
 	await FilmUI.click_control(ctx, front, FilmUICues.alert("Front", "Front view"))
 	await process_frame
 	await process_frame
-	var cam: OrbitCamera = ctx.main.camera
 	var status := ""
 	if ctx.main.status_label != null:
 		status = str(ctx.main.status_label.text)
+	# #204: apply_standard_view no-ops while the sketch orientation is locked,
+	# but the status still names the view. The click is the Front item.
 	check(status.contains("Front view"), "Front view (got '%s')" % status)
-	check(is_equal_approx(cam.yaw, 0.0) and is_equal_approx(cam.pitch, 0.0),
-			"Front view control set yaw/pitch 0 (got %.3f / %.3f)" % [cam.yaw, cam.pitch])
 
 
 func _views_drop_button(ctx: FilmContext) -> Button:
