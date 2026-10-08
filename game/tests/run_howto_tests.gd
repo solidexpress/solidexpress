@@ -73,7 +73,7 @@ func howto_place_and_orbit(main) -> void:
 	check(view.selected_body != "", "body stays selected")
 	main._update_panel_visibility()
 	check(not main.palette.visible, "primitives hidden after select")
-	var ops_x := main.ops_panel.get_global_rect().position.x
+	var ops_x: float = main.ops_panel.get_global_rect().position.x
 	check(ops_x <= ChromeDock.rail_right + 1.0,
 			"modify tools in left rail (x %.1f, rail_right %.1f)" % [ops_x, ChromeDock.rail_right])
 	# Idle selection of a scalable primitive keeps W×H×D up; move-delta stays down.
