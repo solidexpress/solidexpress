@@ -5371,6 +5371,10 @@ func _try_route_length_key(event: InputEvent) -> bool:
 	# the finish-bar dim blank or Distance with the same KEY_2 KEY_0 KEY_0.
 	if _dim_edit_owns_keys():
 		return _try_replace_dim_edit_key(event)
+	# Distance is editing after click / Tab, so LineEdit would insert the key
+	# and this signal path would never see it. Own the character first.
+	if _try_own_focused_distance_key(event):
+		return true
 	if _try_consume_preview_length_key(event):
 		return true
 	if _try_append_focused_dim_length_key(event):
@@ -5465,6 +5469,31 @@ func _try_consume_distance_length_key(event: InputEvent) -> bool:
 	if sketch_chrome != null:
 		if sketch_chrome.has_method("focus_distance_for_typing"):
 			sketch_chrome.focus_distance_for_typing(_distance_length_typed)
+	return true
+
+
+func _try_own_focused_distance_key(event: InputEvent) -> bool:
+	if not (event is InputEventKey and event.pressed and not event.echo \
+			and not event.ctrl_pressed and not event.meta_pressed):
+		return false
+	var ke := event as InputEventKey
+	if not _is_length_type_key(ke):
+		return false
+	var edit := _distance_line_edit()
+	if edit == null or not edit.has_focus():
+		return false
+	# An unfocused burst already seeded this string. The next keys extend
+	# that seed; owning them here would append to the previous commit.
+	if not _distance_length_typed.is_empty():
+		return false
+	if sketch_chrome == null or not sketch_chrome.has_method("apply_distance_typed_char"):
+		return false
+	var ch := _length_type_seed(ke)
+	if ch.is_empty():
+		return false
+	# This burst is the field's, not a leftover unfocused seed.
+	_distance_length_typed = ""
+	sketch_chrome.apply_distance_typed_char(ch)
 	return true
 
 
@@ -5671,6 +5700,13 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if event is InputEventKey and event.pressed:
+			# Tab moves focus. Swallowing it here kept the Extrude Distance
+			# field from ever gaining focus that way, so the first key could
+			# not replace its value.
+			var ke_tab := event as InputEventKey
+			if ke_tab.keycode == KEY_TAB and not ke_tab.ctrl_pressed \
+					and not ke_tab.alt_pressed and not ke_tab.meta_pressed:
+				return
 			if _sketch_keys_blocked():
 				return
 			var ke_len := event as InputEventKey
@@ -5775,6 +5811,9 @@ func _consume_numeric_select_all(ke: InputEventKey) -> bool:
 		line.select_all()
 		if _line_is_tracked_numeric(line):
 			SxUi.arm_replace_on_focus(line)
+		if line == _distance_line_edit() and sketch_chrome != null \
+				and sketch_chrome.has_method("note_distance_select_all"):
+			sketch_chrome.note_distance_select_all()
 		if vp != null:
 			vp.set_input_as_handled()
 		return true

@@ -27,6 +27,8 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _test_distance_fast()
 	await _test_distance_framed()
+	await _test_distance_ctrl_a()
+	await _test_distance_tab()
 	await _test_circle_shortcut()
 	await _test_circle_radius_fast()
 	await _test_circle_radius_framed()
@@ -88,6 +90,57 @@ func _test_distance_fast() -> void:
 func _test_distance_framed() -> void:
 	print("- L10 Distance framed 10 Enter, 14 Enter, 10 Enter")
 	await _distance_sequence(true)
+
+
+func _test_distance_ctrl_a() -> void:
+	print("- Distance Ctrl+A then fast 2.5 replaces 20")
+	var ctx := await _boot()
+	var dist := _distance_edit(ctx.main.sketch_chrome)
+	check(dist != null and _near(_parsed(dist), 20.0),
+			"Distance starts at 20 (got '%s')" % (dist.text if dist != null else ""))
+	if dist == null:
+		await _shutdown(ctx)
+		return
+	await _click_control(dist)
+	# No frame between Ctrl+A and the digits. A spin rewrite of "2" to "2.0"
+	# used to splice this into "2.05".
+	_push_chord_now(ctx.main.get_viewport(), KEY_A, true)
+	await _type_text(ctx.main.get_viewport(), "2.5", false)
+	check(_near(_parsed(dist), 2.5), "Ctrl+A then 2.5 reads 2.5 (got '%s')" % dist.text)
+	check(not str(dist.text).contains("2.05"),
+			"Distance did not splice to 2.05 (got '%s')" % dist.text)
+	await _push_chord(ctx.main.get_viewport(), KEY_A, true, false)
+	check(_selection_covers_all(dist),
+			"Ctrl+A selects all Distance text (got '%s' sel %s-%s)" % [
+				dist.text, dist.get_selection_from_column(), dist.get_selection_to_column()])
+	await _type_text(ctx.main.get_viewport(), "2.5", false)
+	check(_near(_parsed(dist), 2.5), "second Ctrl+A then 2.5 reads 2.5 (got '%s')" % dist.text)
+	check(not str(dist.text).contains("2.052.5"),
+			"second try did not append (got '%s')" % dist.text)
+	await _shutdown(ctx)
+
+
+func _test_distance_tab() -> void:
+	print("- Tab into Distance then fast 2.5 replaces 20")
+	var ctx := await _boot()
+	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dim := _dim_edit(ctx.main.sketch_chrome)
+	if dist == null or dim == null:
+		check(false, "Distance and Dim lines exist for Tab")
+		await _shutdown(ctx)
+		return
+	dim.grab_focus()
+	await process_frame
+	var landed := false
+	for _i in 12:
+		await _push_key(ctx.main.get_viewport(), KEY_TAB)
+		if dist.has_focus():
+			landed = true
+			break
+	check(landed, "Tab reaches Distance (owner '%s')" % _focus_name(ctx))
+	await _type_text(ctx.main.get_viewport(), "2.5", false)
+	check(_near(_parsed(dist), 2.5), "Tab then 2.5 reads 2.5 (got '%s')" % dist.text)
+	await _shutdown(ctx)
 
 
 func _distance_sequence(framed: bool) -> void:
@@ -486,6 +539,11 @@ func _push_key(vp: Viewport, keycode: Key) -> void:
 
 
 func _push_chord(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+	_push_chord_now(vp, keycode, ctrl, shift)
+	await process_frame
+
+
+func _push_chord_now(vp: Viewport, keycode: Key, ctrl: bool, shift: bool = false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -497,4 +555,17 @@ func _push_chord(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	var up := down.duplicate() as InputEventKey
 	up.pressed = false
 	vp.push_input(up)
-	await process_frame
+
+
+func _selection_covers_all(edit: LineEdit) -> bool:
+	if edit == null or not edit.has_selection():
+		return false
+	return edit.get_selection_from_column() == 0 \
+			and edit.get_selection_to_column() == edit.text.length()
+
+
+func _focus_name(ctx: FilmContext) -> String:
+	var owner: Control = ctx.main.get_viewport().gui_get_focus_owner()
+	if owner == null:
+		return ""
+	return str(owner.name)

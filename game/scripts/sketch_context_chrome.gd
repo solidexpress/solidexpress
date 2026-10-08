@@ -804,8 +804,14 @@ func _reassert_distance_line(gen: int, text: String, caret: int, had_sel: bool,
 		var typed := str(edit.get_meta("_sx_typed", ""))
 		if typed != "" and typed != text and not SxUi.replace_armed(edit):
 			return
+	# Ctrl+A / focus-replace can land before this deferred restore. Putting
+	# the old caret back would drop that selection and the next burst appends.
+	var keep_replace := edit != null and (_distance_replace_next \
+			or SxUi.replace_armed(edit) or edit.has_selection())
 	_distance_syncing = true
 	_apply_distance_line(edit, text, caret, had_sel, sel_from, sel_to)
+	if keep_replace and edit != null:
+		edit.select_all()
 	_distance_syncing = false
 
 
@@ -924,6 +930,20 @@ func _on_distance_text_changed(new_text: String) -> void:
 	# A pending deferred / next-frame select_all from the focusing click must
 	# not win over the first typed digit (7 then . would become ".5").
 	_distance_select_gen += 1
+	# Step 0.5 rewrites "2" as "2.0". A native "." / "5" then splices in and
+	# the field reads "2.05" (a second burst appends, "2.052.5"). The typed
+	# snapshot is the value; put it back and do not commit the padded text.
+	var owned_edit := _extrude_spin.get_line_edit() if _extrude_spin != null else null
+	var owned := str(owned_edit.get_meta("_sx_typed", "")) if owned_edit != null else ""
+	if owned_edit != null and owned != "" and new_text != owned \
+			and SxUi.mid_entry(owned_edit) and not _distance_replace_next \
+			and not SxUi.replace_armed(owned_edit):
+		_distance_syncing = true
+		owned_edit.text = owned
+		owned_edit.caret_column = owned.length()
+		owned_edit.deselect()
+		_distance_syncing = false
+		return
 	if _distance_rejecting:
 		return
 	var parsed: Variant = _parse_spin_text(_extrude_spin, new_text)
@@ -986,7 +1006,10 @@ func _on_distance_focus_entered() -> void:
 func _on_distance_focus_exited() -> void:
 	_distance_replace_next = false
 	if _extrude_spin != null:
-		SxUi.disarm_replace(_extrude_spin.get_line_edit())
+		var edit := _extrude_spin.get_line_edit()
+		SxUi.disarm_replace(edit)
+		if edit != null:
+			edit.set_meta("_sx_typed", "")
 	var ix := _host_interaction()
 	if ix != null and ix.has_method("note_distance_focus_released"):
 		ix.note_distance_focus_released()
@@ -1322,6 +1345,50 @@ func _on_dim_text_changed(new_text: String) -> void:
 		sketch_mode.set_length_override(float(parsed))
 
 
+## Ctrl+A and the next digit both replace. LineEdit eats Ctrl+A while editing,
+## so the viewport path calls this before the line sees the key.
+func note_distance_select_all() -> void:
+	_distance_replace_next = true
+	var edit := _extrude_spin.get_line_edit() if _extrude_spin != null else null
+	if edit == null:
+		return
+	if edit.has_focus() and not edit.is_editing():
+		edit.edit()
+	edit.select_all()
+	edit.set_meta("_sx_replace_armed", true)
+
+
+## One numeric key in Extrude Distance. Click, Tab, and Ctrl+A replace the
+## whole value; later keys append to the typed snapshot, not to a step-padded
+## "2.0" (that splice is how 2.5 becomes 2.05).
+func apply_distance_typed_char(ch: String) -> void:
+	if _extrude_spin == null or ch == "":
+		return
+	var line := _extrude_spin.get_line_edit()
+	if line == null:
+		return
+	_distance_user_key = true
+	var replace := _distance_replace_next or SxUi.replace_armed(line) or line.has_selection()
+	var next := ch
+	if not replace:
+		var owned := str(line.get_meta("_sx_typed", ""))
+		if owned != "":
+			next = owned + ch
+		else:
+			next = SxUi.compose_typed_char(line, ch)
+	_distance_replace_next = false
+	_distance_select_gen += 1
+	SxUi.write_typed_text(line, next)
+	var parsed: Variant = _parse_spin_text(_extrude_spin, next)
+	if parsed != null:
+		_distance_line_invalid = false
+		_distance_invalid_raw = ""
+		_write_extrude_spin(float(parsed), next)
+	else:
+		_distance_line_invalid = true
+		_distance_invalid_raw = next
+
+
 func _on_distance_edit_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -1364,33 +1431,22 @@ func _on_distance_edit_gui_input(event: InputEvent) -> void:
 				ix.consume_refusal_exit_ladder()
 			accept_event()
 			return
-		if not _is_numeric_replace_key(k, true):
-			return
-		_distance_user_key = true
-		var line := _extrude_spin.get_line_edit() if _extrude_spin != null else null
-		# Focus border with editing off (Enter's default unedit) swallows
-		# digits. Start editing and replace the committed value.
-		if line != null and line.has_focus() and not line.is_editing():
-			line.edit()
-			_distance_replace_next = true
-		# Every digit, not only the first. Setting Distance .value reformats
-		# "2" to "2.0" (step 0.5); a native "." then "5" becomes "2.05".
-		var ch := SxUi.numeric_key_char(k)
-		if ch != "" and line != null:
-			var next := ch
-			if not _distance_replace_next and not SxUi.replace_armed(line) \
-					and not line.has_selection():
-				next = SxUi.compose_typed_char(line, ch)
-			_distance_replace_next = false
-			_distance_select_gen += 1
-			SxUi.write_typed_text(line, next)
-			var typed: Variant = _parse_spin_text(_extrude_spin, next)
-			if typed != null:
-				_distance_line_invalid = false
-				_distance_invalid_raw = ""
-				_write_extrude_spin(float(typed), next)
+		if (k.ctrl_pressed or k.meta_pressed) and not k.alt_pressed \
+				and k.keycode == KEY_A:
+			note_distance_select_all()
 			accept_event()
 			return
+		if not _is_numeric_replace_key(k, true):
+			return
+		var ch := SxUi.numeric_key_char(k)
+		if ch == "":
+			return
+		# Fallback when the key was not already owned in Viewport._input.
+		# While the line is editing, LineEdit accepts the key first and this
+		# signal does not run — the viewport path is the one that sees it.
+		apply_distance_typed_char(ch)
+		accept_event()
+		return
 
 
 func _on_dim_edit_gui_input(event: InputEvent) -> void:
