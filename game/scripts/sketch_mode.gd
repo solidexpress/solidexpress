@@ -6890,6 +6890,8 @@ func _merge_dimension_records(built: Array, kept: Array) -> Array:
 			merged["type"] = rec["type"]
 			merged["ids"] = rec["ids"]
 			merged["value"] = rec["value"]
+			if str(merged.get("callout", "")) == "jaw_angle":
+				merged["value"] = _normalize_jaw_angle_rad(float(rec["value"]))
 			merged["cid"] = cid
 			out.append(merged)
 			if cid != "":

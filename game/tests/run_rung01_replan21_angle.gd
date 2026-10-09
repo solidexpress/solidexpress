@@ -35,20 +35,22 @@ func _run() -> void:
 		await _fresh_sketch(ctx)
 		await _draw_jaw(ctx, side)
 		await _assert_angle(ctx, "side %s" % side)
-	await _fresh_sketch(ctx)
-	await _draw_jaw(ctx, 1.0)
 	for cycles in [1, 2]:
-		var fid := await FilmUI.exit_sketch(ctx)
-		for _i in cycles:
-			await _reopen_exit(ctx, fid)
-		await _assert_angle(ctx, "reopen %d" % cycles)
 		await _fresh_sketch(ctx)
 		await _draw_jaw(ctx, 1.0)
-	var fid2 := await FilmUI.exit_sketch(ctx)
+		var fid := await FilmUI.exit_sketch(ctx)
+		for _i in cycles:
+			await _reopen(ctx, fid)
+			await FilmUI.exit_sketch(ctx)
+		await _reopen(ctx, fid)
+		await _assert_angle(ctx, "reopen %d" % cycles)
 	for undos in [0, 1, 2]:
 		for redos in [0, 1, 2]:
 			if undos == 0 and redos == 0:
 				continue
+			await _fresh_sketch(ctx)
+			await _draw_jaw(ctx, 1.0)
+			var pencil_fid := await FilmUI.exit_sketch(ctx)
 			for _u in undos:
 				_push_key(ctx.main.get_viewport(), KEY_Z, true, false)
 				await process_frame
@@ -56,17 +58,12 @@ func _run() -> void:
 				_push_key(ctx.main.get_viewport(), KEY_Z, true, true)
 				await process_frame
 			if _feature_named(ctx, "sketch"):
-				var pencil_fid := _last_sketch(ctx)
-				await _reopen_exit(ctx, pencil_fid)
+				await _reopen(ctx, pencil_fid)
 				await _assert_angle(ctx, "undo %d redo %d" % [undos, redos])
-			for _r2 in undos:
-				_push_key(ctx.main.get_viewport(), KEY_Z, true, true)
-				await process_frame
-			for _u2 in redos:
-				_push_key(ctx.main.get_viewport(), KEY_Z, true, false)
-				await process_frame
-	if not ctx.main.sketch_mode.active:
-		await _reopen_exit(ctx, fid2)
+	await _fresh_sketch(ctx)
+	await _draw_jaw(ctx, 1.0)
+	var fid2 := await FilmUI.exit_sketch(ctx)
+	await _reopen(ctx, fid2)
 	for _i in 12:
 		_push_key(ctx.main.get_viewport(), KEY_Z, true, false)
 		await process_frame
@@ -121,12 +118,14 @@ func _assert_angle(ctx: FilmContext, tag: String) -> void:
 	check(editor.begins_with("45") and not editor.contains("-"), "%s editor reads 45 (got `%s`)" % [tag, editor])
 	await _dismiss_editor(ctx)
 	var angle_ok := false
+	var angle_n := 0
 	for dim in sm.dimensions:
-		if str(dim.get("type", "")) != "angle":
+		if str(dim.get("callout", "")) != "jaw_angle" and not (str(dim.get("type", "")) == "angle" and sm._ids_are_jaw_angle(dim.get("ids", []))):
 			continue
+		angle_n += 1
 		var deg := rad_to_deg(float(dim.get("value", 0.0)))
-		angle_ok = deg > -90.0 and deg <= 90.0
-	check(angle_ok, "%s angle record is in (−90°, 90°]" % tag)
+		angle_ok = deg > -90.0 and deg <= 90.0 and absf(deg - 45.0) < 0.2
+	check(angle_n == 1 and angle_ok, "%s one jaw angle record in (−90°, 90°] (n=%d)" % [tag, angle_n])
 
 
 func _is_plain_degree(text: String) -> bool:
@@ -153,6 +152,9 @@ func _draw_jaw(ctx: FilmContext, side: float) -> void:
 
 
 func _editor_text(ctx: FilmContext, degree: bool) -> String:
+	var sel := FilmUI.find_sketch_tool_button(ctx.main, "Select")
+	if sel != null:
+		await FilmUI.click_control(ctx, sel, FilmUICues.alert("Select", "Select"))
 	var sm: SketchMode = ctx.main.sketch_mode
 	var pos := FilmJaw.click_label_first_glyph(ctx.main.get_viewport(), sm, degree)
 	await process_frame
@@ -177,7 +179,7 @@ func _fresh_sketch(ctx: FilmContext) -> void:
 	ctx.main.sketch_mode.set_snap(false)
 
 
-func _reopen_exit(ctx: FilmContext, fid: String) -> void:
+func _reopen(ctx: FilmContext, fid: String) -> void:
 	ctx.main.show_timeline = true
 	ctx.main._update_panel_visibility()
 	if ctx.main.timeline != null:
@@ -190,8 +192,6 @@ func _reopen_exit(ctx: FilmContext, fid: String) -> void:
 		await FilmUI.click_control(ctx, pencil, FilmUICues.alert("Edit", "pencil"))
 		await process_frame
 		await process_frame
-	if ctx.main.sketch_mode.active:
-		await FilmUI.exit_sketch(ctx)
 
 
 func _delete_redraw(ctx: FilmContext) -> void:
@@ -223,9 +223,10 @@ func _circles_and_trim(ctx: FilmContext, outer: bool) -> void:
 	var trim := FilmUI.find_sketch_tool_button(ctx.main, "Trim")
 	if trim != null:
 		await FilmUI.click_control(ctx, trim, FilmUICues.alert("Trim", "Trim"))
-	var a := Vector2(46, -4) if outer else Vector2(32, 8)
-	var b := Vector2(40, 0)
-	await _drag_uv(ctx, a, b)
+	if outer:
+		await _drag_uv(ctx, Vector2(46, -4), Vector2(40, 0))
+	else:
+		await _click_uv(ctx, Vector2(30, 12))
 	await process_frame
 	await _assert_angle(ctx, "trim %s" % ("outer" if outer else "inner"))
 
