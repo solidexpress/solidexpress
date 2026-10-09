@@ -497,17 +497,33 @@ class Walk:
                 return d
         return None
 
+    def _dim_editor_open(self) -> bool:
+        return str((self.control("dim:Edit") or {}).get("text", "")) != ""
+
     def edit_dim(self, dim: dict, text: str) -> str:
         label = str(dim.get("text", ""))
-        # Select's label halo is what a label click uses. Jaw is still armed
-        # after commit, and a miss there is a face pick.
         self.click("rail:Select")
-        self.d.click(dim=label, glyph="center")
-        self.d.wait_idle(frames=2)
-        if str((self.control("dim:Edit") or {}).get("text", "")) == "":
+        points: list[list[float]] = []
+        for key in ("rect", "hit_rect"):
+            rect = dim.get(key) or []
+            if len(rect) < 4 or float(rect[2]) < 1.0:
+                continue
+            x, y, w, h = [float(v) for v in rect[:4]]
+            points.append([x + min(8.0, w * 0.25), y + h * 0.5])
+            points.append([x + w * 0.5, y + h * 0.5])
+        opened = False
+        for pt in points:
+            self.d.click(screen=pt)
+            self.d.wait_idle(frames=1)
+            if self._dim_editor_open():
+                opened = True
+                break
+        if not opened:
             self.d.click(dim=label, glyph="first")
             self.d.wait_idle(frames=2)
         got = self._type_dim_editor(text)
+        if not opened and not self._num_is(got, float(text) if text.replace(".", "", 1).isdigit() else -1):
+            got = f"{got} rect={dim.get('rect')} hit={dim.get('hit_rect')}"
         self.enter()
         return got
 
@@ -1081,7 +1097,7 @@ class Walk:
         path = str(self.out / "blank.sxp")
         self._arm_dialog_dir()
         self._type_dialog_name("blank.sxp", replace_selection=True)
-        shown = str((self.control("dialog:Name") or {}).get("text", ""))
+        shown = str(self.d.call("dialog_dir", path="").get("file", ""))
         self.clause("name replaced", shown == "blank.sxp" or shown.endswith("blank.sxp"), shown)
         self.click("dialog:Ok")
         self._confirm_overwrite()
