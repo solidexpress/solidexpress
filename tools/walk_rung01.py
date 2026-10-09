@@ -1569,9 +1569,20 @@ class Walk:
         self.click("rail:Select")
         self.refresh("status")
         self.clause("select tool", self.S().startswith("Select —"), self.S())
-        self.click(screen=self._jaw_wall_screen(0.4))
-        self.refresh("status")
-        self.clause("wall", "Selected 1 sketch entity" in self.S() and "Constraint selected" not in self.S(), self.S())
+        # 40% along the wall now sits under a leader badge. Use a sample
+        # the badge rects leave clear, the same band N21b presses.
+        samples = self.wall_screen_points(4) or [self._jaw_wall_screen(0.3)]
+        got = ""
+        hit = False
+        for pt in samples:
+            self.click(screen=pt)
+            self.refresh("status")
+            got = self.S()
+            if "Selected 1 sketch entity" in got and "Constraint selected" not in got:
+                hit = True
+                break
+            self.click(sketch=[300, 80])
+        self.clause("wall", hit, got)
         s1 = self.esc()
         s2 = self.esc()
         self.clause("esc", "Selection cleared" in s1 and "Sketch saved" in s2, s1 + " | " + s2)
@@ -3058,9 +3069,18 @@ class Walk:
         reopened = self._reopen_sketch3()
         self.clause("pencil reopen", "Editing sketch" in reopened, reopened)
         self.click("rail:Select")
-        self.click(screen=self._jaw_wall_screen(0.4))
-        self.refresh("status")
-        self.clause("wall", "Selected 1 sketch entity" in self.S() and "Constraint selected" not in self.S(), self.S())
+        samples = self.wall_screen_points(4) or [self._jaw_wall_screen(0.3)]
+        got = ""
+        hit = False
+        for pt in samples:
+            self.click(screen=pt)
+            self.refresh("status")
+            got = self.S()
+            if "Selected 1 sketch entity" in got and "Constraint selected" not in got:
+                hit = True
+                break
+            self.click(sketch=[300, 80])
+        self.clause("wall", hit, got)
         s1 = self.esc()
         s2 = self.esc()
         self.clause("esc", "Selection cleared" in s1 and "Sketch saved" in s2, s1 + " | " + s2)
