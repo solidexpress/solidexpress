@@ -38,8 +38,9 @@ python3 tools/sxdrive.py type 22.5 --delay 10
 python3 tools/walk_rung01.py --out /tmp/sx-041
 python3 tools/walk_rung01.py --rows A8,L4 --out /tmp/sx-041
 python3 tools/walk_rung01.py --from N21b --out /tmp/sx-041
+python3 tools/walk_rung01.py --from A16 --checkpoint --out /tmp/sx-041
 ```
 
-`--rows` and `--from` rerun a subset. When a checkpoint `.sxp` from an earlier chunk is already in `--out`, the runner opens it before the first selected row of a later chunk. The runner reports product failures; it does not change them.
+`--rows` and `--from` rerun a subset. `--checkpoint` reloads the recovery part for the first selected row, and again at a chunk boundary when the previous chunk did not pass: `blank.sxp` (chunk 2), `pre-cut.sxp` (from N20 / A9b), `cut.sxp` (chunk 4), `wrench-wip.sxp` (chunks 5 and 6), `wrench-t14.sxp` (from L7 on). Each row checks mode, sketch, body bbox and the finish bar first; a miss is `BLOCKED-by-<row>` instead of a cascade of failures. The runner reports product failures; it does not change them.
 
 The headless proof that the bridge is real input, not a private API, is `game/tests/run_automation_bridge_tests.gd` (`automation_bridge_tests` in the CI tier): a second Extrude click is `drop:shield`, Enter leaves the Distance field, and the jaw angle label is clicked on its drawn rect and edited to 45.

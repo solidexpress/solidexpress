@@ -157,12 +157,14 @@ func _run(req: Dictionary) -> Dictionary:
 			res = await _cmd_pixels(req)
 		"project":
 			res = _cmd_project(req)
+		"dialog_dir":
+			res = _cmd_dialog_dir(req)
 		_:
 			return {"ok": false, "error": "unknown command '%s'" % cmd}
 	if res.has("error"):
 		res["ok"] = false
 		return res
-	var frames := int(req.get("frames", 1 if cmd in ["state", "trace", "ping", "project", "screenshot", "pixels"] else 2))
+	var frames := int(req.get("frames", 1 if cmd in ["state", "trace", "ping", "project", "screenshot", "pixels", "dialog_dir"] else 2))
 	var settled := await _wait_idle(frames)
 	_harvest_traces()
 	res["ok"] = true
@@ -906,6 +908,8 @@ func _refresh_ids() -> void:
 		"InferToggle": "rail:Infer",
 		"DistanceLineEdit": "finish:Distance",
 		"DimLineEdit": "finish:Radius",
+		"DimEditLine": "dim:Edit",
+		"DimEditPopup": "dim:Popup",
 		"FinishOp": "finish:Op",
 		"FinishEnd": "finish:End",
 		"ThinType": "finish:Thin",
@@ -1034,6 +1038,16 @@ func _model_to_screen(p: Vector3) -> Vector2:
 	if ms == null or cam == null:
 		return Vector2.ZERO
 	return cam.unproject_position(ms.to_global(p))
+
+
+func _cmd_dialog_dir(req: Dictionary) -> Dictionary:
+	var dlg: FileDialog = _main().get("file_dialog")
+	if dlg == null:
+		return {"error": "no file dialog"}
+	var path := str(req.get("path", ""))
+	if path != "":
+		dlg.current_dir = path
+	return {"dir": dlg.current_dir, "file": dlg.current_file}
 
 
 func _cmd_project(req: Dictionary) -> Dictionary:
@@ -1172,7 +1186,9 @@ func _controls() -> Array:
 func _walk_controls(n: Node, out: Array) -> void:
 	if n is Control:
 		var c := n as Control
-		if c.is_visible_in_tree() and c.get_global_rect().size.x >= 1.0 and c.get_global_rect().size.y >= 1.0:
+		var tagged := str(c.get_meta("sx_auto", "")) != ""
+		var sized := c.get_global_rect().size.x >= 1.0 and c.get_global_rect().size.y >= 1.0
+		if c.is_visible_in_tree() and (tagged or sized):
 			var rec := {
 				"path": str(c.get_path()),
 				"id": str(c.get_meta("sx_auto", "")),

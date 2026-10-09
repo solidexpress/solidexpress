@@ -194,6 +194,9 @@ class SxDrive:
     def project(self, **where: Any) -> dict[str, Any]:
         return self.call("project", **where)
 
+    def dialog_dir(self, path: str) -> dict[str, Any]:
+        return self.call("dialog_dir", path=path)
+
     def screenshot(self, path: str) -> dict[str, Any]:
         return self.call("screenshot", path=path)
 

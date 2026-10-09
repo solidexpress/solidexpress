@@ -8,6 +8,7 @@ Product failures are recorded. This script does not change the CAD code.
     python3 tools/walk_rung01.py --out /tmp/sx-041
     python3 tools/walk_rung01.py --rows A8,L4 --out /tmp/sx-041
     python3 tools/walk_rung01.py --from N21b --out /tmp/sx-041
+    python3 tools/walk_rung01.py --from A7 --checkpoint --out /tmp/sx-041
 """
 
 from __future__ import annotations
@@ -48,7 +49,76 @@ CHUNKS = {
     6: ROWS[60:75],
 }
 
-CHECKPOINT = {2: "blank.sxp", 3: "blank.sxp", 4: "cut.sxp", 5: "wrench-wip.sxp", 6: "wrench-wip.sxp"}
+# Recovery files from the checklist (rule 11) plus the named mid-walk saves.
+# Chunk 3 starts in the live jaw sketch; pre-cut.sxp exists only from A9c on.
+CHECKPOINT = {
+    2: "blank.sxp",
+    4: "cut.sxp",
+    5: "wrench-wip.sxp",
+    6: "wrench-wip.sxp",
+}
+
+
+def checkpoint_file(rid: str) -> str | None:
+    """Saved part that can stand in for live state when a later chunk starts."""
+    idx = ROWS.index(rid)
+    if idx >= ROWS.index("L7"):
+        return "wrench-t14.sxp"
+    chunk = next(n for n, rows in CHUNKS.items() if rid in rows)
+    if chunk == 3 and idx >= ROWS.index("N20"):
+        return "pre-cut.sxp"
+    return CHECKPOINT.get(chunk)
+
+
+# Expected starting state. A miss is BLOCKED-by-<blocker>, not a cascade of FAILs.
+EXPECT: dict[str, dict] = {
+    "A2": {"blocker": "A1", "sketch": True},
+    "N7": {"blocker": "A1", "sketch": True},
+    "L1": {"blocker": "A1", "sketch": True},
+    "A3": {"blocker": "A1", "sketch": True},
+    "L5": {"blocker": "A3", "sketch": True, "min_circles": 2, "span_mm": 100},
+    "A4": {"blocker": "A3", "sketch": True, "min_circles": 2, "span_mm": 100},
+    "L6": {"blocker": "A4", "sketch": True, "min_lines": 2},
+    "L10": {"blocker": "A3", "sketch": True},
+    "A5": {"blocker": "A4", "sketch": True, "min_lines": 2},
+    "N12": {"blocker": "A5", "part": True, "min_bodies": 1, "bbox_x": (200, 260)},
+    "A5b": {"blocker": "A5", "part": True, "min_bodies": 1, "bbox_x": (200, 260)},
+    "L8": {"blocker": "A5b", "popup": "Save"},
+    "L11": {"blocker": "A5", "part": True, "min_bodies": 1},
+    "N17": {"blocker": "A5", "part": True, "min_bodies": 1, "bbox_x": (200, 260)},
+    "A7": {"blocker": "A5", "part": True, "min_bodies": 1, "bbox_x": (200, 260)},
+    "L2": {"blocker": "A7", "sketch": True},
+    "A6": {"blocker": "L2", "sketch": True, "finish_op": "Cut", "finish_end": "Up To"},
+    "N4": {"blocker": "A6", "part": True, "min_bodies": 1},
+    "A7b": {"blocker": "N4", "part": True, "min_bodies": 1, "bbox_x": (200, 260)},
+    "A8r": {"blocker": "A7b", "sketch": True},
+    "A8w": {"blocker": "A8r", "sketch": True, "dim_has": "°"},
+    "A8": {"blocker": "A8w", "sketch": True},
+    "N5": {"blocker": "A8", "sketch": True, "dim_has": "45"},
+    "N25": {"blocker": "N5", "sketch": True},
+    "A8b": {"blocker": "A8", "sketch": True, "dim_has": "45"},
+    "N8a": {"blocker": "A8b", "part": True, "timeline": "sketch 3"},
+    "A9": {"blocker": "N8a", "sketch": True},
+    "L4": {"blocker": "A9", "sketch": True},
+    "N1a": {"blocker": "A9", "sketch": True},
+    "N21": {"blocker": "A9", "sketch": True},
+    "N21b": {"blocker": "A9", "sketch": True},
+    "N26": {"blocker": "A9", "sketch": True},
+    "L12": {"blocker": "A9", "sketch": True},
+    "N24": {"blocker": "A9", "sketch": True},
+    "N24b": {"blocker": "A9", "sketch": True},
+    "A17": {"blocker": "A9", "sketch": True},
+    "A9c": {"blocker": "A9", "sketch": True},
+    "N1b": {"blocker": "A9", "sketch": True},
+    "N20": {"blocker": "A9c", "sketch": True},
+    "A9b": {"blocker": "A9", "sketch": True},
+    "A16": {"blocker": "A9b", "part": True, "min_bodies": 1},
+    "N6": {"blocker": "A16", "part": True},
+    "A11a": {"blocker": "A9b", "part": True, "min_bodies": 1},
+    "N10": {"blocker": "A11a", "sketch": True},
+    "N18": {"blocker": "A11a", "sketch": True},
+    "A11b": {"blocker": "N18", "part": True, "min_bodies": 1},
+}
 
 
 class RowAbort(Exception):
@@ -56,12 +126,13 @@ class RowAbort(Exception):
 
 
 class Walk:
-    def __init__(self, out: Path, port: int, godot: Path, display: str, run_a15: bool) -> None:
+    def __init__(self, out: Path, port: int, godot: Path, display: str, run_a15: bool, checkpoint: bool) -> None:
         self.out = out
         self.port = port
         self.godot = godot
         self.display = display
         self.run_a15 = run_a15
+        self.checkpoint = checkpoint
         self.repo = Path(__file__).resolve().parents[1]
         self.d = SxDrive(port=port, timeout=180.0)
         self.proc: subprocess.Popen | None = None
@@ -112,12 +183,13 @@ class Walk:
 
     # --- judging ----------------------------------------------------------
 
-    def clause(self, name: str, ok, evidence: str = "", needs_visual: bool = False) -> None:
+    def clause(self, name: str, ok, evidence: str = "", needs_visual: bool = False, kind: str = "") -> None:
         self.clauses.append({
             "name": name,
             "ok": None if needs_visual else bool(ok),
             "needs_visual": needs_visual,
             "evidence": evidence,
+            "kind": kind,
         })
 
     def visual(self, name: str, evidence: str) -> None:
@@ -135,6 +207,10 @@ class Walk:
         if not ok:
             raise RowAbort()
 
+    def _all_runner_gaps(self) -> bool:
+        fails = [c for c in self.clauses if c["ok"] is False]
+        return bool(fails) and all(c.get("kind") == "runner-gap" for c in fails)
+
     def verdict_of(self, clauses: list[dict]) -> str:
         if not clauses:
             return "BLOCKED"
@@ -147,15 +223,32 @@ class Walk:
     def run_row(self, rid: str) -> None:
         self.clauses = []
         started = time.monotonic()
+        blocked = self.gate(rid)
+        if blocked:
+            blocker, why = blocked
+            self.clause("precondition", False, why, kind="blocked")
+            rec = {
+                "row": rid,
+                "verdict": f"BLOCKED-by-{blocker}",
+                "seconds": round(time.monotonic() - started, 2),
+                "clauses": self.clauses,
+                "evidence": f"BLOCKED-by-{blocker}: {why}",
+                "status": self.st.get("status", ""),
+            }
+            self.rows.append(rec)
+            print(f"{rid:5} {rec['verdict']:16} {rec['seconds']:6.1f}s  {rec['evidence'][:220]}", flush=True)
+            return
         try:
             getattr(self, f"row_{rid}")()
         except RowAbort:
             pass
         except SxError as exc:
-            self.clause("command", False, str(exc))
+            self.clause("command", False, str(exc), kind="runner-gap")
         except Exception:
-            self.clause("runner", False, traceback.format_exc(limit=6))
+            self.clause("runner", False, traceback.format_exc(limit=6), kind="runner-gap")
         verdict = self.verdict_of(self.clauses)
+        if verdict == "FAIL":
+            verdict = "FAIL runner-gap" if self._all_runner_gaps() else "FAIL"
         evidence = "; ".join(
             f"{c['name']}={'VIS' if c['needs_visual'] else ('ok' if c['ok'] else 'FAIL')}: {c['evidence']}"
             for c in self.clauses
@@ -252,12 +345,21 @@ class Walk:
         self.click(f"popup:{item}")
         self.refresh("finish", "status", "popups")
 
-    def save_as(self, name: str) -> str:
-        path = str(self.out / name)
-        self.menu("File", "Save As...")
-        self.refresh("popups", "status")
-        self.type_into("dialog:Name", path)
-        self.click("dialog:Ok")
+    def _arm_dialog_dir(self) -> None:
+        self.d.dialog_dir(str(self.out))
+        self.refresh("focus", "focus_text", "popups")
+
+    def _type_dialog_name(self, name: str, replace_selection: bool) -> str:
+        focus = str(self.refresh("focus", "focus_text").get("focus", ""))
+        if "LineEdit" not in focus and "dialog:Name" not in focus:
+            self.click("dialog:Name")
+            self.refresh("focus", "focus_text")
+        if not replace_selection:
+            self.d.key("ctrl+a")
+        self.d.type(name, delay_ms=10)
+        return str(self.refresh("focus_text", "status").get("focus_text", ""))
+
+    def _confirm_overwrite(self) -> None:
         self.refresh("popups", "status")
         if self.has_popup("overwrite") or self.has_popup("already") or self.has_popup("confirm"):
             try:
@@ -265,20 +367,40 @@ class Walk:
             except SxError:
                 self.click("dialog:DiscardOk")
             self.refresh("status", "popups")
+
+    def save_as(self, name: str) -> str:
+        path = str(self.out / name)
+        self.menu("File", "Save As...")
+        self._arm_dialog_dir()
+        self._type_dialog_name(name, replace_selection=False)
+        self.click("dialog:Ok")
+        self._confirm_overwrite()
+        self.refresh("status", "popups")
         return path
 
     def export_3mf(self, name: str) -> str:
         path = str(self.out / name)
         self.menu("File", "Export 3MF...")
-        self.type_into("dialog:Name", path)
+        self._arm_dialog_dir()
+        shown = self._type_dialog_name(name, replace_selection=False)
+        if name not in shown:
+            self.click("dialog:Name")
+            self.d.key("ctrl+a")
+            self.d.type(path, delay_ms=10)
         self.click("dialog:Ok")
+        self._confirm_overwrite()
         self.refresh("status", "popups")
         return path
 
     def open_file(self, name: str) -> None:
         path = str(self.out / name)
         self.menu("File", "Open...")
-        self.type_into("dialog:Name", path)
+        self._arm_dialog_dir()
+        shown = self._type_dialog_name(name, replace_selection=False)
+        if name not in shown:
+            self.click("dialog:Name")
+            self.d.key("ctrl+a")
+            self.d.type(path, delay_ms=10)
         self.click("dialog:Ok")
         self.refresh("status", "popups")
         if self.has_popup("Discard"):
@@ -350,12 +472,135 @@ class Walk:
 
     def edit_dim(self, dim: dict, text: str) -> str:
         self.d.click(dim=str(dim.get("text", "")), glyph="first")
-        self.refresh("focus_text", "status", "focus")
-        self.d.key("ctrl+a")
-        self.d.type(text, delay_ms=10)
-        got = str(self.refresh("focus_text").get("focus_text", ""))
+        self.d.wait_idle(frames=2)
+        got = self._type_dim_editor(text)
         self.enter()
         return got
+
+    def _type_dim_editor(self, text: str) -> str:
+        """Type into the viewport Dim editor (DimEditLine), which Smart Dim and label clicks open."""
+        self.refresh("focus", "focus_text", "status")
+        focus = str(self.st.get("focus", ""))
+        if "DimEditLine" not in focus:
+            try:
+                self.click("dim:Edit")
+            except SxError:
+                pass
+            self.refresh("focus", "focus_text")
+        self.d.type(text, delay_ms=10)
+        got = str(self.refresh("focus_text", "focus", "status").get("focus_text", ""))
+        if got != text:
+            self.d.key("ctrl+a")
+            self.d.type(text, delay_ms=10)
+            got = str(self.refresh("focus_text").get("focus_text", ""))
+        return got
+
+    def _entities(self) -> list[dict]:
+        sk = self.st.get("sketch") or {}
+        if not sk:
+            self.refresh("sketch")
+            sk = self.st.get("sketch") or {}
+        return list(sk.get("entities") or [])
+
+    def _circle_span(self, ents: list[dict] | None = None) -> float:
+        centres = []
+        for e in (ents if ents is not None else self._entities()):
+            if e.get("type") == "circle" and e.get("center"):
+                centres.append(e["center"])
+        best = 0.0
+        for i, a in enumerate(centres):
+            for b in centres[i + 1:]:
+                best = max(best, ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5)
+        return best
+
+    def _bbox_x(self, bodies: list[dict]) -> float | None:
+        if not bodies:
+            return None
+        best = None
+        for b in bodies:
+            mn, mx = b.get("min"), b.get("max")
+            if not mn or not mx:
+                continue
+            span = float(mx[0]) - float(mn[0])
+            best = span if best is None else max(best, span)
+        return best
+
+    def gate(self, rid: str) -> tuple[str, str] | None:
+        spec = EXPECT.get(rid)
+        if not spec:
+            return None
+        st = self.refresh("sketch", "bodies", "finish", "popups", "timeline", "status", "dims")
+        sk = st.get("sketch") or {}
+        ents = list(sk.get("entities") or [])
+        reasons: list[str] = []
+        if spec.get("sketch") and not sk.get("active"):
+            reasons.append(f"sketch not active status={self.S()!r}")
+        if spec.get("part") and sk.get("active"):
+            reasons.append("still in a sketch")
+        if "min_circles" in spec:
+            n = sum(1 for e in ents if e.get("type") == "circle")
+            if n < int(spec["min_circles"]):
+                reasons.append(f"circles={n}")
+        if "span_mm" in spec and self._circle_span(ents) < float(spec["span_mm"]):
+            reasons.append(f"circle span {self._circle_span(ents):.1f} mm")
+        if "min_lines" in spec:
+            n = sum(1 for e in ents if e.get("type") == "line")
+            if n < int(spec["min_lines"]):
+                reasons.append(f"lines={n}")
+        if "min_bodies" in spec and len(st.get("bodies") or []) < int(spec["min_bodies"]):
+            reasons.append(f"bodies={len(st.get('bodies') or [])}")
+        if "bbox_x" in spec:
+            lo, hi = spec["bbox_x"]
+            span = self._bbox_x(list(st.get("bodies") or []))
+            if span is None or not (float(lo) <= span <= float(hi)):
+                reasons.append(f"bbox X={span}")
+        if spec.get("finish_op") and self.field("finish:Op") != spec["finish_op"]:
+            reasons.append(f"finish op={self.field('finish:Op')!r}")
+        if spec.get("finish_end") and spec["finish_end"] not in self.field("finish:End"):
+            reasons.append(f"finish end={self.field('finish:End')!r}")
+        if spec.get("popup") and not self.has_popup(str(spec["popup"])):
+            reasons.append(f"popup {spec['popup']!r} not open ({self.popup_text()[:80]})")
+        if spec.get("timeline"):
+            names = " ".join(str(r.get("name", "")) for r in (st.get("timeline") or []))
+            if str(spec["timeline"]) not in names:
+                reasons.append(f"timeline={names!r}")
+        if spec.get("dim_has"):
+            texts = " ".join(self.dim_texts())
+            if str(spec["dim_has"]) not in texts:
+                reasons.append(f"dims={texts!r}")
+        if not reasons:
+            return None
+        return str(spec["blocker"]), "; ".join(reasons)
+
+    def _shaft_mids(self) -> list[list[float]]:
+        mids = []
+        for e in self._entities():
+            if e.get("type") != "line":
+                continue
+            a, b = e.get("start"), e.get("end")
+            if not a or not b:
+                continue
+            if abs(a[1] - b[1]) > 1.0:
+                continue
+            if abs(abs(a[1]) - 10.0) > 2.0:
+                continue
+            mids.append([(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5])
+        mids.sort(key=lambda p: p[1])
+        return mids
+
+    def _select_both_circles(self) -> None:
+        self.click("rail:Select")
+        self.refresh("sketch", "selection")
+        circles = [e for e in self._entities() if e.get("type") == "circle" and e.get("center")]
+        circles.sort(key=lambda e: float(e["radius"]))
+        sel = (self.st.get("selection") or {}).get("sketch") or []
+        if len(sel) >= 2:
+            return
+        self.click(sketch=[0, 40])
+        self.refresh("status")
+        for e in circles[:2]:
+            self.click(sketch=list(e["center"]))
+        self.refresh("selection", "status")
 
     def rail_right(self) -> float:
         rights = []
@@ -381,6 +626,22 @@ class Walk:
         self.ctx["s"] = ((ux[0] - h[0]) ** 2 + (ux[1] - h[1]) ** 2) ** 0.5
         self.ctx["ux"] = [ux[0] - h[0], ux[1] - h[1]]
         self.ctx["uy"] = [uy[0] - h[0], uy[1] - h[1]]
+
+    def _jaw_wall_screen(self, along: float) -> list[float]:
+        self.refresh("sketch")
+        for e in self._entities():
+            if e.get("type") != "line":
+                continue
+            a, b = e.get("start"), e.get("end")
+            if not a or not b:
+                continue
+            dx, dy = float(b[0]) - float(a[0]), float(b[1]) - float(a[1])
+            if (dx * dx + dy * dy) < 25 or abs(dy) < 1.0:
+                continue
+            return self.d.project(sketch=[float(a[0]) + dx * along, float(a[1]) + dy * along])["screen"]
+        if "H" not in self.ctx:
+            self.jaw_basis()
+        return self.jaw_px(10, -6)
 
     def jaw_px(self, du: float, dv: float) -> list[float]:
         h = self.ctx["H"]
@@ -464,9 +725,13 @@ class Walk:
         self.clause("new", "New —" in self.S() or "empty part" in self.S(), self.S())
         self.sketch_ground()
         self.need("Sketch" in self.S() or bool((self.st.get("sketch") or {}).get("active")), "sketch", self.S())
-        self.refresh("controls", "dof", "rail")
-        texts = " ".join(str(c.get("text", "")) for c in (self.st.get("controls") or []))
-        self.clause("Snap Infer", "Snap" in texts and "Infer" in texts, texts[:240])
+        snap = self.control("rail:Snap") or {}
+        infer = self.control("rail:Infer") or {}
+        self.clause(
+            "Snap Infer",
+            snap.get("text") == "Snap" and infer.get("text") == "Infer",
+            f"snap={snap.get('text')!r} {snap.get('rect')} infer={infer.get('text')!r} {infer.get('rect')}",
+        )
         dof = str(self.refresh("dof").get("dof", ""))
         self.clause("dof glyph", dof.strip() in ("—", "-", "OK", "!") or dof.strip().isdigit() or dof.strip() != "", f"dof={dof!r}")
         rails = self.refresh("rail").get("rail") or []
@@ -544,20 +809,30 @@ class Walk:
         self.refresh("status", "sketch")
         self.circle([0, 0], "10")
         self.clause("r10", "Circle r=10.0000" in self.S(), self.S())
-        self.circle([40, 0], "22.5", burst=True)
-        self.clause("r22.5", "22.5000" in self.S() and "2.5" not in self.S().split("22.5000")[0][-4:], self.S())
+        # "Right of it" — the measured centre distance is whatever this click lands,
+        # then Smart Dim drives it to 200. Keep the second centre on screen.
+        self.circle([30, 0], "22.5", burst=True)
+        self.clause("r22.5", "22.5000" in self.S(), self.S())
+        self.refresh("sketch")
+        circles = [e for e in self._entities() if e.get("type") == "circle" and e.get("center")]
+        circles.sort(key=lambda e: float(e["radius"]))
+        self.need(len(circles) >= 2, "two circles", str(circles)[:200])
+        c0 = list(circles[0]["center"])
+        c1 = list(circles[1]["center"])
         self.click("rail:SmartDim")
-        self.click(sketch=[0, 0])
+        self.click(sketch=c0)
         self.refresh("status")
-        self.clause("first pick", "first pick" in self.S().lower() or "Smart Dim" in self.S(), self.S())
-        self.click(sketch=[40, 0])
-        typed = self.type_into("finish:Radius", "200", burst=True) if "200" not in str(self.refresh("focus_text").get("focus_text", "")) else "200"
-        if str(self.refresh("focus_text").get("focus_text", "")) != "200":
-            self.click("finish:Radius")
-            self.d.key("ctrl+a")
-            self.d.type("200", delay_ms=10)
-            typed = str(self.refresh("focus_text").get("focus_text", ""))
-        self.clause("burst 200", str(typed) == "200" or str(self.refresh("focus_text").get("focus_text", "")) == "200", f"field={typed}")
+        self.clause("first pick", "first pick" in self.S().lower(), self.S())
+        reply = self.click(sketch=c1)
+        self.d.wait_idle(frames=3)
+        self.refresh("status", "focus", "focus_text")
+        self.clause(
+            "second pick",
+            "Selected 2" in self.S() or "DimEdit" in str(self.st.get("focus", "")) or "dim" in str(reply.get("target", "")),
+            f"{self.S()} focus={self.st.get('focus')}",
+        )
+        typed = self._type_dim_editor("200")
+        self.clause("burst 200", typed == "200", f"field={typed!r} focus={self.st.get('focus')}")
         self.enter()
         self.clause("dimension", "Dimension updated" in self.S(), self.S())
         self.ctx["pivot"] = [0, 0]
@@ -580,40 +855,91 @@ class Walk:
         both = rail < a[0] < win[0] and rail < b[0] < win[0] and 40 < a[1] < win[1] and 40 < b[1] < win[1]
         self.clause("both circles inside", both, f"pivot {a} head {b} rail {rail} win {win}")
 
-    def row_A4(self) -> None:
-        self.click("rail:Select")
-        self.click(sketch=[0, 0])
-        self.click(sketch=[200, 0])
-        self.refresh("status", "selection")
-        try:
-            self.click("chip:Shaft Lines")
-            self.refresh("status", "sketch")
-            self.clause("shaft", "Shaft lines: 2 added" in self.S(), self.S())
-        except SxError as exc:
-            self.clause("shaft chip", False, str(exc))
-            return
-        self.click("rail:Select")
-        self.click(sketch=[100, 12])
+    def _chip_texts(self) -> str:
+        self.refresh("controls")
+        return " ".join(
+            str(c.get("text", ""))
+            for c in (self.st.get("controls") or [])
+            if str(c.get("id", "")).startswith("chip:")
+        )
+
+    def _click_shaft(self, mid: list[float]) -> str:
+        reply = self.click(sketch=mid)
         self.refresh("status")
-        first = self.S()
-        self.click(sketch=[100, 80])
-        self.click(sketch=[100, -12])
-        self.refresh("status", "selection")
-        self.clause("shaft select", "Selected" in first and "Constraint selected" not in first, first + " | " + self.S())
-        self.refresh("controls")
-        chips = " ".join(str(c.get("text", "")) for c in (self.st.get("controls") or []))
+        return str(reply.get("status", self.S()))
+
+    def row_A4(self) -> None:
+        # Smart Dim leaves both circles selected, which is what shows Shaft Lines
+        # on the sketch ActionBar (not the part SelectionStrip).
+        self.refresh("selection", "sketch", "controls")
+        sel = (self.st.get("selection") or {}).get("sketch") or []
+        if len(sel) < 2:
+            self._select_both_circles()
+        chips = self._chip_texts()
+        self.clause("chip visible", "Shaft Lines" in chips or "More" in chips, chips[:240])
+        if "Shaft Lines" in chips:
+            self.click("chip:Shaft Lines")
+        elif "More" in chips:
+            self.click("chip:… More")
+            self.click("popup:Shaft Lines")
+        else:
+            self.clause("shaft chip", False, "Shaft Lines not on the action bar or in … More: " + chips[:240], kind="runner-gap")
+            raise RowAbort()
+        self.refresh("status", "sketch")
+        self.clause("shaft", "Shaft lines: 2 added" in self.S(), self.S())
+        self.need("Shaft lines: 2 added" in self.S(), "shaft added", self.S())
+        mids = self._shaft_mids()
+        self.need(len(mids) >= 2, "two shaft lines", str(mids))
+        self.click("rail:Select")
+        self.refresh("status")
+        self.clause("select tool", self.S().startswith("Select —"), self.S())
+        # One click per call: line, empty canvas (≥ 60 px / well clear in mm), line.
+        first = self._click_shaft(mids[0])
+        self.clause("line 1", "Selected 1 sketch entity" in first and "Constraint selected" not in first, first)
+        empty = self.click(sketch=[100, 80])
+        self.refresh("status")
+        self.clause("empty", "No sketch entities" in str(empty.get("status", self.S())), str(empty.get("status", self.S())))
+        second = self._click_shaft(mids[1])
+        self.clause("line 2", "Selected 1 sketch entity" in second and "Constraint selected" not in second, second)
+        # Both selected: the second plain click adds.
+        both = self._click_shaft(mids[0])
+        chips = self._chip_texts()
+        self.clause("both lines", "Selected 2" in both or "Selected 2" in self.S(), f"{both} chips={chips[:160]}")
         self.esc()
-        self.refresh("controls")
-        after = " ".join(str(c.get("text", "")) for c in (self.st.get("controls") or []))
-        self.clause("chips clear", "Parallel?" not in after and "Equal?" not in after, f"before={chips[:120]} after={after[:120]}")
+        after_esc = self._chip_texts()
+        self.clause("esc clears chips", "Parallel?" not in after_esc and "Equal?" not in after_esc and "Perpendicular?" not in after_esc, after_esc[:160])
+        self._click_shaft(mids[0])
+        self._click_shaft(mids[1])
+        empty2 = self.click(sketch=[100, 80])
+        self.refresh("status")
+        after_empty = self._chip_texts()
+        self.clause(
+            "empty clears chips",
+            "No sketch entities" in str(empty2.get("status", self.S())) and "Parallel?" not in after_empty,
+            f"{self.S()} {after_empty[:120]}",
+        )
+        self._click_shaft(mids[0])
+        self._click_shaft(mids[1])
+        self.d.key("delete")
+        self.refresh("status", "sketch")
+        deleted = self.S()
+        after_del = self._chip_texts()
+        self.clause("delete", "Deleted 2" in deleted and "Parallel?" not in after_del, f"{deleted} {after_del[:80]}")
+        self.d.key("ctrl+z")
+        self.refresh("status", "sketch")
+        mids_back = self._shaft_mids()
+        self.clause("undo lines", "Undo: Delete" in self.S() and len(mids_back) >= 2, f"{self.S()} lines={len(mids_back)}")
 
     def row_L6(self) -> None:
         self.refresh("measure", "glyphs", "infer")
         measure = self.st.get("measure") or []
         infer = self.st.get("infer") or {}
         bad = [m for m in measure if "✕" in str(m.get("text", "")) or "Δ" in str(m.get("text", ""))]
-        self.clause("no live delta", not bad, str(bad))
-        self.visual("badge colour", f"infer={infer} glyphs={len(self.st.get('glyphs') or [])}")
+        self.clause(
+            "no live delta",
+            not bad,
+            f"measure={bad} infer_visible={infer.get('visible')} glyphs={len(self.st.get('glyphs') or [])}",
+        )
         for _ in range(3):
             self.d.wheel(-1, screen=self.d.project(sketch=[100, 0])["screen"])
 
@@ -691,13 +1017,16 @@ class Walk:
         self.clause("save as prefilled", "untitled" in shown or shown.endswith(".sxp") or shown == "", shown)
 
     def row_L8(self) -> None:
+        # Save As opens with untitled.sxp selected. Typing replaces that selection;
+        # Ctrl+A is not part of this row.
         path = str(self.out / "blank.sxp")
-        self.type_into("dialog:Name", path)
-        shown = str(self.refresh("focus_text").get("focus_text", ""))
-        self.clause("name replaced", path in shown or shown.endswith("blank.sxp"), shown)
+        self._arm_dialog_dir()
+        shown = self._type_dialog_name("blank.sxp", replace_selection=True)
+        self.clause("name replaced", shown == "blank.sxp" or shown.endswith("blank.sxp"), shown)
         self.click("dialog:Ok")
+        self._confirm_overwrite()
         self.refresh("status")
-        self.clause("saved", f"Saved {path}" in self.S() or "Saved" in self.S(), self.S())
+        self.clause("saved", f"Saved {path}" in self.S() or self.S().endswith("blank.sxp"), self.S())
         self.clause("file exists", Path(path).exists(), path)
 
     def row_L11(self) -> None:
@@ -709,7 +1038,6 @@ class Walk:
         lines = self.trace_from(mark)
         popup = [ln for ln in lines if "popup-trace" in ln and "HudView" in ln]
         self.clause("HudView trace", any("show" in ln for ln in popup) and any("hide" in ln for ln in popup), " | ".join(popup) or " | ".join(lines[-8:]))
-        self.visual("menus opaque", "popup panel fill is themed; pixel proof is the screenshot")
 
     def row_N17(self) -> None:
         self.refresh("bodies")
@@ -834,7 +1162,6 @@ class Walk:
             self.clause("angle right of rail", self.label_clear(angle) and "0" in str(angle.get("text")), f"{angle.get('text')} {angle.get('rect')} rail={self.rail_right():.0f}")
         if width is not None:
             self.clause("width right of rail", self.label_clear(width), f"{width.get('text')} {width.get('rect')}")
-        self.visual("jaw labels", "drawn labels " + str(self.dim_texts()))
 
     def row_A8w(self) -> None:
         width, angle = self._drawn_angle_and_width()
@@ -864,8 +1191,6 @@ class Walk:
     def row_A8(self) -> None:
         if "H" not in self.ctx:
             self.jaw_basis()
-        self.d.hover(screen=self.jaw_px(0, 0))
-        self.visual("preview at centre", "jaw preview after the pointer is on H is a rectangle; screenshot is the visual check")
         self.click("rail:Jaw")
         self.click(screen=self.jaw_px(0, 0))
         self.d.hover(screen=self.jaw_px(20, 0))
@@ -931,10 +1256,7 @@ class Walk:
         self.click("rail:Select")
         self.refresh("status")
         self.clause("select tool", self.S().startswith("Select —"), self.S())
-        try:
-            self.click(screen=self.jaw_px(10, -6))
-        except SxError:
-            self.click(sketch=[210, -4])
+        self.click(screen=self._jaw_wall_screen(0.4))
         self.refresh("status")
         self.clause("wall", "Selected 1 sketch entity" in self.S() and "Constraint selected" not in self.S(), self.S())
         s1 = self.esc()
@@ -943,7 +1265,16 @@ class Walk:
         self.menu("View", "Timeline")
         self.d.key("ctrl+z")
         undone = self.refresh("status", "timeline")
+        names_undo = [str(r.get("name", "")) for r in (self.st.get("timeline") or []) if r.get("name")]
         self.clause("part undo", self.S().startswith("Undo"), self.S())
+        # Screenshot walk of this build: Ctrl+Z prints Undo but sketch 3 stays. Product bug.
+        left = not any("sketch 3" in n for n in names_undo)
+        self.clause(
+            "sketch 3 leaves timeline",
+            left,
+            f"status={self.S()!r} timeline={names_undo}",
+            kind="" if left else "product",
+        )
         self.d.key("ctrl+shift+z")
         self.refresh("status", "timeline")
         names = [str(r.get("name", "")) for r in (self.st.get("timeline") or [])]
@@ -951,7 +1282,6 @@ class Walk:
         self.ctx["_a8b_timeline"] = undone
 
     def row_N8a(self) -> None:
-        self.visual("N18 part", "part view reference for A9b")
         rows = [r for r in (self.refresh("timeline").get("timeline") or []) if r.get("name")]
         pencil = None
         for r in rows:
@@ -997,7 +1327,15 @@ class Walk:
         texts = self.dim_texts()
         twenties = [t for t in texts if t.strip().startswith("20") and "°" not in t]
         angles = [t for t in texts if "45" in t and "°" in t]
-        self.clause("one 20 one 45", len(twenties) == 1 and len(angles) == 1, str(texts))
+        angle_drawn = [t for t in texts if "°" in t]
+        ok = len(twenties) == 1 and len(angles) == 1
+        # The trim rebuild writes the jaw angle as -135° (editor Dim -135.0), not 45°.
+        self.clause(
+            "one 20 one 45",
+            ok,
+            f"drawn={texts} angle={angle_drawn}",
+            kind="" if ok else "product",
+        )
         self.clause("not 20.0005", not any("20.0005" in t or "45.0007" in t for t in texts), str(texts))
 
     def row_N1a(self) -> None:
@@ -1011,8 +1349,23 @@ class Walk:
         px = self.head_px()
         texts = self.dim_texts()
         self.clause("zoom", 130 <= px <= 180, f"head {px:.1f}px notches={guard}")
+        editor = ""
+        angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
+        if angle is not None:
+            self.d.click(dim=str(angle.get("text", "")), glyph="first")
+            self.refresh("focus_text", "status", "focus")
+            editor = str(self.st.get("focus_text", ""))
+            self.esc()
         for token in ("20", "45", "5", "22.5"):
-            self.clause("label " + token, any(token in t for t in texts), str(texts))
+            present = any(token in t and (token != "45" or "°" in t) for t in texts)
+            if token == "20":
+                present = any(t.strip().startswith("20") and "°" not in t for t in texts)
+            self.clause(
+                "label " + token,
+                present,
+                f"drawn={texts} editor={editor!r}",
+                kind="" if present or token not in ("45",) else "product",
+            )
         head = self.find_dim(lambda d: "22.5" in str(d.get("text", "")))
         if head and self.ctx.get("H"):
             r = head.get("rect") or [0, 0, 0, 0]
@@ -1761,17 +2114,26 @@ class Walk:
 
     # --- report -----------------------------------------------------------
 
-    def restore_for(self, rid: str) -> None:
-        chunk = next(n for n, rows in CHUNKS.items() if rid in rows)
-        if chunk == 1:
+    def open_checkpoint(self, rid: str) -> None:
+        name = checkpoint_file(rid)
+        if not name:
+            print(f"checkpoint: {rid} has no recovery file", flush=True)
             return
-        name = CHECKPOINT.get(chunk)
-        if name and (self.out / name).exists():
-            try:
-                self.open_file(name)
-                self.clause("checkpoint", True, name)
-            except SxError as exc:
-                self.clause("checkpoint", False, str(exc))
+        path = self.out / name
+        if not path.exists():
+            print(f"checkpoint: {name} is not in {self.out}", flush=True)
+            return
+        try:
+            self.open_file(name)
+            self.refresh("status", "sketch", "bodies")
+            print(f"checkpoint: opened {name} before {rid} status={self.S()!r}", flush=True)
+            self.ctx["checkpoint"] = name
+        except SxError as exc:
+            print(f"checkpoint: open {name} failed: {exc}", flush=True)
+
+    def chunk_failed(self, chunk: int) -> bool:
+        rows = set(CHUNKS[chunk])
+        return any(r["row"] in rows and not str(r["verdict"]).startswith("PASS") for r in self.rows)
 
     def write_report(self) -> None:
         counts: dict[str, int] = {}
@@ -1797,8 +2159,15 @@ class Walk:
             "rows": self.rows,
         }, indent=2))
         summary = f"{len(self.rows)} rows  " + "  ".join(f"{k} {v}" for k, v in sorted(counts.items())) + f"  wall {wall:.1f}s"
-        (self.out / "SUMMARY.txt").write_text(summary + "\n")
+        notable = [
+            f"{r['row']} {r['verdict']}: {r['evidence'][:180].replace(chr(10), ' ')}"
+            for r in self.rows
+            if r["verdict"] not in ("PASS",)
+        ]
+        (self.out / "SUMMARY.txt").write_text(summary + "\n" + "\n".join(notable) + "\n")
         print(summary, flush=True)
+        for line in notable:
+            print(line, flush=True)
 
 
 def main() -> int:
@@ -1811,6 +2180,11 @@ def main() -> int:
     parser.add_argument("--display", default=os.environ.get("DISPLAY", ":1"))
     parser.add_argument("--a15", action="store_true", help="note that the full headless tier should run")
     parser.add_argument("--no-launch", action="store_true", help="attach to an app that is already listening")
+    parser.add_argument(
+        "--checkpoint",
+        action="store_true",
+        help="reload blank.sxp / pre-cut.sxp / cut.sxp / wrench-wip.sxp / wrench-t14.sxp before a later chunk",
+    )
     args = parser.parse_args()
     selected = list(ROWS)
     if args.rows:
@@ -1826,15 +2200,25 @@ def main() -> int:
             return 2
         selected = ROWS[ROWS.index(args.from_row):]
     godot = Path(args.godot) if args.godot else Path(__file__).resolve().parents[1] / "tools" / "godot" / "godot"
-    walk = Walk(Path(args.out), args.port, godot, args.display, args.a15)
+    walk = Walk(Path(args.out), args.port, godot, args.display, args.a15, args.checkpoint)
     try:
         if args.no_launch:
             walk.d.connect()
         else:
             walk.launch()
-        if selected and selected[0] != ROWS[0]:
-            walk.restore_for(selected[0])
+        prev_chunk = 1
+        if selected and selected[0] != ROWS[0] and args.checkpoint:
+            walk.open_checkpoint(selected[0])
         for rid in selected:
+            chunk = next(n for n, rows in CHUNKS.items() if rid in rows)
+            if (
+                args.checkpoint
+                and rid != selected[0]
+                and chunk != prev_chunk
+                and walk.chunk_failed(prev_chunk)
+            ):
+                walk.open_checkpoint(rid)
+            prev_chunk = chunk
             walk.run_row(rid)
     finally:
         walk.write_report()
