@@ -1762,6 +1762,11 @@ func _sync_rail_after_sketch_history() -> void:
 
 func _sync_sketch_rail_highlight(tool: int) -> void:
 	var jaw_armed := sketch_mode != null and sketch_mode.is_jaw_armed()
+	# Centerline is a Line variant. The rail has no button for tool 15,
+	# so the Line button stays lit while it is armed.
+	var shown := tool
+	if shown == int(SketchMode.Tool.CENTERLINE):
+		shown = int(SketchMode.Tool.LINE)
 	var armed: Button = null
 	var buttons: Array[Button] = []
 	for b in _sketch_rail_buttons:
@@ -1769,7 +1774,7 @@ func _sync_sketch_rail_highlight(tool: int) -> void:
 			continue
 		buttons.append(b)
 		var id := int(b.get_meta("sx_tool", -1))
-		var want := id == tool
+		var want := id == shown
 		if jaw_armed and id == int(SketchMode.Tool.RECT):
 			want = false
 		if want:
