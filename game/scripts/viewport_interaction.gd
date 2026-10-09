@@ -4517,13 +4517,27 @@ func _on_drag(pos: Vector2) -> void:
 						% [delta.x, delta.y])
 
 
+## Window (left-to-right) is blue; crossing (right-to-left) differs by the fill.
+## The edge is the same blue in both. `_draw` and the automation bridge both
+## read this so the colours cannot drift.
+var box_colours_override: Variant = null
+
+
+func box_colours(crossing: bool) -> Dictionary:
+	if box_colours_override is Dictionary:
+		return box_colours_override
+	var fill := Color(0.35, 0.6, 0.95, 0.18)
+	var edge := Color(0.35, 0.6, 0.95, 0.85)
+	if crossing:
+		fill = Color(0.35, 0.85, 0.45, 0.18)
+	return {"fill": fill, "edge": edge}
+
+
 func _draw() -> void:
 	if (_drag_mode == DragMode.BOX_SELECT or _sketch_box_active) and _box_rect.size != Vector2.ZERO:
-		var fill := Color(0.35, 0.6, 0.95, 0.18)
-		if _sketch_box_active and _sketch_box_crossing:
-			fill = Color(0.35, 0.85, 0.45, 0.18)
-		draw_rect(_box_rect, fill, true)
-		draw_rect(_box_rect, Color(0.35, 0.6, 0.95, 0.85), false, 1.0)
+		var cols: Dictionary = box_colours(_sketch_box_active and _sketch_box_crossing)
+		draw_rect(_box_rect, cols["fill"], true)
+		draw_rect(_box_rect, cols["edge"], false, 1.0)
 	_draw_selection_gizmos()
 	if _drag_mode == DragMode.PUSH_PULL and absf(_pp_preview_dist) > 1e-3:
 		_draw_push_pull_preview()

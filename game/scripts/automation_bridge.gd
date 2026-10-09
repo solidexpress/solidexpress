@@ -373,10 +373,9 @@ func _box_paint() -> Dictionary:
 		return {}
 	var active := bool(ix.get("_sketch_box_active"))
 	var crossing := bool(ix.get("_sketch_box_crossing"))
-	var fill := Color(0.35, 0.6, 0.95, 0.18)
-	var edge := Color(0.35, 0.6, 0.95, 0.85)
-	if active and crossing:
-		fill = Color(0.35, 0.85, 0.45, 0.18)
+	var cols: Dictionary = ix.box_colours(active and crossing) if ix.has_method("box_colours") else {}
+	var fill: Color = cols.get("fill", Color(0.35, 0.6, 0.95, 0.18))
+	var edge: Color = cols.get("edge", Color(0.35, 0.6, 0.95, 0.85))
 	var rect: Variant = ix.get("_box_rect")
 	return {
 		"active": active,
@@ -1322,6 +1321,7 @@ func _state_full() -> Dictionary:
 		"selection": _selection_state(view, sm),
 		"dims": _collect_dims(sm),
 		"glyphs": _collect_glyphs(sm),
+		"glyph_leaders": _glyph_leaders(sm),
 		"contours": _collect_contours(sm),
 		"infer": _infer_state(sm),
 		"measure": _measure_state(ix),
@@ -1677,16 +1677,47 @@ func _collect_glyphs(sm) -> Array:
 	var out: Array = []
 	if sm == null or not sm.has_method("constraint_glyph_screen_rects"):
 		return out
+	var debug: Array = sm.glyph_debug() if sm.has_method("glyph_debug") else []
+	var i := 0
 	for g in sm.constraint_glyph_screen_rects():
 		if typeof(g) != TYPE_DICTIONARY:
 			continue
 		var rect: Rect2 = g.get("rect", Rect2())
-		out.append({
+		var rec := {
 			"type": str(g.get("type", "")),
 			"rect": _rect(rect),
 			"occluded": _occluded(rect),
-		})
+		}
+		if i < debug.size() and debug[i] is Dictionary:
+			var d: Dictionary = debug[i]
+			rec["cid"] = str(d.get("cid", ""))
+			rec["offset_px"] = float(d.get("offset_px", 0.0))
+			rec["leader"] = bool(d.get("leader", false))
+			rec["anchor"] = _v2(d.get("anchor", Vector2.ZERO))
+			rec["pos"] = _v2(d.get("pos", Vector2.ZERO))
+		i += 1
+		out.append(rec)
 	return out
+
+
+func _glyph_leaders(sm) -> Dictionary:
+	if sm == null:
+		return {"present": false, "tris": 0}
+	var node := sm.find_child("GlyphLeaders", true, false) as MeshInstance3D
+	if node == null or node.mesh == null:
+		return {"present": false, "tris": 0}
+	var tris := 0
+	var mesh := node.mesh
+	for s in mesh.get_surface_count():
+		var arrays: Array = mesh.surface_get_arrays(s)
+		var idx: Variant = arrays[Mesh.ARRAY_INDEX]
+		if idx is PackedInt32Array and (idx as PackedInt32Array).size() > 0:
+			tris += (idx as PackedInt32Array).size() / 3
+		else:
+			var verts: Variant = arrays[Mesh.ARRAY_VERTEX]
+			if verts is PackedVector3Array:
+				tris += (verts as PackedVector3Array).size() / 3
+	return {"present": true, "tris": tris}
 
 
 func _collect_contours(sm) -> Array:
@@ -1732,6 +1763,7 @@ func _camera_state(cam) -> Dictionary:
 	if cam == null:
 		return {}
 	return {
+		"target": _v3(cam.pivot),
 		"distance": cam.distance,
 		"yaw": cam.yaw,
 		"pitch": cam.pitch,
@@ -1748,6 +1780,8 @@ func _bodies_state(view) -> Array:
 	for bid in view.doc.body_ids():
 		var bb: Dictionary = view.doc.measure_bbox(bid)
 		var rec := {"id": str(bid), "name": str(view.doc.body_name(bid))}
+		if view.doc.has_method("body_volume"):
+			rec["volume"] = float(view.doc.body_volume(bid))
 		if bb.has("min") and bb.has("max"):
 			rec["min"] = _v3(bb["min"])
 			rec["max"] = _v3(bb["max"])
