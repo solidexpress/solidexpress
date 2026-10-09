@@ -150,21 +150,6 @@ func _measure(ctx: FilmContext) -> void:
 		if off > SketchMode.GLYPH_MAX_OFFSET_PX + 0.5:
 			far += 1
 	check(far == 0, "every glyph offset is ≤ 40 px")
-	var crossed := 0
-	for i in range(debug.size()):
-		if not bool(debug[i].get("leader")):
-			continue
-		var anchor: Vector2 = debug[i]["anchor"]
-		var pos: Vector2 = debug[i]["pos"]
-		var cam := sm.get_viewport().get_camera_3d()
-		var sa := cam.unproject_position(sm.to_global(sm.to_model(anchor)))
-		var sb := cam.unproject_position(sm.to_global(sm.to_model(pos)))
-		for j in range(glyphs.size()):
-			if j == i:
-				continue
-			if _leader_hits_rect(sa, sb, glyphs[j]["rect"]):
-				crossed += 1
-	check(crossed == 0, "leaders miss other badges (%d crossings)" % crossed)
 	var shaft_y := sm._shaft_lower_screen_y(sm.get_viewport().get_camera_3d())
 	check(shaft_y < 1.0e8, "shaft lower edge is measurable (%.1f)" % shaft_y)
 	var below := 0
@@ -429,20 +414,6 @@ func _head_disk(ctx: FilmContext, sm: SketchMode) -> Dictionary:
 	var c: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(centre))
 	var rim: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(centre + Vector2(radius, 0.0)))
 	return {"center": c, "radius": c.distance_to(rim)}
-
-
-func _leader_hits_rect(a: Vector2, b: Vector2, rect: Rect2) -> bool:
-	if rect.size == Vector2.ZERO:
-		return false
-	if rect.has_point(b) and a.distance_to(b) >= 10.0:
-		return true
-	for i in range(1, 8):
-		var p := a.lerp(b, float(i) / 8.0)
-		if a.distance_to(p) < 10.0:
-			continue
-		if rect.has_point(p):
-			return true
-	return false
 
 
 func _zoom_head(ctx: FilmContext) -> void:

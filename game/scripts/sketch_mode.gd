@@ -8312,14 +8312,6 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		for lr in labels:
 			if _leader_crosses_rect(anchor_screen, centre, lr):
 				score += 12000.0
-		# A straight leader through another badge fails the clearance read.
-		# That outranks staying off the curve: the badge can sit a few
-		# pixels farther out and still miss the wall samples.
-		for prev in placed:
-			if _leader_crosses_rect(anchor_screen, centre, prev):
-				# Stay under the curve penalty so a badge is not pushed
-				# onto the wall just to straighten its leader.
-				score += 20000.0
 	return score
 
 
@@ -8987,7 +8979,7 @@ func _relax_glyph_layout(items: Array, labels: Array[Rect2], cam: Camera3D,
 	_uncross_glyph_leaders(items, labels, cam, shaft_y)
 
 
-## After the overlap push, swing a leader off any badge or label it still crosses.
+## Swing a leader off other badges without moving the badge onto a wall.
 func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 		shaft_y: float) -> void:
 	for _pass in 4:
@@ -8999,21 +8991,23 @@ func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 			var centre: Vector2 = it["centre"]
 			if size == Vector2.ZERO:
 				continue
-			var obstacles := _other_glyph_rects(items, i)
-			var label_hit := false
-			for lr in labels:
-				if _leader_crosses_rect(natural, centre, lr):
-					label_hit = true
-					break
-			if not _leader_hits_any(natural, centre, obstacles, []) and not label_hit:
+			var obstacles: Array[Rect2] = []
+			for j in range(items.size()):
+				if j == i:
+					continue
+				var os: Vector2 = items[j]["size"]
+				if os == Vector2.ZERO:
+					continue
+				var oc: Vector2 = items[j]["centre"]
+				obstacles.append(Rect2(oc - os * 0.5, os))
+			if not _leader_crosses_any(natural, centre, obstacles):
 				continue
-			var cur_rect := Rect2(centre - size * 0.5, size)
-			var cur_curve := _glyph_curve_penalty(cur_rect, natural, cam)
+			var cur_curve := _glyph_curve_penalty(Rect2(centre - size * 0.5, size), natural, cam)
 			var best := centre
 			var best_rank := 1000000.0
-			for radius in [8.0, 16.0, 24.0, 32.0, 40.0]:
-				for k in 48:
-					var ang := TAU * float(k) / 48.0
+			for radius in [12.0, 20.0, 28.0, 36.0, 40.0]:
+				for k in 32:
+					var ang := TAU * float(k) / 32.0
 					var trial: Vector2 = natural + Vector2(cos(ang), sin(ang)) * radius
 					var rect := Rect2(trial - size * 0.5, size)
 					if _glyph_below_part(rect, shaft_y):
@@ -9021,17 +9015,9 @@ func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 					var curve := _glyph_curve_penalty(rect, natural, cam)
 					if curve > cur_curve + 1.0:
 						continue
-					if _leader_hits_any(natural, trial, obstacles, []):
+					if _leader_crosses_any(natural, trial, obstacles):
 						continue
-					var crosses_label := false
-					for lr in labels:
-						if _leader_crosses_rect(natural, trial, lr):
-							crosses_label = true
-							break
-					var rank := curve
-					if crosses_label:
-						rank += 20000.0
-					rank += trial.distance_to(centre) * 0.1
+					var rank := curve + trial.distance_to(centre) * 0.1
 					if rank < best_rank:
 						best_rank = rank
 						best = trial
@@ -9046,25 +9032,8 @@ func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 			break
 
 
-func _other_glyph_rects(items: Array, skip: int) -> Array[Rect2]:
-	var out: Array[Rect2] = []
-	for j in range(items.size()):
-		if j == skip:
-			continue
-		var oc: Vector2 = items[j]["centre"]
-		var os: Vector2 = items[j]["size"]
-		if os == Vector2.ZERO:
-			continue
-		out.append(Rect2(oc - os * 0.5, os))
-	return out
-
-
-func _leader_hits_any(anchor: Vector2, centre: Vector2, obstacles: Array[Rect2],
-		labels: Array[Rect2]) -> bool:
+func _leader_crosses_any(anchor: Vector2, centre: Vector2, obstacles: Array[Rect2]) -> bool:
 	for rect in obstacles:
-		if _leader_crosses_rect(anchor, centre, rect):
-			return true
-	for rect in labels:
 		if _leader_crosses_rect(anchor, centre, rect):
 			return true
 	return false
