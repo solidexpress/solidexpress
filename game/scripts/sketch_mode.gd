@@ -669,6 +669,11 @@ func _activate_session() -> void:
 	# Publish the chip before the first redraw. Restoring stays true so this
 	# solve does not pop relation chips; the label still updates.
 	refresh_dof_state()
+	# The activation solve reprints parameters. Re-take the baseline after that
+	# solve so a no-op reopen compares against the solved sketch, not the
+	# pre-solve digits.
+	if editing_fid != "" and sketch != null and sketch.has_method("snapshot"):
+		_edit_baseline = sketch.snapshot()
 	_redraw()
 	if not adopted:
 		_reset_undo_history()
@@ -825,7 +830,7 @@ func exit_sketch() -> String:
 		return ""
 	var fid := ""
 	if editing_fid != "":
-		if sketch.has_method("snapshot") and sketch.snapshot() == _edit_baseline:
+		if sketch.has_method("snapshot") and _snapshots_equal(sketch.snapshot(), _edit_baseline):
 			fid = editing_fid
 			_end_sketch_session()
 			status.emit("Sketch saved")
@@ -2852,8 +2857,135 @@ func constrain(type: String, value: float = 0.0) -> String:
 	return res["status"]
 
 
+## Line directions are defined mod 180°. Fold into (−90°, 90°] and then take
+## the unsigned angle from the horizontal, so a wall read from the other end
+## (−135° or 135°) records 45° and a label never carries a minus.
+func _normalize_jaw_angle_rad(rad: float) -> float:
+	var deg := rad_to_deg(rad)
+	while deg <= -180.0:
+		deg += 360.0
+	while deg > 180.0:
+		deg -= 360.0
+	if deg > 90.0:
+		deg -= 180.0
+	elif deg <= -90.0:
+		deg += 180.0
+	if deg < 0.0:
+		deg = -deg
+	return deg_to_rad(deg)
+
+
+func _jaw_angle_from_direction(dir: Vector2) -> float:
+	if dir.length_squared() < 1e-12:
+		return 0.0
+	return rad_to_deg(_normalize_jaw_angle_rad(Vector2(1, 0).angle_to(dir)))
+
+
+func _ids_are_jaw_angle(ids: Array) -> bool:
+	if sketch == null:
+		return false
+	var saw_datum := false
+	var saw_wall := false
+	for id in ids:
+		var info: Dictionary = sketch.entity_info(str(id))
+		if str(info.get("type", "")) != "line":
+			continue
+		if sketch.is_construction(str(id)):
+			var d: Vector2 = info["end"] - info["start"]
+			if absf(d.y) <= maxf(1e-4, absf(d.x) * 1e-3):
+				saw_datum = true
+		else:
+			saw_wall = true
+	return saw_datum and saw_wall
+
+
+func _dimension_is_jaw_angle(dim: Dictionary) -> bool:
+	if str(dim.get("callout", "")) == "jaw_angle":
+		return true
+	if str(dim.get("type", "")) != "angle":
+		return false
+	return _ids_are_jaw_angle(dim.get("ids", []))
+
+
+func _num_close(a: float, b: float, tol: float) -> bool:
+	var diff := absf(a - b)
+	var scale := maxf(absf(a), absf(b))
+	return diff <= tol or (scale > 0.0 and diff <= tol * scale)
+
+
+## True when two sketch snapshots are the same feature: same entities and
+## constraints in order, parameters and values within `tol` (absolute or relative).
+func _snapshots_equal(a: String, b: String, tol: float = 1e-9) -> bool:
+	if a == b:
+		return true
+	if a == "" or b == "":
+		return false
+	var pa = JSON.parse_string(a)
+	var pb = JSON.parse_string(b)
+	if typeof(pa) != TYPE_DICTIONARY or typeof(pb) != TYPE_DICTIONARY:
+		return false
+	var ea: Array = pa.get("entities", [])
+	var eb: Array = pb.get("entities", [])
+	if ea.size() != eb.size():
+		return false
+	for i in ea.size():
+		var ae: Dictionary = ea[i]
+		var be: Dictionary = eb[i]
+		if str(ae.get("id", "")) != str(be.get("id", "")):
+			return false
+		if str(ae.get("type", "")) != str(be.get("type", "")):
+			return false
+		if bool(ae.get("construction", false)) != bool(be.get("construction", false)):
+			return false
+		if bool(ae.get("external", false)) != bool(be.get("external", false)):
+			return false
+		if str(ae.get("projected_from", "")) != str(be.get("projected_from", "")):
+			return false
+		var ap: Array = ae.get("params", [])
+		var bp: Array = be.get("params", [])
+		if ap.size() != bp.size():
+			return false
+		for j in ap.size():
+			if int(ap[j]) != int(bp[j]):
+				return false
+	var ca: Array = pa.get("constraints", [])
+	var cb: Array = pb.get("constraints", [])
+	if ca.size() != cb.size():
+		return false
+	for i in ca.size():
+		var ac: Dictionary = ca[i]
+		var bc: Dictionary = cb[i]
+		if str(ac.get("id", "")) != str(bc.get("id", "")):
+			return false
+		if str(ac.get("type", "")) != str(bc.get("type", "")):
+			return false
+		if bool(ac.get("driving", true)) != bool(bc.get("driving", true)):
+			return false
+		if not _num_close(float(ac.get("value", 0.0)), float(bc.get("value", 0.0)), tol):
+			return false
+		var ra: Array = ac.get("refs", [])
+		var rb: Array = bc.get("refs", [])
+		if ra.size() != rb.size():
+			return false
+		for j in ra.size():
+			if str(ra[j].get("entity", "")) != str(rb[j].get("entity", "")):
+				return false
+			if str(ra[j].get("role", "self")) != str(rb[j].get("role", "self")):
+				return false
+	var ppa: Array = pa.get("params", [])
+	var ppb: Array = pb.get("params", [])
+	if ppa.size() != ppb.size():
+		return false
+	for i in ppa.size():
+		if not _num_close(float(ppa[i]), float(ppb[i]), tol):
+			return false
+	return true
+
+
 func _record_dimension(type: String, ids: Array, value: float, cid: String = "",
 		callout: String = "") -> void:
+	if type == "angle" and callout == "jaw_angle":
+		value = _normalize_jaw_angle_rad(value)
 	var id_list: Array = []
 	for id in ids:
 		id_list.append(str(id))
@@ -3866,7 +3998,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var ang_cid: String = sketch.add_constraint("angle", [
 		{"entity": hx, "role": "self"},
 		{"entity": str(walls[0]["id"]), "role": "self"}], ang)
-	_record_dimension("angle", [hx, str(walls[0]["id"])], ang, ang_cid, "jaw_angle")
+	_record_dimension("angle", [hx, str(walls[0]["id"])], _normalize_jaw_angle_rad(ang), ang_cid, "jaw_angle")
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "circle" or sketch.is_construction(id):
@@ -6403,7 +6535,8 @@ func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String =
 	var cid: String = sketch.add_constraint("angle", [
 		{"entity": xid, "role": "self"},
 		{"entity": line_id, "role": "self"}], ang, true)
-	_record_dimension("angle", [xid, line_id], ang, cid, callout)
+	var recorded := _normalize_jaw_angle_rad(ang) if callout == "jaw_angle" else ang
+	_record_dimension("angle", [xid, line_id], recorded, cid, callout)
 
 
 func _line_has_angle_dim(line_id: String) -> bool:
@@ -6707,12 +6840,17 @@ func _dimension_record_from_cid(cid: String) -> Dictionary:
 	# Construction projected-circle anchors are not user dimensions.
 	if (t == "radius" or t == "diameter") and sketch.is_construction(str(ids[0])):
 		return {}
-	return {
+	var value := float(info.get("value", 0.0))
+	var rec := {
 		"type": t,
 		"ids": ids,
-		"value": float(info.get("value", 0.0)),
+		"value": value,
 		"cid": cid,
 	}
+	if t == "angle" and _ids_are_jaw_angle(ids):
+		rec["callout"] = "jaw_angle"
+		rec["value"] = _normalize_jaw_angle_rad(value)
+	return rec
 
 
 func _dimension_fact_key(dim: Dictionary) -> String:
@@ -7165,7 +7303,10 @@ func _dimension_display_value(dim: Dictionary) -> float:
 	# Angle and diameter must win over measured_value: two lines report the
 	# endpoint gap, and a circle reports radius, neither of which is the dim.
 	if type == "angle" and ids.size() >= 2 and sketch != null:
-		return rad_to_deg(_lines_signed_angle(str(ids[0]), str(ids[1])))
+		var signed := _lines_signed_angle(str(ids[0]), str(ids[1]))
+		if _dimension_is_jaw_angle(dim):
+			return rad_to_deg(_normalize_jaw_angle_rad(signed))
+		return rad_to_deg(signed)
 	if type == "diameter" and not ids.is_empty() and sketch != null:
 		var dinfo: Dictionary = sketch.entity_info(str(ids[0]))
 		if str(dinfo.get("type", "")) in ["circle", "arc"]:
