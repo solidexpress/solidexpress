@@ -464,6 +464,18 @@ class Walk:
     def dim_texts(self) -> list[str]:
         return [str(d.get("text", "")) for d in self.dims() if d.get("visible", True)]
 
+    def _label_is(self, token: str, text: str) -> bool:
+        t = str(text).replace(" ", "")
+        if token == "45":
+            return t.startswith("45") and "°" in t
+        if token == "20":
+            return t.startswith("20") and "°" not in t
+        if token == "5":
+            return t.startswith("5") and not t.startswith("22") and "°" not in t and "45" not in t
+        if token == "22.5":
+            return t.startswith("22.5")
+        return token in t
+
     def find_dim(self, pred) -> dict | None:
         for d in self.dims():
             if pred(d):
@@ -477,23 +489,24 @@ class Walk:
         self.enter()
         return got
 
+    def _dim_editor_text(self) -> str:
+        # The popup takes digits even while focus stays on the rail button, so
+        # focus_text is empty. Read the line edit itself.
+        edit = self.control("dim:Edit") or {}
+        text = str(edit.get("text", ""))
+        if text == "":
+            text = str(self.st.get("focus_text", ""))
+        return text
+
     def _type_dim_editor(self, text: str) -> str:
-        """Type into the viewport Dim editor (DimEditLine), which Smart Dim and label clicks open."""
-        self.refresh("focus", "focus_text", "status")
-        focus = str(self.st.get("focus", ""))
-        if "DimEditLine" not in focus:
-            try:
-                self.click("dim:Edit")
-            except SxError:
-                pass
-            self.refresh("focus", "focus_text")
+        """Type once into the viewport Dim editor. A second burst appends."""
+        self.d.wait_idle(frames=2)
+        current = self._dim_editor_text()
+        if current == text:
+            return current
         self.d.type(text, delay_ms=10)
-        got = str(self.refresh("focus_text", "focus", "status").get("focus_text", ""))
-        if got != text:
-            self.d.key("ctrl+a")
-            self.d.type(text, delay_ms=10)
-            got = str(self.refresh("focus_text").get("focus_text", ""))
-        return got
+        self.d.wait_idle(frames=2)
+        return self._dim_editor_text()
 
     def _entities(self) -> list[dict]:
         sk = self.st.get("sketch") or {}
@@ -734,14 +747,24 @@ class Walk:
         )
         dof = str(self.refresh("dof").get("dof", ""))
         self.clause("dof glyph", dof.strip() in ("—", "-", "OK", "!") or dof.strip().isdigit() or dof.strip() != "", f"dof={dof!r}")
-        rails = self.refresh("rail").get("rail") or []
-        win = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
+        win = (self.refresh("window", "controls").get("window") or {}).get("size") or [1280, 800]
+        seen: set[str] = set()
+        rails = []
+        for c in self.st.get("controls") or []:
+            cid = str(c.get("id", ""))
+            if not cid.startswith("rail:") or cid in ("rail:Snap", "rail:Infer"):
+                continue
+            if not str(c.get("text", "")).strip() or cid in seen:
+                continue
+            seen.add(cid)
+            rails.append(c)
         clipped = []
         for b in rails:
             r = b.get("rect") or []
             if len(r) >= 4 and (r[1] < 0 or r[1] + r[3] > float(win[1]) + 2):
                 clipped.append(b.get("text"))
-        self.clause("rail labels", len(rails) >= 19 and not clipped, f"{len(rails)} buttons clipped={clipped}")
+        names = [str(b.get("text", "")) for b in rails]
+        self.clause("rail labels", len(rails) >= 19 and not clipped, f"{len(rails)} labels {names} clipped={clipped}")
         self.ctx["rail_count"] = len(rails)
 
     def row_A2(self) -> None:
@@ -832,9 +855,14 @@ class Walk:
             f"{self.S()} focus={self.st.get('focus')}",
         )
         typed = self._type_dim_editor("200")
-        self.clause("burst 200", typed == "200", f"field={typed!r} focus={self.st.get('focus')}")
-        self.enter()
-        self.clause("dimension", "Dimension updated" in self.S(), self.S())
+        committed = self._num_is(typed, 200)
+        self.clause("burst 200", committed, f"field={typed!r}")
+        if committed:
+            self.enter()
+            self.clause("dimension", "Dimension updated" in self.S(), self.S())
+        else:
+            self.esc()
+            self.clause("dimension", False, f"editor read {typed!r}; did not commit", kind="runner-gap")
         self.ctx["pivot"] = [0, 0]
         self.ctx["head"] = [200, 0]
 
@@ -868,6 +896,11 @@ class Walk:
         self.refresh("status")
         return str(reply.get("status", self.S()))
 
+    def _empty_canvas(self) -> dict:
+        win = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
+        rail = self.rail_right()
+        return self.click(screen=[rail + 70.0, float(win[1]) - 90.0])
+
     def row_A4(self) -> None:
         # Smart Dim leaves both circles selected, which is what shows Shaft Lines
         # on the sketch ActionBar (not the part SelectionStrip).
@@ -896,7 +929,7 @@ class Walk:
         # One click per call: line, empty canvas (≥ 60 px / well clear in mm), line.
         first = self._click_shaft(mids[0])
         self.clause("line 1", "Selected 1 sketch entity" in first and "Constraint selected" not in first, first)
-        empty = self.click(sketch=[100, 80])
+        empty = self._empty_canvas()
         self.refresh("status")
         self.clause("empty", "No sketch entities" in str(empty.get("status", self.S())), str(empty.get("status", self.S())))
         second = self._click_shaft(mids[1])
@@ -910,7 +943,7 @@ class Walk:
         self.clause("esc clears chips", "Parallel?" not in after_esc and "Equal?" not in after_esc and "Perpendicular?" not in after_esc, after_esc[:160])
         self._click_shaft(mids[0])
         self._click_shaft(mids[1])
-        empty2 = self.click(sketch=[100, 80])
+        empty2 = self._empty_canvas()
         self.refresh("status")
         after_empty = self._chip_texts()
         self.clause(
@@ -1357,14 +1390,12 @@ class Walk:
             editor = str(self.st.get("focus_text", ""))
             self.esc()
         for token in ("20", "45", "5", "22.5"):
-            present = any(token in t and (token != "45" or "°" in t) for t in texts)
-            if token == "20":
-                present = any(t.strip().startswith("20") and "°" not in t for t in texts)
+            present = any(self._label_is(token, t) for t in texts)
             self.clause(
                 "label " + token,
                 present,
                 f"drawn={texts} editor={editor!r}",
-                kind="" if present or token not in ("45",) else "product",
+                kind="" if present or token != "45" else "product",
             )
         head = self.find_dim(lambda d: "22.5" in str(d.get("text", "")))
         if head and self.ctx.get("H"):
