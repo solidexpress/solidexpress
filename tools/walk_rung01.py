@@ -1661,6 +1661,36 @@ class Walk:
         self.clause("no minus", not any("-" in t for t in texts), str(texts))
         self.clause("not 20.0005", not any("20.0005" in t or "45.0007" in t for t in texts), str(texts))
 
+    def _open_angle_editor(self, angle: dict) -> str:
+        """Click the hit-test rect until DimEditLine reads 45. Leave the sketch open."""
+        rect = angle.get("hit_rect") or []
+        if len(rect) < 4 or float(rect[2]) < 1.0:
+            rect = []
+        points: list[list[float]] = []
+        if rect:
+            x, y, w, h = [float(v) for v in rect[:4]]
+            points.append([x + w * 0.5, y + h * 0.5])
+            points.append([x + min(6.0, max(w * 0.2, 1.0)), y + h * 0.5])
+            points.append([x + w * 0.5, y + min(4.0, h * 0.25)])
+        editor = ""
+        for pt in points:
+            self.d.click(screen=pt)
+            self.d.wait_idle(frames=6)
+            got = str((self.control("dim:Edit") or {}).get("text", ""))
+            if got.startswith("45"):
+                return got
+            if got:
+                self.click("dim:Edit")
+                self.esc()
+                self.click("rail:Select")
+                continue
+            status = self.S()
+            if "Selected" in status and "sketch entity" in status:
+                self.d.key("ctrl+z")
+                self.d.wait_idle(frames=4)
+                self.click("rail:Select")
+        return editor
+
     def row_N1a(self) -> None:
         guard = 0
         while self.head_px() < 142 and guard < 12:
@@ -1676,36 +1706,17 @@ class Walk:
         angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
         if angle is not None:
             # Trim is still armed after A9; it consumes the label click.
-            # The popup line edit is not viewport focus, so read DimEditLine.
+            # The Label3D billboard rect (rect) sits on the jaw wall, so a
+            # click there drags the entity. dimension_hit uses hit_rect.
+            # Esc with focus on the rail exits the sketch, so only dismiss
+            # a popup that is actually open, and only after focusing it.
             self.click("rail:Select")
-            points: list[list[float]] = []
-            for key in ("rect", "hit_rect"):
-                rect = angle.get(key) or []
-                if len(rect) < 4 or float(rect[2]) < 1.0:
-                    continue
-                x, y, w, h = [float(v) for v in rect[:4]]
-                points.append([x + min(8.0, w * 0.25), y + h * 0.5])
-                points.append([x + w * 0.5, y + h * 0.5])
-            for pt in points:
-                self.d.click(screen=pt)
-                self.d.wait_idle(frames=4)
-                got = str((self.control("dim:Edit") or {}).get("text", ""))
-                if got.startswith("45"):
-                    editor = got
-                    break
-                if got:
-                    # A neighbouring callout (the width) accepted the click.
-                    self.esc()
-                    self.click("rail:Select")
-            if not editor.startswith("45"):
-                self.d.click(dim=str(angle.get("text", "")), glyph="center")
-                self.d.wait_idle(frames=6)
-                got = str((self.control("dim:Edit") or {}).get("text", ""))
-                if got.startswith("45"):
-                    editor = got
-            if not editor:
+            editor = self._open_angle_editor(angle)
+            if editor.startswith("45"):
+                self.click("dim:Edit")
+                self.esc()
+            elif not editor:
                 editor = self.S()
-            self.esc()
         for token in ("20", "45", "5", "22.5"):
             present = any(self._label_is(token, t) for t in texts)
             self.clause(
@@ -1718,12 +1729,18 @@ class Walk:
         if angle is not None:
             self.clause("editor 45", "45" in editor and "-" not in editor, f"editor={editor!r}")
         head = self.find_dim(lambda d: "22.5" in str(d.get("text", "")))
-        if head and self.ctx.get("H"):
-            r = head.get("rect") or [0, 0, 0, 0]
-            cx = r[0] + r[2] / 2
-            cy = r[1] + r[3] / 2
-            dist = ((cx - self.ctx["H"][0]) ** 2 + (cy - self.ctx["H"][1]) ** 2) ** 0.5
-            self.clause("22.5 near head", dist <= 40 + px / 2, f"dist to H {dist:.1f}")
+        centre = None
+        try:
+            centre = self.d.project(sketch=[200.0, 0.0])["screen"]
+        except (SxError, TypeError, KeyError):
+            centre = self.ctx.get("H")
+        if head and centre:
+            r = head.get("hit_rect") or head.get("rect") or [0, 0, 0, 0]
+            left, top, w, h = [float(v) for v in r[:4]]
+            dx = max(left - centre[0], 0.0, centre[0] - (left + w))
+            dy = max(top - centre[1], 0.0, centre[1] - (top + h))
+            dist = (dx * dx + dy * dy) ** 0.5
+            self.clause("22.5 near head", dist <= 40 + px / 2, f"dist to head {dist:.1f}")
         else:
             self.clause("22.5 placed", False, str(texts))
 
@@ -1794,6 +1811,27 @@ class Walk:
                 return True
         return False
 
+    def _seg_hit_t(self, a: list[float], b: list[float], rect: list) -> float | None:
+        if len(rect) < 4:
+            return None
+        x, y, w, h = (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))
+
+        def inside(px: float, py: float) -> bool:
+            return x <= px <= x + w and y <= py <= y + h
+
+        span = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+        if inside(b[0], b[1]) and span >= 10.0:
+            return 1.0
+        for i in range(1, 8):
+            t = i / 8
+            px = a[0] + (b[0] - a[0]) * t
+            py = a[1] + (b[1] - a[1]) * t
+            if ((px - a[0]) ** 2 + (py - a[1]) ** 2) ** 0.5 < 10.0:
+                continue
+            if inside(px, py):
+                return t
+        return None
+
     def row_N26(self) -> None:
         st = self.refresh("glyphs", "glyph_leaders", "dims")
         glyphs = list(st.get("glyphs") or [])
@@ -1837,14 +1875,17 @@ class Walk:
                 and grown[1] <= pos[1] <= grown[1] + grown[3]
             )
             hits_dim = any(self._seg_hits_rect(anchor, pos, r) for r in dim_rects)
-            hits_other = False
+            others = []
             for other in glyphs:
                 if other is g:
                     continue
-                if self._seg_hits_rect(anchor, pos, other.get("rect") or []):
-                    hits_other = True
-            if dist > 40.0 or not near_in or hits_dim or hits_other:
-                clearance_bad.append(f"d={dist:.1f} near={near_in} dim={hits_dim} other={hits_other}")
+                hit_t = self._seg_hit_t(anchor, pos, other.get("rect") or [])
+                if hit_t is not None:
+                    others.append(f"{other.get('type')}@{hit_t:.2f}")
+            if dist > 40.0 or not near_in or hits_dim or others:
+                clearance_bad.append(
+                    f"{g.get('type')} d={dist:.1f} near={near_in} dim={hits_dim} other={others}"
+                )
         self.clause("leader clearance", not clearance_bad, str(clearance_bad) or f"{len(leaders)} leaders")
 
     def _longest_wall_screen(self, frac: float) -> list[float] | None:
