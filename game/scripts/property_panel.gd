@@ -344,10 +344,15 @@ func _add_spin_row(field: Dictionary, value) -> void:
 	if key == "distance":
 		spin.update_on_text_changed = false
 	spin.value_changed.connect(func(v: float) -> void:
-		# Extrude Distance never rebuilds from the spin signal. A typed prefix
-		# ("1" of "14") syncs the spin; Enter, focus-exit and the arrows commit.
+		# A typed prefix syncs the spin while the line owns the characters.
+		# That signal must not rebuild. Enter, focus-exit, the arrows, and a
+		# spin change that is not mid-entry still commit.
 		if key == "distance" and _type == "extrude":
-			return
+			if _distance_suppress:
+				return
+			var live := spin.get_line_edit()
+			if live != null and SxUi.mid_entry(live):
+				return
 		if key == "distance" and not _distance_line_parses(spin):
 			return
 		var store = int(v) if field["kind"] == "int" else v
@@ -590,11 +595,14 @@ func _on_distance_arrow_click(event: InputEvent, spin: SpinBox) -> void:
 func _commit_distance_arrow(spin: SpinBox) -> void:
 	if _distance_suppress or spin == null or not is_instance_valid(spin):
 		return
+	var next := spin.value
+	if _same_param(_params.get("distance", next), next):
+		return
 	var edit := spin.get_line_edit()
 	if edit != null:
 		SxUi.mark_mid_entry(edit, false)
 	_distance_suppress = true
-	_set_param("distance", spin.value)
+	_set_param("distance", next)
 	_distance_suppress = false
 
 
