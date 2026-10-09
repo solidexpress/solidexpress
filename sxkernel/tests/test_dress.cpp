@@ -1,6 +1,7 @@
 #include <catch.hpp>
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <string>
 
@@ -10,6 +11,7 @@
 #include "sx/log.hpp"
 #include "sx/shape_utils.hpp"
 #include "sx/sketch.hpp"
+#include "test_temp.hpp"
 
 using namespace sx;
 
@@ -154,12 +156,16 @@ TEST_CASE("stale fillet edges log one error only when face cues cannot recover t
     REQUIRE(feat->params["face_cues"].is_array());
     REQUIRE_FALSE(feat->params["face_cues"].empty());
 
-    const std::string path = "/tmp/sx-dress-stale-cues.log";
+    // Native Windows CreateFile does not open a leading-/tmp path, so the sink
+    // never writes and both counts read as 0 (the first CHECK passes vacuously).
+    sx::test::TmpFile log_file("sx-dress-stale-cues.log");
+    const std::string& path = log_file.path;
     feat->params["edges"] = nlohmann::json::array({"00000000-0000-4000-8000-000000000001"});
     std::remove(path.c_str());
     sx::log::set_file_sink(path);
     REQUIRE(graph.regenerate(doc, &err));
     sx::log::set_file_sink("");
+    REQUIRE(std::filesystem::is_regular_file(path));
     CHECK(count_log_level(path, "ERROR") == 0);
 
     feat = graph.feature(fid);
@@ -170,5 +176,6 @@ TEST_CASE("stale fillet edges log one error only when face cues cannot recover t
     sx::log::set_file_sink(path);
     REQUIRE(graph.regenerate(doc, &err));
     sx::log::set_file_sink("");
+    REQUIRE(std::filesystem::is_regular_file(path));
     CHECK(count_log_level(path, "ERROR") == 1);
 }
