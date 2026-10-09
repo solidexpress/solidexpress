@@ -1,0 +1,3 @@
+script=tests/run_rung01_replan21_angle.gd
+tier=full
+timeout=300
