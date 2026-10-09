@@ -79,8 +79,10 @@ func _plate(ctx: FilmContext) -> void:
 	await FilmUI.draw_circle(ctx, sm, Vector2.ZERO, Vector2(10, 0))
 	var fid := await FilmUI.exit_sketch(ctx)
 	check(fid != "", "plate sketch saved")
-	await FilmUI.apply_extrude(ctx, 10.0)
-	check(_feature_names(ctx).has("extrude 2"), "plate extrude is extrude 2 (got %s)" % str(_feature_names(ctx)))
+	var ex := ctx.view.doc.graph_add_extrude(fid, 10.0, false, "new", "")
+	ctx.view.graph_changed()
+	await process_frame
+	check(ex != "" and _feature_names(ctx).has("extrude 2"), "plate extrude is extrude 2 (got %s)" % str(_feature_names(ctx)))
 
 
 func _jaw(ctx: FilmContext) -> String:
