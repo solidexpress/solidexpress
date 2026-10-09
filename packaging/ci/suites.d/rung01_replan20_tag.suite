@@ -1,0 +1,3 @@
+script=tests/run_rung01_replan20_tag.gd
+tier=full
+timeout=180

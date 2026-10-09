@@ -10,6 +10,7 @@
 extends SceneTree
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const SHAFT_PICK_X := 100.0
 const TOL := 0.2
 const ROOT_SIZE := Vector2i(1280, 800)
@@ -228,6 +229,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		check(absf(r10 - 10.0) <= 0.05, "typed 10 is radius 10 (got %.4f)" % r10)
 	check(_status_has("Ø20") or str(ctx.main.status_label.text).contains("Ø20"),
 			"status contains Ø20 (got %s)" % ctx.main.status_label.text)
+	_guard_dims(ctx, "circle")
 	print("  wrench blank: right-half _x11_click_screen for Ø45 centre (screen x > 640)")
 	await _place_head_right_half(ctx)
 	var dim_blank := _dim_edit(ctx)
@@ -241,6 +243,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		check(absf(r45 - 22.5) <= 0.05, "typed 22.5 is radius 22.5 (got %.4f)" % r45)
 	check(_status_has("Ø45") or str(ctx.main.status_label.text).contains("Ø45"),
 			"status contains Ø45 (got %s)" % ctx.main.status_label.text)
+	_guard_dims(ctx, "second circle")
 	print("- Smart Dimension 200 between the two wrench centres")
 	await _smart_dim_centres(ctx, "200")
 	circs = _circles(sm)
@@ -249,6 +252,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		check(absf(gap - 200.0) <= TOL, "centre distance is 200 ± 0.2 (got %.3f)" % gap)
 	else:
 		check(false, "two circles remain after Smart Dimension 200")
+	_guard_dims(ctx, "Smart Dim")
 	print("  B13.10 Frame")
 	await _push_key(ctx.main.get_viewport(), KEY_F, 0)
 	await process_frame
@@ -256,6 +260,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	_assert_both_circles_on_screen(ctx, "F after 200 dim")
 	# Shaft 20 wide: the Shaft Lines chip adds the two lines at y = ±r0 that end on the Ø45.
 	await _shaft_lines_via_chip(ctx)
+	_guard_dims(ctx, "shaft lines")
 	await _assert_shaft_lines_both_sides(sm)
 	await _assert_contours_stay_on(ctx)
 	chrome = ctx.main.sketch_chrome
@@ -336,6 +341,10 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await process_frame
 	await _b14_frame_origin(ctx)
 	await _rail_click_probe(ctx)
+	# A8 points, default framing, before the hole circle and the Ø45 redraw.
+	await _draw_centre_rect(ctx, Vector2(200, 0))
+	await _edit_rect_labels(ctx)
+	await _b15_contours(ctx)
 	if _origin_circle_id(sm) == "":
 		await _place_hole_circle(ctx)
 	await _zoom_uv(ctx, Vector2(200, 0), 120.0)
@@ -349,8 +358,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		if cc.distance_to(Vector2(200, 0)) < 1.0 and cr > 15.0:
 			head_r = cr
 	check(absf(head_r - 22.5) <= 0.05, "jaw sketch has Ø45 at the head (r=%.4f)" % head_r)
-	await _draw_centre_rect(ctx, Vector2(200, 0))
-	await _edit_rect_labels(ctx)
+	_guard_dims(ctx, "head re-draw")
 	await _circle_motions_leave_no_marks(ctx)
 	await _b14_savelabels(ctx)
 	var first_miss := 12.0
@@ -374,6 +382,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	var trim_status := str(ctx.main.status_label.text)
 	check(trim_status.contains("Trimmed open jaw") or _status_has("Trimmed open jaw"),
 			"status contains Trimmed open jaw (got '%s')" % trim_status)
+	_guard_dims(ctx, "Trim")
 	err = _take_bad_status()
 	check(err == "", "jaw trim status clean" if err == "" else err)
 	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile closed")
@@ -464,6 +473,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	_status_log.clear()
 	await _click_uv(ctx, Vector2(18.5, 0), "Slot first centre")
 	await _b14_slot_cc(ctx)
+	_guard_dims(ctx, "slot")
 	chrome = ctx.main.sketch_chrome
 	await _pick_op(_finish_op(ctx), 1)
 	await _pick_end(_finish_end(ctx), 0)
@@ -529,11 +539,19 @@ func _run_checker(paths: Dictionary) -> void:
 	var checker := repo.path_join("tools/check_rung01.py")
 	check(FileAccess.file_exists(checker), "tools/check_rung01.py exists")
 	await _checker(checker, ["nut", str(paths["nut"])])
-	await _checker(checker, ["wrench", str(paths["wrench"])])
-	await _checker(checker, ["thick", str(paths["thick"]), "14"])
+	var wrench_text := await _checker(checker, ["wrench", str(paths["wrench"])])
+	check(wrench_text.contains("28/28") and wrench_text.contains("flipX=False") and wrench_text.contains("flipY=False"),
+			"wrench checker 28/28 flipX=False flipY=False")
+	var noext := "/tmp/sx-rung01-wrench-noext.3mf"
+	var noext_text := await _checker(checker, ["wrench", noext])
+	check(noext_text.contains("28/28"), "wrench-noext checker 28/28")
+	var thick_text := await _checker(checker, ["thick", str(paths["thick"]), "14"])
+	check(thick_text.contains("7/7"), "thick checker 7/7")
+	var diag := await _checker(checker, ["wrench", str(paths["thick"])], false)
+	check(diag.contains("18/22"), "DIAG checker 18/22")
 
 
-func _checker(checker: String, args: Array) -> void:
+func _checker(checker: String, args: Array, expect_ok: bool = true) -> String:
 	var output: Array = []
 	var argv := PackedStringArray()
 	argv.append(checker)
@@ -542,9 +560,11 @@ func _checker(checker: String, args: Array) -> void:
 	var code := OS.execute("python3", argv, output, true)
 	var text := "\n".join(output)
 	print(text)
-	check(code == 0, "check_rung01.py %s exit %d" % [" ".join(args), code])
+	if expect_ok:
+		check(code == 0, "check_rung01.py %s exit %d" % [" ".join(args), code])
 	if str(args[0]) == "thick":
 		check(text.contains("7/7"), "B13.15 thick checker prints 7/7")
+	return text
 
 
 func _assert_timeline(ctx: FilmContext) -> void:
@@ -2417,17 +2437,15 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	var jaw_chip := FilmUI.find_button(ctx.main.sketch_chrome, "Center Three Point")
 	check(jaw_chip == null or not jaw_chip.is_visible_in_tree(),
 			"Jaw shows no Center Three Point chip")
-	var along := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))
-	var across := Vector2(-along.y, along.x)
 	var before_n: int = sm.sketch.entity_ids().size()
 	await _click_uv(ctx, center, "Jaw click 1 centre")
 	await process_frame
-	await _click_uv(ctx, center + along * 30.0, "Jaw click 2 long side")
+	await _click_uv(ctx, center + Vector2(20.0, 0.0), "Jaw click 2 on the axis")
 	await process_frame
 	var after2 := str(ctx.main.status_label.text)
 	check(after2.contains("click 3") or after2 == SketchMode.JAW_AFTER_LONG,
 			"B13.2 after click 2 the status names the next step (got `%s`)" % after2)
-	await _click_uv(ctx, center + along * 30.0, "Jaw click 2 again")
+	await _click_uv(ctx, center + Vector2(20.0, 0.0), "Jaw click 2 again")
 	await process_frame
 	var after_repeat := str(ctx.main.status_label.text)
 	check(sm.sketch.entity_ids().size() == before_n,
@@ -2440,12 +2458,34 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	check(sm.sketch.entity_ids().size() == before_n,
 			"B14.1 entity count unchanged after repeat click 2 (n=%d was %d)" % [
 				sm.sketch.entity_ids().size(), before_n])
-	await _click_uv(ctx, center + across * 10.0, "Jaw click 3 half width")
+	await _click_uv(ctx, center + Vector2(20.0, -10.0), "Jaw click 3 half width")
 	await process_frame
 	check(str(ctx.main.status_label.text).begins_with("Jaw committed") or _status_has("Jaw committed"),
 			"B13.2 click 3 commits (got `%s`)" % ctx.main.status_label.text)
 	check(str(ctx.main.status_label.text).begins_with("Jaw committed") or _status_has("Jaw committed"),
 			"B14.1 click 3 commits (got `%s`)" % ctx.main.status_label.text)
+	var pre_side := _long_side_angle_deg(sm)
+	check(absf(pre_side - 45.0) > 0.05 and absf(pre_side - 0.0) <= 0.05,
+			"jaw pre-edit long side is 0° and not 45 (got %.3f)" % pre_side)
+	var drawn := FilmJaw.drawn_labels(sm)
+	var deg_n := 0
+	var deg_rect := Rect2()
+	var width_drawn := false
+	for entry in drawn:
+		if not bool(entry.get("visible", false)):
+			continue
+		var shown := str(entry.get("text", ""))
+		if shown.contains("°"):
+			deg_n += 1
+			deg_rect = entry.get("rect", Rect2())
+		else:
+			width_drawn = true
+	check(deg_n == 1, "exactly one drawn ° label (got %d)" % deg_n)
+	var rail: Control = ctx.main.sketch_toolbar
+	var rail_end := rail.get_global_rect().end.x if rail != null else 0.0
+	check(deg_rect.position.x >= rail_end, "drawn ° label is right of the rail (x %.1f rail %.1f)" % [deg_rect.position.x, rail_end])
+	check(width_drawn, "the width label is drawn")
+	_guard_dims(ctx, "jaw")
 	await _b14_undo_jaw(ctx)
 	print("  B13.5 Tool status")
 	for pair in [["Line", "Line"], ["Smart Dim", "Smart Dim"], ["Trim", "Trim"]]:
@@ -2453,9 +2493,6 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 		var st := str(ctx.main.status_label.text)
 		check(st.begins_with(str(pair[1])),
 				"B13.5 %s status starts with %s (got `%s`)" % [pair[0], pair[1], st])
-	await _b15_contours(ctx)
-
-
 func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
@@ -3149,18 +3186,10 @@ func _place_hole_circle(ctx: FilmContext) -> void:
 func _edit_rect_labels(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	await _edit_drawn_jaw_label(ctx, false, "20")
+	await _edit_drawn_jaw_label(ctx, true, "45")
 	var width_i := _dim_index_near(sm, "distance", 20.0)
-	if width_i < 0:
-		width_i = _dim_index_near(sm, "distance", 16.0)
-	check(width_i >= 0, "jaw width label exists")
-	if width_i >= 0:
-		await _edit_label(ctx, width_i, "20")
 	var ang_i := _dim_index(sm, "angle")
-	check(ang_i >= 0, "jaw angle label exists")
-	if ang_i >= 0:
-		await _edit_label(ctx, ang_i, "45", "last")
-	width_i = _dim_index_near(sm, "distance", 20.0)
-	ang_i = _dim_index(sm, "angle")
 	var width_shown := -1.0
 	var ang_shown := -1.0
 	if width_i >= 0:
@@ -3168,7 +3197,7 @@ func _edit_rect_labels(ctx: FilmContext) -> void:
 	if ang_i >= 0:
 		ang_shown = absf(float(sm._dimension_display_value(sm.dimensions[ang_i])))
 	check(absf(width_shown - 20.0) <= TOL, "jaw width label is 20 (got %.3f)" % width_shown)
-	check(absf(ang_shown - 45.0) <= TOL, "jaw angle label is 45 (got %.3f)" % ang_shown)
+	check(absf(ang_shown - 45.0) <= 0.05, "edited angle is 45 ± 0.05 (got %.3f)" % ang_shown)
 	var orient := _long_side_angle_deg(sm)
 	check(absf(orient - 45.0) <= TOL, "jaw long side is 45° (got %.3f)" % orient)
 	var wall_dir := Vector2.ZERO
@@ -3195,6 +3224,28 @@ func _edit_rect_labels(ctx: FilmContext) -> void:
 		floor_dir = floor_dir.normalized()
 	check(absf(wall_dir.dot(floor_dir)) <= sin(deg_to_rad(0.05)),
 			"jaw floor is perpendicular to the wall")
+
+
+func _guard_dims(ctx: FilmContext, where: String) -> void:
+	var errs: PackedStringArray = FilmJaw.assert_all_dimensions_drawn(ctx.main.sketch_mode, ctx.main.sketch_toolbar)
+	check(errs.is_empty(), "dimensions drawn after %s (%s)" % [where, "; ".join(errs)])
+
+
+func _edit_drawn_jaw_label(ctx: FilmContext, degree: bool, text: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var vp: Viewport = ctx.main.get_viewport()
+	var which := "angle" if degree else "width"
+	var pos := FilmJaw.click_label_first_glyph(vp, sm, degree)
+	check(pos != Vector2.INF, "drawn %s label glyph is on screen" % which)
+	await process_frame
+	await process_frame
+	var ix = ctx.main.interaction
+	check(ix._dim_edit_popup != null and ix._dim_edit_popup.visible,
+			"click on the drawn %s label opens the editor" % which)
+	if ix._dim_edit_popup == null or not ix._dim_edit_popup.visible:
+		return
+	await _type_popup(ctx, ix._dim_edit_line, text)
+	await process_frame
 
 
 func _edit_label(ctx: FilmContext, index: int, text: String, glyph: String = "first") -> void:
@@ -4100,12 +4151,14 @@ func _b14_savelabels(ctx: FilmContext) -> void:
 		if typeof(rec) != TYPE_DICTIONARY:
 			continue
 		var lr: Rect2 = rec.get("rect", Rect2())
+		var overlaps := false
 		for g in glyphs:
 			if typeof(g) != TYPE_DICTIONARY:
 				continue
 			var gr: Rect2 = g.get("rect", Rect2())
-			check(not lr.intersects(gr),
-					"B14.6 label `%s` does not overlap a glyph" % str(rec.get("text", "")))
+			if lr.intersects(gr):
+				overlaps = true
+		check(not overlaps, "B14.6 label `%s` does not overlap a glyph" % str(rec.get("text", "")))
 	await _save_as_in_sketch(ctx)
 	var after := _b14_label_rects(sm)
 	var after_txt := _b14_label_text_list(after)

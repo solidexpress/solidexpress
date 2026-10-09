@@ -138,6 +138,8 @@ var _edits := 0
 var _fields: VBoxContainer
 var _title: Label
 var _building := false
+## Esc / an in-flight distance commit must not let focus-exit write the prefix.
+var _distance_suppress := false
 ## Bumped every time Distance (or another schema key) is asked to take the
 ## keyboard. A newer open cancels a select that would otherwise land on the
 ## first typed digit.
@@ -342,6 +344,15 @@ func _add_spin_row(field: Dictionary, value) -> void:
 	if key == "distance":
 		spin.update_on_text_changed = false
 	spin.value_changed.connect(func(v: float) -> void:
+		# A typed prefix syncs the spin while the line owns the characters.
+		# That signal must not rebuild. Enter, focus-exit, the arrows, and a
+		# spin change that is not mid-entry still commit.
+		if key == "distance" and _type == "extrude":
+			if _distance_suppress:
+				return
+			var live := spin.get_line_edit()
+			if live != null and SxUi.mid_entry(live):
+				return
 		if key == "distance" and not _distance_line_parses(spin):
 			return
 		var store = int(v) if field["kind"] == "int" else v
@@ -363,6 +374,8 @@ func _add_spin_row(field: Dictionary, value) -> void:
 			_release_editor_keys(edit))
 		SxUi.release_focus_on_commit(spin)
 	row.add_child(spin)
+	if key == "distance" and _type == "extrude":
+		_hook_distance_arrows.call_deferred(spin)
 
 
 func _editor_size_key(key: String) -> bool:
@@ -514,11 +527,12 @@ func _on_distance_edit_gui_input(event: InputEvent, spin: SpinBox) -> void:
 	if not key.pressed or key.echo:
 		return
 	var ch := SxUi.numeric_key_char(key)
-	if ch == "" or not SxUi.replace_armed(edit):
+	if ch == "":
 		return
-	# Own the first digit. A deferred select-all must not run afterwards and
-	# highlight that digit so the next key replaces it ("14" becoming "4").
-	SxUi.write_typed_text(edit, ch)
+	# Own every digit. SpinBox leaves edit mode after the first key, so a
+	# same-frame burst ("14") would otherwise drop the second character.
+	var next := SxUi.compose_typed_char(edit, ch)
+	SxUi.write_typed_text(edit, next)
 	edit.accept_event()
 
 
@@ -533,7 +547,7 @@ func _on_distance_focus_exited(spin: SpinBox) -> void:
 ## Parse the Distance LineEdit and write `distance` before the spin can be freed.
 ## Partial junk that is not a single float does not write.
 func _commit_distance_line(spin: SpinBox) -> void:
-	if _building or _fid == "" or spin == null or not is_instance_valid(spin):
+	if _distance_suppress or _building or _fid == "" or spin == null or not is_instance_valid(spin):
 		return
 	var edit := spin.get_line_edit()
 	if edit == null:
@@ -541,9 +555,55 @@ func _commit_distance_line(spin: SpinBox) -> void:
 	var parsed: Variant = _parse_spin_text(spin, edit.text)
 	if parsed == null:
 		var keep := float(_params.get("distance", spin.value))
+		SxUi.mark_mid_entry(edit, false)
 		_restore_distance_value.call_deferred(spin, keep)
 		return
+	_distance_suppress = true
+	SxUi.mark_mid_entry(edit, false)
 	_set_param("distance", float(parsed))
+	_distance_suppress = false
+
+
+func _hook_distance_arrows(spin: SpinBox) -> void:
+	if spin == null or not is_instance_valid(spin):
+		return
+	if not spin.gui_input.is_connected(_on_distance_arrow_click):
+		spin.gui_input.connect(_on_distance_arrow_click.bind(spin))
+
+
+## Godot 4.7 draws ▲ / ▼ on the SpinBox; they are not Button children.
+## The step is applied in SpinBox.gui_input during this same press. Commit
+## after that, from the spin's value (the line can still show a prefix).
+func _on_distance_arrow_click(event: InputEvent, spin: SpinBox) -> void:
+	if spin == null or not is_instance_valid(spin):
+		return
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var edit := spin.get_line_edit()
+	if edit != null:
+		var at := mb.global_position
+		if at != Vector2.ZERO and edit.get_global_rect().has_point(at):
+			return
+	if mb.position.x <= spin.size.x * 0.68:
+		return
+	_commit_distance_arrow.call_deferred(spin)
+
+
+func _commit_distance_arrow(spin: SpinBox) -> void:
+	if _distance_suppress or spin == null or not is_instance_valid(spin):
+		return
+	var next := spin.value
+	if _same_param(_params.get("distance", next), next):
+		return
+	var edit := spin.get_line_edit()
+	if edit != null:
+		SxUi.mark_mid_entry(edit, false)
+	_distance_suppress = true
+	_set_param("distance", next)
+	_distance_suppress = false
 
 
 func _restore_distance_value(spin: SpinBox, keep: float) -> void:
@@ -711,18 +771,34 @@ func commit() -> void:
 
 
 func cancel_edits() -> void:
+	var mid := false
+	if _type == "extrude":
+		var spin := _spin_for_key("distance")
+		if spin != null:
+			var edit := spin.get_line_edit()
+			mid = edit != null and SxUi.mid_entry(edit)
+	_distance_suppress = true
 	for i in range(_edits):
 		view.undo()
-	if _edits > 0:
+	if _edits > 0 or mid:
 		status.emit("Edits cancelled")
 	_close()
+	_distance_suppress = false
 
 
 ## True while the user has changed a value that Esc must roll back.
 ## A panel that is only showing the last feature must not steal Esc from
 ## an armed Fillet / Hole pick.
 func has_pending_edits() -> bool:
-	return _edits > 0
+	if _edits > 0:
+		return true
+	if _type != "extrude":
+		return false
+	var spin := _spin_for_key("distance")
+	if spin == null:
+		return false
+	var edit := spin.get_line_edit()
+	return edit != null and SxUi.mid_entry(edit)
 
 
 func dismiss_keep_preview() -> void:

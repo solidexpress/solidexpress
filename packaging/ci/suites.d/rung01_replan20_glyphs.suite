@@ -1,0 +1,3 @@
+script=tests/run_rung01_replan20_glyphs.gd
+tier=full
+timeout=300

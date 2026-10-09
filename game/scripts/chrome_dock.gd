@@ -9,6 +9,9 @@ const CORNERS := ["tl", "tr", "bl", "br"]
 
 ## Optional left inset so docks never cover the icon rail.
 static var rail_right: float = 56.0
+## Right edge of the sketch rail plus 4 px while a sketch is open; 0 otherwise.
+## Dimension labels clamp to the right of this inset.
+static var sketch_rail_right: float = 0.0
 static var top_inset: float = 48.0
 static var bottom_inset: float = 42.0
 ## Lowest y `_apply_chrome_docks` allows for the Timeline top. Clamp must

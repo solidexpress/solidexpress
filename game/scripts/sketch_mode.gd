@@ -1147,6 +1147,7 @@ func _undo_current_entry(label: String) -> Dictionary:
 
 
 func _restore_undo_entry(entry: Dictionary) -> String:
+	_hide_infer_hint()
 	var json := str(entry.get("json", ""))
 	var dims: Array = entry.get("dimensions", [])
 	_undo_restoring = true
@@ -1501,9 +1502,15 @@ signal selection_actions_needed
 signal preview_distance_changed(distance: float)
 
 
+func _hide_infer_hint() -> void:
+	if _infer_label != null:
+		_infer_label.visible = false
+
+
 func set_tool(t: Tool) -> void:
 	# Re-arming a tool spends the "next Esc leaves" promise. The tool-drop
 	# rung applies again until a new pending point is dropped.
+	_hide_infer_hint()
 	_esc_exit_promised = false
 	if not _drag.is_empty():
 		end_drag()
@@ -1599,6 +1606,7 @@ func start_jaw_tool() -> void:
 
 
 func set_tool_variant(v: String) -> void:
+	_hide_infer_hint()
 	tool_variant = v
 	if tool == Tool.POLYGON and (v == "across_flats" or v == "vertex"):
 		_polygon_variant = v
@@ -1644,6 +1652,7 @@ func has_pending_draw_point() -> bool:
 
 ## Esc with a first anchor placed: drop the anchor and keep the sketch session.
 func cancel_pending_draw() -> void:
+	_hide_infer_hint()
 	_tool_points.clear()
 	_length_override = -1.0
 	_update_preview()
@@ -3637,6 +3646,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	if cutter.is_empty():
 		return false
 	if _jaw_ids_alive():
+		_hide_infer_hint()
 		status.emit("Jaw is already open — nothing left to trim here")
 		return true
 	var a: Vector2 = cutter["a"]
@@ -3918,6 +3928,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	_redraw()
 	_redraw_selected()
 	_trim_jaw_done_in_drag = true
+	_hide_infer_hint()
 	status.emit("Trimmed open jaw")
 	return true
 
@@ -4437,6 +4448,7 @@ const CONTOUR_FILL_ALPHA := 0.20
 const CONTOUR_FOCUS_ALPHA := 0.70
 const CONTOUR_OFF_COLOR := Color(0.55, 0.55, 0.55, 0.8)
 const CONTOUR_LIFT_MM := 0.05
+const CONTOUR_TAG_CLEAR_PX := 4.0
 
 
 func set_contour_highlight(included: Array, focus: int = -1) -> void:
@@ -4472,12 +4484,20 @@ func contour_highlight_state() -> Dictionary:
 	}
 
 
+var _contour_tag_leader := false
+var _contour_tag_leader_from := Vector2.ZERO
+
+
+## Interior point with the most screen clearance to every contour outline.
+## A tag that cannot clear its own outline by 4 px sits outside, with a leader.
 func _contour_tag_anchor(region: Dictionary, text: String) -> Vector2:
 	var centre: Vector2 = region["center"]
+	_contour_tag_leader = false
+	_contour_tag_leader_from = centre
 	var holes: Array = region.get("holes", [])
-	if holes.is_empty():
-		return centre
 	var outer: PackedVector2Array = region["outer"]
+	if camera == null or not is_inside_tree():
+		return centre
 	var tris := _contour_fill_triangles(outer, holes)
 	var candidates: Array[Vector2] = []
 	var i := 0
@@ -4485,17 +4505,79 @@ func _contour_tag_anchor(region: Dictionary, text: String) -> Vector2:
 		candidates.append((tris[i] + tris[i + 1] + tris[i + 2]) / 3.0)
 		i += 3
 	if candidates.is_empty():
-		return centre
-	if camera == null or not is_inside_tree():
-		return candidates[0]
+		candidates.append(centre)
+	var loops := _all_contour_loops()
 	var best := candidates[0]
 	var best_clear := -1.0
 	for c in candidates:
 		var rect := _contour_tag_screen_rect(c, text)
-		var clear := _hole_screen_clearance(holes, rect)
+		var clear := _loops_screen_clearance(loops, rect)
 		if clear > best_clear:
 			best_clear = clear
 			best = c
+	if best_clear + 0.01 >= CONTOUR_TAG_CLEAR_PX:
+		return best
+	return _contour_tag_outside(outer, text, loops, centre)
+
+
+func _all_contour_loops() -> Array:
+	var loops: Array = []
+	for region in _contour_regions():
+		if typeof(region) != TYPE_DICTIONARY:
+			continue
+		loops.append(region.get("outer", PackedVector2Array()))
+		for hole in region.get("holes", []):
+			loops.append(hole)
+	return loops
+
+
+func _contour_tag_outside(outer: PackedVector2Array, text: String, loops: Array,
+		centre: Vector2) -> Vector2:
+	var ppm := 1.0
+	if camera != null and camera.has_method("pixels_per_mm_at_pivot"):
+		ppm = maxf(float(camera.pixels_per_mm_at_pivot()), 0.05)
+	var probe := _contour_tag_screen_rect(centre, text)
+	var reach := (maxf(probe.size.x, probe.size.y) * 0.5 + CONTOUR_TAG_CLEAR_PX + 2.0) / ppm
+	var best := centre
+	var best_score := INF
+	var n := outer.size()
+	for i in n:
+		var a: Vector2 = outer[i]
+		var b: Vector2 = outer[(i + 1) % n]
+		var edge := b - a
+		if edge.length_squared() < 1e-8:
+			continue
+		var mid := (a + b) * 0.5
+		var nrm := Vector2(-edge.y, edge.x).normalized()
+		if (mid + nrm).distance_to(centre) < (mid - nrm).distance_to(centre):
+			nrm = -nrm
+		for step in [1.0, 1.5, 2.2]:
+			var opt: Vector2 = mid + nrm * reach * step
+			if outer.size() >= 3 and Geometry2D.is_point_in_polygon(opt, outer):
+				continue
+			var rect := _contour_tag_screen_rect(opt, text)
+			var clear := _loops_screen_clearance(loops, rect)
+			if clear + 0.01 < CONTOUR_TAG_CLEAR_PX:
+				continue
+			var score := opt.distance_to(centre)
+			if score < best_score:
+				best_score = score
+				best = opt
+				_contour_tag_leader_from = mid
+	_contour_tag_leader = true
+	if best_score >= INF * 0.5:
+		var fallback := centre
+		if n >= 2:
+			var a0: Vector2 = outer[0]
+			var b0: Vector2 = outer[1]
+			var mid0 := (a0 + b0) * 0.5
+			var edge0 := b0 - a0
+			var nrm0 := Vector2(-edge0.y, edge0.x).normalized() if edge0.length_squared() > 1e-8 else Vector2.UP
+			if (mid0 + nrm0).distance_to(centre) < (mid0 - nrm0).distance_to(centre):
+				nrm0 = -nrm0
+			fallback = mid0 + nrm0 * reach
+			_contour_tag_leader_from = mid0
+		return fallback
 	return best
 
 
@@ -4506,14 +4588,18 @@ func _contour_tag_screen_rect(anchor: Vector2, text: String) -> Rect2:
 
 
 func _hole_screen_clearance(holes: Array, rect: Rect2) -> float:
+	return _loops_screen_clearance(holes, rect)
+
+
+func _loops_screen_clearance(loops: Array, rect: Rect2) -> float:
 	var best := 1e9
-	for hole in holes:
-		var loop: PackedVector2Array = hole
-		if loop.size() < 2:
+	for loop in loops:
+		var poly: PackedVector2Array = loop
+		if poly.size() < 2:
 			continue
-		for j in loop.size():
-			var a := _sketch_point_screen(loop[j])
-			var b := _sketch_point_screen(loop[(j + 1) % loop.size()])
+		for j in poly.size():
+			var a := _sketch_point_screen(poly[j])
+			var b := _sketch_point_screen(poly[(j + 1) % poly.size()])
 			best = minf(best, _segment_rect_distance(a, b, rect))
 	return best
 
@@ -4591,6 +4677,7 @@ func _redraw_contour_highlight() -> void:
 	if _contour_tag != null:
 		_contour_tag.visible = false
 		_contour_tag.text = ""
+		_contour_tag.set_meta("leader", false)
 	if _contour_node == null:
 		return
 	var regions := _contour_regions()
@@ -4631,6 +4718,21 @@ func _redraw_contour_highlight() -> void:
 			for hole in holes:
 				_append_outline(lines, line_cols, _inset_loop(hole, 0.35), outline_col)
 				_append_outline(lines, line_cols, _inset_loop(hole, 0.70), outline_col)
+	var tag_text := ""
+	var tag_uv := Vector2.ZERO
+	var draw_tag := false
+	if _contour_focus >= 0 and _contour_focus < regions.size() and _contour_tag != null:
+		var focused_region: Dictionary = regions[_contour_focus]
+		tag_text = str(_contour_focus + 1)
+		tag_uv = _contour_tag_anchor(focused_region, tag_text)
+		draw_tag = true
+		if _contour_tag_leader:
+			var leader_col: Color = CONTOUR_COLORS[_contour_focus % CONTOUR_COLORS.size()]
+			leader_col.a = 1.0
+			lines.append(_contour_tag_leader_from)
+			lines.append(tag_uv)
+			line_cols.append(leader_col)
+			line_cols.append(leader_col)
 	if tris.is_empty() and lines.is_empty():
 		_contour_node.mesh = null
 		return
@@ -4659,13 +4761,11 @@ func _redraw_contour_highlight() -> void:
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, larrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, _contour_line_material)
 	_contour_node.mesh = mesh
-	if _contour_focus >= 0 and _contour_focus < regions.size() and _contour_tag != null:
-		var focused_region: Dictionary = regions[_contour_focus]
-		var tag_text := str(_contour_focus + 1)
-		var centre: Vector2 = _contour_tag_anchor(focused_region, tag_text)
+	if draw_tag and _contour_tag != null:
 		_contour_tag.text = tag_text
-		_contour_tag.position = _to3(centre)
+		_contour_tag.position = _to3(tag_uv)
 		_contour_tag.modulate = CONTOUR_COLORS[_contour_focus % CONTOUR_COLORS.size()]
+		_contour_tag.set_meta("leader", _contour_tag_leader)
 		_contour_tag.visible = true
 
 
@@ -4819,7 +4919,9 @@ func click(pos2: Vector2) -> void:
 		dhit_raw = dimension_hit(pos2, tool != Tool.SELECT and tool != Tool.SMART_DIM)
 	# A stacked Ø45 radius label walks onto the top rim. Select still picks
 	# that circle; the editor opens only when the click is not on its rim.
-	if dhit_raw >= 0 and not _radius_label_on_own_rim(dhit_raw, pos2):
+	# A typed radius commits through click(_hover). A callout under that
+	# hover must not open the editor and drop the circle.
+	if dhit_raw >= 0 and _length_override < 0.0 and not _radius_label_on_own_rim(dhit_raw, pos2):
 		_emit_dimension_edit(dhit_raw)
 		return
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
@@ -4882,6 +4984,7 @@ func click(pos2: Vector2) -> void:
 					# Two-point centreline: do not extend the next click.
 					_tool_points.clear()
 				_infer_line(lid, a, b)
+				_hide_infer_hint()
 				if as_centreline:
 					_drop_stale_dimensions()
 				_redraw()
@@ -5274,6 +5377,7 @@ func arm_refusal_exit_ladder() -> void:
 ## not armed. Ends an open line chain in the same press and promises the
 ## following Esc leaves.
 func take_refusal_exit_ladder() -> String:
+	_hide_infer_hint()
 	if not _refusal_esc_ladder or not active:
 		return ""
 	_refusal_esc_ladder = false
@@ -5307,6 +5411,7 @@ func take_refusal_exit_ladder() -> String:
 ## selection still spends the key first (the promise stays armed), so a
 ## Select click after a hover measure cannot exit on the same Esc.
 func esc_keep_sketch() -> String:
+	_hide_infer_hint()
 	if not active or sketch == null:
 		return ""
 	# A selection (entity or constraint glyph) always spends this Esc.
@@ -6677,6 +6782,7 @@ func _sync_missing_radius_records() -> void:
 
 ## Double-click or right-click ends a line chain / commits a spline.
 func end_chain() -> void:
+	_hide_infer_hint()
 	if tool == Tool.SPLINE and _spline_pts.size() >= 2:
 		_commit_spline()
 	elif _auto_close and (tool == Tool.LINE or tool == Tool.CENTERLINE):
@@ -6706,6 +6812,7 @@ func hover(pos2: Vector2) -> void:
 	if tool == Tool.TRIM:
 		_trim_hover_id = _nearest_entity_at(pos2)
 		_hover = pos2
+		_hide_infer_hint()
 		_update_preview()
 		_sync_coincident_glyphs()
 		return
@@ -6731,6 +6838,7 @@ func hover(pos2: Vector2) -> void:
 
 ## Power-trim drag: trim every entity the cursor crosses.
 func begin_trim_drag(pos2: Vector2) -> void:
+	_hide_infer_hint()
 	_free_trim_trail()
 	_trim_dragging = true
 	_trim_jaw_done_in_drag = false
@@ -6915,6 +7023,7 @@ func place_block(block_name: String, offset: Vector2) -> Array:
 
 ## Delete selected sketch entities (geometry).
 func delete_selected_entities() -> int:
+	_hide_infer_hint()
 	if selected.is_empty():
 		return 0
 	var n := 0
@@ -7008,6 +7117,7 @@ func _clear_meshes() -> void:
 	if _contour_tag != null:
 		_contour_tag.visible = false
 		_contour_tag.text = ""
+		_contour_tag.set_meta("leader", false)
 	_contour_fill_alphas = []
 	_contour_outline_count = 0
 	selected = []
@@ -7147,14 +7257,23 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 		var ia: Dictionary = sketch.entity_info(str(ids[0]))
 		var ib: Dictionary = sketch.entity_info(str(ids[1]))
 		if str(ia.get("type", "")) == "line" and str(ib.get("type", "")) == "line":
-			var hit = _line_line_intersect(ia["start"], ia["end"] - ia["start"], ib["start"], ib["end"] - ib["start"])
-			if hit != null:
-				var da: Vector2 = (ia["end"] - ia["start"]).normalized()
-				var db: Vector2 = (ib["end"] - ib["start"]).normalized()
-				var bis := da + db
-				if bis.length_squared() < 1e-8:
-					bis = Vector2(-da.y, da.x)
-				return (hit as Vector2) + bis.normalized() * (DIM_LABEL_OFFSET * 2.0)
+			var hit := _line_line_intersect(ia["start"], ia["end"] - ia["start"], ib["start"], ib["end"] - ib["start"])
+			var da: Vector2 = (ia["end"] - ia["start"]).normalized()
+			var db: Vector2 = (ib["end"] - ib["start"]).normalized()
+			var bis := da + db
+			if bis.length_squared() < 1e-8:
+				bis = Vector2(-da.y, da.x)
+			var off := bis.normalized() * (DIM_LABEL_OFFSET * 2.0)
+			# A shallow angle meets the datum far from the jaw. Park the
+			# label at the datum start, the same place parallel lines use.
+			var p0: Vector2 = ia["start"]
+			var p1: Vector2 = ia["end"]
+			var datum_len := p0.distance_to(p1)
+			var mid := (p0 + p1) * 0.5
+			var anchor: Vector2 = hit
+			if datum_len > 1e-6 and hit.distance_to(mid) > 2.0 * datum_len:
+				anchor = p0
+			return anchor + off
 	# Distance (or other): midpoint of the two reference points, offset perpendicular.
 	var a: Vector2
 	var b: Vector2
@@ -7560,8 +7679,19 @@ func _label_safe_screen_rect() -> Rect2:
 	var vp := get_viewport().get_visible_rect().size if is_inside_tree() else Vector2(1280, 800)
 	var top := ChromeDock.top_inset + 2.0
 	var bottom := ChromeDock.bottom_inset + 2.0
-	var margin := 4.0
-	return Rect2(margin, top, maxf(vp.x - margin * 2.0, 32.0), maxf(vp.y - top - bottom, 32.0))
+	var left := maxf(4.0, ChromeDock.sketch_rail_right)
+	var right_margin := 4.0
+	var rect := Rect2(left, top, maxf(vp.x - left - right_margin, 32.0), maxf(vp.y - top - bottom, 32.0))
+	# The chrome canvas is tighter than the window on the right. A label that
+	# only clears the window edge still hangs off the canvas (5° / 10° jaws).
+	if camera != null and camera.has_method("sketch_fit_canvas_rect"):
+		var canvas: Rect2 = camera.sketch_fit_canvas_rect()
+		if canvas.size.x > 32.0 and canvas.size.y > 32.0 and rect.intersects(canvas):
+			rect = rect.intersection(canvas)
+			# A label flush with the canvas edge fails encloses() on float error.
+			if rect.size.x > 4.0 and rect.size.y > 4.0:
+				rect = Rect2(rect.position + Vector2(1, 1), rect.size - Vector2(2, 2))
+	return rect
 
 
 func _clamp_dimension_labels_into_view(cam: Camera3D, k: float) -> void:
@@ -7995,32 +8125,36 @@ func _glyph_overlap_fraction(a: Rect2, b: Rect2) -> float:
 ## 0 when the badge is clear of other glyphs, labels, and sketch geometry.
 func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF,
-		anchor_screen: Vector2 = Vector2.INF) -> float:
+		anchor_screen: Vector2 = Vector2.INF, penalize_curves: bool = true) -> float:
 	var score := 0.0
 	for prev in placed:
 		var frac := _glyph_overlap_fraction(rect, prev)
-		# Overlap above ~30% is a hard miss: the badge has to stay readable.
-		# Label clearance is soft — dimension text moves after the glyphs do.
+		# A foreign centre inside this badge steals the click (parallel
+		# reads as horizontal). That outranks a curve touch. Label
+		# clearance stays soft — dimension text moves after the glyphs do.
 		score += frac * 40.0
-		if frac > 0.16:
+		if rect.has_point(prev.get_center()) or prev.has_point(centre):
+			score += 200000.0 + frac * 1000.0
+		elif frac > 0.16:
 			score += 8000.0 + (frac - 0.16) * 4000.0
 	for lr in labels:
-		var lg := lr.grow(4.0)
-		if rect.intersects(lg):
-			var inter := rect.intersection(lg)
-			score += 12.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0) * 0.02
-	# Hanging off the part outranks a label or glyph collision.
+		var sep := _rect_separation(rect, lr)
+		if sep + 0.01 < GLYPH_LABEL_GAP_PX:
+			score += 50000.0 + (GLYPH_LABEL_GAP_PX - sep) * 80.0
+	# Hanging off the part outranks a stolen click and a curve touch.
 	if _glyph_below_part(rect, shaft_y):
-		score += 20000.0 + (rect.end.y - shaft_y) * 40.0
+		score += 500000.0 + (rect.end.y - shaft_y) * 40.0
 	if _sketch_at_screen(cam, centre) == null:
 		score += 40.0
-	score += _glyph_curve_penalty(rect, anchor_screen, cam)
+	if penalize_curves:
+		score += _glyph_curve_penalty(rect, anchor_screen, cam)
 	return score
 
 
 ## Screen centre of a glyph pushed off the pile, the labels, and the curves.
 func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2],
-		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF) -> Vector2:
+		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF,
+		penalize_curves: bool = true) -> Vector2:
 	var best := natural
 	var best_score := INF
 	var radii: Array[float] = [0.0]
@@ -8036,7 +8170,7 @@ func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2
 				var ang := TAU * float(i) / float(count)
 				centre = natural + Vector2(cos(ang), sin(ang)) * radius
 			var rect := Rect2(centre - size * 0.5, size)
-			var score := _glyph_block_score(rect, centre, placed, labels, cam, shaft_y, natural)
+			var score := _glyph_block_score(rect, centre, placed, labels, cam, shaft_y, natural, penalize_curves)
 			if score < best_score - 0.01:
 				best_score = score
 				best = centre
@@ -8065,7 +8199,7 @@ func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2
 		if nudged.distance_to(natural) > GLYPH_MAX_OFFSET_PX:
 			nudged = natural + (nudged - natural).normalized() * GLYPH_MAX_OFFSET_PX
 		var nrect := Rect2(nudged - size * 0.5, size)
-		var nscore := _glyph_block_score(nrect, nudged, placed, labels, cam, shaft_y, natural)
+		var nscore := _glyph_block_score(nrect, nudged, placed, labels, cam, shaft_y, natural, penalize_curves)
 		if nscore <= best_score + 0.01:
 			best = nudged
 			best_score = nscore
@@ -8144,19 +8278,10 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 				var contact: Variant = _tangent_contact(line_info, circ_info)
 				if contact != null:
 					return contact
-		"point_on_line":
-			return _ref_pos(refs[0])
-		"parallel", "perpendicular", "equal":
-			var p: Variant = _ref_pos(refs[0])
-			if p == null:
-				return null
-			var nudged: Vector2 = p
-			var einfo: Dictionary = sketch.entity_info(str(refs[0].get("entity", "")))
-			if str(einfo.get("type", "")) == "line":
-				var d: Vector2 = einfo["end"] - einfo["start"]
-				if d.length_squared() > 1e-12:
-					nudged += Vector2(-d.y, d.x).normalized() * 2.5
-			return nudged
+		"point_on_line", "parallel", "perpendicular", "equal", "horizontal", "vertical":
+			var line_info := _line_ref_info(refs)
+			if not line_info.is_empty():
+				return _nudge_off_line(line_info)
 	var sum := Vector2.ZERO
 	var n := 0
 	for ref in refs:
@@ -8171,10 +8296,85 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 	if refs.size() == 1:
 		var info: Dictionary = sketch.entity_info(str(refs[0]["entity"]))
 		if info.get("type", "") == "line":
-			var d: Vector2 = info["end"] - info["start"]
-			if d.length_squared() > 1e-12:
-				anchor += Vector2(-d.y, d.x).normalized() * 2.5
+			return _nudge_off_line(info)
 	return anchor
+
+
+func _line_ref_info(refs: Array) -> Dictionary:
+	var construction := {}
+	for ref in refs:
+		if typeof(ref) != TYPE_DICTIONARY:
+			continue
+		var info: Dictionary = sketch.entity_info(str(ref.get("entity", "")))
+		if str(info.get("type", "")) != "line":
+			continue
+		if bool(info.get("construction", false)):
+			construction = info
+		else:
+			return info
+	return construction
+
+
+func _sketch_centroid() -> Vector2:
+	if sketch == null:
+		return Vector2.ZERO
+	var sum := Vector2.ZERO
+	var n := 0
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind == "line" and not bool(info.get("construction", false)):
+			sum += ((info["start"] as Vector2) + (info["end"] as Vector2)) * 0.5
+			n += 1
+		elif info.has("center"):
+			sum += info["center"] as Vector2
+			n += 1
+	if n == 0:
+		return Vector2.ZERO
+	return sum / float(n)
+
+
+## Midpoint of a wall, pushed to the side farther from the sketch centroid so
+## the badge clears the wall instead of sitting in the corner cluster.
+func _nudge_off_line(info: Dictionary) -> Vector2:
+	var a: Vector2 = info["start"]
+	var b: Vector2 = info["end"]
+	var mid := (a + b) * 0.5
+	var d := b - a
+	if d.length_squared() < 1e-12:
+		return mid
+	var nrm := Vector2(-d.y, d.x).normalized()
+	var step := _badge_clear_mm()
+	var interior := _sketch_centroid()
+	if (mid + nrm * step).distance_to(interior) < (mid - nrm * step).distance_to(interior):
+		nrm = -nrm
+	if _badge_below_shaft(mid + nrm * step) and not _badge_below_shaft(mid - nrm * step):
+		nrm = -nrm
+	if bool(info.get("construction", false)):
+		var best := a + nrm * step
+		var best_score := INF
+		for end in [a, b]:
+			for sgn in [1.0, -1.0]:
+				var opt: Vector2 = end + nrm * sgn * step
+				var score := -opt.distance_to(interior)
+				if _badge_below_shaft(opt):
+					score += 100000.0
+				if score < best_score:
+					best = opt
+					best_score = score
+		return best
+	return mid + nrm * step
+
+
+func _badge_below_shaft(sketch_pos: Vector2) -> bool:
+	if camera == null or not is_inside_tree():
+		return false
+	var shaft_y := _shaft_lower_screen_y(camera)
+	if shaft_y > 1.0e8:
+		return false
+	var screen := camera.unproject_position(to_global(to_model(sketch_pos)))
+	var half := _glyph_symbol_size_px("horizontal", _label_px_scale(camera)).y * 0.5
+	return screen.y + half > shaft_y + 1.5
 
 
 func _tangent_contact(line: Dictionary, circ: Dictionary) -> Variant:
@@ -8197,6 +8397,58 @@ func _constraint_refs_a_line(cinfo: Dictionary) -> bool:
 	return false
 
 
+func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[Rect2],
+		shaft_y: float, placed: Array[Rect2], taken: Array[Vector2], pending: Array,
+		batch_pending: Array) -> void:
+	var cinfo: Dictionary = sketch.constraint_info(cid)
+	var type := str(cinfo.get("type", ""))
+	if not GLYPH_SYMBOLS.has(type):
+		return
+	# A centre-to-centre horizontal has no line to sit beside. Drawing it
+	# would plant a badge between the circles (T14's stray mark).
+	if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo):
+		return
+	var anchor: Variant = _constraint_anchor(cinfo)
+	if anchor == null:
+		return
+	var anchor_sketch := anchor as Vector2
+	var pos := anchor_sketch
+	var offset_px := 0.0
+	var centre := Vector2.ZERO
+	var natural := Vector2.ZERO
+	var size := Vector2.ZERO
+	if cam != null:
+		# De-stack in pixels. A 2.5 mm step is ~8 px at a 150 px head,
+		# smaller than the badge, so the pile survives a millimetre nudge.
+		size = _glyph_symbol_size_px(type, k)
+		natural = cam.unproject_position(to_global(to_model(anchor_sketch)))
+		# A coincident mark names a vertex. Pushing it off every curve
+		# walks it onto the radius callout.
+		var on_curve := type != "coincident"
+		centre = _separate_glyph_screen(natural, size, placed, label_rects, cam, shaft_y, on_curve)
+		offset_px = natural.distance_to(centre)
+		placed.append(Rect2(centre - size * 0.5, size))
+		pos = _sketch_from_screen(cam, centre, anchor_sketch)
+	else:
+		var guard := 0
+		while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
+			pos += Vector2(0, 2.5)
+			guard += 1
+		taken.append(pos)
+	var item := {
+		"cid": cid,
+		"type": type,
+		"anchor": anchor_sketch,
+		"pos": pos,
+		"natural": natural,
+		"centre": centre,
+		"size": size,
+		"offset_px": offset_px,
+	}
+	pending.append(item)
+	batch_pending.append(item)
+
+
 func _rebuild_constraint_glyphs() -> void:
 	_refresh_coincident_keep()
 	_glyph_anchors.clear()
@@ -8217,53 +8469,35 @@ func _rebuild_constraint_glyphs() -> void:
 	var placed: Array[Rect2] = []
 	var taken: Array[Vector2] = []
 	var pending: Array = []
+	# Coincident badges appear and disappear with hover and selection.
+	# Lay the stable badges down first so that flicker cannot move the
+	# glyph a click already aimed at.
+	var stable_ids: Array[String] = []
+	var coincident_ids: Array[String] = []
 	for cid in sketch.constraint_ids():
 		var cinfo: Dictionary = sketch.constraint_info(cid)
 		var type := str(cinfo.get("type", ""))
 		if not GLYPH_SYMBOLS.has(type):
 			continue
-		# A centre-to-centre horizontal has no line to sit beside. Drawing it
-		# would plant a badge between the circles (T14's stray mark).
-		if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo):
-			continue
 		if type == "coincident" and not _coincident_glyph_visible(str(cid), cinfo):
 			continue
-		var anchor: Variant = _constraint_anchor(cinfo)
-		if anchor == null:
-			continue
-		var anchor_sketch := anchor as Vector2
-		var pos := anchor_sketch
-		var offset_px := 0.0
-		var centre := Vector2.ZERO
-		var natural := Vector2.ZERO
-		var size := Vector2.ZERO
-		if cam != null:
-			# De-stack in pixels. A 2.5 mm step is ~8 px at a 150 px head,
-			# smaller than the badge, so the pile survives a millimetre nudge.
-			size = _glyph_symbol_size_px(type, k)
-			natural = cam.unproject_position(to_global(to_model(anchor_sketch)))
-			centre = _separate_glyph_screen(natural, size, placed, label_rects, cam, shaft_y)
-			offset_px = natural.distance_to(centre)
-			placed.append(Rect2(centre - size * 0.5, size))
-			pos = _sketch_from_screen(cam, centre, anchor_sketch)
+		if type == "coincident":
+			coincident_ids.append(str(cid))
 		else:
-			var guard := 0
-			while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
-				pos += Vector2(0, 2.5)
-				guard += 1
-			taken.append(pos)
-		pending.append({
-			"cid": str(cid),
-			"type": type,
-			"anchor": anchor_sketch,
-			"pos": pos,
-			"natural": natural,
-			"centre": centre,
-			"size": size,
-			"offset_px": offset_px,
-		})
-	if cam != null and pending.size() > 1:
-		_relax_glyph_layout(pending, label_rects, cam, shaft_y)
+			stable_ids.append(str(cid))
+	for batch in [stable_ids, coincident_ids]:
+		var batch_pending: Array = []
+		for cid in batch:
+			_place_one_glyph(str(cid), cam, k, label_rects, shaft_y, placed, taken, pending, batch_pending)
+		if cam != null and batch == stable_ids and batch_pending.size() > 1:
+			_relax_glyph_layout(batch_pending, label_rects, cam, shaft_y)
+			placed.clear()
+			for item in batch_pending:
+				var size: Vector2 = item["size"]
+				var centre: Vector2 = item["centre"]
+				if size == Vector2.ZERO:
+					continue
+				placed.append(Rect2(centre - size * 0.5, size))
 	for item in pending:
 		var gtype := str(item["type"])
 		var gcid := str(item["cid"])
@@ -8426,12 +8660,43 @@ func _glyph_curve_penalty(rect: Rect2, anchor_screen: Vector2, cam: Camera3D) ->
 		if kind != "line" and kind != "circle" and kind != "arc":
 			continue
 		for s in _curve_screen_samples(info, cam):
-			if not rect.has_point(s):
-				continue
-			if anchor_screen != Vector2.INF and s.distance_to(anchor_screen) <= 10.0:
-				continue
-			return 6000.0
+			var gap := _point_rect_gap_px(s, rect)
+			var need := PICK_SCREEN_PX + 4.0
+			if gap + 0.01 < need:
+				return 80000.0 + (need - gap) * 100.0
 	return 0.0
+
+
+func _point_rect_gap_px(p: Vector2, rect: Rect2) -> float:
+	if rect.has_point(p):
+		return 0.0
+	var dx := 0.0
+	if p.x < rect.position.x:
+		dx = rect.position.x - p.x
+	elif p.x > rect.end.x:
+		dx = p.x - rect.end.x
+	var dy := 0.0
+	if p.y < rect.position.y:
+		dy = rect.position.y - p.y
+	elif p.y > rect.end.y:
+		dy = p.y - rect.end.y
+	return Vector2(dx, dy).length()
+
+
+## Perpendicular offset that keeps a 25.6 px badge ≥ hit-slop + 4 px off a wall,
+## capped at GLYPH_MAX_OFFSET_PX.
+func _badge_clear_mm() -> float:
+	var ppm := 1.0
+	if camera != null and camera.has_method("pixels_per_mm_at_pivot"):
+		ppm = maxf(float(camera.pixels_per_mm_at_pivot()), 0.05)
+	var k := 1.0
+	if camera != null:
+		k = _label_px_scale(camera)
+	var side := 16.0 * k
+	for type in ["horizontal", "vertical", "parallel", "perpendicular", "equal"]:
+		side = maxf(side, _glyph_symbol_size_px(type, k).x)
+	var need_px := side * 0.5 + PICK_SCREEN_PX + 4.0 + 2.0
+	return minf(need_px / ppm, GLYPH_MAX_OFFSET_PX / ppm)
 
 
 func _curve_screen_samples(info: Dictionary, cam: Camera3D) -> PackedVector2Array:
@@ -8532,10 +8797,11 @@ func _relax_glyph_layout(items: Array, labels: Array[Rect2], cam: Camera3D,
 				var os: Vector2 = items[j]["size"]
 				others.append(Rect2(oc - os * 0.5, os))
 			var rect := Rect2(centre - size * 0.5, size)
-			var score := _glyph_block_score(rect, centre, others, labels, cam, shaft_y, natural)
+			var on_curve := str(it.get("type", "")) != "coincident"
+			var score := _glyph_block_score(rect, centre, others, labels, cam, shaft_y, natural, on_curve)
 			if score < 1.0:
 				continue
-			var better := _separate_glyph_screen(natural, size, others, labels, cam, shaft_y)
+			var better := _separate_glyph_screen(natural, size, others, labels, cam, shaft_y, on_curve)
 			if better.distance_to(centre) <= 0.5:
 				continue
 			it["centre"] = better
@@ -8581,6 +8847,10 @@ func _repel_glyph_items(items: Array, cam: Camera3D, shaft_y: float) -> void:
 				continue
 			var next := _clamp_glyph_centre(centre + push, it["natural"], size, shaft_y)
 			if next.distance_to(centre) <= 0.4:
+				continue
+			var next_rect := Rect2(next - size * 0.5, size)
+			if str(it.get("type", "")) != "coincident" \
+					and _glyph_curve_penalty(next_rect, it["natural"], cam) > _glyph_curve_penalty(rect, it["natural"], cam) + 1.0:
 				continue
 			it["centre"] = next
 			it["offset_px"] = (it["natural"] as Vector2).distance_to(next)
