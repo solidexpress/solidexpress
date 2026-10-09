@@ -62,6 +62,9 @@ var _press_travel := 0.0
 var _box_rect := Rect2()
 ## Last left-press outcome (sketch tool, marquee, or why the press was dropped).
 var last_click_disposition := ""
+## [input-trace] lines while SX_INPUT_TRACE=1, so a headless test can read
+## shift / additive without capturing stderr.
+var press_trace_log: PackedStringArray = PackedStringArray()
 signal click_disposition(text: String)
 ## Sketch Select marquee: pending until the pointer travels, then a window
 ## (left-to-right) or crossing (right-to-left) box.
@@ -3325,14 +3328,34 @@ func _is_left_press(event: InputEvent) -> bool:
 	return mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT
 
 
-func _note_click(text: String, pos: Vector2) -> void:
+func _note_click(text: String, pos: Vector2, shift := false, additive := false) -> void:
 	last_click_disposition = text
 	click_disposition.emit(text)
-	if OS.get_environment("SX_INPUT_TRACE") == "1":
-		# Release exports block-buffer stdout when it is a pipe, so a walker
-		# `2>&1 | tee` never saw print(). printerr writes stderr, which stays
-		# unbuffered under glibc even when redirected.
-		printerr("[input-trace] press (%d,%d) %s" % [int(pos.x), int(pos.y), text])
+	if not SxUi.trace_enabled():
+		return
+	# Release exports block-buffer stdout when it is a pipe, so a walker
+	# `2>&1 | tee` never saw print(). printerr writes stderr, which stays
+	# unbuffered under glibc even when redirected.
+	var line := "[input-trace] t=%.3f press (%d,%d) %s shift=%d additive=%d" % [
+		_trace_seconds(), int(pos.x), int(pos.y), text, 1 if shift else 0, 1 if additive else 0]
+	press_trace_log.append(line)
+	printerr(line)
+
+
+func _trace_seconds() -> float:
+	var host := get_parent()
+	if host != null and host.get("_clock_override_msec") != null:
+		var ov := int(host.get("_clock_override_msec"))
+		if ov >= 0:
+			return float(ov) / 1000.0
+	return Time.get_unix_time_from_system()
+
+
+func _press_modifiers(mb: InputEventMouseButton) -> Dictionary:
+	var shift := mb.shift_pressed or Input.is_key_pressed(KEY_SHIFT)
+	var ctrl := mb.ctrl_pressed or Input.is_key_pressed(KEY_CTRL)
+	var meta := mb.meta_pressed or Input.is_key_pressed(KEY_META)
+	return {"shift": shift, "additive": shift or ctrl or meta}
 
 
 func _note_press_drop(who: String, pos: Vector2) -> void:
@@ -3814,8 +3837,9 @@ func _sketch_input(event: InputEvent) -> void:
 					_sketch_box_pending = true
 					_sketch_box_active = false
 					_sketch_box_start = screen
-					_sketch_box_additive = mb.shift_pressed or mb.ctrl_pressed or mb.meta_pressed
-					_note_click("sketch-box:SELECT", screen)
+					var mods := _press_modifiers(mb)
+					_sketch_box_additive = bool(mods["additive"])
+					_note_click("sketch-box:SELECT", screen, bool(mods["shift"]), bool(mods["additive"]))
 				else:
 					# Line and Centerline place through a label (click skips the
 					# hit). Every other non-Select tool records a text-rect hit
@@ -5869,20 +5893,19 @@ func _trace_key_press(event: InputEvent) -> void:
 	if not (event is InputEventKey):
 		return
 	var k := event as InputEventKey
-	if not k.pressed:
-		return
-	var accepted := SxUi.press_accepted(k)
 	if not SxUi.trace_enabled():
 		return
+	var accepted := SxUi.press_accepted(k) if k.pressed else false
 	var focus := ""
 	var vp := get_viewport()
 	var owner: Node = vp.gui_get_focus_owner() if vp != null else null
 	if owner != null:
 		focus = str(owner.get_path())
-	var line := "[key-trace] t=%.3f key=%s unicode=%d pressed=1 echo=%d accepted=%d focus=%s" % [
-		Time.get_unix_time_from_system(),
+	var line := "[key-trace] t=%.3f key=%s unicode=%d pressed=%d echo=%d accepted=%d focus=%s" % [
+		_trace_seconds(),
 		OS.get_keycode_string(k.keycode),
 		int(k.unicode),
+		1 if k.pressed else 0,
 		1 if k.echo else 0,
 		1 if accepted else 0,
 		focus,

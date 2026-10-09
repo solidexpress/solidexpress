@@ -1,0 +1,3 @@
+script=tests/run_rung01_replan20_shift.gd
+tier=ci
+timeout=180
