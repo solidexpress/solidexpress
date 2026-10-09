@@ -790,25 +790,16 @@ class Walk:
         lines.sort(key=lambda row: row[0], reverse=True)
         lines = lines[:2]
         points: list[list[float]] = []
-        # Step along the screen stroke. Badge glyphs are a fixed pixel size, so
-        # a handful of sketch fractions can all land inside them after a zoom.
-        for _length, a, dx, dy in lines:
-            try:
-                p0 = self.d.project(sketch=[float(a[0]), float(a[1])])["screen"]
-                p1 = self.d.project(sketch=[float(a[0]) + dx, float(a[1]) + dy])["screen"]
-            except SxError:
-                continue
-            vx, vy = float(p1[0]) - float(p0[0]), float(p1[1]) - float(p0[1])
-            span = (vx * vx + vy * vy) ** 0.5
-            if span < 24.0:
-                continue
-            steps = max(4, int(span * 0.7 / 6.0))
-            for i in range(steps):
-                t = 0.15 + 0.70 * ((i + 0.5) / steps)
-                screen = [float(p0[0]) + vx * t, float(p0[1]) + vy * t]
-                if self._in_badge(screen, badges, pad=3.0):
+        # Just past the vertex glyphs, before the midpoint badge. At the N1a
+        # zoom that band is only a few pixels, so the samples sit close together.
+        for frac in (0.21, 0.24, 0.27, 0.30):
+            for _length, a, dx, dy in lines:
+                uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
+                try:
+                    screen = self.d.project(sketch=uv)["screen"]
+                except SxError:
                     continue
-                if any(abs(screen[0] - p[0]) < 5.0 and abs(screen[1] - p[1]) < 5.0 for p in points):
+                if self._in_badge(screen, badges, pad=0.0):
                     continue
                 points.append(screen)
                 if len(points) >= count:
