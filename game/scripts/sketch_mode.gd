@@ -4448,6 +4448,7 @@ const CONTOUR_FILL_ALPHA := 0.20
 const CONTOUR_FOCUS_ALPHA := 0.70
 const CONTOUR_OFF_COLOR := Color(0.55, 0.55, 0.55, 0.8)
 const CONTOUR_LIFT_MM := 0.05
+const CONTOUR_TAG_CLEAR_PX := 4.0
 
 
 func set_contour_highlight(included: Array, focus: int = -1) -> void:
@@ -4483,12 +4484,20 @@ func contour_highlight_state() -> Dictionary:
 	}
 
 
+var _contour_tag_leader := false
+var _contour_tag_leader_from := Vector2.ZERO
+
+
+## Interior point with the most screen clearance to every contour outline.
+## A tag that cannot clear its own outline by 4 px sits outside, with a leader.
 func _contour_tag_anchor(region: Dictionary, text: String) -> Vector2:
 	var centre: Vector2 = region["center"]
+	_contour_tag_leader = false
+	_contour_tag_leader_from = centre
 	var holes: Array = region.get("holes", [])
-	if holes.is_empty():
-		return centre
 	var outer: PackedVector2Array = region["outer"]
+	if camera == null or not is_inside_tree():
+		return centre
 	var tris := _contour_fill_triangles(outer, holes)
 	var candidates: Array[Vector2] = []
 	var i := 0
@@ -4496,17 +4505,79 @@ func _contour_tag_anchor(region: Dictionary, text: String) -> Vector2:
 		candidates.append((tris[i] + tris[i + 1] + tris[i + 2]) / 3.0)
 		i += 3
 	if candidates.is_empty():
-		return centre
-	if camera == null or not is_inside_tree():
-		return candidates[0]
+		candidates.append(centre)
+	var loops := _all_contour_loops()
 	var best := candidates[0]
 	var best_clear := -1.0
 	for c in candidates:
 		var rect := _contour_tag_screen_rect(c, text)
-		var clear := _hole_screen_clearance(holes, rect)
+		var clear := _loops_screen_clearance(loops, rect)
 		if clear > best_clear:
 			best_clear = clear
 			best = c
+	if best_clear + 0.01 >= CONTOUR_TAG_CLEAR_PX:
+		return best
+	return _contour_tag_outside(outer, text, loops, centre)
+
+
+func _all_contour_loops() -> Array:
+	var loops: Array = []
+	for region in _contour_regions():
+		if typeof(region) != TYPE_DICTIONARY:
+			continue
+		loops.append(region.get("outer", PackedVector2Array()))
+		for hole in region.get("holes", []):
+			loops.append(hole)
+	return loops
+
+
+func _contour_tag_outside(outer: PackedVector2Array, text: String, loops: Array,
+		centre: Vector2) -> Vector2:
+	var ppm := 1.0
+	if camera != null and camera.has_method("pixels_per_mm_at_pivot"):
+		ppm = maxf(float(camera.pixels_per_mm_at_pivot()), 0.05)
+	var probe := _contour_tag_screen_rect(centre, text)
+	var reach := (maxf(probe.size.x, probe.size.y) * 0.5 + CONTOUR_TAG_CLEAR_PX + 2.0) / ppm
+	var best := centre
+	var best_score := INF
+	var n := outer.size()
+	for i in n:
+		var a: Vector2 = outer[i]
+		var b: Vector2 = outer[(i + 1) % n]
+		var edge := b - a
+		if edge.length_squared() < 1e-8:
+			continue
+		var mid := (a + b) * 0.5
+		var nrm := Vector2(-edge.y, edge.x).normalized()
+		if (mid + nrm).distance_to(centre) < (mid - nrm).distance_to(centre):
+			nrm = -nrm
+		for step in [1.0, 1.5, 2.2]:
+			var opt: Vector2 = mid + nrm * reach * step
+			if outer.size() >= 3 and Geometry2D.is_point_in_polygon(opt, outer):
+				continue
+			var rect := _contour_tag_screen_rect(opt, text)
+			var clear := _loops_screen_clearance(loops, rect)
+			if clear + 0.01 < CONTOUR_TAG_CLEAR_PX:
+				continue
+			var score := opt.distance_to(centre)
+			if score < best_score:
+				best_score = score
+				best = opt
+				_contour_tag_leader_from = mid
+	_contour_tag_leader = true
+	if best_score >= INF * 0.5:
+		var fallback := centre
+		if n >= 2:
+			var a0: Vector2 = outer[0]
+			var b0: Vector2 = outer[1]
+			var mid0 := (a0 + b0) * 0.5
+			var edge0 := b0 - a0
+			var nrm0 := Vector2(-edge0.y, edge0.x).normalized() if edge0.length_squared() > 1e-8 else Vector2.UP
+			if (mid0 + nrm0).distance_to(centre) < (mid0 - nrm0).distance_to(centre):
+				nrm0 = -nrm0
+			fallback = mid0 + nrm0 * reach
+			_contour_tag_leader_from = mid0
+		return fallback
 	return best
 
 
@@ -4517,14 +4588,18 @@ func _contour_tag_screen_rect(anchor: Vector2, text: String) -> Rect2:
 
 
 func _hole_screen_clearance(holes: Array, rect: Rect2) -> float:
+	return _loops_screen_clearance(holes, rect)
+
+
+func _loops_screen_clearance(loops: Array, rect: Rect2) -> float:
 	var best := 1e9
-	for hole in holes:
-		var loop: PackedVector2Array = hole
-		if loop.size() < 2:
+	for loop in loops:
+		var poly: PackedVector2Array = loop
+		if poly.size() < 2:
 			continue
-		for j in loop.size():
-			var a := _sketch_point_screen(loop[j])
-			var b := _sketch_point_screen(loop[(j + 1) % loop.size()])
+		for j in poly.size():
+			var a := _sketch_point_screen(poly[j])
+			var b := _sketch_point_screen(poly[(j + 1) % poly.size()])
 			best = minf(best, _segment_rect_distance(a, b, rect))
 	return best
 
@@ -4602,6 +4677,7 @@ func _redraw_contour_highlight() -> void:
 	if _contour_tag != null:
 		_contour_tag.visible = false
 		_contour_tag.text = ""
+		_contour_tag.set_meta("leader", false)
 	if _contour_node == null:
 		return
 	var regions := _contour_regions()
@@ -4642,6 +4718,21 @@ func _redraw_contour_highlight() -> void:
 			for hole in holes:
 				_append_outline(lines, line_cols, _inset_loop(hole, 0.35), outline_col)
 				_append_outline(lines, line_cols, _inset_loop(hole, 0.70), outline_col)
+	var tag_text := ""
+	var tag_uv := Vector2.ZERO
+	var draw_tag := false
+	if _contour_focus >= 0 and _contour_focus < regions.size() and _contour_tag != null:
+		var focused_region: Dictionary = regions[_contour_focus]
+		tag_text = str(_contour_focus + 1)
+		tag_uv = _contour_tag_anchor(focused_region, tag_text)
+		draw_tag = true
+		if _contour_tag_leader:
+			var leader_col: Color = CONTOUR_COLORS[_contour_focus % CONTOUR_COLORS.size()]
+			leader_col.a = 1.0
+			lines.append(_contour_tag_leader_from)
+			lines.append(tag_uv)
+			line_cols.append(leader_col)
+			line_cols.append(leader_col)
 	if tris.is_empty() and lines.is_empty():
 		_contour_node.mesh = null
 		return
@@ -4670,13 +4761,11 @@ func _redraw_contour_highlight() -> void:
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, larrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, _contour_line_material)
 	_contour_node.mesh = mesh
-	if _contour_focus >= 0 and _contour_focus < regions.size() and _contour_tag != null:
-		var focused_region: Dictionary = regions[_contour_focus]
-		var tag_text := str(_contour_focus + 1)
-		var centre: Vector2 = _contour_tag_anchor(focused_region, tag_text)
+	if draw_tag and _contour_tag != null:
 		_contour_tag.text = tag_text
-		_contour_tag.position = _to3(centre)
+		_contour_tag.position = _to3(tag_uv)
 		_contour_tag.modulate = CONTOUR_COLORS[_contour_focus % CONTOUR_COLORS.size()]
+		_contour_tag.set_meta("leader", _contour_tag_leader)
 		_contour_tag.visible = true
 
 
@@ -7028,6 +7117,7 @@ func _clear_meshes() -> void:
 	if _contour_tag != null:
 		_contour_tag.visible = false
 		_contour_tag.text = ""
+		_contour_tag.set_meta("leader", false)
 	_contour_fill_alphas = []
 	_contour_outline_count = 0
 	selected = []
