@@ -933,7 +933,11 @@ class Walk:
         self.click("rail:Select")
         self.refresh("status")
         self.clause("select tool", self.S().startswith("Select —"), self.S())
-        # One click per call: line, empty canvas (≥ 60 px / well clear in mm), line.
+        # The two circles are still selected. An empty click clears them so the
+        # shaft-line click is Selected 1, not an additive Selected 3.
+        cleared = self._empty_canvas()
+        self.refresh("status")
+        self.clause("cleared", "No sketch entities" in str(cleared.get("status", self.S())), str(cleared.get("status", self.S())))
         first = self._click_shaft(mids[0])
         self.clause("line 1", "Selected 1 sketch entity" in first and "Constraint selected" not in first, first)
         empty = self._empty_canvas()
