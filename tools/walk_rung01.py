@@ -750,8 +750,8 @@ class Walk:
         return False
 
     def _off_badges(self, screen: list[float], badges: list[list[float]], dx: float, dy: float) -> list[float] | None:
-        """Keep a wall sample, nudging along the line or a few pixels off it."""
-        if not self._in_badge(screen, badges):
+        """Keep a wall sample. A badge overlap slides along the stroke, not off it."""
+        if not self._in_badge(screen, badges, pad=4.0):
             return screen
         try:
             origin = self.d.project(sketch=[0, 0])["screen"]
@@ -764,12 +764,10 @@ class Walk:
         if sl < 1e-3:
             return None
         ux, uy = sx / sl, sy / sl
-        px, py = -uy, ux
-        for dist in (6.0, -6.0, 12.0, -12.0):
-            for ox, oy in ((ux, uy), (px, py)):
-                cand = [screen[0] + ox * dist, screen[1] + oy * dist]
-                if not self._in_badge(cand, badges):
-                    return cand
+        for dist in (8.0, -8.0, 16.0, -16.0):
+            cand = [screen[0] + ux * dist, screen[1] + uy * dist]
+            if not self._in_badge(cand, badges, pad=4.0):
+                return cand
         return None
 
     def wall_screen_points(self, count: int = 9) -> list[list[float]]:
@@ -792,8 +790,9 @@ class Walk:
         lines.sort(key=lambda row: row[0], reverse=True)
         lines = lines[:2]
         points: list[list[float]] = []
-        for step in range(5, 16):
-            frac = step / 20.0
+        # Middle of each wall. Endpoints sit under constraint badges, and a
+        # slide past ~0.56 of these short walls leaves the pickable stroke.
+        for frac in (0.30, 0.36, 0.42, 0.48, 0.54):
             for _length, a, dx, dy in lines:
                 uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
                 try:
@@ -2131,7 +2130,15 @@ class Walk:
             self._click_solid()
             self.click("chip:Fillet")
             self.d.wait_idle(frames=4)
-        radius = self.control("finish:PanelRadius") or self.control("finish:StripR")
+        radius = None
+        self.refresh("finish")
+        for fid in ("finish:PanelRadius", "finish:StripR"):
+            for f in (self.st.get("finish") or {}).get("fields") or []:
+                if f.get("id") == fid and f.get("rect"):
+                    radius = f
+                    break
+            if radius:
+                break
         title = None
         for row in self.refresh("timeline").get("timeline") or []:
             if row.get("kind") == "title":
