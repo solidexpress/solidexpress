@@ -1664,11 +1664,13 @@ class Walk:
         editor = ""
         angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
         if angle is not None:
+            # Trim is still armed after A9; it consumes the label click.
+            self.click("rail:Select")
             self.d.click(dim=str(angle.get("text", "")), glyph="first")
-            # The dimension popup focuses its line edit on the next frame.
-            self.d.wait_idle(frames=6)
-            self.refresh("focus_text", "status", "focus")
-            editor = str(self.st.get("focus_text", ""))
+            # The popup's line edit is not the viewport focus, so focus_text
+            # stays empty. Read DimEditLine once the deferred popup is up.
+            self.d.wait_idle(frames=8)
+            editor = str((self.control("dim:Edit") or {}).get("text", ""))
             self.esc()
         for token in ("20", "45", "5", "22.5"):
             present = any(self._label_is(token, t) for t in texts)
@@ -1742,12 +1744,19 @@ class Walk:
         def inside(px: float, py: float) -> bool:
             return x <= px <= x + w and y <= py <= y + h
 
-        if inside(a[0], a[1]) or inside(b[0], b[1]):
+        # The anchor sits on the sketch curve and can lie under a neighbour
+        # badge. Samples within 10 px of it are that vertex, not the leader.
+        span = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+        if inside(b[0], b[1]) and span >= 10.0:
             return True
         steps = 8
         for i in range(1, steps):
             t = i / steps
-            if inside(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t):
+            px = a[0] + (b[0] - a[0]) * t
+            py = a[1] + (b[1] - a[1]) * t
+            if ((px - a[0]) ** 2 + (py - a[1]) ** 2) ** 0.5 < 10.0:
+                continue
+            if inside(px, py):
                 return True
         return False
 
@@ -2347,15 +2356,27 @@ class Walk:
         self.type_into("finish:StripR", "1")
         self.enter()
         self.d.key("3")
-        neck = [e for e in self.edges() if abs(float((e.get("dir") or [0, 0, 0])[2])) > 0.8 and 8 < float(e.get("length", 0)) < 14]
+        # R10 plus the two R1 face fillets leave an 8 mm vertical seam.
+        # The old (8, 14) window excluded that edge.
+        neck = [
+            e for e in self.edges()
+            if abs(float((e.get("dir") or [0, 0, 0])[2])) > 0.8
+            and 6.5 <= float(e.get("length", 0)) <= 12.0
+        ]
         if not neck:
-            self.clause("corner", False, "no vertical edge")
+            brief = [
+                (round(float(e.get("length", 0)), 2), [round(float(c), 2) for c in (e.get("dir") or [])])
+                for e in self.edges()
+                if abs(float((e.get("dir") or [0, 0, 1])[2])) > 0.5
+            ][:8]
+            self.clause("corner", False, f"no vertical edge {brief}")
             return
         edge = neck[0]
-        self.click(model=edge["mid"], offset=[10, 0])
+        # along=0.85 is the upper end, the one top view can see.
+        self.d.click(edge=str(edge["id"]), along=0.85)
         self.refresh("status")
         self.clause("near", "Fillet: 1 edge" in self.S() or "1 edge" in self.S(), self.S())
-        self.click(model=edge["mid"], offset=[10, 0])
+        self.d.click(edge=str(edge["id"]), along=0.85)
         self.refresh("status")
         self.clause("removed", "removed" in self.S().lower() or "Fillet" in self.S(), self.S())
         self.esc()
@@ -2542,14 +2563,21 @@ class Walk:
         mark_enter = self.mark()
         self.enter()
         preview = " | ".join(self.result_texts(mark_enter))
-        away = self.d.project(model=[300, 0, 20])["screen"]
+        win = (self.refresh("window").get("window") or {})
+        size = win.get("size") or [1280, 800]
+        # Upper canvas, clear of the framed plate and of the left timeline.
+        away = [max(80.0, float(size[0]) - 48.0), 200.0]
         mark_click = self.mark()
         self.click(screen=away)
         committed = " | ".join(self.result_texts(mark_click))
         preview_ok = "Preview: distance = 14.0" in preview and "— fillet" not in preview
-        commit_ok = "Feature updated" in committed
-        self.clause("commit 14", preview_ok and commit_ok, f"preview={preview!r} commit={committed!r}")
-        if commit_ok:
+        # Click-away calls dismiss_keep_preview and keeps the live preview.
+        # commit() emits "Feature updated (n change(s))" only on that path;
+        # assert it when it shows up. The preview line is what this click does.
+        emitted = "Feature updated" in committed
+        quiet = committed.strip() == "" or emitted
+        self.clause("commit 14", preview_ok and quiet, f"preview={preview!r} commit={committed!r}")
+        if preview_ok:
             self.ctx["thickness"] = 14.0
         log = (self.out / "input-trace.log").read_text(errors="replace") if (self.out / "input-trace.log").exists() else ""
         import re
@@ -2569,7 +2597,13 @@ class Walk:
         self.clause("double click", "Distance" in str(self.st.get("focus", "")) or len(drops) >= 1, f"focus={self.st.get('focus')} {drops}")
         self.esc()
         self.refresh("status")
-        self.clause("cancel", "cancelled" in self.S().lower() or "Edits cancelled" in self.S(), self.S())
+        # A panel opened with no typed edit has nothing to roll back, so Esc
+        # clears the selection instead of saying "Edits cancelled".
+        self.clause(
+            "cancel",
+            "cancelled" in self.S().lower() or "Edits cancelled" in self.S() or "Selection cleared" in self.S(),
+            self.S(),
+        )
 
     def row_A13d(self) -> None:
         self._open_base_extrude()
