@@ -3343,11 +3343,12 @@ func _note_click(text: String, pos: Vector2, shift := false, additive := false) 
 
 
 func _trace_seconds() -> float:
-	var host := get_parent()
-	if host != null and host.get("_clock_override_msec") != null:
-		var ov := int(host.get("_clock_override_msec"))
-		if ov >= 0:
+	var host: Node = self
+	while host != null:
+		var ov: Variant = host.get("_clock_override_msec")
+		if ov != null and int(ov) >= 0:
 			return float(ov) / 1000.0
+		host = host.get_parent()
 	return Time.get_unix_time_from_system()
 
 

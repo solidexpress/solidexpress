@@ -95,6 +95,9 @@ var _pinned_timeline_y := -1.0
 ## [status-trace] lines, kept so a headless test can read the hold gap.
 var status_trace_log: PackedStringArray = []
 var popup_trace_log: PackedStringArray = []
+## [hover-trace] lines. A repeat of the same target is not recorded.
+var hover_trace_log: PackedStringArray = []
+var _hover_traced := ""
 ## True while File menu / discard dialog is in the pointer gesture that closes
 ## them, so a mouse-up on Box does not arm place (leftover 3).
 var _palette_insert_blocked := false
@@ -1092,7 +1095,6 @@ func _style_popup_menu(popup: PopupMenu) -> void:
 func _trace_popup(popup: PopupMenu) -> void:
 	if popup == null or popup.has_meta("_sx_popup_traced"):
 		return
-	popup.set_meta("_sx_popup_traced", true)
 	var shown := str(popup.name)
 	var parent := popup.get_parent()
 	if parent is MenuButton and str((parent as MenuButton).text) != "":
@@ -1101,22 +1103,39 @@ func _trace_popup(popup: PopupMenu) -> void:
 			popup.name = shown
 	elif shown == "":
 		shown = "PopupMenu"
+	trace_named_popup(popup, shown)
+
+
+## Show/hide trace for a popup the menu bar does not own (finish-bar
+## OptionButtons, HUD View ▼). `shown` is the trace name, not the node name.
+func trace_named_popup(popup: Window, shown: String) -> void:
+	if popup == null or popup.has_meta("_sx_popup_traced"):
+		return
+	popup.set_meta("_sx_popup_traced", true)
+	popup.set_meta("_sx_popup_trace_name", shown)
 	popup.about_to_popup.connect(_on_popup_trace.bind("show", popup))
 	popup.popup_hide.connect(_on_popup_trace.bind("hide", popup))
 
 
-func _on_popup_trace(kind: String, popup: PopupMenu) -> void:
-	if popup == null:
+func _on_popup_trace(kind: String, popup: Window) -> void:
+	if popup == null or not _input_trace_on():
 		return
-	var trace := OS.get_environment("SX_INPUT_TRACE") == "1"
-	if not trace and SxUi.trace_enabled():
-		trace = true
-	if not trace:
-		return
-	var line := "[popup-trace] t=%.3f %s %s" % [
-		Time.get_unix_time_from_system(), kind, str(popup.name)]
+	var shown := str(popup.get_meta("_sx_popup_trace_name", popup.name))
+	var line := "[popup-trace] t=%.3f %s %s" % [_trace_seconds(), kind, shown]
 	popup_trace_log.append(line)
 	printerr(line)
+
+
+func _input_trace_on() -> bool:
+	if OS.get_environment("SX_INPUT_TRACE") == "1":
+		return true
+	return SxUi.trace_enabled()
+
+
+func _trace_seconds() -> float:
+	if _clock_override_msec >= 0:
+		return float(_clock_override_msec) / 1000.0
+	return Time.get_unix_time_from_system()
 
 
 ## Esc on a menu or dialog this file owns hides that window and runs cancel_stack
@@ -1147,6 +1166,8 @@ func _install_esc_menu_watch() -> void:
 	for node in view_hud.find_children("*", "Popup", true, false):
 		if node is Window:
 			_watch_esc_popup(node)
+	var views := view_hud.find_child("ViewsPopup", true, false) as Window
+	trace_named_popup(views, "HudView")
 
 
 func _watch_esc_popup(win: Window) -> void:
@@ -2812,6 +2833,14 @@ func _hint_tick() -> void:
 		_set_status_label(_current_hint, "restore")
 
 
+func _trace_hover(target: String) -> void:
+	if not _input_trace_on():
+		return
+	var line := "[hover-trace] t=%.3f target=%s" % [_trace_seconds(), target]
+	hover_trace_log.append(line)
+	printerr(line)
+
+
 func _set_status_label(text: String, kind: String) -> void:
 	if status_label == null:
 		return
@@ -2844,6 +2873,10 @@ func _on_status(text: String) -> void:
 ## Hover copy yields while a command result is still on the hold timer.
 ## A hint that arrives during the hold is kept and written when the hold ends.
 func _on_hover_hint(text: String) -> void:
+	var target := "none" if text == "" else text
+	if target != _hover_traced:
+		_hover_traced = target
+		_trace_hover(target)
 	if text == "":
 		var previous := _current_hint
 		_current_hint = ""

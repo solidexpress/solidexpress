@@ -375,6 +375,23 @@ func _build_finish_bar() -> void:
 	done.tooltip_text = "End line / spline chain (Esc · right-click · double-click)"
 	done.pressed.connect(func() -> void: action_chosen.emit("done"))
 	_finish_end_row.add_child(done)
+	_wire_finish_popup_traces()
+
+
+## Finish-bar dropdowns are not menu-bar popups. Trace them as FinishOp /
+## FinishEnd / FinishThin while SX_INPUT_TRACE is on.
+func _wire_finish_popup_traces() -> void:
+	var host: Node = get_parent()
+	while host != null and not host.has_method("trace_named_popup"):
+		host = host.get_parent()
+	if host == null:
+		return
+	if _finish_op != null:
+		host.trace_named_popup(_finish_op.get_popup(), "FinishOp")
+	if _finish_end != null:
+		host.trace_named_popup(_finish_end.get_popup(), "FinishEnd")
+	if _thin_type != null:
+		host.trace_named_popup(_thin_type.get_popup(), "FinishThin")
 
 
 func dim_value() -> float:
