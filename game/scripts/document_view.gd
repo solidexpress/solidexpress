@@ -1337,6 +1337,7 @@ func _polyline_screen_distance(camera: Camera3D, screen: Vector2, pts: PackedVec
 func _polyline_screen_nearest(camera: Camera3D, screen: Vector2, pts: PackedVector3Array) -> Dictionary:
 	var best := INF
 	var best_pt := Vector3.ZERO
+	var best_cam := INF
 	for i in range(pts.size() - 1):
 		var wa := _model_to_world(pts[i])
 		var wb := _model_to_world(pts[i + 1])
@@ -1347,9 +1348,21 @@ func _polyline_screen_nearest(camera: Camera3D, screen: Vector2, pts: PackedVect
 		var ab := b - a
 		var t := 0.0 if ab.length_squared() < 1e-12 else clampf((screen - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
 		var d := screen.distance_to(a + ab * t)
-		if d < best:
+		var model_pt := pts[i].lerp(pts[i + 1], t)
+		var cam_d := camera.global_position.distance_squared_to(_model_to_world(model_pt))
+		# End-on edges project to one pixel. The first sample is often the far
+		# end, hidden under the body. Keep the sample nearest the camera when
+		# the screen distances tie within 0.01 px.
+		var closer := d < best - 0.01
+		if closer:
 			best = d
-			best_pt = pts[i].lerp(pts[i + 1], t)
+			best_pt = model_pt
+			best_cam = cam_d
+		elif absf(d - best) <= 0.01 and cam_d < best_cam:
+			if d < best:
+				best = d
+			best_pt = model_pt
+			best_cam = cam_d
 	return {"px": best, "point": best_pt}
 
 
