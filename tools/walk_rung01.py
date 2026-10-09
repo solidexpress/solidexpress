@@ -742,15 +742,38 @@ class Walk:
                 rects.append([float(v) for v in r[:4]])
         return rects
 
-    def _in_badge(self, pt: list[float], rects: list[list[float]], pad: float = 8.0) -> bool:
+    def _in_badge(self, pt: list[float], rects: list[list[float]], pad: float = 2.0) -> bool:
         x, y = float(pt[0]), float(pt[1])
         for r in rects:
             if r[0] - pad <= x <= r[0] + r[2] + pad and r[1] - pad <= y <= r[1] + r[3] + pad:
                 return True
         return False
 
+    def _off_badges(self, screen: list[float], badges: list[list[float]], dx: float, dy: float) -> list[float] | None:
+        """Keep a wall sample, nudging along the line or a few pixels off it."""
+        if not self._in_badge(screen, badges):
+            return screen
+        try:
+            origin = self.d.project(sketch=[0, 0])["screen"]
+            tip = self.d.project(sketch=[dx, dy])["screen"]
+        except SxError:
+            return None
+        sx = float(tip[0]) - float(origin[0])
+        sy = float(tip[1]) - float(origin[1])
+        sl = (sx * sx + sy * sy) ** 0.5
+        if sl < 1e-3:
+            return None
+        ux, uy = sx / sl, sy / sl
+        px, py = -uy, ux
+        for dist in (6.0, -6.0, 12.0, -12.0):
+            for ox, oy in ((ux, uy), (px, py)):
+                cand = [screen[0] + ox * dist, screen[1] + oy * dist]
+                if not self._in_badge(cand, badges):
+                    return cand
+        return None
+
     def wall_screen_points(self, count: int = 9) -> list[list[float]]:
-        """Screen samples along slanted wall lines, skipping badge rects."""
+        """Screen samples along the two longest slanted walls, outside badge rects."""
         self.refresh("sketch", "glyphs")
         badges = self._badge_rects()
         lines = []
@@ -763,13 +786,13 @@ class Walk:
             dx = float(b[0]) - float(a[0])
             dy = float(b[1]) - float(a[1])
             length = (dx * dx + dy * dy) ** 0.5
-            if length < 8.0 or abs(dy) < 1.0:
+            if length < 4.0 or abs(dy) < 0.5:
                 continue
             lines.append((length, a, dx, dy))
         lines.sort(key=lambda row: row[0], reverse=True)
         lines = lines[:2]
         points: list[list[float]] = []
-        for step in range(7, 14):
+        for step in range(5, 16):
             frac = step / 20.0
             for _length, a, dx, dy in lines:
                 uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
@@ -777,11 +800,12 @@ class Walk:
                     screen = self.d.project(sketch=uv)["screen"]
                 except SxError:
                     continue
-                if self._in_badge(screen, badges):
+                kept = self._off_badges(screen, badges, dx, dy)
+                if kept is None:
                     continue
-                if any(abs(screen[0] - p[0]) < 3.0 and abs(screen[1] - p[1]) < 3.0 for p in points):
+                if any(abs(kept[0] - p[0]) < 4.0 and abs(kept[1] - p[1]) < 4.0 for p in points):
                     continue
-                points.append(screen)
+                points.append(kept)
                 if len(points) >= count:
                     return points
         return points
@@ -1621,21 +1645,30 @@ class Walk:
         self.clause("badges on canvas", not off, f"under rail {off} count={len(glyphs)}")
         self.visual("badge leaders", f"{len(glyphs)} glyphs; leaders are visual")
 
+    def _hover_wall_delta(self, samples: list[list[float]]) -> tuple[list[float] | None, str]:
+        texts = ""
+        for pt in samples:
+            self.d.hover(screen=pt)
+            self.d.wait_idle(frames=3)
+            self.refresh("measure")
+            texts = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
+            if "Δ" in texts:
+                return pt, texts
+        return None, texts
+
     def row_L12(self) -> None:
-        samples = self.wall_screen_points(1)
-        pt = samples[0] if samples else self.jaw_px(16, -6)
+        samples = self.wall_screen_points(12) or [self.jaw_px(16, -6)]
         self.click("rail:Circle")
-        self.d.hover(screen=pt)
+        self.d.hover(screen=samples[0])
         self.d.wait_idle(frames=3)
         self.refresh("measure")
         self.clause("circle has no measure", not (self.st.get("measure") or []), str(self.st.get("measure")))
         self.click("rail:Select")
-        self.d.hover(screen=pt)
-        self.d.wait_idle(frames=3)
-        self.refresh("measure", "status")
-        texts = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
-        self.clause("hover delta", "Δ" in texts, texts or self.S())
-        self.click(screen=pt)
+        pt, texts = self._hover_wall_delta(samples)
+        self.refresh("status")
+        self.clause("hover delta", pt is not None and "Δ" in texts, texts or self.S())
+        if pt is not None:
+            self.click(screen=pt)
         self.refresh("status", "measure")
         texts = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
         self.clause("click clears", "Selected 1 sketch entity" in self.S() and "Δ" not in texts, f"{self.S()} {texts}")
@@ -1747,10 +1780,14 @@ class Walk:
         dim = self.find_dim(lambda d: "20" in str(d.get("text", "")))
         if dim:
             self.d.click(dim=str(dim.get("text")), glyph="first")
-            self.refresh("measure", "status")
+            self.d.wait_idle(frames=2)
+            self.refresh("measure", "status", "focus")
             texts_m = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
             self.clause("editor has no delta", "Δ" not in texts_m, texts_m or self.S())
-            self.esc()
+            focus = str(self.st.get("focus", ""))
+            opened = self.control("dim:Edit") is not None or "DimEdit" in focus
+            if opened:
+                self.esc()
 
     def row_N20(self) -> None:
         path = self.out / "pre-cut.sxp"
@@ -2088,6 +2125,12 @@ class Walk:
         if not str((self.st.get("selection") or {}).get("body") or ""):
             self._click_solid()
         self.click("chip:Fillet")
+        self.d.wait_idle(frames=4)
+        self.refresh("status")
+        if not self.S().startswith("Fillet"):
+            self._click_solid()
+            self.click("chip:Fillet")
+            self.d.wait_idle(frames=4)
         radius = self.control("finish:PanelRadius") or self.control("finish:StripR")
         title = None
         for row in self.refresh("timeline").get("timeline") or []:
@@ -2493,10 +2536,22 @@ class Walk:
     def _timeline_names(self) -> list[str]:
         return [str(r.get("name", "")) for r in (self.refresh("timeline").get("timeline") or []) if r.get("name")]
 
+    def _timeline_visible(self) -> bool:
+        for row in self.refresh("timeline").get("timeline") or []:
+            if row.get("kind") == "panel":
+                return bool(row.get("visible"))
+        return False
+
+    def _show_timeline(self) -> None:
+        if self._timeline_visible():
+            return
+        self.menu("View", "Timeline")
+        self.d.wait_idle(frames=2)
+
     def _reopen_sketch3(self) -> str:
-        if "sketch 3" not in "".join(self._timeline_names()):
-            self.menu("View", "Timeline")
+        self._show_timeline()
         self.click("timeline:pencil:sketch 3")
+        self.d.wait_idle(frames=3)
         self.refresh("status", "sketch")
         return self.S()
 
@@ -2515,7 +2570,7 @@ class Walk:
         s1 = self.esc()
         s2 = self.esc()
         self.clause("esc", "Selection cleared" in s1 and "Sketch saved" in s2, s1 + " | " + s2)
-        self.menu("View", "Timeline")
+        self._show_timeline()
         self.d.key("ctrl+z")
         self.refresh("status", "timeline")
         names = self._timeline_names()
