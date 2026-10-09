@@ -1646,7 +1646,14 @@ func _label3d_rect(lab: Label3D) -> Rect2:
 	var cam := lab.get_viewport().get_camera_3d() if lab.is_inside_tree() else null
 	if cam == null:
 		return Rect2()
-	var centre: Vector2 = cam.unproject_position(lab.global_position) + lab.offset
+	var centre: Vector2 = cam.unproject_position(lab.global_position)
+	var k := 1.0
+	var sm = _main().get("sketch_mode")
+	if sm != null and sm.has_method("_label_px_scale"):
+		k = float(sm._label_px_scale(cam))
+	# Label3D offset is font pixels, Y up. The hit rect uses the same shift.
+	var off := lab.offset
+	centre += Vector2(off.x * k, -off.y * k)
 	var fs := lab.font_size
 	if fs <= 0:
 		fs = 16
