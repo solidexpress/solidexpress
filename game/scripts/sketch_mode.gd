@@ -9022,6 +9022,8 @@ func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 						best_rank = rank
 						best = trial
 			if best.distance_to(centre) <= 0.5:
+				if _nudge_crossed_badges(items, i, cam, shaft_y):
+					moved = true
 				continue
 			it["centre"] = best
 			it["offset_px"] = natural.distance_to(best)
@@ -9030,6 +9032,62 @@ func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 			moved = true
 		if not moved:
 			break
+
+
+## Slide a badge the leader cuts through, perpendicular to that leader,
+## staying off the wall. Returns true when the leader is clear afterwards.
+func _nudge_crossed_badges(items: Array, leader_i: int, cam: Camera3D,
+		shaft_y: float) -> bool:
+	var src: Dictionary = items[leader_i]
+	var natural: Vector2 = src["natural"]
+	var centre: Vector2 = src["centre"]
+	var dir := centre - natural
+	if dir.length_squared() < 4.0:
+		return false
+	dir = dir.normalized()
+	var normal := Vector2(-dir.y, dir.x)
+	var moved := false
+	for j in range(items.size()):
+		if j == leader_i:
+			continue
+		var other: Dictionary = items[j]
+		var os: Vector2 = other["size"]
+		if os == Vector2.ZERO:
+			continue
+		var oc: Vector2 = other["centre"]
+		var orect := Rect2(oc - os * 0.5, os)
+		if not _leader_crosses_rect(natural, centre, orect):
+			continue
+		var onat: Vector2 = other["natural"]
+		var cur_curve := _glyph_curve_penalty(orect, onat, cam)
+		var best := oc
+		var best_rank := 1000000.0
+		for dist in [8.0, 16.0, 24.0, 32.0]:
+			for sgn in [-1.0, 1.0]:
+				var trial: Vector2 = oc + normal * sgn * dist
+				if trial.distance_to(onat) > GLYPH_MAX_OFFSET_PX:
+					var delta := trial - onat
+					trial = onat + delta.normalized() * GLYPH_MAX_OFFSET_PX
+				var rect := Rect2(trial - os * 0.5, os)
+				if _glyph_below_part(rect, shaft_y):
+					continue
+				var curve := _glyph_curve_penalty(rect, onat, cam)
+				if curve > cur_curve + 1.0:
+					continue
+				if _leader_crosses_rect(natural, centre, rect):
+					continue
+				var rank := curve + trial.distance_to(oc) * 0.1
+				if rank < best_rank:
+					best_rank = rank
+					best = trial
+		if best.distance_to(oc) <= 0.5:
+			continue
+		other["centre"] = best
+		other["offset_px"] = onat.distance_to(best)
+		other["pos"] = _sketch_from_screen(cam, best, other["anchor"])
+		items[j] = other
+		moved = true
+	return moved
 
 
 func _leader_crosses_any(anchor: Vector2, centre: Vector2, obstacles: Array[Rect2]) -> bool:
