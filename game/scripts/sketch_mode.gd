@@ -1147,6 +1147,7 @@ func _undo_current_entry(label: String) -> Dictionary:
 
 
 func _restore_undo_entry(entry: Dictionary) -> String:
+	_hide_infer_hint()
 	var json := str(entry.get("json", ""))
 	var dims: Array = entry.get("dimensions", [])
 	_undo_restoring = true
@@ -1501,9 +1502,15 @@ signal selection_actions_needed
 signal preview_distance_changed(distance: float)
 
 
+func _hide_infer_hint() -> void:
+	if _infer_label != null:
+		_infer_label.visible = false
+
+
 func set_tool(t: Tool) -> void:
 	# Re-arming a tool spends the "next Esc leaves" promise. The tool-drop
 	# rung applies again until a new pending point is dropped.
+	_hide_infer_hint()
 	_esc_exit_promised = false
 	if not _drag.is_empty():
 		end_drag()
@@ -1599,6 +1606,7 @@ func start_jaw_tool() -> void:
 
 
 func set_tool_variant(v: String) -> void:
+	_hide_infer_hint()
 	tool_variant = v
 	if tool == Tool.POLYGON and (v == "across_flats" or v == "vertex"):
 		_polygon_variant = v
@@ -1644,6 +1652,7 @@ func has_pending_draw_point() -> bool:
 
 ## Esc with a first anchor placed: drop the anchor and keep the sketch session.
 func cancel_pending_draw() -> void:
+	_hide_infer_hint()
 	_tool_points.clear()
 	_length_override = -1.0
 	_update_preview()
@@ -3637,6 +3646,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	if cutter.is_empty():
 		return false
 	if _jaw_ids_alive():
+		_hide_infer_hint()
 		status.emit("Jaw is already open — nothing left to trim here")
 		return true
 	var a: Vector2 = cutter["a"]
@@ -3918,6 +3928,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	_redraw()
 	_redraw_selected()
 	_trim_jaw_done_in_drag = true
+	_hide_infer_hint()
 	status.emit("Trimmed open jaw")
 	return true
 
@@ -4882,6 +4893,7 @@ func click(pos2: Vector2) -> void:
 					# Two-point centreline: do not extend the next click.
 					_tool_points.clear()
 				_infer_line(lid, a, b)
+				_hide_infer_hint()
 				if as_centreline:
 					_drop_stale_dimensions()
 				_redraw()
@@ -5274,6 +5286,7 @@ func arm_refusal_exit_ladder() -> void:
 ## not armed. Ends an open line chain in the same press and promises the
 ## following Esc leaves.
 func take_refusal_exit_ladder() -> String:
+	_hide_infer_hint()
 	if not _refusal_esc_ladder or not active:
 		return ""
 	_refusal_esc_ladder = false
@@ -5307,6 +5320,7 @@ func take_refusal_exit_ladder() -> String:
 ## selection still spends the key first (the promise stays armed), so a
 ## Select click after a hover measure cannot exit on the same Esc.
 func esc_keep_sketch() -> String:
+	_hide_infer_hint()
 	if not active or sketch == null:
 		return ""
 	# A selection (entity or constraint glyph) always spends this Esc.
@@ -6677,6 +6691,7 @@ func _sync_missing_radius_records() -> void:
 
 ## Double-click or right-click ends a line chain / commits a spline.
 func end_chain() -> void:
+	_hide_infer_hint()
 	if tool == Tool.SPLINE and _spline_pts.size() >= 2:
 		_commit_spline()
 	elif _auto_close and (tool == Tool.LINE or tool == Tool.CENTERLINE):
@@ -6706,6 +6721,7 @@ func hover(pos2: Vector2) -> void:
 	if tool == Tool.TRIM:
 		_trim_hover_id = _nearest_entity_at(pos2)
 		_hover = pos2
+		_hide_infer_hint()
 		_update_preview()
 		_sync_coincident_glyphs()
 		return
@@ -6731,6 +6747,7 @@ func hover(pos2: Vector2) -> void:
 
 ## Power-trim drag: trim every entity the cursor crosses.
 func begin_trim_drag(pos2: Vector2) -> void:
+	_hide_infer_hint()
 	_free_trim_trail()
 	_trim_dragging = true
 	_trim_jaw_done_in_drag = false
@@ -6915,6 +6932,7 @@ func place_block(block_name: String, offset: Vector2) -> Array:
 
 ## Delete selected sketch entities (geometry).
 func delete_selected_entities() -> int:
+	_hide_infer_hint()
 	if selected.is_empty():
 		return 0
 	var n := 0
@@ -8019,19 +8037,22 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 	var score := 0.0
 	for prev in placed:
 		var frac := _glyph_overlap_fraction(rect, prev)
-		# Overlap above ~30% is a hard miss: the badge has to stay readable.
-		# Label clearance is soft — dimension text moves after the glyphs do.
+		# A foreign centre inside this badge steals the click (parallel
+		# reads as horizontal). That outranks a curve touch. Label
+		# clearance stays soft — dimension text moves after the glyphs do.
 		score += frac * 40.0
-		if frac > 0.16:
+		if rect.has_point(prev.get_center()) or prev.has_point(centre):
+			score += 200000.0 + frac * 1000.0
+		elif frac > 0.16:
 			score += 8000.0 + (frac - 0.16) * 4000.0
 	for lr in labels:
 		var lg := lr.grow(4.0)
 		if rect.intersects(lg):
 			var inter := rect.intersection(lg)
 			score += 12.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0) * 0.02
-	# Hanging off the part outranks a label or glyph collision.
+	# Hanging off the part outranks a stolen click and a curve touch.
 	if _glyph_below_part(rect, shaft_y):
-		score += 20000.0 + (rect.end.y - shaft_y) * 40.0
+		score += 500000.0 + (rect.end.y - shaft_y) * 40.0
 	if _sketch_at_screen(cam, centre) == null:
 		score += 40.0
 	score += _glyph_curve_penalty(rect, anchor_screen, cam)
@@ -8164,19 +8185,10 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 				var contact: Variant = _tangent_contact(line_info, circ_info)
 				if contact != null:
 					return contact
-		"point_on_line":
-			return _ref_pos(refs[0])
-		"parallel", "perpendicular", "equal":
-			var p: Variant = _ref_pos(refs[0])
-			if p == null:
-				return null
-			var nudged: Vector2 = p
-			var einfo: Dictionary = sketch.entity_info(str(refs[0].get("entity", "")))
-			if str(einfo.get("type", "")) == "line":
-				var d: Vector2 = einfo["end"] - einfo["start"]
-				if d.length_squared() > 1e-12:
-					nudged += Vector2(-d.y, d.x).normalized() * 2.5
-			return nudged
+		"point_on_line", "parallel", "perpendicular", "equal", "horizontal", "vertical":
+			var line_info := _line_ref_info(refs)
+			if not line_info.is_empty():
+				return _nudge_off_line(line_info)
 	var sum := Vector2.ZERO
 	var n := 0
 	for ref in refs:
@@ -8191,10 +8203,85 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 	if refs.size() == 1:
 		var info: Dictionary = sketch.entity_info(str(refs[0]["entity"]))
 		if info.get("type", "") == "line":
-			var d: Vector2 = info["end"] - info["start"]
-			if d.length_squared() > 1e-12:
-				anchor += Vector2(-d.y, d.x).normalized() * 2.5
+			return _nudge_off_line(info)
 	return anchor
+
+
+func _line_ref_info(refs: Array) -> Dictionary:
+	var construction := {}
+	for ref in refs:
+		if typeof(ref) != TYPE_DICTIONARY:
+			continue
+		var info: Dictionary = sketch.entity_info(str(ref.get("entity", "")))
+		if str(info.get("type", "")) != "line":
+			continue
+		if bool(info.get("construction", false)):
+			construction = info
+		else:
+			return info
+	return construction
+
+
+func _sketch_centroid() -> Vector2:
+	if sketch == null:
+		return Vector2.ZERO
+	var sum := Vector2.ZERO
+	var n := 0
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind == "line" and not bool(info.get("construction", false)):
+			sum += ((info["start"] as Vector2) + (info["end"] as Vector2)) * 0.5
+			n += 1
+		elif info.has("center"):
+			sum += info["center"] as Vector2
+			n += 1
+	if n == 0:
+		return Vector2.ZERO
+	return sum / float(n)
+
+
+## Midpoint of a wall, pushed to the side farther from the sketch centroid so
+## the badge clears the wall instead of sitting in the corner cluster.
+func _nudge_off_line(info: Dictionary) -> Vector2:
+	var a: Vector2 = info["start"]
+	var b: Vector2 = info["end"]
+	var mid := (a + b) * 0.5
+	var d := b - a
+	if d.length_squared() < 1e-12:
+		return mid
+	var nrm := Vector2(-d.y, d.x).normalized()
+	var step := _badge_clear_mm()
+	var interior := _sketch_centroid()
+	if (mid + nrm * step).distance_to(interior) < (mid - nrm * step).distance_to(interior):
+		nrm = -nrm
+	if _badge_below_shaft(mid + nrm * step) and not _badge_below_shaft(mid - nrm * step):
+		nrm = -nrm
+	if bool(info.get("construction", false)):
+		var best := a + nrm * step
+		var best_score := INF
+		for end in [a, b]:
+			for sgn in [1.0, -1.0]:
+				var opt: Vector2 = end + nrm * sgn * step
+				var score := -opt.distance_to(interior)
+				if _badge_below_shaft(opt):
+					score += 100000.0
+				if score < best_score:
+					best = opt
+					best_score = score
+		return best
+	return mid + nrm * step
+
+
+func _badge_below_shaft(sketch_pos: Vector2) -> bool:
+	if camera == null or not is_inside_tree():
+		return false
+	var shaft_y := _shaft_lower_screen_y(camera)
+	if shaft_y > 1.0e8:
+		return false
+	var screen := camera.unproject_position(to_global(to_model(sketch_pos)))
+	var half := _glyph_symbol_size_px("horizontal", _label_px_scale(camera)).y * 0.5
+	return screen.y + half > shaft_y + 1.5
 
 
 func _tangent_contact(line: Dictionary, circ: Dictionary) -> Variant:
@@ -8217,6 +8304,55 @@ func _constraint_refs_a_line(cinfo: Dictionary) -> bool:
 	return false
 
 
+func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[Rect2],
+		shaft_y: float, placed: Array[Rect2], taken: Array[Vector2], pending: Array,
+		batch_pending: Array) -> void:
+	var cinfo: Dictionary = sketch.constraint_info(cid)
+	var type := str(cinfo.get("type", ""))
+	if not GLYPH_SYMBOLS.has(type):
+		return
+	# A centre-to-centre horizontal has no line to sit beside. Drawing it
+	# would plant a badge between the circles (T14's stray mark).
+	if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo):
+		return
+	var anchor: Variant = _constraint_anchor(cinfo)
+	if anchor == null:
+		return
+	var anchor_sketch := anchor as Vector2
+	var pos := anchor_sketch
+	var offset_px := 0.0
+	var centre := Vector2.ZERO
+	var natural := Vector2.ZERO
+	var size := Vector2.ZERO
+	if cam != null:
+		# De-stack in pixels. A 2.5 mm step is ~8 px at a 150 px head,
+		# smaller than the badge, so the pile survives a millimetre nudge.
+		size = _glyph_symbol_size_px(type, k)
+		natural = cam.unproject_position(to_global(to_model(anchor_sketch)))
+		centre = _separate_glyph_screen(natural, size, placed, label_rects, cam, shaft_y)
+		offset_px = natural.distance_to(centre)
+		placed.append(Rect2(centre - size * 0.5, size))
+		pos = _sketch_from_screen(cam, centre, anchor_sketch)
+	else:
+		var guard := 0
+		while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
+			pos += Vector2(0, 2.5)
+			guard += 1
+		taken.append(pos)
+	var item := {
+		"cid": cid,
+		"type": type,
+		"anchor": anchor_sketch,
+		"pos": pos,
+		"natural": natural,
+		"centre": centre,
+		"size": size,
+		"offset_px": offset_px,
+	}
+	pending.append(item)
+	batch_pending.append(item)
+
+
 func _rebuild_constraint_glyphs() -> void:
 	_refresh_coincident_keep()
 	_glyph_anchors.clear()
@@ -8237,53 +8373,35 @@ func _rebuild_constraint_glyphs() -> void:
 	var placed: Array[Rect2] = []
 	var taken: Array[Vector2] = []
 	var pending: Array = []
+	# Coincident badges appear and disappear with hover and selection.
+	# Lay the stable badges down first so that flicker cannot move the
+	# glyph a click already aimed at.
+	var stable_ids: Array[String] = []
+	var coincident_ids: Array[String] = []
 	for cid in sketch.constraint_ids():
 		var cinfo: Dictionary = sketch.constraint_info(cid)
 		var type := str(cinfo.get("type", ""))
 		if not GLYPH_SYMBOLS.has(type):
 			continue
-		# A centre-to-centre horizontal has no line to sit beside. Drawing it
-		# would plant a badge between the circles (T14's stray mark).
-		if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo):
-			continue
 		if type == "coincident" and not _coincident_glyph_visible(str(cid), cinfo):
 			continue
-		var anchor: Variant = _constraint_anchor(cinfo)
-		if anchor == null:
-			continue
-		var anchor_sketch := anchor as Vector2
-		var pos := anchor_sketch
-		var offset_px := 0.0
-		var centre := Vector2.ZERO
-		var natural := Vector2.ZERO
-		var size := Vector2.ZERO
-		if cam != null:
-			# De-stack in pixels. A 2.5 mm step is ~8 px at a 150 px head,
-			# smaller than the badge, so the pile survives a millimetre nudge.
-			size = _glyph_symbol_size_px(type, k)
-			natural = cam.unproject_position(to_global(to_model(anchor_sketch)))
-			centre = _separate_glyph_screen(natural, size, placed, label_rects, cam, shaft_y)
-			offset_px = natural.distance_to(centre)
-			placed.append(Rect2(centre - size * 0.5, size))
-			pos = _sketch_from_screen(cam, centre, anchor_sketch)
+		if type == "coincident":
+			coincident_ids.append(str(cid))
 		else:
-			var guard := 0
-			while guard < 8 and taken.any(func(t: Vector2) -> bool: return t.distance_to(pos) < 2.0):
-				pos += Vector2(0, 2.5)
-				guard += 1
-			taken.append(pos)
-		pending.append({
-			"cid": str(cid),
-			"type": type,
-			"anchor": anchor_sketch,
-			"pos": pos,
-			"natural": natural,
-			"centre": centre,
-			"size": size,
-			"offset_px": offset_px,
-		})
-	if cam != null and pending.size() > 1:
-		_relax_glyph_layout(pending, label_rects, cam, shaft_y)
+			stable_ids.append(str(cid))
+	for batch in [stable_ids, coincident_ids]:
+		var batch_pending: Array = []
+		for cid in batch:
+			_place_one_glyph(str(cid), cam, k, label_rects, shaft_y, placed, taken, pending, batch_pending)
+		if cam != null and batch == stable_ids and batch_pending.size() > 1:
+			_relax_glyph_layout(batch_pending, label_rects, cam, shaft_y)
+			placed.clear()
+			for item in batch_pending:
+				var size: Vector2 = item["size"]
+				var centre: Vector2 = item["centre"]
+				if size == Vector2.ZERO:
+					continue
+				placed.append(Rect2(centre - size * 0.5, size))
 	for item in pending:
 		var gtype := str(item["type"])
 		var gcid := str(item["cid"])
@@ -8446,12 +8564,43 @@ func _glyph_curve_penalty(rect: Rect2, anchor_screen: Vector2, cam: Camera3D) ->
 		if kind != "line" and kind != "circle" and kind != "arc":
 			continue
 		for s in _curve_screen_samples(info, cam):
-			if not rect.has_point(s):
-				continue
-			if anchor_screen != Vector2.INF and s.distance_to(anchor_screen) <= 10.0:
-				continue
-			return 6000.0
+			var gap := _point_rect_gap_px(s, rect)
+			var need := PICK_SCREEN_PX + 4.0
+			if gap + 0.01 < need:
+				return 80000.0 + (need - gap) * 100.0
 	return 0.0
+
+
+func _point_rect_gap_px(p: Vector2, rect: Rect2) -> float:
+	if rect.has_point(p):
+		return 0.0
+	var dx := 0.0
+	if p.x < rect.position.x:
+		dx = rect.position.x - p.x
+	elif p.x > rect.end.x:
+		dx = p.x - rect.end.x
+	var dy := 0.0
+	if p.y < rect.position.y:
+		dy = rect.position.y - p.y
+	elif p.y > rect.end.y:
+		dy = p.y - rect.end.y
+	return Vector2(dx, dy).length()
+
+
+## Perpendicular offset that keeps a 25.6 px badge ≥ hit-slop + 4 px off a wall,
+## capped at GLYPH_MAX_OFFSET_PX.
+func _badge_clear_mm() -> float:
+	var ppm := 1.0
+	if camera != null and camera.has_method("pixels_per_mm_at_pivot"):
+		ppm = maxf(float(camera.pixels_per_mm_at_pivot()), 0.05)
+	var k := 1.0
+	if camera != null:
+		k = _label_px_scale(camera)
+	var side := 16.0 * k
+	for type in ["horizontal", "vertical", "parallel", "perpendicular", "equal"]:
+		side = maxf(side, _glyph_symbol_size_px(type, k).x)
+	var need_px := side * 0.5 + PICK_SCREEN_PX + 4.0 + 2.0
+	return minf(need_px / ppm, GLYPH_MAX_OFFSET_PX / ppm)
 
 
 func _curve_screen_samples(info: Dictionary, cam: Camera3D) -> PackedVector2Array:
@@ -8601,6 +8750,9 @@ func _repel_glyph_items(items: Array, cam: Camera3D, shaft_y: float) -> void:
 				continue
 			var next := _clamp_glyph_centre(centre + push, it["natural"], size, shaft_y)
 			if next.distance_to(centre) <= 0.4:
+				continue
+			var next_rect := Rect2(next - size * 0.5, size)
+			if _glyph_curve_penalty(next_rect, it["natural"], cam) > _glyph_curve_penalty(rect, it["natural"], cam) + 1.0:
 				continue
 			it["centre"] = next
 			it["offset_px"] = (it["natural"] as Vector2).distance_to(next)
