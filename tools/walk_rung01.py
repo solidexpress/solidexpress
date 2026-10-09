@@ -464,6 +464,13 @@ class Walk:
     def dim_texts(self) -> list[str]:
         return [str(d.get("text", "")) for d in self.dims() if d.get("visible", True)]
 
+    def _num_is(self, text: str, want: float) -> bool:
+        token = str(text).strip().rstrip("°").split()[0] if str(text).strip() else ""
+        try:
+            return abs(float(token) - want) < 1e-3
+        except ValueError:
+            return False
+
     def _label_is(self, token: str, text: str) -> bool:
         t = str(text).replace(" ", "")
         if token == "45":
