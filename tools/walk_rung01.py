@@ -1665,12 +1665,28 @@ class Walk:
         angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
         if angle is not None:
             # Trim is still armed after A9; it consumes the label click.
+            # The popup line edit is not viewport focus, so read DimEditLine.
             self.click("rail:Select")
-            self.d.click(dim=str(angle.get("text", "")), glyph="first")
-            # The popup's line edit is not the viewport focus, so focus_text
-            # stays empty. Read DimEditLine once the deferred popup is up.
-            self.d.wait_idle(frames=8)
-            editor = str((self.control("dim:Edit") or {}).get("text", ""))
+            points: list[list[float]] = []
+            for key in ("rect", "hit_rect"):
+                rect = angle.get(key) or []
+                if len(rect) < 4 or float(rect[2]) < 1.0:
+                    continue
+                x, y, w, h = [float(v) for v in rect[:4]]
+                points.append([x + min(8.0, w * 0.25), y + h * 0.5])
+                points.append([x + w * 0.5, y + h * 0.5])
+            for pt in points:
+                self.d.click(screen=pt)
+                self.d.wait_idle(frames=4)
+                editor = str((self.control("dim:Edit") or {}).get("text", ""))
+                if editor:
+                    break
+            if not editor:
+                self.d.click(dim=str(angle.get("text", "")), glyph="first")
+                self.d.wait_idle(frames=6)
+                editor = str((self.control("dim:Edit") or {}).get("text", ""))
+            if not editor:
+                editor = self.S()
             self.esc()
         for token in ("20", "45", "5", "22.5"):
             present = any(self._label_is(token, t) for t in texts)
