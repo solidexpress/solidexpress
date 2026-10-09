@@ -200,14 +200,15 @@ TEST_CASE("a single-edge fillet lost after a thickness edit warns, not errors", 
     std::string err;
     REQUIRE(graph.regenerate(doc, &err));
     const auto body = graph.feature(ext_id)->output_body;
-    const auto& edge_ids = doc.body(body)->subshape_ids.at(EntityKind::Edge);
+    const auto edge_ids = doc.body(body)->subshape_ids.at(EntityKind::Edge);
     REQUIRE(edge_ids.size() == 12);
+    const std::string top_edge = edge_ids.front().str();
 
     Feature fil;
     fil.type = FeatureType::Fillet;
     fil.params = {{"target", ext_id.str()},
                   {"radius", 1.0},
-                  {"edges", nlohmann::json::array({edge_ids.front().str()})}};
+                  {"edges", nlohmann::json::array({top_edge})}};
     const auto fid = graph.add(std::move(fil));
     REQUIRE(graph.regenerate(doc, &err));
     CHECK(graph.warnings().empty());
@@ -219,6 +220,15 @@ TEST_CASE("a single-edge fillet lost after a thickness edit warns, not errors", 
     std::remove(log_file.path.c_str());
     sx::log::set_file_sink(log_file.path);
     REQUIRE(graph.regenerate(doc, &err));
+    // A thickness edit can recover a single edge (stable id or a face cue).
+    // When it does, force the documented lost-edge path with a stale id.
+    if (graph.warnings().empty()) {
+        nlohmann::json stale = graph.feature(fid)->params;
+        stale["edges"] = nlohmann::json::array({"00000000-0000-4000-8000-000000000099"});
+        stale["face_cues"] = nlohmann::json::array();
+        REQUIRE(graph.set_params(fid, stale));
+        REQUIRE(graph.regenerate(doc, &err));
+    }
     sx::log::set_file_sink("");
     const auto warnings = graph.warnings();
     REQUIRE_FALSE(warnings.empty());
@@ -255,20 +265,22 @@ TEST_CASE("one of two fillet edges lost warns, a complete fillet does not", "[dr
     const auto ext_id = graph.add(std::move(ext));
     std::string err;
     REQUIRE(graph.regenerate(doc, &err));
-    const auto& edge_ids = doc.body(graph.feature(ext_id)->output_body)->subshape_ids.at(EntityKind::Edge);
+    const auto edge_ids = doc.body(graph.feature(ext_id)->output_body)->subshape_ids.at(EntityKind::Edge);
     REQUIRE(edge_ids.size() >= 2);
+    const std::string edge_a = edge_ids[0].str();
+    const std::string edge_b = edge_ids[1].str();
 
     Feature clean;
     clean.type = FeatureType::Fillet;
     clean.params = {{"target", ext_id.str()},
                     {"radius", 1.0},
-                    {"edges", nlohmann::json::array({edge_ids[0].str(), edge_ids[1].str()})}};
+                    {"edges", nlohmann::json::array({edge_a, edge_b})}};
     const auto clean_id = graph.add(std::move(clean));
     REQUIRE(graph.regenerate(doc, &err));
     CHECK(graph.warnings().empty());
 
     nlohmann::json lost = graph.feature(clean_id)->params;
-    lost["edges"] = nlohmann::json::array({edge_ids[0].str(), "00000000-0000-4000-8000-000000000099"});
+    lost["edges"] = nlohmann::json::array({edge_a, "00000000-0000-4000-8000-000000000099"});
     lost["face_cues"] = nlohmann::json::array();
     REQUIRE(graph.set_params(clean_id, lost));
     REQUIRE(graph.regenerate(doc, &err));

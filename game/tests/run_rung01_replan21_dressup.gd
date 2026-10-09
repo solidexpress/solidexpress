@@ -48,6 +48,8 @@ func _run() -> void:
 	ctx.view.graph_changed()
 	await process_frame
 	check(_warnings(doc).is_empty(), "a found fillet has no warning")
+	if FileAccess.file_exists(LOG_PATH):
+		DirAccess.remove_absolute(LOG_PATH)
 	if doc.has_method("set_kernel_log"):
 		doc.set_kernel_log(LOG_PATH)
 	_status.clear()
@@ -57,15 +59,28 @@ func _run() -> void:
 	var warns := _warnings(doc)
 	var joined := " ".join(warns)
 	check(joined.contains("all 1 edges lost on rebuild — it changes nothing now"), "warning names the lost edge (%s)" % joined)
+	check(warns.size() == 1, "one warning row (got %d)" % warns.size())
 	var log := _read_log()
 	check(log.contains("[WARN]") and log.contains("fillet soft-skip"), "log warns fillet soft-skip")
+	check(log.contains("fillet 3: fillet soft-skip: 1 edges lost on rebuild"), "log names fillet 3")
 	check(not _error_soft(log), "no [ERROR] line mentions soft-skip")
 	check(log.contains(": fillet soft-skip:"), "the warning is prefixed with the feature name")
+	var preview := false
+	for line in _status:
+		if line.begins_with("Preview: distance = 14.0") and line.ends_with("it changes nothing now"):
+			preview = true
+	check(preview, "preview status ends with the warning and has the 14.0 prefix")
 	var status_hit := false
 	for line in _status:
 		if line.contains("all 1 edges lost") or line.ends_with("it changes nothing now"):
 			status_hit = true
 	check(status_hit, "status after the edit ends with the warning (%s)" % str(_status))
+	check(warns.size() == 1 and warns[0].begins_with("fillet 3:"), "warning starts with the feature name (%s)" % joined)
+	var warn_lines := 0
+	for line in log.split("\n"):
+		if line.contains("[WARN]") and line.contains("soft-skip"):
+			warn_lines += 1
+	check(warn_lines == 1, "one WARN soft-skip line (got %d)" % warn_lines)
 	var two := PackedStringArray()
 	two.append(edges[0])
 	two.append(edges[1])
@@ -91,6 +106,9 @@ func _run() -> void:
 		ctx.view.graph_changed()
 	var partial := " ".join(_warnings(doc))
 	check(partial.contains("1 of 2 edges lost on rebuild"), "one of two edges lost (%s)" % partial)
+	check(partial.begins_with("fillet 3:"), "partial warning names fillet 3 (%s)" % partial)
+	check(not partial.contains("all 2 edges"), "a partial loss is not reported as every edge (%s)" % partial)
+	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	ctx.main.queue_free()
 
 
