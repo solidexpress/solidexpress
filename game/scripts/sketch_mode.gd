@@ -8317,7 +8317,9 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		# pixels farther out and still miss the wall samples.
 		for prev in placed:
 			if _leader_crosses_rect(anchor_screen, centre, prev):
-				score += 100000.0
+				# Stay under the curve penalty so a badge is not pushed
+				# onto the wall just to straighten its leader.
+				score += 20000.0
 	return score
 
 
@@ -9005,6 +9007,8 @@ func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 					break
 			if not _leader_hits_any(natural, centre, obstacles, []) and not label_hit:
 				continue
+			var cur_rect := Rect2(centre - size * 0.5, size)
+			var cur_curve := _glyph_curve_penalty(cur_rect, natural, cam)
 			var best := centre
 			var best_rank := 1000000.0
 			for radius in [8.0, 16.0, 24.0, 32.0, 40.0]:
@@ -9014,6 +9018,9 @@ func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 					var rect := Rect2(trial - size * 0.5, size)
 					if _glyph_below_part(rect, shaft_y):
 						continue
+					var curve := _glyph_curve_penalty(rect, natural, cam)
+					if curve > cur_curve + 1.0:
+						continue
 					if _leader_hits_any(natural, trial, obstacles, []):
 						continue
 					var crosses_label := false
@@ -9021,7 +9028,7 @@ func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
 						if _leader_crosses_rect(natural, trial, lr):
 							crosses_label = true
 							break
-					var rank := _glyph_curve_penalty(rect, natural, cam)
+					var rank := curve
 					if crosses_label:
 						rank += 20000.0
 					rank += trial.distance_to(centre) * 0.1

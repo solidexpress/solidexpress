@@ -1689,13 +1689,20 @@ class Walk:
             for pt in points:
                 self.d.click(screen=pt)
                 self.d.wait_idle(frames=4)
-                editor = str((self.control("dim:Edit") or {}).get("text", ""))
-                if editor:
+                got = str((self.control("dim:Edit") or {}).get("text", ""))
+                if got.startswith("45"):
+                    editor = got
                     break
-            if not editor:
-                self.d.click(dim=str(angle.get("text", "")), glyph="first")
+                if got:
+                    # A neighbouring callout (the width) accepted the click.
+                    self.esc()
+                    self.click("rail:Select")
+            if not editor.startswith("45"):
+                self.d.click(dim=str(angle.get("text", "")), glyph="center")
                 self.d.wait_idle(frames=6)
-                editor = str((self.control("dim:Edit") or {}).get("text", ""))
+                got = str((self.control("dim:Edit") or {}).get("text", ""))
+                if got.startswith("45"):
+                    editor = got
             if not editor:
                 editor = self.S()
             self.esc()
