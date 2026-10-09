@@ -2483,6 +2483,7 @@ func _fit_sketch_rail(stack_top: float) -> void:
 	if not sketch_toolbar.visible:
 		if sketch_toolbar.custom_minimum_size.y != 0.0:
 			sketch_toolbar.custom_minimum_size.y = 0.0
+		_publish_sketch_rail_right()
 		return
 	var vp_h := 800.0
 	if get_viewport() != null:
@@ -2491,6 +2492,22 @@ func _fit_sketch_rail(stack_top: float) -> void:
 	sketch_toolbar.custom_minimum_size = Vector2(_SKETCH_RAIL_MIN_W, avail)
 	if _sketch_rail_scroll != null:
 		_sketch_rail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_publish_sketch_rail_right()
+
+
+## Rail scroll's right edge + 4 px while sketching; 0 after exit and when the
+## rail is hidden. Resize republishes through `_fit_sketch_rail`.
+func _publish_sketch_rail_right() -> void:
+	if sketch_toolbar == null or not sketch_toolbar.visible \
+			or sketch_mode == null or not sketch_mode.active:
+		ChromeDock.sketch_rail_right = 0.0
+		return
+	var box: Control = _sketch_rail_scroll if _sketch_rail_scroll != null else sketch_toolbar
+	var rect := box.get_global_rect()
+	var end_x := rect.end.x
+	if rect.size.x < 8.0:
+		end_x = box.global_position.x + maxf(box.get_combined_minimum_size().x, 120.0)
+	ChromeDock.sketch_rail_right = end_x + 4.0
 
 
 func _reflow_left_stack() -> void:

@@ -7147,14 +7147,23 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 		var ia: Dictionary = sketch.entity_info(str(ids[0]))
 		var ib: Dictionary = sketch.entity_info(str(ids[1]))
 		if str(ia.get("type", "")) == "line" and str(ib.get("type", "")) == "line":
-			var hit = _line_line_intersect(ia["start"], ia["end"] - ia["start"], ib["start"], ib["end"] - ib["start"])
-			if hit != null:
-				var da: Vector2 = (ia["end"] - ia["start"]).normalized()
-				var db: Vector2 = (ib["end"] - ib["start"]).normalized()
-				var bis := da + db
-				if bis.length_squared() < 1e-8:
-					bis = Vector2(-da.y, da.x)
-				return (hit as Vector2) + bis.normalized() * (DIM_LABEL_OFFSET * 2.0)
+			var hit := _line_line_intersect(ia["start"], ia["end"] - ia["start"], ib["start"], ib["end"] - ib["start"])
+			var da: Vector2 = (ia["end"] - ia["start"]).normalized()
+			var db: Vector2 = (ib["end"] - ib["start"]).normalized()
+			var bis := da + db
+			if bis.length_squared() < 1e-8:
+				bis = Vector2(-da.y, da.x)
+			var off := bis.normalized() * (DIM_LABEL_OFFSET * 2.0)
+			# A shallow angle meets the datum far from the jaw. Park the
+			# label at the datum start, the same place parallel lines use.
+			var p0: Vector2 = ia["start"]
+			var p1: Vector2 = ia["end"]
+			var datum_len := p0.distance_to(p1)
+			var mid := (p0 + p1) * 0.5
+			var anchor: Vector2 = hit
+			if datum_len > 1e-6 and hit.distance_to(mid) > 2.0 * datum_len:
+				anchor = p0
+			return anchor + off
 	# Distance (or other): midpoint of the two reference points, offset perpendicular.
 	var a: Vector2
 	var b: Vector2
@@ -7560,8 +7569,19 @@ func _label_safe_screen_rect() -> Rect2:
 	var vp := get_viewport().get_visible_rect().size if is_inside_tree() else Vector2(1280, 800)
 	var top := ChromeDock.top_inset + 2.0
 	var bottom := ChromeDock.bottom_inset + 2.0
-	var margin := 4.0
-	return Rect2(margin, top, maxf(vp.x - margin * 2.0, 32.0), maxf(vp.y - top - bottom, 32.0))
+	var left := maxf(4.0, ChromeDock.sketch_rail_right)
+	var right_margin := 4.0
+	var rect := Rect2(left, top, maxf(vp.x - left - right_margin, 32.0), maxf(vp.y - top - bottom, 32.0))
+	# The chrome canvas is tighter than the window on the right. A label that
+	# only clears the window edge still hangs off the canvas (5° / 10° jaws).
+	if camera != null and camera.has_method("sketch_fit_canvas_rect"):
+		var canvas: Rect2 = camera.sketch_fit_canvas_rect()
+		if canvas.size.x > 32.0 and canvas.size.y > 32.0 and rect.intersects(canvas):
+			rect = rect.intersection(canvas)
+			# A label flush with the canvas edge fails encloses() on float error.
+			if rect.size.x > 4.0 and rect.size.y > 4.0:
+				rect = Rect2(rect.position + Vector2(1, 1), rect.size - Vector2(2, 2))
+	return rect
 
 
 func _clamp_dimension_labels_into_view(cam: Camera3D, k: float) -> void:

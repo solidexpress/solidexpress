@@ -2353,7 +2353,21 @@ func _check_n10(ctx: FilmContext, sm: SketchMode) -> void:
 		check(false, "N10 chip 2 hovered fills[1] - fills[0] >= 0.45")
 	await _press_rail(ctx, "Select")
 	await _release_focus(ctx)
-	await _click_uv(ctx, Vector2(200.0, 18.0), "N10 throwaway circle")
+	# The centre used to snap onto a head-rim tessellation sample, so this
+	# click landed on the stroke. Those samples are not snap targets (re-PLAN
+	# 20); click the drawn circle's rim.
+	var hit := Vector2(200.0, 18.0)
+	var best_d := 30.0
+	for id in sm.sketch.entity_ids():
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		var c: Vector2 = info["center"]
+		var d := c.distance_to(Vector2(200.0, 18.0))
+		if d < best_d:
+			best_d = d
+			hit = c + Vector2(float(info.get("radius", 5.0)), 0.0)
+	await _click_uv(ctx, hit, "N10 throwaway circle")
 	await _key(ctx, KEY_DELETE)
 	var now: int = sm.sketch.entity_ids().size()
 	check(now == before, "N10 throwaway circle is gone (before %d now %d)" % [before, now])

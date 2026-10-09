@@ -3697,22 +3697,31 @@ func refresh_sketch_intersections() -> void:
 		var edges: Dictionary = view.doc.get_edge_lines(body_id)
 		for edge_id in edges:
 			var poly: PackedVector3Array = edges[edge_id]
+			if poly.size() < 2:
+				continue
+			# A closed rim repeats its first point. That seam, and every
+			# interior sample of a coplanar polyline, is tessellation — not a
+			# vertex a click should snap to. Open curves keep their real ends.
+			var closed := poly[0].distance_to(poly[poly.size() - 1]) <= 0.2
 			for i in range(poly.size() - 1):
 				var a: Vector3 = poly[i]
 				var b: Vector3 = poly[i + 1]
 				var da := (a - origin).dot(n)
 				var db := (b - origin).dot(n)
-				if absf(da) <= TOL:
-					var la := a - origin
-					pts.append(Vector2(la.dot(px), la.dot(py)))
-				if absf(db) <= TOL:
-					var lb := b - origin
-					pts.append(Vector2(lb.dot(px), lb.dot(py)))
 				if da * db < 0.0 and absf(da - db) > 1e-9:
 					var t := da / (da - db)
 					var hit: Vector3 = a.lerp(b, t)
 					var lh := hit - origin
 					pts.append(Vector2(lh.dot(px), lh.dot(py)))
+			if closed:
+				continue
+			for end_i in [0, poly.size() - 1]:
+				var v: Vector3 = poly[end_i]
+				var dv := (v - origin).dot(n)
+				if absf(dv) > TOL:
+					continue
+				var lv := v - origin
+				pts.append(Vector2(lv.dot(px), lv.dot(py)))
 	sketch_mode.intersection_points = pts
 
 
