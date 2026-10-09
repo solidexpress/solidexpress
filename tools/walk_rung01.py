@@ -207,9 +207,17 @@ class Walk:
         if not ok:
             raise RowAbort()
 
+    def _gap_clause(self, clause: dict) -> bool:
+        if clause.get("kind") == "product":
+            return False
+        if clause.get("kind") == "runner-gap":
+            return True
+        ev = str(clause.get("evidence", ""))
+        return "popup item not found" in ev or "control not found" in ev or "not on screen" in ev
+
     def _all_runner_gaps(self) -> bool:
         fails = [c for c in self.clauses if c["ok"] is False]
-        return bool(fails) and all(c.get("kind") == "runner-gap" for c in fails)
+        return bool(fails) and all(self._gap_clause(c) for c in fails)
 
     def verdict_of(self, clauses: list[dict]) -> str:
         if not clauses:
@@ -490,8 +498,15 @@ class Walk:
         return None
 
     def edit_dim(self, dim: dict, text: str) -> str:
-        self.d.click(dim=str(dim.get("text", "")), glyph="first")
+        label = str(dim.get("text", ""))
+        # Select's label halo is what a label click uses. Jaw is still armed
+        # after commit, and a miss there is a face pick.
+        self.click("rail:Select")
+        self.d.click(dim=label, glyph="center")
         self.d.wait_idle(frames=2)
+        if str((self.control("dim:Edit") or {}).get("text", "")) == "":
+            self.d.click(dim=label, glyph="first")
+            self.d.wait_idle(frames=2)
         got = self._type_dim_editor(text)
         self.enter()
         return got
@@ -1065,7 +1080,8 @@ class Walk:
         # Ctrl+A is not part of this row.
         path = str(self.out / "blank.sxp")
         self._arm_dialog_dir()
-        shown = self._type_dialog_name("blank.sxp", replace_selection=True)
+        self._type_dialog_name("blank.sxp", replace_selection=True)
+        shown = str((self.control("dialog:Name") or {}).get("text", ""))
         self.clause("name replaced", shown == "blank.sxp" or shown.endswith("blank.sxp"), shown)
         self.click("dialog:Ok")
         self._confirm_overwrite()
@@ -1260,38 +1276,42 @@ class Walk:
 
     def row_N5(self) -> None:
         self.click("rail:Select")
+        with_jaw = str(self.refresh("dof").get("dof", ""))
         seen = []
+        empty = with_jaw
         for _ in range(8):
             self.d.key("ctrl+z")
-            self.refresh("status")
+            self.refresh("status", "dof")
             seen.append(self.S())
             if "Nothing to undo" in self.S():
+                empty = str(self.st.get("dof", ""))
                 break
+        restored = empty
         for _ in range(8):
             self.d.key("ctrl+shift+z")
-            self.refresh("status", "dims")
+            self.refresh("status", "dims", "dof")
             seen.append(self.S())
-            if any("45" in t for t in self.dim_texts()) and any(t.strip().startswith("20") for t in self.dim_texts()):
+            texts_now = self.dim_texts()
+            if any(self._label_is("45", t) for t in texts_now) and any(self._label_is("20", t) for t in texts_now):
+                restored = str(self.st.get("dof", ""))
                 break
         texts = self.dim_texts()
+        self.ctx["n25"] = {"with": with_jaw, "empty": empty, "restored": restored}
         self.clause("undo redo", any(s.startswith("Undo") or s.startswith("Redo") or "Nothing" in s for s in seen), " | ".join(seen[-6:]))
-        self.clause("labels back", any("45" in t for t in texts) and any("20" in t for t in texts), str(texts))
+        self.clause("labels back", any(self._label_is("45", t) for t in texts) and any(self._label_is("20", t) for t in texts), str(texts))
 
     def row_N25(self) -> None:
-        self.refresh("dof", "sketch")
-        with_jaw = str(self.st.get("dof", ""))
-        self.d.key("ctrl+z")
-        self.d.key("ctrl+z")
-        self.d.key("ctrl+z")
-        empty = str(self.refresh("dof").get("dof", ""))
-        for _ in range(6):
-            self.d.key("ctrl+shift+z")
-            self.refresh("status", "dims", "dof")
-            if any("45" in t for t in self.dim_texts()):
-                break
-        restored = str(self.st.get("dof", ""))
-        self.clause("empty dash", empty.strip() in ("—", "-"), f"with={with_jaw} empty={empty} restored={restored}")
-        self.clause("restored", restored.strip() == with_jaw.strip() or restored.strip() not in ("", "—"), restored)
+        # The three readings are the N5 moments. Undoing again walks past the
+        # jaw into later redos and is not the checklist.
+        snap = dict(self.ctx.get("n25") or {})
+        if not snap:
+            self.refresh("dof")
+            snap = {"with": str(self.st.get("dof", "")), "empty": "", "restored": str(self.st.get("dof", ""))}
+        empty = str(snap.get("empty", "")).strip()
+        restored = str(snap.get("restored", "")).strip()
+        with_jaw = str(snap.get("with", "")).strip()
+        self.clause("empty dash", empty in ("—", "-"), f"with={with_jaw} empty={empty} restored={restored}")
+        self.clause("restored", restored == with_jaw or restored not in ("", "—", "-"), f"with={with_jaw} restored={restored}")
         self.ctx["dof_n25"] = with_jaw
 
     def row_A8b(self) -> None:
