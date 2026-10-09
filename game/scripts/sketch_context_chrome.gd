@@ -142,6 +142,7 @@ func _ready() -> void:
 	_finish_bar.add_child(_finish_dim_row)
 	_finish_bar.add_child(_finish_end_row)
 	_contour_bar = _make_bar()
+	_contour_bar.name = "ContourBar"
 	_build_finish_bar()
 	_finish_bar.visible = false
 	_contour_bar.visible = false

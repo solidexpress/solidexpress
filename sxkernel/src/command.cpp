@@ -38,4 +38,11 @@ std::vector<std::string> CommandStack::labels() const {
     return out;
 }
 
+std::vector<std::string> CommandStack::redo_labels() const {
+    std::vector<std::string> out;
+    out.reserve(undone_.size());
+    for (const auto& c : undone_) out.push_back(c->label());
+    return out;
+}
+
 }  // namespace sx

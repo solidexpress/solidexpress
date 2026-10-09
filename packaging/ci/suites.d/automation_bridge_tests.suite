@@ -1,0 +1,3 @@
+script=tests/run_automation_bridge_tests.gd
+tier=ci
+timeout=180

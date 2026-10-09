@@ -454,6 +454,18 @@ bool SxDocument::redo() { return stack_.redo(*doc_); }
 bool SxDocument::can_undo() const { return stack_.can_undo(); }
 bool SxDocument::can_redo() const { return stack_.can_redo(); }
 
+PackedStringArray SxDocument::undo_labels() const {
+    PackedStringArray out;
+    for (const auto& s : stack_.labels()) out.push_back(to_gd(s));
+    return out;
+}
+
+PackedStringArray SxDocument::redo_labels() const {
+    PackedStringArray out;
+    for (const auto& s : stack_.redo_labels()) out.push_back(to_gd(s));
+    return out;
+}
+
 PackedStringArray SxDocument::body_ids() const {
     PackedStringArray out;
     for (const auto& id : doc_->body_ids()) out.push_back(to_gd(id.str()));
@@ -2462,6 +2474,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("redo"), &SxDocument::redo);
     ClassDB::bind_method(D_METHOD("can_undo"), &SxDocument::can_undo);
     ClassDB::bind_method(D_METHOD("can_redo"), &SxDocument::can_redo);
+    ClassDB::bind_method(D_METHOD("undo_labels"), &SxDocument::undo_labels);
+    ClassDB::bind_method(D_METHOD("redo_labels"), &SxDocument::redo_labels);
     ClassDB::bind_method(D_METHOD("body_ids"), &SxDocument::body_ids);
     ClassDB::bind_method(D_METHOD("body_name", "body_id"), &SxDocument::body_name);
     ClassDB::bind_method(D_METHOD("rename_body", "body_id", "name"), &SxDocument::rename_body);

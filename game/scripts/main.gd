@@ -208,6 +208,21 @@ func _ready() -> void:
 		if path != "":
 			voice_executor.handle_wav(path))
 	_fit_window_to_screen()
+	_start_automation_bridge()
+
+
+## Test-only. Listens on 127.0.0.1 when SX_AUTOMATION=1. Release builds
+## stay closed unless that variable is set in the environment.
+func _start_automation_bridge() -> void:
+	if OS.get_environment("SX_AUTOMATION") != "1":
+		return
+	var bridge_script := load("res://scripts/automation_bridge.gd")
+	if bridge_script == null:
+		push_error("SX_AUTOMATION=1 but automation_bridge.gd failed to load")
+		return
+	var bridge: Node = bridge_script.new()
+	bridge.name = "AutomationBridge"
+	add_child(bridge)
 
 
 ## Empty when `win_size` is already within 8 px of the usable rect minus
