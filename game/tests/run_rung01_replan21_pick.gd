@@ -46,7 +46,7 @@ func _run() -> void:
 	for neck in necks:
 		var lines: Dictionary = ctx.view.doc.get_edge_lines(body)
 		var pts: PackedVector3Array = lines[neck["id"]]
-		var screen: Vector2 = cam.unproject_position(neck["mid"])
+		var screen: Vector2 = ctx.view.model_to_screen(cam, neck["mid"])
 		var near: Dictionary = ctx.view._polyline_screen_nearest(cam, screen, pts)
 		var vis: bool = ctx.view._edge_point_visible(cam, near["point"])
 		var first_z := pts[0].z if pts.size() > 0 else -1.0
@@ -54,11 +54,19 @@ func _run() -> void:
 		check(vis, "top view neck y=%.1f sample is visible (near.z=%.3f first.z=%.3f)" % [neck["y"], near["point"].z, first_z])
 	for key in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_6, KEY_7]:
 		_push_key(ctx.main.get_viewport(), key, false)
+		await create_timer(0.4).timeout
 		_push_key(ctx.main.get_viewport(), KEY_F, false)
-		await _frames(2)
+		await create_timer(0.4).timeout
 		for neck in necks:
-			var mid: Vector3 = neck["mid"]
-			var origin: Vector2 = cam.unproject_position(mid)
+			var lines: Dictionary = ctx.view.doc.get_edge_lines(body)
+			var pts: PackedVector3Array = lines[neck["id"]]
+			var origin: Vector2 = ctx.view.model_to_screen(cam, neck["mid"])
+			var near: Dictionary = ctx.view._polyline_screen_nearest(cam, origin, pts)
+			var silhouette: bool = ctx.view._edge_point_visible(cam, near["point"]) and float(near["px"]) <= 2.0
+			if not silhouette:
+				var hidden := ctx.view.edge_near_screen(body, cam, origin, 12.0)
+				check(hidden != str(neck["id"]), "view %s neck y=%.0f hidden midpoint is not picked through the body (got %s)" % [key, neck["y"], hidden])
+				continue
 			for jx in [-2, 0, 2]:
 				for jy in [-2, 0, 2]:
 					var at := origin + Vector2(jx, jy)
@@ -98,8 +106,8 @@ func _junction(ctx: FilmContext, body: String, x_neck: float) -> void:
 	var cam: OrbitCamera = ctx.main.camera
 	var neck := Vector3(x_neck, 10.0, 10.0)
 	var along := Vector3(x_neck - 20.0, 10.0, 10.0)
-	var neck_s: Vector2 = cam.unproject_position(neck)
-	var along_s: Vector2 = cam.unproject_position(along)
+	var neck_s: Vector2 = ctx.view.model_to_screen(cam, neck)
+	var along_s: Vector2 = ctx.view.model_to_screen(cam, along)
 	var dir := along_s - neck_s
 	if dir.length() < 1.0:
 		check(false, "junction has a screen direction")
@@ -128,7 +136,7 @@ func _necks(view: DocumentView, body: String, x_neck: float) -> Array:
 		var dir := delta / length
 		var mid: Vector3 = (pts[0] + pts[pts.size() - 1]) * 0.5
 		if absf(dir.z) > 0.8 and length > 8.0 and length < 14.0 and absf(mid.x - x_neck) < 3.0:
-			out.append({"id": str(eid), "mid": mid, "y": mid.y, "length": length})
+			out.append({"id": str(eid), "mid": mid, "y": mid.y, "length": length, "first_z": pts[0].z})
 	return out
 
 
