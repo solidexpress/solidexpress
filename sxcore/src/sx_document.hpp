@@ -240,6 +240,8 @@ public:
     // Notes from the last regenerate that did not stop it (a fillet that lost
     // some edges). Empty when the rebuild was clean.
     godot::PackedStringArray graph_warnings() const;
+    /// Test sink for sx::log (empty path disables). Not a user-facing control.
+    void set_kernel_log(const godot::String& path);
     // Array of {name, expr, value (float; NAN on error), error: String}.
     godot::Array list_variables() const;
 
