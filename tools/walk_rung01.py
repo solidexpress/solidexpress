@@ -1642,11 +1642,36 @@ class Walk:
         self.clause("badges on canvas", not off, f"under rail {off} count={len(glyphs)}")
         self.visual("badge leaders", f"{len(glyphs)} glyphs; leaders are visual")
 
+    def _longest_wall_screen(self, frac: float) -> list[float] | None:
+        self.refresh("sketch")
+        best = None
+        for e in self._entities():
+            if str(e.get("type", "")) != "line" or e.get("construction"):
+                continue
+            a, b = e.get("start"), e.get("end")
+            if not a or not b:
+                continue
+            dx = float(b[0]) - float(a[0])
+            dy = float(b[1]) - float(a[1])
+            length = (dx * dx + dy * dy) ** 0.5
+            if length < 4.0 or abs(dy) < 0.5:
+                continue
+            if best is None or length > best[0]:
+                best = (length, a, dx, dy)
+        if best is None:
+            return None
+        _length, a, dx, dy = best
+        uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
+        try:
+            return self.d.project(sketch=uv)["screen"]
+        except SxError:
+            return None
+
     def _hover_wall_delta(self, samples: list[list[float]]) -> tuple[list[float] | None, str]:
         texts = ""
         for pt in samples:
             self.d.hover(screen=pt)
-            self.d.wait_idle(frames=3)
+            self.d.wait_idle(frames=6)
             self.refresh("measure")
             texts = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
             if "Δ" in texts:
@@ -1654,22 +1679,27 @@ class Walk:
         return None, texts
 
     def row_L12(self) -> None:
-        samples = self.wall_screen_points(12) or [self.jaw_px(16, -6)]
+        samples = self.wall_screen_points(9) or [self.jaw_px(16, -6)]
+        # The vertex-side clicks select the wall, but the hover label is read
+        # at mid-stroke, where the measure overlay actually arms.
+        mid = self._longest_wall_screen(0.5)
+        hover_pts = ([mid] if mid else []) + list(samples)
         self.click("rail:Circle")
         self.d.hover(screen=samples[0])
         self.d.wait_idle(frames=3)
         self.refresh("measure")
         self.clause("circle has no measure", not (self.st.get("measure") or []), str(self.st.get("measure")))
         self.click("rail:Select")
-        pt, texts = self._hover_wall_delta(samples)
+        pt, texts = self._hover_wall_delta(hover_pts)
         self.refresh("status")
         self.clause("hover delta", pt is not None and "Δ" in texts, texts or self.S())
         # Leave the entity so the hover label clears, then click from elsewhere.
         self.d.hover(screen=[48, 420])
         self.d.wait_idle(frames=2)
-        if pt is not None:
+        click_pt = samples[0] if samples else pt
+        if click_pt is not None:
             self.click(sketch=[300, 80])
-            self.click(screen=pt)
+            self.click(screen=click_pt)
         self.refresh("status", "measure")
         texts = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
         self.clause("click clears", "Selected 1 sketch entity" in self.S() and "Δ" not in texts, f"{self.S()} {texts}")
