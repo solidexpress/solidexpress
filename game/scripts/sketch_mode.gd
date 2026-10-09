@@ -4830,7 +4830,9 @@ func click(pos2: Vector2) -> void:
 		dhit_raw = dimension_hit(pos2, tool != Tool.SELECT and tool != Tool.SMART_DIM)
 	# A stacked Ø45 radius label walks onto the top rim. Select still picks
 	# that circle; the editor opens only when the click is not on its rim.
-	if dhit_raw >= 0 and not _radius_label_on_own_rim(dhit_raw, pos2):
+	# A typed radius commits through click(_hover). A callout under that
+	# hover must not open the editor and drop the circle.
+	if dhit_raw >= 0 and _length_override < 0.0 and not _radius_label_on_own_rim(dhit_raw, pos2):
 		_emit_dimension_edit(dhit_raw)
 		return
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
@@ -8033,7 +8035,7 @@ func _glyph_overlap_fraction(a: Rect2, b: Rect2) -> float:
 ## 0 when the badge is clear of other glyphs, labels, and sketch geometry.
 func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF,
-		anchor_screen: Vector2 = Vector2.INF) -> float:
+		anchor_screen: Vector2 = Vector2.INF, penalize_curves: bool = true) -> float:
 	var score := 0.0
 	for prev in placed:
 		var frac := _glyph_overlap_fraction(rect, prev)
@@ -8046,22 +8048,23 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		elif frac > 0.16:
 			score += 8000.0 + (frac - 0.16) * 4000.0
 	for lr in labels:
-		var lg := lr.grow(4.0)
-		if rect.intersects(lg):
-			var inter := rect.intersection(lg)
-			score += 12.0 + maxf(inter.size.x, 0.0) * maxf(inter.size.y, 0.0) * 0.02
+		var sep := _rect_separation(rect, lr)
+		if sep + 0.01 < GLYPH_LABEL_GAP_PX:
+			score += 50000.0 + (GLYPH_LABEL_GAP_PX - sep) * 80.0
 	# Hanging off the part outranks a stolen click and a curve touch.
 	if _glyph_below_part(rect, shaft_y):
 		score += 500000.0 + (rect.end.y - shaft_y) * 40.0
 	if _sketch_at_screen(cam, centre) == null:
 		score += 40.0
-	score += _glyph_curve_penalty(rect, anchor_screen, cam)
+	if penalize_curves:
+		score += _glyph_curve_penalty(rect, anchor_screen, cam)
 	return score
 
 
 ## Screen centre of a glyph pushed off the pile, the labels, and the curves.
 func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2],
-		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF) -> Vector2:
+		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF,
+		penalize_curves: bool = true) -> Vector2:
 	var best := natural
 	var best_score := INF
 	var radii: Array[float] = [0.0]
@@ -8077,7 +8080,7 @@ func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2
 				var ang := TAU * float(i) / float(count)
 				centre = natural + Vector2(cos(ang), sin(ang)) * radius
 			var rect := Rect2(centre - size * 0.5, size)
-			var score := _glyph_block_score(rect, centre, placed, labels, cam, shaft_y, natural)
+			var score := _glyph_block_score(rect, centre, placed, labels, cam, shaft_y, natural, penalize_curves)
 			if score < best_score - 0.01:
 				best_score = score
 				best = centre
@@ -8106,7 +8109,7 @@ func _separate_glyph_screen(natural: Vector2, size: Vector2, placed: Array[Rect2
 		if nudged.distance_to(natural) > GLYPH_MAX_OFFSET_PX:
 			nudged = natural + (nudged - natural).normalized() * GLYPH_MAX_OFFSET_PX
 		var nrect := Rect2(nudged - size * 0.5, size)
-		var nscore := _glyph_block_score(nrect, nudged, placed, labels, cam, shaft_y, natural)
+		var nscore := _glyph_block_score(nrect, nudged, placed, labels, cam, shaft_y, natural, penalize_curves)
 		if nscore <= best_score + 0.01:
 			best = nudged
 			best_score = nscore
@@ -8329,7 +8332,10 @@ func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[R
 		# smaller than the badge, so the pile survives a millimetre nudge.
 		size = _glyph_symbol_size_px(type, k)
 		natural = cam.unproject_position(to_global(to_model(anchor_sketch)))
-		centre = _separate_glyph_screen(natural, size, placed, label_rects, cam, shaft_y)
+		# A coincident mark names a vertex. Pushing it off every curve
+		# walks it onto the radius callout.
+		var on_curve := type != "coincident"
+		centre = _separate_glyph_screen(natural, size, placed, label_rects, cam, shaft_y, on_curve)
 		offset_px = natural.distance_to(centre)
 		placed.append(Rect2(centre - size * 0.5, size))
 		pos = _sketch_from_screen(cam, centre, anchor_sketch)
@@ -8701,10 +8707,11 @@ func _relax_glyph_layout(items: Array, labels: Array[Rect2], cam: Camera3D,
 				var os: Vector2 = items[j]["size"]
 				others.append(Rect2(oc - os * 0.5, os))
 			var rect := Rect2(centre - size * 0.5, size)
-			var score := _glyph_block_score(rect, centre, others, labels, cam, shaft_y, natural)
+			var on_curve := str(it.get("type", "")) != "coincident"
+			var score := _glyph_block_score(rect, centre, others, labels, cam, shaft_y, natural, on_curve)
 			if score < 1.0:
 				continue
-			var better := _separate_glyph_screen(natural, size, others, labels, cam, shaft_y)
+			var better := _separate_glyph_screen(natural, size, others, labels, cam, shaft_y, on_curve)
 			if better.distance_to(centre) <= 0.5:
 				continue
 			it["centre"] = better
@@ -8752,7 +8759,8 @@ func _repel_glyph_items(items: Array, cam: Camera3D, shaft_y: float) -> void:
 			if next.distance_to(centre) <= 0.4:
 				continue
 			var next_rect := Rect2(next - size * 0.5, size)
-			if _glyph_curve_penalty(next_rect, it["natural"], cam) > _glyph_curve_penalty(rect, it["natural"], cam) + 1.0:
+			if str(it.get("type", "")) != "coincident" \
+					and _glyph_curve_penalty(next_rect, it["natural"], cam) > _glyph_curve_penalty(rect, it["natural"], cam) + 1.0:
 				continue
 			it["centre"] = next
 			it["offset_px"] = (it["natural"] as Vector2).distance_to(next)

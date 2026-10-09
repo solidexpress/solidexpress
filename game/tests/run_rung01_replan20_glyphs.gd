@@ -162,11 +162,24 @@ func _badges(ctx: FilmContext, h: Vector2, s: float, angle_deg: float) -> void:
 							break
 				free.append(click_uv)
 		if float(wall["span"]) > 15.0:
-			for ct in [0.2, 0.4, 0.6, 0.8]:
+			for ct in [0.2, 0.35, 0.5, 0.65, 0.8]:
 				var cuv: Vector2 = a.lerp(b, ct)
 				var cs: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(cuv))
-				if not _glyph_covers(sm, cs, HIT_SLOP):
-					click_at.append(cuv)
+				if _glyph_covers(sm, cs, HIT_SLOP) or _wall_click_blocked(sm, cuv, cs):
+					continue
+				if sm.dimension_hit(cuv) >= 0 or sm.constraint_hit(cuv) != "":
+					continue
+				click_at.append(cuv)
+	for uv in free:
+		if click_at.size() >= 8:
+			break
+		var already := false
+		for prev in click_at:
+			if (prev as Vector2).distance_to(uv) < 1.0:
+				already = true
+				break
+		if not already:
+			click_at.append(uv)
 	check(free.size() >= 8, "≥ 8 of 9 wall positions free at N1a (free %d blocked %d)" % [free.size(), blocked])
 	var ix: ViewportInteraction = ctx.main.interaction
 	if ix != null and ix._dim_edit_popup != null and ix._dim_edit_popup.visible:
