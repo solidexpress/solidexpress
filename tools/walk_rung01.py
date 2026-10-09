@@ -9,6 +9,10 @@ Product failures are recorded. This script does not change the CAD code.
     python3 tools/walk_rung01.py --rows A8,L4 --out /tmp/sx-041
     python3 tools/walk_rung01.py --from N21b --out /tmp/sx-041
     python3 tools/walk_rung01.py --from A7 --checkpoint --out /tmp/sx-041
+
+A full walk reloads a chunk's checklist file when the previous chunk did not
+end in the expected state, and builds a missing cut.sxp / wrench-wip.sxp from
+the last good save. --checkpoint forces that reload for a partial --from run.
 """
 
 from __future__ import annotations
@@ -228,9 +232,41 @@ class Walk:
             return "PARTIAL"
         return "PASS"
 
-    def run_row(self, rid: str) -> None:
+    def _row_body(self, rid: str):
+        variants = {
+            "A8b-variant-walk": self.row_A8b_variant_walk,
+            "A9-variant-walk": self.row_A9_variant_walk,
+        }
+        if rid in variants:
+            return variants[rid]
+        return getattr(self, f"row_{rid}")
+
+    def modal_open(self) -> bool:
+        snap = self.d.state(filter="dialogs")
+        dialogs = snap.get("dialogs") or {}
+        self.st["dialogs"] = dialogs
+        return bool(
+            dialogs.get("file_visible")
+            or dialogs.get("overwrite_visible")
+            or dialogs.get("discard_visible")
+        )
+
+    def dismiss_modals(self) -> None:
+        if not self.modal_open():
+            return
+        self.d.call("dialog_dismiss")
+        self.d.wait_idle(frames=2)
+        self.refresh("status", "popups")
+
+    def run_row(self, rid: str, nxt: str | None = None) -> None:
         self.clauses = []
         started = time.monotonic()
+        wants_dialog = bool((EXPECT.get(rid) or {}).get("popup"))
+        if not wants_dialog:
+            try:
+                self.dismiss_modals()
+            except SxError as exc:
+                self.clause("close stray dialog", False, str(exc), kind="runner-gap")
         blocked = self.gate(rid)
         if blocked:
             blocker, why = blocked
@@ -247,13 +283,27 @@ class Walk:
             print(f"{rid:5} {rec['verdict']:16} {rec['seconds']:6.1f}s  {rec['evidence'][:220]}", flush=True)
             return
         try:
-            getattr(self, f"row_{rid}")()
+            self._row_body(rid)()
         except RowAbort:
             pass
         except SxError as exc:
             self.clause("command", False, str(exc), kind="runner-gap")
         except Exception:
             self.clause("runner", False, traceback.format_exc(limit=6), kind="runner-gap")
+        next_wants = bool((EXPECT.get(nxt) or {}).get("popup")) if nxt else False
+        if not next_wants:
+            try:
+                if self.modal_open():
+                    dialogs = self.st.get("dialogs") or {}
+                    self.clause(
+                        "dialog closed",
+                        False,
+                        f"modal still open status={self.S()!r} dialogs={dialogs}",
+                        kind="runner-gap",
+                    )
+                    self.dismiss_modals()
+            except SxError as exc:
+                self.clause("dialog closed", False, str(exc), kind="runner-gap")
         verdict = self.verdict_of(self.clauses)
         if verdict == "FAIL":
             verdict = "FAIL runner-gap" if self._all_runner_gaps() else "FAIL"
@@ -367,53 +417,52 @@ class Walk:
         self.d.type(name, delay_ms=10)
         return str(self.refresh("focus_text", "status").get("focus_text", ""))
 
-    def _confirm_overwrite(self) -> None:
-        self.refresh("popups", "status")
-        if self.has_popup("overwrite") or self.has_popup("already") or self.has_popup("confirm"):
-            try:
-                self.click("dialog:ConfirmOk")
-            except SxError:
-                self.click("dialog:DiscardOk")
-            self.refresh("status", "popups")
+    def commit_dialog(self, name: str | None = None, set_dir: bool = True) -> dict:
+        """Set the file dialog path and press its real OK, then the overwrite OK."""
+        fields: dict = {}
+        if set_dir:
+            fields["path"] = str(self.out)
+        if name:
+            fields["file"] = name
+        reply = self.d.call("dialog_commit", **fields)
+        self.d.wait_idle(frames=2)
+        self.refresh("status", "popups")
+        snap = self.d.state(filter="dialogs")
+        self.st["dialogs"] = snap.get("dialogs") or {}
+        self.st["status"] = str(reply.get("status") or self.st.get("status") or "")
+        return reply
 
     def save_as(self, name: str) -> str:
         path = str(self.out / name)
         self.menu("File", "Save As...")
-        self._arm_dialog_dir()
-        self._type_dialog_name(name, replace_selection=False)
-        self.click("dialog:Ok")
-        self._confirm_overwrite()
-        self.refresh("status", "popups")
+        reply = self.commit_dialog(name)
+        if reply.get("visible"):
+            dialogs = self.st.get("dialogs") or {}
+            raise SxError(
+                f"Save As stayed open file={dialogs.get('file')!r} "
+                f"overwrite={dialogs.get('overwrite_text')!r} status={self.S()!r}"
+            )
         return path
 
     def export_3mf(self, name: str) -> str:
         path = str(self.out / name)
         self.menu("File", "Export 3MF...")
-        self._arm_dialog_dir()
-        shown = self._type_dialog_name(name, replace_selection=False)
-        if name not in shown:
-            self.click("dialog:Name")
-            self.d.key("ctrl+a")
-            self.d.type(path, delay_ms=10)
-        self.click("dialog:Ok")
-        self._confirm_overwrite()
-        self.refresh("status", "popups")
+        reply = self.commit_dialog(name)
+        if reply.get("visible"):
+            raise SxError(f"Export dialog stayed open status={self.S()!r}")
         return path
 
     def open_file(self, name: str) -> None:
-        path = str(self.out / name)
         self.menu("File", "Open...")
-        self._arm_dialog_dir()
-        shown = self._type_dialog_name(name, replace_selection=False)
-        if name not in shown:
-            self.click("dialog:Name")
-            self.d.key("ctrl+a")
-            self.d.type(path, delay_ms=10)
-        self.click("dialog:Ok")
-        self.refresh("status", "popups")
-        if self.has_popup("Discard"):
+        self.refresh("popups", "status")
+        snap = self.d.state(filter="dialogs")
+        dialogs = snap.get("dialogs") or {}
+        if dialogs.get("discard_visible") or self.has_popup("Discard"):
             self.click("dialog:DiscardOk")
-            self.refresh("status")
+            self.d.wait_idle(frames=2)
+        reply = self.commit_dialog(name)
+        if reply.get("visible"):
+            raise SxError(f"Open dialog stayed open status={self.S()!r}")
 
     def file_new(self, discard: str | None = None) -> None:
         self.menu("File", "New")
@@ -678,18 +727,75 @@ class Walk:
         self.ctx["ux"] = [ux[0] - h[0], ux[1] - h[1]]
         self.ctx["uy"] = [uy[0] - h[0], uy[1] - h[1]]
 
-    def _jaw_wall_screen(self, along: float) -> list[float]:
-        self.refresh("sketch")
+    def _badge_rects(self) -> list[list[float]]:
+        rects = []
+        for g in self.st.get("glyphs") or []:
+            r = g.get("rect") or []
+            if len(r) >= 4 and float(r[2]) > 1.0 and float(r[3]) > 1.0:
+                rects.append([float(v) for v in r[:4]])
+        return rects
+
+    def _in_badge(self, pt: list[float], rects: list[list[float]], pad: float = 8.0) -> bool:
+        x, y = float(pt[0]), float(pt[1])
+        for r in rects:
+            if r[0] - pad <= x <= r[0] + r[2] + pad and r[1] - pad <= y <= r[1] + r[3] + pad:
+                return True
+        return False
+
+    def wall_screen_points(self, count: int = 9) -> list[list[float]]:
+        """Screen samples along slanted wall lines, skipping badge rects."""
+        self.refresh("sketch", "glyphs")
+        badges = self._badge_rects()
+        lines = []
         for e in self._entities():
-            if e.get("type") != "line":
+            if str(e.get("type", "")) != "line":
                 continue
             a, b = e.get("start"), e.get("end")
             if not a or not b:
                 continue
-            dx, dy = float(b[0]) - float(a[0]), float(b[1]) - float(a[1])
-            if (dx * dx + dy * dy) < 25 or abs(dy) < 1.0:
+            dx = float(b[0]) - float(a[0])
+            dy = float(b[1]) - float(a[1])
+            if dx * dx + dy * dy < 25.0 or abs(dy) < 1.0:
                 continue
-            return self.d.project(sketch=[float(a[0]) + dx * along, float(a[1]) + dy * along])["screen"]
+            lines.append((a, b, dx, dy))
+        points: list[list[float]] = []
+        for step in range(4, 17):
+            frac = step / 20.0
+            for a, _b, dx, dy in lines:
+                uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
+                try:
+                    screen = self.d.project(sketch=uv)["screen"]
+                except SxError:
+                    continue
+                if self._in_badge(screen, badges):
+                    continue
+                if any(abs(screen[0] - p[0]) < 3.0 and abs(screen[1] - p[1]) < 3.0 for p in points):
+                    continue
+                points.append(screen)
+                if len(points) >= count:
+                    return points
+        return points
+
+    def _jaw_wall_screen(self, along: float) -> list[float]:
+        pts = self.wall_screen_points(1)
+        if pts:
+            # Prefer the requested fraction when a wall projects cleanly.
+            self.refresh("sketch", "glyphs")
+            badges = self._badge_rects()
+            for e in self._entities():
+                if str(e.get("type", "")) != "line":
+                    continue
+                a, b = e.get("start"), e.get("end")
+                if not a or not b:
+                    continue
+                dx = float(b[0]) - float(a[0])
+                dy = float(b[1]) - float(a[1])
+                if dx * dx + dy * dy < 25.0 or abs(dy) < 1.0:
+                    continue
+                screen = self.d.project(sketch=[float(a[0]) + dx * along, float(a[1]) + dy * along])["screen"]
+                if not self._in_badge(screen, badges):
+                    return screen
+            return pts[0]
         if "H" not in self.ctx:
             self.jaw_basis()
         return self.jaw_px(10, -6)
@@ -1099,10 +1205,12 @@ class Walk:
         self._type_dialog_name("blank.sxp", replace_selection=True)
         shown = str(self.d.call("dialog_dir", path="").get("file", ""))
         self.clause("name replaced", shown == "blank.sxp" or shown.endswith("blank.sxp"), shown)
-        self.click("dialog:Ok")
-        self._confirm_overwrite()
-        self.refresh("status")
-        self.clause("saved", f"Saved {path}" in self.S() or self.S().endswith("blank.sxp"), self.S())
+        reply = self.commit_dialog(set_dir=False)
+        self.clause(
+            "saved",
+            (f"Saved {path}" in self.S() or self.S().endswith("blank.sxp")) and not reply.get("visible"),
+            f"{self.S()} visible={reply.get('visible')}",
+        )
         self.clause("file exists", Path(path).exists(), path)
 
     def row_L11(self) -> None:
@@ -1475,17 +1583,19 @@ class Walk:
 
     def row_N21b(self) -> None:
         self.click("rail:Select")
+        samples = self.wall_screen_points(9)
         free = 0
         notes = []
-        samples = [(20, -4), (12, -8), (8, -2), (20, 4), (12, 8), (8, 2), (24, 0), (18, -6), (16, 6)]
-        for du, dv in samples:
+        if len(samples) < 9:
+            notes.append(f"only {len(samples)} wall samples clear of badges")
+        for i, pt in enumerate(samples[:9]):
             self.click(sketch=[300, 80])
-            self.click(screen=self.jaw_px(du, dv))
+            self.click(screen=pt)
             self.refresh("status")
             ok = "Selected 1 sketch entity" in self.S() and "Constraint selected" not in self.S()
             if ok:
                 free += 1
-            notes.append(f"{du},{dv}:{self.S()[:48]}")
+            notes.append(f"{i}@({pt[0]:.0f},{pt[1]:.0f}):{self.S()[:40]}")
         self.clause("8 of 9 free", free >= 8, f"{free}/9 " + " | ".join(notes))
 
     def row_N26(self) -> None:
@@ -1502,16 +1612,20 @@ class Walk:
         self.visual("badge leaders", f"{len(glyphs)} glyphs; leaders are visual")
 
     def row_L12(self) -> None:
+        samples = self.wall_screen_points(1)
+        pt = samples[0] if samples else self.jaw_px(16, -6)
         self.click("rail:Circle")
-        self.d.hover(screen=self.jaw_px(16, -6))
+        self.d.hover(screen=pt)
+        self.d.wait_idle(frames=3)
         self.refresh("measure")
         self.clause("circle has no measure", not (self.st.get("measure") or []), str(self.st.get("measure")))
         self.click("rail:Select")
-        self.d.hover(screen=self.jaw_px(16, -6))
+        self.d.hover(screen=pt)
+        self.d.wait_idle(frames=3)
         self.refresh("measure", "status")
         texts = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
-        self.clause("hover delta", "Δ" in texts or texts != "", texts or self.S())
-        self.click(screen=self.jaw_px(16, -6))
+        self.clause("hover delta", "Δ" in texts, texts or self.S())
+        self.click(screen=pt)
         self.refresh("status", "measure")
         texts = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
         self.clause("click clears", "Selected 1 sketch entity" in self.S() and "Δ" not in texts, f"{self.S()} {texts}")
@@ -1552,7 +1666,8 @@ class Walk:
         before = int((self.refresh("sketch").get("sketch") or {}).get("entity_count") or 0)
         self.circle([50, -40], "3")
         self.click("rail:Select")
-        self.click(screen=self.jaw_px(14, -5))
+        wall = (self.wall_screen_points(1) or [self.jaw_px(14, -5)])[0]
+        self.click(screen=wall)
         self.refresh("status")
         self.clause("wall", "Selected 1 sketch entity" in self.S(), self.S())
         mark = self.mark()
@@ -1566,7 +1681,7 @@ class Walk:
         press = [ln for ln in lines if "press" in ln and "shift=" in ln]
         self.clause("shift add", "Selected 2" in self.S() and any("shift=1" in ln and "additive=1" in ln for ln in press), f"{self.S()} {press[-1] if press else lines[-3:]}")
         self.click(screen=self.d.project(sketch=[10, -70])["screen"])
-        self.click(screen=self.jaw_px(14, -5))
+        self.click(screen=wall)
         mark = self.mark()
         self.d.drag({"screen": a}, {"screen": b})
         lines = self.trace_from(mark)
@@ -2190,6 +2305,266 @@ class Walk:
         else:
             self.clause("headless tier", True, "skipped inside the GUI walk (make test-godot). Re-run with --a15 is reserved; CI runs the tier")
 
+    # --- checkpoints and the screenshot-walk variants --------------------
+
+    def _sketch_active(self) -> bool:
+        return bool((self.refresh("sketch").get("sketch") or {}).get("active"))
+
+    def _previous_chunk_ready(self, chunk: int) -> bool:
+        """True when the previous chunk already left the state this chunk expects."""
+        prev = chunk - 1
+        if prev < 1:
+            return True
+        sketch = self._sketch_active()
+        if prev == 1:
+            return (self.out / "blank.sxp").exists() and not sketch
+        if prev == 2:
+            texts = self.dim_texts()
+            return (
+                sketch
+                and any(self._label_is("20", t) for t in texts)
+                and any(self._label_is("45", t) for t in texts)
+            )
+        if prev == 3:
+            return (self.out / "cut.sxp").exists() and not sketch
+        if prev == 4:
+            return (self.out / "wrench-wip.sxp").exists() and not sketch
+        if prev == 5:
+            return (self.out / "wrench-wip.sxp").exists() and not sketch and not self.modal_open()
+        return True
+
+    def _reload_checkpoint(self, name: str) -> None:
+        self.dismiss_modals()
+        self.open_file(name)
+        self.refresh("status", "sketch", "bodies")
+        print(f"checkpoint-reload {name}", flush=True)
+        self.ctx["checkpoint"] = name
+
+    def build_open_jaw(self) -> None:
+        """Open blank.sxp and leave the 20 mm / 45° jaw sketch editing."""
+        self.dismiss_modals()
+        self.open_file("blank.sxp")
+        self.refresh("status", "sketch")
+        if self._sketch_active():
+            self.click("rail:ExitSketch")
+            self.refresh("status")
+        self.sketch_on_top()
+        if "Sketch on face" not in self.S():
+            raise SxError(f"jaw rebuild did not open the face sketch: {self.S()!r}")
+        self.jaw_basis()
+        self._jaw_clicks(-10)
+        if "Jaw committed" not in self.S():
+            raise SxError(f"jaw rebuild did not commit: {self.S()!r}")
+        width, angle = self._drawn_angle_and_width()
+        if width is None or angle is None:
+            raise SxError(f"jaw rebuild has no labels: {self.dim_texts()}")
+        self.edit_dim(width, "20")
+        angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
+        if angle is None:
+            raise SxError(f"jaw width edit dropped the angle: {self.dim_texts()}")
+        self.edit_dim(angle, "45")
+        texts = self.dim_texts()
+        if not any(self._label_is("45", t) for t in texts):
+            raise SxError(f"jaw rebuild angle is not 45°: {texts}")
+
+    def build_cut_file(self) -> bool:
+        """Chunk 3 cut, from blank.sxp, saved as cut.sxp."""
+        self.build_open_jaw()
+        self.circle([0, 0], "5")
+        self.circle([200, 0], "22.5", burst=True)
+        self.click("rail:Line")
+        self.click(sketch=[160, 40])
+        self.click(sketch=[240, -40])
+        self.click("rail:Trim")
+        self.d.drag({"sketch": [250, 0]}, {"sketch": [190, 0]})
+        self.refresh("status")
+        print(f"checkpoint: cut trim {self.S()!r}", flush=True)
+        self.set_option("finish:Op", "Cut")
+        self.set_option("finish:End", "Up To Surface")
+        try:
+            self.click("finish:OppositeFace")
+            self.click(face=self.bottom_face()["id"])
+        except SxError as exc:
+            print(f"checkpoint: opposite face {exc}", flush=True)
+        self.click("finish:Extrude", frames=10)
+        self.refresh("status")
+        path = self.save_as("cut.sxp")
+        ok = Path(path).exists() and "Saved" in self.S()
+        print(f"checkpoint: built cut.sxp ok={ok} status={self.S()!r}", flush=True)
+        return ok
+
+    def build_wip_file(self) -> bool:
+        """Slot cut from cut.sxp, saved as wrench-wip.sxp."""
+        self.dismiss_modals()
+        self.open_file("cut.sxp")
+        self.sketch_on_top()
+        self.click("rail:Slot")
+        self.type_into("finish:Radius", "5")
+        self.enter()
+        self.click(sketch=[18.5, 0])
+        self.d.type("150")
+        self.enter()
+        self.set_option("finish:Op", "Cut")
+        self.set_option("finish:End", "Blind")
+        self.type_into("finish:Distance", "2.5", burst=True)
+        self.enter()
+        self.click("finish:Extrude", frames=10)
+        self.refresh("status")
+        path = self.save_as("wrench-wip.sxp")
+        ok = Path(path).exists() and "Saved" in self.S()
+        print(f"checkpoint: built wrench-wip.sxp ok={ok} status={self.S()!r}", flush=True)
+        return ok
+
+    def ensure_chunk_start(self, chunk: int, force: bool = False) -> None:
+        if chunk <= 1:
+            return
+        if not force and self._previous_chunk_ready(chunk):
+            return
+        try:
+            if chunk == 2:
+                if (self.out / "blank.sxp").exists():
+                    self._reload_checkpoint("blank.sxp")
+                return
+            if chunk == 3:
+                if not (self.out / "blank.sxp").exists():
+                    print("checkpoint: blank.sxp missing, cannot rebuild the jaw", flush=True)
+                    return
+                print("checkpoint-reload blank.sxp", flush=True)
+                self.build_open_jaw()
+                return
+            if chunk == 4:
+                if not (self.out / "cut.sxp").exists():
+                    if not (self.out / "blank.sxp").exists():
+                        print("checkpoint: blank.sxp missing, cannot build cut.sxp", flush=True)
+                        return
+                    print("checkpoint: building cut.sxp from blank.sxp", flush=True)
+                    if not self.build_cut_file():
+                        return
+                self._reload_checkpoint("cut.sxp")
+                return
+            if chunk in (5, 6):
+                if not (self.out / "wrench-wip.sxp").exists():
+                    if not (self.out / "cut.sxp").exists():
+                        if not (self.out / "blank.sxp").exists():
+                            print("checkpoint: no blank.sxp to build the wrench", flush=True)
+                            return
+                        if not self.build_cut_file():
+                            return
+                    print("checkpoint: building wrench-wip.sxp from cut.sxp", flush=True)
+                    if not self.build_wip_file():
+                        return
+                self._reload_checkpoint("wrench-wip.sxp")
+        except (SxError, RowAbort) as exc:
+            print(f"checkpoint: chunk {chunk} reload failed: {exc}", flush=True)
+
+    def _timeline_names(self) -> list[str]:
+        return [str(r.get("name", "")) for r in (self.refresh("timeline").get("timeline") or []) if r.get("name")]
+
+    def _reopen_sketch3(self) -> str:
+        if "sketch 3" not in "".join(self._timeline_names()):
+            self.menu("View", "Timeline")
+        self.click("timeline:pencil:sketch 3")
+        self.refresh("status", "sketch")
+        return self.S()
+
+    def row_A8b_variant_walk(self) -> None:
+        # Screenshot walk: Exit Sketch, reopen with the Timeline pencil, then
+        # the wall click / Esc / Esc / Ctrl+Z that left sketch 3 on the Timeline.
+        self.click("rail:ExitSketch")
+        exited = self.refresh("status", "timeline")
+        self.clause("exit sketch", "Sketch saved" in self.S() or self.S().startswith("Sketch"), str(exited.get("status", self.S())))
+        reopened = self._reopen_sketch3()
+        self.clause("pencil reopen", "Editing sketch" in reopened, reopened)
+        self.click("rail:Select")
+        self.click(screen=self._jaw_wall_screen(0.4))
+        self.refresh("status")
+        self.clause("wall", "Selected 1 sketch entity" in self.S() and "Constraint selected" not in self.S(), self.S())
+        s1 = self.esc()
+        s2 = self.esc()
+        self.clause("esc", "Selection cleared" in s1 and "Sketch saved" in s2, s1 + " | " + s2)
+        self.menu("View", "Timeline")
+        self.d.key("ctrl+z")
+        self.refresh("status", "timeline")
+        names = self._timeline_names()
+        stayed = any("sketch 3" in n for n in names)
+        self.clause(
+            "sketch 3 after part undo",
+            not stayed,
+            f"status={self.S()!r} timeline={names}",
+            kind="" if not stayed else "product",
+        )
+
+    def row_A9_variant_walk(self) -> None:
+        # Same walk: pencil reopen, Smart Dim already applied, Line across the
+        # head, Power Trim dragged from the outer stub (head-side closing cut).
+        names = self._timeline_names()
+        if not any("sketch 3" in n for n in names):
+            self.d.key("ctrl+shift+z")
+            self.refresh("status", "timeline")
+            names = self._timeline_names()
+        if not self._sketch_active():
+            reopened = self._reopen_sketch3()
+            self.clause("pencil reopen", "Editing sketch" in reopened, reopened)
+        else:
+            self.clause("pencil reopen", True, "sketch already open")
+        self.d.key("f")
+        self.refresh("status")
+        typed = self.circle([0, 0], "5")
+        self.clause("pivot circle", "Circle r=5.0000" in self.S(), f"typed={typed} {self.S()}")
+        typed = self.circle([200, 0], "22.5", burst=True)
+        self.clause("head circle", "22.5000" in self.S(), f"typed={typed} {self.S()}")
+        self.click("rail:Line")
+        self.refresh("focus_text", "finish")
+        length = self.field("finish:Radius") or str(self.st.get("focus_text", ""))
+        self.clause("length not 22.5", "22.5" not in length, length or "(empty)")
+        # Walk log, head centre (1573, 620), s≈4.57: line (1440,496)→(1720,736).
+        self.click(sketch=[171, 27])
+        self.click(sketch=[232, -25])
+        self.refresh("status")
+        self.click("rail:Trim")
+        # Outer stub of that line, dragged across it toward the head.
+        self.d.drag({"sketch": [226, -20]}, {"sketch": [200, 0]})
+        self.refresh("status", "dims")
+        self.clause("trimmed", "Trimmed open jaw" in self.S(), self.S())
+        texts = self.dim_texts()
+        neg = any("-135" in str(t).replace(" ", "") for t in texts)
+        self.clause(
+            "angle after this trim",
+            not neg,
+            f"drawn={texts}",
+            kind="" if not neg else "product",
+        )
+
+    def run_variants(self) -> None:
+        if not (self.out / "blank.sxp").exists():
+            self.clauses = []
+            self.clause("blank.sxp", False, "variant rebuild has no blank.sxp", kind="runner-gap")
+            self.rows.append({
+                "row": "A8b-variant-walk",
+                "verdict": "FAIL runner-gap",
+                "seconds": 0,
+                "clauses": self.clauses,
+                "evidence": "blank.sxp missing",
+                "status": "",
+            })
+            return
+        try:
+            self.build_open_jaw()
+        except (SxError, RowAbort) as exc:
+            self.clauses = []
+            self.clause("rebuild jaw", False, str(exc), kind="runner-gap")
+            self.rows.append({
+                "row": "A8b-variant-walk",
+                "verdict": "FAIL runner-gap",
+                "seconds": 0,
+                "clauses": self.clauses,
+                "evidence": str(exc),
+                "status": self.st.get("status", ""),
+            })
+            return
+        self.run_row("A8b-variant-walk")
+        self.run_row("A9-variant-walk")
+
     # --- report -----------------------------------------------------------
 
     def open_checkpoint(self, rid: str) -> None:
@@ -2284,20 +2659,22 @@ def main() -> int:
             walk.d.connect()
         else:
             walk.launch()
-        prev_chunk = 1
-        if selected and selected[0] != ROWS[0] and args.checkpoint:
-            walk.open_checkpoint(selected[0])
-        for rid in selected:
+        full = not args.rows and not args.from_row
+        auto_ckpt = full or args.checkpoint
+        prev_chunk = 0
+        if auto_ckpt and selected and selected[0] != ROWS[0]:
+            first_chunk = next(n for n, rows in CHUNKS.items() if selected[0] in rows)
+            walk.ensure_chunk_start(first_chunk, force=True)
+            prev_chunk = first_chunk
+        for i, rid in enumerate(selected):
             chunk = next(n for n, rows in CHUNKS.items() if rid in rows)
-            if (
-                args.checkpoint
-                and rid != selected[0]
-                and chunk != prev_chunk
-                and walk.chunk_failed(prev_chunk)
-            ):
-                walk.open_checkpoint(rid)
+            nxt = selected[i + 1] if i + 1 < len(selected) else None
+            if auto_ckpt and prev_chunk and chunk != prev_chunk:
+                walk.ensure_chunk_start(chunk)
             prev_chunk = chunk
-            walk.run_row(rid)
+            walk.run_row(rid, nxt)
+        if full:
+            walk.run_variants()
     finally:
         walk.write_report()
         if not args.no_launch:
