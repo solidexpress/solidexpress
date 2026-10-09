@@ -258,6 +258,12 @@ class Walk:
         self.d.wait_idle(frames=2)
         self.refresh("status", "popups")
 
+    def dismiss_menus(self) -> None:
+        self.refresh("popups")
+        if self.st.get("popups"):
+            self.esc()
+            self.refresh("popups", "status")
+
     def run_row(self, rid: str, nxt: str | None = None) -> None:
         self.clauses = []
         started = time.monotonic()
@@ -265,6 +271,7 @@ class Walk:
         if not wants_dialog:
             try:
                 self.dismiss_modals()
+                self.dismiss_menus()
             except SxError as exc:
                 self.clause("close stray dialog", False, str(exc), kind="runner-gap")
         blocked = self.gate(rid)
@@ -748,20 +755,23 @@ class Walk:
         badges = self._badge_rects()
         lines = []
         for e in self._entities():
-            if str(e.get("type", "")) != "line":
+            if str(e.get("type", "")) != "line" or e.get("construction"):
                 continue
             a, b = e.get("start"), e.get("end")
             if not a or not b:
                 continue
             dx = float(b[0]) - float(a[0])
             dy = float(b[1]) - float(a[1])
-            if dx * dx + dy * dy < 25.0 or abs(dy) < 1.0:
+            length = (dx * dx + dy * dy) ** 0.5
+            if length < 8.0 or abs(dy) < 1.0:
                 continue
-            lines.append((a, b, dx, dy))
+            lines.append((length, a, dx, dy))
+        lines.sort(key=lambda row: row[0], reverse=True)
+        lines = lines[:2]
         points: list[list[float]] = []
-        for step in range(4, 17):
+        for step in range(7, 14):
             frac = step / 20.0
-            for a, _b, dx, dy in lines:
+            for _length, a, dx, dy in lines:
                 uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
                 try:
                     screen = self.d.project(sketch=uv)["screen"]
@@ -1772,7 +1782,11 @@ class Walk:
 
     def row_A16(self) -> None:
         mark = self.mark()
-        self.menu("View", "Orientation")
+        # "Orientation" is a separator, not an item. The entries under it are the views.
+        self.click("menu:View")
+        self.refresh("popups")
+        listed = self.popup_text()
+        self.clause("orientation list", "Front" in listed and "Isometric" in listed, listed[:400])
         self.esc()
         self.click("hud:View")
         self.esc()
@@ -1835,7 +1849,7 @@ class Walk:
         else:
             self.visual("contour tag", "tag clearance needs the drawn tag rect")
         self.click("rail:Select")
-        self.click(sketch=[200, 0])
+        self.click(sketch=[205, 0])
         self.d.key("delete")
         self.refresh("status")
         self.clause("deleted", "Deleted" in self.S(), self.S())
@@ -1916,7 +1930,21 @@ class Walk:
         self.refresh("status")
         self.clause("applied", "applied" in self.S() and "no longer armed" in self.S(), self.S())
 
+    def _click_solid(self) -> None:
+        try:
+            pt = self.d.project(model=[30, 0, 10])["screen"]
+        except SxError:
+            bodies = self.st.get("bodies") or []
+            if not bodies:
+                return
+            pt = bodies[0]["screen"]
+        self.click(screen=pt)
+        self.refresh("status", "selection")
+
     def row_N3(self) -> None:
+        self.refresh("bodies", "selection")
+        if not str((self.st.get("selection") or {}).get("body") or ""):
+            self._click_solid()
         fillet = self.control("chip:Fillet")
         chamfer = self.control("chip:Chamfer")
         self.clause("chips present", bool(fillet), str(fillet)[:160])
@@ -2042,11 +2070,13 @@ class Walk:
         time.sleep(4.0)
         lines = self.trace_from(mark)
         status_lines = [ln for ln in lines if "status-trace" in ln]
+        got_result = any("kind=result" in ln and "No view for key 0" in ln for ln in status_lines)
+        got_hint = any("kind=hint" in ln or "kind=restore" in ln for ln in status_lines)
         self.clause(
             "result then hint",
-            any("kind=result" in ln and "No view for key 0" in ln for ln in status_lines)
-            and any("kind=hint" in ln or "kind=restore" in ln for ln in status_lines),
+            got_result and got_hint,
             " | ".join(status_lines[-6:]),
+            kind="" if (not got_result or got_hint) else "product",
         )
         self.clause("headless-only hold edge", True, "headless-only: rung01_replan19_hint")
         self.d.hover(screen=[60, 680])
@@ -2054,12 +2084,11 @@ class Walk:
         self.clause("leave clears hint", any("target=none" in ln for ln in lines) or True, " | ".join(lines[-4:]))
 
     def row_N19(self) -> None:
-        self.refresh("bodies")
-        bodies = self.st.get("bodies") or []
-        if bodies:
-            self.click(screen=bodies[0]["screen"])
+        self.refresh("bodies", "selection")
+        if not str((self.st.get("selection") or {}).get("body") or ""):
+            self._click_solid()
         self.click("chip:Fillet")
-        radius = self.control("finish:PanelRadius") or self.control("timeline:title")
+        radius = self.control("finish:PanelRadius") or self.control("finish:StripR")
         title = None
         for row in self.refresh("timeline").get("timeline") or []:
             if row.get("kind") == "title":
@@ -2068,7 +2097,12 @@ class Walk:
         overlap = False
         if title and panel and len(title) >= 4 and len(panel) >= 4:
             overlap = not (title[0] + title[2] < panel[0] or panel[0] + panel[2] < title[0] or title[1] + title[3] < panel[1] or panel[1] + panel[3] < title[1])
-        self.clause("timeline misses radius", not overlap, f"title={title} radius={panel}")
+        self.clause(
+            "timeline misses radius",
+            radius is not None and not overlap,
+            f"title={title} radius={panel}",
+            kind="" if radius is not None else "runner-gap",
+        )
         if radius:
             self.type_into(radius["id"], "2")
         self.esc()
@@ -2076,11 +2110,10 @@ class Walk:
         self.clause("esc hides radius", "cancelled" in self.S().lower() or "Edge pick" in self.S(), self.S())
 
     def row_N23(self) -> None:
-        self.refresh("bodies")
-        bodies = self.st.get("bodies") or []
-        if bodies:
-            self.click(screen=bodies[0]["screen"])
-        chip = self.control("chip:Group") or self.control("chip:Fillet")
+        self.refresh("bodies", "selection")
+        if not str((self.st.get("selection") or {}).get("body") or ""):
+            self._click_solid()
+        chip = self.control("chip:Group Similar") or self.control("chip:Fillet")
         title = None
         for row in self.refresh("timeline").get("timeline") or []:
             if row.get("kind") == "title" and row.get("visible", True):
