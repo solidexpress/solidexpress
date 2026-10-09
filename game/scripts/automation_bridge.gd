@@ -159,6 +159,10 @@ func _run(req: Dictionary) -> Dictionary:
 			res = _cmd_project(req)
 		"dialog_dir":
 			res = _cmd_dialog_dir(req)
+		"dialog_commit":
+			res = await _cmd_dialog_commit(req)
+		"dialog_dismiss":
+			res = await _cmd_dialog_dismiss(req)
 		_:
 			return {"ok": false, "error": "unknown command '%s'" % cmd}
 	if res.has("error"):
@@ -170,7 +174,7 @@ func _run(req: Dictionary) -> Dictionary:
 	res["ok"] = true
 	res["settled_frames"] = settled
 	res["trace_cursor"] = _trace.size()
-	if cmd in ["click", "double_click", "hover", "drag", "key", "type", "wheel", "wait_idle"]:
+	if cmd in ["click", "double_click", "hover", "drag", "key", "type", "wheel", "wait_idle", "dialog_commit", "dialog_dismiss"]:
 		var ix = _main().get("interaction")
 		if ix != null:
 			res["disposition"] = str(ix.last_click_disposition)
@@ -243,6 +247,14 @@ func _deliver_pointer(vp: Viewport, ev: InputEventMouse) -> void:
 				if parent != null:
 					host = parent.get_viewport()
 					at = Vector2(win.position) + ev.position
+					# A dialog parented to another dialog is embedded in the
+					# root window. Its position is root-space, so a point that
+					# falls outside the parent dialog is delivered there.
+					var root := _main().get_window()
+					if host is Window and host != root:
+						var hw := host as Window
+						if at.x < 0.0 or at.y < 0.0 or at.x > float(hw.size.x) or at.y > float(hw.size.y):
+							host = root
 			else:
 				ev.position = at
 				ev.global_position = at
@@ -1050,6 +1062,195 @@ func _cmd_dialog_dir(req: Dictionary) -> Dictionary:
 	return {"dir": dlg.current_dir, "file": dlg.current_file}
 
 
+func _visible_accept_child(root: Node) -> AcceptDialog:
+	if root == null:
+		return null
+	var stack: Array[Node] = []
+	for c in root.get_children(true):
+		stack.append(c)
+	while not stack.is_empty():
+		var n: Node = stack.pop_back() as Node
+		if n is AcceptDialog and (n as AcceptDialog).visible:
+			return n as AcceptDialog
+		for c in n.get_children(true):
+			stack.append(c)
+	return null
+
+
+## Godot's overwrite prompt is an internal ConfirmationDialog of the FileDialog.
+## find_children skips internal nodes, so a name search never sees it.
+func _find_overwrite_dialog(file_dialog: FileDialog) -> AcceptDialog:
+	var direct := _visible_accept_child(file_dialog)
+	if direct != null:
+		return direct
+	var main := _main()
+	var discard: Node = main.get("confirm_dialog")
+	var stack: Array[Node] = []
+	for c in main.get_children(true):
+		stack.append(c)
+	while not stack.is_empty():
+		var n: Node = stack.pop_back() as Node
+		if n is AcceptDialog and n != file_dialog and n != discard and (n as AcceptDialog).visible:
+			var text := str((n as AcceptDialog).dialog_text).to_lower()
+			if text.contains("overwrite") or text.contains("already") or text.contains("exist"):
+				return n as AcceptDialog
+		for c in n.get_children(true):
+			stack.append(c)
+	return null
+
+
+func _dialog_state() -> Dictionary:
+	var main := _main()
+	var dlg: FileDialog = main.get("file_dialog")
+	var discard: ConfirmationDialog = main.get("confirm_dialog")
+	var ow: AcceptDialog = null
+	if dlg != null and dlg.visible:
+		ow = _find_overwrite_dialog(dlg)
+	return {
+		"file_visible": dlg != null and dlg.visible,
+		"overwrite_visible": ow != null,
+		"overwrite_text": str(ow.dialog_text) if ow != null else "",
+		"overwrite_name": str(ow.name) if ow != null else "",
+		"discard_visible": discard != null and discard.visible,
+		"file": dlg.current_file if dlg != null else "",
+		"dir": dlg.current_dir if dlg != null else "",
+	}
+
+
+func _press_control(c: Control) -> void:
+	var guard := 0
+	while guard < 8 and (c.size.x < 1.0 or c.size.y < 1.0):
+		if not is_inside_tree():
+			return
+		await get_tree().process_frame
+		guard += 1
+	await _click_at(c.get_viewport(), _control_click_pos(c), false)
+
+
+func _cmd_dialog_commit(req: Dictionary) -> Dictionary:
+	var dlg: FileDialog = _main().get("file_dialog")
+	if dlg == null or not dlg.visible:
+		return {"error": "file dialog is not open"}
+	var path := str(req.get("path", ""))
+	var filename := str(req.get("file", ""))
+	if path != "":
+		dlg.current_dir = path
+	var edit: LineEdit = null
+	if _main().has_method("_file_dialog_name_edit"):
+		var got: Variant = _main().call("_file_dialog_name_edit")
+		if got is LineEdit:
+			edit = got
+	if filename == "" and edit != null:
+		filename = edit.text.strip_edges()
+	if filename != "":
+		dlg.current_file = filename
+		if edit != null:
+			edit.text = filename
+			edit.caret_column = filename.length()
+	if is_inside_tree():
+		await get_tree().process_frame
+	var ok: Button = dlg.get_ok_button()
+	if ok == null:
+		return {"error": "file dialog has no OK button"}
+	await _press_control(ok)
+	var confirmed := false
+	var confirm_text := ""
+	for _i in 24:
+		if not is_inside_tree():
+			break
+		await get_tree().process_frame
+		if not dlg.visible:
+			break
+		var ow := _find_overwrite_dialog(dlg)
+		if ow == null:
+			continue
+		confirm_text = str(ow.dialog_text)
+		var cok: Button = ow.get_ok_button()
+		if cok == null:
+			return {"error": "overwrite dialog has no OK button", "overwrite_text": confirm_text}
+		await _press_control(cok)
+		confirmed = true
+		break
+	if dlg.visible and not confirmed:
+		await _press_control(ok)
+		for _j in 24:
+			if not is_inside_tree():
+				break
+			await get_tree().process_frame
+			if not dlg.visible:
+				break
+			var ow2 := _find_overwrite_dialog(dlg)
+			if ow2 == null:
+				continue
+			confirm_text = str(ow2.dialog_text)
+			var cok2: Button = ow2.get_ok_button()
+			if cok2 != null:
+				await _press_control(cok2)
+				confirmed = true
+			break
+	var waits := 0
+	while waits < 45 and dlg.visible and is_inside_tree():
+		await get_tree().process_frame
+		waits += 1
+	return {
+		"visible": dlg.visible,
+		"confirmed": confirmed,
+		"overwrite_text": confirm_text,
+		"status": _status_text(),
+		"file": dlg.current_file,
+		"dir": dlg.current_dir,
+		"dialogs": _dialog_state(),
+	}
+
+
+func _cmd_dialog_dismiss(_req: Dictionary) -> Dictionary:
+	var closed: PackedStringArray = []
+	var main := _main()
+	var dlg: FileDialog = main.get("file_dialog")
+	if dlg != null and dlg.visible:
+		var ow := _find_overwrite_dialog(dlg)
+		if ow != null:
+			var cancel: Button = ow.get_cancel_button()
+			if cancel != null:
+				await _press_control(cancel)
+			else:
+				ow.hide()
+			closed.append("overwrite")
+			if is_inside_tree():
+				await get_tree().process_frame
+	if dlg != null and dlg.visible:
+		var cancel_file: Button = dlg.get_cancel_button()
+		if cancel_file != null:
+			await _press_control(cancel_file)
+		closed.append("file")
+		var waits := 0
+		while waits < 12 and dlg.visible and is_inside_tree():
+			await get_tree().process_frame
+			waits += 1
+		if dlg.visible:
+			dlg.hide()
+			closed.append("file-hide")
+	var discard: ConfirmationDialog = main.get("confirm_dialog")
+	if discard != null and discard.visible:
+		var discard_cancel: Button = discard.get_cancel_button()
+		if discard_cancel != null:
+			await _press_control(discard_cancel)
+		else:
+			discard.hide()
+		closed.append("discard")
+	for n in main.find_children("*", "AcceptDialog", true, false):
+		var ad := n as AcceptDialog
+		if ad == null or ad == dlg or ad == discard or not ad.visible:
+			continue
+		var extra: Button = ad.get_cancel_button()
+		if extra != null:
+			await _press_control(extra)
+		else:
+			ad.hide()
+		closed.append(str(ad.name))
+	return {"closed": closed, "dialogs": _dialog_state(), "status": _status_text()}
+
+
 func _cmd_project(req: Dictionary) -> Dictionary:
 	var spec := _resolve_point(req)
 	if spec.has("error"):
@@ -1109,6 +1310,7 @@ func _state_full() -> Dictionary:
 		"window": _window_state(main),
 		"last_click": str(ix.last_click_disposition) if ix != null else "",
 		"trace_cursor": _trace.size(),
+		"dialogs": _dialog_state(),
 	}
 
 

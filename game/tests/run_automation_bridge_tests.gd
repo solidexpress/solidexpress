@@ -59,6 +59,12 @@ func _case_real_input() -> void:
 	check(await _connect(), "client connected")
 	var ping := await _rpc({"cmd": "ping"})
 	check(bool(ping.get("ok", false)), "ping ok (%s)" % str(ping.get("error", "")))
+	var closed := await _rpc({"cmd": "dialog_commit"})
+	check(not bool(closed.get("ok", true)), "dialog_commit refuses a closed file dialog")
+	var dismissed := await _rpc({"cmd": "dialog_dismiss"})
+	check(bool(dismissed.get("ok", false)), "dialog_dismiss with nothing open (%s)" % str(dismissed.get("error", "")))
+	var dialogs := await _state(["dialogs"])
+	check(dialogs.has("dialogs") and not bool((dialogs["dialogs"] as Dictionary).get("file_visible", true)), "state.dialogs reports the file dialog closed")
 
 	var sketch := await _rpc({"cmd": "click", "target": "rail:Sketch"})
 	check(bool(sketch.get("ok", false)), "Sketch rail click (%s)" % str(sketch.get("error", "")))
