@@ -105,6 +105,8 @@ public:
     bool redo();
     bool can_undo() const;
     bool can_redo() const;
+    godot::PackedStringArray undo_labels() const;
+    godot::PackedStringArray redo_labels() const;
 
     // --- queries ---
     godot::PackedStringArray body_ids() const;

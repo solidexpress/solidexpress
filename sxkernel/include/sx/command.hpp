@@ -34,6 +34,7 @@ public:
     bool redo(Document& doc);
     size_t depth() const { return done_.size(); }
     std::vector<std::string> labels() const;
+    std::vector<std::string> redo_labels() const;
 
 private:
     std::vector<std::unique_ptr<Command>> done_;
