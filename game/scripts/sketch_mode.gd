@@ -8266,6 +8266,17 @@ func _glyph_overlap_fraction(a: Rect2, b: Rect2) -> float:
 
 
 ## 0 when the badge is clear of other glyphs, labels, and sketch geometry.
+func _leader_crosses_rect(anchor: Vector2, centre: Vector2, rect: Rect2) -> bool:
+	if anchor == Vector2.INF or rect.size == Vector2.ZERO:
+		return false
+	# The last fifth ends inside this badge; only the leader before that counts.
+	for i in 8:
+		var p := anchor.lerp(centre, float(i) / 8.0)
+		if rect.has_point(p):
+			return true
+	return false
+
+
 func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF,
 		anchor_screen: Vector2 = Vector2.INF, penalize_curves: bool = true) -> float:
@@ -8291,6 +8302,13 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		score += 40.0
 	if penalize_curves:
 		score += _glyph_curve_penalty(rect, anchor_screen, cam)
+	# The leader is the segment from the anchor to the badge. A badge that
+	# clears its neighbours can still draw that segment through a label or
+	# another badge.
+	if anchor_screen != Vector2.INF:
+		for lr in labels:
+			if _leader_crosses_rect(anchor_screen, centre, lr):
+				score += 12000.0
 	return score
 
 

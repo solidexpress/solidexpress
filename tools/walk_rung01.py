@@ -1665,6 +1665,8 @@ class Walk:
         angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
         if angle is not None:
             self.d.click(dim=str(angle.get("text", "")), glyph="first")
+            # The dimension popup focuses its line edit on the next frame.
+            self.d.wait_idle(frames=6)
             self.refresh("focus_text", "status", "focus")
             editor = str(self.st.get("focus_text", ""))
             self.esc()
@@ -2195,14 +2197,19 @@ class Walk:
             self.refresh("status")
         self._arm_fillet()
         self.clause("armed", self.S().startswith("Fillet"), self.S())
-        self.d.key("1")
-        self.refresh("status")
         necks = self._vertical_necks()
         if len(necks) < 2:
             self.clause("neck edge", False, f"found {len(necks)} vertical necks")
             return
+        # Front view looks along the neck pair, so both midpoints are one
+        # pixel and the second click toggles the first off ("removed 10.0 mm
+        # vertical"). −Y is the Front silhouette (key 1); +Y is the Back
+        # silhouette (key 4). Same split as run_rung01_wrench.gd _fillet_neck.
         status = ""
         for edge in necks[:2]:
+            mid = edge.get("mid") or [0, 0, 0]
+            self.d.key("4" if float(mid[1]) > 0.0 else "1")
+            self.refresh("status")
             status = self._pick_neck(edge)
         self.clause(
             "neck edge",

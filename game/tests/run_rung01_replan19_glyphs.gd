@@ -119,6 +119,7 @@ func _measure(ctx: FilmContext) -> void:
 	var glyphs: Array = sm.constraint_glyph_screen_rects()
 	var debug: Array = sm.glyph_debug()
 	check(glyphs.size() >= 4, "at least four glyphs are drawn (got %d)" % glyphs.size())
+	check(glyphs.size() == 9, "open jaw draws nine glyphs (got %d)" % glyphs.size())
 	check(debug.size() == glyphs.size(), "glyph anchors match rects (%d vs %d)" % [debug.size(), glyphs.size()])
 	check(_saw("45.0°"), "jaw commit names the 45° long side")
 	check(_saw("width 19.9997") or _saw("width 20"), "jaw commit names the width")
