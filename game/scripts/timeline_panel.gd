@@ -114,6 +114,7 @@ func _ready() -> void:
 	_scroll.custom_minimum_size = Vector2(240, 120)
 	outer.add_child(_scroll)
 	_list = VBoxContainer.new()
+	_list.name = "TimelineRows"
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.add_child(_list)
 
@@ -334,6 +335,7 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	name_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	if f["suppressed"]:
 		name_btn.modulate = Color(1, 1, 1, 0.45)
+	name_btn.set_meta("sx_auto", "timeline:row:%s" % str(f.get("name", fid)))
 	name_btn.pressed.connect(_select_feature.bind(fid))
 	# A left press focuses this button before gui_input runs, and the
 	# double-click release focuses it again. While Distance is open that
@@ -424,6 +426,7 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	# separate `edit` icon exists). On a sketch it means Edit sketch.
 	var edit_btn := UIIcons.button("rename", "", "Edit sketch" if is_sketch else "Rename feature")
 	edit_btn.name = "RowEdit"
+	edit_btn.set_meta("sx_auto", "timeline:pencil:%s" % str(f.get("name", fid)))
 	if is_sketch:
 		edit_btn.pressed.connect(func() -> void: _edit_sketch_feature(fid))
 	else:
