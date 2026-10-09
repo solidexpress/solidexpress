@@ -788,11 +788,12 @@ class Walk:
                 continue
             lines.append((length, a, dx, dy))
         lines.sort(key=lambda row: row[0], reverse=True)
-        lines = lines[:2]
+        # One wall. The other long edge's projection is not always pickable
+        # after the checklist zoom, and the safe band is only a few pixels wide.
+        lines = lines[:1]
         points: list[list[float]] = []
-        # Just past the vertex glyphs, before the midpoint badge. At the N1a
-        # zoom that band is only a few pixels, so the samples sit close together.
-        for frac in (0.21, 0.24, 0.27, 0.30):
+        # Just past the vertex glyphs, before the midpoint badge.
+        for frac in (0.21, 0.23, 0.25, 0.27, 0.29, 0.31, 0.33, 0.35, 0.37):
             for _length, a, dx, dy in lines:
                 uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
                 try:
@@ -1663,10 +1664,11 @@ class Walk:
         pt, texts = self._hover_wall_delta(samples)
         self.refresh("status")
         self.clause("hover delta", pt is not None and "Δ" in texts, texts or self.S())
-        # The hover label sits on the cursor. Move off it, then click the wall.
+        # Leave the entity so the hover label clears, then click from elsewhere.
         self.d.hover(screen=[48, 420])
         self.d.wait_idle(frames=2)
         if pt is not None:
+            self.click(sketch=[300, 80])
             self.click(screen=pt)
         self.refresh("status", "measure")
         texts = " ".join(str(m.get("text", "")) for m in (self.st.get("measure") or []))
