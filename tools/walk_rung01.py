@@ -1626,6 +1626,7 @@ class Walk:
             ok = "Selected 1 sketch entity" in self.S() and "Constraint selected" not in self.S()
             if ok:
                 free += 1
+                self.ctx["wall_click"] = pt
             notes.append(f"{i}@({pt[0]:.0f},{pt[1]:.0f}):{self.S()[:40]}")
         self.clause("8 of 9 free", free >= 8, f"{free}/9 " + " | ".join(notes))
 
@@ -1696,7 +1697,9 @@ class Walk:
         # Leave the entity so the hover label clears, then click from elsewhere.
         self.d.hover(screen=[48, 420])
         self.d.wait_idle(frames=2)
-        click_pt = samples[0] if samples else pt
+        # Same press as N21b: the vertex-side point drag-selects the wall.
+        # The mid-stroke point only arms the hover label.
+        click_pt = self.ctx.get("wall_click") or (samples[0] if samples else pt)
         if click_pt is not None:
             self.click(sketch=[300, 80])
             self.click(screen=click_pt)
