@@ -1117,6 +1117,24 @@ func _dialog_state() -> Dictionary:
 	}
 
 
+func _click_file_list_item(dlg: FileDialog, filename: String) -> void:
+	var want := filename.get_file().strip_edges()
+	if want == "":
+		return
+	for n in dlg.find_children("*", "ItemList", true, false):
+		var list := n as ItemList
+		if list == null:
+			continue
+		for i in list.item_count:
+			var text := list.get_item_text(i).strip_edges()
+			if text != want:
+				continue
+			var r := list.get_item_rect(i)
+			var pos := list.get_global_transform_with_canvas() * (r.position + r.size * 0.5)
+			await _click_at(list.get_viewport(), pos, false)
+			return
+
+
 func _press_control(c: Control) -> void:
 	var guard := 0
 	while guard < 8 and (c.size.x < 1.0 or c.size.y < 1.0):
@@ -1149,6 +1167,12 @@ func _cmd_dialog_commit(req: Dictionary) -> Dictionary:
 			edit.caret_column = filename.length()
 	if is_inside_tree():
 		await get_tree().process_frame
+	if dlg.file_mode == FileDialog.FILE_MODE_OPEN_FILE and filename != "":
+		if is_inside_tree():
+			await get_tree().process_frame
+		await _click_file_list_item(dlg, filename)
+		if is_inside_tree():
+			await get_tree().process_frame
 	var ok: Button = dlg.get_ok_button()
 	if ok == null:
 		return {"error": "file dialog has no OK button"}
