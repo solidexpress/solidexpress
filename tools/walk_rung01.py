@@ -790,21 +790,27 @@ class Walk:
         lines.sort(key=lambda row: row[0], reverse=True)
         lines = lines[:2]
         points: list[list[float]] = []
-        # Middle of each wall. Endpoints sit under constraint badges, and a
-        # slide past ~0.56 of these short walls leaves the pickable stroke.
-        for frac in (0.30, 0.36, 0.42, 0.48, 0.54):
-            for _length, a, dx, dy in lines:
-                uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
-                try:
-                    screen = self.d.project(sketch=uv)["screen"]
-                except SxError:
+        # Step along the screen stroke. Badge glyphs are a fixed pixel size, so
+        # a handful of sketch fractions can all land inside them after a zoom.
+        for _length, a, dx, dy in lines:
+            try:
+                p0 = self.d.project(sketch=[float(a[0]), float(a[1])])["screen"]
+                p1 = self.d.project(sketch=[float(a[0]) + dx, float(a[1]) + dy])["screen"]
+            except SxError:
+                continue
+            vx, vy = float(p1[0]) - float(p0[0]), float(p1[1]) - float(p0[1])
+            span = (vx * vx + vy * vy) ** 0.5
+            if span < 24.0:
+                continue
+            steps = max(4, int(span * 0.7 / 6.0))
+            for i in range(steps):
+                t = 0.15 + 0.70 * ((i + 0.5) / steps)
+                screen = [float(p0[0]) + vx * t, float(p0[1]) + vy * t]
+                if self._in_badge(screen, badges, pad=3.0):
                     continue
-                kept = self._off_badges(screen, badges, dx, dy)
-                if kept is None:
+                if any(abs(screen[0] - p[0]) < 5.0 and abs(screen[1] - p[1]) < 5.0 for p in points):
                     continue
-                if any(abs(kept[0] - p[0]) < 4.0 and abs(kept[1] - p[1]) < 4.0 for p in points):
-                    continue
-                points.append(kept)
+                points.append(screen)
                 if len(points) >= count:
                     return points
         return points
@@ -1666,6 +1672,9 @@ class Walk:
         pt, texts = self._hover_wall_delta(samples)
         self.refresh("status")
         self.clause("hover delta", pt is not None and "Δ" in texts, texts or self.S())
+        # The hover label sits on the cursor. Move off it, then click the wall.
+        self.d.hover(screen=[48, 420])
+        self.d.wait_idle(frames=2)
         if pt is not None:
             self.click(screen=pt)
         self.refresh("status", "measure")
