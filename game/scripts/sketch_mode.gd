@@ -669,6 +669,11 @@ func _activate_session() -> void:
 	# Publish the chip before the first redraw. Restoring stays true so this
 	# solve does not pop relation chips; the label still updates.
 	refresh_dof_state()
+	# The activation solve reprints parameters. Re-take the baseline after that
+	# solve so a no-op reopen compares against the solved sketch, not the
+	# pre-solve digits.
+	if editing_fid != "" and sketch != null and sketch.has_method("snapshot"):
+		_edit_baseline = sketch.snapshot()
 	_redraw()
 	if not adopted:
 		_reset_undo_history()
@@ -825,7 +830,7 @@ func exit_sketch() -> String:
 		return ""
 	var fid := ""
 	if editing_fid != "":
-		if sketch.has_method("snapshot") and sketch.snapshot() == _edit_baseline:
+		if sketch.has_method("snapshot") and _snapshots_equal(sketch.snapshot(), _edit_baseline):
 			fid = editing_fid
 			_end_sketch_session()
 			status.emit("Sketch saved")
@@ -2852,8 +2857,135 @@ func constrain(type: String, value: float = 0.0) -> String:
 	return res["status"]
 
 
+## Line directions are defined mod 180°. Fold into (−90°, 90°] and then take
+## the unsigned angle from the horizontal, so a wall read from the other end
+## (−135° or 135°) records 45° and a label never carries a minus.
+func _normalize_jaw_angle_rad(rad: float) -> float:
+	var deg := rad_to_deg(rad)
+	while deg <= -180.0:
+		deg += 360.0
+	while deg > 180.0:
+		deg -= 360.0
+	if deg > 90.0:
+		deg -= 180.0
+	elif deg <= -90.0:
+		deg += 180.0
+	if deg < 0.0:
+		deg = -deg
+	return deg_to_rad(deg)
+
+
+func _jaw_angle_from_direction(dir: Vector2) -> float:
+	if dir.length_squared() < 1e-12:
+		return 0.0
+	return rad_to_deg(_normalize_jaw_angle_rad(Vector2(1, 0).angle_to(dir)))
+
+
+func _ids_are_jaw_angle(ids: Array) -> bool:
+	if sketch == null:
+		return false
+	var saw_datum := false
+	var saw_wall := false
+	for id in ids:
+		var info: Dictionary = sketch.entity_info(str(id))
+		if str(info.get("type", "")) != "line":
+			continue
+		if sketch.is_construction(str(id)):
+			var d: Vector2 = info["end"] - info["start"]
+			if absf(d.y) <= maxf(1e-4, absf(d.x) * 1e-3):
+				saw_datum = true
+		else:
+			saw_wall = true
+	return saw_datum and saw_wall
+
+
+func _dimension_is_jaw_angle(dim: Dictionary) -> bool:
+	if str(dim.get("callout", "")) == "jaw_angle":
+		return true
+	if str(dim.get("type", "")) != "angle":
+		return false
+	return _ids_are_jaw_angle(dim.get("ids", []))
+
+
+func _num_close(a: float, b: float, tol: float) -> bool:
+	var diff := absf(a - b)
+	var scale := maxf(absf(a), absf(b))
+	return diff <= tol or (scale > 0.0 and diff <= tol * scale)
+
+
+## True when two sketch snapshots are the same feature: same entities and
+## constraints in order, parameters and values within `tol` (absolute or relative).
+func _snapshots_equal(a: String, b: String, tol: float = 1e-9) -> bool:
+	if a == b:
+		return true
+	if a == "" or b == "":
+		return false
+	var pa = JSON.parse_string(a)
+	var pb = JSON.parse_string(b)
+	if typeof(pa) != TYPE_DICTIONARY or typeof(pb) != TYPE_DICTIONARY:
+		return false
+	var ea: Array = pa.get("entities", [])
+	var eb: Array = pb.get("entities", [])
+	if ea.size() != eb.size():
+		return false
+	for i in ea.size():
+		var ae: Dictionary = ea[i]
+		var be: Dictionary = eb[i]
+		if str(ae.get("id", "")) != str(be.get("id", "")):
+			return false
+		if str(ae.get("type", "")) != str(be.get("type", "")):
+			return false
+		if bool(ae.get("construction", false)) != bool(be.get("construction", false)):
+			return false
+		if bool(ae.get("external", false)) != bool(be.get("external", false)):
+			return false
+		if str(ae.get("projected_from", "")) != str(be.get("projected_from", "")):
+			return false
+		var ap: Array = ae.get("params", [])
+		var bp: Array = be.get("params", [])
+		if ap.size() != bp.size():
+			return false
+		for j in ap.size():
+			if int(ap[j]) != int(bp[j]):
+				return false
+	var ca: Array = pa.get("constraints", [])
+	var cb: Array = pb.get("constraints", [])
+	if ca.size() != cb.size():
+		return false
+	for i in ca.size():
+		var ac: Dictionary = ca[i]
+		var bc: Dictionary = cb[i]
+		if str(ac.get("id", "")) != str(bc.get("id", "")):
+			return false
+		if str(ac.get("type", "")) != str(bc.get("type", "")):
+			return false
+		if bool(ac.get("driving", true)) != bool(bc.get("driving", true)):
+			return false
+		if not _num_close(float(ac.get("value", 0.0)), float(bc.get("value", 0.0)), tol):
+			return false
+		var ra: Array = ac.get("refs", [])
+		var rb: Array = bc.get("refs", [])
+		if ra.size() != rb.size():
+			return false
+		for j in ra.size():
+			if str(ra[j].get("entity", "")) != str(rb[j].get("entity", "")):
+				return false
+			if str(ra[j].get("role", "self")) != str(rb[j].get("role", "self")):
+				return false
+	var ppa: Array = pa.get("params", [])
+	var ppb: Array = pb.get("params", [])
+	if ppa.size() != ppb.size():
+		return false
+	for i in ppa.size():
+		if not _num_close(float(ppa[i]), float(ppb[i]), tol):
+			return false
+	return true
+
+
 func _record_dimension(type: String, ids: Array, value: float, cid: String = "",
 		callout: String = "") -> void:
+	if type == "angle" and callout == "jaw_angle":
+		value = _normalize_jaw_angle_rad(value)
 	var id_list: Array = []
 	for id in ids:
 		id_list.append(str(id))
@@ -3866,7 +3998,7 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	var ang_cid: String = sketch.add_constraint("angle", [
 		{"entity": hx, "role": "self"},
 		{"entity": str(walls[0]["id"]), "role": "self"}], ang)
-	_record_dimension("angle", [hx, str(walls[0]["id"])], ang, ang_cid, "jaw_angle")
+	_record_dimension("angle", [hx, str(walls[0]["id"])], _normalize_jaw_angle_rad(ang), ang_cid, "jaw_angle")
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "circle" or sketch.is_construction(id):
@@ -6403,7 +6535,8 @@ func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String =
 	var cid: String = sketch.add_constraint("angle", [
 		{"entity": xid, "role": "self"},
 		{"entity": line_id, "role": "self"}], ang, true)
-	_record_dimension("angle", [xid, line_id], ang, cid, callout)
+	var recorded := _normalize_jaw_angle_rad(ang) if callout == "jaw_angle" else ang
+	_record_dimension("angle", [xid, line_id], recorded, cid, callout)
 
 
 func _line_has_angle_dim(line_id: String) -> bool:
@@ -6707,12 +6840,17 @@ func _dimension_record_from_cid(cid: String) -> Dictionary:
 	# Construction projected-circle anchors are not user dimensions.
 	if (t == "radius" or t == "diameter") and sketch.is_construction(str(ids[0])):
 		return {}
-	return {
+	var value := float(info.get("value", 0.0))
+	var rec := {
 		"type": t,
 		"ids": ids,
-		"value": float(info.get("value", 0.0)),
+		"value": value,
 		"cid": cid,
 	}
+	if t == "angle" and _ids_are_jaw_angle(ids):
+		rec["callout"] = "jaw_angle"
+		rec["value"] = _normalize_jaw_angle_rad(value)
+	return rec
 
 
 func _dimension_fact_key(dim: Dictionary) -> String:
@@ -6752,6 +6890,8 @@ func _merge_dimension_records(built: Array, kept: Array) -> Array:
 			merged["type"] = rec["type"]
 			merged["ids"] = rec["ids"]
 			merged["value"] = rec["value"]
+			if str(merged.get("callout", "")) == "jaw_angle":
+				merged["value"] = _normalize_jaw_angle_rad(float(rec["value"]))
 			merged["cid"] = cid
 			out.append(merged)
 			if cid != "":
@@ -7165,7 +7305,10 @@ func _dimension_display_value(dim: Dictionary) -> float:
 	# Angle and diameter must win over measured_value: two lines report the
 	# endpoint gap, and a circle reports radius, neither of which is the dim.
 	if type == "angle" and ids.size() >= 2 and sketch != null:
-		return rad_to_deg(_lines_signed_angle(str(ids[0]), str(ids[1])))
+		var signed := _lines_signed_angle(str(ids[0]), str(ids[1]))
+		if _dimension_is_jaw_angle(dim):
+			return rad_to_deg(_normalize_jaw_angle_rad(signed))
+		return rad_to_deg(signed)
 	if type == "diameter" and not ids.is_empty() and sketch != null:
 		var dinfo: Dictionary = sketch.entity_info(str(ids[0]))
 		if str(dinfo.get("type", "")) in ["circle", "arc"]:
@@ -7583,6 +7726,7 @@ func _resolve_label_overlaps() -> void:
 	_clamp_dimension_labels_into_view(cam, k)
 	_seat_full_circle_labels(cam, k)
 	_open_label_glyph_gap(cam, k)
+	_nudge_labels_off_leaders(cam, k)
 	_rebuild_circle_label_leaders(cam)
 
 
@@ -7601,6 +7745,55 @@ func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
 		if rect.intersects(_projected_label_rect(other, cam, k)):
 			return true
 	return false
+
+
+## Shift a callout off a glyph leader by at most 36 screen px total, so a
+## rebuild cannot walk the text off the canvas.
+func _nudge_labels_off_leaders(cam: Camera3D, k: float) -> void:
+	if k < 1e-6:
+		return
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+			continue
+		if _seated_curve_dimension(dim) or _is_slot_cap_radius(dim):
+			continue
+		var clamp_off := Vector2.ZERO
+		var raw: Variant = dim.get("label_clamp", Vector2.ZERO)
+		if raw is Vector2:
+			clamp_off = raw
+		var screen_off := Vector2(clamp_off.x * k, -clamp_off.y * k).length()
+		if screen_off >= 36.0:
+			continue
+		var rect := _projected_label_rect(dim, cam, k)
+		var push := Vector2.ZERO
+		for a in _glyph_anchors:
+			if float(a.get("offset_px", 0.0)) < GLYPH_LEADER_MIN_PX:
+				continue
+			var sa := cam.unproject_position(to_global(to_model(a["anchor"])))
+			var sb := cam.unproject_position(to_global(to_model(a["pos"])))
+			if not _leader_crosses_rect(sa, sb, rect):
+				continue
+			var dir := sb - sa
+			if dir.length_squared() < 1.0:
+				continue
+			var n := Vector2(-dir.y, dir.x).normalized()
+			var side := 1.0 if n.dot(rect.get_center() - (sa + sb) * 0.5) >= 0.0 else -1.0
+			push += n * side * 12.0
+		if push.length_squared() < 0.25:
+			continue
+		var room := 36.0 - screen_off
+		if push.length() > room:
+			push = push.normalized() * room
+		var next := _projected_label_rect(dim, cam, k)
+		# Predict the shift: offset x grows with +screen.x / k, y with -screen.y / k.
+		next.position += push
+		var safe := _label_safe_screen_rect()
+		if not safe.encloses(next):
+			continue
+		clamp_off += Vector2(push.x / k, -push.y / k)
+		dim["label_clamp"] = clamp_off
+		dimensions[i] = dim
 
 
 ## Jaw callouts that still overlap at the stack cap slide sideways, in
@@ -8122,7 +8315,57 @@ func _glyph_overlap_fraction(a: Rect2, b: Rect2) -> float:
 	return area / smaller
 
 
-## 0 when the badge is clear of other glyphs, labels, and sketch geometry.
+## Start a leader just past a badge that sits on its constraint point.
+## The runner samples t = i/8 and ignores points within 10 px of the start,
+## so keep advancing the start until that test is clear. Leave at least 4 px
+## of ribbon or the mesh drops while the leader flag stays on.
+func _leader_clear_start(anchor: Vector2, centre: Vector2, others: Array[Rect2]) -> Vector2:
+	var start := anchor
+	if anchor.distance_to(centre) < 12.0:
+		return anchor
+	for _pass in range(6):
+		var span := start.distance_to(centre)
+		if span < 6.0:
+			break
+		var blocked := start
+		var saw := false
+		for i in range(1, 8):
+			var p := start.lerp(centre, float(i) / 8.0)
+			if start.distance_to(p) < 10.0:
+				continue
+			for rect in others:
+				if rect.grow(1.0).has_point(p):
+					blocked = p
+					saw = true
+					break
+		if not saw:
+			break
+		var dir := centre - start
+		if dir.length_squared() < 1.0:
+			break
+		var next := blocked + dir.normalized() * 2.0
+		if start.distance_to(next) < 0.5:
+			break
+		if next.distance_to(centre) < 4.0:
+			break
+		start = next
+	return start
+
+
+func _leader_crosses_rect(anchor: Vector2, centre: Vector2, rect: Rect2) -> bool:
+	if anchor == Vector2.INF or rect.size == Vector2.ZERO:
+		return false
+	# Skip the anchor neighbourhood (it sits on the curve, often under the
+	# badge that names that vertex) and the badge centre.
+	for i in range(1, 8):
+		var p := anchor.lerp(centre, float(i) / 8.0)
+		if anchor.distance_to(p) < 10.0:
+			continue
+		if rect.has_point(p):
+			return true
+	return false
+
+
 func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		labels: Array[Rect2], cam: Camera3D, shaft_y: float = INF,
 		anchor_screen: Vector2 = Vector2.INF, penalize_curves: bool = true) -> float:
@@ -8148,6 +8391,13 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 		score += 40.0
 	if penalize_curves:
 		score += _glyph_curve_penalty(rect, anchor_screen, cam)
+	# The leader is the segment from the anchor to the badge. A badge that
+	# clears its neighbours can still draw that segment through a label or
+	# another badge.
+	if anchor_screen != Vector2.INF:
+		for lr in labels:
+			if _leader_crosses_rect(anchor_screen, centre, lr):
+				score += 12000.0
 	return score
 
 
@@ -8541,7 +8791,22 @@ func _rebuild_constraint_glyphs() -> void:
 		for a in _glyph_anchors:
 			if float(a.get("offset_px", 0.0)) < GLYPH_LEADER_MIN_PX:
 				continue
-			_append_leader_ribbon(im, cam, a["anchor"], a["pos"], 1.6, col)
+			var from_sketch: Vector2 = a["anchor"]
+			var to_sketch: Vector2 = a["pos"]
+			var sa := cam.unproject_position(to_global(to_model(from_sketch)))
+			var sb := cam.unproject_position(to_global(to_model(to_sketch)))
+			var others: Array[Rect2] = []
+			for b in _glyph_anchors:
+				if b == a:
+					continue
+				var bc: Vector2 = cam.unproject_position(to_global(to_model(b["pos"])))
+				var bsize := _glyph_symbol_size_px(str(b.get("type", "")), k)
+				others.append(Rect2(bc - bsize * 0.5, bsize))
+			var start := _leader_clear_start(sa, sb, others)
+			if start.distance_to(sa) > 0.5:
+				from_sketch = _sketch_from_screen(cam, start, from_sketch)
+				a["anchor"] = from_sketch
+			_append_leader_ribbon(im, cam, from_sketch, to_sketch, 1.6, col)
 		im.surface_end()
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -8812,6 +9077,127 @@ func _relax_glyph_layout(items: Array, labels: Array[Rect2], cam: Camera3D,
 		if not moved:
 			break
 	_repel_glyph_items(items, cam, shaft_y)
+	_uncross_glyph_leaders(items, labels, cam, shaft_y)
+
+
+## Swing a leader off other badges without moving the badge onto a wall.
+func _uncross_glyph_leaders(items: Array, labels: Array[Rect2], cam: Camera3D,
+		shaft_y: float) -> void:
+	for _pass in 4:
+		var moved := false
+		for i in range(items.size()):
+			var it: Dictionary = items[i]
+			var size: Vector2 = it["size"]
+			var natural: Vector2 = it["natural"]
+			var centre: Vector2 = it["centre"]
+			if size == Vector2.ZERO:
+				continue
+			var obstacles: Array[Rect2] = []
+			for j in range(items.size()):
+				if j == i:
+					continue
+				var os: Vector2 = items[j]["size"]
+				if os == Vector2.ZERO:
+					continue
+				var oc: Vector2 = items[j]["centre"]
+				obstacles.append(Rect2(oc - os * 0.5, os))
+			for lr in labels:
+				obstacles.append(lr)
+			if not _leader_crosses_any(natural, centre, obstacles):
+				continue
+			var cur_curve := _glyph_curve_penalty(Rect2(centre - size * 0.5, size), natural, cam)
+			var best := centre
+			var best_rank := 1000000.0
+			for radius in [12.0, 20.0, 28.0, 36.0, 40.0]:
+				for k in 32:
+					var ang := TAU * float(k) / 32.0
+					var trial: Vector2 = natural + Vector2(cos(ang), sin(ang)) * radius
+					var rect := Rect2(trial - size * 0.5, size)
+					if _glyph_below_part(rect, shaft_y):
+						continue
+					var curve := _glyph_curve_penalty(rect, natural, cam)
+					if curve > cur_curve + 1.0:
+						continue
+					if _leader_crosses_any(natural, trial, obstacles):
+						continue
+					var rank := curve + trial.distance_to(centre) * 0.1
+					if rank < best_rank:
+						best_rank = rank
+						best = trial
+			if best.distance_to(centre) <= 0.5:
+				if _nudge_crossed_badges(items, i, cam, shaft_y):
+					moved = true
+				continue
+			it["centre"] = best
+			it["offset_px"] = natural.distance_to(best)
+			it["pos"] = _sketch_from_screen(cam, best, it["anchor"])
+			items[i] = it
+			moved = true
+		if not moved:
+			break
+
+
+## Slide a badge the leader cuts through, perpendicular to that leader,
+## staying off the wall. Returns true when the leader is clear afterwards.
+func _nudge_crossed_badges(items: Array, leader_i: int, cam: Camera3D,
+		shaft_y: float) -> bool:
+	var src: Dictionary = items[leader_i]
+	var natural: Vector2 = src["natural"]
+	var centre: Vector2 = src["centre"]
+	var dir := centre - natural
+	if dir.length_squared() < 4.0:
+		return false
+	dir = dir.normalized()
+	var normal := Vector2(-dir.y, dir.x)
+	var moved := false
+	for j in range(items.size()):
+		if j == leader_i:
+			continue
+		var other: Dictionary = items[j]
+		var os: Vector2 = other["size"]
+		if os == Vector2.ZERO:
+			continue
+		var oc: Vector2 = other["centre"]
+		var orect := Rect2(oc - os * 0.5, os)
+		if not _leader_crosses_rect(natural, centre, orect):
+			continue
+		var onat: Vector2 = other["natural"]
+		var cur_curve := _glyph_curve_penalty(orect, onat, cam)
+		var best := oc
+		var best_rank := 1000000.0
+		for dist in [8.0, 16.0, 24.0, 32.0]:
+			for sgn in [-1.0, 1.0]:
+				var trial: Vector2 = oc + normal * sgn * dist
+				if trial.distance_to(onat) > GLYPH_MAX_OFFSET_PX:
+					var delta := trial - onat
+					trial = onat + delta.normalized() * GLYPH_MAX_OFFSET_PX
+				var rect := Rect2(trial - os * 0.5, os)
+				if _glyph_below_part(rect, shaft_y):
+					continue
+				var curve := _glyph_curve_penalty(rect, onat, cam)
+				if curve > cur_curve + 1.0:
+					continue
+				if _leader_crosses_rect(natural, centre, rect):
+					continue
+				var rank := curve + trial.distance_to(oc) * 0.1
+				if rank < best_rank:
+					best_rank = rank
+					best = trial
+		if best.distance_to(oc) <= 0.5:
+			continue
+		other["centre"] = best
+		other["offset_px"] = onat.distance_to(best)
+		other["pos"] = _sketch_from_screen(cam, best, other["anchor"])
+		items[j] = other
+		moved = true
+	return moved
+
+
+func _leader_crosses_any(anchor: Vector2, centre: Vector2, obstacles: Array[Rect2]) -> bool:
+	for rect in obstacles:
+		if _leader_crosses_rect(anchor, centre, rect):
+			return true
+	return false
 
 
 ## Push overlapping badges apart inside the 40 px cap, and lift any badge

@@ -678,9 +678,13 @@ DressupEdges resolve_dressup_edges(ApplyCtx& ctx, const Body& body, const char* 
         }
     }
     out.lost = std::max(0, out.total - static_cast<int>(out.edges.size()));
-    if (out.lost > 0)
-        sx::log::error(std::string(soft_skip_tag) + std::to_string(out.lost) +
-                       " edges lost on rebuild");
+    if (out.lost > 0) {
+        // A lost edge is a documented, non-fatal degrade (the user-facing
+        // warning is report_lost_edges). Log it as a warning, named.
+        const std::string who = ctx.feature.name.empty() ? std::string("feature") : ctx.feature.name;
+        sx::log::warn(who + ": " + std::string(soft_skip_tag) + std::to_string(out.lost) +
+                      " edges lost on rebuild");
+    }
     return out;
 }
 

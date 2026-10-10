@@ -1175,6 +1175,10 @@ PackedStringArray SxDocument::graph_warnings() const {
     return out;
 }
 
+void SxDocument::set_kernel_log(const String& path) {
+    sx::log::set_file_sink(to_std(path));
+}
+
 bool SxDocument::remove_variable(const String& name) {
     // Unlike other graph edits, keep the removal even when regenerate fails
     // (features may still reference the name). Undo restores the prior
@@ -2507,6 +2511,7 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("export_context"), &SxDocument::export_context);
     ClassDB::bind_method(D_METHOD("graph_features"), &SxDocument::graph_features);
     ClassDB::bind_method(D_METHOD("graph_warnings"), &SxDocument::graph_warnings);
+    ClassDB::bind_method(D_METHOD("set_kernel_log", "path"), &SxDocument::set_kernel_log);
     ClassDB::bind_method(D_METHOD("graph_add_primitive", "kind", "a", "b", "c", "origin"), &SxDocument::graph_add_primitive);
     ClassDB::bind_method(D_METHOD("graph_add_sketch", "sketch"), &SxDocument::graph_add_sketch);
     ClassDB::bind_method(D_METHOD("graph_get_sketch", "fid"), &SxDocument::graph_get_sketch);

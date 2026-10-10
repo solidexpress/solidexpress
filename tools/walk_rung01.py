@@ -40,7 +40,7 @@ ROWS = [
     "A16", "N6", "A11a", "N10", "N18",
     "A11b", "N2", "L3", "A11c", "N3", "A11d", "A11e", "A11f", "N15", "N13",
     "N16", "N19", "N23",
-    "A12", "N11", "A13", "A13b", "A13d", "A13c", "N9", "L7", "N8b", "N14",
+    "A12", "N11", "A13b", "A13d", "A13", "A13c", "N9", "L7", "N8b", "N14",
     "A10", "A10b", "A14", "L9", "A15",
 ]
 
@@ -188,23 +188,21 @@ class Walk:
     # --- judging ----------------------------------------------------------
 
     def clause(self, name: str, ok, evidence: str = "", needs_visual: bool = False, kind: str = "") -> None:
+        stored = None if needs_visual or kind == "headless-only" else bool(ok)
         self.clauses.append({
             "name": name,
-            "ok": None if needs_visual else bool(ok),
+            "ok": stored,
             "needs_visual": needs_visual,
             "evidence": evidence,
             "kind": kind,
         })
 
-    def visual(self, name: str, evidence: str) -> None:
-        path = self.out / f"visual-{self.shot_n:03d}-{name.replace(' ', '_')[:40]}.png"
-        self.shot_n += 1
-        try:
-            shot = self.d.screenshot(str(path))
-            evidence = f"{evidence} screenshot={shot.get('path', path)}"
-        except SxError as exc:
-            evidence = f"{evidence} screenshot failed: {exc}"
-        self.clause(name, None, evidence, needs_visual=True)
+    def _clause_mark(self, clause: dict) -> str:
+        if clause.get("kind") == "headless-only":
+            return "headless-only"
+        if clause.get("needs_visual"):
+            return "VIS"
+        return "ok" if clause.get("ok") else "FAIL"
 
     def need(self, ok: bool, name: str, evidence: str = "") -> None:
         self.clause(name, ok, evidence)
@@ -224,11 +222,14 @@ class Walk:
         return bool(fails) and all(self._gap_clause(c) for c in fails)
 
     def verdict_of(self, clauses: list[dict]) -> str:
-        if not clauses:
+        judged = [c for c in clauses if c.get("kind") != "headless-only"]
+        if not judged:
             return "BLOCKED"
-        if any(c["ok"] is False for c in clauses):
+        if any("BLOCKED-by-flag" in str(c.get("evidence", "")) for c in judged):
+            return "BLOCKED-by-flag"
+        if any(c["ok"] is False for c in judged):
             return "FAIL"
-        if any(c["needs_visual"] or c["ok"] is None for c in clauses):
+        if any(c["needs_visual"] or c["ok"] is None for c in judged):
             return "PARTIAL"
         return "PASS"
 
@@ -289,6 +290,7 @@ class Walk:
             self.rows.append(rec)
             print(f"{rid:5} {rec['verdict']:16} {rec['seconds']:6.1f}s  {rec['evidence'][:220]}", flush=True)
             return
+        bodies_before = [str(b.get("name", "")) for b in (self.refresh("bodies").get("bodies") or [])]
         try:
             self._row_body(rid)()
         except RowAbort:
@@ -297,6 +299,10 @@ class Walk:
             self.clause("command", False, str(exc), kind="runner-gap")
         except Exception:
             self.clause("runner", False, traceback.format_exc(limit=6), kind="runner-gap")
+        try:
+            self._note_bodies(rid, bodies_before)
+        except SxError:
+            pass
         next_wants = bool((EXPECT.get(nxt) or {}).get("popup")) if nxt else False
         if not next_wants:
             try:
@@ -315,7 +321,7 @@ class Walk:
         if verdict == "FAIL":
             verdict = "FAIL runner-gap" if self._all_runner_gaps() else "FAIL"
         evidence = "; ".join(
-            f"{c['name']}={'VIS' if c['needs_visual'] else ('ok' if c['ok'] else 'FAIL')}: {c['evidence']}"
+            f"{c['name']}={self._clause_mark(c)}: {c['evidence']}"
             for c in self.clauses
         )
         rec = {
@@ -480,7 +486,7 @@ class Walk:
 
     def sketch_ground(self) -> None:
         self.click("rail:Sketch")
-        self.click(screen=[720, 460])
+        self.click(model=[0, 0, 0])
         self.refresh("status", "sketch")
 
     def clear_selection(self) -> None:
@@ -874,6 +880,79 @@ class Walk:
         self.cursor = int(reply.get("cursor", 0))
         return self.cursor
 
+    def _trace_text(self, line: str) -> str:
+        key = " text="
+        idx = line.find(key)
+        return line[idx + len(key):] if idx >= 0 else line
+
+    def _trace_time(self, line: str) -> float | None:
+        import re
+        match = re.search(r"\bt=([0-9]+(?:\.[0-9]+)?)", line)
+        return float(match.group(1)) if match else None
+
+    def status_since(self, mark: int, kind: str | None = None) -> list[str]:
+        """`[status-trace]` lines since `mark`. Status clauses read these, not the live label."""
+        lines = [ln for ln in self.trace_from(mark) if "status-trace" in ln]
+        if kind is None:
+            return lines
+        return [ln for ln in lines if f"kind={kind}" in ln]
+
+    def result_texts(self, mark: int) -> list[str]:
+        return [self._trace_text(ln) for ln in self.status_since(mark, "result")]
+
+    def _body_snapshot(self) -> list[str]:
+        self.refresh("bodies", "timeline")
+        names = [str(b.get("name", "")) for b in (self.st.get("bodies") or [])]
+        timeline = [str(r.get("name", "")) for r in (self.st.get("timeline") or []) if r.get("name")]
+        return names, timeline
+
+    def _fmt_volume(self, body: dict) -> str:
+        vol = body.get("volume")
+        if vol is None:
+            mn = body.get("min") or [0, 0, 0]
+            mx = body.get("max") or [0, 0, 0]
+            vol = abs((float(mx[0]) - float(mn[0])) * (float(mx[1]) - float(mn[1])) * (float(mx[2]) - float(mn[2])))
+        return f"{float(vol):.1f}"
+
+    def _bbox_size(self, body: dict) -> tuple[float, float, float]:
+        mn = body.get("min") or [0, 0, 0]
+        mx = body.get("max") or [0, 0, 0]
+        return tuple(abs(float(mx[i]) - float(mn[i])) for i in range(3))
+
+    def body_guard(self, kind: str, thickness: float | None = None) -> bool:
+        """S0: exactly one body before an export. A miss is runner-gap, not a checker FAIL."""
+        self.refresh("bodies")
+        bodies = list(self.st.get("bodies") or [])
+        if len(bodies) != 1:
+            named = ", ".join(f"{b.get('name')} ({self._fmt_volume(b)})" for b in bodies) or "(none)"
+            left = self.ctx.get("bodies_left_by") or "unknown"
+            evidence = f"runner-gap: stray body {named} left by {left}"
+            self.clause("S0", False, evidence, kind="runner-gap")
+            return False
+        body = bodies[0]
+        name = str(body.get("name", ""))
+        if kind == "nut":
+            self.clause("S0", True, f"one body {name} ({self._fmt_volume(body)})")
+            return True
+        sx, sy, sz = self._bbox_size(body)
+        ok = (
+            name.startswith("extrude")
+            and abs(sx - 232.5) <= 0.3
+            and abs(sy - 45.0) <= 0.1
+            and thickness is not None
+            and abs(sz - float(thickness)) <= 0.01
+        )
+        evidence = f"{name} ({self._fmt_volume(body)}) bbox {sx:.3f}×{sy:.3f}×{sz:.3f} T={thickness}"
+        if not ok and len(bodies) == 1:
+            evidence = f"runner-gap: body {name} ({self._fmt_volume(body)}) bbox {sx:.3f}×{sy:.3f}×{sz:.3f} want 232.5×45×{thickness}"
+        self.clause("S0", ok, evidence, kind="" if ok else "runner-gap")
+        return ok
+
+    def _note_bodies(self, rid: str, before: list[str]) -> None:
+        after = [str(b.get("name", "")) for b in (self.refresh("bodies").get("bodies") or [])]
+        if after != before:
+            self.ctx["bodies_left_by"] = rid
+
     # --- rows -------------------------------------------------------------
 
     def row_N22(self) -> None:
@@ -979,10 +1058,7 @@ class Walk:
         differ = False
         if armed and hovered and len(armed) >= 3 and len(hovered) >= 3:
             differ = any(abs(float(armed[i]) - float(hovered[i])) >= 20 for i in range(3))
-        if armed and hovered:
-            self.clause("lit vs hover fill", differ, f"lit={armed} hover={hovered}")
-        else:
-            self.visual("lit fill", f"lit={armed} hover={hovered}")
+        self.clause("lit vs hover fill", bool(armed and hovered) and differ, f"lit={armed} hover={hovered}")
 
     def row_L1(self) -> None:
         order = [
@@ -1042,13 +1118,15 @@ class Walk:
         self.ctx["head"] = [200, 0]
 
     def row_L5(self) -> None:
+        mark_f = self.mark()
         self.d.key("f")
-        self.refresh("status")
-        fit = "fit" in self.S().lower() or "Sketch view" in self.S()
-        self.clause("F", fit, self.S())
+        fit_text = " | ".join(self.result_texts(mark_f))
+        fit = "Sketch view fit" in fit_text or "Framed" in fit_text
+        self.clause("F", fit, fit_text or self.S())
+        mark = self.mark()
         self.click("hud:Frame")
-        self.refresh("status")
-        self.clause("HUD Frame", "fit" in self.S().lower() or "Framed" in self.S() or True, self.S())
+        framed = " | ".join(self.result_texts(mark))
+        self.clause("HUD Frame", "Sketch view fit" in framed or "Framed" in framed, framed or self.S())
         self.d.key("shift+f")
         self.refresh("status")
         a = self.d.project(sketch=[0, 0])["screen"]
@@ -1072,9 +1150,7 @@ class Walk:
         return str(reply.get("status", self.S()))
 
     def _empty_canvas(self) -> dict:
-        win = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
-        rail = self.rail_right()
-        return self.click(screen=[rail + 70.0, float(win[1]) - 90.0])
+        return self.click(sketch=[320, 160])
 
     def row_A4(self) -> None:
         # Smart Dim leaves both circles selected, which is what shows Shaft Lines
@@ -1181,6 +1257,8 @@ class Walk:
         self.refresh("status", "bodies")
         self.clause("extrude", "Extrude Blind 10.0000 mm" in str(reply.get("status", self.S())), str(reply.get("status", self.S())))
         self.clause("one body", len(self.st.get("bodies") or []) == 1, str(self.st.get("bodies")))
+        if not self.body_guard("wrench", 10.0):
+            raise RowAbort()
         path = self.export_3mf("blank.3mf")
         self.clause("exported", "Exported 3MF" in self.S() and Path(path).exists(), self.S())
         if Path(path).exists():
@@ -1203,7 +1281,7 @@ class Walk:
         extrude = self.control("finish:Extrude")
         if extrude and extrude.get("rect"):
             r = extrude["rect"]
-            reply = self.click(screen=[r[0] + r[2] / 2, r[1] + r[3] / 2])
+            reply = self.click("finish:Extrude")
             self.clause("shield", str(reply.get("disposition", "")) == "drop:shield", str(reply.get("disposition", "")) + " " + str(reply.get("status", "")))
         self.click("chip:Fillet")
         self.refresh("status")
@@ -1247,7 +1325,7 @@ class Walk:
     def row_L11(self) -> None:
         mark = self.mark()
         self.click("hud:View")
-        self.click(screen=[400, 500])
+        self.click(model=[80, 0, 5])
         self.click("menu:View")
         self.esc()
         lines = self.trace_from(mark)
@@ -1305,6 +1383,7 @@ class Walk:
         self.clause("no face", not (self.st.get("selection") or {}).get("face"), str(self.st.get("selection")))
 
     def row_N4(self) -> None:
+        before_bodies, before_timeline = self._body_snapshot()
         self.sketch_on_top()
         self.refresh("finish")
         self.clause("finish reset", self.field("finish:End") == "Blind" and self.field("finish:Op") == "New", str(self.st.get("finish")))
@@ -1326,12 +1405,27 @@ class Walk:
         self.d.key("ctrl+a")
         self.refresh("status", "selection")
         self.clause("ctrl+a field", "Selected" not in self.S(), self.S())
-        s1 = self.esc()
-        s2 = self.esc()
-        self.clause("saved sketch", "First point dropped" in s1 and "Sketch saved" in s2, s1 + " | " + s2)
+        mark = self.mark()
+        self.esc()
+        self.esc()
+        texts = self.result_texts(mark)
+        joined = " | ".join(texts)
+        self.clause(
+            "saved sketch",
+            any("First point dropped" in t for t in texts) and any(t.strip() == "Sketch saved" or t.startswith("Sketch saved") for t in texts),
+            joined or self.S(),
+        )
+        undo_mark = self.mark()
         self.d.key("ctrl+z")
-        self.refresh("status")
-        self.clause("undo sketch", self.S().startswith("Undo"), self.S())
+        undo_texts = self.result_texts(undo_mark)
+        undo_text = " | ".join(undo_texts) or self.S()
+        self.clause("undo sketch", any(t.startswith("Undo") for t in undo_texts), undo_text)
+        after_bodies, after_timeline = self._body_snapshot()
+        self.clause(
+            "bodies and timeline",
+            before_bodies == after_bodies and before_timeline == after_timeline,
+            f"bodies {before_bodies} -> {after_bodies} timeline {before_timeline} -> {after_timeline}",
+        )
 
     def row_A7b(self) -> None:
         self.sketch_on_top()
@@ -1475,9 +1569,20 @@ class Walk:
         self.click("rail:Select")
         self.refresh("status")
         self.clause("select tool", self.S().startswith("Select —"), self.S())
-        self.click(screen=self._jaw_wall_screen(0.4))
-        self.refresh("status")
-        self.clause("wall", "Selected 1 sketch entity" in self.S() and "Constraint selected" not in self.S(), self.S())
+        # 40% along the wall now sits under a leader badge. Use a sample
+        # the badge rects leave clear, the same band N21b presses.
+        samples = self.wall_screen_points(4) or [self._jaw_wall_screen(0.3)]
+        got = ""
+        hit = False
+        for pt in samples:
+            self.click(screen=pt)
+            self.refresh("status")
+            got = self.S()
+            if "Selected 1 sketch entity" in got and "Constraint selected" not in got:
+                hit = True
+                break
+            self.click(sketch=[300, 80])
+        self.clause("wall", hit, got)
         s1 = self.esc()
         s2 = self.esc()
         self.clause("esc", "Selection cleared" in s1 and "Sketch saved" in s2, s1 + " | " + s2)
@@ -1545,17 +1650,46 @@ class Walk:
     def row_L4(self) -> None:
         texts = self.dim_texts()
         twenties = [t for t in texts if t.strip().startswith("20") and "°" not in t]
-        angles = [t for t in texts if "45" in t and "°" in t]
         angle_drawn = [t for t in texts if "°" in t]
-        ok = len(twenties) == 1 and len(angles) == 1
-        # The trim rebuild writes the jaw angle as -135° (editor Dim -135.0), not 45°.
+        ok = len(twenties) == 1 and len(angle_drawn) == 1 and angle_drawn[0].replace(" ", "").startswith("45")
         self.clause(
             "one 20 one 45",
             ok,
             f"drawn={texts} angle={angle_drawn}",
             kind="" if ok else "product",
         )
+        self.clause("no minus", not any("-" in t for t in texts), str(texts))
         self.clause("not 20.0005", not any("20.0005" in t or "45.0007" in t for t in texts), str(texts))
+
+    def _open_angle_editor(self, angle: dict) -> str:
+        """Click the hit-test rect until DimEditLine reads 45. Leave the sketch open."""
+        rect = angle.get("hit_rect") or []
+        if len(rect) < 4 or float(rect[2]) < 1.0:
+            rect = []
+        points: list[list[float]] = []
+        if rect:
+            x, y, w, h = [float(v) for v in rect[:4]]
+            points.append([x + w * 0.5, y + h * 0.5])
+            points.append([x + min(6.0, max(w * 0.2, 1.0)), y + h * 0.5])
+            points.append([x + w * 0.5, y + min(4.0, h * 0.25)])
+        editor = ""
+        for pt in points:
+            self.d.click(screen=pt)
+            self.d.wait_idle(frames=6)
+            got = str((self.control("dim:Edit") or {}).get("text", ""))
+            if got.startswith("45"):
+                return got
+            if got:
+                self.click("dim:Edit")
+                self.esc()
+                self.click("rail:Select")
+                continue
+            status = self.S()
+            if "Selected" in status and "sketch entity" in status:
+                self.d.key("ctrl+z")
+                self.d.wait_idle(frames=4)
+                self.click("rail:Select")
+        return editor
 
     def row_N1a(self) -> None:
         guard = 0
@@ -1571,10 +1705,18 @@ class Walk:
         editor = ""
         angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
         if angle is not None:
-            self.d.click(dim=str(angle.get("text", "")), glyph="first")
-            self.refresh("focus_text", "status", "focus")
-            editor = str(self.st.get("focus_text", ""))
-            self.esc()
+            # Trim is still armed after A9; it consumes the label click.
+            # The Label3D billboard rect (rect) sits on the jaw wall, so a
+            # click there drags the entity. dimension_hit uses hit_rect.
+            # Esc with focus on the rail exits the sketch, so only dismiss
+            # a popup that is actually open, and only after focusing it.
+            self.click("rail:Select")
+            editor = self._open_angle_editor(angle)
+            if editor.startswith("45"):
+                self.click("dim:Edit")
+                self.esc()
+            elif not editor:
+                editor = self.S()
         for token in ("20", "45", "5", "22.5"):
             present = any(self._label_is(token, t) for t in texts)
             self.clause(
@@ -1583,13 +1725,22 @@ class Walk:
                 f"drawn={texts} editor={editor!r}",
                 kind="" if present or token != "45" else "product",
             )
+        self.clause("no minus", not any("-" in t for t in texts), str(texts))
+        if angle is not None:
+            self.clause("editor 45", "45" in editor and "-" not in editor, f"editor={editor!r}")
         head = self.find_dim(lambda d: "22.5" in str(d.get("text", "")))
-        if head and self.ctx.get("H"):
-            r = head.get("rect") or [0, 0, 0, 0]
-            cx = r[0] + r[2] / 2
-            cy = r[1] + r[3] / 2
-            dist = ((cx - self.ctx["H"][0]) ** 2 + (cy - self.ctx["H"][1]) ** 2) ** 0.5
-            self.clause("22.5 near head", dist <= 40 + px / 2, f"dist to H {dist:.1f}")
+        centre = None
+        try:
+            centre = self.d.project(sketch=[200.0, 0.0])["screen"]
+        except (SxError, TypeError, KeyError):
+            centre = self.ctx.get("H")
+        if head and centre:
+            r = head.get("hit_rect") or head.get("rect") or [0, 0, 0, 0]
+            left, top, w, h = [float(v) for v in r[:4]]
+            dx = max(left - centre[0], 0.0, centre[0] - (left + w))
+            dy = max(top - centre[1], 0.0, centre[1] - (top + h))
+            dist = (dx * dx + dy * dy) ** 0.5
+            self.clause("22.5 near head", dist <= 40 + px / 2, f"dist to head {dist:.1f}")
         else:
             self.clause("22.5 placed", False, str(texts))
 
@@ -1630,8 +1781,60 @@ class Walk:
             notes.append(f"{i}@({pt[0]:.0f},{pt[1]:.0f}):{self.S()[:40]}")
         self.clause("8 of 9 free", free >= 8, f"{free}/9 " + " | ".join(notes))
 
+    def _screen_of_sketch(self, uv) -> list[float] | None:
+        try:
+            return self.d.project(sketch=[float(uv[0]), float(uv[1])])["screen"]
+        except (SxError, TypeError, KeyError, IndexError):
+            return None
+
+    def _seg_hits_rect(self, a: list[float], b: list[float], rect: list) -> bool:
+        if len(rect) < 4:
+            return False
+        x, y, w, h = (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))
+
+        def inside(px: float, py: float) -> bool:
+            return x <= px <= x + w and y <= py <= y + h
+
+        # The anchor sits on the sketch curve and can lie under a neighbour
+        # badge. Samples within 10 px of it are that vertex, not the leader.
+        span = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+        if inside(b[0], b[1]) and span >= 10.0:
+            return True
+        steps = 8
+        for i in range(1, steps):
+            t = i / steps
+            px = a[0] + (b[0] - a[0]) * t
+            py = a[1] + (b[1] - a[1]) * t
+            if ((px - a[0]) ** 2 + (py - a[1]) ** 2) ** 0.5 < 10.0:
+                continue
+            if inside(px, py):
+                return True
+        return False
+
+    def _seg_hit_t(self, a: list[float], b: list[float], rect: list) -> float | None:
+        if len(rect) < 4:
+            return None
+        x, y, w, h = (float(rect[0]), float(rect[1]), float(rect[2]), float(rect[3]))
+
+        def inside(px: float, py: float) -> bool:
+            return x <= px <= x + w and y <= py <= y + h
+
+        span = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+        if inside(b[0], b[1]) and span >= 10.0:
+            return 1.0
+        for i in range(1, 8):
+            t = i / 8
+            px = a[0] + (b[0] - a[0]) * t
+            py = a[1] + (b[1] - a[1]) * t
+            if ((px - a[0]) ** 2 + (py - a[1]) ** 2) ** 0.5 < 10.0:
+                continue
+            if inside(px, py):
+                return t
+        return None
+
     def row_N26(self) -> None:
-        glyphs = list((self.refresh("glyphs").get("glyphs") or []))
+        st = self.refresh("glyphs", "glyph_leaders", "dims")
+        glyphs = list(st.get("glyphs") or [])
         rail = self.rail_right()
         off = []
         for g in glyphs:
@@ -1641,7 +1844,49 @@ class Walk:
             if r[0] < rail:
                 off.append(g.get("text") or g.get("type"))
         self.clause("badges on canvas", not off, f"under rail {off} count={len(glyphs)}")
-        self.visual("badge leaders", f"{len(glyphs)} glyphs; leaders are visual")
+        flagged = []
+        for g in glyphs:
+            if "offset_px" not in g:
+                flagged.append("missing offset")
+                continue
+            want = float(g.get("offset_px", 0)) >= 12.0
+            if bool(g.get("leader")) != want or "cid" not in g or "anchor" not in g or "pos" not in g:
+                flagged.append(str(g.get("type")))
+        self.clause("leader flag", not flagged and bool(glyphs), f"bad={flagged} n={len(glyphs)}")
+        leaders = [g for g in glyphs if g.get("leader")]
+        mesh = st.get("glyph_leaders") or {}
+        present = bool(mesh.get("present"))
+        tris = int(mesh.get("tris") or 0)
+        mesh_ok = present == bool(leaders) and tris == 2 * len(leaders)
+        self.clause("leader mesh", mesh_ok, f"present={present} tris={tris} leaders={len(leaders)}")
+        dim_rects = [d.get("rect") or [] for d in (st.get("dims") or [])]
+        clearance_bad = []
+        for g in leaders:
+            anchor = self._screen_of_sketch(g.get("anchor") or [0, 0])
+            pos = self._screen_of_sketch(g.get("pos") or [0, 0])
+            rect = g.get("rect") or []
+            if anchor is None or pos is None or len(rect) < 4:
+                clearance_bad.append("unprojected")
+                continue
+            dist = ((pos[0] - anchor[0]) ** 2 + (pos[1] - anchor[1]) ** 2) ** 0.5
+            grown = [rect[0] - 2, rect[1] - 2, rect[2] + 4, rect[3] + 4]
+            near_in = (
+                grown[0] <= pos[0] <= grown[0] + grown[2]
+                and grown[1] <= pos[1] <= grown[1] + grown[3]
+            )
+            hits_dim = any(self._seg_hits_rect(anchor, pos, r) for r in dim_rects)
+            others = []
+            for other in glyphs:
+                if other is g:
+                    continue
+                hit_t = self._seg_hit_t(anchor, pos, other.get("rect") or [])
+                if hit_t is not None:
+                    others.append(f"{other.get('type')}@{hit_t:.2f}")
+            if dist > 40.0 or not near_in or hits_dim or others:
+                clearance_bad.append(
+                    f"{g.get('type')} d={dist:.1f} near={near_in} dim={hits_dim} other={others}"
+                )
+        self.clause("leader clearance", not clearance_bad, str(clearance_bad) or f"{len(leaders)} leaders")
 
     def _longest_wall_screen(self, frac: float) -> list[float] | None:
         self.refresh("sketch")
@@ -1695,7 +1940,7 @@ class Walk:
         self.refresh("status")
         self.clause("hover delta", pt is not None and "Δ" in texts, texts or self.S())
         # Leave the entity so the hover label clears, then click from elsewhere.
-        self.d.hover(screen=[48, 420])
+        self.d.hover(sketch=[400, 200])
         self.d.wait_idle(frames=2)
         # Same press as N21b: the vertex-side point drag-selects the wall.
         # The mid-stroke point only arms the hover label.
@@ -1713,23 +1958,35 @@ class Walk:
         self.click("rail:Select")
         a = self.d.project(sketch=[20, 20])["screen"]
         b = self.d.project(sketch=[60, 60])["screen"]
+        if a[0] > b[0]:
+            a, b = b, a
         box = self.d.drag({"screen": a}, {"screen": b}).get("box") or {}
         self.refresh("status")
+        fill = box.get("fill") or []
         edge = box.get("edge") or []
-        blue = len(edge) >= 3 and edge[2] > edge[0] and edge[2] > edge[1]
-        self.clause("enclose", "Selected 1 sketch entity" in self.S() and (blue or True), f"{self.S()} edge={edge}")
+        blue = len(fill) >= 3 and fill[2] > fill[1] > fill[0]
+        self.clause("enclose", "Selected 1 sketch entity" in self.S(), f"{self.S()} fill={fill}")
+        self.clause("window fill blue", blue, f"fill={fill}")
+        window_edge = list(edge)
         self.click(screen=self.d.project(sketch=[10, 70])["screen"])
         self.refresh("status")
         self.clause("empty click", "cleared" in self.S().lower() or "No sketch" in self.S() or "Selected" not in self.S(), self.S())
         c = self.d.project(sketch=[70, 30])["screen"]
         d0 = self.d.project(sketch=[30, 50])["screen"]
+        if c[0] < d0[0]:
+            c, d0 = d0, c
         box = self.d.drag({"screen": c}, {"screen": d0}).get("box") or {}
         self.refresh("status")
+        fill = box.get("fill") or []
         edge = box.get("edge") or []
-        green = len(edge) >= 3 and edge[1] > edge[0] and edge[1] > edge[2]
-        self.clause("crossing", "Selected" in self.S(), f"{self.S()} edge={edge} green={green}")
-        if not green:
-            self.visual("box colour", f"edge {edge}")
+        green = len(fill) >= 3 and fill[1] > fill[2] and fill[1] > fill[0]
+        self.clause("crossing", "Selected" in self.S(), f"{self.S()} fill={fill}")
+        self.clause("crossing fill green", green, f"fill={fill}")
+        self.clause(
+            "edge colour shared",
+            len(edge) >= 3 and edge == window_edge and edge[2] > edge[0] and edge[2] > edge[1],
+            f"window={window_edge} crossing={edge}",
+        )
         self.d.drag({"screen": self.d.project(sketch=[30, 30])["screen"]}, {"screen": self.d.project(sketch=[50, 36])["screen"]})
         self.refresh("status")
         self.clause("cut misses", "No sketch" in self.S() or "Selected" not in self.S(), self.S())
@@ -1890,7 +2147,24 @@ class Walk:
         self.clause("frame", "Framed" in self.S(), self.S())
 
     def row_A11a(self) -> None:
-        self.visual("top before slot", "N18 reference")
+        self.d.key("3")
+        self.refresh("status", "camera")
+        cam = dict(self.st.get("camera") or {})
+        p0 = self.d.project(model=[0, 0, 10])["screen"]
+        p1 = self.d.project(model=[200, 0, 10])["screen"]
+        self.ctx["top_pose"] = {
+            "target": cam.get("target"),
+            "distance": cam.get("distance"),
+            "yaw": cam.get("yaw"),
+            "pitch": cam.get("pitch"),
+            "p0": p0,
+            "p1": p1,
+        }
+        self.clause(
+            "top before slot",
+            cam.get("target") is not None and "Top view" in self.S(),
+            f"target={cam.get('target')} p0={p0} p1={p1} {self.S()}",
+        )
         self.sketch_on_top()
         self.need("Sketch on face" in self.S(), "sketch", self.S())
         self.click("rail:Slot")
@@ -1918,7 +2192,7 @@ class Walk:
             clearances = [float(t.get("clearance", t.get("gap", 99))) for t in tags if isinstance(t, dict)]
             self.clause("tag clearance", (not clearances) or min(clearances) >= 4 or any(t.get("leader") for t in tags), str(tags)[:300])
         else:
-            self.visual("contour tag", "tag clearance needs the drawn tag rect")
+            self.clause("tag clearance", False, "contour tag rect was not drawn")
         self.click("rail:Select")
         self.click(sketch=[205, 0])
         self.d.key("delete")
@@ -1935,6 +2209,33 @@ class Walk:
         self.clause("slot cut", "Extrude Blind 2.5000 mm" in str(reply.get("status", "")), str(reply.get("status", "")))
         path = self.save_as("wrench-wip.sxp")
         self.clause("saved", Path(path).exists(), self.S())
+        before = self.ctx.get("top_pose") or {}
+        self.d.key("3")
+        self.refresh("camera", "status")
+        cam = self.st.get("camera") or {}
+        p0 = self.d.project(model=[0, 0, 10])["screen"]
+        p1 = self.d.project(model=[200, 0, 10])["screen"]
+
+        def near(a, b, tol: float) -> bool:
+            if a is None or b is None:
+                return False
+            return abs(float(a) - float(b)) <= tol
+
+        def pix(a, b) -> float:
+            return ((float(a[0]) - float(b[0])) ** 2 + (float(a[1]) - float(b[1])) ** 2) ** 0.5
+
+        pose_ok = (
+            near(cam.get("distance"), before.get("distance"), 1e-3)
+            and near(cam.get("yaw"), before.get("yaw"), 1e-3)
+            and near(cam.get("pitch"), before.get("pitch"), 1e-3)
+            and pix(p0, before.get("p0") or p0) <= 5.0
+            and pix(p1, before.get("p1") or p1) <= 5.0
+        )
+        bt = before.get("target") or [0, 0, 0]
+        ct = cam.get("target") or [0, 0, 0]
+        if isinstance(bt, list) and isinstance(ct, list) and len(bt) >= 3 and len(ct) >= 3:
+            pose_ok = pose_ok and all(abs(float(bt[i]) - float(ct[i])) <= 1e-3 for i in range(3))
+        self.clause("top after slot", pose_ok, f"before={before} now target={ct} p0={p0} p1={p1}")
 
     def _arm_fillet(self) -> None:
         self.refresh("bodies", "selection", "status")
@@ -1945,21 +2246,60 @@ class Walk:
         self.click("chip:Fillet")
         self.refresh("status")
 
-    def row_A11b(self) -> None:
-        self._arm_fillet()
-        self.clause("armed", self.S().startswith("Fillet"), self.S())
-        self.d.key("3")
-
-        def vertical_neck(e: dict) -> bool:
+    def _vertical_necks(self) -> list[dict]:
+        found = []
+        for e in self.edges():
             d = e.get("dir") or [0, 0, 0]
             mid = e.get("mid") or [0, 0, 0]
-            return abs(float(d[2])) > 0.8 and 170 < float(mid[0]) < 190 and 8 < float(e.get("length", 0)) < 14
+            if abs(float(d[2])) > 0.8 and 170 < float(mid[0]) < 190 and 8 < float(e.get("length", 0)) < 14:
+                found.append(e)
+        return found
 
-        try:
-            status = self.click_edge_near(vertical_neck, 0.5)
-            self.clause("neck edge", "Fillet:" in status and "1 edge" in status, status)
-        except SxError as exc:
-            self.clause("neck edge", False, str(exc))
+    def _pick_neck(self, edge: dict) -> str:
+        reply = self.d.click(edge=edge["id"], along=0.5)
+        self.refresh("status")
+        return str(reply.get("status", self.S()))
+
+    def row_A11b(self) -> None:
+        # Top view, both necks, then cancel. State-neutral before the Front pick.
+        for label, sign in (("top view +Y", 1.0), ("top view -Y", -1.0)):
+            self._arm_fillet()
+            self.d.key("3")
+            self.refresh("status")
+            group = [e for e in self._vertical_necks() if float((e.get("mid") or [0, 0, 0])[1]) * sign > 0]
+            if not group:
+                self.clause(label, False, "no vertical neck")
+            else:
+                status = self._pick_neck(group[0])
+                self.clause(
+                    label,
+                    "Fillet: 1 edge" in status and "10.0 mm vertical" in status,
+                    status,
+                )
+            self.esc()
+            self.esc()
+            self.refresh("status")
+        self._arm_fillet()
+        self.clause("armed", self.S().startswith("Fillet"), self.S())
+        necks = self._vertical_necks()
+        if len(necks) < 2:
+            self.clause("neck edge", False, f"found {len(necks)} vertical necks")
+            return
+        # Front view looks along the neck pair, so both midpoints are one
+        # pixel and the second click toggles the first off ("removed 10.0 mm
+        # vertical"). −Y is the Front silhouette (key 1); +Y is the Back
+        # silhouette (key 4). Same split as run_rung01_wrench.gd _fillet_neck.
+        status = ""
+        for edge in necks[:2]:
+            mid = edge.get("mid") or [0, 0, 0]
+            self.d.key("4" if float(mid[1]) > 0.0 else "1")
+            self.refresh("status")
+            status = self._pick_neck(edge)
+        self.clause(
+            "neck edge",
+            "Fillet: 2 edge" in status and status.count("10.0 mm vertical") >= 2,
+            status,
+        )
 
     def row_N2(self) -> None:
         self.click("finish:StripR")
@@ -1999,7 +2339,10 @@ class Walk:
     def row_A11c(self) -> None:
         self.enter()
         self.refresh("status")
-        self.clause("applied", "applied" in self.S() and "no longer armed" in self.S(), self.S())
+        applied = "Fillet 2 edges 10.00 applied" in self.S() and "no longer armed" in self.S()
+        self.clause("applied", applied, self.S())
+        if applied:
+            self.ctx["fillet_applies"] = [self.S()]
 
     def _click_solid(self) -> None:
         try:
@@ -2030,59 +2373,57 @@ class Walk:
         self.d.key("3")
         self.refresh("status")
         self.clause("released", "Top view" in self.S(), self.S())
-        face = self.top_face()
-        self.click(face=face["id"])
+        self.click(model=[200, -16, 10])
         self.refresh("status")
-        self.clause("face loop", "Fillet:" in self.S(), self.S())
+        self.clause("face loop", "Fillet: 15 edge" in self.S(), self.S())
         self.enter()
         self.refresh("status")
-        self.clause("top fillet", "applied" in self.S() and "no longer armed" in self.S(), self.S())
+        top = self.S()
+        self.clause("top fillet", "Fillet 15 edges 1.00 applied" in top and "no longer armed" in top, top)
         self._arm_fillet()
         self.type_into("finish:StripR", "1")
         self.enter()
         self.d.key("8")
-        face = self.bottom_face()
-        self.click(face=face["id"])
-        self.d.hover(screen=[400, 400])
-        self.d.hover(screen=[420, 420])
+        self.refresh("status")
+        self.click(model=[50, 0, 0])
+        self.refresh("status")
         self.enter()
         self.refresh("status")
-        self.clause("bottom fillet", "applied" in self.S(), self.S())
+        bottom = self.S()
+        self.clause("bottom fillet", "Fillet 11 edges 1.00 applied" in bottom, bottom)
+        self.ctx.setdefault("fillet_applies", []).extend([top, bottom])
 
     def row_A11e(self) -> None:
         self._arm_fillet()
         self.type_into("finish:StripR", "1")
         self.enter()
         self.d.key("3")
-
-        def slot_floor(e: dict) -> bool:
-            mid = e.get("mid") or [0, 0, 0]
-            return float(e.get("length", 0)) > 80 and 6.0 < float(mid[2]) < 9.0
-
-        try:
-            status = self.click_edge_near(slot_floor, 0.5)
-        except SxError:
-            faces = [f for f in (self.refresh("faces").get("faces") or []) if 6.5 < float(f["mid"][2]) < 8.5]
-            if not faces:
-                self.clause("slot floor", False, "no slot-floor edge or face")
-                return
-            status = str(self.click(face=faces[0]["id"]).get("status", ""))
-            self.refresh("status")
-            status = self.S()
-        self.clause("floor pick", "Fillet:" in status or "Fillet:" in self.S(), status or self.S())
+        self.refresh("status")
+        self.click(model=[93.5, 0, 7.5])
+        self.refresh("status")
+        picked = self.S()
+        self.clause("floor pick", "Fillet: 4 edge" in picked, picked)
         self.enter()
         self.refresh("status")
-        self.clause("R1 applied", "1.00 applied" in self.S() or "applied" in self.S(), self.S())
+        applied = self.S()
+        self.clause("R1 applied", "Fillet 4 edges 1.00 applied" in applied, applied)
+        self.ctx.setdefault("fillet_applies", []).append(applied)
         self._arm_fillet()
         self.type_into("finish:StripR", "1.5")
         self.enter()
-        try:
-            self.click_edge_near(slot_floor, 0.5)
-        except SxError as exc:
-            self.clause("reclick", False, str(exc))
+        self.click(model=[93.5, 0, 7.5])
+        self.refresh("status")
         self.enter()
         self.refresh("status")
         self.clause("refused", "exceeds the 1.250 mm limit" in self.S(), self.S())
+        names = [
+            str(r.get("name", ""))
+            for r in (self.refresh("timeline").get("timeline") or [])
+            if str(r.get("name", "")).startswith("fillet")
+        ]
+        applies = " ".join(self.ctx.get("fillet_applies") or [])
+        four = len(names) == 4 and "2 edges" in applies and "15 edges" in applies and "11 edges" in applies and "4 edges" in applies
+        self.clause("four fillets", four, f"timeline={names} applies={applies}")
         self.esc()
 
     def row_A11f(self) -> None:
@@ -2090,16 +2431,27 @@ class Walk:
         self.type_into("finish:StripR", "1")
         self.enter()
         self.d.key("3")
-        neck = [e for e in self.edges() if abs(float((e.get("dir") or [0, 0, 0])[2])) > 0.8 and 8 < float(e.get("length", 0)) < 14]
+        # R10 plus the two R1 face fillets leave an 8 mm vertical seam.
+        # The old (8, 14) window excluded that edge.
+        neck = [
+            e for e in self.edges()
+            if abs(float((e.get("dir") or [0, 0, 0])[2])) > 0.8
+            and 6.5 <= float(e.get("length", 0)) <= 12.0
+        ]
         if not neck:
-            self.clause("corner", False, "no vertical edge")
+            brief = [
+                (round(float(e.get("length", 0)), 2), [round(float(c), 2) for c in (e.get("dir") or [])])
+                for e in self.edges()
+                if abs(float((e.get("dir") or [0, 0, 1])[2])) > 0.5
+            ][:8]
+            self.clause("corner", False, f"no vertical edge {brief}")
             return
         edge = neck[0]
-        screen = self.d.project(model=edge["mid"])["screen"]
-        self.click(screen=[screen[0] + 10, screen[1]])
+        # along=0.85 is the upper end, the one top view can see.
+        self.d.click(edge=str(edge["id"]), along=0.85)
         self.refresh("status")
         self.clause("near", "Fillet: 1 edge" in self.S() or "1 edge" in self.S(), self.S())
-        self.click(screen=[screen[0] + 10, screen[1]])
+        self.d.click(edge=str(edge["id"]), along=0.85)
         self.refresh("status")
         self.clause("removed", "removed" in self.S().lower() or "Fillet" in self.S(), self.S())
         self.esc()
@@ -2118,7 +2470,12 @@ class Walk:
         self.clause("cancelled", "cancelled" in self.S().lower() or "Selection" in self.S(), self.S())
 
     def row_N13(self) -> None:
-        self.click(screen=[80, 700])
+        self.refresh("bodies")
+        bodies = self.st.get("bodies") or []
+        if bodies and bodies[0].get("screen"):
+            self.click(screen=bodies[0]["screen"])
+        else:
+            self.click(model=[0, 0, 5])
         cam = dict(self.refresh("camera").get("camera") or {})
         self.d.key("0")
         self.refresh("status", "camera")
@@ -2131,28 +2488,59 @@ class Walk:
         self.clause("top", "Top view" in self.S(), self.S())
 
     def row_N16(self) -> None:
-        self.click(screen=[60, 680])
-        self.refresh("status")
-        face = self.top_face()
-        self.d.hover(screen=face["screen"])
+        before_bodies, before_timeline = self._body_snapshot()
+        self.clear_selection()
+        self.refresh("bodies", "selection")
+        bodies = self.st.get("bodies") or []
+        self.need(bool(bodies) and bodies[0].get("screen"), "body screen", str(bodies)[:180])
+        self.clause("nothing selected", not str((self.st.get("selection") or {}).get("body") or ""), self.S())
+        self.d.hover(screen=bodies[0]["screen"])
+        self.d.wait_idle(frames=2)
         mark = self.mark()
         self.d.key("0")
-        self.d.wait_idle(frames=8)
+        self.d.wait_idle(frames=4)
         time.sleep(4.0)
         lines = self.trace_from(mark)
         status_lines = [ln for ln in lines if "status-trace" in ln]
-        got_result = any("kind=result" in ln and "No view for key 0" in ln for ln in status_lines)
-        got_hint = any("kind=hint" in ln or "kind=restore" in ln for ln in status_lines)
+        hover_between = [ln for ln in lines if "hover-trace" in ln]
+        result_i = next((i for i, ln in enumerate(status_lines) if "kind=result" in ln and "No view for key 0" in ln), -1)
+        restore_i = next((i for i, ln in enumerate(status_lines) if "kind=restore" in ln and "Face" in ln), -1)
+        dt = None
+        if result_i >= 0 and restore_i > result_i:
+            t0 = self._trace_time(status_lines[result_i])
+            t1 = self._trace_time(status_lines[restore_i])
+            if t0 is not None and t1 is not None:
+                dt = t1 - t0
+        ordered = result_i >= 0 and restore_i > result_i and dt is not None and 2.0 <= dt <= 4.0 and not hover_between
         self.clause(
-            "result then hint",
-            got_result and got_hint,
-            " | ".join(status_lines[-6:]),
-            kind="" if (not got_result or got_hint) else "product",
+            "result then restore",
+            ordered,
+            f"dt={dt} hover={hover_between[:2]} " + " | ".join(status_lines[-6:]),
         )
-        self.clause("headless-only hold edge", True, "headless-only: rung01_replan19_hint")
-        self.d.hover(screen=[60, 680])
-        lines = self.trace_from(self.cursor)
-        self.clause("leave clears hint", any("target=none" in ln for ln in lines) or True, " | ".join(lines[-4:]))
+        self.clause("headless-only hold edge", None, "headless-only: rung01_replan19_hint", kind="headless-only")
+        ground = self.d.project(model=[400, 300, 0])["screen"]
+        mark2 = self.mark()
+        self.d.key("0")
+        self.d.hover(screen=ground)
+        self.d.wait_idle(frames=2)
+        time.sleep(4.0)
+        lines2 = self.trace_from(mark2)
+        hover_none = any("hover-trace" in ln and "target=none" in ln for ln in lines2)
+        face_later = any(
+            "status-trace" in ln and ("kind=hint" in ln or "kind=restore" in ln) and "Face" in ln
+            for ln in lines2
+        )
+        self.clause(
+            "leave clears hint",
+            hover_none and not face_later,
+            " | ".join(lines2[-8:]),
+        )
+        after_bodies, after_timeline = self._body_snapshot()
+        self.clause(
+            "bodies and timeline",
+            before_bodies == after_bodies and before_timeline == after_timeline,
+            f"bodies {before_bodies} -> {after_bodies} timeline {before_timeline} -> {after_timeline}",
+        )
 
     def row_N19(self) -> None:
         self.refresh("bodies", "selection")
@@ -2211,18 +2599,23 @@ class Walk:
         self.esc_until("Selection cleared", 3)
 
     def row_A12(self) -> None:
+        if not self.body_guard("wrench", 10.0):
+            raise RowAbort()
         path = self.export_3mf("wrench.3mf")
         self.clause("exported", Path(path).exists() and "Exported 3MF" in self.S(), self.S())
         if Path(path).exists():
             code, text = self.checker("wrench", "wrench.3mf")
-            self.clause("28/28", code == 0 and "flipX=False" in text, text.strip().splitlines()[-3:] and "\n".join(text.strip().splitlines()[-4:]))
+            passed = "28/28 passed" in text and "flipX=False" in text and "flipY=False" in text
+            self.clause("28/28", code == 0 and passed, "\n".join(text.strip().splitlines()[-6:]))
 
     def row_N11(self) -> None:
+        if not self.body_guard("wrench", 10.0):
+            raise RowAbort()
         path = self.export_3mf("wrench-noext")
         self.clause("extension added", Path(self.out / "wrench-noext.3mf").exists() and not Path(self.out / "wrench-noext").exists(), self.S())
         if Path(self.out / "wrench-noext.3mf").exists():
             code, text = self.checker("wrench", "wrench-noext.3mf")
-            self.clause("28/28", code == 0, "\n".join(text.strip().splitlines()[-3:]))
+            self.clause("28/28", code == 0 and "28/28 passed" in text, "\n".join(text.strip().splitlines()[-4:]))
 
     def _open_base_extrude(self) -> None:
         rows = [r for r in (self.refresh("timeline").get("timeline") or []) if "extrude" in str(r.get("name", ""))]
@@ -2242,12 +2635,28 @@ class Walk:
         self.d.key("4")
         field2 = str(self.refresh("focus_text").get("focus_text", ""))
         self.clause("prefix silent", "Preview" not in mid and "rejected" not in mid.lower() and "Front view" not in mid, f"after 1 status={mid} field={field}->{field2}")
+        mark_enter = self.mark()
         self.enter()
-        self.refresh("status")
-        self.clause("commit 14", "14" in self.S(), self.S())
+        preview = " | ".join(self.result_texts(mark_enter))
+        win = (self.refresh("window").get("window") or {})
+        size = win.get("size") or [1280, 800]
+        # Upper canvas, clear of the framed plate and of the left timeline.
+        away = [max(80.0, float(size[0]) - 48.0), 200.0]
+        mark_click = self.mark()
+        self.click(screen=away)
+        committed = " | ".join(self.result_texts(mark_click))
+        preview_ok = "Preview: distance = 14.0" in preview and "— fillet" not in preview
+        # Click-away calls dismiss_keep_preview and keeps the live preview.
+        # commit() emits "Feature updated (n change(s))" only on that path;
+        # assert it when it shows up. The preview line is what this click does.
+        emitted = "Feature updated" in committed
+        quiet = committed.strip() == "" or emitted
+        self.clause("commit 14", preview_ok and quiet, f"preview={preview!r} commit={committed!r}")
+        if preview_ok:
+            self.ctx["thickness"] = 14.0
         log = (self.out / "input-trace.log").read_text(errors="replace") if (self.out / "input-trace.log").exists() else ""
         import re
-        n = len(re.findall(r"\[ERROR\].*fillet soft-skip", log))
+        n = len(re.findall(r"\[ERROR\].*soft-skip", log))
         self.clause("no error soft-skip", n == 0, f"count={n}")
         self.trace_from(mark)
 
@@ -2263,7 +2672,13 @@ class Walk:
         self.clause("double click", "Distance" in str(self.st.get("focus", "")) or len(drops) >= 1, f"focus={self.st.get('focus')} {drops}")
         self.esc()
         self.refresh("status")
-        self.clause("cancel", "cancelled" in self.S().lower() or "Edits cancelled" in self.S(), self.S())
+        # A panel opened with no typed edit has nothing to roll back, so Esc
+        # clears the selection instead of saying "Edits cancelled".
+        self.clause(
+            "cancel",
+            "cancelled" in self.S().lower() or "Edits cancelled" in self.S() or "Selection cleared" in self.S(),
+            self.S(),
+        )
 
     def row_A13d(self) -> None:
         self._open_base_extrude()
@@ -2280,20 +2695,47 @@ class Walk:
         self.clause("cancelled", "cancelled" in self.S().lower() or self.S().startswith("Edits"), self.S())
 
     def row_A13c(self) -> None:
+        if not self.body_guard("wrench", float(self.ctx.get("thickness", 10.0))):
+            raise RowAbort()
         path = self.export_3mf("wrench-t14.3mf")
         if not Path(path).exists():
             self.clause("export", False, self.S())
             return
         code, text = self.checker("thick", "wrench-t14.3mf", "14")
-        self.clause("thick 7/7", code == 0, "\n".join(text.strip().splitlines()[-8:]))
+        self.clause("thick 7/7", code == 0 and "7/7 passed" in text, "\n".join(text.strip().splitlines()[-8:]))
         code, text = self.checker("wrench", "wrench-t14.3mf")
-        self.clause("DIAG", "DIAG:" in text, "\n".join([ln for ln in text.splitlines() if "FAIL" in ln or "DIAG" in ln][:12]))
+        failed = set()
+        for ln in text.splitlines():
+            if not ln.startswith("FAIL"):
+                continue
+            body = ln[4:].strip()
+            failed.add(body.split("  got ")[0].strip() if "  got " in body else body)
+        expected = {
+            "bbox Z (thickness)",
+            "grip slot present at y=0,z=8.75",
+            "1mm fillet top outer edge",
+            "1mm fillet on jaw top edge",
+        }
+        self.clause(
+            "DIAG",
+            failed == expected and "18/22 passed" in text,
+            f"failed={sorted(failed)}",
+        )
 
     def row_N9(self) -> None:
-        text = (self.out / "check-wrench-wrench-t14.txt").read_text() if (self.out / "check-wrench-wrench-t14.txt").exists() else ""
-        for name in ("head-shaft R10", "not oversized", "bottom outer"):
-            self.clause(name, name.split()[0] in text or "PASS" in text, "see checker log")
-        self.clause("tris", "tris" in text, text.splitlines()[0] if text else "no diag")
+        path = self.out / "check-wrench-wrench-t14.txt"
+        text = path.read_text() if path.exists() else ""
+        lines = text.splitlines()
+        wanted = (
+            "PASS  head-shaft R10 fillet +Y",
+            "PASS  head-shaft R10 fillet -Y",
+            "PASS  R10 fillet not oversized",
+            "PASS  1mm fillet bottom outer edge",
+        )
+        for needle in wanted:
+            self.clause(needle, any(ln.startswith(needle) for ln in lines), next((ln for ln in lines if needle.split("  ", 1)[-1][:24] in ln), "missing"))
+        tris = next((ln for ln in lines if " tris" in ln or ln.endswith(" tris") or "tris," in ln), "")
+        self.clause("tris", "tris" in tris, tris or "no tris line")
 
     def row_L7(self) -> None:
         path = Path(self.save_as("wrench-t14.sxp"))
@@ -2318,7 +2760,7 @@ class Walk:
         self.clause("opened", any("Opened" in ln for ln in lines) or "Opened" in self.S(), self.S())
         bodies = self.st.get("bodies") or []
         self.clause("framed", bool(bodies), str(bodies)[:160])
-        self.clause("headless-only hold", True, "headless-only: rung01_replan19_hint")
+        self.clause("headless-only hold", None, "headless-only: rung01_replan19_hint", kind="headless-only")
 
     def row_N14(self) -> None:
         self.sketch_on_top()
@@ -2385,6 +2827,8 @@ class Walk:
         self.click("finish:Extrude", frames=8)
         self.refresh("status")
         self.clause("extrude 7.5", "7.5000" in self.S(), self.S())
+        if not self.body_guard("nut"):
+            raise RowAbort()
         path = self.export_3mf("nut.3mf")
         if Path(path).exists():
             code, text = self.checker("nut", "nut.3mf")
@@ -2410,18 +2854,85 @@ class Walk:
         same = bool(readings) and all("Polygon AF" in s for s in readings)
         self.clause("AF bearings", same, " | ".join(readings))
 
+    def _a15_floor(self, log: str, banner: str, floor: int) -> tuple[bool, str]:
+        idx = log.find(banner)
+        if idx < 0:
+            return False, f"missing {banner}"
+        window = log[idx:idx + 80000]
+        nxt = window.find("\nrung01 ", len(banner))
+        if nxt > 0:
+            window = window[:nxt]
+        import re
+        match = re.search(r"(\d+) checks, (\d+) failures", window)
+        if not match:
+            return False, f"{banner}: no checks line"
+        n, failed = int(match.group(1)), int(match.group(2))
+        return failed == 0 and n >= floor, f"{banner}: {n} checks, {failed} failures (floor {floor})"
+
     def row_A15(self) -> None:
+        if not self.run_a15:
+            self.clause(
+                "headless tier",
+                False,
+                "BLOCKED-by-flag: pass --a15 to run the lints and make test-godot",
+            )
+            return
         lint_e2e = subprocess.run([sys.executable, "tools/lint_rung01_e2e.py"], cwd=str(self.repo), capture_output=True, text=True)
         lint_suites = subprocess.run([sys.executable, "tools/lint_suites.py"], cwd=str(self.repo), capture_output=True, text=True)
         e2e = (lint_e2e.stdout or "") + (lint_e2e.stderr or "")
         suites = (lint_suites.stdout or "") + (lint_suites.stderr or "")
-        (self.out / "a15-lint.txt").write_text(e2e + "\n" + suites)
-        self.clause("lint_rung01_e2e", lint_e2e.returncode == 0, e2e.strip().splitlines()[-1] if e2e.strip() else "no output")
-        self.clause("lint_suites", lint_suites.returncode == 0 and "suites ok" in suites, suites.strip().splitlines()[-1] if suites.strip() else "no output")
-        if self.run_a15:
-            self.clause("full tier", False, "--a15 was set but the tier is not invoked from this row body; run make test-godot separately")
-        else:
-            self.clause("headless tier", True, "skipped inside the GUI walk (make test-godot). Re-run with --a15 is reserved; CI runs the tier")
+        (self.out / "a15-lint-e2e.log").write_text(e2e)
+        (self.out / "a15-lint-suites.log").write_text(suites)
+        self.clause(
+            "lint_rung01_e2e",
+            lint_e2e.returncode == 0 and "5 replan21 scripts are clean" in e2e,
+            e2e.strip().splitlines()[-1] if e2e.strip() else "no output",
+        )
+        suite_line = suites.strip().splitlines()[-1] if suites.strip() else ""
+        self.clause(
+            "lint_suites",
+            lint_suites.returncode == 0 and "208 suites ok" in suites and "4 known-red" in suites,
+            suite_line or "no output",
+        )
+        log_path = self.out / "test-godot.log"
+        proc = subprocess.run(
+            ["make", "test-godot"],
+            cwd=str(self.repo),
+            capture_output=True,
+            text=True,
+            env={**os.environ, "KEEP_GOING": "1"},
+        )
+        tier = (proc.stdout or "") + (proc.stderr or "")
+        log_path.write_text(tier)
+        (self.out / "a15-test-godot.log").write_text(tier)
+        import re
+        ran = re.findall(r"suites:\s*(\d+)\s+run,\s*(\d+)\s+failed", tier)
+        tier_ok = bool(ran) and int(ran[-1][0]) >= 204 and int(ran[-1][1]) == 0
+        self.clause("headless tier", tier_ok, f"suites: {ran[-1][0]} run, {ran[-1][1]} failed" if ran else tier[-400:])
+        floors = (
+            ("rung01 wrench walk", 702),
+            ("rung01 replan19 keys", 151),
+            ("rung01 replan19 shield", 32),
+            ("rung01 replan19 jaw", 77),
+            ("rung01 replan19 hint", 30),
+            ("rung01 replan19 glyphs", 83),
+            ("rung01 replan19 timeline", 75),
+            ("rung01 replan19 camera", 25),
+            ("rung01 replan19 fillet pick", 44),
+            ("rung01 replan19 polish", 68),
+            ("rung01 replan21 sketch undo", 40),
+            ("rung01 replan21 angle", 80),
+            ("rung01 replan21 pick", 36),
+            ("rung01 replan21 dressup", 20),
+            ("rung01 replan21 state", 40),
+        )
+        notes = []
+        floors_ok = True
+        for banner, floor in floors:
+            ok, note = self._a15_floor(tier, banner, floor)
+            floors_ok = floors_ok and ok
+            notes.append(note)
+        self.clause("suite floors", floors_ok, "; ".join(notes))
 
     # --- checkpoints and the screenshot-walk variants --------------------
 
@@ -2606,9 +3117,18 @@ class Walk:
         reopened = self._reopen_sketch3()
         self.clause("pencil reopen", "Editing sketch" in reopened, reopened)
         self.click("rail:Select")
-        self.click(screen=self._jaw_wall_screen(0.4))
-        self.refresh("status")
-        self.clause("wall", "Selected 1 sketch entity" in self.S() and "Constraint selected" not in self.S(), self.S())
+        samples = self.wall_screen_points(4) or [self._jaw_wall_screen(0.3)]
+        got = ""
+        hit = False
+        for pt in samples:
+            self.click(screen=pt)
+            self.refresh("status")
+            got = self.S()
+            if "Selected 1 sketch entity" in got and "Constraint selected" not in got:
+                hit = True
+                break
+            self.click(sketch=[300, 80])
+        self.clause("wall", hit, got)
         s1 = self.esc()
         s2 = self.esc()
         self.clause("esc", "Selection cleared" in s1 and "Sketch saved" in s2, s1 + " | " + s2)
@@ -2657,12 +3177,13 @@ class Walk:
         self.refresh("status", "dims")
         self.clause("trimmed", "Trimmed open jaw" in self.S(), self.S())
         texts = self.dim_texts()
-        neg = any("-135" in str(t).replace(" ", "") for t in texts)
+        neg = any("-" in str(t) for t in texts)
+        has_45 = any(self._label_is("45", t) for t in texts)
         self.clause(
             "angle after this trim",
-            not neg,
+            (not neg) and has_45,
             f"drawn={texts}",
-            kind="" if not neg else "product",
+            kind="" if (not neg and has_45) else "product",
         )
 
     def run_variants(self) -> None:
@@ -2724,7 +3245,7 @@ class Walk:
             counts[rec["verdict"]] = counts.get(rec["verdict"], 0) + 1
         wall = time.monotonic() - self.t0
         lines = [
-            "# sx-041 walk",
+            "# sx-042 walk",
             "",
             f"Rows {len(self.rows)}  " + "  ".join(f"{k} {v}" for k, v in sorted(counts.items())),
             f"Wall {wall:.1f}s",

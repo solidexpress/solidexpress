@@ -3896,9 +3896,16 @@ func _sketch_input(event: InputEvent) -> void:
 			_sketch_swallow_release = false
 			_sketch_release_frame = Engine.get_process_frames()
 			_sketch_press_inferred = false
-			var ray_up := _model_ray(_pointer_viewport_pos(mb))
+			var release_at := _pointer_viewport_pos(mb)
+			var ray_up := _model_ray(release_at)
 			var p2_up = sketch_mode.ray_to_sketch(ray_up[0], ray_up[1])
-			var travel_up := _pointer_viewport_pos(mb).distance_to(_sketch_press_pos)
+			var travel_up := release_at.distance_to(_sketch_press_pos)
+			# A press that only jittered still has to select. Re-project the
+			# press point when the release ray misses: samples a pixel apart
+			# on a short wall were committing the drag and leaving the line.
+			if p2_up == null:
+				var ray_press := _model_ray(_sketch_press_pos)
+				p2_up = sketch_mode.ray_to_sketch(ray_press[0], ray_press[1])
 			if sketch_mode.tool == SketchMode.Tool.TRIM:
 				sketch_mode.end_trim_drag()
 			elif travel_up < CLICK_SLOP and p2_up != null:
@@ -4517,13 +4524,27 @@ func _on_drag(pos: Vector2) -> void:
 						% [delta.x, delta.y])
 
 
+## Window (left-to-right) is blue; crossing (right-to-left) differs by the fill.
+## The edge is the same blue in both. `_draw` and the automation bridge both
+## read this so the colours cannot drift.
+var box_colours_override: Variant = null
+
+
+func box_colours(crossing: bool) -> Dictionary:
+	if box_colours_override is Dictionary:
+		return box_colours_override
+	var fill := Color(0.35, 0.6, 0.95, 0.18)
+	var edge := Color(0.35, 0.6, 0.95, 0.85)
+	if crossing:
+		fill = Color(0.35, 0.85, 0.45, 0.18)
+	return {"fill": fill, "edge": edge}
+
+
 func _draw() -> void:
 	if (_drag_mode == DragMode.BOX_SELECT or _sketch_box_active) and _box_rect.size != Vector2.ZERO:
-		var fill := Color(0.35, 0.6, 0.95, 0.18)
-		if _sketch_box_active and _sketch_box_crossing:
-			fill = Color(0.35, 0.85, 0.45, 0.18)
-		draw_rect(_box_rect, fill, true)
-		draw_rect(_box_rect, Color(0.35, 0.6, 0.95, 0.85), false, 1.0)
+		var cols: Dictionary = box_colours(_sketch_box_active and _sketch_box_crossing)
+		draw_rect(_box_rect, cols["fill"], true)
+		draw_rect(_box_rect, cols["edge"], false, 1.0)
 	_draw_selection_gizmos()
 	if _drag_mode == DragMode.PUSH_PULL and absf(_pp_preview_dist) > 1e-3:
 		_draw_push_pull_preview()
