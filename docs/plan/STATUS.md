@@ -24,6 +24,9 @@ SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature ubc_wrench
 
 then a one-line follow-up commit of `published-demos.json` / `demo-catalog.json`. Do not add those ids until the WebM is on the Release.
 
+## 0.1.0 — post-rung-1 cleanup + wrench demo
+- SolidExpress `VERSION` is 0.1.0: the post-rung-1 cleanup (#243) plus the UBC wrench demo video.
+
 ## 0.0.13 — rung 1 (UBC wrench)
 - SolidExpress `VERSION` is 0.0.13. Rung 1 of the SolidWorks tutorial ladder (UBC wrench) is fully makeable: jaw angle label, open-jaw cut, selection/fillet picking at small window sizes, and a test-only automation bridge for checklist walks.
 
