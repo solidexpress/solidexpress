@@ -49,6 +49,7 @@ test-tools:
 	python3 tools/test_lint_suites.py
 	python3 tools/test_lint_rung01_e2e.py
 	python3 tools/test_walk_registry.py
+	python3 tools/test_publish_demo_movies.py
 
 test: test-kernel
 	python3 tools/lint_rung01_e2e.py
