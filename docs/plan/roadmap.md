@@ -238,11 +238,10 @@ That is a **daily driver for brackets, enclosures, and small mechanisms**, with 
 
 ## 7. Structural debt (deferred refactors)
 
-Written at the end of Part A of [`docs/loop/post-rung-01-cleanup.md`](../loop/post-rung-01-cleanup.md). Behaviour-identical organization landed as WP1–WP11. WP12 and WP13 remain parked.
+Written at the end of Part A of [`docs/loop/post-rung-01-cleanup.md`](../loop/post-rung-01-cleanup.md). Behaviour-identical organization landed as WP1–WP12. WP13 remains parked.
 
 | Rank | Refactor | What / where | Design that replaces the conditionals or copies | Why parked |
 |---|---|---|---|---|
-| 11 ★ | `SketchToolSpec` registry | `sketch_mode.gd` nine `match tool` tables, `main.gd` rail table and family map, `automation_bridge.gd` `TOOL_NAMES`, `viewport_interaction.gd` 38 `Tool.` comparisons | one `SketchToolSpec` row per tool: id, label, rail hint, shortcut, icon, default variant, variants, numeric-field key, undo label, arm hint, `draws_with_points`; `match tool` becomes `spec.<field>`; click and preview stay in `SketchMode` but are looked up by spec | WP12 ★ skipped (6 h stop line) |
 | 12 ★ | CI composite action for OCCT | `.github/workflows/ci.yml` (3 blocks) | `.github/actions/setup-occt/action.yml` (cache + `install_occt.sh`) | WP13 ★ skipped (6 h stop line) |
 | 13 | Parked: split `SketchMode` | `sketch_mode.gd` jaw trim (~1,500 lines: `_trim_open_jaw` … `_seal_tangent_bosses`) and dimension / glyph label layout (~2,700 lines, `_rebuild_dimension_labels` … `_repel_glyph_items`) | `JawTrim` and `SketchLabelLayout` as `RefCounted` helpers that receive a narrow context (sketch, camera, view rect) instead of reading 100 members | high (reads ~100 members, 20 rounds of tuning); walk rows A8–A11, N21–N26, L12 |
 | 14 | Parked: split `ViewportInteraction` | 24 `_strip_*` members and 15 `_sketch_*` press/release members, a 299-line `_input` | `SelectionStrip` as its own `Control`; `SketchPointerGesture` state machine (press, release, box, abandon, swallow) | high (input; dead first clicks took rounds 17–19); `tools/gui_click_probe.sh`, walk |

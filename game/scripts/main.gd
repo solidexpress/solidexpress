@@ -896,39 +896,22 @@ func _build_ui() -> void:
 	_sketch_rail_buttons.clear()
 	var rail_group := ButtonGroup.new()
 	rail_group.allow_unpress = false
-	for entry in [
-			[SketchMode.Tool.SELECT, "select", "Select (S)", "Select"],
-			[SketchMode.Tool.LINE, "line", "Line / centerline (L)", "Line"],
-			[SketchMode.Tool.ARC, "arc", "Arc tool (A)", "Arc"],
-			[SketchMode.Tool.CIRCLE, "circle", "Circle (C)", "Circle"],
-			[SketchMode.Tool.RECT, "rect", "Rectangle (R)", "Rect"],
-			[SketchMode.Tool.POLYGON, "polygon", "Polygon", "Polygon"],
-			[SketchMode.Tool.ELLIPSE, "circle", "Ellipse (approx)", "Ellipse"],
-			[SketchMode.Tool.SLOT, "rect", "Straight slot", "Slot"],
-			[SketchMode.Tool.SPLINE, "spline", "Fit spline", "Spline"],
-			[SketchMode.Tool.POINT, "point", "Sketch point", "Point"],
-			[SketchMode.Tool.TRIM, "trim", "Power Trim (T)", "Trim"],
-			[SketchMode.Tool.EXTEND, "extend", "Extend to next", "Extend"],
-			[SketchMode.Tool.SMART_DIM, "dimension", "Smart Dimension (D)", "Smart Dim"],
-			[SketchMode.Tool.CONVERT, "convert", "Convert entities", "Convert"],
-			[SketchMode.Tool.MIRROR, "mirror", "Mirror selection", "Mirror"],
-			[SketchMode.Tool.PATTERN, "pattern", "Linear / circular pattern", "Pattern"],
-			]:
-		var b := UIIcons.button(entry[1], entry[3], entry[2])
-		b.name = "Tool%s" % str(entry[3]).replace(" ", "")
+	for spec in SketchToolSpec.rail_specs():
+		var b := UIIcons.button(spec.icon, spec.label, spec.rail_hint)
+		b.name = "Tool%s" % spec.label.replace(" ", "")
 		b.toggle_mode = true
 		b.button_group = rail_group
-		b.set_meta("sx_tool", int(entry[0]))
+		b.set_meta("sx_tool", spec.id)
 		# Bind the enum now (not the loop index) so Slot after Ellipse cannot
 		# pick up a neighbour's tool id. `pressed` keeps FilmUI.emit working;
 		# `toggled` only arms on press-on so unpressing Rect cannot re-arm Rect.
-		var tool_id := int(entry[0])
+		var tool_id := int(spec.id)
 		b.pressed.connect(_on_sketch_rail_tool.bind(tool_id))
 		b.toggled.connect(_on_sketch_rail_toggled.bind(tool_id))
 		_sketch_rail_buttons.append(b)
 		rows.add_child(b)
 		_compact_sketch_rail_button(b)
-		if entry[0] == SketchMode.Tool.RECT:
+		if spec.id == SketchMode.Tool.RECT:
 			var jaw := UIIcons.button("wrench_open", "Jaw",
 				"Jaw: open-end wrench jaw. Click 1 = centre, click 2 = end of the long side, click 3 = half the width")
 			jaw.name = "JawTool"
@@ -1847,13 +1830,7 @@ func _on_sketch_tool_changed(tool: int) -> void:
 
 
 func _variant_kind_for(tool: int) -> String:
-	match tool as SketchMode.Tool:
-		SketchMode.Tool.RECT: return "rect"
-		SketchMode.Tool.CIRCLE: return "circle"
-		SketchMode.Tool.ARC: return "arc"
-		SketchMode.Tool.PATTERN: return "pattern"
-		SketchMode.Tool.LINE, SketchMode.Tool.CENTERLINE: return "line"
-		_: return ""
+	return SketchToolSpec.of(tool).family
 
 
 func _on_sketch_selection_chips() -> void:

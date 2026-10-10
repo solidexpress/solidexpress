@@ -20,11 +20,8 @@ var _edge_cache_rev := -1
 var _face_cache: Array = []
 var _face_cache_rev := -1
 
-const TOOL_NAMES: PackedStringArray = [
-	"None", "Line", "Rect", "Circle", "Arc", "Polygon", "Select", "Trim",
-	"Extend", "Smart Dim", "Convert", "Mirror", "Pattern", "Spline", "Point",
-	"Centerline", "Ellipse", "Slot", "Chamfer",
-]
+func _tool_names() -> PackedStringArray:
+	return SketchToolSpec.tool_names()
 
 
 func _ready() -> void:
@@ -1378,7 +1375,8 @@ func _tool_state(sm) -> Dictionary:
 	if sm == null:
 		return {}
 	var id := int(sm.tool)
-	var name := TOOL_NAMES[id] if id >= 0 and id < TOOL_NAMES.size() else str(id)
+	var names := _tool_names()
+	var name := names[id] if id >= 0 and id < names.size() else str(id)
 	if bool(sm.get("_jaw_armed")):
 		name = "Jaw"
 	return {"id": id, "name": name, "variant": str(sm.tool_variant), "jaw": bool(sm.get("_jaw_armed"))}

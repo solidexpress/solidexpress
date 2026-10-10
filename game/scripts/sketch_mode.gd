@@ -1238,45 +1238,7 @@ func _try_adopt_parked_undo() -> bool:
 
 
 func _undo_tool_label() -> String:
-	if _jaw_armed:
-		return "Jaw"
-	match tool:
-		Tool.LINE, Tool.CENTERLINE:
-			return "Line"
-		Tool.CIRCLE:
-			return "Circle"
-		Tool.RECT:
-			return "Rect"
-		Tool.POLYGON:
-			return "Polygon"
-		Tool.SLOT:
-			return "Slot"
-		Tool.ARC:
-			return "Arc"
-		Tool.SPLINE:
-			return "Spline"
-		Tool.POINT:
-			return "Point"
-		Tool.ELLIPSE:
-			return "Ellipse"
-		Tool.CHAMFER:
-			return "Chamfer"
-		Tool.TRIM:
-			return "Trim"
-		Tool.EXTEND:
-			return "Extend"
-		Tool.SMART_DIM:
-			return "Dimension"
-		Tool.CONVERT:
-			return "Convert"
-		Tool.MIRROR:
-			return "Mirror"
-		Tool.PATTERN:
-			return "Pattern"
-		Tool.SELECT:
-			return "Edit"
-		_:
-			return "Edit"
+	return SketchToolSpec.undo_label_for(self)
 
 
 func _capture_undo_if_changed() -> void:
@@ -1534,19 +1496,9 @@ func set_tool(t: Tool) -> void:
 	draw_construction = (t == Tool.CENTERLINE)
 	# Default variants per tool family (reset on tool switch so prior family
 	# names like circle "center" don't silently become rect "center").
-	match t:
-		Tool.RECT:
-			tool_variant = "corner"
-		Tool.CIRCLE:
-			tool_variant = "center"
-		Tool.ARC:
-			tool_variant = "center"
-		Tool.PATTERN:
-			tool_variant = "linear"
-		Tool.POLYGON:
-			tool_variant = _polygon_variant
-		_:
-			pass
+	var spec := SketchToolSpec.of(int(t))
+	if spec.sets_default_variant:
+		tool_variant = spec.default_variant_of(self)
 	# Do not clear selection on tool switch — completed geometry must stay
 	# visible/selectable (polygon/circle vanishing after another tool was a bug).
 	_snap_marker = null
@@ -1560,43 +1512,7 @@ func set_tool(t: Tool) -> void:
 ## One-line status when a rail tool (or shortcut) is armed. Empty = keep the
 ## previous line. Slot must say `Slot —` so a walker can tell it actually armed.
 func tool_arm_hint(t: Tool) -> String:
-	match t:
-		Tool.SELECT:
-			return "Select — click geometry, or a dimension label to edit it"
-		Tool.LINE:
-			return "Line — click 2 points (or type a length)"
-		Tool.ARC:
-			return "Arc — click the centre, then the start, then the end"
-		Tool.CIRCLE:
-			return "Circle — click the centre, then the rim (or type a radius)"
-		Tool.RECT:
-			return "Rect — click 1 first corner, click 2 the opposite corner"
-		Tool.POLYGON:
-			return "Polygon — click the centre, then a vertex (or type the size)"
-		Tool.ELLIPSE:
-			return "Ellipse — click the centre, then a corner of the box"
-		Tool.SLOT:
-			return "Slot — type the radius, click the first centre, then the second (or type the length)"
-		Tool.SPLINE:
-			return "Spline — click fit points; Done / Esc / right-click to finish"
-		Tool.POINT:
-			return "Point — click to place a sketch point"
-		Tool.TRIM:
-			return "Trim — drag across entities to trim them"
-		Tool.EXTEND:
-			return "Extend — click a segment to extend it to the next"
-		Tool.SMART_DIM:
-			return "Smart Dim — click geometry to dimension it"
-		Tool.CONVERT:
-			return "Convert — click to convert pierce points"
-		Tool.MIRROR:
-			return "Mirror — select geometry and a mirror axis, then click"
-		Tool.PATTERN:
-			return "Pattern — select geometry, then a linear or circular variant"
-		Tool.CENTERLINE:
-			return "Centerline — click 2 points (construction, never part of the profile)"
-		_:
-			return ""
+	return SketchToolSpec.of(int(t)).arm_hint
 
 
 func is_jaw_armed() -> bool:
@@ -1784,23 +1700,7 @@ func set_length_override(v: float) -> void:
 
 ## Dim-blank identity. Slot radius and Slot c-c are different fields.
 func numeric_field_key() -> String:
-	match tool:
-		Tool.LINE:
-			return "line"
-		Tool.CENTERLINE:
-			return "centerline"
-		Tool.CIRCLE:
-			return "circle"
-		Tool.SLOT:
-			return "slot_cc" if has_single_dof_preview() else "slot_radius"
-		Tool.ARC:
-			return "arc"
-		Tool.POLYGON:
-			return "polygon:" + tool_variant
-		Tool.ELLIPSE:
-			return "ellipse"
-		_:
-			return "tool:%d" % int(tool)
+	return SketchToolSpec.of(int(tool)).numeric_for(self)
 
 
 ## This field's own number, or -1 when the blank should be empty.
@@ -1930,25 +1830,8 @@ const JAW_ZERO_LONG := "Jaw — long side is zero — click 2 again for the end 
 
 
 func variants_for_tool(t: Tool = tool) -> Array:
-	match t:
-		Tool.RECT:
-			if _jaw_armed:
-				return []
-			# SolidWorks rectangle flyout: Corner, Center, 3 Point Corner,
-			# 3 Point Center, Parallelogram. Corner is the default (first).
-			return ["corner", "center", "three_point", "center_three_point", "parallelogram"]
-		Tool.CIRCLE:
-			return ["center", "perimeter", "three_point"]
-		Tool.ARC:
-			return ["center", "tangent", "three_point"]
-		Tool.PATTERN:
-			return ["linear", "circular"]
-		Tool.LINE, Tool.CENTERLINE:
-			return ["line", "centerline"]
-		Tool.POLYGON:
-			return ["vertex", "across_flats"]
-		_:
-			return []
+	# SolidWorks rectangle flyout (corner first) lives on the Rect row.
+	return SketchToolSpec.of(int(t)).variants_of(self)
 
 
 func selection_actions() -> Array:

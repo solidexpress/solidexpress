@@ -3,6 +3,7 @@ extends "res://tests/lib/sx_suite.gd"
 ## Run: tools/godot/godot --headless --path game --script tests/run_automation_bridge_tests.gd
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const _ToolSpec = preload("res://scripts/sketch_tool_spec.gd")
 const PORT := 47341
 const ROOT_SIZE := Vector2i(1280, 800)
 
@@ -13,6 +14,7 @@ var _rpc_id := 1
 
 func _init() -> void:
 	print("automation bridge")
+	_check_tool_names()
 	await _case_off()
 	await _case_real_input()
 	finish()
@@ -37,6 +39,22 @@ func _case_off() -> void:
 	main.queue_free()
 	for _i in 4:
 		await process_frame
+
+
+func _check_tool_names() -> void:
+	var expect := PackedStringArray([
+		"None", "Line", "Rect", "Circle", "Arc", "Polygon", "Select", "Trim",
+		"Extend", "Smart Dim", "Convert", "Mirror", "Pattern", "Spline", "Point",
+		"Centerline", "Ellipse", "Slot", "Chamfer",
+	])
+	var got: PackedStringArray = _ToolSpec.tool_names()
+	var same := got.size() == expect.size()
+	if same:
+		for i in expect.size():
+			if got[i] != expect[i]:
+				same = false
+				break
+	check(same, "tool names None..Chamfer")
 
 
 func _case_real_input() -> void:
