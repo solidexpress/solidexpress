@@ -8765,6 +8765,10 @@ func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[R
 
 func _rebuild_constraint_glyphs() -> void:
 	_refresh_coincident_keep()
+	# A click moves the pointer from the vertex onto the badge, which drops
+	# the other hover marks and rebuilds. Repair would then slide the badge
+	# the pointer is already on. Pin that centre so the click still lands.
+	var pinned_coincident := _pinned_coincident_centres()
 	_glyph_anchors.clear()
 	if _constraint_glyphs == null:
 		return
@@ -8818,6 +8822,8 @@ func _rebuild_constraint_glyphs() -> void:
 		# Repair keeps each coincident leader inside 40 px and off the
 		# wall glyphs (a 15 px parallel leader was ending inside one).
 		_repair_coincident_glyphs(pending, label_rects, cam, shaft_y)
+	if cam != null:
+		_restore_pinned_coincident(pending, pinned_coincident, cam)
 	for item in pending:
 		var gtype := str(item["type"])
 		var gcid := str(item["cid"])
@@ -8913,6 +8919,56 @@ func _coincident_visibility_sig() -> String:
 	return "|".join(ids)
 
 
+func _pinned_coincident_centres() -> Dictionary:
+	var out := {}
+	if _pointer_screen == Vector2.INF or not is_inside_tree():
+		return out
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return out
+	var k := _label_px_scale(cam)
+	for a in _glyph_anchors:
+		if str(a.get("type", "")) != "coincident":
+			continue
+		var rect := _glyph_screen_rect(a["pos"], "coincident", cam, k)
+		if rect.has_point(_pointer_screen):
+			out[str(a.get("cid", ""))] = rect.get_center()
+	return out
+
+
+func _restore_pinned_coincident(items: Array, pinned: Dictionary, cam: Camera3D) -> void:
+	if pinned.is_empty() or cam == null:
+		return
+	for i in range(items.size()):
+		var it: Dictionary = items[i]
+		var cid := str(it.get("cid", ""))
+		if not pinned.has(cid):
+			continue
+		var centre: Vector2 = pinned[cid]
+		var anchor: Vector2 = it["anchor"]
+		var natural: Vector2 = it["natural"]
+		it["centre"] = centre
+		it["offset_px"] = natural.distance_to(centre)
+		it["pos"] = _sketch_from_screen(cam, centre, anchor)
+		items[i] = it
+
+
+func _pointer_on_glyph(cid: String) -> bool:
+	if cid == "" or _pointer_screen == Vector2.INF or not is_inside_tree():
+		return false
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return false
+	var k := _label_px_scale(cam)
+	for a in _glyph_anchors:
+		if str(a.get("cid", "")) != cid:
+			continue
+		var rect := _glyph_screen_rect(a["pos"], str(a.get("type", "")), cam, k)
+		if rect.has_point(_pointer_screen):
+			return true
+	return false
+
+
 func _refresh_coincident_keep() -> void:
 	var next: Dictionary = {}
 	if _pointer_screen != Vector2.INF and is_inside_tree():
@@ -8930,6 +8986,11 @@ func _refresh_coincident_keep() -> void:
 
 func _coincident_glyph_visible(cid: String, cinfo: Dictionary) -> bool:
 	if cid != "" and _coincident_keep.has(cid):
+		return true
+	# The pointer can move from the vertex onto the badge in one click.
+	# Keep is only refreshed while rebuilding, so a badge more than the
+	# hover radius from its vertex would hide before that click lands.
+	if cid != "" and _pointer_on_glyph(cid):
 		return true
 	if cid != "" and cid == selected_constraint:
 		return true
@@ -9492,14 +9553,44 @@ func delete_selected_constraint() -> bool:
 func _dimension_claims_click(pos2: Vector2, hit: int) -> bool:
 	if hit < 0:
 		return false
+	# The letters, and the label anchor itself, open the editor. A headless
+	# viewport clamps the drawn rect off that anchor; the anchor is still the
+	# point dimension_hit reports and the point a click on the value uses.
+	if _dimension_text_contains(pos2, hit) or _dimension_anchor_contains(pos2, hit):
+		return true
+	# dimension_hit still includes an 8 px pad and a 22 px halo. At 1280×800
+	# that halo covers the upper shaft line. Select keeps the curve.
+	if tool == Tool.SELECT and entity_at(pos2) != "":
+		return false
 	if _radius_label_on_own_rim(hit, pos2):
 		return false
-	# dimension_hit(rect_only) still includes an 8 px pad. That pad covers the
-	# upper shaft line at 1280×800. The letters themselves open the editor;
-	# the pad does not take a click that is already on a curve.
-	if tool == Tool.SELECT and entity_at(pos2) != "" and not _dimension_text_contains(pos2, hit):
-		return false
 	return true
+
+
+## Screen distance from the click to the unclamped label anchor.
+## Wide enough for a click on the anchor, short of the 8 px text pad.
+const DIM_ANCHOR_SLOP_PX := 4.0
+
+
+func _dimension_anchor_contains(pos2: Vector2, hit: int) -> bool:
+	if hit < 0 or hit >= dimensions.size():
+		return false
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		var dim0: Dictionary = dimensions[hit]
+		var lp0: Variant = dim0.get("label_pos", null)
+		if lp0 == null:
+			lp0 = _dimension_label_pos2(dim0)
+		return lp0 is Vector2 and pos2.distance_to(lp0) <= 0.5
+	var dim: Dictionary = dimensions[hit]
+	var lp: Variant = dim.get("label_pos", null)
+	if lp == null:
+		lp = _dimension_label_pos2(dim)
+	if not (lp is Vector2):
+		return false
+	var sp: Vector2 = cam.unproject_position(_dimension_label_world(lp as Vector2))
+	var screen := cam.unproject_position(to_global(to_model(pos2)))
+	return screen.distance_to(sp) <= DIM_ANCHOR_SLOP_PX
 
 
 func _dimension_text_contains(pos2: Vector2, hit: int) -> bool:
