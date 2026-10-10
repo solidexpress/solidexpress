@@ -2033,7 +2033,15 @@ class Walk:
         before = int((self.refresh("sketch").get("sketch") or {}).get("entity_count") or 0)
         self.circle([50, -40], "3")
         self.click("rail:Select")
-        wall = (self.wall_screen_points(1) or [self.jaw_px(14, -5)])[0]
+        # N21b already found a screen point on this wall that selects the
+        # entity. Resampling after the r=3 circle can land in the trimmed
+        # gap, which is on the line's bbox and on no stroke.
+        remembered = self.ctx.get("wall_click")
+        if isinstance(remembered, list) and len(remembered) >= 2:
+            wall = remembered
+        else:
+            found = self.wall_screen_points(1)
+            wall = found[0] if found else self.jaw_px(14, -5)
         self.click(screen=wall)
         self.refresh("status")
         self.clause("wall", "Selected 1 sketch entity" in self.S(), self.S())
