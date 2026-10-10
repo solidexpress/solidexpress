@@ -66,11 +66,23 @@ var current_path := ""
 ## Directory of the last successful 3MF export. Empty until one succeeds.
 var _last_export_dir := ""
 enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF, OPEN_IN_SLICER }
+enum WorkMode { MODEL, DRAW, SHEET, FORM, CAM, SIM }
 var _file_action: FileAction = FileAction.NONE
 var _pending_discard: Callable = Callable()
 var _file_popup: PopupMenu
 var _mode_popup: PopupMenu
-var _work_mode := "Model"
+var _work_mode: WorkMode = WorkMode.MODEL
+const WORK_MODE_NAMES := {
+	WorkMode.MODEL: "Model",
+	WorkMode.DRAW: "Draw",
+	WorkMode.SHEET: "Sheet",
+	WorkMode.FORM: "Form",
+	WorkMode.CAM: "Cam",
+	WorkMode.SIM: "Sim",
+}
+const WORK_MODE_BY_MENU: Array = [
+	WorkMode.MODEL, WorkMode.DRAW, WorkMode.SHEET, WorkMode.CAM, WorkMode.SIM, WorkMode.FORM,
+]
 var _edit_popup: PopupMenu
 var _recent_menu: PopupMenu
 ## Process frame of the last menu-bar / HUD popup hide. Esc in that frame,
@@ -392,25 +404,7 @@ func _build_ui() -> void:
 	menu_row.add_child(file_btn)
 	_file_popup = file_btn.get_popup()
 	_style_menu_button(file_btn)
-	_file_popup.add_item("New", 0)
-	_file_popup.add_item("Open...", 1)
-	_file_popup.add_item("Save", 2)
-	_file_popup.add_item("Save As...", 3)
-	_file_popup.add_separator()
-	_file_popup.add_item("Import STEP...", 4)
-	_file_popup.add_item("Import STL...", 9)
-	_file_popup.add_item("Import DXF...", 10)
-	_file_popup.add_item("Export STEP...", 5)
-	_file_popup.add_item("Export STL...", 6)
-	_file_popup.add_item("Export 3MF...", 11)
-	_file_popup.add_item("Export glTF...", 12)
-	_file_popup.add_item("Open in Slicer...", 15)
-	_file_popup.add_separator()
-	_file_popup.add_item("Export AI Context...", 7)
-	_file_popup.add_item("Export Drawing (SVG)...", 8)
-	_file_popup.add_item("Export Drawing (DXF)...", 13)
-	_file_popup.add_item("Export Drawing (PDF)...", 14)
-	_file_popup.add_separator()
+	_populate_file_menu()
 	_recent_menu = PopupMenu.new()
 	_recent_menu.name = "RecentMenu"
 	_style_popup_menu(_recent_menu)
@@ -480,12 +474,8 @@ func _build_ui() -> void:
 	menu_row.add_child(mode_btn)
 	_mode_popup = mode_btn.get_popup()
 	_style_menu_button(mode_btn)
-	_mode_popup.add_item("Model", 0)
-	_mode_popup.add_item("Draw", 1)
-	_mode_popup.add_item("Sheet", 2)
-	_mode_popup.add_item("Cam", 3)
-	_mode_popup.add_item("Sim", 4)
-	_mode_popup.add_item("Form", 5)
+	for i in WORK_MODE_BY_MENU.size():
+		_mode_popup.add_item(str(WORK_MODE_NAMES[WORK_MODE_BY_MENU[i]]), i)
 	_mode_popup.id_pressed.connect(_on_mode_menu)
 
 	# View menu: entry points for panels that auto-hide when they have no data,
@@ -2163,11 +2153,10 @@ func _sync_bottom_docks() -> void:
 
 
 func _on_mode_menu(id: int) -> void:
-	var names := ["Model", "Draw", "Sheet", "Cam", "Sim", "Form"]
-	if id < 0 or id >= names.size():
+	if id < 0 or id >= WORK_MODE_BY_MENU.size():
 		return
-	_work_mode = names[id]
-	_on_status(_work_mode + " mode")
+	_work_mode = WORK_MODE_BY_MENU[id]
+	_on_status(str(WORK_MODE_NAMES[_work_mode]) + " mode")
 	_update_left_rail()
 	_update_mode_overlays()
 
@@ -2220,34 +2209,34 @@ func _on_print_orient() -> void:
 
 func _update_mode_overlays() -> void:
 	if drawing_sheet != null:
-		if _work_mode == "Draw" and view != null and view.doc != null:
+		if _work_mode == WorkMode.DRAW and view != null and view.doc != null:
 			view.doc.ensure_drawing_sheet()
 			view.doc.refresh_drawing_dims()
 			drawing_sheet.set_preview(view.doc.drawing_preview())
-		drawing_sheet.show_sheet(_work_mode == "Draw")
+		drawing_sheet.show_sheet(_work_mode == WorkMode.DRAW)
 	if sheet_metal_view != null:
 		var flat := 0.0
 		if view != null and view.doc != null:
 			flat = view.doc.sheet_flat_length(30.0, 30.0, 1.5, 0.44, 1.5)
-		sheet_metal_view.show_split(_work_mode == "Sheet", flat, 0.44)
+		sheet_metal_view.show_split(_work_mode == WorkMode.SHEET, flat, 0.44)
 	if print_strip != null:
-		print_strip.visible = _work_mode == "Form"
-		if _work_mode == "Form" and print_strip.has_method("sync_from_doc"):
+		print_strip.visible = _work_mode == WorkMode.FORM
+		if _work_mode == WorkMode.FORM and print_strip.has_method("sync_from_doc"):
 			print_strip.sync_from_doc()
 	if view != null and view.has_method("set_print_preview"):
-		view.call("set_print_preview", _work_mode == "Form")
+		view.call("set_print_preview", _work_mode == WorkMode.FORM)
 	if cam_rail != null:
-		cam_rail.visible = _work_mode == "Cam"
-		if _work_mode != "Cam":
+		cam_rail.visible = _work_mode == WorkMode.CAM
+		if _work_mode != WorkMode.CAM:
 			cam_rail.clear_path()
 	if sim_rail != null:
-		sim_rail.visible = _work_mode == "Sim"
+		sim_rail.visible = _work_mode == WorkMode.SIM
 	# Bed ghost visible in Form only (gate the toggle).
 	if bed_ghost != null:
 		var on := false
 		if print_strip != null and is_instance_valid(print_strip._bed_toggle):
 			on = print_strip._bed_toggle.button_pressed
-		bed_ghost.visible = (_work_mode == "Form") and on
+		bed_ghost.visible = (_work_mode == WorkMode.FORM) and on
 
 
 func _update_left_rail() -> void:
@@ -2276,9 +2265,9 @@ func _update_left_rail() -> void:
 		return
 	var placing := interaction != null and interaction.is_placing()
 	var has_body := view.selected_body != ""
-	ops_panel.visible = has_body and _work_mode == "Model"
-	if _work_mode == "Cam" or _work_mode == "Sim" or _work_mode == "Draw" \
-			or _work_mode == "Sheet" or _work_mode == "Form":
+	ops_panel.visible = has_body and _work_mode == WorkMode.MODEL
+	if _work_mode == WorkMode.CAM or _work_mode == WorkMode.SIM or _work_mode == WorkMode.DRAW \
+			or _work_mode == WorkMode.SHEET or _work_mode == WorkMode.FORM:
 		palette.visible = false
 		ops_panel.visible = false
 		return
@@ -3293,43 +3282,65 @@ func edit_delete() -> void:
 		interaction._delete_selection()
 
 
+func _file_menu_rows() -> Array:
+	return [
+		{label="New", menu_id=0, kind="new"},
+		{label="Open...", menu_id=1, kind="open"},
+		{label="Save", menu_id=2, kind="save"},
+		{label="Save As...", menu_id=3, kind="dialog", action=FileAction.SAVE_AS, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.sxp ; SolidExpress"},
+		{kind="sep"},
+		{label="Import STEP...", menu_id=4, kind="dialog", action=FileAction.IMPORT_STEP, mode=FileDialog.FILE_MODE_OPEN_FILE, filter="*.step, *.stp ; STEP"},
+		{label="Import STL...", menu_id=9, kind="dialog", action=FileAction.IMPORT_STL, mode=FileDialog.FILE_MODE_OPEN_FILE, filter="*.stl ; STL"},
+		{label="Import DXF...", menu_id=10, kind="dialog", action=FileAction.IMPORT_DXF, mode=FileDialog.FILE_MODE_OPEN_FILE, filter="*.dxf ; DXF"},
+		{label="Export STEP...", menu_id=5, kind="dialog", action=FileAction.EXPORT_STEP, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.step, *.stp ; STEP"},
+		{label="Export STL...", menu_id=6, kind="dialog", action=FileAction.EXPORT_STL, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.stl ; STL"},
+		{label="Export 3MF...", menu_id=11, kind="dialog", action=FileAction.EXPORT_3MF, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.3mf ; 3MF"},
+		{label="Export glTF...", menu_id=12, kind="dialog", action=FileAction.EXPORT_GLTF, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.gltf ; glTF"},
+		{label="Open in Slicer...", menu_id=15, kind="slicer"},
+		{kind="sep"},
+		{label="Export AI Context...", menu_id=7, kind="dialog", action=FileAction.EXPORT_CONTEXT, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.md ; Markdown"},
+		{label="Export Drawing (SVG)...", menu_id=8, kind="drawing", action=FileAction.EXPORT_DRAWING},
+		{label="Export Drawing (DXF)...", menu_id=13, kind="drawing", action=FileAction.EXPORT_DRAWING_DXF},
+		{label="Export Drawing (PDF)...", menu_id=14, kind="drawing", action=FileAction.EXPORT_DRAWING_PDF},
+		{kind="sep"},
+	]
+
+
+func _populate_file_menu() -> void:
+	for row in _file_menu_rows():
+		if str(row.get("kind", "")) == "sep":
+			_file_popup.add_separator()
+		elif row.has("label"):
+			_file_popup.add_item(str(row.label), int(row.menu_id))
+
+
+func file_menu_id_labels() -> Dictionary:
+	var out := {}
+	for row in _file_menu_rows():
+		if row.has("menu_id") and row.has("label"):
+			out[int(row.menu_id)] = str(row.label)
+	return out
+
+
 func _on_file_menu(id: int) -> void:
-	match id:
-		0:  # New
-			_confirm_discard(_do_new)
-		1:
-			_confirm_discard(_do_open_dialog)
-		2:
-			_save_current()
-		3:
-			_show_file_dialog(FileAction.SAVE_AS, FileDialog.FILE_MODE_SAVE_FILE, "*.sxp ; SolidExpress")
-		4:
-			_show_file_dialog(FileAction.IMPORT_STEP, FileDialog.FILE_MODE_OPEN_FILE, "*.step, *.stp ; STEP")
-		9:
-			_show_file_dialog(FileAction.IMPORT_STL, FileDialog.FILE_MODE_OPEN_FILE, "*.stl ; STL")
-		5:
-			_show_file_dialog(FileAction.EXPORT_STEP, FileDialog.FILE_MODE_SAVE_FILE, "*.step, *.stp ; STEP")
-		6:
-			_show_file_dialog(FileAction.EXPORT_STL, FileDialog.FILE_MODE_SAVE_FILE, "*.stl ; STL")
-		7:
-			_show_file_dialog(FileAction.EXPORT_CONTEXT, FileDialog.FILE_MODE_SAVE_FILE, "*.md ; Markdown")
-		8:
-			_pending_draw_action = FileAction.EXPORT_DRAWING
-			_show_drawing_options()
-		10:
-			_show_file_dialog(FileAction.IMPORT_DXF, FileDialog.FILE_MODE_OPEN_FILE, "*.dxf ; DXF")
-		11:
-			_show_file_dialog(FileAction.EXPORT_3MF, FileDialog.FILE_MODE_SAVE_FILE, "*.3mf ; 3MF")
-		12:
-			_show_file_dialog(FileAction.EXPORT_GLTF, FileDialog.FILE_MODE_SAVE_FILE, "*.gltf ; glTF")
-		15:
-			_show_slicer_dialog()
-		13:
-			_pending_draw_action = FileAction.EXPORT_DRAWING_DXF
-			_show_drawing_options()
-		14:
-			_pending_draw_action = FileAction.EXPORT_DRAWING_PDF
-			_show_drawing_options()
+	for row in _file_menu_rows():
+		if int(row.get("menu_id", -1)) != id:
+			continue
+		match str(row.get("kind", "")):
+			"new":
+				_confirm_discard(_do_new)
+			"open":
+				_confirm_discard(_do_open_dialog)
+			"save":
+				_save_current()
+			"slicer":
+				_show_slicer_dialog()
+			"drawing":
+				_pending_draw_action = row.action
+				_show_drawing_options()
+			"dialog":
+				_show_file_dialog(row.action, row.mode, str(row.filter))
+		return
 
 
 func _do_new() -> void:

@@ -128,53 +128,66 @@ func _reply(obj: Dictionary) -> void:
 	_peer.put_data(text.to_utf8_buffer())
 
 
+func _commands() -> Dictionary:
+	return {
+		"ping": {call=_exec_ping, frames=1, reports=false},
+		"click": {call=_cmd_pointer, frames=2, reports=true, pass_cmd=true},
+		"double_click": {call=_cmd_pointer, frames=2, reports=true, pass_cmd=true},
+		"hover": {call=_cmd_pointer, frames=2, reports=true, pass_cmd=true},
+		"drag": {call=_cmd_drag, frames=2, reports=true},
+		"key": {call=_cmd_key, frames=2, reports=true},
+		"type": {call=_cmd_type, frames=2, reports=true},
+		"wheel": {call=_cmd_wheel, frames=2, reports=true},
+		"wait_idle": {call=_exec_empty, frames=2, reports=true},
+		"state": {call=_exec_state, frames=1, reports=false},
+		"trace": {call=_exec_trace, frames=1, reports=false},
+		"screenshot": {call=_cmd_screenshot, frames=1, reports=false},
+		"pixels": {call=_cmd_pixels, frames=1, reports=false},
+		"project": {call=_cmd_project, frames=1, reports=false},
+		"dialog_dir": {call=_cmd_dialog_dir, frames=1, reports=false},
+		"dialog_commit": {call=_cmd_dialog_commit, frames=2, reports=true},
+		"dialog_dismiss": {call=_cmd_dialog_dismiss, frames=2, reports=true},
+	}
+
+
+func _exec_ping(_req: Dictionary) -> Dictionary:
+	return {"pong": true, "port": _port}
+
+
+func _exec_empty(_req: Dictionary) -> Dictionary:
+	return {}
+
+
+func _exec_state(req: Dictionary) -> Dictionary:
+	return {"state": _state(_as_filter(req.get("filter", [])))}
+
+
+func _exec_trace(req: Dictionary) -> Dictionary:
+	_harvest_traces()
+	return _cmd_trace(req)
+
+
 func _run(req: Dictionary) -> Dictionary:
 	var cmd := str(req.get("cmd", "")).strip_edges().to_lower().replace("-", "_")
+	var spec: Variant = _commands().get(cmd)
+	if spec == null:
+		return {"ok": false, "error": "unknown command '%s'" % cmd}
 	var res := {}
-	match cmd:
-		"ping":
-			res = {"pong": true, "port": _port}
-		"click", "double_click", "hover":
-			res = await _cmd_pointer(req, cmd)
-		"drag":
-			res = await _cmd_drag(req)
-		"key":
-			res = _cmd_key(req)
-		"type":
-			res = await _cmd_type(req)
-		"wheel":
-			res = _cmd_wheel(req)
-		"wait_idle":
-			res = {}
-		"state":
-			res = {"state": _state(_as_filter(req.get("filter", [])))}
-		"trace":
-			_harvest_traces()
-			res = _cmd_trace(req)
-		"screenshot":
-			res = await _cmd_screenshot(req)
-		"pixels":
-			res = await _cmd_pixels(req)
-		"project":
-			res = _cmd_project(req)
-		"dialog_dir":
-			res = _cmd_dialog_dir(req)
-		"dialog_commit":
-			res = await _cmd_dialog_commit(req)
-		"dialog_dismiss":
-			res = await _cmd_dialog_dismiss(req)
-		_:
-			return {"ok": false, "error": "unknown command '%s'" % cmd}
+	var fn: Callable = spec.call
+	if bool(spec.get("pass_cmd", false)):
+		res = await fn.call(req, cmd)
+	else:
+		res = await fn.call(req)
 	if res.has("error"):
 		res["ok"] = false
 		return res
-	var frames := int(req.get("frames", 1 if cmd in ["state", "trace", "ping", "project", "screenshot", "pixels", "dialog_dir"] else 2))
+	var frames := int(req.get("frames", int(spec.frames)))
 	var settled := await _wait_idle(frames)
 	_harvest_traces()
 	res["ok"] = true
 	res["settled_frames"] = settled
 	res["trace_cursor"] = _trace.size()
-	if cmd in ["click", "double_click", "hover", "drag", "key", "type", "wheel", "wait_idle", "dialog_commit", "dialog_dismiss"]:
+	if bool(spec.get("reports", false)):
 		var ix = _main().get("interaction")
 		if ix != null:
 			res["disposition"] = str(ix.last_click_disposition)

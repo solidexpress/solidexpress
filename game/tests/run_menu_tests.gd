@@ -14,6 +14,7 @@ func _init() -> void:
 
 	test_insert_datums(main)
 	test_edit_menu(main)
+	test_file_menu_ids(main)
 	test_export_context(main)
 	test_projection_toggle(main)
 	test_dirty_guard(main)
@@ -70,6 +71,36 @@ func test_edit_menu(main) -> void:
 	main._on_edit_menu(4)  # Paste after cut
 	check(view.doc.body_ids().size() > before, "Edit→Paste after cut")
 	main._refresh_edit_menu()
+
+
+func test_file_menu_ids(main) -> void:
+	print("- File menu ids keep today's labels")
+	var labels: Dictionary = main.file_menu_id_labels()
+	var want := {
+		0: "New",
+		1: "Open...",
+		2: "Save",
+		3: "Save As...",
+		4: "Import STEP...",
+		5: "Export STEP...",
+		6: "Export STL...",
+		7: "Export AI Context...",
+		8: "Export Drawing (SVG)...",
+		9: "Import STL...",
+		10: "Import DXF...",
+		11: "Export 3MF...",
+		12: "Export glTF...",
+		13: "Export Drawing (DXF)...",
+		14: "Export Drawing (PDF)...",
+		15: "Open in Slicer...",
+	}
+	for id in want.keys():
+		check(labels.get(id, "") == want[id], "menu id %s is %s" % [str(id), want[id]])
+	if main._file_popup != null:
+		for id in want.keys():
+			var idx: int = main._file_popup.get_item_index(id)
+			check(idx >= 0 and main._file_popup.get_item_text(idx) == want[id],
+				"popup id %s text %s" % [str(id), want[id]])
 
 
 func test_export_context(main) -> void:
