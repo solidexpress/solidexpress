@@ -45,6 +45,11 @@
       "id": "sketch_tools",
       "title": "Sketch tools",
       "blurb": "Block and fit a spline, then extend — the everyday sketch toolset."
+    },
+    {
+      "id": "ubc_wrench",
+      "title": "Parametric wrench: blank to 3MF",
+      "blurb": "Blank part to a printable 3MF: circles, shaft, open jaw, slot, fillets, thickness 14."
     }
   ]
 }
