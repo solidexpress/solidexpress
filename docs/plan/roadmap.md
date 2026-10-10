@@ -236,6 +236,24 @@ That is a **daily driver for brackets, enclosures, and small mechanisms**, with 
 
 ---
 
+## 7. Structural debt (deferred refactors)
+
+Written at the end of Part A of [`docs/loop/post-rung-01-cleanup.md`](../loop/post-rung-01-cleanup.md). Behaviour-identical organization landed as WP1–WP10. Stretch ★ WPs were not started: wall time from WP1 exceeded 6 hours before WP11.
+
+| Rank | Refactor | What / where | Design that replaces the conditionals or copies | Why parked |
+|---|---|---|---|---|
+| 10 ★ | One geometry helper instead of seven | `_point_segment_distance`, `_point_segment_distance2`, `_point_line_distance`, `_segment_rect_distance`, `_rect_gap`, `_point_rect_gap_px` in `sketch_mode.gd`; `_point_segment_distance2/3`, `_closest_point_on_segment3` in `document_view.gd` | `SketchGeom` static helpers built on Godot's `Geometry2D.get_closest_point_to_segment`, `Geometry2D.segment_intersects_segment`, `Geometry3D.get_closest_point_to_segment` | WP11 ★ skipped (6 h stop line) |
+| 11 ★ | `SketchToolSpec` registry | `sketch_mode.gd` nine `match tool` tables, `main.gd` rail table and family map, `automation_bridge.gd` `TOOL_NAMES`, `viewport_interaction.gd` 38 `Tool.` comparisons | one `SketchToolSpec` row per tool: id, label, rail hint, shortcut, icon, default variant, variants, numeric-field key, undo label, arm hint, `draws_with_points`; `match tool` becomes `spec.<field>`; click and preview stay in `SketchMode` but are looked up by spec | WP12 ★ skipped (6 h stop line) |
+| 12 ★ | CI composite action for OCCT | `.github/workflows/ci.yml` (3 blocks) | `.github/actions/setup-occt/action.yml` (cache + `install_occt.sh`) | WP13 ★ skipped (6 h stop line) |
+| 13 | Parked: split `SketchMode` | `sketch_mode.gd` jaw trim (~1,500 lines: `_trim_open_jaw` … `_seal_tangent_bosses`) and dimension / glyph label layout (~2,700 lines, `_rebuild_dimension_labels` … `_repel_glyph_items`) | `JawTrim` and `SketchLabelLayout` as `RefCounted` helpers that receive a narrow context (sketch, camera, view rect) instead of reading 100 members | high (reads ~100 members, 20 rounds of tuning); walk rows A8–A11, N21–N26, L12 |
+| 14 | Parked: split `ViewportInteraction` | 24 `_strip_*` members and 15 `_sketch_*` press/release members, a 299-line `_input` | `SelectionStrip` as its own `Control`; `SketchPointerGesture` state machine (press, release, box, abandon, swallow) | high (input; dead first clicks took rounds 17–19); `tools/gui_click_probe.sh`, walk |
+| 15 | Parked: `CommandRegistry` drift | `command_registry.gd` documents keys; live handlers bind them locally | handlers register against the table | medium; `run_help_tests.gd` |
+| — | CI composite on export workflows | `.github/workflows/release.yml`, `linux-test-build.yml` still inline the OCCT cache + `install_occt.sh` blocks | same `.github/actions/setup-occt/action.yml` as WP13, once that action exists | follows WP13 |
+
+No WP was parked by the Revert rule.
+
+---
+
 ## Related
 
 - [README.md](README.md) — plan index (park later ideas here, not in chat)

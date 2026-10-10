@@ -2,6 +2,16 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Post-rung-1 cleanup
+
+Organization pass from [`docs/loop/post-rung-01-cleanup.md`](../loop/post-rung-01-cleanup.md) on one PR. Behaviour unchanged.
+
+Shipped: WP1 baseline/ledger, WP2 loop-doc purge (−22,371 lines), WP3 dead code (−381), WP4 `SxSuite` (−2,634 net), WP5 `SxInput` (−1,670 net), WP6 retire chain/walk suites (−3,537; **202 run + 4 known-red**), WP7 lint rule table, WP8 `tools/walk/` package, WP9 kernel `FeatureTypeInfo` + `kApplyHandlers`, WP10 File/WorkMode/bridge tables.
+
+Parked (6 h stop line, not started): WP11 `SketchGeom`, WP12 `SketchToolSpec`, WP13 CI `setup-occt` action. Also ranks 13–15 and the `release.yml` / `linux-test-build.yml` composite conversion — see [roadmap.md §7](roadmap.md).
+
+WP10 pins File menu ids in `run_menu_tests.gd` (`test_file_menu_ids`, +32 checks). That line of the check-count ledger is the only intentional CP2 delta versus WP6.
+
 ## 0.0.13 — rung 1 (UBC wrench)
 - SolidExpress `VERSION` is 0.0.13. Rung 1 of the SolidWorks tutorial ladder (UBC wrench) is fully makeable: jaw angle label, open-jaw cut, selection/fillet picking at small window sizes, and a test-only automation bridge for checklist walks.
 
