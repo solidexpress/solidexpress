@@ -1,25 +1,13 @@
 # Rung 1 replan 13 WP6 — sketch measure ✕ only while measuring; squash and glyph probes.
 # Template: run_measure_overlay_tests.gd (overlay API) + run_rung01_replan12_rail.gd (pushed events).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script res://tests/run_rung01_replan13_measure.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const WIDE_SIZE := Vector2i(1920, 1080)
 const FIRST_DROP := "First point dropped — Esc again exits the sketch"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	await test_jaw_circle_leaves_no_marks()
 	await test_esc_ladder()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_circle_must_not_plant() -> void:
@@ -44,7 +31,7 @@ func test_circle_must_not_plant() -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	check(sm.tool == SketchMode.Tool.CIRCLE, "Circle tool is armed")
 	var rim45 := _circle_rim(sm, 22.5)
-	await _hover_uv(ctx, vp, rim45)
+	await _hover_uv_local(ctx, vp, rim45)
 	print("  after Circle hover uv=%s nearest=%s has_anchor=%s marks=%d labels=%d" % [
 			str(rim45), sm._nearest_entity_at(rim45), str(mo.has_anchor()),
 			mo.marks.size(), mo.labels.size()])
@@ -62,7 +49,7 @@ func test_select_plants_and_shaft_clears() -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	check(sm.tool == SketchMode.Tool.SELECT, "Select tool is armed")
 	var rim45 := _circle_rim(sm, 22.5)
-	await _hover_uv(ctx, vp, rim45)
+	await _hover_uv_local(ctx, vp, rim45)
 	print("  after Select hover uv=%s nearest=%s has_anchor=%s marks=%d" % [
 			str(rim45), sm._nearest_entity_at(rim45), str(mo.has_anchor()),
 			mo.marks.size()])
@@ -107,14 +94,14 @@ func test_delete_clears_on_next_motion() -> void:
 	sm._redraw()
 	await process_frame
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await _hover_uv(ctx, vp, Vector2(0.0, 10.0))
+	await _hover_uv_local(ctx, vp, Vector2(0.0, 10.0))
 	check(mo.has_anchor(), "Select hover plants an anchor on the circle")
 	await _click_uv(ctx, vp, Vector2(0.0, 10.0))
 	check(sm.selected.has(cid) or sm.selected.size() == 1, "the hovered circle is selected")
-	await _push_key(vp, KEY_DELETE)
+	await _push_key_local(vp, KEY_DELETE)
 	await process_frame
 	check(not sm.sketch.entity_ids().has(cid), "the hovered entity was deleted")
-	await _hover_uv(ctx, vp, Vector2(8.0, 8.0))
+	await _hover_uv_local(ctx, vp, Vector2(8.0, 8.0))
 	print("  after delete + motion: has_anchor=%s marks=%d" % [str(mo.has_anchor()), mo.marks.size()])
 	check(not mo.has_anchor(), "the next motion after delete drops the dead anchor")
 	await _shutdown(ctx)
@@ -160,7 +147,7 @@ func test_jaw_circle_leaves_no_marks() -> void:
 		Vector2(50.0, 45.0),
 	]
 	for uv in spots:
-		await _hover_uv(ctx, vp, uv)
+		await _hover_uv_local(ctx, vp, uv)
 	print("  after 10 Circle motions: marks=%d labels=%d has_anchor=%s" % [
 			mo.marks.size(), mo.labels.size(), str(mo.has_anchor())])
 	check(mo.marks.size() == 0, "ten Circle motions leave marks.size() == 0 (got %d)" % mo.marks.size())
@@ -200,7 +187,7 @@ func test_esc_ladder() -> void:
 	sm._redraw()
 	await process_frame
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await _hover_uv(ctx, vp, Vector2(0.0, 10.0))
+	await _hover_uv_local(ctx, vp, Vector2(0.0, 10.0))
 	check(mo.has_anchor(), "Select planted a ✕")
 	_status_log.clear()
 	await _push_esc(vp)
@@ -358,7 +345,7 @@ func _circle_rim(sm: SketchMode, want_r: float) -> Vector2:
 	return Vector2(200.0, 22.5)
 
 
-func _hover_uv(ctx: FilmContext, vp: Viewport, uv: Vector2) -> void:
+func _hover_uv_local(ctx: FilmContext, vp: Viewport, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var ix: ViewportInteraction = ctx.main.interaction
 	ix.grab_focus()
@@ -385,33 +372,6 @@ func _click_uv(ctx: FilmContext, vp: Viewport, uv: Vector2) -> void:
 	await _x11_click_screen(vp, screen)
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
-
-
 func _x11_click(ctrl: Control) -> void:
 	if ctrl == null:
 		check(false, "click target is present")
@@ -421,31 +381,11 @@ func _x11_click(ctrl: Control) -> void:
 	# Chip / rail buttons still need the pressed signal (same as FilmUI.click_control).
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
 func _push_esc(vp: Viewport) -> void:
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

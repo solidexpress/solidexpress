@@ -4,26 +4,14 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan20_jaw.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const COMMIT_PREFIX := "Jaw committed — width "
 const COMMIT_SUFFIX := ", long side 0.0° — click a label to edit it"
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _story()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _story() -> void:
@@ -422,7 +409,7 @@ func _file_new(ctx: FilmContext) -> void:
 
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String, second: bool) -> void:
 	await _press_rail(ctx, "Circle")
-	await _click_uv(ctx, center)
+	await _click_uv_local(ctx, center)
 	await _motion_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text, second)
 
@@ -447,9 +434,9 @@ func _smart_dim_200(ctx: FilmContext) -> void:
 		check(false, "J0 Smart Dim needs two circles")
 		return
 	await _press_rail(ctx, "Smart Dim")
-	await _click_uv(ctx, circs[0]["center"])
+	await _click_uv_local(ctx, circs[0]["center"])
 	await process_frame
-	await _click_uv(ctx, circs[1]["center"])
+	await _click_uv_local(ctx, circs[1]["center"])
 	await process_frame
 	await process_frame
 	var ix: ViewportInteraction = ctx.main.interaction
@@ -469,12 +456,12 @@ func _shaft_lines(ctx: FilmContext) -> void:
 	var circs := _circles(sm)
 	await _zoom(ctx, Vector3(100, 0, 0), 280.0)
 	await _press_rail(ctx, "Select")
-	await _click_uv(ctx, Vector2(100.0, 80.0))
+	await _click_uv_local(ctx, Vector2(100.0, 80.0))
 	await process_frame
 	check(sm.selected.is_empty(), "J0 empty click clears the selection (got %d)" % sm.selected.size())
 	for c in circs:
 		var top: Vector2 = (c["center"] as Vector2) + Vector2(0.0, float(c["radius"]))
-		await _click_uv(ctx, top)
+		await _click_uv_local(ctx, top)
 		await process_frame
 	check(sm.selected.size() == 2, "J0 both circles selected (got %d)" % sm.selected.size())
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Shaft Lines")
@@ -545,8 +532,8 @@ func _edit_drawn(ctx: FilmContext, degree: bool, text: String) -> void:
 
 func _draw_line(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
 	await _press_rail(ctx, "Line")
-	await _click_uv(ctx, a)
-	await _click_uv(ctx, b)
+	await _click_uv_local(ctx, a)
+	await _click_uv_local(ctx, b)
 	await process_frame
 
 
@@ -842,7 +829,7 @@ func _pointer_click(ctx: FilmContext, pos: Vector2) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.is_on_screen(ctx, screen), "click on screen %s" % str(uv))

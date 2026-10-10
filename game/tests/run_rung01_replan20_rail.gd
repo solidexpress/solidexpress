@@ -2,8 +2,7 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan20_rail.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
@@ -11,29 +10,17 @@ const CENTERLINE_ARM := "Centerline — click 2 points (construction, never part
 const CENTERLINE_ADD := "Centerline added — construction, not part of the profile"
 const TOOL_DROPPED := "Tool dropped — Esc again exits the sketch"
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan20 rail")
 	var ctx := await _boot()
 	await _case(ctx)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:
@@ -85,13 +72,13 @@ func _case(ctx: FilmContext) -> void:
 	ctx.main.get_viewport().gui_release_focus()
 	ctx.main.interaction.grab_focus()
 	_log.clear()
-	_push_key(ctx.main.get_viewport(), KEY_Z, true, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 	await process_frame
 	await process_frame
 	check(_saw("Undo: Line"), "Ctrl+Z undoes the centreline (log %s)" % " | ".join(_log))
 	_expect_lit(rows, ["Line"], "after Centerline undo")
 	_log.clear()
-	_push_key(ctx.main.get_viewport(), KEY_Z, true, true)
+	_push_key_local(ctx.main.get_viewport(), KEY_Z, true, true)
 	await process_frame
 	await process_frame
 	check(_saw("Redo: Line"), "Ctrl+Shift+Z redoes the centreline (log %s)" % " | ".join(_log))
@@ -109,7 +96,7 @@ func _case(ctx: FilmContext) -> void:
 	for pair in [["L", KEY_L, "Line"], ["D", KEY_D, "Smart Dim"], ["T", KEY_T, "Trim"], ["C", KEY_C, "Circle"], ["S", KEY_S, "Select"]]:
 		ctx.main.get_viewport().gui_release_focus()
 		ctx.main.interaction.grab_focus()
-		_push_key(ctx.main.get_viewport(), pair[1], false, false)
+		_push_key_local(ctx.main.get_viewport(), pair[1], false, false)
 		await process_frame
 		await process_frame
 		_expect_lit(rows, [pair[2]], "key %s" % pair[0])
@@ -133,7 +120,7 @@ func _case(ctx: FilmContext) -> void:
 	ctx.main.get_viewport().gui_release_focus()
 	ctx.main.interaction.grab_focus()
 	_log.clear()
-	_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	await process_frame
 	await process_frame
 	check(_saw(TOOL_DROPPED) or str(ctx.main.status_label.text) == TOOL_DROPPED,
@@ -142,7 +129,7 @@ func _case(ctx: FilmContext) -> void:
 	check(dropped.size() <= 1, "Esc leaves at most one rail button lit (got %s)" % str(dropped))
 	check(dropped.is_empty() or dropped[0] == "Select",
 			"Esc lights nothing or Select (got %s)" % str(dropped))
-	_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	await process_frame
 	await process_frame
 	check(not sm.active, "second Esc leaves the sketch")
@@ -213,7 +200,7 @@ func _saw(fragment: String) -> bool:
 	return false
 
 
-func _push_key(vp: Viewport, code: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, code: Key, ctrl: bool, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.pressed = true
 	down.keycode = code

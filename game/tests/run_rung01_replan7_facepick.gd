@@ -1,23 +1,11 @@
 # Rung 1 replan 7 WP1 — a click on a solid face selects the face; a pad wins only on its ink.
 # Clicks are one X11 burst (no await between mouse-down and mouse-up).
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan7_facepick.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -25,8 +13,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await test_face_click_beats_hidden_pad()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _sketch_feature_ids(ctx: FilmContext) -> Array:
@@ -53,8 +40,8 @@ func test_face_click_beats_hidden_pad() -> void:
 	check(sm != null and sm.active, "ground sketch is open")
 	await _zoom(ctx, Vector3(20, 15, 0), 90.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
-	await _click_uv(ctx, Vector2.ZERO, "Rect corner A")
-	await _click_uv(ctx, Vector2(40, 30), "Rect corner B")
+	await _click_uv_local(ctx, Vector2.ZERO, "Rect corner A")
+	await _click_uv_local(ctx, Vector2(40, 30), "Rect corner B")
 	await process_frame
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	var dist := _distance_edit(chrome)
@@ -97,8 +84,8 @@ func test_face_click_beats_hidden_pad() -> void:
 			"Sketch from the strip opens on the top face")
 	await _zoom_uv(ctx, Vector2(20, 15), 80.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2(20, 15), "Hole centre")
-	await _click_uv(ctx, Vector2(25, 15), "Hole radius")
+	await _click_uv_local(ctx, Vector2(20, 15), "Hole centre")
+	await _click_uv_local(ctx, Vector2(25, 15), "Hole radius")
 	await process_frame
 	var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
 	await _x11_click(exit_btn)
@@ -218,7 +205,7 @@ func _face_along(ctx: FilmContext, body: String, z_sign: int) -> String:
 	return best
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -227,33 +214,6 @@ func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 
 func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 	await _zoom(ctx, ctx.main.sketch_mode.to_model(uv), size_mm)
-
-
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
 
 
 func _x11_key(vp: Viewport, code: Key) -> void:
@@ -276,32 +236,6 @@ func _zoom_top(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
 	cam.yaw = PI
 	cam.pitch = deg_to_rad(89.0)
 	await _zoom(ctx, model_pivot, size_mm)
-
-
-func _x11_click(ctrl: Control) -> void:
-	var pos := ctrl.get_global_rect().get_center()
-	var vp := ctrl.get_viewport()
-	await _x11_click_screen(vp, pos)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _distance_edit(chrome: SketchContextChrome) -> LineEdit:

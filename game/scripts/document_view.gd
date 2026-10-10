@@ -1262,7 +1262,7 @@ func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE
 		for edge_id in lines:
 			var pts: PackedVector3Array = lines[edge_id]
 			for i in range(pts.size() - 1):
-				var d := _point_segment_distance3(point, pts[i], pts[i + 1])
+				var d := SketchGeom.point_segment_distance_3d(point, pts[i], pts[i + 1])
 				if d < best_d:
 					best_d = d
 					best_id = edge_id
@@ -1276,7 +1276,7 @@ func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE
 		var pts: PackedVector3Array = lines[edge_id]
 		var d3 := INF
 		for i in range(pts.size() - 1):
-			d3 = minf(d3, _point_segment_distance3(point, pts[i], pts[i + 1]))
+			d3 = minf(d3, SketchGeom.point_segment_distance_3d(point, pts[i], pts[i + 1]))
 		if d3 >= tolerance_mm:
 			continue
 		var px := _polyline_screen_distance(camera, screen, pts)
@@ -1393,12 +1393,6 @@ func _edge_point_visible(camera: Camera3D, model_pt: Vector3) -> bool:
 	return hit_dist >= dist - maxf(0.3, dist * 0.002)
 
 
-func _point_segment_distance2(p: Vector2, a: Vector2, b: Vector2) -> float:
-	var ab := b - a
-	var t := 0.0 if ab.length_squared() < 1e-12 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
-	return p.distance_to(a + ab * t)
-
-
 ## Closest point on any edge of `body_id` to `point` (no pick tolerance).
 ## Returns `point` unchanged when the body has no edge polylines.
 func closest_edge_point(body_id: String, point: Vector3) -> Vector3:
@@ -1408,7 +1402,7 @@ func closest_edge_point(body_id: String, point: Vector3) -> Vector3:
 	for edge_id in lines:
 		var pts: PackedVector3Array = lines[edge_id]
 		for i in range(pts.size() - 1):
-			var q := _closest_point_on_segment3(point, pts[i], pts[i + 1])
+			var q := SketchGeom.closest_point_on_segment_3d(point, pts[i], pts[i + 1])
 			var d := point.distance_squared_to(q)
 			if d < best_d:
 				best_d = d
@@ -1520,16 +1514,6 @@ func closest_surface_point(body_id: String, from: Vector3) -> Vector3:
 	return closest_edge_point(body_id, from)
 
 
-func _point_segment_distance3(p: Vector3, a: Vector3, b: Vector3) -> float:
-	return p.distance_to(_closest_point_on_segment3(p, a, b))
-
-
-func _closest_point_on_segment3(p: Vector3, a: Vector3, b: Vector3) -> Vector3:
-	var ab := b - a
-	var t := 0.0 if ab.length_squared() < 1e-12 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
-	return a + ab * t
-
-
 ## Distance from `point` to the tessellated polyline of `edge_id`, or INF.
 func edge_distance_to_point(body_id: String, edge_id: String, point: Vector3) -> float:
 	var pts := _edge_polyline(body_id, edge_id)
@@ -1537,7 +1521,7 @@ func edge_distance_to_point(body_id: String, edge_id: String, point: Vector3) ->
 		return INF
 	var best := INF
 	for i in range(pts.size() - 1):
-		best = minf(best, _point_segment_distance3(point, pts[i], pts[i + 1]))
+		best = minf(best, SketchGeom.point_segment_distance_3d(point, pts[i], pts[i + 1]))
 	return best
 
 
@@ -1834,15 +1818,6 @@ func set_import_scale(body_id: String, scale: float) -> bool:
 	select_entity(keep, "")
 	return true
 
-
-## Feature id for an import body, or "".
-func import_feature_id(body_id: String) -> String:
-	if not is_import_body(body_id):
-		return ""
-	return feature_of_body(body_id)
-
-
-## Select a component instance (clears body/face/edge selection).
 func select_instance(instance_id: String) -> void:
 	select_entity("", "")
 	selected_instance = instance_id
@@ -2378,13 +2353,6 @@ func set_selection_alias(text: String) -> void:
 	var target := selected_face if selected_face != "" else selected_body
 	if target != "":
 		doc.set_card_alias(target, text)
-
-
-func set_selection_notes(text: String) -> void:
-	var target := selected_face if selected_face != "" else selected_body
-	if target != "":
-		doc.set_card_notes(target, text)
-
 
 func undo() -> bool:
 	var ok := doc.undo()

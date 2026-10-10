@@ -1,7 +1,7 @@
 [
   {
     "id": "path_merge_sweep",
-    "title": "Merge sketches → path → sweep solid",
+    "title": "Merge sketches \u2192 path \u2192 sweep solid",
     "script": "res://tests/films/film_path_merge_sweep.gd",
     "enabled": true,
     "quit_after": 900
@@ -29,7 +29,7 @@
   },
   {
     "id": "precision_plate",
-    "title": "Precision plate — corner snaps inset holes",
+    "title": "Precision plate \u2014 corner snaps inset holes",
     "script": "res://tests/films/film_precision_plate.gd",
     "enabled": true,
     "quit_after": 1200
@@ -43,12 +43,11 @@
   },
   {
     "id": "revolve_washer",
-    "title": "Revolve washer profile 360°",
+    "title": "Revolve washer profile 360\u00b0",
     "script": "res://tests/films/film_revolve_washer.gd",
     "enabled": true,
     "quit_after": 1000
   },
-  
   {
     "id": "sketch_edit_in_out",
     "title": "Exit sketch pad and reopen to edit",
@@ -93,7 +92,7 @@
   },
   {
     "id": "hole_wizard_m6",
-    "title": "Four M6 holes; mass = steel × volume",
+    "title": "Four M6 holes; mass = steel \u00d7 volume",
     "script": "res://tests/films/film_hole_wizard_m6.gd",
     "enabled": true,
     "quit_after": 900
@@ -114,7 +113,7 @@
   },
   {
     "id": "dxf_trace_extrude",
-    "title": "DXF rectangle → extrude",
+    "title": "DXF rectangle \u2192 extrude",
     "script": "res://tests/films/film_dxf_trace_extrude.gd",
     "enabled": true,
     "quit_after": 900
@@ -219,7 +218,7 @@
   },
   {
     "id": "fea_bracket",
-    "title": "Cantilever tip deflection scales with L³",
+    "title": "Cantilever tip deflection scales with L\u00b3",
     "script": "res://tests/films/film_fea_bracket.gd",
     "enabled": true,
     "quit_after": 700
@@ -231,36 +230,236 @@
     "enabled": true,
     "quit_after": 700
   },
-  {"id": "explode_gearbox", "title": "Explode separates and restores", "script": "res://tests/films/film_explode_gearbox.gd", "enabled": true, "quit_after": 900},
-  {"id": "bolt_circle_pattern", "title": "Pattern around a joint", "script": "res://tests/films/film_bolt_circle_pattern.gd", "enabled": true, "quit_after": 900},
-  {"id": "context_update", "title": "Neighbor grows, consumer waits", "script": "res://tests/films/film_context_update.gd", "enabled": true, "quit_after": 1000},
-  {"id": "drawing_section", "title": "Section hatch on the sheet", "script": "res://tests/films/film_drawing_section.gd", "enabled": true, "quit_after": 800},
-  {"id": "convert_thin_box", "title": "Thin solid becomes sheet metal", "script": "res://tests/films/film_convert_thin_box.gd", "enabled": true, "quit_after": 800},
-  {"id": "weld_on_sheet", "title": "Weld symbol on the drawing", "script": "res://tests/films/film_weld_on_sheet.gd", "enabled": true, "quit_after": 800},
-  {"id": "knit_to_box", "title": "Knit six planes to a solid", "script": "res://tests/films/film_knit_to_box.gd", "enabled": true, "quit_after": 700},
-  {"id": "zebra_cylinder", "title": "Zebra stripes on a cylinder", "script": "res://tests/films/film_zebra_cylinder.gd", "enabled": true, "quit_after": 700},
-  {"id": "replace_face", "title": "Replace one face, solid valid", "script": "res://tests/films/film_replace_face.gd", "enabled": true, "quit_after": 700},
-  {"id": "whats_wrong_fillet", "title": "What's Wrong offers a rematch", "script": "res://tests/films/film_whats_wrong_fillet.gd", "enabled": true, "quit_after": 700},
-  {"id": "intent_flush", "title": "Make these flush → fastened", "script": "res://tests/films/film_intent_flush.gd", "enabled": true, "quit_after": 800},
-  {"id": "auto_define_plate", "title": "Auto-define to DOF 0", "script": "res://tests/films/film_auto_define_plate.gd", "enabled": true, "quit_after": 1000},
-  {"id": "propose_parallel", "title": "Propose parallel on two lines", "script": "res://tests/films/film_propose_parallel.gd", "enabled": true, "quit_after": 900},
-  {"id": "nl_four_holes", "title": "Four M6 holes from query + intent", "script": "res://tests/films/film_nl_four_holes.gd", "enabled": true, "quit_after": 800},
-  {"id": "user_csink", "title": "User feature countersink regenerates", "script": "res://tests/films/film_user_csink.gd", "enabled": true, "quit_after": 800},
-  {"id": "sweep_3d_polyline", "title": "3D polyline feeds a sweep path", "script": "res://tests/films/film_sweep_3d_polyline.gd", "enabled": true, "quit_after": 700},
-  {"id": "convert_survives_edit", "title": "Converted edges keep UUIDs", "script": "res://tests/films/film_convert_survives_edit.gd", "enabled": true, "quit_after": 900},
-  {"id": "config_drawing", "title": "Config-aware BOM", "script": "res://tests/films/film_config_drawing.gd", "enabled": true, "quit_after": 700},
-  {"id": "fillet_c2", "title": "C2 fillet continuity", "script": "res://tests/films/film_fillet_c2.gd", "enabled": true, "quit_after": 700},
-  {"id": "subd_to_solid", "title": "SubD spike to a solid", "script": "res://tests/films/film_subd_to_solid.gd", "enabled": true, "quit_after": 700},
-  {"id": "branch_merge_sxp", "title": "PDM-lite version note", "script": "res://tests/films/film_branch_merge_sxp.gd", "enabled": true, "quit_after": 700},
-  {"id": "route_tube", "title": "Tube along a 3D path", "script": "res://tests/films/film_route_tube.gd", "enabled": true, "quit_after": 700},
-  {"id": "core_cavity", "title": "Mold core / cavity split", "script": "res://tests/films/film_core_cavity.gd", "enabled": true, "quit_after": 700},
-  {"id": "mesh_boolean", "title": "Boolean vs a mesh body", "script": "res://tests/films/film_mesh_boolean.gd", "enabled": true, "quit_after": 700},
-  {"id": "gear_mate", "title": "Gear ratio on a joint", "script": "res://tests/films/film_gear_mate.gd", "enabled": true, "quit_after": 700},
-  {"id": "pmi_survives_regen", "title": "3D dim survives regen", "script": "res://tests/films/film_pmi_survives_regen.gd", "enabled": true, "quit_after": 700},
-  {"id": "board_in_box", "title": "IDF board in an enclosure", "script": "res://tests/films/film_board_in_box.gd", "enabled": true, "quit_after": 700},
-  {"id": "print_thin_wall", "title": "Print check flags a thin plate", "script": "res://tests/films/film_print_thin_wall.gd", "enabled": true, "quit_after": 800},
-  {"id": "print_overhang_orient", "title": "Orient lays a tall box on the bed", "script": "res://tests/films/film_print_overhang_orient.gd", "enabled": true, "quit_after": 800},
-  {"id": "open_in_slicer", "title": "Open in Slicer prepares per-body 3MF", "script": "res://tests/films/film_open_in_slicer.gd", "enabled": true, "quit_after": 900},
-  {"id": "thread_standard", "title": "Thread from ISO/UNC on a shaft", "script": "res://tests/films/film_thread_standard.gd", "enabled": true, "quit_after": 900},
-  {"id": "datum_offset", "title": "Datum plane with offset on the timeline", "script": "res://tests/films/film_datum_offset.gd", "enabled": true, "quit_after": 800}
+  {
+    "id": "explode_gearbox",
+    "title": "Explode separates and restores",
+    "script": "res://tests/films/film_explode_gearbox.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "bolt_circle_pattern",
+    "title": "Pattern around a joint",
+    "script": "res://tests/films/film_bolt_circle_pattern.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "context_update",
+    "title": "Neighbor grows, consumer waits",
+    "script": "res://tests/films/film_context_update.gd",
+    "enabled": true,
+    "quit_after": 1000
+  },
+  {
+    "id": "drawing_section",
+    "title": "Section hatch on the sheet",
+    "script": "res://tests/films/film_drawing_section.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "convert_thin_box",
+    "title": "Thin solid becomes sheet metal",
+    "script": "res://tests/films/film_convert_thin_box.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "weld_on_sheet",
+    "title": "Weld symbol on the drawing",
+    "script": "res://tests/films/film_weld_on_sheet.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "knit_to_box",
+    "title": "Knit six planes to a solid",
+    "script": "res://tests/films/film_knit_to_box.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "zebra_cylinder",
+    "title": "Zebra stripes on a cylinder",
+    "script": "res://tests/films/film_zebra_cylinder.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "replace_face",
+    "title": "Replace one face, solid valid",
+    "script": "res://tests/films/film_replace_face.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "whats_wrong_fillet",
+    "title": "What's Wrong offers a rematch",
+    "script": "res://tests/films/film_whats_wrong_fillet.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "intent_flush",
+    "title": "Make these flush \u2192 fastened",
+    "script": "res://tests/films/film_intent_flush.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "auto_define_plate",
+    "title": "Auto-define to DOF 0",
+    "script": "res://tests/films/film_auto_define_plate.gd",
+    "enabled": true,
+    "quit_after": 1000
+  },
+  {
+    "id": "propose_parallel",
+    "title": "Propose parallel on two lines",
+    "script": "res://tests/films/film_propose_parallel.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "nl_four_holes",
+    "title": "Four M6 holes from query + intent",
+    "script": "res://tests/films/film_nl_four_holes.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "user_csink",
+    "title": "User feature countersink regenerates",
+    "script": "res://tests/films/film_user_csink.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "sweep_3d_polyline",
+    "title": "3D polyline feeds a sweep path",
+    "script": "res://tests/films/film_sweep_3d_polyline.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "convert_survives_edit",
+    "title": "Converted edges keep UUIDs",
+    "script": "res://tests/films/film_convert_survives_edit.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "config_drawing",
+    "title": "Config-aware BOM",
+    "script": "res://tests/films/film_config_drawing.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "fillet_c2",
+    "title": "C2 fillet continuity",
+    "script": "res://tests/films/film_fillet_c2.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "subd_to_solid",
+    "title": "SubD spike to a solid",
+    "script": "res://tests/films/film_subd_to_solid.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "branch_merge_sxp",
+    "title": "PDM-lite version note",
+    "script": "res://tests/films/film_branch_merge_sxp.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "route_tube",
+    "title": "Tube along a 3D path",
+    "script": "res://tests/films/film_route_tube.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "core_cavity",
+    "title": "Mold core / cavity split",
+    "script": "res://tests/films/film_core_cavity.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "mesh_boolean",
+    "title": "Boolean vs a mesh body",
+    "script": "res://tests/films/film_mesh_boolean.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "gear_mate",
+    "title": "Gear ratio on a joint",
+    "script": "res://tests/films/film_gear_mate.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "pmi_survives_regen",
+    "title": "3D dim survives regen",
+    "script": "res://tests/films/film_pmi_survives_regen.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "board_in_box",
+    "title": "IDF board in an enclosure",
+    "script": "res://tests/films/film_board_in_box.gd",
+    "enabled": true,
+    "quit_after": 700
+  },
+  {
+    "id": "print_thin_wall",
+    "title": "Print check flags a thin plate",
+    "script": "res://tests/films/film_print_thin_wall.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "print_overhang_orient",
+    "title": "Orient lays a tall box on the bed",
+    "script": "res://tests/films/film_print_overhang_orient.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "open_in_slicer",
+    "title": "Open in Slicer prepares per-body 3MF",
+    "script": "res://tests/films/film_open_in_slicer.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "thread_standard",
+    "title": "Thread from ISO/UNC on a shaft",
+    "script": "res://tests/films/film_thread_standard.gd",
+    "enabled": true,
+    "quit_after": 900
+  },
+  {
+    "id": "datum_offset",
+    "title": "Datum plane with offset on the timeline",
+    "script": "res://tests/films/film_datum_offset.gd",
+    "enabled": true,
+    "quit_after": 800
+  },
+  {
+    "id": "ubc_wrench",
+    "title": "Parametric wrench: blank to 3MF",
+    "script": "res://tests/films/film_ubc_wrench.gd",
+    "enabled": true,
+    "quit_after": 3600,
+    "blurb": "Blank part to a printable 3MF: circles, shaft, open jaw, slot, fillets, thickness 14."
+  }
 ]

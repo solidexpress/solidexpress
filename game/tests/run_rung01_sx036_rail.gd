@@ -4,8 +4,7 @@
 # Validation suite: sketch setup may use the document API; layout is read
 # from real Control global rects after the chrome restacks.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sx036_rail.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 ## Exit Sketch through Auto Dim — the labelled rail, including the 11 that
@@ -14,25 +13,13 @@ const RAIL_LABELS := ["Exit Sketch", "Select", "Line", "Arc", "Circle", "Rect", 
 		"Polygon", "Ellipse", "Slot", "Spline", "Point", "Trim", "Extend", "Smart Dim",
 		"Convert", "Mirror", "Pattern", "Auto Dim"]
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 sx-036 A1 sketch rail fits at 1280×800")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run() -> void:

@@ -257,14 +257,6 @@ func dismiss() -> void:
 	_precision_row.visible = false
 	_refresh_panel()
 
-
-func is_pointer_over(global_pos: Vector2) -> bool:
-	if _move_panel != null and _move_panel.visible \
-			and _move_panel.get_global_rect().has_point(global_pos):
-		return true
-	return visible and get_global_rect().has_point(global_pos)
-
-
 func _refresh_panel() -> void:
 	# Move Δ lives in LeftStack; this panel is only place dims / precision.
 	var any := _dims_row.visible or _precision_row.visible

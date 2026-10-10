@@ -1,15 +1,4 @@
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 func _feature_output_body(doc: SxDocument, fid: String) -> String:
 	for f in doc.graph_features():
@@ -21,8 +10,7 @@ func _init() -> void:
 	print("clearance language tests")
 	test_builtins_and_hole_tracks_clearance()
 	test_quick_configs_change_jaw_af_single_model()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 func test_builtins_and_hole_tracks_clearance() -> void:
 	print("- new doc seeds built-ins; hole Ø tracks clearance + compensation")

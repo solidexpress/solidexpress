@@ -1,26 +1,14 @@
 # Rung 1 replan 14 WP7 — timeline pencil edits a sketch; File → Open enables on an existing .sxp.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan14_polish.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const SAVE_PATH := "/tmp/sx_polish_blank.sxp"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _item15_disabled_seq: Array[String] = []
 var _item15_row_click_needed_second := false
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	print("item15 disabled sequence: %s" % ", ".join(_item15_disabled_seq))
 	if _item15_row_click_needed_second:
 		print("item15 row 8 needed a second ItemList click (candidate b)")
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run() -> void:
@@ -178,7 +165,7 @@ func _test_timeline_pencil(ctx: FilmContext) -> void:
 	var sketch_name := _row_name_btn(sketch_row)
 	check(sketch_name != null, "sketch name button exists")
 	if sketch_name != null:
-		await _x11_click(sketch_name)
+		await _x11_click_local(sketch_name)
 		await process_frame
 		await _x11_key(sketch_name.get_viewport(), KEY_F2)
 		await process_frame
@@ -246,7 +233,7 @@ func _test_timeline_pencil(ctx: FilmContext) -> void:
 	sketch_row = _row_for_fid(ctx, sketch_fid)
 	sketch_name = _row_name_btn(sketch_row)
 	if sketch_name != null:
-		await _x11_click(sketch_name, true)
+		await _x11_click_local(sketch_name, true)
 		await process_frame
 		await process_frame
 	sm = ctx.main.sketch_mode
@@ -509,7 +496,7 @@ func _exit_sketch_real(ctx: FilmContext) -> void:
 		return
 	var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
 	if exit_btn != null and exit_btn.is_visible_in_tree():
-		await _x11_click(exit_btn)
+		await _x11_click_local(exit_btn)
 		await process_frame
 		await process_frame
 	if sm.active:
@@ -673,14 +660,14 @@ func _click_settled(ctrl: Control) -> void:
 			pos = now
 			break
 		pos = now
-	await _x11_click_screen(vp, pos)
+	await _x11_click_screen_local(vp, pos)
 
 
-func _x11_click(ctrl: Control, double_click: bool = false) -> void:
+func _x11_click_local(ctrl: Control, double_click: bool = false) -> void:
 	if ctrl == null:
 		return
 	var pos := ctrl.get_global_rect().get_center()
-	await _x11_click_screen(ctrl.get_viewport(), pos, double_click)
+	await _x11_click_screen_local(ctrl.get_viewport(), pos, double_click)
 
 
 func _x11_click_right(ctrl: Control) -> void:
@@ -707,7 +694,7 @@ func _x11_click_right(ctrl: Control) -> void:
 	await process_frame
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos
@@ -736,7 +723,7 @@ func _x11_click_embedded(ctrl: Control) -> void:
 		var win := ctrl.get_viewport()
 		if win is Window:
 			pos = Vector2((win as Window).position) + pos
-	await _x11_click_screen(root.get_viewport(), pos)
+	await _x11_click_screen_local(root.get_viewport(), pos)
 
 
 func _x11_click_embedded_at(ctrl: Control, local: Vector2, double_click: bool = false) -> void:
@@ -749,7 +736,7 @@ func _x11_click_embedded_at(ctrl: Control, local: Vector2, double_click: bool = 
 			pos = Vector2((win as Window).position) + ctrl.get_global_rect().position + local
 		else:
 			pos = ctrl.get_global_rect().position + local
-	await _x11_click_screen(root.get_viewport(), pos, double_click)
+	await _x11_click_screen_local(root.get_viewport(), pos, double_click)
 
 
 func _x11_click_popup_item(popup: PopupMenu, index: int) -> void:
@@ -765,7 +752,7 @@ func _x11_click_popup_item(popup: PopupMenu, index: int) -> void:
 	var row_h := float(font_h) + float(v_sep)
 	var local := Vector2(maxf(8.0, popup.size.x * 0.5), top + row_h * (float(index) + 0.5))
 	var screen := Vector2(popup.position) + local
-	await _x11_click_screen(root.get_viewport(), screen)
+	await _x11_click_screen_local(root.get_viewport(), screen)
 
 
 func _x11_key(vp: Viewport, keycode: Key) -> void:

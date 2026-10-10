@@ -4,24 +4,12 @@
 # Run: DISPLAY=:1 LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan15_extrude.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const SMALL_SIZE := Vector2i(1024, 768)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -34,8 +22,7 @@ func _init() -> void:
 	await test_invalid_distance()
 	await test_overlap_at_1024()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_blind_then_second_click() -> void:
@@ -355,45 +342,6 @@ func _type_keys(vp: Viewport, text: String) -> void:
 		elif ch >= 97 and ch <= 122:
 			code = (KEY_A + (ch - 97)) as Key
 		await _push_key(vp, code, ch)
-
-
-func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
-	var ev := InputEventKey.new()
-	ev.keycode = keycode
-	ev.physical_keycode = keycode
-	ev.unicode = unicode
-	ev.pressed = true
-	ev.echo = false
-	vp.push_input(ev)
-	await process_frame
-	var rel := InputEventKey.new()
-	rel.keycode = keycode
-	rel.physical_keycode = keycode
-	rel.unicode = unicode
-	rel.pressed = false
-	rel.echo = false
-	vp.push_input(rel)
-	await process_frame
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _print_strip_overlap(ctx: FilmContext, centre: Vector2, tag: String) -> void:

@@ -1,6 +1,6 @@
 # Driving a checklist walk without screenshots
 
-The sx-041 walk (`docs/loop/rung-01-replan-20.md`) used to be a vision agent: mouse clicks from screenshots, four hours, and mis-clicks whenever the left rail moved. The app now exposes a test-only automation bridge so a script can click a control by identity and read the same state the screen was standing in for.
+The sx-041 walk used to be a vision agent: mouse clicks from screenshots, four hours, and mis-clicks whenever the left rail moved. The app now exposes a test-only automation bridge so a script can click a control by identity and read the same state the screen was standing in for.
 
 ## Turn the bridge on
 

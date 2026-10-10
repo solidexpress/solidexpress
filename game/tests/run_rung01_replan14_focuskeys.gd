@@ -4,8 +4,7 @@
 # Viewport.push_input event (or FilmUI.click_control for the Fillet button).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script res://tests/run_rung01_replan14_focuskeys.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const FIRST_DROP := "First point dropped — Esc again exits the sketch"
@@ -15,18 +14,7 @@ const ISO_PITCH := deg_to_rad(40.0)
 const ISO_YAW := deg_to_rad(-35.0)
 const VIEW_EPS := 0.01
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -35,8 +23,7 @@ func _init() -> void:
 	await _part_rows()
 	await _sketch_rows()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _st(main) -> String:
@@ -115,7 +102,7 @@ func _observe_spin(main, tag: String, spin: SpinBox) -> void:
 		tag, str(val), text, _st(main), _last_status()])
 
 
-func _push_key(vp: Viewport, code: int, unicode: int = 0, ctrl := false) -> void:
+func _push_key_local(vp: Viewport, code: int, unicode: int = 0, ctrl := false) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code
@@ -307,7 +294,7 @@ func _zoom_model(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "on screen: %s" % desc)
@@ -339,7 +326,7 @@ func _part_rows() -> void:
 			"1b: arm did not leave caret in a LineEdit (got %s)" % [
 				"null" if arm_owner == null else arm_owner.get_class()])
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	_assert_top(cam, "1b after arm")
@@ -360,7 +347,7 @@ func _part_rows() -> void:
 	var after_arrows := _strip_text(main)
 	_status_log.clear()
 	var pitch_before_3 := cam.pitch
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	_focus_probe(vp, "after KEY_3")
@@ -381,10 +368,10 @@ func _part_rows() -> void:
 	await _click_at(vp, _spin_text_pos(spin))
 	await process_frame
 	_focus_probe(vp, "strip text click")
-	await _push_key(vp, KEY_A, 0, true)
-	await _push_key(vp, KEY_1, 49)
-	await _push_key(vp, KEY_0, 48)
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_A, 0, true)
+	await _push_key_local(vp, KEY_1, 49)
+	await _push_key_local(vp, KEY_0, 48)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -392,7 +379,7 @@ func _part_rows() -> void:
 	_observe_spin(main, "after strip 10 Enter", spin)
 	_observe_spin(main, "panel after strip 10 Enter", _panel_spin(main))
 	_status_log.clear()
-	await _push_key(vp, KEY_4, 52)
+	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
 	_assert_back(cam, "3 strip typed 10 Enter")
@@ -412,10 +399,10 @@ func _part_rows() -> void:
 	if spin != null:
 		await _click_at(vp, _spin_text_pos(spin))
 		await process_frame
-		await _push_key(vp, KEY_A, 0, true)
-		await _push_key(vp, KEY_1, 49)
-		await _push_key(vp, KEY_0, 48)
-		await _push_key(vp, KEY_TAB)
+		await _push_key_local(vp, KEY_A, 0, true)
+		await _push_key_local(vp, KEY_1, 49)
+		await _push_key_local(vp, KEY_0, 48)
+		await _push_key_local(vp, KEY_TAB)
 		await process_frame
 		await process_frame
 		await process_frame
@@ -432,7 +419,7 @@ func _part_rows() -> void:
 	check(_parses_to(_panel_text(main), 10.0),
 			"3b: panel parses to 10 (got `%s`)" % _panel_text(main))
 	_status_log.clear()
-	await _push_key(vp, KEY_4, 52)
+	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
 	_assert_back(cam, "3b strip typed 10 Tab")
@@ -443,12 +430,12 @@ func _part_rows() -> void:
 
 	print("- 4. KEY_8 then KEY_3 each change the view")
 	_status_log.clear()
-	await _push_key(vp, KEY_8, 56)
+	await _push_key_local(vp, KEY_8, 56)
 	await process_frame
 	check(absf(cam.pitch - deg_to_rad(-90.0)) < VIEW_EPS,
 			"4: KEY_8 is Bottom (pitch %.4f)" % cam.pitch)
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	_assert_top(cam, "4 KEY_3")
 
@@ -466,7 +453,7 @@ func _part_rows() -> void:
 	_focus_probe(vp, "caret in strip")
 	var pitch_caret := cam.pitch
 	var text_caret := _strip_text(main)
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	_observe_spin(main, "caret KEY_3", spin)
 	check(_strip_text(main).contains("3"),
@@ -486,7 +473,7 @@ func _part_rows() -> void:
 			"6: focus owner is not a LineEdit (got %s)" % [
 				"null" if owner == null else owner.get_class()])
 	_status_log.clear()
-	await _push_key(vp, KEY_7, 55)
+	await _push_key_local(vp, KEY_7, 55)
 	await process_frame
 	_assert_iso(cam, "6 KEY_7")
 	check(_status_has("Isometric view") or absf(cam.pitch - ISO_PITCH) < VIEW_EPS,
@@ -516,7 +503,7 @@ func _part_rows() -> void:
 		_observe_spin(main, "after panel arrows", panel)
 		var panel_after_arrows := _panel_text(main)
 		_status_log.clear()
-		await _push_key(vp, KEY_3, 51)
+		await _push_key_local(vp, KEY_3, 51)
 		await process_frame
 		_assert_top(cam, "7 panel arrows")
 		check(not _panel_text(main).contains("3") or _parses_to(_panel_text(main), _text_radius(panel_after_arrows)),
@@ -524,17 +511,17 @@ func _part_rows() -> void:
 
 		await _click_at(vp, _spin_text_pos(panel))
 		await process_frame
-		await _push_key(vp, KEY_A, 0, true)
-		await _push_key(vp, KEY_1, 49)
-		await _push_key(vp, KEY_0, 48)
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_A, 0, true)
+		await _push_key_local(vp, KEY_1, 49)
+		await _push_key_local(vp, KEY_0, 48)
+		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 		await process_frame
 		_focus_probe(vp, "after panel 10 Enter")
 		_observe_spin(main, "after panel 10 Enter", panel)
 		_status_log.clear()
-		await _push_key(vp, KEY_4, 52)
+		await _push_key_local(vp, KEY_4, 52)
 		await process_frame
 		_assert_back(cam, "7 panel typed 10 Enter")
 		check(_parses_to(_panel_text(main), 10.0),
@@ -544,10 +531,10 @@ func _part_rows() -> void:
 		check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
 				"7: Fillet still armed after Enter / KEY_4")
 		_status_log.clear()
-		await _push_key(vp, KEY_8, 56)
+		await _push_key_local(vp, KEY_8, 56)
 		await process_frame
 		check(absf(cam.pitch - deg_to_rad(-90.0)) < VIEW_EPS, "7: KEY_8 Bottom")
-		await _push_key(vp, KEY_3, 51)
+		await _push_key_local(vp, KEY_3, 51)
 		await process_frame
 		_assert_top(cam, "7 KEY_3 after panel")
 
@@ -560,7 +547,7 @@ func _part_rows() -> void:
 		await process_frame
 	_focus_probe(vp, "before Esc")
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	check(_status_has("Edge pick cancelled") or _st(main).contains("Edge pick cancelled"),
@@ -581,7 +568,7 @@ func _sketch_rows() -> void:
 
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	check(sm.tool == SketchMode.Tool.POLYGON, "Polygon tool is active")
-	await _click_uv(ctx, Vector2.ZERO, "Polygon centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Polygon centre")
 	await process_frame
 	var dim := _dim_edit(main.sketch_chrome)
 	check(dim != null, "chrome dim LineEdit exists")
@@ -590,16 +577,16 @@ func _sketch_rows() -> void:
 		await process_frame
 		await _click_at(vp, dim.get_global_rect().get_center())
 		await process_frame
-		await _push_key(vp, KEY_2, 50)
-		await _push_key(vp, KEY_0, 48)
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_2, 50)
+		await _push_key_local(vp, KEY_0, 48)
+		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 	check(sm.sketch.entity_ids().size() >= 1, "polygon committed (ids %d)" % sm.sketch.entity_ids().size())
 
 	print("- 9. Circle Radius field Ctrl+A does not select sketch entities")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre")
 	await process_frame
 	check(sm.has_pending_draw_point(), "circle has a pending centre")
 	dim = _dim_edit(main.sketch_chrome)
@@ -615,7 +602,7 @@ func _sketch_rows() -> void:
 		print("  dim.has_focus=%s text=`%s` selected_text=`%s`" % [
 			str(dim.has_focus()), dim.text, dim.get_selected_text()])
 		_status_log.clear()
-		await _push_key(vp, KEY_A, 0, true)
+		await _push_key_local(vp, KEY_A, 0, true)
 		await process_frame
 		_focus_probe(vp, "after Ctrl+A")
 		print("  after Ctrl+A: focus_text=`%s` selected=`%s` sm.selected=%s status=`%s` log=%s" % [
@@ -640,7 +627,7 @@ func _sketch_rows() -> void:
 	_focus_probe(vp, "before focused Esc")
 	check(sm.has_pending_draw_point(), "10: still has a pending point")
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	print("  after focused Esc: pending=%s preview_hidden=%s focus=%s last_status=`%s`" % [
@@ -656,7 +643,7 @@ func _sketch_rows() -> void:
 	var owner10 := vp.gui_get_focus_owner()
 	check(not (owner10 is LineEdit) or (dim != null and not dim.has_focus()),
 			"10: field no longer has focus")
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	print("  after second Esc: active=%s label=`%s` last_status=`%s`" % [
 		str(sm.active), _st(main), _last_status()])
@@ -675,14 +662,14 @@ func _sketch_rows() -> void:
 		await _zoom_model(ctx, Vector3.ZERO, 80.0)
 	if sm.sketch.entity_ids().is_empty():
 		await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-		await _click_uv(ctx, Vector2.ZERO, "11 line start")
-		await _click_uv(ctx, Vector2(15, 0), "11 line end")
+		await _click_uv_local(ctx, Vector2.ZERO, "11 line start")
+		await _click_uv_local(ctx, Vector2(15, 0), "11 line end")
 		await process_frame
 	check(sm.sketch.entity_ids().size() >= 1,
 			"11: sketch holds geometry so a tool drop could steal the exit")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	check(sm.tool == SketchMode.Tool.CIRCLE, "11: Circle is armed")
-	await _click_uv(ctx, Vector2(0, 18), "Circle centre unfocused")
+	await _click_uv_local(ctx, Vector2(0, 18), "Circle centre unfocused")
 	await process_frame
 	dim = _dim_edit(main.sketch_chrome)
 	if dim != null and dim.has_focus():
@@ -694,7 +681,7 @@ func _sketch_rows() -> void:
 	_focus_probe(vp, "unfocused before Esc")
 	check(sm.has_pending_draw_point(), "11: pending point with field not focused")
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	check(not sm.has_pending_draw_point(), "11: first Esc drops the pending point")
 	check(_last_status() == FIRST_DROP or _status_has(FIRST_DROP),
@@ -702,7 +689,7 @@ func _sketch_rows() -> void:
 	check(sm.active, "11: first Esc keeps the sketch open")
 	check(sm.tool == SketchMode.Tool.CIRCLE, "11: Circle stays armed after the point drop")
 	var active_after_first := sm.active
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	print("  11 second Esc: was_active=%s now_active=%s label=`%s` last=`%s`" % [
 		str(active_after_first), str(sm.active), _st(main), _last_status()])

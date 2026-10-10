@@ -2,21 +2,9 @@
 # (Video 6), plane_parallel mates (Video 7), and reference-geometry insert
 # after components (Video 8). Exercises Insert menu chrome + AssemblyPanel.
 # Run: tools/godot/godot --headless --path game --script tests/run_insert_component_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -33,8 +21,7 @@ func _init() -> void:
 	await test_plane_parallel_mate_ui(main)
 	await test_reference_geometry_after_insert(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _ctx(main) -> FilmContext:

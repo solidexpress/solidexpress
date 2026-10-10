@@ -1044,22 +1044,6 @@ func _emit_armed_dressup_status() -> void:
 	else:
 		status.emit("%s r=%.2f — edit Radius, click edges, Enter" % [kind, _radius_spin.value])
 
-
-## If edges are already selected, commit immediately; otherwise arm edge picking.
-## Used by the Modify-card Fillet/Chamfer buttons (power path).
-func _start_or_apply_dressup(fillet: bool) -> void:
-	if view.selected_body == "":
-		return
-	if not view.selected_edges.is_empty() or view.selected_edge != "":
-		_apply_dressup(fillet)
-		return
-	if view.selected_face != "":
-		_add_dressup_face(view.selected_body, view.selected_face)
-		_apply_dressup(fillet)
-		return
-	_arm_dressup(fillet)
-
-
 func _commit_armed_dressup() -> bool:
 	var fillet := _pending == Pending.FILLET_EDGES
 	if view.selected_edges.is_empty() and view.selected_edge == "":
@@ -1881,35 +1865,6 @@ func _resolve_hex_place(body: String, face: String, point: Vector3) -> void:
 		# Do not auto-arm HOLE_MOVE — that stole the next pocket click and
 		# dropped the axis to mid-thickness (blind 1.5 mm pocket).
 
-
-func _arm_last_hole_move() -> void:
-	var last_hole := ""
-	for f in view.doc.graph_features():
-		if str(f.get("type", "")) == "hole":
-			last_hole = str(f.get("id", ""))
-	if last_hole == "":
-		return
-	_selected_hole_fid = last_hole
-	_hole_move_fid = last_hole
-	_pending = Pending.HOLE_MOVE
-	var raw := ""
-	for f in view.doc.graph_features():
-		if str(f.get("id")) == last_hole:
-			raw = str(f.get("params", "{}"))
-			break
-	var p = JSON.parse_string(raw)
-	if p is Dictionary:
-		_hole_place_face = str(p.get("face", _hole_place_face))
-		if p.has("position"):
-			var arr = p["position"]
-			if typeof(arr) == TYPE_ARRAY and arr.size() >= 3:
-				_hole_move_start = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
-				if interaction != null:
-					interaction.set_hole_markers(PackedVector3Array([_hole_move_start]),
-							_hole_diameter.value)
-
-
-## Project `point` onto the hole's entry plane and clamp in-plane (never mid-thickness).
 func _hole_move_position(hole_fid: String, body: String, point: Vector3) -> Vector3:
 	var raw := ""
 	for f in view.doc.graph_features():

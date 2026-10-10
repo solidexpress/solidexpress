@@ -2,25 +2,12 @@
 # The clock is main._clock_override_msec. Run:
 # LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan19_hint.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const BOX_SIZE := Vector3(8, 6, 3)
 const NO_VIEW := "No view for key 0 — use 1 2 3 4 6 7 8"
 const FACE := "Face — click selects body first, click again for face · then Pull arrow"
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -32,8 +19,7 @@ func _init() -> void:
 	await _leave_after_hint()
 	await _opened_path()
 	SxUi.trace_enabled_override = false
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _still_pointer() -> void:
@@ -45,7 +31,7 @@ func _still_pointer() -> void:
 	_release_focus(ctx.main.get_viewport())
 	ctx.main.status_trace_log.clear()
 	var t0 := _stamp(ctx, 100000)
-	await _push_key(ctx.main.get_viewport(), KEY_0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_0)
 	check(_label(ctx) == NO_VIEW, "key 0 result (got `%s`)" % _label(ctx))
 	_stamp(ctx, t0 + 2400)
 	ctx.main._hint_tick()
@@ -63,7 +49,7 @@ func _hint_during_hold() -> void:
 	var px := await _face_point(ctx)
 	_release_focus(ctx.main.get_viewport())
 	var t0 := _stamp(ctx, 200000)
-	await _push_key(ctx.main.get_viewport(), KEY_0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_0)
 	check(_label(ctx) == NO_VIEW, "result is showing before the pointer moves")
 	await _motion(ctx.main.get_viewport(), px)
 	_stamp(ctx, t0 + 2400)
@@ -82,7 +68,7 @@ func _leave_during_hold() -> void:
 	var ground := _empty_ground(ctx, px)
 	_release_focus(ctx.main.get_viewport())
 	var t0 := _stamp(ctx, 300000)
-	await _push_key(ctx.main.get_viewport(), KEY_0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_0)
 	await _motion(ctx.main.get_viewport(), px)
 	await _motion(ctx.main.get_viewport(), ground)
 	_stamp(ctx, t0 + 3000)
@@ -169,7 +155,7 @@ func _face_point(ctx: FilmContext) -> Vector2:
 	check(body != "", "box exists")
 	if ctx.view.selected_body != "":
 		_release_focus(ctx.main.get_viewport())
-		await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		ctx.main._clock_override_msec = Time.get_ticks_msec() + 3000
 		ctx.main._hint_tick()
 		ctx.main._clock_override_msec = -1
@@ -242,7 +228,7 @@ func _motion(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

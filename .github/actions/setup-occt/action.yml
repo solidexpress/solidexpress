@@ -1,0 +1,27 @@
+name: Setup OCCT
+description: Cache a source-built OCCT prefix and install it when the cache misses
+inputs:
+  version:
+    description: OCCT version (install prefix /opt/occt-<version>)
+    required: true
+  cache-key:
+    description: actions/cache key for that prefix
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Cache OCCT ${{ inputs.version }}
+      uses: actions/cache@v4
+      with:
+        path: /opt/occt-${{ inputs.version }}
+        key: ${{ inputs.cache-key }}
+
+    - name: Install OCCT ${{ inputs.version }} from source
+      shell: bash
+      env:
+        OCCT_VERSION: ${{ inputs.version }}
+      run: |
+        chmod +x packaging/ci/install_occt.sh
+        sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
+        sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
+        OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh

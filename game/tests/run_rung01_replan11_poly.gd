@@ -3,30 +3,17 @@
 # The GUI nut row (A14) uses this path: centre click, type AF 20 with the pointer
 # off the X axis. Export is not required; the Y extent check is the nut AF.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan11_poly.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan11 WP8 typed hex flats horizontal")
 	FilmUI.reset_fail_count()
 	await test_typed_and_dragged_hex()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_typed_and_dragged_hex() -> void:

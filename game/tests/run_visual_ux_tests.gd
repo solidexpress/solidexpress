@@ -1,18 +1,6 @@
 # Headless tests for visual UX slice: hover, gizmos, context strip/RMB, view HUD.
 # Run: tools/godot/godot --headless --path game --script tests/run_visual_ux_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -34,8 +22,7 @@ func _init() -> void:
 	test_push_pull_preview_state(main)
 	test_rmb_orbit_and_peer_chrome(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_hover_distinct(main) -> void:

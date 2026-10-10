@@ -38,6 +38,5 @@ TopoDS_Shape from_brep_string(const std::string& data);
 // One-line geometric description of a subshape ("planar face, area 100 mm^2,
 // normal +Z") used in semantic card digests.
 std::string describe_face(const TopoDS_Shape& face);
-std::string describe_edge(const TopoDS_Shape& edge);
 
 }  // namespace sx::shape

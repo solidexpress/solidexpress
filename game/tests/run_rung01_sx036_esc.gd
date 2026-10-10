@@ -2,24 +2,12 @@
 # Select / while a dimension editor is open, Up To Surface does not eat a
 # Circle click, and Save As keeps sketch undo.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sx036_esc.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const SELECT_HINT := "Select — click geometry, or a dimension label to edit it"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -32,8 +20,7 @@ func _init() -> void:
 	await test_up_to_surface_does_not_eat_circle()
 	await test_save_as_keeps_undo()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_jaw_esc_keeps() -> void:
@@ -75,7 +62,7 @@ func test_jaw_esc_keeps() -> void:
 				str(mo.has_anchor() if mo != null else false),
 				mo.marks.size() if mo != null else -1])
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	check(sm.active, "first Esc keeps the sketch open")
 	check(sm.selected.is_empty(), "first Esc clears the selection")
 	check(_status_has("Selection cleared — Esc again exits the sketch"),
@@ -84,7 +71,7 @@ func test_jaw_esc_keeps() -> void:
 			"selection Esc is not Measure cleared (log: %s)" % str(_status_log))
 	check(_profile_lines(sm) == 4, "lines survive the selection clear")
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(not sm.active, "second Esc leaves the sketch")
 	check(_status_has("Sketch saved"), "second Esc saves (log: %s)" % str(_status_log))
@@ -115,9 +102,9 @@ func test_empty_sketch_still_cancels() -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, vp, Vector2.ZERO)
 	check(sm.has_pending_draw_point(), "circle centre is pending")
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	check(sm.active and not sm.has_pending_draw_point(), "first Esc drops the point")
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	check(not sm.active, "second Esc cancels the empty sketch")
 	check(_count_type(ctx, "sketch") == before, "empty cancel adds no sketch feature")
 	await _shutdown(ctx)
@@ -134,25 +121,25 @@ func test_part_mode_redo() -> void:
 	var vp: Viewport = ctx.main.get_viewport()
 	_release_focus(vp)
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == n - 1, "Ctrl+Z undoes the last body")
 	check(str(ctx.main.status_label.text) == "Undo" or _status_has("Undo"),
 			"Ctrl+Z status is Undo (got `%s`)" % ctx.main.status_label.text)
 	_release_focus(vp)
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, true)
+	await _push_key_local(vp, KEY_Z, true, true)
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == n, "Ctrl+Shift+Z restores the last body")
 	check(str(ctx.main.status_label.text) == "Redo",
 			"Ctrl+Shift+Z status is Redo (got `%s`)" % ctx.main.status_label.text)
 	_release_focus(vp)
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == n - 1, "Ctrl+Z undoes again")
 	_release_focus(vp)
 	_status_log.clear()
-	await _push_key(vp, KEY_Y, true, false)
+	await _push_key_local(vp, KEY_Y, true, false)
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == n, "Ctrl+Y restores the last body")
 	check(str(ctx.main.status_label.text) == "Redo",
@@ -199,7 +186,7 @@ func test_dim_editor_clears_measure() -> void:
 	check(not mo.has_anchor() and mo.marks.is_empty() and not _overlay_has_delta(mo),
 			"motion while the editor is open starts no measure (marks=%d labels=%s)" % [
 				mo.marks.size(), _overlay_texts(mo)])
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	await process_frame
 	check(not ix._dim_edit_owns_keys(), "Esc closes the editor")
@@ -214,7 +201,7 @@ func test_dim_editor_clears_measure() -> void:
 	if edit != null and not edit.has_focus():
 		edit.grab_focus()
 		await process_frame
-	await _push_key(vp, KEY_ENTER, false, false)
+	await _push_key_local(vp, KEY_ENTER, false, false)
 	await process_frame
 	await process_frame
 	check(not ix._dim_edit_owns_keys(), "Enter closes the editor")
@@ -295,7 +282,7 @@ func test_save_as_keeps_undo() -> void:
 	check(saved.begins_with("Saved "), "status is Saved … (got `%s`)" % saved)
 	_release_focus(vp)
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	await process_frame
 	var st := str(ctx.main.status_label.text)
 	check(st.begins_with("Undo:"), "Ctrl+Z after Save As undoes (got `%s`)" % st)
@@ -458,7 +445,7 @@ func _x11_click(ctrl: Control) -> void:
 	await _click_screen(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -476,28 +463,3 @@ func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	await process_frame
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame

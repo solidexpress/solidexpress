@@ -4,10 +4,7 @@
 # generous — they catch regressions without over-optimizing for these parts.
 # UI gaps (steps impossible without direct doc calls) are recorded per part.
 # Run: tools/godot/godot --headless --path game --script tests/run_workflow_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
+extends "res://tests/lib/sx_suite.gd"
 
 var _gestures := 0
 var _gaps: Array[String] = []
@@ -19,16 +16,6 @@ var ops: OpsPanel
 var sk: SketchMode
 
 
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
-
-
-# n = user gestures this step would take (clicks, key presses, drags).
 func gesture(n: int) -> void:
 	_gestures += n
 
@@ -80,8 +67,7 @@ func _init() -> void:
 		var gaps_txt: String = "" if r["gaps"].is_empty() else "  GAPS: " + ", ".join(r["gaps"])
 		print("  %-28s %2d / ceiling %2d%s" % [r["name"], r["gestures"], r["ceiling"], gaps_txt])
 
-	print("\n%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _volume(body: String) -> float:

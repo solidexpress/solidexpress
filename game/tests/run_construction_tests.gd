@@ -1,18 +1,6 @@
 # Wave 6 construction chrome: post-place W/H/D, hole/thread/hex, variables.
 # Run: tools/godot/godot --headless --path game --script tests/run_construction_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -32,8 +20,7 @@ func _init() -> void:
 	await test_hole_wizard_arms_from_body(main)
 	test_insert_thread_and_sketch(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_palette_has_sketch_and_torus(main) -> void:

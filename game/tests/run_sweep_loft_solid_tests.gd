@@ -1,18 +1,6 @@
 # Sweep and loft smoke tests with spline geometry; assert closed solids (volume), not open shells.
 # Run: tools/godot/godot --headless --path game --script tests/run_sweep_loft_solid_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -23,8 +11,7 @@ func _init() -> void:
 	test_sweep_path_merge_spline_rail_solid()
 	test_sweep_single_rail_path_solid()
 	test_loft_spline_profiles_solid()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _catmull2(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:

@@ -1,17 +1,7 @@
 # Wrench blockers: Chamfer reachable, sketch at real scale, rail never covered.
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const ChromeDock := preload("res://scripts/chrome_dock.gd")
 
-var failures := 0
-var checks := 0
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c: print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 func _init() -> void:
 	print("wrench blockers cut")
@@ -19,8 +9,7 @@ func _init() -> void:
 	await test_chamfer_reachable()
 	await test_sketch_scale_and_guard()
 	await test_rail_never_covered()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func test_configurable_fillet() -> void:

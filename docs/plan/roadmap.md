@@ -236,6 +236,19 @@ That is a **daily driver for brackets, enclosures, and small mechanisms**, with 
 
 ---
 
+## 7. Structural debt (deferred refactors)
+
+Written at the end of Part A of [`docs/loop/post-rung-01-cleanup.md`](../loop/post-rung-01-cleanup.md). Behaviour-identical organization landed as WP1–WP13. No ★ WP was skipped. No WP was parked by the Revert rule.
+
+| Rank | Refactor | What / where | Design that replaces the conditionals or copies | Why parked |
+|---|---|---|---|---|
+| 13 | Parked: split `SketchMode` | `sketch_mode.gd` jaw trim (~1,500 lines: `_trim_open_jaw` … `_seal_tangent_bosses`) and dimension / glyph label layout (~2,700 lines, `_rebuild_dimension_labels` … `_repel_glyph_items`) | `JawTrim` and `SketchLabelLayout` as `RefCounted` helpers that receive a narrow context (sketch, camera, view rect) instead of reading 100 members | high (reads ~100 members, 20 rounds of tuning); walk rows A8–A11, N21–N26, L12 |
+| 14 | Parked: split `ViewportInteraction` | 24 `_strip_*` members and 15 `_sketch_*` press/release members, a 299-line `_input` | `SelectionStrip` as its own `Control`; `SketchPointerGesture` state machine (press, release, box, abandon, swallow) | high (input; dead first clicks took rounds 17–19); `tools/gui_click_probe.sh`, walk |
+| 15 | Parked: `CommandRegistry` drift | `command_registry.gd` documents keys; live handlers bind them locally | handlers register against the table | medium; `run_help_tests.gd` |
+| — | CI composite on export workflows | `.github/workflows/release.yml`, `linux-test-build.yml` still inline the OCCT cache + `install_occt.sh` blocks | same `.github/actions/setup-occt/action.yml` as WP13 | `release.yml` and `linux-test-build.yml` do not run on a PR |
+
+---
+
 ## Related
 
 - [README.md](README.md) — plan index (park later ideas here, not in chat)

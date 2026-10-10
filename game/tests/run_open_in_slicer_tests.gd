@@ -1,21 +1,9 @@
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 func _init() -> void:
 	print("open-in-slicer tests")
 	test_open_in_slicer_per_body_and_mm()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 func _write_cfg(exec_path: String, args: PackedStringArray) -> void:
 	var ok := SlicerSettings.save_settings(exec_path, args)

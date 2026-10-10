@@ -4,25 +4,13 @@
 # not open the editor. Timeline → parameters → Cancel undoes a radius edit.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan16_n2.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOP_PITCH := deg_to_rad(90.0)
 const APPLIED := "Fillet 2 edges 10.00 applied — View ▸ Timeline to edit parameters — Fillet no longer armed"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -30,8 +18,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _run()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run() -> void:
@@ -88,7 +75,7 @@ func _run() -> void:
 	await _push_char(vp, "0")
 	print("  strip after typing `%s`" % _line_text(strip))
 	_status_log.clear()
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -104,7 +91,7 @@ func _run() -> void:
 	check(owner == main.interaction,
 			"strip Enter returns viewport focus (got %s)" % _owner_name(owner))
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	check(_label(main).contains("Top view") or _status_has("Top view"),
 			"key 3 after strip Enter is Top view (label `%s`)" % _label(main))
@@ -119,7 +106,7 @@ func _run() -> void:
 	await _push_char(vp, "0")
 	print("  panel after typing `%s`" % _line_text(panel))
 	_status_log.clear()
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -134,7 +121,7 @@ func _run() -> void:
 	check(owner == main.interaction,
 			"panel Enter returns viewport focus (got %s)" % _owner_name(owner))
 	_status_log.clear()
-	await _push_key(vp, KEY_4, 52)
+	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	check(_label(main).contains("Back view") or _status_has("Back view"),
 			"key 4 after panel Enter is Back view (label `%s`)" % _label(main))
@@ -147,7 +134,7 @@ func _run() -> void:
 	await process_frame
 	var fillets_before := _fillet_count(view)
 	_status_log.clear()
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -161,7 +148,7 @@ func _run() -> void:
 	check(is_equal_approx(_fillet_radius(view, fid), 10.0),
 			"committed fillet radius is 10 (got %s)" % str(_fillet_radius(view, fid)))
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	check(_fillet_count(view) == fillets_before + 1, "Esc after apply keeps the fillet")
@@ -192,7 +179,7 @@ func _run() -> void:
 		await _click_at(vp, _spin_text_pos(radius_spin), 3)
 		await _push_char(vp, "4")
 		print("  editor radius after key 4 `%s`" % _line_text(radius_spin))
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 		await process_frame
@@ -200,7 +187,7 @@ func _run() -> void:
 		check(not (owner is LineEdit) and not (owner is SpinBox),
 				"editor Radius Enter releases the field (got %s)" % _owner_name(owner))
 		_status_log.clear()
-		await _push_key(vp, KEY_3, 51)
+		await _push_key_local(vp, KEY_3, 51)
 		await process_frame
 		check(_label(main).contains("Top view") or _status_has("Top view"),
 				"key 3 after editor Enter is Top view (label `%s`)" % _label(main))
@@ -340,7 +327,7 @@ func _select_two_verticals(view: DocumentView, body: String) -> PackedStringArra
 	return PackedStringArray(edges)
 
 
-func _push_key(vp: Viewport, code: int, unicode: int = 0) -> void:
+func _push_key_local(vp: Viewport, code: int, unicode: int = 0) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code
@@ -358,7 +345,7 @@ func _push_char(vp: Viewport, ch: String) -> void:
 	var code := KEY_NONE
 	if unicode >= 48 and unicode <= 57:
 		code = (KEY_0 + (unicode - 48)) as Key
-	await _push_key(vp, code, unicode)
+	await _push_key_local(vp, code, unicode)
 
 
 func _click_at(vp: Viewport, pos: Vector2, times: int = 1) -> void:

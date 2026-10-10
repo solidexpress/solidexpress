@@ -7,23 +7,11 @@
 # A fresh click must own the keyboard: 1.5 stays 1.5, Ctrl+A selects the
 # field text (not every face), and Circle's 5 does not land in Extrude.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sx037_l10.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -34,8 +22,7 @@ func _init() -> void:
 	await _fillet_radius_commit()
 	await _circle_radius_not_extrude()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:
@@ -122,7 +109,7 @@ func _dim_blank_refocus() -> void:
 	await _zoom(ctx, Vector3.ZERO, 120.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre")
 	var dim := _dim_edit(ctx.main.sketch_chrome)
 	check(dim != null, "DimLineEdit exists")
 	if dim == null:
@@ -337,8 +324,8 @@ func _draw_closed_rect(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
 	await process_frame
-	await _click_uv(ctx, Vector2(-15, -10), "Rect corner A")
-	await _click_uv(ctx, Vector2(15, 10), "Rect corner B")
+	await _click_uv_local(ctx, Vector2(-15, -10), "Rect corner A")
+	await _click_uv_local(ctx, Vector2(15, 10), "Rect corner B")
 	await process_frame
 	var closed := false
 	if sm != null and sm.sketch != null:
@@ -350,7 +337,7 @@ func _draw_closed_rect(ctx: FilmContext) -> void:
 	check(closed, "sketch has a closed profile")
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -372,33 +359,6 @@ func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	up.position = screen
 	up.global_position = screen
 	vp.push_input(up)
-	await process_frame
-
-
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
 	await process_frame
 
 

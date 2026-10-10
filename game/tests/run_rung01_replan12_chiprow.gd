@@ -3,8 +3,7 @@
 # Validation suite: script-side sketch setup is allowed; layout is read from
 # real Control global rects after the chrome restacks.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan12_chiprow.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 ## The 16-chip two-circle row from the sx-033 screenshot (Split is the 17th).
@@ -14,25 +13,13 @@ const SIXTEEN_CHIPS := [
 	"midpoint", "symmetric", "offset", "pattern", "mirror", "block",
 ]
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan12 chip row stays right of the sketch rail")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run() -> void:

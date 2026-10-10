@@ -2,23 +2,11 @@
 # edit does not leave a stale contour fill or a ±50 mm grid patch.
 # Real events: Viewport.push_input for clicks and keys under test.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sx036_fields.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -26,8 +14,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _run()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run() -> void:
@@ -97,7 +84,7 @@ func _test_circle_radius(ctx: FilmContext) -> void:
 			"Circle blank shows circle radius %.1f not slot %.1f (got '%s')" % [
 				sm.circle_radius, sm.slot_radius, _digits(dim)])
 	check(is_equal_approx(sm.slot_radius, 5.0), "slot radius stays 5")
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre")
 	await process_frame
 	dim = _dim_edit(chrome)
 	check(dim != null and dim.has_focus(), "centre click focuses the Radius field")
@@ -110,7 +97,7 @@ func _test_circle_radius(ctx: FilmContext) -> void:
 	await _push_char(ctx, "5")
 	check(_parses_to(_dim_edit(chrome), 22.5) and _digits(_dim_edit(chrome)) == "22.5",
 			"Radius reads 22.5 (got '%s')" % _digits(_dim_edit(chrome)))
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	var circ := _circle_near(sm, Vector2.ZERO)
 	var info: Dictionary = sm.sketch.entity_info(circ) if circ != "" else {}
@@ -136,7 +123,7 @@ func _test_polygon_af(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	await process_frame
 	check(sm.tool_variant == "across_flats", "polygon variant is across flats")
-	await _click_uv(ctx, Vector2(12, 12), "Polygon centre")
+	await _click_uv_local(ctx, Vector2(12, 12), "Polygon centre")
 	await process_frame
 	var dim := _dim_edit(chrome)
 	check(dim != null and dim.has_focus(), "polygon centre focuses the AF field")
@@ -144,7 +131,7 @@ func _test_polygon_af(ctx: FilmContext) -> void:
 	check(_digits(_dim_edit(chrome)) == "2", "first AF key is '2' (got '%s')" % _digits(_dim_edit(chrome)))
 	await _push_char(ctx, "0")
 	check(_digits(_dim_edit(chrome)) == "20", "AF reads '20' (got '%s')" % _digits(_dim_edit(chrome)))
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	check(_status_blob().contains("Polygon AF 20"),
 			"status has Polygon AF 20 (got '%s')" % _status_blob())
@@ -168,7 +155,7 @@ func _test_angle_editor(ctx: FilmContext) -> void:
 	check(label != Vector2.INF, "angle dimension has a label")
 	if label == Vector2.INF:
 		return
-	await _click_uv(ctx, label, "Angle dimension label")
+	await _click_uv_local(ctx, label, "Angle dimension label")
 	await process_frame
 	await process_frame
 	await process_frame
@@ -185,7 +172,7 @@ func _test_angle_editor(ctx: FilmContext) -> void:
 	await _push_char(ctx, "5")
 	line = _dim_popup_line(ctx)
 	check(str(line.text) == "45", "angle editor reads '45' (got '%s')" % str(line.text))
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	var shown := -1.0
@@ -220,7 +207,7 @@ func _test_stale_fill_and_frame(ctx: FilmContext) -> void:
 	await _push_char(ctx, "0")
 	line = _dim_popup_line(ctx)
 	check(str(line.text) == "200", "distance editor reads '200' (got '%s')" % str(line.text))
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	var moved: Vector2 = sm.sketch.entity_info(c1)["center"]
@@ -233,7 +220,7 @@ func _test_stale_fill_and_frame(ctx: FilmContext) -> void:
 		owner.release_focus()
 	await process_frame
 	var vp: Viewport = ctx.main.get_viewport()
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await process_frame
 	var giz: WorldGizmos = ctx.main.interaction.world_gizmos
 	check(giz != null and giz.grid_half_mm >= 150.0,
@@ -251,7 +238,7 @@ func _test_stale_fill_and_frame(ctx: FilmContext) -> void:
 	check(grids == 1, "exactly one Grid mesh (got %d)" % grids)
 	var size_f: float = ctx.main.camera.size
 	_assert_sketch_span(ctx, sm, "F")
-	await _push_key(vp, KEY_F, true)
+	await _push_key_local(vp, KEY_F, true)
 	check(absf(ctx.main.camera.size - size_f) <= size_f * 0.01,
 			"Shift+F frame size within 1%% of F (F=%.4f Shift+F=%.4f)" % [
 				size_f, ctx.main.camera.size])
@@ -389,7 +376,7 @@ func _parses_to(edit: LineEdit, v: float) -> bool:
 	return is_equal_approx(float(text), v)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -439,7 +426,7 @@ func _push_char(ctx: FilmContext, ch: String) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

@@ -7,8 +7,7 @@
 # sx-026 steps use _x11_click_screen with no await between mouse-down
 # and mouse-up.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const SHAFT_PICK_X := 100.0
@@ -23,23 +22,12 @@ const PERP := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
 
 const _UUID_STATUS_PATTERN := "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
-var failures := 0
-var checks := 0
 var _bad_status: Array[String] = []
 var _status_log: Array[String] = []
 var _slot_floor_refused := false
 var _slot_floor_error := ""
 var _last_extrude_pos := Vector2.ZERO
 static var _uuid_status_re: RegEx
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -74,8 +62,7 @@ func _init() -> void:
 		await _b14_polish(ctx)
 
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _on_sketch_status(text: String) -> void:
@@ -134,7 +121,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(sm.tool_variant == "across_flats",
 			"polygon variant is across_flats without a setter (got %s)" % sm.tool_variant)
 	_assert_polygon_chips_clear(ctx)
-	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Hex centre")
 	print("  B13.14 Typed fields (polygon preview)")
 	var last_r := -1.0
 	var tips: Array[Vector2] = [Vector2(8, 3), Vector2(10, 6), Vector2(12, 4)]
@@ -157,9 +144,9 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(_status_has("flats horizontal") or str(ctx.main.status_label.text).contains("flats horizontal"),
 			"status contains flats horizontal (got %s)" % ctx.main.status_label.text)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2.ZERO, "Bore centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Bore centre")
 	await _b14_focuskeys_field(ctx)
-	await _click_uv(ctx, Vector2.ZERO, "Bore centre after B14.7 Esc")
+	await _click_uv_local(ctx, Vector2.ZERO, "Bore centre after B14.7 Esc")
 	await _hover_uv(ctx, Vector2(4, 0))
 	await _type_dim(ctx, "5", false)
 	var bore := _first_of(sm, "circle")
@@ -254,7 +241,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 		check(false, "two circles remain after Smart Dimension 200")
 	_guard_dims(ctx, "Smart Dim")
 	print("  B13.10 Frame")
-	await _push_key(ctx.main.get_viewport(), KEY_F, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_F, 0)
 	await process_frame
 	await process_frame
 	_assert_both_circles_on_screen(ctx, "F after 200 dim")
@@ -325,18 +312,18 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _aim_pointer(ctx, esc_screen)
 	await _pointer_click(ctx, esc_screen, false)
 	await process_frame
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 	var drop_status := str(ctx.main.status_label.text)
 	check(drop_status.contains("First point dropped — Esc again exits the sketch")
 			or _status_has("First point dropped — Esc again exits the sketch"),
 			"status contains First point dropped — Esc again exits the sketch (got %s)" % drop_status)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 	check(not sm.active, "Esc again exits the face sketch")
 	await _sketch_on_top(ctx, body, top, 10.0, false)
 	sm = ctx.main.sketch_mode
-	await _push_key(ctx.main.get_viewport(), KEY_F, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_F, 0)
 	await process_frame
 	await process_frame
 	await _b14_frame_origin(ctx)
@@ -395,7 +382,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(err == "", "second trim click status clean" if err == "" else err)
 	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile still closed after the second trim click")
 	print("  B15.3 trim chain")
-	check(FileAccess.file_exists("res://tests/run_rung01_replan15_chain.gd"),
+	check(FileAccess.file_exists("res://tests/run_rung01_replan15_jawstub.gd"),
 			"B15.3 the Line-cutter chain suite exists")
 	chrome = ctx.main.sketch_chrome
 	await _pick_op(_finish_op(ctx), 1)
@@ -471,7 +458,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	await _type_dim(ctx, "5", false)
 	check(absf(sm.slot_radius - 5.0) < 1e-3, "slot radius typed into the dim blank (got %.4f)" % sm.slot_radius)
 	_status_log.clear()
-	await _click_uv(ctx, Vector2(18.5, 0), "Slot first centre")
+	await _click_uv_local(ctx, Vector2(18.5, 0), "Slot first centre")
 	await _b14_slot_cc(ctx)
 	_guard_dims(ctx, "slot")
 	chrome = ctx.main.sketch_chrome
@@ -630,7 +617,7 @@ func _edit_jaw_to_21(ctx: FilmContext, jaw_sketch: String) -> void:
 	if lp == null:
 		return
 	await _zoom_uv(ctx, lp as Vector2, 40.0)
-	await _click_uv(ctx, lp as Vector2, "Edit jaw width")
+	await _click_uv_local(ctx, lp as Vector2, "Edit jaw width")
 	await process_frame
 	await process_frame
 	var ix = ctx.main.interaction
@@ -753,7 +740,7 @@ func _triball_one_esc(ctx: FilmContext) -> void:
 	var focus: Control = ctx.main.get_viewport().gui_get_focus_owner()
 	check(focus != ctx.main.interaction and not ctx.main.interaction.has_focus(),
 			"Esc is not delivered by grab_focus on Interaction")
-	_push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 	check(tb == null or (not tb.active and not tb.visible), "one Esc clears TriBall")
 	check(ctx.view.selected_body == "", "one Esc clears the selection with TriBall")
@@ -988,7 +975,7 @@ func _save_as_in_sketch(ctx: FilmContext) -> void:
 
 
 func _real_esc(ctx: FilmContext) -> void:
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 
 
@@ -1061,14 +1048,14 @@ func _commit_fillet(ctx: FilmContext) -> void:
 	var edit: LineEdit = spin.get_line_edit()
 	edit.grab_focus()
 	await process_frame
-	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+	await _push_key_local(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 	# Field Enter commits the radius only. Viewport Enter applies.
 	if ctx.main.ops_panel._pending != OpsPanel.Pending.NONE:
 		ctx.main.interaction.return_viewport_keys()
 		await process_frame
-		await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
+		await _push_key_local(ctx.main.get_viewport(), KEY_ENTER, 0)
 		await process_frame
 		await process_frame
 	# StripRadius == panel after the apply (10, then 1).
@@ -1081,7 +1068,7 @@ func _commit_fillet(ctx: FilmContext) -> void:
 	# A refused radius re-arms the same edges. Esc cancels that pick so the
 	# next Fillet click does not immediately re-commit leftover edges.
 	if str(ctx.view.doc.last_graph_error()) != "":
-		await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+		await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 		await process_frame
 
 
@@ -1219,7 +1206,7 @@ func _recovery_ground_sketch(ctx: FilmContext, ground := Vector3(22, 18, 0)) -> 
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm != null and sm.active:
 		return
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 	await _zoom(ctx, ground, 80.0)
 	var sketch_btn := FilmUI.find_palette_sketch_button(ctx.main)
@@ -1398,7 +1385,7 @@ func _type_timeline_distance(ctx: FilmContext, fid: String, digits: String) -> v
 	check(selected != "" and selected == edit.text,
 			"distance text is selected ('%s')" % selected)
 	await _type_text(ctx.main.get_viewport(), digits)
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER, 0)
 	if digits == "14":
 		print("  B13.14 Typed fields (Distance)")
 		for i in 5:
@@ -1872,11 +1859,11 @@ func _click_menu_item(ctx: FilmContext, title: String, id: int, desc: String) ->
 
 
 func _pointer_click_at(vp: Viewport, pos: Vector2) -> void:
-	await _push_mouse(vp, pos, MOUSE_BUTTON_LEFT, true)
-	await _push_mouse(vp, pos, MOUSE_BUTTON_LEFT, false)
+	await _push_mouse_local(vp, pos, MOUSE_BUTTON_LEFT, true)
+	await _push_mouse_local(vp, pos, MOUSE_BUTTON_LEFT, false)
 
 
-func _push_mouse(vp: Viewport, pos: Vector2, button: MouseButton, pressed: bool) -> void:
+func _push_mouse_local(vp: Viewport, pos: Vector2, button: MouseButton, pressed: bool) -> void:
 	if vp == null:
 		return
 	var motion := InputEventMouseMotion.new()
@@ -1893,27 +1880,6 @@ func _push_mouse(vp: Viewport, pos: Vector2, button: MouseButton, pressed: bool)
 		ev.button_mask = MOUSE_BUTTON_MASK_LEFT
 	vp.push_input(ev)
 	await process_frame
-
-
-func _keycode_for_char(ch: String) -> Key:
-	var c := ch.unicode_at(0)
-	if ch == "/":
-		return KEY_SLASH
-	if ch == "\\":
-		return KEY_BACKSLASH
-	if ch == "-":
-		return KEY_MINUS
-	if ch == "_":
-		return KEY_UNDERSCORE
-	if ch == ".":
-		return KEY_PERIOD
-	if c >= 48 and c <= 57:
-		return (KEY_0 + (c - 48)) as Key
-	if c >= 97 and c <= 122:
-		return (KEY_A + (c - 97)) as Key
-	if c >= 65 and c <= 90:
-		return (KEY_A + (c - 65)) as Key
-	return KEY_NONE
 
 
 func _release_gui_focus(ctx: FilmContext) -> void:
@@ -1978,14 +1944,14 @@ func _type_hex_af_digits(ctx: FilmContext, sm: SketchMode, cam: Camera3D) -> voi
 	check(dim == null or not dim.has_focus(), "dim blank is not focused before KEY_2")
 	var basis0: Basis = cam.global_basis
 	var vp: Viewport = ctx.main.get_viewport()
-	await _push_key(vp, KEY_2, 50)
-	await _push_key(vp, KEY_0, 48)
+	await _push_key_local(vp, KEY_2, 50)
+	await _push_key_local(vp, KEY_0, 48)
 	await process_frame
 	var text := "" if dim == null else str(dim.text)
 	check(text.contains("20"), "dim blank contains 20 after KEY_2 KEY_0 (got '%s')" % text)
 	check(cam.global_basis.is_equal_approx(basis0),
 			"camera basis unchanged after KEY_2 KEY_0")
-	await _push_key(vp, KEY_ENTER, 0)
+	await _push_key_local(vp, KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 
@@ -2072,7 +2038,7 @@ func _esc_box_then_file_menu(ctx: FilmContext) -> void:
 		await _click_control(w_edit)
 		await process_frame
 	var vp: Viewport = ctx.main.get_viewport()
-	await _push_key(vp, KEY_ESCAPE, 0)
+	await _push_key_local(vp, KEY_ESCAPE, 0)
 	await process_frame
 	check(ctx.view.selected_body == "", "one Esc from HUD W cleared selected_body")
 	check(ix.triball == null or (not ix.triball.active and not ix.triball.visible),
@@ -2101,7 +2067,7 @@ func _esc_box_then_file_menu(ctx: FilmContext) -> void:
 		await process_frame
 	check(popup != null and popup.visible, "File menu is open from a click")
 	var esc_vp: Viewport = popup if popup != null else vp
-	await _push_key(esc_vp, KEY_ESCAPE, 0)
+	await _push_key_local(esc_vp, KEY_ESCAPE, 0)
 	await process_frame
 	if popup != null and popup.visible:
 		# Headless embed: DisplayServer never focuses the popup, so the same
@@ -2147,7 +2113,7 @@ func _sketch_on_top(ctx: FilmContext, body: String, top: String, z_top: float, v
 	var vp: Viewport = ctx.main.get_viewport()
 	var host := Vector3(SHAFT_PICK_X, 0.0, z_top)
 	await _view_key(ctx, KEY_3)
-	await _push_key(vp, KEY_ESCAPE, 0)
+	await _push_key_local(vp, KEY_ESCAPE, 0)
 	var screen := FilmUI.model_to_screen(ctx, host)
 	if verify:
 		check(FilmUI.require_on_screen(ctx, screen, "top face pick"), "top face pick is on screen")
@@ -2232,7 +2198,7 @@ func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 	await _zoom(ctx, sm.to_model(uv), size_mm)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	if not FilmUI.require_on_screen(ctx, screen, desc):
@@ -2266,8 +2232,8 @@ func _right_click_uv(ctx: FilmContext, uv: Vector2) -> void:
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	await _aim_pointer(ctx, screen)
 	var vp: Viewport = ctx.main.get_viewport()
-	await _push_mouse(vp, screen, MOUSE_BUTTON_RIGHT, true)
-	await _push_mouse(vp, screen, MOUSE_BUTTON_RIGHT, false)
+	await _push_mouse_local(vp, screen, MOUSE_BUTTON_RIGHT, true)
+	await _push_mouse_local(vp, screen, MOUSE_BUTTON_RIGHT, false)
 
 
 func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
@@ -2332,7 +2298,7 @@ func _assert_shaft_lines_both_sides(sm: SketchMode) -> void:
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String, second_click: bool) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, center, "Circle centre")
+	await _click_uv_local(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text, second_click)
 
@@ -2438,14 +2404,14 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	check(jaw_chip == null or not jaw_chip.is_visible_in_tree(),
 			"Jaw shows no Center Three Point chip")
 	var before_n: int = sm.sketch.entity_ids().size()
-	await _click_uv(ctx, center, "Jaw click 1 centre")
+	await _click_uv_local(ctx, center, "Jaw click 1 centre")
 	await process_frame
-	await _click_uv(ctx, center + Vector2(20.0, 0.0), "Jaw click 2 on the axis")
+	await _click_uv_local(ctx, center + Vector2(20.0, 0.0), "Jaw click 2 on the axis")
 	await process_frame
 	var after2 := str(ctx.main.status_label.text)
 	check(after2.contains("click 3") or after2 == SketchMode.JAW_AFTER_LONG,
 			"B13.2 after click 2 the status names the next step (got `%s`)" % after2)
-	await _click_uv(ctx, center + Vector2(20.0, 0.0), "Jaw click 2 again")
+	await _click_uv_local(ctx, center + Vector2(20.0, 0.0), "Jaw click 2 again")
 	await process_frame
 	var after_repeat := str(ctx.main.status_label.text)
 	check(sm.sketch.entity_ids().size() == before_n,
@@ -2458,7 +2424,7 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	check(sm.sketch.entity_ids().size() == before_n,
 			"B14.1 entity count unchanged after repeat click 2 (n=%d was %d)" % [
 				sm.sketch.entity_ids().size(), before_n])
-	await _click_uv(ctx, center + Vector2(20.0, -10.0), "Jaw click 3 half width")
+	await _click_uv_local(ctx, center + Vector2(20.0, -10.0), "Jaw click 3 half width")
 	await process_frame
 	check(str(ctx.main.status_label.text).begins_with("Jaw committed") or _status_has("Jaw committed"),
 			"B13.2 click 3 commits (got `%s`)" % ctx.main.status_label.text)
@@ -2809,7 +2775,7 @@ func _type_unfocused_distance(ctx: FilmContext, digits: String) -> void:
 	for i in digits.length():
 		var ch := digits.unicode_at(i)
 		var code := KEY_PERIOD if ch == 46 else ((KEY_0 + (ch - 48)) as Key)
-		await _push_key(vp, code, ch)
+		await _push_key_local(vp, code, ch)
 	await process_frame
 	var readout := ""
 	var node: Label = chrome.find_child("ExtrudeReadout", true, false)
@@ -2828,13 +2794,7 @@ func _type_popup(ctx: FilmContext, edit: LineEdit, text: String) -> void:
 	await process_frame
 
 
-func _type_text(vp: Viewport, text: String) -> void:
-	for i in text.length():
-		var ch := text.substr(i, 1)
-		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
-
-
-func _push_key(vp: Viewport, keycode: Key, unicode: int, ctrl := false, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, unicode: int, ctrl := false, shift := false) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = keycode
 	ev.physical_keycode = keycode
@@ -3157,9 +3117,9 @@ func _circle_motions_leave_no_marks(ctx: FilmContext) -> void:
 func _place_hole_circle(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2.ZERO, "Hole centre on the Ø20")
+	await _click_uv_local(ctx, Vector2.ZERO, "Hole centre on the Ø20")
 	await _hover_uv(ctx, Vector2(6, 0))
-	await _click_uv(ctx, Vector2(6, 0), "Hole radius")
+	await _click_uv_local(ctx, Vector2(6, 0), "Hole radius")
 	await process_frame
 	var circ := _first_of(sm, "circle")
 	check(circ != "", "hole circle exists")
@@ -3170,7 +3130,7 @@ func _place_hole_circle(ctx: FilmContext) -> void:
 	check(center.length() <= 0.5, "hole centre is the Ø20 centre (got %s)" % center)
 	var radius := float(info["radius"])
 	await _press_rail_label(ctx, "Smart Dim")
-	await _click_uv(ctx, center + Vector2(radius, 0.0), "Smart dimension the hole")
+	await _click_uv_local(ctx, center + Vector2(radius, 0.0), "Smart dimension the hole")
 	await process_frame
 	var di := _dim_index(sm, "diameter")
 	check(di >= 0, "hole has a diameter label")
@@ -3784,7 +3744,7 @@ func _b14_type_spin_tab(ctx: FilmContext, spin: SpinBox, digits: String) -> void
 		await _x11_type(vp, digits)
 		await process_frame
 	_status_log.clear()
-	await _push_key(vp, KEY_TAB, 0)
+	await _push_key_local(vp, KEY_TAB, 0)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -3857,7 +3817,7 @@ func _b14_focuskeys_field(ctx: FilmContext) -> void:
 	check(not _status_has("Selected") and not str(ctx.main.status_label.text).contains("Selected "),
 			"B14.7 Ctrl+A does not select sketch entities (got `%s`)" % ctx.main.status_label.text)
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE, 0)
+	await _push_key_local(vp, KEY_ESCAPE, 0)
 	await process_frame
 	var drop := str(ctx.main.status_label.text)
 	check(drop.contains("First point dropped — Esc again exits the sketch")
@@ -3889,7 +3849,7 @@ func _b14_ctxbar(ctx: FilmContext, body: String) -> void:
 	print("  B14.8 part context bar")
 	var vp: Viewport = ctx.main.get_viewport()
 	var ix: ViewportInteraction = ctx.main.interaction
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	var pick := FilmUI.model_to_screen(ctx, Vector3(100, 0, 5))
@@ -3942,9 +3902,9 @@ func _b14_ctxbar(ctx: FilmContext, body: String) -> void:
 	check(bar.position.x >= 0.0 and bar.position.y >= 0.0
 			and bar.end.x <= 1280.5 and bar.end.y <= 800.5,
 			"B14.8 bar is inside 1280×800 (%s)" % str(bar))
-	await _push_key(vp, KEY_ESCAPE, 0)
+	await _push_key_local(vp, KEY_ESCAPE, 0)
 	await process_frame
-	await _push_key(vp, KEY_ESCAPE, 0)
+	await _push_key_local(vp, KEY_ESCAPE, 0)
 	await process_frame
 
 
@@ -3952,9 +3912,9 @@ func _b14_camera(ctx: FilmContext, body: String) -> void:
 	print("  B14.10 wheel zoom and F")
 	var vp: Viewport = ctx.main.get_viewport()
 	var cam: OrbitCamera = ctx.main.camera
-	await _push_key(vp, KEY_ESCAPE, 0)
+	await _push_key_local(vp, KEY_ESCAPE, 0)
 	await process_frame
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	if ctx.view.selected_body != body:
@@ -3978,7 +3938,7 @@ func _b14_camera(ctx: FilmContext, body: String) -> void:
 				"B14.10 wheel-out %d moves the unprojected point ≤ 2 px (err %.3f)" % [
 					i + 1, got.distance_to(head)])
 	_status_log.clear()
-	await _push_key(vp, KEY_F, 0)
+	await _push_key_local(vp, KEY_F, 0)
 	await process_frame
 	await process_frame
 	var framed_sel := 0
@@ -3989,7 +3949,7 @@ func _b14_camera(ctx: FilmContext, body: String) -> void:
 			"B14.10 F prints Framed selection once (count %d status `%s`)" % [
 				framed_sel, ctx.main.status_label.text])
 	_status_log.clear()
-	await _push_key(vp, KEY_F, 0, false, true)
+	await _push_key_local(vp, KEY_F, 0, false, true)
 	await process_frame
 	await process_frame
 	var framed_all := 0
@@ -4078,13 +4038,13 @@ func _b14_railstatus(ctx: FilmContext, center: Vector2) -> void:
 	check(rect_chips.size() == 5, "B14.11 Rect shows five chips (got %s)" % str(rect_chips))
 	await _press_rail_label(ctx, "Circle")
 	var uv := _b14_on_screen_uv(ctx, center)
-	await _click_uv(ctx, uv, "B14.11 Circle centre")
+	await _click_uv_local(ctx, uv, "B14.11 Circle centre")
 	await process_frame
 	var st := str(ctx.main.status_label.text)
 	check(st.contains("Circle — centre set, click the rim or type a radius")
 			or _status_has("Circle — centre set, click the rim or type a radius"),
 			"B14.11 Circle centre status (got `%s`)" % st)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 
 
@@ -4095,22 +4055,22 @@ func _b14_undo_jaw(ctx: FilmContext) -> void:
 	await _release_gui_focus(ctx)
 	var n1: int = sm.sketch.entity_ids().size()
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, 0, true, false)
+	await _push_key_local(vp, KEY_Z, 0, true, false)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Undo: Jaw" or _status_has("Undo: Jaw"),
 			"B14.9 Ctrl+Z status Undo: Jaw (got `%s`)" % ctx.main.status_label.text)
 	check(sm.sketch.entity_ids().size() < n1, "B14.9 jaw entities are gone (n=%d was %d)" % [
 		sm.sketch.entity_ids().size(), n1])
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, 0, true, true)
+	await _push_key_local(vp, KEY_Z, 0, true, true)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Redo: Jaw" or _status_has("Redo: Jaw"),
 			"B14.9 Ctrl+Shift+Z status Redo: Jaw (got `%s`)" % ctx.main.status_label.text)
 	check(sm.sketch.entity_ids().size() == n1, "B14.9 Redo: Jaw restores entities")
-	await _push_key(vp, KEY_Z, 0, true, false)
+	await _push_key_local(vp, KEY_Z, 0, true, false)
 	await process_frame
 	_status_log.clear()
-	await _push_key(vp, KEY_Y, 0, true, false)
+	await _push_key_local(vp, KEY_Y, 0, true, false)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Redo: Jaw" or _status_has("Redo: Jaw"),
 			"B14.9 Ctrl+Y status Redo: Jaw (got `%s`)" % ctx.main.status_label.text)
@@ -4118,7 +4078,7 @@ func _b14_undo_jaw(ctx: FilmContext) -> void:
 	while guard < 40:
 		var before_n: int = sm.sketch.entity_ids().size()
 		_status_log.clear()
-		await _push_key(vp, KEY_Z, 0, true, false)
+		await _push_key_local(vp, KEY_Z, 0, true, false)
 		await process_frame
 		guard += 1
 		if str(ctx.main.status_label.text) == "Nothing to undo" or _status_has("Nothing to undo"):
@@ -4130,7 +4090,7 @@ func _b14_undo_jaw(ctx: FilmContext) -> void:
 	guard = 0
 	while guard < 40:
 		_status_log.clear()
-		await _push_key(vp, KEY_Z, 0, true, true)
+		await _push_key_local(vp, KEY_Z, 0, true, true)
 		await process_frame
 		guard += 1
 		if str(ctx.main.status_label.text) == "Nothing to redo" or _status_has("Nothing to redo"):
@@ -4195,7 +4155,7 @@ func _b14_savelabels(ctx: FilmContext) -> void:
 					has_delta = true
 		check(overlay == null or not overlay.has_anchor() or not has_delta,
 				"B14.6 no Δ overlay while the label editor is open")
-		await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+		await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 		await process_frame
 	else:
 		check(open_i >= 0, "B14.6 found a label to hover")
@@ -4208,7 +4168,7 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 	var btn: Button = ctx.main.interaction._strip_fillet
 	await FilmUI.click_control(ctx, btn, FilmUICues.alert("Fillet", "Arm fillet"))
 	await process_frame
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	var spin: SpinBox = ctx.main.interaction._strip_radius
@@ -4223,12 +4183,12 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 		await _x11_click(edit)
 		await _ctrl_a(edit.get_viewport())
 		await _type_text(edit.get_viewport(), "10")
-		await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+		await _push_key_local(edit.get_viewport(), KEY_ENTER, 0)
 		await process_frame
 		await process_frame
 		check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
 				"B14.7 Fillet still armed after Enter")
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	check(absf(cam.pitch - deg_to_rad(90.0)) < 0.05, "B14.7 after strip: camera is Top")
@@ -4243,12 +4203,12 @@ func _b14_focuskeys_fillet(ctx: FilmContext) -> void:
 		await _x11_click(p_edit)
 		await _ctrl_a(p_edit.get_viewport())
 		await _type_text(p_edit.get_viewport(), "10")
-		await _push_key(p_edit.get_viewport(), KEY_ENTER, 0)
+		await _push_key_local(p_edit.get_viewport(), KEY_ENTER, 0)
 		await process_frame
 		await process_frame
 		check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
 				"B14.7 Fillet still armed after Enter")
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	check(absf(cam.pitch - deg_to_rad(90.0)) < 0.05, "B14.7 after panel: camera is Top")
@@ -4290,7 +4250,7 @@ func _b14_fillet_tab(ctx: FilmContext) -> void:
 		await process_frame
 		await process_frame
 	await _release_gui_focus(ctx)
-	await _push_key(ctx.main.get_viewport(), KEY_3, 51)
+	await _push_key_local(ctx.main.get_viewport(), KEY_3, 51)
 	await process_frame
 	await process_frame
 
@@ -4377,7 +4337,7 @@ func _b14_polish(ctx: FilmContext) -> void:
 			await process_frame
 			await process_frame
 		if sm.active:
-			await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+			await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 			await process_frame
 	var path := "/tmp/sx-rung01-jaw-saveas.sxp"
 	if not FileAccess.file_exists(path):
@@ -4493,9 +4453,9 @@ func _b15_n2(ctx: FilmContext) -> void:
 	var edit := _b14_spin_line(strip)
 	await _x11_click(edit)
 	await _x11_select_all(edit.get_viewport())
-	await _push_key(vp, KEY_1, 49)
-	await _push_key(vp, KEY_0, 48)
-	await _push_key(vp, KEY_ENTER, 0)
+	await _push_key_local(vp, KEY_1, 49)
+	await _push_key_local(vp, KEY_0, 48)
+	await _push_key_local(vp, KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -4509,14 +4469,14 @@ func _b15_n2(ctx: FilmContext) -> void:
 	check(_b15_radius_is_10(strip) and panel != null and _b15_radius_is_10(panel),
 			"B15.1 strip R and panel read 10 after strip Enter (strip `%s` panel `%s`)" % [
 				_b14_spin_text(strip), _b14_spin_text(panel)])
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
 			"B15.1 pending stays FILLET_EDGES after key 3")
 	check(str(ctx.main.status_label.text) == "Top view" or _status_has("Top view"),
 			"B15.1 Top view printed (got `%s`)" % ctx.main.status_label.text)
-	await _push_key(vp, KEY_4, 52)
+	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
 	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
@@ -4532,9 +4492,9 @@ func _b15_n2(ctx: FilmContext) -> void:
 	var p_edit := _b14_spin_line(panel)
 	await _x11_click(p_edit)
 	await _x11_select_all(p_edit.get_viewport())
-	await _push_key(vp, KEY_1, 49)
-	await _push_key(vp, KEY_0, 48)
-	await _push_key(vp, KEY_ENTER, 0)
+	await _push_key_local(vp, KEY_1, 49)
+	await _push_key_local(vp, KEY_0, 48)
+	await _push_key_local(vp, KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -4548,7 +4508,7 @@ func _b15_n2(ctx: FilmContext) -> void:
 	check(_b15_radius_is_10(strip) and _b15_radius_is_10(panel),
 			"B15.1 strip R and panel read 10 after panel Enter (strip `%s` panel `%s`)" % [
 				_b14_spin_text(strip), _b14_spin_text(panel)])
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
@@ -4641,14 +4601,14 @@ func _b15_contours(ctx: FilmContext) -> void:
 	var before := sm.sketch.entity_ids().size()
 	await _press_rail_label(ctx, "Circle")
 	await _zoom_uv(ctx, Vector2(120, 15), 50.0)
-	await _click_uv(ctx, Vector2(120, 15), "B15.2 circle centre")
-	await _click_uv(ctx, Vector2(128, 15), "B15.2 circle rim")
+	await _click_uv_local(ctx, Vector2(120, 15), "B15.2 circle centre")
+	await _click_uv_local(ctx, Vector2(128, 15), "B15.2 circle rim")
 	await process_frame
 	await process_frame
 	await _b15_contour_row(ctx)
 	await _press_rail_label(ctx, "Select")
 	await _zoom_uv(ctx, Vector2(128, 15), 40.0)
-	await _click_uv(ctx, Vector2(128, 15), "B15.2 select rim")
+	await _click_uv_local(ctx, Vector2(128, 15), "B15.2 select rim")
 	await _recovery_press_delete(ctx)
 	await process_frame
 	await process_frame
@@ -4703,7 +4663,7 @@ func _b15_key0(ctx: FilmContext) -> void:
 	var yaw0 := cam.yaw
 	var pitch0 := cam.pitch
 	_status_log.clear()
-	await _push_key(vp, KEY_0, 48)
+	await _push_key_local(vp, KEY_0, 48)
 	await process_frame
 	await process_frame
 	var st := str(ctx.main.status_label.text)
@@ -4712,7 +4672,7 @@ func _b15_key0(ctx: FilmContext) -> void:
 	check(is_equal_approx(cam.yaw, yaw0) and is_equal_approx(cam.pitch, pitch0),
 			"B15.6 key 0 leaves yaw and pitch unchanged")
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Top view" or _status_has("Top view"),

@@ -2,26 +2,14 @@
 # Surface face pick and does not leave the sketch host face selected. After
 # Extrude refuses, the next Esc is the exit ladder and the one after saves.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sx037_exit.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const FIRST_DROP := "First point dropped — Esc again exits the sketch"
 const FACE_PICK_CANCEL := "Up To Surface face pick cancelled"
 const SEL_CLEARED := "Selection cleared"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	await test_save_drops_host_and_face_pick()
 	await test_extrude_refusal_esc_ladder()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_cancel_drops_host_and_face_pick() -> void:
@@ -60,11 +47,11 @@ func test_cancel_drops_host_and_face_pick() -> void:
 	await _click_uv(ctx, vp, Vector2(8, 8))
 	check(sm.has_pending_draw_point(), "circle centre is pending")
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	check(sm.active, "first Esc keeps the sketch")
 	check(_status_has(FIRST_DROP) or str(ctx.main.status_label.text) == FIRST_DROP,
 			"first Esc drops the point (got `%s`)" % ctx.main.status_label.text)
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	await process_frame
 	check(not sm.active, "second Esc cancels the sketch")
@@ -73,7 +60,7 @@ func test_cancel_drops_host_and_face_pick() -> void:
 	_assert_part_mode_clean(ctx, top, "cancel")
 	_status_log.clear()
 	_release_focus(vp)
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Sketch cancelled",
 			"part-mode Esc with nothing selected leaves the status (got `%s`)" % ctx.main.status_label.text)
@@ -84,7 +71,7 @@ func test_cancel_drops_host_and_face_pick() -> void:
 	check(ctx.view.selected_face == top, "a later click can select the host face again")
 	_status_log.clear()
 	_release_focus(vp)
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(ctx.view.selected_face == "" and ctx.view.selected_body == "",
 			"Esc clears the face the user selected after the sketch")
@@ -125,11 +112,11 @@ func test_save_drops_host_and_face_pick() -> void:
 	await _click_uv(ctx, vp, Vector2(8, 12))
 	check(sm.has_pending_draw_point(), "circle centre is pending on the saved sketch")
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	check(sm.active, "first Esc keeps the sketch")
 	check(_status_has(FIRST_DROP) or str(ctx.main.status_label.text) == FIRST_DROP,
 			"first Esc drops the point (got `%s`)" % ctx.main.status_label.text)
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	await process_frame
 	check(not sm.active, "second Esc leaves the sketch")
@@ -139,7 +126,7 @@ func test_save_drops_host_and_face_pick() -> void:
 	_assert_part_mode_clean(ctx, top, "save")
 	_status_log.clear()
 	_release_focus(vp)
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Sketch saved",
 			"part-mode Esc with nothing selected leaves Sketch saved (got `%s`)" % ctx.main.status_label.text)
@@ -190,7 +177,7 @@ func test_extrude_refusal_esc_ladder() -> void:
 	check(not _looks_like_uuid(refused), "refusal status has no uuid (got `%s`)" % refused)
 	_release_focus(vp)
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	var ladder := str(ctx.main.status_label.text)
 	check(sm.active, "first Esc after refusal stays in the sketch")
@@ -198,7 +185,7 @@ func test_extrude_refusal_esc_ladder() -> void:
 			"first Esc is the exit ladder (got `%s`)" % ladder)
 	check(not ladder.contains("Chain ended"),
 			"first Esc is not Chain ended (got `%s`)" % ladder)
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	await process_frame
 	check(not sm.active, "second Esc leaves the sketch")
@@ -207,7 +194,7 @@ func test_extrude_refusal_esc_ladder() -> void:
 	_assert_part_mode_clean(ctx, top, "refusal save")
 	_status_log.clear()
 	_release_focus(vp)
-	await _push_key(vp, KEY_ESCAPE, false, false)
+	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Sketch saved",
 			"part-mode Esc after the refusal save changes nothing (got `%s`)" % ctx.main.status_label.text)
@@ -380,7 +367,7 @@ func _motion(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -398,28 +385,3 @@ func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	await process_frame
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame

@@ -3,8 +3,7 @@
 # Template: run_rung01_replan10_trim.gd (viewport drag) + run_rung01_replan13_trim.gd (Jaw path).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan14_trim.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HEAD := Vector2(200.0, 0.0)
@@ -15,18 +14,7 @@ const OUTER_SHORT := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 30.
 const LONG_DISCARD := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 + Vector2(-0.70710678, 0.70710678) * 10.0
 const CUTTER_MID := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 12.0
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -39,8 +27,7 @@ func _init() -> void:
 	await test_second_stroke_already_open()
 	await test_rectangle_without_circle_is_not_jaw_trim()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_drag_outer_short_opens_jaw() -> void:
@@ -121,7 +108,7 @@ func test_rectangle_without_circle_is_not_jaw_trim() -> void:
 	await _zoom_model(ctx, sm.to_model(Vector2(20, 10)), 80.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	_status_log.clear()
-	await _click_uv(ctx, Vector2(30, 0), "kernel trim on a rectangle side")
+	await _click_uv_local(ctx, Vector2(30, 0), "kernel trim on a rectangle side")
 	check(not _status_has("Trimmed open jaw"), "no circle: not an open-jaw trim (log=%s)" % str(_status_log))
 	check(not _status_has("no head circle"), "no circle: does not consume the click as a jaw refusal (log=%s)" % str(_status_log))
 	await _shutdown(ctx)
@@ -244,31 +231,11 @@ func _drag_between(ctx: FilmContext, from_uv: Vector2, to_uv: Vector2) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "on screen: %s" % desc)
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
-	await process_frame
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
 	await process_frame
 
 

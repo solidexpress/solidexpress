@@ -1,18 +1,6 @@
 # Headless tests that mirror docs/howto/*.md steps and assert the goals.
 # Run: tools/godot/godot --headless --path game --script tests/run_howto_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -34,8 +22,7 @@ func _init() -> void:
 	await howto_print_thin_wall(main)
 	await howto_print_overhang_orient(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _center(ix: ViewportInteraction) -> Vector2:

@@ -3,23 +3,11 @@
 # in-viewport dimension label editor, sketch redo, and the sketch rail.
 # Every press and key under test is a real InputEvent via Viewport.push_input.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sx038_focuskeys.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -39,8 +27,7 @@ func _init() -> void:
 	await _test_rail_select_after_line_click(false)
 	await _test_rail_select_after_line_click(true)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:
@@ -105,7 +92,7 @@ func _test_distance_ctrl_a() -> void:
 	# No frame between Ctrl+A and the digits. A spin rewrite of "2" to "2.0"
 	# used to splice this into "2.05".
 	_push_chord_now(ctx.main.get_viewport(), KEY_A, true)
-	await _type_text(ctx.main.get_viewport(), "2.5", false)
+	await _type_text_local(ctx.main.get_viewport(), "2.5", false)
 	check(_near(_parsed(dist), 2.5), "Ctrl+A then 2.5 reads 2.5 (got '%s')" % dist.text)
 	check(not str(dist.text).contains("2.05"),
 			"Distance did not splice to 2.05 (got '%s')" % dist.text)
@@ -113,7 +100,7 @@ func _test_distance_ctrl_a() -> void:
 	check(_selection_covers_all(dist),
 			"Ctrl+A selects all Distance text (got '%s' sel %s-%s)" % [
 				dist.text, dist.get_selection_from_column(), dist.get_selection_to_column()])
-	await _type_text(ctx.main.get_viewport(), "2.5", false)
+	await _type_text_local(ctx.main.get_viewport(), "2.5", false)
 	check(_near(_parsed(dist), 2.5), "second Ctrl+A then 2.5 reads 2.5 (got '%s')" % dist.text)
 	check(not str(dist.text).contains("2.052.5"),
 			"second try did not append (got '%s')" % dist.text)
@@ -133,12 +120,12 @@ func _test_distance_tab() -> void:
 	await process_frame
 	var landed := false
 	for _i in 12:
-		await _push_key(ctx.main.get_viewport(), KEY_TAB)
+		await _push_key_local(ctx.main.get_viewport(), KEY_TAB)
 		if dist.has_focus():
 			landed = true
 			break
 	check(landed, "Tab reaches Distance (owner '%s')" % _focus_name(ctx))
-	await _type_text(ctx.main.get_viewport(), "2.5", false)
+	await _type_text_local(ctx.main.get_viewport(), "2.5", false)
 	check(_near(_parsed(dist), 2.5), "Tab then 2.5 reads 2.5 (got '%s')" % dist.text)
 	await _shutdown(ctx)
 
@@ -151,24 +138,24 @@ func _distance_sequence(framed: bool) -> void:
 		await _shutdown(ctx)
 		return
 	await _click_control(dist)
-	await _type_text(ctx.main.get_viewport(), "10", framed)
+	await _type_text_local(ctx.main.get_viewport(), "10", framed)
 	check(_near(_parsed(dist), 10.0), "fast/framed typed 10 reads 10 (got '%s')" % dist.text)
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	check(not dist.has_focus(), "Distance Enter releases focus (text '%s')" % dist.text)
 	check(_near(_parsed(dist), 10.0), "Distance stays 10 after Enter (got '%s')" % dist.text)
-	await _type_text(ctx.main.get_viewport(), "14", framed)
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _type_text_local(ctx.main.get_viewport(), "14", framed)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	check(not dist.has_focus(), "second Distance Enter releases focus")
 	check(_near(_parsed(dist), 14.0), "Distance replaced with 14 (got '%s')" % dist.text)
-	await _type_text(ctx.main.get_viewport(), "10", framed)
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _type_text_local(ctx.main.get_viewport(), "10", framed)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	check(not dist.has_focus(), "third Distance Enter releases focus")
 	check(_near(_parsed(dist), 10.0), "Distance replaced with 10 (got '%s')" % dist.text)
 	_status_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_S)
+	await _push_key_local(ctx.main.get_viewport(), KEY_S)
 	await process_frame
 	check(_status_blob().begins_with("Select"),
 			"key after Distance Enter reaches the viewport (status '%s')" % _status_blob())
@@ -186,7 +173,7 @@ func _test_circle_shortcut() -> void:
 	check(dim != null and dim.has_focus(),
 			"arming Circle focuses Radius (focus %s)" % str(dim.has_focus() if dim != null else false))
 	_status_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_S)
+	await _push_key_local(ctx.main.get_viewport(), KEY_S)
 	await process_frame
 	check(sm.tool == SketchMode.Tool.SELECT, "S switches Circle to Select (tool %s)" % str(sm.tool))
 	check(_status_blob().begins_with("Select"),
@@ -213,11 +200,11 @@ func _circle_radius(framed: bool) -> void:
 	var dim := _dim_edit(ctx.main.sketch_chrome)
 	check(dim != null, "Radius field exists after the centre click")
 	_status_log.clear()
-	await _type_text(ctx.main.get_viewport(), "22.5", framed)
+	await _type_text_local(ctx.main.get_viewport(), "22.5", framed)
 	if dim != null:
 		check(_near(_parsed(dim), 22.5),
 				"radius burst reads 22.5 before Enter (got '%s')" % dim.text)
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	var radius := _circle_radius_of(sm)
@@ -245,11 +232,11 @@ func _angle_editor(framed: bool) -> void:
 		return
 	var line := _dim_popup_line(ctx)
 	_status_log.clear()
-	await _type_text(ctx.main.get_viewport(), "45", framed)
+	await _type_text_local(ctx.main.get_viewport(), "45", framed)
 	line = _dim_popup_line(ctx)
 	check(line != null and str(line.text) == "45",
 			"angle editor keeps both digits (got '%s')" % (str(line.text) if line != null else "null"))
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	var shown := _angle_display(sm)
@@ -297,8 +284,8 @@ func _test_redo_after_dim_commit() -> void:
 	if not await _open_angle_editor(ctx):
 		await _shutdown(ctx)
 		return
-	await _type_text(ctx.main.get_viewport(), "45", true)
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _type_text_local(ctx.main.get_viewport(), "45", true)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	var popup := ctx.main.interaction.find_child("DimEditPopup", true, false) as PopupPanel
@@ -374,7 +361,7 @@ func _open_angle_editor(ctx: FilmContext) -> bool:
 	check(label != Vector2.INF, "angle dimension has a label")
 	if label == Vector2.INF:
 		return false
-	await _click_uv(ctx, label)
+	await _click_uv_local(ctx, label)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -496,14 +483,14 @@ func _click_screen(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, "angle label"), "angle label is on screen")
 	await _click_screen(ctx.main.get_viewport(), screen)
 
 
-func _type_text(vp: Viewport, text: String, framed: bool) -> void:
+func _type_text_local(vp: Viewport, text: String, framed: bool) -> void:
 	for i in text.length():
 		await _push_char(vp, text.substr(i, 1), framed)
 	await process_frame
@@ -534,7 +521,7 @@ func _push_char(vp: Viewport, ch: String, framed: bool) -> void:
 		await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	await _push_chord(vp, keycode, false, false)
 
 

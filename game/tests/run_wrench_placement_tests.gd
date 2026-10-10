@@ -1,15 +1,5 @@
 # Hex place / hole move / resize remap / flat New — wrench placement gate.
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c: print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
+extends "res://tests/lib/sx_suite.gd"
 
 func _init() -> void:
 	print("wrench placement gate")
@@ -17,8 +7,7 @@ func _init() -> void:
 	await test_hex_place_off_center()
 	await test_resize_keeps_holes()
 	await test_hole_move()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func test_flat_new_and_box_name() -> void:

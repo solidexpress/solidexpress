@@ -1,22 +1,9 @@
 # Rung 1 replan 3 WP4 — Timeline Distance 10→14 on Enter and click-away.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan3_timeline.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -40,8 +27,7 @@ func _init() -> void:
 	await test_cancel_rolls_back_preview(ctx)
 
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func _assert_no_cheats() -> void:
@@ -195,8 +181,8 @@ func _build_rect_blind_10(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
 	await process_frame
 	await _zoom_uv(ctx, Vector2(20, 8), 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "Rect corner")
-	await _click_uv(ctx, Vector2(40, 16), "Rect opposite")
+	await _click_uv_local(ctx, Vector2.ZERO, "Rect corner")
+	await _click_uv_local(ctx, Vector2(40, 16), "Rect opposite")
 	await process_frame
 	var n := 0
 	if sm.sketch != null:
@@ -499,38 +485,11 @@ func _click_menu_item(ctx: FilmContext, title: String, id: int, desc: String) ->
 	return await _click_popup_item(popup, id, desc)
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
-
-
 func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 	await _zoom(ctx, ctx.main.sketch_mode.to_model(uv), size_mm)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -611,47 +570,3 @@ func _pointer_click(ctx: FilmContext, pos: Vector2, double_click: bool) -> void:
 	await process_frame
 
 
-func _type_text(vp: Viewport, text: String) -> void:
-	for i in text.length():
-		var ch := text.substr(i, 1)
-		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
-
-
-func _keycode_for_char(ch: String) -> Key:
-	var c := ch.unicode_at(0)
-	if ch == "/":
-		return KEY_SLASH
-	if ch == "\\":
-		return KEY_BACKSLASH
-	if ch == "-":
-		return KEY_MINUS
-	if ch == "_":
-		return KEY_UNDERSCORE
-	if ch == ".":
-		return KEY_PERIOD
-	if c >= 48 and c <= 57:
-		return (KEY_0 + (c - 48)) as Key
-	if c >= 97 and c <= 122:
-		return (KEY_A + (c - 97)) as Key
-	if c >= 65 and c <= 90:
-		return (KEY_A + (c - 65)) as Key
-	return KEY_NONE
-
-
-func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
-	var ev := InputEventKey.new()
-	ev.keycode = keycode
-	ev.physical_keycode = keycode
-	ev.unicode = unicode
-	ev.pressed = true
-	ev.echo = false
-	vp.push_input(ev)
-	await process_frame
-	var rel := InputEventKey.new()
-	rel.keycode = keycode
-	rel.physical_keycode = keycode
-	rel.unicode = unicode
-	rel.pressed = false
-	rel.echo = false
-	vp.push_input(rel)
-	await process_frame

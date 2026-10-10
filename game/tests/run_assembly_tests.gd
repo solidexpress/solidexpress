@@ -1,19 +1,7 @@
 # Headless tests for AssemblyPanel: instance list, place/remove, armed mate
 # flow, mate delete, and solve. Panel is not in main.tscn — mounted here.
 # Run: tools/godot/godot --headless --path game --script tests/run_assembly_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -37,8 +25,7 @@ func _init() -> void:
 	await test_snap_on_drop(main)
 	await test_explode_and_pattern(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 ## Slice H: exploded view is a way of seeing (ViewHud, beside Section), and a

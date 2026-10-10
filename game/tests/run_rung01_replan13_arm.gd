@@ -2,8 +2,7 @@
 # to its sketch. Rail buttons and advertised shortcuts are real Viewport.push_input
 # at the button centre (same path as run_rung01_replan12_slotarm.gd).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script res://tests/run_rung01_replan13_arm.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
@@ -18,25 +17,12 @@ const RAIL_SHORTCUTS := [
 	["Smart Dim", KEY_D, "Smart Dim"],
 ]
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
-
 
 func _init() -> void:
 	print("rung01 replan13 WP1 armed tools name themselves; finish bar owns its sketch")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _status_of(main) -> String:
@@ -75,7 +61,7 @@ func _push_click(pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(keycode: Key) -> void:
+func _push_key_local(keycode: Key) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = keycode
@@ -292,7 +278,7 @@ func _test_rail_and_keys(ctx: FilmContext, main) -> void:
 		check(jaw2 != null, "Jaw before shortcut `%s`" % str(row[0]))
 		await process_frame
 		var prev_k := _status_of(main)
-		await _push_key(row[1] as Key)
+		await _push_key_local(row[1] as Key)
 		await _assert_named(main, str(row[2]), prev_k, "key `%s`" % str(row[0]))
 
 

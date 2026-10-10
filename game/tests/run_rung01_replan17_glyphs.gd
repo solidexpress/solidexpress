@@ -5,8 +5,7 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan17_glyphs.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HEAD := Vector2(36.0, 0.0)
@@ -14,18 +13,7 @@ const HEAD_R := 22.5
 const JAW_DIR := Vector2(0.70710678, 0.70710678)
 const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -40,11 +28,10 @@ func _init() -> void:
 	await _fresh_sketch(ctx)
 	await _test_g5(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:
@@ -471,26 +458,6 @@ func _hover_screen(vp: Viewport, pos: Vector2) -> void:
 	motion.global_position = pos
 	vp.push_input(motion)
 	await process_frame
-	await process_frame
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
 	await process_frame
 
 

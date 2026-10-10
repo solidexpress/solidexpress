@@ -2,8 +2,7 @@
 # Circle's centre click says so; Slot c-c label regression (#151).
 # Real events: Viewport.push_input (motion, press, release). 1280×800.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script res://tests/run_rung01_replan14_railstatus.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const CIRCLE_CENTRE_SET := "Circle — centre set, click the rim or type a radius"
@@ -13,25 +12,13 @@ const RECT_CHIP_ORDER: Array[String] = [
 	"Corner", "Center", "Three Point", "Center Three Point", "Parallelogram",
 ]
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan14 WP6 Jaw rail highlight, Circle centre status, Slot c-c")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _status_of(main) -> String:

@@ -5,8 +5,7 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_jaw_label_hit.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const CTR := Vector2(30.0, 5.0)
@@ -17,18 +16,7 @@ const HALF_W := 10.0
 const SPAN_PX := 140.0
 const NEAR_PX := 160.0
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -39,7 +27,7 @@ func _init() -> void:
 	await _assert_placement(ctx, "at ~140 px")
 	await _assert_armed_clicks(ctx)
 	await _assert_select_click(ctx)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	# Larger on-screen span is zoom in; smaller is zoom out. The editor must
@@ -49,11 +37,10 @@ func _init() -> void:
 	await _zoom_span(ctx, SPAN_PX * 0.85)
 	await _assert_placement(ctx, "after zoom out")
 	await _assert_armed_clicks(ctx)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null:
 		ctx.main.queue_free()
 	await process_frame
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:
@@ -95,11 +82,11 @@ func _commit_jaw(ctx: FilmContext) -> void:
 	check(sm.is_jaw_armed(), "Jaw is armed")
 	var dir := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))
 	var perp := Vector2(-dir.y, dir.x)
-	await _click_uv(ctx, CTR)
+	await _click_uv_local(ctx, CTR)
 	await process_frame
-	await _click_uv(ctx, CTR + dir * HALF_LEN)
+	await _click_uv_local(ctx, CTR + dir * HALF_LEN)
 	await process_frame
-	await _click_uv(ctx, CTR + perp * HALF_W)
+	await _click_uv_local(ctx, CTR + perp * HALF_W)
 	await process_frame
 	await process_frame
 	var committed := false
@@ -177,14 +164,14 @@ func _assert_armed_clicks(ctx: FilmContext) -> void:
 	check(sm.is_jaw_armed(), "Jaw is armed for the glyph clicks")
 	var n_ent := sm.sketch.entity_ids().size()
 	await _click_label(ctx, sm, "20", n_ent)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	var ix: ViewportInteraction = ctx.main.interaction
 	check(ix == null or not ix._dim_edit_owns_keys(), "Esc closes the width editor")
 	check(sm.active, "Esc after the width editor keeps the sketch")
 	await _click_label(ctx, sm, "45°", n_ent)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	check(ix == null or not ix._dim_edit_owns_keys(), "Esc closes the angle editor")
@@ -378,33 +365,13 @@ func _button_by_text(node: Node, text: String) -> Button:
 	return null
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
-func _push_key(vp: Viewport, code: int) -> void:
+func _push_key_local(vp: Viewport, code: int) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code as Key

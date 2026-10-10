@@ -1,18 +1,6 @@
 # Headless tests for DocumentView display modes (shaded / edges / wireframe).
 # Run: tools/godot/godot --headless --path game --script tests/run_display_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	test_selection_corners(view)
 	await test_world_gizmos()
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _edges_of(view: DocumentView, body_id: String) -> MeshInstance3D:

@@ -5,8 +5,7 @@
 # Part 2: an overlapping contour is allowed to be refused, but each attempt asserts the invariant:
 #   accepted -> the body exports as a closed 3MF; refused -> named, volume and feature count unchanged.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan10_cut.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HEAD := Vector2(200.0, 0.0)
@@ -18,18 +17,7 @@ const SHAFT_SIDE := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 
 const HANDOUT_ATTEMPTS := 4
 const ATTEMPTS := 6
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -56,8 +44,7 @@ func _init() -> void:
 	check(good["vol_after"] < good["vol_before"] - 300.0 and good["vol_after"] > good["vol_before"] - 700.0,
 			"the hole removed about 500 mm³ (%.1f -> %.1f)" % [good["vol_before"], good["vol_after"]])
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _extrude_count(doc) -> int:
@@ -197,33 +184,6 @@ func _build_and_trim_handout_jaw(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
-
-
 func _boot() -> FilmContext:
 	var main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
@@ -255,21 +215,3 @@ func _x11_click(ctrl: Control) -> void:
 	await _x11_click_screen(ctrl.get_viewport(), pos)
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame

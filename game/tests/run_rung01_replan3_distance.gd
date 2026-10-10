@@ -1,20 +1,8 @@
 # Rung 1 replan 3 WP1 — Distance stores the number Extrude will send.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan3_distance.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -46,8 +34,7 @@ func _init() -> void:
 	await test_typed_distance_without_enter(main)
 	await test_enter_commits_7_5(main)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_published_api(main) -> void:

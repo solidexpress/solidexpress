@@ -534,27 +534,6 @@ void Document::restore_mate(Mate&& m) {
     bump_revision();
 }
 
-EntityId Document::add_connector(MateConnector c) {
-    if (c.id.is_null()) c.id = EntityId::generate();
-    if (c.name.empty())
-        c.name = "Connector " + std::to_string(connectors_.size() + 1);
-    const EntityId id = c.id;
-    connectors_.push_back(std::move(c));
-    bump_revision();
-    return id;
-}
-
-bool Document::remove_connector(const EntityId& id) {
-    for (size_t i = 0; i < connectors_.size(); ++i) {
-        if (connectors_[i].id == id) {
-            connectors_.erase(connectors_.begin() + static_cast<long>(i));
-            bump_revision();
-            return true;
-        }
-    }
-    return false;
-}
-
 void Document::restore_connector(MateConnector&& c) {
     connectors_.push_back(std::move(c));
     bump_revision();

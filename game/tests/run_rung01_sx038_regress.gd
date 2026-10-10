@@ -31,8 +31,7 @@ func _init() -> void:
 		await _l7b_exact_limit(ctx)
 	if _first_red == "":
 		await _n14_host_face(ctx)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _l7b_exact_limit(ctx: FilmContext) -> void:
@@ -117,8 +116,8 @@ func _n14_host_face(ctx: FilmContext) -> void:
 			"host face is selected while sketching (face=%s host=%s)" % [ctx.view.selected_face, host])
 	await _draw_circle(ctx, Vector2(40.0, 0.0), "5")
 	await _press_rail(ctx, "Line")
-	await _click_uv(ctx, Vector2(70.0, 12.0), "loose line start")
-	await _click_uv(ctx, Vector2(88.0, 18.0), "loose line end")
+	await _click_uv_local(ctx, Vector2(70.0, 12.0), "loose line start")
+	await _click_uv_local(ctx, Vector2(88.0, 18.0), "loose line end")
 	await process_frame
 	check(sm.has_open_chain(), "the loose line leaves the chain open")
 	await _pick_op(_finish_op(ctx), 1)

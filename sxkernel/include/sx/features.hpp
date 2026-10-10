@@ -100,6 +100,15 @@ struct Feature {
     std::vector<EntityId> output_bodies;
 };
 
+struct FeatureTypeInfo {
+    FeatureType type;
+    const char* name;
+    bool (*creates_body)(const Feature&);
+};
+
+extern const FeatureTypeInfo kFeatureTypes[];
+inline constexpr int kFeatureTypeCount = 35;
+
 class FeatureGraph {
 public:
     // Appends to the timeline. Assigns feature id (and output_body id where

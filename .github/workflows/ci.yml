@@ -39,18 +39,11 @@ jobs:
             libfreetype-dev libfontconfig-dev rapidjson-dev \
             libx11-dev libxi-dev libxext-dev libxmu-dev libgl1-mesa-dev
 
-      - name: Cache OCCT ${{ env.OCCT_VERSION }}
-        uses: actions/cache@v4
+      - name: Setup OCCT
+        uses: ./.github/actions/setup-occt
         with:
-          path: /opt/occt-${{ env.OCCT_VERSION }}
-          key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
-
-      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
-        run: |
-          chmod +x packaging/ci/install_occt.sh
-          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
-          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
-          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
+          version: ${{ env.OCCT_VERSION }}
+          cache-key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
 
       - name: Configure
         run: |
@@ -79,18 +72,11 @@ jobs:
           HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
         run: brew install cmake ninja eigen boost tbb freetype rapidjson
 
-      - name: Cache OCCT ${{ env.OCCT_VERSION }}
-        uses: actions/cache@v4
+      - name: Setup OCCT
+        uses: ./.github/actions/setup-occt
         with:
-          path: /opt/occt-${{ env.OCCT_VERSION }}
-          key: occt-${{ env.OCCT_VERSION }}-macos-arm64-shared-tbb-freetype-rapidjson-v1
-
-      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
-        run: |
-          chmod +x packaging/ci/install_occt.sh
-          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
-          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
-          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
+          version: ${{ env.OCCT_VERSION }}
+          cache-key: occt-${{ env.OCCT_VERSION }}-macos-arm64-shared-tbb-freetype-rapidjson-v1
 
       - name: Configure + build kernel tests
         run: |
@@ -131,18 +117,11 @@ jobs:
           python3 -m pip install --break-system-packages -r tools/requirements.txt
           python3 -c 'import numpy; print("numpy", numpy.__version__)'
 
-      - name: Cache OCCT ${{ env.OCCT_VERSION }}
-        uses: actions/cache@v4
+      - name: Setup OCCT
+        uses: ./.github/actions/setup-occt
         with:
-          path: /opt/occt-${{ env.OCCT_VERSION }}
-          key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
-
-      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
-        run: |
-          chmod +x packaging/ci/install_occt.sh
-          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
-          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
-          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
+          version: ${{ env.OCCT_VERSION }}
+          cache-key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
 
       - name: Cache Godot 4.7-stable binary
         uses: actions/cache@v4

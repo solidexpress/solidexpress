@@ -5,8 +5,7 @@
 # under test is Viewport.push_input (HUD Frame / marking-menu via visible buttons).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script res://tests/run_rung01_replan14_camera.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const ANCHOR_PX := 2.0
@@ -15,18 +14,7 @@ const FILL_FRAC := 0.60
 const BOX_SIZE := Vector3(240, 45, 10)
 const CIRCLE_R := 20.0
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -38,8 +26,7 @@ func _init() -> void:
 	await test_sketch_session_end_f()
 	await test_zoom_anchor_matrix()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_part_mode_f_and_hud() -> void:
@@ -51,10 +38,10 @@ func test_part_mode_f_and_hud() -> void:
 	var body := await _place_box(ctx)
 	check(body != "", "box 240×45×10 placed")
 
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	check(ctx.view.selected_body == "", "no body selected after Esc")
 
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_3)
 	check(absf(cam.pitch - deg_to_rad(90.0)) < 0.05, "key 3 is Top view (pitch %.4f)" % cam.pitch)
 
 	var end_px := _clamp_canvas(ctx, _end_screen(ctx, body))
@@ -67,7 +54,7 @@ func test_part_mode_f_and_hud() -> void:
 		dist_zoomed, str(pivot_zoomed), str(end_px)])
 
 	var mark := _status_log.size()
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	var hits := _framed_since(mark)
 	print("  after F (no selection): label=`%s` framed_hits=%s log_tail=%s" % [
 		str(main.status_label.text), str(hits), str(_status_log.slice(maxi(_status_log.size() - 6, 0)))])
@@ -84,7 +71,7 @@ func test_part_mode_f_and_hud() -> void:
 	print("  after F all: d=%.4f pivot=%s canvas=%s" % [
 		cam.distance, str(cam.pivot), str(canvas_f)])
 	mark = _status_log.size()
-	await _push_key(vp, KEY_F, true)
+	await _push_key_local(vp, KEY_F, true)
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and hits[0] == "Framed all",
 			"1b: Shift+F with nothing selected prints Framed all once (got %s)" % str(hits))
@@ -98,7 +85,7 @@ func test_part_mode_f_and_hud() -> void:
 		# Key F while the pointer sits on the HUD (same hover as a Frame click).
 		await _move_pointer(vp, fit_btn_all.get_global_rect().get_center())
 		mark = _status_log.size()
-		await _push_key(vp, KEY_F)
+		await _push_key_local(vp, KEY_F)
 		check(_pose_near(cam, pose_f_all),
 				"1b: F with pointer on HUD Frame matches canvas F (d %.4f vs %.4f)" % [
 					cam.distance, pose_f_all["distance"]])
@@ -124,7 +111,7 @@ func test_part_mode_f_and_hud() -> void:
 	check(ctx.view.selected_body == body, "2: click selected the body (%s)" % ctx.view.selected_body)
 	await _zoom_on(vp, end_px2, true, 8)
 	mark = _status_log.size()
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	hits = _framed_since(mark)
 	print("  after F (selected): label=`%s` framed_hits=%s" % [str(main.status_label.text), str(hits)])
 	check(hits.size() == 1 and hits[0] == "Framed selection",
@@ -133,7 +120,7 @@ func test_part_mode_f_and_hud() -> void:
 
 	var pose_f := _pose_of(cam)
 	mark = _status_log.size()
-	await _push_key(vp, KEY_F, true)
+	await _push_key_local(vp, KEY_F, true)
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and hits[0] == "Framed all",
 			"2: Shift+F prints Framed all once (got %s)" % str(hits))
@@ -142,7 +129,7 @@ func test_part_mode_f_and_hud() -> void:
 	var pose_sel := pose_f
 	await _click_at(vp, _clamp_canvas(ctx, _body_screen_center(ctx, body)))
 	await process_frame
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	pose_sel = _pose_of(cam)
 	var fit_btn := _find_labeled_button(main.view_hud, "Frame")
 	check(fit_btn != null and fit_btn.is_visible_in_tree(), "3: View HUD has a visible Frame button")
@@ -197,7 +184,7 @@ func test_part_mode_f_and_hud() -> void:
 		await process_frame
 	mark = _status_log.size()
 	var dist_pre := cam.distance
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	hits = _framed_since(mark)
 	print("  after fillet-spinner F: hits=%s focus=%s d %.4f → %.4f" % [
 		str(hits), _focus_name(vp), dist_pre, cam.distance])
@@ -220,10 +207,10 @@ func test_hud_frame_with_timeline() -> void:
 	await process_frame
 	await process_frame
 	check(main.timeline != null and main.timeline.visible, "Timeline is visible")
-	await _push_key(vp, KEY_ESCAPE)
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_3)
 	var mark := _status_log.size()
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	var hits := _framed_since(mark)
 	check(hits.size() == 1 and hits[0] == "Framed all",
 			"N6: F prints Framed all (got %s)" % str(hits))
@@ -257,7 +244,7 @@ func test_sketch_session_end_f() -> void:
 	var cam: OrbitCamera = main.camera
 	var vp: Viewport = main.get_viewport()
 	var body := await _place_box(ctx)
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_3)
 
 	await FilmUI.enter_sketch(ctx)
 	var sm: SketchMode = main.sketch_mode
@@ -275,7 +262,7 @@ func test_sketch_session_end_f() -> void:
 	check(sm == null or not sm.active, "4: Exit Sketch ended the session")
 	check(not _sketch_fit_valid(cam), "4: sketch_fit is invalid after Exit Sketch")
 	var mark := _status_log.size()
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	var hits := _framed_since(mark)
 	check(hits.size() == 1 and (hits[0] == "Framed all" or hits[0] == "Framed selection"),
 			"4: F after Exit Sketch frames the part (got %s)" % str(hits))
@@ -289,18 +276,18 @@ func test_sketch_session_end_f() -> void:
 		sm.sketch.add_circle(0.0, 0.0, CIRCLE_R)
 		sm.run_solve()
 		await process_frame
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	if sm != null and sm.active:
-		await _push_key(vp, KEY_ESCAPE)
+		await _push_key_local(vp, KEY_ESCAPE)
 		await process_frame
 	if sm != null and sm.active:
-		await _push_key(vp, KEY_ESCAPE)
+		await _push_key_local(vp, KEY_ESCAPE)
 		await process_frame
 	check(sm == null or not sm.active, "4: Esc ended the sketch session")
 	check(not _sketch_fit_valid(cam), "4: sketch_fit is invalid after Esc")
 	mark = _status_log.size()
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and (hits[0] == "Framed all" or hits[0] == "Framed selection"),
 			"4: F after Esc frames the part (got %s)" % str(hits))
@@ -326,7 +313,7 @@ func test_sketch_session_end_f() -> void:
 	check(sm == null or not sm.active, "4: session ended after Save As then Exit Sketch")
 	check(not _sketch_fit_valid(cam), "4: sketch_fit is invalid after Save As re-entry then exit")
 	mark = _status_log.size()
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and (hits[0] == "Framed all" or hits[0] == "Framed selection"),
 			"4: F after Save As re-entry then exit frames the part (got %s)" % str(hits))
@@ -347,16 +334,16 @@ func _zoom_anchor_part(ortho: bool) -> void:
 	var cam: OrbitCamera = ctx.main.camera
 	var vp: Viewport = ctx.main.get_viewport()
 	var body := await _place_box(ctx)
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_3)
 	if ortho:
 		if cam.projection != Camera3D.PROJECTION_ORTHOGONAL:
-			await _push_key(vp, KEY_5)
+			await _push_key_local(vp, KEY_5)
 		check(cam.projection == Camera3D.PROJECTION_ORTHOGONAL, "%s: orthogonal" % tag)
 	else:
 		if cam.projection == Camera3D.PROJECTION_ORTHOGONAL:
-			await _push_key(vp, KEY_5)
+			await _push_key_local(vp, KEY_5)
 		check(cam.projection == Camera3D.PROJECTION_PERSPECTIVE, "%s: perspective" % tag)
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await process_frame
 	var p := _clamp_canvas(ctx, _end_screen(ctx, body))
 	check(p != Vector2.INF, "%s: body end on screen (px %s)" % [tag, str(p)])
@@ -423,7 +410,7 @@ func _assert_anchor_roundtrip(ctx: FilmContext, cam: OrbitCamera, vp: Viewport, 
 
 
 func _assert_zoom_out_cap(ctx: FilmContext, cam: OrbitCamera, vp: Viewport, body: String, p: Vector2, tag: String) -> void:
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await process_frame
 	p = _clamp_canvas(ctx, _end_screen(ctx, body))
 	await _assert_zoom_out_from_here(ctx, cam, vp, p, cam.distance, tag)
@@ -452,7 +439,7 @@ func _assert_zoom_out_from_here(ctx: FilmContext, cam: OrbitCamera, vp: Viewport
 
 
 func _assert_offscreen_safety_net(ctx: FilmContext, cam: OrbitCamera, vp: Viewport, body: String, tag: String) -> void:
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await process_frame
 	var p := _body_screen_center(ctx, body)
 	await _move_pointer(vp, p)
@@ -701,7 +688,7 @@ func _place_box(ctx: FilmContext) -> String:
 	return body
 
 
-func _push_key(vp: Viewport, keycode: Key, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

@@ -1,18 +1,6 @@
 # Headless tests for SketchMode ARC and POLYGON drawing tools.
 # Run: tools/godot/godot --headless --path game --script tests/run_sketch_tools_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -54,8 +42,7 @@ func _init() -> void:
 	test_typed_radius_circle(main)
 	test_dim_blank_ignores_mouse_while_editing(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_arc_tool(main) -> void:

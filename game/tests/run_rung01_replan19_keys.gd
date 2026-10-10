@@ -1,25 +1,13 @@
 # re-PLAN 19 WP1 — X11 burst echo and same-frame focus writes.
 # Every press under test is a real InputEvent via Viewport.push_input.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan19_keys.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const ECHO_STRINGS: PackedStringArray = ["22.5", "200", "1.5", "45", "2.5", "10", "100"]
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _clock := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -33,8 +21,7 @@ func _init() -> void:
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	_clear_clock()
 	SxUi.trace_enabled_override = null
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:
@@ -388,9 +375,9 @@ func _a11d_strip() -> void:
 	await _click_control(line)
 	await _push_chord(vp, KEY_A, true)
 	await _push_char(vp, "1", false)
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	_status_log.clear()
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_3)
 	await process_frame
 	check(_saw(ctx.main, "Top view"), "A11d key 3 is Top view (status '%s' label '%s')" % [_status_blob(), _label(ctx.main)])
 	check(_body(line.text) == "1" or line.text.contains("1 mm"),
@@ -650,7 +637,7 @@ func _key_for(ch: String) -> Key:
 	return KEY_NONE
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	_push_key_now(vp, keycode)
 	await process_frame
 

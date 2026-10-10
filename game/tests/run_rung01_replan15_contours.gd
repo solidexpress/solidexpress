@@ -2,23 +2,11 @@
 # Real pointer events on the Contours chips. Setup may use the sketch API.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan15_contours.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -29,8 +17,7 @@ func _init() -> void:
 	await _row_c1()
 	await _row_d1()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _rows_a_and_c2() -> void:
@@ -267,8 +254,8 @@ func _row_c1() -> void:
 		await _x11_click_screen(vp, edit.get_global_rect().get_center())
 		await process_frame
 		await process_frame
-		await _push_key(vp, KEY_1, 49)
-		await _push_key(vp, KEY_0, 48)
+		await _push_key_local(vp, KEY_1, 49)
+		await _push_key_local(vp, KEY_0, 48)
 		await process_frame
 		check(edit.text.contains("10"), "C1 Distance field reads 10 (got `%s`)" % edit.text)
 	var ex := chrome.extrude_button()
@@ -469,27 +456,7 @@ func _hover_screen(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
-func _push_key(vp: Viewport, code: int, unicode: int = 0) -> void:
+func _push_key_local(vp: Viewport, code: int, unicode: int = 0) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code

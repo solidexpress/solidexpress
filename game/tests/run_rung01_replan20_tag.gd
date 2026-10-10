@@ -3,25 +3,13 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan20_tag.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const CLEAR_PX := 4.0
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -29,8 +17,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _story()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _story() -> void:
@@ -66,12 +53,12 @@ func _boot() -> FilmContext:
 func _disjoint(ctx: FilmContext) -> void:
 	print("- disjoint r10 + r5")
 	await FilmUI.enter_sketch(ctx)
-	await _zoom(ctx, Vector2(100, 0), 2.857)
+	await _zoom_local(ctx, Vector2(100, 0), 2.857)
 	await _draw_circle(ctx, Vector2.ZERO, "10")
 	await _draw_circle(ctx, Vector2(200, 0), "5")
 	check(_circle_count(ctx) == 2, "P10 scene has two circles (got %d)" % _circle_count(ctx))
 	for ppm in [1.4, 2.857, 6.0]:
-		await _zoom(ctx, Vector2(100, 0), ppm)
+		await _zoom_local(ctx, Vector2(100, 0), ppm)
 		var measured := float(ctx.main.camera.pixels_per_mm_at_pivot())
 		check(absf(measured - ppm) / ppm < 0.08,
 				"zoom %.3f px/mm (got %.3f)" % [ppm, measured])
@@ -82,16 +69,16 @@ func _concentric(ctx: FilmContext) -> void:
 	print("- concentric r5 inside the head")
 	# A nested circle is a hole of the head, so a second profile is what
 	# makes the contour chips appear.
-	await _zoom(ctx, Vector2(40, 0), 2.857)
+	await _zoom_local(ctx, Vector2(40, 0), 2.857)
 	await _draw_circle(ctx, Vector2.ZERO, "22.5")
 	await _draw_circle(ctx, Vector2.ZERO, "5")
 	await _draw_circle(ctx, Vector2(80, 0), "6")
 	check(_circle_count(ctx) == 3, "head, concentric r5 and a neighbour (got %d)" % _circle_count(ctx))
 	var holed := _holed_index(ctx)
 	check(holed >= 0, "head region has the r5 hole (idx %d)" % holed)
-	await _zoom(ctx, Vector2(40, 0), 2.857)
+	await _zoom_local(ctx, Vector2(40, 0), 2.857)
 	await _assert_every_tag(ctx, "concentric")
-	await _zoom(ctx, Vector2(40, 0), 6.0)
+	await _zoom_local(ctx, Vector2(40, 0), 6.0)
 	if holed >= 0:
 		await _hover_chip(ctx, holed)
 		_assert_tag_rule(ctx, holed, "concentric 6px hole")
@@ -99,7 +86,7 @@ func _concentric(ctx: FilmContext) -> void:
 
 func _with_hole(ctx: FilmContext) -> void:
 	print("- region with a hole")
-	await _zoom(ctx, Vector2(40, 0), 2.0)
+	await _zoom_local(ctx, Vector2(40, 0), 2.0)
 	await _draw_circle(ctx, Vector2.ZERO, "40")
 	await _draw_circle(ctx, Vector2(90, 0), "18")
 	await _draw_circle(ctx, Vector2(90, 0), "6")
@@ -110,17 +97,17 @@ func _with_hole(ctx: FilmContext) -> void:
 		if typeof(region) == TYPE_DICTIONARY and (region.get("holes", []) as Array).size() >= 1:
 			holed += 1
 	check(holed >= 1, "one region carries a hole (got %d)" % holed)
-	await _zoom(ctx, Vector2(40, 0), 2.0)
+	await _zoom_local(ctx, Vector2(40, 0), 2.0)
 	await _assert_every_tag(ctx, "hole")
 
 
 func _thin_and_small(ctx: FilmContext) -> void:
 	print("- thin rectangle and a region smaller than the tag")
 	# Zoom in until the snap magnet is finer than the 2 mm height.
-	await _zoom(ctx, Vector2(20, 10), 16.0)
+	await _zoom_local(ctx, Vector2(20, 10), 16.0)
 	await _draw_rect(ctx, Vector2(0, 0), Vector2(40, 2))
 	await _draw_circle(ctx, Vector2(20, 16), "3")
-	await _zoom(ctx, Vector2(20, 10), 8.0)
+	await _zoom_local(ctx, Vector2(20, 10), 8.0)
 	var thin := _region_index_matching(ctx, 40.0, 2.0)
 	check(thin >= 0, "thin 2×40 region exists (idx %d)" % thin)
 	if thin >= 0:
@@ -131,10 +118,10 @@ func _thin_and_small(ctx: FilmContext) -> void:
 		await _hover_chip(ctx, other)
 		_assert_tag_rule(ctx, other, "thin neighbour")
 	await _fresh_sketch(ctx)
-	await _zoom(ctx, Vector2(20, 0), 4.0)
+	await _zoom_local(ctx, Vector2(20, 0), 4.0)
 	await _draw_circle(ctx, Vector2.ZERO, "1")
 	await _draw_circle(ctx, Vector2(40, 0), "12")
-	await _zoom(ctx, Vector2(20, 0), 4.0)
+	await _zoom_local(ctx, Vector2(20, 0), 4.0)
 	var small := _region_index_near(ctx, Vector2.ZERO)
 	check(small >= 0, "r1 region exists (idx %d)" % small)
 	if small >= 0:
@@ -144,10 +131,10 @@ func _thin_and_small(ctx: FilmContext) -> void:
 
 func _chip_status(ctx: FilmContext) -> void:
 	print("- chip hover and include / skip")
-	await _zoom(ctx, Vector2(30, 0), 2.857)
+	await _zoom_local(ctx, Vector2(30, 0), 2.857)
 	await _draw_circle(ctx, Vector2.ZERO, "16")
 	await _draw_circle(ctx, Vector2(60, 0), "8")
-	await _zoom(ctx, Vector2(30, 0), 2.857)
+	await _zoom_local(ctx, Vector2(30, 0), 2.857)
 	var chips := _chips(ctx)
 	check(chips.size() == 2, "two contour chips (got %d)" % chips.size())
 	if chips.size() < 2:
@@ -443,7 +430,7 @@ func _fresh_sketch(ctx: FilmContext) -> void:
 	await FilmUI.enter_sketch(ctx)
 
 
-func _zoom(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
+func _zoom_local(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
 	var cam = ctx.main.camera
 	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():

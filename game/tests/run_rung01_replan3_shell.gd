@@ -1,21 +1,8 @@
 # Rung 1 replan 3 WP6 — rail Extrude distance gate and absolute export path.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan3_shell.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-
-var failures := 0
-var checks := 0
-
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c:
-		print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 
 func _init() -> void:
@@ -39,8 +26,7 @@ func _init() -> void:
 	await test_rail_extrude()
 	await test_export_absolute_path()
 	check(FilmUI.fail_count == 0, "FilmUI reported no missing controls")
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func _boot() -> Array:
@@ -68,42 +54,6 @@ func _file_button(main) -> MenuButton:
 	return null
 
 
-func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
-	var ev := InputEventKey.new()
-	ev.keycode = keycode
-	ev.physical_keycode = keycode
-	ev.unicode = unicode
-	ev.pressed = true
-	ev.echo = false
-	vp.push_input(ev)
-	await process_frame
-	var rel := InputEventKey.new()
-	rel.keycode = keycode
-	rel.physical_keycode = keycode
-	rel.unicode = unicode
-	rel.pressed = false
-	rel.echo = false
-	vp.push_input(rel)
-	await process_frame
-
-
-func _push_mouse(vp: Viewport, pos: Vector2, pressed: bool) -> void:
-	if vp == null:
-		return
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	await process_frame
-	var ev := InputEventMouseButton.new()
-	ev.button_index = MOUSE_BUTTON_LEFT
-	ev.pressed = pressed
-	ev.position = pos
-	ev.global_position = pos
-	vp.push_input(ev)
-	await process_frame
-
-
 func _click_at(vp: Viewport, pos: Vector2) -> void:
 	await _push_mouse(vp, pos, true)
 	await _push_mouse(vp, pos, false)
@@ -112,33 +62,6 @@ func _click_at(vp: Viewport, pos: Vector2) -> void:
 func _click_control(ctrl: Control) -> void:
 	var pos := FilmUI.ensure_control_visible(ctrl)
 	await _click_at(ctrl.get_viewport(), pos)
-
-
-func _keycode_for_char(ch: String) -> Key:
-	var c := ch.unicode_at(0)
-	if ch == "/":
-		return KEY_SLASH
-	if ch == "\\":
-		return KEY_BACKSLASH
-	if ch == "-":
-		return KEY_MINUS
-	if ch == "_":
-		return KEY_UNDERSCORE
-	if ch == ".":
-		return KEY_PERIOD
-	if c >= 48 and c <= 57:
-		return (KEY_0 + (c - 48)) as Key
-	if c >= 97 and c <= 122:
-		return (KEY_A + (c - 97)) as Key
-	if c >= 65 and c <= 90:
-		return (KEY_A + (c - 65)) as Key
-	return KEY_NONE
-
-
-func _type_text(vp: Viewport, text: String) -> void:
-	for i in text.length():
-		var ch := text.substr(i, 1)
-		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
 
 
 func _popup_row_height(popup: PopupMenu, index: int, font_h: int, v_sep: int) -> float:
@@ -208,33 +131,6 @@ func _click_file_item(ctx: FilmContext, id: int, desc: String) -> bool:
 	if popup.id_pressed.is_connected(cb):
 		popup.id_pressed.disconnect(cb)
 	return got[0] == id
-
-
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
 
 
 func _type_distance(main, text: String) -> LineEdit:

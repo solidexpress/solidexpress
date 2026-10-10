@@ -1,21 +1,9 @@
 # Critic A→L walk — merge gate for print-a-wrench.
 # Replays the live critique order on a 1280×720 canvas.
 # Run: tools/godot/godot --headless --path game --script tests/run_critic_walk_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const ChromeDock := preload("res://scripts/chrome_dock.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -42,8 +30,7 @@ func _init() -> void:
 	await step_j_analyze(main)
 	await step_l_docks(main, vp)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func step_a_empty(main, _vp: SubViewport) -> void:

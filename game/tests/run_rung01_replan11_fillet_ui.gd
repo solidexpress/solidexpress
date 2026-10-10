@@ -1,16 +1,6 @@
-extends SceneTree
+extends "res://tests/lib/sx_suite.gd"
 ## Needs WP2. LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan11_fillet_ui.gd
 
-var failures := 0
-var checks := 0
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 func _init() -> void:
 	print("rung01 replan11 WP3 fillet ui")
@@ -60,8 +50,7 @@ func _init() -> void:
 			"face-first applies or names a real refusal")
 	await _test_same_length_twin_toggle(main, view, ops)
 	main.queue_free()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 func _mid(view, body: String, edge: String) -> Vector3:
 	var pts: PackedVector3Array = view.doc.get_edge_lines(body)[edge]

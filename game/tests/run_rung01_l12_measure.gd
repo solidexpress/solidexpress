@@ -4,25 +4,13 @@
 # frames (F / Shift+F / HUD Frame), and when the part selection changes
 # (empty-ground click / deselect), taking any 0.00 gizmo label with it.
 # Run: tools/godot/godot --headless --path game --script res://tests/run_rung01_l12_measure.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const MEASURE_CLEARED := "Measure cleared"
 const SELECTION_CLEARED := "Selection cleared — Esc again exits the sketch"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	await test_sketch_l12()
 	await test_part_hover_clears()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_sketch_l12() -> void:
@@ -61,36 +48,36 @@ func test_sketch_l12() -> void:
 			"that point is outside the old 2.5 mm radius")
 
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _hover_uv(ctx, vp, mid)
-	await _hover_uv(ctx, vp, Vector2(200.0, 22.5))
+	await _hover_uv_local(ctx, vp, mid)
+	await _hover_uv_local(ctx, vp, Vector2(200.0, 22.5))
 	check(not mo.has_anchor() and mo.marks.is_empty() and not _has_delta(mo),
 			"Circle hover leaves no ✕ and no Δ (marks=%d)" % mo.marks.size())
 
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await _hover_uv(ctx, vp, mid)
+	await _hover_uv_local(ctx, vp, mid)
 	check(mo.has_anchor() and mo.marks.size() >= 1, "Select hover plants an ✕")
 	check(_has_delta(mo), "Select hover shows Δ labels (%s)" % _label_texts(mo))
-	await _hover_uv(ctx, vp, Vector2(90.0, 80.0))
+	await _hover_uv_local(ctx, vp, Vector2(90.0, 80.0))
 	check(not mo.has_anchor() and mo.marks.is_empty() and not _has_delta(mo),
 			"leaving the line clears the ✕ and Δ")
 
-	await _hover_uv(ctx, vp, mid)
+	await _hover_uv_local(ctx, vp, mid)
 	check(mo.has_anchor(), "hover replants the ✕")
 	await _frame_key(vp, false)
 	check(not mo.has_anchor() and mo.marks.is_empty() and not _has_delta(mo),
 			"F clears the sketch hover ✕")
-	await _hover_uv(ctx, vp, mid)
+	await _hover_uv_local(ctx, vp, mid)
 	await _frame_key(vp, true)
 	check(not mo.has_anchor() and mo.marks.is_empty(), "Shift+F clears the sketch hover ✕")
-	await _hover_uv(ctx, vp, mid)
+	await _hover_uv_local(ctx, vp, mid)
 	await _click_frame(ctx)
 	check(not mo.has_anchor() and mo.marks.is_empty() and not _has_delta(mo),
 			"HUD Frame clears the sketch hover ✕")
 
-	await _hover_uv(ctx, vp, mid)
+	await _hover_uv_local(ctx, vp, mid)
 	check(mo.has_anchor() and _has_delta(mo), "Select hover again shows ✕ and Δ")
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE, false)
+	await _push_key_local(vp, KEY_ESCAPE, false)
 	check(_status_has(MEASURE_CLEARED), "Esc says Measure cleared (log: %s)" % str(_status_log))
 	check(not mo.has_anchor() and not _has_delta(mo), "Esc clears the ✕ and Δ")
 	check(sm.active, "Measure cleared keeps the sketch open")
@@ -102,7 +89,7 @@ func test_sketch_l12() -> void:
 	check(not mo.has_anchor() and mo.marks.is_empty() and not _has_delta(mo),
 			"the Select click clears the hover ✕")
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE, false)
+	await _push_key_local(vp, KEY_ESCAPE, false)
 	check(sm.active, "selection Esc keeps the sketch open")
 	check(sm.selected.is_empty(), "selection Esc clears the line")
 	check(_status_has(SELECTION_CLEARED),
@@ -279,7 +266,7 @@ func _uv_screen(ctx: FilmContext, uv: Vector2) -> Vector2:
 	return FilmUI.model_to_screen(ctx, sm.to_model(uv))
 
 
-func _hover_uv(ctx: FilmContext, vp: Viewport, uv: Vector2) -> void:
+func _hover_uv_local(ctx: FilmContext, vp: Viewport, uv: Vector2) -> void:
 	var screen := _uv_screen(ctx, uv)
 	check(FilmUI.require_on_screen(ctx, screen, "sketch hover"), "hover on screen at %s" % str(uv))
 	await _motion(vp, screen)
@@ -331,7 +318,7 @@ func _click_screen_jitter(vp: Viewport, pos: Vector2, jitter: Vector2) -> void:
 
 
 func _frame_key(vp: Viewport, shift: bool) -> void:
-	await _push_key(vp, KEY_F, shift)
+	await _push_key_local(vp, KEY_F, shift)
 	await create_timer(0.45).timeout
 	await process_frame
 
@@ -346,7 +333,7 @@ func _click_frame(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -361,33 +348,6 @@ func _push_key(vp: Viewport, keycode: Key, shift: bool) -> void:
 	up.shift_pressed = shift
 	up.echo = false
 	vp.push_input(up)
-	await process_frame
-	await process_frame
-
-
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
 	await process_frame
 	await process_frame
 

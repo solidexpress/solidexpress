@@ -1,29 +1,16 @@
 # Rung 1 replan 11 WP7 — Centerline chips stack under the Contours row.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan11_chrome.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan11 WP7 chrome stack")
 	FilmUI.reset_fail_count()
 	await test_centerline_clears_contours()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_centerline_clears_contours() -> void:

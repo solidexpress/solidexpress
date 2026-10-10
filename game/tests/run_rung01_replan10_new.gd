@@ -1,22 +1,10 @@
 # Rung 1 replan 10 WP4 — File > New puts the finish bar back to New / Blind / no Up To Surface face.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan10_new.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -24,8 +12,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await test_new_resets_finish_bar()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_new_resets_finish_bar() -> void:
@@ -124,26 +111,6 @@ func _shutdown(ctx: FilmContext) -> void:
 func _x11_click(ctrl: Control) -> void:
 	var pos := ctrl.get_global_rect().get_center()
 	await _x11_click_screen(ctrl.get_viewport(), pos)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _x11_key(vp: Viewport, keycode: Key) -> void:

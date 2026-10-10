@@ -1,21 +1,9 @@
 # Rung 1 WP1 — empty part, one Esc, TriBall does not eat the next click,
 # hex pocket panel, AF/resize clamp, move stays available.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_chrome_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c:
-		print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 
 func _init() -> void:
@@ -28,8 +16,7 @@ func _init() -> void:
 	await test_move_twice_after_af()
 	await test_typed_xy()
 	check(FilmUI.fail_count == 0, "FilmUI reported no missing controls")
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func _boot() -> Array:

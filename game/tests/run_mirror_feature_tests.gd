@@ -1,18 +1,6 @@
 # Headless smoke: feature-level Mirror (source_feature_ids), not body-only.
 # Run: tools/godot/godot --headless --path game --script tests/run_mirror_feature_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _feature_output_body(doc: SxDocument, fid: String) -> String:
@@ -26,8 +14,7 @@ func _init() -> void:
 	print("feature-level mirror binding tests")
 	test_body_mirror_still_works()
 	test_feature_mirror_extrude_cut()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_body_mirror_still_works() -> void:
