@@ -111,9 +111,13 @@ func run_film(ctx: FilmContext) -> void:
 	await ctx.beat("Round the neck and faces", 0.45)
 	body = _only_body(ctx)
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
+	await _select_body(ctx, body)
 	await _fillet_neck(ctx, body, far_x)
+	await _select_body(ctx, body)
 	await _fillet_at(ctx, body, Vector3(200, -16, 10), 1.0, KEY_3)
+	await _select_body(ctx, body)
 	await _fillet_at(ctx, body, Vector3(50, 0, 0), 1.0, KEY_8)
+	await _select_body(ctx, body)
 	await _fillet_at(ctx, body, Vector3(93.5, 0, 7.5), 1.0, KEY_3)
 	if not _ok():
 		return
@@ -339,8 +343,27 @@ func _pick_option(ctx: FilmContext, opt: OptionButton, index: int, desc: String)
 	await FilmUI.wait_frames(ctx.tree, 4)
 
 
+func _select_body(ctx: FilmContext, body: String) -> void:
+	await SxInput.push_key(ctx.main.get_viewport(), KEY_4)
+	await FilmUI.wait_frames(ctx.tree, 2)
+	var screen := FilmUI.model_to_screen(ctx, Vector3(100, 0, 7))
+	if FilmUI.is_on_screen(ctx, screen):
+		await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Select wrench"))
+	if ctx.view.selected_body != body:
+		var bb: Dictionary = ctx.view.doc.measure_bbox(body)
+		if not bb.is_empty():
+			var mid: Vector3 = (bb["min"] as Vector3 + bb["max"] as Vector3) * 0.5
+			screen = FilmUI.model_to_screen(ctx, mid)
+			if FilmUI.is_on_screen(ctx, screen):
+				await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Select wrench centre"))
+	await FilmUI.wait_frames(ctx.tree, 3)
+
+
 func _arm_fillet(ctx: FilmContext, radius: float) -> void:
-	var btn := FilmUI.find_button(ctx.main, "Fillet")
+	var btn: Button = ctx.main.interaction._strip_fillet
+	if btn == null or not btn.is_visible_in_tree():
+		FilmUI._fail("Fillet chip on the selection strip is hidden")
+		return
 	if not await FilmUI.click_control(ctx, btn, FilmUICues.alert("Fillet", "Arm fillet")):
 		return
 	await FilmUI.wait_frames(ctx.tree, 2)
@@ -350,7 +373,8 @@ func _arm_fillet(ctx: FilmContext, radius: float) -> void:
 		return
 	var edit: LineEdit = spin.get_line_edit()
 	await SxInput.x11_click(edit)
-	await SxInput.type_text(edit.get_viewport(), str(radius))
+	var digits := str(int(round(radius))) if is_equal_approx(radius, round(radius)) else str(radius)
+	await SxInput.type_text(edit.get_viewport(), digits)
 	await SxInput.push_key(edit.get_viewport(), KEY_ENTER)
 	await FilmUI.wait_frames(ctx.tree, 2)
 
@@ -361,8 +385,6 @@ func _commit_fillet(ctx: FilmContext) -> void:
 
 
 func _fillet_neck(ctx: FilmContext, body: String, neck_x: float) -> void:
-	await FilmUI.viewport_click(ctx, FilmUI.model_to_screen(ctx, Vector3(90, 0, 5)),
-			FilmUICues.alert("Click", "Select wrench body"))
 	await _arm_fillet(ctx, 10.0)
 	await SxInput.push_key(ctx.main.get_viewport(), KEY_1)
 	await FilmUI.wait_frames(ctx.tree, 2)
