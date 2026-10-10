@@ -42,13 +42,16 @@ assignment to current_dir and a call to _dimension_label_pos2.
 """
 from __future__ import annotations
 
+import argparse
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WALK = ROOT / "game" / "tests" / "run_rung01_wrench.gd"
 TESTS = ROOT / "game" / "tests"
+Rule = tuple[str, tuple[str, ...], tuple[Callable[..., None], ...], int]
 ALLOWED_SIZE = (1280, 800)
 REPLAN3_FORBIDDEN = (
     "interaction._input",
@@ -301,123 +304,65 @@ def _lint_walk_smart_dim(src: str, errors: list[str]) -> None:
         )
 
 
-def _lint_replan3(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan3_*.gd"))
-    if not paths:
-        errors.append(f"no run_rung01_replan3_*.gd scripts under {TESTS}")
-        return
+def _apply_rule(rule: Rule, errors: list[str]) -> list[Path]:
+    glob, forbidden, extra, min_files = rule
+    paths = sorted(TESTS.glob(glob))
+    if min_files and len(paths) < min_files and TESTS == ROOT / "game" / "tests":
+        errors.append(f"expected at least {min_files} {glob} under {TESTS}")
     for path in paths:
         src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
-        for needle in REPLAN3_FORBIDDEN:
-            for m in re.finditer(re.escape(needle), src):
-                errors.append(f"{rel}:{_line_of(src, m.start())}: {needle}")
-
-
-def _lint_replan4(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan4_*.gd"))
-    if not paths:
-        errors.append(f"no run_rung01_replan4_*.gd scripts under {TESTS}")
-        return
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
+        try:
+            rel = path.relative_to(ROOT)
+        except ValueError:
+            rel = path
         prefix = f"{rel}:"
-        _lint_needles(src, REPLAN3_FORBIDDEN, errors, prefix)
-        _lint_needles(src, REPLAN4_EXTRA_FORBIDDEN, errors, prefix)
-        _lint_text_assignment(src, errors, prefix)
-        _lint_x11_click_await(src, errors, prefix)
+        _lint_needles(src, forbidden, errors, prefix)
+        for fn in extra:
+            fn(src, errors, prefix, path)
+    return paths
 
 
-def _lint_replan5(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan5_*.gd"))
-    if not paths:
-        errors.append(f"no run_rung01_replan5_*.gd scripts under {TESTS}")
+def _extra_replan4(src: str, errors: list[str], prefix: str, _path: Path) -> None:
+    _lint_text_assignment(src, errors, prefix)
+    _lint_x11_click_await(src, errors, prefix)
+
+
+def _extra_replan5(src: str, errors: list[str], prefix: str, _path: Path) -> None:
+    _lint_text_assignment(src, errors, prefix)
+    _lint_x11_click_await(src, errors, prefix)
+
+
+def _extra_replan6(src: str, errors: list[str], prefix: str, _path: Path) -> None:
+    _lint_text_assignment(src, errors, prefix)
+    _lint_x11_click_await(src, errors, prefix)
+    _lint_current_dir_assignment(src, errors, prefix)
+    _lint_dimension_label_pos2(src, errors, prefix)
+
+
+def _extra_replan7(src: str, errors: list[str], prefix: str, _path: Path) -> None:
+    _lint_text_assignment(src, errors, prefix)
+    _lint_x11_click_await(src, errors, prefix)
+    _lint_current_dir_assignment(src, errors, prefix)
+    _lint_dimension_label_pos2(src, errors, prefix)
+
+
+def _extra_replan11(src: str, errors: list[str], prefix: str, path: Path) -> None:
+    skip_look_along = path.name == "run_rung01_replan11_dimhit.gd"
+    _lint_replan11_camera(src, errors, prefix, skip_look_along=skip_look_along)
+    if path.name in REPLAN11_VALIDATION:
         return
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
-        prefix = f"{rel}:"
-        _lint_needles(src, REPLAN5_FORBIDDEN, errors, prefix)
-        _lint_text_assignment(src, errors, prefix)
-        _lint_x11_click_await(src, errors, prefix)
+    _lint_needles(src, REPLAN7_FORBIDDEN, errors, prefix)
+    _lint_text_assignment(src, errors, prefix)
+    _lint_x11_click_await(src, errors, prefix)
+    _lint_current_dir_assignment(src, errors, prefix)
 
 
-def _lint_replan6(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan6_*.gd"))
-    if not paths:
-        errors.append(f"no run_rung01_replan6_*.gd scripts under {TESTS}")
-        return
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
-        prefix = f"{rel}:"
-        _lint_needles(src, REPLAN5_FORBIDDEN, errors, prefix)
-        _lint_text_assignment(src, errors, prefix)
-        _lint_x11_click_await(src, errors, prefix)
-        _lint_current_dir_assignment(src, errors, prefix)
-        _lint_dimension_label_pos2(src, errors, prefix)
+def _extra_replan12(src: str, errors: list[str], prefix: str, _path: Path) -> None:
+    _lint_replan11_camera(src, errors, prefix)
 
 
-def _lint_replan7(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan7_*.gd"))
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
-        prefix = f"{rel}:"
-        _lint_needles(src, REPLAN7_FORBIDDEN, errors, prefix)
-        _lint_text_assignment(src, errors, prefix)
-        _lint_x11_click_await(src, errors, prefix)
-        _lint_current_dir_assignment(src, errors, prefix)
-        _lint_dimension_label_pos2(src, errors, prefix)
-
-
-def _lint_replan8(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan8_*.gd"))
-    if not paths:
-        errors.append(f"no run_rung01_replan8_*.gd scripts under {TESTS}")
-        return
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
-        prefix = f"{rel}:"
-        _lint_needles(src, REPLAN7_FORBIDDEN, errors, prefix)
-        _lint_text_assignment(src, errors, prefix)
-        _lint_x11_click_await(src, errors, prefix)
-        _lint_current_dir_assignment(src, errors, prefix)
-        _lint_dimension_label_pos2(src, errors, prefix)
-
-
-def _lint_replan9(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan9_*.gd"))
-    if not paths:
-        errors.append(f"no run_rung01_replan9_*.gd scripts under {TESTS}")
-        return
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
-        prefix = f"{rel}:"
-        _lint_needles(src, REPLAN7_FORBIDDEN, errors, prefix)
-        _lint_text_assignment(src, errors, prefix)
-        _lint_x11_click_await(src, errors, prefix)
-        _lint_current_dir_assignment(src, errors, prefix)
-        _lint_dimension_label_pos2(src, errors, prefix)
-
-
-def _lint_replan10(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan10_*.gd"))
-    if not paths:
-        errors.append(f"no run_rung01_replan10_*.gd scripts under {TESTS}")
-        return
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
-        prefix = f"{rel}:"
-        _lint_needles(src, REPLAN7_FORBIDDEN, errors, prefix)
-        _lint_text_assignment(src, errors, prefix)
-        _lint_x11_click_await(src, errors, prefix)
-        _lint_current_dir_assignment(src, errors, prefix)
-        _lint_dimension_label_pos2(src, errors, prefix)
+def _extra_replan_n(src: str, errors: list[str], prefix: str, _path: Path) -> None:
+    _lint_replan11_camera(src, errors, prefix, extra_yaw_pitch_ok=("_zoom_model",))
 
 
 def _lint_replan11_camera(
@@ -457,46 +402,21 @@ def _lint_walk_replan11_camera(src: str, errors: list[str]) -> None:
             errors.append(f"{name} contains _zoom(")
 
 
-def _lint_replan11(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan11_*.gd"))
-    if len(paths) != 11:
-        errors.append("expected 11 run_rung01_replan11_*.gd")
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT)
-        prefix = f"{rel}:"
-        # dimhit's header comment names _look_along as forbidden and does not
-        # call it. Exempt that needle for this file only.
-        skip_look_along = path.name == "run_rung01_replan11_dimhit.gd"
-        _lint_replan11_camera(src, errors, prefix, skip_look_along=skip_look_along)
-        if path.name in REPLAN11_VALIDATION:
-            continue
-        _lint_needles(src, REPLAN7_FORBIDDEN, errors, prefix)
-        _lint_text_assignment(src, errors, prefix)
-        _lint_x11_click_await(src, errors, prefix)
-        _lint_current_dir_assignment(src, errors, prefix)
-
-
-def _lint_replan12(errors: list[str]) -> None:
-    paths = sorted(TESTS.glob("run_rung01_replan12_*.gd"))
-    if len(paths) != 10:
-        errors.append("expected 10 run_rung01_replan12_*.gd")
-    for path in paths:
-        src = path.read_text(encoding="utf-8")
-        prefix = f"{path.relative_to(ROOT)}:"
-        # These are validation suites: script-side setup (insert_primitive,
-        # select_entity to arm) is allowed, but the pointer and camera paths
-        # under test must be real keys and events.
-        _lint_replan11_camera(src, errors, prefix)
+RULES: list[Rule] = [
+    ("run_rung01_replan3_*.gd", REPLAN3_FORBIDDEN, (), 1),
+    ("run_rung01_replan4_*.gd", REPLAN3_FORBIDDEN + REPLAN4_EXTRA_FORBIDDEN, (_extra_replan4,), 1),
+    ("run_rung01_replan5_*.gd", REPLAN5_FORBIDDEN, (_extra_replan5,), 1),
+    ("run_rung01_replan6_*.gd", REPLAN5_FORBIDDEN, (_extra_replan6,), 1),
+    ("run_rung01_replan7_*.gd", REPLAN7_FORBIDDEN, (_extra_replan7,), 1),
+    ("run_rung01_replan8_*.gd", REPLAN7_FORBIDDEN, (_extra_replan7,), 1),
+    ("run_rung01_replan9_*.gd", REPLAN7_FORBIDDEN, (_extra_replan7,), 1),
+    ("run_rung01_replan10_*.gd", REPLAN7_FORBIDDEN, (_extra_replan7,), 1),
+    ("run_rung01_replan11_*.gd", (), (_extra_replan11,), 1),
+    ("run_rung01_replan12_*.gd", (), (_extra_replan12,), 1),
+]
 
 
 def _lint_replan_n(errors: list[str]) -> dict[int, list[Path]]:
-    """Camera needles for run_rung01_replan<N>_*.gd, N >= 13.
-
-    Requires at least one script for N in {13, 14, 15}. Later rounds
-    (replan 16 and on) are linted when their scripts exist, so registering
-    one is a new file, not an edit here.
-    """
     by_n: dict[int, list[Path]] = {}
     pat = re.compile(r"run_rung01_replan(\d+)_.*\.gd$")
     for path in sorted(TESTS.glob("run_rung01_replan*.gd")):
@@ -510,13 +430,14 @@ def _lint_replan_n(errors: list[str]) -> dict[int, list[Path]]:
     for n in (13, 14, 15):
         if len(by_n.get(n, [])) < 1:
             errors.append(f"expected at least 1 run_rung01_replan{n}_*.gd")
-    for n in sorted(by_n):
-        for path in by_n[n]:
+    for n, paths in sorted(by_n.items()):
+        for path in paths:
             src = path.read_text(encoding="utf-8")
-            prefix = f"{path.relative_to(ROOT)}:"
-            _lint_replan11_camera(
-                src, errors, prefix, extra_yaw_pitch_ok=("_zoom_model",)
-            )
+            try:
+                rel = path.relative_to(ROOT)
+            except ValueError:
+                rel = path
+            _extra_replan_n(src, errors, f"{rel}:", path)
     return by_n
 
 
@@ -534,24 +455,24 @@ def _lint_sx_lib(errors: list[str]) -> None:
         _lint_replan11_camera(src, errors, prefix, extra_yaw_pitch_ok=("zoom", "_zoom"))
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tests-dir", type=Path, default=None)
+    args = parser.parse_args(argv)
+    global TESTS
+    if args.tests_dir is not None:
+        TESTS = args.tests_dir
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
         return 1
     src = WALK.read_text(encoding="utf-8")
     errors: list[str] = []
     _lint_walk(src, errors)
-    _lint_sx_lib(errors)
-    _lint_replan3(errors)
-    _lint_replan4(errors)
-    _lint_replan5(errors)
-    _lint_replan6(errors)
-    _lint_replan7(errors)
-    _lint_replan8(errors)
-    _lint_replan9(errors)
-    _lint_replan10(errors)
-    _lint_replan11(errors)
-    _lint_replan12(errors)
+    if (TESTS / "lib" / "sx_input.gd").is_file() or (TESTS / "lib" / "sx_suite.gd").is_file():
+        _lint_sx_lib(errors)
+    matched: dict[str, list[Path]] = {}
+    for rule in RULES:
+        matched[rule[0]] = _apply_rule(rule, errors)
     replan_n = _lint_replan_n(errors)
 
     if errors:
@@ -559,27 +480,21 @@ def main() -> int:
         for e in errors:
             print(f"  {e}", file=sys.stderr)
         return 1
-    n3 = len(list(TESTS.glob("run_rung01_replan3_*.gd")))
-    n4 = len(list(TESTS.glob("run_rung01_replan4_*.gd")))
-    n5 = len(list(TESTS.glob("run_rung01_replan5_*.gd")))
-    n6 = len(list(TESTS.glob("run_rung01_replan6_*.gd")))
-    n7 = len(list(TESTS.glob("run_rung01_replan7_*.gd")))
-    n8 = len(list(TESTS.glob("run_rung01_replan8_*.gd")))
-    n9 = len(list(TESTS.glob("run_rung01_replan9_*.gd")))
-    n10 = len(list(TESTS.glob("run_rung01_replan10_*.gd")))
-    n11 = len(list(TESTS.glob("run_rung01_replan11_*.gd")))
     print(f"lint_rung01_e2e: {WALK} is clean")
-    print(f"lint_rung01_e2e: {n3} replan3 scripts are clean")
-    print(f"lint_rung01_e2e: {n4} replan4 scripts are clean")
-    print(f"lint_rung01_e2e: {n5} replan5 scripts are clean")
-    print(f"lint_rung01_e2e: {n6} replan6 scripts are clean")
-    print(f"lint_rung01_e2e: {n7} replan7 scripts are clean")
-    print(f"lint_rung01_e2e: {n8} replan8 scripts are clean")
-    print(f"lint_rung01_e2e: {n9} replan9 scripts are clean")
-    print(f"lint_rung01_e2e: {n10} replan10 scripts are clean")
-    print(f"lint_rung01_e2e: {n11} replan11 scripts are clean")
-    n12 = len(list(TESTS.glob("run_rung01_replan12_*.gd")))
-    print(f"lint_rung01_e2e: {n12} replan12 scripts are clean")
+    labels = (
+        (3, "run_rung01_replan3_*.gd"),
+        (4, "run_rung01_replan4_*.gd"),
+        (5, "run_rung01_replan5_*.gd"),
+        (6, "run_rung01_replan6_*.gd"),
+        (7, "run_rung01_replan7_*.gd"),
+        (8, "run_rung01_replan8_*.gd"),
+        (9, "run_rung01_replan9_*.gd"),
+        (10, "run_rung01_replan10_*.gd"),
+        (11, "run_rung01_replan11_*.gd"),
+        (12, "run_rung01_replan12_*.gd"),
+    )
+    for n, glob in labels:
+        print(f"lint_rung01_e2e: {len(matched[glob])} replan{n} scripts are clean")
     for n, paths in sorted(replan_n.items()):
         print(f"lint_rung01_e2e: {len(paths)} replan{n} scripts are clean")
     return 0

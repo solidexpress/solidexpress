@@ -47,6 +47,7 @@ test-tools:
 	@if [ -f tools/test_check_rung01.py ]; then python3 tools/test_check_rung01.py; fi
 	python3 tools/lint_suites.py
 	python3 tools/test_lint_suites.py
+	python3 tools/test_lint_rung01_e2e.py
 
 test: test-kernel
 	python3 tools/lint_rung01_e2e.py
