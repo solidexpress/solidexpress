@@ -1,6 +1,6 @@
 ---
 description: Marketing site download buttons must always target the GitHub latest release only
-globs: website/**/*.{html,js,md} docs/index.html docs/features.html
+globs: website/**/*.{html,js,md}
 alwaysApply: false
 ---
 
