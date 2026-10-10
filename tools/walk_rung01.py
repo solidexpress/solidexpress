@@ -824,16 +824,19 @@ class Walk:
                 if self._in_badge(screen, badges, pad=6.0):
                     continue
                 # Coincident marks are hidden until the pointer is near the
-                # vertex. Hover, then skip a sample the appearing badge covers.
+                # vertex. Hover and skip a sample that lands in the badge.
+                # Pad 0: a 6 px pad covers the whole short wall at 1920×1200.
                 try:
                     self.d.hover(screen=screen)
                     self.d.wait_idle(frames=1)
                     self.refresh("glyphs")
                 except SxError:
                     pass
-                if self._in_badge(screen, self._badge_rects(), pad=6.0):
+                if self._in_badge(screen, self._badge_rects(), pad=0.0):
                     continue
-                if any((screen[0] - p[0]) ** 2 + (screen[1] - p[1]) ** 2 < 9.0 for p in points):
+                # 2 px apart. The clear span beside a vertex badge is only
+                # about 20 px, and a 3 px gap cannot fit 8 samples in it.
+                if any((screen[0] - p[0]) ** 2 + (screen[1] - p[1]) ** 2 < 4.0 for p in points):
                     continue
                 points.append(screen)
                 if len(points) >= count:

@@ -9249,10 +9249,8 @@ func _coincident_place_cost(items: Array, index: int, natural: Vector2, centre: 
 	var rect := Rect2(centre - size * 0.5, size)
 	var dist := natural.distance_to(centre)
 	var cost := 0.0
-	# The walk measures the reprojected leader and rejects anything over 40.
-	# A centre placed at 40 lands a fraction past that after the plane round-trip.
-	if dist > 38.5:
-		cost += 2000000.0 + (dist - 38.5) * 40.0
+	if dist > GLYPH_MAX_OFFSET_PX + 0.5:
+		cost += 2000000.0 + (dist - GLYPH_MAX_OFFSET_PX) * 40.0
 	for j in range(items.size()):
 		if j == index:
 			continue
@@ -9284,7 +9282,28 @@ func _coincident_place_cost(items: Array, index: int, natural: Vector2, centre: 
 			cost += 4000.0
 	if _glyph_below_part(rect, shaft_y):
 		cost += 8000.0 + (rect.end.y - shaft_y) * 20.0
+	# A 38 px badge centred on the vertex covers the short jaw wall at
+	# 1920×1200, so every wall sample selects the constraint. Sit off the line.
+	cost += _coincident_line_penalty(rect)
 	return cost
+
+
+func _coincident_line_penalty(rect: Rect2) -> float:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if sketch == null or cam == null:
+		return 0.0
+	var worst := 0.0
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		if info.is_empty() or bool(info.get("construction", false)):
+			continue
+		if str(info.get("type", "")) != "line":
+			continue
+		for s in _curve_screen_samples(info, cam):
+			var gap := _point_rect_gap_px(s, rect)
+			if gap + 0.01 < 4.0:
+				worst = maxf(worst, 90000.0 + (4.0 - gap) * 100.0)
+	return worst
 
 
 func _relax_glyph_layout(items: Array, labels: Array[Rect2], cam: Camera3D,
