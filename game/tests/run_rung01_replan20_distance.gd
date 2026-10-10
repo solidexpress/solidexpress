@@ -2,23 +2,11 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan20_distance.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -26,8 +14,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _story()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _story() -> void:
@@ -66,7 +53,7 @@ func _boot() -> FilmContext:
 func _build(ctx: FilmContext, radius_text: String) -> String:
 	print("- circle, extrude 10, fillet r%s" % radius_text)
 	await FilmUI.enter_sketch(ctx)
-	await _zoom(ctx, Vector2.ZERO, 4.0)
+	await _zoom_local(ctx, Vector2.ZERO, 4.0)
 	await FilmUI.select_sketch_tool(ctx, ctx.main.sketch_mode, SketchMode.Tool.CIRCLE)
 	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, Vector2.ZERO, "circle centre")
 	await process_frame
@@ -568,7 +555,7 @@ func _pick_option(ctx: FilmContext, opt: OptionButton, index: int) -> void:
 	await process_frame
 
 
-func _zoom(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
+func _zoom_local(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
 	var cam = ctx.main.camera
 	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():

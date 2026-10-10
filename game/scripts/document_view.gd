@@ -1834,15 +1834,6 @@ func set_import_scale(body_id: String, scale: float) -> bool:
 	select_entity(keep, "")
 	return true
 
-
-## Feature id for an import body, or "".
-func import_feature_id(body_id: String) -> String:
-	if not is_import_body(body_id):
-		return ""
-	return feature_of_body(body_id)
-
-
-## Select a component instance (clears body/face/edge selection).
 func select_instance(instance_id: String) -> void:
 	select_entity("", "")
 	selected_instance = instance_id
@@ -2378,13 +2369,6 @@ func set_selection_alias(text: String) -> void:
 	var target := selected_face if selected_face != "" else selected_body
 	if target != "":
 		doc.set_card_alias(target, text)
-
-
-func set_selection_notes(text: String) -> void:
-	var target := selected_face if selected_face != "" else selected_body
-	if target != "":
-		doc.set_card_notes(target, text)
-
 
 func undo() -> bool:
 	var ok := doc.undo()

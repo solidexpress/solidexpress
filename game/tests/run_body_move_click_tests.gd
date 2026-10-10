@@ -2,19 +2,7 @@
 # Synthetic InputEventMouseButton press+release (and press-move-release)
 # through ViewportInteraction._handle_model_pointer.
 # Run: tools/godot/godot --headless --path game --script tests/run_body_move_click_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -32,8 +20,7 @@ func _init() -> void:
 	await test_drag_past_dead_zone_moves(main)
 	await test_esc_cancels_in_progress_move(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _center(view: DocumentView, id: String) -> Vector3:

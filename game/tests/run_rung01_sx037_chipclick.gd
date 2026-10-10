@@ -4,22 +4,9 @@
 # Ctrl+Z / Ctrl+Shift+Z are real Viewport.push_input events.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_sx037_chipclick.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -27,8 +14,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await test_centerline_chip_and_suggestions()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_centerline_chip_and_suggestions() -> void:
@@ -138,11 +124,11 @@ func test_centerline_chip_and_suggestions() -> void:
 	await process_frame
 	check(removed == 1, "deleted the centerline")
 	check(_construction_count(sm) == base_construction, "centerline is gone before undo")
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	check(_construction_count(sm) == base_construction + 1, "Ctrl+Z restores the centerline")
 	var after_undo := _suggestion_labels(ctx)
 	check(after_undo.is_empty(), "undo leaves no suggestion chips (got %s)" % str(after_undo))
-	await _push_key(vp, KEY_Z, true, true)
+	await _push_key_local(vp, KEY_Z, true, true)
 	check(_construction_count(sm) == base_construction, "Ctrl+Shift+Z removes the centerline again")
 	var after_redo := _suggestion_labels(ctx)
 	check(after_redo.is_empty(), "redo leaves no suggestion chips (got %s)" % str(after_redo))
@@ -256,13 +242,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, vp: Viewport, uv: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	check(FilmUI.require_on_screen(ctx, screen, "sketch click"), "sketch click on screen at %s" % str(uv))
-	await _x11_click_screen(vp, screen)
-
-
 func _x11_click(ctrl: Control) -> void:
 	if ctrl == null:
 		check(false, "click target exists")
@@ -270,27 +249,7 @@ func _x11_click(ctrl: Control) -> void:
 	await _x11_click_screen(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

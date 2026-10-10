@@ -1,23 +1,11 @@
 # Rung 1 replan 5 WP1 — discarded open-profile Exit leaves a usable session.
 # Clicks are one X11 burst (no await between mouse-down and mouse-up).
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan5_session.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -26,8 +14,7 @@ func _init() -> void:
 	_assert_source_hygiene()
 	await test_discard_open_profile_then_circle()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _assert_source_hygiene() -> void:
@@ -62,8 +49,8 @@ func test_discard_open_profile_then_circle() -> void:
 	check(sm != null and sm.active, "ground sketch session is open")
 	await _zoom(ctx, Vector3(20, 15, 0), 80.0)
 	await _select_tool(ctx, "Rectangle")
-	await _click_uv(ctx, Vector2(0, 0), "Rect corner A")
-	await _click_uv(ctx, Vector2(40, 30), "Rect corner B")
+	await _click_uv_local(ctx, Vector2(0, 0), "Rect corner A")
+	await _click_uv_local(ctx, Vector2(40, 30), "Rect corner B")
 	await process_frame
 	var n_lines := _count_profile_lines(sm)
 	check(n_lines >= 4, "rectangle has four edges (got %d)" % n_lines)
@@ -101,12 +88,12 @@ func test_discard_open_profile_then_circle() -> void:
 	check(not edge_mids.is_empty(), "reopened sketch still has a rectangle edge")
 	for mid in edge_mids:
 		await _zoom(ctx, sm.to_model(mid), 50.0)
-		await _click_uv(ctx, mid, "Select rectangle edge")
+		await _click_uv_local(ctx, mid, "Select rectangle edge")
 		await process_frame
 		if sm.selected.size() >= 1:
 			break
 	if sm.selected.is_empty() and not edge_mids.is_empty():
-		await _click_uv(ctx, edge_mids[0], "Select rectangle edge again")
+		await _click_uv_local(ctx, edge_mids[0], "Select rectangle edge again")
 		await process_frame
 	check(sm.selected.size() >= 1, "one rectangle edge is selected (got %d)" % sm.selected.size())
 	var before_ids := sm.sketch.entity_ids() if sm.sketch != null else PackedStringArray()
@@ -146,8 +133,8 @@ func test_discard_open_profile_then_circle() -> void:
 		await _zoom(ctx, sm.plane_origin, 120.0)
 	await _select_tool(ctx, "Circle")
 	_status_log.clear()
-	await _click_uv(ctx, Vector2(0, 0), "Circle centre")
-	await _click_uv(ctx, Vector2(8, 0), "Circle rim")
+	await _click_uv_local(ctx, Vector2(0, 0), "Circle centre")
+	await _click_uv_local(ctx, Vector2(8, 0), "Circle rim")
 	await process_frame
 	status_text = str(ctx.main.status_label.text)
 	check(status_text.contains("Circle") or _status_has("Circle"),
@@ -190,32 +177,6 @@ func _status_has(needle: String) -> bool:
 		if s.contains(needle):
 			return true
 	return false
-
-
-func _x11_click(ctrl: Control) -> void:
-	var pos := ctrl.get_global_rect().get_center()
-	var vp := ctrl.get_viewport()
-	await _x11_click_screen(vp, pos)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _x11_type(vp: Viewport, text: String) -> void:
@@ -511,7 +472,7 @@ func _count_profile_lines(sm: SketchMode) -> int:
 	return n
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -550,3 +511,31 @@ func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
 	cam._update_transform()
 	await process_frame
 	await process_frame
+
+func _x11_click(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	await _x11_click_screen(vp, pos)
+
+
+func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.double_click = double_click
+	down.position = pos
+	down.global_position = pos
+	vp.push_input(down)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	vp.push_input(up)
+	await process_frame
+
+

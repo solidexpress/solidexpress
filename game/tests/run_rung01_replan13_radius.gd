@@ -6,30 +6,16 @@
 # number. Strip text for 10 must start with "10" (not a scrolled "0.0 mm").
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script res://tests/run_rung01_replan13_radius.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan13 WP3 fillet radius strip/panel")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _st(main) -> String:
@@ -162,7 +148,7 @@ func _last_fillet_fid(view: DocumentView) -> String:
 	return fid
 
 
-func _push_key(code: int, unicode: int = 0, ctrl := false) -> void:
+func _push_key_local(code: int, unicode: int = 0, ctrl := false) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code
@@ -175,10 +161,10 @@ func _push_key(code: int, unicode: int = 0, ctrl := false) -> void:
 	await process_frame
 
 
-func _type_text(text: String) -> void:
+func _type_text_local(text: String) -> void:
 	for i in text.length():
 		var ch := text.substr(i, 1)
-		await _push_key(_keycode_for_char(ch), ch.unicode_at(0))
+		await _push_key_local(_keycode_for_char(ch), ch.unicode_at(0))
 
 
 func _keycode_for_char(ch: String) -> Key:
@@ -193,14 +179,14 @@ func _keycode_for_char(ch: String) -> Key:
 func _focus_select_all(edit: LineEdit) -> void:
 	edit.grab_focus()
 	await process_frame
-	await _push_key(KEY_A, 0, true)
+	await _push_key_local(KEY_A, 0, true)
 	await process_frame
 
 
 func _type_into_spin(spin: SpinBox, digits: String) -> void:
 	var edit: LineEdit = spin.get_line_edit()
 	await _focus_select_all(edit)
-	await _type_text(digits)
+	await _type_text_local(digits)
 	await process_frame
 
 
@@ -239,7 +225,7 @@ func _run() -> void:
 	await _type_into_spin(ops._radius_spin, "10")
 	panel_le.grab_focus()
 	await process_frame
-	await _push_key(KEY_ENTER)
+	await _push_key_local(KEY_ENTER)
 	await process_frame
 	await process_frame
 	_observe(main, "after panel LineEdit typed 10 Enter")
@@ -263,7 +249,7 @@ func _run() -> void:
 	_agree_armed(main, 1.0, "7 start")
 	panel_le = ops._radius_spin.get_line_edit()
 	await _focus_select_all(panel_le)
-	await _type_text("0")
+	await _type_text_local("0")
 	await process_frame
 	_observe(main, "7 intermediate 0")
 	# Walk: strip latched the partial 0 and never caught up. Plant that stale
@@ -274,12 +260,12 @@ func _run() -> void:
 		if sle0 != null and not sle0.has_focus():
 			sle0.text = "0.0 mm"
 	await _focus_select_all(panel_le)
-	await _type_text("10")
+	await _type_text_local("10")
 	await process_frame
 	_observe(main, "7 panel typed 10 before Tab")
 	panel_le.grab_focus()
 	await process_frame
-	await _push_key(KEY_TAB)
+	await _push_key_local(KEY_TAB)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -298,7 +284,7 @@ func _run() -> void:
 	await _type_into_spin(spin, "1.5")
 	await process_frame
 	_observe(main, "8 strip typed 1.5 before Tab")
-	await _push_key(KEY_TAB)
+	await _push_key_local(KEY_TAB)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -323,7 +309,7 @@ func _run() -> void:
 	await _type_into_spin(spin, "10")
 	await process_frame
 	_observe(main, "9 strip typed 10 before Tab")
-	await _push_key(KEY_TAB)
+	await _push_key_local(KEY_TAB)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -338,7 +324,7 @@ func _run() -> void:
 				"null" if focus_owner == null else focus_owner.get_class()])
 	var cam: OrbitCamera = main.camera
 	var pitch_before := cam.pitch if cam != null else 0.0
-	await _push_key(KEY_3, 51)
+	await _push_key_local(KEY_3, 51)
 	await process_frame
 	await process_frame
 	check(cam != null and absf(cam.pitch - deg_to_rad(90.0)) < 0.05,
@@ -362,7 +348,7 @@ func _run() -> void:
 	spin = _strip(main)
 	await _type_into_spin(spin, "1.5")
 	await process_frame
-	await _push_key(KEY_ENTER)
+	await _push_key_local(KEY_ENTER)
 	await process_frame
 	await process_frame
 	_observe(main, "after strip typed 1.5 Enter")
@@ -376,7 +362,7 @@ func _run() -> void:
 		spin.get_line_edit().release_focus()
 	main.interaction.return_viewport_keys()
 	await process_frame
-	await _push_key(KEY_ENTER)
+	await _push_key_local(KEY_ENTER)
 	await process_frame
 	await process_frame
 	_observe(main, "after viewport Enter at 1.5")
@@ -389,7 +375,7 @@ func _run() -> void:
 	ops.arm_or_apply_fillet()
 	await process_frame
 	await process_frame
-	await _push_key(KEY_ESCAPE)
+	await _push_key_local(KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	check(_st(main).contains("Edge pick cancelled"),
@@ -482,7 +468,7 @@ func _run() -> void:
 	picked = _select_two_verticals(view, body2)
 	check(picked.size() == 2, "6: two vertical edges on the second box")
 	await process_frame
-	await _push_key(KEY_ENTER)
+	await _push_key_local(KEY_ENTER)
 	await process_frame
 	await process_frame
 	_observe(main, "after viewport Enter at 10")

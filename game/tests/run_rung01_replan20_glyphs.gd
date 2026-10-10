@@ -2,26 +2,14 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan20_glyphs.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HIT_SLOP := 14.0
 const CLEAR_PX := 18.0
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -29,8 +17,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _story()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _story() -> void:
@@ -124,7 +111,7 @@ func _badges(ctx: FilmContext, h: Vector2, s: float, angle_deg: float) -> void:
 		check(_saw("Dimension updated"), "angle Dimension updated")
 	await _zoom_head(ctx)
 	await _press_rail(ctx, "Select")
-	await _click_uv(ctx, Vector2(100, 70))
+	await _click_uv_local(ctx, Vector2(100, 70))
 	await process_frame
 	var walls := _jaw_walls(sm)
 	check(walls.size() == 3, "three jaw walls (got %d)" % walls.size())
@@ -187,10 +174,10 @@ func _badges(ctx: FilmContext, h: Vector2, s: float, angle_deg: float) -> void:
 		await process_frame
 	var clicks := 0
 	for uv in click_at:
-		await _click_uv(ctx, Vector2(100, 70))
+		await _click_uv_local(ctx, Vector2(100, 70))
 		await process_frame
 		_log.clear()
-		await _click_uv(ctx, uv)
+		await _click_uv_local(ctx, uv)
 		await process_frame
 		var status := str(ctx.main.status_label.text)
 		var entity := status == "Selected 1 sketch entity" or _saw("Selected 1 sketch entity")
@@ -245,11 +232,11 @@ func _badges(ctx: FilmContext, h: Vector2, s: float, angle_deg: float) -> void:
 			check(false, "press on %s glyph (missing)" % type)
 			continue
 		_log.clear()
-		await _click_uv(ctx, at)
+		await _click_uv_local(ctx, at)
 		await process_frame
 		check(_saw("Constraint selected: %s — Del removes it" % type) or str(ctx.main.status_label.text) == "Constraint selected: %s — Del removes it" % type,
 				"press on %s glyph (got '%s')" % [type, ctx.main.status_label.text])
-		await _click_uv(ctx, Vector2(100, 70))
+		await _click_uv_local(ctx, Vector2(100, 70))
 
 
 func _walk_sketch(ctx: FilmContext, h: Vector2, s: float) -> void:
@@ -305,7 +292,7 @@ func _infer(ctx: FilmContext) -> void:
 			"Jaw is already open — nothing left to trim here (got '%s')" % ctx.main.status_label.text)
 	_assert_hidden(ctx, "already open")
 	await _press_rail(ctx, "Line")
-	await _click_uv(ctx, Vector2(60, 40))
+	await _click_uv_local(ctx, Vector2(60, 40))
 	await process_frame
 	await _key(ctx, KEY_T, 0)
 	await process_frame
@@ -372,7 +359,7 @@ func _show_v(ctx: FilmContext) -> bool:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await _press_rail(ctx, "Line")
 	var origin := Vector2(60, 40)
-	await _click_uv(ctx, origin)
+	await _click_uv_local(ctx, origin)
 	await process_frame
 	await _motion_uv(ctx, origin + Vector2(0, 30))
 	await process_frame
@@ -388,7 +375,7 @@ func _finish_v_line(ctx: FilmContext) -> void:
 	if sm._tool_points.is_empty():
 		return
 	var origin: Vector2 = sm._tool_points[sm._tool_points.size() - 1]
-	await _click_uv(ctx, origin + Vector2(0, 25))
+	await _click_uv_local(ctx, origin + Vector2(0, 25))
 	await process_frame
 
 
@@ -415,7 +402,7 @@ func _delete_throwaway(ctx: FilmContext) -> void:
 		if a.distance_to(Vector2(60, 40)) < 2.0 or b.distance_to(Vector2(60, 40)) < 2.0:
 			hit = (a + b) * 0.5
 			break
-	await _click_uv(ctx, hit)
+	await _click_uv_local(ctx, hit)
 	await process_frame
 	await _show_v(ctx)
 	await _key(ctx, KEY_DELETE, 0)
@@ -573,7 +560,7 @@ func _edit_drawn(ctx: FilmContext, degree: bool, text: String) -> void:
 
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String, second: bool) -> void:
 	await _press_rail(ctx, "Circle")
-	await _click_uv(ctx, center)
+	await _click_uv_local(ctx, center)
 	await _motion_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text, second)
 
@@ -601,9 +588,9 @@ func _smart_dim_gap(ctx: FilmContext) -> void:
 		check(false, "Smart Dim needs two circles (got %d)" % circs.size())
 		return
 	await _press_rail(ctx, "Smart Dim")
-	await _click_uv(ctx, circs[0]["center"])
+	await _click_uv_local(ctx, circs[0]["center"])
 	await process_frame
-	await _click_uv(ctx, circs[1]["center"])
+	await _click_uv_local(ctx, circs[1]["center"])
 	await process_frame
 	await process_frame
 	var ix: ViewportInteraction = ctx.main.interaction
@@ -626,11 +613,11 @@ func _shaft_lines(ctx: FilmContext) -> void:
 			circs.append(info)
 	await _zoom(ctx, Vector3(100, 0, 0), 280.0)
 	await _press_rail(ctx, "Select")
-	await _click_uv(ctx, Vector2(100.0, 80.0))
+	await _click_uv_local(ctx, Vector2(100.0, 80.0))
 	await process_frame
 	for c in circs:
 		var top: Vector2 = (c["center"] as Vector2) + Vector2(0.0, float(c["radius"]))
-		await _click_uv(ctx, top)
+		await _click_uv_local(ctx, top)
 		await process_frame
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Shaft Lines")
 	check(chip != null and chip.is_visible_in_tree(), "Shaft Lines chip is visible")
@@ -674,8 +661,8 @@ func _type_dim(ctx: FilmContext, text: String, second: bool) -> void:
 
 func _draw_line(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
 	await _press_rail(ctx, "Line")
-	await _click_uv(ctx, a)
-	await _click_uv(ctx, b)
+	await _click_uv_local(ctx, a)
+	await _click_uv_local(ctx, b)
 	await process_frame
 
 
@@ -764,7 +751,7 @@ func _pointer_click(ctx: FilmContext, pos: Vector2) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await _pointer_click(ctx, FilmUI.model_to_screen(ctx, sm.to_model(uv)))
 

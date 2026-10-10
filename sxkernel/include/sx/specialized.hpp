@@ -28,10 +28,6 @@ ConfigBom config_bom(const Document& doc);
 bool fillet_c2(Document& doc, const EntityId& body, const std::vector<int>& edges,
                double radius, double radius2, std::string* err = nullptr);
 
-// 4.5 SubD spike: fillet every edge of a box (OpenSubdiv later). Returns volume.
-double subd_round_box(Document& doc, const EntityId& body, double radius,
-                      std::string* err = nullptr);
-
 // 4.6 PDM-lite: append a version note; persisted in the document revision log.
 struct PdmEntry {
     std::string message;

@@ -1,18 +1,6 @@
 # Hover measure pair + selection bound dimensions.
 # Run: tools/godot/godot --headless --path game --script tests/run_measure_overlay_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -34,8 +22,7 @@ func _init() -> void:
 	await test_place_ghost_nearest_corner(main)
 	await test_move_uses_transport_measure(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_closest_edge_point(main) -> void:

@@ -157,7 +157,7 @@ class LintSuitesTests(unittest.TestCase):
             for ln in (ROOT / "packaging" / "ci" / "suites.baseline").read_text().splitlines()
             if ln.strip()
         ]
-        self.assertGreaterEqual(len(baseline), 154)
+        self.assertGreaterEqual(len(baseline), 153)
         self.assertTrue(set(baseline) <= got)
 
     def test_bad_manifest_exits_2(self):

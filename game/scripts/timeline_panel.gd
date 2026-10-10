@@ -166,13 +166,6 @@ func _get_minimum_size() -> Vector2:
 		h = 160.0
 	return Vector2(PANEL_WIDTH, h)
 
-
-func _pin_width() -> void:
-	custom_minimum_size.x = PANEL_WIDTH
-	size.x = PANEL_WIDTH
-	offset_right = offset_left + PANEL_WIDTH
-
-
 func _clamp_height() -> void:
 	await get_tree().process_frame
 	if not is_instance_valid(self):

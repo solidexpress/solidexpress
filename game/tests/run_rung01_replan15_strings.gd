@@ -4,8 +4,7 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan15_strings.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const VIEW_EPS := 0.0001
@@ -16,23 +15,12 @@ const UUID_RE := "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
 const FILLET_APPLIED := "^Fillet \\d+ edges? 1\\.00 applied"
 const CHAMFER_APPLIED := "^Chamfer \\d+ edges? 1\\.00 applied"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _line_re := RegEx.new()
 var _arc_re := RegEx.new()
 var _uuid_re := RegEx.new()
 var _fillet_re := RegEx.new()
 var _chamfer_re := RegEx.new()
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -50,8 +38,7 @@ func _init() -> void:
 	await _row_s3b()
 	await _row_s3c()
 	await _row_s4()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:
@@ -156,26 +143,6 @@ func _place_box(ctx: FilmContext) -> String:
 	return body
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
 func _click_control(vp: Viewport, ctrl: Control) -> void:
 	if ctrl == null:
 		return
@@ -184,13 +151,13 @@ func _click_control(vp: Viewport, ctrl: Control) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
 
 
-func _push_key(vp: Viewport, code: int, unicode: int = 0, ctrl := false, alt := false) -> void:
+func _push_key_local(vp: Viewport, code: int, unicode: int = 0, ctrl := false, alt := false) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code as Key
@@ -214,7 +181,7 @@ func _type_distance_2(ctx: FilmContext) -> void:
 	await _click_control(edit.get_viewport(), edit)
 	await process_frame
 	await process_frame
-	await _push_key(edit.get_viewport(), KEY_2, 50)
+	await _push_key_local(edit.get_viewport(), KEY_2, 50)
 	await process_frame
 	_capture(ctx.main)
 	print("  distance field `%s` spin %.4f" % [edit.text, chrome.extrude_distance()])
@@ -338,7 +305,7 @@ func _row_s2() -> void:
 	var yaw0 := cam.yaw
 	var pitch0 := cam.pitch
 	var n0 := _status_log.size()
-	await _push_key(vp, KEY_0, 48)
+	await _push_key_local(vp, KEY_0, 48)
 	_capture(main)
 	_dump("S2a")
 	check(_log_since_has(n0, NO_VIEW), "S2a status is `%s`" % NO_VIEW)
@@ -346,13 +313,13 @@ func _row_s2() -> void:
 			"S2a camera yaw/pitch unchanged (dyaw %.6f dpitch %.6f)" % [
 				cam.yaw - yaw0, cam.pitch - pitch0])
 	var n3 := _status_log.size()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	_capture(main)
 	check(_log_since_has(n3, "Top view"), "S2b status is Top view")
 	var nmod := _status_log.size()
-	await _push_key(vp, KEY_0, 48, true, false)
-	await _push_key(vp, KEY_0, 48, false, true)
+	await _push_key_local(vp, KEY_0, 48, true, false)
+	await _push_key_local(vp, KEY_0, 48, false, true)
 	_capture(main)
 	check(not _log_since_has(nmod, NO_VIEW), "S2e Ctrl+0 and Alt+0 do not print the key 0 status")
 	await _row_s2c(ctx)
@@ -377,10 +344,10 @@ func _row_s2c(ctx: FilmContext) -> void:
 	var edit := spin.get_line_edit()
 	await _click_control(vp, edit)
 	await process_frame
-	await _push_key(vp, KEY_A, 0, true, false)
+	await _push_key_local(vp, KEY_A, 0, true, false)
 	var before := edit.text
 	var n := _status_log.size()
-	await _push_key(vp, KEY_0, 48)
+	await _push_key_local(vp, KEY_0, 48)
 	_capture(main)
 	print("  S2c field before `%s` after `%s`" % [before, edit.text])
 	check(not _log_since_has(n, NO_VIEW), "S2c no key 0 view status")
@@ -403,14 +370,14 @@ func _row_s2d() -> void:
 		await _click_control(circle.get_viewport(), circle)
 		await process_frame
 	check(sm.tool == SketchMode.Tool.CIRCLE, "S2d Circle tool is armed")
-	await _click_uv(ctx, Vector2.ZERO)
+	await _click_uv_local(ctx, Vector2.ZERO)
 	await process_frame
 	await process_frame
 	check(sm.has_single_dof_preview(), "S2d circle centre is placed (rubber-band)")
 	var n := _status_log.size()
 	var vp: Viewport = ctx.main.get_viewport()
-	await _push_key(vp, KEY_1, 49)
-	await _push_key(vp, KEY_0, 48)
+	await _push_key_local(vp, KEY_1, 49)
+	await _push_key_local(vp, KEY_0, 48)
 	await process_frame
 	_capture(ctx.main)
 	var dim: LineEdit = ctx.main.sketch_chrome.find_child("DimLineEdit", true, false)
@@ -442,7 +409,7 @@ func _dressup_face(kind: String, button_name: String, re: RegEx, feat: String) -
 	check(body != "", "%s box placed" % kind)
 	await _arm_strip(ctx_ok, button_name)
 	var vp: Viewport = ctx_ok.main.get_viewport()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	var hit := FilmUI.model_to_screen(ctx_ok, Vector3(0, 0, 10))
@@ -457,19 +424,19 @@ func _dressup_face(kind: String, button_name: String, re: RegEx, feat: String) -
 		var edit := spin.get_line_edit()
 		await _click_control(vp, edit)
 		await process_frame
-		await _push_key(vp, KEY_A, 0, true, false)
-		await _push_key(vp, KEY_1, 49)
+		await _push_key_local(vp, KEY_A, 0, true, false)
+		await _push_key_local(vp, KEY_1, 49)
 		await process_frame
 		print("  %s radius field `%s`" % [kind, edit.text])
 		_status_log.clear()
-		await _push_key(vp, KEY_ENTER, 0)
+		await _push_key_local(vp, KEY_ENTER, 0)
 		await process_frame
 		await process_frame
 		# Field Enter commits the radius. A second Enter, viewport focused, applies.
 		if ctx_ok.main.ops_panel._pending != OpsPanel.Pending.NONE:
 			ctx_ok.main.interaction.return_viewport_keys()
 			await process_frame
-			await _push_key(vp, KEY_ENTER, 0)
+			await _push_key_local(vp, KEY_ENTER, 0)
 		for _i in 12:
 			await process_frame
 		_capture(ctx_ok.main)
@@ -583,11 +550,11 @@ func _row_s4() -> void:
 	check(sm.is_jaw_armed(), "S4 Jaw is armed")
 	var dir := Vector2(cos(deg_to_rad(45.0)), sin(deg_to_rad(45.0)))
 	var ctr := Vector2.ZERO
-	await _click_uv(ctx, ctr)
+	await _click_uv_local(ctx, ctr)
 	await process_frame
-	await _click_uv(ctx, ctr + dir * 30.0)
+	await _click_uv_local(ctx, ctr + dir * 30.0)
 	await process_frame
-	await _click_uv(ctx, ctr + Vector2(-dir.y, dir.x) * 10.0)
+	await _click_uv_local(ctx, ctr + Vector2(-dir.y, dir.x) * 10.0)
 	await process_frame
 	await process_frame
 	_capture(ctx.main)
@@ -596,12 +563,12 @@ func _row_s4() -> void:
 	var n_ent := sm.sketch.entity_ids().size()
 	var ix: ViewportInteraction = ctx.main.interaction
 	await _assert_label_edit(ctx, sm, ix, "20", 20.0, n_ent)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	check(ix == null or not ix._dim_edit_owns_keys(), "S4 Esc closes the width editor")
 	await _assert_label_edit(ctx, sm, ix, "45°", 45.0, n_ent)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	check(ix == null or not ix._dim_edit_owns_keys(), "S4 Esc closes the angle editor")

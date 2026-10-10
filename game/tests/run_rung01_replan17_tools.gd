@@ -1,8 +1,7 @@
 # Rung 1 replan 17 WP2 — Jaw preview shape, polygon pointer on a vertex, DOF chip after undo.
 # Presses, motion and keys under test go through Viewport.push_input.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan17_tools.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const EMPTY_CHIP := "—"
@@ -10,26 +9,14 @@ const JAW_AXIS_DEG := 37.0
 const JAW_HALF_LEN := 24.0
 const PREVIEW_MIN_HALF_W := 1.5
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan17 WP2 tools")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _on_status(msg: String) -> void:
@@ -79,10 +66,10 @@ func _x11_click(ctrl: Control) -> void:
 	if ctrl == null:
 		check(false, "click target exists")
 		return
-	await _x11_click_screen(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
+	await _x11_click_screen_local(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos
@@ -103,10 +90,10 @@ func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var screen := _uv_screen(ctx, uv)
 	check(FilmUI.require_on_screen(ctx, screen, desc), "%s on screen at %s" % [desc, str(screen)])
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await _x11_click_screen_local(ctx.main.get_viewport(), screen)
 
 
 func _motion_uv(ctx: FilmContext, uv: Vector2) -> void:
@@ -119,7 +106,7 @@ func _motion_uv(ctx: FilmContext, uv: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool, unicode: int = 0) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool, unicode: int = 0) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = keycode
@@ -137,7 +124,7 @@ func _type_digits(vp: Viewport, text: String) -> void:
 	for i in text.length():
 		var ch := text.unicode_at(i)
 		var code := KEY_0 + (ch - 48)
-		await _push_key(vp, code as Key, false, false, ch)
+		await _push_key_local(vp, code as Key, false, false, ch)
 
 
 func _drop_field_focus(ctx: FilmContext) -> void:
@@ -155,8 +142,8 @@ func _clear_focused_dim_blank(ctx: FilmContext) -> void:
 	var vp: Viewport = ctx.main.get_viewport()
 	var owner: Control = vp.gui_get_focus_owner()
 	check(owner is LineEdit, "P1 dim blank is focused before the vertex click")
-	await _push_key(vp, KEY_A, true, false)
-	await _push_key(vp, KEY_BACKSPACE, false, false)
+	await _push_key_local(vp, KEY_A, true, false)
+	await _push_key_local(vp, KEY_BACKSPACE, false, false)
 	await process_frame
 
 
@@ -259,7 +246,7 @@ func _test_jaw(ctx: FilmContext) -> void:
 	var ctr := Vector2(8.0, -4.0)
 	var tip := ctr + dir * JAW_HALF_LEN
 	await _zoom_uv(ctx, ctr, 120.0)
-	await _click_uv(ctx, ctr, "Jaw click 1")
+	await _click_uv_local(ctx, ctr, "Jaw click 1")
 	check(sm._tool_points.size() == 1, "J1 click 1 stored the centre (n=%d)" % sm._tool_points.size())
 	await _motion_uv(ctx, tip)
 	var segs := _preview_segs(sm)
@@ -274,7 +261,7 @@ func _test_jaw(ctx: FilmContext) -> void:
 			"J1 rectangle centre is the click-1 point (got %s want %s)" % [str(mid), str(ctr)])
 
 	var before := _entity_count(sm)
-	await _click_uv(ctx, tip, "Jaw click 2")
+	await _click_uv_local(ctx, tip, "Jaw click 2")
 	check(sm._tool_points.size() == 2, "J2 click 2 kept centre and long side (n=%d)" % sm._tool_points.size())
 	await _motion_uv(ctx, tip)
 	segs = _preview_segs(sm)
@@ -297,7 +284,7 @@ func _test_jaw(ctx: FilmContext) -> void:
 	check(absf(across_len - 2.0 * PREVIEW_MIN_HALF_W) <= 0.05,
 			"J2 across edge is 2 * min half-width (got %.4f want %.4f)" % [across_len, 2.0 * PREVIEW_MIN_HALF_W])
 	_log.clear()
-	await _click_uv(ctx, tip, "Jaw repeat click 2")
+	await _click_uv_local(ctx, tip, "Jaw repeat click 2")
 	var refused := _last()
 	if refused == "":
 		refused = _status_label(ctx)
@@ -305,7 +292,7 @@ func _test_jaw(ctx: FilmContext) -> void:
 			"J2 repeat click 2 prints zero width (got `%s`)" % refused)
 	check(_entity_count(sm) == before, "J2 repeat click 2 leaves the entity count unchanged")
 	var click3 := ctr + nrm * 8.0
-	await _click_uv(ctx, click3, "Jaw click 3")
+	await _click_uv_local(ctx, click3, "Jaw click 3")
 	var committed := _last()
 	if not committed.begins_with("Jaw committed — width"):
 		committed = _status_label(ctx)
@@ -328,7 +315,7 @@ func _test_polygon(ctx: FilmContext) -> void:
 	# Bearing 110° at 40 mm is toward the top of the screen. Bias the pivot
 	# up so that click stays on the canvas, below the top chrome.
 	await _zoom_uv(ctx, centre, 180.0, Vector2(0.0, 36.0))
-	await _click_uv(ctx, centre, "Polygon centre")
+	await _click_uv_local(ctx, centre, "Polygon centre")
 	check(sm._tool_points.size() == 1, "P1 centre click is down (n=%d)" % sm._tool_points.size())
 	var dists: Array[float] = [20.0, 30.0, 40.0]
 	var bearings: Array[float] = [20.0, 70.0, 110.0]
@@ -366,7 +353,7 @@ func _test_polygon(ctx: FilmContext) -> void:
 	await _clear_focused_dim_blank(ctx)
 	await _motion_uv(ctx, aim)
 	live_af = _af_text(centre.distance_to(sm._hover))
-	await _click_uv(ctx, aim, "Polygon vertex click")
+	await _click_uv_local(ctx, aim, "Polygon vertex click")
 	check(_entity_count(sm) > before, "P1 second click commits the hex")
 	var commit := sm.last_commit_text()
 	check(commit == "Polygon AF %s — flats horizontal" % live_af,
@@ -395,11 +382,11 @@ func _test_polygon(ctx: FilmContext) -> void:
 		skip[str(sid)] = true
 	var c2 := Vector2(70.0, 6.0)
 	await _zoom_uv(ctx, c2, 80.0)
-	await _click_uv(ctx, c2, "Typed polygon centre")
+	await _click_uv_local(ctx, c2, "Typed polygon centre")
 	await _motion_uv(ctx, c2 + Vector2(12.0, 9.0))
 	var vp: Viewport = ctx.main.get_viewport()
 	await _type_digits(vp, "20")
-	await _push_key(vp, KEY_ENTER, false, false)
+	await _push_key_local(vp, KEY_ENTER, false, false)
 	await process_frame
 	var typed := sm.last_commit_text()
 	if typed == "":
@@ -431,7 +418,7 @@ func _undo_until_empty(ctx: FilmContext) -> void:
 	for _i in 8:
 		await _drop_field_focus(ctx)
 		_log.clear()
-		await _push_key(vp, KEY_Z, true, false)
+		await _push_key_local(vp, KEY_Z, true, false)
 		var line := _status_label(ctx)
 		if line == "":
 			line = _last()
@@ -446,14 +433,14 @@ func _test_dof(ctx: FilmContext) -> void:
 	var sm := await _fresh_sketch(ctx)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
 	await _zoom_uv(ctx, Vector2(20.0, 10.0), 120.0)
-	await _click_uv(ctx, Vector2(4.0, 6.0), "Line start")
-	await _click_uv(ctx, Vector2(36.0, 18.0), "Line end")
+	await _click_uv_local(ctx, Vector2(4.0, 6.0), "Line start")
+	await _click_uv_local(ctx, Vector2(36.0, 18.0), "Line end")
 	check(_entity_count(sm) > 0, "D1 line click added an entity")
 	await _undo_until_empty(ctx)
 	check(ctx.main.dof_label.text == EMPTY_CHIP,
 			"D1 empty sketch chip is — (got `%s`)" % ctx.main.dof_label.text)
 	await _drop_field_focus(ctx)
-	await _push_key(ctx.main.get_viewport(), KEY_Z, true, true)
+	await _push_key_local(ctx.main.get_viewport(), KEY_Z, true, true)
 	check(ctx.main.dof_label.text == _format_dofs(sm),
 			"D1 redo chip matches last_dofs (chip `%s` dofs %d status `%s`)" % [
 				ctx.main.dof_label.text, sm.last_dofs, sm.last_solve_status])
@@ -464,20 +451,20 @@ func _test_dof(ctx: FilmContext) -> void:
 	var nrm := Vector2(-dir.y, dir.x)
 	var ctr := Vector2(6.0, 4.0)
 	await _zoom_uv(ctx, ctr, 120.0)
-	await _click_uv(ctx, ctr, "DOF jaw centre")
-	await _click_uv(ctx, ctr + dir * 22.0, "DOF jaw long side")
-	await _click_uv(ctx, ctr + nrm * 7.0, "DOF jaw width")
+	await _click_uv_local(ctx, ctr, "DOF jaw centre")
+	await _click_uv_local(ctx, ctr + dir * 22.0, "DOF jaw long side")
+	await _click_uv_local(ctx, ctr + nrm * 7.0, "DOF jaw width")
 	check(_last().begins_with("Jaw committed — width") or _status_label(ctx).begins_with("Jaw committed — width"),
 			"D1 jaw committed before undo (got `%s`)" % _status_label(ctx))
 	await _drop_field_focus(ctx)
 	var before := str(ctx.main.dof_label.text)
 	_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_Z, true, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 	var undo_line := _status_label(ctx)
 	check(undo_line == "Undo: Jaw", "D1 Undo: Jaw (got `%s`)" % undo_line)
 	check(ctx.main.dof_label.text == EMPTY_CHIP,
 			"D1 Undo: Jaw chip is — (got `%s`)" % ctx.main.dof_label.text)
-	await _push_key(ctx.main.get_viewport(), KEY_Z, true, true)
+	await _push_key_local(ctx.main.get_viewport(), KEY_Z, true, true)
 	var redo_line := _status_label(ctx)
 	check(redo_line == "Redo: Jaw", "D1 Redo: Jaw (got `%s`)" % redo_line)
 	check(ctx.main.dof_label.text == before,

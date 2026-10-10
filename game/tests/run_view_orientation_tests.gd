@@ -2,14 +2,11 @@
 # Cardinal views are axis-aligned, orthographic, and centred on the part.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_view_orientation_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const AXIAL_EPS := 1e-4
 const CENTER_MM := 0.05
 const SCREEN_PX := 2.0
 
-var failures := 0
-var checks := 0
 
 ## Label, view id, number key, exact look direction (world, camera -Z).
 const VIEWS: Array = [
@@ -21,15 +18,6 @@ const VIEWS: Array = [
 	["Bottom", "bottom", KEY_8, Vector3(0, 1, 0), true],
 	["Isometric", "iso", KEY_7, Vector3.ZERO, false],
 ]
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -47,8 +35,7 @@ func _init() -> void:
 	check(center.length_squared() > 1.0, "part center is off the origin (%s)" % str(center))
 	for entry in VIEWS:
 		await _test_one(main, center, entry)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _test_menu_items(main) -> void:

@@ -1,21 +1,9 @@
 # Rung 1 WP3 — fillets (click Fillet) and timeline double-click.
 # Kernel to_face / hex coverage lives in sxkernel/tests/test_rung01_extrude.cpp.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_fillet_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilletSetsScript = preload("res://scripts/fillet_sets.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -29,8 +17,7 @@ func _init() -> void:
 	await test_fillets(main)
 	await test_timeline_double_click(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_fillets(main) -> void:

@@ -1,31 +1,18 @@
 # re-PLAN 21 WP6 — a lost fillet edge is a warning, not an error.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan21_dressup.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const LOG_PATH := "/tmp/sx-replan21-dressup.log"
 
-var failures := 0
-var checks := 0
 var _status: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan21 dressup")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run() -> void:
@@ -160,9 +147,9 @@ func _edit_distance(ctx: FilmContext, fid: String, digits: String) -> void:
 		return
 	for ch in digits:
 		var code := KEY_0 + int(ch)
-		_push_key(ctx.main.get_viewport(), code as Key, false)
+		_push_key_local(ctx.main.get_viewport(), code as Key, false)
 		await process_frame
-	_push_key(ctx.main.get_viewport(), KEY_ENTER, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_ENTER, false)
 	await _frames(4)
 
 
@@ -242,7 +229,7 @@ func _click(vp: Viewport, pos: Vector2) -> void:
 		vp.push_input(ev)
 
 
-func _push_key(vp: Viewport, code: Key, shift: bool) -> void:
+func _push_key_local(vp: Viewport, code: Key, shift: bool) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.pressed = pressed

@@ -1,20 +1,8 @@
 # Rung 1 replan 3 WP2 — unfocused Distance 7.5, Up To Surface face pick.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan3_input.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -40,8 +28,7 @@ func _init() -> void:
 	await test_up_to_surface_face_pick(ctx)
 
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _assert_source_hygiene() -> void:
@@ -66,8 +53,8 @@ func test_unfocused_distance_75(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	await process_frame
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
-	await _click_uv(ctx, Vector2(8, 0), "Hex size")
+	await _click_uv_local(ctx, Vector2.ZERO, "Hex centre")
+	await _click_uv_local(ctx, Vector2(8, 0), "Hex size")
 	await process_frame
 	check(sm.active, "sketch stays active after the polygon")
 	check(not sm.has_single_dof_preview(),
@@ -111,7 +98,7 @@ func test_preview_digits_go_to_dim(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	await process_frame
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "Preview hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Preview hex centre")
 	await process_frame
 	check(sm.has_single_dof_preview(), "preview is active before typing 20")
 	await _release_gui_focus(ctx)
@@ -156,8 +143,8 @@ func test_up_to_surface_face_pick(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
 	await process_frame
 	await _zoom_uv(ctx, Vector2(20, 15), 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "Rect corner A")
-	await _click_uv(ctx, Vector2(40, 30), "Rect corner B")
+	await _click_uv_local(ctx, Vector2.ZERO, "Rect corner A")
+	await _click_uv_local(ctx, Vector2(40, 30), "Rect corner B")
 	await process_frame
 	check(not sm.has_single_dof_preview(), "rectangle is committed")
 	await _type_distance_click_path(ctx, "10")
@@ -186,8 +173,8 @@ func test_up_to_surface_face_pick(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
 	await _zoom_uv(ctx, Vector2(20, 15), 80.0)
-	await _click_uv(ctx, Vector2(20, 15), "Hole centre")
-	await _click_uv(ctx, Vector2(25, 15), "Hole radius")
+	await _click_uv_local(ctx, Vector2(20, 15), "Hole centre")
+	await _click_uv_local(ctx, Vector2(25, 15), "Hole radius")
 	await process_frame
 	var n_geo := sm.sketch.entity_ids().size() if sm.sketch != null else 0
 	var pts0: int = sm._tool_points.size()
@@ -238,8 +225,8 @@ func test_up_to_surface_face_pick(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
 	await _zoom_uv(ctx, Vector2(8, 8), 80.0)
-	await _click_uv(ctx, Vector2(8, 8), "Uncut circle centre")
-	await _click_uv(ctx, Vector2(11, 8), "Uncut circle radius")
+	await _click_uv_local(ctx, Vector2(8, 8), "Uncut circle centre")
+	await _click_uv_local(ctx, Vector2(11, 8), "Uncut circle radius")
 	await _pick_option(ctx, _finish_op(chrome), 1, "Cut no-face")
 	await _pick_option(ctx, _finish_end(chrome), 0, "Blind before Up To Surface")
 	await _pick_option(ctx, _finish_end(chrome), 3, "Up To Surface no-face")
@@ -609,7 +596,7 @@ func _click_at(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)

@@ -1,20 +1,7 @@
 # Rung 1 replan 2 WP6 — standard-view keys stay out of a sketch.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan2_camera.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -36,8 +23,7 @@ func _init() -> void:
 	await test_outside_sketch_key_1_frames_front(main, ctx)
 
 	check(FilmUI.fail_count == 0, "FilmUI reported no missing controls")
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _key_event(code: Key, pressed: bool) -> InputEventKey:
@@ -50,7 +36,7 @@ func _key_event(code: Key, pressed: bool) -> InputEventKey:
 	return ev
 
 
-func _push_key(vp: Viewport, code: Key) -> void:
+func _push_key_local(vp: Viewport, code: Key) -> void:
 	vp.push_input(_key_event(code, true))
 	vp.push_input(_key_event(code, false))
 
@@ -83,7 +69,7 @@ func test_sketch_view_keys_not_nav(main, ctx: FilmContext) -> void:
 		check(not cam._handle_nav_key(ev), "KEY_%s is not handled as a view while sketch-locked" % label)
 		check(cam.global_transform.basis.is_equal_approx(basis_locked),
 				"KEY_%s handle_input leaves camera basis unchanged" % label)
-		_push_key(vp, code)
+		_push_key_local(vp, code)
 		await process_frame
 		check(cam.global_transform.basis.is_equal_approx(basis_locked),
 				"KEY_%s push_input leaves camera basis unchanged" % label)
@@ -108,19 +94,19 @@ func test_outside_sketch_key_1_frames_front(main, ctx: FilmContext) -> void:
 	var one := _key_event(KEY_1, true)
 	check(cam._is_nav_key(one), "KEY_1 is a nav key outside a sketch")
 	var vp: Viewport = main.interaction.get_viewport()
-	_push_key(vp, KEY_1)
+	_push_key_local(vp, KEY_1)
 	await process_frame
 	await process_frame
 	check(is_equal_approx(cam.yaw, 0.0), "KEY_1 frames front (yaw 0)")
 	check(is_equal_approx(cam.pitch, 0.0), "KEY_1 frames front (pitch 0)")
 	check(absf(cam.global_position.y - cam.pivot.y) < 1.0, "front view is level")
 
-	_push_key(vp, KEY_2)
+	_push_key_local(vp, KEY_2)
 	await process_frame
 	check(is_equal_approx(cam.yaw, deg_to_rad(90.0)), "KEY_2 frames right (yaw 90)")
 	check(is_equal_approx(cam.pitch, 0.0), "KEY_2 frames right (pitch 0)")
 
 	var proj := cam.projection
-	_push_key(vp, KEY_5)
+	_push_key_local(vp, KEY_5)
 	await process_frame
 	check(cam.projection != proj, "KEY_5 toggles projection outside a sketch")

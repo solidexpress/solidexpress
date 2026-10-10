@@ -2,6 +2,28 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Post-rung-1 cleanup
+
+Organization pass from [`docs/loop/post-rung-01-cleanup.md`](../loop/post-rung-01-cleanup.md) on one PR. Behaviour unchanged.
+
+Shipped: WP1 baseline/ledger, WP2 loop-doc purge (−22,371 lines), WP3 dead code (−381), WP4 `SxSuite` (−2,634 net), WP5 `SxInput` (−1,670 net), WP6 retire chain/walk suites (−3,537; **202 run + 4 known-red**), WP7 lint rule table, WP8 `tools/walk/` package, WP9 kernel `FeatureTypeInfo` + `kApplyHandlers`, WP10 File/WorkMode/bridge tables.
+
+Parked (6 h stop line, not started): WP11 `SketchGeom`, WP12 `SketchToolSpec`, WP13 CI `setup-occt` action. Also ranks 13–15 and the `release.yml` / `linux-test-build.yml` composite conversion — see [roadmap.md §7](roadmap.md).
+
+WP10 pins File menu ids in `run_menu_tests.gd` (`test_file_menu_ids`, +32 checks). That line of the check-count ledger is the only intentional CP2 delta versus WP6.
+
+Part B: film `ubc_wrench` + `run_film_ubc_wrench_tests.gd` (`tier=full`). Suites **203 run + 4 known-red**.
+
+### Pending publish
+`ubc_wrench.webm` is not on Release `demo-movies` (this token cannot upload). Human step:
+
+```
+gh release upload demo-movies -R solidexpress/solidexpress.github.io --clobber ubc_wrench.webm ubc_wrench.vtt
+SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature ubc_wrench
+```
+
+then a one-line follow-up commit of `published-demos.json` / `demo-catalog.json`. Do not add those ids until the WebM is on the Release.
+
 ## 0.0.13 — rung 1 (UBC wrench)
 - SolidExpress `VERSION` is 0.0.13. Rung 1 of the SolidWorks tutorial ladder (UBC wrench) is fully makeable: jaw angle label, open-jaw cut, selection/fillet picking at small window sizes, and a test-only automation bridge for checklist walks.
 
@@ -19,7 +41,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 - Gate: `run_rung01_replan16_chrome.gd` C3 (left 3 px column is accent, the next pixel is not, hover is not, only one bar lit).
 
 ## Rung 1 replan 16 — sx-037 GUI walk replay
-- Headless replay `run_rung01_replan16_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
+- Headless replay `run_rung01_replan17_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
 - Save re-entry no longer prints `Editing sketch` (that sentence stays on the pencil click). An idle property panel no longer takes Esc away from an armed Fillet (`Edge pick cancelled`).
 
 ## sx-036 — Esc keeps a committed sketch; Save keeps undo
@@ -37,11 +59,11 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 ## Rung 1 replan 15 — sx-035 leftovers
 - Six real-input suites on main: `run_rung01_replan15_{armedkeys,contours,chain,export,extrude,strings}.gd` (+ `_chain_<stage>` only if WP3b ran). Enter in a Radius field no longer disarms Fillet / Chamfer (it applies only with edges picked); Contours chips highlight their region (`SxSketch.contour_outlines`, the only C++ change) and name it in the status; the profile-Line jaw → Up To Surface cut → slot → fillets → export chain is a regression net (headless, checker 28/28 and 7/7); Export 3MF always ends in `.3mf`; a second click at the Extrude pixel cannot hit an AF chip (600 ms guard); the chain-break status shows no entity id; key `0` says `No view for key 0 …`; `applied` is the Fillet / Chamfer success wording; a label click with Jaw armed is pinned.
 - The wrench walk gained `B15.*` rows (N2, contours, export without extension, second Extrude click, key 0, `applied`, slot-floor edge lengths) **729 checks, 0 failures**; nut 7/7, wrench 28/28, thick 7/7, blank 5/5. `_press_extrude` now sends a real mouse press (the walk used to call `pressed.emit()`). The walk fails on any status containing a UUID.
-- sx-036 checklist delta: `docs/loop/rung-01-replan-15.md` (N10–N14, A11d reads `applied`). Plan: `docs/loop/rung-01-replan-15.md`, critique: `docs/loop/rung-01-leftovers-sx035.md`. Gate: the walk, the six suites, `tools/lint_rung01_e2e.py`.
+- sx-036 checklist delta: N10–N14; A11d reads `applied`. Gate: the walk, the six suites, `tools/lint_rung01_e2e.py`. History: `git log -- docs/loop/rung-01-replan-15.md`.
 
 ## Rung 1 replan 15 — sx-035 leftovers (plan)
 - Plan only, no product code: the sx-035 FULL GUI critique of linux-test-build `d408a8c7` scored ~6.5 / 10 and failed rung 1. Spin-outs #163–#169 are merged; this plan covers the ten leftovers. Wave A (blocks pass): WP1 Enter in a Radius field must not disarm Fillet (N2), WP2 Contours chips highlight their region (the only C++ WP), WP3 headless regression net for the A9 → A9b → A11e → A12 / A13 chain with a profile-Line cutter (conditional WP3b only if it goes red). Wave B: WP4 Export 3MF keeps `.3mf`, WP5 Extrude click / `jaw_af` status, WP6 chain-break status without ids + key `0` + `applied` wording pinned + Jaw-armed label click pinned. Wave C: WP7 walk `B15.*` rows, `_lint_replan15`, Makefile loop, UUID guard.
-- Docs live in `docs/loop/` with the replan 14 docs: `rung-01-replan-15.md` (plan, decisions, sx-036 checklist delta), `rung-01-replan-15-wp1.md` … `-wp7.md` (BUILD prompts), `rung-01-leftovers-sx035.md` (condensed critique). Baseline `main` `d534765c`. Found while planning: `FilmUI.click_control` sends no real mouse event (cue + `pressed.emit()`), so the walk never proved a real click on Extrude; WP7 fixes `_press_extrude`.
+- Plan-only history for the sx-035 leftovers (baseline `main` `d534765c`): `git log -- docs/loop/rung-01-replan-15.md`. Found while planning: `FilmUI.click_control` sends no real mouse event (cue + `pressed.emit()`), so the walk never proved a real click on Extrude; WP7 fixes `_press_extrude`.
 
 ## sx-035 GUI L3 — Fillet strip R shows the committed radius
 - Typing `10` + Tab in the selection-strip `R` field left status at `Fillet r=10.00` while the LineEdit showed `0.0 mm`: Godot formatted `10.000 mm` with the caret at the end, and the 88 px field scrolled to the suffix. A stray `100` was the walker clicking that clipped tail. Tab also moved focus onto the `AF 10` chip; arming grabbed the R field so view keys 3/4 did nothing.
@@ -77,7 +99,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 - Eight real-input suites on main: `run_rung01_replan14_{savelabels,focuskeys,ctxbar,undo,camera,railstatus,polish,trim}.gd`. WP4's only C++ is `SxSketch.snapshot()` / `restore()` (JSON through the existing sketch codec).
 - The wrench walk gained `B14.1`–`B14.13` (re-verify A8 / A9 / A9b / A11a / L3 plus one real-input row per product WP, leftover 16 as the timeline-index body-name rule, leftover 18 as the DIAG note). **646 checks, 0 failures**; nut 7/7, wrench 28/28, thick 7/7.
 - `check_rung01.py wrench` at T = 14 prints a `DIAG:` header; the four by-design failures are `bbox Z (thickness)`, `grip slot present at y=0,z=8.75`, `1mm fillet top outer edge`, and `1mm fillet on jaw top edge`. `thick` is the T-aware pass. Leftover 16 is closed by design (sx-035 rule 37).
-- sx-035 rules 37–40 (body names are timeline indices; read labels not pictures; after a commit the viewport owns the keys; undo reads the status) live in `docs/loop/rung-01-replan-14.md`. Gate: the walk and `tools/lint_rung01_e2e.py`.
+- sx-035 rules 37–40: body names are timeline indices; read labels not pictures; after a commit the viewport owns the keys; undo reads the status. Gate: the walk and `tools/lint_rung01_e2e.py`. History: `git log -- docs/loop/rung-01-replan-14.md`.
 
 ## sx-034 A11a — Slot typed-length status
 - Typing the centre-to-centre length after the first Slot centre printed `Length 150.0000 mm` because `click()` emitted `Slot c-c …` but did not set `last_commit_text`, so dim Enter overwrote the bar. Slot commit now stores that sentence (with ` — typed` when the length was typed). Editing the 150 label re-reads `Slot c-c … R…` instead of a bare `Dimension updated`. After the first centre the dim blank is labelled `c-c`, not `Radius r`.

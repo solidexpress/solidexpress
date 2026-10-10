@@ -5,8 +5,7 @@
 # stage only (ci subset).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan17_walk.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const OUT := "/tmp/sx-038-out"
@@ -18,8 +17,6 @@ const NEW_SENTENCE := "New — empty part, Top plane (XY). View ▸ Timeline to 
 const STAGES: Array[String] = ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
 const UUID_RE := "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _all_status: Array[String] = []
 var _stage := ""
@@ -34,13 +31,9 @@ var _only := ""
 
 
 func check(cond: bool, what: String) -> void:
-	checks += 1
 	var tagged := "%s: %s" % [_stage if _stage != "" else "boot", what]
-	if cond:
-		print("  ok   - " + tagged)
-	else:
-		failures += 1
-		printerr("  FAIL - " + tagged)
+	super.check(cond, tagged)
+	if not cond:
 		if STAGES.has(_stage) and not _skipped.get(_stage, false):
 			if not _stage_fail.has(_stage):
 				_stage_fail[_stage] = what
@@ -89,11 +82,10 @@ func _init() -> void:
 				print("  TODO - skipped: %s red; later stages need its document" % _first_red)
 	_print_summary()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _begin(id: String) -> void:
@@ -291,7 +283,7 @@ func _stage_s2(ctx: FilmContext) -> void:
 	await _type_distance(ctx, "7")
 	var sketches_before := _count_type(ctx, "sketch")
 	await _press_rail(ctx, "Circle")
-	await _click_uv(ctx, Vector2(40, 12), "UTS circle centre")
+	await _click_uv_local(ctx, Vector2(40, 12), "UTS circle centre")
 	_grab()
 	check(_saw("Circle — centre set"), "circle click lands under Up To Surface (`%s`)" % _grab())
 	await _key(ctx, KEY_ESCAPE)
@@ -311,10 +303,10 @@ func _stage_s2(ctx: FilmContext) -> void:
 		_dump_log()
 		return
 	await _press_rail(ctx, "Polygon")
-	await _click_uv(ctx, Vector2(30, 8), "throwaway polygon centre")
+	await _click_uv_local(ctx, Vector2(30, 8), "throwaway polygon centre")
 	await _type_dim(ctx, "20", true)
 	await _press_rail(ctx, "Circle")
-	await _click_uv(ctx, Vector2(30, 8), "throwaway circle centre")
+	await _click_uv_local(ctx, Vector2(30, 8), "throwaway circle centre")
 	await _key(ctx, KEY_ESCAPE)
 	await _key(ctx, KEY_ESCAPE)
 	_grab()
@@ -345,7 +337,7 @@ func _stage_s2(ctx: FilmContext) -> void:
 	_grab()
 	var line_uv := _first_line_mid(sm)
 	if line_uv != Vector2.INF:
-		await _click_uv(ctx, line_uv, "select jaw line")
+		await _click_uv_local(ctx, line_uv, "select jaw line")
 	await _key(ctx, KEY_ESCAPE)
 	_grab()
 	check(_saw("Selection cleared — Esc again exits the sketch"), "Esc clears the jaw selection (`%s`)" % _grab())
@@ -478,6 +470,7 @@ func _stage_s4(ctx: FilmContext) -> void:
 		await _key(ctx, int(pair[0]))
 		_grab()
 		check(_saw(str(pair[1])), "A16 key view %s (`%s`)" % [pair[1], _grab()])
+	check(_saw("Top view"), "key view %s (`%s`)" % ["Top view", _grab()])
 	await _check_orientation_menu(ctx)
 	await _key(ctx, KEY_F)
 	_grab()
@@ -499,7 +492,7 @@ func _stage_s4(ctx: FilmContext) -> void:
 	_grab()
 	check(_grab().begins_with("Slot"), "Slot armed (`%s`)" % _grab())
 	await _type_dim(ctx, "5", false)
-	await _click_uv(ctx, Vector2(18.5, 0), "slot centre")
+	await _click_uv_local(ctx, Vector2(18.5, 0), "slot centre")
 	var cap := ""
 	if ctx.main.sketch_chrome != null and ctx.main.sketch_chrome._radius_label != null:
 		cap = str(ctx.main.sketch_chrome._radius_label.text)
@@ -742,7 +735,7 @@ func _stage_s8(ctx: FilmContext) -> void:
 		return
 	await _press_rail(ctx, "Polygon")
 	await _zoom_model(ctx, sm.to_model(Vector2.ZERO), 140.0)
-	await _click_uv(ctx, Vector2.ZERO, "nut centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "nut centre")
 	await _check_polygon_bearings(ctx, sm)
 	await _key(ctx, KEY_ESCAPE)
 	_grab()
@@ -752,7 +745,7 @@ func _stage_s8(ctx: FilmContext) -> void:
 		await _ground_sketch(ctx)
 		sm = ctx.main.sketch_mode
 	await _press_rail(ctx, "Polygon")
-	await _click_uv(ctx, Vector2.ZERO, "nut centre typed")
+	await _click_uv_local(ctx, Vector2.ZERO, "nut centre typed")
 	_status_log.clear()
 	await _type_dim(ctx, "20", false)
 	_grab()
@@ -1022,7 +1015,7 @@ func _sketch_on_top(ctx: FilmContext, body: String, z_top: float) -> void:
 
 func _draw_circle(ctx: FilmContext, center: Vector2, radius_text: String) -> void:
 	await _press_rail(ctx, "Circle")
-	await _click_uv(ctx, center, "circle centre")
+	await _click_uv_local(ctx, center, "circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text, false)
 
@@ -1052,8 +1045,8 @@ func _draw_line(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
 	await _press_rail(ctx, "Line")
 	var blank := _length_blank_text(ctx)
 	check(blank != "22.5", "A9 Line length blank is not 22.5 (got `%s`)" % blank)
-	await _click_uv(ctx, a, "line start")
-	await _click_uv(ctx, b, "line end")
+	await _click_uv_local(ctx, a, "line start")
+	await _click_uv_local(ctx, b, "line end")
 	await _key(ctx, KEY_ESCAPE)
 
 
@@ -1064,10 +1057,10 @@ func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 	if circs.size() != 2:
 		return
 	await _press_rail(ctx, "Smart Dim")
-	await _click_uv(ctx, circs[0]["center"], "dim centre 1")
+	await _click_uv_local(ctx, circs[0]["center"], "dim centre 1")
 	_grab()
 	check(_saw("Smart Dim: first pick set"), "first centre pick (`%s`)" % _grab())
-	await _click_uv(ctx, circs[1]["center"], "dim centre 2")
+	await _click_uv_local(ctx, circs[1]["center"], "dim centre 2")
 	await process_frame
 	var ix: ViewportInteraction = ctx.main.interaction
 	var line: LineEdit = ix._dim_edit_line
@@ -1087,10 +1080,10 @@ func _shaft_lines(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await _zoom_model(ctx, sm.to_model(Vector2(100, 0)), 280.0)
 	await _press_rail(ctx, "Select")
-	await _click_uv(ctx, Vector2(100, 80), "clear selection")
+	await _click_uv_local(ctx, Vector2(100, 80), "clear selection")
 	for c in _circles(sm):
 		var top: Vector2 = (c["center"] as Vector2) + Vector2(0, float(c["radius"]))
-		await _click_uv(ctx, top, "select circle")
+		await _click_uv_local(ctx, top, "select circle")
 	check(sm.selected.size() == 2, "both circles selected (got %d)" % sm.selected.size())
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Shaft Lines")
 	check(chip != null and chip.is_visible_in_tree(), "Shaft Lines chip is visible")
@@ -1106,22 +1099,22 @@ func _jaw_three(ctx: FilmContext, center: Vector2) -> void:
 	await _zoom_model(ctx, sm.to_model(center), 80.0)
 	var before_n: int = sm.sketch.entity_ids().size()
 	await _press_rail(ctx, "Jaw")
-	await _click_uv(ctx, center, "jaw 1")
+	await _click_uv_local(ctx, center, "jaw 1")
 	await _hover_uv(ctx, center + JAW_DIR * 30.0)
 	check(_jaw_preview_count(sm) == 4,
 			"A8 after click 1 the preview has 4 segments (got %d)" % _jaw_preview_count(sm))
-	await _click_uv(ctx, center + JAW_DIR * 30.0, "jaw 2")
+	await _click_uv_local(ctx, center + JAW_DIR * 30.0, "jaw 2")
 	check(_jaw_preview_count(sm) == 4,
 			"A8 after click 2 the preview has 4 segments (got %d)" % _jaw_preview_count(sm))
 	await _hover_uv(ctx, center + JAW_DIR * 30.0)
 	check(_jaw_preview_count(sm) == 4,
 			"A8 with the pointer on the axis the preview still has 4 segments (got %d)" % _jaw_preview_count(sm))
-	await _click_uv(ctx, center + JAW_DIR * 30.0, "jaw 2 again")
+	await _click_uv_local(ctx, center + JAW_DIR * 30.0, "jaw 2 again")
 	_grab()
 	check(_saw("Jaw — width is zero — click 3 again for half the width"),
 			"repeated click 2 (`%s`)" % _grab())
 	check(sm.sketch.entity_ids().size() == before_n, "repeated click 2 does not commit")
-	await _click_uv(ctx, center + JAW_ACROSS * 10.0, "jaw 3")
+	await _click_uv_local(ctx, center + JAW_ACROSS * 10.0, "jaw 3")
 	_grab()
 	check(_saw("Jaw committed"), "click 3 commits the jaw (`%s`)" % _grab())
 
@@ -1451,7 +1444,7 @@ func _menu_button(main, title: String) -> MenuButton:
 	return null
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, _desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, _desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	if not FilmUI.is_on_screen(ctx, screen):
@@ -2367,7 +2360,7 @@ func _check_n10(ctx: FilmContext, sm: SketchMode) -> void:
 		if d < best_d:
 			best_d = d
 			hit = c + Vector2(float(info.get("radius", 5.0)), 0.0)
-	await _click_uv(ctx, hit, "N10 throwaway circle")
+	await _click_uv_local(ctx, hit, "N10 throwaway circle")
 	await _key(ctx, KEY_DELETE)
 	var now: int = sm.sketch.entity_ids().size()
 	check(now == before, "N10 throwaway circle is gone (before %d now %d)" % [before, now])

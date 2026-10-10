@@ -2087,18 +2087,6 @@ func _finish_bar_bottom() -> float:
 		h = float(_chip_h())
 	return top + h
 
-
-func _keep_variant_below_finish() -> void:
-	if _variant_bar == null or _finish_bar == null:
-		return
-	if not _variant_bar.visible or not _finish_bar.visible:
-		return
-	var fr := _finish_bar.get_global_rect()
-	var need_y := fr.position.y + fr.size.y + float(CHIP_PAD)
-	if _variant_bar.global_position.y < need_y:
-		_variant_bar.global_position.y = need_y
-
-
 func hide_variants() -> void:
 	_variant_bar.visible = false
 	_active_kind = ""
@@ -2127,14 +2115,6 @@ func hide_selection_actions() -> void:
 	_action_wrap_width = -1.0
 	_clear_bar(_action_bar)
 
-
-## Merge-sketches option strip (2+ pads selected outside sketch mode).
-func show_merge_menu(screen_pos: Vector2) -> void:
-	show_selection_actions(
-			["merge_join", "merge_spline", "merge_composite", "merge_clear"], screen_pos)
-
-
-## Multi-sketch → 3D workflow (SolidWorks-style chips from pad selection).
 func show_sketch_to_3d_menu(actions: Array, screen_pos: Vector2) -> void:
 	show_selection_actions(actions, screen_pos)
 

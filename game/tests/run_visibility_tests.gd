@@ -1,18 +1,6 @@
 # Headless tests for hide/isolate and rubber-band box selection.
 # Run: tools/godot/godot --headless --path game --script tests/run_visibility_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -32,8 +20,7 @@ func _init() -> void:
 	test_box_select_crossing_drag(main)
 	test_select_similar(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _ray_at(x: float, y: float) -> Array:

@@ -27,3 +27,4 @@ Notes:
 - “Through All” avoids Blind 10 mm cuts that fail when thickness changes.
 - Hex dimensions are across-flats by design intent; use polygon where available. If AF as a first-class label requires kernel changes, it is intentionally deferred here.
 
+See also: [ubc-wrench.md](ubc-wrench.md) for the click-driven blank-to-3MF film path.

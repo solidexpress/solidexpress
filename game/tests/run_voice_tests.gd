@@ -1,19 +1,7 @@
 # Headless tests for VoiceCapture hold-to-talk overlay.
 # Run: tools/godot/godot --headless --path game --script tests/run_voice_tests.gd
 # Does not require a real microphone.
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -22,8 +10,7 @@ func _init() -> void:
 	await test_inject_utterance()
 	await test_shortcut_documented()
 	await test_interpreter_and_executor()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_lifecycle() -> void:

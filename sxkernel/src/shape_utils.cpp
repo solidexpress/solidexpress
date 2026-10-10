@@ -150,20 +150,4 @@ std::string describe_face(const TopoDS_Shape& face) {
     return type + ", area " + fmt(props.Mass()) + " mm^2" + extra;
 }
 
-std::string describe_edge(const TopoDS_Shape& edge) {
-    if (edge.IsNull() || edge.ShapeType() != TopAbs_EDGE) return "invalid edge";
-    BRepAdaptor_Curve curve(TopoDS::Edge(edge));
-    std::string type;
-    switch (curve.GetType()) {
-        case GeomAbs_Line: type = "linear edge"; break;
-        case GeomAbs_Circle: type = "circular edge, radius " + fmt(curve.Circle().Radius()) + " mm"; break;
-        case GeomAbs_Ellipse: type = "elliptical edge"; break;
-        case GeomAbs_BSplineCurve: type = "spline edge"; break;
-        default: type = "curved edge";
-    }
-    GProp_GProps props;
-    BRepGProp::LinearProperties(edge, props);
-    return type + ", length " + fmt(props.Mass()) + " mm";
-}
-
 }  // namespace sx::shape

@@ -2,19 +2,7 @@
 # rotational DOF; dragging an instance rotates about that axis; solve preserves
 # the angle. Also covers instance↔instance mates and extrude Through All / Midplane.
 # Run: tools/godot/godot --headless --path game --script tests/run_pliers_motion_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	test_extrude_midplane_and_through_all(main)
 	await test_pliers_mvp_assembly(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _cyl_face(doc: SxDocument, body: String) -> String:

@@ -3,24 +3,12 @@
 # 25 mm window on the part origin, so the Ø45 head at x=200 sat off the right
 # edge and F / Frame / wheel zoom-out could not bring it back.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_sx037_faceframe.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const WHEEL_NOTCHES := 8
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -28,8 +16,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await test_face_sketch_frames_blank()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_face_sketch_frames_blank() -> void:
@@ -63,12 +50,12 @@ func test_face_sketch_frames_blank() -> void:
 	await process_frame
 	check(not _body_in_canvas(ctx, body),
 			"parked view hides part of the blank (the sx-037 failure)")
-	await _push_key(ctx.main.get_viewport(), KEY_F)
+	await _push_key_local(ctx.main.get_viewport(), KEY_F)
 	_assert_body_in_canvas(ctx, body, "F")
 
 	_park_on_origin(ctx)
 	await process_frame
-	await _push_key(ctx.main.get_viewport(), KEY_F, true)
+	await _push_key_local(ctx.main.get_viewport(), KEY_F, true)
 	_assert_body_in_canvas(ctx, body, "Shift+F")
 
 	_park_on_origin(ctx)
@@ -209,7 +196,7 @@ func _find_labeled_button(root: Node, text: String) -> Button:
 	return null
 
 
-func _push_key(vp: Viewport, keycode: Key, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

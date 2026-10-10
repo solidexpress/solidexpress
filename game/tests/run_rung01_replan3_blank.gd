@@ -1,23 +1,11 @@
 # Rung 1 replan 3 WP3 — inference-on wrench blank and jaw angle at 1280×800.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan3_blank.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const TOL := 0.2
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -30,8 +18,7 @@ func _init() -> void:
 	await test_tangent_blank_and_open_vertex()
 	await test_jaw_angle_held()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:
@@ -171,9 +158,9 @@ func test_jaw_angle_held() -> void:
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Center Three Point", "Centre rectangle"))
 	var along := Vector2(cos(deg_to_rad(30.0)), sin(deg_to_rad(30.0)))
 	var across := Vector2(-along.y, along.x)
-	await _click_uv(ctx, Vector2.ZERO, "Rect centre")
-	await _click_uv(ctx, along * 30.0, "Rect long side")
-	await _click_uv(ctx, across * 8.0, "Rect half width")
+	await _click_uv_local(ctx, Vector2.ZERO, "Rect centre")
+	await _click_uv_local(ctx, along * 30.0, "Rect long side")
+	await _click_uv_local(ctx, across * 8.0, "Rect half width")
 	await process_frame
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	var width_i := _dim_index_near(sm, "distance", 16.0)
@@ -211,16 +198,16 @@ func _draw_tangent_segment(ctx: FilmContext, pair: Dictionary, c1: Vector2, c2: 
 	var a_off := a + (a - c1).normalized() * 0.3
 	var b_off := b + (b - c2).normalized() * 0.3
 	await _zoom_uv(ctx, a_off, 90.0)
-	await _click_uv(ctx, a_off, "Tangent start near circle")
+	await _click_uv_local(ctx, a_off, "Tangent start near circle")
 	await _zoom_uv(ctx, b_off, 90.0)
-	await _click_uv(ctx, b_off, "Tangent end near circle")
+	await _click_uv_local(ctx, b_off, "Tangent end near circle")
 	await _right_click_uv(ctx, b_off)
 
 
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, center, "Circle centre")
+	await _click_uv_local(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text)
 
@@ -266,7 +253,7 @@ func _edit_label(ctx: FilmContext, index: int, text: String) -> void:
 	if lp == null:
 		return
 	await _zoom_uv(ctx, lp as Vector2, 50.0)
-	await _click_uv(ctx, lp as Vector2, "Edit dimension label")
+	await _click_uv_local(ctx, lp as Vector2, "Edit dimension label")
 	await process_frame
 	await process_frame
 	var ix = ctx.main.interaction
@@ -284,12 +271,6 @@ func _type_popup(ctx: FilmContext, edit: LineEdit, text: String) -> void:
 	await _type_text(edit.get_viewport(), text)
 	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
-
-
-func _type_text(vp: Viewport, text: String) -> void:
-	for i in text.length():
-		var ch := text.substr(i, 1)
-		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
 
 
 func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
@@ -319,7 +300,7 @@ func _keycode_for_char(ch: String) -> Key:
 	return KEY_NONE
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -340,17 +321,17 @@ func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 func _right_click_uv(ctx: FilmContext, uv: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	await _push_mouse(ctx.main.get_viewport(), screen, MOUSE_BUTTON_RIGHT, true)
-	await _push_mouse(ctx.main.get_viewport(), screen, MOUSE_BUTTON_RIGHT, false)
+	await _push_mouse_local(ctx.main.get_viewport(), screen, MOUSE_BUTTON_RIGHT, true)
+	await _push_mouse_local(ctx.main.get_viewport(), screen, MOUSE_BUTTON_RIGHT, false)
 
 
 func _pointer_click(ctx: FilmContext, pos: Vector2) -> void:
 	var vp: Viewport = ctx.main.get_viewport()
-	await _push_mouse(vp, pos, MOUSE_BUTTON_LEFT, true)
-	await _push_mouse(vp, pos, MOUSE_BUTTON_LEFT, false)
+	await _push_mouse_local(vp, pos, MOUSE_BUTTON_LEFT, true)
+	await _push_mouse_local(vp, pos, MOUSE_BUTTON_LEFT, false)
 
 
-func _push_mouse(vp: Viewport, pos: Vector2, button: MouseButton, pressed: bool) -> void:
+func _push_mouse_local(vp: Viewport, pos: Vector2, button: MouseButton, pressed: bool) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos
@@ -372,8 +353,8 @@ func _click_control(ctrl: Control) -> void:
 	await process_frame
 	pos = ctrl.get_global_rect().get_center()
 	var vp := ctrl.get_viewport()
-	await _push_mouse(vp, pos, MOUSE_BUTTON_LEFT, true)
-	await _push_mouse(vp, pos, MOUSE_BUTTON_LEFT, false)
+	await _push_mouse_local(vp, pos, MOUSE_BUTTON_LEFT, true)
+	await _push_mouse_local(vp, pos, MOUSE_BUTTON_LEFT, false)
 
 
 func _release_gui_focus(ctx: FilmContext) -> void:
@@ -381,33 +362,6 @@ func _release_gui_focus(ctx: FilmContext) -> void:
 	var focus: Control = vp.gui_get_focus_owner()
 	if focus != null:
 		focus.release_focus()
-	await process_frame
-
-
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
 	await process_frame
 
 

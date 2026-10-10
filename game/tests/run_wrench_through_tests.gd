@@ -1,17 +1,7 @@
 # Through-cut hex, plane-locked move, pocket select, AF regen — wrench path.
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c: print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 func _init() -> void:
 	print("wrench through-cut gate")
@@ -19,8 +9,7 @@ func _init() -> void:
 	await test_pocket_select_no_auto_move()
 	await test_af_grows_existing()
 	await test_new_matte_no_triball()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func _top_face(view, id: String, z_expect: float) -> String:

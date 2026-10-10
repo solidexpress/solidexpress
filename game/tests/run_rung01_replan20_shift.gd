@@ -2,26 +2,14 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan20_shift.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
 var _wall := ""
 var _circle := ""
 var _sm: SketchMode
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	await _story()
 	SxUi.trace_enabled_override = false
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _story() -> void:
@@ -69,7 +56,7 @@ func _boot() -> FilmContext:
 func _scene(ctx: FilmContext) -> void:
 	print("- wall and throwaway circle")
 	await FilmUI.enter_sketch(ctx)
-	await _zoom(ctx, Vector2(40, 20), 4.0)
+	await _zoom_local(ctx, Vector2(40, 20), 4.0)
 	await _draw_line(ctx, Vector2(0, 0), Vector2(80, 0))
 	await _draw_circle(ctx, Vector2(40, 36), "6")
 	var sm: SketchMode = ctx.main.sketch_mode
@@ -252,8 +239,8 @@ func _case_key_trace(ctx: FilmContext) -> void:
 
 func _select_wall(ctx: FilmContext) -> void:
 	_log.clear()
-	await _click_uv(ctx, Vector2(-10, -25))
-	await _click_uv(ctx, Vector2(32, 0))
+	await _click_uv_local(ctx, Vector2(-10, -25))
+	await _click_uv_local(ctx, Vector2(32, 0))
 	await process_frame
 	var label := str(ctx.main.status_label.text)
 	check((label == "Selected 1 sketch entity" or _saw("Selected 1 sketch entity"))
@@ -263,8 +250,8 @@ func _select_wall(ctx: FilmContext) -> void:
 
 func _clear_then_wall(ctx: FilmContext) -> void:
 	_log.clear()
-	await _click_uv(ctx, Vector2(-10, -25))
-	await _click_uv(ctx, Vector2(32, 0))
+	await _click_uv_local(ctx, Vector2(-10, -25))
+	await _click_uv_local(ctx, Vector2(32, 0))
 	await process_frame
 
 
@@ -407,11 +394,11 @@ func _draw_circle(ctx: FilmContext, center: Vector2, radius_text: String) -> voi
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2) -> void:
 	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, uv, "sketch point")
 
 
-func _zoom(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
+func _zoom_local(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
 	var cam = ctx.main.camera
 	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():

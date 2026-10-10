@@ -4,8 +4,7 @@
 # Layout assertions at 1280×800. Run:
 #   LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #     --script res://tests/run_rung01_replan14_ctxbar.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const SMALL_SIZE := Vector2i(1024, 768)
@@ -15,18 +14,7 @@ const COMMON := [
 	"StripTriBall", "StripFillet", "StripChamfer",
 ]
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -34,8 +22,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _run()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run() -> void:
@@ -47,7 +34,7 @@ func _run() -> void:
 	await FilmUI.place_primitive_at(ctx, "box", Vector3(15, 0, 0), Vector3(40, 20, 10))
 	await process_frame
 	await process_frame
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_3)
 	await process_frame
 	await process_frame
 
@@ -417,7 +404,7 @@ func _esc_until_hidden(ctx: FilmContext, vp: Viewport, ix: ViewportInteraction, 
 	for _i in cap:
 		if strip == null or not strip.visible:
 			return
-		await _push_key(vp, KEY_ESCAPE)
+		await _push_key_local(vp, KEY_ESCAPE)
 		await process_frame
 		await process_frame
 
@@ -439,7 +426,7 @@ func _push_click(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

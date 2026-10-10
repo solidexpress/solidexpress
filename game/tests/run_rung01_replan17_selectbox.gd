@@ -4,23 +4,11 @@
 # InputEventMouseButton / InputEventMouseMotion / InputEventKey via push_input.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan17_selectbox.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -29,8 +17,7 @@ func _init() -> void:
 	await test_first_drag_and_nearest()
 	await test_chips_clear_on_delete()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_first_drag_and_nearest() -> void:
@@ -48,7 +35,7 @@ func test_first_drag_and_nearest() -> void:
 	var near_a: String = sm.sketch.add_line(0.0, -50.0, 50.0, -50.0)
 	var near_b: String = sm.sketch.add_line(0.0, -49.6, 50.0, -49.6)
 	sm._redraw()
-	await _zoom(ctx, sm.to_model(Vector2(30.0, -5.0)), 180.0, false)
+	await _zoom_local(ctx, sm.to_model(Vector2(30.0, -5.0)), 180.0, false)
 	await _arm_select(ctx, sm, vp)
 
 	var win_lo := _uv(ctx, sm, Vector2(-14.0, -14.0))
@@ -201,7 +188,7 @@ func test_chips_clear_on_delete() -> void:
 	var circ: String = sm.sketch.add_circle(70.0, 30.0, 3.0)
 	sm._redraw()
 	await process_frame
-	await _zoom(ctx, sm.to_model(Vector2(35.0, 16.0)), 140.0, false)
+	await _zoom_local(ctx, sm.to_model(Vector2(35.0, 16.0)), 140.0, false)
 	await _arm_select(ctx, sm, vp)
 	var before := sm.sketch.entity_ids().size()
 
@@ -337,7 +324,7 @@ func _on_status(text: String) -> void:
 	_status_log.append(text)
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float, top: bool) -> void:
+func _zoom_local(ctx: FilmContext, model_pivot: Vector3, size_mm: float, top: bool) -> void:
 	var cam = ctx.main.camera
 	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():

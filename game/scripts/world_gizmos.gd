@@ -60,14 +60,6 @@ func set_gizmos_visible(on: bool) -> void:
 	gizmos_visible = on
 	_apply_visibility()
 
-
-func set_grid_visible(on: bool) -> void:
-	grid_visible = on
-	_apply_visibility()
-
-
-## Rebuild the sheet so minor cells are ≥ MIN_MINOR_PX on screen.
-## `px_per_mm` is pixels per model millimetre at the orbit pivot.
 func refresh_lod(px_per_mm: float) -> void:
 	var step := pick_minor_step_mm(px_per_mm)
 	var major := step * float(MAJOR_EVERY)

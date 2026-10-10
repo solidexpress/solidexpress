@@ -1,20 +1,8 @@
 # Rung 1 replan WP6 — property panel select-all, opaque docks, Pick face row.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan_panel.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -33,8 +21,7 @@ func _init() -> void:
 	await _build_to_face_extrude(ctx)
 	await _edit_distance_from_timeline(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _file_new(ctx: FilmContext) -> void:

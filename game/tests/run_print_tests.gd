@@ -1,20 +1,8 @@
 # Print-first Form strip: Analyze / Orient via visible chips (print-first.md).
 # Run: tools/godot/godot --headless --path game --script tests/run_print_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, msg: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + msg)
-	else:
-		failures += 1
-		printerr("  FAIL - " + msg)
 
 
 func _init() -> void:
@@ -37,8 +25,7 @@ func _init() -> void:
 	await test_orient_tall_box(ctx, main)
 	await test_hole_changes_digest(ctx, main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_analyze_thin_plate(ctx: FilmContext, main) -> void:

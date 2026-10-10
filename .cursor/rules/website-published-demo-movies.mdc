@@ -1,6 +1,6 @@
 ---
 description: Marketing site demo videos must exist on the demo-movies Release
-globs: website/**/*.{html,js,json,md} docs/index.html docs/features.html
+globs: website/**/*.{html,js,json,md}
 alwaysApply: false
 ---
 

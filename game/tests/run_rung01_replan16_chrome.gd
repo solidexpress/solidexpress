@@ -4,8 +4,7 @@
 # Every press, key, and motion under test is Viewport.push_input.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan16_chrome.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const POSE_EPS := 0.001
@@ -13,18 +12,7 @@ const SAVE_PATH := "/tmp/sx_wp5_chrome.sxp"
 const FACE_HINT := "Face — click selects body first, click again for face · then Pull arrow"
 const BOX_SIZE := Vector3(240, 45, 10)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -36,8 +24,7 @@ func _init() -> void:
 	await _test_c4_timeline()
 	await _test_c5_c6_open()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _test_c1_camera() -> void:
@@ -48,14 +35,14 @@ func _test_c1_camera() -> void:
 	var vp: Viewport = main.get_viewport()
 	var body := await _place_box(ctx)
 	check(body != "", "C1 box placed")
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_3)
 	await process_frame
 	var before := _pose_of(cam)
 	print("  C1 pre-sketch pose %s" % _pose_text(before))
 	# A selected body hides the palette; the Modify-rail Sketch is the visible one.
 	var sketch_btn: Button = _find_labeled_button(main.ops_panel, "Sketch")
 	if sketch_btn == null:
-		await _push_key(vp, KEY_ESCAPE)
+		await _push_key_local(vp, KEY_ESCAPE)
 		await process_frame
 		sketch_btn = main.find_child("PaletteSketch", true, false)
 	check(sketch_btn != null and sketch_btn.is_visible_in_tree(),
@@ -77,7 +64,7 @@ func _test_c1_camera() -> void:
 		return
 	_release_focus(vp)
 	var mark := _status_log.size()
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await process_frame
 	var saw_fit := _log_has_since(mark, "Sketch view fit") or _label(main) == "Sketch view fit"
 	print("  C1 after F label=`%s` locked=%s log_tail=%s" % [
@@ -855,7 +842,7 @@ func _motion(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	await _push_key_raw(vp, keycode)
 
 

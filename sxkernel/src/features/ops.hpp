@@ -6,8 +6,11 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include <TopoDS_Shape.hxx>
+#include <TopoDS_Wire.hxx>
+#include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
 
@@ -15,6 +18,8 @@
 #include "sx/entity.hpp"
 #include "sx/features.hpp"
 #include "sx/ids.hpp"
+#include "sx/shape_utils.hpp"
+#include "sx/sketch.hpp"
 
 namespace sx::feature_ops {
 
@@ -57,6 +62,61 @@ bool apply_mirror(ApplyCtx& ctx);
 bool apply_linear_pattern(ApplyCtx& ctx);
 bool apply_circular_pattern(ApplyCtx& ctx);
 bool apply_boolean(ApplyCtx& ctx);
+bool apply_primitive(ApplyCtx& ctx);
+bool apply_sketch(ApplyCtx& ctx);
+bool apply_extrude_revolve(ApplyCtx& ctx);
+bool apply_hole(ApplyCtx& ctx);
+bool apply_path(ApplyCtx& ctx);
+bool apply_sweep(ApplyCtx& ctx);
+bool apply_loft(ApplyCtx& ctx);
+bool apply_helix_sweep(ApplyCtx& ctx);
+bool apply_thread(ApplyCtx& ctx);
+bool apply_import(ApplyCtx& ctx);
+bool apply_direct_edit(ApplyCtx& ctx);
+bool apply_replace_face(ApplyCtx& ctx);
+bool apply_rib(ApplyCtx& ctx);
+bool apply_thicken(ApplyCtx& ctx);
+bool apply_wrap(ApplyCtx& ctx);
+bool apply_flange(ApplyCtx& ctx);
+bool apply_knit(ApplyCtx& ctx);
+bool apply_frame_member(ApplyCtx& ctx);
+bool apply_in_context(ApplyCtx& ctx);
+bool apply_convert_sheet(ApplyCtx& ctx);
+bool apply_user_feature(ApplyCtx& ctx);
+bool apply_datum(ApplyCtx& ctx);
+bool apply_noop(ApplyCtx& ctx);
+
+inline constexpr double k_hole_nudge = 1.0;
+inline constexpr double k_hole_through = 1e6;
+
+shape::Placement placement_from(const nlohmann::json& p);
+
+TopoDS_Shape build_primitive_feature(const nlohmann::json& p,
+                                     const std::map<std::string, double>& env);
+TopoDS_Shape build_feature_hole_tool(const gp_Pnt& position, const gp_Dir& direction,
+                                     double diameter, double depth, const std::string& type,
+                                     double cb_diameter, double cb_depth, double cs_diameter,
+                                     double cs_angle_deg);
+nlohmann::json simplify_path_polyline(const nlohmann::json& path);
+nlohmann::json simplify_path_rdp(const nlohmann::json& path, double eps);
+nlohmann::json simplify_path_for_sweep(const nlohmann::json& path);
+nlohmann::json sketch_ordered_polyline(const Sketch& sk);
+nlohmann::json join_polylines(nlohmann::json a, const nlohmann::json& b);
+nlohmann::json chain_points(std::vector<gp_Pnt> pts);
+nlohmann::json densify_catmull(const std::vector<gp_Pnt>& ctrl, int samples_per_seg = 8);
+nlohmann::json pnt_to_json(const gp_Pnt& p);
+TopoDS_Wire make_polyline_wire(const nlohmann::json& path);
+TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const nlohmann::json& path,
+                                  const nlohmann::json* guide_path = nullptr,
+                                  double thin_thickness = 0.0);
+TopoDS_Shape helix_sweep_solid(const gp_Ax2& axis, double helix_r, double pitch,
+                               double turns, bool left_handed, double profile_r);
+TopoDS_Shape thread_cutter_solid(const gp_Ax2& axis, double major_radius, double pitch,
+                                 double turns, double depth, double angle_deg);
+std::vector<gp_Pnt> sketch_line_points(const Sketch& sk);
+std::string thin_wall_on_error(double mm);
+bool sketch_closed_contour(const Sketch& sk);
+void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f);
 
 bool resolve_topo_shape(Document& doc, const Body& body, EntityKind kind,
                         const nlohmann::json& ref, TopoDS_Shape& out, std::string* why);

@@ -3,24 +3,12 @@
 # test is a real InputEvent pushed with Viewport.push_input.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan17_input.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _disp_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -33,8 +21,7 @@ func _init() -> void:
 	await test_w1_wording()
 	await test_s1_smart_dim_points()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_k1_ledger() -> void:
@@ -63,7 +50,7 @@ func test_k1_ledger() -> void:
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(18.0, -12.0)))
 	check(FilmUI.require_on_screen(ctx, screen, "K1 canvas"), "K1 canvas click is on screen")
 	var mark := _status_log.size()
-	await _x11_click_screen(vp, screen)
+	await _x11_click_screen_local(vp, screen)
 	await process_frame
 	check(_last_disp() == "sketch-click:CIRCLE",
 			"K1 canvas disposition sketch-click:CIRCLE (got `%s`)" % _last_disp())
@@ -74,7 +61,7 @@ func test_k1_ledger() -> void:
 		extrude = ctx.main.sketch_chrome.extrude_button()
 	check(extrude != null and extrude.is_visible_in_tree(), "K1 Extrude button is visible")
 	if extrude != null:
-		await _x11_click_screen(vp, extrude.get_global_rect().get_center())
+		await _x11_click_screen_local(vp, extrude.get_global_rect().get_center())
 		await process_frame
 		var ed := _last_disp()
 		check(ed.begins_with("drop:over-chrome:") and ed.length() > "drop:over-chrome:".length(),
@@ -169,7 +156,7 @@ func test_k2_trials() -> void:
 	if sm != null and sm.active:
 		sm.sketch.add_line(-20.0, 0.0, 20.0, 0.0)
 		sm._redraw()
-		await _zoom(ctx, sm.to_model(Vector2.ZERO), 50.0, false)
+		await _zoom_local(ctx, sm.to_model(Vector2.ZERO), 50.0, false)
 		var centre := FilmUI.model_to_screen(ctx, sm.to_model(Vector2.ZERO))
 		var off := centre + Vector2(0, 3)
 		check(FilmUI.require_on_screen(ctx, off, "K2 thin line"), "K2 3 px off the line is on screen")
@@ -185,7 +172,7 @@ func test_k2_trials() -> void:
 					select_dead += 1
 					print("  dead select trial %d selected=%d disp=%s" % [i + 1, sm.selected.size(), _last_disp()])
 				# A second click on the same line toggles it off. Clear on empty canvas.
-				await _x11_click_screen(vp, clear_at)
+				await _x11_click_screen_local(vp, clear_at)
 	check(select_dead == 0, "K2 rail Select thin line 0/10 dead (dead %d)" % select_dead)
 	check(dead + jaw_dead + circle_dead + select_dead == 0, "K2 zero dead trials")
 	await _shutdown(ctx)
@@ -205,7 +192,7 @@ func test_k3_dim_halo() -> void:
 	var rcid: String = sm.sketch.add_constraint("radius", [{"entity": cid, "role": "self"}], 15.0)
 	sm._record_dimension("radius", [cid], 15.0, rcid)
 	sm._redraw()
-	await _zoom(ctx, sm.to_model(Vector2.ZERO), 80.0, false)
+	await _zoom_local(ctx, sm.to_model(Vector2.ZERO), 80.0, false)
 	await process_frame
 	var spot := _halo_outside_text(ctx, sm)
 	check(spot != Vector2.INF, "K3 found a halo point outside the text rect")
@@ -216,7 +203,7 @@ func test_k3_dim_halo() -> void:
 	await _x11_click(circle)
 	await process_frame
 	var before := sm.sketch.entity_ids().size()
-	await _x11_click_screen(vp, spot)
+	await _x11_click_screen_local(vp, spot)
 	await process_frame
 	check(_last_disp() == "sketch-click:CIRCLE",
 			"K3 halo click is sketch-click:CIRCLE (got `%s`)" % _last_disp())
@@ -247,7 +234,7 @@ func test_marquee() -> void:
 	]
 	var circ: String = sm.sketch.add_circle(90.0, 10.0, 8.0)
 	sm._redraw()
-	await _zoom(ctx, sm.to_model(Vector2(45.0, 10.0)), 140.0, false)
+	await _zoom_local(ctx, sm.to_model(Vector2(45.0, 10.0)), 140.0, false)
 	var sel := FilmUI.find_sketch_tool_button(ctx.main, "Select")
 	await _x11_click(sel)
 	await process_frame
@@ -289,10 +276,10 @@ func test_marquee() -> void:
 	# M3 Shift+drag adds the quad to the circle. A click on an already
 	# selected circle toggles it off, so clear first, then pick the centre.
 	var empty_m3 := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(-30.0, 40.0)))
-	await _x11_click_screen(vp, empty_m3)
+	await _x11_click_screen_local(vp, empty_m3)
 	await process_frame
 	var circ_pt := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(98.0, 10.0)))
-	await _x11_click_screen(vp, circ_pt)
+	await _x11_click_screen_local(vp, circ_pt)
 	await process_frame
 	check(sm.selected.has(circ), "M3 prior click selects the circle")
 	mark = _status_log.size()
@@ -308,7 +295,7 @@ func test_marquee() -> void:
 	# M4 press-release on empty canvas clears.
 	var empty := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(-30.0, 40.0)))
 	check(FilmUI.require_on_screen(ctx, empty, "M4 empty"), "M4 empty canvas is on screen")
-	await _x11_click_screen(vp, empty)
+	await _x11_click_screen_local(vp, empty)
 	await process_frame
 	check(sm.selected.is_empty(), "M4 click on empty canvas clears the selection (got %s)" % str(sm.selected))
 
@@ -347,7 +334,7 @@ func test_marquee() -> void:
 	circ = sm.sketch.add_circle(90.0, 10.0, 8.0)
 	sm.dimensions.append({"type": "distance", "ids": [q[0]], "value": 40.0, "cid": ""})
 	sm._redraw()
-	await _zoom(ctx, sm.to_model(Vector2(45.0, 10.0)), 140.0, false)
+	await _zoom_local(ctx, sm.to_model(Vector2(45.0, 10.0)), 140.0, false)
 	sel = FilmUI.find_sketch_tool_button(ctx.main, "Select")
 	await _x11_click(sel)
 	await process_frame
@@ -386,26 +373,26 @@ func test_w1_wording() -> void:
 	await process_frame
 	await process_frame
 	ctx.view.clear_selection()
-	await _zoom(ctx, Vector3(0, 0, 10), 80.0, true)
+	await _zoom_local(ctx, Vector3(0, 0, 10), 80.0, true)
 	var vp: Viewport = ctx.main.get_viewport()
 	var face_pt := FilmUI.model_to_screen(ctx, Vector3(0, 0, 10))
 	check(FilmUI.require_on_screen(ctx, face_pt, "W1 face"), "W1 face pick is on screen")
 	await _x11_key(vp, KEY_ESCAPE)
 	var mark := _status_log.size()
-	await _x11_click_screen(vp, face_pt)
+	await _x11_click_screen_local(vp, face_pt)
 	await process_frame
 	check(ctx.view.selected_body == body and ctx.view.selected_face == "" and ctx.view.selected_edge == "",
 			"W1 first click selects the body")
 	check(_saw_since(mark, "Selected body "), "W1 status Selected body  (log %s)" % _tail())
 	mark = _status_log.size()
-	await _x11_click_screen(vp, face_pt)
+	await _x11_click_screen_local(vp, face_pt)
 	await process_frame
 	check(ctx.view.selected_face != "", "W1 second click selects a face")
 	check(_saw_since(mark, "Selected face "), "W1 status Selected face  (log %s)" % _tail())
 	var edge_pt := _top_edge_screen(ctx, face_pt)
 	check(FilmUI.require_on_screen(ctx, edge_pt, "W1 edge"), "W1 edge pick is on screen")
 	mark = _status_log.size()
-	await _x11_click_screen(vp, edge_pt)
+	await _x11_click_screen_local(vp, edge_pt)
 	await process_frame
 	check(ctx.view.selected_edge != "", "W1 click near an edge selects an edge")
 	check(_saw_since(mark, "Selected edge "), "W1 status Selected edge  (log %s)" % _tail())
@@ -418,7 +405,7 @@ func test_w1_wording() -> void:
 		sm._redraw()
 		await process_frame
 		mark = _status_log.size()
-		await _push_key(vp, KEY_A, true, false)
+		await _push_key_local(vp, KEY_A, true, false)
 		check(sm.selected.size() == 1, "W1 Ctrl+A selects the one entity")
 		check(_saw_since(mark, "Selected 1 sketch entity"),
 				"W1 status Selected 1 sketch entity (log %s)" % _tail())
@@ -438,7 +425,7 @@ func test_s1_smart_dim_points() -> void:
 	sm.sketch.add_circle(0.0, 0.0, 10.0)
 	sm.sketch.add_circle(40.0, 0.0, 10.0)
 	sm._redraw()
-	await _zoom(ctx, sm.to_model(Vector2(20.0, 0.0)), 80.0, false)
+	await _zoom_local(ctx, sm.to_model(Vector2(20.0, 0.0)), 80.0, false)
 	var before := _point_ids(sm)
 	var dim_btn := FilmUI.find_sketch_tool_button(ctx.main, "Smart Dim")
 	check(dim_btn != null and dim_btn.is_visible_in_tree(), "S1 rail Smart Dim is visible")
@@ -448,9 +435,9 @@ func test_s1_smart_dim_points() -> void:
 	var c2 := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(40.0, 0.0)))
 	check(FilmUI.require_on_screen(ctx, c1, "S1 c1") and FilmUI.require_on_screen(ctx, c2, "S1 c2"),
 			"S1 centres are on screen")
-	await _x11_click_screen(vp, c1)
+	await _x11_click_screen_local(vp, c1)
 	await process_frame
-	await _x11_click_screen(vp, c2)
+	await _x11_click_screen_local(vp, c2)
 	await process_frame
 	var after := _point_ids(sm)
 	var fresh: Array[String] = []
@@ -647,7 +634,7 @@ func _tail() -> String:
 	return str(_status_log.slice(n))
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float, top: bool) -> void:
+func _zoom_local(ctx: FilmContext, model_pivot: Vector3, size_mm: float, top: bool) -> void:
 	var cam = ctx.main.camera
 	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():
@@ -681,10 +668,10 @@ func _x11_click(ctrl: Control) -> void:
 	if ctrl == null:
 		check(false, "click target exists")
 		return
-	await _x11_click_screen(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
+	await _x11_click_screen_local(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2) -> void:
 	await _trial_click(vp, pos, false)
 
 
@@ -748,10 +735,10 @@ func _drag_screen(vp: Viewport, a: Vector2, b: Vector2, shift: bool) -> void:
 
 
 func _x11_key(vp: Viewport, code: Key) -> void:
-	await _push_key(vp, code, false, false)
+	await _push_key_local(vp, code, false, false)
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

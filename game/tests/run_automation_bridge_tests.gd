@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tests/lib/sx_suite.gd"
 ## Proves SX_AUTOMATION injects real viewport input.
 ## Run: tools/godot/godot --headless --path game --script tests/run_automation_bridge_tests.gd
 
@@ -6,28 +6,16 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const PORT := 47341
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _peer: StreamPeerTCP
 var _buf := ""
 var _rpc_id := 1
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("automation bridge")
 	await _case_off()
 	await _case_real_input()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _case_off() -> void:

@@ -4,8 +4,7 @@
 # slot-floor R1, then top and bottom face R1, closed 3MF, check_rung01 wrench.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan15_jawstub.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOL := 0.2
@@ -25,8 +24,6 @@ const BAD_STATUS: Array[String] = [
 	"left an open shell",
 ]
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _stage := ""
 var _stage_base := ""
@@ -44,12 +41,8 @@ var _slot_floor_error := ""
 
 
 func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+	super.check(cond, what)
+	if not cond:
 		if STAGES.has(_stage) and not _skipped.get(_stage, false):
 			if not _stage_fail.has(_stage):
 				_stage_fail[_stage] = what
@@ -68,11 +61,10 @@ func _init() -> void:
 		await _run_chain(ctx)
 	_print_summary()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _begin(id: String) -> void:
@@ -377,7 +369,7 @@ func _stage_s4(ctx: FilmContext, top: String, body: String) -> void:
 	await _type_dim(ctx, "5", false)
 	_capture()
 	check(absf(sm.slot_radius - 5.0) < 1e-3, "S4: slot radius typed 5 (got %.4f)" % sm.slot_radius)
-	await _click_uv(ctx, Vector2(18.5, 0.0), "S4 slot first centre")
+	await _click_uv_local(ctx, Vector2(18.5, 0.0), "S4 slot first centre")
 	await _hover_uv(ctx, Vector2(168.5, 0.0))
 	await _type_dim(ctx, "150", false)
 	_capture()
@@ -848,13 +840,7 @@ func _click_control(ctrl: Control) -> void:
 	await process_frame
 
 
-func _x11_click(ctrl: Control) -> void:
-	var pos := ctrl.get_global_rect().get_center()
-	var vp := ctrl.get_viewport()
-	await _x11_click_screen(vp, pos)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos
@@ -876,7 +862,7 @@ func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -
 
 
 func _x11_click_at(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
-	await _x11_click_screen(vp, pos, double_click)
+	await _x11_click_screen_local(vp, pos, double_click)
 
 
 func _x11_click_embedded(ctrl: Control) -> void:
@@ -945,7 +931,7 @@ func _click_popup_item(popup: PopupMenu, id: int, desc: String) -> bool:
 	var cb := func(pressed_id: int) -> void:
 		got[0] = pressed_id
 	popup.id_pressed.connect(cb)
-	await _x11_click_screen(root.get_viewport(), screen)
+	await _x11_click_screen_local(root.get_viewport(), screen)
 	await process_frame
 	await process_frame
 	if popup.id_pressed.is_connected(cb):
@@ -1159,11 +1145,11 @@ func _type_distance(ctx: FilmContext, text: String) -> void:
 	check(absf(got - float(text)) <= TOL, "typed Blind distance %s (got %.3f)" % [text, got])
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "on screen: %s" % desc)
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await _x11_click_screen_local(ctx.main.get_viewport(), screen)
 	await process_frame
 
 
@@ -1235,7 +1221,7 @@ func _press_rail_label(ctx: FilmContext, label: String) -> Button:
 	check(pos != Vector2.INF, "rail button `%s` centre is on the rail clip" % label)
 	if pos == Vector2.INF:
 		return null
-	await _x11_click_screen(ctx.main.get_viewport(), pos)
+	await _x11_click_screen_local(ctx.main.get_viewport(), pos)
 	await process_frame
 	return btn
 
@@ -1384,14 +1370,14 @@ func _commit_fillet(ctx: FilmContext) -> void:
 	var edit: LineEdit = spin.get_line_edit()
 	edit.grab_focus()
 	await process_frame
-	await _push_key(edit.get_viewport(), KEY_ENTER, 0)
+	await _push_key_local(edit.get_viewport(), KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 	# Field Enter commits the radius only. Viewport Enter applies.
 	if ctx.main.ops_panel._pending != OpsPanel.Pending.NONE:
 		ctx.main.interaction.return_viewport_keys()
 		await process_frame
-		await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
+		await _push_key_local(ctx.main.get_viewport(), KEY_ENTER, 0)
 		await process_frame
 		await process_frame
 	var applied := spin.value
@@ -1399,7 +1385,7 @@ func _commit_fillet(ctx: FilmContext) -> void:
 		print("  B13.8 Fillet radius %s" % _radius_digits(applied))
 		_assert_strip_equals_panel(ctx, applied, _radius_digits(applied))
 	if str(ctx.view.doc.last_graph_error()) != "":
-		await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+		await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 		await process_frame
 
 
@@ -1461,34 +1447,7 @@ func _assert_strip_equals_panel(ctx: FilmContext, want: float, tag: String) -> v
 				tag, str(want), str(spin.value), str(panel)])
 
 
-func _keycode_for_char(ch: String) -> Key:
-	var c := ch.unicode_at(0)
-	if ch == "/":
-		return KEY_SLASH
-	if ch == "\\":
-		return KEY_BACKSLASH
-	if ch == "-":
-		return KEY_MINUS
-	if ch == "_":
-		return KEY_UNDERSCORE
-	if ch == ".":
-		return KEY_PERIOD
-	if c >= 48 and c <= 57:
-		return (KEY_0 + (c - 48)) as Key
-	if c >= 97 and c <= 122:
-		return (KEY_A + (c - 97)) as Key
-	if c >= 65 and c <= 90:
-		return (KEY_A + (c - 65)) as Key
-	return KEY_NONE
-
-
-func _type_text(vp: Viewport, text: String) -> void:
-	for i in text.length():
-		var ch := text.substr(i, 1)
-		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
-
-
-func _push_key(vp: Viewport, keycode: Key, unicode: int, ctrl := false, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, unicode: int, ctrl := false, shift := false) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = keycode
 	ev.physical_keycode = keycode
@@ -1607,7 +1566,7 @@ func _type_timeline_distance(ctx: FilmContext, fid: String, digits: String) -> v
 	check(selected != "" and selected == edit.text,
 			"distance text is selected ('%s')" % selected)
 	await _type_text(ctx.main.get_viewport(), digits)
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER, 0)
 	if digits == "14":
 		print("  B13.14 Typed fields (Distance)")
 		for i in 5:
@@ -1651,7 +1610,7 @@ func _esc_ends_pick(ctx: FilmContext) -> void:
 
 
 func _real_esc(ctx: FilmContext) -> void:
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 	await process_frame
 
 

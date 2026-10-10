@@ -155,8 +155,6 @@ public:
 
     // Explicit mate connectors (Onshape-style). Implicit connectors are
     // inferred from faces at apply time; these persist user-named frames.
-    EntityId add_connector(MateConnector c);
-    bool remove_connector(const EntityId& id);
     const std::vector<MateConnector>& connectors() const { return connectors_; }
     void restore_connector(MateConnector&& c);
 

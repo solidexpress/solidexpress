@@ -4,8 +4,7 @@
 # Real events: Viewport.push_input for F / Shift+F; View HUD Frame and marking-menu
 # items 20/21 via visible buttons. Geometry is placed through the sketch API.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan13_frame.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const MARGIN_PX := 4.0
@@ -15,18 +14,7 @@ const HEAD := Vector2(200, 0)
 const ORIGIN_R := 10.0
 const HEAD_R := 22.5
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -36,8 +24,7 @@ func _init() -> void:
 	await test_face_sketch_and_exit_3d()
 	await test_face_sketch_origin_clears_rail()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_blank_sketch_f_fits_both_circles() -> void:
@@ -56,13 +43,13 @@ func test_blank_sketch_f_fits_both_circles() -> void:
 	check(sm.sketch.entity_ids().size() >= 2, "two circles exist")
 
 	var locked0 := cam.sketch_orientation_locked
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await _record_head_extremes(ctx, "after F")
 	_assert_both_circles_framed(ctx, "F")
 	_assert_sketch_plane(ctx, locked0)
 
 	var size_f := cam.size
-	await _push_key(vp, KEY_F, true)
+	await _push_key_local(vp, KEY_F, true)
 	await _record_head_extremes(ctx, "after Shift+F")
 	_assert_both_circles_framed(ctx, "Shift+F")
 	_assert_sketch_plane(ctx, locked0)
@@ -102,7 +89,7 @@ func test_blank_sketch_f_fits_both_circles() -> void:
 	await process_frame
 	await process_frame
 	await _smart_dim_centres_200(ctx)
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await _record_head_extremes(ctx, "after Smart Dim 200 then F")
 	_assert_both_circles_framed(ctx, "F after Smart Dim 200")
 	_assert_sketch_plane(ctx, locked0)
@@ -129,7 +116,7 @@ func test_face_sketch_and_exit_3d() -> void:
 	check(sm != null and sm.active, "face sketch is open")
 	check(sm.sketch.entity_ids().is_empty(), "face sketch starts empty")
 	var locked0 := cam.sketch_orientation_locked
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	_assert_sketch_plane(ctx, locked0)
 	var origin_screen := _project_model(ctx, sm.plane_origin)
 	check(_in_framed_canvas(ctx, origin_screen),
@@ -146,7 +133,7 @@ func test_face_sketch_and_exit_3d() -> void:
 	sm.sketch.add_circle(HEAD.x, HEAD.y, HEAD_R)
 	sm.run_solve()
 	await process_frame
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await _record_head_extremes(ctx, "face sketch after F")
 	_assert_both_circles_framed(ctx, "face-sketch F with entities", 5.0, HEAD_R)
 	_assert_sketch_plane(ctx, locked0)
@@ -158,7 +145,7 @@ func test_face_sketch_and_exit_3d() -> void:
 	check(not cam.sketch_orientation_locked, "sketch lock is off after Exit Sketch")
 	check(not _sketch_fit_valid(cam),
 			"camera.sketch_fit is invalid after exit_sketch")
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	check(not _sketch_fit_valid(cam), "sketch_fit stays invalid after 3D F")
 	check(not cam.sketch_orientation_locked, "3D F does not re-lock the sketch view")
 	var dist0 := cam.distance
@@ -196,7 +183,7 @@ func test_face_sketch_origin_clears_rail() -> void:
 		ctx.main._update_left_rail()
 	await process_frame
 	await process_frame
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	await process_frame
 	var origin_screen := _project_uv(ctx, ORIGIN)
 	var rail_right := _rail_right_px(ctx)
@@ -350,8 +337,8 @@ func _click_orient_item(ctx: FilmContext, label: String) -> void:
 func _smart_dim_centres_200(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
-	await _click_uv(ctx, ORIGIN, "Smart Dim first centre")
-	await _click_uv(ctx, HEAD, "Smart Dim second centre")
+	await _click_uv_local(ctx, ORIGIN, "Smart Dim first centre")
+	await _click_uv_local(ctx, HEAD, "Smart Dim second centre")
 	await process_frame
 	await process_frame
 	var ix: ViewportInteraction = ctx.main.interaction
@@ -385,14 +372,14 @@ func _centre_gap(sm: SketchMode) -> float:
 	return centres[0].distance_to(centres[1])
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
 
 
-func _push_key(vp: Viewport, keycode: Key, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -413,26 +400,6 @@ func _push_key(vp: Viewport, keycode: Key, shift := false) -> void:
 
 func _x11_click(ctrl: Control) -> void:
 	await _x11_click_screen(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _x11_type(vp: Viewport, text: String) -> void:

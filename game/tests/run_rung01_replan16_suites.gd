@@ -1,8 +1,7 @@
 # Rung 1 replan 16 WP1 — suite manifests are the only registration path.
 # Run from the repo root:
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan16_suites.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const OLD_CI: Array[String] = [
 	"tests/run_workflow_tests.gd",
 	"tests/run_ui_tests.gd",
@@ -22,24 +21,12 @@ const OLD_CI: Array[String] = [
 	"tests/run_rung01_replan15_thick.gd",
 ]
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan16 WP1 suites")
 	_run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _repo() -> String:
@@ -124,7 +111,7 @@ func _run() -> void:
 		base_n += 1
 		if not basenames.has(line):
 			missing.append(line)
-	check(base_n == 154, "baseline has 154 names (got %d)" % base_n)
+	check(base_n == 153, "baseline has 153 names (got %d)" % base_n)
 	check(missing.is_empty(), "baseline basenames ⊆ manifest scripts, missing %s" % str(missing))
 	for script in OLD_CI:
 		check(str(tiers.get(script, "")) == "ci", "old CI tier=ci " + script)

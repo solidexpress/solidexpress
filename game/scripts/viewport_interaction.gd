@@ -2761,27 +2761,6 @@ func _commit_place(screen_pos: Vector2) -> void:
 	_refresh_transform_hud()
 	place_changed.emit(false)
 
-
-func _place_input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion:
-		_update_ghost((event as InputEventMouseMotion).position)
-		accept_event()
-	elif event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if not mb.pressed:
-			# Swallow the release that paired with a place-commit press.
-			if _ignore_select_release and mb.button_index == MOUSE_BUTTON_LEFT:
-				_ignore_select_release = false
-			accept_event()
-			return
-		if mb.button_index == MOUSE_BUTTON_LEFT:
-			_commit_place(mb.position)
-			accept_event()
-		elif mb.button_index == MOUSE_BUTTON_RIGHT:
-			_disarm_place(true)
-			accept_event()
-
-
 func _gui_input(event: InputEvent) -> void:
 	# Prefer `_input` for model pointers (works when this Control is not the
 	# hovered target). Keep `_gui_input` as a fallback for headless tests and
@@ -3241,11 +3220,6 @@ func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
 	if area < 4.0 or area > max_area:
 		return false
 	return r.has_point(pos)
-
-
-func _tree_blocks_pointer(node: Node, pos: Vector2, max_area: float) -> bool:
-	return _tree_blocking_name(node, pos, max_area) != ""
-
 
 func _tree_blocking_name(node: Node, pos: Vector2, max_area: float) -> String:
 	if node == null or not is_instance_valid(node):

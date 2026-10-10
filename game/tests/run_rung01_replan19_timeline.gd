@@ -3,23 +3,11 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan19_timeline.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -28,8 +16,7 @@ func _init() -> void:
 	await _case_double_click()
 	await _case_radius()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _case_double_click() -> void:
@@ -66,12 +53,12 @@ func _case_double_click() -> void:
 		var sel := opened.get_selected_text()
 		check(sel != "" and sel == opened.text,
 				"first open selects Distance text ('%s' of '%s')" % [sel, opened.text])
-		_push_key(ctx.main.get_viewport(), KEY_1)
+		_push_key_local(ctx.main.get_viewport(), KEY_1)
 		await _frames(2)
-		_push_key(ctx.main.get_viewport(), KEY_ENTER)
+		_push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 		await _frames(2)
 	_status_log.clear()
-	_push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await _frames(3)
 	var esc_status := str(ctx.main.status_label.text)
 	check(esc_status == "Edits cancelled" or _status_blob().contains("Edits cancelled"),
@@ -151,7 +138,7 @@ func _case_double_click() -> void:
 			check(chip < 0.0 or y2 + 1.0 >= chip + 4.0,
 					"repeat %d Timeline is >= 4 px under the chip row (top %.1f chip %.1f)" % [i, y2, chip])
 			saw_move = true
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		await _frames(2)
 
 	check(saw_move, "an unselected double-click moved the Timeline only after the guard")
@@ -331,7 +318,7 @@ func _release(vp: Viewport, pos: Vector2) -> void:
 	vp.push_input(up)
 
 
-func _push_key(vp: Viewport, code: Key) -> void:
+func _push_key_local(vp: Viewport, code: Key) -> void:
 	var down := InputEventKey.new()
 	down.pressed = true
 	down.keycode = code

@@ -1,25 +1,13 @@
 # Rung 1 replan 5 WP1 — Power Trim opens a perpendicular jaw; near-parallel fails.
 # Clicks are one X11 burst (no await between mouse-down and mouse-up).
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan5_trim.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOL := 1.0
 const HEAD := Vector2(200, 0)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -28,8 +16,7 @@ func _init() -> void:
 	_assert_source_hygiene()
 	await test_perpendicular_then_parallel_trim()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _assert_source_hygiene() -> void:
@@ -201,32 +188,6 @@ func _status_has(needle: String) -> bool:
 	return false
 
 
-func _x11_click(ctrl: Control) -> void:
-	var pos := ctrl.get_global_rect().get_center()
-	var vp := ctrl.get_viewport()
-	await _x11_click_screen(vp, pos)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
 func _x11_type(vp: Viewport, text: String) -> void:
 	for i in text.length():
 		var ch := text.unicode_at(i)
@@ -377,7 +338,7 @@ func _press_key(vp: Viewport, key: Key) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -395,19 +356,9 @@ func _aim_then_click_screen(vp: Viewport, pos: Vector2) -> void:
 	await _x11_click_screen(vp, pos)
 
 
-func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	var motion := InputEventMouseMotion.new()
-	motion.position = screen
-	motion.global_position = screen
-	ctx.main.get_viewport().push_input(motion)
-	await process_frame
-
-
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String) -> void:
 	await _select_tool(ctx, "Circle")
-	await _click_uv(ctx, center, "Circle centre")
+	await _click_uv_local(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text)
 
@@ -448,9 +399,9 @@ func _draw_shaft_line(ctx: FilmContext, far_x: float, sign: float) -> void:
 	var b_dir := b - c2
 	var b_off := b + (b_dir.normalized() if b_dir.length_squared() > 1e-8 else Vector2(0, sign)) * 0.3
 	await _zoom_uv(ctx, a, 90.0)
-	await _click_uv(ctx, a, "Tangent start")
+	await _click_uv_local(ctx, a, "Tangent start")
 	await _zoom_uv(ctx, b_off, 90.0)
-	await _click_uv(ctx, b_off, "Tangent end")
+	await _click_uv_local(ctx, b_off, "Tangent end")
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(b_off))
 	var vp: Viewport = ctx.main.get_viewport()
@@ -479,9 +430,9 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2, angle_deg: float, half
 		await process_frame
 	var along := Vector2(cos(deg_to_rad(angle_deg)), sin(deg_to_rad(angle_deg)))
 	var across := Vector2(-along.y, along.x)
-	await _click_uv(ctx, center, "Rect centre")
-	await _click_uv(ctx, center + along * 30.0, "Rect long side")
-	await _click_uv(ctx, center + across * half_w, "Rect half width")
+	await _click_uv_local(ctx, center, "Rect centre")
+	await _click_uv_local(ctx, center + along * 30.0, "Rect long side")
+	await _click_uv_local(ctx, center + across * half_w, "Rect half width")
 
 
 func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void:
@@ -494,9 +445,9 @@ func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void
 		await process_frame
 	var dir := along.normalized()
 	await _zoom_uv(ctx, center - dir * 25.0, 70.0)
-	await _click_uv(ctx, center - dir * 25.0, "Centreline start")
+	await _click_uv_local(ctx, center - dir * 25.0, "Centreline start")
 	await _zoom_uv(ctx, center + dir * 25.0, 70.0)
-	await _click_uv(ctx, center + dir * 25.0, "Centreline end")
+	await _click_uv_local(ctx, center + dir * 25.0, "Centreline end")
 
 
 func _edit_rect_labels(ctx: FilmContext) -> void:
@@ -521,7 +472,7 @@ func _edit_label(ctx: FilmContext, index: int, text: String) -> void:
 	if lp == null:
 		return
 	await _zoom_uv(ctx, lp as Vector2, 50.0)
-	await _click_uv(ctx, lp as Vector2, "Edit dimension label")
+	await _click_uv_local(ctx, lp as Vector2, "Edit dimension label")
 	await process_frame
 	await process_frame
 	var ix: ViewportInteraction = ctx.main.interaction
@@ -722,3 +673,31 @@ func _dim_index_near(sm: SketchMode, type_name: String, value: float) -> int:
 			best_d = d
 			best = i
 	return best
+
+func _x11_click(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	await _x11_click_screen(vp, pos)
+
+
+func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.double_click = double_click
+	down.position = pos
+	down.global_position = pos
+	vp.push_input(down)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	vp.push_input(up)
+	await process_frame
+
+

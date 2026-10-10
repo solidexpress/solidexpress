@@ -3,23 +3,11 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan19_shield.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	await _case_fillet_chip()
 	await _case_canvas_ends_shield()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _case_file_menu() -> void:
@@ -51,7 +38,7 @@ func _case_file_menu() -> void:
 	if file_btn != null:
 		_press_release(ctx.main.get_viewport(), file_btn.get_global_rect().get_center())
 		await process_frame
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		await process_frame
 		await process_frame
 	var y1 := _strip_top(ctx)
@@ -85,7 +72,7 @@ func _case_view_menu() -> void:
 	if view_btn != null:
 		_press_release(ctx.main.get_viewport(), view_btn.get_global_rect().get_center())
 		await process_frame
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		await process_frame
 	var y1 := _strip_top(ctx)
 	check(absf(y1 - y0) <= 1.0, "chip row y unchanged after View (%.1f -> %.1f)" % [y0, y1])
@@ -111,7 +98,7 @@ func _case_hud_view() -> void:
 	if drop != null:
 		_press_release(ctx.main.get_viewport(), drop.get_global_rect().get_center())
 		await process_frame
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		await process_frame
 	var y1 := _strip_top(ctx)
 	check(absf(y1 - y0) <= 1.0, "chip row y unchanged after HUD View (%.1f -> %.1f)" % [y0, y1])
@@ -289,7 +276,7 @@ func _press_release(vp: Viewport, pos: Vector2) -> void:
 	vp.push_input(up)
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -302,7 +289,7 @@ func _push_key(vp: Viewport, keycode: Key) -> void:
 
 
 func _push_key_await(vp: Viewport, keycode: Key) -> void:
-	_push_key(vp, keycode)
+	_push_key_local(vp, keycode)
 	await process_frame
 
 

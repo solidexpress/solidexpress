@@ -1,19 +1,7 @@
 # Headless tests for assembly mate bindings: add/list/remove/solve through
 # SxDocument, with the viewport picking up moved instances.
 # Run: tools/godot/godot --headless --path game --script tests/run_mate_tests.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -28,8 +16,7 @@ func _init() -> void:
 	test_bad_mate(main)
 	test_drawing_export(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 ## Face of `body` whose bbox center matches a predicate; "" when none.

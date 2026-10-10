@@ -3,23 +3,10 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan19_polish.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const POLYGON_CENTRE := "Polygon — centre set, click a vertex or type the size"
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -29,8 +16,7 @@ func _init() -> void:
 	await _case_contours()
 	await _case_hover_and_popup()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _case_rail() -> void:
@@ -74,7 +60,7 @@ func _case_rail() -> void:
 	ctx.main.get_viewport().gui_release_focus()
 	await _frames(1)
 	var before_undo := int(ctx.main.sketch_mode.sketch.entity_ids().size())
-	_push_key(ctx.main.get_viewport(), KEY_Z, true, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 	await _frames(3)
 	var lit := _lit_tools(rows)
 	check(lit.size() == 1, "exactly one rail button lit after Ctrl+Z (got %s)" % str(lit))
@@ -82,7 +68,7 @@ func _case_rail() -> void:
 			"the lit button after undo is Circle (got %s)" % str(lit))
 	check(ctx.main.sketch_mode.tool == SketchMode.Tool.CIRCLE, "active tool stays Circle")
 	check(ctx.main.sketch_mode.sketch.entity_ids().size() < before_undo, "Ctrl+Z removed the line")
-	_push_key(ctx.main.get_viewport(), KEY_Z, true, true)
+	_push_key_local(ctx.main.get_viewport(), KEY_Z, true, true)
 	await _frames(3)
 	var lit_redo := _lit_tools(rows)
 	check(lit_redo.size() == 1, "exactly one rail button lit after Ctrl+Shift+Z (got %s)" % str(lit_redo))
@@ -163,7 +149,7 @@ func _case_hover_and_popup() -> void:
 	var ctx := await _boot()
 	var body: String = ctx.view.insert_primitive("box", Vector3.ZERO, Vector3(40, 24, 12))
 	await _frames(2)
-	_push_key(ctx.main.get_viewport(), KEY_F, false, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_F, false, false)
 	await _frames(2)
 	var on_part := _face_screen_point(ctx)
 	var menu := ctx.main.find_child("FileMenu", true, false) as Control
@@ -197,7 +183,7 @@ func _case_hover_and_popup() -> void:
 				and str(line).ends_with(" File"):
 			hid = true
 	check(showed, "popup-trace show File (got %s)" % str(ctx.main.popup_trace_log))
-	_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	await _frames(3)
 	for line in ctx.main.popup_trace_log:
 		if str(line).begins_with("[popup-trace] t=") and str(line).contains(" hide ") \
@@ -363,7 +349,7 @@ func _motion(vp: Viewport, pos: Vector2) -> void:
 	vp.push_input(motion)
 
 
-func _push_key(vp: Viewport, code: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, code: Key, ctrl: bool, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.pressed = true
 	down.keycode = code

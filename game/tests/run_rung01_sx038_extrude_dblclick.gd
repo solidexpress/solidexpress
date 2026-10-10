@@ -5,24 +5,12 @@
 # Run: DISPLAY=:1 LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_sx038_extrude_dblclick.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const EXTRUDE_STATUS := "Extrude Blind 10.0000 mm"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -32,8 +20,7 @@ func _init() -> void:
 	await _case_gap(2)
 	await _case_return_after_move()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _case_gap(gap_frames: int) -> void:
@@ -172,25 +159,6 @@ func _type_distance(ctx: FilmContext, text: String) -> void:
 		var ch := text.unicode_at(i)
 		var code := (KEY_0 + (ch - 48)) as Key
 		await _push_key(edit.get_viewport(), code, ch)
-
-
-func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
-	var ev := InputEventKey.new()
-	ev.keycode = keycode
-	ev.physical_keycode = keycode
-	ev.unicode = unicode
-	ev.pressed = true
-	ev.echo = false
-	vp.push_input(ev)
-	await process_frame
-	var rel := InputEventKey.new()
-	rel.keycode = keycode
-	rel.physical_keycode = keycode
-	rel.unicode = unicode
-	rel.pressed = false
-	rel.echo = false
-	vp.push_input(rel)
-	await process_frame
 
 
 func _motion(vp: Viewport, pos: Vector2) -> void:

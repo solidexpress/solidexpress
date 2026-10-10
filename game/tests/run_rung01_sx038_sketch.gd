@@ -1,25 +1,13 @@
 # sx-038 — one lit sketch-rail button, and no stray point marker after Smart Dim.
 # Real events: Viewport.push_input (motion, press, release, keys). 1280×800.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script res://tests/run_rung01_sx038_sketch.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const ARMED_FILL_MIX := 0.32
 const RIGHT_CENTRE := Vector2(50.0, 0.0)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -28,8 +16,7 @@ func _init() -> void:
 	await test_one_lit_rail_button()
 	await test_smart_dim_centres_leave_no_marker()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_one_lit_rail_button() -> void:
@@ -106,13 +93,13 @@ func test_smart_dim_centres_leave_no_marker() -> void:
 	check(sm.tool == SketchMode.Tool.SMART_DIM, "Smart Dim is armed from the rail")
 	await _zoom_uv(ctx, c0, 40.0)
 	_status_log.clear()
-	await _click_uv(ctx, c0, "Smart Dim first centre")
+	await _click_uv_local(ctx, c0, "Smart Dim first centre")
 	await process_frame
 	var first_status := _joined_status(ctx)
 	check(first_status.contains("Smart Dim: first pick set"),
 			"first centre pick says so (got `%s`)" % first_status)
 	await _zoom_uv(ctx, c1, 40.0)
-	await _click_uv(ctx, c1, "Smart Dim second centre")
+	await _click_uv_local(ctx, c1, "Smart Dim second centre")
 	await process_frame
 	await process_frame
 	var ix: ViewportInteraction = ctx.main.interaction
@@ -452,17 +439,7 @@ func _hover_control(btn: Control) -> void:
 	await process_frame
 
 
-func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	var motion := InputEventMouseMotion.new()
-	motion.position = screen
-	motion.global_position = screen
-	ctx.main.get_viewport().push_input(motion)
-	await process_frame
-
-
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -473,7 +450,7 @@ func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String) -> void:
 	await _click_rail(ctx, "Circle")
 	await process_frame
-	await _click_uv(ctx, center, "Circle centre")
+	await _click_uv_local(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text)
 
@@ -497,26 +474,6 @@ func _x11_click(ctrl: Control) -> void:
 	if ctrl == null:
 		return
 	await _x11_click_screen(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _x11_type(vp: Viewport, text: String) -> void:

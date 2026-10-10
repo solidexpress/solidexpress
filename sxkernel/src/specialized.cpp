@@ -63,20 +63,6 @@ bool fillet_c2(Document& doc, const EntityId& body, const std::vector<int>& edge
     }
 }
 
-double subd_round_box(Document& doc, const EntityId& body, double radius, std::string* err) {
-    const Body* b = doc.body(body);
-    if (!b) {
-        if (err) *err = "subd needs a body";
-        return 0.0;
-    }
-    sx::occt::ShapeIndexedMap map;
-    TopExp::MapShapes(b->shape, TopAbs_EDGE, map);
-    std::vector<int> edges;
-    for (int i = 1; i <= map.Extent(); ++i) edges.push_back(i);
-    if (!fillet_c2(doc, body, edges, radius, radius, err)) return 0.0;
-    return shape::volume(doc.body(body)->shape);
-}
-
 void pdm_commit(Document& doc, const std::string& message) { doc.add_pdm_entry(message); }
 
 std::vector<PdmEntry> pdm_log(const Document& doc) {
