@@ -50,6 +50,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WALK = ROOT / "game" / "tests" / "run_rung01_wrench.gd"
+WALK_PY = ROOT / "tools" / "walk_rung01.py"
+WALK_PKG = ROOT / "tools" / "walk"
 TESTS = ROOT / "game" / "tests"
 Rule = tuple[str, tuple[str, ...], tuple[Callable[..., None], ...], int]
 ALLOWED_SIZE = (1280, 800)
@@ -455,6 +457,24 @@ def _lint_sx_lib(errors: list[str]) -> None:
         _lint_replan11_camera(src, errors, prefix, extra_yaw_pitch_ok=("zoom", "_zoom"))
 
 
+def _python_walk_files() -> list[Path]:
+    return sorted(WALK_PKG.glob("*.py")) + [WALK_PY]
+
+
+def _lint_python_walk(errors: list[str]) -> None:
+    """Same shortcut needles as the GDScript walk, over the split Python package."""
+    if not WALK_PY.is_file():
+        errors.append(f"missing {WALK_PY.relative_to(ROOT)}")
+        return
+    files = _python_walk_files()
+    py_files = [p for p in files if p.is_file() and p.suffix == ".py"]
+    if len(list(WALK_PKG.glob("*.py"))) < 8:
+        errors.append("tools/walk is missing mixin modules")
+    src = "\n".join(p.read_text(encoding="utf-8") for p in py_files)
+    _lint_needles(src, ("infer_enabled", "text_submitted.emit", "interaction._input", "id_pressed.emit"), errors, "tools/walk:")
+    _lint_walk_replan11_camera(src, errors)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tests-dir", type=Path, default=None)
@@ -468,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     src = WALK.read_text(encoding="utf-8")
     errors: list[str] = []
     _lint_walk(src, errors)
+    _lint_python_walk(errors)
     if (TESTS / "lib" / "sx_input.gd").is_file() or (TESTS / "lib" / "sx_suite.gd").is_file():
         _lint_sx_lib(errors)
     matched: dict[str, list[Path]] = {}
@@ -481,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {e}", file=sys.stderr)
         return 1
     print(f"lint_rung01_e2e: {WALK} is clean")
+    print(f"lint_rung01_e2e: {len(_python_walk_files())} python walk files are clean")
     labels = (
         (3, "run_rung01_replan3_*.gd"),
         (4, "run_rung01_replan4_*.gd"),
