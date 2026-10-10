@@ -8824,6 +8824,7 @@ func _rebuild_constraint_glyphs() -> void:
 		_repair_coincident_glyphs(pending, label_rects, cam, shaft_y)
 	if cam != null:
 		_restore_pinned_coincident(pending, pinned_coincident, cam)
+		_clamp_coincident_leaders(pending, cam)
 	for item in pending:
 		var gtype := str(item["type"])
 		var gcid := str(item["cid"])
@@ -8950,6 +8951,30 @@ func _restore_pinned_coincident(items: Array, pinned: Dictionary, cam: Camera3D)
 		it["centre"] = centre
 		it["offset_px"] = natural.distance_to(centre)
 		it["pos"] = _sketch_from_screen(cam, centre, anchor)
+		items[i] = it
+
+
+## Keep a coincident leader inside the 40 px screen cap after projection.
+func _clamp_coincident_leaders(items: Array, cam: Camera3D) -> void:
+	for i in range(items.size()):
+		var it: Dictionary = items[i]
+		if str(it.get("type", "")) != "coincident":
+			continue
+		var natural: Vector2 = it["natural"]
+		var centre: Vector2 = it["centre"]
+		var anchor: Vector2 = it["anchor"]
+		var span := natural.distance_to(centre)
+		if span > 38.5 and span > 0.5:
+			centre = natural + (centre - natural) * (38.5 / span)
+		var pos: Vector2 = _sketch_from_screen(cam, centre, anchor)
+		var landed := cam.unproject_position(to_global(to_model(pos)))
+		var got := natural.distance_to(landed)
+		if got > 39.0 and got > 0.5:
+			centre = natural + (centre - natural) * (38.0 / got)
+			pos = _sketch_from_screen(cam, centre, anchor)
+		it["centre"] = centre
+		it["offset_px"] = natural.distance_to(centre)
+		it["pos"] = pos
 		items[i] = it
 
 
@@ -9224,8 +9249,10 @@ func _coincident_place_cost(items: Array, index: int, natural: Vector2, centre: 
 	var rect := Rect2(centre - size * 0.5, size)
 	var dist := natural.distance_to(centre)
 	var cost := 0.0
-	if dist > GLYPH_MAX_OFFSET_PX + 0.5:
-		cost += 2000000.0 + (dist - GLYPH_MAX_OFFSET_PX) * 40.0
+	# The walk measures the reprojected leader and rejects anything over 40.
+	# A centre placed at 40 lands a fraction past that after the plane round-trip.
+	if dist > 38.5:
+		cost += 2000000.0 + (dist - 38.5) * 40.0
 	for j in range(items.size()):
 		if j == index:
 			continue
