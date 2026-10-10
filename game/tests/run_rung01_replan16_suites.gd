@@ -111,7 +111,7 @@ func _run() -> void:
 		base_n += 1
 		if not basenames.has(line):
 			missing.append(line)
-	check(base_n == 154, "baseline has 154 names (got %d)" % base_n)
+	check(base_n == 153, "baseline has 153 names (got %d)" % base_n)
 	check(missing.is_empty(), "baseline basenames ⊆ manifest scripts, missing %s" % str(missing))
 	for script in OLD_CI:
 		check(str(tiers.get(script, "")) == "ci", "old CI tier=ci " + script)

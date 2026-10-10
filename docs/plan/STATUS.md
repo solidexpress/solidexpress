@@ -19,7 +19,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 - Gate: `run_rung01_replan16_chrome.gd` C3 (left 3 px column is accent, the next pixel is not, hover is not, only one bar lit).
 
 ## Rung 1 replan 16 — sx-037 GUI walk replay
-- Headless replay `run_rung01_replan16_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
+- Headless replay `run_rung01_replan17_walk.gd` drives the sx-037 checklist in order (blank, face sketch, trim/cut, slot, fillets, export, open, nut). One run: nut 7/7, blank 5/5, wrench 28/28, thick 7/7, about 29 s, `tier=ci`.
 - Save re-entry no longer prints `Editing sketch` (that sentence stays on the pencil click). An idle property panel no longer takes Esc away from an armed Fillet (`Edge pick cancelled`).
 
 ## sx-036 — Esc keeps a committed sketch; Save keeps undo

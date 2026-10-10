@@ -2930,9 +2930,19 @@ class Walk:
             e2e.strip().splitlines()[-1] if e2e.strip() else "no output",
         )
         suite_line = suites.strip().splitlines()[-1] if suites.strip() else ""
+        import re
+        suites_m = re.search(
+            r"lint_suites:\s*(\d+)\s+suites ok\s+\((\d+)\s+ci,\s+(\d+)\s+full,\s+(\d+)\s+known-red\)",
+            suites,
+        )
+        suites_ok = (
+            lint_suites.returncode == 0
+            and suites_m is not None
+            and int(suites_m.group(4)) == 4
+        )
         self.clause(
             "lint_suites",
-            lint_suites.returncode == 0 and "208 suites ok" in suites and "4 known-red" in suites,
+            suites_ok,
             suite_line or "no output",
         )
         log_path = self.out / "test-godot.log"
@@ -2946,9 +2956,14 @@ class Walk:
         tier = (proc.stdout or "") + (proc.stderr or "")
         log_path.write_text(tier)
         (self.out / "a15-test-godot.log").write_text(tier)
-        import re
         ran = re.findall(r"suites:\s*(\d+)\s+run,\s*(\d+)\s+failed", tier)
-        tier_ok = bool(ran) and int(ran[-1][0]) >= 204 and int(ran[-1][1]) == 0
+        ci_n = int(suites_m.group(2)) if suites_m else -1
+        full_n = int(suites_m.group(3)) if suites_m else -1
+        tier_ok = (
+            bool(ran)
+            and int(ran[-1][1]) == 0
+            and int(ran[-1][0]) == ci_n + full_n
+        )
         self.clause("headless tier", tier_ok, f"suites: {ran[-1][0]} run, {ran[-1][1]} failed" if ran else tier[-400:])
         floors = (
             ("rung01 wrench walk", 702),

@@ -470,6 +470,7 @@ func _stage_s4(ctx: FilmContext) -> void:
 		await _key(ctx, int(pair[0]))
 		_grab()
 		check(_saw(str(pair[1])), "A16 key view %s (`%s`)" % [pair[1], _grab()])
+	check(_saw("Top view"), "key view %s (`%s`)" % ["Top view", _grab()])
 	await _check_orientation_menu(ctx)
 	await _key(ctx, KEY_F)
 	_grab()

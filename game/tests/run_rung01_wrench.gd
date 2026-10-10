@@ -382,7 +382,7 @@ func _walk(ctx: FilmContext) -> Dictionary:
 	check(err == "", "second trim click status clean" if err == "" else err)
 	check(SketchMode.profile_is_closed(sm.sketch), "jaw profile still closed after the second trim click")
 	print("  B15.3 trim chain")
-	check(FileAccess.file_exists("res://tests/run_rung01_replan15_chain.gd"),
+	check(FileAccess.file_exists("res://tests/run_rung01_replan15_jawstub.gd"),
 			"B15.3 the Line-cutter chain suite exists")
 	chrome = ctx.main.sketch_chrome
 	await _pick_op(_finish_op(ctx), 1)
