@@ -4096,13 +4096,62 @@ func _weld_jaw_profile(floor_id: String, walls: Array, arc_id: String) -> void:
 	sketch.set_entity_geometry(str(walls[1]["id"]), {"start": h1, "end": s1})
 	sketch.set_entity_geometry(floor_id, {"start": h0, "end": h1})
 	var center: Vector2 = ainfo["center"]
+	# CCW from the wall-matched ends is the long way around the head when the
+	# mouth is the short cap. That bulge cuts the head down to the wall tips
+	# (231×31 instead of 232.5×45). Keep the minor sweep, and retarget the
+	# coincident roles so the next solve does not flip the bulge back.
 	var ang := _jaw_ccw_angles(center, s0, s1)
+	var sweep := wrapf(ang.y - ang.x, 0.0, TAU)
+	if sweep > PI:
+		ang = _jaw_ccw_angles(center, s1, s0)
+		var swapped: Vector2 = s0
+		s0 = s1
+		s1 = swapped
 	sketch.set_entity_geometry(arc_id, {
 		"start": s0,
 		"end": s1,
 		"start_angle": ang.x,
 		"end_angle": ang.y,
 	})
+	_rebind_arc_wall_ends(arc_id, walls)
+
+
+## Point each arc end at the wall tip it actually sits on. A minor-sweep swap
+## changes which end is start; leaving the old coincident roles makes the
+## next solve walk the bulge the long way around the head.
+func _rebind_arc_wall_ends(arc_id: String, walls: Array) -> void:
+	if sketch == null or walls.size() != 2 or not sketch.has_method("constraint_ids"):
+		return
+	var ainfo: Dictionary = sketch.entity_info(arc_id)
+	if ainfo.is_empty():
+		return
+	var start: Vector2 = ainfo["start"]
+	var endp: Vector2 = ainfo["end"]
+	var ids: PackedStringArray = sketch.constraint_ids()
+	for cid in ids:
+		var info: Dictionary = sketch.constraint_info(str(cid))
+		if info.is_empty() or str(info.get("type", "")) != "coincident":
+			continue
+		var refs: Array = info.get("refs", [])
+		var names_end := false
+		for ref in refs:
+			if typeof(ref) != TYPE_DICTIONARY:
+				continue
+			if str(ref.get("entity", "")) == arc_id and str(ref.get("role", "")) in ["start", "end"]:
+				names_end = true
+				break
+		if names_end:
+			sketch.remove_constraint(str(cid))
+	var w0 := str(walls[0]["id"])
+	var w1 := str(walls[1]["id"])
+	var e0: Vector2 = sketch.entity_info(w0)["end"]
+	var start_on_w0 := start.distance_to(e0) <= endp.distance_to(e0)
+	sketch.add_constraint("coincident", [
+		{"entity": arc_id, "role": "start" if start_on_w0 else "end"},
+		{"entity": w0, "role": "end"}], 0.0)
+	sketch.add_constraint("coincident", [
+		{"entity": arc_id, "role": "end" if start_on_w0 else "start"},
+		{"entity": w1, "role": "end"}], 0.0)
 
 
 ## Delete a leftover full circle that is concentric with a jaw arc trim
@@ -5053,7 +5102,12 @@ func click(pos2: Vector2) -> void:
 	# that circle; the editor opens only when the click is not on its rim.
 	# A typed radius commits through click(_hover). A callout under that
 	# hover must not open the editor and drop the circle.
-	if dhit_raw >= 0 and _length_override < 0.0 and not _radius_label_on_own_rim(dhit_raw, pos2):
+	# A 22 px / 6 mm halo around a callout used to steal a click that was
+	# already on a curve. At 1280×800 the upper shaft line's midpoint sits
+	# in that halo, so Select opened a broken editor and reported no
+	# entities. The text rect still opens the editor. The curve wins when
+	# the pointer is on it and only the halo matches.
+	if dhit_raw >= 0 and _length_override < 0.0 and _dimension_claims_click(pos2, dhit_raw):
 		_emit_dimension_edit(dhit_raw)
 		return
 	# TRIM/EXTEND need the raw pick along the curve; snap would pull away.
@@ -5086,8 +5140,8 @@ func click(pos2: Vector2) -> void:
 				return
 			if selected_constraint != "":
 				select_constraint("")
-			var dhit := dimension_hit(pos2)
-			if dhit >= 0:
+			var dhit := dimension_hit(select_pos)
+			if dhit >= 0 and _dimension_claims_click(select_pos, dhit):
 				_emit_dimension_edit(dhit)
 				return
 			_select_at(select_pos)
@@ -8331,7 +8385,9 @@ func _leader_clear_start(anchor: Vector2, centre: Vector2, others: Array[Rect2])
 		var saw := false
 		for i in range(1, 8):
 			var p := start.lerp(centre, float(i) / 8.0)
-			if start.distance_to(p) < 10.0:
+			# Match the walker's 14 px vertex dead-zone. A 10 px skip still
+			# left the ribbon inside the coincident badge at the anchor.
+			if start.distance_to(p) < 14.0:
 				continue
 			for rect in others:
 				if rect.grow(1.0).has_point(p):
@@ -8355,11 +8411,16 @@ func _leader_clear_start(anchor: Vector2, centre: Vector2, others: Array[Rect2])
 func _leader_crosses_rect(anchor: Vector2, centre: Vector2, rect: Rect2) -> bool:
 	if anchor == Vector2.INF or rect.size == Vector2.ZERO:
 		return false
+	# The badge centre is the end of the leader. Samples stop at 7/8, so a
+	# 15 px leader (every sample inside the 14 px anchor skip) used to count
+	# as clear while its badge sat inside a neighbour.
+	if anchor.distance_to(centre) >= 14.0 and rect.has_point(centre):
+		return true
 	# Skip the anchor neighbourhood (it sits on the curve, often under the
-	# badge that names that vertex) and the badge centre.
+	# badge that names that vertex).
 	for i in range(1, 8):
 		var p := anchor.lerp(centre, float(i) / 8.0)
-		if anchor.distance_to(p) < 10.0:
+		if anchor.distance_to(p) < 14.0:
 			continue
 		if rect.has_point(p):
 			return true
@@ -8395,6 +8456,9 @@ func _glyph_block_score(rect: Rect2, centre: Vector2, placed: Array[Rect2],
 	# clears its neighbours can still draw that segment through a label or
 	# another badge.
 	if anchor_screen != Vector2.INF:
+		for prev in placed:
+			if _leader_crosses_rect(anchor_screen, centre, prev):
+				score += 90000.0
 		for lr in labels:
 			if _leader_crosses_rect(anchor_screen, centre, lr):
 				score += 12000.0
@@ -8748,6 +8812,12 @@ func _rebuild_constraint_glyphs() -> void:
 				if size == Vector2.ZERO:
 					continue
 				placed.append(Rect2(centre - size * 0.5, size))
+	if cam != null and pending.size() > 1:
+		# Coincident marks appear only while a vertex is selected. They are
+		# placed after the stable badges so a hover cannot slide those.
+		# Repair keeps each coincident leader inside 40 px and off the
+		# wall glyphs (a 15 px parallel leader was ending inside one).
+		_repair_coincident_glyphs(pending, label_rects, cam, shaft_y)
 	for item in pending:
 		var gtype := str(item["type"])
 		var gcid := str(item["cid"])
@@ -9043,6 +9113,92 @@ func constraint_hit(pos2: Vector2) -> String:
 	return best2
 
 
+## Slide coincident badges off stable glyphs and off each other. Stable
+## badges stay put. The leader stays inside 40 px: at 1280×800 the vertex
+## is close to the shaft, and stepping past the cap is what the walk rejects.
+func _repair_coincident_glyphs(items: Array, labels: Array[Rect2], cam: Camera3D,
+		shaft_y: float) -> void:
+	for _pass in 8:
+		var moved := false
+		for i in range(items.size()):
+			var it: Dictionary = items[i]
+			if str(it.get("type", "")) != "coincident":
+				continue
+			var size: Vector2 = it["size"]
+			if size == Vector2.ZERO:
+				continue
+			var natural: Vector2 = it["natural"]
+			var centre: Vector2 = it["centre"]
+			var anchor: Vector2 = it["anchor"]
+			var cost := _coincident_place_cost(items, i, natural, centre, size, labels, shaft_y)
+			if cost < 1.0:
+				continue
+			var best := centre
+			var best_cost := cost
+			var radii: Array[float] = [0.0, 6.0, 12.0, 18.0, 24.0, 30.0, 36.0, 40.0]
+			for radius in radii:
+				var count := 1 if radius < 1.0 else 48
+				for k in count:
+					var trial := natural
+					if radius >= 1.0:
+						var ang := TAU * float(k) / float(count)
+						trial = natural + Vector2(cos(ang), sin(ang)) * radius
+					var c := _coincident_place_cost(items, i, natural, trial, size, labels, shaft_y)
+					if c < best_cost - 0.5:
+						best_cost = c
+						best = trial
+			if best.distance_to(centre) <= 0.5:
+				continue
+			it["centre"] = best
+			it["offset_px"] = natural.distance_to(best)
+			it["pos"] = _sketch_from_screen(cam, best, anchor)
+			items[i] = it
+			moved = true
+		if not moved:
+			break
+
+
+func _coincident_place_cost(items: Array, index: int, natural: Vector2, centre: Vector2,
+		size: Vector2, labels: Array[Rect2], shaft_y: float) -> float:
+	var rect := Rect2(centre - size * 0.5, size)
+	var dist := natural.distance_to(centre)
+	var cost := 0.0
+	if dist > GLYPH_MAX_OFFSET_PX + 0.5:
+		cost += 2000000.0 + (dist - GLYPH_MAX_OFFSET_PX) * 40.0
+	for j in range(items.size()):
+		if j == index:
+			continue
+		var other: Dictionary = items[j]
+		var os: Vector2 = other["size"]
+		if os == Vector2.ZERO:
+			continue
+		var oc: Vector2 = other["centre"]
+		var orect := Rect2(oc - os * 0.5, os)
+		if orect.has_point(centre) or rect.has_point(oc):
+			cost += 1000000.0
+		else:
+			var frac := _glyph_overlap_fraction(rect, orect)
+			if frac > 0.16:
+				cost += 100000.0 + frac * 1000.0
+			elif frac > 0.0:
+				cost += frac * 80.0
+		if dist >= GLYPH_LEADER_MIN_PX and _leader_crosses_rect(natural, centre, orect):
+			cost += 500000.0
+		var onat: Vector2 = other["natural"]
+		var ooff := onat.distance_to(oc)
+		if ooff >= GLYPH_LEADER_MIN_PX and _leader_crosses_rect(onat, oc, rect):
+			cost += 500000.0
+	for lr in labels:
+		var sep := _rect_separation(rect, lr)
+		if sep + 0.01 < GLYPH_LABEL_GAP_PX:
+			cost += 2000.0 + (GLYPH_LABEL_GAP_PX - sep) * 8.0
+		if dist >= GLYPH_LEADER_MIN_PX and _leader_crosses_rect(natural, centre, lr):
+			cost += 4000.0
+	if _glyph_below_part(rect, shaft_y):
+		cost += 8000.0 + (rect.end.y - shaft_y) * 20.0
+	return cost
+
+
 func _relax_glyph_layout(items: Array, labels: Array[Rect2], cam: Camera3D,
 		shaft_y: float) -> void:
 	for _pass in 10:
@@ -9330,6 +9486,40 @@ func delete_selected_constraint() -> bool:
 ## the stored anchor and the 6 mm sketch-space radius stay as fallbacks.
 ## `rect_only` skips the halo so an armed Jaw/Trim click on nearby geometry
 ## is not stolen by a typed-circle radius label.
+## True when this click should open the dimension editor.
+## Select yields to a curve under the pointer unless the text rect itself
+## contains the click. Draw tools keep the rect-only hit they already asked for.
+func _dimension_claims_click(pos2: Vector2, hit: int) -> bool:
+	if hit < 0:
+		return false
+	if _radius_label_on_own_rim(hit, pos2):
+		return false
+	# dimension_hit(rect_only) still includes an 8 px pad. That pad covers the
+	# upper shaft line at 1280×800. The letters themselves open the editor;
+	# the pad does not take a click that is already on a curve.
+	if tool == Tool.SELECT and entity_at(pos2) != "" and not _dimension_text_contains(pos2, hit):
+		return false
+	return true
+
+
+func _dimension_text_contains(pos2: Vector2, hit: int) -> bool:
+	if hit < 0 or hit >= dimensions.size():
+		return false
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return true
+	var dim: Dictionary = dimensions[hit]
+	var lp: Variant = dim.get("label_pos", null)
+	if lp == null:
+		lp = _dimension_label_pos2(dim)
+	if lp == null:
+		return false
+	var sp: Vector2 = cam.unproject_position(_dimension_label_world(lp as Vector2))
+	var rect := _dimension_label_rect(dim, sp, _label_px_scale(cam))
+	var screen := cam.unproject_position(to_global(to_model(pos2)))
+	return rect.has_point(screen)
+
+
 func dimension_hit(pos2: Vector2, rect_only: bool = false) -> int:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	var screen := Vector2(INF, INF)

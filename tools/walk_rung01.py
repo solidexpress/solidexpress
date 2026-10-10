@@ -130,10 +130,13 @@ class RowAbort(Exception):
 
 
 class Walk:
-    def __init__(self, out: Path, port: int, godot: Path, display: str, run_a15: bool, checkpoint: bool) -> None:
+    def __init__(self, out: Path, port: int, godot: Path, display: str, run_a15: bool, checkpoint: bool,
+                 app: Path | None = None, resolution: str = "1280x800") -> None:
         self.out = out
         self.port = port
         self.godot = godot
+        self.app = app
+        self.resolution = resolution
         self.display = display
         self.run_a15 = run_a15
         self.checkpoint = checkpoint
@@ -163,9 +166,16 @@ class Walk:
         if Path(lib).is_dir():
             env["LD_LIBRARY_PATH"] = lib + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
         self.log_fp = open(self.out / "input-trace.log", "w", buffering=1)
+        if self.app is not None:
+            # Exported binary: cwd is the bundle so libsxcore.so beside it loads.
+            cmd = [str(self.app), "--resolution", self.resolution]
+            cwd = str(self.app.parent)
+        else:
+            cmd = [str(self.godot), "--path", str(self.repo / "game"), "--resolution", self.resolution]
+            cwd = str(self.repo)
         self.proc = subprocess.Popen(
-            [str(self.godot), "--path", str(self.repo / "game"), "--resolution", "1280x800"],
-            cwd=str(self.repo),
+            cmd,
+            cwd=cwd,
             env=env,
             stdout=self.log_fp,
             stderr=subprocess.STDOUT,
@@ -798,19 +808,27 @@ class Walk:
         # after the checklist zoom, and the safe band is only a few pixels wide.
         lines = lines[:1]
         points: list[list[float]] = []
-        # Just past the vertex glyphs, before the midpoint badge.
-        for frac in (0.21, 0.23, 0.25, 0.27, 0.29, 0.31, 0.33, 0.35, 0.37):
+        # Walk the wall and keep samples that are clear of badge rects.
+        # A fixed 0.21–0.37 band sits under the perpendicular glyph at
+        # 1280×800; the middle of the same wall is still a plain entity pick.
+        frac = 0.12
+        while frac <= 0.88:
             for _length, a, dx, dy in lines:
                 uv = [float(a[0]) + dx * frac, float(a[1]) + dy * frac]
                 try:
                     screen = self.d.project(sketch=uv)["screen"]
                 except SxError:
                     continue
-                if self._in_badge(screen, badges, pad=0.0):
+                # A point on the rect's edge still hits the glyph after the
+                # click is reprojected. Keep a few pixels of clearance.
+                if self._in_badge(screen, badges, pad=6.0):
+                    continue
+                if any((screen[0] - p[0]) ** 2 + (screen[1] - p[1]) ** 2 < 9.0 for p in points):
                     continue
                 points.append(screen)
                 if len(points) >= count:
                     return points
+            frac += 0.02
         return points
 
     def _jaw_wall_screen(self, along: float) -> list[float]:
@@ -1796,16 +1814,18 @@ class Walk:
             return x <= px <= x + w and y <= py <= y + h
 
         # The anchor sits on the sketch curve and can lie under a neighbour
-        # badge. Samples within 10 px of it are that vertex, not the leader.
+        # badge. Samples within 14 px of it are that vertex, not the leader.
+        # 10 px was short at 1280×800: a 15 px leader still grazed the
+        # coincident badge at t=0.75 (~11 px).
         span = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
-        if inside(b[0], b[1]) and span >= 10.0:
+        if inside(b[0], b[1]) and span >= 14.0:
             return True
         steps = 8
         for i in range(1, steps):
             t = i / steps
             px = a[0] + (b[0] - a[0]) * t
             py = a[1] + (b[1] - a[1]) * t
-            if ((px - a[0]) ** 2 + (py - a[1]) ** 2) ** 0.5 < 10.0:
+            if ((px - a[0]) ** 2 + (py - a[1]) ** 2) ** 0.5 < 14.0:
                 continue
             if inside(px, py):
                 return True
@@ -1820,13 +1840,13 @@ class Walk:
             return x <= px <= x + w and y <= py <= y + h
 
         span = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
-        if inside(b[0], b[1]) and span >= 10.0:
+        if inside(b[0], b[1]) and span >= 14.0:
             return 1.0
         for i in range(1, 8):
             t = i / 8
             px = a[0] + (b[0] - a[0]) * t
             py = a[1] + (b[1] - a[1]) * t
-            if ((px - a[0]) ** 2 + (py - a[1]) ** 2) ** 0.5 < 10.0:
+            if ((px - a[0]) ** 2 + (py - a[1]) ** 2) ** 0.5 < 14.0:
                 continue
             if inside(px, py):
                 return t
@@ -3281,6 +3301,8 @@ def main() -> int:
     parser.add_argument("--rows", default="", help="comma-separated row ids, e.g. A8,L4")
     parser.add_argument("--from", dest="from_row", default="", help="start at this row and continue")
     parser.add_argument("--godot", default="")
+    parser.add_argument("--app", default="", help="exported binary to launch instead of the Godot editor")
+    parser.add_argument("--resolution", default="1280x800", help="window size passed to the app, e.g. 1920x1200")
     parser.add_argument("--display", default=os.environ.get("DISPLAY", ":1"))
     parser.add_argument("--a15", action="store_true", help="note that the full headless tier should run")
     parser.add_argument("--no-launch", action="store_true", help="attach to an app that is already listening")
@@ -3304,7 +3326,11 @@ def main() -> int:
             return 2
         selected = ROWS[ROWS.index(args.from_row):]
     godot = Path(args.godot) if args.godot else Path(__file__).resolve().parents[1] / "tools" / "godot" / "godot"
-    walk = Walk(Path(args.out), args.port, godot, args.display, args.a15, args.checkpoint)
+    app = Path(args.app).resolve() if args.app else None
+    if app is not None and not app.is_file():
+        print("missing --app binary: " + str(app), file=sys.stderr)
+        return 2
+    walk = Walk(Path(args.out), args.port, godot, args.display, args.a15, args.checkpoint, app, args.resolution)
     try:
         if args.no_launch:
             walk.d.connect()
