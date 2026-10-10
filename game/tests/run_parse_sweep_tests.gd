@@ -26,6 +26,10 @@ func _scan(dir: String) -> void:
 				_scan(p)
 		elif n.ends_with(".gd"):
 			var s = load(p)
-			check(s != null, "parses %s" % p)
+			if n == "sx_input.gd":
+				if s == null:
+					check(false, "parses %s" % p)
+			else:
+				check(s != null, "parses %s" % p)
 		n = d.get_next()
 	d.list_dir_end()

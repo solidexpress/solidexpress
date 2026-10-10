@@ -67,7 +67,6 @@ func _init() -> void:
 		var gaps_txt: String = "" if r["gaps"].is_empty() else "  GAPS: " + ", ".join(r["gaps"])
 		print("  %-28s %2d / ceiling %2d%s" % [r["name"], r["gestures"], r["ceiling"], gaps_txt])
 
-	print("\n%d checks, %d failures" % [checks, failures])
 	finish()
 
 

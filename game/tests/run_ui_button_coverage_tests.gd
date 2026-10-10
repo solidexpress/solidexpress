@@ -59,7 +59,7 @@ func _init() -> void:
 			print("  BROKEN %s (%s)" % [r["button"], r["detail"]])
 	print("%d buttons probed, %d work, %d broken; %d checks, %d failures" % [
 		results.size(), ok_n, bad_n, checks, failures])
-	finish()
+	quit(1 if failures > 0 else 0)
 
 
 func _fresh(main) -> SxDocument:
