@@ -1,23 +1,11 @@
 # Rung 1 WP2 — sketch tools the UBC nut / wrench tutorial names.
 # Click-driven: Sketch tool + viewport clicks. Kernel asserts are checks only.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sketch_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const TOL := 0.2
 
-var failures := 0
-var checks := 0
 var _bad_status: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -42,8 +30,7 @@ func _init() -> void:
 	await test_wrench(ctx)
 
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _on_sketch_status(text: String) -> void:

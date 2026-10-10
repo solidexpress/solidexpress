@@ -7,8 +7,7 @@
 # sx-026 steps use _x11_click_screen with no await between mouse-down
 # and mouse-up.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const SHAFT_PICK_X := 100.0
@@ -23,23 +22,12 @@ const PERP := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
 
 const _UUID_STATUS_PATTERN := "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
-var failures := 0
-var checks := 0
 var _bad_status: Array[String] = []
 var _status_log: Array[String] = []
 var _slot_floor_refused := false
 var _slot_floor_error := ""
 var _last_extrude_pos := Vector2.ZERO
 static var _uuid_status_re: RegEx
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -74,8 +62,7 @@ func _init() -> void:
 		await _b14_polish(ctx)
 
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _on_sketch_status(text: String) -> void:

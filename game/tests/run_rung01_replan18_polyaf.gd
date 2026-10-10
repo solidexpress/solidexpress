@@ -4,27 +4,15 @@
 # bearing. Real pointer moves at equal pixel distance. No product code.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan18_polyaf.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const BEARINGS: Array[float] = [20.0, 70.0, 110.0, 160.0, 200.0, 250.0, 290.0, 340.0]
 const HOVER_PX := 150.0
 const ZOOM_MM := 80.0
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _main = null
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -37,11 +25,10 @@ func _init() -> void:
 	await _run_case(ctx, false, Vector2(37.0, -21.0), false)
 	await _typed_twenty(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _note(text: String) -> void:

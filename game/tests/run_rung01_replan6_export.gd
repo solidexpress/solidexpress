@@ -1,25 +1,13 @@
 # Rung 1 replan 6 WP2 — a bare export name uses the path field, not HOME.
 # Types the folder into the Path: LineEdit and does not press Enter there.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan6_export.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const EXPORT_DIR := "/tmp/sx-rung01-replan6-export"
 const EXPORT_NAME := "nut.3mf"
 const ABS_EXPORT := "/tmp/sx-rung01-replan6-abs/nut-abs.3mf"
 
-var failures := 0
-var checks := 0
-
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c:
-		print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 
 func _init() -> void:
@@ -35,8 +23,7 @@ func _init() -> void:
 	await _test_cancel_leaves_process(ctx, main)
 	check(main.is_inside_tree(), "process is still running")
 	check(FilmUI.fail_count == 0, "FilmUI reported no missing controls")
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func _assert_source_hygiene() -> void:

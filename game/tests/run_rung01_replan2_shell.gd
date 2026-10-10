@@ -1,20 +1,8 @@
 # Rung 1 replan 2 WP4 — File→New stays empty, popup Esc, Exit Sketch, export path.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan2_shell.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c:
-		print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 
 func _init() -> void:
@@ -28,8 +16,7 @@ func _init() -> void:
 	await test_exit_sketch_with_geometry()
 	await test_export_3mf_typed_path()
 	check(FilmUI.fail_count == 0, "FilmUI reported no missing controls")
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func _boot() -> Array:

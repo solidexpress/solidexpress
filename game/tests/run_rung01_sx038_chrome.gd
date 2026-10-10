@@ -3,25 +3,13 @@
 # Real layout at 1920×1200 and 1280×800 (headless viewport).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_sx038_chrome.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ChromeDock = preload("res://scripts/chrome_dock.gd")
 ## Checklist N23 is ≥ 4 px on a 1280×800 frame. A 1920×1200 capture scaled
 ## to that frame needs ≥ 6 window px; the dock uses a larger fixed gap.
 const CHIP_GAP := 6.0
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	await _test_size(Vector2i(1280, 800), "1280x800")
 	await _test_wrap(Vector2i(900, 800))
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _test_size(win: Vector2i, tag: String) -> void:

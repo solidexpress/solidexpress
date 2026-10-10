@@ -31,8 +31,7 @@ func _init() -> void:
 		await _l7b_exact_limit(ctx)
 	if _first_red == "":
 		await _n14_host_face(ctx)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _l7b_exact_limit(ctx: FilmContext) -> void:

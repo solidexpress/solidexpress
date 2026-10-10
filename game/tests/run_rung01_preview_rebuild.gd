@@ -5,8 +5,7 @@
 # turn that into 4. Commit is the empty-viewport dismiss that keeps the edit.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_preview_rebuild.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOL := 0.35
@@ -16,18 +15,7 @@ const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
 const LONG_DISCARD := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 + Vector2(-0.70710678, 0.70710678) * 10.0
 const T_NEW := 14.0
 
-var failures := 0
-var checks := 0
 var _status_log: PackedStringArray = PackedStringArray()
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -39,8 +27,7 @@ func _init() -> void:
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:

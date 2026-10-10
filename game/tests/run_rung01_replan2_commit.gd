@@ -1,22 +1,10 @@
 # Rung 1 replan 2 WP2 — typed length wins over the cursor.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan2_commit.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const POINTER_AF := 10.438
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -44,8 +32,7 @@ func _init() -> void:
 	await test_typed_too_short(ctx)
 
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_empty_new_sketch(ctx: FilmContext) -> void:

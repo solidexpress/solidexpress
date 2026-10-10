@@ -2,26 +2,14 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan20_glyphs.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HIT_SLOP := 14.0
 const CLEAR_PX := 18.0
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -29,8 +17,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await _story()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _story() -> void:

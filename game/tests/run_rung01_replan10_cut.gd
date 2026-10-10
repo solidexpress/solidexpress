@@ -5,8 +5,7 @@
 # Part 2: an overlapping contour is allowed to be refused, but each attempt asserts the invariant:
 #   accepted -> the body exports as a closed 3MF; refused -> named, volume and feature count unchanged.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan10_cut.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HEAD := Vector2(200.0, 0.0)
@@ -18,18 +17,7 @@ const SHAFT_SIDE := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 
 const HANDOUT_ATTEMPTS := 4
 const ATTEMPTS := 6
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -56,8 +44,7 @@ func _init() -> void:
 	check(good["vol_after"] < good["vol_before"] - 300.0 and good["vol_after"] > good["vol_before"] - 700.0,
 			"the hole removed about 500 mm³ (%.1f -> %.1f)" % [good["vol_before"], good["vol_after"]])
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _extrude_count(doc) -> int:

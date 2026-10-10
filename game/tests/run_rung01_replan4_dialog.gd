@@ -1,23 +1,11 @@
 # Rung 1 replan 4 WP2 — File / Export / Save dialogs must not quit the app.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan4_dialog.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const EXPORT_PATH := "/tmp/sx024-nut-dialog.3mf"
 const SAVE_PATH := "/tmp/sx024-save.sxp"
 
-var failures := 0
-var checks := 0
-
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c:
-		print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 
 func _init() -> void:
@@ -50,9 +38,8 @@ func _init() -> void:
 	await _test_save_as(ctx, main)
 	check(main.is_inside_tree(), "main stays in the tree at the end")
 	check(FilmUI.fail_count == 0, "FilmUI reported no missing controls")
-	print("%d checks, %d failures" % [checks, failures])
 	print("script still running after dialog Cancel / WM close / OK")
-	quit(1 if failures else 0)
+	finish()
 
 
 func _boot() -> Array:

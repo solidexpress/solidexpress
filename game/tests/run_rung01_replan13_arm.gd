@@ -2,8 +2,7 @@
 # to its sketch. Rail buttons and advertised shortcuts are real Viewport.push_input
 # at the button centre (same path as run_rung01_replan12_slotarm.gd).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script res://tests/run_rung01_replan13_arm.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
@@ -18,25 +17,13 @@ const RAIL_SHORTCUTS := [
 	["Smart Dim", KEY_D, "Smart Dim"],
 ]
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan13 WP1 armed tools name themselves; finish bar owns its sketch")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _status_of(main) -> String:

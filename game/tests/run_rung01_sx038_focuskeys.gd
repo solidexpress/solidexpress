@@ -3,23 +3,11 @@
 # in-viewport dimension label editor, sketch redo, and the sketch rail.
 # Every press and key under test is a real InputEvent via Viewport.push_input.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sx038_focuskeys.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -39,8 +27,7 @@ func _init() -> void:
 	await _test_rail_select_after_line_click(false)
 	await _test_rail_select_after_line_click(true)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:

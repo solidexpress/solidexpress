@@ -1,16 +1,4 @@
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
-
+extends "res://tests/lib/sx_suite.gd"
 
 func _init() -> void:
 	print("wrench chrome tests (Wave 6.6)")
@@ -24,8 +12,7 @@ func _init() -> void:
 	await test_hole_wizard_from_context_strip(main)
 	test_cut_default_end_through_all(main)
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_insert_menu_has_thread(main) -> void:

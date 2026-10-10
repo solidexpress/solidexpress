@@ -4,8 +4,7 @@
 # strip buttons are armed with FilmUI.click_control (same helper as focuskeys).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan15_armedkeys.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOP_PITCH := deg_to_rad(90.0)
@@ -16,18 +15,7 @@ const ARMED_ENTER := "Fillet r=10.00 — edit Radius, click edges, Enter"
 const CANCELLED := "No edges selected — cancelled"
 const EDGE_PICK_CANCELLED := "Edge pick cancelled"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -45,8 +33,7 @@ func _init() -> void:
 	await _row_d1()
 	await _row_d2()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _st(main) -> String:

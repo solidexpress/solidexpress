@@ -1,8 +1,7 @@
 # Rung 1 replan 17 WP2 — Jaw preview shape, polygon pointer on a vertex, DOF chip after undo.
 # Presses, motion and keys under test go through Viewport.push_input.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan17_tools.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const EMPTY_CHIP := "—"
@@ -10,26 +9,14 @@ const JAW_AXIS_DEG := 37.0
 const JAW_HALF_LEN := 24.0
 const PREVIEW_MIN_HALF_W := 1.5
 
-var failures := 0
-var checks := 0
 var _log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
 	print("rung01 replan17 WP2 tools")
 	FilmUI.reset_fail_count()
 	await _run()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _on_status(msg: String) -> void:

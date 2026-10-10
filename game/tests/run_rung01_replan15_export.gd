@@ -2,23 +2,11 @@
 # Real File-menu click, per-key name, real OK. Pure-function table at the end.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan15_export.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const OUT := "/tmp/sx-replan15"
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -38,8 +26,7 @@ func _init() -> void:
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
 	await _run(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI setup stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run(ctx: FilmContext) -> void:

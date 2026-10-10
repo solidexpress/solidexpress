@@ -3,8 +3,7 @@
 # viewport input. SX_WALK_ONLY=S1 runs the blank stage only (ci subset).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan16_walk.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const OUT := "/tmp/sx-037-out"
@@ -16,8 +15,6 @@ const NEW_SENTENCE := "New — empty part, Top plane (XY). View ▸ Timeline to 
 const STAGES: Array[String] = ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
 const UUID_RE := "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _all_status: Array[String] = []
 var _stage := ""
@@ -32,13 +29,9 @@ var _only := ""
 
 
 func check(cond: bool, what: String) -> void:
-	checks += 1
 	var tagged := "%s: %s" % [_stage if _stage != "" else "boot", what]
-	if cond:
-		print("  ok   - " + tagged)
-	else:
-		failures += 1
-		printerr("  FAIL - " + tagged)
+	super.check(cond, tagged)
+	if not cond:
 		if STAGES.has(_stage) and not _skipped.get(_stage, false):
 			if not _stage_fail.has(_stage):
 				_stage_fail[_stage] = what
@@ -82,11 +75,10 @@ func _init() -> void:
 				print("  TODO - skipped: %s red; later stages need its document" % _first_red)
 	_print_summary()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _begin(id: String) -> void:

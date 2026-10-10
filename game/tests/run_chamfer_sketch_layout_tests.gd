@@ -1,15 +1,5 @@
 # Chamfer apply + sketch extrude keep-alive + layout clear of left rail.
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c: print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
+extends "res://tests/lib/sx_suite.gd"
 
 func _init() -> void:
 	print("chamfer/sketch/layout cut")
@@ -17,8 +7,7 @@ func _init() -> void:
 	await test_extrude_keeps_open_sketch()
 	await test_extrude_closes_and_solids()
 	await test_timeline_clear_of_rail()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func test_chamfer_enter_applies() -> void:

@@ -1,18 +1,6 @@
 # Rung 1 replan 7 WP2 — Smart Dimension between two circles keeps the origin circle at the origin.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan7_anchor.gd
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 
 func _init() -> void:
@@ -47,5 +35,4 @@ func _init() -> void:
 	sm.constrain("diameter", 24.0)
 	var rr := float(sm.sketch.entity_info(origin_id)["radius"])
 	check(absf(rr - 12.0) < 1e-3, "a diameter dimension still resizes the pinned circle (radius %.3f)" % rr)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()

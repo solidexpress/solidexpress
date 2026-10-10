@@ -1,8 +1,7 @@
 # Rung 1 replan 8 WP1 — every sketch rail tool shows a text label; Jaw starts the Center Three Point rectangle.
 # Clicks are one X11 burst (no await between mouse-down and mouse-up).
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan8_rail.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
@@ -10,18 +9,7 @@ const RAIL_LABELS := ["Exit Sketch", "Select", "Line", "Arc", "Circle", "Rect", 
 		"Ellipse", "Slot", "Spline", "Point", "Trim", "Extend", "Smart Dim", "Convert", "Mirror",
 		"Pattern", "Auto Dim"]
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -29,8 +17,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	await test_rail()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_rail() -> void:

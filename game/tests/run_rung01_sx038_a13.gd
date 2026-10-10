@@ -6,22 +6,10 @@
 # same. An empty-viewport click closes the panel and hides
 # "Params (JSON, advanced)".
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_sx038_a13.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -36,8 +24,7 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	await _distance_keys_edit_the_field(main)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _distance_keys_edit_the_field(main) -> void:

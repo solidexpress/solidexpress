@@ -4,27 +4,15 @@
 # interior sample sits outside that band.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan16_picks.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const NEW_SENTENCE := "New — empty part, Top plane (XY). View ▸ Timeline to edit features"
 const REFUSAL := "exceeds the 1.250 mm limit set by the 150.000 mm line edge"
 const SAVE_PATH := "/tmp/sx-replan16-picks.sxp"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _all_status: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -41,12 +29,11 @@ func _init() -> void:
 	else:
 		check(false, "setup built the shaft and the slot")
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
 	DirAccess.remove_absolute(SAVE_PATH)
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _phase_p1(ctx: FilmContext) -> void:

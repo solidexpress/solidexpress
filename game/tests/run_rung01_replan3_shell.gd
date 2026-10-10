@@ -1,21 +1,9 @@
 # Rung 1 replan 3 WP6 — rail Extrude distance gate and absolute export path.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan3_shell.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var failures := 0
-var checks := 0
-
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c:
-		print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 
 func _init() -> void:
@@ -39,8 +27,7 @@ func _init() -> void:
 	await test_rail_extrude()
 	await test_export_absolute_path()
 	check(FilmUI.fail_count == 0, "FilmUI reported no missing controls")
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func _boot() -> Array:

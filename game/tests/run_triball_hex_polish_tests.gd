@@ -1,17 +1,7 @@
 # TriBall Esc, hex in-face clamp, hole feature pick — post-#41 polish.
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-func check(c: bool, w: String) -> void:
-	checks += 1
-	if c: print("  ok   - " + w)
-	else:
-		failures += 1
-		printerr("  FAIL - " + w)
 
 func _init() -> void:
 	print("triball / hex polish gate")
@@ -19,8 +9,7 @@ func _init() -> void:
 	await test_hex_stays_on_face()
 	await test_hex_feature_pick()
 	await test_flat_material()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures else 0)
+	finish()
 
 
 func test_triball_esc() -> void:

@@ -2,25 +2,12 @@
 # The clock is main._clock_override_msec. Run:
 # LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan19_hint.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const BOX_SIZE := Vector3(8, 6, 3)
 const NO_VIEW := "No view for key 0 — use 1 2 3 4 6 7 8"
 const FACE := "Face — click selects body first, click again for face · then Pull arrow"
-
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -32,8 +19,7 @@ func _init() -> void:
 	await _leave_after_hint()
 	await _opened_path()
 	SxUi.trace_enabled_override = false
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _still_pointer() -> void:

@@ -1,21 +1,9 @@
 # Headless layout-hygiene tests: context panels auto-hide when empty, and no
 # two visible text controls or top-level panels overlap on screen.
 # Run: tools/godot/godot --headless --path game --script tests/run_layout_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const ChromeDock := preload("res://scripts/chrome_dock.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -40,8 +28,7 @@ func _init() -> void:
 	await test_busy_state_on_screen(main, vp, Vector2i(1600, 900))
 	await test_busy_state_on_screen(main, vp, Vector2i(1280, 720))
 
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 ## Busy chrome (body + timeline + hole PropertyPanel + assembly) must stay on-screen.

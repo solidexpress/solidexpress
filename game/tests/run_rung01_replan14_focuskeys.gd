@@ -4,8 +4,7 @@
 # Viewport.push_input event (or FilmUI.click_control for the Fillet button).
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script res://tests/run_rung01_replan14_focuskeys.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const FIRST_DROP := "First point dropped — Esc again exits the sketch"
@@ -15,18 +14,7 @@ const ISO_PITCH := deg_to_rad(40.0)
 const ISO_YAW := deg_to_rad(-35.0)
 const VIEW_EPS := 0.01
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -35,8 +23,7 @@ func _init() -> void:
 	await _part_rows()
 	await _sketch_rows()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _st(main) -> String:

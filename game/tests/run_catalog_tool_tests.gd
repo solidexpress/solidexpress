@@ -1,23 +1,11 @@
-extends SceneTree
-
-var failures := 0
-var checks := 0
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
+extends "res://tests/lib/sx_suite.gd"
 
 func _init() -> void:
 	print("catalog mechanic-tool tests (Wave 6.5)")
 	test_hex_driver_blank_default_af()
 	test_hex_socket_blank_constructs()
 	test_open_end_blank_constructs()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 # -- helpers --
 

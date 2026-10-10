@@ -4,8 +4,7 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan15_strings.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const VIEW_EPS := 0.0001
@@ -16,23 +15,12 @@ const UUID_RE := "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
 const FILLET_APPLIED := "^Fillet \\d+ edges? 1\\.00 applied"
 const CHAMFER_APPLIED := "^Chamfer \\d+ edges? 1\\.00 applied"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _line_re := RegEx.new()
 var _arc_re := RegEx.new()
 var _uuid_re := RegEx.new()
 var _fillet_re := RegEx.new()
 var _chamfer_re := RegEx.new()
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -50,8 +38,7 @@ func _init() -> void:
 	await _row_s3b()
 	await _row_s3c()
 	await _row_s4()
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:

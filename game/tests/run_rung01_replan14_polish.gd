@@ -1,26 +1,14 @@
 # Rung 1 replan 14 WP7 — timeline pencil edits a sketch; File → Open enables on an existing .sxp.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game --script tests/run_rung01_replan14_polish.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const SAVE_PATH := "/tmp/sx_polish_blank.sxp"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
 var _item15_disabled_seq: Array[String] = []
 var _item15_row_click_needed_second := false
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	print("item15 disabled sequence: %s" % ", ".join(_item15_disabled_seq))
 	if _item15_row_click_needed_second:
 		print("item15 row 8 needed a second ItemList click (candidate b)")
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _run() -> void:

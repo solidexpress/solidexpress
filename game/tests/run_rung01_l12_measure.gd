@@ -4,25 +4,13 @@
 # frames (F / Shift+F / HUD Frame), and when the part selection changes
 # (empty-ground click / deselect), taking any 0.00 gizmo label with it.
 # Run: tools/godot/godot --headless --path game --script res://tests/run_rung01_l12_measure.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const MEASURE_CLEARED := "Measure cleared"
 const SELECTION_CLEARED := "Selection cleared — Esc again exits the sketch"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -31,8 +19,7 @@ func _init() -> void:
 	await test_sketch_l12()
 	await test_part_hover_clears()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func test_sketch_l12() -> void:

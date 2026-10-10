@@ -1,8 +1,7 @@
 # Rung 1 replan 10 WP1 — Power Trim opens the jaw when the centreline is NOT dead-centre, when the click
 # is re-sent, when the stroke drags, and names every refusal.
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan10_trim.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HEAD := Vector2(200.0, 0.0)
@@ -11,18 +10,7 @@ const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
 ## The walk's Power Trim click: 3 mm along the jaw and 8 mm across it, on the shaft side of the cutter.
 const SHAFT_SIDE := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 + Vector2(-0.70710678, 0.70710678) * 8.0
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -34,8 +22,7 @@ func _init() -> void:
 	await test_hole_at_head_still_caps_on_head()
 	await test_nothing_under_pointer_is_named()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 ## Ø10 hole at the origin (or at `hole_c`), Ø45 head at HEAD, the 20 mm wide Jaw rectangle at 45 degrees,

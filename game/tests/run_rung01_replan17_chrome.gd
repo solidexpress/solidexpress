@@ -4,8 +4,7 @@
 # Every press, key, and motion under test is Viewport.push_input.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan17_chrome.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ChromeDock = preload("res://scripts/chrome_dock.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
@@ -15,17 +14,6 @@ const BOX_SIZE := Vector3(8, 6, 3)
 const NO_VIEW := "No view for key 0 — use 1 2 3 4 6 7 8"
 const FRAMED_ALL := "Framed all"
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -38,8 +26,7 @@ func _init() -> void:
 	await _test_t2()
 	_test_w1()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _test_h1() -> void:

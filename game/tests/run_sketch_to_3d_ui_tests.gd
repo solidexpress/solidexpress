@@ -2,21 +2,9 @@
 # Covers path merge + sweep, ruled/smooth loft, and loft with guide rails.
 # Owns the loft UI coverage formerly in run_film_loft_ui_tests.gd.
 # Run: tools/godot/godot --headless --path game --script tests/run_sketch_to_3d_ui_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
-
-
-func check(cond: bool, msg: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + msg)
-	else:
-		failures += 1
-		printerr("  FAIL - " + msg)
 
 
 func _init() -> void:
@@ -45,8 +33,7 @@ func _init() -> void:
 
 	check(FilmUI.fail_count == 0,
 			"FilmUI had no offscreen/control errors (got %d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _fresh_doc(main) -> SxDocument:

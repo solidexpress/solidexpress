@@ -1,25 +1,13 @@
 # Rung 1 replan 4 WP1 — first-key replace for dim and Distance at 1280×800.
 # Clicks are one X11 burst (no await between mouse-down and mouse-up).
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan4_numeric.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOL_R := 0.05
 const TOL_Z := 0.2
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -30,8 +18,7 @@ func _init() -> void:
 	await test_distance_75_extrude()
 	await test_junk_distance_does_not_extrude()
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _assert_source_hygiene() -> void:

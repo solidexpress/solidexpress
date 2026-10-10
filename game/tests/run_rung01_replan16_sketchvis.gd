@@ -4,8 +4,7 @@
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib DISPLAY=:1 \
 #   tools/godot/godot --headless --path game \
 #   --script tests/run_rung01_replan16_sketchvis.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HEAD := Vector2(36.0, 0.0)
@@ -17,18 +16,7 @@ const POLY_LIVE := "^Polygon AF \\d+\\.\\d{4} — flats horizontal — click to 
 const POLY_COMMIT := "Polygon AF 20.0000 — flats horizontal"
 const NOTHING_TRIMMED := "Nothing trimmed — no crossing at that point"
 
-var failures := 0
-var checks := 0
 var _status_log: Array[String] = []
-
-
-func check(cond: bool, what: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + what)
-	else:
-		failures += 1
-		printerr("  FAIL - " + what)
 
 
 func _init() -> void:
@@ -43,11 +31,10 @@ func _init() -> void:
 	await _fresh_sketch(ctx)
 	await _test_v5(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
-	print("%d checks, %d failures" % [checks, failures])
 	if ctx.main != null and is_instance_valid(ctx.main):
 		ctx.main.queue_free()
 		await process_frame
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _boot() -> FilmContext:

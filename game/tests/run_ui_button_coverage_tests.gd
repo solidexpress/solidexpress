@@ -1,22 +1,10 @@
 # Click-driven coverage for UI buttons that other suites skip (selection strip
 # booleans, extra palette kinds, merge spline, sketch-rail tools, Extrude Cut).
 # Run: tools/godot/godot --headless --path game --script tests/run_ui_button_coverage_tests.gd
-extends SceneTree
-
+extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var failures := 0
-var checks := 0
 var results: Array[Dictionary] = []
-
-
-func check(cond: bool, msg: String) -> void:
-	checks += 1
-	if cond:
-		print("  ok   - " + msg)
-	else:
-		failures += 1
-		printerr("  FAIL - " + msg)
 
 
 func record(button: String, worked: bool, detail: String = "") -> void:
@@ -71,7 +59,7 @@ func _init() -> void:
 			print("  BROKEN %s (%s)" % [r["button"], r["detail"]])
 	print("%d buttons probed, %d work, %d broken; %d checks, %d failures" % [
 		results.size(), ok_n, bad_n, checks, failures])
-	quit(1 if failures > 0 else 0)
+	finish()
 
 
 func _fresh(main) -> SxDocument:
