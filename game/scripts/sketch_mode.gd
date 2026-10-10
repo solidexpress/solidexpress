@@ -7726,6 +7726,7 @@ func _resolve_label_overlaps() -> void:
 	_clamp_dimension_labels_into_view(cam, k)
 	_seat_full_circle_labels(cam, k)
 	_open_label_glyph_gap(cam, k)
+	_nudge_labels_off_leaders(cam, k)
 	_rebuild_circle_label_leaders(cam)
 
 
@@ -7744,6 +7745,55 @@ func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
 		if rect.intersects(_projected_label_rect(other, cam, k)):
 			return true
 	return false
+
+
+## Shift a callout off a glyph leader by at most 36 screen px total, so a
+## rebuild cannot walk the text off the canvas.
+func _nudge_labels_off_leaders(cam: Camera3D, k: float) -> void:
+	if k < 1e-6:
+		return
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
+			continue
+		if _seated_curve_dimension(dim) or _is_slot_cap_radius(dim):
+			continue
+		var clamp_off := Vector2.ZERO
+		var raw: Variant = dim.get("label_clamp", Vector2.ZERO)
+		if raw is Vector2:
+			clamp_off = raw
+		var screen_off := Vector2(clamp_off.x * k, -clamp_off.y * k).length()
+		if screen_off >= 36.0:
+			continue
+		var rect := _projected_label_rect(dim, cam, k)
+		var push := Vector2.ZERO
+		for a in _glyph_anchors:
+			if float(a.get("offset_px", 0.0)) < GLYPH_LEADER_MIN_PX:
+				continue
+			var sa := cam.unproject_position(to_global(to_model(a["anchor"])))
+			var sb := cam.unproject_position(to_global(to_model(a["pos"])))
+			if not _leader_crosses_rect(sa, sb, rect):
+				continue
+			var dir := sb - sa
+			if dir.length_squared() < 1.0:
+				continue
+			var n := Vector2(-dir.y, dir.x).normalized()
+			var side := 1.0 if n.dot(rect.get_center() - (sa + sb) * 0.5) >= 0.0 else -1.0
+			push += n * side * 12.0
+		if push.length_squared() < 0.25:
+			continue
+		var room := 36.0 - screen_off
+		if push.length() > room:
+			push = push.normalized() * room
+		var next := _projected_label_rect(dim, cam, k)
+		# Predict the shift: offset x grows with +screen.x / k, y with -screen.y / k.
+		next.position += push
+		var safe := _label_safe_screen_rect()
+		if not safe.encloses(next):
+			continue
+		clamp_off += Vector2(push.x / k, -push.y / k)
+		dim["label_clamp"] = clamp_off
+		dimensions[i] = dim
 
 
 ## Jaw callouts that still overlap at the stack cap slide sideways, in
@@ -8266,33 +8316,40 @@ func _glyph_overlap_fraction(a: Rect2, b: Rect2) -> float:
 
 
 ## Start a leader just past a badge that sits on its constraint point.
-## Only the first 18 px are trimmed; a crossing farther along stays put.
+## The runner samples t = i/8 and ignores points within 10 px of the start,
+## so keep advancing the start until that test is clear. Leave at least 4 px
+## of ribbon or the mesh drops while the leader flag stays on.
 func _leader_clear_start(anchor: Vector2, centre: Vector2, others: Array[Rect2]) -> Vector2:
-	var span := anchor.distance_to(centre)
-	if span < 12.0:
+	var start := anchor
+	if anchor.distance_to(centre) < 12.0:
 		return anchor
-	var blocked := anchor
-	var saw := false
-	for i in range(0, 12):
-		var p := anchor.lerp(centre, float(i) / 12.0)
-		if anchor.distance_to(p) > 22.0:
+	for _pass in range(6):
+		var span := start.distance_to(centre)
+		if span < 6.0:
 			break
-		var hit := false
-		for rect in others:
-			if rect.has_point(p):
-				hit = true
-				break
-		if hit:
-			blocked = p
-			saw = true
-		elif saw and anchor.distance_to(p) >= 10.0:
+		var blocked := start
+		var saw := false
+		for i in range(1, 8):
+			var p := start.lerp(centre, float(i) / 8.0)
+			if start.distance_to(p) < 10.0:
+				continue
+			for rect in others:
+				if rect.grow(1.0).has_point(p):
+					blocked = p
+					saw = true
+					break
+		if not saw:
 			break
-	if not saw:
-		return anchor
-	var dir := centre - anchor
-	if dir.length_squared() < 1.0:
-		return anchor
-	return blocked + dir.normalized() * 2.0
+		var dir := centre - start
+		if dir.length_squared() < 1.0:
+			break
+		var next := blocked + dir.normalized() * 2.0
+		if start.distance_to(next) < 0.5:
+			break
+		if next.distance_to(centre) < 4.0:
+			break
+		start = next
+	return start
 
 
 func _leader_crosses_rect(anchor: Vector2, centre: Vector2, rect: Rect2) -> bool:

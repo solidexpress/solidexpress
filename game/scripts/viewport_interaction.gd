@@ -3896,9 +3896,16 @@ func _sketch_input(event: InputEvent) -> void:
 			_sketch_swallow_release = false
 			_sketch_release_frame = Engine.get_process_frames()
 			_sketch_press_inferred = false
-			var ray_up := _model_ray(_pointer_viewport_pos(mb))
+			var release_at := _pointer_viewport_pos(mb)
+			var ray_up := _model_ray(release_at)
 			var p2_up = sketch_mode.ray_to_sketch(ray_up[0], ray_up[1])
-			var travel_up := _pointer_viewport_pos(mb).distance_to(_sketch_press_pos)
+			var travel_up := release_at.distance_to(_sketch_press_pos)
+			# A press that only jittered still has to select. Re-project the
+			# press point when the release ray misses: samples a pixel apart
+			# on a short wall were committing the drag and leaving the line.
+			if p2_up == null:
+				var ray_press := _model_ray(_sketch_press_pos)
+				p2_up = sketch_mode.ray_to_sketch(ray_press[0], ray_press[1])
 			if sketch_mode.tool == SketchMode.Tool.TRIM:
 				sketch_mode.end_trim_drag()
 			elif travel_up < CLICK_SLOP and p2_up != null:
