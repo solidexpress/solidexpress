@@ -7726,16 +7726,12 @@ func _resolve_label_overlaps() -> void:
 	_clamp_dimension_labels_into_view(cam, k)
 	_seat_full_circle_labels(cam, k)
 	_open_label_glyph_gap(cam, k)
-	_nudge_labels_off_leaders(cam, k)
-	_clamp_dimension_labels_into_view(cam, k)
 	_rebuild_circle_label_leaders(cam)
 
 
 func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
 		glyphs: Array[Rect2]) -> bool:
 	var rect := _projected_label_rect(dim, cam, k)
-	if _label_hits_glyph_leader(rect, cam):
-		return true
 	for gr in glyphs:
 		if rect.intersects(gr.grow(GLYPH_LABEL_GAP_PX)):
 			return true
@@ -7748,59 +7744,6 @@ func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
 		if rect.intersects(_projected_label_rect(other, cam, k)):
 			return true
 	return false
-
-
-## A leader is a thin segment, so a label can miss every badge and still
-## cover the line. Step the callout off that segment.
-func _label_hits_glyph_leader(rect: Rect2, cam: Camera3D) -> bool:
-	for a in _glyph_anchors:
-		if float(a.get("offset_px", 0.0)) < GLYPH_LEADER_MIN_PX:
-			continue
-		var sa := cam.unproject_position(to_global(to_model(a["anchor"])))
-		var sb := cam.unproject_position(to_global(to_model(a["pos"])))
-		if _leader_crosses_rect(sa, sb, rect):
-			return true
-	return false
-
-
-func _nudge_labels_off_leaders(cam: Camera3D, k: float) -> void:
-	if k < 1e-6:
-		return
-	for _pass in 6:
-		var moved := false
-		for i in range(dimensions.size()):
-			var dim: Dictionary = dimensions[i]
-			if typeof(dim) != TYPE_DICTIONARY or dim.get("label_pos", null) == null:
-				continue
-			if _seated_curve_dimension(dim) or _is_slot_cap_radius(dim):
-				continue
-			var rect := _projected_label_rect(dim, cam, k)
-			var push := Vector2.ZERO
-			for a in _glyph_anchors:
-				if float(a.get("offset_px", 0.0)) < GLYPH_LEADER_MIN_PX:
-					continue
-				var sa := cam.unproject_position(to_global(to_model(a["anchor"])))
-				var sb := cam.unproject_position(to_global(to_model(a["pos"])))
-				if not _leader_crosses_rect(sa, sb, rect):
-					continue
-				var dir := sb - sa
-				if dir.length_squared() < 1.0:
-					continue
-				var n := Vector2(-dir.y, dir.x).normalized()
-				var side := 1.0 if n.dot(rect.get_center() - (sa + sb) * 0.5) >= 0.0 else -1.0
-				push += n * side * 10.0
-			if push.length_squared() < 0.25:
-				continue
-			var clamp_off := Vector2.ZERO
-			var raw: Variant = dim.get("label_clamp", Vector2.ZERO)
-			if raw is Vector2:
-				clamp_off = raw
-			clamp_off += push / k
-			dim["label_clamp"] = clamp_off
-			dimensions[i] = dim
-			moved = true
-		if not moved:
-			break
 
 
 ## Jaw callouts that still overlap at the stack cap slide sideways, in
