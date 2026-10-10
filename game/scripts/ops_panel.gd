@@ -2307,7 +2307,7 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 		# the edge band.
 		var screen_edge := ""
 		if cam != null:
-			screen_edge = view.edge_near_screen(body, cam, view.model_to_screen(cam, point), DRESSUP_FIRST_PICK_EDGE_PX)
+			screen_edge = view.edge_near_screen(body, cam, view.model_to_screen(cam, point), _dressup_first_pick_band_px(cam))
 		if screen_edge != "":
 			var near3 := view.edge_near_point(body, point, 2.5, cam)
 			edge = near3 if near3 != "" else screen_edge
@@ -2336,6 +2336,10 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 
 const DRESSUP_SNAP_PX := 14.0
 const DRESSUP_FIRST_PICK_EDGE_PX := 12.0
+## World width of the first-pick edge band. A 5 mm slot floor framed at
+## 1280×800 is only about 12 px from its rim, so a fixed 12 px band selects
+## the rim instead of the face loop. Cap the band at 2 mm (and at 12 px).
+const DRESSUP_FIRST_PICK_EDGE_MM := 2.0
 const DRESSUP_SILHOUETTE_PX := 10.0
 ## Re-click of a picked edge: the face-hit can sit a few mm inward, and a
 ## same-length twin can be slightly closer. Stay on the picked edge when it
@@ -2348,6 +2352,18 @@ func _dressup_camera() -> Camera3D:
 	if view == null or not view.is_inside_tree():
 		return null
 	return view.get_viewport().get_camera_3d()
+
+
+## First click: an edge wins only inside this band. High zoom stays at 12 px
+## so a corner still arms the vertical. Zoom-extents on a small window shrinks
+## the band to 2 mm so the middle of a narrow floor stays a face loop.
+func _dressup_first_pick_band_px(cam: Camera3D) -> float:
+	var band := DRESSUP_FIRST_PICK_EDGE_PX
+	if cam != null and cam.has_method("pixels_per_mm_at_pivot"):
+		var ppm := float(cam.pixels_per_mm_at_pivot())
+		if ppm > 0.05:
+			band = minf(band, maxf(3.0, DRESSUP_FIRST_PICK_EDGE_MM * ppm))
+	return band
 
 
 func _dressup_has_edges() -> bool:
