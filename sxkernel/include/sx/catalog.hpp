@@ -34,8 +34,5 @@ struct MechanicTool {
 const std::vector<MechanicTool>& mechanic_tools();
 // Filtered view by kind.
 std::vector<MechanicTool> mechanic_tools_of_kind(const std::string& kind);
-// Lookup by kind + designation (exact match).
-std::optional<MechanicTool> find_mechanic_tool(const std::string& kind,
-                                               const std::string& designation);
 
 }  // namespace sx::catalog

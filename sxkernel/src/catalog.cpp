@@ -57,12 +57,4 @@ std::vector<MechanicTool> mechanic_tools_of_kind(const std::string& kind) {
     return out;
 }
 
-std::optional<MechanicTool> find_mechanic_tool(const std::string& kind,
-                                               const std::string& designation) {
-    for (const auto& t : mechanic_tools()) {
-        if (t.kind == kind && t.designation == designation) return t;
-    }
-    return std::nullopt;
-}
-
 }  // namespace sx::catalog

@@ -3502,19 +3502,6 @@ func _longest_profile_dir() -> Vector2:
 			best = d
 	return best
 
-
-## Cutter line is within 15% of the radius of the centre, and the segment
-## overlaps the circle. Replaces the 1.0 mm best_cd gate that missed Ø45.
-func _circle_meets_cutter(c: Vector2, r: float, a: Vector2, b: Vector2) -> bool:
-	if r < 1e-6:
-		return false
-	if _point_line_distance(c, a, b) > 0.15 * r:
-		return false
-	return _point_segment_distance(c, a, b) <= r + 1.0
-
-
-## Largest circle whose disc the cutter line crosses well inside the rim:
-## sketch circles first, then the solid's head edge. {} when none.
 func _jaw_cap_circle(a: Vector2, b: Vector2) -> Dictionary:
 	var best: Dictionary = {}
 	var best_r := 0.0
@@ -4767,11 +4754,6 @@ func _contour_tag_screen_rect(anchor: Vector2, text: String) -> Rect2:
 	var size := _dimension_label_size_px(text) * _label_px_scale(camera)
 	return Rect2(sp - size * 0.5, size)
 
-
-func _hole_screen_clearance(holes: Array, rect: Rect2) -> float:
-	return _loops_screen_clearance(holes, rect)
-
-
 func _loops_screen_clearance(loops: Array, rect: Rect2) -> float:
 	var best := 1e9
 	for loop in loops:
@@ -5522,21 +5504,6 @@ func _add_slot(a: Vector2, b: Vector2, half_w: float) -> void:
 	sketch.add_constraint("coincident", [
 		{"entity": bot, "role": "end"},
 		{"entity": cap_b, "role": "start"}], 0.0)
-
-
-func _add_semicircle(center: Vector2, start_off: Vector2, outward: Vector2) -> void:
-	var r := start_off.length()
-	var a0 := start_off.angle()
-	var prev := center + start_off
-	for i in range(1, 9):
-		var ang := a0 + PI * float(i) / 8.0
-		# Flip based on outward so the bulge goes the right way.
-		var p := center + Vector2(cos(ang), sin(ang)) * r
-		if (p - center).dot(outward) < 0.0:
-			p = center - (p - center)
-		sketch.add_line(prev.x, prev.y, p.x, p.y)
-		prev = p
-
 
 const SMART_DIM_PICK_HINT := "Smart Dim: first pick set — click the second circle's centre or edge (Esc drops it)"
 const SMART_DIM_MISS_HINT := "Smart Dim: nothing there — first pick kept, click the second circle's centre or edge (Esc drops it)"
@@ -7139,22 +7106,6 @@ func set_sketch_picture(tex: Texture2D, size: Vector2 = Vector2(100, 100)) -> vo
 	sketch_picture = tex
 	sketch_picture_size = size
 	_rebuild_picture()
-
-
-## Uniform / anisotropic resize of the picture underlay (mm on the sketch plane).
-func set_sketch_picture_size(size: Vector2) -> void:
-	if size.x < 0.1 or size.y < 0.1:
-		return
-	sketch_picture_size = size
-	_rebuild_picture()
-
-
-func clear_sketch_picture() -> void:
-	sketch_picture = null
-	if _picture_node != null:
-		_picture_node.queue_free()
-		_picture_node = null
-
 
 func _rebuild_picture() -> void:
 	if _picture_node != null:

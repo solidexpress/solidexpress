@@ -478,24 +478,6 @@ func pick_pad_visible(ray_origin: Vector3, ray_dir: Vector3, solid_t: float = IN
 			best_fid = fid
 	return best_fid
 
-
-## Pads whose screen AABB matches `rect` (window vs crossing, same as bodies).
-func pads_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D, crossing := false) -> Array[String]:
-	var band := rect.abs()
-	var out: Array[String] = []
-	if camera == null:
-		return out
-	for fid in _pads:
-		var scr := pad_screen_aabb(fid, camera, model_space)
-		if scr.size == Vector2.ZERO:
-			continue
-		var ok := band.encloses(scr) if not crossing else band.intersects(scr)
-		if ok:
-			out.append(fid)
-	return out
-
-
-## Screen AABB of a pad's plane extents (min2/max2 corners).
 func pad_screen_aabb(fid: String, camera: Camera3D, model_space: Node3D) -> Rect2:
 	if not _pads.has(fid) or camera == null:
 		return Rect2()

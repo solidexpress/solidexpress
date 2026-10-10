@@ -1432,15 +1432,6 @@ func _sketch_pad_role(fid: String) -> String:
 		return "rail"
 	return "unknown"
 
-
-func _latest_path_fid() -> String:
-	var feats: Array = view.doc.graph_features()
-	for i in range(feats.size() - 1, -1, -1):
-		if str(feats[i].get("type", "")) == "path":
-			return str(feats[i].get("id", ""))
-	return ""
-
-
 func _sketch_to_3d_actions() -> Array:
 	var actions: Array = []
 	var n := selected_sketch_pads.size()
@@ -2613,17 +2604,6 @@ func _sync_view_menu_checks() -> void:
 		_view_popup.set_item_checked(vi, show_variables)
 	if si >= 0:
 		_view_popup.set_item_checked(si, show_scenic_bg)
-
-
-func hide_timeline_if_idle() -> void:
-	# Only auto-hide if the user did not explicitly open Timeline.
-	# Property panel close no longer implies Timeline was forced on.
-	if timeline != null and timeline.property_panel != null \
-			and timeline.property_panel.visible:
-		timeline.property_panel.visible = false
-	_sync_view_menu_checks()
-	_update_panel_visibility()
-
 
 func _reset_panel_layout() -> void:
 	if FileAccess.file_exists(ChromeDock.CFG_PATH):
