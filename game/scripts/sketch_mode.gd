@@ -2508,18 +2508,12 @@ func _select_at(pos2: Vector2) -> void:
 func _entity_distance(info: Dictionary, p: Vector2) -> float:
 	match info.get("type", ""):
 		"line":
-			return _point_segment_distance(p, info["start"], info["end"])
+			return SketchGeom.point_segment_distance(p, info["start"], info["end"])
 		"circle", "arc":
 			return absf(p.distance_to(info["center"]) - info["radius"])
 		"point":
 			return p.distance_to(info["position"])
 	return INF
-
-
-func _point_segment_distance(p: Vector2, a: Vector2, b: Vector2) -> float:
-	var ab := b - a
-	var t := 0.0 if ab.length_squared() < 1e-12 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
-	return p.distance_to(a + ab * t)
 
 
 ## Closest sketch-plane point on `eid` to `pos2` (the measure ✕ sits here).
@@ -3354,10 +3348,10 @@ func _nearest_construction_line(p: Vector2, max_dist: float) -> Dictionary:
 			continue
 		var a: Vector2 = info["start"]
 		var b: Vector2 = info["end"]
-		var d := _point_line_distance(p, a, b)
+		var d := SketchGeom.point_line_distance(p, a, b)
 		if d > best_d:
 			continue
-		if _point_segment_distance(p, a, b) > max_dist + a.distance_to(b):
+		if SketchGeom.point_segment_distance(p, a, b) > max_dist + a.distance_to(b):
 			continue
 		best_d = d
 		best = {"id": id, "a": a, "b": b}
@@ -3533,9 +3527,9 @@ const JAW_CUTTER_MAX_RIM_FRACTION := 0.9
 func _jaw_cutter_crosses_disc(c: Vector2, r: float, a: Vector2, b: Vector2) -> bool:
 	if r < 1e-6:
 		return false
-	if _point_line_distance(c, a, b) > JAW_CUTTER_MAX_RIM_FRACTION * r:
+	if SketchGeom.point_line_distance(c, a, b) > JAW_CUTTER_MAX_RIM_FRACTION * r:
 		return false
-	return _point_segment_distance(c, a, b) <= r + 1.0
+	return SketchGeom.point_segment_distance(c, a, b) <= r + 1.0
 
 
 func _jaw_no_cap_status(a: Vector2, b: Vector2) -> String:
@@ -3550,12 +3544,12 @@ func _jaw_no_cap_status(a: Vector2, b: Vector2) -> String:
 		var r := float(info.get("radius", 0.0))
 		if r > best_r:
 			best_r = r
-			best_d = _point_line_distance(info["center"], a, b)
+			best_d = SketchGeom.point_line_distance(info["center"], a, b)
 	for mc in _model_circles():
 		var r2 := float(mc["radius"])
 		if r2 > best_r:
 			best_r = r2
-			best_d = _point_line_distance(mc["center"], a, b)
+			best_d = SketchGeom.point_line_distance(mc["center"], a, b)
 	if best_r < 1e-6:
 		return "Trim failed — no head circle: redraw the Ø45 head circle on this sketch"
 	return "Trim failed — the centreline is %.1f mm from the Ø%.0f head centre (limit %.1f mm): draw it closer to the head centre" % [
@@ -3703,7 +3697,7 @@ func _jaw_cutter_for_click(pos2: Vector2) -> Dictionary:
 					continue
 			elif not _cutter_crosses_both_side_interiors(a, b, sides):
 				continue
-			var d := _point_segment_distance(pos2, a, b)
+			var d := SketchGeom.point_segment_distance(pos2, a, b)
 			if d < best_d:
 				best_d = d
 				best = {"id": id, "a": a, "b": b}
@@ -3718,7 +3712,7 @@ func _jaw_click_reaches_cutter(pos2: Vector2, cutter_d: float, sides: Array) -> 
 	if sides.size() != 2:
 		return false
 	for s in sides:
-		if _point_segment_distance(pos2, s["a"], s["b"]) <= PICK_TOLERANCE * 2.0:
+		if SketchGeom.point_segment_distance(pos2, s["a"], s["b"]) <= PICK_TOLERANCE * 2.0:
 			return true
 	return _jaw_aabb_expanded(sides, 8.0).has_point(pos2)
 
@@ -4763,54 +4757,12 @@ func _loops_screen_clearance(loops: Array, rect: Rect2) -> float:
 		for j in poly.size():
 			var a := _sketch_point_screen(poly[j])
 			var b := _sketch_point_screen(poly[(j + 1) % poly.size()])
-			best = minf(best, _segment_rect_distance(a, b, rect))
+			best = minf(best, SketchGeom.segment_rect_distance(a, b, rect))
 	return best
 
 
 func _sketch_point_screen(p: Vector2) -> Vector2:
 	return camera.unproject_position(to_global(_to3(p)))
-
-
-func _segment_hits_rect(a: Vector2, b: Vector2, rect: Rect2) -> bool:
-	if rect.has_point(a) or rect.has_point(b):
-		return true
-	var corners: Array[Vector2] = [
-		rect.position,
-		Vector2(rect.end.x, rect.position.y),
-		rect.end,
-		Vector2(rect.position.x, rect.end.y),
-	]
-	for i in corners.size():
-		if Geometry2D.segment_intersects_segment(a, b, corners[i], corners[(i + 1) % corners.size()]) != null:
-			return true
-	return false
-
-
-func _segment_rect_distance(a: Vector2, b: Vector2, rect: Rect2) -> float:
-	if _segment_hits_rect(a, b, rect):
-		return 0.0
-	var best := _point_rect_distance(a, rect)
-	best = minf(best, _point_rect_distance(b, rect))
-	var corners: Array[Vector2] = [
-		rect.position,
-		rect.position + Vector2(rect.size.x, 0.0),
-		rect.end,
-		rect.position + Vector2(0.0, rect.size.y),
-	]
-	for c in corners:
-		best = minf(best, _point_segment_distance2(c, a, b))
-	return best
-
-
-func _point_rect_distance(p: Vector2, rect: Rect2) -> float:
-	var c := Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.y, rect.position.y, rect.end.y))
-	return p.distance_to(c)
-
-
-func _point_segment_distance2(p: Vector2, a: Vector2, b: Vector2) -> float:
-	var ab := b - a
-	var t := 0.0 if ab.length_squared() < 1e-12 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
-	return p.distance_to(a + ab * t)
 
 
 func _contour_regions() -> Array:
@@ -5696,7 +5648,7 @@ func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
 	if line_id != "" and not pt.is_empty():
 		var pref := _point_xy(pt)
 		var li: Dictionary = sketch.entity_info(line_id)
-		var dist := _point_line_distance(pref, li["start"], li["end"])
+		var dist := SketchGeom.point_line_distance(pref, li["start"], li["end"])
 		var cid: String = sketch.add_constraint("distance", [
 			{"entity": str(pt["entity"]), "role": str(pt.get("role", "center"))},
 			{"entity": line_id, "role": "self"}], dist)
@@ -5778,14 +5730,6 @@ func _point_xy(ref: Dictionary) -> Vector2:
 		"point":
 			return info.get("position", Vector2.ZERO)
 	return Vector2.ZERO
-
-
-func _point_line_distance(p: Vector2, a: Vector2, b: Vector2) -> float:
-	var ab := b - a
-	var len := ab.length()
-	if len < 1e-9:
-		return p.distance_to(a)
-	return absf((p - a).cross(ab)) / len
 
 
 # --- constraint inference (automatic relations on creation) ---
@@ -7502,12 +7446,6 @@ func _dimension_label_rect(dim: Dictionary, anchor: Vector2, k: float) -> Rect2:
 	return Rect2(centre - size * 0.5, size)
 
 
-func _rect_gap(r: Rect2, p: Vector2) -> float:
-	var dx := maxf(maxf(r.position.x - p.x, 0.0), p.x - r.end.x)
-	var dy := maxf(maxf(r.position.y - p.y, 0.0), p.y - r.end.y)
-	return sqrt(dx * dx + dy * dy)
-
-
 func _rebuild_dimension_labels() -> void:
 	_clear_dimension_labels()
 	if _dimension_labels == null or sketch == null:
@@ -9032,27 +8970,11 @@ func _glyph_curve_penalty(rect: Rect2, anchor_screen: Vector2, cam: Camera3D) ->
 		if kind != "line" and kind != "circle" and kind != "arc":
 			continue
 		for s in _curve_screen_samples(info, cam):
-			var gap := _point_rect_gap_px(s, rect)
+			var gap := SketchGeom.point_rect_distance(s, rect)
 			var need := PICK_SCREEN_PX + 4.0
 			if gap + 0.01 < need:
 				return 80000.0 + (need - gap) * 100.0
 	return 0.0
-
-
-func _point_rect_gap_px(p: Vector2, rect: Rect2) -> float:
-	if rect.has_point(p):
-		return 0.0
-	var dx := 0.0
-	if p.x < rect.position.x:
-		dx = rect.position.x - p.x
-	elif p.x > rect.end.x:
-		dx = p.x - rect.end.x
-	var dy := 0.0
-	if p.y < rect.position.y:
-		dy = rect.position.y - p.y
-	elif p.y > rect.end.y:
-		dy = p.y - rect.end.y
-	return Vector2(dx, dy).length()
 
 
 ## Perpendicular offset that keeps a 25.6 px badge ≥ hit-slop + 4 px off a wall,
@@ -9251,7 +9173,7 @@ func _coincident_line_penalty(rect: Rect2) -> float:
 		if str(info.get("type", "")) != "line":
 			continue
 		for s in _curve_screen_samples(info, cam):
-			var gap := _point_rect_gap_px(s, rect)
+			var gap := SketchGeom.point_rect_distance(s, rect)
 			if gap + 0.01 < 4.0:
 				worst = maxf(worst, 90000.0 + (4.0 - gap) * 100.0)
 	return worst
@@ -9633,7 +9555,7 @@ func dimension_hit(pos2: Vector2, rect_only: bool = false) -> int:
 		if cam != null:
 			var sp := cam.unproject_position(_dimension_label_world(p))
 			var rect := _dimension_label_rect(dim, sp, k)
-			var gap := _rect_gap(rect, screen)
+			var gap := SketchGeom.point_rect_distance(screen, rect)
 			var centre_d := screen.distance_to(rect.get_center())
 			if gap <= DIM_LABEL_PAD_PX and (gap < rect_gap - 0.01
 					or (absf(gap - rect_gap) <= 0.01 and centre_d < rect_centre_d)):
