@@ -27,7 +27,7 @@ func _case_wheel() -> void:
 	ctx.view.select_entity(body, "")
 	await process_frame
 	var cam: OrbitCamera = ctx.main.camera
-	_push_key(ctx.main.get_viewport(), KEY_3, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_3, false)
 	check(str(ctx.main.status_label.text).contains("Top view"),
 			"key 3 status is Top view (got '%s')" % str(ctx.main.status_label.text))
 	# Same frame as key 3: no process_frame between the view and the notch.
@@ -85,26 +85,26 @@ func _case_frame() -> void:
 	ctx.view.select_entity(body, "")
 	await process_frame
 	_status_log.clear()
-	_push_key(ctx.main.get_viewport(), KEY_F, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_F, false)
 	await process_frame
 	check(_saw("Framed selection"), "F with a body is Framed selection (got '%s')" % _status_blob())
 	ctx.view.clear_selection()
 	await process_frame
 	_status_log.clear()
-	_push_key(ctx.main.get_viewport(), KEY_F, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_F, false)
 	await process_frame
 	check(_saw("Framed all"), "F with nothing selected is Framed all (got '%s')" % _status_blob())
 	ctx.view.select_entity(body, "")
 	await process_frame
 	var cam: OrbitCamera = ctx.main.camera
 	_status_log.clear()
-	_push_key(ctx.main.get_viewport(), KEY_F, true)
+	_push_key_local(ctx.main.get_viewport(), KEY_F, true)
 	await process_frame
 	check(_saw("Framed all"), "Shift+F is Framed all (got '%s')" % _status_blob())
 	ctx.view.clear_selection()
 	await process_frame
 	var pose_before := cam.capture_pose()
-	_push_key(ctx.main.get_viewport(), KEY_F, true)
+	_push_key_local(ctx.main.get_viewport(), KEY_F, true)
 	await process_frame
 	var shift_pose := cam.capture_pose()
 	cam.apply_pose(pose_before)
@@ -158,7 +158,7 @@ func _wheel(vp: Viewport, pos: Vector2, zoom_in: bool) -> void:
 	vp.push_input(up)
 
 
-func _push_key(vp: Viewport, code: Key, shift: bool) -> void:
+func _push_key_local(vp: Viewport, code: Key, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.pressed = true
 	down.keycode = code

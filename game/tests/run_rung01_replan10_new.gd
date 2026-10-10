@@ -113,26 +113,6 @@ func _x11_click(ctrl: Control) -> void:
 	await _x11_click_screen(ctrl.get_viewport(), pos)
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
 func _x11_key(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode

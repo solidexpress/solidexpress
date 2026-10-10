@@ -59,19 +59,19 @@ func _build(ctx: FilmContext) -> void:
 	sm.snap_enabled = false
 	sm.infer_enabled = true
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2.ZERO, "pivot centre")
-	await _click_uv(ctx, Vector2(10, 0), "pivot rim")
+	await _click_uv_local(ctx, Vector2.ZERO, "pivot centre")
+	await _click_uv_local(ctx, Vector2(10, 0), "pivot rim")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, HEAD, "head centre")
+	await _click_uv_local(ctx, HEAD, "head centre")
 	ctx.main.interaction.grab_focus()
 	await _type_text(ctx.main.get_viewport(), "22.5")
 	await _tap_key(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await _click_uv(ctx, Vector2(0, 40), "clear selection")
-	await _click_uv(ctx, Vector2(0, 10), "select pivot")
-	await _click_uv(ctx, HEAD + Vector2(0, HEAD_R), "select head")
+	await _click_uv_local(ctx, Vector2(0, 40), "clear selection")
+	await _click_uv_local(ctx, Vector2(0, 10), "select pivot")
+	await _click_uv_local(ctx, HEAD + Vector2(0, HEAD_R), "select head")
 	check(sm.selected.size() == 2, "both circles selected (got %d)" % sm.selected.size())
 	var shaft := FilmUI.find_button(ctx.main.sketch_chrome, "Shaft Lines")
 	check(shaft != null, "Shaft Lines chip is visible")
@@ -83,13 +83,13 @@ func _build(ctx: FilmContext) -> void:
 	check(jaw != null, "Jaw tool is on the rail")
 	if jaw != null:
 		await _click_screen(ctx.main.get_viewport(), jaw.get_global_rect().get_center())
-	await _click_uv(ctx, HEAD, "jaw centre")
-	await _click_uv(ctx, HEAD + Vector2(14.142, 14.142), "jaw at 45")
-	await _click_uv(ctx, HEAD + Vector2(-7.071, 7.071), "jaw width")
+	await _click_uv_local(ctx, HEAD, "jaw centre")
+	await _click_uv_local(ctx, HEAD + Vector2(14.142, 14.142), "jaw at 45")
+	await _click_uv_local(ctx, HEAD + Vector2(-7.071, 7.071), "jaw width")
 	check(_saw("Jaw committed"), "jaw committed (log %s)" % " | ".join(_log))
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await _click_uv(ctx, HEAD + Vector2(0, -40), "cutter a")
-	await _click_uv(ctx, HEAD + Vector2(0, 40), "cutter b")
+	await _click_uv_local(ctx, HEAD + Vector2(0, -40), "cutter a")
+	await _click_uv_local(ctx, HEAD + Vector2(0, 40), "cutter b")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	await _drag_uv(ctx, HEAD + Vector2(0, 32), HEAD + Vector2(24, 32))
 	check(_saw("Trimmed") or _saw("Nothing trimmed"),
@@ -102,7 +102,7 @@ func _build(ctx: FilmContext) -> void:
 func _measure(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	print("- glyph spread, wall clicks, trim orphans, callouts")
-	await _click_uv(ctx, Vector2(-40, 40), "clear selection before glyph counts")
+	await _click_uv_local(ctx, Vector2(-40, 40), "clear selection before glyph counts")
 	var glyphs: Array = sm.constraint_glyph_screen_rects()
 	var debug: Array = sm.glyph_debug()
 	check(glyphs.size() >= 4, "at least four glyphs are drawn (got %d)" % glyphs.size())
@@ -431,7 +431,7 @@ func _head_px(ctx: FilmContext, sm: SketchMode) -> float:
 	return float(disk["radius"]) * 2.0
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	var on := FilmUI.require_on_screen(ctx, screen, desc)

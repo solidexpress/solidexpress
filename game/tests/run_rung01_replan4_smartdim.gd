@@ -43,12 +43,12 @@ func test_smart_dim_first_key_replace() -> void:
 	await _zoom(ctx, Vector3(90, 0, 0), 280.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "First circle centre")
-	await _click_uv(ctx, Vector2(15, 0), "First circle rim")
+	await _click_uv_local(ctx, Vector2.ZERO, "First circle centre")
+	await _click_uv_local(ctx, Vector2(15, 0), "First circle rim")
 	await process_frame
 	await _zoom_uv(ctx, Vector2(180, 0), 80.0)
-	await _click_uv(ctx, Vector2(180, 0), "Second circle centre")
-	await _click_uv(ctx, Vector2(195, 0), "Second circle rim")
+	await _click_uv_local(ctx, Vector2(180, 0), "Second circle centre")
+	await _click_uv_local(ctx, Vector2(195, 0), "Second circle rim")
 	await process_frame
 	var circs := _circles(sm)
 	check(circs.size() == 2, "two circles via viewport clicks (got %d)" % circs.size())
@@ -64,9 +64,9 @@ func test_smart_dim_first_key_replace() -> void:
 	await _zoom(ctx, Vector3(90, 0, 0), 280.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
 	await _zoom_uv(ctx, c1, 50.0)
-	await _click_uv(ctx, c1, "Smart Dimension first centre")
+	await _click_uv_local(ctx, c1, "Smart Dimension first centre")
 	await _zoom_uv(ctx, c2, 50.0)
-	await _click_uv(ctx, c2, "Smart Dimension second centre")
+	await _click_uv_local(ctx, c2, "Smart Dimension second centre")
 	await process_frame
 	await process_frame
 	var di := _distance_dim_index(sm)
@@ -75,7 +75,7 @@ func test_smart_dim_first_key_replace() -> void:
 	check(n_dims >= 1, "at least one dimension is recorded")
 	var miss := Vector2(90, 80)
 	await _zoom_uv(ctx, miss, 80.0)
-	await _click_uv(ctx, miss, "Miss the dimension label")
+	await _click_uv_local(ctx, miss, "Miss the dimension label")
 	await process_frame
 	check(sm.active, "miss click does not exit the sketch")
 	check(sm.dimensions.size() == n_dims,
@@ -92,7 +92,7 @@ func test_smart_dim_first_key_replace() -> void:
 		await _shutdown(ctx)
 		return
 	await _zoom_uv(ctx, lp as Vector2, 50.0)
-	await _click_uv(ctx, lp as Vector2, "Click dimension label")
+	await _click_uv_local(ctx, lp as Vector2, "Click dimension label")
 	await process_frame
 	await process_frame
 	var ix: ViewportInteraction = ctx.main.interaction
@@ -260,7 +260,7 @@ func _x11_enter(vp: Viewport) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -281,33 +281,6 @@ func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	up.position = screen
 	up.global_position = screen
 	vp.push_input(up)
-	await process_frame
-	await process_frame
-
-
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
 	await process_frame
 	await process_frame
 

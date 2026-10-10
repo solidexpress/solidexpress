@@ -53,7 +53,7 @@ func _boot() -> FilmContext:
 func _build(ctx: FilmContext, radius_text: String) -> String:
 	print("- circle, extrude 10, fillet r%s" % radius_text)
 	await FilmUI.enter_sketch(ctx)
-	await _zoom(ctx, Vector2.ZERO, 4.0)
+	await _zoom_local(ctx, Vector2.ZERO, 4.0)
 	await FilmUI.select_sketch_tool(ctx, ctx.main.sketch_mode, SketchMode.Tool.CIRCLE)
 	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, Vector2.ZERO, "circle centre")
 	await process_frame
@@ -555,7 +555,7 @@ func _pick_option(ctx: FilmContext, opt: OptionButton, index: int) -> void:
 	await process_frame
 
 
-func _zoom(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
+func _zoom_local(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
 	var cam = ctx.main.camera
 	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():

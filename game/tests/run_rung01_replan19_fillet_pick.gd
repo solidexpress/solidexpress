@@ -33,9 +33,9 @@ func _case_picks() -> void:
 	var ex_fid: String = str(built["extrude"])
 	ctx.view.select_entity(body, "")
 	await process_frame
-	_push_key(ctx.main.get_viewport(), KEY_3, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_3, false)
 	await process_frame
-	_push_key(ctx.main.get_viewport(), KEY_F, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_F, false)
 	await _frames(2)
 	check(str(ctx.main.status_label.text).contains("Framed"),
 			"Top view framed (got '%s')" % str(ctx.main.status_label.text))
@@ -60,7 +60,7 @@ func _case_picks() -> void:
 				"%d px from the neck is one edge (got '%s')" % [px, status])
 		check(not status.contains("13 edge(s)"), "%d px never takes 13 edges" % px)
 		bare.append(ctx.view.selected_edges.size())
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false)
 		await _frames(2)
 	check(bare == [1, 1, 1, 1], "each near press selected one edge (got %s)" % str(bare))
 
@@ -83,7 +83,7 @@ func _case_picks() -> void:
 		var n := _edge_count(status)
 		check(n >= 6, "%d px inside the top face takes %d edges (got '%s')" % [px, n, status])
 		check(not _lists_zero_line(status), "%d px status has no 0.0 mm line" % px)
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false)
 		await _frames(2)
 
 	print("- face already selected, then the corner")
@@ -113,7 +113,7 @@ func _case_picks() -> void:
 	check(not corner_status.contains("13 edge(s)"), "pre-selected face is not the 13-edge loop")
 
 	print("- thickness 14 keeps recovered fillet edges")
-	_push_key(ctx.main.get_viewport(), KEY_ENTER, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_ENTER, false)
 	await _frames(3)
 	check(_count_fillet(ctx) >= 1, "Enter applies the corner fillet")
 	ctx.main.show_timeline = true
@@ -132,10 +132,10 @@ func _case_picks() -> void:
 		var edit := _distance_edit(tl)
 		check(edit != null and edit.has_focus(), "Distance field is focused for T14")
 		if edit != null:
-			_push_key(ctx.main.get_viewport(), KEY_1, false)
-			_push_key(ctx.main.get_viewport(), KEY_4, false)
+			_push_key_local(ctx.main.get_viewport(), KEY_1, false)
+			_push_key_local(ctx.main.get_viewport(), KEY_4, false)
 			await process_frame
-			_push_key(ctx.main.get_viewport(), KEY_ENTER, false)
+			_push_key_local(ctx.main.get_viewport(), KEY_ENTER, false)
 			await _frames(4)
 	var warns := str(ctx.view.doc.graph_warnings())
 	check(warns.find("edges lost on rebuild") < 0,
@@ -286,7 +286,7 @@ func _click_screen(vp: Viewport, pos: Vector2, double_click := false) -> void:
 	vp.push_input(up)
 
 
-func _push_key(vp: Viewport, code: Key, shift: bool) -> void:
+func _push_key_local(vp: Viewport, code: Key, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.pressed = true
 	down.keycode = code

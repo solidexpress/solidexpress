@@ -4,7 +4,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
 
-
 func _init() -> void:
 	print("rung01 replan2 shell (WP4)")
 	FilmUI.reset_fail_count()
@@ -43,72 +42,9 @@ func _file_button(main) -> MenuButton:
 	return null
 
 
-func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
-	var ev := InputEventKey.new()
-	ev.keycode = keycode
-	ev.physical_keycode = keycode
-	ev.unicode = unicode
-	ev.pressed = true
-	ev.echo = false
-	vp.push_input(ev)
-	await process_frame
-	var rel := InputEventKey.new()
-	rel.keycode = keycode
-	rel.physical_keycode = keycode
-	rel.unicode = unicode
-	rel.pressed = false
-	rel.echo = false
-	vp.push_input(rel)
-	await process_frame
-
-
-func _push_mouse(vp: Viewport, pos: Vector2, pressed: bool) -> void:
-	if vp == null:
-		return
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	await process_frame
-	var ev := InputEventMouseButton.new()
-	ev.button_index = MOUSE_BUTTON_LEFT
-	ev.pressed = pressed
-	ev.position = pos
-	ev.global_position = pos
-	vp.push_input(ev)
-	await process_frame
-
-
 func _click_at(vp: Viewport, pos: Vector2) -> void:
 	await _push_mouse(vp, pos, true)
 	await _push_mouse(vp, pos, false)
-
-
-func _keycode_for_char(ch: String) -> Key:
-	var c := ch.unicode_at(0)
-	if ch == "/":
-		return KEY_SLASH
-	if ch == "\\":
-		return KEY_BACKSLASH
-	if ch == "-":
-		return KEY_MINUS
-	if ch == "_":
-		return KEY_UNDERSCORE
-	if ch == ".":
-		return KEY_PERIOD
-	if c >= 48 and c <= 57:
-		return (KEY_0 + (c - 48)) as Key
-	if c >= 97 and c <= 122:
-		return (KEY_A + (c - 97)) as Key
-	if c >= 65 and c <= 90:
-		return (KEY_A + (c - 65)) as Key
-	return KEY_NONE
-
-
-func _type_text(vp: Viewport, text: String) -> void:
-	for i in text.length():
-		var ch := text.substr(i, 1)
-		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
 
 
 func _popup_row_height(popup: PopupMenu, index: int, font_h: int, v_sep: int) -> float:

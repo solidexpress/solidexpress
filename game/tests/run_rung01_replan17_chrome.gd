@@ -15,7 +15,6 @@ const NO_VIEW := "No view for key 0 — use 1 2 3 4 6 7 8"
 const FRAMED_ALL := "Framed all"
 
 
-
 func _init() -> void:
 	print("rung01 replan17 WP4 chrome / hover hold / timeline / window")
 	FilmUI.reset_fail_count()
@@ -42,7 +41,7 @@ func _test_h1() -> void:
 	print("  H1 hover %s hit=%s" % [str(px), str(hit.get("face", hit.get("body", "")))])
 	check(px != Vector2.INF and not hit.is_empty(), "H1 motion point hits the body")
 	_release_focus(vp)
-	await _push_key(vp, KEY_0)
+	await _push_key_local(vp, KEY_0)
 	var t0 := Time.get_ticks_msec()
 	check(_label(ctx.main) == NO_VIEW, "H1 key 0 status (got `%s`)" % _label(ctx.main))
 	await _motion(vp, px)
@@ -68,7 +67,7 @@ func _test_h2() -> void:
 	print("  H2 body %s ground %s miss_empty=%s" % [str(on_body), str(ground), str(miss.is_empty())])
 	check(not _pick(ctx, on_body).is_empty() and miss.is_empty(), "H2 ground point misses the body")
 	_release_focus(vp)
-	await _push_key(vp, KEY_0)
+	await _push_key_local(vp, KEY_0)
 	var t0 := Time.get_ticks_msec()
 	check(_label(ctx.main) == NO_VIEW, "H2 key 0 status (got `%s`)" % _label(ctx.main))
 	await _motion(vp, on_body)
@@ -89,11 +88,11 @@ func _test_h3() -> void:
 	var px := _body_screen_center(ctx, body)
 	check(not _pick(ctx, px).is_empty(), "H3 motion point hits the body")
 	_release_focus(vp)
-	await _push_key(vp, KEY_0)
+	await _push_key_local(vp, KEY_0)
 	var t0 := Time.get_ticks_msec()
 	await _motion(vp, px)
 	await _await_until(t0 + 1200)
-	await _push_key(vp, KEY_F)
+	await _push_key_local(vp, KEY_F)
 	var tF := Time.get_ticks_msec()
 	print("  H3 after F `%s` (F at +%d ms)" % [_label(ctx.main), tF - t0])
 	check(_label(ctx.main) == FRAMED_ALL, "H3 key F status is Framed all (got `%s`)" % _label(ctx.main))
@@ -143,7 +142,7 @@ func _test_t1() -> void:
 	check(_rect_inside(win, strip), "T1 chip row is inside the window")
 	check(_rect_inside(win, tr), "T1 Timeline is inside the window")
 	_assert_chips_clear(main, tr)
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	for _i in 6:
 		await process_frame
 	tr = timeline.get_global_rect()
@@ -305,7 +304,7 @@ func _deselect(ctx: FilmContext) -> void:
 	if ctx.view.selected_body == "" and ctx.view.selection_size() == 0:
 		return
 	_release_focus(ctx.main.get_viewport())
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await process_frame
 
 
@@ -419,7 +418,7 @@ func _click_at(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

@@ -18,7 +18,6 @@ const RAIL_SHORTCUTS := [
 ]
 
 
-
 func _init() -> void:
 	print("rung01 replan13 WP1 armed tools name themselves; finish bar owns its sketch")
 	FilmUI.reset_fail_count()
@@ -62,7 +61,7 @@ func _push_click(pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(keycode: Key) -> void:
+func _push_key_local(keycode: Key) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = keycode
@@ -279,7 +278,7 @@ func _test_rail_and_keys(ctx: FilmContext, main) -> void:
 		check(jaw2 != null, "Jaw before shortcut `%s`" % str(row[0]))
 		await process_frame
 		var prev_k := _status_of(main)
-		await _push_key(row[1] as Key)
+		await _push_key_local(row[1] as Key)
 		await _assert_named(main, str(row[2]), prev_k, "key `%s`" % str(row[0]))
 
 

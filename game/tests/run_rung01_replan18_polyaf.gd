@@ -133,7 +133,7 @@ func _press_rail(ctx: FilmContext, label: String) -> Button:
 	return btn
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, _desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, _desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	if not FilmUI.is_on_screen(ctx, screen):
@@ -393,7 +393,7 @@ func _fresh_polygon(ctx: FilmContext, snap: bool, centre: Vector2, tag: String) 
 	sm.snap_enabled = snap
 	check(sm.snap_enabled == snap, "%s snap_enabled is %s before the centre click" % [tag, snap])
 	_status_log.clear()
-	await _click_uv(ctx, centre, "polygon centre")
+	await _click_uv_local(ctx, centre, "polygon centre")
 	check(sm._tool_points.size() == 1, "%s centre click armed one point (got %d)" % [tag, sm._tool_points.size()])
 	if sm._tool_points.size() == 1:
 		var got: Vector2 = sm._tool_points[0]

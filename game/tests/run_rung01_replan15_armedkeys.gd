@@ -89,7 +89,7 @@ func _last_status() -> String:
 	return _status_log[_status_log.size() - 1]
 
 
-func _push_key(vp: Viewport, code: int, unicode: int = 0, ctrl := false) -> void:
+func _push_key_local(vp: Viewport, code: int, unicode: int = 0, ctrl := false) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code
@@ -222,11 +222,11 @@ func _armed(main, pending: int, tag: String) -> void:
 func _type_replace(vp: Viewport, spin: SpinBox, digits: String) -> void:
 	await _click_at(vp, _spin_text_pos(spin))
 	await process_frame
-	await _push_key(vp, KEY_A, 0, true)
+	await _push_key_local(vp, KEY_A, 0, true)
 	for i in digits.length():
 		var ch := digits.unicode_at(i)
 		var code := KEY_0 + (ch - 48)
-		await _push_key(vp, code, ch)
+		await _push_key_local(vp, code, ch)
 
 
 func _fillet_count(view: DocumentView) -> int:
@@ -275,7 +275,7 @@ func _row_a1() -> void:
 	await _arm_fillet_strip(ctx)
 	_armed(main, OpsPanel.Pending.FILLET_EDGES, "A1 after arm")
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, TOP_PITCH, "Top view", "A1")
@@ -302,7 +302,7 @@ func _row_a2() -> void:
 	await process_frame
 	var after_arrows := _strip_text(main)
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, TOP_PITCH, "Top view", "A2")
@@ -327,7 +327,7 @@ func _row_a3() -> void:
 		return
 	_status_log.clear()
 	await _type_replace(vp, spin, "10")
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -344,7 +344,7 @@ func _row_a3() -> void:
 	check(_parses_to(_panel_text(main), 10.0),
 			"A3: panel parses to 10 (got `%s`)" % _panel_text(main))
 	_status_log.clear()
-	await _push_key(vp, KEY_4, 52)
+	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, BACK_PITCH, "Back view", "A3")
@@ -365,12 +365,12 @@ func _row_a4() -> void:
 		await _shutdown(ctx)
 		return
 	await _type_replace(vp, spin, "10")
-	await _push_key(vp, KEY_TAB)
+	await _push_key_local(vp, KEY_TAB)
 	await process_frame
 	await process_frame
 	await process_frame
 	_status_log.clear()
-	await _push_key(vp, KEY_4, 52)
+	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, BACK_PITCH, "Back view", "A4")
@@ -401,7 +401,7 @@ func _row_b1() -> void:
 	await process_frame
 	await process_frame
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, TOP_PITCH, "Top view", "B1")
@@ -426,7 +426,7 @@ func _row_b2() -> void:
 	await process_frame
 	_status_log.clear()
 	await _type_replace(vp, panel, "10")
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -443,17 +443,17 @@ func _row_b2() -> void:
 	check(_parses_to(_panel_text(main), 10.0),
 			"B2: panel parses to 10 (got `%s`)" % _panel_text(main))
 	_status_log.clear()
-	await _push_key(vp, KEY_4, 52)
+	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, BACK_PITCH, "Back view", "B2")
 	_armed(main, OpsPanel.Pending.FILLET_EDGES, "B2 after 4")
-	await _push_key(vp, KEY_8, 56)
+	await _push_key_local(vp, KEY_8, 56)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, BOTTOM_PITCH, "Bottom view", "B2")
 	_armed(main, OpsPanel.Pending.FILLET_EDGES, "B2 after 8")
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, TOP_PITCH, "Top view", "B2")
@@ -471,7 +471,7 @@ func _row_c1() -> void:
 	var view: DocumentView = ctx.view
 	await _arm_fillet_strip(ctx)
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, TOP_PITCH, "Top view", "C1")
@@ -491,7 +491,7 @@ func _row_c1() -> void:
 	if spin != null:
 		_status_log.clear()
 		await _type_replace(vp, spin, "1")
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 		await process_frame
@@ -502,7 +502,7 @@ func _row_c1() -> void:
 		main.interaction.return_viewport_keys()
 		await process_frame
 		_status_log.clear()
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 		await process_frame
@@ -535,7 +535,7 @@ func _row_c2() -> void:
 	check(main.view.selected_edges.is_empty() and main.view.selected_edge == "",
 			"C2: empty canvas picked no edge (edges %s)" % str(main.view.selected_edges))
 	_status_log.clear()
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	print("  C2 status after viewport Enter: `%s` pending=%s" % [
@@ -558,7 +558,7 @@ func _row_c3() -> void:
 		await _shutdown(ctx)
 		return
 	await _type_replace(vp, spin, "2")
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -566,7 +566,7 @@ func _row_c3() -> void:
 		_last_status(), str(main.ops_panel._pending)])
 	_armed(main, OpsPanel.Pending.CHAMFER_EDGES, "C3 after Enter")
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, TOP_PITCH, "Top view", "C3")
@@ -582,7 +582,7 @@ func _row_d1() -> void:
 	var spin := _strip(main)
 	if spin != null:
 		await _type_replace(vp, spin, "10")
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 		await process_frame
@@ -614,7 +614,7 @@ func _row_d2() -> void:
 	check(spin != null and spin.is_visible_in_tree(), "D2: strip R visible")
 	if spin != null:
 		await _type_replace(vp, spin, "10")
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 		await _click_at(vp, _spin_text_pos(spin))
@@ -622,11 +622,11 @@ func _row_d2() -> void:
 	print("  D2 before Esc: pending=%s focus=%s" % [
 		str(main.ops_panel._pending), str(vp.gui_get_focus_owner())])
 	_status_log.clear()
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	if main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES:
-		await _push_key(vp, KEY_ESCAPE)
+		await _push_key_local(vp, KEY_ESCAPE)
 		await process_frame
 		await process_frame
 	print("  D2 after Esc: pending=%s status=`%s`" % [

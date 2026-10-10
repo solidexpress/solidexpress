@@ -29,7 +29,7 @@ func _preview_and_wide(snap: bool) -> void:
 	await _arm_jaw(ctx)
 	_widen(ctx)
 	var ctr := Vector2(0, 0)
-	await _click_uv(ctx, ctr, "jaw centre")
+	await _click_uv_local(ctx, ctr, "jaw centre")
 	_motion_uv(ctx, ctr)
 	await process_frame
 	var n0 := _preview_verts(ctx)
@@ -41,12 +41,12 @@ func _preview_and_wide(snap: bool) -> void:
 		check(n >= 8, "preview at %.1f mm has >= 8 verts (got %d)" % [dist, n])
 	var dir := Vector2(20, 20 * tan(deg_to_rad(5.0)))
 	var nrm := Vector2(-dir.y, dir.x).normalized()
-	await _click_uv(ctx, ctr + dir, "jaw length")
-	await _click_uv(ctx, ctr + dir, "jaw length again")
+	await _click_uv_local(ctx, ctr + dir, "jaw length")
+	await _click_uv_local(ctx, ctr + dir, "jaw length again")
 	var again := _last()
 	check(again.contains("width is zero") or again.contains("Jaw"),
 			"repeated click 2 stays a jaw status (got '%s')" % again)
-	await _click_uv(ctx, ctr + nrm * 48.4, "jaw width")
+	await _click_uv_local(ctx, ctr + nrm * 48.4, "jaw width")
 	var committed := _last()
 	var label := str(ctx.main.status_label.text)
 	var committed_ok := committed.begins_with("Jaw committed — width") \
@@ -77,9 +77,9 @@ func _sizes() -> void:
 			_widen(ctx)
 			var dir := Vector2(hl, 0)
 			var nrm := Vector2(0, 1)
-			await _click_uv(ctx, Vector2.ZERO, "centre")
-			await _click_uv(ctx, dir, "length")
-			await _click_uv(ctx, nrm * hw, "width")
+			await _click_uv_local(ctx, Vector2.ZERO, "centre")
+			await _click_uv_local(ctx, dir, "length")
+			await _click_uv_local(ctx, nrm * hw, "width")
 			var text := _last()
 			check(text.begins_with("Jaw committed"), "hl %.0f hw %.0f commits (got '%s')" % [hl, hw, text])
 			check(_dof(ctx) != "!", "hl %.0f hw %.0f DOF is not !" % [hl, hw])
@@ -93,9 +93,9 @@ func _reject_and_undo() -> void:
 	ctx.main.sketch_mode.infer_enabled = false
 	await _arm_jaw(ctx)
 	_widen(ctx)
-	await _click_uv(ctx, Vector2.ZERO, "centre")
-	await _click_uv(ctx, Vector2(20, 0), "length")
-	await _click_uv(ctx, Vector2(0, 10), "width")
+	await _click_uv_local(ctx, Vector2.ZERO, "centre")
+	await _click_uv_local(ctx, Vector2(20, 0), "length")
+	await _click_uv_local(ctx, Vector2(0, 10), "width")
 	var sm: SketchMode = ctx.main.sketch_mode
 	var before := sm.sketch.snapshot()
 	var dof_before := _dof(ctx)
@@ -137,8 +137,8 @@ func _empty_dof() -> void:
 	var ctx := await _boot()
 	await FilmUI.enter_sketch(ctx)
 	await FilmUI.select_sketch_tool(ctx, ctx.main.sketch_mode, SketchMode.Tool.LINE)
-	await _click_uv(ctx, Vector2(0, 0), "line a")
-	await _click_uv(ctx, Vector2(30, 0), "line b")
+	await _click_uv_local(ctx, Vector2(0, 0), "line a")
+	await _click_uv_local(ctx, Vector2(30, 0), "line b")
 	ctx.main.interaction.grab_focus()
 	await process_frame
 	_log.clear()
@@ -169,7 +169,7 @@ func _edit_dim(ctx: FilmContext, text: String, width_first: bool) -> void:
 	if glyph == Vector2.INF:
 		return
 	_log.clear()
-	await _x11_click_screen(ctx.main.get_viewport(), glyph)
+	await _x11_click_screen_local(ctx.main.get_viewport(), glyph)
 	await process_frame
 	for i in text.length():
 		var ch := text.unicode_at(i)
@@ -202,7 +202,7 @@ func _arm_jaw(ctx: FilmContext) -> void:
 	var jaw := FilmUI.find_sketch_tool_button(ctx.main, "Jaw")
 	check(jaw != null, "Jaw tool is on the rail")
 	if jaw != null:
-		await _x11_click_screen(ctx.main.get_viewport(), jaw.get_global_rect().get_center())
+		await _x11_click_screen_local(ctx.main.get_viewport(), jaw.get_global_rect().get_center())
 	await process_frame
 
 
@@ -211,11 +211,11 @@ func _dof(ctx: FilmContext) -> String:
 	return "" if lab == null else str(lab.text)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "%s on screen" % desc)
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await _x11_click_screen_local(ctx.main.get_viewport(), screen)
 
 
 func _motion_uv(ctx: FilmContext, uv: Vector2) -> void:
@@ -227,7 +227,7 @@ func _motion_uv(ctx: FilmContext, uv: Vector2) -> void:
 	ctx.main.get_viewport().push_input(motion)
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos

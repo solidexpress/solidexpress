@@ -52,7 +52,7 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 	await process_frame
 	check(sm.tool_variant == "across_flats",
 			"polygon variant is across_flats (got %s)" % sm.tool_variant)
-	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Hex centre")
 	await _hover_uv(ctx, Vector2(8, 0))
 	await _type_dim(ctx, "20")
 	await process_frame
@@ -61,7 +61,7 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 	var hex_edge := _horizontal_flat(sm)
 	check(hex_edge != "", "hex has a horizontal flat")
 	await _select_tool(ctx, "Circle")
-	await _click_uv(ctx, Vector2.ZERO, "Bore centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Bore centre")
 	await _hover_uv(ctx, Vector2(4, 0))
 	await _type_dim(ctx, "5")
 	await process_frame
@@ -72,10 +72,10 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 		check(absf(br0 - 5.0) <= 0.05, "bore radius is 5 (got %.4f)" % br0)
 	await _select_tool(ctx, "Smart Dimension")
 	await _zoom_uv(ctx, Vector2.ZERO, 40.0)
-	await _click_uv(ctx, Vector2.ZERO, "Smart Dimension centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Smart Dimension centre")
 	var flat_uv := _flat_midpoint(sm, hex_edge)
 	await _zoom_uv(ctx, flat_uv, 40.0)
-	await _click_uv(ctx, flat_uv, "Smart Dimension hex flat")
+	await _click_uv_local(ctx, flat_uv, "Smart Dimension hex flat")
 	await process_frame
 	var dist := _centre_to_flat_value(sm)
 	check(dist >= 0.0 and absf(dist - 10.0) <= 0.5,
@@ -90,7 +90,7 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 		var info: Dictionary = sm.sketch.entity_info(bore)
 		rim = (info["center"] as Vector2) + Vector2(float(info.get("radius", 5.0)), 0)
 	await _zoom_uv(ctx, rim, 40.0)
-	await _click_uv(ctx, rim, "Smart Dimension bore circumference")
+	await _click_uv_local(ctx, rim, "Smart Dimension bore circumference")
 	await process_frame
 	var dia := _diameter_dim_value(sm)
 	check(dia >= 0.0 and absf(dia - 10.0) <= 0.2,
@@ -100,15 +100,15 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 	# bore and a flat would succeed and would not exercise the revert.
 	await _select_tool(ctx, "Point")
 	await _zoom_uv(ctx, Vector2(40, 24), 50.0)
-	await _click_uv(ctx, Vector2(30, 24), "Fail-point A")
-	await _click_uv(ctx, Vector2(50, 24), "Fail-point B")
+	await _click_uv_local(ctx, Vector2(30, 24), "Fail-point A")
+	await _click_uv_local(ctx, Vector2(50, 24), "Fail-point B")
 	await _select_tool(ctx, "Select")
 	sm._set_selected([])
 	await process_frame
 	await _zoom_uv(ctx, Vector2(30, 24), 30.0)
-	await _click_uv(ctx, Vector2(30, 24), "Select fail-point A")
+	await _click_uv_local(ctx, Vector2(30, 24), "Select fail-point A")
 	await _zoom_uv(ctx, Vector2(50, 24), 30.0)
-	await _click_uv(ctx, Vector2(50, 24), "Select fail-point B")
+	await _click_uv_local(ctx, Vector2(50, 24), "Select fail-point B")
 	await process_frame
 	if sm.selected.size() != 2:
 		var pts := _point_ids(sm)
@@ -206,32 +206,6 @@ func _status_has(needle: String) -> bool:
 		if s.contains(needle):
 			return true
 	return false
-
-
-func _x11_click(ctrl: Control) -> void:
-	var pos := ctrl.get_global_rect().get_center()
-	var vp := ctrl.get_viewport()
-	await _x11_click_screen(vp, pos)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _x11_type(vp: Viewport, text: String) -> void:
@@ -386,7 +360,7 @@ func _press_key(vp: Viewport, key: Key) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -397,16 +371,6 @@ func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	vp.push_input(motion)
 	await process_frame
 	await _x11_click_screen(vp, screen)
-	await process_frame
-
-
-func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	var motion := InputEventMouseMotion.new()
-	motion.position = screen
-	motion.global_position = screen
-	ctx.main.get_viewport().push_input(motion)
 	await process_frame
 
 
@@ -548,3 +512,31 @@ func _coincident_ids(sm: SketchMode) -> Array[String]:
 		if str(info.get("type", "")) == "coincident":
 			out.append(str(cid))
 	return out
+
+func _x11_click(ctrl: Control) -> void:
+	var pos := ctrl.get_global_rect().get_center()
+	var vp := ctrl.get_viewport()
+	await _x11_click_screen(vp, pos)
+
+
+func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	vp.push_input(motion)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.double_click = double_click
+	down.position = pos
+	down.global_position = pos
+	vp.push_input(down)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	vp.push_input(up)
+	await process_frame
+
+

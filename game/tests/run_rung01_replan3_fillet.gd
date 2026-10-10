@@ -5,7 +5,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
 
-
 func _init() -> void:
 	print("rung01 replan3 WP5 fillet")
 	FilmUI.reset_fail_count()
@@ -42,8 +41,8 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
 	await process_frame
-	await _click_uv(ctx, Vector2(-20, -15), "Plate corner A")
-	await _click_uv(ctx, Vector2(20, 15), "Plate corner B")
+	await _click_uv_local(ctx, Vector2(-20, -15), "Plate corner A")
+	await _click_uv_local(ctx, Vector2(20, 15), "Plate corner B")
 	await process_frame
 	await _type_distance(ctx, "10")
 	await _press_extrude(ctx, "Extrude plate Blind 10")
@@ -71,8 +70,8 @@ func test_plate_slot_fillets(ctx: FilmContext) -> void:
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
 	await process_frame
-	await _click_uv(ctx, Vector2(-10, -5), "Slot corner A")
-	await _click_uv(ctx, Vector2(10, 5), "Slot corner B")
+	await _click_uv_local(ctx, Vector2(-10, -5), "Slot corner A")
+	await _click_uv_local(ctx, Vector2(10, 5), "Slot corner B")
 	await process_frame
 	await _pick_finish_op(ctx, 1, "Cut")
 	await _type_distance(ctx, "2.5")
@@ -446,34 +445,7 @@ func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 	await _zoom(ctx, sm.to_model(uv), size_mm)
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
-
-
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -545,31 +517,6 @@ func _ctrl_a(vp: Viewport) -> void:
 	rel.physical_keycode = KEY_A
 	rel.unicode = 0
 	rel.ctrl_pressed = true
-	rel.pressed = false
-	rel.echo = false
-	vp.push_input(rel)
-	await process_frame
-
-
-func _type_text(vp: Viewport, text: String) -> void:
-	for i in text.length():
-		var ch := text.substr(i, 1)
-		await _push_key(vp, _keycode_for_char(ch), ch.unicode_at(0))
-
-
-func _push_key(vp: Viewport, keycode: Key, unicode: int) -> void:
-	var ev := InputEventKey.new()
-	ev.keycode = keycode
-	ev.physical_keycode = keycode
-	ev.unicode = unicode
-	ev.pressed = true
-	ev.echo = false
-	vp.push_input(ev)
-	await process_frame
-	var rel := InputEventKey.new()
-	rel.keycode = keycode
-	rel.physical_keycode = keycode
-	rel.unicode = unicode
 	rel.pressed = false
 	rel.echo = false
 	vp.push_input(rel)

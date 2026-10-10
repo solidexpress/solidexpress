@@ -81,8 +81,8 @@ func _box(ctx: FilmContext, bridge) -> void:
 
 
 func _pose(ctx: FilmContext) -> void:
-	_push_key(ctx.main.get_viewport(), KEY_3)
-	_push_key(ctx.main.get_viewport(), KEY_F)
+	_push_key_local(ctx.main.get_viewport(), KEY_3)
+	_push_key_local(ctx.main.get_viewport(), KEY_F)
 	await process_frame
 	await process_frame
 	var cam = ctx.main.camera
@@ -107,8 +107,8 @@ func _pose(ctx: FilmContext) -> void:
 			await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(2, 0))
 			await FilmUI.exit_sketch(ctx)
 			await FilmUI.apply_extrude(ctx, -2.0)
-	_push_key(ctx.main.get_viewport(), KEY_3)
-	_push_key(ctx.main.get_viewport(), KEY_F)
+	_push_key_local(ctx.main.get_viewport(), KEY_3)
+	_push_key_local(ctx.main.get_viewport(), KEY_F)
 	await process_frame
 	await process_frame
 	check(absf(cam.yaw - float(before["yaw"])) < 1e-2, "yaw matches the top view (Δ %.4f)" % absf(cam.yaw - float(before["yaw"])))
@@ -195,7 +195,7 @@ func _click(vp: Viewport, pos: Vector2) -> void:
 		vp.push_input(ev)
 
 
-func _push_key(vp: Viewport, code: Key) -> void:
+func _push_key_local(vp: Viewport, code: Key) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.pressed = pressed

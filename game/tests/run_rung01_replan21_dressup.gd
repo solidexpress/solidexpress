@@ -147,9 +147,9 @@ func _edit_distance(ctx: FilmContext, fid: String, digits: String) -> void:
 		return
 	for ch in digits:
 		var code := KEY_0 + int(ch)
-		_push_key(ctx.main.get_viewport(), code as Key, false)
+		_push_key_local(ctx.main.get_viewport(), code as Key, false)
 		await process_frame
-	_push_key(ctx.main.get_viewport(), KEY_ENTER, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_ENTER, false)
 	await _frames(4)
 
 
@@ -229,7 +229,7 @@ func _click(vp: Viewport, pos: Vector2) -> void:
 		vp.push_input(ev)
 
 
-func _push_key(vp: Viewport, code: Key, shift: bool) -> void:
+func _push_key_local(vp: Viewport, code: Key, shift: bool) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.pressed = pressed

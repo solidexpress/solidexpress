@@ -55,8 +55,8 @@ func test_two_click_and_drag(ctx: FilmContext) -> void:
 	await _ground_sketch(ctx)
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await _click_uv(ctx, Vector2(0, 0), "Line start")
-	await _click_uv(ctx, Vector2(15, 0), "Line end")
+	await _click_uv_local(ctx, Vector2(0, 0), "Line start")
+	await _click_uv_local(ctx, Vector2(15, 0), "Line end")
 	check(_count_real(sm, "line") == 1, "two clicks → one line (got %d)" % _count_real(sm, "line"))
 	sm.cancel()
 	await process_frame
@@ -75,15 +75,15 @@ func test_angle_dimension(ctx: FilmContext) -> void:
 	await _ground_sketch(ctx)
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await _click_uv(ctx, Vector2(0, 0), "Angle line A start")
-	await _click_uv(ctx, Vector2(30, 0), "Angle line A end")
+	await _click_uv_local(ctx, Vector2(0, 0), "Angle line A start")
+	await _click_uv_local(ctx, Vector2(30, 0), "Angle line A end")
 	# Right-click ends the chain so line B is not the reverse of line A.
 	await _right_click_uv(ctx, Vector2(30, 0))
-	await _click_uv(ctx, Vector2(0, 0), "Angle line B start")
-	await _click_uv(ctx, Vector2(26, 15), "Angle line B end")
+	await _click_uv_local(ctx, Vector2(0, 0), "Angle line B start")
+	await _click_uv_local(ctx, Vector2(26, 15), "Angle line B end")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
-	await _click_uv(ctx, Vector2(15, 0), "Dimension first line")
-	await _click_uv(ctx, Vector2(13, 7.5), "Dimension second line")
+	await _click_uv_local(ctx, Vector2(15, 0), "Dimension first line")
+	await _click_uv_local(ctx, Vector2(13, 7.5), "Dimension second line")
 	var ang_i := _dim_index(sm, "angle")
 	check(ang_i >= 0, "angle dimension recorded")
 	if ang_i >= 0:
@@ -105,13 +105,13 @@ func test_nut(ctx: FilmContext) -> void:
 	await _ground_sketch(ctx)
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre")
 	await _hover_uv(ctx, Vector2(1, 0))
 	await _commit_dim(ctx, 5.0)
 	check(_count_real(sm, "circle") == 1, "circle created")
 	var circ := _first_of(sm, "circle")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
-	await _click_uv(ctx, Vector2(5, 0.4), "Diameter on the rim")
+	await _click_uv_local(ctx, Vector2(5, 0.4), "Diameter on the rim")
 	if not circ.is_empty():
 		var r := float(sm.sketch.entity_info(circ)["radius"])
 		check(absf(r - 5.0) < 0.05, "solved radius 5 (got %.4f)" % r)
@@ -119,7 +119,7 @@ func test_nut(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	sm.set_tool_variant("across_flats")
 	sm.polygon_sides = 6
-	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Hex centre")
 	await _hover_uv(ctx, Vector2(1, 0))
 	await _commit_dim(ctx, 20.0)
 	check(_count_real(sm, "line") >= 6, "hex has 6 edges")
@@ -172,11 +172,11 @@ func test_wrench(ctx: FilmContext) -> void:
 	await _draw_circle(ctx, Vector2(200, 0), 22.5)
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await _click_uv(ctx, Vector2(0, 10), "Upper tangent start")
-	await _click_uv(ctx, Vector2(far_x, 10), "Upper tangent end")
+	await _click_uv_local(ctx, Vector2(0, 10), "Upper tangent start")
+	await _click_uv_local(ctx, Vector2(far_x, 10), "Upper tangent end")
 	await _right_click_uv(ctx, Vector2(far_x, 10))
-	await _click_uv(ctx, Vector2(0, -10), "Lower tangent start")
-	await _click_uv(ctx, Vector2(far_x, -10), "Lower tangent end")
+	await _click_uv_local(ctx, Vector2(0, -10), "Lower tangent start")
+	await _click_uv_local(ctx, Vector2(far_x, -10), "Lower tangent end")
 	await _right_click_uv(ctx, Vector2(far_x, -10))
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	chrome.set_finish_op("new")
@@ -215,7 +215,7 @@ func test_wrench(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	var s2 := sqrt(2.0) / 2.0
 	var ax := Vector2(s2, s2)
-	await _click_uv(ctx, Vector2(200, 0) + ax * -12.0, "Trim inner jaw half")
+	await _click_uv_local(ctx, Vector2(200, 0) + ax * -12.0, "Trim inner jaw half")
 	await process_frame
 	err = _take_bad_status()
 	check(err == "", "jaw trim status clean" if err == "" else err)
@@ -282,7 +282,7 @@ func test_wrench(ctx: FilmContext) -> void:
 	ctx.main.sketch_chrome.focus_dim_for_typing("5")
 	ctx.main.sketch_chrome.release_dim_focus()
 	check(absf(sm.slot_radius - 5.0) < 1e-3, "slot radius from dim blank")
-	await _click_uv(ctx, Vector2(18.5, 0), "Slot first centre")
+	await _click_uv_local(ctx, Vector2(18.5, 0), "Slot first centre")
 	await _hover_uv(ctx, Vector2(19.5, 0))
 	await _commit_dim(ctx, 150.0)
 	var centres := _arc_centres(sm)
@@ -326,7 +326,7 @@ func test_wrench(ctx: FilmContext) -> void:
 	if lp == null:
 		return
 	await _zoom_uv(ctx, lp as Vector2, 40.0)
-	await _click_uv(ctx, lp as Vector2, "Edit jaw width")
+	await _click_uv_local(ctx, lp as Vector2, "Edit jaw width")
 	await process_frame
 	var ix = ctx.main.interaction
 	check(ix._dim_edit_popup != null and ix._dim_edit_popup.visible, "dimension editor opened")
@@ -480,7 +480,7 @@ func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 	await _zoom(ctx, sm.to_model(uv), size_mm)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, uv, desc)
 
 
@@ -550,7 +550,7 @@ func _drag_uv(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
 func _draw_circle(ctx: FilmContext, center: Vector2, radius: float) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, center, "Circle centre")
+	await _click_uv_local(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(1, 0))
 	await _commit_dim(ctx, radius)
 
@@ -564,9 +564,9 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2) -> void:
 	var s2 := sqrt(2.0) / 2.0
 	var along := Vector2(s2, s2)
 	var across := Vector2(-s2, s2)
-	await _click_uv(ctx, center, "Rect centre")
-	await _click_uv(ctx, center + along * 30.0, "Rect long side")
-	await _click_uv(ctx, center + across * 10.0, "Rect half width")
+	await _click_uv_local(ctx, center, "Rect centre")
+	await _click_uv_local(ctx, center + along * 30.0, "Rect long side")
+	await _click_uv_local(ctx, center + across * 10.0, "Rect half width")
 
 
 func _draw_centreline(ctx: FilmContext, center: Vector2) -> void:
@@ -576,8 +576,8 @@ func _draw_centreline(ctx: FilmContext, center: Vector2) -> void:
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Centerline")
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Construction centreline"))
 	var across := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
-	await _click_uv(ctx, center - across * 25.0, "Centreline start")
-	await _click_uv(ctx, center + across * 25.0, "Centreline end")
+	await _click_uv_local(ctx, center - across * 25.0, "Centreline start")
+	await _click_uv_local(ctx, center + across * 25.0, "Centreline end")
 
 
 func _count_real(sm: SketchMode, kind: String) -> int:

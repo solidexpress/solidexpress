@@ -10,7 +10,6 @@ const FAILED_SKETCH := "Failed to update sketch"
 const NEW_SENTENCE := "New — empty part, Top plane (XY). View ▸ Timeline to edit features"
 
 
-
 func _init() -> void:
 	print("rung01 replan5 WP2 shell")
 	FilmUI.reset_fail_count()
@@ -81,13 +80,7 @@ func _boot() -> Array:
 	return [main, ctx]
 
 
-func _x11_click(ctrl: Control) -> void:
-	var pos := ctrl.get_global_rect().get_center()
-	var vp := ctrl.get_viewport()
-	await _x11_click_screen(vp, pos)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos
@@ -147,7 +140,7 @@ func _x11_click_embedded(ctrl: Control) -> void:
 		var win := ctrl.get_viewport()
 		if win is Window:
 			pos = Vector2((win as Window).position) + pos
-	await _x11_click_screen(root.get_viewport(), pos)
+	await _x11_click_screen_local(root.get_viewport(), pos)
 
 
 func _x11_click_embedded_at(ctrl: Control, local: Vector2, double_click: bool = false) -> void:
@@ -160,10 +153,10 @@ func _x11_click_embedded_at(ctrl: Control, local: Vector2, double_click: bool = 
 			pos = Vector2((win as Window).position) + ctrl.get_global_rect().position + local
 		else:
 			pos = ctrl.get_global_rect().position + local
-	await _x11_click_screen(root.get_viewport(), pos, double_click)
+	await _x11_click_screen_local(root.get_viewport(), pos, double_click)
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = keycode
 	ev.physical_keycode = keycode
@@ -249,42 +242,15 @@ func _click_menu_item(ctx: FilmContext, title: String, id: int, desc: String) ->
 	popup.reset_size()
 	await process_frame
 	var screen: Vector2 = _item_screen_center(popup, idx)
-	await _x11_click_screen(root.get_viewport(), screen)
+	await _x11_click_screen_local(root.get_viewport(), screen)
 	await process_frame
 	await process_frame
 	return true
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
-
-
 func _click_sketch_uv(ctx: FilmContext, uv: Vector2) -> void:
 	var screen := FilmUI.sketch_uv_to_screen(ctx, uv)
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await _x11_click_screen_local(ctx.main.get_viewport(), screen)
 	await process_frame
 
 
@@ -332,7 +298,7 @@ func _click_exit(ctx: FilmContext) -> void:
 				pos = Vector2(r.position.x + 10.0, r.position.y + 10.0)
 				if dr.has_point(pos):
 					pos = Vector2(r.end.x - 8.0, r.position.y + 8.0)
-	await _x11_click_screen(vp, pos)
+	await _x11_click_screen_local(vp, pos)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -351,7 +317,7 @@ func _enter_ground_sketch(ctx: FilmContext) -> void:
 	var ground := FilmUI.model_to_screen(ctx, Vector3(22, 18, 0))
 	if not FilmUI.is_on_screen(ctx, ground):
 		ground = FilmUI.viewport_empty_click_pos(ctx)
-	await _x11_click_screen(ctx.main.get_viewport(), ground)
+	await _x11_click_screen_local(ctx.main.get_viewport(), ground)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -428,7 +394,7 @@ func _reopen_sketch_from_timeline(ctx: FilmContext) -> void:
 	if btn == null:
 		return
 	var pos := btn.get_global_rect().get_center()
-	await _x11_click_screen(ctx.main.get_viewport(), pos)
+	await _x11_click_screen_local(ctx.main.get_viewport(), pos)
 	await process_frame
 	# The first click selects the feature. Timeline docks under the chip row
 	# while a body is selected, so the sketch row can move before the second
@@ -436,7 +402,7 @@ func _reopen_sketch_from_timeline(ctx: FilmContext) -> void:
 	btn = _row_name_button(tl, fid)
 	if btn != null:
 		pos = btn.get_global_rect().get_center()
-	await _x11_click_screen(ctx.main.get_viewport(), pos, true)
+	await _x11_click_screen_local(ctx.main.get_viewport(), pos, true)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -461,7 +427,7 @@ func _delete_one_edge(ctx: FilmContext) -> void:
 	await _click_sketch_uv(ctx, Vector2(0, -15))
 	await process_frame
 	check(not sm.selected.is_empty(), "one rectangle edge is selected")
-	await _push_key(ctx.main.get_viewport(), KEY_DELETE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_DELETE)
 	await process_frame
 	await process_frame
 	var n := 0

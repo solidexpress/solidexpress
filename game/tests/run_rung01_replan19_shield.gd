@@ -38,7 +38,7 @@ func _case_file_menu() -> void:
 	if file_btn != null:
 		_press_release(ctx.main.get_viewport(), file_btn.get_global_rect().get_center())
 		await process_frame
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		await process_frame
 		await process_frame
 	var y1 := _strip_top(ctx)
@@ -72,7 +72,7 @@ func _case_view_menu() -> void:
 	if view_btn != null:
 		_press_release(ctx.main.get_viewport(), view_btn.get_global_rect().get_center())
 		await process_frame
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		await process_frame
 	var y1 := _strip_top(ctx)
 	check(absf(y1 - y0) <= 1.0, "chip row y unchanged after View (%.1f -> %.1f)" % [y0, y1])
@@ -98,7 +98,7 @@ func _case_hud_view() -> void:
 	if drop != null:
 		_press_release(ctx.main.get_viewport(), drop.get_global_rect().get_center())
 		await process_frame
-		_push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		await process_frame
 	var y1 := _strip_top(ctx)
 	check(absf(y1 - y0) <= 1.0, "chip row y unchanged after HUD View (%.1f -> %.1f)" % [y0, y1])
@@ -276,7 +276,7 @@ func _press_release(vp: Viewport, pos: Vector2) -> void:
 	vp.push_input(up)
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -289,7 +289,7 @@ func _push_key(vp: Viewport, keycode: Key) -> void:
 
 
 func _push_key_await(vp: Viewport, keycode: Key) -> void:
-	_push_key(vp, keycode)
+	_push_key_local(vp, keycode)
 	await process_frame
 
 

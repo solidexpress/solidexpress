@@ -45,14 +45,14 @@ func test_polygon_af_and_circle(ctx: FilmContext) -> void:
 	await process_frame
 	check(sm.tool_variant == "across_flats",
 			"polygon variant is across_flats without a chip click (got %s)" % sm.tool_variant)
-	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Hex centre")
 	await _hover_uv(ctx, Vector2(8, 0))
 	await _type_into_spin(ctx.main.sketch_chrome._dim_spin, "20")
 	await process_frame
 	await process_frame
 	_assert_hex_flats(sm)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre")
 	await _hover_uv(ctx, Vector2(4, 0))
 	await _type_into_spin(ctx.main.sketch_chrome._dim_spin, "5")
 	await process_frame
@@ -111,9 +111,9 @@ func test_tangent_blank(ctx: FilmContext) -> void:
 		var a_off := a + (a - c1).normalized() * 0.3
 		var b_off := b + (b - c2).normalized() * 1.1
 		await _zoom_uv(ctx, a_off, 90.0)
-		await _click_uv(ctx, a_off, "Tangent start near circle")
+		await _click_uv_local(ctx, a_off, "Tangent start near circle")
 		await _zoom_uv(ctx, b_off, 90.0)
-		await _click_uv(ctx, b_off, "Tangent end near circle")
+		await _click_uv_local(ctx, b_off, "Tangent end near circle")
 		await _right_click_uv(ctx, b_off)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	await _type_into_spin(chrome._extrude_spin, "10")
@@ -152,9 +152,9 @@ func test_centre_rect_dims(ctx: FilmContext) -> void:
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Center Three Point", "Centre rectangle"))
 	var along := Vector2(cos(deg_to_rad(30.0)), sin(deg_to_rad(30.0)))
 	var across := Vector2(-along.y, along.x)
-	await _click_uv(ctx, Vector2.ZERO, "Rect centre")
-	await _click_uv(ctx, along * 30.0, "Rect long side")
-	await _click_uv(ctx, across * 8.0, "Rect half width")
+	await _click_uv_local(ctx, Vector2.ZERO, "Rect centre")
+	await _click_uv_local(ctx, along * 30.0, "Rect long side")
+	await _click_uv_local(ctx, across * 8.0, "Rect half width")
 	await process_frame
 	var built := _real_lines(sm)
 	check(built.size() == 4, "centre rect has 4 profile lines (got %d)" % built.size())
@@ -201,11 +201,11 @@ func test_single_line_angle(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await _zoom(ctx, Vector3(10, 5, 0), 60.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await _click_uv(ctx, Vector2.ZERO, "Line start")
-	await _click_uv(ctx, Vector2(20, 10), "Line end")
+	await _click_uv_local(ctx, Vector2.ZERO, "Line start")
+	await _click_uv_local(ctx, Vector2(20, 10), "Line end")
 	await _right_click_uv(ctx, Vector2(20, 10))
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
-	await _click_uv(ctx, Vector2(10, 5), "Dimension the line")
+	await _click_uv_local(ctx, Vector2(10, 5), "Dimension the line")
 	await process_frame
 	check(_dim_index(sm, "angle") >= 0, "single line grew an angle dimension")
 	var cons_line := false
@@ -362,39 +362,12 @@ func _ground_sketch(ctx: FilmContext) -> void:
 	check(ctx.main.sketch_mode.active, "sketch session is open")
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
-
-
 func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await _zoom(ctx, sm.to_model(uv), size_mm)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, uv, desc)
 
 
@@ -427,7 +400,7 @@ func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, center, "Circle centre")
+	await _click_uv_local(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_into_spin(ctx.main.sketch_chrome._dim_spin, radius_text)
 	await process_frame
@@ -444,7 +417,7 @@ func _type_into_spin(spin: SpinBox, text: String) -> void:
 	edit.select_all()
 	await process_frame
 	await _push_text(edit, text)
-	await _push_key(edit, KEY_ENTER, 0)
+	await _push_key_local(edit, KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 
@@ -456,7 +429,7 @@ func _edit_dim_label(ctx: FilmContext, index: int, text: String) -> void:
 	if lp == null:
 		return
 	await _zoom_uv(ctx, lp as Vector2, 40.0)
-	await _click_uv(ctx, lp as Vector2, "Edit dimension label")
+	await _click_uv_local(ctx, lp as Vector2, "Edit dimension label")
 	await process_frame
 	await process_frame
 	var ix = ctx.main.interaction
@@ -468,7 +441,7 @@ func _edit_dim_label(ctx: FilmContext, index: int, text: String) -> void:
 	await process_frame
 	edit.select_all()
 	await _push_text(edit, text)
-	await _push_key(edit, KEY_ENTER, 0)
+	await _push_key_local(edit, KEY_ENTER, 0)
 	await process_frame
 	await process_frame
 
@@ -477,10 +450,10 @@ func _push_text(edit: LineEdit, text: String) -> void:
 	for i in text.length():
 		var code := text.unicode_at(i)
 		var key := KEY_PERIOD if code == 46 else KEY_0 + (code - 48)
-		await _push_key(edit, key, code)
+		await _push_key_local(edit, key, code)
 
 
-func _push_key(edit: LineEdit, keycode: int, unicode: int) -> void:
+func _push_key_local(edit: LineEdit, keycode: int, unicode: int) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = keycode as Key
 	ev.physical_keycode = keycode as Key

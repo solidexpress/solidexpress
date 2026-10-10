@@ -38,10 +38,10 @@ func _run() -> void:
 			await _draw_jaw(ctx, 1.0)
 			var pencil_fid := await FilmUI.exit_sketch(ctx)
 			for _u in undos:
-				_push_key(ctx.main.get_viewport(), KEY_Z, true, false)
+				_push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 				await process_frame
 			for _r in redos:
-				_push_key(ctx.main.get_viewport(), KEY_Z, true, true)
+				_push_key_local(ctx.main.get_viewport(), KEY_Z, true, true)
 				await process_frame
 			if _feature_named(ctx, "sketch"):
 				await _reopen(ctx, pencil_fid)
@@ -51,12 +51,12 @@ func _run() -> void:
 	var fid2 := await FilmUI.exit_sketch(ctx)
 	await _reopen(ctx, fid2)
 	for _i in 12:
-		_push_key(ctx.main.get_viewport(), KEY_Z, true, false)
+		_push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 		await process_frame
 		if str(ctx.main.status_label.text).contains("Nothing to undo"):
 			break
 	for _i in 12:
-		_push_key(ctx.main.get_viewport(), KEY_Z, true, true)
+		_push_key_local(ctx.main.get_viewport(), KEY_Z, true, true)
 		await process_frame
 	if ctx.main.sketch_mode.active:
 		await _assert_angle(ctx, "sketch undo redo")
@@ -130,9 +130,9 @@ func _draw_jaw(ctx: FilmContext, side: float) -> void:
 	var nrm := Vector2(-dir.y, dir.x) * side
 	var ctr := Vector2(20, 10)
 	await _zoom_uv(ctx, ctr, 140.0)
-	await _click_uv(ctx, ctr)
-	await _click_uv(ctx, ctr + dir * 30.0)
-	await _click_uv(ctx, ctr + dir * 30.0 + nrm * 10.0)
+	await _click_uv_local(ctx, ctr)
+	await _click_uv_local(ctx, ctr + dir * 30.0)
+	await _click_uv_local(ctx, ctr + dir * 30.0 + nrm * 10.0)
 	await process_frame
 	check(str(ctx.main.status_label.text).begins_with("Jaw committed"), "jaw committed side %s" % side)
 
@@ -152,7 +152,7 @@ func _editor_text(ctx: FilmContext, degree: bool) -> String:
 
 
 func _dismiss_editor(ctx: FilmContext) -> void:
-	_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	await process_frame
 
 
@@ -192,8 +192,8 @@ func _delete_redraw(ctx: FilmContext) -> void:
 	for id in ids:
 		var info: Dictionary = sm.sketch.entity_info(str(id))
 		var p: Vector2 = info.get("start", info.get("center", Vector2.ZERO))
-		await _click_uv(ctx, p)
-		_push_key(ctx.main.get_viewport(), KEY_DELETE, false, false)
+		await _click_uv_local(ctx, p)
+		_push_key_local(ctx.main.get_viewport(), KEY_DELETE, false, false)
 		await process_frame
 	await _draw_jaw(ctx, -1.0)
 	await _assert_angle(ctx, "delete redraw")
@@ -212,7 +212,7 @@ func _circles_and_trim(ctx: FilmContext, outer: bool) -> void:
 	if outer:
 		await _drag_uv(ctx, Vector2(46, -4), Vector2(40, 0))
 	else:
-		await _click_uv(ctx, Vector2(30, 12))
+		await _click_uv_local(ctx, Vector2(30, 12))
 	await process_frame
 	await _assert_angle(ctx, "trim %s" % ("outer" if outer else "inner"))
 
@@ -246,7 +246,7 @@ func _boot() -> FilmContext:
 	return ctx
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2) -> void:
 	var screen: Vector2 = FilmUI.model_to_screen(ctx, ctx.main.sketch_mode.to_model(uv))
 	var vp: Viewport = ctx.main.get_viewport()
 	var motion := InputEventMouseMotion.new()
@@ -297,7 +297,7 @@ func _drag_uv(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = keycode

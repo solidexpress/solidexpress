@@ -74,7 +74,7 @@ func _phase_p1(ctx: FilmContext) -> void:
 	ctx.main.ops_panel.arm_or_apply_fillet()
 	await process_frame
 	_status_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	_capture(ctx)
 	check(_status_has("Edge pick cancelled") or str(ctx.main.status_label.text).contains("Edge pick cancelled"),
 			"P1: Esc after an armed fillet says Edge pick cancelled (got `%s`)" % ctx.main.status_label.text)
@@ -91,7 +91,7 @@ func _phase_p1(ctx: FilmContext) -> void:
 			"P1: Fillet chip never opens a sketch (active=%s log=%s)" % [str(sm.active), str(_status_log)])
 	check(chip_status.contains("Fillet r=") or _status_has("Fillet r="),
 			"P1: Fillet chip arms Fillet r= (got `%s`)" % chip_status)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	await _leave_sketch(ctx)
 
 
@@ -181,7 +181,7 @@ func _phase_p4(ctx: FilmContext) -> void:
 	var near := str(ctx.main.status_label.text)
 	check(near.contains("Fillet: 1 edge(s)") or _status_has("Fillet: 1 edge(s)"),
 			"P4: click within 3 px selects one edge (got `%s`)" % near)
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	await process_frame
 	ctx.main.ops_panel.arm_or_apply_fillet()
 	ctx.main.ops_panel.set_dressup_radius(1.0)
@@ -201,7 +201,7 @@ func _phase_p4(ctx: FilmContext) -> void:
 	ctx.main.interaction.grab_focus()
 	await process_frame
 	_status_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER, false, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER, false, false)
 	await process_frame
 	await process_frame
 	_capture(ctx)
@@ -287,7 +287,7 @@ func _phase_p3(ctx: FilmContext) -> void:
 	_status_log.clear()
 	await _click_model(ctx, Vector3(93.5, 0.0, 7.5), false)
 	_capture(ctx)
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER, false, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER, false, false)
 	for _i in 4:
 		await process_frame
 	_capture(ctx)
@@ -297,7 +297,7 @@ func _phase_p3(ctx: FilmContext) -> void:
 	check(refused.contains(REFUSAL) or _status_has(REFUSAL),
 			"P3: R1.5 on the slot floor is refused (status=`%s` err=`%s`)" % [refused, err])
 	_status_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	_capture(ctx)
 	check(_status_has("Edge pick cancelled") or str(ctx.main.status_label.text).contains("Edge pick cancelled"),
 			"P3: Esc says Edge pick cancelled (got `%s`)" % ctx.main.status_label.text)
@@ -438,9 +438,9 @@ func _move_a_dimension(ctx: FilmContext) -> bool:
 	if ix != null and ix._dim_edit_line != null and not ix._dim_edit_line.has_focus():
 		ix._dim_edit_line.grab_focus()
 		await process_frame
-	await _push_key(vp, KEY_A, true, false)
+	await _push_key_local(vp, KEY_A, true, false)
 	await _type_text(vp, "140")
-	await _push_key(vp, KEY_ENTER, false, false)
+	await _push_key_local(vp, KEY_ENTER, false, false)
 	await process_frame
 	await process_frame
 	var changed := false
@@ -609,8 +609,8 @@ func _exit_sketch_button(ctx: FilmContext) -> void:
 	if sm.active:
 		var vp: Viewport = ctx.main.get_viewport()
 		_release_focus(vp)
-		await _push_key(vp, KEY_ESCAPE, false, false)
-		await _push_key(vp, KEY_ESCAPE, false, false)
+		await _push_key_local(vp, KEY_ESCAPE, false, false)
+		await _push_key_local(vp, KEY_ESCAPE, false, false)
 		await process_frame
 
 
@@ -736,7 +736,7 @@ func _x11_click(ctrl: Control) -> void:
 	await _click_screen(ctrl.get_viewport(), ctrl.get_global_rect().get_center(), false)
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -784,33 +784,6 @@ func _zoom_model(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void
 	cam.sketch_orientation_locked = false
 	cam.yaw = 0.0
 	cam.pitch = deg_to_rad(89.0)
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
-
-
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
 	var half := tan(deg_to_rad(cam.fov) * 0.5)

@@ -6,7 +6,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
 
-
 func _init() -> void:
 	print("rung01 replan12 WP5 timeline panel dismiss")
 	FilmUI.reset_fail_count()
@@ -14,7 +13,7 @@ func _init() -> void:
 	finish()
 
 
-func _push_key(code: int, unicode: int = 0) -> void:
+func _push_key_local(code: int, unicode: int = 0) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code
@@ -71,9 +70,9 @@ func _open_and_type(main, fid: String) -> LineEdit:
 	le.grab_focus()
 	le.select_all()
 	await process_frame
-	await _push_key(KEY_1, 49)
-	await _push_key(KEY_4, 52)
-	await _push_key(KEY_ENTER)
+	await _push_key_local(KEY_1, 49)
+	await _push_key_local(KEY_4, 52)
+	await _push_key_local(KEY_ENTER)
 	return le
 
 
@@ -109,7 +108,7 @@ func _run() -> void:
 	check(pp.visible, "panel is open after typing 14 + Enter")
 	check(absf(_distance(view.doc, ex_fid) - 14.0) < 0.01, "Enter previews distance 14 (got %.3f)" % _distance(view.doc, ex_fid))
 	check(le.has_focus(), "the Distance field keeps focus after Enter (the GUI state)")
-	await _push_key(KEY_ESCAPE)
+	await _push_key_local(KEY_ESCAPE)
 	check(not pp.visible, "one Esc closes the panel with Distance focused")
 	check(absf(_distance(view.doc, ex_fid) - 10.0) < 0.01, "Esc cancels the preview (distance %.3f)" % _distance(view.doc, ex_fid))
 	check(str(main.status_label.text) == "Edits cancelled", "status is `Edits cancelled` (got `%s`)" % str(main.status_label.text))

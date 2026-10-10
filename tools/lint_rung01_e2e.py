@@ -99,7 +99,7 @@ REPLAN11_CAMERA = (
     ".basis =",
 )
 REPLAN11_CAMERA_YAW_PITCH = (".yaw =", ".pitch =")
-REPLAN11_YAW_PITCH_OK = ("_zoom", "_zoom_uv")
+REPLAN11_YAW_PITCH_OK = ("_zoom", "_zoom_uv", "_zoom_local")
 REPLAN11_NO_ZOOM = (
     "_fillet_neck",
     "_fillet_face",
@@ -129,7 +129,7 @@ WALK_PRESS_RELEASE_EXTRA = (
 def _functions(src: str) -> list[tuple[str, int, int]]:
     """Return (name, start, end) for each `func` in src. end is exclusive."""
     starts: list[tuple[str, int]] = []
-    for m in re.finditer(r"(?m)^func\s+(\w+)\s*\(", src):
+    for m in re.finditer(r"(?m)^(?:static\s+)?func\s+(\w+)\s*\(", src):
         starts.append((m.group(1), m.start()))
     out: list[tuple[str, int, int]] = []
     for i, (name, start) in enumerate(starts):
@@ -143,7 +143,8 @@ def _line_of(src: str, index: int) -> int:
 
 
 def _is_press_release_fn(name: str) -> bool:
-    if name == "_x11_click" or name.startswith("_x11_click_"):
+    bare = name[1:] if name.startswith("_") else name
+    if bare == "x11_click" or bare.startswith("x11_click_"):
         return True
     if name.startswith("_recovery") or name.startswith("_power_trim"):
         return True
@@ -519,6 +520,20 @@ def _lint_replan_n(errors: list[str]) -> dict[int, list[Path]]:
     return by_n
 
 
+def _lint_sx_lib(errors: list[str]) -> None:
+    lib_needles = tuple(dict.fromkeys(REPLAN3_FORBIDDEN + REPLAN5_FORBIDDEN + WALK_EXTRA_FORBIDDEN))
+    for name in ("sx_suite.gd", "sx_input.gd"):
+        path = TESTS / "lib" / name
+        if not path.is_file():
+            errors.append(f"missing {path.relative_to(ROOT)}")
+            continue
+        src = path.read_text(encoding="utf-8")
+        prefix = f"{path.relative_to(ROOT)}:"
+        _lint_needles(src, lib_needles, errors, prefix)
+        _lint_x11_click_await(src, errors, prefix)
+        _lint_replan11_camera(src, errors, prefix, extra_yaw_pitch_ok=("zoom", "_zoom"))
+
+
 def main() -> int:
     if not WALK.is_file():
         print(f"lint_rung01_e2e: missing {WALK}", file=sys.stderr)
@@ -526,6 +541,7 @@ def main() -> int:
     src = WALK.read_text(encoding="utf-8")
     errors: list[str] = []
     _lint_walk(src, errors)
+    _lint_sx_lib(errors)
     _lint_replan3(errors)
     _lint_replan4(errors)
     _lint_replan5(errors)

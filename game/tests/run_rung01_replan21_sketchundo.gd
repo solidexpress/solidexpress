@@ -82,9 +82,9 @@ func _jaw(ctx: FilmContext) -> String:
 	var dir := Vector2(cos(deg_to_rad(37.0)), sin(deg_to_rad(37.0)))
 	var nrm := Vector2(-dir.y, dir.x)
 	var ctr := Vector2(6.0, 4.0)
-	await _click_uv(ctx, ctr, "Jaw centre")
-	await _click_uv(ctx, ctr + dir * 22.0, "Jaw long side")
-	await _click_uv(ctx, ctr + nrm * 7.0, "Jaw width")
+	await _click_uv_local(ctx, ctr, "Jaw centre")
+	await _click_uv_local(ctx, ctr + dir * 22.0, "Jaw long side")
+	await _click_uv_local(ctx, ctr + nrm * 7.0, "Jaw width")
 	check(str(ctx.main.status_label.text).begins_with("Jaw committed"), "jaw committed")
 	await _release_focus(ctx)
 	return await FilmUI.exit_sketch(ctx)
@@ -100,7 +100,7 @@ func _reopen_exit(ctx: FilmContext, fid: String) -> void:
 		await process_frame
 	check(ctx.main.sketch_mode.active, "pencil reopened the sketch")
 	await _release_focus(ctx)
-	_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false, false)
 	await process_frame
 	var saved := await FilmUI.exit_sketch(ctx)
 	check(saved == fid or str(ctx.main.status_label.text).contains("Sketch saved"), "Esc / Exit saved the sketch")
@@ -122,7 +122,7 @@ func _real_edit(ctx: FilmContext, fid: String) -> void:
 			if str(info.get("type", "")) != "line":
 				continue
 			var a: Vector2 = info.get("start", Vector2.ZERO)
-			await _click_uv(ctx, a, "point")
+			await _click_uv_local(ctx, a, "point")
 			await _drag_uv(ctx, a, a + Vector2(3, 1))
 			moved = true
 			break
@@ -152,7 +152,7 @@ func _sketch_ids(ctx: FilmContext) -> PackedStringArray:
 
 func _part_undo(ctx: FilmContext) -> void:
 	await _release_focus(ctx)
-	_push_key(ctx.main.get_viewport(), KEY_Z, true, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 	await process_frame
 	await process_frame
 	check(str(ctx.main.status_label.text).begins_with("Undo"), "part Ctrl+Z says Undo (got `%s`)" % ctx.main.status_label.text)
@@ -160,7 +160,7 @@ func _part_undo(ctx: FilmContext) -> void:
 
 func _part_redo(ctx: FilmContext) -> void:
 	await _release_focus(ctx)
-	_push_key(ctx.main.get_viewport(), KEY_Z, true, true)
+	_push_key_local(ctx.main.get_viewport(), KEY_Z, true, true)
 	await process_frame
 	await process_frame
 	check(str(ctx.main.status_label.text).begins_with("Redo"), "part Ctrl+Shift+Z says Redo (got `%s`)" % ctx.main.status_label.text)
@@ -210,7 +210,7 @@ func _uv_screen(ctx: FilmContext, uv: Vector2) -> Vector2:
 	return FilmUI.model_to_screen(ctx, ctx.main.sketch_mode.to_model(uv))
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var screen := _uv_screen(ctx, uv)
 	check(FilmUI.require_on_screen(ctx, screen, desc), "%s on screen" % desc)
 	_pointer(ctx.main.get_viewport(), screen, true)
@@ -265,7 +265,7 @@ func _motion(vp: Viewport, pos: Vector2) -> void:
 	vp.push_input(motion)
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = keycode

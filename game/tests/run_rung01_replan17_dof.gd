@@ -48,7 +48,7 @@ func _uv_screen(ctx: FilmContext, uv: Vector2) -> Vector2:
 	return FilmUI.model_to_screen(ctx, sm.to_model(uv))
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos
@@ -69,13 +69,13 @@ func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var screen := _uv_screen(ctx, uv)
 	check(FilmUI.require_on_screen(ctx, screen, desc), "%s on screen at %s" % [desc, str(screen)])
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await _x11_click_screen_local(ctx.main.get_viewport(), screen)
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = keycode
@@ -181,9 +181,9 @@ func _run() -> void:
 	var nrm := Vector2(-dir.y, dir.x)
 	var ctr := Vector2(6.0, 4.0)
 	await _zoom_uv(ctx, ctr, 120.0)
-	await _click_uv(ctx, ctr, "Jaw centre")
-	await _click_uv(ctx, ctr + dir * 22.0, "Jaw long side")
-	await _click_uv(ctx, ctr + nrm * 7.0, "Jaw width")
+	await _click_uv_local(ctx, ctr, "Jaw centre")
+	await _click_uv_local(ctx, ctr + dir * 22.0, "Jaw long side")
+	await _click_uv_local(ctx, ctr + nrm * 7.0, "Jaw width")
 	var committed := _last()
 	var label := str(ctx.main.status_label.text)
 	check(committed.begins_with("Jaw committed — width") or label.begins_with("Jaw committed — width"),
@@ -204,12 +204,12 @@ func _run() -> void:
 	var listed := _sketch_ids(ctx).size()
 	await _release_focus(ctx)
 	_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_Z, true, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 	var undo_line := str(ctx.main.status_label.text)
 	check(undo_line.begins_with("Undo"), "part Ctrl+Z begins Undo (got `%s`)" % undo_line)
 	check(_sketch_ids(ctx).size() == listed - 1, "part Ctrl+Z removed the jaw sketch")
 	_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_Z, true, true)
+	await _push_key_local(ctx.main.get_viewport(), KEY_Z, true, true)
 	var redo_line := str(ctx.main.status_label.text)
 	check(redo_line.begins_with("Redo"), "part Ctrl+Shift+Z begins Redo (got `%s`)" % redo_line)
 	var restored := _sketch_ids(ctx)

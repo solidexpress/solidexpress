@@ -254,8 +254,8 @@ func _row_c1() -> void:
 		await _x11_click_screen(vp, edit.get_global_rect().get_center())
 		await process_frame
 		await process_frame
-		await _push_key(vp, KEY_1, 49)
-		await _push_key(vp, KEY_0, 48)
+		await _push_key_local(vp, KEY_1, 49)
+		await _push_key_local(vp, KEY_0, 48)
 		await process_frame
 		check(edit.text.contains("10"), "C1 Distance field reads 10 (got `%s`)" % edit.text)
 	var ex := chrome.extrude_button()
@@ -456,27 +456,7 @@ func _hover_screen(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
-func _push_key(vp: Viewport, code: int, unicode: int = 0) -> void:
+func _push_key_local(vp: Viewport, code: int, unicode: int = 0) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code

@@ -8,7 +8,6 @@ const ROOT_SIZE := Vector2i(1280, 800)
 const OUT := "/tmp/sx-replan15"
 
 
-
 func _init() -> void:
 	print("rung01 replan15 WP4 export 3mf extension")
 	FilmUI.reset_fail_count()
@@ -420,7 +419,7 @@ func _click_popup_item(popup: PopupMenu, id: int, desc: String) -> bool:
 	var cb := func(pressed_id: int) -> void:
 		got[0] = pressed_id
 	popup.id_pressed.connect(cb)
-	await _x11_click_screen(root.get_viewport(), screen)
+	await _x11_click_screen_local(root.get_viewport(), screen)
 	await process_frame
 	await process_frame
 	if popup.id_pressed.is_connected(cb):
@@ -449,13 +448,7 @@ func _click_menu_item(ctx: FilmContext, title: String, id: int, desc: String) ->
 	return await _click_popup_item(popup, id, desc)
 
 
-func _x11_click(ctrl: Control) -> void:
-	var pos := ctrl.get_global_rect().get_center()
-	var vp := ctrl.get_viewport()
-	await _x11_click_screen(vp, pos)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos
@@ -523,7 +516,7 @@ func _x11_select_all(vp: Viewport) -> void:
 
 
 func _x11_click_at(vp: Viewport, pos: Vector2, double_click: bool = false) -> void:
-	await _x11_click_screen(vp, pos, double_click)
+	await _x11_click_screen_local(vp, pos, double_click)
 
 
 ## Embedded FileDialog only sees the click on the root viewport, in screen

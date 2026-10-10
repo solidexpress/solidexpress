@@ -66,7 +66,7 @@ func _arm_and_centre(ctx: FilmContext, sm: SketchMode, chrome: SketchContextChro
 		return
 	var rail_at := FilmUI.ensure_control_visible(btn)
 	await process_frame
-	await _x11_click_screen(ctx.main.get_viewport(), rail_at)
+	await _x11_click_screen_local(ctx.main.get_viewport(), rail_at)
 	await process_frame
 	await process_frame
 	check(sm.tool == _tool_for(label), "%s rail press arms the tool (got %s)" % [
@@ -75,7 +75,7 @@ func _arm_and_centre(ctx: FilmContext, sm: SketchMode, chrome: SketchContextChro
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, label + " centre"),
 			"%s centre is on screen at %s" % [label, str(uv)])
-	await _x11_click_screen(ctx.main.get_viewport(), screen)
+	await _x11_click_screen_local(ctx.main.get_viewport(), screen)
 	await process_frame
 	await process_frame
 	var pts: int = sm._tool_points.size()
@@ -198,7 +198,7 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
+func _x11_click_screen_local(vp: Viewport, pos: Vector2) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = pos
 	motion.global_position = pos

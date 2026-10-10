@@ -416,7 +416,7 @@ func _press_key(vp: Viewport, key: Key) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -434,19 +434,9 @@ func _aim_then_click_screen(vp: Viewport, pos: Vector2) -> void:
 	await _x11_click_screen(vp, pos)
 
 
-func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	var motion := InputEventMouseMotion.new()
-	motion.position = screen
-	motion.global_position = screen
-	ctx.main.get_viewport().push_input(motion)
-	await process_frame
-
-
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String) -> void:
 	await _select_tool(ctx, "Circle")
-	await _click_uv(ctx, center, "Circle centre")
+	await _click_uv_local(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text)
 
@@ -487,9 +477,9 @@ func _draw_shaft_line(ctx: FilmContext, far_x: float, sign: float) -> void:
 	var b_dir := b - c2
 	var b_off := b + (b_dir.normalized() if b_dir.length_squared() > 1e-8 else Vector2(0, sign)) * 0.3
 	await _zoom_uv(ctx, a, 90.0)
-	await _click_uv(ctx, a, "Tangent start")
+	await _click_uv_local(ctx, a, "Tangent start")
 	await _zoom_uv(ctx, b_off, 90.0)
-	await _click_uv(ctx, b_off, "Tangent end")
+	await _click_uv_local(ctx, b_off, "Tangent end")
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(b_off))
 	await _x11_right_click_screen(ctx.main.get_viewport(), screen)
@@ -505,9 +495,9 @@ func _draw_centre_rect(ctx: FilmContext, center: Vector2, angle_deg: float, half
 		await process_frame
 	var along := Vector2(cos(deg_to_rad(angle_deg)), sin(deg_to_rad(angle_deg)))
 	var across := Vector2(-along.y, along.x)
-	await _click_uv(ctx, center, "Rect centre")
-	await _click_uv(ctx, center + along * 30.0, "Rect long side")
-	await _click_uv(ctx, center + across * half_w, "Rect half width")
+	await _click_uv_local(ctx, center, "Rect centre")
+	await _click_uv_local(ctx, center + along * 30.0, "Rect long side")
+	await _click_uv_local(ctx, center + across * half_w, "Rect half width")
 
 
 func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void:
@@ -520,9 +510,9 @@ func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void
 		await process_frame
 	var dir := along.normalized()
 	await _zoom_uv(ctx, center - dir * 25.0, 70.0)
-	await _click_uv(ctx, center - dir * 25.0, "Centreline start")
+	await _click_uv_local(ctx, center - dir * 25.0, "Centreline start")
 	await _zoom_uv(ctx, center + dir * 25.0, 70.0)
-	await _click_uv(ctx, center + dir * 25.0, "Centreline end")
+	await _click_uv_local(ctx, center + dir * 25.0, "Centreline end")
 
 
 func _end_centreline_chain(ctx: FilmContext) -> void:

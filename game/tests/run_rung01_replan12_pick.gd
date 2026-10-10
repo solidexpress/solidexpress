@@ -7,7 +7,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
 
-
 func _init() -> void:
 	print("rung01 replan12 WP4/WP5 fillet picks")
 	FilmUI.reset_fail_count()
@@ -33,7 +32,7 @@ func _push_click(pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(code: int) -> void:
+func _push_key_local(code: int) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code
@@ -189,7 +188,7 @@ func _run() -> void:
 
 		# 6. Enter applies both and the applied text stays in the status bar.
 		var before_fillets := _fillet_count(view)
-		await _push_key(KEY_ENTER)
+		await _push_key_local(KEY_ENTER)
 		check(_fillet_count(view) == before_fillets + 1, "Enter adds one fillet feature (%d → %d)" % [before_fillets, _fillet_count(view)])
 		check(_st(main).begins_with("Fillet 2 edges 1.00 applied"), "status is `Fillet 2 edges 1.00 applied …` (got `%s`)" % _st(main))
 		check(not _st(main).contains("Feature created"), "the applied text is not overwritten by `Feature created`")
@@ -246,7 +245,7 @@ func _run() -> void:
 	var esc_in := (FilmUI.model_to_screen(ctx, centre2) - esc_corner).normalized() * 3.0
 	await _push_click(esc_corner + esc_in)
 	check(view.selected_edges.size() >= 1, "an edge is armed before Esc (%d)" % view.selected_edges.size())
-	await _push_key(KEY_ESCAPE)
+	await _push_key_local(KEY_ESCAPE)
 	check(ops._pending == OpsPanel.Pending.NONE, "one real Esc ends the armed fillet")
 	check(view.selected_edges.is_empty() and view.selected_edge == "", "Esc drops the picked edges")
 	check(view.selected_body == body2, "Esc keeps the body selected")

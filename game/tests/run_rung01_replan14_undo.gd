@@ -1,6 +1,6 @@
 # Rung 1 replan 14 WP4 — Ctrl+Z / Ctrl+Shift+Z undo and redo sketch edits.
 # Template: run_rung01_replan13_trim.gd (_boot, jaw) and run_rung01_replan13_frame.gd
-# (_push_key, FilmUI). Setup may use helpers; every click and key under test is a
+# (_push_key_local, FilmUI). Setup may use helpers; every click and key under test is a
 # real InputEventMouseButton / InputEventMouseMotion / InputEventKey.
 # Run: LD_LIBRARY_PATH=/opt/occt-8.0.1/lib tools/godot/godot --headless --path game \
 #   --script res://tests/run_rung01_replan14_undo.gd
@@ -80,9 +80,9 @@ func test_jaw_undo_redo_line_save() -> void:
 	print("  n0=%d rev=%d timeline=%d" % [n0, rev0, tl0])
 
 	await _press_rail(ctx, "Jaw")
-	await _click_uv(ctx, HEAD, "Jaw click 1 centre")
-	await _click_uv(ctx, HEAD + JAW_LONG, "Jaw click 2 long side")
-	await _click_uv(ctx, HEAD + JAW_WIDE, "Jaw click 3 half width")
+	await _click_uv_local(ctx, HEAD, "Jaw click 1 centre")
+	await _click_uv_local(ctx, HEAD + JAW_LONG, "Jaw click 2 long side")
+	await _click_uv_local(ctx, HEAD + JAW_WIDE, "Jaw click 3 half width")
 	await process_frame
 	await process_frame
 	print("  observed after Jaw: `%s`" % _status_text(ctx))
@@ -93,7 +93,7 @@ func test_jaw_undo_redo_line_save() -> void:
 	check(_has_jaw_dims(sm), "Jaw recorded width / angle dimensions")
 
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Ctrl+Z: `%s`" % _status_text(ctx))
 	check(sm.sketch.entity_ids().size() == n0, "Ctrl+Z restores entity count to n0 (got %d)" % sm.sketch.entity_ids().size())
 	check(not _has_jaw_dims(sm), "sm.dimensions has no jaw width / angle after Undo: Jaw")
@@ -103,43 +103,43 @@ func test_jaw_undo_redo_line_save() -> void:
 	check(ctx.view.doc.graph_features().size() == tl0, "timeline length unchanged")
 
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, true)
+	await _push_key_local(vp, KEY_Z, true, true)
 	print("  observed Ctrl+Shift+Z: `%s`" % _status_text(ctx))
 	check(_id_set(sm.sketch.entity_ids()) == jaw_ids, "Ctrl+Shift+Z restores the Jaw entity id set")
 	check(_has_jaw_width_evidence(sm), "width / angle records (or 20-type labels) are back")
 	check(_status_text(ctx) == "Redo: Jaw", "status Redo: Jaw (got `%s`)" % _status_text(ctx))
 
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	check(sm.sketch.entity_ids().size() == n0, "Ctrl+Z after redo is n0 again")
 	_status_log.clear()
-	await _push_key(vp, KEY_Y, true, false)
+	await _push_key_local(vp, KEY_Y, true, false)
 	print("  observed Ctrl+Y: `%s`" % _status_text(ctx))
 	check(_id_set(sm.sketch.entity_ids()) == jaw_ids, "Ctrl+Y restores the Jaw entity id set")
 	check(_status_text(ctx) == "Redo: Jaw", "Ctrl+Y status Redo: Jaw (got `%s`)" % _status_text(ctx))
 
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, true)
+	await _push_key_local(vp, KEY_Z, true, true)
 	print("  observed empty Ctrl+Shift+Z after redo: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to redo", "empty redo Ctrl+Shift+Z → Nothing to redo (got `%s`)" % _status_text(ctx))
 
 	while sm.has_method("can_undo") and sm.can_undo():
-		await _push_key(vp, KEY_Z, true, false)
+		await _push_key_local(vp, KEY_Z, true, false)
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed empty Ctrl+Z: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to undo", "empty stack Ctrl+Z → Nothing to undo (got `%s`)" % _status_text(ctx))
 
 	await _press_rail(ctx, "Jaw")
-	await _click_uv(ctx, HEAD, "Jaw 2 click 1")
-	await _click_uv(ctx, HEAD + JAW_LONG, "Jaw 2 click 2")
-	await _click_uv(ctx, HEAD + JAW_WIDE, "Jaw 2 click 3")
+	await _click_uv_local(ctx, HEAD, "Jaw 2 click 1")
+	await _click_uv_local(ctx, HEAD + JAW_LONG, "Jaw 2 click 2")
+	await _click_uv_local(ctx, HEAD + JAW_WIDE, "Jaw 2 click 3")
 	await process_frame
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	check(not _has_jaw_dims(sm), "Jaw undone before drawing a Line")
 	await _press_rail(ctx, "Line")
-	await _click_uv(ctx, Vector2(-8.0, -8.0), "Line start")
-	await _click_uv(ctx, Vector2(-8.0, 8.0), "Line end")
+	await _click_uv_local(ctx, Vector2(-8.0, -8.0), "Line start")
+	await _click_uv_local(ctx, Vector2(-8.0, 8.0), "Line end")
 	await process_frame
 	# A focused numeric blank swallows Ctrl+Z (#200). Hand the keys back.
 	var focus_owner := vp.gui_get_focus_owner()
@@ -147,39 +147,39 @@ func test_jaw_undo_redo_line_save() -> void:
 		focus_owner.release_focus()
 		await process_frame
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, true)
+	await _push_key_local(vp, KEY_Z, true, true)
 	print("  observed redo after new Line: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to redo", "new op clears redo (got `%s`)" % _status_text(ctx))
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Undo Line: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Undo: Line", "Ctrl+Z → Undo: Line (got `%s`)" % _status_text(ctx))
 
 	await _press_rail(ctx, "Jaw")
-	await _click_uv(ctx, HEAD, "Jaw save click 1")
-	await _click_uv(ctx, HEAD + JAW_LONG, "Jaw save click 2")
-	await _click_uv(ctx, HEAD + JAW_WIDE, "Jaw save click 3")
+	await _click_uv_local(ctx, HEAD, "Jaw save click 1")
+	await _click_uv_local(ctx, HEAD + JAW_LONG, "Jaw save click 2")
+	await _click_uv_local(ctx, HEAD + JAW_WIDE, "Jaw save click 3")
 	await process_frame
 	check(_has_jaw_dims(sm), "Jaw is undoable before Save")
 	ctx.main.current_path = SAVE_PATH
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(SAVE_PATH)
 	_status_log.clear()
-	await _push_key(vp, KEY_S, true, false)
+	await _push_key_local(vp, KEY_S, true, false)
 	await process_frame
 	await process_frame
 	print("  observed Ctrl+S: `%s` active=%s" % [_status_text(ctx), str(sm.active)])
 	check(sm.active, "Save inside a sketch keeps the session open")
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Ctrl+Z after Save: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Undo: Jaw", "Save keeps history: Undo: Jaw (got `%s`)" % _status_text(ctx))
 	check(not _has_jaw_dims(sm), "Jaw is gone after undo that survived Save")
 
 	await _press_rail(ctx, "Jaw")
-	await _click_uv(ctx, HEAD, "Jaw edit-menu click 1")
-	await _click_uv(ctx, HEAD + JAW_LONG, "Jaw edit-menu click 2")
-	await _click_uv(ctx, HEAD + JAW_WIDE, "Jaw edit-menu click 3")
+	await _click_uv_local(ctx, HEAD, "Jaw edit-menu click 1")
+	await _click_uv_local(ctx, HEAD + JAW_LONG, "Jaw edit-menu click 2")
+	await _click_uv_local(ctx, HEAD + JAW_WIDE, "Jaw edit-menu click 3")
 	await process_frame
 	var n_before_edit: int = sm.sketch.entity_ids().size()
 	var edit_btn := _find_edit_menu(ctx.main)
@@ -212,9 +212,9 @@ func test_coalesce_circle_hover_drag() -> void:
 	await process_frame
 	await _press_rail(ctx, "Circle")
 	var stack0 := _undo_size(sm)
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre")
 	await _type_keys(vp, "5")
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	var stack1 := _undo_size(sm)
@@ -224,7 +224,7 @@ func test_coalesce_circle_hover_drag() -> void:
 	var circ_n: int = sm.sketch.entity_ids().size()
 	var cids_with_circ := _id_set(sm.sketch.constraint_ids())
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Undo Circle: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Undo: Circle", "Undo: Circle (got `%s`)" % _status_text(ctx))
 	check(sm.sketch.entity_ids().size() < circ_n, "Undo: Circle removes the circle")
@@ -233,9 +233,9 @@ func test_coalesce_circle_hover_drag() -> void:
 			"Undo: Circle removes the circle and its radius constraint together")
 
 	await _press_rail(ctx, "Circle")
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre 2")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre 2")
 	await _type_keys(vp, "5")
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	var hover_n := _undo_size(sm)
 	for i in 10:
@@ -289,12 +289,12 @@ func test_trim_and_dimension() -> void:
 	var walls_before := _wall_snapshot(sm)
 	await _press_rail(ctx, "Trim")
 	_status_log.clear()
-	await _click_uv(ctx, SHAFT_SIDE, "Trim click")
+	await _click_uv_local(ctx, SHAFT_SIDE, "Trim click")
 	await process_frame
 	print("  observed Trim: `%s`" % _status_text(ctx))
 	check(_status_has("Trimmed open jaw"), "real Trim click → Trimmed open jaw (got `%s`)" % _status_text(ctx))
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Undo Trim: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Undo: Trim", "Ctrl+Z → Undo: Trim (got `%s`)" % _status_text(ctx))
 	check(_walls_match(sm, walls_before), "open-jaw walls are the pre-trim ones")
@@ -310,12 +310,12 @@ func test_trim_and_dimension() -> void:
 			await _x11_click_screen(ix._dim_edit_line.get_viewport(),
 					ix._dim_edit_line.get_global_rect().get_center())
 			await _type_keys(ix._dim_edit_line.get_viewport(), "18")
-			await _push_key(ix._dim_edit_line.get_viewport(), KEY_ENTER)
+			await _push_key_local(ix._dim_edit_line.get_viewport(), KEY_ENTER)
 			await process_frame
 			await process_frame
 		print("  observed after width 18: `%s` value=%s" % [_status_text(ctx), str(_width_value(sm))])
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Undo Dimension: `%s` width=%s" % [_status_text(ctx), str(_width_value(sm))])
 	check(_status_text(ctx) == "Undo: Dimension", "Ctrl+Z → Undo: Dimension (got `%s`)" % _status_text(ctx))
 	var w := _width_value(sm)
@@ -329,9 +329,9 @@ func test_exit_clears_history() -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var vp: Viewport = ctx.main.get_viewport()
 	await _press_rail(ctx, "Jaw")
-	await _click_uv(ctx, HEAD, "exit Jaw 1")
-	await _click_uv(ctx, HEAD + JAW_LONG, "exit Jaw 2")
-	await _click_uv(ctx, HEAD + JAW_WIDE, "exit Jaw 3")
+	await _click_uv_local(ctx, HEAD, "exit Jaw 1")
+	await _click_uv_local(ctx, HEAD + JAW_LONG, "exit Jaw 2")
+	await _click_uv_local(ctx, HEAD + JAW_WIDE, "exit Jaw 3")
 	await process_frame
 	var fid := str(sm.editing_fid)
 	await FilmUI.exit_sketch(ctx)
@@ -348,7 +348,7 @@ func test_exit_clears_history() -> void:
 		await process_frame
 	check(sm.active, "timeline double-click re-opens the sketch")
 	_status_log.clear()
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed after re-entry Ctrl+Z: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to undo", "re-entry Ctrl+Z → Nothing to undo (got `%s`)" % _status_text(ctx))
 	await _shutdown(ctx)
@@ -362,7 +362,7 @@ func test_document_undo_outside_sketch() -> void:
 	var n0: int = ctx.view.doc.body_ids().size()
 	check(n0 >= 1, "box placed (bodies=%d)" % n0)
 	_status_log.clear()
-	await _push_key(ctx.main.get_viewport(), KEY_Z, true, false)
+	await _push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 	await process_frame
 	print("  observed part-mode Ctrl+Z: `%s` bodies %d→%d" % [
 			_status_text(ctx), n0, ctx.view.doc.body_ids().size()])
@@ -383,13 +383,13 @@ func test_radius_field_owns_ctrl_z() -> void:
 	sm.fit_view()
 	await process_frame
 	await _press_rail(ctx, "Jaw")
-	await _click_uv(ctx, HEAD, "focus Jaw 1")
-	await _click_uv(ctx, HEAD + JAW_LONG, "focus Jaw 2")
-	await _click_uv(ctx, HEAD + JAW_WIDE, "focus Jaw 3")
+	await _click_uv_local(ctx, HEAD, "focus Jaw 1")
+	await _click_uv_local(ctx, HEAD + JAW_LONG, "focus Jaw 2")
+	await _click_uv_local(ctx, HEAD + JAW_WIDE, "focus Jaw 3")
 	await process_frame
 	var n_jaw: int = sm.sketch.entity_ids().size()
 	await _press_rail(ctx, "Circle")
-	await _click_uv(ctx, Vector2(8.0, 8.0), "Radius-field circle centre")
+	await _click_uv_local(ctx, Vector2(8.0, 8.0), "Radius-field circle centre")
 	var dim_edit := _dim_line_edit(ctx.main)
 	check(dim_edit != null, "sketch Radius field exists")
 	if dim_edit != null:
@@ -397,7 +397,7 @@ func test_radius_field_owns_ctrl_z() -> void:
 		await process_frame
 		check(dim_edit.has_focus(), "Radius field is focused")
 		_status_log.clear()
-		await _push_key(vp, KEY_Z, true, false)
+		await _push_key_local(vp, KEY_Z, true, false)
 		await process_frame
 		print("  observed focused Ctrl+Z: `%s` entities %d→%d" % [
 				_status_text(ctx), n_jaw, sm.sketch.entity_ids().size()])
@@ -539,7 +539,7 @@ func _press_rail(ctx: FilmContext, label: String) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -596,7 +596,7 @@ func _drag_uv(ctx: FilmContext, a: Vector2, b: Vector2, steps: int) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, ctrl := false, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl := false, shift := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
@@ -638,26 +638,6 @@ func _type_keys(vp: Viewport, text: String) -> void:
 		rel.unicode = 0
 		vp.push_input(rel)
 		await process_frame
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _double_click_control(ctrl: Control) -> void:

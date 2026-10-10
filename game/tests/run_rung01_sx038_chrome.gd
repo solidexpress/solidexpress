@@ -11,7 +11,6 @@ const ChromeDock = preload("res://scripts/chrome_dock.gd")
 const CHIP_GAP := 6.0
 
 
-
 func _init() -> void:
 	print("rung01 sx038 timeline gap / dress-up panel")
 	FilmUI.reset_fail_count()
@@ -58,7 +57,7 @@ func _test_size(win: Vector2i, tag: String) -> void:
 
 	var vp: Viewport = main.get_viewport()
 	_release_focus(vp)
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	for _i in 6:
 		await process_frame
 	var status := str(main.status_label.text)
@@ -79,7 +78,7 @@ func _test_size(win: Vector2i, tag: String) -> void:
 	_assert_width(main, tag + " chamfer armed", width_idle, stack_idle)
 	_assert_chip_x(main, tag + " chamfer armed", chip_x)
 	_release_focus(vp)
-	await _push_key(vp, KEY_ESCAPE)
+	await _push_key_local(vp, KEY_ESCAPE)
 	for _i in 4:
 		await process_frame
 	check(not _radius_visible(main), "%s Distance row hidden after Chamfer Esc" % tag)
@@ -100,7 +99,7 @@ func _test_size(win: Vector2i, tag: String) -> void:
 		ctx.view.selected_edge = edge
 		if main.interaction.has_method("return_viewport_keys"):
 			main.interaction.return_viewport_keys()
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_ENTER)
 		for _i in 8:
 			await process_frame
 		var applied := str(main.status_label.text)
@@ -350,7 +349,7 @@ func _release_focus(vp: Viewport) -> void:
 		owner.release_focus()
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

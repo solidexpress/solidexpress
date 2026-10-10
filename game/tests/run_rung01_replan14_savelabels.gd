@@ -87,7 +87,7 @@ func test_save_does_not_change_labels() -> void:
 	if FileAccess.file_exists(save_path):
 		DirAccess.remove_absolute(save_path)
 	ctx.main.current_path = save_path
-	await _push_key(ctx.main.get_viewport(), KEY_S, false, true)
+	await _push_key_local(ctx.main.get_viewport(), KEY_S, false, true)
 	await process_frame
 	await process_frame
 	if not FileAccess.file_exists(save_path) or not _status_has("Saved "):
@@ -187,7 +187,7 @@ func test_save_does_not_change_labels() -> void:
 			"Δ overlay has no anchor while the editor is open")
 	check(not _overlay_has_delta(overlay),
 			"no Δ label exists while the editor is open (labels=%s)" % _overlay_texts(overlay))
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	check(ix != null and not ix._dim_edit_owns_keys(), "Esc closes the editor")
@@ -231,14 +231,14 @@ func _build_blank_body(ctx: FilmContext) -> void:
 func _typed_circle(ctx: FilmContext, center: Vector2, digits: String, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, center, "%s centre" % desc)
+	await _click_uv_local(ctx, center, "%s centre" % desc)
 	await process_frame
 	var edit := _dim_edit(ctx.main.sketch_chrome)
 	if edit != null:
 		await _x11_click_screen(edit.get_viewport(), edit.get_global_rect().get_center())
 		await process_frame
 		await _type_text(edit.get_viewport(), digits)
-		await _push_key(edit.get_viewport(), KEY_ENTER)
+		await _push_key_local(edit.get_viewport(), KEY_ENTER)
 		await process_frame
 		await process_frame
 	var found := false
@@ -296,7 +296,7 @@ func _type_label(ctx: FilmContext, needle: String, keys: String) -> void:
 	var ix: ViewportInteraction = ctx.main.interaction
 	if ix != null and ix._dim_edit_line != null and ix._dim_edit_owns_keys():
 		await _type_text(ix._dim_edit_line.get_viewport(), keys)
-		await _push_key(ix._dim_edit_line.get_viewport(), KEY_ENTER)
+		await _push_key_local(ix._dim_edit_line.get_viewport(), KEY_ENTER)
 		await process_frame
 		await process_frame
 	var idx := _dim_index_for_text(sm, needle)
@@ -329,7 +329,7 @@ func _trim_shaft(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	_status_log.clear()
-	await _click_uv(ctx, SHAFT_SIDE, "Power Trim shaft side")
+	await _click_uv_local(ctx, SHAFT_SIDE, "Power Trim shaft side")
 	await process_frame
 	await process_frame
 
@@ -436,7 +436,7 @@ func _assert_jaw_armed_first_glyph(ctx: FilmContext, sm: SketchMode) -> void:
 			"N1a Jaw-armed click on `20` first glyph opens the editor")
 	check(sm._tool_points.is_empty(),
 			"N1a Jaw-armed label click did not start a new jaw")
-	await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+	await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await process_frame
 	await process_frame
 	check(ix != null and not ix._dim_edit_owns_keys(),
@@ -792,31 +792,11 @@ func _item_screen_center(popup: PopupMenu, index: int) -> Vector2:
 	return Vector2(popup.position) + Vector2(popup.size.x * 0.5, top + float(font_h) * 0.5)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "on screen: %s" % desc)
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
 
 
 func _x11_motion(vp: Viewport, pos: Vector2) -> void:
@@ -877,7 +857,7 @@ func _ctrl_a(vp: Viewport) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, shift := false, ctrl := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift := false, ctrl := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

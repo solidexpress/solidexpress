@@ -50,12 +50,12 @@ func test_face_sketch_frames_blank() -> void:
 	await process_frame
 	check(not _body_in_canvas(ctx, body),
 			"parked view hides part of the blank (the sx-037 failure)")
-	await _push_key(ctx.main.get_viewport(), KEY_F)
+	await _push_key_local(ctx.main.get_viewport(), KEY_F)
 	_assert_body_in_canvas(ctx, body, "F")
 
 	_park_on_origin(ctx)
 	await process_frame
-	await _push_key(ctx.main.get_viewport(), KEY_F, true)
+	await _push_key_local(ctx.main.get_viewport(), KEY_F, true)
 	_assert_body_in_canvas(ctx, body, "Shift+F")
 
 	_park_on_origin(ctx)
@@ -196,7 +196,7 @@ func _find_labeled_button(root: Node, text: String) -> Button:
 	return null
 
 
-func _push_key(vp: Viewport, keycode: Key, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

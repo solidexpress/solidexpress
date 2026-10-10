@@ -375,9 +375,9 @@ func _a11d_strip() -> void:
 	await _click_control(line)
 	await _push_chord(vp, KEY_A, true)
 	await _push_char(vp, "1", false)
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	_status_log.clear()
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_3)
 	await process_frame
 	check(_saw(ctx.main, "Top view"), "A11d key 3 is Top view (status '%s' label '%s')" % [_status_blob(), _label(ctx.main)])
 	check(_body(line.text) == "1" or line.text.contains("1 mm"),
@@ -637,7 +637,7 @@ func _key_for(ch: String) -> Key:
 	return KEY_NONE
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	_push_key_now(vp, keycode)
 	await process_frame
 

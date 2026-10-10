@@ -35,7 +35,7 @@ func test_first_drag_and_nearest() -> void:
 	var near_a: String = sm.sketch.add_line(0.0, -50.0, 50.0, -50.0)
 	var near_b: String = sm.sketch.add_line(0.0, -49.6, 50.0, -49.6)
 	sm._redraw()
-	await _zoom(ctx, sm.to_model(Vector2(30.0, -5.0)), 180.0, false)
+	await _zoom_local(ctx, sm.to_model(Vector2(30.0, -5.0)), 180.0, false)
 	await _arm_select(ctx, sm, vp)
 
 	var win_lo := _uv(ctx, sm, Vector2(-14.0, -14.0))
@@ -188,7 +188,7 @@ func test_chips_clear_on_delete() -> void:
 	var circ: String = sm.sketch.add_circle(70.0, 30.0, 3.0)
 	sm._redraw()
 	await process_frame
-	await _zoom(ctx, sm.to_model(Vector2(35.0, 16.0)), 140.0, false)
+	await _zoom_local(ctx, sm.to_model(Vector2(35.0, 16.0)), 140.0, false)
 	await _arm_select(ctx, sm, vp)
 	var before := sm.sketch.entity_ids().size()
 
@@ -324,7 +324,7 @@ func _on_status(text: String) -> void:
 	_status_log.append(text)
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float, top: bool) -> void:
+func _zoom_local(ctx: FilmContext, model_pivot: Vector3, size_mm: float, top: bool) -> void:
 	var cam = ctx.main.camera
 	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():

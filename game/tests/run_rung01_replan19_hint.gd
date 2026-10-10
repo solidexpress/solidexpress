@@ -31,7 +31,7 @@ func _still_pointer() -> void:
 	_release_focus(ctx.main.get_viewport())
 	ctx.main.status_trace_log.clear()
 	var t0 := _stamp(ctx, 100000)
-	await _push_key(ctx.main.get_viewport(), KEY_0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_0)
 	check(_label(ctx) == NO_VIEW, "key 0 result (got `%s`)" % _label(ctx))
 	_stamp(ctx, t0 + 2400)
 	ctx.main._hint_tick()
@@ -49,7 +49,7 @@ func _hint_during_hold() -> void:
 	var px := await _face_point(ctx)
 	_release_focus(ctx.main.get_viewport())
 	var t0 := _stamp(ctx, 200000)
-	await _push_key(ctx.main.get_viewport(), KEY_0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_0)
 	check(_label(ctx) == NO_VIEW, "result is showing before the pointer moves")
 	await _motion(ctx.main.get_viewport(), px)
 	_stamp(ctx, t0 + 2400)
@@ -68,7 +68,7 @@ func _leave_during_hold() -> void:
 	var ground := _empty_ground(ctx, px)
 	_release_focus(ctx.main.get_viewport())
 	var t0 := _stamp(ctx, 300000)
-	await _push_key(ctx.main.get_viewport(), KEY_0)
+	await _push_key_local(ctx.main.get_viewport(), KEY_0)
 	await _motion(ctx.main.get_viewport(), px)
 	await _motion(ctx.main.get_viewport(), ground)
 	_stamp(ctx, t0 + 3000)
@@ -155,7 +155,7 @@ func _face_point(ctx: FilmContext) -> Vector2:
 	check(body != "", "box exists")
 	if ctx.view.selected_body != "":
 		_release_focus(ctx.main.get_viewport())
-		await _push_key(ctx.main.get_viewport(), KEY_ESCAPE)
+		await _push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 		ctx.main._clock_override_msec = Time.get_ticks_msec() + 3000
 		ctx.main._hint_tick()
 		ctx.main._clock_override_msec = -1
@@ -228,7 +228,7 @@ func _motion(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

@@ -63,11 +63,11 @@ func _test_fields(ctx: FilmContext) -> void:
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre")
 	await process_frame
 	check(_dim_edit(chrome) != null and _dim_edit(chrome).has_focus(), "circle centre focuses Radius")
-	await _type_text(ctx, "22.5")
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _type_text_local(ctx, "22.5")
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	check(_status_blob().contains("Circle r=22.5"), "status has Circle r=22.5")
 	check(is_equal_approx(sm.circle_radius, 22.5), "circle radius stored as 22.5")
@@ -81,10 +81,10 @@ func _test_fields(ctx: FilmContext) -> void:
 	check(line_digits == "" or _parses_to(_dim_edit(chrome), sm.own_numeric()),
 			"Line length is empty or Line's own value (got '%s')" % line_digits)
 
-	await _click_uv(ctx, Vector2(12, 0), "Line start")
+	await _click_uv_local(ctx, Vector2(12, 0), "Line start")
 	await process_frame
-	await _type_text(ctx, "18")
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _type_text_local(ctx, "18")
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	check(sm._tool_numeric.has("line"), "Line remembered its own length")
@@ -125,15 +125,15 @@ func _test_fields(ctx: FilmContext) -> void:
 	var radius_label: Label = chrome.find_child("RadiusLabel", true, false)
 	check(radius_label != null and str(radius_label.text) == "Radius",
 			"Slot arms on Radius (got '%s')" % (str(radius_label.text) if radius_label != null else ""))
-	await _type_text(ctx, "5")
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _type_text_local(ctx, "5")
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	check(is_equal_approx(sm.slot_radius, 5.0), "typed slot radius is 5 (got %.4f)" % sm.slot_radius)
 
 	sm.fit_view()
 	await process_frame
 	await process_frame
-	await _click_uv(ctx, Vector2(0, 0), "Slot centre 1")
+	await _click_uv_local(ctx, Vector2(0, 0), "Slot centre 1")
 	await process_frame
 	await process_frame
 	radius_label = chrome.find_child("RadiusLabel", true, false)
@@ -146,8 +146,8 @@ func _test_fields(ctx: FilmContext) -> void:
 	check(cc_digits == "" or _parses_to(_dim_edit(chrome), float(sm._tool_numeric.get("slot_cc", -1.0))),
 			"c-c is empty or the slot's own last c-c (got '%s')" % cc_digits)
 
-	await _type_text(ctx, "30")
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _type_text_local(ctx, "30")
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	check(_status_blob().contains("Slot c-c 30"), "typed c-c commits 30 (log '%s')" % _status_blob())
@@ -163,7 +163,7 @@ func _test_fields(ctx: FilmContext) -> void:
 				str(radius_label.text) if radius_label != null else ""))
 	check(_parses_to(_dim_edit(chrome), 5.0) and not _parses_to(_dim_edit(chrome), 30.0),
 			"re-armed Slot shows radius 5, not c-c 30 (got '%s')" % _digits(_dim_edit(chrome)))
-	await _click_uv(ctx, Vector2(8, 3), "Slot centre 2")
+	await _click_uv_local(ctx, Vector2(8, 3), "Slot centre 2")
 	await process_frame
 	await process_frame
 	radius_label = chrome.find_child("RadiusLabel", true, false)
@@ -219,10 +219,10 @@ func _test_new_document(ctx: FilmContext) -> void:
 			"same-document new sketch keeps line 18 (got '%s')" % _digits(_dim_edit(chrome)))
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
-	await _click_uv(ctx, Vector2.ZERO, "Circle for 45")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle for 45")
 	await process_frame
-	await _type_text(ctx, "45")
-	await _push_key(ctx.main.get_viewport(), KEY_ENTER)
+	await _type_text_local(ctx, "45")
+	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
 	check(is_equal_approx(sm.circle_radius, 45.0), "circle radius is 45 before New (got %.4f)" % sm.circle_radius)
 	_show_distance(chrome, 5.0)
@@ -343,7 +343,7 @@ func _status_blob() -> String:
 	return " ".join(_status_log)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -405,7 +405,7 @@ func _drag_between(ctx: FilmContext, from_uv: Vector2, to_uv: Vector2) -> void:
 	await process_frame
 
 
-func _type_text(ctx: FilmContext, text: String) -> void:
+func _type_text_local(ctx: FilmContext, text: String) -> void:
 	for i in text.length():
 		await _push_char(ctx, text.substr(i, 1))
 
@@ -435,7 +435,7 @@ func _push_char(ctx: FilmContext, ch: String) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key) -> void:
+func _push_key_local(vp: Viewport, keycode: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

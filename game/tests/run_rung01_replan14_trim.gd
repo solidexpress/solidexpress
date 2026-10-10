@@ -108,7 +108,7 @@ func test_rectangle_without_circle_is_not_jaw_trim() -> void:
 	await _zoom_model(ctx, sm.to_model(Vector2(20, 10)), 80.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	_status_log.clear()
-	await _click_uv(ctx, Vector2(30, 0), "kernel trim on a rectangle side")
+	await _click_uv_local(ctx, Vector2(30, 0), "kernel trim on a rectangle side")
 	check(not _status_has("Trimmed open jaw"), "no circle: not an open-jaw trim (log=%s)" % str(_status_log))
 	check(not _status_has("no head circle"), "no circle: does not consume the click as a jaw refusal (log=%s)" % str(_status_log))
 	await _shutdown(ctx)
@@ -231,31 +231,11 @@ func _drag_between(ctx: FilmContext, from_uv: Vector2, to_uv: Vector2) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "on screen: %s" % desc)
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
-	await process_frame
-
-
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
 	await process_frame
 
 

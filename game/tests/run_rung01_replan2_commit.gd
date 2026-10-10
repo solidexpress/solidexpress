@@ -64,7 +64,7 @@ func test_typed_20_beats_cursor_4(ctx: FilmContext) -> void:
 			"polygon variant is across_flats without a chip click (got %s)" % sm.tool_variant)
 	check(sm.is_empty_new_sketch(), "sketch is empty before the hex")
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "Hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Hex centre")
 	check(sm.has_single_dof_preview(), "polygon preview is active after the centre click")
 	await _hover_uv(ctx, Vector2(4, 0))
 	await _type_into_dim(ctx, "20", false)
@@ -86,7 +86,7 @@ func test_typed_20_beats_cursor_4(ctx: FilmContext) -> void:
 	check(sm.has_single_dof_preview(),
 			"polygon preview still active after typing (points=%d)" % sm._tool_points.size())
 	var before := _entity_count(sm)
-	await _click_uv(ctx, Vector2(4, 0), "Cursor 4 mm along +X")
+	await _click_uv_local(ctx, Vector2(4, 0), "Cursor 4 mm along +X")
 	await process_frame
 	await process_frame
 	check(_entity_count(sm) > before, "second click committed the hex")
@@ -108,7 +108,7 @@ func test_typed_circle_radius_5(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "Circle centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Circle centre")
 	await _hover_uv(ctx, Vector2(2, 0))
 	await _type_into_dim(ctx, "5", false)
 	await process_frame
@@ -117,7 +117,7 @@ func test_typed_circle_radius_5(ctx: FilmContext) -> void:
 	check(sm.has_length_override(), "typed 5 set the radius override")
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
 	await _hover_uv(ctx, Vector2(2, 0))
-	await _click_uv(ctx, Vector2(2, 0), "Cursor 2 mm along +X")
+	await _click_uv_local(ctx, Vector2(2, 0), "Cursor 2 mm along +X")
 	await process_frame
 	await process_frame
 	var circ := _first_of(sm, "circle")
@@ -138,10 +138,10 @@ func test_pointer_af_control(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	await process_frame
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "Pointer hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Pointer hex centre")
 	check(not sm.has_length_override(), "control case has no length override")
 	await _hover_uv(ctx, Vector2(POINTER_AF, 0))
-	await _click_uv(ctx, Vector2(POINTER_AF, 0), "Pointer 10.438 mm along +X")
+	await _click_uv_local(ctx, Vector2(POINTER_AF, 0), "Pointer 10.438 mm along +X")
 	await process_frame
 	await process_frame
 	# D3: the pointer sits on the circumscribed circle, so AF = √3 × distance.
@@ -156,7 +156,7 @@ func test_typed_too_short(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.POLYGON)
 	await process_frame
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
-	await _click_uv(ctx, Vector2.ZERO, "Short hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Short hex centre")
 	await _hover_uv(ctx, Vector2(8, 0))
 	var before := _entity_count(sm)
 	_status_log.clear()
@@ -221,39 +221,12 @@ func _ground_sketch(ctx: FilmContext) -> void:
 	check(ctx.main.sketch_mode.active, "sketch session is open")
 
 
-func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
-	var cam = ctx.main.camera
-	var ms: Node3D = ctx.main.model_space
-	if cam._view_tween != null and cam._view_tween.is_valid():
-		cam._view_tween.kill()
-		cam._view_tween = null
-	var sm: SketchMode = ctx.main.sketch_mode
-	if sm != null and sm.active:
-		var n: Vector3 = sm.plane_normal()
-		if n.length_squared() > 1e-8:
-			cam.yaw = atan2(n.x, -n.y)
-			cam.pitch = clampf(asin(clampf(n.z, -1.0, 1.0)), deg_to_rad(-89.0), deg_to_rad(89.0))
-		if ms != null and sm.plane_y.length_squared() > 1e-8:
-			var up_w: Vector3 = ms.global_transform.basis * sm.plane_y
-			if up_w.length_squared() > 1e-8:
-				cam._sketch_view_up = up_w.normalized()
-		cam.sketch_orientation_locked = true
-		cam._look_at_content = true
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.pivot = ms.to_global(model_pivot) if ms != null else model_pivot
-	var half := tan(deg_to_rad(cam.fov) * 0.5)
-	cam.distance = size_mm / (2.0 * half)
-	cam._update_transform()
-	await process_frame
-	await process_frame
-
-
 func _zoom_uv(ctx: FilmContext, uv: Vector2, size_mm: float) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await _zoom(ctx, sm.to_model(uv), size_mm)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	# Move GUI hover onto the canvas first. Typing into the dim blank leaves
 	# the LineEdit as gui_get_hovered_control(); Interaction then ignores the
 	# pick because _viewport_owns_pointer is false.

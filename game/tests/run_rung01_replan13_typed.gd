@@ -51,7 +51,7 @@ func test_part_a_polygon_preview(ctx: FilmContext) -> void:
 			"polygon variant is across_flats (got %s)" % sm.tool_variant)
 	await _zoom_uv(ctx, Vector2.ZERO, 80.0)
 
-	await _click_uv(ctx, Vector2.ZERO, "Polygon centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Polygon centre")
 	await process_frame
 	check(sm.has_single_dof_preview() and sm._tool_points.size() == 1,
 			"centre click left a single-DOF polygon preview (points=%d)" % sm._tool_points.size())
@@ -104,7 +104,7 @@ func test_part_a_polygon_preview(ctx: FilmContext) -> void:
 	print("-- Part A: type AF 20, flats horizontal")
 	_status_log.clear()
 	sm.set_tool(SketchMode.Tool.POLYGON)
-	await _click_uv(ctx, Vector2.ZERO, "Typed hex centre")
+	await _click_uv_local(ctx, Vector2.ZERO, "Typed hex centre")
 	await _motion_uv(ctx, steered_tip)
 	await process_frame
 	if dim_edit != null:
@@ -429,7 +429,7 @@ func _click_control(ctrl: Control) -> void:
 	await _click_at(ctrl.get_viewport(), pos)
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "on screen: %s" % desc)

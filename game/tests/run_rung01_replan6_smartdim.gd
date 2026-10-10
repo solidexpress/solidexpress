@@ -401,7 +401,7 @@ func _press_key(vp: Viewport, key: Key) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "sketch click on screen: %s" % desc)
@@ -418,19 +418,9 @@ func _aim_then_click_screen(vp: Viewport, pos: Vector2) -> void:
 	await _x11_click_screen(vp, pos)
 
 
-func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	var motion := InputEventMouseMotion.new()
-	motion.position = screen
-	motion.global_position = screen
-	ctx.main.get_viewport().push_input(motion)
-	await process_frame
-
-
 func _draw_circle_typed(ctx: FilmContext, center: Vector2, radius_text: String) -> void:
 	await _select_tool(ctx, "Circle")
-	await _click_uv(ctx, center, "Circle centre")
+	await _click_uv_local(ctx, center, "Circle centre")
 	await _hover_uv(ctx, center + Vector2(6, 0))
 	await _type_dim(ctx, radius_text)
 
@@ -515,9 +505,9 @@ func _newest_circle(sm: SketchMode) -> String:
 func _smart_dim_centres_to(ctx: FilmContext, a: Vector2, b: Vector2, text: String) -> void:
 	await _select_tool(ctx, "Smart Dimension")
 	await _zoom_uv(ctx, a, 40.0)
-	await _click_uv(ctx, a, "Smart Dim first centre")
+	await _click_uv_local(ctx, a, "Smart Dim first centre")
 	await _zoom_uv(ctx, b, 40.0)
-	await _click_uv(ctx, b, "Smart Dim second centre")
+	await _click_uv_local(ctx, b, "Smart Dim second centre")
 	var ix: ViewportInteraction = ctx.main.interaction
 	if ix._dim_edit_popup != null and ix._dim_edit_popup.visible and ix._dim_edit_line != null:
 		await _x11_click(ix._dim_edit_line)
@@ -548,9 +538,9 @@ func _draw_offset_shaft_line(ctx: FilmContext, c0: Vector2, r0: float,
 	var a := a_exact + Vector2(0.0, miss * sign)
 	var b := b_exact + Vector2(0.0, miss * sign)
 	await _zoom_uv(ctx, a, 200.0)
-	await _click_uv(ctx, a, "Offset tangent start")
+	await _click_uv_local(ctx, a, "Offset tangent start")
 	await _zoom_uv(ctx, b, 200.0)
-	await _click_uv(ctx, b, "Offset tangent end")
+	await _click_uv_local(ctx, b, "Offset tangent end")
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(b))
 	await _x11_right_click_screen(ctx.main.get_viewport(), screen)

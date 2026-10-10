@@ -4,7 +4,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
 
-
 func _init() -> void:
 	print("rung01 replan shell (WP4)")
 	FilmUI.reset_fail_count()
@@ -190,7 +189,7 @@ func test_export_dialog() -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, unicode: int, pressed: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, unicode: int, pressed: bool) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = keycode
 	ev.physical_keycode = keycode
@@ -231,9 +230,9 @@ func test_unhandled_esc() -> void:
 	check(focus != ix and not ix.has_focus(),
 			"focus stays off Interaction (owner %s)" % str(focus))
 	var vp := ix.get_viewport()
-	_push_key(vp, KEY_ESCAPE, 0, true)
+	_push_key_local(vp, KEY_ESCAPE, 0, true)
 	await process_frame
-	_push_key(vp, KEY_ESCAPE, 0, false)
+	_push_key_local(vp, KEY_ESCAPE, 0, false)
 	await process_frame
 	check(tb == null or (not tb.active and not tb.visible), "unhandled Esc clears TriBall")
 	check(main.view.selected_body == "", "unhandled Esc clears the selection")

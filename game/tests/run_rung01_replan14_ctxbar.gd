@@ -34,7 +34,7 @@ func _run() -> void:
 	await FilmUI.place_primitive_at(ctx, "box", Vector3(15, 0, 0), Vector3(40, 20, 10))
 	await process_frame
 	await process_frame
-	await _push_key(vp, KEY_3)
+	await _push_key_local(vp, KEY_3)
 	await process_frame
 	await process_frame
 
@@ -404,7 +404,7 @@ func _esc_until_hidden(ctx: FilmContext, vp: Viewport, ix: ViewportInteraction, 
 	for _i in cap:
 		if strip == null or not strip.visible:
 			return
-		await _push_key(vp, KEY_ESCAPE)
+		await _push_key_local(vp, KEY_ESCAPE)
 		await process_frame
 		await process_frame
 
@@ -426,7 +426,7 @@ func _push_click(vp: Viewport, pos: Vector2) -> void:
 	await process_frame
 
 
-func _push_key(vp: Viewport, keycode: Key, shift := false) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, shift := false) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode

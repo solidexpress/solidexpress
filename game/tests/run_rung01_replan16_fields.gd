@@ -86,7 +86,7 @@ func _status_has(needle: String) -> bool:
 	return false
 
 
-func _push_key(vp: Viewport, code: int, unicode: int = 0, ctrl := false) -> void:
+func _push_key_local(vp: Viewport, code: int, unicode: int = 0, ctrl := false) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.keycode = code
@@ -112,7 +112,7 @@ func _push_char(vp: Viewport, ch: String) -> void:
 	else:
 		push_error("no key for %s" % ch)
 		return
-	await _push_key(vp, code, unicode)
+	await _push_key_local(vp, code, unicode)
 
 
 func _click_at(vp: Viewport, pos: Vector2, times: int = 1) -> void:
@@ -264,7 +264,7 @@ func _f1_replace(ctx: FilmContext) -> void:
 	got = _digits(_line_text(strip.get_line_edit()))
 	print("  F1 strip after 1.5 `%s`" % _line_text(strip.get_line_edit()))
 	check(got == "1.5", "F1 strip reads 1.5 (got `%s`)" % got)
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	check(_label(main) == FILLET_IDLE or _status_has(FILLET_IDLE),
@@ -288,7 +288,7 @@ func _f1_replace(ctx: FilmContext) -> void:
 		await _push_char(vp, "5")
 		got = _digits(_line_text(panel.get_line_edit()))
 		check(got == "1.5", "F1 panel reads 1.5 (got `%s`)" % got)
-		await _push_key(vp, KEY_ENTER)
+		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 		check(_label(main) == FILLET_IDLE or _status_has(FILLET_IDLE),
@@ -305,7 +305,7 @@ func _f1_replace(ctx: FilmContext) -> void:
 	check(got == "10", "F1 click then 10 reads 10 (got `%s`)" % got)
 	check(not got.contains("100") and got != ".0" and not got.begins_with("."),
 			"F1 10 is not 100 or a .0 fragment (got `%s`)" % got)
-	await _push_key(vp, KEY_TAB)
+	await _push_key_local(vp, KEY_TAB)
 	await process_frame
 	await process_frame
 	var owner: Control = vp.gui_get_focus_owner()
@@ -314,7 +314,7 @@ func _f1_replace(ctx: FilmContext) -> void:
 			"F1 Tab focus is not a LineEdit or SpinBox (got %s)" % owner_cls)
 	var cam: OrbitCamera = main.camera
 	_status_log.clear()
-	await _push_key(vp, KEY_3, 51)
+	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	check(_label(main).contains("Top view") or _status_has("Top view"),
 			"F1 key 3 is Top view (label `%s` pitch %.3f)" % [_label(main), cam.pitch])
@@ -338,7 +338,7 @@ func _f2_format(ctx: FilmContext) -> void:
 	await _click_at(vp, _spin_text_pos(strip), 3)
 	await _push_char(vp, "1")
 	await _push_char(vp, "0")
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -348,7 +348,7 @@ func _f2_format(ctx: FilmContext) -> void:
 	await _push_char(vp, "1")
 	await _push_char(vp, ".")
 	await _push_char(vp, "5")
-	await _push_key(vp, KEY_TAB)
+	await _push_key_local(vp, KEY_TAB)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -403,7 +403,7 @@ func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
 	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit if chrome != null else null
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	check(FilmUI.require_on_screen(ctx, screen, desc), "on screen: %s" % desc)
@@ -433,7 +433,7 @@ func _f3_one_tool(ctx: FilmContext, label: String, keys: String, status_needle: 
 	var n_before: int = sm.sketch.entity_ids().size() if sm.sketch != null else -1
 	var pts_before: int = sm._tool_points.size()
 	_status_log.clear()
-	await _click_uv(ctx, Vector2(18, 12), "%s first click" % label)
+	await _click_uv_local(ctx, Vector2(18, 12), "%s first click" % label)
 	await process_frame
 	await process_frame
 	var dim := _dim_edit(chrome)
@@ -467,7 +467,7 @@ func _f3_one_tool(ctx: FilmContext, label: String, keys: String, status_needle: 
 				label, dist_before, _line_text(_distance_edit(chrome))])
 	if label == "Circle":
 		check(dist_before == "20.0 mm", "F3 Circle distance starts at 20.0 mm (got `%s`)" % dist_before)
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
 	check(_label(main).contains(status_needle) or _status_has(status_needle),
@@ -497,12 +497,12 @@ func _f3_slot_radius(ctx: FilmContext) -> void:
 	check(_line_text(_distance_edit(chrome)) == dist_before,
 			"F3 Slot distance unchanged while typing radius (was `%s` now `%s`)" % [
 				dist_before, _line_text(_distance_edit(chrome))])
-	await _push_key(vp, KEY_ENTER)
+	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	check(_label(main).contains("Slot radius 5.0000") or _status_has("Slot radius 5.0000"),
 			"F3 Slot status contains Slot radius 5.0000 (got `%s`)" % _label(main))
 	var pts_before: int = sm._tool_points.size()
-	await _click_uv(ctx, Vector2(22, -6), "Slot first centre")
+	await _click_uv_local(ctx, Vector2(22, -6), "Slot first centre")
 	await process_frame
 	check(sm._tool_points.size() == pts_before + 1,
 			"F3 Slot first click placed the centre (points %d was %d, status `%s`)" % [
@@ -614,7 +614,7 @@ func _file_new(ctx: FilmContext) -> void:
 				await _click_at(ok.get_viewport(), local)
 				await process_frame
 		if dlg.visible:
-			await _push_key(ok.get_viewport() if ok != null else ctx.main.get_viewport(), KEY_ENTER)
+			await _push_key_local(ok.get_viewport() if ok != null else ctx.main.get_viewport(), KEY_ENTER)
 			await process_frame
 	await process_frame
 
@@ -663,7 +663,7 @@ func _f3_a10(ctx: FilmContext) -> void:
 		"null" if main.get_viewport().gui_get_focus_owner() == null \
 				else main.get_viewport().gui_get_focus_owner().get_class()])
 	_status_log.clear()
-	await _click_uv(ctx, Vector2(14, 9), "A10 Circle first click")
+	await _click_uv_local(ctx, Vector2(14, 9), "A10 Circle first click")
 	await process_frame
 	await process_frame
 	var sm: SketchMode = main.sketch_mode
@@ -740,10 +740,10 @@ func _f4_save_finish(ctx: FilmContext) -> void:
 	if not main.sketch_mode.active:
 		return
 	await _press_rail(ctx, "Circle")
-	await _click_uv(ctx, Vector2(4, 3), "F4 circle centre")
+	await _click_uv_local(ctx, Vector2(4, 3), "F4 circle centre")
 	await process_frame
 	await _push_char(main.get_viewport(), "4")
-	await _push_key(main.get_viewport(), KEY_ENTER)
+	await _push_key_local(main.get_viewport(), KEY_ENTER)
 	await process_frame
 	await process_frame
 	var chrome: SketchContextChrome = main.sketch_chrome
@@ -783,7 +783,7 @@ func _f4_save_finish(ctx: FilmContext) -> void:
 	var extrude: Button = chrome.extrude_button()
 	check(extrude != null and not extrude.disabled, "F4 Extrude enabled before save")
 	_status_log.clear()
-	await _push_key(main.get_viewport(), KEY_S, 0, true)
+	await _push_key_local(main.get_viewport(), KEY_S, 0, true)
 	await process_frame
 	await process_frame
 	await process_frame
@@ -797,7 +797,7 @@ func _f4_save_finish(ctx: FilmContext) -> void:
 	check(extrude != null and not extrude.disabled, "F4 Extrude still enabled after Save")
 	check(main.sketch_mode.active, "F4 still in the sketch after Save")
 	_status_log.clear()
-	await _push_key(main.get_viewport(), KEY_Z, 0, true)
+	await _push_key_local(main.get_viewport(), KEY_Z, 0, true)
 	await process_frame
 	check(_label(main).begins_with("Undo:"),
 			"F4 Ctrl+Z status begins Undo: (got `%s`)" % _label(main))

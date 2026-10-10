@@ -56,7 +56,7 @@ func _boot() -> FilmContext:
 func _scene(ctx: FilmContext) -> void:
 	print("- wall and throwaway circle")
 	await FilmUI.enter_sketch(ctx)
-	await _zoom(ctx, Vector2(40, 20), 4.0)
+	await _zoom_local(ctx, Vector2(40, 20), 4.0)
 	await _draw_line(ctx, Vector2(0, 0), Vector2(80, 0))
 	await _draw_circle(ctx, Vector2(40, 36), "6")
 	var sm: SketchMode = ctx.main.sketch_mode
@@ -239,8 +239,8 @@ func _case_key_trace(ctx: FilmContext) -> void:
 
 func _select_wall(ctx: FilmContext) -> void:
 	_log.clear()
-	await _click_uv(ctx, Vector2(-10, -25))
-	await _click_uv(ctx, Vector2(32, 0))
+	await _click_uv_local(ctx, Vector2(-10, -25))
+	await _click_uv_local(ctx, Vector2(32, 0))
 	await process_frame
 	var label := str(ctx.main.status_label.text)
 	check((label == "Selected 1 sketch entity" or _saw("Selected 1 sketch entity"))
@@ -250,8 +250,8 @@ func _select_wall(ctx: FilmContext) -> void:
 
 func _clear_then_wall(ctx: FilmContext) -> void:
 	_log.clear()
-	await _click_uv(ctx, Vector2(-10, -25))
-	await _click_uv(ctx, Vector2(32, 0))
+	await _click_uv_local(ctx, Vector2(-10, -25))
+	await _click_uv_local(ctx, Vector2(32, 0))
 	await process_frame
 
 
@@ -394,11 +394,11 @@ func _draw_circle(ctx: FilmContext, center: Vector2, radius_text: String) -> voi
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2) -> void:
+func _click_uv_local(ctx: FilmContext, uv: Vector2) -> void:
 	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, uv, "sketch point")
 
 
-func _zoom(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
+func _zoom_local(ctx: FilmContext, uv: Vector2, ppm: float) -> void:
 	var cam = ctx.main.camera
 	var ms: Node3D = ctx.main.model_space
 	if cam._view_tween != null and cam._view_tween.is_valid():

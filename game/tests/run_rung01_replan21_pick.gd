@@ -24,8 +24,8 @@ func _run() -> void:
 	var body: String = str(built["body"])
 	var necks := _necks(ctx.view, body, float(built["x_neck"]))
 	check(necks.size() >= 2, "two vertical neck edges (got %d)" % necks.size())
-	_push_key(ctx.main.get_viewport(), KEY_3, false)
-	_push_key(ctx.main.get_viewport(), KEY_F, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_3, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_F, false)
 	await _frames(3)
 	var cam: OrbitCamera = ctx.main.camera
 	print("- red step: near point z and visibility in Top view")
@@ -39,9 +39,9 @@ func _run() -> void:
 		print("PICK-RED y=%.2f first.z=%.3f near.z=%.3f visible=%s len=%.2f" % [neck["y"], first_z, near["point"].z, str(vis), neck["length"]])
 		check(vis, "top view neck y=%.1f sample is visible (near.z=%.3f first.z=%.3f)" % [neck["y"], near["point"].z, first_z])
 	for key in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_6, KEY_7]:
-		_push_key(ctx.main.get_viewport(), key, false)
+		_push_key_local(ctx.main.get_viewport(), key, false)
 		await create_timer(0.4).timeout
-		_push_key(ctx.main.get_viewport(), KEY_F, false)
+		_push_key_local(ctx.main.get_viewport(), KEY_F, false)
 		await create_timer(0.4).timeout
 		for neck in necks:
 			var lines: Dictionary = ctx.view.doc.get_edge_lines(body)
@@ -66,8 +66,8 @@ func _run() -> void:
 						await _frames(2)
 						var status := str(ctx.main.status_label.text)
 						check(status.contains("10.0 mm vertical") or status.contains("vertical"), "click status is the vertical (%s)" % status)
-						_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false)
-						_push_key(ctx.main.get_viewport(), KEY_ESCAPE, false)
+						_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false)
+						_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE, false)
 						await _frames(1)
 	await _junction(ctx, body, float(built["x_neck"]))
 	ctx.main.queue_free()
@@ -86,8 +86,8 @@ func _edge_info(view: DocumentView, body: String, edge_id: String) -> Vector2:
 
 
 func _junction(ctx: FilmContext, body: String, x_neck: float) -> void:
-	_push_key(ctx.main.get_viewport(), KEY_3, false)
-	_push_key(ctx.main.get_viewport(), KEY_F, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_3, false)
+	_push_key_local(ctx.main.get_viewport(), KEY_F, false)
 	await _frames(2)
 	var cam: OrbitCamera = ctx.main.camera
 	var neck := Vector3(x_neck, 10.0, 10.0)
@@ -190,7 +190,7 @@ func _click(vp: Viewport, pos: Vector2) -> void:
 	vp.push_input(up)
 
 
-func _push_key(vp: Viewport, code: Key, shift: bool) -> void:
+func _push_key_local(vp: Viewport, code: Key, shift: bool) -> void:
 	for pressed in [true, false]:
 		var ev := InputEventKey.new()
 		ev.pressed = pressed

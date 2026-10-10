@@ -9,7 +9,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
 
-
 func _init() -> void:
 	print("sx-037 chip click is not a line point; undo clears suggestion chips")
 	FilmUI.reset_fail_count()
@@ -125,11 +124,11 @@ func test_centerline_chip_and_suggestions() -> void:
 	await process_frame
 	check(removed == 1, "deleted the centerline")
 	check(_construction_count(sm) == base_construction, "centerline is gone before undo")
-	await _push_key(vp, KEY_Z, true, false)
+	await _push_key_local(vp, KEY_Z, true, false)
 	check(_construction_count(sm) == base_construction + 1, "Ctrl+Z restores the centerline")
 	var after_undo := _suggestion_labels(ctx)
 	check(after_undo.is_empty(), "undo leaves no suggestion chips (got %s)" % str(after_undo))
-	await _push_key(vp, KEY_Z, true, true)
+	await _push_key_local(vp, KEY_Z, true, true)
 	check(_construction_count(sm) == base_construction, "Ctrl+Shift+Z removes the centerline again")
 	var after_redo := _suggestion_labels(ctx)
 	check(after_redo.is_empty(), "redo leaves no suggestion chips (got %s)" % str(after_redo))
@@ -243,13 +242,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _click_uv(ctx: FilmContext, vp: Viewport, uv: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
-	check(FilmUI.require_on_screen(ctx, screen, "sketch click"), "sketch click on screen at %s" % str(uv))
-	await _x11_click_screen(vp, screen)
-
-
 func _x11_click(ctrl: Control) -> void:
 	if ctrl == null:
 		check(false, "click target exists")
@@ -257,27 +249,7 @@ func _x11_click(ctrl: Control) -> void:
 	await _x11_click_screen(ctrl.get_viewport(), ctrl.get_global_rect().get_center())
 
 
-func _x11_click_screen(vp: Viewport, pos: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = pos
-	motion.global_position = pos
-	vp.push_input(motion)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = pos
-	down.global_position = pos
-	vp.push_input(down)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = pos
-	up.global_position = pos
-	vp.push_input(up)
-	await process_frame
-
-
-func _push_key(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
+func _push_key_local(vp: Viewport, keycode: Key, ctrl: bool, shift: bool) -> void:
 	var down := InputEventKey.new()
 	down.keycode = keycode
 	down.physical_keycode = keycode
