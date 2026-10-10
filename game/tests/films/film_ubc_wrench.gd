@@ -20,10 +20,10 @@ func run_film(ctx: FilmContext) -> void:
 	await FilmUI.enter_sketch(ctx)
 	if not _ok():
 		return
-	await SxInput.zoom(ctx, Vector3(100, 0, 0), 280.0)
 	await _typed_circle(ctx, Vector2.ZERO, "10")
 	if not _ok():
 		return
+	await SxInput.zoom(ctx, Vector3(100, 0, 0), 320.0)
 	await _typed_circle(ctx, HEAD, "22.5")
 	if not _ok():
 		return
@@ -148,9 +148,13 @@ func _press_rail(ctx: FilmContext, label: String) -> void:
 	await FilmUI.click_control(ctx, b, FilmUICues.alert(label, label))
 
 
-func _click_uv(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+func _click_uv(ctx: FilmContext, uv: Vector2, desc: String, span: float = 80.0) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
-	var screen := FilmUI.model_to_screen(ctx, sm.to_model(uv))
+	if span > 0.0:
+		await SxInput.zoom(ctx, sm.to_model(uv), span)
+	var screen := FilmUI.sketch_uv_to_screen(ctx, uv)
+	if screen == Vector2.ZERO:
+		screen = FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	if not FilmUI.require_on_screen(ctx, screen, desc):
 		return
 	await SxInput.x11_click_screen(ctx.main.get_viewport(), screen)
@@ -198,12 +202,28 @@ func _type_distance(ctx: FilmContext, text: String) -> void:
 	await FilmUI.wait_frames(ctx.tree, 2)
 
 
+func _circles(sm: SketchMode) -> Array:
+	var out: Array = []
+	if sm == null or sm.sketch == null:
+		return out
+	for id in sm.sketch.entity_ids():
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) == "circle":
+			out.append(info)
+	return out
+
+
 func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
+	var circs := _circles(sm)
+	if circs.size() < 2:
+		FilmUI._fail("need two circles for Smart Dimension (got %d)" % circs.size())
+		return
+	var c1: Vector2 = circs[0]["center"]
+	var c2: Vector2 = circs[1]["center"]
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
-	await SxInput.zoom(ctx, Vector3(100, 0, 0), 280.0)
-	await _click_uv(ctx, Vector2.ZERO, "Smart Dim first centre")
-	await _click_uv(ctx, HEAD, "Smart Dim second centre")
+	await _click_uv(ctx, c1, "Smart Dim first centre")
+	await _click_uv(ctx, c2, "Smart Dim second centre")
 	await FilmUI.wait_frames(ctx.tree, 4)
 	var ix: ViewportInteraction = ctx.main.interaction
 	if ix._dim_edit_popup == null or not ix._dim_edit_popup.visible:
@@ -221,10 +241,19 @@ func _smart_dim_centres(ctx: FilmContext, text: String) -> void:
 
 func _shaft_lines(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
+	var circs := _circles(sm)
+	if circs.size() < 2:
+		FilmUI._fail("need two circles for Shaft Lines (got %d)" % circs.size())
+		return
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await _click_uv(ctx, Vector2(100, 80), "Clear selection")
-	await _click_uv(ctx, Vector2(0, 10), "Select pivot circle")
-	await _click_uv(ctx, Vector2(200, 22.5), "Select head circle")
+	await SxInput.zoom(ctx, Vector3(100, 0, 0), 280.0)
+	await _click_uv(ctx, Vector2(100, 80), "Clear selection", 0.0)
+	for c in circs:
+		var top: Vector2 = (c["center"] as Vector2) + Vector2(0.0, float(c["radius"]))
+		await _click_uv(ctx, top, "Select circle edge", 0.0)
+	if sm.selected.size() < 2:
+		FilmUI._fail("Shaft Lines: selected %d circles" % sm.selected.size())
+		return
 	var chip := FilmUI.find_button(ctx.main.sketch_chrome, "Shaft Lines")
 	if not await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Shaft Lines")):
 		return
@@ -288,19 +317,26 @@ func _pick_option(ctx: FilmContext, opt: OptionButton, index: int, desc: String)
 	if opt == null or not opt.is_visible_in_tree():
 		FilmUI._fail("%s missing" % desc)
 		return
-	if not await FilmUI.click_control(ctx, opt, FilmUICues.alert("Click", desc)):
-		return
+	await SxInput.x11_click(opt)
 	opt.show_popup()
-	await FilmUI.wait_frames(ctx.tree, 8)
+	await FilmUI.wait_frames(ctx.tree, 10)
 	var popup: PopupMenu = opt.get_popup()
 	if popup == null or not popup.visible:
 		FilmUI._fail("%s popup not visible" % desc)
 		return
-	var id := popup.get_item_id(index)
-	popup.id_pressed.emit(id)
-	opt.select(index)
-	popup.hide()
-	await FilmUI.wait_frames(ctx.tree, 2)
+	var font: Font = popup.get_theme_font("font")
+	var fs: int = popup.get_theme_font_size("font_size")
+	var font_h: int = font.get_height(fs) if font != null else fs
+	var v_sep: int = popup.get_theme_constant("v_separation")
+	var top := 0.0
+	if popup.has_theme_stylebox("panel"):
+		var panel: StyleBox = popup.get_theme_stylebox("panel")
+		if panel != null:
+			top = panel.get_margin(SIDE_TOP)
+	var y := top + (float(font_h) + float(v_sep)) * (float(index) + 0.5)
+	var pos := Vector2(popup.position) + Vector2(float(popup.size.x) * 0.5, y)
+	await SxInput.x11_click_screen(ctx.main.get_viewport(), pos)
+	await FilmUI.wait_frames(ctx.tree, 4)
 
 
 func _arm_fillet(ctx: FilmContext, radius: float) -> void:
