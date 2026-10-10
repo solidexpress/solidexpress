@@ -766,7 +766,13 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         if (found.edges.empty()) return true;
         for (const auto& edge : found.edges) mk.Add(v, edge);
         mk.Build();
-        if (!mk.IsDone()) return ctx.fail("chamfer failed");
+        if (!mk.IsDone()) {
+            // OCCT refuses without a limit phrase (fillets have one). Name the
+            // distance and the edge count so a refused chamfer is not a bare
+            // "chamfer failed" at the end of a green suite log.
+            return ctx.fail("chamfer failed (" + format_mm(v) + " on " +
+                            std::to_string(found.edges.size()) + " edge(s))");
+        }
         result = mk.Shape();
         remember_face_cues(ctx, *tb, found.edges);
     }

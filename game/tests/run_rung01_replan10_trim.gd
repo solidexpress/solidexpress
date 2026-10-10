@@ -122,6 +122,19 @@ func _status_has(needle: String) -> bool:
 	return _count_status(needle) > 0
 
 
+func _jaw_arc_sweep(sm: SketchMode, centre: Vector2) -> float:
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "arc":
+			continue
+		if (info["center"] as Vector2).distance_to(centre) > 0.5:
+			continue
+		return wrapf(float(info.get("end_angle", 0.0)) - float(info.get("start_angle", 0.0)), 0.0, TAU)
+	return -1.0
+
+
 func _arc_radius_near(sm: SketchMode, centre: Vector2) -> float:
 	for id in sm.sketch.entity_ids():
 		if sm.sketch.is_construction(id):
@@ -143,6 +156,9 @@ func test_offset_cutter_then_second_click() -> void:
 	check(SketchMode.profile_is_closed(sm.sketch), "the trimmed Jaw profile is closed")
 	check(absf(_arc_radius_near(sm, HEAD) - 22.5) <= 0.3,
 			"the head cap arc is Ø45 (radius %.2f)" % _arc_radius_near(sm, HEAD))
+	var sweep := _jaw_arc_sweep(sm, HEAD)
+	check(sweep > 0.05 and sweep <= PI,
+			"jaw cap is the minor bulge, not the long way around the head (sweep %.3f)" % sweep)
 	var lines_after_first := sm.sketch.entity_ids().size()
 	_status_log.clear()
 	await _click_at(ctx, SHAFT_SIDE + Vector2(-3.0, -2.0))

@@ -3749,6 +3749,18 @@ func refresh_sketch_intersections() -> void:
 	sketch_mode.intersection_points = pts
 
 
+## Select: a dimension halo does not block a press that is already on a curve.
+func _dimension_blocks_curve(p2: Vector2) -> bool:
+	if sketch_mode == null:
+		return false
+	var hit := sketch_mode.dimension_hit(p2)
+	if hit < 0:
+		return false
+	if sketch_mode.has_method("_dimension_claims_click"):
+		return bool(sketch_mode._dimension_claims_click(p2, hit))
+	return true
+
+
 func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -3822,7 +3834,7 @@ func _sketch_input(event: InputEvent) -> void:
 					_sketch_dragging = true
 				elif sketch_mode.tool == SketchMode.Tool.SELECT \
 						and sketch_mode.constraint_hit(p2) == "" \
-						and sketch_mode.dimension_hit(p2) < 0 \
+						and not _dimension_blocks_curve(p2) \
 						and not sketch_mode.drag_hit(p2).is_empty():
 					_note_click("sketch-drag:" + tool_key, mb.position)
 					sketch_mode.begin_drag(p2)
@@ -3833,7 +3845,7 @@ func _sketch_input(event: InputEvent) -> void:
 					sketch_mode.commit_at_length(float(typed_len))
 				elif sketch_mode.tool == SketchMode.Tool.SELECT \
 						and sketch_mode.constraint_hit(p2) == "" \
-						and sketch_mode.dimension_hit(p2) < 0 \
+						and not _dimension_blocks_curve(p2) \
 						and sketch_mode.entity_at(p2) == "":
 					_sketch_box_pending = true
 					_sketch_box_active = false

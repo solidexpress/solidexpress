@@ -4,11 +4,15 @@ The sx-041 walk (`docs/loop/rung-01-replan-20.md`) used to be a vision agent: mo
 
 ## Turn the bridge on
 
-The socket is closed unless the environment asks for it. A release build does not listen.
+The socket is closed unless the environment asks for it. The bridge is in the editor build and in release exports. Neither listens unless `SX_AUTOMATION=1`. The listener is **127.0.0.1 only**, so a shipped binary does not accept connections from another machine. That is the gate: an export can be walked when the variable is set, and it stays silent otherwise.
 
 ```bash
 SX_AUTOMATION=1 SX_INPUT_TRACE=1 SX_AUTOMATION_PORT=47321 \
   tools/godot/godot --path game --resolution 1280x800
+
+# The same variable opens the bridge in a Linux export:
+SX_AUTOMATION=1 SX_INPUT_TRACE=1 \
+  ./SolidExpress.x86_64 --resolution 1280x800
 ```
 
 `SX_AUTOMATION_PORT` defaults to **47321**. The listener is **127.0.0.1 only**. Each command is one line of JSON; the reply is one line, and it is sent only after the UI has settled (`wait_idle`: a few rendered frames and no camera tween still running).
@@ -32,7 +36,7 @@ python3 tools/sxdrive.py type 22.5 --delay 10
 
 ## sx-041 runner
 
-`tools/walk_rung01.py` launches the app with `SX_AUTOMATION=1` and `SX_INPUT_TRACE=1`, walks the sx-041 rows in order, and judges each row from `state` and the trace log. It writes `WALK_LOG.md` plus `walk_report.json`, saves and exports into `--out`, and runs `tools/check_rung01.py` on those files. A clause that is only a colour or a tint is computed from drawn rects and style fills when that is enough; otherwise it is marked `needs-visual` and one screenshot is taken for it.
+`tools/walk_rung01.py` launches the app with `SX_AUTOMATION=1` and `SX_INPUT_TRACE=1`, walks the sx-041 rows in order, and judges each row from `state` and the trace log. `--app path/to/SolidExpress.x86_64` launches that export instead of the Godot editor (working directory is the binary's folder). `--resolution 1920x1200` is the window size passed through; the default is `1280x800`. It writes `WALK_LOG.md` plus `walk_report.json`, saves and exports into `--out`, and runs `tools/check_rung01.py` on those files. A clause that is only a colour or a tint is computed from drawn rects and style fills when that is enough; otherwise it is marked `needs-visual` and one screenshot is taken for it.
 
 ```bash
 python3 tools/walk_rung01.py --out /tmp/sx-041
