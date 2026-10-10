@@ -2,6 +2,9 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## 0.0.13 — rung 1 (UBC wrench)
+- SolidExpress `VERSION` is 0.0.13. Rung 1 of the SolidWorks tutorial ladder (UBC wrench) is fully makeable: jaw angle label, open-jaw cut, selection/fillet picking at small window sizes, and a test-only automation bridge for checklist walks.
+
 ## View menu Orientation — sx-037 A16
 - Menu-bar View → Orientation lists Front, Back, Left, Right, Top, Bottom, Isometric with shortcuts 1, 4, 6, 2, 3, 8, 7. The menu, the HUD View list, and those number keys call `OrbitCamera.apply_standard_view_id`.
 - Cardinal views are orthographic and axis-aligned (Top/Bottom at ±90°, not ±89°) with the pivot on the part. A straight top view looks through the open jaw, so a click in that slot does not select; the head click is on the remaining meat. Isometric stays the angled view and uses the same framing path. An empty New document keeps the biased grid aim.
