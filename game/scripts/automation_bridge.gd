@@ -18,7 +18,8 @@ var _trace_marks := {}
 var _edge_cache: Array = []
 var _edge_cache_rev := -1
 var _face_cache: Array = []
-var _face_cache_rev := -1
+## (document revision, camera transform). Screen pixels are not valid across a view change.
+var _face_cache_key := ""
 
 func _tool_names() -> PackedStringArray:
 	return SketchToolSpec.tool_names()
@@ -331,6 +332,8 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 	var out := {"at": _v2(pos)}
 	if spec.has("id"):
 		out["target"] = spec["id"]
+	if spec.has("normal"):
+		out["normal"] = spec["normal"]
 	if spec.has("occluded"):
 		out["occluded"] = spec["occluded"]
 	return out
@@ -683,11 +686,8 @@ func _resolve_point(req: Dictionary) -> Dictionary:
 		var b := _vec3(edge["b"])
 		var p := a.lerp(b, clampf(along, 0.0, 1.0))
 		return {"vp": _main().get_viewport(), "pos": _model_to_screen(p) + offset, "id": str(req["edge"])}
-	if req.has("face"):
-		var face := _find_face(str(req["face"]))
-		if face.is_empty():
-			return {"error": "face not found: %s" % str(req["face"])}
-		return {"vp": _main().get_viewport(), "pos": _vec2(face["screen"]) + offset, "id": str(req["face"])}
+	if req.has("face") or req.has("face_normal"):
+		return _resolve_face_query(req, offset)
 	if req.has("dim") or req.has("dim_id") or req.has("dim_index"):
 		var dim := _find_dim(req)
 		if dim.is_empty():
@@ -1816,11 +1816,32 @@ func _bodies_state(view) -> Array:
 func _faces_cached(view) -> Array:
 	if view == null or view.doc == null:
 		return []
-	var rev := int(view.doc.revision()) if view.doc.has_method("revision") else -1
-	if rev != _face_cache_rev:
+	var key := _face_view_key(view)
+	if key != _face_cache_key:
 		_face_cache = _build_faces(view)
-		_face_cache_rev = rev
+		_face_cache_key = key
 	return _face_cache
+
+
+## revision plus the camera that projects `screen`. A view change is a new key.
+func _face_view_key(view) -> String:
+	var rev := int(view.doc.revision()) if view.doc.has_method("revision") else -1
+	return "%d|%s" % [rev, _camera_stamp(_main().get("camera"))]
+
+
+func _camera_stamp(cam) -> String:
+	if cam == null:
+		return "-"
+	var xf: Transform3D = cam.global_transform
+	var o := xf.origin
+	var x := xf.basis.x
+	var y := xf.basis.y
+	var z := xf.basis.z
+	return "%.3f,%.3f,%.3f|%.5f,%.5f,%.5f|%.5f,%.5f,%.5f|%.5f,%.5f,%.5f|%d|%.4f" % [
+		o.x, o.y, o.z,
+		x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z,
+		int(cam.projection), cam.size,
+	]
 
 
 func _edges_cached(view) -> Array:
@@ -1837,14 +1858,69 @@ func _build_faces(view) -> Array:
 	var out: Array = []
 	for bid in view.doc.body_ids():
 		for fid in view.doc.get_face_ids(bid):
-			var mid: Vector3 = view.doc.face_midpoint(fid)
-			out.append({
-				"id": str(fid),
-				"body": str(bid),
-				"mid": _v3(mid),
-				"screen": _v2(_model_to_screen(mid)),
-			})
+			out.append(_face_record(view, str(bid), str(fid)))
 	return out
+
+
+## One record: identity, the face frame (centre, normal, area), and where it sits now.
+func _face_record(view, body: String, fid: String) -> Dictionary:
+	var centre: Vector3 = view.doc.face_midpoint(fid)
+	var normal := Vector3.ZERO
+	if view.has_method("face_normal"):
+		normal = view.face_normal(body, fid)
+	var area := 0.0
+	if view.doc.has_method("measure_face_area"):
+		area = float(view.doc.measure_face_area(fid))
+	return {
+		"id": fid,
+		"body": body,
+		"mid": _v3(centre),
+		"centre": _v3(centre),
+		"normal": _v3(normal),
+		"area": snappedf(area, 0.001),
+		"screen": _v2(_model_to_screen(centre)),
+	}
+
+
+## Click the face centre through the camera at click time, not a stored pixel.
+func _resolve_face_query(req: Dictionary, offset: Vector2) -> Dictionary:
+	var face := {}
+	if req.has("face"):
+		face = _find_face(str(req["face"]))
+		if face.is_empty():
+			return {"error": "face not found: %s" % str(req["face"])}
+	else:
+		face = _find_face_by_normal(_vec3(req["face_normal"]))
+		if face.is_empty():
+			return {"error": "face not found for normal %s" % str(req["face_normal"])}
+	var centre := _vec3(face.get("centre", face.get("mid")))
+	return {
+		"vp": _main().get_viewport(),
+		"pos": _model_to_screen(centre) + offset,
+		"id": str(face["id"]),
+		"normal": face.get("normal", []),
+	}
+
+
+## Faces whose normal aligns with `want`. Several (a shell's inner and outer wall)
+## resolve to the one furthest along that normal — the outer face.
+func _find_face_by_normal(want: Vector3) -> Dictionary:
+	if want.length_squared() < 1e-8:
+		return {}
+	want = want.normalized()
+	var best := {}
+	var best_along := -1.0e30
+	for f in _faces_cached(_main().get("view")):
+		var n := _vec3(f.get("normal", []))
+		if n.length_squared() < 1e-8:
+			continue
+		if n.normalized().dot(want) < 0.999:
+			continue
+		var along := _vec3(f.get("centre", f.get("mid"))).dot(want)
+		if best.is_empty() or along > best_along:
+			best = f
+			best_along = along
+	return best
 
 
 func _build_edges(view) -> Array:

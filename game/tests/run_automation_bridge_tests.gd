@@ -17,6 +17,7 @@ func _init() -> void:
 	_check_tool_names()
 	await _case_off()
 	await _case_real_input()
+	await _case_face_identity()
 	finish()
 
 
@@ -141,6 +142,144 @@ func _case_real_input() -> void:
 				"angle edited toward 45 (status %s labels %s)" % [edited.get("status", ""), texts])
 		check(_has_45(texts), "drawn label reads 45° (%s)" % texts)
 	await _shutdown(main)
+
+
+## Face id stays the same face after the camera moves, and face_normal picks +X.
+func _case_face_identity() -> void:
+	print("- face identity survives a camera move")
+	var main: Node = await _boot()
+	if main == null:
+		return
+	check(await _connect(), "face client connected")
+	if not await _extrude_box():
+		await _shutdown(main)
+		return
+	await _rpc({"cmd": "key", "combo": "f", "frames": 8})
+	var st := await _state(["faces", "bodies", "selection"])
+	var faces: Array = st.get("faces", [])
+	check(faces.size() >= 6, "box exposes its faces (%d)" % faces.size())
+	if faces.is_empty():
+		await _shutdown(main)
+		return
+	var sample: Dictionary = faces[0]
+	check(sample.has("normal") and sample.has("centre") and sample.has("area") and sample.has("screen"),
+			"face record has normal, centre, area, screen (keys %s)" % str(sample.keys()))
+	var face := _face_at(faces, 0, 100.0)
+	var fid := str(face.get("id", ""))
+	check(fid != "", "plus-X face id")
+	if fid == "":
+		await _shutdown(main)
+		return
+	var first := await _drill_face(fid)
+	var normal_before: Array = first.get("normal", [])
+	print("  first pick normal=%s at=%s" % [str(normal_before), str(first.get("at", []))])
+	await _rpc({"cmd": "key", "combo": "2", "frames": 8})
+	await _clear_selection()
+	var centre: Array = _face_centre(face)
+	var live := await _rpc({"cmd": "project", "model": centre})
+	var second := await _drill_face(fid)
+	var sel2 := await _state(["selection", "faces"])
+	var selected2 := str((sel2.get("selection", {}) as Dictionary).get("face", ""))
+	var normal_after: Array = second.get("normal", [])
+	var listed := _face_by_id(sel2.get("faces", []), fid)
+	print("  second pick face=%s normal=%s at=%s live=%s listed=%s" % [selected2, str(normal_after), str(second.get("at", [])), str(live.get("screen", [])), str(listed.get("screen", []))])
+	check(_screen_near(second.get("at", []), live.get("screen", []), 4.0),
+			"second pick uses the camera now (at %s live %s)" % [second.get("at", []), live.get("screen", [])])
+	check(_screen_near(listed.get("screen", []), live.get("screen", []), 4.0),
+			"face screen follows the camera (%s vs %s)" % [listed.get("screen", []), live.get("screen", [])])
+	check(selected2 == fid, "second pick selects the same face (got %s)" % selected2)
+	check(normal_before.size() == 3 and _vec_near(normal_before, normal_after, 0.02),
+			"second pick reports the same normal (%s vs %s)" % [normal_before, normal_after])
+	await _clear_selection()
+	var by_normal := await _drill_face_normal([1, 0, 0])
+	var sel3 := await _state(["selection", "faces"])
+	var picked := str((sel3.get("selection", {}) as Dictionary).get("face", ""))
+	var rec := _face_by_id(sel3.get("faces", []), picked)
+	var got_n: Array = by_normal.get("normal", [])
+	var got_c: Array = _face_centre(rec)
+	print("  face_normal pick face=%s normal=%s centre=%s" % [picked, str(got_n), str(got_c)])
+	check(got_c.size() == 3 and absf(float(got_c[0]) - 100.0) < 0.5,
+			"face_normal [1,0,0] selects the x=100 face (centre %s)" % str(got_c))
+	check(_vec_near(got_n, [1, 0, 0], 0.02), "face_normal pick reports +X (got %s)" % str(got_n))
+	await _shutdown(main)
+
+
+func _extrude_box() -> bool:
+	var sketch := await _rpc({"cmd": "click", "target": "rail:Sketch"})
+	check(bool(sketch.get("ok", false)), "Sketch rail (%s)" % str(sketch.get("error", "")))
+	var ground := await _rpc({"cmd": "click", "screen": [900, 450]})
+	check(bool(ground.get("ok", false)), "ground plane (%s)" % str(ground.get("error", "")))
+	var rect := await _rpc({"cmd": "click", "target": "rail:Rect"})
+	check(bool(rect.get("ok", false)), "Rect tool (%s)" % str(rect.get("error", "")))
+	var a := await _rpc({"cmd": "click", "sketch": [0, 0]})
+	var b := await _rpc({"cmd": "click", "sketch": [100, 60]})
+	check(bool(a.get("ok", false)) and bool(b.get("ok", false)), "rectangle corners")
+	var field := await _rpc({"cmd": "click", "target": "finish:Distance"})
+	check(bool(field.get("ok", false)), "Distance field (%s)" % str(field.get("error", "")))
+	await _rpc({"cmd": "type", "text": "50"})
+	await _rpc({"cmd": "key", "combo": "enter"})
+	var extruded := await _rpc({"cmd": "click", "target": "finish:Extrude", "frames": 10})
+	check(bool(extruded.get("ok", false)), "Extrude (%s status %s)" % [str(extruded.get("error", "")), str(extruded.get("status", ""))])
+	var bodies := await _state(["bodies"])
+	var n := (bodies.get("bodies", []) as Array).size()
+	check(n == 1, "one box body (%d)" % n)
+	return n == 1
+
+
+func _clear_selection() -> void:
+	var off := await _rpc({"cmd": "project", "model": [-40, -40, 90]})
+	var screen: Array = off.get("screen", [24, 760])
+	await _rpc({"cmd": "click", "screen": screen, "frames": 3})
+
+
+func _drill_face(id: String) -> Dictionary:
+	await _rpc({"cmd": "click", "face": id, "frames": 3})
+	return await _rpc({"cmd": "click", "face": id, "frames": 3})
+
+
+func _drill_face_normal(normal: Array) -> Dictionary:
+	await _rpc({"cmd": "click", "face_normal": normal, "frames": 3})
+	return await _rpc({"cmd": "click", "face_normal": normal, "frames": 3})
+
+
+func _face_at(faces: Array, axis: int, coord: float) -> Dictionary:
+	var best := {}
+	var best_d := 1.0e9
+	for f in faces:
+		if not (f is Dictionary):
+			continue
+		var p := _face_centre(f)
+		if p.size() < 3:
+			continue
+		var d := absf(float(p[axis]) - coord)
+		if d < best_d:
+			best_d = d
+			best = f
+	return best
+
+
+func _face_by_id(faces: Array, id: String) -> Dictionary:
+	for f in faces:
+		if f is Dictionary and str(f.get("id", "")) == id:
+			return f
+	return {}
+
+
+func _face_centre(face: Dictionary) -> Array:
+	var c: Variant = face.get("centre", face.get("mid", []))
+	return c if c is Array else []
+
+
+func _screen_near(a: Variant, b: Variant, tol: float) -> bool:
+	if not (a is Array) or not (b is Array) or (a as Array).size() < 2 or (b as Array).size() < 2:
+		return false
+	return Vector2(float(a[0]), float(a[1])).distance_to(Vector2(float(b[0]), float(b[1]))) <= tol
+
+
+func _vec_near(a: Variant, b: Variant, tol: float) -> bool:
+	if not (a is Array) or not (b is Array) or (a as Array).size() < 3 or (b as Array).size() < 3:
+		return false
+	return Vector3(float(a[0]), float(a[1]), float(a[2])).distance_to(Vector3(float(b[0]), float(b[1]), float(b[2]))) <= tol
 
 
 func _angle_dim(dims: Array) -> Dictionary:
