@@ -1,0 +1,3 @@
+script=tests/run_rung02_plane_basis.gd
+tier=ci
+timeout=180

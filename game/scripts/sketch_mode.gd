@@ -567,9 +567,9 @@ func face_lies_on_plane(face_id: String) -> bool:
 	return absf(((mid as Vector3) - plane_origin).dot(n)) <= 0.75
 
 
-## Begin a sketch on the model-space plane (origin + normal). x_hint picks the
-## in-plane X direction; pass ZERO for an automatic perpendicular (n × world-Z,
-## or world-X when the normal is parallel to Z). Extrude follows this normal.
+## Begin a sketch on the model-space plane (origin + normal). The in-plane
+## axes come from PlaneBasis.for_face. x_hint is unused (callers pass ZERO).
+## Extrude follows this normal.
 func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO,
 		support: Dictionary = {}) -> void:
 	editing_fid = ""
@@ -630,21 +630,13 @@ func begin_edit(fid: String, announce: bool = true) -> bool:
 	return true
 
 
-func _setup_plane(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO) -> void:
+func _setup_plane(origin: Vector3, normal: Vector3, _x_hint: Vector3 = Vector3.ZERO) -> void:
 	last_dofs = -1
 	last_solve_status = ""
-	plane_origin = origin
-	var n := normal.normalized()
-	var x := x_hint
-	if x == Vector3.ZERO or absf(x.dot(n)) > 0.99:
-		# A top/bottom face whose tessellated normal is a fraction of a degree
-		# off ±Z makes n × Z a random in-plane axis, so sketch (200, 0) misses
-		# the head. Treat near-horizontal planes as world-XY.
-		x = n.cross(Vector3(0, 0, 1))
-		if x.length_squared() < 0.04:
-			x = Vector3.RIGHT
-	plane_x = (x - n * x.dot(n)).normalized()
-	plane_y = n.cross(plane_x).normalized()
+	var basis := PlaneBasis.for_face(normal, origin)
+	plane_origin = basis.origin
+	plane_x = basis.x
+	plane_y = basis.y
 
 
 func _activate_session() -> void:
