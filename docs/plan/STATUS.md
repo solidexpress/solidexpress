@@ -24,6 +24,9 @@ SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature ubc_wrench
 
 then a one-line follow-up commit of `published-demos.json` / `demo-catalog.json`. Do not add those ids until the WebM is on the Release.
 
+## 0.1.1 — rung 2 (Student Guide box)
+- SolidExpress `VERSION` is 0.1.1. Rung 2 (SolidWorks Student Guide Lesson 2 box) is fully makeable (#246).
+
 ## 0.1.0 — post-rung-1 cleanup + wrench demo
 - SolidExpress `VERSION` is 0.1.0: the post-rung-1 cleanup (#243) plus the UBC wrench demo video.
 
