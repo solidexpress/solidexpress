@@ -130,6 +130,12 @@ const SCHEMAS := {
 	],
 }
 
+## Field to focus when the editor opens. Other types still focus `distance` if they have one.
+const OPEN_FOCUS := {
+	"extrude": "distance",
+	"shell": "thickness",
+}
+
 var _fid := ""
 var _type := ""
 var _params := {}
@@ -205,8 +211,11 @@ func open(fid: String) -> bool:
 		_title.text = "%s — %s" % [f["name"], type]
 		_build_fields(type)
 		visible = true
-		if _params.has("distance"):
-			focus_schema_key("distance")
+		var focus_key := str(OPEN_FOCUS.get(type, ""))
+		if focus_key == "" and _params.has("distance"):
+			focus_key = "distance"
+		if focus_key != "" and _params.has(focus_key):
+			focus_schema_key(focus_key)
 		return true
 	return false
 

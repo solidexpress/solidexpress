@@ -1492,6 +1492,9 @@ func _offset() -> void:
 
 
 func _shell() -> void:
+	if interaction != null and interaction.has_method("apply_shell_thickness"):
+		interaction.apply_shell_thickness(_thickness_spin.value)
+		return
 	# Multi-selected faces all open; else the single selected face.
 	var faces := PackedStringArray(view.selected_faces)
 	if faces.is_empty() and view.selected_face != "":

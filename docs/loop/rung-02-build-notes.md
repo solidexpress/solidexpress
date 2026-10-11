@@ -84,3 +84,26 @@ No UI status texts. Kernel log wording when a stored cue does not resolve (fille
 - `lost face cue point (x, y, z) dir (dx, dy, dz)` (shell error, after the feature name)
 
 Shell on this filleted body succeeds (`MakeThickSolidByJoin` did not need a join change). `65 → 60 → 65` keeps fillet and shell: volume `no_hole(60) = 94173.7` and `no_hole(65) = 98923.7` within 0.5 %, walls 5.0 ± 0.1. `sxkernel_tests` 347 cases, 8325 assertions, all passed. `python3 tools/lint_suites.py`: `lint_suites: 208 suites ok (60 ci, 144 full, 4 known-red)`.
+
+## WP4 — Shell reachable and faithful
+
+Red, before the chip (`tests/run_rung02_shell_chip.gd`). The box and the four Z-edge fillets were already in place; `strip:shell` was not:
+
+```
+  ok   - Shell chip absent with nothing selected
+  ok   - +Z face selected
+  FAIL - strip:shell is visible on the top face
+16 checks, 1 failures
+```
+
+Catch2 `shell a filleted box opens the top` was green on the existing `MakeThickSolidByJoin` (11 assertions). `apply_shell` was not changed; the join was not switched to `GeomAbs_Arc`.
+
+Status texts measured on this build (`[status-trace] … kind=result`):
+
+- `Shell thickness 30.0000 mm is at least half the 50.0000 mm extent (limit) — nothing added`
+- `Shell 5.0000 mm applied`
+- `Shell needs a planar face — nothing added`
+
+Timeline name: `Shell 5.0000 mm`. Thickness field id `finish:Thickness` (default `5`), OK id `finish:Ok`, chip id `strip:shell`. Chip rect at 1280×800: `[P: (833.0, 83.0), S: (46.0, 31.0)]`. Shelled filleted box volume `94173.6752` (`no_hole(60)` within 0.5 %). Double-click of the timeline row opens `Param_thickness` at `5.0000`.
+
+`run_rung02_shell_chip.gd` 38 checks, 0 failures. `run_ui_tests.gd` 275 checks, 0 failures. `run_workflow_tests.gd` 82 checks, 0 failures. `python3 tools/lint_suites.py`: `lint_suites: 209 suites ok (61 ci, 144 full, 4 known-red)`.

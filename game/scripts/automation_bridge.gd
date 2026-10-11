@@ -983,6 +983,10 @@ func _refresh_ids() -> void:
 	_tag_spin_edit(main.find_child("Param_radius", true, false), "finish:ParamRadius")
 	_tag_spin_edit(main.find_child("StripRadius", true, false), "finish:StripR")
 	_tag_spin_edit(main.find_child("DressupRadius", true, false), "finish:PanelRadius")
+	# After the strip's chip:Text pass, so these ids stay put.
+	_tag(main.find_child("StripShell", true, false), "strip:shell")
+	_tag(main.find_child("ThicknessLineEdit", true, false), "finish:Thickness")
+	_tag(main.find_child("ShellOk", true, false), "finish:Ok")
 
 
 func _tag(node: Node, id: String) -> void:
