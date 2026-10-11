@@ -7,7 +7,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 var _disp_log: Array[String] = []
 
 
@@ -39,7 +38,7 @@ func test_k1_ledger() -> void:
 	var circle := FilmUI.find_sketch_tool_button(ctx.main, "Circle")
 	check(circle != null and circle.is_visible_in_tree(), "K1 rail Circle is visible")
 	_disp_log.clear()
-	_status_log.clear()
+	status_log.clear()
 	await _x11_click(circle)
 	await process_frame
 	var rail_disp := _last_disp()
@@ -49,7 +48,7 @@ func test_k1_ledger() -> void:
 			"K1 rail disposition names the rail (got `%s`)" % rail_disp)
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(18.0, -12.0)))
 	check(FilmUI.require_on_screen(ctx, screen, "K1 canvas"), "K1 canvas click is on screen")
-	var mark := _status_log.size()
+	var mark := status_log.size()
 	await _x11_click_screen_local(vp, screen)
 	await process_frame
 	check(_last_disp() == "sketch-click:CIRCLE",
@@ -86,7 +85,7 @@ func test_k2_trials() -> void:
 	if sketch_btn != null:
 		var pos := sketch_btn.get_global_rect().get_center()
 		for i in 10:
-			var mark := _status_log.size()
+			var mark := status_log.size()
 			await _trial_click(vp, pos, i % 2 == 1)
 			var ok := _saw_since(mark, "Select a face or existing sketch (Esc to cancel)")
 			if not ok:
@@ -113,7 +112,7 @@ func test_k2_trials() -> void:
 					jaw = ctx.main.find_child("JawTool", true, false) as Button
 					canvas = FilmUI.model_to_screen(ctx, sm.to_model(Vector2(12.0, 8.0)))
 				await _trial_click(vp, jaw.get_global_rect().get_center(), i % 2 == 1)
-				var mark2 := _status_log.size()
+				var mark2 := status_log.size()
 				await _trial_click(vp, canvas, i % 2 == 1)
 				var ok2 := _saw_since(mark2, "Jaw — centre set, click 2 end of the long side")
 				if not ok2:
@@ -140,7 +139,7 @@ func test_k2_trials() -> void:
 					circle = FilmUI.find_sketch_tool_button(ctx.main, "Circle")
 					cpos = FilmUI.model_to_screen(ctx, sm.to_model(Vector2(6.0, -14.0)))
 				await _trial_click(vp, circle.get_global_rect().get_center(), i % 2 == 1)
-				var mark3 := _status_log.size()
+				var mark3 := status_log.size()
 				await _trial_click(vp, cpos, i % 2 == 1)
 				var ok3 := _saw_since(mark3, "Circle — centre set, click the rim or type a radius")
 				if not ok3:
@@ -244,7 +243,7 @@ func test_marquee() -> void:
 	var quad_b := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(46.0, 26.0)))
 	check(FilmUI.require_on_screen(ctx, quad_a, "M1 start") and FilmUI.require_on_screen(ctx, quad_b, "M1 end"),
 			"M1 window drag is on screen")
-	var mark := _status_log.size()
+	var mark := status_log.size()
 	await _drag_screen(vp, quad_a, quad_b, false)
 	var want := _window_ids(ctx, sm, Rect2(quad_a, quad_b - quad_a).abs())
 	var got: Array[String] = []
@@ -266,7 +265,7 @@ func test_marquee() -> void:
 	var cross_a := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(130.0, 8.0)))
 	var cross_b := FilmUI.model_to_screen(ctx, sm.to_model(Vector2(30.0, 12.0)))
 	check(cross_a.x > cross_b.x, "M2 drag is right to left")
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _drag_screen(vp, cross_a, cross_b, false)
 	var rect2 := Rect2(cross_a, cross_b - cross_a).abs()
 	check(sm.selected.has(q[1]) and sm.selected.has(circ),
@@ -282,7 +281,7 @@ func test_marquee() -> void:
 	await _x11_click_screen_local(vp, circ_pt)
 	await process_frame
 	check(sm.selected.has(circ), "M3 prior click selects the circle")
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _drag_screen(vp, quad_a, quad_b, true)
 	var kept_circle := sm.selected.has(circ)
 	var kept_quad := true
@@ -345,7 +344,7 @@ func test_marquee() -> void:
 	for id in sm.selected:
 		removed.append(str(id))
 	check(removed.size() >= 4, "M6 window selected the quad (got %d)" % removed.size())
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _x11_key(vp, KEY_DELETE)
 	var gone := true
 	for id in removed:
@@ -378,20 +377,20 @@ func test_w1_wording() -> void:
 	var face_pt := FilmUI.model_to_screen(ctx, Vector3(0, 0, 10))
 	check(FilmUI.require_on_screen(ctx, face_pt, "W1 face"), "W1 face pick is on screen")
 	await _x11_key(vp, KEY_ESCAPE)
-	var mark := _status_log.size()
+	var mark := status_log.size()
 	await _x11_click_screen_local(vp, face_pt)
 	await process_frame
 	check(ctx.view.selected_body == body and ctx.view.selected_face == "" and ctx.view.selected_edge == "",
 			"W1 first click selects the body")
 	check(_saw_since(mark, "Selected body "), "W1 status Selected body  (log %s)" % _tail())
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _x11_click_screen_local(vp, face_pt)
 	await process_frame
 	check(ctx.view.selected_face != "", "W1 second click selects a face")
 	check(_saw_since(mark, "Selected face "), "W1 status Selected face  (log %s)" % _tail())
 	var edge_pt := _top_edge_screen(ctx, face_pt)
 	check(FilmUI.require_on_screen(ctx, edge_pt, "W1 edge"), "W1 edge pick is on screen")
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _x11_click_screen_local(vp, edge_pt)
 	await process_frame
 	check(ctx.view.selected_edge != "", "W1 click near an edge selects an edge")
@@ -404,7 +403,7 @@ func test_w1_wording() -> void:
 		sm.sketch.add_line(0.0, 0.0, 10.0, 0.0)
 		sm._redraw()
 		await process_frame
-		mark = _status_log.size()
+		mark = status_log.size()
 		await _push_key_local(vp, KEY_A, true, false)
 		check(sm.selected.size() == 1, "W1 Ctrl+A selects the one entity")
 		check(_saw_since(mark, "Selected 1 sketch entity"),
@@ -586,12 +585,9 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	_disp_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	listen_status(main)
 	if main.interaction != null and main.interaction.has_signal("click_disposition"):
 		main.interaction.click_disposition.connect(_on_disp)
 	return ctx
@@ -605,8 +601,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _on_disp(text: String) -> void:
@@ -621,17 +615,17 @@ func _last_disp() -> String:
 
 
 func _saw_since(mark: int, prefix: String) -> bool:
-	for i in range(mark, _status_log.size()):
-		if str(_status_log[i]).begins_with(prefix):
+	for i in range(mark, status_log.size()):
+		if str(status_log[i]).begins_with(prefix):
 			return true
 	return false
 
 
 func _tail() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return "[]"
-	var n := maxi(_status_log.size() - 4, 0)
-	return str(_status_log.slice(n))
+	var n := maxi(status_log.size() - 4, 0)
+	return str(status_log.slice(n))
 
 
 func _zoom_local(ctx: FilmContext, model_pivot: Vector3, size_mm: float, top: bool) -> void:

@@ -14,7 +14,6 @@ const ISO_PITCH := deg_to_rad(40.0)
 const ISO_YAW := deg_to_rad(-35.0)
 const VIEW_EPS := 0.01
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -67,18 +66,18 @@ func _parses_to(text: String, want: float) -> bool:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
-	if needle != "" and _status_log.size() > 0:
+	if needle != "" and status_log.size() > 0:
 		pass
 	return false
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _focus_probe(vp: Viewport, tag: String) -> void:
@@ -192,18 +191,13 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	if main.ops_panel != null and not main.ops_panel.status.is_connected(_on_status):
 		main.ops_panel.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:
@@ -242,7 +236,7 @@ func _assert_top(cam: OrbitCamera, tag: String) -> void:
 			"%s: camera is Top (pitch %.4f want %.4f)" % [tag, cam.pitch, TOP_PITCH])
 	var saw := _status_has("Top view") or _st_from_cam(cam).contains("Top view")
 	check(saw, "%s: status log has Top view (log=%s label=`%s`)" % [
-		tag, str(_status_log.slice(maxi(_status_log.size() - 6, 0))), _last_label()])
+		tag, str(status_log.slice(maxi(status_log.size() - 6, 0))), _last_label()])
 
 
 func _assert_back(cam: OrbitCamera, tag: String) -> void:
@@ -325,7 +319,7 @@ func _part_rows() -> void:
 	check(not (arm_owner is LineEdit),
 			"1b: arm did not leave caret in a LineEdit (got %s)" % [
 				"null" if arm_owner == null else arm_owner.get_class()])
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
@@ -345,7 +339,7 @@ func _part_rows() -> void:
 	_focus_probe(vp, "after strip arrows")
 	_observe_spin(main, "after strip arrows", spin)
 	var after_arrows := _strip_text(main)
-	_status_log.clear()
+	status_log.clear()
 	var pitch_before_3 := cam.pitch
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
@@ -378,7 +372,7 @@ func _part_rows() -> void:
 	_focus_probe(vp, "after strip 10 Enter")
 	_observe_spin(main, "after strip 10 Enter", spin)
 	_observe_spin(main, "panel after strip 10 Enter", _panel_spin(main))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
@@ -418,7 +412,7 @@ func _part_rows() -> void:
 			"3b: strip text starts with 10, not clipped 0.0 (got `%s`)" % _strip_text(main))
 	check(_parses_to(_panel_text(main), 10.0),
 			"3b: panel parses to 10 (got `%s`)" % _panel_text(main))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
@@ -429,12 +423,12 @@ func _part_rows() -> void:
 			"3b: no stray digit in strip (got `%s`)" % _strip_text(main))
 
 	print("- 4. KEY_8 then KEY_3 each change the view")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_8, 56)
 	await process_frame
 	check(absf(cam.pitch - deg_to_rad(-90.0)) < VIEW_EPS,
 			"4: KEY_8 is Bottom (pitch %.4f)" % cam.pitch)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	_assert_top(cam, "4 KEY_3")
@@ -472,7 +466,7 @@ func _part_rows() -> void:
 	check(not (owner is LineEdit),
 			"6: focus owner is not a LineEdit (got %s)" % [
 				"null" if owner == null else owner.get_class()])
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_7, 55)
 	await process_frame
 	_assert_iso(cam, "6 KEY_7")
@@ -502,7 +496,7 @@ func _part_rows() -> void:
 		_focus_probe(vp, "after panel arrows")
 		_observe_spin(main, "after panel arrows", panel)
 		var panel_after_arrows := _panel_text(main)
-		_status_log.clear()
+		status_log.clear()
 		await _push_key_local(vp, KEY_3, 51)
 		await process_frame
 		_assert_top(cam, "7 panel arrows")
@@ -520,7 +514,7 @@ func _part_rows() -> void:
 		await process_frame
 		_focus_probe(vp, "after panel 10 Enter")
 		_observe_spin(main, "after panel 10 Enter", panel)
-		_status_log.clear()
+		status_log.clear()
 		await _push_key_local(vp, KEY_4, 52)
 		await process_frame
 		_assert_back(cam, "7 panel typed 10 Enter")
@@ -530,7 +524,7 @@ func _part_rows() -> void:
 				"7: strip parses to 10 (got `%s`)" % _strip_text(main))
 		check(main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES,
 				"7: Fillet still armed after Enter / KEY_4")
-		_status_log.clear()
+		status_log.clear()
 		await _push_key_local(vp, KEY_8, 56)
 		await process_frame
 		check(absf(cam.pitch - deg_to_rad(-90.0)) < VIEW_EPS, "7: KEY_8 Bottom")
@@ -546,7 +540,7 @@ func _part_rows() -> void:
 		await _click_at(vp, _spin_text_pos(spin))
 		await process_frame
 	_focus_probe(vp, "before Esc")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	await process_frame
@@ -601,12 +595,12 @@ func _sketch_rows() -> void:
 		_focus_probe(vp, "circle radius click (item 5)")
 		print("  dim.has_focus=%s text=`%s` selected_text=`%s`" % [
 			str(dim.has_focus()), dim.text, dim.get_selected_text()])
-		_status_log.clear()
+		status_log.clear()
 		await _push_key_local(vp, KEY_A, 0, true)
 		await process_frame
 		_focus_probe(vp, "after Ctrl+A")
 		print("  after Ctrl+A: focus_text=`%s` selected=`%s` sm.selected=%s status=`%s` log=%s" % [
-			dim.text, dim.get_selected_text(), str(sm.selected), _st(main), str(_status_log)])
+			dim.text, dim.get_selected_text(), str(sm.selected), _st(main), str(status_log)])
 		check(dim.get_selected_text() == dim.text and dim.text.strip_edges() != "",
 				"9: LineEdit selected text equals text and is non-empty (text=`%s` sel=`%s`)" % [
 					dim.text, dim.get_selected_text()])
@@ -614,11 +608,11 @@ func _sketch_rows() -> void:
 				"9: sketch selection unchanged (before %s after %s)" % [
 					str(selected_before), str(sm.selected)])
 		var saw_selected := false
-		for s in _status_log:
+		for s in status_log:
 			if s.begins_with("Selected"):
 				saw_selected = true
 		check(not saw_selected,
-				"9: no status begins Selected (log=%s label=`%s`)" % [str(_status_log), _st(main)])
+				"9: no status begins Selected (log=%s label=`%s`)" % [str(status_log), _st(main)])
 
 	print("- 10. Esc with the field focused drops the pending point")
 	if dim != null and not dim.has_focus():
@@ -626,7 +620,7 @@ func _sketch_rows() -> void:
 		await process_frame
 	_focus_probe(vp, "before focused Esc")
 	check(sm.has_pending_draw_point(), "10: still has a pending point")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	await process_frame
@@ -638,7 +632,7 @@ func _sketch_rows() -> void:
 	check(sm.tool == SketchMode.Tool.CIRCLE, "10: Circle stays armed after the point drop")
 	check(_last_status() == FIRST_DROP or _status_has(FIRST_DROP),
 			"10: last status is First point dropped (got `%s` log=%s)" % [
-				_last_status(), str(_status_log)])
+				_last_status(), str(status_log)])
 	check(_preview_hidden(sm), "10: preview circle is gone")
 	var owner10 := vp.gui_get_focus_owner()
 	check(not (owner10 is LineEdit) or (dim != null and not dim.has_focus()),
@@ -649,7 +643,7 @@ func _sketch_rows() -> void:
 		str(sm.active), _st(main), _last_status()])
 	check(not sm.active, "10: second Esc exits the sketch")
 	check(not _status_has("Tool dropped"),
-			"10: second Esc does not drop the tool (log=%s)" % str(_status_log))
+			"10: second Esc does not drop the tool (log=%s)" % str(status_log))
 	# The polygon committed above is real geometry. The promised second Esc
 	# still leaves, and it keeps that profile.
 	check(_st(main) == "Sketch saved",
@@ -680,7 +674,7 @@ func _sketch_rows() -> void:
 		await process_frame
 	_focus_probe(vp, "unfocused before Esc")
 	check(sm.has_pending_draw_point(), "11: pending point with field not focused")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	check(not sm.has_pending_draw_point(), "11: first Esc drops the pending point")
@@ -695,7 +689,7 @@ func _sketch_rows() -> void:
 		str(active_after_first), str(sm.active), _st(main), _last_status()])
 	check(not sm.active, "11: second Esc exits the sketch")
 	check(not _status_has("Tool dropped"),
-			"11: second Esc does not drop the tool (log=%s)" % str(_status_log))
+			"11: second Esc does not drop the tool (log=%s)" % str(status_log))
 	check(_st(main) == "Sketch saved",
 			"11: committed geometry is kept (got `%s`)" % _st(main))
 	await _shutdown(ctx)

@@ -6,10 +6,10 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOL_Z := 0.75
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan5 WP3 face")
 	FilmUI.reset_fail_count()
 	_assert_source_hygiene()
@@ -71,11 +71,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
@@ -87,13 +84,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_blob(ctx: FilmContext) -> String:
-	var parts: PackedStringArray = PackedStringArray(_status_log)
+	var parts: PackedStringArray = PackedStringArray(status_log)
 	if ctx != null and ctx.main != null and ctx.main.status_label != null:
 		parts.append(str(ctx.main.status_label.text))
 	return " ".join(parts)
@@ -141,7 +135,7 @@ func test_opposite_face_cut() -> void:
 	check(absf(chrome.extrude_distance() - 20.0) < 0.05,
 			"Blind distance field is still the 20 mm leftover (got %.3f)" % chrome.extrude_distance())
 	var n_ex := _count_extrudes(ctx)
-	_status_log.clear()
+	status_log.clear()
 	if ex != null:
 		await _x11_click(ex)
 	await process_frame
@@ -172,7 +166,7 @@ func test_orbit_then_front_click_and_right_cancel() -> void:
 	await _pick_option(ctx, _finish_end(chrome), 3, "Up To Surface orbit")
 	check(chrome.wants_face_pick(), "pick is armed")
 	check(str(chrome.up_to_face_id).strip_edges() == "", "id empty after fresh arm")
-	_status_log.clear()
+	status_log.clear()
 	var vp: Viewport = ctx.main.get_viewport()
 	var drag_at := _viewport_drag_pos(ctx)
 	await _x11_middle_drag(vp, drag_at)
@@ -205,7 +199,7 @@ func test_orbit_then_front_click_and_right_cancel() -> void:
 	await _pick_option(ctx, _finish_end(chrome), 3, "Up To Surface re-arm")
 	check(chrome.wants_face_pick(), "pick is armed for right-click")
 	chrome.arm_face_pick()
-	_status_log.clear()
+	status_log.clear()
 	await _x11_right_click_screen(vp, drag_at)
 	await process_frame
 	await process_frame
@@ -272,7 +266,7 @@ func _build_blank_and_top_circle(ctx: FilmContext) -> void:
 	await _click_uv_local(ctx, Vector2(40, 30), "Rect corner B")
 	await process_frame
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var dist := _distance_edit(chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	if dist != null:
 		await _x11_click(dist)
 		await _x11_type(dist.get_viewport(), "10")
@@ -449,10 +443,6 @@ func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
 	return chrome.find_child("DimLineEdit", true, false) as LineEdit
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _first_body(ctx: FilmContext) -> String:

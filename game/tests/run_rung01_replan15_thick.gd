@@ -6,6 +6,7 @@
 #   --script tests/run_rung01_replan15_thick.gd
 extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOL := 0.2
 const HEAD := Vector2(200.0, 0.0)
@@ -190,12 +191,9 @@ func _edit_thickness(ctx: FilmContext) -> void:
 	check(exported and FileAccess.file_exists(path), "exported T=14 3MF")
 	if not exported:
 		return
-	var repo := ProjectSettings.globalize_path("res://").trim_suffix("/").get_base_dir()
-	var checker := repo.path_join("tools/check_rung01.py")
-	var output: Array = []
-	var code := OS.execute("python3", PackedStringArray([checker, "thick", path, "14"]), output, true)
-	var text := "\n".join(output)
-	print(text)
+	var result := SxChecker.run("rung01", ["thick", path, "14"])
+	var code := int(result["code"])
+	var text := str(result["text"])
 	check(code == 0 and text.contains("7/7"), "check_rung01.py thick 7/7 (exit %d)" % code)
 
 

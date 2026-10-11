@@ -15,7 +15,6 @@ const UUID_RE := "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
 const FILLET_APPLIED := "^Fillet \\d+ edges? 1\\.00 applied"
 const CHAMFER_APPLIED := "^Chamfer \\d+ edges? 1\\.00 applied"
 
-var _status_log: Array[String] = []
 var _line_re := RegEx.new()
 var _arc_re := RegEx.new()
 var _uuid_re := RegEx.new()
@@ -52,18 +51,13 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	if main.ops_panel != null and not main.ops_panel.status.is_connected(_on_status):
 		main.ops_panel.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _capture(main) -> void:
@@ -72,8 +66,8 @@ func _capture(main) -> void:
 	var t := str(main.status_label.text).strip_edges()
 	if t == "" or t.begins_with("empty-drag"):
 		return
-	if not _status_log.has(t):
-		_status_log.append(t)
+	if not status_log.has(t):
+		status_log.append(t)
 
 
 func _shutdown(ctx: FilmContext) -> void:
@@ -85,28 +79,28 @@ func _shutdown(ctx: FilmContext) -> void:
 
 
 func _dump(tag: String) -> void:
-	print("  %s status log (%d):" % [tag, _status_log.size()])
-	for s in _status_log:
+	print("  %s status log (%d):" % [tag, status_log.size()])
+	for s in status_log:
 		print("    | " + s)
 
 
 func _log_matches(re: RegEx) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if re.search(s) != null:
 			return true
 	return false
 
 
 func _log_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
 
 
 func _log_since_has(start: int, needle: String) -> bool:
-	for i in range(start, _status_log.size()):
-		if _status_log[i].contains(needle):
+	for i in range(start, status_log.size()):
+		if status_log[i].contains(needle):
 			return true
 	return false
 
@@ -199,7 +193,7 @@ func _press_extrude(ctx: FilmContext) -> void:
 	check(btn != null and btn.is_visible_in_tree(), "Extrude button is visible")
 	if btn == null:
 		return
-	_status_log.clear()
+	status_log.clear()
 	await _click_control(btn.get_viewport(), btn)
 	await process_frame
 	await process_frame
@@ -304,7 +298,7 @@ func _row_s2() -> void:
 	check(not (owner is LineEdit), "S2a nothing focused in a LineEdit")
 	var yaw0 := cam.yaw
 	var pitch0 := cam.pitch
-	var n0 := _status_log.size()
+	var n0 := status_log.size()
 	await _push_key_local(vp, KEY_0, 48)
 	_capture(main)
 	_dump("S2a")
@@ -312,12 +306,12 @@ func _row_s2() -> void:
 	check(absf(cam.yaw - yaw0) < VIEW_EPS and absf(cam.pitch - pitch0) < VIEW_EPS,
 			"S2a camera yaw/pitch unchanged (dyaw %.6f dpitch %.6f)" % [
 				cam.yaw - yaw0, cam.pitch - pitch0])
-	var n3 := _status_log.size()
+	var n3 := status_log.size()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	_capture(main)
 	check(_log_since_has(n3, "Top view"), "S2b status is Top view")
-	var nmod := _status_log.size()
+	var nmod := status_log.size()
 	await _push_key_local(vp, KEY_0, 48, true, false)
 	await _push_key_local(vp, KEY_0, 48, false, true)
 	_capture(main)
@@ -346,7 +340,7 @@ func _row_s2c(ctx: FilmContext) -> void:
 	await process_frame
 	await _push_key_local(vp, KEY_A, 0, true, false)
 	var before := edit.text
-	var n := _status_log.size()
+	var n := status_log.size()
 	await _push_key_local(vp, KEY_0, 48)
 	_capture(main)
 	print("  S2c field before `%s` after `%s`" % [before, edit.text])
@@ -374,7 +368,7 @@ func _row_s2d() -> void:
 	await process_frame
 	await process_frame
 	check(sm.has_single_dof_preview(), "S2d circle centre is placed (rubber-band)")
-	var n := _status_log.size()
+	var n := status_log.size()
 	var vp: Viewport = ctx.main.get_viewport()
 	await _push_key_local(vp, KEY_1, 49)
 	await _push_key_local(vp, KEY_0, 48)
@@ -428,7 +422,7 @@ func _dressup_face(kind: String, button_name: String, re: RegEx, feat: String) -
 		await _push_key_local(vp, KEY_1, 49)
 		await process_frame
 		print("  %s radius field `%s`" % [kind, edit.text])
-		_status_log.clear()
+		status_log.clear()
 		await _push_key_local(vp, KEY_ENTER, 0)
 		await process_frame
 		await process_frame
@@ -472,7 +466,7 @@ func _row_s3c() -> void:
 	var btn: Button = ctx.main.sketch_chrome.extrude_button()
 	check(btn != null, "S3c Extrude button exists")
 	if btn != null:
-		_status_log.clear()
+		status_log.clear()
 		await _click_control(btn.get_viewport(), btn)
 		await process_frame
 		await process_frame
@@ -573,13 +567,13 @@ func _row_s4() -> void:
 	await process_frame
 	check(ix == null or not ix._dim_edit_owns_keys(), "S4 Esc closes the angle editor")
 	check(sm.is_jaw_armed(), "S4 Jaw is still armed")
-	var n4 := _status_log.size()
+	var n4 := status_log.size()
 	var away := await _click_away_from_labels(ctx, sm)
 	_capture(ctx.main)
 	_dump("S4 fourth")
 	var started := false
-	for i in range(n4, _status_log.size()):
-		if _status_log[i].begins_with("Jaw — centre set"):
+	for i in range(n4, status_log.size()):
+		if status_log[i].begins_with("Jaw — centre set"):
 			started = true
 	check(away and started, "S4 fourth click starts a new Jaw (Jaw — centre set)")
 	await _shutdown(ctx)
@@ -592,7 +586,7 @@ func _assert_label_edit(ctx: FilmContext, sm: SketchMode, ix: ViewportInteractio
 	check(hit != Vector2.INF and _on_screen(hit), "S4 first glyph of `%s` is on screen" % needle)
 	if hit == Vector2.INF or not _on_screen(hit):
 		return
-	var n := _status_log.size()
+	var n := status_log.size()
 	await _x11_click_screen(ctx.main.get_viewport(), hit)
 	await process_frame
 	await process_frame
@@ -606,8 +600,8 @@ func _assert_label_edit(ctx: FilmContext, sm: SketchMode, ix: ViewportInteractio
 	check(_editor_near(line, want), "S4 editor line shows %s (got `%s`)" % [needle, shown])
 	check(sm.sketch.entity_ids().size() == n_ent, "S4 entity count unchanged after `%s`" % needle)
 	var started := false
-	for i in range(n, _status_log.size()):
-		if _status_log[i].begins_with("Jaw — centre set"):
+	for i in range(n, status_log.size()):
+		if status_log[i].begins_with("Jaw — centre set"):
 			started = true
 	check(not started, "S4 `%s` click does not start a new Jaw" % needle)
 
@@ -623,12 +617,12 @@ func _click_away_from_labels(ctx: FilmContext, sm: SketchMode) -> bool:
 		print("  S4 away uv %s screen %s" % [str(uv), str(screen)])
 		if not _on_screen(screen) or _hits_any_label(sm, screen):
 			continue
-		var n := _status_log.size()
+		var n := status_log.size()
 		await _x11_click_screen(ctx.main.get_viewport(), screen)
 		await process_frame
 		await process_frame
 		_capture(ctx.main)
-		for i in range(n, _status_log.size()):
-			if _status_log[i].begins_with("Jaw — centre set"):
+		for i in range(n, status_log.size()):
+			if status_log[i].begins_with("Jaw — centre set"):
 				return true
 	return false

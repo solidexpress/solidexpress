@@ -7,7 +7,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const SELECT_HINT := "Select — click geometry, or a dimension label to edit it"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -48,7 +47,7 @@ func test_jaw_esc_keeps() -> void:
 	await process_frame
 	var lines := _profile_lines(sm)
 	check(lines == 4, "Jaw committed four lines (got %d)" % lines)
-	_status_log.clear()
+	status_log.clear()
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	await process_frame
 	check(_status_has(SELECT_HINT) or str(ctx.main.status_label.text) == SELECT_HINT,
@@ -61,22 +60,22 @@ func test_jaw_esc_keeps() -> void:
 			"Select line click creates no measure (anchor=%s marks=%d)" % [
 				str(mo.has_anchor() if mo != null else false),
 				mo.marks.size() if mo != null else -1])
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	check(sm.active, "first Esc keeps the sketch open")
 	check(sm.selected.is_empty(), "first Esc clears the selection")
 	check(_status_has("Selection cleared — Esc again exits the sketch"),
-			"first Esc is the selection rung (log: %s)" % str(_status_log))
+			"first Esc is the selection rung (log: %s)" % str(status_log))
 	check(not _status_has("Measure cleared"),
-			"selection Esc is not Measure cleared (log: %s)" % str(_status_log))
+			"selection Esc is not Measure cleared (log: %s)" % str(status_log))
 	check(_profile_lines(sm) == 4, "lines survive the selection clear")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(not sm.active, "second Esc leaves the sketch")
-	check(_status_has("Sketch saved"), "second Esc saves (log: %s)" % str(_status_log))
+	check(_status_has("Sketch saved"), "second Esc saves (log: %s)" % str(status_log))
 	check(not _status_has("Sketch cancelled"),
-			"second Esc does not cancel (log: %s)" % str(_status_log))
+			"second Esc does not cancel (log: %s)" % str(status_log))
 	check(_count_type(ctx, "sketch") == before + 1,
 			"timeline sketch count +1 (before %d)" % before)
 	var fid := _last_feature_id(ctx, "sketch")
@@ -120,14 +119,14 @@ func test_part_mode_redo() -> void:
 	check(n >= 2, "two bodies placed (got %d)" % n)
 	var vp: Viewport = ctx.main.get_viewport()
 	_release_focus(vp)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == n - 1, "Ctrl+Z undoes the last body")
 	check(str(ctx.main.status_label.text) == "Undo" or _status_has("Undo"),
 			"Ctrl+Z status is Undo (got `%s`)" % ctx.main.status_label.text)
 	_release_focus(vp)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, true)
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == n, "Ctrl+Shift+Z restores the last body")
@@ -138,7 +137,7 @@ func test_part_mode_redo() -> void:
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == n - 1, "Ctrl+Z undoes again")
 	_release_focus(vp)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Y, true, false)
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == n, "Ctrl+Y restores the last body")
@@ -281,7 +280,7 @@ func test_save_as_keeps_undo() -> void:
 	var saved := str(ctx.main.status_label.text)
 	check(saved.begins_with("Saved "), "status is Saved … (got `%s`)" % saved)
 	_release_focus(vp)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	await process_frame
 	var st := str(ctx.main.status_label.text)
@@ -366,7 +365,7 @@ func _profile_lines(sm: SketchMode) -> int:
 func _status_has(needle: String) -> bool:
 	if needle == "":
 		return false
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -382,16 +381,13 @@ func _boot() -> FilmContext:
 	ctx.view = main.view
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	if main.status_label != null and not main.status_label.has_meta("_sx036"):
 		main.status_label.set_meta("_sx036", true)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

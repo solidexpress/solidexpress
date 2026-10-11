@@ -9,7 +9,6 @@ const RAIL_LABELS := ["Exit Sketch", "Select", "Line", "Arc", "Circle", "Rect", 
 		"Ellipse", "Slot", "Spline", "Point", "Trim", "Extend", "Smart Dim", "Convert", "Mirror",
 		"Pattern", "Auto Dim"]
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -124,7 +123,7 @@ func _distance_near(sm: SketchMode, value: float) -> int:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -141,13 +140,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

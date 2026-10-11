@@ -6,10 +6,10 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 sx037 per-tool numeric fields and trim trail")
 	FilmUI.reset_fail_count()
 	await _run()
@@ -36,7 +36,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	await FilmUI.enter_sketch(ctx)
@@ -52,9 +52,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _test_fields(ctx: FilmContext) -> void:
@@ -228,8 +225,8 @@ func _test_new_document(ctx: FilmContext) -> void:
 	_show_distance(chrome, 5.0)
 	await process_frame
 	await process_frame
-	check(_parses_to(_distance_edit(chrome), 5.0),
-			"extrude distance is 5 before New (got '%s')" % _digits(_distance_edit(chrome)))
+	check(_parses_to(FilmUI.distance_edit(ctx), 5.0),
+			"extrude distance is 5 before New (got '%s')" % _digits(FilmUI.distance_edit(ctx)))
 	ctx.main._on_file_menu(0)
 	await process_frame
 	await process_frame
@@ -239,14 +236,14 @@ func _test_new_document(ctx: FilmContext) -> void:
 		await process_frame
 	check(str(ctx.main.status_label.text).contains("New — empty part"),
 			"File → New status (got '%s')" % str(ctx.main.status_label.text))
-	check(_parses_to(_distance_edit(chrome), 20.0) and not _parses_to(_distance_edit(chrome), 5.0),
-			"Extrude distance is the default 20 after New (got '%s')" % _digits(_distance_edit(chrome)))
+	check(_parses_to(FilmUI.distance_edit(ctx), 20.0) and not _parses_to(FilmUI.distance_edit(ctx), 5.0),
+			"Extrude distance is the default 20 after New (got '%s')" % _digits(FilmUI.distance_edit(ctx)))
 	check(is_equal_approx(sm.circle_radius, 10.0), "circle radius default 10 after New (got %.4f)" % sm.circle_radius)
 	check(not sm._tool_numeric.has("line"), "Line length from the discarded doc is gone")
 	await FilmUI.enter_sketch(ctx)
 	await process_frame
-	check(_parses_to(_distance_edit(chrome), 20.0),
-			"new sketch Extrude distance stays 20 (got '%s')" % _digits(_distance_edit(chrome)))
+	check(_parses_to(FilmUI.distance_edit(ctx), 20.0),
+			"new sketch Extrude distance stays 20 (got '%s')" % _digits(FilmUI.distance_edit(ctx)))
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
 	check(_parses_to(_dim_edit(chrome), 10.0) and not _parses_to(_dim_edit(chrome), 45.0),
@@ -266,8 +263,8 @@ func _test_new_document(ctx: FilmContext) -> void:
 	sm.remember_numeric(5.0, "line")
 	await process_frame
 	await process_frame
-	check(_parses_to(_distance_edit(chrome), 5.0),
-			"extrude distance is 5 before Open (got '%s')" % _digits(_distance_edit(chrome)))
+	check(_parses_to(FilmUI.distance_edit(ctx), 5.0),
+			"extrude distance is 5 before Open (got '%s')" % _digits(FilmUI.distance_edit(ctx)))
 	ctx.main._open_document(path)
 	await process_frame
 	await process_frame
@@ -275,8 +272,8 @@ func _test_new_document(ctx: FilmContext) -> void:
 			"Open status (got '%s')" % str(ctx.main.status_label.text))
 	check(is_equal_approx(sm.circle_radius, 10.0), "Open resets circle radius to 10 (got %.4f)" % sm.circle_radius)
 	check(not sm._tool_numeric.has("line"), "Open clears the previous line length")
-	check(_parses_to(_distance_edit(chrome), 20.0) and not _parses_to(_distance_edit(chrome), 5.0),
-			"Open resets Extrude distance to 20 (got '%s')" % _digits(_distance_edit(chrome)))
+	check(_parses_to(FilmUI.distance_edit(ctx), 20.0) and not _parses_to(FilmUI.distance_edit(ctx), 5.0),
+			"Open resets Extrude distance to 20 (got '%s')" % _digits(FilmUI.distance_edit(ctx)))
 	await FilmUI.enter_sketch(ctx)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await process_frame
@@ -303,10 +300,6 @@ func _show_distance(chrome: SketchContextChrome, v: float) -> void:
 	chrome._refresh_extrude_readout(v)
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
@@ -340,7 +333,7 @@ func _parses_to(edit: LineEdit, v: float) -> bool:
 
 
 func _status_blob() -> String:
-	return " ".join(_status_log)
+	return " ".join(status_log)
 
 
 func _click_uv_local(ctx: FilmContext, uv: Vector2, desc: String) -> void:

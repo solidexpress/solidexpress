@@ -6,7 +6,6 @@ const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const SAVE_PATH := "/tmp/sx_polish_blank.sxp"
 
-var _status_log: Array[String] = []
 var _item15_disabled_seq: Array[String] = []
 var _item15_row_click_needed_second := false
 
@@ -41,22 +40,17 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null:
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null:
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	if main.timeline != null:
 		main.timeline.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	var live := str(ctx_status())
@@ -117,7 +111,7 @@ func _test_timeline_pencil(ctx: FilmContext) -> void:
 	check(extrude_row != null and extrude_pencil != null, "extrude row has a pencil")
 	if sketch_pencil == null:
 		return
-	_status_log.clear()
+	status_log.clear()
 	await _click_settled(sketch_pencil)
 	await process_frame
 	await process_frame
@@ -256,7 +250,7 @@ func _test_open_enable(ctx: FilmContext) -> void:
 	var feat_count: int = ctx.view.doc.graph_features().size()
 	if ctx.main.file_dialog != null:
 		ctx.main.file_dialog.current_dir = "/tmp"
-	_status_log.clear()
+	status_log.clear()
 	await _open_file_menu(ctx, 1, "File → Open")
 	await _click_discard_if_any(ctx)
 	await process_frame
@@ -366,7 +360,7 @@ func _test_open_enable(ctx: FilmContext) -> void:
 		check(ok_row != null and not ok_row.disabled,
 				"8: Open is enabled after a row click")
 		if ok_row != null and not ok_row.disabled:
-			_status_log.clear()
+			status_log.clear()
 			await _x11_click_embedded(ok_row)
 			await process_frame
 			await process_frame

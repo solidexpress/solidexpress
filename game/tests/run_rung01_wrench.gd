@@ -9,6 +9,7 @@
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_wrench.gd
 extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const SHAFT_PICK_X := 100.0
 const TOL := 0.2
@@ -538,15 +539,10 @@ func _run_checker(paths: Dictionary) -> void:
 	check(diag.contains("18/22"), "DIAG checker 18/22")
 
 
-func _checker(checker: String, args: Array, expect_ok: bool = true) -> String:
-	var output: Array = []
-	var argv := PackedStringArray()
-	argv.append(checker)
-	for a in args:
-		argv.append(str(a))
-	var code := OS.execute("python3", argv, output, true)
-	var text := "\n".join(output)
-	print(text)
+func _checker(_path: String, args: Array, expect_ok: bool = true) -> String:
+	var result := SxChecker.run("rung01", args)
+	var code := int(result["code"])
+	var text := str(result["text"])
 	if expect_ok:
 		check(code == 0, "check_rung01.py %s exit %d" % [" ".join(args), code])
 	if str(args[0]) == "thick":

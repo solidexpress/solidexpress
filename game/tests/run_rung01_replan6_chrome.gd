@@ -9,10 +9,10 @@ const VIEWPORT := Rect2(0, 0, 1280, 800)
 const RAIL_GAP := 8.0
 const SPIN_GAP := 24.0
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan6 WP3 chrome")
 	FilmUI.reset_fail_count()
 	_assert_source_hygiene()
@@ -80,11 +80,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
@@ -96,13 +93,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_blob(ctx: FilmContext) -> String:
-	var parts: PackedStringArray = PackedStringArray(_status_log)
+	var parts: PackedStringArray = PackedStringArray(status_log)
 	if ctx != null and ctx.main != null and ctx.main.status_label != null:
 		parts.append(str(ctx.main.status_label.text))
 	return " ".join(parts)
@@ -131,7 +125,7 @@ func test_exit_sketch_and_radius_blank() -> void:
 	_assert_finish_bar_layout(ctx, chrome)
 
 	var dim := _dim_edit(chrome)
-	var dist := _distance_edit(chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dim != null, "DimLineEdit exists")
 	check(dist != null, "DistanceLineEdit exists")
 	var dist_before := 20.0
@@ -174,7 +168,7 @@ func test_extrude_blank_75() -> void:
 	await _draw_closed_rect(ctx)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	var dim := _dim_edit(chrome)
-	var dist := _distance_edit(chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dist != null, "DistanceLineEdit exists")
 	var dim_before := 10.0
 	if chrome != null:
@@ -314,10 +308,6 @@ func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
 	return chrome.find_child("DimLineEdit", true, false) as LineEdit
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _nth_circle(sm: SketchMode, index: int) -> String:

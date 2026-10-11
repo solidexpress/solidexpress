@@ -6,10 +6,10 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 sx036 numeric fields, contour fill, grid")
 	FilmUI.reset_fail_count()
 	await _run()
@@ -41,7 +41,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	await FilmUI.enter_sketch(ctx)
@@ -57,13 +57,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_blob() -> String:
-	return " ".join(_status_log)
+	return " ".join(status_log)
 
 
 func _test_circle_radius(ctx: FilmContext) -> void:
@@ -74,7 +71,7 @@ func _test_circle_radius(ctx: FilmContext) -> void:
 	await process_frame
 	var dim := _dim_edit(chrome)
 	check(_parses_to(dim, 5.0), "Slot blank shows slot radius 5 (got '%s')" % _digits(dim))
-	var dist := _distance_edit(chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	var dist_before := _digits(dist)
 	var dist_value := _distance_spin(chrome).value if _distance_spin(chrome) != null else -1.0
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
@@ -105,9 +102,9 @@ func _test_circle_radius(ctx: FilmContext) -> void:
 	check(is_equal_approx(radius, 22.5), "committed circle radius is 22.5 (got %.4f)" % radius)
 	check(_status_blob().contains("Circle r=22.5"), "status has Circle r=22.5")
 	check(is_equal_approx(sm.slot_radius, 5.0), "slot radius still 5 after circle")
-	check(_digits(_distance_edit(chrome)) == dist_before,
+	check(_digits(FilmUI.distance_edit(ctx)) == dist_before,
 			"Extrude distance text unchanged (was '%s' now '%s')" % [
-				dist_before, _digits(_distance_edit(chrome))])
+				dist_before, _digits(FilmUI.distance_edit(ctx))])
 	check(is_equal_approx(_distance_spin(chrome).value, dist_value),
 			"Extrude distance value unchanged (was %.4f now %.4f)" % [
 				dist_value, _distance_spin(chrome).value])
@@ -337,10 +334,6 @@ func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
 	return chrome.find_child("DimLineEdit", true, false) as LineEdit
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _distance_spin(chrome: SketchContextChrome) -> SpinBox:

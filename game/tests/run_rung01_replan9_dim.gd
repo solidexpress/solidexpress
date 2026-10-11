@@ -4,7 +4,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -35,22 +34,22 @@ func test_centre_then_centre() -> void:
 	var edits: Array[int] = []
 	sm.dimension_edit_requested.connect(func(i: int) -> void: edits.append(i))
 
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv(ctx, vp, Vector2.ZERO)
 	check(_pending(sm), "the first centre click sets a pending pick")
 	check(sm.selected.size() == 1 and sm.selected[0] == ids[0], "the first circle is selected")
-	check(_status_has("Smart Dim: first pick set"), "the first pick says what to click next (log: %s)" % str(_status_log))
+	check(_status_has("Smart Dim: first pick set"), "the first pick says what to click next (log: %s)" % str(status_log))
 
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv(ctx, vp, Vector2(100.0, 80.0))
 	check(_pending(sm), "a click on empty canvas keeps the first pick")
 	check(sm.selected.size() == 1 and sm.selected[0] == ids[0], "the first circle stays selected after the miss")
-	check(_status_has("first pick kept"), "the miss is named in the status (log: %s)" % str(_status_log))
+	check(_status_has("first pick kept"), "the miss is named in the status (log: %s)" % str(status_log))
 
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv(ctx, vp, Vector2.ZERO)
 	check(_pending(sm), "a second click on the same circle keeps the first pick")
-	check(_status_has("pick a different circle"), "the same-circle click is named (log: %s)" % str(_status_log))
+	check(_status_has("pick a different circle"), "the same-circle click is named (log: %s)" % str(status_log))
 	check(_distance_near(sm, 0.0, 0.5) < 0, "no zero-length distance dimension was made")
 
 	await _click_uv(ctx, vp, Vector2(200.0, 0.0))
@@ -88,12 +87,12 @@ func test_esc_drops_pick() -> void:
 	await _two_circles(ctx)
 	await _click_uv(ctx, vp, Vector2.ZERO)
 	check(_pending(sm), "first centre pick is pending before Esc")
-	_status_log.clear()
+	status_log.clear()
 	await _x11_key(vp, KEY_ESCAPE)
 	check(sm.active, "Esc with a pending Smart Dim pick keeps the sketch open")
 	check(not _pending(sm), "Esc drops the pending pick")
 	check(sm.selected.is_empty(), "Esc clears the first-pick selection")
-	check(_status_has("Smart Dim pick dropped"), "Esc says the pick was dropped (log: %s)" % str(_status_log))
+	check(_status_has("Smart Dim pick dropped"), "Esc says the pick was dropped (log: %s)" % str(status_log))
 	check(sm.sketch.entity_ids().size() == 2, "both circles are still in the sketch")
 	for _i in 3:
 		if not sm.active:
@@ -116,7 +115,7 @@ func _distance_near(sm: SketchMode, value: float, tol: float) -> int:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -133,14 +132,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

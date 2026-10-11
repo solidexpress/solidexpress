@@ -6,7 +6,6 @@
 extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -34,7 +33,7 @@ func test_typed_and_dragged_hex() -> void:
 	sm.snap_enabled = false
 	sm.click(Vector2(0, 0))
 	sm.hover(Vector2(18, 7))
-	_status_log.clear()
+	status_log.clear()
 	sm.commit_at_length(20.0)
 	var typed_status := _joined_status()
 	check(typed_status.contains("flats horizontal") and typed_status.contains("20"),
@@ -65,7 +64,7 @@ func test_typed_and_dragged_hex() -> void:
 	var drag_p := drag_c + Vector2.from_angle(deg_to_rad(10.0)) * 20.0
 	sm.set_tool(SketchMode.Tool.POLYGON)
 	sm.click(drag_c)
-	_status_log.clear()
+	status_log.clear()
 	sm.click(drag_p)
 	var dragged := _polygon_lines(sm, after_typed)
 	var all_hv60 := true
@@ -150,9 +149,9 @@ func _folded_edge_deg(a: Vector2, b: Vector2) -> float:
 
 
 func _joined_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return " | ".join(_status_log)
+	return " | ".join(status_log)
 
 
 func _boot():
@@ -160,13 +159,11 @@ func _boot():
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return main
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(main) -> void:

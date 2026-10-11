@@ -7,7 +7,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -44,7 +43,7 @@ func _case_file_menu() -> void:
 	var y1 := _strip_top(ctx)
 	check(absf(y1 - y0) <= 1.0, "chip row y unchanged after File (%.1f -> %.1f)" % [y0, y1])
 	check(not _row_covers(_strip(ctx), pos), "chip row still clear of the Extrude pixel")
-	_status_log.clear()
+	status_log.clear()
 	ctx.main.interaction.last_click_disposition = ""
 	_press_release(ctx.main.get_viewport(), pos)
 	await process_frame
@@ -119,7 +118,7 @@ func _case_fillet_chip() -> void:
 		await _shutdown(ctx)
 		return
 	var y0 := _strip_top(ctx)
-	_status_log.clear()
+	status_log.clear()
 	var vp: Viewport = ctx.main.get_viewport()
 	_motion(vp, fillet.get_global_rect().get_center())
 	_press_release(vp, fillet.get_global_rect().get_center())
@@ -224,7 +223,7 @@ func _feature_types(ctx: FilmContext) -> String:
 
 
 func _status_blob() -> String:
-	return " | ".join(_status_log)
+	return " | ".join(status_log)
 
 
 func _boot() -> FilmContext:
@@ -238,15 +237,13 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is %s (got %s)" % [ROOT_SIZE, root.size])
-	_status_log.clear()
+	status_log.clear()
 	main.interaction.status.connect(_on_status)
 	if main.ops_panel != null and main.ops_panel.has_signal("status"):
 		main.ops_panel.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

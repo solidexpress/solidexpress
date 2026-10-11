@@ -16,10 +16,10 @@ const POLY_LIVE := "^Polygon AF \\d+\\.\\d{4} — flats horizontal — click to 
 const POLY_COMMIT := "Polygon AF 20.0000 — flats horizontal"
 const NOTHING_TRIMMED := "Nothing trimmed — no crossing at that point"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan16 WP4 sketch visuals")
 	FilmUI.reset_fail_count()
 	var ctx := await _boot()
@@ -48,16 +48,10 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _fresh_sketch(ctx: FilmContext) -> void:
@@ -66,7 +60,7 @@ func _fresh_sketch(ctx: FilmContext) -> void:
 		sm.cancel()
 		await process_frame
 		await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await FilmUI.enter_sketch(ctx)
 	await process_frame
 	if ctx.main.sketch_mode != null:
@@ -98,7 +92,7 @@ func _test_v1_v2(ctx: FilmContext) -> void:
 	await process_frame
 	await _arm_tool(ctx, "ToolTrim")
 	check(sm.tool == SketchMode.Tool.TRIM, "V1 Trim is armed")
-	_status_log.clear()
+	status_log.clear()
 	var outer: Vector2 = HEAD + JAW_DIR * 30.0
 	await _drag_between(ctx, outer + JAW_DIR * 4.0, outer - JAW_DIR * 4.0)
 	check(_status_has("Trimmed open jaw"),
@@ -144,7 +138,7 @@ func _test_v1_v2(ctx: FilmContext) -> void:
 	var glyph_at := _farthest_glyph_centre(glyphs)
 	check(glyph_at != Vector2.INF, "V2 a glyph centre is available to click")
 	if glyph_at != Vector2.INF:
-		_status_log.clear()
+		status_log.clear()
 		await _x11_click_screen(ctx.main.get_viewport(), glyph_at)
 		await process_frame
 		await process_frame
@@ -165,7 +159,7 @@ func _test_v3(ctx: FilmContext) -> void:
 	sm.click(a)
 	await _motion_uv(ctx, a + Vector2(40.0, 0.0))
 	await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await _type_text(ctx.main.get_viewport(), "150")
 	await _push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 	await process_frame
@@ -216,7 +210,7 @@ func _test_v4(ctx: FilmContext) -> void:
 	check(sm.tool == SketchMode.Tool.POLYGON, "V4 Polygon is armed")
 	check(sm.tool_variant == "across_flats", "V4 variant is across_flats (got %s)" % sm.tool_variant)
 	var centre := Vector2(8.0, 6.0)
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv_local(ctx, centre)
 	await process_frame
 	await process_frame
@@ -246,7 +240,7 @@ func _test_v4(ctx: FilmContext) -> void:
 	await process_frame
 	await process_frame
 	var committed_line := ""
-	for s in _status_log:
+	for s in status_log:
 		if s == POLY_COMMIT:
 			committed_line = s
 	if committed_line == "":
@@ -281,22 +275,22 @@ func _test_v5(ctx: FilmContext) -> void:
 	var before := ""
 	if sm.sketch.has_method("snapshot"):
 		before = sm.sketch.snapshot()
-	_status_log.clear()
+	status_log.clear()
 	await _drag_between(ctx, Vector2(-12.0, 70.0), Vector2(22.0, 70.0))
 	var after := ""
 	if sm.sketch.has_method("snapshot"):
 		after = sm.sketch.snapshot()
-	print("  V5 status log %s" % str(_status_log))
+	print("  V5 status log %s" % str(status_log))
 	print("  V5 label `%s`" % str(ctx.main.status_label.text))
 	check(_status_has(NOTHING_TRIMMED),
 			"V5 status is `%s` (log %s)" % [NOTHING_TRIMMED, _tail()])
 	var bare := false
-	for s in _status_log:
+	for s in status_log:
 		if s == "Trimmed":
 			bare = true
 	check(not bare, "V5 never says bare Trimmed")
 	check(before != "" and before == after, "V5 sketch.snapshot() is identical before and after the drag")
-	_status_log.clear()
+	status_log.clear()
 	await _push_chord(ctx.main.get_viewport(), KEY_Z, true)
 	await process_frame
 	await process_frame
@@ -590,11 +584,11 @@ func _push_chord(vp: Viewport, code: int, ctrl: bool, unicode: int = 0) -> void:
 func _status_has(needle: String) -> bool:
 	if needle == "":
 		return false
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
 
 
 func _tail() -> String:
-	return str(_status_log.slice(maxi(_status_log.size() - 6, 0)))
+	return str(status_log.slice(maxi(status_log.size() - 6, 0)))

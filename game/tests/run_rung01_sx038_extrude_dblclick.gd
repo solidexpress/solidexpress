@@ -10,7 +10,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const EXTRUDE_STATUS := "Extrude Blind 10.0000 mm"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -32,7 +31,7 @@ func _case_gap(gap_frames: int) -> void:
 		return
 	var doc = ctx.view.doc
 	var vp: Viewport = ctx.main.get_viewport()
-	_status_log.clear()
+	status_log.clear()
 	_press_release(vp, pos, true)
 	var feats := _feature_count(doc)
 	var bodies := doc.body_ids().size()
@@ -48,12 +47,12 @@ func _case_gap(gap_frames: int) -> void:
 				pos, hide.get_global_rect() if hide != null else Rect2()])
 	for _i in gap_frames:
 		await process_frame
-	var log_n := _status_log.size()
+	var log_n := status_log.size()
 	_press_release(vp, pos, false)
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
-	print("  after second press status='%s' log=%s" % [ctx.main.status_label.text, str(_status_log)])
+	print("  after second press status='%s' log=%s" % [ctx.main.status_label.text, str(status_log)])
 	_assert_unchanged(ctx, feats, bodies, status, log_n, "gap %d" % gap_frames)
 	await _shutdown(ctx)
 
@@ -68,7 +67,7 @@ func _case_return_after_move() -> void:
 		return
 	var doc = ctx.view.doc
 	var vp: Viewport = ctx.main.get_viewport()
-	_status_log.clear()
+	status_log.clear()
 	_press_release(vp, pos, true)
 	var feats := _feature_count(doc)
 	var bodies := doc.body_ids().size()
@@ -77,12 +76,12 @@ func _case_return_after_move() -> void:
 	_motion(vp, Vector2(900, 500))
 	await process_frame
 	await process_frame
-	var log_n := _status_log.size()
+	var log_n := status_log.size()
 	_press_release(vp, pos, false)
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
-	print("  after return press status='%s' log=%s" % [ctx.main.status_label.text, str(_status_log)])
+	print("  after return press status='%s' log=%s" % [ctx.main.status_label.text, str(status_log)])
 	_assert_unchanged(ctx, feats, bodies, status, log_n, "return")
 	await _shutdown(ctx)
 
@@ -95,7 +94,7 @@ func _assert_unchanged(ctx: FilmContext, feats: int, bodies: int, status: String
 	check(_body_visible(ctx), "%s body still visible" % tag)
 	check(str(ctx.main.status_label.text) == status,
 			"%s status unchanged (got '%s')" % [tag, ctx.main.status_label.text])
-	check(not _log_grew(log_n, status), "%s no new status (log=%s)" % [tag, str(_status_log)])
+	check(not _log_grew(log_n, status), "%s no new status (log=%s)" % [tag, str(status_log)])
 
 
 func _extrude_ready(ctx: FilmContext) -> Vector2:
@@ -190,8 +189,8 @@ func _feature_count(doc) -> int:
 
 
 func _log_grew(from_index: int, previous: String) -> bool:
-	for i in range(from_index, _status_log.size()):
-		if _status_log[i] != previous:
+	for i in range(from_index, status_log.size()):
+		if status_log[i] != previous:
 			return true
 	return false
 
@@ -202,8 +201,8 @@ func _capture_status(main) -> void:
 	var t := str(main.status_label.text)
 	if t == "":
 		return
-	if _status_log.is_empty() or _status_log[_status_log.size() - 1] != t:
-		_status_log.append(t)
+	if status_log.is_empty() or status_log[status_log.size() - 1] != t:
+		status_log.append(t)
 
 
 func _boot() -> FilmContext:
@@ -217,14 +216,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is %s (got %s)" % [ROOT_SIZE, root.size])
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

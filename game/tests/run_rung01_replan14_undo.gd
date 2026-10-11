@@ -13,7 +13,6 @@ const JAW_WIDE := Vector2(0.0, 10.0)
 const SHAFT_SIDE := Vector2(3.0, 8.0)
 const SAVE_PATH := "/tmp/rung01_replan14_wp4_undo.sxp"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -92,7 +91,7 @@ func test_jaw_undo_redo_line_save() -> void:
 	var jaw_ids := _id_set(sm.sketch.entity_ids())
 	check(_has_jaw_dims(sm), "Jaw recorded width / angle dimensions")
 
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Ctrl+Z: `%s`" % _status_text(ctx))
 	check(sm.sketch.entity_ids().size() == n0, "Ctrl+Z restores entity count to n0 (got %d)" % sm.sketch.entity_ids().size())
@@ -102,30 +101,30 @@ func test_jaw_undo_redo_line_save() -> void:
 	check(int(ctx.view.doc.revision()) == rev0, "document revision unchanged (got %d want %d)" % [int(ctx.view.doc.revision()), rev0])
 	check(ctx.view.doc.graph_features().size() == tl0, "timeline length unchanged")
 
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, true)
 	print("  observed Ctrl+Shift+Z: `%s`" % _status_text(ctx))
 	check(_id_set(sm.sketch.entity_ids()) == jaw_ids, "Ctrl+Shift+Z restores the Jaw entity id set")
 	check(_has_jaw_width_evidence(sm), "width / angle records (or 20-type labels) are back")
 	check(_status_text(ctx) == "Redo: Jaw", "status Redo: Jaw (got `%s`)" % _status_text(ctx))
 
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	check(sm.sketch.entity_ids().size() == n0, "Ctrl+Z after redo is n0 again")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Y, true, false)
 	print("  observed Ctrl+Y: `%s`" % _status_text(ctx))
 	check(_id_set(sm.sketch.entity_ids()) == jaw_ids, "Ctrl+Y restores the Jaw entity id set")
 	check(_status_text(ctx) == "Redo: Jaw", "Ctrl+Y status Redo: Jaw (got `%s`)" % _status_text(ctx))
 
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, true)
 	print("  observed empty Ctrl+Shift+Z after redo: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to redo", "empty redo Ctrl+Shift+Z → Nothing to redo (got `%s`)" % _status_text(ctx))
 
 	while sm.has_method("can_undo") and sm.can_undo():
 		await _push_key_local(vp, KEY_Z, true, false)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed empty Ctrl+Z: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to undo", "empty stack Ctrl+Z → Nothing to undo (got `%s`)" % _status_text(ctx))
@@ -146,11 +145,11 @@ func test_jaw_undo_redo_line_save() -> void:
 	if focus_owner != null and focus_owner.has_method("release_focus"):
 		focus_owner.release_focus()
 		await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, true)
 	print("  observed redo after new Line: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to redo", "new op clears redo (got `%s`)" % _status_text(ctx))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Undo Line: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Undo: Line", "Ctrl+Z → Undo: Line (got `%s`)" % _status_text(ctx))
@@ -164,13 +163,13 @@ func test_jaw_undo_redo_line_save() -> void:
 	ctx.main.current_path = SAVE_PATH
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(SAVE_PATH)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_S, true, false)
 	await process_frame
 	await process_frame
 	print("  observed Ctrl+S: `%s` active=%s" % [_status_text(ctx), str(sm.active)])
 	check(sm.active, "Save inside a sketch keeps the session open")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Ctrl+Z after Save: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Undo: Jaw", "Save keeps history: Undo: Jaw (got `%s`)" % _status_text(ctx))
@@ -185,7 +184,7 @@ func test_jaw_undo_redo_line_save() -> void:
 	var edit_btn := _find_edit_menu(ctx.main)
 	check(edit_btn != null, "Edit menu button exists")
 	if edit_btn != null:
-		_status_log.clear()
+		status_log.clear()
 		await FilmUI.activate_menu_id(ctx, edit_btn, 0, FilmUICues.alert("Undo", "Edit ▸ Undo"))
 		await process_frame
 		print("  observed Edit ▸ Undo: `%s`" % _status_text(ctx))
@@ -223,7 +222,7 @@ func test_coalesce_circle_hover_drag() -> void:
 	check(stack1 == stack0 + 1, "typed Circle is one undo entry (stack %d→%d)" % [stack0, stack1])
 	var circ_n: int = sm.sketch.entity_ids().size()
 	var cids_with_circ := _id_set(sm.sketch.constraint_ids())
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Undo Circle: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Undo: Circle", "Undo: Circle (got `%s`)" % _status_text(ctx))
@@ -288,12 +287,12 @@ func test_trim_and_dimension() -> void:
 	await process_frame
 	var walls_before := _wall_snapshot(sm)
 	await _press_rail(ctx, "Trim")
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv_local(ctx, SHAFT_SIDE, "Trim click")
 	await process_frame
 	print("  observed Trim: `%s`" % _status_text(ctx))
 	check(_status_has("Trimmed open jaw"), "real Trim click → Trimmed open jaw (got `%s`)" % _status_text(ctx))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Undo Trim: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Undo: Trim", "Ctrl+Z → Undo: Trim (got `%s`)" % _status_text(ctx))
@@ -314,7 +313,7 @@ func test_trim_and_dimension() -> void:
 			await process_frame
 			await process_frame
 		print("  observed after width 18: `%s` value=%s" % [_status_text(ctx), str(_width_value(sm))])
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed Undo Dimension: `%s` width=%s" % [_status_text(ctx), str(_width_value(sm))])
 	check(_status_text(ctx) == "Undo: Dimension", "Ctrl+Z → Undo: Dimension (got `%s`)" % _status_text(ctx))
@@ -347,7 +346,7 @@ func test_exit_clears_history() -> void:
 		await process_frame
 		await process_frame
 	check(sm.active, "timeline double-click re-opens the sketch")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_Z, true, false)
 	print("  observed after re-entry Ctrl+Z: `%s`" % _status_text(ctx))
 	check(_status_text(ctx) == "Nothing to undo", "re-entry Ctrl+Z → Nothing to undo (got `%s`)" % _status_text(ctx))
@@ -361,7 +360,7 @@ func test_document_undo_outside_sketch() -> void:
 	await process_frame
 	var n0: int = ctx.view.doc.body_ids().size()
 	check(n0 >= 1, "box placed (bodies=%d)" % n0)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(ctx.main.get_viewport(), KEY_Z, true, false)
 	await process_frame
 	print("  observed part-mode Ctrl+Z: `%s` bodies %d→%d" % [
@@ -396,7 +395,7 @@ func test_radius_field_owns_ctrl_z() -> void:
 		await _x11_click_screen(dim_edit.get_viewport(), dim_edit.get_global_rect().get_center())
 		await process_frame
 		check(dim_edit.has_focus(), "Radius field is focused")
-		_status_log.clear()
+		status_log.clear()
 		await _push_key_local(vp, KEY_Z, true, false)
 		await process_frame
 		print("  observed focused Ctrl+Z: `%s` entities %d→%d" % [
@@ -513,21 +512,19 @@ func _id_set(ids: PackedStringArray) -> Dictionary:
 func _status_text(ctx: FilmContext) -> String:
 	if ctx != null and ctx.main != null and ctx.main.status_label != null:
 		return str(ctx.main.status_label.text)
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _status_has(needle: String) -> bool:
-	if not _status_log.is_empty():
-		for s in _status_log:
+	if not status_log.is_empty():
+		for s in status_log:
 			if s.contains(needle):
 				return true
 	return false
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _press_rail(ctx: FilmContext, label: String) -> void:
@@ -714,11 +711,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 

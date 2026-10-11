@@ -10,7 +10,6 @@ const ROOT_SIZE := Vector2i(1280, 800)
 const MEASURE_CLEARED := "Measure cleared"
 const SELECTION_CLEARED := "Selection cleared — Esc again exits the sketch"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -76,9 +75,9 @@ func test_sketch_l12() -> void:
 
 	await _hover_uv_local(ctx, vp, mid)
 	check(mo.has_anchor() and _has_delta(mo), "Select hover again shows ✕ and Δ")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE, false)
-	check(_status_has(MEASURE_CLEARED), "Esc says Measure cleared (log: %s)" % str(_status_log))
+	check(_status_has(MEASURE_CLEARED), "Esc says Measure cleared (log: %s)" % str(status_log))
 	check(not mo.has_anchor() and not _has_delta(mo), "Esc clears the ✕ and Δ")
 	check(sm.active, "Measure cleared keeps the sketch open")
 	var sel := FilmUI.find_sketch_tool_button(ctx.main, "Select")
@@ -88,14 +87,14 @@ func test_sketch_l12() -> void:
 	check(sm.selected.has(lid), "jittered click off the thin line selects it (got %s)" % str(sm.selected))
 	check(not mo.has_anchor() and mo.marks.is_empty() and not _has_delta(mo),
 			"the Select click clears the hover ✕")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE, false)
 	check(sm.active, "selection Esc keeps the sketch open")
 	check(sm.selected.is_empty(), "selection Esc clears the line")
 	check(_status_has(SELECTION_CLEARED),
-			"Esc says Selection cleared — Esc again exits the sketch (log: %s)" % str(_status_log))
+			"Esc says Selection cleared — Esc again exits the sketch (log: %s)" % str(status_log))
 	check(not _status_has("Sketch saved") and not _status_has("Sketch cancelled"),
-			"that Esc does not leave the sketch (log: %s)" % str(_status_log))
+			"that Esc does not leave the sketch (log: %s)" % str(status_log))
 	await _shutdown(ctx)
 
 
@@ -238,18 +237,15 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false

@@ -12,7 +12,6 @@ const SAVE_PATH := "/tmp/sx_wp5_chrome.sxp"
 const FACE_HINT := "Face — click selects body first, click again for face · then Pull arrow"
 const BOX_SIZE := Vector3(240, 45, 10)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -63,12 +62,12 @@ func _test_c1_camera() -> void:
 		await _shutdown(ctx)
 		return
 	_release_focus(vp)
-	var mark := _status_log.size()
+	var mark := status_log.size()
 	await _push_key_local(vp, KEY_F)
 	await process_frame
 	var saw_fit := _log_has_since(mark, "Sketch view fit") or _label(main) == "Sketch view fit"
 	print("  C1 after F label=`%s` locked=%s log_tail=%s" % [
-		_label(main), str(cam.sketch_orientation_locked), str(_status_log.slice(maxi(_status_log.size() - 4, 0)))])
+		_label(main), str(cam.sketch_orientation_locked), str(status_log.slice(maxi(status_log.size() - 4, 0)))])
 	check(saw_fit, "C1 F prints Sketch view fit")
 	sm._add_slot(Vector2(-40.0, 0.0), Vector2(40.0, 0.0), 5.0)
 	await process_frame
@@ -81,7 +80,7 @@ func _test_c1_camera() -> void:
 	var extrude: Button = main.find_child("ExtrudeButton", true, false)
 	check(extrude != null and extrude.is_visible_in_tree() and not extrude.disabled,
 			"C1 Extrude button is visible and enabled")
-	mark = _status_log.size()
+	mark = status_log.size()
 	if extrude != null:
 		await _click_control(extrude)
 		for _i in 8:
@@ -124,7 +123,7 @@ func _test_c2_menu_esc() -> void:
 			view_btn.show_popup()
 			await process_frame
 	check(popup != null and popup.visible, "C2 View popup is visible")
-	var mark := _status_log.size()
+	var mark := status_log.size()
 	if popup != null:
 		await _push_esc(popup.get_viewport())
 		await _push_esc(vp)
@@ -156,7 +155,7 @@ func _test_c2_menu_esc() -> void:
 	check(hud_popup != null and hud_popup.visible, "C2 HUD View popup is visible")
 	mode_before = _panel_mode(main)
 	var body_before := ctx.view.selected_body
-	mark = _status_log.size()
+	mark = status_log.size()
 	if hud_popup != null:
 		await _push_esc(hud_popup.get_viewport())
 		await _push_esc(vp)
@@ -169,7 +168,7 @@ func _test_c2_menu_esc() -> void:
 	check(_panel_mode(main) == mode_before, "C2 HUD Esc keeps the left panel")
 	check(not _log_has_since(mark, "Selection cleared"), "C2 HUD Esc does not print Selection cleared")
 
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _push_esc(vp)
 	await process_frame
 	await process_frame
@@ -421,16 +420,11 @@ func _boot() -> FilmContext:
 	ctx.view = main.view
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	_status_log.clear()
-	if main.sketch_mode != null:
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null:
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:
@@ -454,8 +448,8 @@ func _panel_mode(main) -> String:
 
 
 func _log_has_since(mark: int, needle: String) -> bool:
-	for i in range(mark, _status_log.size()):
-		if str(_status_log[i]).contains(needle):
+	for i in range(mark, status_log.size()):
+		if str(status_log[i]).contains(needle):
 			return true
 	return false
 

@@ -10,10 +10,10 @@ const ROOT_SIZE := Vector2i(1280, 800)
 const TOP_PITCH := deg_to_rad(90.0)
 const APPLIED := "Fillet 2 edges 10.00 applied — View ▸ Timeline to edit parameters — Fillet no longer armed"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan16 N2 fillet radius Enter")
 	FilmUI.reset_fail_count()
 	await _run()
@@ -74,7 +74,7 @@ func _run() -> void:
 	await _push_char(vp, "1")
 	await _push_char(vp, "0")
 	print("  strip after typing `%s`" % _line_text(strip))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
@@ -90,7 +90,7 @@ func _run() -> void:
 	var owner: Control = vp.gui_get_focus_owner()
 	check(owner == main.interaction,
 			"strip Enter returns viewport focus (got %s)" % _owner_name(owner))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	check(_label(main).contains("Top view") or _status_has("Top view"),
@@ -105,7 +105,7 @@ func _run() -> void:
 	await _push_char(vp, "1")
 	await _push_char(vp, "0")
 	print("  panel after typing `%s`" % _line_text(panel))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
@@ -120,7 +120,7 @@ func _run() -> void:
 	owner = vp.gui_get_focus_owner()
 	check(owner == main.interaction,
 			"panel Enter returns viewport focus (got %s)" % _owner_name(owner))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	check(_label(main).contains("Back view") or _status_has("Back view"),
@@ -133,7 +133,7 @@ func _run() -> void:
 	main.interaction.return_viewport_keys()
 	await process_frame
 	var fillets_before := _fillet_count(view)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
@@ -147,7 +147,7 @@ func _run() -> void:
 	var fid := _last_fillet_fid(view)
 	check(is_equal_approx(_fillet_radius(view, fid), 10.0),
 			"committed fillet radius is 10 (got %s)" % str(_fillet_radius(view, fid)))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	await process_frame
@@ -186,7 +186,7 @@ func _run() -> void:
 		owner = vp.gui_get_focus_owner()
 		check(not (owner is LineEdit) and not (owner is SpinBox),
 				"editor Radius Enter releases the field (got %s)" % _owner_name(owner))
-		_status_log.clear()
+		status_log.clear()
 		await _push_key_local(vp, KEY_3, 51)
 		await process_frame
 		check(_label(main).contains("Top view") or _status_has("Top view"),
@@ -198,11 +198,11 @@ func _run() -> void:
 	if cancel != null:
 		FilmUI.ensure_control_visible(cancel)
 		await process_frame
-		_status_log.clear()
+		status_log.clear()
 		await _click_control(vp, cancel)
 		await process_frame
 		await process_frame
-	print("  cancel status `%s` log=%s" % [_label(main), str(_status_log)])
+	print("  cancel status `%s` log=%s" % [_label(main), str(status_log)])
 	check(not pp.visible, "Cancel closes the editor")
 	check(_label(main) == "Edits cancelled" or _status_has("Edits cancelled"),
 			"Cancel status is Edits cancelled (got `%s`)" % _label(main))
@@ -214,9 +214,6 @@ func _run() -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _label(main) -> String:
@@ -228,7 +225,7 @@ func _label(main) -> String:
 func _status_has(needle: String) -> bool:
 	if _label(root.get_child(0) if root.get_child_count() > 0 else null).contains(needle):
 		return true
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false

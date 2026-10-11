@@ -22,10 +22,10 @@ const _FACE_ORIGIN := {
 	"-Z": "0.0,0.0,0.0",
 }
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung02 plane basis")
 	FilmUI.reset_fail_count()
 	await _run()
@@ -63,7 +63,7 @@ func _build_box(ctx: FilmContext) -> void:
 			if str(sm.sketch.entity_info(id).get("type", "")) == "line":
 				lines += 1
 	check(lines == 4, "rect is four lines (got %d)" % lines)
-	var dist := _distance_edit(ctx)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dist != null and dist.is_visible_in_tree(), "Distance field is visible")
 	if dist != null:
 		await _x11_click(dist)
@@ -173,11 +173,6 @@ func _only_body(ctx: FilmContext) -> String:
 	return str(ids[0])
 
 
-func _distance_edit(ctx: FilmContext) -> LineEdit:
-	var chrome = ctx.main.sketch_chrome
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _tag(n: Vector3) -> String:
@@ -205,25 +200,19 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800")
-	if main.sketch_mode != null:
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null:
-		main.interaction.status.connect(_on_status)
+	listen_status(main)
 	return ctx
 
 
 func _status_has(text: String) -> bool:
-	return _status_log.has(text)
+	return status_log.has(text)
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _note_status(ctx: FilmContext) -> void:
 	if ctx.main != null and ctx.main.status_label != null:
 		var text := str(ctx.main.status_label.text)
-		if text != "" and (_status_log.is_empty() or _status_log[_status_log.size() - 1] != text):
-			_status_log.append(text)
+		if text != "" and (status_log.is_empty() or status_log[status_log.size() - 1] != text):
+			status_log.append(text)
 			print("  status: " + text)

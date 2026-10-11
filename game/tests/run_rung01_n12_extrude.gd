@@ -8,7 +8,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -36,20 +35,20 @@ func test_second_click_on_blank() -> void:
 	var bodies0 := doc.body_ids().size()
 	var ex0 := _extrude_count(doc)
 	var jaw0 := _var_value(doc, "jaw_af")
-	_status_log.clear()
+	status_log.clear()
 	var vp: Viewport = ctx.main.get_viewport()
 	await _x11_click_screen(vp, centre)
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
 	var last := _last_status()
-	print("N12 after extrude status='%s' log=%s" % [last, str(_status_log)])
+	print("N12 after extrude status='%s' log=%s" % [last, str(status_log)])
 	check(doc.body_ids().size() == bodies0 + 1,
 			"N12 one new body (%d -> %d)" % [bodies0, doc.body_ids().size()])
 	check(_extrude_count(doc) == ex0 + 1, "N12 one new extrude")
 	check(last == "Extrude Blind 10.0000 mm",
 			"N12 status is Extrude Blind 10.0000 mm (got '%s')" % last)
-	check(not _log_has("jaw_af"), "N12 no jaw_af text after the extrude (log=%s)" % str(_status_log))
+	check(not _log_has("jaw_af"), "N12 no jaw_af text after the extrude (log=%s)" % str(status_log))
 	check(str(doc.active_configuration()) == "",
 			"N12 active configuration stays empty (got '%s')" % str(doc.active_configuration()))
 	var jaw_box := ctx.main.interaction.find_child("StripJawAF", true, false) as Control
@@ -62,7 +61,7 @@ func test_second_click_on_blank() -> void:
 				"N12 shield contains the Extrude pixel %s (shield %s)" % [centre, shield.get_global_rect()])
 	var bodies1 := doc.body_ids().size()
 	var ex1 := _extrude_count(doc)
-	var log_n := _status_log.size()
+	var log_n := status_log.size()
 	await _x11_click_screen(vp, centre)
 	await process_frame
 	await process_frame
@@ -70,25 +69,25 @@ func test_second_click_on_blank() -> void:
 	check(_extrude_count(doc) == ex1, "N12 second click adds no extrude")
 	check(doc.body_ids().size() == bodies1, "N12 second click adds no body")
 	check(not _log_grew(log_n, last),
-			"N12 second click leaves status Extrude Blind 10.0000 mm (log=%s)" % str(_status_log))
+			"N12 second click leaves status Extrude Blind 10.0000 mm (log=%s)" % str(status_log))
 	check(str(ctx.main.status_label.text) == "Extrude Blind 10.0000 mm",
 			"N12 status label stays Extrude Blind 10.0000 mm (got '%s')" % ctx.main.status_label.text)
-	check(not _log_has("jaw_af"), "N12 second click writes no jaw_af (log=%s)" % str(_status_log))
+	check(not _log_has("jaw_af"), "N12 second click writes no jaw_af (log=%s)" % str(status_log))
 	check(is_equal_approx(_var_value(doc, "jaw_af"), jaw0),
 			"N12 jaw_af unchanged (was %.4f now %.4f)" % [jaw0, _var_value(doc, "jaw_af")])
 	check(str(doc.active_configuration()) == "", "N12 second click does not activate a config")
 	# Soft-GL walk: the follow-up click can land after the 600 ms jaw guard.
 	await create_timer(0.7).timeout
-	log_n = _status_log.size()
+	log_n = status_log.size()
 	await _x11_click_screen(vp, centre)
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
-	print("N12 log after late click=%s" % str(_status_log))
+	print("N12 log after late click=%s" % str(status_log))
 	check(_extrude_count(doc) == ex1, "N12 late click adds no extrude")
 	check(doc.body_ids().size() == bodies1, "N12 late click keeps one body")
 	check(not _log_grew(log_n, last),
-			"N12 late click adds no status (log=%s)" % str(_status_log))
+			"N12 late click adds no status (log=%s)" % str(status_log))
 	check(str(ctx.main.status_label.text) == "Extrude Blind 10.0000 mm",
 			"N12 late status is still Extrude Blind 10.0000 mm (got '%s')" % ctx.main.status_label.text)
 	check(not _log_has("jaw_af"), "N12 late click writes no jaw_af")
@@ -124,7 +123,7 @@ func test_af_chips_when_jaw_in_use() -> void:
 	check(jaw_box != null and jaw_box.is_visible_in_tree(), "N12b AF chips visible when jaw_af is in use")
 	check(jaw != null and jaw.is_visible_in_tree(), "N12b StripJaw12 is visible")
 	if jaw != null and jaw.is_visible_in_tree():
-		_status_log.clear()
+		status_log.clear()
 		await _x11_click_screen(jaw.get_viewport(), jaw.get_global_rect().get_center())
 		await process_frame
 		await process_frame
@@ -180,21 +179,21 @@ func _var_value(doc, var_name: String) -> float:
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _log_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
 
 
 func _log_grew(from_index: int, previous: String) -> bool:
-	for i in range(from_index, _status_log.size()):
-		if _status_log[i] != previous:
+	for i in range(from_index, status_log.size()):
+		if status_log[i] != previous:
 			return true
 	return false
 
@@ -205,8 +204,8 @@ func _capture_status(main) -> void:
 	var t := str(main.status_label.text)
 	if t == "":
 		return
-	if _status_log.is_empty() or _status_log[_status_log.size() - 1] != t:
-		_status_log.append(t)
+	if status_log.is_empty() or status_log[status_log.size() - 1] != t:
+		status_log.append(t)
 
 
 func _boot() -> FilmContext:
@@ -220,14 +219,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is %s (got %s)" % [ROOT_SIZE, root.size])
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

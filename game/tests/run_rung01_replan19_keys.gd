@@ -6,11 +6,11 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const ECHO_STRINGS: PackedStringArray = ["22.5", "200", "1.5", "45", "2.5", "10", "100"]
 
-var _status_log: Array[String] = []
 var _clock := 0
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan19 keys")
 	FilmUI.reset_fail_count()
 	await _test_echo_matrix()
@@ -37,7 +37,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	_connect_status(main)
@@ -59,7 +59,7 @@ func _boot_part() -> FilmContext:
 	ctx.view = main.view
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	_status_log.clear()
+	status_log.clear()
 	_connect_status(main)
 	return ctx
 
@@ -73,10 +73,7 @@ func _shutdown(ctx: FilmContext) -> void:
 
 
 func _connect_status(main) -> void:
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	listen_status(main)
 	if main.ops_panel != null and main.ops_panel.has_signal("status") \
 			and not main.ops_panel.status.is_connected(_on_status):
 		main.ops_panel.status.connect(_on_status)
@@ -94,13 +91,10 @@ func _saw(main, needle: String) -> bool:
 	return false
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_blob() -> String:
-	return " ".join(_status_log)
+	return " ".join(status_log)
 
 
 func _clear_clock() -> void:
@@ -140,7 +134,7 @@ func _echo_circle() -> void:
 		await process_frame
 		check(_body(dim.text) == s, "Circle Radius echo '%s' reads '%s'" % [s, dim.text])
 		if s == "22.5":
-			_status_log.clear()
+			status_log.clear()
 			_push_key_now(vp, KEY_ENTER)
 			await process_frame
 			await process_frame
@@ -151,7 +145,7 @@ func _echo_circle() -> void:
 
 func _echo_distance() -> void:
 	var ctx := await _boot()
-	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dist != null, "Distance blank exists")
 	if dist == null:
 		await _shutdown(ctx)
@@ -190,7 +184,7 @@ func _echo_slot() -> void:
 	_push_x11_burst(vp, "150")
 	await process_frame
 	check(_body(dim.text) == "150", "Slot c-c burst reads 150 (got '%s')" % dim.text)
-	_status_log.clear()
+	status_log.clear()
 	_push_key_now(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
@@ -255,7 +249,7 @@ func _echo_strip_and_panel() -> void:
 		if sle != null:
 			await _click_control(sle)
 			_push_x11_burst(vp, "1.5")
-			_status_log.clear()
+			status_log.clear()
 			_push_key_now(vp, KEY_ENTER)
 			await process_frame
 			await process_frame
@@ -279,7 +273,7 @@ func _echo_strip_and_panel() -> void:
 func _test_real_repeat() -> void:
 	print("- real auto-repeat is a single 5")
 	var ctx := await _boot()
-	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	if dist == null:
 		check(false, "Distance exists for repeat")
 		await _shutdown(ctx)
@@ -329,7 +323,7 @@ func _test_same_frame() -> void:
 		_click_control_now(line)
 		_push_x11_burst(vp, "1.5")
 		_push_key_now(vp, KEY_ENTER)
-		_status_log.clear()
+		status_log.clear()
 		_push_key_now(vp, KEY_3)
 		await process_frame
 		var owner := _focus_name(ctx)
@@ -350,7 +344,7 @@ func _field_ctx(which: String) -> FilmContext:
 
 func _field_line(ctx: FilmContext, which: String) -> Array:
 	if which == "distance":
-		var dist := _distance_edit(ctx.main.sketch_chrome)
+		var dist := FilmUI.distance_edit(ctx)
 		return [dist, dist.get_parent() if dist != null else null]
 	var spin: SpinBox
 	if which == "strip":
@@ -376,7 +370,7 @@ func _a11d_strip() -> void:
 	await _push_chord(vp, KEY_A, true)
 	await _push_char(vp, "1", false)
 	await _push_key_local(vp, KEY_ENTER)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3)
 	await process_frame
 	check(_saw(ctx.main, "Top view"), "A11d key 3 is Top view (status '%s' label '%s')" % [_status_blob(), _label(ctx.main)])
@@ -388,7 +382,7 @@ func _a11d_strip() -> void:
 func _test_keys_before_focus() -> void:
 	print("- key before focus does not become Front view")
 	var ctx := await _boot()
-	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	if dist == null:
 		check(false, "Distance exists for pre-focus")
 		await _shutdown(ctx)
@@ -398,7 +392,7 @@ func _test_keys_before_focus() -> void:
 	check(_focus_name(ctx) == "Interaction",
 			"viewport owns focus before the burst (got '%s')" % _focus_name(ctx))
 	var vp: Viewport = ctx.main.get_viewport()
-	_status_log.clear()
+	status_log.clear()
 	_click_control_now(dist)
 	_push_char_now(vp, "1", false)
 	await process_frame
@@ -413,7 +407,7 @@ func _test_keys_before_focus() -> void:
 func _test_trace() -> void:
 	print("- key trace gate")
 	var ctx := await _boot()
-	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	if dist == null:
 		check(false, "Distance exists for trace")
 		await _shutdown(ctx)
@@ -507,10 +501,6 @@ func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
 	return chrome.find_child("DimLineEdit", true, false) as LineEdit
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _dim_popup_line(ctx: FilmContext) -> LineEdit:

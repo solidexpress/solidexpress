@@ -6,6 +6,7 @@
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan15_jawstub.gd
 extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const TOL := 0.2
 const HEAD := Vector2(200.0, 0.0)
@@ -24,7 +25,6 @@ const BAD_STATUS: Array[String] = [
 	"left an open shell",
 ]
 
-var _status_log: Array[String] = []
 var _stage := ""
 var _stage_base := ""
 var _first_red := ""
@@ -70,7 +70,7 @@ func _init() -> void:
 func _begin(id: String) -> void:
 	_stage = id
 	print("-- %s" % id)
-	_status_log.clear()
+	status_log.clear()
 	_stage_base = str(_main.status_label.text) if _main != null else ""
 
 
@@ -80,16 +80,16 @@ func _capture() -> void:
 	var t := str(_main.status_label.text)
 	if t == "" or t == _stage_base:
 		return
-	if _status_log.size() > 0 and _status_log[_status_log.size() - 1] == t:
+	if status_log.size() > 0 and status_log[status_log.size() - 1] == t:
 		return
-	_status_log.append(t)
+	status_log.append(t)
 
 
 func _dump_log() -> void:
 	print("STATUS-LOG %s" % _stage)
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		print("  | (empty)")
-	for s in _status_log:
+	for s in status_log:
 		print("  | %s" % s)
 
 
@@ -226,11 +226,11 @@ func _stage_s2(ctx: FilmContext) -> void:
 	check(sm.tool == SketchMode.Tool.TRIM, "S2: Power Trim is the active tool")
 	var origin0: Vector3 = sm.plane_origin
 	var pivot0: Vector3 = ctx.main.camera.pivot
-	_status_log.clear()
+	status_log.clear()
 	_stage_base = str(_main.status_label.text)
 	await _drag_between(ctx, OUTER_STUB + JAW_DIR * 4.0, OUTER_STUB - JAW_DIR * 4.0)
 	_capture()
-	check(_saw("Trimmed open jaw"), "S2: status log has Trimmed open jaw (log=%s)" % str(_status_log))
+	check(_saw("Trimmed open jaw"), "S2: status log has Trimmed open jaw (log=%s)" % str(status_log))
 	check(SketchMode.profile_is_closed(sm.sketch), "S2: profile is closed")
 	_assert_minor_mouth(sm)
 	check(not _cutter_remains(sm), "S2: the cutter Line is gone")
@@ -272,7 +272,7 @@ func _stage_s2b(ctx: FilmContext) -> void:
 	await _drag_between(ctx, LONG_DISCARD + JAW_DIR * 2.0 + JAW_ACROSS * 4.0,
 			LONG_DISCARD + JAW_DIR * 2.0 - JAW_ACROSS * 4.0)
 	_capture()
-	check(_saw("Jaw is already open"), "S2b: status log has Jaw is already open (log=%s)" % str(_status_log))
+	check(_saw("Jaw is already open"), "S2b: status log has Jaw is already open (log=%s)" % str(status_log))
 	_dump_log()
 
 
@@ -300,7 +300,7 @@ func _stage_s3(ctx: FilmContext, bottom: String) -> void:
 			"S3: up_to_face_id is the bottom face (got %s want %s)" % [chrome.up_to_face_id, bottom])
 	var ex_btn := chrome.extrude_button()
 	check(ex_btn != null and not ex_btn.disabled, "S3: Extrude is enabled")
-	_status_log.clear()
+	status_log.clear()
 	_stage_base = str(_main.status_label.text)
 	if ex_btn != null:
 		await _x11_click(ex_btn)
@@ -309,8 +309,8 @@ func _stage_s3(ctx: FilmContext, bottom: String) -> void:
 	_capture()
 	check(_saw("Extrude Up To Surface 10.0000 mm"),
 			"S3: status has Extrude Up To Surface 10.0000 mm (log=%s label=%s)" % [
-				str(_status_log), str(_main.status_label.text)])
-	check(not _bad_hit(), "S3: no bad status (log=%s label=%s)" % [str(_status_log), str(_main.status_label.text)])
+				str(status_log), str(_main.status_label.text)])
+	check(not _bad_hit(), "S3: no bad status (log=%s label=%s)" % [str(status_log), str(_main.status_label.text)])
 	check(_extrude_count(doc) == exts_before + 1,
 			"S3: one more extrude feature (%d -> %d)" % [exts_before, _extrude_count(doc)])
 	var bodies: PackedStringArray = doc.body_ids()
@@ -380,7 +380,7 @@ func _stage_s4(ctx: FilmContext, top: String, body: String) -> void:
 	_capture()
 	var ex_btn := chrome.extrude_button()
 	check(ex_btn != null and not ex_btn.disabled, "S4: Extrude is enabled")
-	_status_log.clear()
+	status_log.clear()
 	_stage_base = str(_main.status_label.text)
 	if ex_btn != null:
 		await _x11_click(ex_btn)
@@ -389,8 +389,8 @@ func _stage_s4(ctx: FilmContext, top: String, body: String) -> void:
 	_capture()
 	check(_saw("Extrude Blind 2.5000 mm"),
 			"S4: status Extrude Blind 2.5000 mm (log=%s label=%s)" % [
-				str(_status_log), str(_main.status_label.text)])
-	check(not _bad_hit(), "S4: no bad status (log=%s label=%s)" % [str(_status_log), str(_main.status_label.text)])
+				str(status_log), str(_main.status_label.text)])
+	check(not _bad_hit(), "S4: no bad status (log=%s label=%s)" % [str(status_log), str(_main.status_label.text)])
 	var doc = ctx.view.doc
 	var bodies: PackedStringArray = doc.body_ids()
 	if bodies.is_empty():
@@ -424,7 +424,7 @@ func _stage_s5(ctx: FilmContext, body: String) -> void:
 func _fillet_one(ctx: FilmContext, body: String, label: String, neck_x: float, point: Vector3,
 		radius: float) -> void:
 	var before := _count_type(ctx, "fillet")
-	var log_at := _status_log.size()
+	var log_at := status_log.size()
 	if label == "neck":
 		await _fillet_neck(ctx, body, neck_x)
 	elif label == "bottom face":
@@ -445,7 +445,7 @@ func _fillet_slot_floor(ctx: FilmContext, body: String) -> void:
 	await _ensure_body_selected(ctx, body)
 	var before := _count_type(ctx, "fillet")
 	var tris0 := _tri_count(ctx.view.doc, body)
-	var log_at := _status_log.size()
+	var log_at := status_log.size()
 	await _arm_fillet(ctx, 1.0)
 	await _view_key(ctx, KEY_3)
 	await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
@@ -530,29 +530,20 @@ func _stage_s8() -> void:
 
 
 func _run_checker_print(kind: String, args: Array) -> Dictionary:
-	var repo := ProjectSettings.globalize_path("res://").trim_suffix("/").get_base_dir()
-	var checker := repo.path_join("tools/check_rung01.py")
-	var output: Array = []
-	var argv := PackedStringArray()
-	argv.append(checker)
-	argv.append(kind)
-	for a in args:
-		argv.append(str(a))
 	print("CHECKER %s" % kind)
-	var code := OS.execute("python3", argv, output, true)
-	var text := "\n".join(output)
-	print(text)
-	return {"code": code, "text": text}
+	var all: Array = [kind]
+	all.append_array(args)
+	return SxChecker.run("rung01", all)
 
 
 func _fresh_has(needle: String, log_at: int) -> bool:
 	if _main != null and str(_main.status_label.text).contains(needle):
 		return true
 	var start := log_at
-	if start > _status_log.size():
+	if start > status_log.size():
 		start = 0
-	for i in range(start, _status_log.size()):
-		if _status_log[i].contains(needle):
+	for i in range(start, status_log.size()):
+		if status_log[i].contains(needle):
 			return true
 	return false
 
@@ -741,7 +732,7 @@ func _boot() -> FilmContext:
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
 	_main = main
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	if main.ops_panel != null:
 		main.ops_panel.status.connect(_on_status)
@@ -752,12 +743,10 @@ func _boot() -> FilmContext:
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -1299,7 +1288,7 @@ func _fillet_face(ctx: FilmContext, body: String, from_side: Vector3, point: Vec
 	if label == "bottom face":
 		print("  B13.4 Bottom-face pick")
 		bb0 = ctx.view.doc.measure_bbox(body)
-		_status_log.clear()
+		status_log.clear()
 	if label == "slot floor":
 		await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
 	await _click_model(ctx, point, label)

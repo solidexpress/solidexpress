@@ -14,7 +14,6 @@ const OUTER_SHORT := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 30.
 const LONG_DISCARD := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 + Vector2(-0.70710678, 0.70710678) * 10.0
 const CUTTER_MID := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 12.0
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -34,7 +33,7 @@ func test_drag_outer_short_opens_jaw() -> void:
 	print("-- drag across the outer short side (profile Line cutter)")
 	var ctx := await _open_line_cutter_scene("perp")
 	var sm: SketchMode = ctx.main.sketch_mode
-	_status_log.clear()
+	status_log.clear()
 	await _drag_between(ctx, OUTER_SHORT + JAW_DIR * 4.0, OUTER_SHORT - JAW_DIR * 4.0)
 	_assert_opened(sm, "outer-short drag")
 	await _shutdown(ctx)
@@ -45,7 +44,7 @@ func test_drag_long_side_opens_jaw() -> void:
 	var ctx := await _open_line_cutter_scene("perp")
 	var sm: SketchMode = ctx.main.sketch_mode
 	var before := _entity_span(sm)
-	_status_log.clear()
+	status_log.clear()
 	await _drag_between(ctx, LONG_DISCARD + JAW_ACROSS * 4.0, LONG_DISCARD - JAW_ACROSS * 4.0)
 	_assert_opened(sm, "long-side drag")
 	check(_entity_span(sm) > 20.0, "long-side drag does not collapse the jaw (span %.2f, was %.2f)" % [
@@ -57,7 +56,7 @@ func test_drag_across_cutter_opens_jaw() -> void:
 	print("-- drag across the cutter Line itself")
 	var ctx := await _open_line_cutter_scene("perp")
 	var sm: SketchMode = ctx.main.sketch_mode
-	_status_log.clear()
+	status_log.clear()
 	await _drag_between(ctx, CUTTER_MID - JAW_DIR * 6.0, CUTTER_MID + JAW_DIR * 6.0)
 	_assert_opened(sm, "cutter-line drag")
 	await _shutdown(ctx)
@@ -72,7 +71,7 @@ func test_horizontal_line_through_head() -> void:
 	if sides.size() == 2:
 		var d: Vector2 = (sides[0]["b"] as Vector2) - (sides[0]["a"] as Vector2)
 		check(sm._dirs_within_deg(d, JAW_DIR, 2.0), "long-side dir is the 45° jaw, not +X")
-	_status_log.clear()
+	status_log.clear()
 	await _drag_between(ctx, OUTER_SHORT + JAW_DIR * 4.0, OUTER_SHORT - JAW_DIR * 4.0)
 	_assert_opened(sm, "horizontal-cutter drag")
 	await _shutdown(ctx)
@@ -82,14 +81,14 @@ func test_second_stroke_already_open() -> void:
 	print("-- a second trim stroke says the jaw is already open")
 	var ctx := await _open_line_cutter_scene("perp")
 	var sm: SketchMode = ctx.main.sketch_mode
-	_status_log.clear()
+	status_log.clear()
 	await _drag_between(ctx, SHAFT_SIDE, HEAD + Vector2(0.0, 18.0))
-	check(_status_has("Trimmed open jaw"), "first stroke opens the jaw (log=%s)" % str(_status_log))
+	check(_status_has("Trimmed open jaw"), "first stroke opens the jaw (log=%s)" % str(status_log))
 	var n := sm.sketch.entity_ids().size()
-	_status_log.clear()
+	status_log.clear()
 	await _drag_between(ctx, SHAFT_SIDE + Vector2(-2.0, -2.0), HEAD + Vector2(0.0, 16.0))
-	check(_status_has("Jaw is already open"), "second stroke: Jaw is already open (log=%s)" % str(_status_log))
-	check(not _status_has("Trim failed"), "second stroke is not a failure (log=%s)" % str(_status_log))
+	check(_status_has("Jaw is already open"), "second stroke: Jaw is already open (log=%s)" % str(status_log))
+	check(not _status_has("Trim failed"), "second stroke is not a failure (log=%s)" % str(status_log))
 	check(sm.sketch.entity_ids().size() == n, "second stroke changes no entity")
 	await _shutdown(ctx)
 
@@ -107,16 +106,16 @@ func test_rectangle_without_circle_is_not_jaw_trim() -> void:
 	sm.run_solve()
 	await _zoom_model(ctx, sm.to_model(Vector2(20, 10)), 80.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv_local(ctx, Vector2(30, 0), "kernel trim on a rectangle side")
-	check(not _status_has("Trimmed open jaw"), "no circle: not an open-jaw trim (log=%s)" % str(_status_log))
-	check(not _status_has("no head circle"), "no circle: does not consume the click as a jaw refusal (log=%s)" % str(_status_log))
+	check(not _status_has("Trimmed open jaw"), "no circle: not an open-jaw trim (log=%s)" % str(status_log))
+	check(not _status_has("no head circle"), "no circle: does not consume the click as a jaw refusal (log=%s)" % str(status_log))
 	await _shutdown(ctx)
 
 
 func _assert_opened(sm: SketchMode, tag: String) -> void:
-	check(_status_has("Trimmed open jaw"), "%s status is Trimmed open jaw (log=%s)" % [tag, str(_status_log)])
-	check(not _status_has("no crossing to trim at"), "%s is not a kernel miss (log=%s)" % [tag, str(_status_log)])
+	check(_status_has("Trimmed open jaw"), "%s status is Trimmed open jaw (log=%s)" % [tag, str(status_log)])
+	check(not _status_has("no crossing to trim at"), "%s is not a kernel miss (log=%s)" % [tag, str(status_log)])
 	check(SketchMode.profile_is_closed(sm.sketch), "%s trimmed profile is closed" % tag)
 	check(absf(_arc_radius_near(sm, HEAD) - 22.5) <= 0.3,
 			"%s head cap arc is Ø45 (radius %.2f)" % [tag, _arc_radius_near(sm, HEAD)])
@@ -277,17 +276,15 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false

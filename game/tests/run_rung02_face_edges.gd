@@ -263,7 +263,7 @@ func _build_box(ctx: FilmContext) -> void:
 	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(0, 0))
 	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(100, 60))
 	await process_frame
-	var dist := _distance_edit(ctx)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dist != null and dist.is_visible_in_tree(), "Distance field is visible")
 	if dist != null:
 		await _x11_click(dist)
@@ -449,11 +449,6 @@ func _body(ctx: FilmContext) -> String:
 	return str(ids[0])
 
 
-func _distance_edit(ctx: FilmContext) -> LineEdit:
-	var chrome = ctx.main.sketch_chrome
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _status_since(mark: int) -> String:

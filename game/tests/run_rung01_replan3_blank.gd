@@ -5,10 +5,10 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const TOL := 0.2
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan3 WP3 blank")
 	FilmUI.reset_fail_count()
 	var src := FileAccess.get_file_as_string("res://tests/run_rung01_replan3_blank.gd")
@@ -32,7 +32,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	return ctx
@@ -46,14 +46,11 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _latest_status(ctx: FilmContext) -> String:
-	if not _status_log.is_empty():
-		return _status_log[_status_log.size() - 1]
+	if not status_log.is_empty():
+		return status_log[status_log.size() - 1]
 	if ctx.main != null and ctx.main.status_label != null:
 		return str(ctx.main.status_label.text)
 	return ""
@@ -116,15 +113,15 @@ func test_tangent_blank_and_open_vertex() -> void:
 	await _assert_thin_off(ctx)
 	await _type_distance(ctx, "10")
 	before = _count_type(ctx, "extrude")
-	_status_log.clear()
+	status_log.clear()
 	await _press_extrude(ctx, "Extrude closed wrench blank 10")
 	await process_frame
 	await process_frame
 	var open_again := false
-	for s in _status_log:
+	for s in status_log:
 		if str(s).contains("open profile"):
 			open_again = true
-	check(not open_again, "closed blank did not emit open profile (%s)" % ",".join(_status_log))
+	check(not open_again, "closed blank did not emit open profile (%s)" % ",".join(status_log))
 	check(not sm.active, "closed blank leaves sketch mode")
 	check(_count_type(ctx, "extrude") == before + 1, "blank extrude added")
 	check(_count_type(ctx, "primitive") == 0, "blank is not a primitive")

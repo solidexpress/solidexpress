@@ -4,7 +4,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -53,26 +52,26 @@ func test_cut_guard() -> void:
 	await process_frame
 	sm = ctx.main.sketch_mode
 	var big: String = sm.sketch.add_circle(0.0, 0.0, 45.0)
-	_status_log.clear()
+	status_log.clear()
 	sm.finish_extrude(10.0, "cut", "blind", 0.0, "one_side", false, [])
 	await process_frame
-	check(_status_has("Cut would remove 81% of the body"), "an 81%% cut gets the named refuse (log: %s)" % str(_status_log))
+	check(_status_has("Cut would remove 81% of the body"), "an 81%% cut gets the named refuse (log: %s)" % str(status_log))
 	check(sm.active, "the sketch session stays open after the refuse")
 	check(_extrude_count(doc) == extrudes_before, "the refused cut leaves no extrude feature")
 	check(absf(_volume(doc, doc.body_ids()[0]) - base_vol) < 1.0, "the body volume is unchanged after the refuse")
 
 	sm.sketch.remove_entity(big)
 	sm.sketch.add_circle(200.0, 0.0, 5.0)
-	_status_log.clear()
+	status_log.clear()
 	sm.finish_extrude(10.0, "cut", "blind", 0.0, "one_side", false, [])
 	await process_frame
-	check(_status_has("Cut removed nothing"), "a contour off the body gets the named refuse (log: %s)" % str(_status_log))
+	check(_status_has("Cut removed nothing"), "a contour off the body gets the named refuse (log: %s)" % str(status_log))
 	check(sm.active and _extrude_count(doc) == extrudes_before, "nothing was cut and the session is open")
 
 	for id in sm.sketch.entity_ids():
 		sm.sketch.remove_entity(id)
 	sm.sketch.add_circle(0.0, 0.0, 5.0)
-	_status_log.clear()
+	status_log.clear()
 	sm.finish_extrude(10.0, "cut", "blind", 0.0, "one_side", false, [])
 	await process_frame
 	await process_frame
@@ -85,7 +84,7 @@ func test_cut_guard() -> void:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -101,13 +100,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

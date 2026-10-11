@@ -37,6 +37,14 @@ static func ensure_test_viewport(ctx: FilmContext, size: Vector2i = Vector2i(128
 	isolate_background_window(ctx.tree)
 
 
+## Extrude Distance line edit on the sketch chrome.
+static func distance_edit(ctx: FilmContext) -> LineEdit:
+	var chrome = ctx.main.sketch_chrome if ctx != null and ctx.main != null else null
+	if chrome == null:
+		return null
+	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
+
+
 ## Keep the Godot window from stealing the operator's desktop during films /
 ## non-headless UI runners, without stopping per-frame presents.
 ## Synthetic FilmUI input still works (injected events; focus not required).

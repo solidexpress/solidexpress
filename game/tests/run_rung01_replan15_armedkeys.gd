@@ -15,7 +15,6 @@ const ARMED_ENTER := "Fillet r=10.00 — edit Radius, click edges, Enter"
 const CANCELLED := "No edges selected — cancelled"
 const EDGE_PICK_CANCELLED := "Edge pick cancelled"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -77,16 +76,16 @@ func _parses_to(text: String, want: float) -> bool:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _push_key_local(vp: Viewport, code: int, unicode: int = 0, ctrl := false) -> void:
@@ -148,18 +147,13 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	if main.ops_panel != null and not main.ops_panel.status.is_connected(_on_status):
 		main.ops_panel.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:
@@ -274,7 +268,7 @@ func _row_a1() -> void:
 	var vp: Viewport = main.get_viewport()
 	await _arm_fillet_strip(ctx)
 	_armed(main, OpsPanel.Pending.FILLET_EDGES, "A1 after arm")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
@@ -301,7 +295,7 @@ func _row_a2() -> void:
 	await process_frame
 	await process_frame
 	var after_arrows := _strip_text(main)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
@@ -325,7 +319,7 @@ func _row_a3() -> void:
 	if spin == null:
 		await _shutdown(ctx)
 		return
-	_status_log.clear()
+	status_log.clear()
 	await _type_replace(vp, spin, "10")
 	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
@@ -337,20 +331,20 @@ func _row_a3() -> void:
 	check(after_enter == ARMED_ENTER,
 			"A3: status after Enter is `%s` (got `%s`)" % [ARMED_ENTER, after_enter])
 	check(not _status_has("No edges selected"),
-			"A3: No edges selected never appears before key 4 (log=%s)" % str(_status_log))
+			"A3: No edges selected never appears before key 4 (log=%s)" % str(status_log))
 	_armed(main, OpsPanel.Pending.FILLET_EDGES, "A3 after Enter")
 	check(_strip_text(main).strip_edges().begins_with("10"),
 			"A3: strip text starts with 10 (got `%s`)" % _strip_text(main))
 	check(_parses_to(_panel_text(main), 10.0),
 			"A3: panel parses to 10 (got `%s`)" % _panel_text(main))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
 	_assert_view(main.camera, BACK_PITCH, "Back view", "A3")
 	_armed(main, OpsPanel.Pending.FILLET_EDGES, "A3 after 4")
 	check(not _status_has("No edges selected"),
-			"A3: No edges selected never appears (log=%s)" % str(_status_log))
+			"A3: No edges selected never appears (log=%s)" % str(status_log))
 	await _shutdown(ctx)
 
 
@@ -369,7 +363,7 @@ func _row_a4() -> void:
 	await process_frame
 	await process_frame
 	await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
@@ -400,7 +394,7 @@ func _row_b1() -> void:
 	await process_frame
 	await process_frame
 	await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
@@ -424,7 +418,7 @@ func _row_b2() -> void:
 	FilmUI.ensure_control_visible(panel)
 	await process_frame
 	await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await _type_replace(vp, panel, "10")
 	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
@@ -436,13 +430,13 @@ func _row_b2() -> void:
 	check(after_enter == ARMED_ENTER,
 			"B2: status after Enter is `%s` (got `%s`)" % [ARMED_ENTER, after_enter])
 	check(not _status_has("No edges selected"),
-			"B2: No edges selected never appears (log=%s)" % str(_status_log))
+			"B2: No edges selected never appears (log=%s)" % str(status_log))
 	_armed(main, OpsPanel.Pending.FILLET_EDGES, "B2 after Enter")
 	check(_parses_to(_strip_text(main), 10.0),
 			"B2: strip parses to 10 (got `%s`)" % _strip_text(main))
 	check(_parses_to(_panel_text(main), 10.0),
 			"B2: panel parses to 10 (got `%s`)" % _panel_text(main))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_4, 52)
 	await process_frame
 	await process_frame
@@ -470,7 +464,7 @@ func _row_c1() -> void:
 	var vp: Viewport = main.get_viewport()
 	var view: DocumentView = ctx.view
 	await _arm_fillet_strip(ctx)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
@@ -489,7 +483,7 @@ func _row_c1() -> void:
 				str(view.selected_edges), view.selected_edge])
 	var spin := _strip(main)
 	if spin != null:
-		_status_log.clear()
+		status_log.clear()
 		await _type_replace(vp, spin, "1")
 		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
@@ -501,18 +495,18 @@ func _row_c1() -> void:
 				"C1: field Enter does not add a fillet (before %d after %d)" % [before, _fillet_count(view)])
 		main.interaction.return_viewport_keys()
 		await process_frame
-		_status_log.clear()
+		status_log.clear()
 		await _push_key_local(vp, KEY_ENTER)
 		await process_frame
 		await process_frame
 		await process_frame
 	var applied := false
-	for s in _status_log:
+	for s in status_log:
 		if s.begins_with("Fillet edge 1.00 applied") or s.begins_with("Fillet 1 edges 1.00 applied"):
 			applied = true
 	print("  C1 status after Enter: `%s` pending=%s log=%s" % [
-		_last_status(), str(main.ops_panel._pending), str(_status_log)])
-	check(applied, "C1: status starts Fillet edge/1 edges 1.00 applied (log=%s)" % str(_status_log))
+		_last_status(), str(main.ops_panel._pending), str(status_log)])
+	check(applied, "C1: status starts Fillet edge/1 edges 1.00 applied (log=%s)" % str(status_log))
 	check(_fillet_count(view) == before + 1,
 			"C1: one fillet feature added (before %d after %d)" % [before, _fillet_count(view)])
 	check(main.ops_panel._pending == OpsPanel.Pending.NONE,
@@ -534,7 +528,7 @@ func _row_c2() -> void:
 	await process_frame
 	check(main.view.selected_edges.is_empty() and main.view.selected_edge == "",
 			"C2: empty canvas picked no edge (edges %s)" % str(main.view.selected_edges))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ENTER)
 	await process_frame
 	await process_frame
@@ -543,7 +537,7 @@ func _row_c2() -> void:
 	check(main.ops_panel._pending == OpsPanel.Pending.NONE,
 			"C2: viewport Enter disarms (pending %s)" % str(main.ops_panel._pending))
 	check(_last_status() == CANCELLED or _status_has(CANCELLED),
-			"C2: status is `%s` (got `%s` log=%s)" % [CANCELLED, _last_status(), str(_status_log)])
+			"C2: status is `%s` (got `%s` log=%s)" % [CANCELLED, _last_status(), str(status_log)])
 	await _shutdown(ctx)
 
 
@@ -565,7 +559,7 @@ func _row_c3() -> void:
 	print("  C3 status after Enter: `%s` pending=%s" % [
 		_last_status(), str(main.ops_panel._pending)])
 	_armed(main, OpsPanel.Pending.CHAMFER_EDGES, "C3 after Enter")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	await process_frame
@@ -591,7 +585,7 @@ func _row_d1() -> void:
 	var fillet: Button = main.interaction.find_child("StripFillet", true, false)
 	check(fillet != null and fillet.is_visible_in_tree(), "D1: StripFillet visible for the second press")
 	if fillet != null:
-		_status_log.clear()
+		status_log.clear()
 		await _click_at(vp, fillet.get_global_rect().get_center())
 		await process_frame
 		await process_frame
@@ -601,7 +595,7 @@ func _row_d1() -> void:
 	check(main.ops_panel._pending == OpsPanel.Pending.NONE,
 			"D1: second Fillet press disarms (pending %s)" % str(main.ops_panel._pending))
 	check(_last_status() == CANCELLED or _status_has(CANCELLED),
-			"D1: status is `%s` (got `%s` log=%s)" % [CANCELLED, _last_status(), str(_status_log)])
+			"D1: status is `%s` (got `%s` log=%s)" % [CANCELLED, _last_status(), str(status_log)])
 	await _shutdown(ctx)
 
 
@@ -621,7 +615,7 @@ func _row_d2() -> void:
 		await process_frame
 	print("  D2 before Esc: pending=%s focus=%s" % [
 		str(main.ops_panel._pending), str(vp.gui_get_focus_owner())])
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE)
 	await process_frame
 	await process_frame
@@ -634,5 +628,5 @@ func _row_d2() -> void:
 	check(main.ops_panel._pending == OpsPanel.Pending.NONE,
 			"D2: Esc cleared the armed fillet within two presses (pending %s)" % str(main.ops_panel._pending))
 	check(_status_has(EDGE_PICK_CANCELLED),
-			"D2: status is Edge pick cancelled (log=%s label=`%s`)" % [str(_status_log), _st(main)])
+			"D2: status is Edge pick cancelled (log=%s label=`%s`)" % [str(status_log), _st(main)])
 	await _shutdown(ctx)

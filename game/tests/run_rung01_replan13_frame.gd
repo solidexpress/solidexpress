@@ -14,7 +14,6 @@ const HEAD := Vector2(200, 0)
 const ORIGIN_R := 10.0
 const HEAD_R := 22.5
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -351,13 +350,13 @@ func _smart_dim_centres_200(ctx: FilmContext) -> void:
 	var gap := _centre_gap(sm)
 	check(absf(gap - 200.0) <= 0.2, "centre distance is 200 ± 0.2 after Smart Dim (got %.3f)" % gap)
 	var saw_dim := false
-	for s in _status_log:
+	for s in status_log:
 		if s.contains("Dimension updated") or s.contains("dimension"):
 			saw_dim = true
 	print("  status after Smart Dim: %s" % str(ctx.main.status_label.text))
 	check(gap > 0.0, "Smart Dim path produced a centre distance")
 	if not saw_dim:
-		print("  note: no 'Dimension updated' in status log (log: %s)" % str(_status_log))
+		print("  note: no 'Dimension updated' in status log (log: %s)" % str(status_log))
 
 
 func _centre_gap(sm: SketchMode) -> float:
@@ -449,16 +448,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

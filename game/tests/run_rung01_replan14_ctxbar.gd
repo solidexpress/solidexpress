@@ -14,7 +14,6 @@ const COMMON := [
 	"StripTriBall", "StripFillet", "StripChamfer",
 ]
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -89,7 +88,7 @@ func _run() -> void:
 	# Arm Fillet by clicking the body-state Fillet centre (must not land on Chamfer).
 	var fillet_body: Rect2 = r_body.get("StripFillet", Rect2())
 	check(fillet_body.size.x > 1.0, "body-state StripFillet rect is real (%s)" % str(fillet_body))
-	_status_log.clear()
+	status_log.clear()
 	await _push_click(vp, fillet_body.get_center())
 	await process_frame
 	await process_frame
@@ -392,8 +391,8 @@ func _face_pick_screen(ctx: FilmContext, body: String) -> Vector2:
 
 
 func _status_text(ctx: FilmContext) -> String:
-	if not _status_log.is_empty():
-		return _status_log[_status_log.size() - 1]
+	if not status_log.is_empty():
+		return status_log[status_log.size() - 1]
 	if ctx.main.status_label != null:
 		return str(ctx.main.status_label.text)
 	return ""
@@ -456,7 +455,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
 		main.interaction.status.connect(_on_status)
 	if main.ops_panel != null and main.ops_panel.has_signal("status") \
@@ -465,8 +464,6 @@ func _boot() -> FilmContext:
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

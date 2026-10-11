@@ -15,7 +15,6 @@ const JAW_DIR := Vector2(0.70710678, 0.70710678)
 const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
 const SHAFT_SIDE := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 + Vector2(-0.70710678, 0.70710678) * 8.0
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -60,7 +59,7 @@ func test_save_does_not_change_labels() -> void:
 	await process_frame
 	await process_frame
 	check(_status_has("Trimmed open jaw"),
-			"status includes Trimmed open jaw (log=%s)" % str(_status_log))
+			"status includes Trimmed open jaw (log=%s)" % str(status_log))
 
 	await _zoom_head_px(ctx, 150.0)
 	await process_frame
@@ -98,7 +97,7 @@ func test_save_does_not_change_labels() -> void:
 	check(sm.active, "sketch still open after Ctrl+S")
 	check(_status_has("Saved ") or str(ctx.main.status_label.text).begins_with("Saved "),
 			"Ctrl+S status is Saved … (got `%s` log=%s)" % [
-				ctx.main.status_label.text, str(_status_log)])
+				ctx.main.status_label.text, str(status_log)])
 	check(FileAccess.file_exists(save_path), "Ctrl+S wrote %s" % save_path)
 	var after_s := _label_rects(sm)
 	print("  after Ctrl+S labels: %s" % _rects_brief(after_s))
@@ -115,7 +114,7 @@ func test_save_does_not_change_labels() -> void:
 	check(sm.active, "sketch still open after File → Save As")
 	check(_status_has("Saved ") or str(ctx.main.status_label.text).begins_with("Saved "),
 			"Save As status is Saved … (got `%s` log=%s)" % [
-				ctx.main.status_label.text, str(_status_log)])
+				ctx.main.status_label.text, str(status_log)])
 	var after := _label_rects(sm)
 	print("  after Save As labels: %s" % _rects_brief(after))
 	_dump_constraints(sm, "after Save As")
@@ -277,7 +276,7 @@ func _commit_jaw_real(ctx: FilmContext) -> void:
 		await process_frame
 		await process_frame
 	sm.snap_enabled = prev_snap
-	check(_status_has("Jaw committed"), "Jaw committed (log=%s)" % str(_status_log))
+	check(_status_has("Jaw committed"), "Jaw committed (log=%s)" % str(status_log))
 
 
 func _type_label(ctx: FilmContext, needle: String, keys: String) -> void:
@@ -328,7 +327,7 @@ func _add_jaw_cutter(sm: SketchMode) -> void:
 func _trim_shaft(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv_local(ctx, SHAFT_SIDE, "Power Trim shaft side")
 	await process_frame
 	await process_frame
@@ -889,22 +888,17 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	if main.has_signal("status") == false and main.status_label != null:
 		pass
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false

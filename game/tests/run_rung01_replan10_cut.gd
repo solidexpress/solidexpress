@@ -17,7 +17,6 @@ const SHAFT_SIDE := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 
 const HANDOUT_ATTEMPTS := 4
 const ATTEMPTS := 6
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -66,7 +65,7 @@ func _face_at(doc, body: String, z: float) -> String:
 
 
 func _log_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -123,13 +122,13 @@ func run_cut(label: String, kind: String) -> Dictionary:
 	check(str(chrome.up_to_face_id) == bottom, "Opposite face stored the bottom face")
 	var vol_before := float(doc.measure_mass(body)["volume"])
 	var exts_before := _extrude_count(doc)
-	_status_log.clear()
+	status_log.clear()
 	await _x11_click(chrome.extrude_button())
 	await process_frame
 	await process_frame
 	await process_frame
 	var out := {"accepted": false, "export_ok": false, "export_msg": "n/a", "vol_before": vol_before,
-			"vol_after": -1.0, "log": _status_log.duplicate()}
+			"vol_after": -1.0, "log": status_log.duplicate()}
 	var bodies: PackedStringArray = doc.body_ids()
 	if not bodies.is_empty():
 		out["vol_after"] = float(doc.measure_mass(bodies[0])["volume"])
@@ -175,12 +174,12 @@ func _build_and_trim_handout_jaw(ctx: FilmContext) -> void:
 	sm.run_solve()
 	await _zoom(ctx, sm.to_model(HEAD), 120.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
-	_status_log.clear()
+	status_log.clear()
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(SHAFT_SIDE))
 	check(FilmUI.require_on_screen(ctx, screen, "trim click"), "the Power Trim click is on screen")
 	await _x11_click_screen(ctx.main.get_viewport(), screen)
 	await process_frame
-	check(_log_has("Trimmed open jaw"), "Power Trim opened the jaw (log: %s)" % str(_status_log))
+	check(_log_has("Trimmed open jaw"), "Power Trim opened the jaw (log: %s)" % str(status_log))
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 
 
@@ -195,13 +194,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

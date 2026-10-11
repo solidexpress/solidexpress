@@ -7,7 +7,6 @@ extends "res://tests/lib/sx_suite.gd"
 const HEAD := Vector2(200.0, 0.0)
 
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -77,7 +76,7 @@ func _folded_to_horizontal_deg(d: Vector2) -> float:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -89,7 +88,7 @@ func test_one_click_angle_and_perp_floor() -> void:
 	var sm: SketchMode = main.sketch_mode
 	var ix: ViewportInteraction = main.interaction
 	_build_jaw(sm, 12.0, Vector2.ZERO)
-	_status_log.clear()
+	status_log.clear()
 	sm.trim_at(_shaft_side())
 	sm.set_tool(SketchMode.Tool.SMART_DIM)
 
@@ -132,9 +131,9 @@ func test_one_click_angle_and_perp_floor() -> void:
 	var selected := "" if ix._dim_edit_line == null else ix._dim_edit_line.get_selected_text()
 	check(selected.length() > 0, "DimEditLine has a selection after two idle frames (sel=%s)" % selected)
 
-	_status_log.clear()
+	status_log.clear()
 	ix._apply_dim_edit("45")
-	check(_status_has("Dimension updated"), "submitting 45 emits Dimension updated (log: %s)" % str(_status_log))
+	check(_status_has("Dimension updated"), "submitting 45 emits Dimension updated (log: %s)" % str(status_log))
 
 	wd = _entity_dir(sm, wall_id)
 	var wall_h := _folded_to_horizontal_deg(wd)
@@ -154,14 +153,14 @@ func test_one_click_angle_and_perp_floor() -> void:
 			"linear width label_pos returns a non-negative dimension_hit (i=%d hit=%d)" % [
 				dist_i, sm.dimension_hit(dist_lp) if dist_lp != null else -1])
 
-	_status_log.clear()
+	status_log.clear()
 	var width_txt := "1"
 	if dist_i >= 0:
 		width_txt = String.num(sm._dimension_display_value(sm.dimensions[dist_i]), 3)
 		ix._show_dim_edit(dist_i)
 	ix._apply_dim_edit(width_txt)
 	check(_status_has("Dimension updated"),
-			"submitting the width's current value still returns Dimension updated (log: %s)" % str(_status_log))
+			"submitting the width's current value still returns Dimension updated (log: %s)" % str(status_log))
 	await _shutdown(main)
 
 
@@ -172,14 +171,11 @@ func _boot():
 	await process_frame
 	main.view.clear_selection()
 	main._start_sketch()
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return main
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(main) -> void:

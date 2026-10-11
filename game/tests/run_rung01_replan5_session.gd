@@ -5,10 +5,10 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan5 WP1 session")
 	FilmUI.reset_fail_count()
 	_assert_source_hygiene()
@@ -102,7 +102,7 @@ func test_discard_open_profile_then_circle() -> void:
 	var after_ids := sm.sketch.entity_ids() if sm.sketch != null else PackedStringArray()
 	check(after_ids.size() < before_ids.size(), "Delete removed the selected edge")
 	check(not SketchMode.profile_is_closed(sm.sketch), "profile is open after Delete")
-	_status_log.clear()
+	status_log.clear()
 	var exit_btn := FilmUI.find_sketch_tool_button(ctx.main, "Exit Sketch")
 	check(exit_btn != null and exit_btn.is_visible_in_tree(), "Exit Sketch is visible")
 	# Finish-bar DimLineEdit can sit on the Exit label at 1280×800. Click the
@@ -132,7 +132,7 @@ func test_discard_open_profile_then_circle() -> void:
 	if not FilmUI.is_on_screen(ctx, origin_screen):
 		await _zoom(ctx, sm.plane_origin, 120.0)
 	await _select_tool(ctx, "Circle")
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv_local(ctx, Vector2(0, 0), "Circle centre")
 	await _click_uv_local(ctx, Vector2(8, 0), "Circle rim")
 	await process_frame
@@ -153,7 +153,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	return ctx
@@ -167,13 +167,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false

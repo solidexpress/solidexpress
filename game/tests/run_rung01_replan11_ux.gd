@@ -5,7 +5,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const RECT_HINT := "Rect — click 1 first corner, click 2 the opposite corner"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -57,10 +56,10 @@ func _run() -> void:
 	var sel: Array[String] = []
 	sel.append(lid)
 	sm._set_selected(sel)
-	_status_log.clear()
+	status_log.clear()
 	await _sketch_key(ix, KEY_DELETE)
 	var deleted_status := _last_status()
-	_status_log.clear()
+	status_log.clear()
 	await _sketch_key(ix, KEY_DELETE)
 	check(deleted_status == "Deleted 1" and _last_status() == "Nothing to delete",
 			"Delete of one line is Deleted 1, then Nothing to delete (got `%s` then `%s`)" % [
@@ -138,7 +137,7 @@ func _run() -> void:
 				str(pp.visible), kept, previewed])
 
 	await FilmUI.enter_sketch(ctx)
-	_status_log.clear()
+	status_log.clear()
 	sm.cancel()
 	await process_frame
 	check(str(main.status_label.text) == "Sketch cancelled" and not sm.active,
@@ -149,7 +148,7 @@ func _run() -> void:
 	sm.sketch.add_line(0.0, 0.0, 10.0, 0.0)
 	var save_path := "/tmp/rung01_wp10_save.sxp"
 	main.current_path = save_path
-	_status_log.clear()
+	status_log.clear()
 	main._save_current()
 	await process_frame
 	var saved := _sxp_text(save_path)
@@ -164,11 +163,11 @@ func _run() -> void:
 
 	await FilmUI.enter_sketch(ctx)
 	sm.sketch.add_line(0.0, 0.0, 10.0, 0.0)
-	_status_log.clear()
+	status_log.clear()
 	sm.exit_sketch()
 	await process_frame
 	check(_status_has("Sketch saved") and not _status_has("Sketch cancelled"),
-			"exit_sketch on a drawn sketch emits Sketch saved and not Sketch cancelled (log: %s)" % str(_status_log))
+			"exit_sketch on a drawn sketch emits Sketch saved and not Sketch cancelled (log: %s)" % str(status_log))
 
 	await _shutdown(ctx)
 
@@ -238,13 +237,13 @@ func _param_float(doc, fid: String, key: String) -> float:
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -260,14 +259,11 @@ func _boot() -> FilmContext:
 	ctx.view = main.view
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _sketch_key(ix: ViewportInteraction, keycode: int) -> void:
