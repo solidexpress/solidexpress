@@ -12,7 +12,7 @@ Organization pass after rung 2, before the lesson-2 film. Behaviour unchanged. H
 
 Shipped Part A WP1–WP12. WP12 adds `FilmSteps` (click-only film steps) and `BoxFixture` (the 100×60×50 validation box). `film_ubc_wrench.gd` is 303 lines. That extraction is net −63 lines. Suites stay **206 run + 4 known-red** (`lint_suites: 210 suites ok (62 ci, 144 full, 4 known-red)`). No ★ work package was parked (WP4, WP7, WP10 shipped). The Revert rule fired for none. Plane-basis check count stays 76 (WP8's +6).
 
-Part B (WP13–WP15) is the lesson-2 box film, its test, the rendered video, and the website card. The website entry is gated on a Release upload: render `lesson2_box` outside the tree, attach the webm to the PR, and append `published-demos.json` and `demo-catalog.json` only after `lesson2_box.webm` is already on Release `demo-movies`. Do not publish from this commit. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card.
+Part B (WP13–WP15) is the lesson-2 box film, its test, the rendered video, and the website card. The website entry is gated on a Release upload. WP13 adds the film, the manifest id, and the how-to only. Do not add `lesson2_box` to `published-demos.json` or `demo-catalog.json` until `lesson2_box.webm` is on Release `demo-movies`. Pending publish, after the webm and vtt exist outside the tree: `gh release upload demo-movies -R solidexpress/solidexpress.github.io --clobber lesson2_box.webm lesson2_box.vtt`, then `SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature lesson2_box`, then a one-line follow-up commit. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card.
 
 ## Post-rung-1 cleanup
 

@@ -7,6 +7,15 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const SxInput = preload("res://tests/lib/sx_input.gd")
 
+## Lesson 2 box: four vertical corners. Iso shows the y-min pair;
+## Right and Left show the y-max pair (the walk's CORNERS table).
+const _BOX_CORNERS: Array = [
+	{"x_max": true, "y_max": false, "key": KEY_7},
+	{"x_max": false, "y_max": false, "key": KEY_7},
+	{"x_max": true, "y_max": true, "key": KEY_2},
+	{"x_max": false, "y_max": true, "key": KEY_6},
+]
+
 
 static func press_rail(ctx: FilmContext, label: String) -> void:
 	var b := FilmUI.find_sketch_tool_button(ctx.main, label)
@@ -198,3 +207,120 @@ static func export_3mf(ctx: FilmContext) -> void:
 	await FilmUI.wait_frames(ctx.tree, 6)
 	if dlg.visible:
 		dlg.hide()
+
+
+static func pick_corner_edges(ctx: FilmContext, body: String) -> void:
+	if body == "" or ctx.view == null or ctx.view.doc == null:
+		FilmUI._fail("corner fillet needs a body")
+		return
+	var bb: Dictionary = ctx.view.doc.measure_bbox(body)
+	if bb.is_empty():
+		FilmUI._fail("corner fillet: body has no bbox")
+		return
+	var mn: Vector3 = bb["min"]
+	var mx: Vector3 = bb["max"]
+	var mid_z := (mn.z + mx.z) * 0.5
+	await _release_line_focus(ctx)
+	for spec in _BOX_CORNERS:
+		var x := mx.x if bool(spec["x_max"]) else mn.x
+		var y := mx.y if bool(spec["y_max"]) else mn.y
+		await SxInput.push_key(ctx.main.get_viewport(), spec["key"] as Key)
+		await FilmUI.wait_frames(ctx.tree, 3)
+		var world := Vector3(x, y, mid_z)
+		await SxInput.zoom(ctx, world, 70.0)
+		var screen := FilmUI.model_to_screen(ctx, world)
+		if not FilmUI.require_on_screen(ctx, screen, "corner edge"):
+			return
+		await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Corner edge"))
+		await FilmUI.wait_frames(ctx.tree, 2)
+
+
+static func shell_selected_face(ctx: FilmContext, mm: float) -> void:
+	var chip := _by_auto(ctx.main, "strip:shell") as Button
+	if chip == null or not chip.is_visible_in_tree():
+		FilmUI._fail("Shell chip is hidden")
+		return
+	if not await FilmUI.click_control(ctx, chip, FilmUICues.alert("Shell", "Hollow the selected face")):
+		return
+	await FilmUI.wait_frames(ctx.tree, 3)
+	var field := _by_auto(ctx.main, "finish:Thickness") as LineEdit
+	if field == null or not field.is_visible_in_tree():
+		FilmUI._fail("Shell thickness field is hidden")
+		return
+	var digits := str(int(round(mm))) if is_equal_approx(mm, round(mm)) else str(mm)
+	await SxInput.type_text(field.get_viewport(), digits)
+	await FilmUI.wait_frames(ctx.tree, 1)
+	var ok := _by_auto(ctx.main, "finish:Ok") as Button
+	if ok == null or not ok.is_visible_in_tree():
+		FilmUI._fail("Shell Apply is hidden")
+		return
+	await FilmUI.click_control(ctx, ok, FilmUICues.alert("Apply", "Shell %s mm" % digits))
+	await FilmUI.wait_frames(ctx.tree, 4)
+
+
+static func open_side_face_sketch(ctx: FilmContext, normal: Vector3, view_key: Key) -> void:
+	var body := only_body(ctx)
+	if body == "":
+		FilmUI._fail("side sketch needs one body")
+		return
+	await _release_line_focus(ctx)
+	await SxInput.push_key(ctx.main.get_viewport(), view_key)
+	await FilmUI.wait_frames(ctx.tree, 3)
+	var face := FilmUI.find_face_by_normal(ctx.view, body, normal)
+	if face == "":
+		FilmUI._fail("no face for normal %s" % str(normal))
+		return
+	var pt := FilmUI.face_pick_point(ctx.view, body, face)
+	if pt == Vector3.INF:
+		FilmUI._fail("no pick point for the side face")
+		return
+	var screen := FilmUI.model_to_screen(ctx, pt)
+	if not FilmUI.require_on_screen(ctx, screen, "side face"):
+		return
+	await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Side face"))
+	await FilmUI.wait_frames(ctx.tree, 2)
+	if ctx.view.selected_face != face:
+		await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Side face"))
+		await FilmUI.wait_frames(ctx.tree, 2)
+	if ctx.view.selected_face != face:
+		FilmUI._fail("side face not selected")
+		return
+	await SxInput.push_key(ctx.main.get_viewport(), view_key)
+	await FilmUI.wait_frames(ctx.tree, 2)
+	var strip: Node = ctx.main.find_child("SelectionStrip", true, false)
+	var chip := FilmUI.find_button(strip, "Sketch") if strip != null else null
+	if chip == null or not chip.is_visible_in_tree():
+		FilmUI._fail("Sketch chip is hidden")
+		return
+	await FilmUI.click_control(ctx, chip, FilmUICues.toolbar_sketch())
+	await FilmUI.wait_frames(ctx.tree, 4)
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null or not sm.active:
+		FilmUI._fail("side-face sketch did not start")
+
+
+static func convert_edge(ctx: FilmContext, world: Vector3) -> void:
+	await press_rail(ctx, "Convert")
+	if FilmUI.fail_count > 0:
+		return
+	await SxInput.zoom(ctx, world, 140.0)
+	var screen := FilmUI.model_to_screen(ctx, world)
+	if not FilmUI.require_on_screen(ctx, screen, "Convert edge"):
+		return
+	await FilmUI.viewport_click(ctx, screen, FilmUICues.sketch_click("Convert edge"))
+	await FilmUI.wait_frames(ctx.tree, 3)
+
+
+static func _by_auto(root: Node, id: String) -> Control:
+	if root == null:
+		return null
+	for c in root.find_children("*", "Control", true, false):
+		if str(c.get_meta("sx_auto", "")) == id:
+			return c as Control
+	return null
+
+
+static func _release_line_focus(ctx: FilmContext) -> void:
+	var owner: Node = ctx.main.get_viewport().gui_get_focus_owner()
+	if owner is LineEdit:
+		await SxInput.push_key(ctx.main.get_viewport(), KEY_TAB)
