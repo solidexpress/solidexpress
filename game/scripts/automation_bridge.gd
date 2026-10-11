@@ -15,11 +15,8 @@ var _mouse_down := false
 var _mods := {"shift": false, "ctrl": false, "alt": false, "meta": false}
 var _trace: PackedStringArray = PackedStringArray()
 var _trace_marks := {}
-var _edge_cache: Array = []
-var _edge_cache_rev := -1
-var _face_cache: Array = []
-## (document revision, camera transform). Screen pixels are not valid across a view change.
-var _face_cache_key := ""
+var _edge_cache := ViewCache.new()
+var _face_cache := ViewCache.new()
 
 func _tool_names() -> PackedStringArray:
 	return SketchToolSpec.tool_names()
@@ -1856,8 +1853,7 @@ func _bodies_state(view) -> Array:
 	for bid in view.doc.body_ids():
 		var bb: Dictionary = view.doc.measure_bbox(bid)
 		var rec := {"id": str(bid), "name": str(view.doc.body_name(bid))}
-		if view.doc.has_method("body_volume"):
-			rec["volume"] = float(view.doc.body_volume(bid))
+		rec["volume"] = float(view.doc.body_volume(bid))
 		if bb.has("min") and bb.has("max"):
 			rec["min"] = _v3(bb["min"])
 			rec["max"] = _v3(bb["max"])
@@ -1868,47 +1864,28 @@ func _bodies_state(view) -> Array:
 
 
 func _faces_cached(view) -> Array:
-	if view == null or view.doc == null:
+	if not (view is DocumentView) or view.doc == null:
 		return []
-	var key := _face_view_key(view)
-	if key != _face_cache_key:
-		_face_cache = _build_faces(view)
-		_face_cache_key = key
-	return _face_cache
+	var dv: DocumentView = view
+	return _face_cache.fetch(_face_key(dv), func() -> Array: return _build_faces(dv))
 
 
-## revision plus the camera that projects `screen`. A view change is a new key.
-func _face_view_key(view) -> String:
-	var rev := int(view.doc.revision()) if view.doc.has_method("revision") else -1
-	return "%d|%s" % [rev, _camera_stamp(_main().get("camera"))]
-
-
-func _camera_stamp(cam) -> String:
+## revision, camera frame, projection, and size. Screen pixels follow that key.
+func _face_key(view: DocumentView) -> Array:
+	var cam := _main().get("camera") as Camera3D
 	if cam == null:
-		return "-"
-	var xf: Transform3D = cam.global_transform
-	var o := xf.origin
-	var x := xf.basis.x
-	var y := xf.basis.y
-	var z := xf.basis.z
-	return "%.3f,%.3f,%.3f|%.5f,%.5f,%.5f|%.5f,%.5f,%.5f|%.5f,%.5f,%.5f|%d|%.4f" % [
-		o.x, o.y, o.z,
-		x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z,
-		int(cam.projection), cam.size,
-	]
+		return [int(view.doc.revision()), null, null, null]
+	return [int(view.doc.revision()), cam.global_transform, cam.projection, cam.size]
 
 
 func _edges_cached(view) -> Array:
 	if view == null or view.doc == null:
 		return []
-	var rev := int(view.doc.revision()) if view.doc.has_method("revision") else -1
-	if rev != _edge_cache_rev:
-		_edge_cache = _build_edges(view)
-		_edge_cache_rev = rev
-	return _edge_cache
+	var rev := int(view.doc.revision())
+	return _edge_cache.fetch(rev, func() -> Array: return _build_edges(view))
 
 
-func _build_faces(view) -> Array:
+func _build_faces(view: DocumentView) -> Array:
 	var out: Array = []
 	for bid in view.doc.body_ids():
 		for fid in view.doc.get_face_ids(bid):
@@ -1917,18 +1894,13 @@ func _build_faces(view) -> Array:
 
 
 ## One record: identity, the face frame (centre, normal, area), and where it sits now.
-func _face_record(view, body: String, fid: String) -> Dictionary:
+func _face_record(view: DocumentView, body: String, fid: String) -> Dictionary:
 	var centre: Vector3 = view.doc.face_midpoint(fid)
-	var normal := Vector3.ZERO
-	if view.has_method("face_normal"):
-		normal = view.face_normal(body, fid)
-	var area := 0.0
-	if view.doc.has_method("measure_face_area"):
-		area = float(view.doc.measure_face_area(fid))
+	var normal: Vector3 = view.face_normal(body, fid)
+	var area := float(view.doc.measure_face_area(fid))
 	return {
 		"id": fid,
 		"body": body,
-		"mid": _v3(centre),
 		"centre": _v3(centre),
 		"normal": _v3(normal),
 		"area": snappedf(area, 0.001),
@@ -1947,7 +1919,7 @@ func _resolve_face_query(req: Dictionary, offset: Vector2) -> Dictionary:
 		face = _find_face_by_normal(_vec3(req["face_normal"]))
 		if face.is_empty():
 			return {"error": "face not found for normal %s" % str(req["face_normal"])}
-	var centre := _vec3(face.get("centre", face.get("mid")))
+	var centre := _vec3(face["centre"])
 	return {
 		"vp": _main().get_viewport(),
 		"pos": _model_to_screen(centre) + offset,
@@ -2032,7 +2004,7 @@ func _find_face(id: String) -> Dictionary:
 
 func _features_state(view) -> Array:
 	var out: Array = []
-	if view == null or view.doc == null or not view.doc.has_method("graph_features"):
+	if view == null or view.doc == null:
 		return out
 	for f in view.doc.graph_features():
 		if f is Dictionary:

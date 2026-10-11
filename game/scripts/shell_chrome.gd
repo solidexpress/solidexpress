@@ -21,6 +21,13 @@ var _chip: Button
 var _panel: PanelContainer
 var _field: LineEdit
 var _ok: Button
+var _view_of: Callable
+var _sketching: Callable
+
+
+func bind(view: Callable, sketching: Callable) -> void:
+	_view_of = view
+	_sketching = sketching
 
 
 func build(row: Node, overlay: Control) -> void:
@@ -136,16 +143,16 @@ func _on_chip() -> void:
 
 
 func _planar_face_selected() -> bool:
-	var ix = get_parent()
-	if ix == null or ix.view == null:
+	var view := _view()
+	if view == null:
 		return false
-	if ix.sketch_mode != null and ix.sketch_mode.active:
+	if _sketching.is_valid() and bool(_sketching.call()):
 		return false
-	var face: String = ix.view.selected_face
-	var body: String = ix.view.selected_body
+	var face: String = view.selected_face
+	var body: String = view.selected_body
 	if face == "" or body == "":
 		return false
-	return ix.view.face_is_planar(body, face)
+	return view.face_is_planar(body, face)
 
 
 func _selected_faces(view: DocumentView) -> PackedStringArray:
@@ -166,10 +173,9 @@ func _min_extent(view: DocumentView, body: String) -> float:
 
 
 func _view() -> DocumentView:
-	var ix = get_parent()
-	if ix == null:
+	if not _view_of.is_valid():
 		return null
-	return ix.view
+	return _view_of.call()
 
 
 func _parse_mm(text: String) -> float:

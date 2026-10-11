@@ -1492,26 +1492,7 @@ func _offset() -> void:
 
 
 func _shell() -> void:
-	if interaction != null and interaction.has_method("apply_shell_thickness"):
-		interaction.apply_shell_thickness(_thickness_spin.value)
-		return
-	# Multi-selected faces all open; else the single selected face.
-	var faces := PackedStringArray(view.selected_faces)
-	if faces.is_empty() and view.selected_face != "":
-		faces = PackedStringArray([view.selected_face])
-	if faces.is_empty():
-		return
-	var fid := view.feature_of_body(view.selected_body)
-	var ok: bool
-	if fid != "":
-		ok = view.doc.graph_add_shell(fid, faces, _thickness_spin.value) != ""
-	else:
-		ok = view.doc.shell_body(faces, _thickness_spin.value)
-	if ok:
-		view.graph_changed()
-		status.emit("Shelled %d face(s), wall %.1f mm" % [faces.size(), _thickness_spin.value])
-	else:
-		status.emit("Shell failed (thickness too large?)")
+	interaction.apply_shell_thickness(_thickness_spin.value)
 
 
 func _draft() -> bool:

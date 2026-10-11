@@ -29,16 +29,16 @@ class WalkUI:
         faces = list(self.st.get("faces") or [])
         if not faces:
             raise SxError("no faces")
-        tops = [f for f in faces if float(f["mid"][2]) >= 9.0]
+        tops = [f for f in faces if float(f["centre"][2]) >= 9.0]
         pool = tops or faces
-        return max(pool, key=lambda f: (float(f["mid"][2]), -abs(float(f["mid"][0]) - 100.0)))
+        return max(pool, key=lambda f: (float(f["centre"][2]), -abs(float(f["centre"][0]) - 100.0)))
 
     def bottom_face(self) -> dict:
         self.refresh("faces")
         faces = list(self.st.get("faces") or [])
-        lows = [f for f in faces if float(f["mid"][2]) <= 1.0]
+        lows = [f for f in faces if float(f["centre"][2]) <= 1.0]
         pool = lows or faces
-        return min(pool, key=lambda f: float(f["mid"][2]))
+        return min(pool, key=lambda f: float(f["centre"][2]))
 
     def sketch_on_top(self) -> None:
         self.clear_selection()
