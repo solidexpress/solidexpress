@@ -12,7 +12,26 @@ Organization pass after rung 2, before the lesson-2 film. Behaviour unchanged. H
 
 Shipped Part A WP1–WP12. WP12 adds `FilmSteps` (click-only film steps) and `BoxFixture` (the 100×60×50 validation box). `film_ubc_wrench.gd` is 303 lines. That extraction is net −63 lines. Suites stay **206 run + 4 known-red** (`lint_suites: 210 suites ok (62 ci, 144 full, 4 known-red)`). No ★ work package was parked (WP4, WP7, WP10 shipped). The Revert rule fired for none. Plane-basis check count stays 76 (WP8's +6).
 
-Part B (WP13–WP15) is the lesson-2 box film, its test, the rendered video, and the website card. The website entry is gated on a Release upload. WP13 adds the film, the manifest id, and the how-to only. Do not add `lesson2_box` to `published-demos.json` or `demo-catalog.json` until `lesson2_box.webm` is on Release `demo-movies`. Pending publish, after the webm and vtt exist outside the tree: `gh release upload demo-movies -R solidexpress/solidexpress.github.io --clobber lesson2_box.webm lesson2_box.vtt`, then `SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature lesson2_box`, then a one-line follow-up commit. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card.
+Part B: film `lesson2_box` and `docs/howto/lesson2-box.md` (WP13), `run_film_lesson2_box_tests.gd` (`tier=full`, WP14), poster `website/assets/screenshots/lesson2_box.png` (WP15). `lint_suites: 211 suites ok (62 ci, 145 full, 4 known-red)` so the tier is **207 run + 4 known-red**. The WebM is VP9 1600×900 at 30 fps. Container duration 67.667 s matches the caption timeline (last cue ends at 01:07.667). The poster is that timeline's last picture (`ffmpeg -sseof -0.1` on the video track): the writer drops duplicate presents, so the video track ends at 41.966 s and `-sseof` on the muxed file seeks past it. `precision_plate` calibrated at 48 s wall for a 33.4 s film, so the box render stayed at 30 fps (about 85 s wall, under the 90-minute ceiling).
+
+`lesson2_box.webm` is not on Release `demo-movies` (this token cannot upload). It is not in `published-demos.json` or `demo-catalog.json`. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card. The WebM and VTT stay outside git (`/opt/cursor/artifacts/lesson2_box.webm` and `.vtt`).
+
+Pending publish:
+
+```
+gh release upload demo-movies -R solidexpress/solidexpress.github.io --clobber lesson2_box.webm lesson2_box.vtt
+SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature lesson2_box
+```
+
+Then a one-line follow-up commit. Dry-run (`SX_MOVIES_OUT=/tmp/sx-movies scripts/sx-publish-demo-movies --dry-run --feature lesson2_box`) wrote nothing:
+
+```
+dry-run poster: lesson2_box → website/assets/screenshots/lesson2_box.png
+dry-run upload 2 assets to solidexpress/solidexpress.github.io@demo-movies: /tmp/sx-movies/lesson2_box.webm /tmp/sx-movies/lesson2_box.vtt
+dry-run published-demos → website/assets/published-demos.json (10 ids, append ['lesson2_box'])
+dry-run demo-catalog featured append ['lesson2_box'] → 10 rows
+dry-run: no gh call, no file change
+```
 
 ## Post-rung-1 cleanup
 
