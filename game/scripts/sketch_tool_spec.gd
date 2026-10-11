@@ -119,7 +119,7 @@ static func _ensure() -> void:
 	_hint(T.TRIM, "Trim — drag across entities to trim them")
 	_hint(T.EXTEND, "Extend — click a segment to extend it to the next")
 	_hint(T.SMART_DIM, "Smart Dim — click geometry to dimension it")
-	_hint(T.CONVERT, "Convert — click to convert pierce points")
+	_hint(T.CONVERT, "Convert — click an edge of this face")
 	_hint(T.MIRROR, "Mirror — select geometry and a mirror axis, then click")
 	_hint(T.PATTERN, "Pattern — select geometry, then a linear or circular variant")
 	_hint(T.CENTERLINE, "Centerline — click 2 points (construction, never part of the profile)")

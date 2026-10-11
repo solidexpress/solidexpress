@@ -316,7 +316,14 @@ struct Xlate {
                         if (!ok1) return false;
                         dim_values.push_back(c.value);
                         GCS::Line& ln = line0 ? l0->second : l1->second;
-                        sys.addConstraintP2LDistance(p, ln, &dim_values.back(), true, tag, drv);
+                        // Keep the point on the side it already occupies. ccw
+                        // is the sign of the cross product, not a constant.
+                        const double x0 = *p.x, y0 = *p.y;
+                        const double x1 = *ln.p1.x, y1 = *ln.p1.y;
+                        const double x2 = *ln.p2.x, y2 = *ln.p2.y;
+                        const double area = -x0 * (y2 - y1) + y0 * (x2 - x1) + x1 * y2 - x2 * y1;
+                        sys.addConstraintP2LDistance(p, ln, &dim_values.back(), area >= 0.0, tag,
+                                                     drv);
                         return true;
                     }
                 }

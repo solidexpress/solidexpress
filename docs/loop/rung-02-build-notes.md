@@ -107,3 +107,31 @@ Status texts measured on this build (`[status-trace] … kind=result`):
 Timeline name: `Shell 5.0000 mm`. Thickness field id `finish:Thickness` (default `5`), OK id `finish:Ok`, chip id `strip:shell`. Chip rect at 1280×800: `[P: (833.0, 83.0), S: (46.0, 31.0)]`. Shelled filleted box volume `94173.6752` (`no_hole(60)` within 0.5 %). Double-click of the timeline row opens `Param_thickness` at `5.0000`.
 
 `run_rung02_shell_chip.gd` 38 checks, 0 failures. `run_ui_tests.gd` 275 checks, 0 failures. `run_workflow_tests.gd` 82 checks, 0 failures. `python3 tools/lint_suites.py`: `lint_suites: 209 suites ok (61 ci, 144 full, 4 known-red)`.
+
+## WP5 — Face edges in a face sketch; point-line dims
+
+Red, before Convert projected edges (`tests/run_rung02_face_edges.gd`). The box, fillets, +X sketch, and upright basis were already in place; rail Convert still made pierce points:
+
+```
+  status: Convert — click to convert pierce points
+  ok   - rail Convert is armed
+  status: Converted 12 pierce points
+  status: Converted 12 pierce points
+  entities 24 external 0
+  FAIL - two external lines (got 0)
+  FAIL - both external lines are construction (got 0)
+22 checks, 2 failures
+```
+
+Status texts measured on this build:
+
+- `Convert — click an edge of this face` (arm; still starts with `Convert —`)
+- `Convert: external line`
+- `Convert: edge is not on this face` (foreign spot on this body `(100, 5, 0)`)
+- `Convert: edge is not a straight line` (kernel returns `""` for a non-line; not hit by the click test)
+- `centre-to-flat %.4f` (point-line Smart Dim, unchanged)
+- DOF chip text is `OK` when `last_dofs` is 0 (fully defined). The plan's "chip 0" is this chip.
+- Esc with a selection: `Selection cleared — Esc again exits the sketch`. Next Esc on armed Convert: `Tool dropped — Esc again exits the sketch` (tool back to Select, sketch stays).
+- `Dimension rejected — constraints could not be satisfied` was seen when an untyped circle radius and a diameter locked the same DOF. An armed dim blank is not a typed length, so a rim click no longer adds that radius constraint.
+
+`run_rung02_face_edges.gd` 57 checks, 0 failures (labels `Ø10`, `25`, `40`; centre sketch `(35, 40)` / world `(100, 35, 40)`). Rung-1: replan4 47, replan5 66, replan6 80, sx036 Esc 70, sx036 fields 47, slotarm 111, anchor 5, sketch tools 142, all 0 failures. `python3 tools/lint_suites.py`: `lint_suites: 210 suites ok (62 ci, 144 full, 4 known-red)`.

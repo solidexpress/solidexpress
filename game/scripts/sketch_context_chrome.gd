@@ -95,6 +95,8 @@ var _dim_select_gen := 0
 ## Next digit / '.' / (Distance) '-' replaces the whole line. Set on focus and
 ## every left click so a caret click that clears select_all still replaces.
 var _dim_replace_next := false
+## True only after a digit. The rubber-band number in the blank is not a length.
+var _dim_user_typed := false
 ## True while Circle armed the radius blank itself. A tool key (S/L/…) must
 ## leave that blank. A click or a typed character clears it so an expression
 ## can keep the letters.
@@ -475,7 +477,7 @@ func focus_distance_for_typing(seed: String = "") -> void:
 
 ## Parsed dim LineEdit number while that text is a single float, else null.
 func typed_dim_value() -> Variant:
-	if _dim_spin == null:
+	if not _dim_user_typed or _dim_spin == null:
 		return null
 	var edit := _dim_spin.get_line_edit()
 	if edit == null:
@@ -501,6 +503,7 @@ func clear_dim_blank() -> void:
 	if _dim_spin == null:
 		return
 	_dim_blank_empty = true
+	_dim_user_typed = false
 	_dim_syncing = true
 	_dim_spin.set_value_no_signal(_dim_spin.min_value)
 	_dim_last_good = -1.0
@@ -1313,6 +1316,7 @@ func focus_dim_for_typing(seed := "") -> void:
 	_dim_editing = true
 	if seed != "":
 		_dim_blank_empty = false
+		_dim_user_typed = true
 		# Unfocused burst writes the whole seed. Do not replace the next key.
 		_dim_replace_next = false
 		_dim_select_gen += 1
@@ -1349,6 +1353,7 @@ func arm_dim_replace(shown: float = -1.0) -> void:
 		clear_dim_blank()
 	_dim_editing = true
 	_dim_replace_next = true
+	_dim_user_typed = false
 	var edit := _dim_spin.get_line_edit()
 	if edit == null:
 		return
@@ -1374,6 +1379,7 @@ func replace_dim_with_char(ch: String) -> bool:
 	_dim_editing = true
 	_dim_blank_empty = false
 	_dim_replace_next = false
+	_dim_user_typed = true
 	_dim_select_gen += 1
 	SxUi.write_typed_text(edit, ch)
 	var parsed: Variant = _parse_spin_text(_dim_spin, ch)
@@ -1420,6 +1426,10 @@ func _release_distance_focus() -> void:
 func _on_dim_value_changed(v: float) -> void:
 	if _dim_syncing or _dim_rejecting or not _dim_editing:
 		return
+	# The blank was just armed with the rubber-band number. Focus echoes that
+	# value; it is not a typed length and must not lock the circle radius.
+	if _dim_replace_next:
+		return
 	# Focusing an empty blank echoes min_value. That is not a typed length.
 	if _dim_blank_empty and _dim_spin != null and is_equal_approx(v, _dim_spin.min_value):
 		_reassert_empty_dim()
@@ -1441,12 +1451,24 @@ func _on_dim_text_changed(new_text: String) -> void:
 	if _dim_blank_empty and _is_spin_minimum_text(new_text):
 		_reassert_empty_dim()
 		return
-	_dim_focus_from_tool = false
-	# Cancel a pending deferred / next-frame select_all once typing starts.
-	_dim_select_gen += 1
+	# Armed blank showing the rubber-band. Focus rewrites that text; it is
+	# not typing, so the circle radius stays free until a digit is entered.
+	if _dim_replace_next:
+		return
+	var edit := _dim_spin.get_line_edit() if _dim_spin != null else null
+	if _dim_focus_from_tool and not SxUi.typed_since_intent(edit):
+		return
 	var parsed: Variant = _parse_spin_text(_dim_spin, new_text)
 	if parsed == null:
 		return
+	# Focus can rewrite the rubber-band after replace disarms. Same number,
+	# no digit yet: still not a typed length.
+	if not _dim_user_typed and is_equal_approx(float(parsed), _dim_last_good):
+		return
+	_dim_user_typed = true
+	_dim_focus_from_tool = false
+	# Cancel a pending deferred / next-frame select_all once typing starts.
+	_dim_select_gen += 1
 	_dim_blank_empty = false
 	_apply_slot_radius(float(parsed))
 	if sketch_mode != null and sketch_mode.active and sketch_mode.has_single_dof_preview():
@@ -1619,6 +1641,7 @@ func _on_dim_edit_gui_input(event: InputEvent) -> void:
 				else:
 					_dim_editing = true
 					_dim_blank_empty = false
+					_dim_user_typed = true
 					_dim_select_gen += 1
 					var next := SxUi.compose_typed_char(dim_line, ch)
 					SxUi.write_typed_text(dim_line, next)
