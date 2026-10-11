@@ -176,10 +176,15 @@ func test_rect_inference(sk: SketchMode) -> void:
 	sk.set_tool(SketchMode.Tool.RECT)
 	sk.click(Vector2(0, 0))
 	sk.click(Vector2(30, 20))
-	check(sk.sketch.entity_ids().size() == 4, "four rect lines")
-	# 4 H/V + 4 coincident corners = 8 inferred constraints.
-	check(sk.sketch.constraint_ids().size() == 8,
-		"8 inferred constraints (got %d)" % sk.sketch.constraint_ids().size())
+	var lines := 0
+	for eid in sk.sketch.entity_ids():
+		if str(sk.sketch.entity_info(eid).get("type", "")) == "line":
+			lines += 1
+	check(lines == 4, "four rect lines")
+	# 4 H/V + 4 coincident corners, plus a fixed origin point and its coincident
+	# when a corner sits on the sketch origin.
+	check(sk.sketch.constraint_ids().size() == 10,
+		"8 inferred constraints plus the origin pin (got %d)" % sk.sketch.constraint_ids().size())
 	# Rect topology survives a solve after constraining one side's length.
 	sk.set_tool(SketchMode.Tool.SELECT)
 	var first: String = sk.sketch.entity_ids()[0]

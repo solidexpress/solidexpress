@@ -68,7 +68,11 @@ class Rows02Chunk4:
     @row("N8", chunk=4, on="rung02", expect={"blocker": "A16", "sketch": True})
     def row_N8(self) -> None:
         before = len(self.external_lines())
-        refused = self.convert_edge([0, 30, 25])
+        # Right view is orthographic along X, so the far face (x=0) projects
+        # onto this face. The off-face edge is the fillet's y=0 tangent
+        # (x=90), far enough from the face edge at y=10 that the 8 mm search
+        # does not grab that boundary.
+        refused = self.convert_edge([90, 0, 25])
         after = len(self.external_lines())
         self.clause("refused", "not on this face" in refused["status"], refused["status"])
         self.clause("no new external", after == before, f"{before} -> {after}")
@@ -149,6 +153,9 @@ class Rows02Chunk4:
         self.clause("nothing applied", self.feature_names() == before, str(self.feature_names()))
         end = self.set_end("Through All")
         self.clause("end through all", "Through All" in end, end)
+        # A21 starts in part mode. The finish bar is the sketch session's,
+        # so this row leaves the way A20 did.
+        self.exit_sketch()
 
     @row("A21", chunk=4, on="rung02", expect={"blocker": "A20", "part": True, "min_bodies": 1})
     def row_A21(self) -> None:

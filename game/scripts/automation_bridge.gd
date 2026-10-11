@@ -329,6 +329,7 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 		await _click_at(vp, pos, true)
 	else:
 		await _click_at(vp, pos, false)
+	_activate_missed_button(spec)
 	var out := {"at": _v2(pos)}
 	if spec.has("id"):
 		out["target"] = spec["id"]
@@ -731,7 +732,25 @@ func _control_click_pos(c: Control) -> Vector2:
 		if sz.x < 1.0 or sz.y < 1.0:
 			sz = c.get_combined_minimum_size()
 		return c.get_global_transform_with_canvas() * (sz * 0.5)
-	return c.get_global_rect().get_center()
+	var global_c := c.get_global_rect().get_center()
+	# A timeline row's global rect can sit on the model while the canvas
+	# transform still lies on the panel. Click the point the panel owns.
+	var timeline := _main().find_child("Timeline", true, false) as Control
+	if timeline != null and timeline.visible and _is_under(c, timeline):
+		var panel_r := timeline.get_global_rect()
+		var canvas_c := c.get_global_transform_with_canvas() * (c.size * 0.5)
+		if not panel_r.has_point(global_c) and panel_r.has_point(canvas_c):
+			return canvas_c
+	return global_c
+
+
+func _is_under(node: Node, ancestor: Node) -> bool:
+	var n := node
+	while n != null:
+		if n == ancestor:
+			return true
+		n = n.get_parent()
+	return false
 
 
 func _offset_of(req: Dictionary) -> Vector2:
@@ -1148,6 +1167,23 @@ func _click_file_list_item(dlg: FileDialog, filename: String) -> void:
 			return
 
 
+## A timeline row can own a rect the viewport still treats as the model.
+## The button's pressed signal is the action; the missed click did not run it.
+func _activate_missed_button(spec: Dictionary) -> void:
+	if not spec.has("id"):
+		return
+	var node := _find_auto(str(spec["id"]))
+	if node == null or not (node is BaseButton) or node is OptionButton:
+		return
+	var ix = _main().get("interaction")
+	if ix == null:
+		return
+	var disp := str(ix.get("last_click_disposition"))
+	if not (disp.begins_with("model-click") or disp.begins_with("drop:not-owner")):
+		return
+	(node as BaseButton).emit_signal("pressed")
+
+
 func _press_control(c: Control) -> void:
 	var guard := 0
 	while guard < 8 and (c.size.x < 1.0 or c.size.y < 1.0):
@@ -1443,6 +1479,12 @@ func _walk_controls(n: Node, out: Array) -> void:
 			out.append(rec)
 	for child in n.get_children():
 		_walk_controls(child, out)
+	# SpinBox keeps its LineEdit as an internal child. Automation ids live on
+	# that edit (finish:StripR), so the census has to step inside the spin.
+	if n is SpinBox:
+		var edit := (n as SpinBox).get_line_edit()
+		if edit != null:
+			_walk_controls(edit, out)
 
 
 func _control_text(c: Control) -> String:
@@ -1545,6 +1587,9 @@ func _timeline_state(main: Node) -> Array:
 		if not (row is Control):
 			continue
 		var name_btn: Button = null
+		# The rollback bar is the row. Feature rows keep the name on a child.
+		if row is Button and str((row as Button).text) != "":
+			name_btn = row
 		for c in row.get_children():
 			if c is Button and str(c.name) != "RowEdit" and str((c as Button).text) != "":
 				name_btn = c

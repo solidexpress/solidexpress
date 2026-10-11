@@ -650,7 +650,9 @@ func _jaw_metrics_of_3mf(path: String) -> Vector2:
 	var checker := repo.path_join("tools/check_rung01.py")
 	var script := """
 import importlib.util, math, sys
+from pathlib import Path
 import numpy as np
+sys.path.insert(0, str(Path(sys.argv[1]).resolve().parent))
 spec = importlib.util.spec_from_file_location('chk', sys.argv[1])
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)

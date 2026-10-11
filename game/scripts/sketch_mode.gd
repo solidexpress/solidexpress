@@ -825,6 +825,10 @@ func exit_sketch() -> String:
 		if sketch.has_method("snapshot") and _snapshots_equal(sketch.snapshot(), _edit_baseline):
 			fid = editing_fid
 			_end_sketch_session()
+			# The dimension edit already wrote the graph. Refresh the body
+			# mesh without a second undo snapshot.
+			if view != null:
+				view.graph_changed()
 			status.emit("Sketch saved")
 			return fid
 		if view.doc.graph_update_sketch(editing_fid, sketch):
@@ -862,6 +866,10 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		thin_thickness: float = 0.0, thin_type: String = "one_side",
 		flip_side: bool = false, selected_contours: Array = []) -> void:
 	if not active:
+		return
+	var distance_refusal := _extrude_distance_refusal(distance, end)
+	if distance_refusal != "":
+		_refuse_extrude(distance_refusal)
 		return
 	# Auto-commit an in-progress Polygon/Circle/Rect/Slot tip so Extrude
 	# doesn't see only a preview ghost and report "open profile". Pass the
@@ -951,6 +959,18 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 			return
 	var fail_msg := "Extrude failed — is the profile closed?"
 	_finish_feature(sk_fid, ex_fid, op, fail_msg)
+
+
+## Blind and mid-plane read the typed distance. Zero never reaches the kernel.
+const _EXTRUDE_DISTANCE_ENDS := ["blind", "midplane"]
+
+
+func _extrude_distance_refusal(distance: float, end: String) -> String:
+	if not _EXTRUDE_DISTANCE_ENDS.has(end):
+		return ""
+	if is_zero_approx(distance):
+		return "Distance must be a positive number"
+	return ""
 
 
 ## Refusal kept the sketch open. Say why, and make the next Esc the exit ladder.
@@ -6744,6 +6764,10 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 			_end_sketch_session()
 			_emit_discard_status()
 			return ""
+		# The graph already has this profile. Exit must not push a second
+		# identical snapshot, or one Undo lands on the edit instead of before it.
+		if sketch.has_method("snapshot"):
+			_edit_baseline = sketch.snapshot()
 	_redraw()
 	_redraw_selected()
 	_rebuild_dimension_labels()
@@ -7734,6 +7758,7 @@ func _resolve_label_overlaps() -> void:
 	_open_label_glyph_gap(cam, k)
 	_nudge_labels_off_leaders(cam, k)
 	_rebuild_circle_label_leaders(cam)
+	_park_labels_outside_host_face(cam, k)
 
 
 func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
@@ -7953,6 +7978,62 @@ func _curve_center_radius(dim: Dictionary) -> Variant:
 ## Park a circle or head-arc radius/diameter just outside its rim. A millimetre
 ## stack walks `22.5` a hundred pixels off the head; the callout has to stay
 ## on the circle, with a leader when it is not touching the rim.
+## Face-sketch callouts sit in the margin. The obstacle is the host face's
+## screen box; each label takes the shortest step that puts its centre outside.
+func _park_labels_outside_host_face(cam: Camera3D, k: float) -> void:
+	if k < 1e-6 or host_face_id == "" or view == null or view.doc == null:
+		return
+	var face := _host_face_screen_rect(cam)
+	if face.size.x < 4.0 or face.size.y < 4.0:
+		return
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		var rect := _projected_label_rect(dim, cam, k)
+		var centre := rect.get_center()
+		if not face.has_point(centre):
+			continue
+		var push := _shortest_exit(centre, face)
+		var prev: Vector2 = dim.get("label_clamp", Vector2.ZERO)
+		dim["label_clamp"] = prev + Vector2(push.x / k, -push.y / k)
+		dimensions[i] = dim
+
+
+## Screen box of the body this face sketch sits on, in the same space as labels.
+func _host_face_screen_rect(cam: Camera3D) -> Rect2:
+	var host := _host_body_uv_aabb()
+	if host.is_empty():
+		return Rect2()
+	var mn: Vector2 = host["min"]
+	var mx: Vector2 = host["max"]
+	var box := Rect2()
+	var any := false
+	for uv in [mn, Vector2(mx.x, mn.y), mx, Vector2(mn.x, mx.y)]:
+		var screen := cam.unproject_position(to_global(to_model(uv)))
+		if not any:
+			box = Rect2(screen, Vector2.ZERO)
+			any = true
+		else:
+			box = box.expand(screen)
+	return box
+
+
+## Screen delta that moves `centre` just past the nearest side of `face`.
+func _shortest_exit(centre: Vector2, face: Rect2) -> Vector2:
+	var exits := [
+		{"gap": centre.x - face.position.x, "push": Vector2(-(centre.x - face.position.x + 2.0), 0.0)},
+		{"gap": face.end.x - centre.x, "push": Vector2(face.end.x - centre.x + 2.0, 0.0)},
+		{"gap": centre.y - face.position.y, "push": Vector2(0.0, -(centre.y - face.position.y + 2.0))},
+		{"gap": face.end.y - centre.y, "push": Vector2(0.0, face.end.y - centre.y + 2.0)},
+	]
+	var best: Dictionary = exits[0]
+	for exit in exits:
+		if float(exit["gap"]) < float(best["gap"]):
+			best = exit
+	return best["push"]
+
+
 func _seat_full_circle_labels(cam: Camera3D, k: float) -> void:
 	if k < 1e-6 or sketch == null:
 		return

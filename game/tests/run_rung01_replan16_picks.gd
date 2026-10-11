@@ -267,11 +267,9 @@ func _phase_p3(ctx: FilmContext) -> void:
 	await _exit_sketch_button(ctx)
 	_capture(ctx)
 	check(ctx.main._document_is_dirty(), "P3: a real dimension edit dirties the document")
-	# The edit moved the 150 mm slot edge. set_dimension_value and Exit
-	# Sketch each push a graph snapshot, so two undos restore that edge
-	# before the refused fillet below.
-	ctx.view.undo()
-	await process_frame
+	# set_dimension_value pushes the graph snapshot and refreshes the edit
+	# baseline, so Exit Sketch does not push a second one. One undo restores
+	# the slot edge before the refused fillet below.
 	ctx.view.undo()
 	await process_frame
 	ctx.main._save_current()

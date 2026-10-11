@@ -43,31 +43,30 @@ func _run() -> void:
 	await _edit_distance(ctx, str(built["extrude"]), "14")
 	if doc.has_method("set_kernel_log"):
 		doc.set_kernel_log("")
+	# The top edge's fraction of the extrude bbox is unchanged when the depth
+	# goes 10 → 14, so the relative cue keeps it. A lost edge is still a
+	# warning; that case is the unknown id below.
 	var warns := _warnings(doc)
 	var joined := " ".join(warns)
-	check(joined.contains("all 1 edges lost on rebuild — it changes nothing now"), "warning names the lost edge (%s)" % joined)
-	check(warns.size() == 1, "one warning row (got %d)" % warns.size())
+	check(warns.is_empty(), "resized extrude keeps the top edge (%s)" % joined)
+	var bb: Dictionary = doc.measure_bbox(str(built["body"]))
+	var zmax := float((bb.get("max", Vector3.ZERO) as Vector3).z)
+	check(absf(zmax - 14.0) < 0.2, "extrude depth is 14 (z=%.3f)" % zmax)
+	check(not _status.is_empty(), "the depth edit produced a status")
+	var still := false
+	for feat in doc.graph_features():
+		if str(feat.get("type", "")) == "fillet":
+			still = true
+	check(still, "fillet feature still in the graph")
 	var log := _read_log()
-	check(log.contains("[WARN]") and log.contains("fillet soft-skip"), "log warns fillet soft-skip")
-	check(log.contains("fillet 3: fillet soft-skip: 1 edges lost on rebuild"), "log names fillet 3")
+	check(not log.contains("soft-skip"), "kept edge is not a soft-skip (%s)" % log.right(180))
 	check(not _error_soft(log), "no [ERROR] line mentions soft-skip")
-	check(log.contains(": fillet soft-skip:"), "the warning is prefixed with the feature name")
 	var preview := false
 	for line in _status:
-		if line.begins_with("Preview: distance = 14.0") and line.ends_with("it changes nothing now"):
-			preview = true
-	check(preview, "preview status ends with the warning and has the 14.0 prefix")
-	var status_hit := false
-	for line in _status:
-		if line.contains("all 1 edges lost") or line.ends_with("it changes nothing now"):
-			status_hit = true
-	check(status_hit, "status after the edit ends with the warning (%s)" % str(_status))
-	check(warns.size() == 1 and warns[0].begins_with("fillet 3:"), "warning starts with the feature name (%s)" % joined)
-	var warn_lines := 0
-	for line in log.split("\n"):
-		if line.contains("[WARN]") and line.contains("soft-skip"):
-			warn_lines += 1
-	check(warn_lines == 1, "one WARN soft-skip line (got %d)" % warn_lines)
+		if line == "Preview: distance = 14.0" or line.begins_with("Preview: distance = 14.0"):
+			if not line.contains("lost"):
+				preview = true
+	check(preview, "preview status is the new depth without a lost-edge suffix (%s)" % str(_status))
 	var two := PackedStringArray()
 	two.append(edges[0])
 	two.append(edges[1])

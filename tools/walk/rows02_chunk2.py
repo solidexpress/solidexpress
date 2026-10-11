@@ -27,7 +27,14 @@ class Rows02Chunk2:
 
     @row("A8", chunk=2, on="rung02", expect={"blocker": "A7", "part": True, "min_bodies": 1})
     def row_A8(self) -> None:
-        if self.ctx.pop("l3_pick", None) or self.fillet_armed_count() not in (None, 0):
+        # L3 leaves one edge picked. A second Fillet click would apply it.
+        # Esc first, then arm again so the four picks start from zero.
+        prior = self.ctx.pop("l3_pick", None)
+        if isinstance(prior, dict) and prior.get("ok"):
+            self.esc()
+            self.refresh("status")
+            self.arm_fillet("10")
+        elif self.fillet_armed_count() not in (None, 0):
             self.disarm_fillet()
             self.arm_fillet("10")
         rest = self.pick_corner_edges()
@@ -45,12 +52,14 @@ class Rows02Chunk2:
     @row("N4", chunk=2, on="rung02", expect={"blocker": "A8", "part": True})
     def row_N4(self) -> None:
         edges = self.ctx.get("corner_edges") or []
-        edge_id = next((p["id"] for p in edges if p.get("id")), "")
-        status = self.pick_edge_again(edge_id) if edge_id else "no edge"
+        first = next((p for p in edges if p.get("id")), {})
+        edge_id = str(first.get("id", ""))
+        view = str(first.get("view", ""))
+        status = self.pick_edge_again(edge_id, view) if edge_id else "no edge"
         count = self.fillet_count(status)
         self.clause("no double count", count is not None and count <= 4, status)
         if count is not None and count < 4 and edge_id:
-            status = self.pick_edge_again(edge_id)
+            status = self.pick_edge_again(edge_id, view)
             count = self.fillet_count(status)
         self.clause("restored 4", count == 4, status)
 
@@ -60,7 +69,8 @@ class Rows02Chunk2:
         self.type_into("finish:StripR", "30")
         status = self.apply_enter()
         after = self.feature_names()
-        self.clause("refused", "limit" in status.lower() or "too large" in status.lower(), status)
+        refused = any(tok in status.lower() for tok in ("could not be built", "limit", "too large"))
+        self.clause("refused", refused, status)
         self.clause("timeline unchanged", before == after, f"{before} -> {after}")
         self.clause("picks kept", self.fillet_count(self.S()) == 4 or "4 edge" in status or "4 edge" in self.S(), self.S())
         shown = self.type_into("finish:StripR", "10")

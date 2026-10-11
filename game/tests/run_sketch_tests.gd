@@ -271,7 +271,11 @@ func test_sketch_exit_pad_reopen(main) -> void:
 	check(open_sk_live != null and open_sk_live.contour_count() == 0, "open line is rail role")
 	check(sm.begin_edit(fid), "reopen sketch")
 	check(sm.active and sm.editing_fid == fid, "editing same feature")
-	check(sm.sketch.entity_ids().size() == 4, "reopened rect has 4 lines")
+	var lines := 0
+	for eid in sm.sketch.entity_ids():
+		if str(sm.sketch.entity_info(eid).get("type", "")) == "line":
+			lines += 1
+	check(lines == 4, "reopened rect has 4 lines")
 	# Extrude should reuse the feature, not double-add.
 	sm.finish_extrude(5.0, "new")
 	var sketch_count := 0

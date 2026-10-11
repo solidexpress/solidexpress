@@ -135,3 +135,17 @@ Status texts measured on this build:
 - `Dimension rejected — constraints could not be satisfied` was seen when an untyped circle radius and a diameter locked the same DOF. An armed dim blank is not a typed length, so a rim click no longer adds that radius constraint.
 
 `run_rung02_face_edges.gd` 57 checks, 0 failures (labels `Ø10`, `25`, `40`; centre sketch `(35, 40)` / world `(100, 35, 40)`). Rung-1: replan4 47, replan5 66, replan6 80, sx036 Esc 70, sx036 fields 47, slotarm 111, anchor 5, sketch tools 142, all 0 failures. `python3 tools/lint_suites.py`: `lint_suites: 210 suites ok (62 ci, 144 full, 4 known-red)`.
+
+## WP8 — Integration
+
+`SX_AUTOMATION=1 python3 tools/walk_rung02.py --out /tmp/sx-rung02-wp8-a15 --a15`:
+
+```
+44 rows  PASS 44  wall 1918.4s
+```
+
+A25: kernel `All tests passed (8336 assertions in 348 test cases)` and sxvoice `8 assertions in 1 test case`; godot `suites: 206 run, 0 failed`; `lint_suites: 210 suites ok (62 ci, 144 full, 4 known-red)`; `test_check_rung02.py` OK; `test_walk_registry.py` OK. `make` configure cannot finish on this snapshot (Boost headers missing), so A25 runs the same test binaries and `packaging/ci/run_suites.sh --tier full --keep-going` the Makefile recipes run after `build`.
+
+`check_rung02.py final` on `final-60.3mf` and `final --width 65` on `final-65.3mf`: both `16/16 passed`. Volumes `93330.6` and `98080.6`.
+
+Walk fixes that landed with this pass: corner views Right/Left for the hidden Z edges; chord centres instead of tessellation mids; Shell chip wheel does not zoom; a zero Blind distance is refused before the kernel; dimension editor accepts a leading minus so `-5` is one token; face-sketch labels park outside the host face; timeline pencil clicks that the viewport treats as the model still activate the row; Exit Sketch after a dimension edit does not push a second identical undo snapshot, and still refreshes the body mesh. Shell's apply button reads `Apply` (the icon census rejects a two-letter `OK`). A corner rectangle on the origin carries the fixed origin point (infer constraints 10, four lines). A depth edit `10 → 14` keeps a top-edge fillet by its bbox fraction; a missing edge id is still a warning. The wrench jaw probe imports `geom` via the checker's directory.

@@ -56,7 +56,7 @@ func build(row: Node, overlay: Control) -> void:
 	box.add_child(_field)
 	_ok = Button.new()
 	_ok.name = "ShellOk"
-	_ok.text = "OK"
+	_ok.text = "Apply"
 	_ok.set_meta("sx_auto", str(SPEC["ok_id"]))
 	_ok.pressed.connect(func() -> void: apply_mm(_parse_mm(_field.text)))
 	box.add_child(_ok)
