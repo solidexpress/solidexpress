@@ -29,9 +29,6 @@ class Walk:
         self.run_a15 = run_a15
         self.checkpoint = checkpoint
         self.repo = Path(__file__).resolve().parents[2]
-        if rung is None:
-            from walk.registry import RUNG1
-            rung = RUNG1
         self.rung = rung
         self.d = SxDrive(port=port, timeout=180.0)
         self.proc: subprocess.Popen | None = None
@@ -140,11 +137,13 @@ class Walk:
             return None
         return self.rung.expectations.get(rid)
 
-    def _row_body(self, rid: str):
-        handler = self.rung.handlers.get(rid) if self.rung is not None else None
+    def _row_fn(self, rid: str):
+        handler = None
+        if self.rung is not None:
+            handler = self.rung.handlers.get(rid) or self.rung.variants.get(rid)
         if handler is None:
             raise AttributeError(f"no walk row {rid}")
-        return handler.__get__(self, type(self))
+        return handler
 
     def modal_open(self) -> bool:
         snap = self.d.state(filter="dialogs")
@@ -196,7 +195,7 @@ class Walk:
             return
         bodies_before = [str(b.get("name", "")) for b in (self.refresh("bodies").get("bodies") or [])]
         try:
-            self._row_body(rid)()
+            self._row_fn(rid)(self)
         except RowAbort:
             pass
         except SxError as exc:
@@ -272,7 +271,7 @@ class Walk:
         return spec.blocker or "previous", "; ".join(reasons)
 
     def checker(self, kind: str, name: str, extra: str | list | None = None) -> tuple[int, str]:
-        script = self.rung.checker if self.rung is not None else "check_rung01.py"
+        script = self.rung.checker
         cmd = [sys.executable, str(self.repo / "tools" / script), kind, str(self.out / name)]
         if isinstance(extra, (list, tuple)):
             cmd.extend(str(part) for part in extra)
@@ -331,35 +330,6 @@ class Walk:
         mx = body.get("max") or [0, 0, 0]
         return tuple(abs(float(mx[i]) - float(mn[i])) for i in range(3))
 
-    def body_guard(self, kind: str, thickness: float | None = None) -> bool:
-        """S0: exactly one body before an export. A miss is runner-gap, not a checker FAIL."""
-        self.refresh("bodies")
-        bodies = list(self.st.get("bodies") or [])
-        if len(bodies) != 1:
-            named = ", ".join(f"{b.get('name')} ({self._fmt_volume(b)})" for b in bodies) or "(none)"
-            left = self.ctx.get("bodies_left_by") or "unknown"
-            evidence = f"runner-gap: stray body {named} left by {left}"
-            self.clause("S0", False, evidence, kind="runner-gap")
-            return False
-        body = bodies[0]
-        name = str(body.get("name", ""))
-        if kind == "nut":
-            self.clause("S0", True, f"one body {name} ({self._fmt_volume(body)})")
-            return True
-        sx, sy, sz = self._bbox_size(body)
-        ok = (
-            name.startswith("extrude")
-            and abs(sx - 232.5) <= 0.3
-            and abs(sy - 45.0) <= 0.1
-            and thickness is not None
-            and abs(sz - float(thickness)) <= 0.01
-        )
-        evidence = f"{name} ({self._fmt_volume(body)}) bbox {sx:.3f}×{sy:.3f}×{sz:.3f} T={thickness}"
-        if not ok and len(bodies) == 1:
-            evidence = f"runner-gap: body {name} ({self._fmt_volume(body)}) bbox {sx:.3f}×{sy:.3f}×{sz:.3f} want 232.5×45×{thickness}"
-        self.clause("S0", ok, evidence, kind="" if ok else "runner-gap")
-        return ok
-
     def _note_bodies(self, rid: str, before: list[str]) -> None:
         after = [str(b.get("name", "")) for b in (self.refresh("bodies").get("bodies") or [])]
         if after != before:
@@ -370,29 +340,6 @@ class Walk:
     def _sketch_active(self) -> bool:
         return bool((self.refresh("sketch").get("sketch") or {}).get("active"))
 
-    def _previous_chunk_ready(self, chunk: int) -> bool:
-        """True when the previous chunk already left the state this chunk expects."""
-        prev = chunk - 1
-        if prev < 1:
-            return True
-        sketch = self._sketch_active()
-        if prev == 1:
-            return (self.out / "blank.sxp").exists() and not sketch
-        if prev == 2:
-            texts = self.dim_texts()
-            return (
-                sketch
-                and any(self._label_is("20", t) for t in texts)
-                and any(self._label_is("45", t) for t in texts)
-            )
-        if prev == 3:
-            return (self.out / "cut.sxp").exists() and not sketch
-        if prev == 4:
-            return (self.out / "wrench-wip.sxp").exists() and not sketch
-        if prev == 5:
-            return (self.out / "wrench-wip.sxp").exists() and not sketch and not self.modal_open()
-        return True
-
     def _reload_checkpoint(self, name: str) -> None:
         self.dismiss_modals()
         self.open_file(name)
@@ -400,149 +347,8 @@ class Walk:
         print(f"checkpoint-reload {name}", flush=True)
         self.ctx["checkpoint"] = name
 
-    def build_open_jaw(self) -> None:
-        """Open blank.sxp and leave the 20 mm / 45° jaw sketch editing."""
-        self.dismiss_modals()
-        self.open_file("blank.sxp")
-        self.refresh("status", "sketch")
-        if self._sketch_active():
-            self.click("rail:ExitSketch")
-            self.refresh("status")
-        self.sketch_on_top()
-        if "Sketch on face" not in self.S():
-            raise SxError(f"jaw rebuild did not open the face sketch: {self.S()!r}")
-        self.jaw_basis()
-        self._jaw_clicks(-10)
-        if "Jaw committed" not in self.S():
-            raise SxError(f"jaw rebuild did not commit: {self.S()!r}")
-        width, angle = self._drawn_angle_and_width()
-        if width is None or angle is None:
-            raise SxError(f"jaw rebuild has no labels: {self.dim_texts()}")
-        self.edit_dim(width, "20")
-        angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
-        if angle is None:
-            raise SxError(f"jaw width edit dropped the angle: {self.dim_texts()}")
-        self.edit_dim(angle, "45")
-        texts = self.dim_texts()
-        if not any(self._label_is("45", t) for t in texts):
-            raise SxError(f"jaw rebuild angle is not 45°: {texts}")
-
-    def build_cut_file(self) -> bool:
-        """Chunk 3 cut, from blank.sxp, saved as cut.sxp."""
-        self.build_open_jaw()
-        self.circle([0, 0], "5")
-        self.circle([200, 0], "22.5", burst=True)
-        self.click("rail:Line")
-        self.click(sketch=[160, 40])
-        self.click(sketch=[240, -40])
-        self.click("rail:Trim")
-        self.d.drag({"sketch": [250, 0]}, {"sketch": [190, 0]})
-        self.refresh("status")
-        print(f"checkpoint: cut trim {self.S()!r}", flush=True)
-        self.set_option("finish:Op", "Cut")
-        self.set_option("finish:End", "Up To Surface")
-        try:
-            self.click("finish:OppositeFace")
-            self.click(face=self.bottom_face()["id"])
-        except SxError as exc:
-            print(f"checkpoint: opposite face {exc}", flush=True)
-        self.click("finish:Extrude", frames=10)
-        self.refresh("status")
-        path = self.save_as("cut.sxp")
-        ok = Path(path).exists() and "Saved" in self.S()
-        print(f"checkpoint: built cut.sxp ok={ok} status={self.S()!r}", flush=True)
-        return ok
-
-    def build_wip_file(self) -> bool:
-        """Slot cut from cut.sxp, saved as wrench-wip.sxp."""
-        self.dismiss_modals()
-        self.open_file("cut.sxp")
-        self.sketch_on_top()
-        self.click("rail:Slot")
-        self.type_into("finish:Radius", "5")
-        self.enter()
-        self.click(sketch=[18.5, 0])
-        self.d.type("150")
-        self.enter()
-        self.set_option("finish:Op", "Cut")
-        self.set_option("finish:End", "Blind")
-        self.type_into("finish:Distance", "2.5", burst=True)
-        self.enter()
-        self.click("finish:Extrude", frames=10)
-        self.refresh("status")
-        path = self.save_as("wrench-wip.sxp")
-        ok = Path(path).exists() and "Saved" in self.S()
-        print(f"checkpoint: built wrench-wip.sxp ok={ok} status={self.S()!r}", flush=True)
-        return ok
-
-    def _policy_checkpoint(self, chunk: int, force: bool = False) -> None:
-        """Reload the previous chunk's file. The file names live on the rung."""
-        if chunk <= 1 or self.rung is None:
-            return
-        name = self.rung.checkpoints.get(chunk)
-        if not name:
-            return
-        ready = (
-            not force
-            and not self.chunk_failed(chunk - 1)
-            and not self._sketch_active()
-            and (self.out / name).exists()
-        )
-        if ready:
-            return
-        if not (self.out / name).exists():
-            print(f"checkpoint: {name} is not in {self.out}", flush=True)
-            return
-        try:
-            self._reload_checkpoint(name)
-        except (SxError, RowAbort) as exc:
-            print(f"checkpoint: chunk {chunk} reload failed: {exc}", flush=True)
-
     def ensure_chunk_start(self, chunk: int, force: bool = False) -> None:
-        policy = self.rung.policy if self.rung is not None else "_policy_rung01"
-        getattr(self, policy)(chunk, force)
-
-    def _policy_rung01(self, chunk: int, force: bool = False) -> None:
-        if chunk <= 1:
-            return
-        if not force and self._previous_chunk_ready(chunk):
-            return
-        try:
-            if chunk == 2:
-                if (self.out / "blank.sxp").exists():
-                    self._reload_checkpoint("blank.sxp")
-                return
-            if chunk == 3:
-                if not (self.out / "blank.sxp").exists():
-                    print("checkpoint: blank.sxp missing, cannot rebuild the jaw", flush=True)
-                    return
-                print("checkpoint-reload blank.sxp", flush=True)
-                self.build_open_jaw()
-                return
-            if chunk == 4:
-                if not (self.out / "cut.sxp").exists():
-                    if not (self.out / "blank.sxp").exists():
-                        print("checkpoint: blank.sxp missing, cannot build cut.sxp", flush=True)
-                        return
-                    print("checkpoint: building cut.sxp from blank.sxp", flush=True)
-                    if not self.build_cut_file():
-                        return
-                self._reload_checkpoint("cut.sxp")
-                return
-            if chunk in (5, 6):
-                if not (self.out / "wrench-wip.sxp").exists():
-                    if not (self.out / "cut.sxp").exists():
-                        if not (self.out / "blank.sxp").exists():
-                            print("checkpoint: no blank.sxp to build the wrench", flush=True)
-                            return
-                        if not self.build_cut_file():
-                            return
-                    print("checkpoint: building wrench-wip.sxp from cut.sxp", flush=True)
-                    if not self.build_wip_file():
-                        return
-                self._reload_checkpoint("wrench-wip.sxp")
-        except (SxError, RowAbort) as exc:
-            print(f"checkpoint: chunk {chunk} reload failed: {exc}", flush=True)
+        self.rung.chunk_start(self, chunk, force)
 
     def chunk_failed(self, chunk: int) -> bool:
         rows = set(self.rung.chunks[chunk])
@@ -554,7 +360,7 @@ class Walk:
             counts[rec["verdict"]] = counts.get(rec["verdict"], 0) + 1
         wall = time.monotonic() - self.t0
         lines = [
-            "# " + (self.rung.report_title if self.rung is not None else "sx-042 walk"),
+            "# " + self.rung.report_title,
             "",
             f"Rows {len(self.rows)}  " + "  ".join(f"{k} {v}" for k, v in sorted(counts.items())),
             f"Wall {wall:.1f}s",

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from walk.registry import row
-from walk.ui02 import FEATURE_ORDER
+from walk.rung2.ui02 import FEATURE_ORDER
 
 
 class Rows02Chunk2:

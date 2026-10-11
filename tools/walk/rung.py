@@ -67,9 +67,9 @@ class Rung:
     rows: tuple[str, ...] = ()
     handlers: dict[str, Callable] = field(default_factory=dict)
     checkpoint_after: tuple[CheckpointAfter, ...] = ()
-    policy: str = "_policy_rung01"
+    chunk_start: Callable[[object, int, bool], None] | None = None
     report_title: str = "sx-042 walk"
-    variants: bool = False
+    variants: dict[str, Callable] = field(default_factory=dict)
 
     def chunk_of(self, rid: str) -> int:
         return next(n for n, rows in self.chunks.items() if rid in rows)

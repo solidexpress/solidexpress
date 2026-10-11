@@ -1,9 +1,13 @@
-"""Bridge sugar: clicks, menus, fields, dialogs, sketch helpers."""
+"""Shared gestures both rungs call.
+WalkGestures is the base each walk app extends; Walk stays rung-agnostic.
+"""
 from __future__ import annotations
 
 from sxdrive import SxError
+from walk.harness import Walk
 
-class WalkUI:
+
+class WalkGestures(Walk):
     def refresh(self, *keys: str) -> dict:
         filt = ",".join(keys) if keys else (
             "status,focus,focus_text,dof,sketch,finish,tool,rail,dims,timeline,"
@@ -83,20 +87,6 @@ class WalkUI:
         self.click(f"popup:{item}")
         self.refresh("finish", "status", "popups")
 
-    def _arm_dialog_dir(self) -> None:
-        self.d.dialog_dir(str(self.out))
-        self.refresh("focus", "focus_text", "popups")
-
-    def _type_dialog_name(self, name: str, replace_selection: bool) -> str:
-        focus = str(self.refresh("focus", "focus_text").get("focus", ""))
-        if "LineEdit" not in focus and "dialog:Name" not in focus:
-            self.click("dialog:Name")
-            self.refresh("focus", "focus_text")
-        if not replace_selection:
-            self.d.key("ctrl+a")
-        self.d.type(name, delay_ms=10)
-        return str(self.refresh("focus_text", "status").get("focus_text", ""))
-
     def commit_dialog(self, name: str | None = None, set_dir: bool = True) -> dict:
         """Set the file dialog path and press its real OK, then the overwrite OK."""
         fields: dict = {}
@@ -156,44 +146,6 @@ class WalkUI:
         self.click(model=[0, 0, 0])
         self.refresh("status", "sketch")
 
-    def clear_selection(self) -> None:
-        self.esc_until("Selection cleared", 5)
-
-    def top_face(self) -> dict:
-        self.refresh("faces")
-        faces = list(self.st.get("faces") or [])
-        if not faces:
-            raise SxError("no faces")
-        tops = [f for f in faces if float(f["mid"][2]) >= 9.0]
-        pool = tops or faces
-        return max(pool, key=lambda f: (float(f["mid"][2]), -abs(float(f["mid"][0]) - 100.0)))
-
-    def bottom_face(self) -> dict:
-        self.refresh("faces")
-        faces = list(self.st.get("faces") or [])
-        lows = [f for f in faces if float(f["mid"][2]) <= 1.0]
-        pool = lows or faces
-        return min(pool, key=lambda f: float(f["mid"][2]))
-
-    def sketch_on_top(self) -> None:
-        self.clear_selection()
-        self.click("rail:Sketch")
-        face = self.top_face()
-        self.click(face=face["id"])
-        self.refresh("status", "sketch", "finish")
-
-    def circle(self, uv: list[float], radius: str, burst: bool = False) -> str:
-        self.click("rail:Circle")
-        self.click(sketch=uv)
-        self.refresh("status", "focus")
-        if "Radius" in str(self.st.get("focus", "")) or "Dim" in str(self.st.get("focus", "")):
-            self.d.type(radius, delay_ms=10 if burst else 0)
-            typed = self.refresh("focus_text").get("focus_text", "")
-        else:
-            typed = self.type_into("finish:Radius", radius, burst=burst)
-        self.enter()
-        return str(typed)
-
     def dims(self) -> list[dict]:
         self.refresh("dims", "status", "dof")
         return list(self.st.get("dims") or [])
@@ -207,18 +159,6 @@ class WalkUI:
             return abs(float(token) - want) < 1e-3
         except ValueError:
             return False
-
-    def _label_is(self, token: str, text: str) -> bool:
-        t = str(text).replace(" ", "")
-        if token == "45":
-            return t.startswith("45") and "°" in t
-        if token == "20":
-            return t.startswith("20") and "°" not in t
-        if token == "5":
-            return t.startswith("5") and not t.startswith("22") and "°" not in t and "45" not in t
-        if token == "22.5":
-            return t.startswith("22.5")
-        return token in t
 
     def find_dim(self, pred) -> dict | None:
         for d in self.dims():
@@ -305,52 +245,6 @@ class WalkUI:
             best = span if best is None else max(best, span)
         return best
 
-    def _shaft_mids(self) -> list[list[float]]:
-        mids = []
-        for e in self._entities():
-            if e.get("type") != "line":
-                continue
-            a, b = e.get("start"), e.get("end")
-            if not a or not b:
-                continue
-            if abs(a[1] - b[1]) > 1.0:
-                continue
-            if abs(abs(a[1]) - 10.0) > 2.0:
-                continue
-            mids.append([(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5])
-        mids.sort(key=lambda p: p[1])
-        return mids
-
-    def _select_both_circles(self) -> None:
-        self.click("rail:Select")
-        self.refresh("sketch", "selection")
-        circles = [e for e in self._entities() if e.get("type") == "circle" and e.get("center")]
-        circles.sort(key=lambda e: float(e["radius"]))
-        sel = (self.st.get("selection") or {}).get("sketch") or []
-        if len(sel) >= 2:
-            return
-        self.click(sketch=[0, 40])
-        self.refresh("status")
-        for e in circles[:2]:
-            self.click(sketch=list(e["center"]))
-        self.refresh("selection", "status")
-
-    def rail_right(self) -> float:
-        rights = []
-        for b in (self.refresh("rail").get("rail") or []):
-            rect = b.get("rect") or []
-            if len(rect) >= 4:
-                rights.append(float(rect[0]) + float(rect[2]))
-        return max(rights) if rights else 129.0
-
-    def label_clear(self, dim: dict) -> bool:
-        rect = dim.get("rect") or []
-        if len(rect) < 4:
-            return False
-        win = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
-        x, y, w, h = [float(v) for v in rect[:4]]
-        return x >= self.rail_right() - 1 and y >= 36 and x + w <= float(win[0]) - 2 and y + h <= float(win[1]) - 2
-
     def edges(self) -> list[dict]:
         self.refresh("edges")
         return list(self.st.get("edges") or [])
@@ -370,9 +264,3 @@ class WalkUI:
         self.menu("View", "Timeline")
         self.d.wait_idle(frames=2)
 
-    def _reopen_sketch3(self) -> str:
-        self._show_timeline()
-        self.click("timeline:pencil:sketch 3")
-        self.d.wait_idle(frames=3)
-        self.refresh("status", "sketch")
-        return self.S()
