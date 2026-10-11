@@ -7,6 +7,8 @@ import re
 import signal
 import subprocess
 import sys
+
+from walk import proc
 import time
 import traceback
 from pathlib import Path
@@ -277,10 +279,10 @@ class Walk:
             cmd.extend(str(part) for part in extra)
         elif extra:
             cmd.append(extra)
-        proc = subprocess.run(cmd, cwd=str(self.repo), capture_output=True, text=True)
-        text = (proc.stdout or "") + (proc.stderr or "")
+        result = proc.run(cmd, cwd=self.repo)
+        text = (result.stdout or "") + (result.stderr or "")
         (self.out / f"check-{kind}-{Path(name).stem}.txt").write_text(text)
-        return proc.returncode, text
+        return result.returncode, text
 
     def trace_from(self, cursor: int) -> list[str]:
         reply = self.d.trace(since=cursor)

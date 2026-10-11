@@ -141,10 +141,36 @@ class WalkGestures(Walk):
             self.click("dialog:DiscardOk" if discard == "ok" else "dialog:DiscardCancel")
             self.refresh("status", "popups")
 
-    def sketch_ground(self) -> None:
+    def sketch_ground(self, key: str | None = None) -> str:
         self.click("rail:Sketch")
         self.click(model=[0, 0, 0])
         self.refresh("status", "sketch")
+        if key is None:
+            return self.S()
+        mark = self.mark()
+        self.d.key(key)
+        self.d.wait_idle(frames=2)
+        text = " | ".join(self.result_texts(mark))
+        self.refresh("status", "sketch")
+        return text or self.S()
+
+    def circle(self, uv: list[float], radius: str | None = None, burst: bool = False, *, rim=None) -> str | dict:
+        self.click("rail:Circle")
+        if rim is not None:
+            self.show_sketch_point(uv)
+            self.click(sketch=list(uv))
+            self.click(sketch=list(rim))
+            self.refresh("sketch", "status")
+            return {"circles": self._entities(kind="circle"), "status": self.S()}
+        self.click(sketch=list(uv))
+        self.refresh("status", "focus")
+        if "Radius" in str(self.st.get("focus", "")) or "Dim" in str(self.st.get("focus", "")):
+            self.d.type(radius, delay_ms=10 if burst else 0)
+            typed = self.refresh("focus_text").get("focus_text", "")
+        else:
+            typed = self.type_into("finish:Radius", radius or "", burst=burst)
+        self.enter()
+        return str(typed)
 
     def dims(self) -> list[dict]:
         self.refresh("dims", "status", "dof")
@@ -169,7 +195,19 @@ class WalkGestures(Walk):
     def _dim_editor_open(self) -> bool:
         return str((self.control("dim:Edit") or {}).get("text", "")) != ""
 
-    def edit_dim(self, dim: dict, text: str) -> str:
+    def open_label(self, dim: dict) -> bool:
+        self.d.double_click(dim=str(dim.get("text", "")))
+        self.d.wait_idle(frames=2)
+        if self._dim_editor_open():
+            return True
+        self.click("rail:Select")
+        self.d.click(dim=str(dim.get("text", "")), glyph="first")
+        self.d.wait_idle(frames=2)
+        return self._dim_editor_open()
+
+    def edit_dim(self, dim: dict | None = None, text: str = "", *, token: str | None = None) -> str | dict:
+        if token is not None:
+            return self._edit_token(token, text)
         label = str(dim.get("text", ""))
         self.click("rail:Select")
         points: list[list[float]] = []
@@ -196,6 +234,22 @@ class WalkGestures(Walk):
         self.enter()
         return got
 
+    def _edit_token(self, token: str, value: str) -> dict:
+        dim = self.find_dim(lambda d: label_reads(token, str(d.get("text", ""))))
+        undo_before = list(self.refresh("undo").get("undo") or [])
+        opened = self.open_label(dim) if dim else False
+        if opened:
+            self._type_dim_editor(value)
+            self.enter()
+        undo_after = list(self.refresh("undo").get("undo") or [])
+        return {
+            "opened": opened,
+            "texts": self.dim_texts(),
+            "undo_before": undo_before,
+            "undo_after": undo_after,
+            "bbox": self.sketch_bbox(),
+        }
+
     def _dim_editor_text(self) -> str:
         # The popup takes digits even while focus stays on the rail button, so
         # focus_text is empty. Read the line edit itself.
@@ -215,12 +269,17 @@ class WalkGestures(Walk):
         self.d.wait_idle(frames=2)
         return self._dim_editor_text()
 
-    def _entities(self) -> list[dict]:
+    def _entities(self, kind: str | None = None) -> list[dict]:
+        if kind is not None:
+            self.refresh("sketch", "status")
         sk = self.st.get("sketch") or {}
         if not sk:
             self.refresh("sketch")
             sk = self.st.get("sketch") or {}
-        return list(sk.get("entities") or [])
+        ents = list(sk.get("entities") or [])
+        if kind is None:
+            return ents
+        return [e for e in ents if _matches_kind(e, kind)]
 
     def _circle_span(self, ents: list[dict] | None = None) -> float:
         centres = []
@@ -249,8 +308,13 @@ class WalkGestures(Walk):
         self.refresh("edges")
         return list(self.st.get("edges") or [])
 
-    def _timeline_names(self) -> list[str]:
-        return [str(r.get("name", "")) for r in (self.refresh("timeline").get("timeline") or []) if r.get("name")]
+    def _timeline_names(self, *, show: bool = False, records: bool = False) -> list:
+        if show:
+            self._show_timeline()
+        rows = [r for r in (self.refresh("timeline").get("timeline") or []) if r.get("name")]
+        if records:
+            return [r for r in rows if "rollback" not in str(r.get("name"))]
+        return [str(r.get("name", "")) for r in rows]
 
     def _timeline_visible(self) -> bool:
         for row in self.refresh("timeline").get("timeline") or []:
@@ -263,4 +327,19 @@ class WalkGestures(Walk):
             return
         self.menu("View", "Timeline")
         self.d.wait_idle(frames=2)
+
+
+def label_reads(token: str, text: str) -> bool:
+    t = str(text).replace(" ", "")
+    if token.startswith("Ø"):
+        return token in t or t.replace("Ø", "").startswith(token[1:])
+    return t == token or t.startswith(token + ".") or t.startswith("Ø" + token)
+
+
+def _matches_kind(entity: dict, kind: str) -> bool:
+    if entity.get("type") != kind:
+        return False
+    if kind == "circle" and entity.get("construction"):
+        return False
+    return True
 

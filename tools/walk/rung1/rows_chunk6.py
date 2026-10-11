@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import math
-import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
 
 from sxdrive import SxError
+from walk import proc
+from walk.gates import parse_suites, parse_tier, run_tier
 from walk.registry import row
 
 class RowsChunk6:
@@ -304,8 +304,8 @@ class RowsChunk6:
                 "BLOCKED-by-flag: pass --a15 to run the lints and make test-godot",
             )
             return
-        lint_e2e = subprocess.run([sys.executable, "tools/lint_rung01_e2e.py"], cwd=str(self.repo), capture_output=True, text=True)
-        lint_suites = subprocess.run([sys.executable, "tools/lint_suites.py"], cwd=str(self.repo), capture_output=True, text=True)
+        lint_e2e = proc.run([sys.executable, "tools/lint_rung01_e2e.py"], cwd=self.repo)
+        lint_suites = proc.run([sys.executable, "tools/lint_suites.py"], cwd=self.repo)
         e2e = (lint_e2e.stdout or "") + (lint_e2e.stderr or "")
         suites = (lint_suites.stdout or "") + (lint_suites.stderr or "")
         (self.out / "a15-lint-e2e.log").write_text(e2e)
@@ -315,41 +315,23 @@ class RowsChunk6:
             lint_e2e.returncode == 0 and "5 replan21 scripts are clean" in e2e,
             e2e.strip().splitlines()[-1] if e2e.strip() else "no output",
         )
-        suite_line = suites.strip().splitlines()[-1] if suites.strip() else ""
-        suites_m = re.search(
-            r"lint_suites:\s*(\d+)\s+suites ok\s+\((\d+)\s+ci,\s+(\d+)\s+full,\s+(\d+)\s+known-red\)",
-            suites,
-        )
-        suites_ok = (
-            lint_suites.returncode == 0
-            and suites_m is not None
-            and int(suites_m.group(4)) == 4
-        )
+        counts = parse_suites(suites)
+        suites_ok = lint_suites.returncode == 0 and counts is not None and counts[2] == 4
         self.clause(
             "lint_suites",
             suites_ok,
-            suite_line or "no output",
+            proc.tail(lint_suites.stdout, lint_suites.stderr),
         )
         log_path = self.out / "test-godot.log"
-        proc = subprocess.run(
-            ["make", "test-godot"],
-            cwd=str(self.repo),
-            capture_output=True,
-            text=True,
-            env={**os.environ, "KEEP_GOING": "1"},
-        )
-        tier = (proc.stdout or "") + (proc.stderr or "")
+        tier_proc = run_tier(self)
+        tier = (tier_proc.stdout or "") + (tier_proc.stderr or "")
         log_path.write_text(tier)
         (self.out / "a15-test-godot.log").write_text(tier)
-        ran = re.findall(r"suites:\s*(\d+)\s+run,\s*(\d+)\s+failed", tier)
-        ci_n = int(suites_m.group(2)) if suites_m else -1
-        full_n = int(suites_m.group(3)) if suites_m else -1
-        tier_ok = (
-            bool(ran)
-            and int(ran[-1][1]) == 0
-            and int(ran[-1][0]) == ci_n + full_n
-        )
-        self.clause("headless tier", tier_ok, f"suites: {ran[-1][0]} run, {ran[-1][1]} failed" if ran else tier[-400:])
+        ran = parse_tier(tier)
+        ci_n = counts[0] if counts else -1
+        full_n = counts[1] if counts else -1
+        tier_ok = ran is not None and ran[1] == 0 and ran[0] == ci_n + full_n
+        self.clause("headless tier", tier_ok, f"suites: {ran[0]} run, {ran[1]} failed" if ran else tier[-400:])
         floors = (
             ("rung01 wrench walk", 702),
             ("rung01 replan19 keys", 151),

@@ -1,7 +1,10 @@
 """Rung-2 chunk 3: shell the top face, wall 5."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from walk.registry import row
+from walk.rung2.export_report import report_export
 
 
 class Rows02Chunk3:
@@ -64,8 +67,9 @@ class Rows02Chunk3:
 
     @row("A12", chunk=3, on="rung02", expect={"blocker": "A11", "part": True, "min_bodies": 1})
     def row_A12(self) -> None:
-        report = self.export_and_check("shell", "shelled.3mf")
+        report = report_export(self, "shell", "shelled.3mf")
         self.clause("S0", report["s0"], report["s0_evidence"], kind="" if report["s0"] else "runner-gap")
         self.clause("shell", report["check_ok"], report["check_text"])
-        saved = self.save_part("shelled.sxp")
-        self.clause("saved", saved["exists"] and "Saved" in saved["status"], saved["status"])
+        path = self.save_as("shelled.sxp")
+        self.refresh("status")
+        self.clause("saved", Path(path).is_file() and "Saved" in self.S(), self.S())

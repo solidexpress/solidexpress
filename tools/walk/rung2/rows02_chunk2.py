@@ -1,7 +1,10 @@
 """Rung-2 chunk 2: one fillet on the four vertical edges."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from walk.registry import row
+from walk.rung2.export_report import report_export
 from walk.rung2.ui02 import FEATURE_ORDER
 
 
@@ -86,8 +89,9 @@ class Rows02Chunk2:
         self.clause("one feature", added == [FEATURE_ORDER[2]] or (len(added) == 1 and added[0].startswith("fillet")), str(added))
         self.clause("four edges", "4 edges" in status, status)
         self.clause("disarmed", "no longer armed" in status, status)
-        report = self.export_and_check("rounded", "rounded.3mf")
+        report = report_export(self, "rounded", "rounded.3mf")
         self.clause("S0", report["s0"], report["s0_evidence"], kind="" if report["s0"] else "runner-gap")
         self.clause("rounded", report["check_ok"], report["check_text"])
-        saved = self.save_part("rounded.sxp")
-        self.clause("saved", saved["exists"] and "Saved" in saved["status"], saved["status"])
+        path = self.save_as("rounded.sxp")
+        self.refresh("status")
+        self.clause("saved", Path(path).is_file() and "Saved" in self.S(), self.S())

@@ -47,18 +47,6 @@ class WalkUI:
         self.click(face=face["id"])
         self.refresh("status", "sketch", "finish")
 
-    def circle(self, uv: list[float], radius: str, burst: bool = False) -> str:
-        self.click("rail:Circle")
-        self.click(sketch=uv)
-        self.refresh("status", "focus")
-        if "Radius" in str(self.st.get("focus", "")) or "Dim" in str(self.st.get("focus", "")):
-            self.d.type(radius, delay_ms=10 if burst else 0)
-            typed = self.refresh("focus_text").get("focus_text", "")
-        else:
-            typed = self.type_into("finish:Radius", radius, burst=burst)
-        self.enter()
-        return str(typed)
-
     def _label_is(self, token: str, text: str) -> bool:
         t = str(text).replace(" ", "")
         if token == "45":

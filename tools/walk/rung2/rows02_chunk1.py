@@ -1,7 +1,10 @@
 """Rung-2 chunk 1: the 100 × 60 × 50 blank."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from walk.registry import row
+from walk.rung2.export_report import report_export
 
 
 def _near(pt, x, y, tol=0.2) -> bool:
@@ -31,7 +34,7 @@ class Rows02Chunk1:
     def row_A1(self) -> None:
         status = self.new_part()
         self.clause("new", "New —" in status or "empty part" in status, status)
-        view = self.ground_sketch()
+        view = self.sketch_ground("3")
         active = bool((self.st.get("sketch") or {}).get("active"))
         self.clause("sketch", active and ("Sketch" in self.S() or "Top" in view), f"{self.S()} | {view}")
         snap = self.control("rail:Snap") or {}
@@ -100,7 +103,7 @@ class Rows02Chunk1:
 
     @row("A4", chunk=1, on="rung02", expect={"blocker": "A3", "sketch": True, "dim_has": "65"})
     def row_A4(self) -> None:
-        edited = self.edit_label_to("65", "60")
+        edited = self.edit_dim(token="65", text="60")
         self.clause("editor open", edited["opened"], f"texts={edited['texts']}")
         self.clause("label 60", self.label_has("60"), f"{edited['texts']}")
         box = edited["bbox"] or {}
@@ -136,14 +139,15 @@ class Rows02Chunk1:
         self.clause("extrude", "Extrude Blind 50.0000 mm" in made["status"], made["status"])
         self.clause("status", "Extrude Blind" in made["status"], made["status"])
         self.clause("one body", len(made["bodies"]) == 1, str(made["bodies"]))
-        report = self.export_and_check("base", "base.3mf")
+        report = report_export(self, "base", "base.3mf")
         self.clause("S0", report["s0"], report["s0_evidence"], kind="" if report["s0"] else "runner-gap")
         self.clause("exported", report["exported"], "base.3mf")
         self.clause("base", report["check_ok"], report["check_text"])
 
     @row("A6", chunk=1, on="rung02", expect={"blocker": "A5", "part": True, "min_bodies": 1})
     def row_A6(self) -> None:
-        saved = self.save_part("box.sxp")
-        self.clause("saved", "Saved" in saved["status"], saved["status"])
-        self.clause("file exists", saved["exists"], saved["path"])
-        self.clause("title", "box" in saved["status"], saved["status"])
+        path = self.save_as("box.sxp")
+        self.refresh("status")
+        self.clause("saved", "Saved" in self.S(), self.S())
+        self.clause("file exists", Path(path).is_file(), path)
+        self.clause("title", "box" in self.S(), self.S())
