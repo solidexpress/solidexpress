@@ -60,6 +60,16 @@ python3 tools/walk_rung01.py --from A16 --checkpoint --out /tmp/sx-041
 
 The headless proof that the bridge is real input, not a private API, is `game/tests/run_automation_bridge_tests.gd` (`automation_bridge_tests` in the CI tier): a second Extrude click is `drop:shield`, Enter leaves the Distance field, and the jaw angle label is clicked on its drawn rect and edited to 45.
 
+## Lesson 2 runner
+
+`tools/walk_rung02.py` is the same command as `tools/walk_rung01.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 44-row box checklist. It runs `tools/check_rung02.py`. `--checkpoint` reloads `box.sxp` (chunk 2), `rounded.sxp` (chunk 3), `shelled.sxp` (chunk 4), or `final.sxp` (chunk 5). `state.sketch.plane` is `{origin, x, y, normal}` while a sketch is active. Export rows assert S0 first: one body whose name starts with `extrude`, `fillet`, `shell`, or `cut`, and a bbox of `100 × W × 50` ± 0.1.
+
+```bash
+python3 tools/walk_rung02.py --out /tmp/sx-rung02
+python3 tools/walk_rung02.py --rows A1,A2,A3,A4,A5 --out /tmp/sx-rung02
+python3 tools/walk_rung02.py --from A7 --checkpoint --out /tmp/sx-rung02
+```
+
 ## sx-042 runner rules (re-PLAN 21)
 
 Statuses that a row judges are the `[status-trace] … kind=result text=…` lines since that row's mark (`Walk.status_since`). The live status label is only for hover hints. Every `click(screen=[x, y])` uses a bridge selector (`target=`, `model=`, `sketch=`, `edge=`, `face=`, `face_normal=`) or a position taken from `bodies[i].screen` / `project`. The only fixed offsets that remain are inside `jaw_px`, which is derived from the measured head.

@@ -5565,7 +5565,9 @@ func _apply_line_length_dim(ref: Dictionary, intent: Dictionary) -> void:
 	_set_selected([hit])
 	constrain("distance", info["start"].distance_to(info["end"]))
 	_tag_label_anchor(intent, [hit])
-	if str(intent.get("also", "")) == "angle_to_horizontal":
+	# An axis-locked side (a rectangle's H/V) already has its angle. A second
+	# angle-to-horizontal fights that lock and the length dim does not stick.
+	if str(intent.get("also", "")) == "angle_to_horizontal" and not _line_locked_axis(hit):
 		var mid: Vector2 = (info["start"] + info["end"]) * 0.5
 		_add_angle_to_horizontal(hit, mid)
 		run_solve()
@@ -6419,7 +6421,40 @@ func _infer_rect(l1: String, l2: String, l3: String, l4: String) -> void:
 		sketch.add_constraint("coincident", [
 			{"entity": c[0], "role": c[1]},
 			{"entity": c[2], "role": c[3]}], 0.0)
+	_pin_rect_corner_at_origin([l1, l2, l3, l4])
 	run_solve()
+
+
+## A corner rectangle that starts on the sketch origin is fully defined once
+## its two side lengths are driving. Without this pin the profile still has
+## two translational degrees of freedom and a later length edit slides it.
+func _pin_rect_corner_at_origin(line_ids: Array) -> void:
+	if sketch == null:
+		return
+	var best_id := ""
+	var best_role := ""
+	var best := ORIGIN_PIN_TOL * ORIGIN_PIN_TOL
+	for lid in line_ids:
+		var info: Dictionary = sketch.entity_info(str(lid))
+		if str(info.get("type", "")) != "line":
+			continue
+		for role in ["start", "end"]:
+			var p: Vector2 = info[role]
+			var d := p.length_squared()
+			if d <= best:
+				best = d
+				best_id = str(lid)
+				best_role = role
+	if best_id == "":
+		return
+	var origin := sketch.add_point(0.0, 0.0)
+	if origin == "":
+		return
+	sketch.set_construction(origin, true)
+	sketch.add_constraint("fix", [{"entity": origin, "role": "self"}], 0.0)
+	sketch.add_constraint("coincident", [
+		{"entity": origin, "role": "self"},
+		{"entity": best_id, "role": best_role}], 0.0)
 
 
 ## Centre-3-pt rectangle: driving width on the short side, and an angle from
@@ -6496,6 +6531,20 @@ func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String =
 		{"entity": line_id, "role": "self"}], ang, true)
 	var recorded := _normalize_jaw_angle_rad(ang) if callout == "jaw_angle" else ang
 	_record_dimension("angle", [xid, line_id], recorded, cid, callout)
+
+
+func _line_locked_axis(line_id: String) -> bool:
+	if sketch == null or line_id == "":
+		return false
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(str(cid))
+		var kind := str(info.get("type", ""))
+		if kind != "horizontal" and kind != "vertical":
+			continue
+		for ref in info.get("refs", []):
+			if str(ref.get("entity", "")) == line_id:
+				return true
+	return false
 
 
 func _line_has_angle_dim(line_id: String) -> bool:

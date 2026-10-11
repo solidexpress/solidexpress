@@ -1496,7 +1496,7 @@ func _window_text(w: Window) -> String:
 
 func _finish_state(main: Node) -> Dictionary:
 	var fields: Array = []
-	for id in ["finish:Distance", "finish:Radius", "finish:Op", "finish:End", "finish:Thin", "finish:StripR", "finish:PanelRadius", "finish:ParamDistance", "finish:ParamRadius"]:
+	for id in ["finish:Distance", "finish:Radius", "finish:Op", "finish:End", "finish:Thin", "finish:StripR", "finish:PanelRadius", "finish:ParamDistance", "finish:ParamRadius", "finish:Thickness", "finish:Ok"]:
 		var node := _find_auto(id)
 		if node is Control and (node as Control).is_visible_in_tree():
 			fields.append({"id": id, "text": _control_text(node as Control), "rect": _rect((node as Control).get_global_rect())})
@@ -1513,11 +1513,20 @@ func _sketch_state(sm) -> Dictionary:
 			entities.append(_jsonify(info))
 			if entities.size() >= 80:
 				break
+	var plane := {}
+	if bool(sm.active):
+		plane = {
+			"origin": _v3(sm.plane_origin),
+			"x": _v3(sm.plane_x),
+			"y": _v3(sm.plane_y),
+			"normal": _v3(sm.plane_normal()),
+		}
 	return {
 		"active": bool(sm.active),
 		"editing": str(sm.editing_fid),
 		"entity_count": entities.size() if sm.sketch == null or not bool(sm.active) else sm.sketch.entity_ids().size(),
 		"entities": entities,
+		"plane": plane,
 	}
 
 
