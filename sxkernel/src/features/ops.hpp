@@ -8,11 +8,14 @@
 #include <string>
 #include <vector>
 
+#include <TopoDS_Edge.hxx>
+#include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Wire.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
 
 #include "sx/document.hpp"
 #include "sx/entity.hpp"
@@ -126,5 +129,9 @@ gp_Dir dir_from(const nlohmann::json& a);
 void put_body(Document& doc, const EntityId& id, const TopoDS_Shape& shape,
               const std::string& name);
 void ensure_pattern_slots(Feature& f, int count, Document& doc);
+
+bool planar_face_normal(const TopoDS_Face& face, gp_Dir& n);
+bool edge_midpoint_sample(const TopoDS_Edge& edge, gp_Pnt& point, gp_Vec& unit_tangent);
+std::string format_fixed(double v, int decimals);
 
 }  // namespace sx::feature_ops

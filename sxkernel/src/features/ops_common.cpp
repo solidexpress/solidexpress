@@ -1,9 +1,14 @@
 #include "ops.hpp"
 
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRep_Tool.hxx>
+#include <GeomAbs_SurfaceType.hxx>
 #include <TopExp.hxx>
 #include "sx/occt_types.hpp"
 
 #include <cmath>
+#include <sstream>
 #include <stdexcept>
 
 namespace sx::feature_ops {
@@ -86,6 +91,38 @@ bool resolve_topo_shape(Document& doc, const Body& body, EntityKind kind,
     }
     if (why) *why = "topology ref must be uuid string or integer index";
     return false;
+}
+
+bool planar_face_normal(const TopoDS_Face& face, gp_Dir& n) {
+    BRepAdaptor_Surface surf(face);
+    if (surf.GetType() != GeomAbs_Plane) return false;
+    n = surf.Plane().Axis().Direction();
+    if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+    return true;
+}
+
+bool edge_midpoint_sample(const TopoDS_Edge& edge, gp_Pnt& point, gp_Vec& unit_tangent) {
+    if (BRep_Tool::Degenerated(edge)) return false;
+    BRepAdaptor_Curve curve(edge);
+    gp_Pnt p;
+    gp_Vec v;
+    curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
+    if (v.Magnitude() < 1e-12) return false;
+    v.Normalize();
+    point = p;
+    unit_tangent = v;
+    return true;
+}
+
+std::string format_fixed(double v, int decimals) {
+    double scale = 1.0;
+    for (int i = 0; i < decimals; ++i) scale *= 10.0;
+    const double shown = std::round(v * scale) / scale;
+    std::ostringstream os;
+    os.setf(std::ios::fixed);
+    os.precision(decimals);
+    os << shown;
+    return os.str();
 }
 
 }  // namespace sx::feature_ops

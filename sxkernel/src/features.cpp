@@ -3,7 +3,6 @@
 #include "features/ops.hpp"
 #include "features/topo_cue.h"
 
-#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <gp_Pln.hxx>
@@ -969,12 +968,9 @@ static void remember_live_edges(FeatureGraph& graph, Document& doc) {
             TopoDS_Shape shape = doc.resolve(eid);
             if (shape.IsNull() || shape.ShapeType() != TopAbs_EDGE) continue;
             const TopoDS_Edge edge = TopoDS::Edge(shape);
-            BRepAdaptor_Curve curve(edge);
             gp_Pnt p;
             gp_Vec v;
-            curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
-            if (v.Magnitude() < 1e-12) continue;
-            v.Normalize();
+            if (!feature_ops::edge_midpoint_sample(edge, p, v)) continue;
             graph.remember_edge(eid.str(), p.X(), p.Y(), p.Z(), v.X(), v.Y(), v.Z());
         }
     }
@@ -986,8 +982,8 @@ static void remember_live_edges(FeatureGraph& graph, Document& doc) {
 static bool cue_still_names(const json& cue, const gp_Pnt& point, const gp_Vec& dir) {
     if (!cue.is_object() || (!cue.contains("point") && !cue.contains("dir"))) return true;
     const TopoCue stored = cue_from_json(cue);
-    return cue_names_line(stored, Vec3{point.X(), point.Y(), point.Z()},
-                          Vec3{dir.X(), dir.Y(), dir.Z()});
+    return cue_names_line(stored, gp_XYZ(point.X(), point.Y(), point.Z()),
+                          gp_XYZ(dir.X(), dir.Y(), dir.Z()));
 }
 
 // A fillet/chamfer edge created by an earlier feature is released when the
@@ -1034,16 +1030,7 @@ static void remember_dressup_edge_cues(FeatureGraph& graph, Feature& f, Document
             TopoCue fresh = job->kind == EntityKind::Face
                                 ? cue_from_face(TopoDS::Face(es), tb->shape)
                                 : cue_from_edge(TopoDS::Edge(es), tb->shape);
-            if (fresh.dir.x == 0.0 && fresh.dir.y == 0.0 && fresh.dir.z == 0.0) continue;
-            if (have) {
-                const TopoCue stored = cue_from_json(cues[key]);
-                const bool same = job->kind == EntityKind::Face
-                                      ? cue_names_face(stored, fresh)
-                                      : cue_names_line(stored, fresh.point, fresh.dir);
-                if (!same) continue;
-            }
-            cues[key] = cue_to_json(fresh);
-            changed = true;
+            if (refresh_cue(cues, key, fresh, job->kind)) changed = true;
             continue;
         }
         if (job->kind != EntityKind::Edge) continue;
