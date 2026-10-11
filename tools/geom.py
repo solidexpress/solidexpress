@@ -131,12 +131,29 @@ def topology_report(V, T):
     return Topology(open_edges, nonmanifold, components)
 
 
-class R:
+@dataclass(frozen=True)
+class Row:
+    name: str
+    ok: bool
+    got: object
+    want: object
+
+    def __post_init__(self):
+        object.__setattr__(self, "ok", bool(self.ok))
+
+
+class Report:
     def __init__(self): self.rows = []; self.fail = 0
     def add(self, name, ok, got, want):
         self.rows.append((name, 'PASS' if ok else 'FAIL', got, want)); self.fail += (not ok)
+    def extend(self, rows):
+        for row in rows:
+            self.add(row.name, row.ok, row.got, row.want)
     def show(self):
         w = max(len(r[0]) for r in self.rows)
         for n, s, g, wnt in self.rows:
             print(f"{s:4}  {n:<{w}}  got {g}  want {wnt}")
         print(f"\n{len(self.rows)-self.fail}/{len(self.rows)} passed")
+
+
+R = Report
