@@ -5099,7 +5099,7 @@ func click(pos2: Vector2) -> void:
 		Tool.SMART_DIM:
 			_click_smart_dim(pos2)
 		Tool.CONVERT:
-			SketchEdgeRefs.convert_click(self, pos2)
+			_convert_edge_click(pos2)
 		Tool.MIRROR:
 			# Selection must already include axis + geometry; click confirms.
 			mirror_selected()
@@ -5441,18 +5441,35 @@ func cancel_pending_dim_pick() -> void:
 	_set_selected([])
 
 
-func _smart_dim_kind(ref: Dictionary) -> String:
+func _convert_edge_click(uv: Vector2) -> void:
+	if sketch == null or view == null or view.doc == null:
+		return
+	var ctx := SketchConvertEdge.Context.new()
+	ctx.doc = view.doc
+	ctx.view = view
+	ctx.plane = plane
+	ctx.host_face_id = host_face_id
+	ctx.support_host = support_host
+	ctx.support_normal = support_normal
+	ctx.ensure_feature = _ensure_sketch_feature
+	ctx.commit = func(label: String) -> void:
+		_undo_note(label)
+		run_solve()
+		_redraw()
+	ctx.status = func(text: String) -> void:
+		status.emit(text)
+	ctx.fallback = convert_pierce_points
+	SketchConvertEdge.new(ctx).click(uv)
+	host_face_id = ctx.host_face_id
+
+
+func _smart_dim_kind(ref: Dictionary) -> SmartDimTable.End:
 	var id := str(ref.get("entity", ""))
 	if id == "" or sketch == null:
-		return ""
+		return null
 	var info: Dictionary = sketch.entity_info(id)
-	var type := str(info.get("type", ""))
-	var role := str(ref.get("role", "self"))
-	if type == "line" and sketch.is_external(id):
-		return "external_line"
-	if (type == "circle" or type == "arc") and role == "center":
-		return type + "_center"
-	return type
+	return SmartDimTable.end_for(str(info.get("type", "")), str(ref.get("role", "self")),
+			sketch.is_external(id))
 
 
 func _click_smart_dim(pos2: Vector2) -> void:
@@ -5484,13 +5501,13 @@ func _click_smart_dim(pos2: Vector2) -> void:
 			status.emit(SMART_DIM_SAME_HINT)
 			return
 		var second := hit_ref
-		if SketchEdgeRefs.resolve("between", _smart_dim_kind(_smart_dim_pending),
+		if SmartDimTable.resolve(SmartDimTable.Channel.BETWEEN, _smart_dim_kind(_smart_dim_pending),
 				_smart_dim_kind(hit_ref)).is_empty():
 			var as_center := {"entity": hit, "role": "center"}
-			if not SketchEdgeRefs.resolve("between", _smart_dim_kind(_smart_dim_pending),
+			if not SmartDimTable.resolve(SmartDimTable.Channel.BETWEEN, _smart_dim_kind(_smart_dim_pending),
 					_smart_dim_kind(as_center)).is_empty():
 				second = as_center
-		if not _dispatch_smart_dim("between", _smart_dim_pending, second):
+		if not _dispatch_smart_dim(SmartDimTable.Channel.BETWEEN, _smart_dim_pending, second):
 			_set_selected([hit])
 			_smart_dim_first = pos2
 			_smart_dim_pending.clear()
@@ -5500,10 +5517,10 @@ func _click_smart_dim(pos2: Vector2) -> void:
 		return
 	if selected.size() == 1 and str(selected[0]) != hit:
 		var sel_ref := {"entity": selected[0], "role": "self"}
-		if _dispatch_smart_dim("selection", sel_ref, hit_ref):
+		if _dispatch_smart_dim(SmartDimTable.Channel.SELECTION, sel_ref, hit_ref):
 			_smart_dim_first = null
 			return
-	var single := SketchEdgeRefs.resolve("single", _smart_dim_kind(hit_ref), "")
+	var single := SmartDimTable.resolve(SmartDimTable.Channel.SINGLE, _smart_dim_kind(hit_ref))
 	if single.is_empty():
 		_set_selected([hit])
 		_smart_dim_first = pos2
@@ -5542,15 +5559,15 @@ func _lines_signed_angle(id_a: String, id_b: String) -> float:
 
 
 func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
-	_dispatch_smart_dim("between", a, b)
+	_dispatch_smart_dim(SmartDimTable.Channel.BETWEEN, a, b)
 
 
-func _dispatch_smart_dim(channel: String, a: Dictionary, b: Dictionary) -> bool:
+func _dispatch_smart_dim(channel: SmartDimTable.Channel, a: Dictionary, b: Dictionary) -> bool:
 	var ida := str(a.get("entity", ""))
 	var idb := str(b.get("entity", ""))
 	if ida == "" or idb == "":
 		return false
-	var intent := SketchEdgeRefs.resolve(channel, _smart_dim_kind(a), _smart_dim_kind(b))
+	var intent := SmartDimTable.resolve(channel, _smart_dim_kind(a), _smart_dim_kind(b))
 	if intent.is_empty():
 		return false
 	_set_selected([ida, idb])
