@@ -1,0 +1,3 @@
+script=tests/run_film_lesson2_box_tests.gd
+tier=full
+timeout=300
