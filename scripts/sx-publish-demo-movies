@@ -16,6 +16,8 @@
 #   SX_DEMO_RELEASE_REPO   default: solidexpress/solidexpress.github.io
 #   SX_DEMO_RELEASE_TAG    default: demo-movies
 #   SX_SKIP_UPLOAD         if set, skip gh release upload
+#   SX_PUBLISHED_JSON      default: <repo>/website/assets/published-demos.json
+#   SX_CATALOG_JSON        default: <repo>/website/assets/demo-catalog.json
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,8 +26,8 @@ SITE="${SX_SITE_ROOT:-$ROOT/../solidexpress.github.io}"
 REPO="${SX_DEMO_RELEASE_REPO:-solidexpress/solidexpress.github.io}"
 TAG="${SX_DEMO_RELEASE_TAG:-demo-movies}"
 MANIFEST="$ROOT/game/tests/ui_movie_manifest.json"
-PUBLISHED="$ROOT/website/assets/published-demos.json"
-CATALOG="$ROOT/website/assets/demo-catalog.json"
+PUBLISHED="${SX_PUBLISHED_JSON:-$ROOT/website/assets/published-demos.json}"
+CATALOG="${SX_CATALOG_JSON:-$ROOT/website/assets/demo-catalog.json}"
 CANON_SHOTS="$ROOT/website/assets/screenshots"
 
 DRY_RUN=0

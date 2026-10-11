@@ -36,7 +36,8 @@ func _run() -> void:
 	await _zoom(ctx, Vector3(100, 30, 25), 90.0)
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CONVERT)
-	check(sm.tool == SketchMode.Tool.CONVERT, "rail Convert is armed")
+	check(sm.tool == SketchMode.Tool.CONVERT and _status_log.has("Convert — click an edge of this face"),
+			"rail Convert is armed")
 	var before := _entity_count(sm)
 	await _project_click(ctx, Vector3(100, 10, 25), "Left edge y=10")
 	await _project_click(ctx, Vector3(100, 30, 0), "Bottom edge z=0")
@@ -44,7 +45,8 @@ func _run() -> void:
 	var externals := _external_lines(sm)
 	print("  entities %d external %d" % [_entity_count(sm), externals.size()])
 	_dump_entities(sm)
-	check(externals.size() == 2, "two external lines (got %d)" % externals.size())
+	check(externals.size() == 2 and _status_log.has("Convert: external line"),
+			"two external lines (got %d)" % externals.size())
 	var constructed := 0
 	for id in externals:
 		if sm.sketch.is_construction(id):
@@ -141,7 +143,7 @@ func _refuse_foreign_edge(ctx: FilmContext) -> void:
 	var refused := _status_since(mark)
 	print("  refused: %s" % refused)
 	check(_external_lines(sm).size() == n0, "foreign edge adds no external (got %d)" % _external_lines(sm).size())
-	check(refused.contains("not on") or refused.to_lower().contains("face"),
+	check(refused.contains("Convert: edge is not on this face"),
 			"foreign edge is refused with a status (got '%s')" % refused)
 
 

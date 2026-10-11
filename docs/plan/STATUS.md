@@ -2,9 +2,13 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Rung 2 — Lesson 2 box (PR #246)
+
+Shipped: `PlaneBasis`, `TopoCue`, Shell chip, Convert on a face, point-line Smart Dim, bridge face identity, `Rung` descriptor, `check_rung02.py`, 44-row walk. Suites **206 run + 4 known-red**. Checker bar: `check_rung02.py` base 3/3, rounded 7/7, shell 13/13, final 16/16 at width 60 and at width 65.
+
 ## Post-rung-1 cleanup
 
-Organization pass from [`docs/loop/post-rung-01-cleanup.md`](../loop/post-rung-01-cleanup.md) on one PR. Behaviour unchanged.
+Organization pass after rung 1 on one PR. Behaviour unchanged. History: `git log -- docs/loop`.
 
 Shipped: WP1 baseline/ledger, WP2 loop-doc purge (−22,371 lines), WP3 dead code (−381), WP4 `SxSuite` (−2,634 net), WP5 `SxInput` (−1,670 net), WP6 retire chain/walk suites (−3,537; **202 run + 4 known-red**), WP7 lint rule table, WP8 `tools/walk/` package, WP9 kernel `FeatureTypeInfo` + `kApplyHandlers`, WP10 File/WorkMode/bridge tables, WP11 `SketchGeom`, WP12 `SketchToolSpec`, WP13 CI `setup-occt` composite (kernel, macos-kernel, godot-smoke).
 
@@ -14,15 +18,7 @@ WP10 pins File menu ids in `run_menu_tests.gd` (`test_file_menu_ids`, +32 checks
 
 Part B: film `ubc_wrench` + `run_film_ubc_wrench_tests.gd` (`tier=full`). Suites **203 run + 4 known-red**.
 
-### Pending publish
-`ubc_wrench.webm` is not on Release `demo-movies` (this token cannot upload). Human step:
-
-```
-gh release upload demo-movies -R solidexpress/solidexpress.github.io --clobber ubc_wrench.webm ubc_wrench.vtt
-SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature ubc_wrench
-```
-
-then a one-line follow-up commit of `published-demos.json` / `demo-catalog.json`. Do not add those ids until the WebM is on the Release.
+`ubc_wrench` is on Release `demo-movies` and in `published-demos.json` and `demo-catalog.json`.
 
 ## 0.1.1 — rung 2 (Student Guide box)
 - SolidExpress `VERSION` is 0.1.1. Rung 2 (SolidWorks Student Guide Lesson 2 box) is fully makeable (#246).

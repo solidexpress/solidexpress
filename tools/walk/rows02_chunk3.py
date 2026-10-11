@@ -40,7 +40,11 @@ class Rows02Chunk3:
         size = self.body_size()
         self.select_face([0, 0, 1])
         tried = self.apply_shell("30")
-        self.clause("refused", "limit" in tried["status"].lower(), tried["status"])
+        self.clause(
+            "refused",
+            "Shell thickness 30.0000 mm is at least half the 50.0000 mm extent (limit) — nothing added" in tried["status"],
+            tried["status"],
+        )
         self.clause("unchanged", tried["names"] == before and self.body_size() == size, f"{tried['names']} size={self.body_size()}")
         field = tried["field"] or str((self.control("finish:Thickness") or {}).get("text", ""))
         self.clause("field 5", field.startswith("5"), f"field={field!r}")
@@ -52,7 +56,7 @@ class Rows02Chunk3:
         self.clause("panel", chip is not None, str((chip or {}).get("id")))
         made = self.apply_shell("5")
         self.clause("thickness 5", made["shown"].startswith("5") or "5" in made["status"], f"shown={made['shown']!r} {made['status']}")
-        self.clause("status", "Shell" in made["status"] and "applied" in made["status"], made["status"])
+        self.clause("status", "Shell 5.0000 mm applied" in made["status"], made["status"])
         self.clause("feature", any(n.startswith("Shell") for n in made["names"]), str(made["names"]))
         size = self.body_size()
         ok = size is not None and abs(size[0] - 100) <= 0.1 and abs(size[1] - self.width()) <= 0.1 and abs(size[2] - 50) <= 0.1

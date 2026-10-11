@@ -355,15 +355,6 @@ class WalkUI:
         self.refresh("edges")
         return list(self.st.get("edges") or [])
 
-    def click_edge_near(self, pred, along: float = 0.5) -> str:
-        hits = [e for e in self.edges() if pred(e)]
-        if not hits:
-            raise SxError("no edge matched")
-        edge = hits[0]
-        reply = self.d.click(edge=edge["id"], along=along)
-        self.refresh("status")
-        return str(reply.get("status", self.S()))
-
     def _timeline_names(self) -> list[str]:
         return [str(r.get("name", "")) for r in (self.refresh("timeline").get("timeline") or []) if r.get("name")]
 

@@ -456,16 +456,6 @@ static func keep_editing_on_submit(line: LineEdit) -> void:
 	line.keep_editing_on_text_submit = true
 
 
-## After a commit, the line is still the focus owner. Make sure it is actually
-## editing and that the next digit replaces the committed text.
-static func rearm_replace_after_commit(line: LineEdit) -> void:
-	if line == null or not is_instance_valid(line):
-		return
-	if line.has_focus() and not line.is_editing():
-		line.edit()
-	arm_replace_on_focus(line)
-
-
 ## Arm replace-on-next-key and select the current text one frame later.
 ## Never select_all synchronously from focus_entered — that re-enters Window
 ## focus and the deferred select used to eat the first typed digit.
@@ -669,17 +659,6 @@ static func _user_continued(current: String, typed: String) -> bool:
 	if c == t or t == "" or not c.begins_with(t):
 		return false
 	return not _is_zero_padded(c, t)
-
-
-## "2.00" / "1.50" are reformats. "1." and "15" are not.
-static func _is_reformat_of(current: String, typed: String) -> bool:
-	var c := _numeric_body(current)
-	var t := _numeric_body(typed)
-	if c == t:
-		return true
-	if c.ends_with(".") or t.ends_with("."):
-		return false
-	return _is_zero_padded(c, t)
 
 
 static func _is_zero_padded(current: String, typed: String) -> bool:

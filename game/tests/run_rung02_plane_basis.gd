@@ -13,6 +13,14 @@ const PIN_POS_Z_X := Vector3(1, 0, 0)
 const PIN_POS_Z_Y := Vector3(0, 1, 0)
 const PIN_NEG_Z_X := Vector3(1, 0, 0)
 const PIN_NEG_Z_Y := Vector3(0, -1, 0)
+const _FACE_ORIGIN := {
+	"+X": "100.0,0.0,0.0",
+	"-X": "0.0,0.0,0.0",
+	"+Y": "0.0,60.0,0.0",
+	"-Y": "0.0,0.0,0.0",
+	"+Z": "0.0,0.0,50.0",
+	"-Z": "0.0,0.0,0.0",
+}
 
 var _status_log: Array[String] = []
 
@@ -112,10 +120,11 @@ func _face(ctx: FilmContext, normal: Vector3, view_key: Key, world: Vector3, wan
 	for _i in 4:
 		await process_frame
 	var sm: SketchMode = ctx.main.sketch_mode
-	check(sm.active, "%s sketch is active" % tag)
+	_note_status(ctx)
+	var face_status := "Sketch on face (plane %s @ origin %s)" % [tag, _FACE_ORIGIN[tag]]
+	check(sm.active and _status_has(face_status), "%s sketch is active (%s)" % [tag, face_status])
 	if not sm.active or sm.sketch == null:
 		return
-	_note_status(ctx)
 	var pi: Dictionary = sm.sketch.plane_info()
 	var px: Vector3 = (pi["x_dir"] as Vector3).normalized()
 	var py: Vector3 = (pi["y_dir"] as Vector3).normalized()
@@ -197,6 +206,10 @@ func _boot() -> FilmContext:
 	if main.interaction != null:
 		main.interaction.status.connect(_on_status)
 	return ctx
+
+
+func _status_has(text: String) -> bool:
+	return _status_log.has(text)
 
 
 func _on_status(text: String) -> void:

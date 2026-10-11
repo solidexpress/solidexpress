@@ -107,10 +107,3 @@ ROWS: list[str] = []
 CHUNKS: dict[int, list[str]] = {}
 EXPECT: dict = {}
 ROW_HANDLERS: dict[str, object] = {}
-
-
-def checkpoint_file(rid: str) -> str | None:
-    """Saved part that can stand in for live state when a later chunk starts."""
-    if RUNG1 is None:
-        return None
-    return RUNG1.checkpoint_for(rid)

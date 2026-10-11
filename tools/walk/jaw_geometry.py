@@ -28,27 +28,6 @@ class WalkJaw:
                 return True
         return False
 
-    def _off_badges(self, screen: list[float], badges: list[list[float]], dx: float, dy: float) -> list[float] | None:
-        """Keep a wall sample. A badge overlap slides along the stroke, not off it."""
-        if not self._in_badge(screen, badges, pad=4.0):
-            return screen
-        try:
-            origin = self.d.project(sketch=[0, 0])["screen"]
-            tip = self.d.project(sketch=[dx, dy])["screen"]
-        except SxError:
-            return None
-        sx = float(tip[0]) - float(origin[0])
-        sy = float(tip[1]) - float(origin[1])
-        sl = (sx * sx + sy * sy) ** 0.5
-        if sl < 1e-3:
-            return None
-        ux, uy = sx / sl, sy / sl
-        for dist in (8.0, -8.0, 16.0, -16.0):
-            cand = [screen[0] + ux * dist, screen[1] + uy * dist]
-            if not self._in_badge(cand, badges, pad=4.0):
-                return cand
-        return None
-
     def wall_screen_points(self, count: int = 9) -> list[list[float]]:
         """Screen samples along the two longest slanted walls, outside badge rects."""
         self.refresh("sketch", "glyphs")

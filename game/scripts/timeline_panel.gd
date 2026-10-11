@@ -550,14 +550,6 @@ func _edit_sketch_feature(fid: String) -> void:
 		status.emit("Could not edit sketch")
 
 
-## Distance is the schema key `distance`, not whichever spin happens to be first
-## (a primitive's first spin is W). End is the enum beside it.
-## The actual grab is deferred inside the property panel so it lands after
-## this click's focus assignment.
-func _focus_extrude_distance() -> void:
-	_focus_row_field(_selected_fid if _selected_fid != "" else "")
-
-
 func _feature_type(fid: String) -> String:
 	if view == null or fid == "":
 		return ""

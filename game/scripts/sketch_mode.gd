@@ -568,10 +568,9 @@ func face_lies_on_plane(face_id: String) -> bool:
 
 
 ## Begin a sketch on the model-space plane (origin + normal). The in-plane
-## axes come from PlaneBasis.for_face. x_hint is unused (callers pass ZERO).
+## axes come from PlaneBasis.for_face.
 ## Extrude follows this normal.
-func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO,
-		support: Dictionary = {}) -> void:
+func begin(origin: Vector3, normal: Vector3, support: Dictionary = {}) -> void:
 	editing_fid = ""
 	_clear_support()
 	if not support.is_empty():
@@ -579,7 +578,7 @@ func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO,
 		support_normal = support.get("normal", Vector3.ZERO)
 		support_side = str(support.get("side", "max"))
 		host_face_id = str(support.get("face", ""))
-	_setup_plane(origin, normal, x_hint)
+	_setup_plane(origin, normal)
 	sketch = SxSketch.new()
 	sketch.set_plane(origin, plane_x, plane_y)
 	_activate_session()
@@ -630,7 +629,7 @@ func begin_edit(fid: String, announce: bool = true) -> bool:
 	return true
 
 
-func _setup_plane(origin: Vector3, normal: Vector3, _x_hint: Vector3 = Vector3.ZERO) -> void:
+func _setup_plane(origin: Vector3, normal: Vector3) -> void:
 	last_dofs = -1
 	last_solve_status = ""
 	var basis := PlaneBasis.for_face(normal, origin)

@@ -677,16 +677,19 @@ class WalkUI02:
         return best
 
     def convert_edge(self, model) -> dict:
+        arm = self.mark()
         self.click("rail:Convert")
+        armed = " | ".join(self._trace_text(ln) for ln in self.status_since(arm))
         edge = self._edge_near(model)
         if edge is None:
-            return {"status": "no edge", "id": ""}
+            return {"status": "no edge", "id": "", "armed": armed}
         mark = self.mark()
         reply = self.d.click(edge=edge["id"], along=0.5)
         self.refresh("sketch", "status")
         return {
             "status": " | ".join(self.result_texts(mark)) or str(reply.get("status", self.S())),
             "id": edge["id"],
+            "armed": armed,
         }
 
     def external_lines(self) -> list[dict]:

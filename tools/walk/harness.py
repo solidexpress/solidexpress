@@ -544,23 +544,6 @@ class Walk:
         except (SxError, RowAbort) as exc:
             print(f"checkpoint: chunk {chunk} reload failed: {exc}", flush=True)
 
-    def open_checkpoint(self, rid: str) -> None:
-        name = self.rung.checkpoint_for(rid) if self.rung is not None else None
-        if not name:
-            print(f"checkpoint: {rid} has no recovery file", flush=True)
-            return
-        path = self.out / name
-        if not path.exists():
-            print(f"checkpoint: {name} is not in {self.out}", flush=True)
-            return
-        try:
-            self.open_file(name)
-            self.refresh("status", "sketch", "bodies")
-            print(f"checkpoint: opened {name} before {rid} status={self.S()!r}", flush=True)
-            self.ctx["checkpoint"] = name
-        except SxError as exc:
-            print(f"checkpoint: open {name} failed: {exc}", flush=True)
-
     def chunk_failed(self, chunk: int) -> bool:
         rows = set(self.rung.chunks[chunk])
         return any(r["row"] in rows and not str(r["verdict"]).startswith("PASS") for r in self.rows)

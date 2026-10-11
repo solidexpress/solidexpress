@@ -64,7 +64,7 @@ func _run() -> void:
 	check(_bbox_size(ctx).distance_to(bb0) < 0.2, "bbox unchanged after a refused shell")
 	var refused := str(ctx.main.status_label.text)
 	print("  refused status: " + refused)
-	check(refused.contains("limit") or refused.contains("half"),
+	check(refused == "Shell thickness 30.0000 mm is at least half the 50.0000 mm extent (limit) — nothing added",
 			"thickness past half the extent is refused (got '%s')" % refused)
 	check(field.text == "5", "field returns to 5 after refusal (got '%s')" % field.text)
 	await _type_thickness(ctx, field, "5")
@@ -76,7 +76,8 @@ func _run() -> void:
 	print("  applied status: " + applied)
 	var names := _feature_names(ctx)
 	print("  timeline: " + ", ".join(names))
-	check(_has_shell(names), "timeline has a Shell feature (%s)" % ", ".join(names))
+	check(_has_shell(names) and applied == "Shell 5.0000 mm applied",
+			"timeline has a Shell feature (%s; %s)" % [", ".join(names), applied])
 	var bb1 := _bbox_size(ctx)
 	print("  bbox %s → %s" % [str(bb0), str(bb1)])
 	check(bb1.distance_to(bb0) < 0.2, "bbox unchanged after shell (got %s)" % str(bb1))
@@ -118,7 +119,8 @@ func _hint_without_face(ctx: FilmContext) -> void:
 	var hint := str(ctx.main.status_label.text)
 	print("  no-face status: " + hint)
 	check(_feature_count(ctx) == before, "no face adds no feature")
-	check(hint.contains("nothing added"), "no-face shell shows a hint (got '%s')" % hint)
+	check(hint == "Shell needs a planar face — nothing added",
+			"no-face shell shows a hint (got '%s')" % hint)
 
 
 func _edit_thickness_from_timeline(ctx: FilmContext) -> void:
