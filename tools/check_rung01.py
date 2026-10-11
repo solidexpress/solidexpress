@@ -14,9 +14,12 @@ moved to (-10,-22.5,0)); the head end is found from the vertices (the X end whos
 Tolerance: 0.2 mm on every length.
 DIAG: run `wrench` on a T≠10 file only to read the other fillet rows; `bbox Z (thickness)`, `grip slot present at y=0,z=8.75`, `1mm fillet top outer edge` and `1mm fillet on jaw top edge` fail by design at T≠10 — `thick` is the pass. `bbox Z`, the grip slot and both fillet rows fail by design at T≠10; the other rows are the diagnostic.
 """
-import sys, zipfile, re, math
-import xml.etree.ElementTree as ET
+import math
+import sys
+
 import numpy as np
+
+from geom import R, first_hit, inside, load_3mf, manifold_report, ray_hits, tri_arrays
 
 TOL = 0.2
 
@@ -36,72 +39,6 @@ def diag_expected_failures_at_t(T):
             '1mm fillet on jaw top edge',
         ]
     return []
-
-def load_3mf(path):
-    z = zipfile.ZipFile(path)
-    name = [n for n in z.namelist() if n.lower().endswith('.model')][0]
-    root = ET.fromstring(z.read(name))
-    ns = {'m': root.tag.split('}')[0].strip('{')}
-    V, T = [], []
-    for mesh in root.iter('{%s}mesh' % ns['m']):
-        base = len(V)
-        for v in mesh.iter('{%s}vertex' % ns['m']):
-            V.append((float(v.get('x')), float(v.get('y')), float(v.get('z'))))
-        for t in mesh.iter('{%s}triangle' % ns['m']):
-            T.append((base + int(t.get('v1')), base + int(t.get('v2')), base + int(t.get('v3'))))
-    return np.array(V, float), np.array(T, int)
-
-def tri_arrays(V, T):
-    return V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]
-
-def ray_hits(tris, o, d):
-    """Return sorted positive t of ray o + t d against all triangles (Moller-Trumbore)."""
-    a, b, c = tris
-    e1, e2 = b - a, c - a
-    p = np.cross(d, e2)
-    det = np.einsum('ij,ij->i', e1, p)
-    ok = np.abs(det) > 1e-12
-    inv = np.where(ok, 1.0 / np.where(ok, det, 1), 0)
-    s = o - a
-    u = np.einsum('ij,ij->i', s, p) * inv
-    q = np.cross(s, e1)
-    v = (q @ d) * inv
-    t = np.einsum('ij,ij->i', e2, q) * inv
-    m = ok & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-9)
-    return np.sort(t[m])
-
-def inside(tris, pt):
-    # parity along a slightly skewed direction; majority of 3 directions for robustness
-    votes = 0
-    for d in ([1, 0.0123, 0.0071], [0.0091, 1, 0.0137], [0.0113, 0.0067, 1]):
-        d = np.array(d) / np.linalg.norm(d)
-        votes += len(ray_hits(tris, np.array(pt, float), d)) % 2
-    return votes >= 2
-
-def first_hit(tris, o, d):
-    d = np.array(d, float); d /= np.linalg.norm(d)
-    h = ray_hits(tris, np.array(o, float), d)
-    return h[0] if len(h) else None
-
-def manifold_report(V, T):
-    key = np.round(V, 6)
-    _, inv = np.unique(key, axis=0, return_inverse=True)
-    inv = inv.reshape(-1)
-    TT = inv[T]
-    TT = TT[(TT[:, 0] != TT[:, 1]) & (TT[:, 1] != TT[:, 2]) & (TT[:, 0] != TT[:, 2])]  # drop sliver/degenerate tris
-    edges = np.sort(np.concatenate([TT[:, [0, 1]], TT[:, [1, 2]], TT[:, [2, 0]]]), axis=1)
-    _, counts = np.unique(edges, axis=0, return_counts=True)
-    return int((counts != 2).sum()), len(counts)
-
-class R:
-    def __init__(self): self.rows = []; self.fail = 0
-    def add(self, name, ok, got, want):
-        self.rows.append((name, 'PASS' if ok else 'FAIL', got, want)); self.fail += (not ok)
-    def show(self):
-        w = max(len(r[0]) for r in self.rows)
-        for n, s, g, wnt in self.rows:
-            print(f"{s:4}  {n:<{w}}  got {g}  want {wnt}")
-        print(f"\n{len(self.rows)-self.fail}/{len(self.rows)} passed")
 
 def wrench_tests(tris, r):
     s2 = math.sqrt(2) / 2
