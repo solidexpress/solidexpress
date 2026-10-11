@@ -1,4 +1,5 @@
 #include "ops.hpp"
+#include "topo_cue.h"
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
@@ -12,8 +13,6 @@
 #include <BRepGProp.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
-#include <ElCLib.hxx>
-#include <ElSLib.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
@@ -341,67 +340,17 @@ void note_faulty_contour(BRepFilletAPI_MakeFillet& mk, std::string* fault) {
     if (!fe.IsNull()) *fault = edge_phrase(fe);
 }
 
-// Rebuilds mint new ids for edges that an upstream feature recreates. Match
-// the cue captured before regen (midpoint + direction) back onto the body.
-// A line edge that only grows or shrinks along itself (the neck verticals when
-// the base extrude distance changes) keeps the same axis: the old midpoint
-// slides along the line and is no longer within 0.5 mm of the new midpoint.
-// Those edges match by axis, not by midpoint. Every other curve still needs
-// the midpoint within 0.5 mm, so a floor edge that lifts with the top face
-// stays unresolved unless a face cue covers it.
+// Cue-only resolve (no stable id). Absolute then relative live in resolve().
 bool match_edge_cue(const Body& body, const nlohmann::json& cue, TopoDS_Shape& out) {
-    if (!cue.is_object() || !cue.contains("point") || !cue.contains("dir")) return false;
-    const auto& pj = cue["point"];
-    const auto& dj = cue["dir"];
-    if (!pj.is_array() || pj.size() < 3 || !dj.is_array() || dj.size() < 3) return false;
-    const gp_Pnt want(pj[0].get<double>(), pj[1].get<double>(), pj[2].get<double>());
-    gp_Vec want_dir(dj[0].get<double>(), dj[1].get<double>(), dj[2].get<double>());
-    if (want_dir.Magnitude() < 1e-12) return false;
-    want_dir.Normalize();
-    sx::occt::ShapeIndexedMap map;
-    TopExp::MapShapes(body.shape, TopAbs_EDGE, map);
-    double best = 1e300;
-    bool found = false;
-    for (int i = 1; i <= map.Extent(); ++i) {
-        const TopoDS_Edge edge = TopoDS::Edge(map(i));
-        if (BRep_Tool::Degenerated(edge)) continue;
-        BRepAdaptor_Curve curve(edge);
-        gp_Pnt p;
-        gp_Vec v;
-        curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
-        if (v.Magnitude() < 1e-12) continue;
-        v.Normalize();
-        const double align = std::abs(v.Dot(want_dir));
-        if (align <= 0.95) continue;
-
-        double score = 1e300;
-        if (curve.GetType() == GeomAbs_Line) {
-            const gp_Lin lin = curve.Line();
-            const double perp = lin.Distance(want);
-            // Same 0.5 mm gate, measured to the axis. A parallel edge that
-            // merely translated sideways still misses.
-            if (perp > 0.5) continue;
-            const double u = ElCLib::Parameter(lin, want);
-            const double lo = std::min(curve.FirstParameter(), curve.LastParameter());
-            const double hi = std::max(curve.FirstParameter(), curve.LastParameter());
-            const double gap = u < lo ? (lo - u) : (u > hi ? (u - hi) : 0.0);
-            // The cue was the midpoint of this edge before the edit. A
-            // thickness change keeps that point on the segment, or within a
-            // few millimetres of it when the edge shrinks past the old mid.
-            if (gap > 25.0) continue;
-            score = perp + gap * 1.0e-4;
-        } else {
-            const double dist = p.Distance(want);
-            if (dist >= 0.5) continue;
-            score = dist;
-        }
-        if (score < best) {
-            best = score;
-            out = edge;
-            found = true;
-        }
-    }
-    return found;
+    if (!cue.is_object()) return false;
+    ShapeIndex index;
+    index.shape = body.shape;
+    index.kind = EntityKind::Edge;
+    index.body = &body;
+    const Resolution found = resolve(cue_from_json(cue), index);
+    if (!found.found) return false;
+    out = found.shape;
+    return true;
 }
 
 bool same_smooth_curve(const TopoDS_Edge& a, const TopoDS_Edge& b) {
@@ -598,48 +547,36 @@ nlohmann::json face_cues_for(const TopoDS_Shape& shape, const std::vector<TopoDS
 // qualify (a pocket floor under the top face), the one whose plane moved
 // least wins.
 bool match_face_cue(const TopoDS_Shape& shape, const nlohmann::json& cue, TopoDS_Face& out) {
-    if (!cue.is_object() || !cue.contains("point") || !cue.contains("normal")) return false;
-    const auto& pj = cue["point"];
-    const auto& nj = cue["normal"];
-    if (!pj.is_array() || pj.size() < 3 || !nj.is_array() || nj.size() < 3) return false;
-    const gp_Pnt want(pj[0].get<double>(), pj[1].get<double>(), pj[2].get<double>());
-    gp_Vec want_n(nj[0].get<double>(), nj[1].get<double>(), nj[2].get<double>());
-    if (want_n.Magnitude() < 1e-12) return false;
-    want_n.Normalize();
-    sx::occt::ShapeIndexedMap faces;
-    TopExp::MapShapes(shape, TopAbs_FACE, faces);
-    double best = 1e300;
-    bool found = false;
-    for (int i = 1; i <= faces.Extent(); ++i) {
-        const TopoDS_Face face = TopoDS::Face(faces(i));
-        gp_Dir n;
-        if (!planar_face_normal(face, n)) continue;
-        if (gp_Vec(n).Dot(want_n) < 0.999) continue;
-        BRepAdaptor_Surface surf(face);
-        const gp_Pln pln = surf.Plane();
-        const double shift = gp_Vec(want, pln.Location()).Dot(want_n);
-        const gp_Pnt on_plane = want.Translated(want_n * shift);
-        double u, v;
-        ElSLib::PlaneParameters(pln.Position(), on_plane, u, v);
-        BRepClass_FaceClassifier cl(face, gp_Pnt2d(u, v), 1e-4);
-        if (cl.State() != TopAbs_IN && cl.State() != TopAbs_ON) continue;
-        if (std::abs(shift) < best) {
-            best = std::abs(shift);
-            out = face;
-            found = true;
-        }
-    }
-    return found;
+    if (!cue.is_object()) return false;
+    ShapeIndex index;
+    index.shape = shape;
+    index.kind = EntityKind::Face;
+    const Resolution found = resolve(cue_from_json(cue), index);
+    if (!found.found || found.shape.IsNull() || found.shape.ShapeType() != TopAbs_FACE) return false;
+    out = TopoDS::Face(found.shape);
+    return true;
 }
 
 bool resolve_dressup_edge(ApplyCtx& ctx, const Body& body, const nlohmann::json& je,
                           TopoDS_Shape& es, std::string* why) {
-    if (resolve_topo_shape(ctx.doc, body, EntityKind::Edge, je, es, why)) return true;
-    if (!je.is_string() || !ctx.params.contains("edge_cues")) return false;
-    const auto& cues = ctx.params["edge_cues"];
-    const std::string key = je.get<std::string>();
-    if (!cues.is_object() || !cues.contains(key)) return false;
-    if (!match_edge_cue(body, cues[key], es)) return false;
+    TopoCue cue;
+    if (je.is_string() && ctx.params.contains("edge_cues") && ctx.params["edge_cues"].is_object()) {
+        const auto& cues = ctx.params["edge_cues"];
+        const std::string key = je.get<std::string>();
+        if (cues.contains(key)) cue = cue_from_json(cues[key]);
+    }
+    ShapeIndex index;
+    index.shape = body.shape;
+    index.kind = EntityKind::Edge;
+    index.ref = je;
+    index.doc = &ctx.doc;
+    index.body = &body;
+    const Resolution found = resolve(cue, index);
+    if (!found.found) {
+        if (why) *why = found.lost;
+        return false;
+    }
+    es = found.shape;
     if (why) why->clear();
     return true;
 }
@@ -787,13 +724,32 @@ bool apply_shell(ApplyCtx& ctx) {
     const Body* tb = ctx.doc.body(target);
     if (!tb) return ctx.fail("missing target body");
     sx::occt::ShapeList remove_faces;
+    nlohmann::json stored_cues = ctx.feature.params.value("face_cues", nlohmann::json::object());
+    if (!stored_cues.is_object()) stored_cues = nlohmann::json::object();
+    bool cues_changed = false;
     for (const auto& jf : ctx.params.at("faces")) {
-        TopoDS_Shape fs;
-        std::string why;
-        if (!resolve_topo_shape(ctx.doc, *tb, EntityKind::Face, jf, fs, &why))
-            return ctx.fail(why);
-        remove_faces.Append(fs);
+        TopoCue cue;
+        if (jf.is_string() && stored_cues.contains(jf.get<std::string>()))
+            cue = cue_from_json(stored_cues[jf.get<std::string>()]);
+        ShapeIndex index;
+        index.shape = tb->shape;
+        index.kind = EntityKind::Face;
+        index.ref = jf;
+        index.doc = &ctx.doc;
+        index.body = tb;
+        const Resolution found = resolve(cue, index);
+        if (!found.found) return ctx.fail(found.lost);
+        remove_faces.Append(found.shape);
+        if (!jf.is_string() || found.shape.ShapeType() != TopAbs_FACE) continue;
+        const TopoCue fresh = cue_from_face(TopoDS::Face(found.shape), tb->shape);
+        if (fresh.dir.x == 0.0 && fresh.dir.y == 0.0 && fresh.dir.z == 0.0) continue;
+        const std::string key = jf.get<std::string>();
+        if (stored_cues.contains(key) && !cue_names_face(cue_from_json(stored_cues[key]), fresh))
+            continue;
+        stored_cues[key] = cue_to_json(fresh);
+        cues_changed = true;
     }
+    if (cues_changed) ctx.feature.params["face_cues"] = std::move(stored_cues);
     if (remove_faces.IsEmpty()) return ctx.fail("no faces to remove");
     double thickness = num_param(ctx.params, "thickness", 1.0, ctx.env);
     BRepOffsetAPI_MakeThickSolid mk;

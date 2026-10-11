@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 from walk.app import WalkApp  # noqa: E402
+import walk.app02  # noqa: E402, F401
 from walk import registry  # noqa: E402
+from walk.expect import CHECKS, State, gate  # noqa: E402
+from walk.rung import Expect  # noqa: E402
 
 # 75 checklist ids in registration order (chunks 1–6). Plus two variant walks = 77.
 FROZEN_ROWS = [
@@ -36,6 +39,23 @@ FROZEN_CHUNKS = {
 }
 
 
+# 44 checklist ids. Chunks are the slices in docs/loop/rung-02-plan.md.
+FROZEN_ROWS_02 = [
+    "N1", "A1", "A2", "L1", "A3", "N2", "A4", "L2", "N3", "A5", "A6",
+    "A7", "L3", "A8", "N4", "N5", "A9",
+    "A10", "L4", "N6", "N7", "A11", "A12",
+    "A13", "A14", "L5", "A15", "A16", "N8", "A17", "A18", "A19", "L6", "N9", "A20", "N10", "A21",
+    "A22", "A23", "N11", "A24", "N12", "L7", "A25",
+]
+FROZEN_CHUNKS_02 = {
+    1: FROZEN_ROWS_02[0:11],
+    2: FROZEN_ROWS_02[11:17],
+    3: FROZEN_ROWS_02[17:23],
+    4: FROZEN_ROWS_02[23:37],
+    5: FROZEN_ROWS_02[37:44],
+}
+
+
 class WalkRegistryTests(unittest.TestCase):
     def test_frozen_id_list_is_registry_order(self) -> None:
         self.assertEqual(list(registry.ROWS), FROZEN_ROWS)
@@ -57,6 +77,29 @@ class WalkRegistryTests(unittest.TestCase):
             self.assertTrue(callable(getattr(WalkApp, registry.ROW_HANDLERS[rid].__name__)))
         for rid in FROZEN_VARIANTS:
             self.assertIn(rid, registry.ROW_HANDLERS)
+
+    def test_rung2_rows_and_chunks(self) -> None:
+        rung = getattr(registry, "RUNG2", None)
+        self.assertIsNotNone(rung, "rung 2 has no rows")
+        self.assertEqual(list(rung.rows), FROZEN_ROWS_02)
+        self.assertEqual({n: list(rows) for n, rows in rung.chunks.items()}, FROZEN_CHUNKS_02)
+        self.assertEqual(len(FROZEN_ROWS_02), 44)
+        for rid in FROZEN_ROWS_02:
+            self.assertIn(rid, rung.handlers)
+            self.assertTrue(callable(rung.handlers[rid]))
+        self.assertEqual(rung.checker, "check_rung02.py")
+        self.assertEqual(rung.checkpoints[2], "box.sxp")
+
+    def test_gate_walks_the_check_table(self) -> None:
+        self.assertEqual(list(CHECKS), ["mode", "sketch", "bodies", "bbox", "timeline", "finish_bar"])
+        state = State(
+            status="x", sketch_active=False, n_circles=0, n_lines=1, circle_span=0,
+            n_bodies=0, bbox_x=10, finish_op="", finish_end="", popup_text="",
+            timeline="", dim_texts="",
+        )
+        reasons = gate(state, Expect(blocker="A1", mode="sketch", sketch={"min_lines": 4}))
+        self.assertEqual(reasons, ["sketch not active status='x'", "lines=1"])
+        self.assertEqual(registry.RUNG1.expectations["A2"].mode, "sketch")
 
 
 if __name__ == "__main__":

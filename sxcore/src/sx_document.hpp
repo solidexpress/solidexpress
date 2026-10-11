@@ -162,6 +162,10 @@ public:
     godot::Ref<class SxSketch> graph_get_sketch(const godot::String& fid) const;
     // Replace a Sketch feature's geometry and regenerate dependents (undoable).
     bool graph_update_sketch(const godot::String& fid, const godot::Ref<class SxSketch>& sketch);
+    // Project one linear edge onto a sketch as an external construction line.
+    // "" when the sketch or edge is missing, or the edge is not a line.
+    godot::String sketch_add_external_edge(const godot::String& sketch_id,
+                                           const godot::String& edge_id);
     // op: "new" | "fuse" | "cut"; target_fid required for fuse/cut.
     godot::String graph_add_extrude(const godot::String& sketch_fid, double distance,
                                     bool symmetric, const godot::String& op,

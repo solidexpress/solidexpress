@@ -1,6 +1,7 @@
 #include "sx/features.hpp"
 
 #include "features/ops.hpp"
+#include "features/topo_cue.h"
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
@@ -983,21 +984,10 @@ static void remember_live_edges(FeatureGraph& graph, Document& doc) {
 // Topological naming can hand a fillet's old edge id to a different curve
 // after the blend consumes it. That must not replace the pre-fillet cue.
 static bool cue_still_names(const json& cue, const gp_Pnt& point, const gp_Vec& dir) {
-    if (!cue.is_object() || !cue.contains("point") || !cue.contains("dir")) return true;
-    const auto& pj = cue["point"];
-    const auto& dj = cue["dir"];
-    if (!pj.is_array() || pj.size() < 3 || !dj.is_array() || dj.size() < 3) return true;
-    gp_Vec want_dir(dj[0].get<double>(), dj[1].get<double>(), dj[2].get<double>());
-    if (want_dir.Magnitude() < 1e-12 || dir.Magnitude() < 1e-12) return false;
-    want_dir.Normalize();
-    gp_Vec got = dir;
-    got.Normalize();
-    if (std::abs(got.Dot(want_dir)) <= 0.95) return false;
-    const gp_Pnt want(pj[0].get<double>(), pj[1].get<double>(), pj[2].get<double>());
-    const gp_Vec delta(want, point);
-    const gp_Vec along = want_dir * delta.Dot(want_dir);
-    const double perp = (delta - along).Magnitude();
-    return perp <= 0.5;
+    if (!cue.is_object() || (!cue.contains("point") && !cue.contains("dir"))) return true;
+    const TopoCue stored = cue_from_json(cue);
+    return cue_names_line(stored, Vec3{point.X(), point.Y(), point.Z()},
+                          Vec3{dir.X(), dir.Y(), dir.Z()});
 }
 
 // A fillet/chamfer edge created by an earlier feature is released when the
@@ -1007,44 +997,72 @@ static bool cue_still_names(const json& cue, const gp_Pnt& point, const gp_Vec& 
 // when the id now resolves to a different curve, so a later regen keeps the
 // pre-fillet location.
 static void remember_dressup_edge_cues(FeatureGraph& graph, Feature& f, Document& doc) {
-    if (f.type != FeatureType::Fillet && f.type != FeatureType::Chamfer) return;
-    if (!f.params.contains("edges") || !f.params["edges"].is_array()) return;
+    struct CueJob {
+        FeatureType type;
+        const char* refs;
+        const char* cues;
+        EntityKind kind;
+    };
+    // Fillet and chamfer remember edges. Shell remembers the removed faces.
+    // A new dress-up reference is another row, not another branch at the call.
+    static constexpr CueJob kJobs[] = {
+        {FeatureType::Fillet, "edges", "edge_cues", EntityKind::Edge},
+        {FeatureType::Chamfer, "edges", "edge_cues", EntityKind::Edge},
+        {FeatureType::Shell, "faces", "face_cues", EntityKind::Face},
+    };
+    const CueJob* job = nullptr;
+    for (const auto& candidate : kJobs)
+        if (candidate.type == f.type) job = &candidate;
+    if (!job) return;
+    if (!f.params.contains(job->refs) || !f.params[job->refs].is_array()) return;
     if (!f.params.contains("target") || !f.params["target"].is_string()) return;
     const Feature* ref =
         graph.feature(EntityId::from_string(f.params["target"].get<std::string>()));
     if (!ref || ref->output_body.is_null()) return;
     const Body* tb = doc.body(ref->output_body);
     if (!tb) return;
-    json cues = f.params.value("edge_cues", json::object());
+    json cues = f.params.value(job->cues, json::object());
+    if (!cues.is_object()) return;
     bool changed = false;
-    for (const auto& je : f.params["edges"]) {
+    for (const auto& je : f.params[job->refs]) {
         if (!je.is_string()) continue;
         const std::string key = je.get<std::string>();
         const bool have = cues.contains(key);
         TopoDS_Shape es;
         std::string why;
-        if (feature_ops::resolve_topo_shape(doc, *tb, EntityKind::Edge, je, es, &why)) {
-            const TopoDS_Edge edge = TopoDS::Edge(es);
-            BRepAdaptor_Curve curve(edge);
-            gp_Pnt p;
-            gp_Vec v;
-            curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
-            if (v.Magnitude() < 1e-12) continue;
-            v.Normalize();
-            if (have && !cue_still_names(cues[key], p, v)) continue;
-            cues[key] = {{"point", {p.X(), p.Y(), p.Z()}}, {"dir", {v.X(), v.Y(), v.Z()}}};
+        if (feature_ops::resolve_topo_shape(doc, *tb, job->kind, je, es, &why)) {
+            TopoCue fresh = job->kind == EntityKind::Face
+                                ? cue_from_face(TopoDS::Face(es), tb->shape)
+                                : cue_from_edge(TopoDS::Edge(es), tb->shape);
+            if (fresh.dir.x == 0.0 && fresh.dir.y == 0.0 && fresh.dir.z == 0.0) continue;
+            if (have) {
+                const TopoCue stored = cue_from_json(cues[key]);
+                const bool same = job->kind == EntityKind::Face
+                                      ? cue_names_face(stored, fresh)
+                                      : cue_names_line(stored, fresh.point, fresh.dir);
+                if (!same) continue;
+            }
+            cues[key] = cue_to_json(fresh);
             changed = true;
             continue;
         }
+        if (job->kind != EntityKind::Edge) continue;
         double px, py, pz, dx, dy, dz;
         if (!graph.recall_edge(key, px, py, pz, dx, dy, dz)) continue;
         gp_Pnt mem_p(px, py, pz);
         gp_Vec mem_d(dx, dy, dz);
         if (have && !cue_still_names(cues[key], mem_p, mem_d)) continue;
-        cues[key] = {{"point", {px, py, pz}}, {"dir", {dx, dy, dz}}};
+        // A cue that already names this line keeps its fraction. Replacing it
+        // with the point/dir memory would drop the relative match.
+        if (have) continue;
+        TopoCue mem;
+        mem.point = {px, py, pz};
+        mem.dir = {dx, dy, dz};
+        mem.tol = 0.5;
+        cues[key] = cue_to_json(mem);
         changed = true;
     }
-    if (changed) f.params["edge_cues"] = std::move(cues);
+    if (changed) f.params[job->cues] = std::move(cues);
 }
 
 void FeatureGraph::remember_edge(const std::string& id, double px, double py, double pz,

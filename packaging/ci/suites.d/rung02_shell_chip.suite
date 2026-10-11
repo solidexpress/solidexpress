@@ -1,0 +1,3 @@
+script=tests/run_rung02_shell_chip.gd
+tier=ci
+timeout=180

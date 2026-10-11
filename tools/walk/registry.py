@@ -1,17 +1,16 @@
-"""Row registry for the sx-041 walk. Order is registration order per chunk."""
+"""Rows register against a rung. Rung 1's frozen list is unchanged."""
 from __future__ import annotations
 
 from collections.abc import Callable
 
-_ENTRIES: list[tuple[str, int, str]] = []
-EXPECT: dict[str, dict] = {}
+from walk.rung import CheckpointAfter, Rung, expect_from
+
+_PENDING: dict[str, list[tuple]] = {}
 
 
-def row(rid: str, chunk: int, expect: dict | None = None):
+def row(rid: str, chunk: int, expect: dict | None = None, *, on: str = "rung01"):
     def deco(fn: Callable):
-        _ENTRIES.append((rid, chunk, fn.__name__))
-        if expect is not None:
-            EXPECT[rid] = expect
+        _PENDING.setdefault(on, []).append((rid, chunk, fn.__name__, expect))
         return fn
     return deco
 
@@ -30,42 +29,88 @@ CANONICAL_ROWS = [
     "A10", "A10b", "A14", "L9", "A15",
 ]
 
+# Lesson 2 box. Order is the checklist, not import order.
+RUNG2_ROWS = [
+    "N1", "A1", "A2", "L1", "A3", "N2", "A4", "L2", "N3", "A5", "A6",
+    "A7", "L3", "A8", "N4", "N5", "A9",
+    "A10", "L4", "N6", "N7", "A11", "A12",
+    "A13", "A14", "L5", "A15", "A16", "N8", "A17", "A18", "A19", "L6", "N9", "A20", "N10", "A21",
+    "A22", "A23", "N11", "A24", "N12", "L7", "A25",
+]
 
-def _rows_and_chunks() -> tuple[list[str], dict[int, list[str]]]:
+_RUNG_SPEC = {
+    "rung01": {
+        "checker": "check_rung01.py",
+        "checkpoints": {2: "blank.sxp", 4: "cut.sxp", 5: "wrench-wip.sxp", 6: "wrench-wip.sxp"},
+        "canonical": CANONICAL_ROWS,
+        "policy": "_policy_rung01",
+        "report_title": "sx-042 walk",
+        "variants": True,
+        "checkpoint_after": (
+            CheckpointAfter("L7", "wrench-t14.sxp"),
+            CheckpointAfter("N20", "pre-cut.sxp", chunk=3),
+        ),
+    },
+    "rung02": {
+        "checker": "check_rung02.py",
+        "checkpoints": {2: "box.sxp", 3: "rounded.sxp", 4: "shelled.sxp", 5: "final.sxp"},
+        "canonical": RUNG2_ROWS,
+        "policy": "_policy_checkpoint",
+        "report_title": "rung-02 walk",
+        "checkpoint_after": (),
+    },
+}
+
+
+def _assemble(name: str) -> tuple[list[str], dict[int, list[str]], dict, dict[str, str]]:
+    spec = _RUNG_SPEC[name]
+    rank = {rid: i for i, rid in enumerate(spec["canonical"])}
     chunks: dict[int, list[str]] = {}
-    for rid, chunk, _name in _ENTRIES:
+    expectations = {}
+    names: dict[str, str] = {}
+    for rid, chunk, fn_name, expect in _PENDING.get(name, []):
         chunks.setdefault(chunk, []).append(rid)
-    rank = {rid: i for i, rid in enumerate(CANONICAL_ROWS)}
+        names[rid] = fn_name
+        built = expect_from(expect)
+        if built is not None:
+            expectations[rid] = built
     for n, ids in chunks.items():
         chunks[n] = sorted(ids, key=lambda rid: rank.get(rid, len(rank)))
     rows: list[str] = []
     for n in sorted(chunks):
         rows.extend(chunks[n])
-    return rows, chunks
+    return rows, chunks, expectations, names
 
 
-def finalize() -> None:
-    rows, chunks = _rows_and_chunks()
-    ROWS[:] = rows
-    CHUNKS.clear()
-    CHUNKS.update(chunks)
+def install(name: str, app_cls: type) -> Rung:
+    spec = _RUNG_SPEC[name]
+    rows, chunks, expectations, names = _assemble(name)
+    handlers = {rid: getattr(app_cls, names[rid]) for rid in rows}
+    return Rung(
+        name=name,
+        checker=spec["checker"],
+        chunks=chunks,
+        checkpoints=dict(spec["checkpoints"]),
+        expectations=expectations,
+        rows=tuple(rows),
+        handlers=handlers,
+        checkpoint_after=tuple(spec["checkpoint_after"]),
+        policy=spec["policy"],
+        report_title=spec["report_title"],
+        variants=bool(spec.get("variants", False)),
+    )
 
 
+RUNG1: Rung | None = None
+RUNG2: Rung | None = None
 ROWS: list[str] = []
 CHUNKS: dict[int, list[str]] = {}
-
-CHECKPOINT = {2: 'blank.sxp', 4: 'cut.sxp', 5: 'wrench-wip.sxp', 6: 'wrench-wip.sxp'}
+EXPECT: dict = {}
+ROW_HANDLERS: dict[str, object] = {}
 
 
 def checkpoint_file(rid: str) -> str | None:
     """Saved part that can stand in for live state when a later chunk starts."""
-    idx = ROWS.index(rid)
-    if idx >= ROWS.index("L7"):
-        return "wrench-t14.sxp"
-    chunk = next(n for n, rows in CHUNKS.items() if rid in rows)
-    if chunk == 3 and idx >= ROWS.index("N20"):
-        return "pre-cut.sxp"
-    return CHECKPOINT.get(chunk)
-
-
-ROW_HANDLERS: dict[str, object] = {}
+    if RUNG1 is None:
+        return None
+    return RUNG1.checkpoint_for(rid)

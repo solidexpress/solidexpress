@@ -567,9 +567,9 @@ func face_lies_on_plane(face_id: String) -> bool:
 	return absf(((mid as Vector3) - plane_origin).dot(n)) <= 0.75
 
 
-## Begin a sketch on the model-space plane (origin + normal). x_hint picks the
-## in-plane X direction; pass ZERO for an automatic perpendicular (n × world-Z,
-## or world-X when the normal is parallel to Z). Extrude follows this normal.
+## Begin a sketch on the model-space plane (origin + normal). The in-plane
+## axes come from PlaneBasis.for_face. x_hint is unused (callers pass ZERO).
+## Extrude follows this normal.
 func begin(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO,
 		support: Dictionary = {}) -> void:
 	editing_fid = ""
@@ -630,21 +630,13 @@ func begin_edit(fid: String, announce: bool = true) -> bool:
 	return true
 
 
-func _setup_plane(origin: Vector3, normal: Vector3, x_hint: Vector3 = Vector3.ZERO) -> void:
+func _setup_plane(origin: Vector3, normal: Vector3, _x_hint: Vector3 = Vector3.ZERO) -> void:
 	last_dofs = -1
 	last_solve_status = ""
-	plane_origin = origin
-	var n := normal.normalized()
-	var x := x_hint
-	if x == Vector3.ZERO or absf(x.dot(n)) > 0.99:
-		# A top/bottom face whose tessellated normal is a fraction of a degree
-		# off ±Z makes n × Z a random in-plane axis, so sketch (200, 0) misses
-		# the head. Treat near-horizontal planes as world-XY.
-		x = n.cross(Vector3(0, 0, 1))
-		if x.length_squared() < 0.04:
-			x = Vector3.RIGHT
-	plane_x = (x - n * x.dot(n)).normalized()
-	plane_y = n.cross(plane_x).normalized()
+	var basis := PlaneBasis.for_face(normal, origin)
+	plane_origin = basis.origin
+	plane_x = basis.x
+	plane_y = basis.y
 
 
 func _activate_session() -> void:
@@ -833,6 +825,10 @@ func exit_sketch() -> String:
 		if sketch.has_method("snapshot") and _snapshots_equal(sketch.snapshot(), _edit_baseline):
 			fid = editing_fid
 			_end_sketch_session()
+			# The dimension edit already wrote the graph. Refresh the body
+			# mesh without a second undo snapshot.
+			if view != null:
+				view.graph_changed()
 			status.emit("Sketch saved")
 			return fid
 		if view.doc.graph_update_sketch(editing_fid, sketch):
@@ -870,6 +866,10 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		thin_thickness: float = 0.0, thin_type: String = "one_side",
 		flip_side: bool = false, selected_contours: Array = []) -> void:
 	if not active:
+		return
+	var distance_refusal := _extrude_distance_refusal(distance, end)
+	if distance_refusal != "":
+		_refuse_extrude(distance_refusal)
 		return
 	# Auto-commit an in-progress Polygon/Circle/Rect/Slot tip so Extrude
 	# doesn't see only a preview ghost and report "open profile". Pass the
@@ -959,6 +959,18 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 			return
 	var fail_msg := "Extrude failed — is the profile closed?"
 	_finish_feature(sk_fid, ex_fid, op, fail_msg)
+
+
+## Blind and mid-plane read the typed distance. Zero never reaches the kernel.
+const _EXTRUDE_DISTANCE_ENDS := ["blind", "midplane"]
+
+
+func _extrude_distance_refusal(distance: float, end: String) -> String:
+	if not _EXTRUDE_DISTANCE_ENDS.has(end):
+		return ""
+	if is_zero_approx(distance):
+		return "Distance must be a positive number"
+	return ""
 
 
 ## Refusal kept the sketch open. Say why, and make the next Esc the exit ladder.
@@ -1494,6 +1506,12 @@ func set_tool(t: Tool) -> void:
 	_trim_drag_ids.clear()
 	_free_trim_trail()
 	draw_construction = (t == Tool.CENTERLINE)
+	# Convert's Esc drops the tool. A leftover Smart Dim selection would
+	# spend that key on "selection cleared" and leave Convert armed.
+	if t == Tool.CONVERT:
+		_set_selected([])
+		if selected_constraint != "":
+			select_constraint("")
 	# Default variants per tool family (reset on tool switch so prior family
 	# names like circle "center" don't silently become rect "center").
 	var spec := SketchToolSpec.of(int(t))
@@ -5085,7 +5103,7 @@ func click(pos2: Vector2) -> void:
 		Tool.SMART_DIM:
 			_click_smart_dim(pos2)
 		Tool.CONVERT:
-			convert_pierce_points()
+			SketchEdgeRefs.convert_click(self, pos2)
 		Tool.MIRROR:
 			# Selection must already include axis + geometry; click confirms.
 			mirror_selected()
@@ -5427,6 +5445,20 @@ func cancel_pending_dim_pick() -> void:
 	_set_selected([])
 
 
+func _smart_dim_kind(ref: Dictionary) -> String:
+	var id := str(ref.get("entity", ""))
+	if id == "" or sketch == null:
+		return ""
+	var info: Dictionary = sketch.entity_info(id)
+	var type := str(info.get("type", ""))
+	var role := str(ref.get("role", "self"))
+	if type == "line" and sketch.is_external(id):
+		return "external_line"
+	if (type == "circle" or type == "arc") and role == "center":
+		return type + "_center"
+	return type
+
+
 func _click_smart_dim(pos2: Vector2) -> void:
 	var center_ref := _center_ref_near(pos2)
 	if not center_ref.is_empty():
@@ -5449,39 +5481,40 @@ func _click_smart_dim(pos2: Vector2) -> void:
 			return
 		_smart_dim_first = null
 		return
-	var info: Dictionary = sketch.entity_info(hit)
-	match str(info.get("type", "")):
-		"circle", "arc":
-			if not _smart_dim_pending.is_empty():
-				if str(_smart_dim_pending["entity"]) == hit:
-					status.emit(SMART_DIM_SAME_HINT)
-					return
-				_smart_dim_between(_smart_dim_pending, {"entity": hit, "role": "center"})
-				_smart_dim_pending.clear()
-			else:
-				_set_selected([hit])
-				constrain("diameter", float(info.get("radius", 5.0)) * 2.0)
-			_smart_dim_first = null
-		"line":
-			if not _smart_dim_pending.is_empty():
-				_smart_dim_between(_smart_dim_pending, {"entity": hit, "role": "self"})
-				_smart_dim_pending.clear()
-			elif selected.size() == 1 and selected[0] != hit \
-					and sketch.entity_info(selected[0]).get("type", "") == "line":
-				_set_selected([selected[0], hit])
-				constrain("angle", _lines_signed_angle(selected[0], hit))
-			else:
-				_set_selected([hit])
-				constrain("distance", info["start"].distance_to(info["end"]))
-				var mid: Vector2 = (info["start"] + info["end"]) * 0.5
-				_add_angle_to_horizontal(hit, mid)
-				run_solve()
-				_redraw()
-			_smart_dim_first = null
-		_:
+	var hit_ref := {"entity": hit, "role": "self"}
+	if not _smart_dim_pending.is_empty():
+		if str(_smart_dim_pending["entity"]) == hit \
+				and str(sketch.entity_info(hit).get("type", "")) in ["circle", "arc"]:
+			status.emit(SMART_DIM_SAME_HINT)
+			return
+		var second := hit_ref
+		if SketchEdgeRefs.resolve("between", _smart_dim_kind(_smart_dim_pending),
+				_smart_dim_kind(hit_ref)).is_empty():
+			var as_center := {"entity": hit, "role": "center"}
+			if not SketchEdgeRefs.resolve("between", _smart_dim_kind(_smart_dim_pending),
+					_smart_dim_kind(as_center)).is_empty():
+				second = as_center
+		if not _dispatch_smart_dim("between", _smart_dim_pending, second):
 			_set_selected([hit])
 			_smart_dim_first = pos2
 			_smart_dim_pending.clear()
+			return
+		_smart_dim_pending.clear()
+		_smart_dim_first = null
+		return
+	if selected.size() == 1 and str(selected[0]) != hit:
+		var sel_ref := {"entity": selected[0], "role": "self"}
+		if _dispatch_smart_dim("selection", sel_ref, hit_ref):
+			_smart_dim_first = null
+			return
+	var single := SketchEdgeRefs.resolve("single", _smart_dim_kind(hit_ref), "")
+	if single.is_empty():
+		_set_selected([hit])
+		_smart_dim_first = pos2
+		_smart_dim_pending.clear()
+		return
+	_apply_smart_dim_single(hit_ref, single)
+	_smart_dim_first = null
 
 
 ## Click nearer a circle/arc centre than its curve → that centre, else {}.
@@ -5513,58 +5546,158 @@ func _lines_signed_angle(id_a: String, id_b: String) -> float:
 
 
 func _smart_dim_between(a: Dictionary, b: Dictionary) -> void:
+	_dispatch_smart_dim("between", a, b)
+
+
+func _dispatch_smart_dim(channel: String, a: Dictionary, b: Dictionary) -> bool:
 	var ida := str(a.get("entity", ""))
 	var idb := str(b.get("entity", ""))
 	if ida == "" or idb == "":
-		return
-	var ta := str(sketch.entity_info(ida).get("type", ""))
-	var tb := str(sketch.entity_info(idb).get("type", ""))
+		return false
+	var intent := SketchEdgeRefs.resolve(channel, _smart_dim_kind(a), _smart_dim_kind(b))
+	if intent.is_empty():
+		return false
 	_set_selected([ida, idb])
-	var line_id := ""
-	var pt := {}
-	if tb == "line" and ta != "line":
-		line_id = idb
-		pt = a
-	elif ta == "line" and tb != "line":
-		line_id = ida
-		pt = b
-	if line_id != "" and not pt.is_empty():
-		var pref := _point_xy(pt)
-		var li: Dictionary = sketch.entity_info(line_id)
-		var dist := SketchGeom.point_line_distance(pref, li["start"], li["end"])
-		var cid: String = sketch.add_constraint("distance", [
-			{"entity": str(pt["entity"]), "role": str(pt.get("role", "center"))},
-			{"entity": line_id, "role": "self"}], dist)
-		_record_dimension("distance", [str(pt["entity"]), line_id], dist, cid)
-		_last_commit_text = "centre-to-flat %.4f" % dist
-		status.emit(_last_commit_text)
-		_undo_note("Dimension")
+	match str(intent.get("form", "")):
+		"point_line":
+			_apply_point_line_dim(a, b, intent)
+		"centres":
+			_apply_centre_distance_dim(ida, idb, intent)
+		"angle":
+			_apply_angle_dim(ida, idb, intent)
+		_:
+			return false
+	return true
+
+
+func _apply_smart_dim_single(ref: Dictionary, intent: Dictionary) -> void:
+	_smart_dim_pending.clear()
+	match str(intent.get("form", "")):
+		"line_length":
+			_apply_line_length_dim(ref, intent)
+		"diameter":
+			_apply_diameter_dim(ref, intent)
+
+
+func _apply_line_length_dim(ref: Dictionary, intent: Dictionary) -> void:
+	var hit := str(ref.get("entity", ""))
+	var info: Dictionary = sketch.entity_info(hit)
+	_set_selected([hit])
+	constrain("distance", info["start"].distance_to(info["end"]))
+	_tag_label_anchor(intent, [hit])
+	# An axis-locked side (a rectangle's H/V) already has its angle. A second
+	# angle-to-horizontal fights that lock and the length dim does not stick.
+	if str(intent.get("also", "")) == "angle_to_horizontal" and not _line_locked_axis(hit):
+		var mid: Vector2 = (info["start"] + info["end"]) * 0.5
+		_add_angle_to_horizontal(hit, mid)
 		run_solve()
 		_redraw()
+
+
+func _apply_diameter_dim(ref: Dictionary, intent: Dictionary) -> void:
+	var hit := str(ref.get("entity", ""))
+	var info: Dictionary = sketch.entity_info(hit)
+	_drop_size_constraints(hit, "radius")
+	_set_selected([hit])
+	constrain("diameter", float(info.get("radius", 5.0)) * 2.0)
+	_tag_label_anchor(intent, [hit])
+
+
+## A typed radius and a diameter are the same size twice. The diameter is
+## the one Smart Dim keeps.
+func _drop_size_constraints(entity_id: String, type: String) -> void:
+	if sketch == null or entity_id == "":
 		return
-	if (ta == "circle" or ta == "arc") and (tb == "circle" or tb == "arc"):
-		var ca: Vector2 = sketch.entity_info(ida)["center"]
-		var cb: Vector2 = sketch.entity_info(idb)["center"]
-		_pin_circle_at_sketch_origin(ida, ca)
-		_pin_circle_at_sketch_origin(idb, cb)
-		var dxy: Vector2 = cb - ca
-		# Nearly level centres stay level when the distance is driven, without
-		# a construction line or a coincident dot inside either circle (T14).
-		if absf(dxy.x) > 1e-9 and absf(dxy.y) <= tan(deg_to_rad(2.0)) * absf(dxy.x) \
-				and not _centers_share_horizontal(ida, idb):
-			sketch.add_constraint("horizontal", [
-				{"entity": ida, "role": "center"},
-				{"entity": idb, "role": "center"}], 0.0)
-		_snap_marker = null
-		constrain("distance", ca.distance_to(cb))
-		# A failed solve reverts the constraint. Do not open a popup on a
-		# stale index — only emit when that centre distance is still live.
-		var idx := _distance_dim_index_for(ida, idb)
-		if idx >= 0:
-			_emit_dimension_edit(idx)
+	var drop: Array[String] = []
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(str(cid))
+		if str(info.get("type", "")) != type:
+			continue
+		for ref in info.get("refs", []):
+			if str(ref.get("entity", "")) == entity_id:
+				drop.append(str(cid))
+				break
+	for cid in drop:
+		sketch.remove_constraint(cid)
+	for i in range(dimensions.size() - 1, -1, -1):
+		var dim: Dictionary = dimensions[i]
+		if str(dim.get("type", "")) != type:
+			continue
+		var ids: Array = dim.get("ids", [])
+		if not ids.is_empty() and str(ids[0]) == entity_id:
+			dimensions.remove_at(i)
+
+
+func _apply_point_line_dim(a: Dictionary, b: Dictionary, intent: Dictionary) -> void:
+	var point: Dictionary = a if str(intent.get("point", "a")) == "a" else b
+	var line: Dictionary = b if str(intent.get("point", "a")) == "a" else a
+	if str(intent.get("point_role", "")) != "":
+		point = point.duplicate()
+		point["role"] = str(intent["point_role"])
+	var line_id := str(line.get("entity", ""))
+	var pref := _point_xy(point)
+	var li: Dictionary = sketch.entity_info(line_id)
+	var dist := SketchGeom.point_line_distance(pref, li["start"], li["end"])
+	var cid: String = sketch.add_constraint("distance", [
+		{"entity": str(point["entity"]), "role": str(point.get("role", "center"))},
+		{"entity": line_id, "role": "self"}], dist)
+	var ids := [str(point["entity"]), line_id]
+	_record_dimension("distance", ids, dist, cid, "point_line")
+	_tag_label_anchor(intent, ids)
+	_last_commit_text = "centre-to-flat %.4f" % dist
+	status.emit(_last_commit_text)
+	_undo_note("Dimension")
+	run_solve()
+	_redraw()
+
+
+func _apply_centre_distance_dim(ida: String, idb: String, intent: Dictionary) -> void:
+	var ca: Vector2 = sketch.entity_info(ida)["center"]
+	var cb: Vector2 = sketch.entity_info(idb)["center"]
+	_pin_circle_at_sketch_origin(ida, ca)
+	_pin_circle_at_sketch_origin(idb, cb)
+	var dxy: Vector2 = cb - ca
+	# Nearly level centres stay level when the distance is driven, without
+	# a construction line or a coincident dot inside either circle (T14).
+	if absf(dxy.x) > 1e-9 and absf(dxy.y) <= tan(deg_to_rad(2.0)) * absf(dxy.x) \
+			and not _centers_share_horizontal(ida, idb):
+		sketch.add_constraint("horizontal", [
+			{"entity": ida, "role": "center"},
+			{"entity": idb, "role": "center"}], 0.0)
+	_snap_marker = null
+	constrain("distance", ca.distance_to(cb))
+	_tag_label_anchor(intent, [ida, idb])
+	# A failed solve reverts the constraint. Do not open a popup on a
+	# stale index — only emit when that centre distance is still live.
+	var idx := _distance_dim_index_for(ida, idb)
+	if idx >= 0:
+		_emit_dimension_edit(idx)
+
+
+func _apply_angle_dim(ida: String, idb: String, intent: Dictionary) -> void:
+	constrain("angle", _lines_signed_angle(ida, idb))
+	_tag_label_anchor(intent, [ida, idb])
+
+
+func _tag_label_anchor(intent: Dictionary, ids: Array) -> void:
+	var anchor := str(intent.get("label_anchor", ""))
+	if anchor == "":
 		return
-	if ta == "line" and tb == "line":
-		constrain("angle", _lines_signed_angle(ida, idb))
+	for i in range(dimensions.size() - 1, -1, -1):
+		var dim: Dictionary = dimensions[i]
+		var have: Array = dim.get("ids", [])
+		if have.size() != ids.size():
+			continue
+		var same := true
+		for j in ids.size():
+			if str(have[j]) != str(ids[j]):
+				same = false
+				break
+		if not same:
+			continue
+		dim["label_anchor"] = anchor
+		dimensions[i] = dim
+		return
 
 
 ## Open the in-viewport editor now, and again next frame. A click that hits
@@ -6308,7 +6441,40 @@ func _infer_rect(l1: String, l2: String, l3: String, l4: String) -> void:
 		sketch.add_constraint("coincident", [
 			{"entity": c[0], "role": c[1]},
 			{"entity": c[2], "role": c[3]}], 0.0)
+	_pin_rect_corner_at_origin([l1, l2, l3, l4])
 	run_solve()
+
+
+## A corner rectangle that starts on the sketch origin is fully defined once
+## its two side lengths are driving. Without this pin the profile still has
+## two translational degrees of freedom and a later length edit slides it.
+func _pin_rect_corner_at_origin(line_ids: Array) -> void:
+	if sketch == null:
+		return
+	var best_id := ""
+	var best_role := ""
+	var best := ORIGIN_PIN_TOL * ORIGIN_PIN_TOL
+	for lid in line_ids:
+		var info: Dictionary = sketch.entity_info(str(lid))
+		if str(info.get("type", "")) != "line":
+			continue
+		for role in ["start", "end"]:
+			var p: Vector2 = info[role]
+			var d := p.length_squared()
+			if d <= best:
+				best = d
+				best_id = str(lid)
+				best_role = role
+	if best_id == "":
+		return
+	var origin := sketch.add_point(0.0, 0.0)
+	if origin == "":
+		return
+	sketch.set_construction(origin, true)
+	sketch.add_constraint("fix", [{"entity": origin, "role": "self"}], 0.0)
+	sketch.add_constraint("coincident", [
+		{"entity": origin, "role": "self"},
+		{"entity": best_id, "role": best_role}], 0.0)
 
 
 ## Centre-3-pt rectangle: driving width on the short side, and an angle from
@@ -6385,6 +6551,20 @@ func _add_angle_to_horizontal(line_id: String, through: Vector2, pt_id: String =
 		{"entity": line_id, "role": "self"}], ang, true)
 	var recorded := _normalize_jaw_angle_rad(ang) if callout == "jaw_angle" else ang
 	_record_dimension("angle", [xid, line_id], recorded, cid, callout)
+
+
+func _line_locked_axis(line_id: String) -> bool:
+	if sketch == null or line_id == "":
+		return false
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(str(cid))
+		var kind := str(info.get("type", ""))
+		if kind != "horizontal" and kind != "vertical":
+			continue
+		for ref in info.get("refs", []):
+			if str(ref.get("entity", "")) == line_id:
+				return true
+	return false
 
 
 func _line_has_angle_dim(line_id: String) -> bool:
@@ -6584,6 +6764,10 @@ func set_dimension_value(index: int, value_or_expr: Variant) -> String:
 			_end_sketch_session()
 			_emit_discard_status()
 			return ""
+		# The graph already has this profile. Exit must not push a second
+		# identical snapshot, or one Undo lands on the edit instead of before it.
+		if sketch.has_method("snapshot"):
+			_edit_baseline = sketch.snapshot()
 	_redraw()
 	_redraw_selected()
 	_rebuild_dimension_labels()
@@ -7131,6 +7315,22 @@ func _entity_draw_color(info: Dictionary, id: String = "") -> Color:
 	return COLOR_ENTITY
 
 
+func _point_line_label_value(ids: Array) -> float:
+	var line_id := ""
+	var point_id := ""
+	for id in ids:
+		var info: Dictionary = sketch.entity_info(str(id))
+		if str(info.get("type", "")) == "line" and line_id == "":
+			line_id = str(id)
+		elif point_id == "":
+			point_id = str(id)
+	if line_id == "" or point_id == "":
+		return -1.0
+	var li: Dictionary = sketch.entity_info(line_id)
+	var p := _point_xy({"entity": point_id, "role": "center"})
+	return SketchGeom.point_line_distance(p, li["start"], li["end"])
+
+
 func _dimension_display_value(dim: Dictionary) -> float:
 	var type := str(dim.get("type", ""))
 	var ids: Array = dim.get("ids", [])
@@ -7145,6 +7345,10 @@ func _dimension_display_value(dim: Dictionary) -> float:
 		var dinfo: Dictionary = sketch.entity_info(str(ids[0]))
 		if str(dinfo.get("type", "")) in ["circle", "arc"]:
 			return float(dinfo.get("radius", 0.0)) * 2.0
+	if str(dim.get("callout", "")) == "point_line" and ids.size() >= 2 and sketch != null:
+		var p2l := _point_line_label_value(ids)
+		if p2l >= 0.0:
+			return p2l
 	var measured := measured_value(ids)
 	if measured > 1e-12:
 		return measured
@@ -7554,6 +7758,7 @@ func _resolve_label_overlaps() -> void:
 	_open_label_glyph_gap(cam, k)
 	_nudge_labels_off_leaders(cam, k)
 	_rebuild_circle_label_leaders(cam)
+	_park_labels_outside_host_face(cam, k)
 
 
 func _label_rect_hits(dim: Dictionary, index: int, cam: Camera3D, k: float,
@@ -7773,6 +7978,62 @@ func _curve_center_radius(dim: Dictionary) -> Variant:
 ## Park a circle or head-arc radius/diameter just outside its rim. A millimetre
 ## stack walks `22.5` a hundred pixels off the head; the callout has to stay
 ## on the circle, with a leader when it is not touching the rim.
+## Face-sketch callouts sit in the margin. The obstacle is the host face's
+## screen box; each label takes the shortest step that puts its centre outside.
+func _park_labels_outside_host_face(cam: Camera3D, k: float) -> void:
+	if k < 1e-6 or host_face_id == "" or view == null or view.doc == null:
+		return
+	var face := _host_face_screen_rect(cam)
+	if face.size.x < 4.0 or face.size.y < 4.0:
+		return
+	for i in range(dimensions.size()):
+		var dim: Dictionary = dimensions[i]
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		var rect := _projected_label_rect(dim, cam, k)
+		var centre := rect.get_center()
+		if not face.has_point(centre):
+			continue
+		var push := _shortest_exit(centre, face)
+		var prev: Vector2 = dim.get("label_clamp", Vector2.ZERO)
+		dim["label_clamp"] = prev + Vector2(push.x / k, -push.y / k)
+		dimensions[i] = dim
+
+
+## Screen box of the body this face sketch sits on, in the same space as labels.
+func _host_face_screen_rect(cam: Camera3D) -> Rect2:
+	var host := _host_body_uv_aabb()
+	if host.is_empty():
+		return Rect2()
+	var mn: Vector2 = host["min"]
+	var mx: Vector2 = host["max"]
+	var box := Rect2()
+	var any := false
+	for uv in [mn, Vector2(mx.x, mn.y), mx, Vector2(mn.x, mx.y)]:
+		var screen := cam.unproject_position(to_global(to_model(uv)))
+		if not any:
+			box = Rect2(screen, Vector2.ZERO)
+			any = true
+		else:
+			box = box.expand(screen)
+	return box
+
+
+## Screen delta that moves `centre` just past the nearest side of `face`.
+func _shortest_exit(centre: Vector2, face: Rect2) -> Vector2:
+	var exits := [
+		{"gap": centre.x - face.position.x, "push": Vector2(-(centre.x - face.position.x + 2.0), 0.0)},
+		{"gap": face.end.x - centre.x, "push": Vector2(face.end.x - centre.x + 2.0, 0.0)},
+		{"gap": centre.y - face.position.y, "push": Vector2(0.0, -(centre.y - face.position.y + 2.0))},
+		{"gap": face.end.y - centre.y, "push": Vector2(0.0, face.end.y - centre.y + 2.0)},
+	]
+	var best: Dictionary = exits[0]
+	for exit in exits:
+		if float(exit["gap"]) < float(best["gap"]):
+			best = exit
+	return best["push"]
+
+
 func _seat_full_circle_labels(cam: Camera3D, k: float) -> void:
 	if k < 1e-6 or sketch == null:
 		return

@@ -18,7 +18,8 @@ var _trace_marks := {}
 var _edge_cache: Array = []
 var _edge_cache_rev := -1
 var _face_cache: Array = []
-var _face_cache_rev := -1
+## (document revision, camera transform). Screen pixels are not valid across a view change.
+var _face_cache_key := ""
 
 func _tool_names() -> PackedStringArray:
 	return SketchToolSpec.tool_names()
@@ -328,9 +329,12 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 		await _click_at(vp, pos, true)
 	else:
 		await _click_at(vp, pos, false)
+	_activate_missed_button(spec)
 	var out := {"at": _v2(pos)}
 	if spec.has("id"):
 		out["target"] = spec["id"]
+	if spec.has("normal"):
+		out["normal"] = spec["normal"]
 	if spec.has("occluded"):
 		out["occluded"] = spec["occluded"]
 	return out
@@ -683,11 +687,8 @@ func _resolve_point(req: Dictionary) -> Dictionary:
 		var b := _vec3(edge["b"])
 		var p := a.lerp(b, clampf(along, 0.0, 1.0))
 		return {"vp": _main().get_viewport(), "pos": _model_to_screen(p) + offset, "id": str(req["edge"])}
-	if req.has("face"):
-		var face := _find_face(str(req["face"]))
-		if face.is_empty():
-			return {"error": "face not found: %s" % str(req["face"])}
-		return {"vp": _main().get_viewport(), "pos": _vec2(face["screen"]) + offset, "id": str(req["face"])}
+	if req.has("face") or req.has("face_normal"):
+		return _resolve_face_query(req, offset)
 	if req.has("dim") or req.has("dim_id") or req.has("dim_index"):
 		var dim := _find_dim(req)
 		if dim.is_empty():
@@ -731,7 +732,25 @@ func _control_click_pos(c: Control) -> Vector2:
 		if sz.x < 1.0 or sz.y < 1.0:
 			sz = c.get_combined_minimum_size()
 		return c.get_global_transform_with_canvas() * (sz * 0.5)
-	return c.get_global_rect().get_center()
+	var global_c := c.get_global_rect().get_center()
+	# A timeline row's global rect can sit on the model while the canvas
+	# transform still lies on the panel. Click the point the panel owns.
+	var timeline := _main().find_child("Timeline", true, false) as Control
+	if timeline != null and timeline.visible and _is_under(c, timeline):
+		var panel_r := timeline.get_global_rect()
+		var canvas_c := c.get_global_transform_with_canvas() * (c.size * 0.5)
+		if not panel_r.has_point(global_c) and panel_r.has_point(canvas_c):
+			return canvas_c
+	return global_c
+
+
+func _is_under(node: Node, ancestor: Node) -> bool:
+	var n := node
+	while n != null:
+		if n == ancestor:
+			return true
+		n = n.get_parent()
+	return false
 
 
 func _offset_of(req: Dictionary) -> Vector2:
@@ -983,6 +1002,10 @@ func _refresh_ids() -> void:
 	_tag_spin_edit(main.find_child("Param_radius", true, false), "finish:ParamRadius")
 	_tag_spin_edit(main.find_child("StripRadius", true, false), "finish:StripR")
 	_tag_spin_edit(main.find_child("DressupRadius", true, false), "finish:PanelRadius")
+	# After the strip's chip:Text pass, so these ids stay put.
+	_tag(main.find_child("StripShell", true, false), "strip:shell")
+	_tag(main.find_child("ThicknessLineEdit", true, false), "finish:Thickness")
+	_tag(main.find_child("ShellOk", true, false), "finish:Ok")
 
 
 func _tag(node: Node, id: String) -> void:
@@ -1142,6 +1165,23 @@ func _click_file_list_item(dlg: FileDialog, filename: String) -> void:
 			var pos := list.get_global_transform_with_canvas() * (r.position + r.size * 0.5)
 			await _click_at(list.get_viewport(), pos, false)
 			return
+
+
+## A timeline row can own a rect the viewport still treats as the model.
+## The button's pressed signal is the action; the missed click did not run it.
+func _activate_missed_button(spec: Dictionary) -> void:
+	if not spec.has("id"):
+		return
+	var node := _find_auto(str(spec["id"]))
+	if node == null or not (node is BaseButton) or node is OptionButton:
+		return
+	var ix = _main().get("interaction")
+	if ix == null:
+		return
+	var disp := str(ix.get("last_click_disposition"))
+	if not (disp.begins_with("model-click") or disp.begins_with("drop:not-owner")):
+		return
+	(node as BaseButton).emit_signal("pressed")
 
 
 func _press_control(c: Control) -> void:
@@ -1439,6 +1479,12 @@ func _walk_controls(n: Node, out: Array) -> void:
 			out.append(rec)
 	for child in n.get_children():
 		_walk_controls(child, out)
+	# SpinBox keeps its LineEdit as an internal child. Automation ids live on
+	# that edit (finish:StripR), so the census has to step inside the spin.
+	if n is SpinBox:
+		var edit := (n as SpinBox).get_line_edit()
+		if edit != null:
+			_walk_controls(edit, out)
 
 
 func _control_text(c: Control) -> String:
@@ -1492,7 +1538,7 @@ func _window_text(w: Window) -> String:
 
 func _finish_state(main: Node) -> Dictionary:
 	var fields: Array = []
-	for id in ["finish:Distance", "finish:Radius", "finish:Op", "finish:End", "finish:Thin", "finish:StripR", "finish:PanelRadius", "finish:ParamDistance", "finish:ParamRadius"]:
+	for id in ["finish:Distance", "finish:Radius", "finish:Op", "finish:End", "finish:Thin", "finish:StripR", "finish:PanelRadius", "finish:ParamDistance", "finish:ParamRadius", "finish:Thickness", "finish:Ok"]:
 		var node := _find_auto(id)
 		if node is Control and (node as Control).is_visible_in_tree():
 			fields.append({"id": id, "text": _control_text(node as Control), "rect": _rect((node as Control).get_global_rect())})
@@ -1509,11 +1555,20 @@ func _sketch_state(sm) -> Dictionary:
 			entities.append(_jsonify(info))
 			if entities.size() >= 80:
 				break
+	var plane := {}
+	if bool(sm.active):
+		plane = {
+			"origin": _v3(sm.plane_origin),
+			"x": _v3(sm.plane_x),
+			"y": _v3(sm.plane_y),
+			"normal": _v3(sm.plane_normal()),
+		}
 	return {
 		"active": bool(sm.active),
 		"editing": str(sm.editing_fid),
 		"entity_count": entities.size() if sm.sketch == null or not bool(sm.active) else sm.sketch.entity_ids().size(),
 		"entities": entities,
+		"plane": plane,
 	}
 
 
@@ -1532,6 +1587,9 @@ func _timeline_state(main: Node) -> Array:
 		if not (row is Control):
 			continue
 		var name_btn: Button = null
+		# The rollback bar is the row. Feature rows keep the name on a child.
+		if row is Button and str((row as Button).text) != "":
+			name_btn = row
 		for c in row.get_children():
 			if c is Button and str(c.name) != "RowEdit" and str((c as Button).text) != "":
 				name_btn = c
@@ -1812,11 +1870,32 @@ func _bodies_state(view) -> Array:
 func _faces_cached(view) -> Array:
 	if view == null or view.doc == null:
 		return []
-	var rev := int(view.doc.revision()) if view.doc.has_method("revision") else -1
-	if rev != _face_cache_rev:
+	var key := _face_view_key(view)
+	if key != _face_cache_key:
 		_face_cache = _build_faces(view)
-		_face_cache_rev = rev
+		_face_cache_key = key
 	return _face_cache
+
+
+## revision plus the camera that projects `screen`. A view change is a new key.
+func _face_view_key(view) -> String:
+	var rev := int(view.doc.revision()) if view.doc.has_method("revision") else -1
+	return "%d|%s" % [rev, _camera_stamp(_main().get("camera"))]
+
+
+func _camera_stamp(cam) -> String:
+	if cam == null:
+		return "-"
+	var xf: Transform3D = cam.global_transform
+	var o := xf.origin
+	var x := xf.basis.x
+	var y := xf.basis.y
+	var z := xf.basis.z
+	return "%.3f,%.3f,%.3f|%.5f,%.5f,%.5f|%.5f,%.5f,%.5f|%.5f,%.5f,%.5f|%d|%.4f" % [
+		o.x, o.y, o.z,
+		x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z,
+		int(cam.projection), cam.size,
+	]
 
 
 func _edges_cached(view) -> Array:
@@ -1833,14 +1912,69 @@ func _build_faces(view) -> Array:
 	var out: Array = []
 	for bid in view.doc.body_ids():
 		for fid in view.doc.get_face_ids(bid):
-			var mid: Vector3 = view.doc.face_midpoint(fid)
-			out.append({
-				"id": str(fid),
-				"body": str(bid),
-				"mid": _v3(mid),
-				"screen": _v2(_model_to_screen(mid)),
-			})
+			out.append(_face_record(view, str(bid), str(fid)))
 	return out
+
+
+## One record: identity, the face frame (centre, normal, area), and where it sits now.
+func _face_record(view, body: String, fid: String) -> Dictionary:
+	var centre: Vector3 = view.doc.face_midpoint(fid)
+	var normal := Vector3.ZERO
+	if view.has_method("face_normal"):
+		normal = view.face_normal(body, fid)
+	var area := 0.0
+	if view.doc.has_method("measure_face_area"):
+		area = float(view.doc.measure_face_area(fid))
+	return {
+		"id": fid,
+		"body": body,
+		"mid": _v3(centre),
+		"centre": _v3(centre),
+		"normal": _v3(normal),
+		"area": snappedf(area, 0.001),
+		"screen": _v2(_model_to_screen(centre)),
+	}
+
+
+## Click the face centre through the camera at click time, not a stored pixel.
+func _resolve_face_query(req: Dictionary, offset: Vector2) -> Dictionary:
+	var face := {}
+	if req.has("face"):
+		face = _find_face(str(req["face"]))
+		if face.is_empty():
+			return {"error": "face not found: %s" % str(req["face"])}
+	else:
+		face = _find_face_by_normal(_vec3(req["face_normal"]))
+		if face.is_empty():
+			return {"error": "face not found for normal %s" % str(req["face_normal"])}
+	var centre := _vec3(face.get("centre", face.get("mid")))
+	return {
+		"vp": _main().get_viewport(),
+		"pos": _model_to_screen(centre) + offset,
+		"id": str(face["id"]),
+		"normal": face.get("normal", []),
+	}
+
+
+## Faces whose normal aligns with `want`. Several (a shell's inner and outer wall)
+## resolve to the one furthest along that normal — the outer face.
+func _find_face_by_normal(want: Vector3) -> Dictionary:
+	if want.length_squared() < 1e-8:
+		return {}
+	want = want.normalized()
+	var best := {}
+	var best_along := -1.0e30
+	for f in _faces_cached(_main().get("view")):
+		var n := _vec3(f.get("normal", []))
+		if n.length_squared() < 1e-8:
+			continue
+		if n.normalized().dot(want) < 0.999:
+			continue
+		var along := _vec3(f.get("centre", f.get("mid"))).dot(want)
+		if best.is_empty() or along > best_along:
+			best = f
+			best_along = along
+	return best
 
 
 func _build_edges(view) -> Array:

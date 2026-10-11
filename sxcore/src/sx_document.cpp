@@ -12,7 +12,9 @@
 #include "sx/commands_transform.hpp"
 #include <cmath>
 #include <limits>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <GeomAbs_CurveType.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Dir.hxx>
@@ -805,6 +807,35 @@ bool SxDocument::graph_update_sketch(const String& fid, const Ref<SxSketch>& ske
         f->sketch = sketch->sketch();
         return true;
     });
+}
+
+String SxDocument::sketch_add_external_edge(const String& sketch_id, const String& edge_id) {
+    const sx::EntityId fid = parse_id(sketch_id);
+    const sx::EntityId eid = parse_id(edge_id);
+    sx::EntityId added;
+    const bool ok = apply_graph_edit("convert edge", [&] {
+        sx::Feature* f = doc_->graph().feature(fid);
+        if (f == nullptr || !f->sketch) return false;
+        const std::string edge = eid.str();
+        for (const auto& e : f->sketch->entities()) {
+            if (e.external && e.projected_from == edge) {
+                added = e.id;
+                return true;
+            }
+        }
+        const TopoDS_Shape sh = doc_->resolve(eid);
+        if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) return false;
+        const BRepAdaptor_Curve curve(TopoDS::Edge(sh));
+        if (curve.GetType() != GeomAbs_Line) return false;
+        const gp_Pnt a = curve.Value(curve.FirstParameter());
+        const gp_Pnt b = curve.Value(curve.LastParameter());
+        if (a.Distance(b) < 1e-9) return false;
+        added = f->sketch->project_line_edge({a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, edge);
+        if (added.is_null()) return false;
+        f->sketch->set_construction(added, true);
+        return true;
+    });
+    return ok ? to_gd(added.str()) : String();
 }
 
 String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
@@ -2517,6 +2548,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_get_sketch", "fid"), &SxDocument::graph_get_sketch);
     ClassDB::bind_method(D_METHOD("graph_update_sketch", "fid", "sketch"),
                          &SxDocument::graph_update_sketch);
+    ClassDB::bind_method(D_METHOD("sketch_add_external_edge", "sketch_id", "edge_id"),
+                         &SxDocument::sketch_add_external_edge);
     ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op",
                                   "target_fid", "end", "thin_thickness", "thin_type", "flip_side",
                                   "selected_contours", "to_face"),

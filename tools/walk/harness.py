@@ -12,14 +12,14 @@ import traceback
 from pathlib import Path
 
 from sxdrive import SxDrive, SxError
-from walk.registry import CHUNKS, EXPECT, ROWS, checkpoint_file
+from walk.expect import State, gate as gate_reasons
 
 class RowAbort(Exception):
     """A clause already failed; the rest of the row cannot run."""
 
 class Walk:
     def __init__(self, out: Path, port: int, godot: Path, display: str, run_a15: bool, checkpoint: bool,
-                 app: Path | None = None, resolution: str = "1280x800") -> None:
+                 app: Path | None = None, resolution: str = "1280x800", rung=None) -> None:
         self.out = out
         self.port = port
         self.godot = godot
@@ -29,6 +29,10 @@ class Walk:
         self.run_a15 = run_a15
         self.checkpoint = checkpoint
         self.repo = Path(__file__).resolve().parents[2]
+        if rung is None:
+            from walk.registry import RUNG1
+            rung = RUNG1
+        self.rung = rung
         self.d = SxDrive(port=port, timeout=180.0)
         self.proc: subprocess.Popen | None = None
         self.log_fp = None
@@ -131,9 +135,13 @@ class Walk:
             return "PARTIAL"
         return "PASS"
 
+    def _expect(self, rid: str | None):
+        if not rid or self.rung is None:
+            return None
+        return self.rung.expectations.get(rid)
+
     def _row_body(self, rid: str):
-        from walk.registry import ROW_HANDLERS
-        handler = ROW_HANDLERS.get(rid)
+        handler = self.rung.handlers.get(rid) if self.rung is not None else None
         if handler is None:
             raise AttributeError(f"no walk row {rid}")
         return handler.__get__(self, type(self))
@@ -164,7 +172,7 @@ class Walk:
     def run_row(self, rid: str, nxt: str | None = None) -> None:
         self.clauses = []
         started = time.monotonic()
-        wants_dialog = bool((EXPECT.get(rid) or {}).get("popup"))
+        wants_dialog = bool(self._expect(rid) and self._expect(rid).popup)
         if not wants_dialog:
             try:
                 self.dismiss_modals()
@@ -199,7 +207,7 @@ class Walk:
             self._note_bodies(rid, bodies_before)
         except SxError:
             pass
-        next_wants = bool((EXPECT.get(nxt) or {}).get("popup")) if nxt else False
+        next_wants = bool(nxt and self._expect(nxt) and self._expect(nxt).popup)
         if not next_wants:
             try:
                 if self.modal_open():
@@ -233,56 +241,42 @@ class Walk:
 
     # --- bridge sugar -----------------------------------------------------
 
-    def gate(self, rid: str) -> tuple[str, str] | None:
-        spec = EXPECT.get(rid)
-        if not spec:
-            return None
+    def _gate_state(self) -> State:
         st = self.refresh("sketch", "bodies", "finish", "popups", "timeline", "status", "dims")
         sk = st.get("sketch") or {}
         ents = list(sk.get("entities") or [])
-        reasons: list[str] = []
-        if spec.get("sketch") and not sk.get("active"):
-            reasons.append(f"sketch not active status={self.S()!r}")
-        if spec.get("part") and sk.get("active"):
-            reasons.append("still in a sketch")
-        if "min_circles" in spec:
-            n = sum(1 for e in ents if e.get("type") == "circle")
-            if n < int(spec["min_circles"]):
-                reasons.append(f"circles={n}")
-        if "span_mm" in spec and self._circle_span(ents) < float(spec["span_mm"]):
-            reasons.append(f"circle span {self._circle_span(ents):.1f} mm")
-        if "min_lines" in spec:
-            n = sum(1 for e in ents if e.get("type") == "line")
-            if n < int(spec["min_lines"]):
-                reasons.append(f"lines={n}")
-        if "min_bodies" in spec and len(st.get("bodies") or []) < int(spec["min_bodies"]):
-            reasons.append(f"bodies={len(st.get('bodies') or [])}")
-        if "bbox_x" in spec:
-            lo, hi = spec["bbox_x"]
-            span = self._bbox_x(list(st.get("bodies") or []))
-            if span is None or not (float(lo) <= span <= float(hi)):
-                reasons.append(f"bbox X={span}")
-        if spec.get("finish_op") and self.field("finish:Op") != spec["finish_op"]:
-            reasons.append(f"finish op={self.field('finish:Op')!r}")
-        if spec.get("finish_end") and spec["finish_end"] not in self.field("finish:End"):
-            reasons.append(f"finish end={self.field('finish:End')!r}")
-        if spec.get("popup") and not self.has_popup(str(spec["popup"])):
-            reasons.append(f"popup {spec['popup']!r} not open ({self.popup_text()[:80]})")
-        if spec.get("timeline"):
-            names = " ".join(str(r.get("name", "")) for r in (st.get("timeline") or []))
-            if str(spec["timeline"]) not in names:
-                reasons.append(f"timeline={names!r}")
-        if spec.get("dim_has"):
-            texts = " ".join(self.dim_texts())
-            if str(spec["dim_has"]) not in texts:
-                reasons.append(f"dims={texts!r}")
+        texts = " ".join(str(d.get("text", "")) for d in (st.get("dims") or []) if d.get("visible", True))
+        names = " ".join(str(r.get("name", "")) for r in (st.get("timeline") or []))
+        return State(
+            status=self.S(),
+            sketch_active=bool(sk.get("active")),
+            n_circles=sum(1 for e in ents if e.get("type") == "circle"),
+            n_lines=sum(1 for e in ents if e.get("type") == "line"),
+            circle_span=self._circle_span(ents),
+            n_bodies=len(st.get("bodies") or []),
+            bbox_x=self._bbox_x(list(st.get("bodies") or [])),
+            finish_op=self.field("finish:Op"),
+            finish_end=self.field("finish:End"),
+            popup_text=self.popup_text(),
+            timeline=names,
+            dim_texts=texts,
+        )
+
+    def gate(self, rid: str) -> tuple[str, str] | None:
+        spec = self._expect(rid)
+        if spec is None:
+            return None
+        reasons = gate_reasons(self._gate_state(), spec)
         if not reasons:
             return None
-        return str(spec["blocker"]), "; ".join(reasons)
+        return spec.blocker or "previous", "; ".join(reasons)
 
-    def checker(self, kind: str, name: str, extra: str | None = None) -> tuple[int, str]:
-        cmd = [sys.executable, str(self.repo / "tools" / "check_rung01.py"), kind, str(self.out / name)]
-        if extra:
+    def checker(self, kind: str, name: str, extra: str | list | None = None) -> tuple[int, str]:
+        script = self.rung.checker if self.rung is not None else "check_rung01.py"
+        cmd = [sys.executable, str(self.repo / "tools" / script), kind, str(self.out / name)]
+        if isinstance(extra, (list, tuple)):
+            cmd.extend(str(part) for part in extra)
+        elif extra:
             cmd.append(extra)
         proc = subprocess.run(cmd, cwd=str(self.repo), capture_output=True, text=True)
         text = (proc.stdout or "") + (proc.stderr or "")
@@ -481,7 +475,34 @@ class Walk:
         print(f"checkpoint: built wrench-wip.sxp ok={ok} status={self.S()!r}", flush=True)
         return ok
 
+    def _policy_checkpoint(self, chunk: int, force: bool = False) -> None:
+        """Reload the previous chunk's file. The file names live on the rung."""
+        if chunk <= 1 or self.rung is None:
+            return
+        name = self.rung.checkpoints.get(chunk)
+        if not name:
+            return
+        ready = (
+            not force
+            and not self.chunk_failed(chunk - 1)
+            and not self._sketch_active()
+            and (self.out / name).exists()
+        )
+        if ready:
+            return
+        if not (self.out / name).exists():
+            print(f"checkpoint: {name} is not in {self.out}", flush=True)
+            return
+        try:
+            self._reload_checkpoint(name)
+        except (SxError, RowAbort) as exc:
+            print(f"checkpoint: chunk {chunk} reload failed: {exc}", flush=True)
+
     def ensure_chunk_start(self, chunk: int, force: bool = False) -> None:
+        policy = self.rung.policy if self.rung is not None else "_policy_rung01"
+        getattr(self, policy)(chunk, force)
+
+    def _policy_rung01(self, chunk: int, force: bool = False) -> None:
         if chunk <= 1:
             return
         if not force and self._previous_chunk_ready(chunk):
@@ -524,7 +545,7 @@ class Walk:
             print(f"checkpoint: chunk {chunk} reload failed: {exc}", flush=True)
 
     def open_checkpoint(self, rid: str) -> None:
-        name = checkpoint_file(rid)
+        name = self.rung.checkpoint_for(rid) if self.rung is not None else None
         if not name:
             print(f"checkpoint: {rid} has no recovery file", flush=True)
             return
@@ -541,7 +562,7 @@ class Walk:
             print(f"checkpoint: open {name} failed: {exc}", flush=True)
 
     def chunk_failed(self, chunk: int) -> bool:
-        rows = set(CHUNKS[chunk])
+        rows = set(self.rung.chunks[chunk])
         return any(r["row"] in rows and not str(r["verdict"]).startswith("PASS") for r in self.rows)
 
     def write_report(self) -> None:
@@ -550,7 +571,7 @@ class Walk:
             counts[rec["verdict"]] = counts.get(rec["verdict"], 0) + 1
         wall = time.monotonic() - self.t0
         lines = [
-            "# sx-042 walk",
+            "# " + (self.rung.report_title if self.rung is not None else "sx-042 walk"),
             "",
             f"Rows {len(self.rows)}  " + "  ".join(f"{k} {v}" for k, v in sorted(counts.items())),
             f"Wall {wall:.1f}s",

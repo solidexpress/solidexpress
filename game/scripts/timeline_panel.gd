@@ -12,6 +12,16 @@ const ChromeDock := preload("res://scripts/chrome_dock.gd")
 signal status(text: String)
 signal feature_selected(fid: String, ftype: String)
 
+## Double-click a row: focus this schema key. A sketch still opens for edit.
+const _ROW_FOCUS_KEY := {
+	"extrude": "distance",
+	"shell": "thickness",
+}
+const _ROW_FOCUS_STATUS := {
+	"extrude": "Extrude — Distance and End",
+	"shell": "Shell — Thickness",
+}
+
 var view: DocumentView
 
 var _list: VBoxContainer
@@ -352,10 +362,12 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 			var ftype := str(f["type"])
 			if ftype == "sketch":
 				_edit_sketch_feature(fid)
-			elif ftype == "extrude":
+			elif _ROW_FOCUS_KEY.has(ftype):
 				_select_feature(fid)
-				_focus_extrude_distance()
-				status.emit("Extrude — Distance and End")
+				_focus_row_field(fid)
+				var note := str(_ROW_FOCUS_STATUS.get(ftype, ""))
+				if note != "":
+					status.emit(note)
 			else:
 				_begin_rename(fid, row, name_btn)
 	)
@@ -543,9 +555,23 @@ func _edit_sketch_feature(fid: String) -> void:
 ## The actual grab is deferred inside the property panel so it lands after
 ## this click's focus assignment.
 func _focus_extrude_distance() -> void:
-	if property_panel == null or not property_panel.visible:
+	_focus_row_field(_selected_fid if _selected_fid != "" else "")
+
+
+func _feature_type(fid: String) -> String:
+	if view == null or fid == "":
+		return ""
+	for f in view.doc.graph_features():
+		if str(f.get("id", "")) == fid:
+			return str(f.get("type", ""))
+	return ""
+
+
+func _focus_row_field(fid: String) -> void:
+	var key := str(_ROW_FOCUS_KEY.get(_feature_type(fid), ""))
+	if key == "" or property_panel == null or not property_panel.visible:
 		return
-	property_panel.focus_schema_key("distance")
+	property_panel.focus_schema_key(key)
 
 
 func _on_row_focus_entered(fid: String) -> void:
@@ -553,7 +579,7 @@ func _on_row_focus_entered(fid: String) -> void:
 		return
 	if property_panel.editing_feature_id() != fid:
 		return
-	_focus_extrude_distance()
+	_focus_row_field(fid)
 
 
 ## The JSON toggle lives outside the property panel. Closing Distance (Esc

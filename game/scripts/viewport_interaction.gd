@@ -125,6 +125,8 @@ var _strip_x_floor := 0.0
 var _left_stack_wired: Control
 var _strip_fillet: Button
 var _strip_chamfer: Button
+const _ShellChrome := preload("res://scripts/shell_chrome.gd")
+var _shell_chrome: Node
 var _strip_radius_box: HBoxContainer
 var _strip_radius: SpinBox
 var _dressup_radius_connected := false
@@ -570,6 +572,11 @@ func _build_selection_strip() -> void:
 	_strip_chamfer.tooltip_text = "Break edges — click edges, then Enter (Radius box sets the distance)"
 	_strip_chamfer.pressed.connect(func() -> void: _ctx_chamfer())
 	row.add_child(_strip_chamfer)
+	_shell_chrome = _ShellChrome.new()
+	_shell_chrome.name = "ShellChrome"
+	add_child(_shell_chrome)
+	_shell_chrome.build(row, self)
+	_shell_chrome.status.connect(func(t: String) -> void: status.emit(t))
 	# Configurable fillet/chamfer size — visible while edge pick is armed.
 	_strip_radius_box = HBoxContainer.new()
 	_strip_radius_box.name = "StripDressupRadius"
@@ -931,11 +938,12 @@ func _try_replace_dim_edit_key(event: InputEvent) -> bool:
 	if ke.keycode == KEY_BACKSPACE and not ke.ctrl_pressed and not ke.meta_pressed:
 		_apply_dim_edit_backspace(event)
 		return true
-	if not _is_length_type_key(ke):
+	var ch := _dim_edit_char(ke)
+	if ch == "":
 		return false
 	if _dim_edit_line == null:
 		return false
-	_apply_dim_edit_char(_length_type_seed(ke), event)
+	_apply_dim_edit_char(ch, event)
 	return true
 
 
@@ -1052,11 +1060,12 @@ func _on_dim_edit_line_gui_input(event: InputEvent) -> void:
 		_apply_dim_edit_backspace(event)
 		_dim_edit_line.accept_event()
 		return
-	if not _is_length_type_key(ke):
+	var ch := _dim_edit_char(ke)
+	if ch == "":
 		return
 	# Own every digit. edit() plus a deferred reassert of the first character
 	# drops the rest of a fast "45" when the popup steals the key from _input.
-	_apply_dim_edit_char(_length_type_seed(ke), event)
+	_apply_dim_edit_char(ch, event)
 	_dim_edit_line.accept_event()
 
 
@@ -2198,6 +2207,9 @@ func cancel_stack() -> bool:
 	var acted := false
 	var vp := get_viewport()
 	var main_pp := _find_main()
+	if _shell_chrome != null and _shell_chrome.cancel():
+		status.emit("Shell cancelled")
+		return true
 	if main_pp != null and main_pp.has_method("cancel_property_panel") and main_pp.cancel_property_panel():
 		if vp != null and _should_release_cancel_focus(vp.gui_get_focus_owner()):
 			vp.gui_get_focus_owner().release_focus()
@@ -2786,7 +2798,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and (_text_field_has_focus() or _sketch_keys_blocked()):
 		return
-	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
+	var allow_scroll := _camera_may_scroll(event)
 	if camera != null and camera.is_nav_event(event, allow_scroll):
 		if camera.handle_input(event, allow_scroll):
 			accept_event()
@@ -3087,6 +3099,16 @@ func _over_chrome(global_mouse: Vector2) -> bool:
 
 ## Menu bar, status bar, docks, and the sketch rail. Rects, not the hovered
 ## control: headless hover lags a frame behind the event position.
+## Wheel and two-finger pan stay with chrome and scrolling panels.
+## Pinch and modified wheels still reach the camera (`is_nav_event`).
+func _camera_may_scroll(event: InputEvent) -> bool:
+	if OrbitCamera.pointer_over_scrollable_ui():
+		return false
+	if event is InputEventMouse and _pointer_off_model((event as InputEventMouse).position):
+		return false
+	return true
+
+
 func _pointer_off_model(pos: Vector2) -> bool:
 	if _over_chrome(pos) or _point_on_dock_panel(pos):
 		return true
@@ -3135,7 +3157,8 @@ func _over_chrome_who(global_mouse: Vector2) -> String:
 	var max_area := _chrome_area_cap()
 	var move_delta: Control = transform_hud.move_delta_panel() if transform_hud != null else null
 	var view_hud := _named_chrome_control("ViewHud")
-	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip, _finish_click_shield, view_hud]:
+	var shell_panel: Control = _shell_chrome.panel() if _shell_chrome != null and _shell_chrome.has_method("panel") else null
+	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip, _finish_click_shield, view_hud, shell_panel]:
 		if ctrl == null or not ctrl.visible:
 			continue
 		if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE:
@@ -3145,6 +3168,12 @@ func _over_chrome_who(global_mouse: Vector2) -> String:
 			continue
 		if r.has_point(global_mouse):
 			return _control_block_name(ctrl)
+	# The selection strip is an IGNORE shell. Its chips (Shell, Fillet) still
+	# own the pointer, including wheel, so a scroll there is not a camera zoom.
+	if _selection_strip != null and _selection_strip.visible and _selection_strip.is_visible_in_tree():
+		var strip_who := _tree_blocking_name(_selection_strip, global_mouse, max_area)
+		if strip_who != "":
+			return strip_who
 	if _over_sketch_rail(global_mouse):
 		var rail := _sketch_tools_control()
 		return _control_block_name(rail) if rail != null else "SketchTools"
@@ -3288,9 +3317,7 @@ func _dock_panel_at(pos: Vector2) -> Control:
 		if panel == null or not panel.visible or not panel.is_visible_in_tree():
 			continue
 		var rect := panel.get_global_rect()
-		if rect.size.x < 2.0 or rect.size.y < 2.0:
-			continue
-		if rect.has_point(pos):
+		if rect.size.x >= 2.0 and rect.size.y >= 2.0 and rect.has_point(pos):
 			return panel
 	return null
 
@@ -4113,6 +4140,21 @@ func _sketch_skips_mouse_up_commit() -> bool:
 		return v == "center_three_point" or v == "three_point" \
 				or v == "parallelogram"
 	return false
+
+
+## Label editor accepts a leading minus so "-5" stays one token and the
+## positive-number check can refuse it. Preview and Distance stay digit-only.
+const _DIM_EDIT_EXTRA := {
+	KEY_MINUS: "-",
+	KEY_KP_SUBTRACT: "-",
+}
+
+
+func _dim_edit_char(ke: InputEventKey) -> String:
+	var seed := _length_type_seed(ke)
+	if seed != "":
+		return seed
+	return str(_DIM_EDIT_EXTRA.get(ke.keycode, ""))
 
 
 func _is_length_type_key(ke: InputEventKey) -> bool:
@@ -5883,7 +5925,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# Camera nav before the face pick so a headless middle-drag orbits
 	# instead of falling through as an unhandled button.
-	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
+	var allow_scroll := _camera_may_scroll(event)
 	if camera != null:
 		var block_nav := false
 		if event is InputEventKey:
@@ -6017,7 +6059,7 @@ func _input(event: InputEvent) -> void:
 	# Camera first — before Control STOP panels so orbit works over docks, and
 	# before place so Alt+drag / two-finger pan don't commit a solid.
 	# Never steal wheel / two-finger pan from ScrollContainers; pinch always zooms.
-	var allow_scroll := not OrbitCamera.pointer_over_scrollable_ui()
+	var allow_scroll := _camera_may_scroll(event)
 	# Magnify must never fall through place/sketch even if scroll gating diffs.
 	if event is InputEventMagnifyGesture and camera != null:
 		if camera.handle_input(event, true):
@@ -6420,6 +6462,8 @@ func _refresh_selection_strip() -> void:
 	_selection_strip.visible = has and _place_kind == "" and not sketching
 	_selection_strip.mouse_filter = Control.MOUSE_FILTER_STOP if _selection_strip.visible \
 			else Control.MOUSE_FILTER_IGNORE
+	if _shell_chrome != null:
+		_shell_chrome.sync()
 	if not has:
 		return
 	# Instances get a slim strip: Delete only (modeling ops act on bodies).
@@ -6861,6 +6905,11 @@ func _on_context_id(id: int) -> void:
 
 func _ctx_set_active_plane() -> void:
 	set_active_plane_from_selection()
+
+
+func apply_shell_thickness(mm: float) -> void:
+	if _shell_chrome != null:
+		_shell_chrome.apply_mm(mm)
 
 
 func _ctx_fillet() -> void:

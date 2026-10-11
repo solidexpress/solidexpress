@@ -19,7 +19,18 @@ SX_AUTOMATION=1 SX_INPUT_TRACE=1 \
 
 Pointer and key commands are real `InputEvent`s. The main window gets `Viewport.push_input` of `InputEventMouseButton`, `InputEventMouseMotion`, and `InputEventKey`. An embedded popup (File, finish-bar menus, dialogs) is clicked by pushing that same event through the parent viewport at the popup's position, which is the path Godot uses to call `Window._input_from_window` before `push_input`. A native popup uses `Input.parse_input_event` with that window's id. Nothing calls menu handlers directly, so focus, the Extrude shield, popups, hover, and `drop:shield` behave as they do for a person.
 
-Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw`, …), finish-bar fields (`finish:Distance`, `finish:Op`, `finish:Extrude`), the HUD (`hud:Frame`, `hud:View`), menu buttons (`menu:File`), timeline rows and pencils (`timeline:row:sketch 1`, `timeline:pencil:sketch 1`), contour chips, and the file / discard dialogs (`dialog:Name`, `dialog:Ok`, `dialog:DiscardOk`). A click can also name a node path, a sketch-plane millimetre point, a kernel 3D point, an edge or face id, or a drawn dimension label (`dim` text or `dim_id`).
+Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw`, `rail:Convert`, …), finish-bar fields (`finish:Distance`, `finish:Op`, `finish:End`, `finish:Extrude`, `finish:Thickness`, `finish:Ok`), the Shell chip (`strip:shell`), the HUD (`hud:Frame`, `hud:View`), menu buttons (`menu:File`), timeline rows and pencils (`timeline:row:sketch 1`, `timeline:pencil:sketch 1`), contour chips, and the file / discard dialogs (`dialog:Name`, `dialog:Ok`, `dialog:DiscardOk`). A click can also name a node path, a sketch-plane millimetre point, a kernel 3D point, an edge or face id, a face normal (`face_normal=[x,y,z]`), or a drawn dimension label (`dim` text or `dim_id`).
+
+| id | control |
+|---|---|
+| `strip:shell` | Shell chip on a selected planar face |
+| `rail:Convert` | Convert (project a face edge into the sketch) |
+| `finish:Thickness` | Shell thickness field |
+| `finish:Ok` | Shell OK |
+| `finish:Op` | Extrude operation (Extrude / Cut) |
+| `finish:End` | Extrude end condition |
+
+`state.faces` records are `id`, `body`, `mid`, `centre`, `normal`, `area`, `screen`. The list is cached by document revision and camera transform, so `screen` is recomputed when the view moves. `click(face=<id>)` projects that face's `centre` through the camera at click time. `click(face_normal=[x,y,z])` chooses the face whose normal aligns with that direction (|dot| ≥ 0.999); if several faces share it, the one furthest along the normal is used (the outer wall). The click reply includes that face's `normal`.
 
 `state` returns one JSON snapshot: status text, focus, armed tool, which rail buttons are lit, visible controls (path, rect, text, disabled), open popups, finish-bar fields, the DOF chip, sketch mode, timeline rows, undo/redo labels, selection, drawn dimension labels (text, rect, visible, occluded), constraint badges, contour tags, camera, and body bounding boxes plus the feature list. `trace` returns `[input-trace]`, `[key-trace]`, `[status-trace]`, `[popup-trace]`, and `[hover-trace]` lines since a cursor. `screenshot` writes a PNG only when a check is visual and the rects cannot answer it.
 
@@ -49,9 +60,19 @@ python3 tools/walk_rung01.py --from A16 --checkpoint --out /tmp/sx-041
 
 The headless proof that the bridge is real input, not a private API, is `game/tests/run_automation_bridge_tests.gd` (`automation_bridge_tests` in the CI tier): a second Extrude click is `drop:shield`, Enter leaves the Distance field, and the jaw angle label is clicked on its drawn rect and edited to 45.
 
+## Lesson 2 runner
+
+`tools/walk_rung02.py` is the same command as `tools/walk_rung01.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 44-row box checklist. It runs `tools/check_rung02.py`. `--checkpoint` reloads `box.sxp` (chunk 2), `rounded.sxp` (chunk 3), `shelled.sxp` (chunk 4), or `final.sxp` (chunk 5). `state.sketch.plane` is `{origin, x, y, normal}` while a sketch is active. Export rows assert S0 first: one body whose name starts with `extrude`, `fillet`, `shell`, or `cut`, and a bbox of `100 × W × 50` ± 0.1.
+
+```bash
+python3 tools/walk_rung02.py --out /tmp/sx-rung02
+python3 tools/walk_rung02.py --rows A1,A2,A3,A4,A5 --out /tmp/sx-rung02
+python3 tools/walk_rung02.py --from A7 --checkpoint --out /tmp/sx-rung02
+```
+
 ## sx-042 runner rules (re-PLAN 21)
 
-Statuses that a row judges are the `[status-trace] … kind=result text=…` lines since that row's mark (`Walk.status_since`). The live status label is only for hover hints. Every `click(screen=[x, y])` uses a bridge selector (`target=`, `model=`, `sketch=`, `edge=`, `face=`) or a position taken from `bodies[i].screen` / `project`. The only fixed offsets that remain are inside `jaw_px`, which is derived from the measured head.
+Statuses that a row judges are the `[status-trace] … kind=result text=…` lines since that row's mark (`Walk.status_since`). The live status label is only for hover hints. Every `click(screen=[x, y])` uses a bridge selector (`target=`, `model=`, `sketch=`, `edge=`, `face=`, `face_normal=`) or a position taken from `bodies[i].screen` / `project`. The only fixed offsets that remain are inside `jaw_px`, which is derived from the measured head.
 
 **S0** is not a row. It is a clause on every export (A5, A12, N11, A13c, A14), read from bridge `bodies` before the file is written. It requires exactly one body. Wrench exports (A5, A12, N11, A13c) also require a name starting with `extrude` and a bbox of `232.5 ± 0.3` × `45 ± 0.1` × `T ± 0.01` (`T` is 10, or 14 after A13 commits). The nut export (A14) asserts only the body count. A miss is `FAIL runner-gap: stray body <name> (<volume>)`, naming the body and the row that left it, and the checker does not run. Each body record includes `volume` (mm³) from `body_volume`. N4 and N16 assert `bodies` and `timeline` are unchanged by the row.
 
