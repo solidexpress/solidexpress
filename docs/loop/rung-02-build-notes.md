@@ -58,3 +58,29 @@ Status texts measured on this build (existing sentences, not new chrome):
 - `Sketch cancelled`
 
 `run_rung02_plane_basis.gd` 70 checks, 0 failures. `run_rung01_replan7_facepick.gd` 31 checks, 0 failures. `run_extrude_frame_tests.gd` 20 checks, 0 failures. `python3 tools/lint_suites.py`: `lint_suites: 208 suites ok (60 ci, 144 full, 4 known-red)`.
+
+## WP3 — references survive a resize (`TopoCue`)
+
+Red, before `TopoCue` (`sxkernel_tests "fillet and shell survive a rectangle resize"`). Shell on the filleted box built. After the width edit, one fillet edge was soft-skipped and the shell face id was gone:
+
+```
+[DEBUG] fillet soft-skip: missing edge uuid 8f04176c-dd15-40c9-9bff-f70105fec4a6
+[WARN] fillet: fillet soft-skip: 1 edges lost on rebuild
+[ERROR] regenerate stopped at feature shell
+FAILED:
+  REQUIRE( ok )
+with expansion:
+  false
+with messages:
+  shell: missing face uuid 49dd10da-60a3-48a4-b993-d0534cc8fb69
+test cases: 1 | 1 failed
+assertions: 9 | 8 passed | 1 failed
+```
+
+No UI status texts. Kernel log wording when a stored cue does not resolve (fillet stays a warning; shell fails the regen through `ctx.fail`, which prefixes the feature name):
+
+- `fillet soft-skip: missing edge uuid <id>; lost edge cue point (x, y, z) dir (dx, dy, dz)`
+- `fillet <name>: fillet soft-skip: N edges lost on rebuild` (unchanged warning)
+- `lost face cue point (x, y, z) dir (dx, dy, dz)` (shell error, after the feature name)
+
+Shell on this filleted body succeeds (`MakeThickSolidByJoin` did not need a join change). `65 → 60 → 65` keeps fillet and shell: volume `no_hole(60) = 94173.7` and `no_hole(65) = 98923.7` within 0.5 %, walls 5.0 ± 0.1. `sxkernel_tests` 347 cases, 8325 assertions, all passed. `python3 tools/lint_suites.py`: `lint_suites: 208 suites ok (60 ci, 144 full, 4 known-red)`.
