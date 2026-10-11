@@ -4,6 +4,7 @@
 
 #include <BRepAdaptor_Curve.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <GeomAbs_CurveType.hxx>
 #include <Geom_Plane.hxx>
 #include <TopExp.hxx>
 #include <TopoDS.hxx>
@@ -92,6 +93,27 @@ bool pierce_edge(const Document& doc, const EntityId& edge_id, const SketchPlane
 }
 
 }  // namespace
+
+EntityId add_external_edge(Document& doc, const EntityId& sketch_fid, const EntityId& edge_id) {
+    Feature* f = doc.graph().feature(sketch_fid);
+    if (f == nullptr || !f->sketch) return {};
+    const std::string edge = edge_id.str();
+    for (const auto& e : f->sketch->entities()) {
+        if (e.external && e.projected_from == edge) return e.id;
+    }
+    const TopoDS_Shape sh = doc.resolve(edge_id);
+    if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) return {};
+    const BRepAdaptor_Curve curve(TopoDS::Edge(sh));
+    if (curve.GetType() != GeomAbs_Line) return {};
+    const gp_Pnt a = curve.Value(curve.FirstParameter());
+    const gp_Pnt b = curve.Value(curve.LastParameter());
+    if (a.Distance(b) < 1e-9) return {};
+    const EntityId added =
+        f->sketch->project_line_edge({a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, edge);
+    if (added.is_null()) return {};
+    f->sketch->set_construction(added, true);
+    return added;
+}
 
 int convert_edges_to_sketch(Document& doc, const EntityId& sketch_fid,
                             const std::vector<EntityId>& edge_ids, std::string* err) {

@@ -26,7 +26,7 @@ endforeach()
 unset(_SX_OCCT_DE_PROBE)
 
 add_library(sxkernel STATIC ${SXKERNEL_SOURCES})
-target_include_directories(sxkernel PUBLIC include)
+target_include_directories(sxkernel PUBLIC include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(sxkernel SYSTEM PUBLIC ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(sxkernel
     PUBLIC

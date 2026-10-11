@@ -33,6 +33,11 @@ std::vector<std::array<double, 3>> sketch3d_path(const Sketch3D& s);
 int convert_edges_to_sketch(Document& doc, const EntityId& sketch_fid,
                             const std::vector<EntityId>& edge_ids, std::string* err = nullptr);
 
+// One external construction line for a model edge. Null when the edge is not
+// a planar line. A second call for the same edge returns the existing entity.
+EntityId add_external_edge(Document& doc, const EntityId& sketch_fid,
+                           const EntityId& edge_id);
+
 // Rebuild converted pierce points from stored edge UUIDs. Returns points written.
 int rebuild_converted_points(Document& doc, const EntityId& sketch_fid);
 
