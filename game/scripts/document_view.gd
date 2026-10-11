@@ -2461,6 +2461,53 @@ func face_normal(body_id: String, face_id: String) -> Vector3:
 	return normals[0] if normals.size() > 0 else Vector3.ZERO
 
 
+## Faces of one body whose unit normal meets `min_dot` against `want`.
+## Each record is {id, normal, centre}. The caller keeps its own tie-break.
+func faces_matching(body_id: String, want: Vector3, min_dot: float) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if doc == null or body_id == "" or want.length_squared() < 1e-12:
+		return out
+	var target := want.normalized()
+	for face_id in doc.get_face_ids(body_id):
+		var n := face_normal(body_id, str(face_id))
+		if n.length_squared() < 1e-12:
+			continue
+		n = n.normalized()
+		if n.dot(target) < min_dot:
+			continue
+		var mid: Variant = doc.face_midpoint(str(face_id))
+		var centre := (mid as Vector3) if mid is Vector3 else Vector3.ZERO
+		out.append({"id": str(face_id), "normal": n, "centre": centre})
+	return out
+
+
+## Planar when the bbox is flat, else when every mesh normal agrees.
+func face_is_planar(body_id: String, face_id: String) -> bool:
+	if doc == null or body_id == "" or face_id == "":
+		return false
+	var bb: Dictionary = doc.measure_bbox(face_id)
+	if not bb.is_empty():
+		var ext: Vector3 = bb["max"] - bb["min"]
+		var mx := maxf(ext.x, maxf(ext.y, ext.z))
+		var mn := minf(ext.x, minf(ext.y, ext.z))
+		if mx > 1e-6 and mn <= maxf(1e-4, mx * 0.02):
+			return true
+	var node := body_node(body_id)
+	var ids: PackedStringArray = doc.get_face_ids(body_id)
+	var idx := ids.find(face_id)
+	if node == null or node.mesh == null or idx < 0 or idx >= node.mesh.get_surface_count():
+		return false
+	var arrays: Array = node.mesh.surface_get_arrays(idx)
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	if normals.is_empty():
+		return false
+	var n0 := normals[0].normalized()
+	for i in normals.size():
+		if absf(normals[i].normalized().dot(n0)) < 0.999:
+			return false
+	return true
+
+
 func body_node(body_id: String) -> MeshInstance3D:
 	return _body_nodes.get(body_id)
 

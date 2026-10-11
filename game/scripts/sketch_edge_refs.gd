@@ -93,7 +93,7 @@ static func convert_click(mode: SketchMode, uv: Vector2) -> void:
 	var body := mode.view.body_of_feature(mode.support_host)
 	var face_edges := _face_edge_set(mode, body)
 	var lines: Dictionary = mode.view.doc.get_edge_lines(body)
-	var world := mode.plane_origin + mode.plane_x * uv.x + mode.plane_y * uv.y
+	var world := mode.plane.to_world(uv)
 	var on_face := _nearest(lines, face_edges, world, FACE_TOL, true)
 	if on_face != "":
 		var id: String = mode.view.doc.sketch_add_external_edge(fid, on_face)
@@ -116,19 +116,16 @@ static func _face_edge_set(mode: SketchMode, body: String) -> Dictionary:
 	var edges: PackedStringArray = mode.view.doc.edges_of_face(mode.host_face_id)
 	if edges.is_empty() and body != "" and mode.support_normal.length_squared() > 1e-8:
 		var want := mode.support_normal.normalized()
-		var best := ""
+		var best: Dictionary = {}
 		var best_dot := 0.7
-		for face_id in mode.view.doc.get_face_ids(body):
-			var n: Vector3 = mode.view.face_normal(body, str(face_id))
-			if n.length_squared() < 1e-12:
-				continue
-			var d := n.normalized().dot(want)
+		for face in mode.view.faces_matching(body, want, 0.7):
+			var d := (face["normal"] as Vector3).dot(want)
 			if d > best_dot:
 				best_dot = d
-				best = str(face_id)
-		if best != "":
-			mode.host_face_id = best
-			edges = mode.view.doc.edges_of_face(best)
+				best = face
+		if not best.is_empty():
+			mode.host_face_id = str(best["id"])
+			edges = mode.view.doc.edges_of_face(mode.host_face_id)
 	var set := {}
 	for id in edges:
 		set[str(id)] = true

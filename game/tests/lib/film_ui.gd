@@ -1245,18 +1245,15 @@ static func face_pick_point(view: DocumentView, body_id: String, face_id: String
 static func find_face_by_normal(view: DocumentView, body_id: String, want_normal: Vector3) -> String:
 	if view == null or body_id == "":
 		return ""
-	var best := ""
-	var best_dot := -2.0
 	var target := want_normal.normalized()
-	for face_id in view.doc.get_face_ids(body_id):
-		var n := view.face_normal(body_id, face_id)
-		if n.length_squared() < 1e-12:
-			continue
-		var d := n.normalized().dot(target)
+	var best: Dictionary = {}
+	var best_dot := 0.7
+	for face in view.faces_matching(body_id, target, 0.7):
+		var d := (face["normal"] as Vector3).dot(target)
 		if d > best_dot:
 			best_dot = d
-			best = face_id
-	return best if best_dot > 0.7 else ""
+			best = face
+	return str(best.get("id", ""))
 
 
 static func pad_screen_center(ctx: FilmContext, fid: String) -> Vector2:

@@ -136,10 +136,17 @@ var camera: OrbitCamera
 ## Array of Vector2 in sketch coords — used for snap/select/measure.
 var intersection_points: Array[Vector2] = []
 
-# Sketch plane frame in model space.
-var plane_origin := Vector3.ZERO
-var plane_x := Vector3.RIGHT
-var plane_y := Vector3.UP  # model-space Y (kernel), set on begin()
+# Sketch plane frame in model space. Outside readers use the properties.
+var plane: PlaneBasis = PlaneBasis.from_axes(Vector3.ZERO, Vector3.RIGHT, Vector3.UP)
+var plane_origin: Vector3:
+	get:
+		return plane.origin
+var plane_x: Vector3:
+	get:
+		return plane.x
+var plane_y: Vector3:
+	get:
+		return plane.y
 
 ## Selected entity ids (SELECT tool), most recent last, max 2.
 var selected: Array[String] = []
@@ -444,7 +451,7 @@ static func _support_side(doc: SxDocument, body_id: String, face_id: String,
 
 ## Unit normal of the current sketch plane (model space).
 func plane_normal() -> Vector3:
-	return plane_x.cross(plane_y).normalized()
+	return plane.normal
 
 
 ## 2D AABB of all entities inflated by `pad_frac` (0.2 = 20% past extents).
@@ -531,8 +538,7 @@ func _host_body_uv_aabb() -> Dictionary:
 	for x in [bmin.x, bmax.x]:
 		for y in [bmin.y, bmax.y]:
 			for z in [bmin.z, bmax.z]:
-				var rel := Vector3(x, y, z) - plane_origin
-				var uv := Vector2(rel.dot(plane_x), rel.dot(plane_y))
+				var uv := plane.to_uv(Vector3(x, y, z))
 				mn = mn.min(uv)
 				mx = mx.max(uv)
 	if not is_finite(mn.x):
@@ -542,7 +548,7 @@ func _host_body_uv_aabb() -> Dictionary:
 
 ## Sketch 2D → model space.
 func to_model(p: Vector2) -> Vector3:
-	return plane_origin + plane_x * p.x + plane_y * p.y
+	return plane.to_world(p)
 
 
 func _clear_support() -> void:
@@ -561,10 +567,10 @@ func face_lies_on_plane(face_id: String) -> bool:
 	var mid: Variant = view.doc.face_midpoint(face_id)
 	if not (mid is Vector3):
 		return false
-	var n := plane_normal()
+	var n := plane.normal
 	if n.length_squared() < 1e-12:
 		return false
-	return absf(((mid as Vector3) - plane_origin).dot(n)) <= 0.75
+	return absf(Plane(n, plane.origin).distance_to(mid as Vector3)) <= 0.75
 
 
 ## Begin a sketch on the model-space plane (origin + normal). The in-plane
@@ -591,9 +597,7 @@ func begin_on_plane(origin: Vector3, x_dir: Vector3, y_dir: Vector3) -> bool:
 		return false
 	editing_fid = ""
 	_clear_support()
-	plane_origin = origin
-	plane_x = x_dir.normalized()
-	plane_y = y_dir.normalized()
+	plane = PlaneBasis.from_axes(origin, x_dir.normalized(), y_dir.normalized())
 	sketch = SxSketch.new()
 	sketch.set_plane(origin, plane_x, plane_y)
 	_activate_session()
@@ -617,9 +621,10 @@ func begin_edit(fid: String, announce: bool = true) -> bool:
 	if pi.is_empty():
 		return false
 	editing_fid = fid
-	plane_origin = pi["origin"]
-	plane_x = (pi["x_dir"] as Vector3).normalized()
-	plane_y = (pi["y_dir"] as Vector3).normalized()
+	plane = PlaneBasis.from_axes(
+			pi["origin"],
+			(pi["x_dir"] as Vector3).normalized(),
+			(pi["y_dir"] as Vector3).normalized())
 	sketch = loaded
 	_edit_baseline = loaded.snapshot() if loaded.has_method("snapshot") else ""
 	_clear_support()
@@ -632,10 +637,7 @@ func begin_edit(fid: String, announce: bool = true) -> bool:
 func _setup_plane(origin: Vector3, normal: Vector3) -> void:
 	last_dofs = -1
 	last_solve_status = ""
-	var basis := PlaneBasis.for_face(normal, origin)
-	plane_origin = basis.origin
-	plane_x = basis.x
-	plane_y = basis.y
+	plane = PlaneBasis.for_face(normal, origin)
 
 
 func _activate_session() -> void:
@@ -1460,15 +1462,14 @@ func _frame_new_body() -> void:
 
 ## Model-space ray -> sketch 2D coords (null if parallel to plane).
 func ray_to_sketch(origin: Vector3, direction: Vector3) -> Variant:
-	var n := plane_x.cross(plane_y)
+	var n := plane.x.cross(plane.y)
 	var denom := direction.dot(n)
 	if absf(denom) < 1e-9:
 		return null
-	var t := (plane_origin - origin).dot(n) / denom
+	var t := (plane.origin - origin).dot(n) / denom
 	if t < 0:
 		return null
-	var p := origin + direction * t - plane_origin
-	return Vector2(p.dot(plane_x), p.dot(plane_y))
+	return plane.to_uv(origin + direction * t)
 
 
 signal tool_changed(tool: int)
@@ -2131,11 +2132,9 @@ func _model_circle_centers() -> Array[Vector2]:
 			if c3 == null:
 				continue
 			var center3: Vector3 = c3
-			if absf((center3 - plane_origin).dot(n)) > 0.75:
+			if absf((center3 - plane.origin).dot(n)) > 0.75:
 				continue
-			var on := center3 - n * (center3 - plane_origin).dot(n)
-			var rel := on - plane_origin
-			out.append(Vector2(rel.dot(plane_x), rel.dot(plane_y)))
+			out.append(plane.to_uv(center3))
 	return out
 
 
@@ -3279,12 +3278,10 @@ func _model_circles() -> Array:
 			r /= float(poly.size())
 			if r < 0.4:
 				continue
-			if absf((c3 - plane_origin).dot(n)) > 0.75:
+			if absf((c3 - plane.origin).dot(n)) > 0.75:
 				continue
-			var on := c3 - n * (c3 - plane_origin).dot(n)
-			var rel := on - plane_origin
 			out.append({
-				"center": Vector2(rel.dot(plane_x), rel.dot(plane_y)),
+				"center": plane.to_uv(c3),
 				"radius": r,
 			})
 	return out
@@ -7258,7 +7255,7 @@ func paste_entities(offset := Vector2(10, 10)) -> Array:
 
 
 func _to3(p: Vector2) -> Vector3:
-	return plane_origin + plane_x * p.x + plane_y * p.y
+	return plane.to_world(p)
 
 
 func _clear_meshes() -> void:

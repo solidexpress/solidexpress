@@ -133,6 +133,10 @@ func _face(ctx: FilmContext, normal: Vector3, view_key: Key, world: Vector3, wan
 			"%s basis x=%s y=%s (want %s %s)" % [tag, str(px), str(py), str(want_x), str(want_y)])
 	check(sm.plane_x.distance_to(want_x) < 1e-4 and sm.plane_y.distance_to(want_y) < 1e-4,
 			"%s SketchMode axes match the sketch plane" % tag)
+	var round_uv := Vector2(12.5, -7.25)
+	var round_back := sm.plane.to_uv(sm.plane.to_world(round_uv))
+	check(round_back.distance_to(round_uv) < 1e-4,
+			"%s to_uv(to_world) round-trips (got %s)" % [tag, str(round_back)])
 	var rel := world - sm.plane_origin
 	var expected := Vector2(rel.dot(want_x), rel.dot(want_y))
 	check(expected.distance_to(want_uv) <= 0.05,

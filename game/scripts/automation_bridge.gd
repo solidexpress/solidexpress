@@ -1962,19 +1962,28 @@ func _find_face_by_normal(want: Vector3) -> Dictionary:
 	if want.length_squared() < 1e-8:
 		return {}
 	want = want.normalized()
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {}
 	var best := {}
 	var best_along := -1.0e30
-	for f in _faces_cached(_main().get("view")):
-		var n := _vec3(f.get("normal", []))
-		if n.length_squared() < 1e-8:
-			continue
-		if n.normalized().dot(want) < 0.999:
-			continue
-		var along := _vec3(f.get("centre", f.get("mid"))).dot(want)
-		if best.is_empty() or along > best_along:
-			best = f
-			best_along = along
-	return best
+	for body_id in view.doc.body_ids():
+		for face in view.faces_matching(str(body_id), want, 0.999):
+			var centre: Vector3 = face["centre"]
+			var along := Vector3(
+					snappedf(centre.x, 0.001),
+					snappedf(centre.y, 0.001),
+					snappedf(centre.z, 0.001)).dot(want)
+			if best.is_empty() or along > best_along:
+				best = face
+				best_along = along
+	if best.is_empty():
+		return {}
+	var best_id := str(best["id"])
+	for f in _faces_cached(view):
+		if str(f["id"]) == best_id:
+			return f
+	return {}
 
 
 func _build_edges(view) -> Array:
