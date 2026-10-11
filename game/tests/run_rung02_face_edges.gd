@@ -6,6 +6,7 @@ extends "res://tests/lib/sx_suite.gd"
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
+const BoxFixture = preload("res://tests/lib/box_fixture.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const CENTRE_TOL := 0.01
 
@@ -22,11 +23,11 @@ func _init() -> void:
 
 func _run() -> void:
 	var ctx := await _boot()
-	await _build_box(ctx)
+	await BoxFixture.build_box(ctx, Callable(), _note_status)
 	if failures > 0:
 		ctx.main.queue_free()
 		return
-	_fillet_z_edges(ctx)
+	await BoxFixture.fillet_z_edges(ctx, 10.0)
 	if failures > 0:
 		ctx.main.queue_free()
 		return
@@ -166,7 +167,7 @@ func _esc_disarms(ctx: FilmContext) -> void:
 
 func _foreign_spot(ctx: FilmContext) -> Vector3:
 	var sm: SketchMode = ctx.main.sketch_mode
-	var body := _body(ctx)
+	var body := BoxFixture.only_body(ctx)
 	var face_ids := {}
 	for id in ctx.view.doc.edges_of_face(sm.host_face_id):
 		face_ids[str(id)] = true
@@ -215,7 +216,7 @@ func _open_face_sketch(ctx: FilmContext) -> bool:
 	await _push_key(ctx.main.get_viewport(), KEY_2, 0)
 	await process_frame
 	await process_frame
-	var body := _body(ctx)
+	var body := BoxFixture.only_body(ctx)
 	var face := FilmUI.find_face_by_normal(ctx.view, body, Vector3(1, 0, 0))
 	check(face != "", "+X face exists")
 	if face == "":
@@ -252,59 +253,6 @@ func _open_face_sketch(ctx: FilmContext) -> bool:
 	check(px.distance_to(Vector3(0, 1, 0)) < 1e-4 and py.distance_to(Vector3(0, 0, 1)) < 1e-4,
 			"upright basis x=+Y y=+Z")
 	return true
-
-
-func _build_box(ctx: FilmContext) -> void:
-	await FilmUI.enter_sketch(ctx)
-	var sm: SketchMode = ctx.main.sketch_mode
-	check(sm != null and sm.active, "ground sketch is open")
-	await _zoom(ctx, Vector3(50, 30, 0), 160.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(0, 0))
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(100, 60))
-	await process_frame
-	var dist := FilmUI.distance_edit(ctx)
-	check(dist != null and dist.is_visible_in_tree(), "Distance field is visible")
-	if dist != null:
-		await _x11_click(dist)
-		await _type_text(dist.get_viewport(), "50")
-		await process_frame
-	var ex: Button = ctx.main.sketch_chrome.extrude_button() if ctx.main.sketch_chrome != null else null
-	check(ex != null and ex.is_visible_in_tree(), "Extrude button is visible")
-	if ex != null:
-		await _x11_click(ex)
-	for _i in 8:
-		await process_frame
-	_note_status(ctx)
-	var body := _body(ctx)
-	check(body != "", "extrude made one body")
-	if body == "":
-		return
-	var bb: Dictionary = ctx.view.doc.measure_bbox(body)
-	var sz: Vector3 = bb["max"] - bb["min"]
-	check(sz.distance_to(Vector3(100, 60, 50)) < 0.2, "box is 100×60×50 (got %s)" % str(sz))
-
-
-func _fillet_z_edges(ctx: FilmContext) -> void:
-	var body := _body(ctx)
-	var fid := ctx.view.feature_of_body(body)
-	var edges := PackedStringArray()
-	var lines: Dictionary = ctx.view.doc.get_edge_lines(body)
-	for id in lines:
-		var pts: PackedVector3Array = lines[id]
-		if pts.size() < 2:
-			continue
-		var d: Vector3 = pts[pts.size() - 1] - pts[0]
-		if absf(d.z) > 5.0 and absf(d.x) < 0.5 and absf(d.y) < 0.5:
-			edges.append(str(id))
-	check(edges.size() == 4, "four Z edges to fillet (got %d)" % edges.size())
-	if edges.size() != 4 or fid == "":
-		return
-	var added := ctx.view.doc.graph_add_fillet(fid, edges, 10.0)
-	check(added != "", "fillet feature added (%s)" % ctx.view.doc.last_graph_error())
-	ctx.view.graph_changed()
-	await process_frame
-	await process_frame
 
 
 func _project_click(ctx: FilmContext, model: Vector3, desc: String) -> void:
@@ -440,15 +388,6 @@ func _label_has(sm: SketchMode, text: String) -> bool:
 		if sm._dimension_label_text(dim) == text:
 			return true
 	return false
-
-
-func _body(ctx: FilmContext) -> String:
-	var ids: PackedStringArray = ctx.view.doc.body_ids()
-	if ids.size() != 1:
-		return ""
-	return str(ids[0])
-
-
 
 
 func _status_since(mark: int) -> String:

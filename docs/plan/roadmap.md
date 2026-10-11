@@ -260,6 +260,8 @@ Parked here so a later pass can resume without the chat. ★ work packages are a
 | Timeline-row click | `_activate_missed_button` and the timeline branch of `_control_click_pos` | A row rect the viewport does not treat as the model | Product defect: the workaround compensates for a timeline row the viewport picks as geometry |
 | Dimension entry flags | `sketch_context_chrome.gd`: 13 `_dim_*` vars, including `_dim_user_typed`, `_dim_replace_next`, `_dim_focus_from_tool`, `_dim_select_gen`, `_dim_last_good` | One `DimEntry` state enum `ARMED_PREVIEW → FOCUSED → TYPED` instead of five booleans | High. Typed-length and replace-on-focus rules |
 
+Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and reverted none. WP4, WP7, and WP10 shipped. Nothing from the Revert rule is appended to this table.
+
 ---
 
 ## Related

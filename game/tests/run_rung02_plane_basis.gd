@@ -5,6 +5,7 @@ extends "res://tests/lib/sx_suite.gd"
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
+const BoxFixture = preload("res://tests/lib/box_fixture.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const UV_TOL := 1.0
 
@@ -35,7 +36,7 @@ func _init() -> void:
 
 func _run() -> void:
 	var ctx := await _boot()
-	await _build_box(ctx)
+	await BoxFixture.build_box(ctx, _count_rect_lines, _note_status)
 	if failures > 0:
 		ctx.main.queue_free()
 		return
@@ -48,41 +49,14 @@ func _run() -> void:
 	ctx.main.queue_free()
 
 
-func _build_box(ctx: FilmContext) -> void:
-	await FilmUI.enter_sketch(ctx)
+func _count_rect_lines(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
-	check(sm != null and sm.active, "ground sketch is open")
-	await _zoom(ctx, Vector3(50, 30, 0), 160.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(0, 0))
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(100, 60))
-	await process_frame
 	var lines := 0
 	if sm.sketch != null:
 		for id in sm.sketch.entity_ids():
 			if str(sm.sketch.entity_info(id).get("type", "")) == "line":
 				lines += 1
 	check(lines == 4, "rect is four lines (got %d)" % lines)
-	var dist := FilmUI.distance_edit(ctx)
-	check(dist != null and dist.is_visible_in_tree(), "Distance field is visible")
-	if dist != null:
-		await _x11_click(dist)
-		await _type_text(dist.get_viewport(), "50")
-		await process_frame
-	var ex: Button = ctx.main.sketch_chrome.extrude_button() if ctx.main.sketch_chrome != null else null
-	check(ex != null and ex.is_visible_in_tree(), "Extrude button is visible")
-	if ex != null:
-		await _x11_click(ex)
-	for _i in 8:
-		await process_frame
-	_note_status(ctx)
-	var body := _only_body(ctx)
-	check(body != "", "extrude made one body")
-	if body == "":
-		return
-	var bb: Dictionary = ctx.view.doc.measure_bbox(body)
-	var sz: Vector3 = bb["max"] - bb["min"]
-	check(sz.distance_to(Vector3(100, 60, 50)) < 0.2, "box is 100×60×50 (got %s)" % str(sz))
 
 
 func _face(ctx: FilmContext, normal: Vector3, view_key: Key, world: Vector3, want_x: Vector3, want_y: Vector3, want_uv: Vector2) -> void:
@@ -92,7 +66,7 @@ func _face(ctx: FilmContext, normal: Vector3, view_key: Key, world: Vector3, wan
 	await _push_key(ctx.main.get_viewport(), view_key, 0)
 	await process_frame
 	await process_frame
-	var body := _only_body(ctx)
+	var body := BoxFixture.only_body(ctx)
 	var face := FilmUI.find_face_by_normal(ctx.view, body, normal)
 	check(face != "", "%s face exists" % tag)
 	if face == "":
@@ -164,15 +138,6 @@ func _leave_sketch(ctx: FilmContext) -> void:
 		await _push_key(ctx.main.get_viewport(), KEY_ESCAPE, 0)
 		await process_frame
 	_note_status(ctx)
-
-
-func _only_body(ctx: FilmContext) -> String:
-	var ids: PackedStringArray = ctx.view.doc.body_ids()
-	if ids.size() != 1:
-		return ""
-	return str(ids[0])
-
-
 
 
 func _tag(n: Vector3) -> String:
