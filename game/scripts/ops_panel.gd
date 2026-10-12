@@ -673,7 +673,8 @@ func _on_picked(body: String, face: String, point: Vector3) -> void:
 		_finish_hole_move(body, face, point)
 		return
 	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
-		_accumulate_dressup_edge(body, point, face)
+		var shift := Input.is_key_pressed(KEY_SHIFT) or Input.is_key_pressed(KEY_CTRL)
+		_accumulate_dressup_edge(body, point, face, shift)
 		return
 	if _pending == Pending.HOLE or _pending == Pending.LINEAR \
 			or _pending == Pending.CIRCULAR or _pending == Pending.MIRROR:
@@ -1799,7 +1800,9 @@ func consumes_viewport_pick() -> bool:
 
 
 ## Handle a consumed viewport pick. Returns true if the click was used.
-func handle_viewport_pick(body: String, face: String, point: Vector3) -> bool:
+## `shift` is Shift/Ctrl additive from the pointer (FilletPick.POLICY).
+func handle_viewport_pick(body: String, face: String, point: Vector3,
+		shift: bool = false) -> bool:
 	if _pending == Pending.HOLE_WIZARD:
 		_accumulate_hole_wizard_pick(body, face, point)
 		return true
@@ -1810,7 +1813,7 @@ func handle_viewport_pick(body: String, face: String, point: Vector3) -> bool:
 		_finish_hole_move(body, face, point)
 		return true
 	if _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES:
-		_accumulate_dressup_edge(body, point, face)
+		_accumulate_dressup_edge(body, point, face, shift)
 		return true
 	if _pending == Pending.HOLE or _pending == Pending.LINEAR \
 			or _pending == Pending.CIRCULAR or _pending == Pending.MIRROR:
@@ -2223,7 +2226,8 @@ func _dressup_radius_refused() -> bool:
 	return why.contains("limit ") or why.contains("fillet failed") or why.contains("chamfer failed")
 
 
-func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -> void:
+func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "",
+		shift: bool = false) -> void:
 	if body == "" or view == null:
 		return
 	if _pending != Pending.FILLET_EDGES and _pending != Pending.CHAMFER_EDGES:
@@ -2231,19 +2235,12 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 	if _pending_body != "" and body != _pending_body:
 		status.emit("Fillet/Chamfer: pick edges on the same body")
 		return
-	# A click on the face interior fillets every edge of that face, but only as
-	# the FIRST pick. Once an edge is armed, a face click snaps to the nearest
-	# edge within DRESSUP_SNAP_PX or is refused; it never replaces the set.
+	# Resolve an edge hit with the same bands as before. Face vs edge when the
+	# pointer is ambiguous is FilletPick.POLICY (Shift+face adds the loop).
 	var cam := _dressup_camera()
 	var first_pick := not _dressup_has_edges()
 	var edge := ""
 	if first_pick:
-		# Face interior (farther than 12 px from every edge) selects the loop.
-		# A pointer that is within 12 px keeps the 3D nearest edge when one
-		# is inside 2.5 mm, so a corner click still arms the vertical.
-		# A face that was already selected is not an edge pick: only the
-		# face under this press counts, and only when the pointer is outside
-		# the edge band.
 		var screen_edge := ""
 		if cam != null:
 			screen_edge = view.edge_near_screen(body, cam, view.model_to_screen(cam, point), _dressup_first_pick_band_px(cam))
@@ -2252,25 +2249,27 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "") -
 			edge = near3 if near3 != "" else screen_edge
 	else:
 		edge = view.edge_near_point(body, point, 2.5, cam)
-	if edge == "" and face != "":
-		if first_pick:
-			_add_dressup_face(body, face)
-			return
-		if cam != null:
+		if edge == "" and face != "" and cam != null:
 			edge = view.edge_near_screen(body, cam, view.model_to_screen(cam, point), DRESSUP_SNAP_PX)
-		if edge == "":
-			status.emit("No edge near click — click on an edge (a face click fillets the whole face only as the first pick)")
-			return
-	if edge == "":
+	if edge == "" and face == "":
 		edge = view.edge_near_point(body, point, 12.0, cam)
-	if edge == "":
+	if edge != "":
+		edge = _prefer_selected_dressup_edge(body, str(edge), point)
+		_toggle_dressup_edge(body, edge)
+		return
+	if face == "":
 		status.emit("No edge near click — zoom in or click closer to an edge")
 		return
-	# Nearest-id is not unique: same-length twins and seam splits can win the
-	# 3D/screen tie-break on a re-click of an already-picked edge. Prefer
-	# toggling the selected edge off when the click is still on it.
-	edge = _prefer_selected_dressup_edge(body, str(edge), point)
-	_toggle_dressup_edge(body, edge)
+	var action := FilletPick.decide(first_pick, shift, "face")
+	match action:
+		"take_face":
+			_add_dressup_face(body, face)
+		"add_face":
+			_merge_dressup_face(body, face)
+		"refuse_face":
+			status.emit(FilletPick.REFUSE_FACE)
+		_:
+			status.emit(FilletPick.REFUSE_FACE)
 
 
 const DRESSUP_SNAP_PX := 14.0
@@ -2473,6 +2472,41 @@ func _add_dressup_face(body: String, face: String) -> void:
 	view._highlight_edge()
 	view.selection_changed.emit(view.selected_body, view.selected_face)
 	_dressup_from_face = true
+	status.emit(_dressup_pick_status())
+
+
+## Shift+face while edges are already armed: union the face loop into the set.
+func _merge_dressup_face(body: String, face: String) -> void:
+	var edges := FilletSets.edges_of_face(view.doc, body, face)
+	if edges.is_empty():
+		status.emit("Fillet: that face has no edges")
+		return
+	var have := {}
+	for id in _selected_dressup_ids():
+		have[str(id)] = true
+	var arr: Array[String] = []
+	for id in _selected_dressup_ids():
+		arr.append(str(id))
+	for e in edges:
+		var s := str(e)
+		if have.has(s):
+			continue
+		var twin := false
+		for id in arr:
+			if view.edges_share_geometry(body, id, s):
+				twin = true
+				break
+		if twin:
+			continue
+		arr.append(s)
+		have[s] = true
+	view.selected_edges = arr
+	view.selected_edge = arr[0] if not arr.is_empty() else ""
+	view.selected_body = body
+	view.selected_face = ""
+	view._highlight_edge()
+	view.selection_changed.emit(view.selected_body, view.selected_face)
+	_dressup_from_face = false
 	status.emit(_dressup_pick_status())
 
 

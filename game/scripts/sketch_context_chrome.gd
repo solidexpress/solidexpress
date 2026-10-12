@@ -1981,6 +1981,8 @@ func done_button() -> Button:
 
 func show_for_session(on: bool, fid: String = "") -> void:
 	_finish_bar.visible = on
+	if not on and offset_tool != null:
+		offset_tool.hide_panel()
 	if on:
 		if fid != "" and fid == _finish_owner:
 			# Same owner (Save As of an already-saved sketch): keep Op/End/D.

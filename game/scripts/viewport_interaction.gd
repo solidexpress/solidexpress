@@ -4941,7 +4941,7 @@ func _on_release(pos: Vector2) -> void:
 		if not hit.is_empty():
 			ops_panel.handle_viewport_pick(
 				str(hit.get("body", "")), str(hit.get("face", "")),
-				hit.get("point", Vector3.ZERO) as Vector3)
+				hit.get("point", Vector3.ZERO) as Vector3, _additive_click)
 		else:
 			ops_panel.handle_viewport_miss(_press_pos, get_viewport().get_camera_3d())
 		_box_drag = false
