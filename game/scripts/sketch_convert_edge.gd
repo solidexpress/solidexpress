@@ -1,12 +1,15 @@
 class_name SketchConvertEdge
 extends RefCounted
-## One Convert click on a face sketch: the nearest boundary line becomes external.
+## One Convert click on a face sketch: the nearest boundary edge becomes external.
 ## The click carries a context. This file does not read SketchMode.
 
 
-const ADDED := "Convert: external line"
+const PROJECTORS := {
+	"line": "Convert: external line",
+	"circle": "Convert: external circle",
+}
 const NOT_ON_FACE := "Convert: edge is not on this face"
-const NOT_LINE := "Convert: edge is not a straight line"
+const NOT_SUPPORTED := "Convert: edge type not supported (line or circle)"
 
 ## A click this close to a boundary of the sketch face projects that edge.
 const FACE_TOL := 3.5
@@ -49,25 +52,13 @@ func click(uv: Vector2) -> void:
 	var lines: Dictionary = ctx.doc.get_edge_lines(body)
 	var world := ctx.plane.to_world(uv)
 	var on_face := _nearest(lines, face_edges, world, FACE_TOL, true)
-	print("  DBG world %s face_edges %s line_keys %d on_face %s" % [
-		str(world), str(face_edges.keys()), lines.size(), on_face])
-	for edge_id in lines:
-		var key := str(edge_id)
-		if not face_edges.has(key):
-			continue
-		var pts: PackedVector3Array = lines[edge_id]
-		var best_d := 1e9
-		for i in range(pts.size() - 1):
-			best_d = minf(best_d, SketchGeom.point_segment_distance_3d(world, pts[i], pts[i + 1]))
-		print("  DBG face edge %s pts %d dist %.3f p0 %s" % [
-			key.substr(0, 8), pts.size(), best_d, str(pts[0] if pts.size() else Vector3.INF)])
 	if on_face != "":
 		var id := str(ctx.doc.sketch_add_external_edge(fid, on_face))
 		if id == "":
-			ctx.status.call(NOT_LINE)
+			ctx.status.call(NOT_SUPPORTED)
 			return
 		ctx.commit.call("Convert")
-		ctx.status.call(ADDED)
+		ctx.status.call(_added_status(lines, on_face))
 		return
 	var other := _nearest(lines, face_edges, world, OTHER_TOL, false)
 	if other != "":
@@ -76,26 +67,48 @@ func click(uv: Vector2) -> void:
 	ctx.fallback.call()
 
 
+func _added_status(lines: Dictionary, edge_id: String) -> String:
+	var kind := _edge_kind(lines, edge_id)
+	return str(PROJECTORS.get(kind, PROJECTORS.line))
+
+
+func _edge_kind(lines: Dictionary, edge_id: String) -> String:
+	var pts: PackedVector3Array = lines.get(edge_id, PackedVector3Array())
+	if pts.size() <= 2:
+		return "line"
+	if pts.size() >= 8 and pts[0].distance_to(pts[pts.size() - 1]) <= 0.2:
+		return "circle"
+	return "line"
+
+
 func _face_edge_set(ctx: Context, body: String) -> Dictionary:
+	ctx.host_face_id = _resolve_host_face(ctx, body)
 	var edges: PackedStringArray = ctx.doc.edges_of_face(ctx.host_face_id)
-	print("  DBG host %s initial_edges %d body %s" % [
-		ctx.host_face_id, edges.size(), body])
-	if edges.is_empty() and body != "" and ctx.support_normal.length_squared() > 1e-8:
-		var want := ctx.support_normal.normalized()
-		var best: Dictionary = {}
-		var best_dot := 0.7
-		for face in ctx.view.faces_matching(body, want, 0.7):
-			var d := (face["normal"] as Vector3).dot(want)
-			if d > best_dot:
-				best_dot = d
-				best = face
-		if not best.is_empty():
-			ctx.host_face_id = str(best["id"])
-			edges = ctx.doc.edges_of_face(ctx.host_face_id)
 	var set := {}
 	for id in edges:
 		set[str(id)] = true
 	return set
+
+
+func _resolve_host_face(ctx: Context, body: String) -> String:
+	if body == "" or ctx.support_normal.length_squared() < 1e-8:
+		return ctx.host_face_id
+	var want := ctx.support_normal.normalized()
+	var origin := ctx.plane.origin
+	var best_id := ctx.host_face_id
+	var best_gap := 1.0e9
+	for face in ctx.view.faces_matching(body, want, 0.7):
+		var fid := str(face["id"])
+		var n: Vector3 = face["normal"] as Vector3
+		if n.length_squared() < 1e-12:
+			continue
+		n = n.normalized()
+		var pick := FacePick.point(ctx.doc, fid)
+		var gap := absf(FacePick.plane_offset(n, pick) - FacePick.plane_offset(n, origin))
+		if gap < best_gap:
+			best_gap = gap
+			best_id = fid
+	return best_id
 
 
 ## `on_face` keeps edges in `face_edges`; otherwise it keeps every other edge.
