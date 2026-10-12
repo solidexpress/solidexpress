@@ -6,6 +6,7 @@
 #   --script tests/run_rung01_replan20_jaw.gd
 extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const FilmJaw = preload("res://tests/lib/film_jaw.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const COMMIT_PREFIX := "Jaw committed — width "
@@ -666,11 +667,7 @@ func _export_3mf(ctx: FilmContext, path: String) -> String:
 
 
 func _checker(path: String) -> String:
-	var repo := ProjectSettings.globalize_path("res://").trim_suffix("/").get_base_dir()
-	var checker := repo.path_join("tools/check_rung01.py")
-	var output: Array = []
-	OS.execute("python3", PackedStringArray([checker, "wrench", path]), output, true)
-	return "\n".join(output)
+	return str(SxChecker.run("rung01", ["wrench", path])["text"])
 
 
 func _row_pass(table: String, name: String) -> bool:

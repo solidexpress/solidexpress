@@ -9,7 +9,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const SMALL_SIZE := Vector2i(1024, 768)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -45,7 +44,7 @@ func test_blind_then_second_click() -> void:
 	var doc = ctx.view.doc
 	var bodies0 := doc.body_ids().size()
 	var ex0 := _extrude_count(doc)
-	_status_log.clear()
+	status_log.clear()
 	var vp: Viewport = ctx.main.get_viewport()
 	print("A1 focus before click: %s" % _focus_desc(vp))
 	await _x11_click_screen(vp, centre)
@@ -56,14 +55,14 @@ func test_blind_then_second_click() -> void:
 	var bodies1 := doc.body_ids().size()
 	var ex1 := _extrude_count(doc)
 	var last := _last_status()
-	print("A1 last status='%s' log=%s" % [last, str(_status_log)])
+	print("A1 last status='%s' log=%s" % [last, str(status_log)])
 	if ex1 == ex0:
 		_dump_hits(ctx.main, centre)
 	check(bodies1 == bodies0 + 1, "A1 exactly one new body (%d -> %d)" % [bodies0, bodies1])
 	check(ex1 == ex0 + 1, "A1 exactly one new extrude (%d -> %d)" % [ex0, ex1])
 	check(last == "Extrude Blind 10.0000 mm",
 			"A1 last status is Extrude Blind 10.0000 mm (got '%s')" % last)
-	check(not _log_has("jaw_af"), "A1 no status contains jaw_af (log=%s)" % str(_status_log))
+	check(not _log_has("jaw_af"), "A1 no status contains jaw_af (log=%s)" % str(status_log))
 	# jaw_af is seeded to 10 on every new document. The chip is what saves
 	# configuration "10"; a plain Extrude must leave the active config empty.
 	check(str(doc.active_configuration()) == "",
@@ -74,20 +73,20 @@ func test_blind_then_second_click() -> void:
 				"A1 bbox is 40 × 20 × 10 (got %s)" % str(ext))
 	else:
 		check(false, "A1 bbox is 40 × 20 × 10 (no body)")
-	var log_n := _status_log.size()
+	var log_n := status_log.size()
 	var last_before := last
 	await _x11_click_screen(vp, centre)
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
 	var stray := false
-	for i in range(log_n, _status_log.size()):
-		if _status_log[i] != last_before:
+	for i in range(log_n, status_log.size()):
+		if status_log[i] != last_before:
 			stray = true
-	print("A2 log after second click=%s" % str(_status_log))
+	print("A2 log after second click=%s" % str(status_log))
 	check(_extrude_count(doc) == ex1, "A2 extrude feature count still %d" % ex1)
 	check(doc.body_ids().size() == bodies1, "A2 body count still %d" % bodies1)
-	check(not stray, "A2 status log has no new entry (log=%s)" % str(_status_log))
+	check(not stray, "A2 status log has no new entry (log=%s)" % str(status_log))
 	check(str(doc.active_configuration()) == "",
 			"A2 the AF chip did not run (active='%s')" % str(doc.active_configuration()))
 	check(str(doc.last_graph_error()) == "",
@@ -101,17 +100,17 @@ func test_blind_then_second_click() -> void:
 			"A3 AF chips hidden on a body that does not use jaw_af")
 	check(jaw == null or not jaw.is_visible_in_tree(),
 			"A3 StripJaw12 hidden without a jaw")
-	var log_late := _status_log.size()
+	var log_late := status_log.size()
 	await _x11_click_screen(vp, centre)
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
 	var late := false
-	for i in range(log_late, _status_log.size()):
-		if _status_log[i] != last_before:
+	for i in range(log_late, status_log.size()):
+		if status_log[i] != last_before:
 			late = true
-	print("A3 log after late click=%s" % str(_status_log))
-	check(not late, "A3 late click at the Extrude pixel adds no status (log=%s)" % str(_status_log))
+	print("A3 log after late click=%s" % str(status_log))
+	check(not late, "A3 late click at the Extrude pixel adds no status (log=%s)" % str(status_log))
 	check(_extrude_count(doc) == ex1, "A3 extrude feature count still %d" % ex1)
 	check(doc.body_ids().size() == bodies1, "A3 body count still %d" % bodies1)
 	check(str(doc.active_configuration()) == "",
@@ -135,7 +134,7 @@ func test_focused_button() -> void:
 	var bodies0 := doc.body_ids().size()
 	var ex0 := _extrude_count(doc)
 	var centre := btn.get_global_rect().get_center() if btn != null else Vector2.ZERO
-	_status_log.clear()
+	status_log.clear()
 	var vp: Viewport = ctx.main.get_viewport()
 	print("A1b focus before click: %s" % _focus_desc(vp))
 	await _x11_click_screen(vp, centre)
@@ -143,14 +142,14 @@ func test_focused_button() -> void:
 	await process_frame
 	_capture_status(ctx.main)
 	var last := _last_status()
-	print("A1b last status='%s' log=%s" % [last, str(_status_log)])
+	print("A1b last status='%s' log=%s" % [last, str(status_log)])
 	if _extrude_count(doc) == ex0:
 		_dump_hits(ctx.main, centre)
 	check(doc.body_ids().size() == bodies0 + 1, "A1b exactly one new body")
 	check(_extrude_count(doc) == ex0 + 1, "A1b exactly one new extrude")
 	check(last == "Extrude Blind 10.0000 mm",
 			"A1b last status is Extrude Blind 10.0000 mm (got '%s')" % last)
-	check(not _log_has("jaw_af"), "A1b no status contains jaw_af (log=%s)" % str(_status_log))
+	check(not _log_has("jaw_af"), "A1b no status contains jaw_af (log=%s)" % str(status_log))
 	check(str(doc.active_configuration()) == "",
 			"A1b the AF chip did not run (active='%s')" % str(doc.active_configuration()))
 	if doc.body_ids().size() > 0:
@@ -173,16 +172,16 @@ func test_cut_blind() -> void:
 	var edit := await _type_distance(ctx, "2.5")
 	print("A4 distance text='%s'" % (edit.text if edit != null else ""))
 	var btn := chrome.extrude_button()
-	_status_log.clear()
+	status_log.clear()
 	await _x11_click_screen(btn.get_viewport(), btn.get_global_rect().get_center())
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
 	var last := _last_status()
-	print("A4 last status='%s' log=%s" % [last, str(_status_log)])
+	print("A4 last status='%s' log=%s" % [last, str(status_log)])
 	check(last == "Extrude Blind 2.5000 mm",
 			"A4 last status is Extrude Blind 2.5000 mm (got '%s')" % last)
-	check(not _log_has("jaw_af"), "A4 no jaw_af text (log=%s)" % str(_status_log))
+	check(not _log_has("jaw_af"), "A4 no jaw_af text (log=%s)" % str(status_log))
 	await _shutdown(ctx)
 
 
@@ -204,16 +203,16 @@ func test_cut_up_to_surface() -> void:
 		await process_frame
 		await process_frame
 	var btn := chrome.extrude_button()
-	_status_log.clear()
+	status_log.clear()
 	await _x11_click_screen(btn.get_viewport(), btn.get_global_rect().get_center())
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
 	var last := _last_status()
-	print("A5 last status='%s' log=%s" % [last, str(_status_log)])
+	print("A5 last status='%s' log=%s" % [last, str(status_log)])
 	check(last == "Extrude Up To Surface 10.0000 mm",
 			"A5 last status is Extrude Up To Surface 10.0000 mm (got '%s')" % last)
-	check(not _log_has("jaw_af"), "A5 no jaw_af text (log=%s)" % str(_status_log))
+	check(not _log_has("jaw_af"), "A5 no jaw_af text (log=%s)" % str(status_log))
 	await _shutdown(ctx)
 
 
@@ -228,18 +227,18 @@ func test_invalid_distance() -> void:
 	var doc = ctx.view.doc
 	var ex0 := _extrude_count(doc)
 	var btn := chrome.extrude_button()
-	_status_log.clear()
+	status_log.clear()
 	await _x11_click_screen(btn.get_viewport(), btn.get_global_rect().get_center())
 	await process_frame
 	await process_frame
 	_capture_status(ctx.main)
 	var last := _last_status()
-	print("B1 status='%s' log=%s" % [last, str(_status_log)])
+	print("B1 status='%s' log=%s" % [last, str(status_log)])
 	check(last.begins_with("Cannot read distance:"),
 			"B1 status is the invalid-distance sentence (got '%s')" % last)
 	check(_extrude_count(doc) == ex0, "B1 no feature added")
 	check(sm.active, "B1 the sketch stays open")
-	check(not _log_has("jaw_af"), "B1 no jaw_af text (log=%s)" % str(_status_log))
+	check(not _log_has("jaw_af"), "B1 no jaw_af text (log=%s)" % str(status_log))
 	await _shutdown(ctx)
 
 
@@ -426,13 +425,13 @@ func _var_is(doc, var_name: String, want: float) -> bool:
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _log_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -444,8 +443,8 @@ func _capture_status(main) -> void:
 	var t := str(main.status_label.text)
 	if t == "":
 		return
-	if _status_log.is_empty() or _status_log[_status_log.size() - 1] != t:
-		_status_log.append(t)
+	if status_log.is_empty() or status_log[status_log.size() - 1] != t:
+		status_log.append(t)
 
 
 func _boot(size: Vector2i) -> FilmContext:
@@ -459,14 +458,11 @@ func _boot(size: Vector2i) -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, size)
 	check(root.size == size, "root is %s (got %s)" % [size, root.size])
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

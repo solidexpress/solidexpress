@@ -7,12 +7,10 @@
 #include <BRepBndLib.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BRepGProp.hxx>
-#include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <ElCLib.hxx>
 #include <ElSLib.hxx>
 #include <GeomAbs_CurveType.hxx>
-#include <GeomAbs_SurfaceType.hxx>
 #include <GProp_GProps.hxx>
 #include <TopExp.hxx>
 #include <TopoDS.hxx>
@@ -26,27 +24,22 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <sstream>
 
 namespace sx {
 
 namespace {
 
-double mag2(const Vec3& v) { return v.x * v.x + v.y * v.y + v.z * v.z; }
-
-double mag(const Vec3& v) { return std::sqrt(mag2(v)); }
-
-double dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-
-Vec3 normalized(const Vec3& v) {
-    const double m = mag(v);
-    if (m < 1e-15) return {};
-    return {v.x / m, v.y / m, v.z / m};
+// OCCT Normalized throws when the modulus is at most gp::Resolution().
+gp_XYZ unit_or_zero(const gp_XYZ& v) {
+    if (v.Modulus() < 1e-15) return gp_XYZ(0.0, 0.0, 0.0);
+    return v.Normalized();
 }
 
+bool is_zero(const gp_XYZ& v) { return v.SquareModulus() == 0.0; }
+
 struct Extent {
-    Vec3 lo;
-    Vec3 hi;
+    gp_XYZ lo;
+    gp_XYZ hi;
     bool ok = false;
 
     static Extent of(const TopoDS_Shape& shape) {
@@ -55,45 +48,38 @@ struct Extent {
         Bnd_Box box;
         BRepBndLib::Add(shape, box);
         if (box.IsVoid()) return e;
-        box.Get(e.lo.x, e.lo.y, e.lo.z, e.hi.x, e.hi.y, e.hi.z);
+        double x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
+        box.Get(x0, y0, z0, x1, y1, z1);
+        e.lo = gp_XYZ(x0, y0, z0);
+        e.hi = gp_XYZ(x1, y1, z1);
         e.ok = true;
         return e;
     }
 
-    Vec3 span() const { return {hi.x - lo.x, hi.y - lo.y, hi.z - lo.z}; }
+    gp_XYZ span() const { return hi - lo; }
 
-    double diagonal() const {
-        const Vec3 s = span();
-        return std::sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
-    }
+    double diagonal() const { return span().Modulus(); }
 
-    Vec3 fraction(const Vec3& p) const {
-        const Vec3 s = span();
+    gp_XYZ fraction(const gp_XYZ& p) const {
+        const gp_XYZ s = span();
         auto axis = [](double v, double origin, double length) {
             return (v - origin) / std::max(length, 1e-12);
         };
-        return {axis(p.x, lo.x, s.x), axis(p.y, lo.y, s.y), axis(p.z, lo.z, s.z)};
+        return gp_XYZ(axis(p.X(), lo.X(), s.X()), axis(p.Y(), lo.Y(), s.Y()),
+                      axis(p.Z(), lo.Z(), s.Z()));
     }
 
 };
 
-bool read_vec(const nlohmann::json& j, const char* key, Vec3& out) {
+bool read_vec(const nlohmann::json& j, const char* key, gp_XYZ& out) {
     if (!j.is_object() || !j.contains(key) || !j[key].is_array() || j[key].size() < 3) return false;
-    out = {j[key][0].get<double>(), j[key][1].get<double>(), j[key][2].get<double>()};
+    out = gp_XYZ(j[key][0].get<double>(), j[key][1].get<double>(), j[key][2].get<double>());
     return true;
 }
 
-std::string format3(double v) {
-    const double shown = std::round(v * 1000.0) / 1000.0;
-    std::ostringstream os;
-    os.setf(std::ios::fixed);
-    os.precision(3);
-    os << shown;
-    return os.str();
-}
-
-std::string vec_text(const Vec3& v) {
-    return "(" + format3(v.x) + ", " + format3(v.y) + ", " + format3(v.z) + ")";
+std::string vec_text(const gp_XYZ& v) {
+    return "(" + feature_ops::format_fixed(v.X(), 3) + ", " + feature_ops::format_fixed(v.Y(), 3) +
+           ", " + feature_ops::format_fixed(v.Z(), 3) + ")";
 }
 
 const char* kind_word(EntityKind kind) {
@@ -105,35 +91,22 @@ std::string lost_cue(EntityKind kind, const TopoCue& cue, const char* prefix) {
            " dir " + vec_text(cue.dir);
 }
 
-bool planar_normal(const TopoDS_Face& face, Vec3& n) {
-    BRepAdaptor_Surface surf(face);
-    if (surf.GetType() != GeomAbs_Plane) return false;
-    gp_Dir d = surf.Plane().Axis().Direction();
-    if (face.Orientation() == TopAbs_REVERSED) d.Reverse();
-    n = {d.X(), d.Y(), d.Z()};
-    return true;
-}
-
 struct Sample {
     TopoDS_Shape shape;
-    Vec3 point;
-    Vec3 dir;
-    Vec3 size;
+    gp_XYZ point;
+    gp_XYZ dir;
+    gp_XYZ size;
     bool ok = false;
 };
 
 Sample sample_edge(const TopoDS_Edge& edge) {
     Sample s;
-    if (BRep_Tool::Degenerated(edge)) return s;
-    BRepAdaptor_Curve curve(edge);
     gp_Pnt p;
     gp_Vec v;
-    curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
-    if (v.Magnitude() < 1e-12) return s;
-    v.Normalize();
+    if (!feature_ops::edge_midpoint_sample(edge, p, v)) return s;
     s.shape = edge;
-    s.point = {p.X(), p.Y(), p.Z()};
-    s.dir = {v.X(), v.Y(), v.Z()};
+    s.point = p.XYZ();
+    s.dir = v.XYZ();
     const Extent box = Extent::of(edge);
     if (box.ok) s.size = box.span();
     s.ok = true;
@@ -142,14 +115,14 @@ Sample sample_edge(const TopoDS_Edge& edge) {
 
 Sample sample_face(const TopoDS_Face& face) {
     Sample s;
-    Vec3 n;
-    if (!planar_normal(face, n)) return s;
+    gp_Dir n;
+    if (!feature_ops::planar_face_normal(face, n)) return s;
     GProp_GProps props;
     BRepGProp::SurfaceProperties(face, props);
     const gp_Pnt p = props.CentreOfMass();
     s.shape = face;
-    s.point = {p.X(), p.Y(), p.Z()};
-    s.dir = n;
+    s.point = p.XYZ();
+    s.dir = n.XYZ();
     const Extent box = Extent::of(face);
     if (box.ok) s.size = box.span();
     s.ok = true;
@@ -192,11 +165,11 @@ Resolution strategy_stable_id(const TopoCue&, const ShapeIndex& index) {
 // that slides the cue point along its normal onto the plane.
 Resolution strategy_absolute(const TopoCue& cue, const ShapeIndex& index) {
     Resolution r;
-    if (mag(cue.dir) < 1e-12 || index.shape.IsNull()) return r;
-    const Vec3 want_dir = normalized(cue.dir);
+    if (cue.dir.Modulus() < 1e-12 || index.shape.IsNull()) return r;
+    const gp_XYZ want_dir = unit_or_zero(cue.dir);
     const double tol = cue.tol > 0.0 ? cue.tol : 0.5;
-    const gp_Pnt want(cue.point.x, cue.point.y, cue.point.z);
-    const gp_Vec want_n(want_dir.x, want_dir.y, want_dir.z);
+    const gp_Pnt want(cue.point.X(), cue.point.Y(), cue.point.Z());
+    const gp_Vec want_n(want_dir);
 
     if (index.kind == EntityKind::Face) {
         sx::occt::ShapeIndexedMap faces;
@@ -204,9 +177,9 @@ Resolution strategy_absolute(const TopoCue& cue, const ShapeIndex& index) {
         double best = 1e300;
         for (int i = 1; i <= faces.Extent(); ++i) {
             const TopoDS_Face face = TopoDS::Face(faces(i));
-            Vec3 n;
-            if (!planar_normal(face, n)) continue;
-            if (std::abs(dot(n, want_dir)) < 0.999) continue;
+            gp_Dir n;
+            if (!feature_ops::planar_face_normal(face, n)) continue;
+            if (std::abs(n.XYZ().Dot(want_dir)) < 0.999) continue;
             BRepAdaptor_Surface surf(face);
             const gp_Pln pln = surf.Plane();
             const double shift = gp_Vec(want, pln.Location()).Dot(want_n);
@@ -229,14 +202,11 @@ Resolution strategy_absolute(const TopoCue& cue, const ShapeIndex& index) {
     double best = 1e300;
     for (int i = 1; i <= map.Extent(); ++i) {
         const TopoDS_Edge edge = TopoDS::Edge(map(i));
-        if (BRep_Tool::Degenerated(edge)) continue;
-        BRepAdaptor_Curve curve(edge);
         gp_Pnt p;
         gp_Vec v;
-        curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
-        if (v.Magnitude() < 1e-12) continue;
-        v.Normalize();
+        if (!feature_ops::edge_midpoint_sample(edge, p, v)) continue;
         if (std::abs(v.Dot(want_n)) <= 0.95) continue;
+        BRepAdaptor_Curve curve(edge);
         double score = 1e300;
         if (curve.GetType() == GeomAbs_Line) {
             const gp_Lin lin = curve.Line();
@@ -262,32 +232,22 @@ Resolution strategy_absolute(const TopoCue& cue, const ShapeIndex& index) {
     return r;
 }
 
-double size_dist(const Vec3& a, const Vec3& b) {
-    const double dx = a.x - b.x;
-    const double dy = a.y - b.y;
-    const double dz = a.z - b.z;
-    return std::sqrt(dx * dx + dy * dy + dz * dz);
-}
+double size_dist(const gp_XYZ& a, const gp_XYZ& b) { return (a - b).Modulus(); }
 
 // Distance between two fraction points, scaled into millimetres by the
 // bbox diagonal. That length is within 0.02 · diagonal exactly when the
 // unit-box fraction distance is within 0.02.
-double fraction_gap(const Vec3& a, const Vec3& b) {
-    const double dx = a.x - b.x;
-    const double dy = a.y - b.y;
-    const double dz = a.z - b.z;
-    return std::sqrt(dx * dx + dy * dy + dz * dz);
-}
+double fraction_gap(const gp_XYZ& a, const gp_XYZ& b) { return (a - b).Modulus(); }
 
 // Relative cue: same direction, fraction of the current bbox nearest the
 // stored fraction. Accepted only when that entity is unique inside
 // 0.02 · bbox diagonal. Face size breaks a remaining tie.
 Resolution strategy_relative(const TopoCue& cue, const ShapeIndex& index) {
     Resolution r;
-    if (!cue.has_frac || mag(cue.dir) < 1e-12 || index.shape.IsNull()) return r;
+    if (!cue.has_frac || cue.dir.Modulus() < 1e-12 || index.shape.IsNull()) return r;
     const Extent box = Extent::of(index.shape);
     if (!box.ok || box.diagonal() < 1e-12) return r;
-    const Vec3 want_dir = normalized(cue.dir);
+    const gp_XYZ want_dir = unit_or_zero(cue.dir);
 
     struct Cand {
         TopoDS_Shape shape;
@@ -296,7 +256,7 @@ Resolution strategy_relative(const TopoCue& cue, const ShapeIndex& index) {
     };
     std::vector<Cand> near;
     for (const Sample& s : samples_of(index)) {
-        if (std::abs(dot(normalized(s.dir), want_dir)) < 0.999) continue;
+        if (std::abs(unit_or_zero(s.dir).Dot(want_dir)) < 0.999) continue;
         const double dist = fraction_gap(box.fraction(s.point), cue.frac) * box.diagonal();
         if (dist > 0.02 * box.diagonal()) continue;
         near.push_back(Cand{s.shape, dist, size_dist(s.size, cue.size)});
@@ -344,7 +304,7 @@ Resolution resolve(const TopoCue& cue, const ShapeIndex& index) {
         if (!r.lost.empty()) why = r.lost;
     }
     Resolution lost;
-    if (mag(cue.dir) > 1e-12) {
+    if (cue.dir.Modulus() > 1e-12) {
         const std::string named = lost_cue(index.kind, cue, "lost");
         lost.lost = why.empty() ? named : why + "; " + named;
     } else {
@@ -386,11 +346,11 @@ TopoCue cue_from_face(const TopoDS_Face& face, const TopoDS_Shape& owner) {
 }
 
 nlohmann::json cue_to_json(const TopoCue& cue) {
-    nlohmann::json j = {{"point", {cue.point.x, cue.point.y, cue.point.z}},
-                        {"dir", {cue.dir.x, cue.dir.y, cue.dir.z}},
-                        {"size", {cue.size.x, cue.size.y, cue.size.z}},
+    nlohmann::json j = {{"point", {cue.point.X(), cue.point.Y(), cue.point.Z()}},
+                        {"dir", {cue.dir.X(), cue.dir.Y(), cue.dir.Z()}},
+                        {"size", {cue.size.X(), cue.size.Y(), cue.size.Z()}},
                         {"tol", cue.tol}};
-    if (cue.has_frac) j["frac"] = {cue.frac.x, cue.frac.y, cue.frac.z};
+    if (cue.has_frac) j["frac"] = {cue.frac.X(), cue.frac.Y(), cue.frac.Z()};
     return j;
 }
 
@@ -405,26 +365,38 @@ TopoCue cue_from_json(const nlohmann::json& j) {
     return cue;
 }
 
-bool cue_names_line(const TopoCue& cue, const Vec3& point, const Vec3& dir) {
-    if (mag(cue.dir) < 1e-12 || mag(dir) < 1e-12) return false;
-    const Vec3 want = normalized(cue.dir);
-    const Vec3 got = normalized(dir);
-    if (std::abs(dot(want, got)) <= 0.95) return false;
-    const Vec3 delta{point.x - cue.point.x, point.y - cue.point.y, point.z - cue.point.z};
-    const double along = dot(delta, want);
-    const Vec3 perp{delta.x - want.x * along, delta.y - want.y * along, delta.z - want.z * along};
+bool cue_names_line(const TopoCue& cue, const gp_XYZ& point, const gp_XYZ& dir) {
+    if (cue.dir.Modulus() < 1e-12 || dir.Modulus() < 1e-12) return false;
+    const gp_XYZ want = unit_or_zero(cue.dir);
+    const gp_XYZ got = unit_or_zero(dir);
+    if (std::abs(want.Dot(got)) <= 0.95) return false;
+    const gp_XYZ delta = point - cue.point;
+    const double along = delta.Dot(want);
+    const gp_XYZ perp = delta - want * along;
     const double tol = cue.tol > 0.0 ? cue.tol : 0.5;
-    return mag(perp) <= tol;
+    return perp.Modulus() <= tol;
 }
 
 bool cue_names_face(const TopoCue& stored, const TopoCue& fresh) {
-    if (mag(stored.dir) < 1e-12 || mag(fresh.dir) < 1e-12) return false;
-    if (std::abs(dot(normalized(stored.dir), normalized(fresh.dir))) < 0.999) return false;
-    const Vec3 n = normalized(fresh.dir);
-    const Vec3 delta{stored.point.x - fresh.point.x, stored.point.y - fresh.point.y,
-                     stored.point.z - fresh.point.z};
+    if (stored.dir.Modulus() < 1e-12 || fresh.dir.Modulus() < 1e-12) return false;
+    if (std::abs(unit_or_zero(stored.dir).Dot(unit_or_zero(fresh.dir))) < 0.999) return false;
+    const gp_XYZ n = unit_or_zero(fresh.dir);
+    const gp_XYZ delta = stored.point - fresh.point;
     const double tol = stored.tol > 0.0 ? stored.tol : 0.5;
-    return std::abs(dot(delta, n)) <= tol;
+    return std::abs(delta.Dot(n)) <= tol;
+}
+
+bool refresh_cue(nlohmann::json& cues, const std::string& key, const TopoCue& fresh,
+                 EntityKind kind) {
+    if (is_zero(fresh.dir)) return false;
+    if (cues.contains(key)) {
+        const TopoCue stored = cue_from_json(cues[key]);
+        const bool same = kind == EntityKind::Face ? cue_names_face(stored, fresh)
+                                                    : cue_names_line(stored, fresh.point, fresh.dir);
+        if (!same) return false;
+    }
+    cues[key] = cue_to_json(fresh);
+    return true;
 }
 
 }  // namespace sx

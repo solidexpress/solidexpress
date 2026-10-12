@@ -9,10 +9,10 @@ const HEAD := Vector2(200, 0)
 const JAW := Vector2(sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
 const PERP := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan6 WP1 cut")
 	FilmUI.reset_fail_count()
 	_assert_source_hygiene()
@@ -126,7 +126,7 @@ func test_offset_cutter_jaw_cut() -> void:
 	var screen := FilmUI.model_to_screen(ctx, sm.to_model(click_uv))
 	check(FilmUI.require_on_screen(ctx, screen, "shaft-side trim"),
 			"shaft-side trim click is on screen")
-	_status_log.clear()
+	status_log.clear()
 	print("  Power Trim: _x11_click_screen on shaft side of offset cutter, no yield")
 	await _aim_then_click_screen(ctx.main.get_viewport(), screen)
 	await process_frame
@@ -148,7 +148,7 @@ func test_offset_cutter_jaw_cut() -> void:
 	check(str(chrome.up_to_face_id) == bottom,
 			"Opposite face stored the bottom id (got %s want %s)" % [
 				chrome.up_to_face_id, bottom])
-	_status_log.clear()
+	status_log.clear()
 	var ex_btn: Button = chrome.extrude_button()
 	check(ex_btn != null and not ex_btn.disabled, "Extrude is enabled after Opposite face")
 	if ex_btn != null:
@@ -157,7 +157,7 @@ func test_offset_cutter_jaw_cut() -> void:
 	await process_frame
 	await process_frame
 	status_text = str(ctx.main.status_label.text)
-	var blob := " | ".join(_status_log)
+	var blob := " | ".join(status_log)
 	check(not status_text.contains("Open-profile cut needs a line chain")
 			and not blob.contains("Open-profile cut needs a line chain"),
 			"cut is not refused with Open-profile cut needs a line chain (got '%s')" % status_text)
@@ -193,7 +193,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	return ctx
@@ -207,13 +207,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false

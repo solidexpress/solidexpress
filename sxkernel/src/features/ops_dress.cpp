@@ -35,9 +35,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
 #include <limits>
-#include <sstream>
 
 #include "sx/shape_utils.hpp"
 #include "sx/variables.hpp"
@@ -302,14 +300,6 @@ double min_departure_length(const TopoDS_Shape& body, const TopoDS_Edge& fillet_
     return best;
 }
 
-std::string format_mm(double v) {
-    const double shown = std::round(v * 1000.0) / 1000.0;
-    std::ostringstream os;
-    os.setf(std::ios::fixed);
-    os << std::setprecision(3) << shown;
-    return os.str();
-}
-
 std::string edge_phrase(const TopoDS_Edge& edge) {
     BRepAdaptor_Curve curve(edge);
     GProp_GProps props;
@@ -326,8 +316,8 @@ std::string edge_phrase(const TopoDS_Edge& edge) {
     }
     gp_Pnt mid;
     curve.D0(0.5 * (curve.FirstParameter() + curve.LastParameter()), mid);
-    return format_mm(props.Mass()) + " mm " + kind + " at (" + format_mm(mid.X()) + ", "
-           + format_mm(mid.Y()) + ", " + format_mm(mid.Z()) + ")";
+    return format_fixed(props.Mass(), 3) + " mm " + kind + " at (" + format_fixed(mid.X(), 3) +
+           ", " + format_fixed(mid.Y(), 3) + ", " + format_fixed(mid.Z(), 3) + ")";
 }
 
 void note_faulty_contour(BRepFilletAPI_MakeFillet& mk, std::string* fault) {
@@ -480,14 +470,6 @@ bool contains_edge(const std::vector<TopoDS_Edge>& edges, const TopoDS_Edge& edg
     for (const auto& e : edges)
         if (e.IsSame(edge)) return true;
     return false;
-}
-
-bool planar_face_normal(const TopoDS_Face& face, gp_Dir& n) {
-    BRepAdaptor_Surface surf(face);
-    if (surf.GetType() != GeomAbs_Plane) return false;
-    n = surf.Plane().Axis().Direction();
-    if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
-    return true;
 }
 
 // The grid sample inside the face that sits nearest the middle of its UV box.
@@ -681,7 +663,7 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         if (limit < 1e290 && asked > limit + 1e-4) {
             std::string extra;
             if (!limit_edge.IsNull()) extra = "; " + edge_phrase(limit_edge);
-            return ctx.fail("fillet failed (limit " + format_mm(limit) + extra + ")");
+            return ctx.fail("fillet failed (limit " + format_fixed(limit, 3) + extra + ")");
         }
         std::string fault;
         if (!build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
@@ -707,7 +689,7 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             // OCCT refuses without a limit phrase (fillets have one). Name the
             // distance and the edge count so a refused chamfer is not a bare
             // "chamfer failed" at the end of a green suite log.
-            return ctx.fail("chamfer failed (" + format_mm(v) + " on " +
+            return ctx.fail("chamfer failed (" + format_fixed(v, 3) + " on " +
                             std::to_string(found.edges.size()) + " edge(s))");
         }
         result = mk.Shape();
@@ -742,12 +724,8 @@ bool apply_shell(ApplyCtx& ctx) {
         remove_faces.Append(found.shape);
         if (!jf.is_string() || found.shape.ShapeType() != TopAbs_FACE) continue;
         const TopoCue fresh = cue_from_face(TopoDS::Face(found.shape), tb->shape);
-        if (fresh.dir.x == 0.0 && fresh.dir.y == 0.0 && fresh.dir.z == 0.0) continue;
         const std::string key = jf.get<std::string>();
-        if (stored_cues.contains(key) && !cue_names_face(cue_from_json(stored_cues[key]), fresh))
-            continue;
-        stored_cues[key] = cue_to_json(fresh);
-        cues_changed = true;
+        if (refresh_cue(stored_cues, key, fresh, EntityKind::Face)) cues_changed = true;
     }
     if (cues_changed) ctx.feature.params["face_cues"] = std::move(stored_cues);
     if (remove_faces.IsEmpty()) return ctx.fail("no faces to remove");

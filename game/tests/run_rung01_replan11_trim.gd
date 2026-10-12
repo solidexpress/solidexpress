@@ -9,7 +9,6 @@ const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
 ## The walk's Power Trim click: 3 mm along the jaw and 8 mm across it, on the shaft side of the cutter.
 const SHAFT_SIDE := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 + Vector2(-0.70710678, 0.70710678) * 8.0
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -71,16 +70,16 @@ func _arc_radius_near(sm: SketchMode, centre: Vector2) -> float:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func test_prefers_cross_jaw_cutter() -> void:
@@ -89,15 +88,15 @@ func test_prefers_cross_jaw_cutter() -> void:
 	var sm: SketchMode = main.sketch_mode
 	_build_jaw(sm, 12.0, Vector2.ZERO)
 	var along_id := _add_along_jaw(sm.sketch)
-	_status_log.clear()
+	status_log.clear()
 	sm.trim_at(SHAFT_SIDE)
-	check(_status_has("Trimmed open jaw"), "trim_at opens the jaw with both construction lines (log: %s)" % str(_status_log))
-	check(not _status_has("does not cross two jaw sides"), "status does not claim the cutter misses the sides (log: %s)" % str(_status_log))
+	check(_status_has("Trimmed open jaw"), "trim_at opens the jaw with both construction lines (log: %s)" % str(status_log))
+	check(not _status_has("does not cross two jaw sides"), "status does not claim the cutter misses the sides (log: %s)" % str(status_log))
 	check(_alive(sm, along_id), "the along-jaw construction line is still in the sketch")
 	check(SketchMode.profile_is_closed(sm.sketch), "the trimmed Jaw profile is closed")
-	_status_log.clear()
+	status_log.clear()
 	sm.trim_at(SHAFT_SIDE)
-	check(_status_has("Jaw is already open"), "a second trim_at says the jaw is already open (log: %s)" % str(_status_log))
+	check(_status_has("Jaw is already open"), "a second trim_at says the jaw is already open (log: %s)" % str(status_log))
 	await _shutdown(main)
 
 
@@ -108,10 +107,10 @@ func test_along_jaw_refusal() -> void:
 	var cutter_id := _build_jaw(sm, 12.0, Vector2.ZERO)
 	sm.sketch.remove_entity(cutter_id)
 	_add_along_jaw(sm.sketch)
-	_status_log.clear()
+	status_log.clear()
 	sm.trim_at(SHAFT_SIDE)
 	check(_status_has("runs along the jaw") and _status_has("delete the along-jaw line"),
-			"along-jaw-only trim names the leftover (log: %s)" % str(_status_log))
+			"along-jaw-only trim names the leftover (log: %s)" % str(status_log))
 	check(not SketchMode.profile_is_closed(sm.sketch) or _arc_radius_near(sm, HEAD) < 0.0,
 			"profile is not closed after the along-jaw refusal")
 	await _shutdown(main)
@@ -131,10 +130,10 @@ func test_toggle_replaces_jaw_cutters() -> void:
 	var cross_id: String = sm.sketch.add_line(x0.x, x0.y, x1.x, x1.y)
 	var sel: Array[String] = [cross_id]
 	sm._set_selected(sel)
-	_status_log.clear()
+	status_log.clear()
 	sm.toggle_construction_selected()
 	check(not _alive(sm, along_id) and _status_has("Removed 1 jaw construction line"),
-			"toggle drops the along-jaw leftover (log: %s)" % str(_status_log))
+			"toggle drops the along-jaw leftover (log: %s)" % str(status_log))
 	check(_alive(sm, far_id), "a construction line far from the jaw survives the toggle")
 	check(_alive(sm, datum_id), "a datum construction line is not removed")
 	await _shutdown(main)
@@ -148,11 +147,11 @@ func test_toggle_outside_jaw() -> void:
 	var n := sm.sketch.entity_ids().size()
 	var sel: Array[String] = [id]
 	sm._set_selected(sel)
-	_status_log.clear()
+	status_log.clear()
 	sm.toggle_construction_selected()
 	check(_last_status() == "Construction on" and sm.sketch.entity_ids().size() == n
 			and sm.sketch.is_construction(id),
-			"toggle outside a jaw emits Construction on (log: %s)" % str(_status_log))
+			"toggle outside a jaw emits Construction on (log: %s)" % str(status_log))
 	await _shutdown(main)
 
 
@@ -163,13 +162,11 @@ func _boot():
 	await process_frame
 	main.view.clear_selection()
 	main._start_sketch()
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return main
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(main) -> void:

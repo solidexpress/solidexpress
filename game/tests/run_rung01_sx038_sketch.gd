@@ -7,10 +7,10 @@ const ROOT_SIZE := Vector2i(1280, 800)
 const ARMED_FILL_MIX := 0.32
 const RIGHT_CENTRE := Vector2(50.0, 0.0)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 sx038 rail highlight and Smart Dim marker")
 	FilmUI.reset_fail_count()
 	await test_one_lit_rail_button()
@@ -92,7 +92,7 @@ func test_smart_dim_centres_leave_no_marker() -> void:
 	await process_frame
 	check(sm.tool == SketchMode.Tool.SMART_DIM, "Smart Dim is armed from the rail")
 	await _zoom_uv(ctx, c0, 40.0)
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv_local(ctx, c0, "Smart Dim first centre")
 	await process_frame
 	var first_status := _joined_status(ctx)
@@ -108,7 +108,7 @@ func test_smart_dim_centres_leave_no_marker() -> void:
 	if ix._dim_edit_popup == null or not ix._dim_edit_popup.visible or ix._dim_edit_line == null:
 		await _shutdown(ctx)
 		return
-	_status_log.clear()
+	status_log.clear()
 	await _x11_click(ix._dim_edit_line)
 	await _x11_type(ix._dim_edit_line.get_viewport(), "200")
 	await _x11_enter(ix._dim_edit_line.get_viewport())
@@ -306,7 +306,7 @@ func _joined_status(ctx: FilmContext) -> String:
 	var parts: PackedStringArray = PackedStringArray()
 	if ctx.main.status_label != null:
 		parts.append(str(ctx.main.status_label.text))
-	for line in _status_log:
+	for line in status_log:
 		parts.append(line)
 	return " | ".join(parts)
 
@@ -322,11 +322,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
@@ -338,9 +335,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _start_ground_sketch(ctx: FilmContext, ground := Vector3(22, 18, 0)) -> void:

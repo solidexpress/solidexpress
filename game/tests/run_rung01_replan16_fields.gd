@@ -10,10 +10,10 @@ const ROOT_SIZE := Vector2i(1280, 800)
 const TOP_PITCH := deg_to_rad(90.0)
 const FILLET_IDLE := "Fillet r=1.50 — edit Radius, click edges, Enter"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan16 WP3 numeric fields / finish bar")
 	FilmUI.reset_fail_count()
 	await _run()
@@ -48,11 +48,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	if main.ops_panel != null and not main.ops_panel.status.is_connected(_on_status):
 		main.ops_panel.status.connect(_on_status)
 	return ctx
@@ -66,9 +63,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _label(main) -> String:
@@ -80,7 +74,7 @@ func _label(main) -> String:
 func _status_has(needle: String) -> bool:
 	if _label(root.get_child(0) if root.get_child_count() > 0 else null).contains(needle):
 		return true
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -313,7 +307,7 @@ func _f1_replace(ctx: FilmContext) -> void:
 	check(not (owner is LineEdit) and not (owner is SpinBox),
 			"F1 Tab focus is not a LineEdit or SpinBox (got %s)" % owner_cls)
 	var cam: OrbitCamera = main.camera
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_3, 51)
 	await process_frame
 	check(_label(main).contains("Top view") or _status_has("Top view"),
@@ -432,7 +426,7 @@ func _f3_one_tool(ctx: FilmContext, label: String, keys: String, status_needle: 
 	print("  F3 %s distance before `%s`" % [label, dist_before])
 	var n_before: int = sm.sketch.entity_ids().size() if sm.sketch != null else -1
 	var pts_before: int = sm._tool_points.size()
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv_local(ctx, Vector2(18, 12), "%s first click" % label)
 	await process_frame
 	await process_frame
@@ -486,7 +480,7 @@ func _f3_slot_radius(ctx: FilmContext) -> void:
 	await _press_rail(ctx, "Slot")
 	await process_frame
 	var dist_before := _line_text(_distance_edit(chrome))
-	_status_log.clear()
+	status_log.clear()
 	await _push_char(vp, "5")
 	var typed := _digits(_line_text(_dim_edit(chrome)))
 	print("  F3 Slot after key 5 radius `%s` distance `%s` focus dim=%s dist=%s" % [
@@ -662,7 +656,7 @@ func _f3_a10(ctx: FilmContext) -> void:
 		str(shield), dist_before,
 		"null" if main.get_viewport().gui_get_focus_owner() == null \
 				else main.get_viewport().gui_get_focus_owner().get_class()])
-	_status_log.clear()
+	status_log.clear()
 	await _click_uv_local(ctx, Vector2(14, 9), "A10 Circle first click")
 	await process_frame
 	await process_frame
@@ -782,7 +776,7 @@ func _f4_save_finish(ctx: FilmContext) -> void:
 	print("  F4 snapshot before %s" % str(before))
 	var extrude: Button = chrome.extrude_button()
 	check(extrude != null and not extrude.disabled, "F4 Extrude enabled before save")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(main.get_viewport(), KEY_S, 0, true)
 	await process_frame
 	await process_frame
@@ -796,7 +790,7 @@ func _f4_save_finish(ctx: FilmContext) -> void:
 	extrude = chrome.extrude_button()
 	check(extrude != null and not extrude.disabled, "F4 Extrude still enabled after Save")
 	check(main.sketch_mode.active, "F4 still in the sketch after Save")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(main.get_viewport(), KEY_Z, 0, true)
 	await process_frame
 	check(_label(main).begins_with("Undo:"),

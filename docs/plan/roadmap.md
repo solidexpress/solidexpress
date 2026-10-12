@@ -238,7 +238,7 @@ That is a **daily driver for brackets, enclosures, and small mechanisms**, with 
 
 ## 7. Structural debt (deferred refactors)
 
-Written at the end of Part A of [`docs/loop/post-rung-01-cleanup.md`](../loop/post-rung-01-cleanup.md). Behaviour-identical organization landed as WP1–WP13. No ★ WP was skipped. No WP was parked by the Revert rule.
+Written at the end of Part A of the post-rung-1 organization pass. Behaviour-identical organization landed as WP1–WP13. No ★ WP was skipped. No WP was parked by the Revert rule. History: `git log -- docs/loop`.
 
 | Rank | Refactor | What / where | Design that replaces the conditionals or copies | Why parked |
 |---|---|---|---|---|
@@ -246,6 +246,21 @@ Written at the end of Part A of [`docs/loop/post-rung-01-cleanup.md`](../loop/po
 | 14 | Parked: split `ViewportInteraction` | 24 `_strip_*` members and 15 `_sketch_*` press/release members, a 299-line `_input` | `SelectionStrip` as its own `Control`; `SketchPointerGesture` state machine (press, release, box, abandon, swallow) | high (input; dead first clicks took rounds 17–19); `tools/gui_click_probe.sh`, walk |
 | 15 | Parked: `CommandRegistry` drift | `command_registry.gd` documents keys; live handlers bind them locally | handlers register against the table | medium; `run_help_tests.gd` |
 | — | CI composite on export workflows | `.github/workflows/release.yml`, `linux-test-build.yml` still inline the OCCT cache + `install_occt.sh` blocks | same `.github/actions/setup-occt/action.yml` as WP13 | `release.yml` and `linux-test-build.yml` do not run on a PR |
+
+---
+
+## 8. Structural debt found after rung 2
+
+Parked here so a later pass can resume without the chat. ★ work packages are added to this table only when this cleanup parks them.
+
+| Item | What / where | Design that replaces the split or the flags | Why parked |
+|---|---|---|---|
+| Cue schema split | Fillet `face_cues` is an array of `{point, normal}`; Shell `face_cues` is an object keyed by face id. Same key, two schemas under different feature types | A loader migration before any rename of `edge_cues` / `face_cues` | Save compatibility. Renaming without a migration breaks existing `.sxp` files |
+| Edge-cache key | Bridge edge cache is keyed by document revision only. The face cache is also keyed by the camera | Decide whether edge `screen` positions go stale across a camera move, then key them the same way as faces if they do | Latent. This pass does not change the edge key |
+| Timeline-row click | `_activate_missed_button` and the timeline branch of `_control_click_pos` | A row rect the viewport does not treat as the model | Product defect: the workaround compensates for a timeline row the viewport picks as geometry |
+| Dimension entry flags | `sketch_context_chrome.gd`: 13 `_dim_*` vars, including `_dim_user_typed`, `_dim_replace_next`, `_dim_focus_from_tool`, `_dim_select_gen`, `_dim_last_good` | One `DimEntry` state enum `ARMED_PREVIEW → FOCUSED → TYPED` instead of five booleans | High. Typed-length and replace-on-focus rules |
+
+Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and reverted none. WP4, WP7, and WP10 shipped. Nothing from the Revert rule is appended to this table.
 
 ---
 
@@ -258,4 +273,5 @@ Written at the end of Part A of [`docs/loop/post-rung-01-cleanup.md`](../loop/po
 - [feature-matrix.md](../survey/feature-matrix.md) — who has what
 - [implementation-plan.md](implementation-plan.md) — how we build
 - [STATUS.md](STATUS.md) — what has landed
+- §8 — structural debt found after rung 2
 - [education-research.md](../education-research.md) — how the command names should be taught

@@ -5,13 +5,14 @@ Rows call these helpers. Pixel positions come from project(), never literals.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 
 from sxdrive import SxError
+from walk import proc
+from walk.gates import parse_tier, run_tier
+from walk.gestures import label_reads
 
 # Vertical corner → view key. Iso (yaw -35) shows the two y=0 edges.
 # Right and Left show the y=W edges on the +X and -X faces.
@@ -56,13 +57,11 @@ class WalkUI02:
         cached = self.ctx.get("part")
         if isinstance(cached, dict):
             return cached
-        proc = subprocess.run(
+        result = proc.run(
             [sys.executable, str(self.repo / "tools" / "check_rung02.py"), "params"],
-            cwd=str(self.repo),
-            capture_output=True,
-            text=True,
+            cwd=self.repo,
         )
-        data = json.loads(proc.stdout)
+        data = json.loads(result.stdout)
         self.ctx["part"] = data
         return data
 
@@ -101,15 +100,6 @@ class WalkUI02:
         self.file_new("ok")
         self.refresh("status")
         return self.S()
-
-    def ground_sketch(self) -> str:
-        self.sketch_ground()
-        mark = self.mark()
-        self.d.key("3")
-        self.d.wait_idle(frames=2)
-        text = " | ".join(self.result_texts(mark))
-        self.refresh("status", "sketch")
-        return text or self.S()
 
     def chrome_nodes(self) -> dict:
         st = self.refresh("window", "controls", "rail")
@@ -226,16 +216,6 @@ class WalkUI02:
         self.refresh("dims", "dof", "status")
         return {"opened": opened, "texts": self.dim_texts(), "status": self.S()}
 
-    def open_label(self, dim: dict) -> bool:
-        self.d.double_click(dim=str(dim.get("text", "")))
-        self.d.wait_idle(frames=2)
-        if self._dim_editor_open():
-            return True
-        self.click("rail:Select")
-        self.d.click(dim=str(dim.get("text", "")), glyph="first")
-        self.d.wait_idle(frames=2)
-        return self._dim_editor_open()
-
     def dof_text(self) -> str:
         return str(self.refresh("dof").get("dof", "")).strip()
 
@@ -246,10 +226,7 @@ class WalkUI02:
         return any(self._reads(token, text) for text in self.dim_texts())
 
     def _reads(self, token: str, text: str) -> bool:
-        t = str(text).replace(" ", "")
-        if token.startswith("Ø"):
-            return token in t or t.replace("Ø", "").startswith(token[1:])
-        return t == token or t.startswith(token + ".") or t.startswith("Ø" + token)
+        return label_reads(token, text)
 
     def refuse_dim(self, token: str, bad: str) -> dict:
         dim = self.find_dim(lambda d: self._reads(token, str(d.get("text", ""))))
@@ -265,22 +242,6 @@ class WalkUI02:
         opened = self.open_label(dim) if dim else False
         self.esc()
         return {"opened": opened, "editor": self._dim_editor_open(), "texts": self.dim_texts()}
-
-    def edit_label_to(self, token: str, value: str) -> dict:
-        dim = self.find_dim(lambda d: self._reads(token, str(d.get("text", ""))))
-        undo_before = list(self.refresh("undo").get("undo") or [])
-        opened = self.open_label(dim) if dim else False
-        if opened:
-            self._type_dim_editor(value)
-            self.enter()
-        undo_after = list(self.refresh("undo").get("undo") or [])
-        return {
-            "opened": opened,
-            "texts": self.dim_texts(),
-            "undo_before": undo_before,
-            "undo_after": undo_after,
-            "bbox": self.sketch_bbox(),
-        }
 
     def label_boxes(self, tokens: list[str]) -> list[dict]:
         found = []
@@ -361,41 +322,8 @@ class WalkUI02:
             evidence = "runner-gap: " + evidence
         return {"ok": prefix and size_ok, "evidence": evidence, "volume": body.get("volume")}
 
-    def export_and_check(self, stage: str, filename: str, width: float | None = None) -> dict:
-        w = self.width() if width is None else float(width)
-        guard = self.s0(w)
-        out = {
-            "s0": guard["ok"],
-            "s0_evidence": guard["evidence"],
-            "exported": False,
-            "check_ok": False,
-            "check_text": "",
-            "volume": guard.get("volume"),
-        }
-        if not guard["ok"]:
-            return out
-        path = self.export_3mf(filename)
-        out["exported"] = Path(path).is_file()
-        extra = None if abs(w - float(self.part()["widths"][0])) < 1e-6 else ["--width", str(int(w))]
-        _code, text = self.checker(stage, filename, extra)
-        out["check_ok"] = _code == 0 and "\nFAIL " not in ("\n" + text) and not text.startswith("FAIL")
-        out["check_text"] = text.strip().splitlines()[-1] if text.strip() else ""
-        if "FAIL" in text:
-            out["check_ok"] = False
-        return out
-
-    def save_part(self, name: str) -> dict:
-        path = self.save_as(name)
-        self.refresh("status")
-        return {"path": path, "exists": Path(path).is_file(), "status": self.S()}
-
     def feature_names(self) -> list[str]:
-        self._show_timeline()
-        names = []
-        for name in self._timeline_names():
-            if name and "rollback" not in name:
-                names.append(name)
-        return names
+        return [str(r.get("name", "")) for r in self._timeline_names(show=True, records=True)]
 
     def select_body(self) -> str:
         self.refresh("bodies", "selection")
@@ -479,10 +407,6 @@ class WalkUI02:
     def camera(self) -> dict:
         return dict(self.refresh("camera").get("camera") or {})
 
-    def sketch_circles(self) -> list[dict]:
-        self.refresh("sketch")
-        return [e for e in self._entities() if e.get("type") == "circle" and not e.get("construction")]
-
     def external_mid(self, side: str) -> list[float] | None:
         lines = self.external_lines()
         best = None
@@ -500,13 +424,6 @@ class WalkUI02:
     def set_end(self, name: str) -> str:
         self.set_option("finish:End", name)
         return self.field("finish:End")
-
-    def timeline_rows(self) -> list[dict]:
-        self._show_timeline()
-        return [
-            r for r in (self.refresh("timeline").get("timeline") or [])
-            if r.get("name") and "rollback" not in str(r.get("name"))
-        ]
 
     def timeline_panel_rect(self) -> list:
         for row in self.refresh("timeline").get("timeline") or []:
@@ -656,15 +573,6 @@ class WalkUI02:
             return None
         return [v / length for v in vec]
 
-    def draw_circle(self, centre, rim) -> dict:
-        self.click("rail:Circle")
-        self.show_sketch_point(centre)
-        self.click(sketch=list(centre))
-        self.click(sketch=list(rim))
-        self.refresh("sketch", "status")
-        circles = [e for e in self._entities() if e.get("type") == "circle" and not e.get("construction")]
-        return {"circles": circles, "status": self.S()}
-
     def _edge_near(self, model, limit: float = 8.0) -> dict | None:
         # Tessellation `mid` is often an endpoint. The chord centre is the
         # point the hole table names (left edge y=10, bottom edge z=0).
@@ -677,16 +585,19 @@ class WalkUI02:
         return best
 
     def convert_edge(self, model) -> dict:
+        arm = self.mark()
         self.click("rail:Convert")
+        armed = " | ".join(self._trace_text(ln) for ln in self.status_since(arm))
         edge = self._edge_near(model)
         if edge is None:
-            return {"status": "no edge", "id": ""}
+            return {"status": "no edge", "id": "", "armed": armed}
         mark = self.mark()
         reply = self.d.click(edge=edge["id"], along=0.5)
         self.refresh("sketch", "status")
         return {
             "status": " | ".join(self.result_texts(mark)) or str(reply.get("status", self.S())),
             "id": edge["id"],
+            "armed": armed,
         }
 
     def external_lines(self) -> list[dict]:
@@ -725,7 +636,7 @@ class WalkUI02:
     def circle_world(self) -> list[float] | None:
         sk = self.refresh("sketch").get("sketch") or {}
         plane = sk.get("plane") or {}
-        circles = [e for e in self._entities() if e.get("type") == "circle" and not e.get("construction")]
+        circles = self._entities(kind="circle")
         if not circles or not plane.get("origin"):
             return None
         centre = circles[0]["center"]
@@ -822,15 +733,13 @@ class WalkUI02:
         errors = self.log_errors()
         self._release_project()
         try:
-            # Makefile test-kernel / test-godot both depend on `build`, and
-            # `build` re-runs cmake. This snapshot's configure does not finish
-            # (Boost headers are not installed), so the recipes' test commands
-            # run against the binaries and Godot already built.
+            # `make test-kernel` re-runs cmake. This snapshot's configure does
+            # not finish, so the kernel binaries already built are run directly.
             kernel = self._kernel_tests()
-            godot = self._godot_tier()
-            lint = self._make([sys.executable, "tools/lint_suites.py"])
-            unit = self._make([sys.executable, "tools/test_check_rung02.py"])
-            registry = self._make([sys.executable, "tools/test_walk_registry.py"])
+            godot = run_tier(self)
+            lint = proc.run([sys.executable, "tools/lint_suites.py"], cwd=self.repo)
+            unit = proc.run([sys.executable, "tools/test_check_rung02.py"], cwd=self.repo)
+            registry = proc.run([sys.executable, "tools/test_walk_registry.py"], cwd=self.repo)
         finally:
             # The row's dialog check still talks to the bridge.
             if getattr(self, "proc", None) is None or self.proc.poll() is not None:
@@ -838,16 +747,16 @@ class WalkUI02:
         godot_text = (godot.stdout or "") + (godot.stderr or "")
         (self.out / "a25-godot.log").write_text(godot_text)
         (self.out / "a25-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
-        ran = re.findall(r"suites:\s*(\d+)\s+run,\s*(\d+)\s+failed", godot_text)
+        ran = parse_tier(godot_text)
         return {
-            "kernel": {"ok": kernel.returncode == 0, "evidence": _tail(kernel.stdout, kernel.stderr)},
+            "kernel": {"ok": kernel.returncode == 0, "evidence": proc.tail(kernel.stdout, kernel.stderr)},
             "godot": {
-                "ok": bool(ran) and int(ran[-1][1]) == 0,
-                "evidence": f"suites: {ran[-1][0]} run, {ran[-1][1]} failed" if ran else _tail(godot.stdout, godot.stderr),
+                "ok": ran is not None and ran[1] == 0,
+                "evidence": f"suites: {ran[0]} run, {ran[1]} failed" if ran else proc.tail(godot.stdout, godot.stderr),
             },
-            "lint": {"ok": lint.returncode == 0, "evidence": _tail(lint.stdout, lint.stderr)},
-            "unit": {"ok": unit.returncode == 0, "evidence": _tail(unit.stdout, unit.stderr)},
-            "registry": {"ok": registry.returncode == 0, "evidence": _tail(registry.stdout, registry.stderr)},
+            "lint": {"ok": lint.returncode == 0, "evidence": proc.tail(lint.stdout, lint.stderr)},
+            "unit": {"ok": unit.returncode == 0, "evidence": proc.tail(unit.stdout, unit.stderr)},
+            "registry": {"ok": registry.returncode == 0, "evidence": proc.tail(registry.stdout, registry.stderr)},
             "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
         }
 
@@ -872,42 +781,8 @@ class WalkUI02:
         chunks = []
         code = 0
         for rel in ("./build/sxkernel/sxkernel_tests", "./build/sxvoice/sxvoice_tests"):
-            proc = self._make([rel])
-            chunks.append((proc.stdout or "") + (proc.stderr or ""))
-            if proc.returncode != 0:
-                code = proc.returncode
+            result = proc.run([rel], cwd=self.repo)
+            chunks.append((result.stdout or "") + (result.stderr or ""))
+            if result.returncode != 0:
+                code = result.returncode
         return subprocess.CompletedProcess(["kernel"], code, "\n".join(chunks), "")
-
-
-    def _godot_tier(self) -> subprocess.CompletedProcess:
-        godot = str(self.repo / "tools" / "godot" / "godot")
-        env = {**os.environ, "KEEP_GOING": "1", "GODOT_BIN": godot}
-        pre = self._make(
-            [godot, "--headless", "--path", "game", "--script", "tests/preflight_sxcore.gd"],
-            env,
-        )
-        suites = self._make(
-            ["packaging/ci/run_suites.sh", "--tier", "full", "--keep-going"],
-            env,
-        )
-        text = "\n".join(
-            part for part in (
-                pre.stdout, pre.stderr, suites.stdout, suites.stderr,
-            ) if part
-        )
-        code = 0 if pre.returncode == 0 and suites.returncode == 0 else (suites.returncode or pre.returncode or 1)
-        return subprocess.CompletedProcess(["godot"], code, text, "")
-
-
-    def _make(self, args: list[str], env: dict | None = None) -> subprocess.CompletedProcess:
-        try:
-            return subprocess.run(
-                args, cwd=str(self.repo), capture_output=True, text=True, env=env,
-            )
-        except OSError as exc:
-            return subprocess.CompletedProcess(args, 127, "", str(exc))
-
-
-def _tail(out: str | None, err: str | None) -> str:
-    text = ((out or "") + (err or "")).strip()
-    return text.splitlines()[-1] if text else "no output"

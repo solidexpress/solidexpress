@@ -5,6 +5,7 @@ extends "res://tests/lib/sx_suite.gd"
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
+const BoxFixture = preload("res://tests/lib/box_fixture.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const UV_TOL := 1.0
 
@@ -13,11 +14,19 @@ const PIN_POS_Z_X := Vector3(1, 0, 0)
 const PIN_POS_Z_Y := Vector3(0, 1, 0)
 const PIN_NEG_Z_X := Vector3(1, 0, 0)
 const PIN_NEG_Z_Y := Vector3(0, -1, 0)
+const _FACE_ORIGIN := {
+	"+X": "100.0,0.0,0.0",
+	"-X": "0.0,0.0,0.0",
+	"+Y": "0.0,60.0,0.0",
+	"-Y": "0.0,0.0,0.0",
+	"+Z": "0.0,0.0,50.0",
+	"-Z": "0.0,0.0,0.0",
+}
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung02 plane basis")
 	FilmUI.reset_fail_count()
 	await _run()
@@ -27,7 +36,7 @@ func _init() -> void:
 
 func _run() -> void:
 	var ctx := await _boot()
-	await _build_box(ctx)
+	await BoxFixture.build_box(ctx, _count_rect_lines, _note_status)
 	if failures > 0:
 		ctx.main.queue_free()
 		return
@@ -40,41 +49,14 @@ func _run() -> void:
 	ctx.main.queue_free()
 
 
-func _build_box(ctx: FilmContext) -> void:
-	await FilmUI.enter_sketch(ctx)
+func _count_rect_lines(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
-	check(sm != null and sm.active, "ground sketch is open")
-	await _zoom(ctx, Vector3(50, 30, 0), 160.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(0, 0))
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(100, 60))
-	await process_frame
 	var lines := 0
 	if sm.sketch != null:
 		for id in sm.sketch.entity_ids():
 			if str(sm.sketch.entity_info(id).get("type", "")) == "line":
 				lines += 1
 	check(lines == 4, "rect is four lines (got %d)" % lines)
-	var dist := _distance_edit(ctx)
-	check(dist != null and dist.is_visible_in_tree(), "Distance field is visible")
-	if dist != null:
-		await _x11_click(dist)
-		await _type_text(dist.get_viewport(), "50")
-		await process_frame
-	var ex: Button = ctx.main.sketch_chrome.extrude_button() if ctx.main.sketch_chrome != null else null
-	check(ex != null and ex.is_visible_in_tree(), "Extrude button is visible")
-	if ex != null:
-		await _x11_click(ex)
-	for _i in 8:
-		await process_frame
-	_note_status(ctx)
-	var body := _only_body(ctx)
-	check(body != "", "extrude made one body")
-	if body == "":
-		return
-	var bb: Dictionary = ctx.view.doc.measure_bbox(body)
-	var sz: Vector3 = bb["max"] - bb["min"]
-	check(sz.distance_to(Vector3(100, 60, 50)) < 0.2, "box is 100×60×50 (got %s)" % str(sz))
 
 
 func _face(ctx: FilmContext, normal: Vector3, view_key: Key, world: Vector3, want_x: Vector3, want_y: Vector3, want_uv: Vector2) -> void:
@@ -84,7 +66,7 @@ func _face(ctx: FilmContext, normal: Vector3, view_key: Key, world: Vector3, wan
 	await _push_key(ctx.main.get_viewport(), view_key, 0)
 	await process_frame
 	await process_frame
-	var body := _only_body(ctx)
+	var body := BoxFixture.only_body(ctx)
 	var face := FilmUI.find_face_by_normal(ctx.view, body, normal)
 	check(face != "", "%s face exists" % tag)
 	if face == "":
@@ -112,10 +94,11 @@ func _face(ctx: FilmContext, normal: Vector3, view_key: Key, world: Vector3, wan
 	for _i in 4:
 		await process_frame
 	var sm: SketchMode = ctx.main.sketch_mode
-	check(sm.active, "%s sketch is active" % tag)
+	_note_status(ctx)
+	var face_status := "Sketch on face (plane %s @ origin %s)" % [tag, _FACE_ORIGIN[tag]]
+	check(sm.active and _status_has(face_status), "%s sketch is active (%s)" % [tag, face_status])
 	if not sm.active or sm.sketch == null:
 		return
-	_note_status(ctx)
 	var pi: Dictionary = sm.sketch.plane_info()
 	var px: Vector3 = (pi["x_dir"] as Vector3).normalized()
 	var py: Vector3 = (pi["y_dir"] as Vector3).normalized()
@@ -124,6 +107,10 @@ func _face(ctx: FilmContext, normal: Vector3, view_key: Key, world: Vector3, wan
 			"%s basis x=%s y=%s (want %s %s)" % [tag, str(px), str(py), str(want_x), str(want_y)])
 	check(sm.plane_x.distance_to(want_x) < 1e-4 and sm.plane_y.distance_to(want_y) < 1e-4,
 			"%s SketchMode axes match the sketch plane" % tag)
+	var round_uv := Vector2(12.5, -7.25)
+	var round_back := sm.plane.to_uv(sm.plane.to_world(round_uv))
+	check(round_back.distance_to(round_uv) < 1e-4,
+			"%s to_uv(to_world) round-trips (got %s)" % [tag, str(round_back)])
 	var rel := world - sm.plane_origin
 	var expected := Vector2(rel.dot(want_x), rel.dot(want_y))
 	check(expected.distance_to(want_uv) <= 0.05,
@@ -153,20 +140,6 @@ func _leave_sketch(ctx: FilmContext) -> void:
 	_note_status(ctx)
 
 
-func _only_body(ctx: FilmContext) -> String:
-	var ids: PackedStringArray = ctx.view.doc.body_ids()
-	if ids.size() != 1:
-		return ""
-	return str(ids[0])
-
-
-func _distance_edit(ctx: FilmContext) -> LineEdit:
-	var chrome = ctx.main.sketch_chrome
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
-
-
 func _tag(n: Vector3) -> String:
 	if n.x > 0.5:
 		return "+X"
@@ -192,21 +165,19 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800")
-	if main.sketch_mode != null:
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null:
-		main.interaction.status.connect(_on_status)
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
+func _status_has(text: String) -> bool:
+	return status_log.has(text)
+
+
 
 
 func _note_status(ctx: FilmContext) -> void:
 	if ctx.main != null and ctx.main.status_label != null:
 		var text := str(ctx.main.status_label.text)
-		if text != "" and (_status_log.is_empty() or _status_log[_status_log.size() - 1] != text):
-			_status_log.append(text)
+		if text != "" and (status_log.is_empty() or status_log[status_log.size() - 1] != text):
+			status_log.append(text)
 			print("  status: " + text)

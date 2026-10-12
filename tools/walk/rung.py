@@ -67,22 +67,9 @@ class Rung:
     rows: tuple[str, ...] = ()
     handlers: dict[str, Callable] = field(default_factory=dict)
     checkpoint_after: tuple[CheckpointAfter, ...] = ()
-    policy: str = "_policy_rung01"
+    chunk_start: Callable[[object, int, bool], None] | None = None
     report_title: str = "sx-042 walk"
-    variants: bool = False
+    variants: dict[str, Callable] = field(default_factory=dict)
 
     def chunk_of(self, rid: str) -> int:
         return next(n for n, rows in self.chunks.items() if rid in rows)
-
-    def checkpoint_for(self, rid: str) -> str | None:
-        if rid not in self.rows:
-            return None
-        idx = self.rows.index(rid)
-        for rule in self.checkpoint_after:
-            if rule.row not in self.rows:
-                continue
-            if rule.chunk is not None and self.chunk_of(rid) != rule.chunk:
-                continue
-            if idx >= self.rows.index(rule.row):
-                return rule.file
-        return self.checkpoints.get(self.chunk_of(rid))

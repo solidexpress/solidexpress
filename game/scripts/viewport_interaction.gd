@@ -125,8 +125,7 @@ var _strip_x_floor := 0.0
 var _left_stack_wired: Control
 var _strip_fillet: Button
 var _strip_chamfer: Button
-const _ShellChrome := preload("res://scripts/shell_chrome.gd")
-var _shell_chrome: Node
+var _shell_chrome: ShellChrome
 var _strip_radius_box: HBoxContainer
 var _strip_radius: SpinBox
 var _dressup_radius_connected := false
@@ -572,10 +571,13 @@ func _build_selection_strip() -> void:
 	_strip_chamfer.tooltip_text = "Break edges — click edges, then Enter (Radius box sets the distance)"
 	_strip_chamfer.pressed.connect(func() -> void: _ctx_chamfer())
 	row.add_child(_strip_chamfer)
-	_shell_chrome = _ShellChrome.new()
+	_shell_chrome = ShellChrome.new()
 	_shell_chrome.name = "ShellChrome"
 	add_child(_shell_chrome)
 	_shell_chrome.build(row, self)
+	_shell_chrome.bind(
+		func() -> DocumentView: return view,
+		func() -> bool: return sketch_mode != null and sketch_mode.active)
 	_shell_chrome.status.connect(func(t: String) -> void: status.emit(t))
 	# Configurable fillet/chamfer size — visible while edge pick is armed.
 	_strip_radius_box = HBoxContainer.new()
@@ -3157,7 +3159,7 @@ func _over_chrome_who(global_mouse: Vector2) -> String:
 	var max_area := _chrome_area_cap()
 	var move_delta: Control = transform_hud.move_delta_panel() if transform_hud != null else null
 	var view_hud := _named_chrome_control("ViewHud")
-	var shell_panel: Control = _shell_chrome.panel() if _shell_chrome != null and _shell_chrome.has_method("panel") else null
+	var shell_panel: Control = _shell_chrome.panel() if _shell_chrome != null else null
 	for ctrl in [_place_snap_panel, transform_hud, move_delta, _selection_strip, _finish_click_shield, view_hud, shell_panel]:
 		if ctrl == null or not ctrl.visible:
 			continue

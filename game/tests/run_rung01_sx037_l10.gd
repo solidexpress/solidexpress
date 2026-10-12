@@ -11,10 +11,10 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 sx037 L10 numeric commit focus")
 	FilmUI.reset_fail_count()
 	await _distance_l10()
@@ -36,11 +36,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
@@ -52,9 +49,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _distance_l10() -> void:
@@ -67,7 +61,7 @@ func _distance_l10() -> void:
 	await _zoom(ctx, Vector3.ZERO, 120.0)
 	await _draw_closed_rect(ctx)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var dist := _distance_edit(chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dist != null, "DistanceLineEdit exists")
 	if dist == null:
 		await _shutdown(ctx)
@@ -160,11 +154,11 @@ func _fillet_radius_commit() -> void:
 	check(line.has_focus() and line.is_editing(),
 			"strip R click is real keyboard focus (focus %s editing %s)" % [
 				str(line.has_focus()), str(line.is_editing())])
-	_status_log.clear()
+	status_log.clear()
 	await _type_gap(line, "10")
 	check(_near(_parsed(line), 10.0), "strip R typed 10 (got '%s')" % line.text)
 	check(not _status_has("Front view") and not _status_has("No view for key 0"),
-			"strip R first 10 did not change the view (%s)" % str(_status_log))
+			"strip R first 10 did not change the view (%s)" % str(status_log))
 	await _x11_ctrl_a(line.get_viewport())
 	await process_frame
 	check(line.has_focus() and line.has_selection(),
@@ -185,12 +179,12 @@ func _fillet_radius_commit() -> void:
 				"null" if owner == null else owner.get_class()))
 	await _x11_click_at(line, 0.82)
 	await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await _type_gap(line, "1.5")
 	check(_near(_parsed(line), 1.5),
 			"strip R fresh click then 1.5 reads 1.5, not 15 (got '%s')" % line.text)
 	check(not _status_has("Front view") and not _status_has("No view for key 0"),
-			"strip R 1.5 did not change the view (%s)" % str(_status_log))
+			"strip R 1.5 did not change the view (%s)" % str(status_log))
 	var panel: SpinBox = ctx.main.ops_panel._radius_spin
 	check(panel != null, "panel Radius exists")
 	if panel != null:
@@ -202,12 +196,12 @@ func _fillet_radius_commit() -> void:
 		check(panel_line.has_focus() and panel_line.is_editing(),
 				"panel Radius click is real keyboard focus (focus %s editing %s)" % [
 					str(panel_line.has_focus()), str(panel_line.is_editing())])
-		_status_log.clear()
+		status_log.clear()
 		await _type_gap(panel_line, "1.5")
 		check(_near(_parsed(panel_line), 1.5),
 				"panel Radius fresh click then 1.5 reads 1.5, not 15 (got '%s')" % panel_line.text)
 		check(not _status_has("Front view") and not _status_has("No view for key 0"),
-				"panel Radius 1.5 did not change the view (%s)" % str(_status_log))
+				"panel Radius 1.5 did not change the view (%s)" % str(status_log))
 		await _x11_ctrl_a(panel_line.get_viewport())
 		await process_frame
 		check(panel_line.has_focus() and panel_line.has_selection(),
@@ -231,7 +225,7 @@ func _circle_radius_not_extrude() -> void:
 	await process_frame
 	await process_frame
 	var dim := _dim_edit(ctx.main.sketch_chrome)
-	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dim != null and dist != null, "Circle radius and Extrude fields exist")
 	if dim == null or dist == null:
 		await _shutdown(ctx)
@@ -314,10 +308,6 @@ func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
 	return chrome.find_child("DimLineEdit", true, false) as LineEdit
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _draw_closed_rect(ctx: FilmContext) -> void:
@@ -378,7 +368,7 @@ func _x11_enter(vp: Viewport) -> void:
 
 
 func _status_has(fragment: String) -> bool:
-	for row in _status_log:
+	for row in status_log:
 		if row.find(fragment) >= 0:
 			return true
 	return false

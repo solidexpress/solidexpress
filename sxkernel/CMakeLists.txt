@@ -26,7 +26,7 @@ endforeach()
 unset(_SX_OCCT_DE_PROBE)
 
 add_library(sxkernel STATIC ${SXKERNEL_SOURCES})
-target_include_directories(sxkernel PUBLIC include)
+target_include_directories(sxkernel PUBLIC include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(sxkernel SYSTEM PUBLIC ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(sxkernel
     PUBLIC
@@ -42,7 +42,9 @@ target_link_libraries(sxkernel
 if(SX_BUILD_TESTS)
     file(GLOB SXKERNEL_TEST_SOURCES tests/*.cpp)
     add_executable(sxkernel_tests ${SXKERNEL_TEST_SOURCES})
-    target_include_directories(sxkernel_tests PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/catch2)
+    target_include_directories(sxkernel_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/thirdparty/catch2
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(sxkernel_tests PRIVATE sxkernel)
     # planegcs RUNTIME_OUTPUT_DIRECTORY is game/bin (Godot load path). On Windows
     # the loader only searches the exe directory first — without this copy,

@@ -5,7 +5,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -27,11 +26,11 @@ func test_esc_ladder() -> void:
 	await _click_uv(ctx, vp, Vector2.ZERO)
 	await process_frame
 	check(sm.has_pending_draw_point(), "one Circle click leaves a pending first point")
-	_status_log.clear()
+	status_log.clear()
 	await _x11_key(vp, KEY_ESCAPE)
 	check(sm.active, "Esc with a pending first point keeps the sketch open")
 	check(not sm.has_pending_draw_point(), "Esc drops the pending first point")
-	check(_status_has("First point dropped"), "Esc says the first point was dropped (log: %s)" % str(_status_log))
+	check(_status_has("First point dropped"), "Esc says the first point was dropped (log: %s)" % str(status_log))
 	var entities := sm.sketch.entity_ids().size()
 	check(entities == 0, "no circle was created by the dropped point (got %d entities)" % entities)
 	await _click_uv(ctx, vp, Vector2.ZERO)
@@ -104,7 +103,7 @@ func _top_zoom(ctx: FilmContext, pivot: Vector3, size_mm: float) -> void:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -120,14 +119,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-from walk.app import WalkApp  # noqa: E402
+import walk.app  # noqa: E402, F401
 import walk.app02  # noqa: E402, F401
 from walk import registry  # noqa: E402
 from walk.expect import CHECKS, State, gate  # noqa: E402
@@ -58,25 +58,27 @@ FROZEN_CHUNKS_02 = {
 
 class WalkRegistryTests(unittest.TestCase):
     def test_frozen_id_list_is_registry_order(self) -> None:
-        self.assertEqual(list(registry.ROWS), FROZEN_ROWS)
-        self.assertEqual(len(registry.ROWS) + len(FROZEN_VARIANTS), 77)
+        self.assertEqual(list(registry.RUNG1.rows), FROZEN_ROWS)
+        self.assertEqual(tuple(registry.RUNG1.variants), FROZEN_VARIANTS)
+        self.assertEqual(len(registry.RUNG1.rows) + len(registry.RUNG1.variants), 77)
 
     def test_every_id_has_a_chunk(self) -> None:
         for rid in FROZEN_ROWS:
-            chunk = next(n for n, rows in registry.CHUNKS.items() if rid in rows)
+            chunk = next(n for n, rows in registry.RUNG1.chunks.items() if rid in rows)
             self.assertEqual(chunk, next(n for n, rows in FROZEN_CHUNKS.items() if rid in rows))
 
     def test_chunks_match_frozen_slices(self) -> None:
-        self.assertEqual({n: list(rows) for n, rows in registry.CHUNKS.items()}, FROZEN_CHUNKS)
-        flattened = [rid for n in sorted(registry.CHUNKS) for rid in registry.CHUNKS[n]]
+        self.assertEqual({n: list(rows) for n, rows in registry.RUNG1.chunks.items()}, FROZEN_CHUNKS)
+        flattened = [rid for n in sorted(registry.RUNG1.chunks) for rid in registry.RUNG1.chunks[n]]
         self.assertEqual(flattened, FROZEN_ROWS)
 
     def test_handlers_cover_rows_and_variants(self) -> None:
         for rid in FROZEN_ROWS:
-            self.assertIn(rid, registry.ROW_HANDLERS)
-            self.assertTrue(callable(getattr(WalkApp, registry.ROW_HANDLERS[rid].__name__)))
+            handler = registry.RUNG1.handlers[rid]
+            self.assertTrue(callable(handler))
+            self.assertEqual(handler.__name__, "row_" + rid)
         for rid in FROZEN_VARIANTS:
-            self.assertIn(rid, registry.ROW_HANDLERS)
+            self.assertTrue(callable(registry.RUNG1.variants[rid]))
 
     def test_rung2_rows_and_chunks(self) -> None:
         rung = getattr(registry, "RUNG2", None)

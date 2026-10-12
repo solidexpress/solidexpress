@@ -1,7 +1,10 @@
 """Rung-2 chunk 4: the Ø10 hole on the +X face."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from walk.registry import row
+from walk.rung2.export_report import report_export
 
 
 class Rows02Chunk4:
@@ -22,7 +25,11 @@ class Rows02Chunk4:
         axis_x = plane.get("x") or [0, 0, 0]
         axis_y = plane.get("y") or [0, 0, 0]
         normal = plane.get("normal") or [0, 0, 0]
-        self.clause("sketch on face", opened["active"], opened["status"])
+        self.clause(
+            "sketch on face",
+            opened["active"] and "Sketch on face (plane +X @ origin 100.0,0.0,0.0)" in opened["status"],
+            opened["status"],
+        )
         self.clause("normal", abs(float(normal[0]) - 1) < 1e-3, str(normal))
         self.clause("basis x", _axis(axis_x, (0, 1, 0)), str(axis_x))
         self.clause("basis y", _axis(axis_y, (0, 0, 1)), str(axis_y))
@@ -51,7 +58,7 @@ class Rows02Chunk4:
 
     @row("A15", chunk=4, on="rung02", expect={"blocker": "A14", "sketch": True})
     def row_A15(self) -> None:
-        made = self.draw_circle((35, 40), (45, 40))
+        made = self.circle((35, 40), rim=(45, 40))
         self.clause("circle", "Circle" in made["status"] or len(made["circles"]) == 1, made["status"])
         self.clause("one circle", len(made["circles"]) == 1, f"circles={len(made['circles'])}")
 
@@ -60,8 +67,13 @@ class Rows02Chunk4:
         left = self.convert_edge([100, 10, 25])
         bottom = self.convert_edge([100, 30, 0])
         lines = self.external_lines()
-        self.clause("left edge", "external line" in left["status"], left["status"])
-        self.clause("bottom edge", "external line" in bottom["status"], bottom["status"])
+        self.clause(
+            "left edge",
+            "Convert: external line" in left["status"]
+            and "Convert — click an edge of this face" in left.get("armed", ""),
+            left["status"],
+        )
+        self.clause("bottom edge", "Convert: external line" in bottom["status"], bottom["status"])
         self.clause("two externals", len(lines) >= 2, f"externals={len(lines)}")
         self.clause("construction", all(ln.get("construction") or ln.get("external") for ln in lines), str(lines)[:240])
 
@@ -74,7 +86,7 @@ class Rows02Chunk4:
         # does not grab that boundary.
         refused = self.convert_edge([90, 0, 25])
         after = len(self.external_lines())
-        self.clause("refused", "not on this face" in refused["status"], refused["status"])
+        self.clause("refused", "Convert: edge is not on this face" in refused["status"], refused["status"])
         self.clause("no new external", after == before, f"{before} -> {after}")
         self.esc()
         self.refresh("status")
@@ -89,7 +101,7 @@ class Rows02Chunk4:
 
     @row("A18", chunk=4, on="rung02", expect={"blocker": "A17", "sketch": True, "min_circles": 1})
     def row_A18(self) -> None:
-        circles = self.sketch_circles()
+        circles = self._entities(kind="circle")
         centre = circles[0]["center"] if circles else [35, 40]
         mid = self.external_mid("left") or [10, 25]
         made = self.dim_between(centre, mid, "25")
@@ -100,7 +112,7 @@ class Rows02Chunk4:
 
     @row("A19", chunk=4, on="rung02", expect={"blocker": "A18", "sketch": True})
     def row_A19(self) -> None:
-        circles = self.sketch_circles()
+        circles = self._entities(kind="circle")
         centre = circles[0]["center"] if circles else [35, 40]
         mid = self.external_mid("bottom") or [30, 0]
         made = self.dim_between(centre, mid, "40")
@@ -127,10 +139,10 @@ class Rows02Chunk4:
     @row("N9", chunk=4, on="rung02", expect={"blocker": "A19", "sketch": True, "dim_has": "25"})
     def row_N9(self) -> None:
         undo0 = list(self.refresh("undo").get("undo") or [])
-        self.edit_label_to("25", "26")
+        self.edit_dim(token="25", text="26")
         y1 = (self.circle_world() or [0, 0, 0])[1]
         self.clause("moved 36", abs(y1 - 36) <= 0.05, f"y={y1}")
-        self.edit_label_to("26", "25")
+        self.edit_dim(token="26", text="25")
         y2 = (self.circle_world() or [0, 0, 0])[1]
         self.clause("back 35", abs(y2 - 35) <= 0.01, f"y={y2}")
         self.clause("dof 0", self.dof_zero(), f"dof={self.dof_text()!r}")
@@ -168,11 +180,12 @@ class Rows02Chunk4:
         self.clause("applied", "Extrude" in made["status"] and "Through All" in made["status"], made["status"])
         self.clause("feature", len(added) == 1 and added[0].startswith("extrude"), str(added))
         self.clause("one body", len(made["bodies"]) == 1, str(made["bodies"]))
-        report = self.export_and_check("final", "final-60.3mf")
+        report = report_export(self, "final", "final-60.3mf")
         self.clause("S0", report["s0"], report["s0_evidence"], kind="" if report["s0"] else "runner-gap")
         self.clause("final", report["check_ok"], report["check_text"])
-        saved = self.save_part("final.sxp")
-        self.clause("saved", saved["exists"] and "Saved" in saved["status"], saved["status"])
+        path = self.save_as("final.sxp")
+        self.refresh("status")
+        self.clause("saved", Path(path).is_file() and "Saved" in self.S(), self.S())
         self.ctx["final60_volume"] = report.get("volume")
 
 
@@ -180,32 +193,6 @@ def _axis(got, want) -> bool:
     if not got:
         return False
     return all(abs(float(got[i]) - want[i]) < 1e-3 for i in range(3))
-
-
-def _left_external(lines: list[dict]) -> dict | None:
-    best = None
-    best_x = 1e9
-    for line in lines:
-        start, end = line.get("start"), line.get("end")
-        if not start or not end:
-            continue
-        mid = (float(start[0]) + float(end[0])) * 0.5
-        if mid < best_x:
-            best, best_x = line, mid
-    return best
-
-
-def _bottom_external(lines: list[dict]) -> dict | None:
-    best = None
-    best_y = 1e9
-    for line in lines:
-        start, end = line.get("start"), line.get("end")
-        if not start or not end:
-            continue
-        mid = (float(start[1]) + float(end[1])) * 0.5
-        if mid < best_y:
-            best, best_y = line, mid
-    return best
 
 
 def _screen_box(walk, models) -> list[float] | None:

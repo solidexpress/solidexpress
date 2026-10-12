@@ -6,7 +6,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -104,7 +103,7 @@ func _rows_a_and_c2() -> void:
 		check(false, "A3 no tag")
 	print("-- A4 click chip 1 off")
 	var ids_before: int = sm.sketch.entity_ids().size()
-	_status_log.clear()
+	status_log.clear()
 	await _x11_click_screen(vp, chips[0].get_global_rect().get_center())
 	await process_frame
 	check(sm.sketch.entity_ids().size() == ids_before, "A4 sketch entities unchanged")
@@ -117,11 +116,11 @@ func _rows_a_and_c2() -> void:
 	else:
 		check(false, "A4 fills[0] == 0")
 	check(_region_has_outline(sm, 0), "A4 outline still drawn for region 0")
-	var last := _status_log[_status_log.size() - 1] if not _status_log.is_empty() else ""
+	var last := status_log[status_log.size() - 1] if not status_log.is_empty() else ""
 	check(last.begins_with("Contour 1 of 2 — 40.0 × 20.0 mm at (20.0, 10.0)") and last.ends_with("— skipped"),
 			"A4 status names region 1 skipped (got `%s`)" % last)
 	print("-- A5 click chip 1 on")
-	_status_log.clear()
+	status_log.clear()
 	chips = _chips(chrome)
 	await _x11_click_screen(vp, chips[0].get_global_rect().get_center())
 	await process_frame
@@ -131,7 +130,7 @@ func _rows_a_and_c2() -> void:
 		check(fills5.size() >= 1 and float(fills5[0]) > 0.0, "A5 fills[0] > 0 (got %s)" % str(fills5))
 	else:
 		check(false, "A5 fills[0] > 0")
-	var last5 := _status_log[_status_log.size() - 1] if not _status_log.is_empty() else ""
+	var last5 := status_log[status_log.size() - 1] if not status_log.is_empty() else ""
 	check(last5.ends_with("— included"), "A5 status ends — included (got `%s`)" % last5)
 	print("-- A6 overlay mesh aabb")
 	check(_aabb_matches_outlines(sm), "A6 mesh aabb matches outline union within 0.1 mm")
@@ -480,13 +479,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

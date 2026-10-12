@@ -7,10 +7,10 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 sx038 focus keys")
 	FilmUI.reset_fail_count()
 	await _test_distance_fast()
@@ -41,11 +41,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	await FilmUI.enter_sketch(ctx)
 	await process_frame
 	check(main.sketch_mode != null and main.sketch_mode.active, "sketch is active")
@@ -60,13 +57,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_blob() -> String:
-	return " ".join(_status_log)
+	return " ".join(status_log)
 
 
 func _test_distance_fast() -> void:
@@ -82,7 +76,7 @@ func _test_distance_framed() -> void:
 func _test_distance_ctrl_a() -> void:
 	print("- Distance Ctrl+A then fast 2.5 replaces 20")
 	var ctx := await _boot()
-	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dist != null and _near(_parsed(dist), 20.0),
 			"Distance starts at 20 (got '%s')" % (dist.text if dist != null else ""))
 	if dist == null:
@@ -110,7 +104,7 @@ func _test_distance_ctrl_a() -> void:
 func _test_distance_tab() -> void:
 	print("- Tab into Distance then fast 2.5 replaces 20")
 	var ctx := await _boot()
-	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	var dim := _dim_edit(ctx.main.sketch_chrome)
 	if dist == null or dim == null:
 		check(false, "Distance and Dim lines exist for Tab")
@@ -132,7 +126,7 @@ func _test_distance_tab() -> void:
 
 func _distance_sequence(framed: bool) -> void:
 	var ctx := await _boot()
-	var dist := _distance_edit(ctx.main.sketch_chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dist != null, "DistanceLineEdit exists")
 	if dist == null:
 		await _shutdown(ctx)
@@ -154,7 +148,7 @@ func _distance_sequence(framed: bool) -> void:
 	await process_frame
 	check(not dist.has_focus(), "third Distance Enter releases focus")
 	check(_near(_parsed(dist), 10.0), "Distance replaced with 10 (got '%s')" % dist.text)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(ctx.main.get_viewport(), KEY_S)
 	await process_frame
 	check(_status_blob().begins_with("Select"),
@@ -172,7 +166,7 @@ func _test_circle_shortcut() -> void:
 	check(dim != null and dim.is_visible_in_tree(), "Circle radius field is visible")
 	check(dim != null and dim.has_focus(),
 			"arming Circle focuses Radius (focus %s)" % str(dim.has_focus() if dim != null else false))
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(ctx.main.get_viewport(), KEY_S)
 	await process_frame
 	check(sm.tool == SketchMode.Tool.SELECT, "S switches Circle to Select (tool %s)" % str(sm.tool))
@@ -199,7 +193,7 @@ func _circle_radius(framed: bool) -> void:
 	await process_frame
 	var dim := _dim_edit(ctx.main.sketch_chrome)
 	check(dim != null, "Radius field exists after the centre click")
-	_status_log.clear()
+	status_log.clear()
 	await _type_text_local(ctx.main.get_viewport(), "22.5", framed)
 	if dim != null:
 		check(_near(_parsed(dim), 22.5),
@@ -231,7 +225,7 @@ func _angle_editor(framed: bool) -> void:
 		await _shutdown(ctx)
 		return
 	var line := _dim_popup_line(ctx)
-	_status_log.clear()
+	status_log.clear()
 	await _type_text_local(ctx.main.get_viewport(), "45", framed)
 	line = _dim_popup_line(ctx)
 	check(line != null and str(line.text) == "45",
@@ -268,7 +262,7 @@ func _test_redo_while_editor_open() -> void:
 	var popup := ctx.main.interaction.find_child("DimEditPopup", true, false) as PopupPanel
 	check(popup != null and popup.visible, "editor still open after undo")
 	check(line == null or not SxUi.mid_entry(line), "opened editor is not mid-entry")
-	_status_log.clear()
+	status_log.clear()
 	await _push_chord(ctx.main.get_viewport(), KEY_Z, true, true)
 	await process_frame
 	var blob := _status_blob()
@@ -290,12 +284,12 @@ func _test_redo_after_dim_commit() -> void:
 	await process_frame
 	var popup := ctx.main.interaction.find_child("DimEditPopup", true, false) as PopupPanel
 	check(popup == null or not popup.visible, "editor closed before redo")
-	_status_log.clear()
+	status_log.clear()
 	await _push_chord(ctx.main.get_viewport(), KEY_Z, true, false)
 	await process_frame
 	check(_status_blob().contains("Undo"),
 			"Ctrl+Z after commit undoes (status '%s')" % _status_blob())
-	_status_log.clear()
+	status_log.clear()
 	await _push_chord(ctx.main.get_viewport(), KEY_Z, true, true)
 	await process_frame
 	check(_status_blob().contains("Redo"),
@@ -405,10 +399,6 @@ func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
 	return chrome.find_child("DimLineEdit", true, false) as LineEdit
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _dim_popup_line(ctx: FilmContext) -> LineEdit:

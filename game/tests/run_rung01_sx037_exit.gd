@@ -9,7 +9,6 @@ const FIRST_DROP := "First point dropped — Esc again exits the sketch"
 const FACE_PICK_CANCEL := "Up To Surface face pick cancelled"
 const SEL_CLEARED := "Selection cleared"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -46,7 +45,7 @@ func test_cancel_drops_host_and_face_pick() -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, vp, Vector2(8, 8))
 	check(sm.has_pending_draw_point(), "circle centre is pending")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	check(sm.active, "first Esc keeps the sketch")
 	check(_status_has(FIRST_DROP) or str(ctx.main.status_label.text) == FIRST_DROP,
@@ -58,18 +57,18 @@ func test_cancel_drops_host_and_face_pick() -> void:
 	check(str(ctx.main.status_label.text) == "Sketch cancelled",
 			"status is Sketch cancelled (got `%s`)" % ctx.main.status_label.text)
 	_assert_part_mode_clean(ctx, top, "cancel")
-	_status_log.clear()
+	status_log.clear()
 	_release_focus(vp)
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Sketch cancelled",
 			"part-mode Esc with nothing selected leaves the status (got `%s`)" % ctx.main.status_label.text)
 	check(not _status_has(FACE_PICK_CANCEL) and not _status_has(SEL_CLEARED),
-			"part-mode Esc did not cancel a face pick or clear a selection (log: %s)" % str(_status_log))
+			"part-mode Esc did not cancel a face pick or clear a selection (log: %s)" % str(status_log))
 	ctx.view.select_entity(body, top)
 	await process_frame
 	check(ctx.view.selected_face == top, "a later click can select the host face again")
-	_status_log.clear()
+	status_log.clear()
 	_release_focus(vp)
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
@@ -111,7 +110,7 @@ func test_save_drops_host_and_face_pick() -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await _click_uv(ctx, vp, Vector2(8, 12))
 	check(sm.has_pending_draw_point(), "circle centre is pending on the saved sketch")
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	check(sm.active, "first Esc keeps the sketch")
 	check(_status_has(FIRST_DROP) or str(ctx.main.status_label.text) == FIRST_DROP,
@@ -124,14 +123,14 @@ func test_save_drops_host_and_face_pick() -> void:
 			"status is Sketch saved (got `%s`)" % ctx.main.status_label.text)
 	check(_count_type(ctx, "sketch") == before + 1, "save added the sketch feature")
 	_assert_part_mode_clean(ctx, top, "save")
-	_status_log.clear()
+	status_log.clear()
 	_release_focus(vp)
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Sketch saved",
 			"part-mode Esc with nothing selected leaves Sketch saved (got `%s`)" % ctx.main.status_label.text)
 	check(not _status_has(FACE_PICK_CANCEL) and not _status_has(SEL_CLEARED),
-			"part-mode Esc did not cancel a face pick or clear a selection (log: %s)" % str(_status_log))
+			"part-mode Esc did not cancel a face pick or clear a selection (log: %s)" % str(status_log))
 	await _shutdown(ctx)
 
 
@@ -165,7 +164,7 @@ func test_extrude_refusal_esc_ladder() -> void:
 	await process_frame
 	var extrude := chrome.extrude_button()
 	check(extrude != null and extrude.is_visible_in_tree(), "Extrude button is visible")
-	_status_log.clear()
+	status_log.clear()
 	if extrude != null:
 		await FilmUI.click_control(ctx, extrude, FilmUICues.alert("Click", "Extrude"))
 	await process_frame
@@ -176,7 +175,7 @@ func test_extrude_refusal_esc_ladder() -> void:
 			"refusal names the open line (got `%s`)" % refused)
 	check(not _looks_like_uuid(refused), "refusal status has no uuid (got `%s`)" % refused)
 	_release_focus(vp)
-	_status_log.clear()
+	status_log.clear()
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	var ladder := str(ctx.main.status_label.text)
@@ -192,14 +191,14 @@ func test_extrude_refusal_esc_ladder() -> void:
 	check(str(ctx.main.status_label.text) == "Sketch saved",
 			"second Esc is Sketch saved (got `%s`)" % ctx.main.status_label.text)
 	_assert_part_mode_clean(ctx, top, "refusal save")
-	_status_log.clear()
+	status_log.clear()
 	_release_focus(vp)
 	await _push_key_local(vp, KEY_ESCAPE, false, false)
 	await process_frame
 	check(str(ctx.main.status_label.text) == "Sketch saved",
 			"part-mode Esc after the refusal save changes nothing (got `%s`)" % ctx.main.status_label.text)
 	check(not _status_has(FACE_PICK_CANCEL) and not _status_has(SEL_CLEARED),
-			"that Esc is not a leftover face pick or a selection clear (log: %s)" % str(_status_log))
+			"that Esc is not a leftover face pick or a selection clear (log: %s)" % str(status_log))
 	await _shutdown(ctx)
 
 
@@ -297,7 +296,7 @@ func _count_type(ctx: FilmContext, kind: String) -> int:
 func _status_has(needle: String) -> bool:
 	if needle == "":
 		return false
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -313,14 +312,11 @@ func _boot() -> FilmContext:
 	ctx.view = main.view
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

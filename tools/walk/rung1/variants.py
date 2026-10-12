@@ -3,8 +3,11 @@ from __future__ import annotations
 
 from sxdrive import SxError
 from walk.harness import RowAbort
+from walk.registry import variant
+from walk.rung1.chunk_start import build_open_jaw
 
 class WalkVariants:
+    @variant("A8b-variant-walk")
     def row_A8b_variant_walk(self) -> None:
         # Screenshot walk: Exit Sketch, reopen with the Timeline pencil, then
         # the wall click / Esc / Esc / Ctrl+Z that left sketch 3 on the Timeline.
@@ -41,6 +44,7 @@ class WalkVariants:
             kind="" if not stayed else "product",
         )
 
+    @variant("A9-variant-walk")
     def row_A9_variant_walk(self) -> None:
         # Same walk: pencil reopen, Smart Dim already applied, Line across the
         # head, Power Trim dragged from the outer stub (head-side closing cut).
@@ -97,7 +101,7 @@ class WalkVariants:
             })
             return
         try:
-            self.build_open_jaw()
+            build_open_jaw(self)
         except (SxError, RowAbort) as exc:
             self.clauses = []
             self.clause("rebuild jaw", False, str(exc), kind="runner-gap")
@@ -110,7 +114,7 @@ class WalkVariants:
                 "status": self.st.get("status", ""),
             })
             return
-        self.run_row("A8b-variant-walk")
-        self.run_row("A9-variant-walk")
+        for rid in self.rung.variants:
+            self.run_row(rid)
 
     # --- report -----------------------------------------------------------

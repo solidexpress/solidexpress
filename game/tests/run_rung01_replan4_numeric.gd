@@ -7,10 +7,10 @@ const ROOT_SIZE := Vector2i(1280, 800)
 const TOL_R := 0.05
 const TOL_Z := 0.2
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan4 WP1 numeric")
 	FilmUI.reset_fail_count()
 	_assert_source_hygiene()
@@ -69,7 +69,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	return ctx
@@ -83,13 +83,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_blob(ctx: FilmContext) -> String:
-	var parts: PackedStringArray = PackedStringArray(_status_log)
+	var parts: PackedStringArray = PackedStringArray(status_log)
 	if ctx != null and ctx.main != null and ctx.main.status_label != null:
 		parts.append(str(ctx.main.status_label.text))
 	return " ".join(parts)
@@ -188,7 +185,7 @@ func test_distance_75_extrude() -> void:
 	await _zoom(ctx, Vector3.ZERO, 120.0)
 	await _draw_closed_rect(ctx)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var dist := _distance_edit(chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	var readout: Label = chrome.find_child("ExtrudeReadout", true, false)
 	check(dist != null, "DistanceLineEdit exists")
 	check(readout != null, "ExtrudeReadout exists")
@@ -236,7 +233,7 @@ func test_junk_distance_does_not_extrude() -> void:
 	await _zoom(ctx, Vector3.ZERO, 120.0)
 	await _draw_closed_rect(ctx)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var dist := _distance_edit(chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	check(dist != null, "DistanceLineEdit exists for junk")
 	if dist != null:
 		await _x11_click(dist)
@@ -304,10 +301,6 @@ func _dim_edit(chrome: SketchContextChrome) -> LineEdit:
 	return chrome.find_child("DimLineEdit", true, false) as LineEdit
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _spin_digits(edit: LineEdit) -> String:

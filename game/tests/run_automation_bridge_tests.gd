@@ -266,7 +266,7 @@ func _face_by_id(faces: Array, id: String) -> Dictionary:
 
 
 func _face_centre(face: Dictionary) -> Array:
-	var c: Variant = face.get("centre", face.get("mid", []))
+	var c: Variant = face.get("centre", [])
 	return c if c is Array else []
 
 

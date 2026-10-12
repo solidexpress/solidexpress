@@ -4,6 +4,9 @@ const SxInput = preload("res://tests/lib/sx_input.gd")
 
 var checks := 0
 var failures := 0
+var status_log := PackedStringArray()
+## When set, each recorded status line is also printed.
+var status_echo := false
 
 
 func check(cond: bool, what: String) -> void:
@@ -54,3 +57,22 @@ func _hover_uv(ctx: FilmContext, uv: Vector2) -> void:
 
 func _zoom(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
 	await SxInput.zoom(ctx, model_pivot, size_mm)
+
+
+## Sketch-mode and interaction status, once each. Other emitters stay at the call site.
+func listen_status(main) -> void:
+	if main == null:
+		return
+	_attach_status(main.sketch_mode)
+	_attach_status(main.interaction)
+
+
+func _attach_status(node) -> void:
+	if node != null and node.has_signal("status") and not node.status.is_connected(_on_status):
+		node.status.connect(_on_status)
+
+
+func _on_status(text: String) -> void:
+	status_log.append(text)
+	if status_echo:
+		print("  status: " + text)

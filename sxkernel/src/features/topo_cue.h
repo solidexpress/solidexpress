@@ -7,6 +7,7 @@
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
+#include <gp_XYZ.hxx>
 
 #include "sx/entity.hpp"
 
@@ -17,17 +18,11 @@ namespace sx {
 class Document;
 struct Body;
 
-struct Vec3 {
-    double x = 0;
-    double y = 0;
-    double z = 0;
-};
-
 struct TopoCue {
-    Vec3 point;
-    Vec3 dir;
-    Vec3 size;
-    Vec3 frac;
+    gp_XYZ point;
+    gp_XYZ dir;
+    gp_XYZ size;
+    gp_XYZ frac;
     double tol = 0.5;
     // Old cues store point and dir only. Relative matching stays off until
     // a fraction of the input shape's bounding box was recorded.
@@ -58,9 +53,14 @@ TopoCue cue_from_json(const nlohmann::json& j);
 
 // The stored cue still names this line (direction aligned, point within tol
 // of the axis). Used so a rebuilt id is not allowed to overwrite the cue.
-bool cue_names_line(const TopoCue& cue, const Vec3& point, const Vec3& dir);
+bool cue_names_line(const TopoCue& cue, const gp_XYZ& point, const gp_XYZ& dir);
 
 // The stored cue still names this face (normal aligned, point on its plane).
 bool cue_names_face(const TopoCue& stored, const TopoCue& fresh);
+
+// Store fresh under key unless its direction is zero or a stored cue names
+// a different line or face. Returns true when the map changes.
+bool refresh_cue(nlohmann::json& cues, const std::string& key, const TopoCue& fresh,
+                 EntityKind kind);
 
 }  // namespace sx

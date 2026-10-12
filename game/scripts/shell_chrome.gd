@@ -21,6 +21,13 @@ var _chip: Button
 var _panel: PanelContainer
 var _field: LineEdit
 var _ok: Button
+var _view_of: Callable
+var _sketching: Callable
+
+
+func bind(view: Callable, sketching: Callable) -> void:
+	_view_of = view
+	_sketching = sketching
 
 
 func build(row: Node, overlay: Control) -> void:
@@ -136,40 +143,16 @@ func _on_chip() -> void:
 
 
 func _planar_face_selected() -> bool:
-	var ix = get_parent()
-	if ix == null or ix.view == null:
+	var view := _view()
+	if view == null:
 		return false
-	if ix.sketch_mode != null and ix.sketch_mode.active:
+	if _sketching.is_valid() and bool(_sketching.call()):
 		return false
-	var face: String = ix.view.selected_face
-	var body: String = ix.view.selected_body
+	var face: String = view.selected_face
+	var body: String = view.selected_body
 	if face == "" or body == "":
 		return false
-	return _face_is_planar(ix.view, body, face)
-
-
-func _face_is_planar(view: DocumentView, body: String, face: String) -> bool:
-	var bb: Dictionary = view.doc.measure_bbox(face)
-	if not bb.is_empty():
-		var ext: Vector3 = bb["max"] - bb["min"]
-		var mx := maxf(ext.x, maxf(ext.y, ext.z))
-		var mn := minf(ext.x, minf(ext.y, ext.z))
-		if mx > 1e-6 and mn <= maxf(1e-4, mx * 0.02):
-			return true
-	var node := view.body_node(body)
-	var ids: PackedStringArray = view.doc.get_face_ids(body)
-	var idx := ids.find(face)
-	if node == null or node.mesh == null or idx < 0 or idx >= node.mesh.get_surface_count():
-		return false
-	var arrays: Array = node.mesh.surface_get_arrays(idx)
-	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	if normals.is_empty():
-		return false
-	var n0 := normals[0].normalized()
-	for i in normals.size():
-		if absf(normals[i].normalized().dot(n0)) < 0.999:
-			return false
-	return true
+	return view.face_is_planar(body, face)
 
 
 func _selected_faces(view: DocumentView) -> PackedStringArray:
@@ -190,10 +173,9 @@ func _min_extent(view: DocumentView, body: String) -> float:
 
 
 func _view() -> DocumentView:
-	var ix = get_parent()
-	if ix == null:
+	if not _view_of.is_valid():
 		return null
-	return ix.view
+	return _view_of.call()
 
 
 func _parse_mm(text: String) -> float:

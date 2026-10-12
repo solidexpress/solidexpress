@@ -4,7 +4,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -131,7 +130,7 @@ func _pressed(ctx: FilmContext) -> Array[String]:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -148,14 +147,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

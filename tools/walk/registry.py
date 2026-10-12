@@ -3,14 +3,24 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from walk.checkpoint import checkpoint_reload
 from walk.rung import CheckpointAfter, Rung, expect_from
+from walk.rung1.chunk_start import Rung1ChunkStart
 
 _PENDING: dict[str, list[tuple]] = {}
+_VARIANTS: dict[str, list[tuple[str, Callable]]] = {}
 
 
 def row(rid: str, chunk: int, expect: dict | None = None, *, on: str = "rung01"):
     def deco(fn: Callable):
-        _PENDING.setdefault(on, []).append((rid, chunk, fn.__name__, expect))
+        _PENDING.setdefault(on, []).append((rid, chunk, fn, expect))
+        return fn
+    return deco
+
+
+def variant(rid: str, *, on: str = "rung01"):
+    def deco(fn: Callable):
+        _VARIANTS.setdefault(on, []).append((rid, fn))
         return fn
     return deco
 
@@ -43,9 +53,8 @@ _RUNG_SPEC = {
         "checker": "check_rung01.py",
         "checkpoints": {2: "blank.sxp", 4: "cut.sxp", 5: "wrench-wip.sxp", 6: "wrench-wip.sxp"},
         "canonical": CANONICAL_ROWS,
-        "policy": "_policy_rung01",
+        "chunk_start": Rung1ChunkStart(),
         "report_title": "sx-042 walk",
-        "variants": True,
         "checkpoint_after": (
             CheckpointAfter("L7", "wrench-t14.sxp"),
             CheckpointAfter("N20", "pre-cut.sxp", chunk=3),
@@ -55,22 +64,22 @@ _RUNG_SPEC = {
         "checker": "check_rung02.py",
         "checkpoints": {2: "box.sxp", 3: "rounded.sxp", 4: "shelled.sxp", 5: "final.sxp"},
         "canonical": RUNG2_ROWS,
-        "policy": "_policy_checkpoint",
+        "chunk_start": checkpoint_reload,
         "report_title": "rung-02 walk",
         "checkpoint_after": (),
     },
 }
 
 
-def _assemble(name: str) -> tuple[list[str], dict[int, list[str]], dict, dict[str, str]]:
+def _assemble(name: str) -> tuple[list[str], dict[int, list[str]], dict, dict[str, Callable]]:
     spec = _RUNG_SPEC[name]
     rank = {rid: i for i, rid in enumerate(spec["canonical"])}
     chunks: dict[int, list[str]] = {}
     expectations = {}
-    names: dict[str, str] = {}
-    for rid, chunk, fn_name, expect in _PENDING.get(name, []):
+    handlers: dict[str, Callable] = {}
+    for rid, chunk, fn, expect in _PENDING.get(name, []):
         chunks.setdefault(chunk, []).append(rid)
-        names[rid] = fn_name
+        handlers[rid] = fn
         built = expect_from(expect)
         if built is not None:
             expectations[rid] = built
@@ -79,13 +88,20 @@ def _assemble(name: str) -> tuple[list[str], dict[int, list[str]], dict, dict[st
     rows: list[str] = []
     for n in sorted(chunks):
         rows.extend(chunks[n])
-    return rows, chunks, expectations, names
+    return rows, chunks, expectations, handlers
+
+
+def _defined_on(fn: Callable, app_cls: type) -> bool:
+    return any(cls.__dict__.get(fn.__name__) is fn for cls in app_cls.__mro__)
 
 
 def install(name: str, app_cls: type) -> Rung:
     spec = _RUNG_SPEC[name]
-    rows, chunks, expectations, names = _assemble(name)
-    handlers = {rid: getattr(app_cls, names[rid]) for rid in rows}
+    rows, chunks, expectations, handlers = _assemble(name)
+    variants = dict(_VARIANTS.get(name, []))
+    for fn in (*handlers.values(), *variants.values()):
+        if not _defined_on(fn, app_cls):
+            raise RuntimeError(f"{name} handler {fn.__name__} is not defined on {app_cls.__name__}")
     return Rung(
         name=name,
         checker=spec["checker"],
@@ -95,22 +111,11 @@ def install(name: str, app_cls: type) -> Rung:
         rows=tuple(rows),
         handlers=handlers,
         checkpoint_after=tuple(spec["checkpoint_after"]),
-        policy=spec["policy"],
+        chunk_start=spec["chunk_start"],
         report_title=spec["report_title"],
-        variants=bool(spec.get("variants", False)),
+        variants=variants,
     )
 
 
 RUNG1: Rung | None = None
 RUNG2: Rung | None = None
-ROWS: list[str] = []
-CHUNKS: dict[int, list[str]] = {}
-EXPECT: dict = {}
-ROW_HANDLERS: dict[str, object] = {}
-
-
-def checkpoint_file(rid: str) -> str | None:
-    """Saved part that can stand in for live state when a later chunk starts."""
-    if RUNG1 is None:
-        return None
-    return RUNG1.checkpoint_for(rid)

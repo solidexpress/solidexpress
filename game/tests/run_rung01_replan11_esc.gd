@@ -5,7 +5,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const FIRST_DROP := "First point dropped — Esc again exits the sketch"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -28,7 +27,7 @@ func _circle_row() -> void:
 	await FilmUI.click_sketch(ctx, sm, Vector2.ZERO, "Circle centre")
 	await process_frame
 	var mo := _force_anchor(ctx)
-	_status_log.clear()
+	status_log.clear()
 	await _push_esc(vp)
 	check(_last_status() == FIRST_DROP,
 			"Circle: first Esc text is `%s`" % FIRST_DROP)
@@ -49,7 +48,7 @@ func _line_row() -> void:
 	await FilmUI.click_sketch(ctx, sm, Vector2.ZERO, "Line first point")
 	await process_frame
 	_force_anchor(ctx)
-	_status_log.clear()
+	status_log.clear()
 	await _push_esc(vp)
 	check(_last_status().contains("First point dropped"),
 			"Line: first Esc is `First point dropped`")
@@ -68,7 +67,7 @@ func _rect_row() -> void:
 	await FilmUI.click_sketch(ctx, sm, Vector2.ZERO, "Rect first corner")
 	await process_frame
 	var mo := _force_anchor(ctx)
-	_status_log.clear()
+	status_log.clear()
 	await _push_esc(vp)
 	check(_last_status().contains("First point dropped"),
 			"Rect: first Esc is `First point dropped`")
@@ -88,7 +87,7 @@ func _polygon_row() -> void:
 	await FilmUI.click_sketch(ctx, sm, Vector2.ZERO, "Polygon centre")
 	await process_frame
 	_force_anchor(ctx)
-	_status_log.clear()
+	status_log.clear()
 	await _push_esc(vp)
 	check(_last_status().contains("First point dropped"),
 			"Polygon: first Esc is `First point dropped`")
@@ -108,9 +107,9 @@ func _force_anchor(ctx: FilmContext) -> MeasureOverlay:
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _boot() -> FilmContext:
@@ -123,14 +122,11 @@ func _boot() -> FilmContext:
 	ctx.view = main.view
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

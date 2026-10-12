@@ -3,7 +3,8 @@
 extends "res://tests/lib/sx_suite.gd"
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
-const MANIFEST_PATH := "res://tests/ui_movie_manifest.json"
+const FilmHarness = preload("res://tests/lib/film_harness.gd")
+const SxChecker = preload("res://tests/lib/sx_checker.gd")
 # Walk T=14 mesh /tmp/sx-base/walk/wrench-t14.3mf (film ends after timeline 10→14).
 # T=10 checkpoint /tmp/sx-base/walk/wrench.3mf is 43832.52 mm³.
 const WRENCH_VOLUME := 63046.0885
@@ -19,32 +20,18 @@ const DIAG_FAILS := [
 func _init() -> void:
 	print("film ubc_wrench")
 	FilmUI.reset_fail_count()
-	var entry := _manifest_entry("ubc_wrench")
+	var entry := FilmHarness.manifest_entry("ubc_wrench")
 	check(not entry.is_empty(), "ubc_wrench is in the movie manifest")
 	if entry.is_empty():
 		finish()
 		return
 
-	var main_scene: PackedScene = load("res://scenes/main.tscn")
-	var main = main_scene.instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.camera = FilmCamera.new(main.camera)
-	ctx.clock = FilmClock.new()
-	ctx.tree = self
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1600, 900))
-
-	var film_script: GDScript = load(str(entry.get("script", ""))) as GDScript
-	check(film_script != null and film_script.can_instantiate(), "load film_ubc_wrench.gd")
-	if film_script == null or not film_script.can_instantiate():
+	var ctx := await FilmHarness.boot(self, Vector2i(1600, 900))
+	var film: Object = FilmHarness.load_film(entry)
+	check(film != null, "load film_ubc_wrench.gd")
+	if film == null:
 		finish()
 		return
-	var film: Object = film_script.new()
 	await film.run_film(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI.fail_count == 0 (got %d)" % FilmUI.fail_count)
 
@@ -70,19 +57,6 @@ func _init() -> void:
 	await _run_checker(["thick", glob, "14"], true, "7/7")
 	await _run_diag(glob)
 	finish()
-
-
-func _manifest_entry(want_id: String) -> Dictionary:
-	var f := FileAccess.open(MANIFEST_PATH, FileAccess.READ)
-	if f == null:
-		return {}
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	if typeof(parsed) != TYPE_ARRAY:
-		return {}
-	for item in parsed:
-		if str(item.get("id", "")) == want_id:
-			return item
-	return {}
 
 
 func _assert_features(doc: SxDocument) -> void:
@@ -116,16 +90,9 @@ func _assert_features(doc: SxDocument) -> void:
 
 
 func _run_checker(args: Array, expect_ok: bool, needle: String) -> String:
-	var repo := ProjectSettings.globalize_path("res://").trim_suffix("/").get_base_dir()
-	var checker := repo.path_join("tools/check_rung01.py")
-	var argv := PackedStringArray()
-	argv.append(checker)
-	for a in args:
-		argv.append(str(a))
-	var output: Array = []
-	var code := OS.execute("python3", argv, output, true)
-	var text := "\n".join(output)
-	print(text)
+	var result := SxChecker.run("rung01", args)
+	var code := int(result["code"])
+	var text := str(result["text"])
 	if expect_ok:
 		check(code == 0, "check_rung01.py %s exit %d" % [" ".join(args), code])
 	if needle != "":

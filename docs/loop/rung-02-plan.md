@@ -2,7 +2,7 @@
 
 **PLAN only, no product code.** One BUILD agent (grok, medium effort) implements this in one PR, in the order of the work packages below. Source: SolidWorks *Student's Guide to Learning SolidWorks Software*, Lesson 2 "Active Learning Exercises — Creating a Basic Part" (PDF pp. 17–24). Everything the BUILD agent needs from the PDF is in "The PDF, step by step"; it does not re-read the PDF.
 
-Model: rung 1 (`rung-01-plan.md`, `rung-01-replan-21.md`, `tools/check_rung01.py`, `tools/walk/`, `automation-bridge.md`). Same machinery, same verdict rules (R1–R10 there), a new part, a new checker, a new walk.
+Model: rung 1 (`rung-01-replan-21.md`, `tools/check_rung01.py`, `tools/walk/`, `automation-bridge.md`). Same machinery, same verdict rules (R1–R10 there), a new part, a new checker, a new walk. History: `git log -- docs/loop`.
 
 ## Where we are
 

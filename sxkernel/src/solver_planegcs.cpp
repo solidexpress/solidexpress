@@ -45,6 +45,15 @@ GCS::Line tangent_line_oriented(const GCS::Line& line, const GCS::Point& center)
     return oriented;
 }
 
+// The point keeps the side it already occupies.
+static bool point_left_of_line(const GCS::Point& point, const GCS::Line& line) {
+    const double x0 = *point.x, y0 = *point.y;
+    const double x1 = *line.p1.x, y1 = *line.p1.y;
+    const double x2 = *line.p2.x, y2 = *line.p2.y;
+    const double area = -x0 * (y2 - y1) + y0 * (x2 - x1) + x1 * y2 - x2 * y1;
+    return area >= 0.0;
+}
+
 // Per-solve translation state.
 struct Xlate {
     Sketch& sketch;
@@ -316,14 +325,8 @@ struct Xlate {
                         if (!ok1) return false;
                         dim_values.push_back(c.value);
                         GCS::Line& ln = line0 ? l0->second : l1->second;
-                        // Keep the point on the side it already occupies. ccw
-                        // is the sign of the cross product, not a constant.
-                        const double x0 = *p.x, y0 = *p.y;
-                        const double x1 = *ln.p1.x, y1 = *ln.p1.y;
-                        const double x2 = *ln.p2.x, y2 = *ln.p2.y;
-                        const double area = -x0 * (y2 - y1) + y0 * (x2 - x1) + x1 * y2 - x2 * y1;
-                        sys.addConstraintP2LDistance(p, ln, &dim_values.back(), area >= 0.0, tag,
-                                                     drv);
+                        sys.addConstraintP2LDistance(p, ln, &dim_values.back(),
+                                                     point_left_of_line(p, ln), tag, drv);
                         return true;
                     }
                 }

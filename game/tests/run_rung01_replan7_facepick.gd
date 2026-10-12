@@ -5,10 +5,10 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan7 WP1 facepick")
 	FilmUI.reset_fail_count()
 	await test_face_click_beats_hidden_pad()
@@ -44,7 +44,7 @@ func test_face_click_beats_hidden_pad() -> void:
 	await _click_uv_local(ctx, Vector2(40, 30), "Rect corner B")
 	await process_frame
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var dist := _distance_edit(chrome)
+	var dist := FilmUI.distance_edit(ctx)
 	await _x11_click(dist)
 	await _x11_type(dist.get_viewport(), "10")
 	await process_frame
@@ -149,11 +149,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
@@ -165,9 +162,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _first_body(ctx: FilmContext) -> String:
@@ -238,10 +232,6 @@ func _zoom_top(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void:
 	await _zoom(ctx, model_pivot, size_mm)
 
 
-func _distance_edit(chrome: SketchContextChrome) -> LineEdit:
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _x11_type(vp: Viewport, text: String) -> void:

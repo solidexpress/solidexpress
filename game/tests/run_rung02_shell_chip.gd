@@ -6,6 +6,7 @@ extends "res://tests/lib/sx_suite.gd"
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
+const BoxFixture = preload("res://tests/lib/box_fixture.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 # no_hole(60): rounded(60) − inner(60). inner(60) = 201534.3.
 const NO_HOLE_60 := 94173.7
@@ -23,11 +24,12 @@ func _init() -> void:
 
 func _run() -> void:
 	var ctx := await _boot()
-	await _build_box(ctx)
+	await BoxFixture.build_box(ctx, Callable(), _note_status)
 	if failures > 0:
 		ctx.main.queue_free()
 		return
-	_fillet_z_edges(ctx)
+	# R10 on the four Z edges is the solid under Shell (no_hole volume).
+	await BoxFixture.fillet_z_edges(ctx, 10.0)
 	if failures > 0:
 		ctx.main.queue_free()
 		return
@@ -45,7 +47,7 @@ func _run() -> void:
 	check(rect.size.x > 8.0 and rect.size.y > 8.0 and window.encloses(rect),
 			"strip:shell is inside 1280×800 (%s)" % str(rect))
 	check(str(chip.text) == "Shell", "Shell chip label is Shell (got '%s')" % chip.text)
-	var bb0 := _bbox_size(ctx)
+	var bb0 := BoxFixture.bbox(ctx)
 	await _open_shell(ctx, chip)
 	var field := _find_auto(ctx.main, "finish:Thickness") as LineEdit
 	var ok_btn := _find_auto(ctx.main, "finish:Ok") as Button
@@ -61,10 +63,10 @@ func _run() -> void:
 		await process_frame
 	_note_status(ctx)
 	check(_feature_count(ctx) == before, "thickness 30 adds no feature (%d → %d)" % [before, _feature_count(ctx)])
-	check(_bbox_size(ctx).distance_to(bb0) < 0.2, "bbox unchanged after a refused shell")
+	check(BoxFixture.bbox(ctx).distance_to(bb0) < 0.2, "bbox unchanged after a refused shell")
 	var refused := str(ctx.main.status_label.text)
 	print("  refused status: " + refused)
-	check(refused.contains("limit") or refused.contains("half"),
+	check(refused == "Shell thickness 30.0000 mm is at least half the 50.0000 mm extent (limit) — nothing added",
 			"thickness past half the extent is refused (got '%s')" % refused)
 	check(field.text == "5", "field returns to 5 after refusal (got '%s')" % field.text)
 	await _type_thickness(ctx, field, "5")
@@ -76,8 +78,9 @@ func _run() -> void:
 	print("  applied status: " + applied)
 	var names := _feature_names(ctx)
 	print("  timeline: " + ", ".join(names))
-	check(_has_shell(names), "timeline has a Shell feature (%s)" % ", ".join(names))
-	var bb1 := _bbox_size(ctx)
+	check(_has_shell(names) and applied == "Shell 5.0000 mm applied",
+			"timeline has a Shell feature (%s; %s)" % [", ".join(names), applied])
+	var bb1 := BoxFixture.bbox(ctx)
 	print("  bbox %s → %s" % [str(bb0), str(bb1)])
 	check(bb1.distance_to(bb0) < 0.2, "bbox unchanged after shell (got %s)" % str(bb1))
 	var vol := _volume(ctx)
@@ -118,7 +121,8 @@ func _hint_without_face(ctx: FilmContext) -> void:
 	var hint := str(ctx.main.status_label.text)
 	print("  no-face status: " + hint)
 	check(_feature_count(ctx) == before, "no face adds no feature")
-	check(hint.contains("nothing added"), "no-face shell shows a hint (got '%s')" % hint)
+	check(hint == "Shell needs a planar face — nothing added",
+			"no-face shell shows a hint (got '%s')" % hint)
 
 
 func _edit_thickness_from_timeline(ctx: FilmContext) -> void:
@@ -144,66 +148,12 @@ func _edit_thickness_from_timeline(ctx: FilmContext) -> void:
 	print("  timeline thickness %.4f" % spin.value)
 
 
-func _build_box(ctx: FilmContext) -> void:
-	await FilmUI.enter_sketch(ctx)
-	var sm: SketchMode = ctx.main.sketch_mode
-	check(sm != null and sm.active, "ground sketch is open")
-	await _zoom(ctx, Vector3(50, 30, 0), 160.0)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(0, 0))
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(100, 60))
-	await process_frame
-	var dist := _distance_edit(ctx)
-	check(dist != null and dist.is_visible_in_tree(), "Distance field is visible")
-	if dist != null:
-		await _x11_click(dist)
-		await _type_text(dist.get_viewport(), "50")
-		await process_frame
-	var ex: Button = ctx.main.sketch_chrome.extrude_button() if ctx.main.sketch_chrome != null else null
-	check(ex != null and ex.is_visible_in_tree(), "Extrude button is visible")
-	if ex != null:
-		await _x11_click(ex)
-	for _i in 8:
-		await process_frame
-	_note_status(ctx)
-	var body := _only_body(ctx)
-	check(body != "", "extrude made one body")
-	if body == "":
-		return
-	var sz := _bbox_size(ctx)
-	check(sz.distance_to(Vector3(100, 60, 50)) < 0.2, "box is 100×60×50 (got %s)" % str(sz))
-
-
-## The plan's 94173.7 is the filleted shell. The four Z edges are the PDF fillet
-## that sits under Shell; the chip test starts from that solid.
-func _fillet_z_edges(ctx: FilmContext) -> void:
-	var body := _only_body(ctx)
-	var fid := ctx.view.feature_of_body(body)
-	var edges := PackedStringArray()
-	var lines: Dictionary = ctx.view.doc.get_edge_lines(body)
-	for id in lines:
-		var pts: PackedVector3Array = lines[id]
-		if pts.size() < 2:
-			continue
-		var d: Vector3 = pts[pts.size() - 1] - pts[0]
-		if absf(d.z) > 5.0 and absf(d.x) < 0.5 and absf(d.y) < 0.5:
-			edges.append(str(id))
-	check(edges.size() == 4, "four Z edges to fillet (got %d)" % edges.size())
-	if edges.size() != 4 or fid == "":
-		return
-	var added := ctx.view.doc.graph_add_fillet(fid, edges, 10.0)
-	check(added != "", "fillet feature added (%s)" % ctx.view.doc.last_graph_error())
-	ctx.view.graph_changed()
-	await process_frame
-	await process_frame
-
-
 func _select_top(ctx: FilmContext) -> void:
 	await _select_normal(ctx, Vector3(0, 0, 1), Vector3(50, 30, 50))
 
 
 func _select_normal(ctx: FilmContext, normal: Vector3, fallback: Vector3, exact: bool = true) -> void:
-	var body := _only_body(ctx)
+	var body := BoxFixture.only_body(ctx)
 	var face := FilmUI.find_face_by_normal(ctx.view, body, normal)
 	var tag := str(normal)
 	check(face != "", "%s face exists" % tag)
@@ -271,25 +221,8 @@ func _find_auto(node: Node, id: String) -> Node:
 	return null
 
 
-func _only_body(ctx: FilmContext) -> String:
-	var ids: PackedStringArray = ctx.view.doc.body_ids()
-	if ids.size() != 1:
-		return ""
-	return str(ids[0])
-
-
-func _bbox_size(ctx: FilmContext) -> Vector3:
-	var body := _only_body(ctx)
-	if body == "":
-		return Vector3.ZERO
-	var bb: Dictionary = ctx.view.doc.measure_bbox(body)
-	if bb.is_empty():
-		return Vector3.ZERO
-	return bb["max"] - bb["min"]
-
-
 func _volume(ctx: FilmContext) -> float:
-	var body := _only_body(ctx)
+	var body := BoxFixture.only_body(ctx)
 	if body == "":
 		return -1.0
 	return ctx.view.doc.body_volume(body)
@@ -324,11 +257,6 @@ func _shell_row_button(ctx: FilmContext) -> Button:
 	return null
 
 
-func _distance_edit(ctx: FilmContext) -> LineEdit:
-	var chrome = ctx.main.sketch_chrome
-	if chrome == null:
-		return null
-	return chrome.find_child("DistanceLineEdit", true, false) as LineEdit
 
 
 func _on_status(text: String) -> void:

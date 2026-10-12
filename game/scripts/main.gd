@@ -1628,7 +1628,7 @@ func _start_sketch_on_face(face_id: String, body_id: String) -> void:
 		origin = plane["origin"]
 		normal = plane["normal"]
 		var side := SketchMode._support_side(view.doc, body_id, face_id, normal)
-		sketch_mode.begin(origin, normal, Vector3.ZERO, {
+		sketch_mode.begin(origin, normal, {
 			"host": sketch_mode.target_fid,
 			"normal": normal,
 			"side": side,

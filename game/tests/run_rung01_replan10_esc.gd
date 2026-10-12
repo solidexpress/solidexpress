@@ -4,7 +4,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -58,33 +57,33 @@ func test_jaw_esc_ladder() -> void:
 	var mo: MeasureOverlay = ctx.main.interaction.measure_overlay
 	check(mo == null or not mo.has_anchor(),
 			"selecting a Jaw line does not start a measure")
-	_status_log.clear()
+	status_log.clear()
 	await _x11_key(vp, KEY_ESCAPE)
 	check(sm.active, "the first Esc after selecting a Jaw line keeps the sketch open")
 	check(not _status_has("Measure cleared"),
-			"the first Esc is not spent on a measure (log: %s)" % str(_status_log))
+			"the first Esc is not spent on a measure (log: %s)" % str(status_log))
 	check(sm.selected.is_empty(), "the first Esc clears the selection")
 	check(_profile_lines(sm) == 4, "the Jaw lines are all still there (got %d)" % _profile_lines(sm))
 	check(_status_has("Selection cleared — Esc again exits the sketch"),
-			"Esc names what it dropped (log: %s)" % str(_status_log))
+			"Esc names what it dropped (log: %s)" % str(status_log))
 
 	await _x11_click(FilmUI.find_sketch_tool_button(ctx.main, "Jaw"))
 	await process_frame
 	check(sm.tool == SketchMode.Tool.RECT, "Jaw is the active tool again")
-	_status_log.clear()
+	status_log.clear()
 	await _x11_key(vp, KEY_ESCAPE)
 	check(sm.active, "Esc with the Jaw tool active and geometry drawn keeps the sketch open")
 	check(sm.tool == SketchMode.Tool.SELECT, "Esc drops the Jaw tool back to Select")
 	check(_profile_lines(sm) == 4, "the Jaw lines survive the tool drop (got %d)" % _profile_lines(sm))
 	check(_status_has("Tool dropped — Esc again exits the sketch"),
-			"the tool drop is named (log: %s)" % str(_status_log))
+			"the tool drop is named (log: %s)" % str(status_log))
 
 	var sketches_before := _sketch_feature_count(ctx)
 	await _x11_key(vp, KEY_ESCAPE)
 	check(not sm.active, "Esc with nothing selected and the Select tool still exits the sketch")
 	check(_sketch_feature_count(ctx) == sketches_before + 1,
 			"the last Esc keeps the Jaw as a sketch feature")
-	check(_status_has("Sketch saved"), "the last Esc saves the sketch (log: %s)" % str(_status_log))
+	check(_status_has("Sketch saved"), "the last Esc saves the sketch (log: %s)" % str(status_log))
 	await _shutdown(ctx)
 
 
@@ -103,7 +102,7 @@ func test_empty_sketch_esc_exits() -> void:
 	if ctx.main.interaction != null:
 		ctx.main.interaction.grab_focus()
 	await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await _x11_key(vp, KEY_ESCAPE)
 	_note_label(ctx)
 	if sm.active:
@@ -112,7 +111,7 @@ func test_empty_sketch_esc_exits() -> void:
 	check(not sm.active, "Esc exits the empty sketch")
 	check(_status_has("Sketch cancelled"),
 			"empty sketch Esc cancels (log: %s label: %s)" % [
-				str(_status_log), _label(ctx)])
+				str(status_log), _label(ctx)])
 	await _shutdown(ctx)
 
 func _label(ctx: FilmContext) -> String:
@@ -124,11 +123,11 @@ func _label(ctx: FilmContext) -> String:
 func _note_label(ctx: FilmContext) -> void:
 	var text := _label(ctx)
 	if text != "":
-		_status_log.append(text)
+		status_log.append(text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
@@ -145,14 +144,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

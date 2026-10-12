@@ -7,7 +7,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -57,7 +56,7 @@ func _case_double_click() -> void:
 		await _frames(2)
 		_push_key_local(ctx.main.get_viewport(), KEY_ENTER)
 		await _frames(2)
-	_status_log.clear()
+	status_log.clear()
 	_push_key_local(ctx.main.get_viewport(), KEY_ESCAPE)
 	await _frames(3)
 	var esc_status := str(ctx.main.status_label.text)
@@ -188,7 +187,7 @@ func _case_radius() -> void:
 	var pos: Vector2 = edit.get_global_rect().get_center()
 	_motion(ctx.main.get_viewport(), pos)
 	await process_frame
-	_status_log.clear()
+	status_log.clear()
 	var t0 := 500000
 	_clock(ctx, t0)
 	ctx.main.interaction.last_click_disposition = ""
@@ -348,7 +347,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is %s (got %s)" % [ROOT_SIZE, root.size])
-	_status_log.clear()
+	status_log.clear()
 	if main.interaction != null and main.interaction.has_signal("status"):
 		main.interaction.status.connect(_on_status)
 	if main.timeline != null and main.timeline.has_signal("status"):
@@ -367,12 +366,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _status_blob() -> String:
-	return " | ".join(_status_log)
+	return " | ".join(status_log)
 
 
 func _row_name_button(tl: TimelinePanel, fid: String) -> Button:

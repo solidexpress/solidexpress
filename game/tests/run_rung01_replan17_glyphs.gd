@@ -13,10 +13,10 @@ const HEAD_R := 22.5
 const JAW_DIR := Vector2(0.70710678, 0.70710678)
 const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan17 WP1 glyphs and contour fill")
 	FilmUI.reset_fail_count()
 	var ctx := await _boot()
@@ -50,9 +50,6 @@ func _boot() -> FilmContext:
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _fresh_sketch(ctx: FilmContext) -> void:
@@ -61,7 +58,7 @@ func _fresh_sketch(ctx: FilmContext) -> void:
 		sm.cancel()
 		await process_frame
 		await process_frame
-	_status_log.clear()
+	status_log.clear()
 	await FilmUI.enter_sketch(ctx)
 	await process_frame
 	if ctx.main.sketch_mode != null:
@@ -170,7 +167,7 @@ func _test_g4_g3(ctx: FilmContext) -> void:
 	await process_frame
 	await _arm_tool(ctx, "ToolTrim")
 	check(sm.tool == SketchMode.Tool.TRIM, "G4 Trim is armed")
-	_status_log.clear()
+	status_log.clear()
 	var outer: Vector2 = HEAD + JAW_DIR * 30.0
 	await _drag_between(ctx, outer + JAW_DIR * 4.0, outer - JAW_DIR * 4.0)
 	check(_status_has("Trimmed open jaw"),
@@ -462,11 +459,11 @@ func _hover_screen(vp: Viewport, pos: Vector2) -> void:
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
 
 
 func _tail() -> String:
-	return str(_status_log.slice(maxi(_status_log.size() - 6, 0)))
+	return str(status_log.slice(maxi(status_log.size() - 6, 0)))

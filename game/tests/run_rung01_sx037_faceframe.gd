@@ -8,7 +8,6 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const WHEEL_NOTCHES := 8
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -183,7 +182,7 @@ func _rail_right_px(ctx: FilmContext) -> float:
 
 
 func _last_status() -> String:
-	return "" if _status_log.is_empty() else _status_log[_status_log.size() - 1]
+	return "" if status_log.is_empty() else status_log[status_log.size() - 1]
 
 
 func _find_labeled_button(root: Node, text: String) -> Button:
@@ -241,15 +240,10 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

@@ -7,7 +7,6 @@ const ROOT_SIZE := Vector2i(1280, 800)
 const WIDE_SIZE := Vector2i(1920, 1080)
 const FIRST_DROP := "First point dropped — Esc again exits the sketch"
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -167,7 +166,7 @@ func test_esc_ladder() -> void:
 	await _click_uv(ctx, vp, Vector2.ZERO)
 	await process_frame
 	check(sm.has_pending_draw_point(), "Circle has a first point down")
-	_status_log.clear()
+	status_log.clear()
 	await _push_esc(vp)
 	check(_last_status() == FIRST_DROP, "first Esc drops the first point (got '%s')" % _last_status())
 	check(not _status_has("Measure cleared"), "no Measure cleared between the two Esc presses")
@@ -189,9 +188,9 @@ func test_esc_ladder() -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	await _hover_uv_local(ctx, vp, Vector2(0.0, 10.0))
 	check(mo.has_anchor(), "Select planted a ✕")
-	_status_log.clear()
+	status_log.clear()
 	await _push_esc(vp)
-	check(_status_has("Measure cleared"), "Select with a planted ✕: one Esc says Measure cleared (log: %s)" % str(_status_log))
+	check(_status_has("Measure cleared"), "Select with a planted ✕: one Esc says Measure cleared (log: %s)" % str(status_log))
 	check(not mo.has_anchor(), "Esc cleared the planted ✕")
 	check(sm.active, "Measure cleared keeps the sketch open")
 	await _shutdown(ctx)
@@ -300,24 +299,21 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	main.sketch_mode.status.connect(_on_status)
-	main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false

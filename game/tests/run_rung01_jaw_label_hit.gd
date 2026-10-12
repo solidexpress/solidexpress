@@ -16,7 +16,6 @@ const HALF_W := 10.0
 const SPAN_PX := 140.0
 const NEAR_PX := 160.0
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -54,15 +53,10 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	listen_status(main)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _commit_jaw(ctx: FilmContext) -> void:
@@ -90,10 +84,10 @@ func _commit_jaw(ctx: FilmContext) -> void:
 	await process_frame
 	await process_frame
 	var committed := false
-	for line in _status_log:
+	for line in status_log:
 		if str(line).begins_with("Jaw committed"):
 			committed = true
-	check(committed, "Jaw committed (log tail %s)" % str(_status_log.slice(maxi(_status_log.size() - 4, 0))))
+	check(committed, "Jaw committed (log tail %s)" % str(status_log.slice(maxi(status_log.size() - 4, 0))))
 	check(sm.is_jaw_armed(), "Jaw stays armed after commit")
 
 
@@ -191,11 +185,11 @@ func _assert_select_click(ctx: FilmContext) -> void:
 	await process_frame
 	check(sm.tool == SketchMode.Tool.SELECT, "Select is armed")
 	var n_ent := sm.sketch.entity_ids().size()
-	var n := _status_log.size()
+	var n := status_log.size()
 	await _click_label(ctx, sm, "20", n_ent)
 	var cleared := false
-	for i in range(n, _status_log.size()):
-		if str(_status_log[i]).contains("selection cleared"):
+	for i in range(n, status_log.size()):
+		if str(status_log[i]).contains("selection cleared"):
 			cleared = true
 	check(not cleared, "Select click on the drawn width glyph does not clear the selection")
 
@@ -206,7 +200,7 @@ func _click_label(ctx: FilmContext, sm: SketchMode, needle: String, n_ent: int) 
 	if drawn.is_empty():
 		return
 	var glyph: Vector2 = drawn["glyph"]
-	var n := _status_log.size()
+	var n := status_log.size()
 	await _x11_click_screen(ctx.main.get_viewport(), glyph)
 	await process_frame
 	await process_frame
@@ -217,8 +211,8 @@ func _click_label(ctx: FilmContext, sm: SketchMode, needle: String, n_ent: int) 
 	check(sm.sketch != null and sm.sketch.entity_ids().size() == n_ent,
 			"entity count unchanged after `%s`" % needle)
 	var started := false
-	for i in range(n, _status_log.size()):
-		if str(_status_log[i]).begins_with("Jaw — centre set"):
+	for i in range(n, status_log.size()):
+		if str(status_log[i]).begins_with("Jaw — centre set"):
 			started = true
 	check(not started, "`%s` click does not start a new Jaw" % needle)
 

@@ -7,6 +7,7 @@
 #   tools/godot/godot --headless --path game --script tests/run_rung01_replan17_walk.gd
 extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const OUT := "/tmp/sx-038-out"
 const HEAD := Vector2(200.0, 0.0)
@@ -816,17 +817,7 @@ func _select_body(ctx: FilmContext, body: String) -> void:
 
 
 func _checker(args: Array) -> String:
-	var repo := ProjectSettings.globalize_path("res://").trim_suffix("/").get_base_dir()
-	var checker := repo.path_join("tools/check_rung01.py")
-	var output: Array = []
-	var argv := PackedStringArray()
-	argv.append(checker)
-	for a in args:
-		argv.append(str(a))
-	OS.execute("python3", argv, output, true)
-	var text := "\n".join(output)
-	print(text)
-	return text
+	return str(SxChecker.run("rung01", args)["text"])
 
 
 func _export_3mf(ctx: FilmContext, name: String) -> String:

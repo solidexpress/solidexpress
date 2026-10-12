@@ -10,7 +10,6 @@ const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
 ## The walk's Power Trim click: 3 mm along the jaw and 8 mm across it, on the shaft side of the cutter.
 const SHAFT_SIDE := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 + Vector2(-0.70710678, 0.70710678) * 8.0
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -99,7 +98,7 @@ func _drag_between(ctx: FilmContext, from_uv: Vector2, to_uv: Vector2) -> void:
 
 func _count_status(needle: String) -> int:
 	var n := 0
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			n += 1
 	return n
@@ -136,10 +135,10 @@ func test_offset_cutter_then_second_click() -> void:
 	print("-- cutter 12 mm along the jaw")
 	var ctx := await _open_trim_scene(12.0, Vector2.ZERO)
 	var sm: SketchMode = ctx.main.sketch_mode
-	_status_log.clear()
+	status_log.clear()
 	await _click_at(ctx, SHAFT_SIDE)
-	check(_status_has("Trimmed open jaw"), "an offset cutter opens the jaw (log: %s)" % str(_status_log))
-	check(not _status_has("Trim failed"), "no Trim failed on the first click (log: %s)" % str(_status_log))
+	check(_status_has("Trimmed open jaw"), "an offset cutter opens the jaw (log: %s)" % str(status_log))
+	check(not _status_has("Trim failed"), "no Trim failed on the first click (log: %s)" % str(status_log))
 	check(SketchMode.profile_is_closed(sm.sketch), "the trimmed Jaw profile is closed")
 	check(absf(_arc_radius_near(sm, HEAD) - 22.5) <= 0.3,
 			"the head cap arc is Ø45 (radius %.2f)" % _arc_radius_near(sm, HEAD))
@@ -147,10 +146,10 @@ func test_offset_cutter_then_second_click() -> void:
 	check(sweep > 0.05 and sweep <= PI,
 			"jaw cap is the minor bulge, not the long way around the head (sweep %.3f)" % sweep)
 	var lines_after_first := sm.sketch.entity_ids().size()
-	_status_log.clear()
+	status_log.clear()
 	await _click_at(ctx, SHAFT_SIDE + Vector2(-3.0, -2.0))
-	check(_status_has("Jaw is already open"), "a second click says the jaw is already open (log: %s)" % str(_status_log))
-	check(not _status_has("Trim failed"), "a second click is not a failure (log: %s)" % str(_status_log))
+	check(_status_has("Jaw is already open"), "a second click says the jaw is already open (log: %s)" % str(status_log))
+	check(not _status_has("Trim failed"), "a second click is not a failure (log: %s)" % str(status_log))
 	check(SketchMode.profile_is_closed(sm.sketch), "the profile is still closed after the second click")
 	check(sm.sketch.entity_ids().size() == lines_after_first, "the second click changes no entity (%d vs %d)" % [
 			sm.sketch.entity_ids().size(), lines_after_first])
@@ -161,11 +160,11 @@ func test_drag_after_success_keeps_jaw() -> void:
 	print("-- a stroke that crosses the cutter and keeps moving")
 	var ctx := await _open_trim_scene(12.0, Vector2.ZERO)
 	var sm: SketchMode = ctx.main.sketch_mode
-	_status_log.clear()
+	status_log.clear()
 	await _drag_between(ctx, SHAFT_SIDE, HEAD + Vector2(0.0, 18.0))
-	check(_status_has("Trimmed open jaw"), "the drag trims the jaw (log: %s)" % str(_status_log))
-	check(not _status_has("Trim failed"), "the rest of the stroke does not report Trim failed (log: %s)" % str(_status_log))
-	check(not _status_has("already open"), "the rest of the stroke does not re-trim (log: %s)" % str(_status_log))
+	check(_status_has("Trimmed open jaw"), "the drag trims the jaw (log: %s)" % str(status_log))
+	check(not _status_has("Trim failed"), "the rest of the stroke does not report Trim failed (log: %s)" % str(status_log))
+	check(not _status_has("already open"), "the rest of the stroke does not re-trim (log: %s)" % str(status_log))
 	check(SketchMode.profile_is_closed(sm.sketch), "the profile is closed after the stroke")
 	check(_count_status("Trimmed open jaw") == 1, "the jaw is trimmed exactly once (%d)" % _count_status("Trimmed open jaw"))
 	await _shutdown(ctx)
@@ -175,10 +174,10 @@ func test_cutter_too_far_is_named() -> void:
 	print("-- cutter 24 mm from the head centre")
 	var ctx := await _open_trim_scene(24.0, Vector2.ZERO)
 	var sm: SketchMode = ctx.main.sketch_mode
-	_status_log.clear()
+	status_log.clear()
 	await _click_at(ctx, SHAFT_SIDE)
-	check(_status_has("Trim failed — the centreline is"), "the refusal names the centreline distance (log: %s)" % str(_status_log))
-	check(_status_has("head centre"), "the refusal names the head centre (log: %s)" % str(_status_log))
+	check(_status_has("Trim failed — the centreline is"), "the refusal names the centreline distance (log: %s)" % str(status_log))
+	check(_status_has("head centre"), "the refusal names the head centre (log: %s)" % str(status_log))
 	check(not SketchMode.profile_is_closed(sm.sketch) or _arc_radius_near(sm, HEAD) < 0.0,
 			"a refused trim does not weld a cap arc")
 	await _shutdown(ctx)
@@ -188,9 +187,9 @@ func test_hole_at_head_still_caps_on_head() -> void:
 	print("-- a Ø10 hole at the head centre must not become the cap")
 	var ctx := await _open_trim_scene(8.0, HEAD)
 	var sm: SketchMode = ctx.main.sketch_mode
-	_status_log.clear()
+	status_log.clear()
 	await _click_at(ctx, SHAFT_SIDE)
-	check(_status_has("Trimmed open jaw"), "the jaw opens with a Ø10 at the head centre (log: %s)" % str(_status_log))
+	check(_status_has("Trimmed open jaw"), "the jaw opens with a Ø10 at the head centre (log: %s)" % str(status_log))
 	check(absf(_arc_radius_near(sm, HEAD) - 22.5) <= 0.3,
 			"the cap is the Ø45 arc, not the Ø10 (radius %.2f)" % _arc_radius_near(sm, HEAD))
 	await _shutdown(ctx)
@@ -199,10 +198,10 @@ func test_hole_at_head_still_caps_on_head() -> void:
 func test_nothing_under_pointer_is_named() -> void:
 	print("-- Trim on empty canvas")
 	var ctx := await _open_trim_scene(12.0, Vector2.ZERO)
-	_status_log.clear()
+	status_log.clear()
 	await _zoom_uv(ctx, Vector2(100.0, 90.0), 60.0)
 	await _click_at(ctx, Vector2(100.0, 90.0))
-	check(_status_has("nothing under the pointer"), "empty-canvas Trim is named (log: %s)" % str(_status_log))
+	check(_status_has("nothing under the pointer"), "empty-canvas Trim is named (log: %s)" % str(status_log))
 	check(not _status_has("Trim failed") or _status_has("Trim failed —"), "the failure is never the bare sentence")
 	await _shutdown(ctx)
 
@@ -218,13 +217,11 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

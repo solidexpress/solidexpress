@@ -41,6 +41,7 @@ func _init() -> void:
 	test_typed_length_line(main)
 	test_typed_radius_circle(main)
 	test_dim_blank_ignores_mouse_while_editing(main)
+	test_smart_dim_table_matches_legacy()
 
 	finish()
 
@@ -730,3 +731,122 @@ func test_dim_blank_ignores_mouse_while_editing(main) -> void:
 	check(absf(chrome.dim_value() - 4.0) < 1e-4, "mouse sync skipped while typing")
 	chrome.release_dim_focus()
 	sm.cancel()
+
+
+const _LEGACY_DIM_ROWS := {
+	"single|line|": {
+		"form": "line_length", "label_anchor": "mid", "also": "angle_to_horizontal",
+	},
+	"single|external_line|": {
+		"form": "line_length", "label_anchor": "mid", "also": "angle_to_horizontal",
+	},
+	"single|circle|": {"form": "diameter", "label_anchor": "rim"},
+	"single|arc|": {"form": "diameter", "label_anchor": "rim"},
+	"between|circle_center|circle_center": {"form": "centres", "label_anchor": "mid"},
+	"between|circle_center|arc_center": {"form": "centres", "label_anchor": "mid"},
+	"between|arc_center|circle_center": {"form": "centres", "label_anchor": "mid"},
+	"between|arc_center|arc_center": {"form": "centres", "label_anchor": "mid"},
+	"between|circle_center|line": {
+		"form": "point_line", "point": "a", "label_anchor": "mid",
+	},
+	"between|circle_center|external_line": {
+		"form": "point_line", "point": "a", "label_anchor": "mid",
+	},
+	"between|arc_center|line": {
+		"form": "point_line", "point": "a", "label_anchor": "mid",
+	},
+	"between|arc_center|external_line": {
+		"form": "point_line", "point": "a", "label_anchor": "mid",
+	},
+	"between|line|circle_center": {
+		"form": "point_line", "point": "b", "label_anchor": "mid",
+	},
+	"between|external_line|circle_center": {
+		"form": "point_line", "point": "b", "label_anchor": "mid",
+	},
+	"between|line|arc_center": {
+		"form": "point_line", "point": "b", "label_anchor": "mid",
+	},
+	"between|external_line|arc_center": {
+		"form": "point_line", "point": "b", "label_anchor": "mid",
+	},
+	"between|line|line": {"form": "angle", "label_anchor": "vertex"},
+	"between|line|external_line": {"form": "angle", "label_anchor": "vertex"},
+	"between|external_line|line": {"form": "angle", "label_anchor": "vertex"},
+	"between|external_line|external_line": {"form": "angle", "label_anchor": "vertex"},
+	"selection|line|line": {"form": "angle", "label_anchor": "vertex"},
+	"selection|line|external_line": {"form": "angle", "label_anchor": "vertex"},
+	"selection|external_line|line": {"form": "angle", "label_anchor": "vertex"},
+	"selection|external_line|external_line": {"form": "angle", "label_anchor": "vertex"},
+	"selection|circle|external_line": {
+		"form": "point_line", "point": "a", "point_role": "center", "label_anchor": "mid",
+	},
+	"selection|arc|external_line": {
+		"form": "point_line", "point": "a", "point_role": "center", "label_anchor": "mid",
+	},
+	"selection|external_line|circle": {
+		"form": "point_line", "point": "b", "point_role": "center", "label_anchor": "mid",
+	},
+	"selection|external_line|arc": {
+		"form": "point_line", "point": "b", "point_role": "center", "label_anchor": "mid",
+	},
+}
+
+const _LEGACY_CHANNELS := ["single", "between", "selection"]
+const _LEGACY_KINDS := ["line", "external_line", "circle", "arc", "circle_center", "arc_center", ""]
+
+
+func test_smart_dim_table_matches_legacy() -> void:
+	print("- smart dim table matches the legacy intent rows")
+	for channel in _LEGACY_CHANNELS:
+		for kind_a in _LEGACY_KINDS:
+			if kind_a == "":
+				continue
+			for kind_b in _LEGACY_KINDS:
+				_check_legacy_dim(channel, kind_a, kind_b)
+
+
+func _check_legacy_dim(channel: String, kind_a: String, kind_b: String) -> void:
+	var key := "%s|%s|%s" % [channel, kind_a, kind_b]
+	var expected: Dictionary = _LEGACY_DIM_ROWS.get(key, {})
+	var got := SmartDimTable.resolve(_legacy_channel(channel), _legacy_end(kind_a), _legacy_end(kind_b))
+	check(_dim_fields(got) == _dim_fields(expected), "smart dim %s" % key)
+
+
+func _legacy_channel(name: String) -> SmartDimTable.Channel:
+	match name:
+		"single":
+			return SmartDimTable.Channel.SINGLE
+		"between":
+			return SmartDimTable.Channel.BETWEEN
+		_:
+			return SmartDimTable.Channel.SELECTION
+
+
+func _legacy_end(kind: String) -> SmartDimTable.End:
+	match kind:
+		"line":
+			return SmartDimTable.End.make(SmartDimTable.Kind.LINE, false)
+		"external_line":
+			return SmartDimTable.End.make(SmartDimTable.Kind.LINE, true)
+		"circle":
+			return SmartDimTable.End.make(SmartDimTable.Kind.CIRCLE, false)
+		"arc":
+			return SmartDimTable.End.make(SmartDimTable.Kind.ARC, false)
+		"circle_center":
+			return SmartDimTable.End.make(SmartDimTable.Kind.CIRCLE_CENTER, false)
+		"arc_center":
+			return SmartDimTable.End.make(SmartDimTable.Kind.ARC_CENTER, false)
+		_:
+			return null
+
+
+func _dim_fields(row: Dictionary) -> Array:
+	return [
+		str(row.get("form", "")),
+		str(row.get("point", "")),
+		str(row.get("point_role", "")),
+		str(row.get("label_anchor", "")),
+		str(row.get("also", "")),
+	]
+

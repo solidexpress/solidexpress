@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_rung01
 import check_rung02 as c
 import geom
+from implicit_part import ImplicitPart
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,14 +63,14 @@ class ParamsTests(unittest.TestCase):
 class StageTests(unittest.TestCase):
     def test_implicit_stages_pass(self):
         cases = (
-            ("base", c.ImplicitPart.base(60), 60),
-            ("base", c.ImplicitPart.base(65), 65),
-            ("rounded", c.ImplicitPart.rounded(60), 60),
-            ("rounded", c.ImplicitPart.rounded(65), 65),
-            ("shell", c.ImplicitPart.shell(60), 60),
-            ("shell", c.ImplicitPart.shell(65), 65),
-            ("final", c.ImplicitPart.final(60), 60),
-            ("final", c.ImplicitPart.final(65), 65),
+            ("base", ImplicitPart.base(60), 60),
+            ("base", ImplicitPart.base(65), 65),
+            ("rounded", ImplicitPart.rounded(60), 60),
+            ("rounded", ImplicitPart.rounded(65), 65),
+            ("shell", ImplicitPart.shell(60), 60),
+            ("shell", ImplicitPart.shell(65), 65),
+            ("final", ImplicitPart.final(60), 60),
+            ("final", ImplicitPart.final(65), 65),
         )
         for stage, solid, width in cases:
             rows = _rows(stage, solid, width)
@@ -77,11 +78,11 @@ class StageTests(unittest.TestCase):
 
     def test_mesh_stages_pass(self):
         cases = (
-            ("base", c.ImplicitPart.base(60), 60),
-            ("rounded", c.ImplicitPart.rounded(60), 60),
-            ("shell", c.ImplicitPart.shell(60), 60),
-            ("final", c.ImplicitPart.final(60), 60),
-            ("final", c.ImplicitPart.final(65), 65),
+            ("base", ImplicitPart.base(60), 60),
+            ("rounded", ImplicitPart.rounded(60), 60),
+            ("shell", ImplicitPart.shell(60), 60),
+            ("final", ImplicitPart.final(60), 60),
+            ("final", ImplicitPart.final(65), 65),
         )
         for stage, part, width in cases:
             solid = c.TriMesh(*mesh_from_implicit(part))
@@ -99,48 +100,48 @@ class MutationTests(unittest.TestCase):
 
     def test_r5_and_r15_corners(self):
         for radius in (5.0, 15.0):
-            rows = self._assert_named("rounded", c.ImplicitPart.rounded(60, radius), 60, "corner")
+            rows = self._assert_named("rounded", ImplicitPart.rounded(60, radius), 60, "corner")
             self.assertTrue(_passed(rows, "bbox"))
             self.assertTrue(_passed(rows, "watertight"))
 
     def test_wall_3_and_7(self):
         for thickness in (3.0, 7.0):
             wall = (thickness, thickness, thickness, thickness)
-            self._assert_named("shell", c.ImplicitPart.shell(60, wall=wall), 60, "wall")
+            self._assert_named("shell", ImplicitPart.shell(60, wall=wall), 60, "wall")
 
     def test_one_wall_thinner(self):
         rows = self._assert_named(
-            "shell", c.ImplicitPart.shell(60, wall=(4.0, 5.0, 5.0, 5.0)), 60, "wall")
+            "shell", ImplicitPart.shell(60, wall=(4.0, 5.0, 5.0, 5.0)), 60, "wall")
         self.assertTrue(_passed(rows, "open top"))
 
     def test_closed_top(self):
-        self._assert_named("shell", c.ImplicitPart.shell(60, closed_top=True), 60, "open top")
+        self._assert_named("shell", ImplicitPart.shell(60, closed_top=True), 60, "open top")
 
     def test_hole_diameter(self):
         for diameter in (8.0, 12.0):
-            part = c.ImplicitPart.final(60, hole_d=diameter)
+            part = ImplicitPart.final(60, hole_d=diameter)
             rows = self._assert_named("final", part, 60, "hole Ø10")
             self.assertTrue(_passed(rows, "hole axis"))
 
     def test_hole_one_wall(self):
-        self._assert_named("final", c.ImplicitPart.final(60, hole_mode="one-x"), 60, "hole axis")
+        self._assert_named("final", ImplicitPart.final(60, hole_mode="one-x"), 60, "hole axis")
 
     def test_hole_moved(self):
         for kwargs in ({"hole_y": 38.0}, {"hole_z": 43.0}):
-            self._assert_named("final", c.ImplicitPart.final(60, **kwargs), 60, "hole axis")
+            self._assert_named("final", ImplicitPart.final(60, **kwargs), 60, "hole axis")
 
     def test_hole_in_y_wall(self):
-        self._assert_named("final", c.ImplicitPart.final(60, hole_mode="both-y"), 60, "hole axis")
+        self._assert_named("final", ImplicitPart.final(60, hole_mode="both-y"), 60, "hole axis")
 
     def test_no_hole(self):
-        rows = self._assert_named("final", c.ImplicitPart.shell(60), 60, "hole axis")
+        rows = self._assert_named("final", ImplicitPart.shell(60), 60, "hole axis")
         self.assertTrue(any(name == "volume" for name in _failed(rows)))
 
     def test_width_mismatch(self):
-        self._assert_named("final", c.ImplicitPart.final(65), 60, "bbox")
+        self._assert_named("final", ImplicitPart.final(65), 60, "bbox")
 
     def test_duplicate_body(self):
-        V, T = mesh_from_implicit(c.ImplicitPart.final(60))
+        V, T = mesh_from_implicit(ImplicitPart.final(60))
         shift = V.copy()
         shift[:, 0] += 300.0
         base = len(V)
@@ -149,13 +150,13 @@ class MutationTests(unittest.TestCase):
         self._assert_named("final", c.TriMesh(V2, T2), 60, "watertight")
 
     def test_flipped_triangle(self):
-        V, T = mesh_from_implicit(c.ImplicitPart.final(60))
+        V, T = mesh_from_implicit(ImplicitPart.final(60))
         T = T.copy()
         T[0, 1], T[0, 2] = T[0, 2], T[0, 1]
         self._assert_named("final", c.TriMesh(V, T), 60, "watertight")
 
     def test_final_checked_as_base(self):
-        rows = self._assert_named("base", c.ImplicitPart.final(60), 60, "volume")
+        rows = self._assert_named("base", ImplicitPart.final(60), 60, "volume")
         self.assertTrue(_passed(rows, "bbox"))
         self.assertTrue(_passed(rows, "watertight"))
 
@@ -164,19 +165,45 @@ class CliTests(unittest.TestCase):
     def test_width_usage(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "box.3mf"
-            write_3mf(path, *mesh_from_implicit(c.ImplicitPart.final(60)))
+            write_3mf(path, *mesh_from_implicit(ImplicitPart.final(60)))
             buf = io.StringIO()
             with redirect_stdout(buf):
                 rc = c.main(["final", str(path), "--width", "70"])
             text = buf.getvalue()
             self.assertEqual(rc, 1)
-            self.assertIn("FAIL", text)
-            self.assertIn("usage", text)
+            self.assertIn("FAIL  usage  got 70.0  want 60 or 65", text)
+
+    def test_bad_stage(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = c.main(["cube"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(
+            buf.getvalue(),
+            "FAIL  usage  got cube  want base|rounded|shell|final\n\n0/1 passed\n",
+        )
+
+    def test_missing_file(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = c.main(["final"])
+        self.assertEqual(rc, 1)
+        self.assertEqual(
+            buf.getvalue(),
+            "FAIL  usage  got missing file  want stage file.3mf [--width 60|65]\n\n0/1 passed\n",
+        )
+
+    def test_params_cli(self):
+        proc = subprocess.run(
+            [sys.executable, str(CHECK), "params"],
+            check=False, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), c.params_dict())
 
     def test_cli_final_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "final.3mf"
-            write_3mf(path, *mesh_from_implicit(c.ImplicitPart.final(60)))
+            write_3mf(path, *mesh_from_implicit(ImplicitPart.final(60)))
             proc = subprocess.run(
                 [sys.executable, str(CHECK), "final", str(path)],
                 check=False, capture_output=True, text=True)

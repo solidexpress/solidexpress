@@ -6,6 +6,7 @@ const MANIFEST_PATH := "res://tests/ui_movie_manifest.json"
 const _FILM_UI_BOOT := preload("res://tests/lib/film_ui.gd")
 const _FILM_CHROME_BOOT := preload("res://tests/lib/film_chrome.gd")
 const _FILM_CONTEXT_BOOT := preload("res://tests/lib/film_context.gd")
+const _FILM_HARNESS := preload("res://tests/lib/film_harness.gd")
 
 var failures := 0
 var films_run := 0
@@ -51,35 +52,17 @@ func _load_manifest() -> Array:
 
 func _run_one(entry: Dictionary) -> void:
 	var film_id := str(entry.get("id", ""))
-	var script_path := str(entry.get("script", ""))
 	var budget_frames := int(entry.get("quit_after", 1200)) * 2 + 600
 	print("- smoke %s" % film_id)
 	FilmUI.reset_fail_count()
 
-	var main_scene: PackedScene = load("res://scenes/main.tscn")
-	var main = main_scene.instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.camera = FilmCamera.new(main.camera)
-	ctx.clock = FilmClock.new()
-	ctx.tree = self
-	await FilmUI.ensure_test_viewport(ctx)
-
+	var ctx := await FilmHarness.boot(self)
+	var main = ctx.main
 	# A script with a parse error still loads as a GDScript but cannot be
 	# instantiated; without this guard the film was skipped silently.
-	var film_script: GDScript = load(script_path) as GDScript
-	if film_script == null or not film_script.can_instantiate():
-		check(false, "%s: load script %s" % [film_id, script_path])
-		main.queue_free()
-		return
-	var film: Object = film_script.new()
-	if not film.has_method("run_film"):
-		check(false, "%s: missing run_film" % film_id)
+	var film: Object = FilmHarness.load_film(entry)
+	if film == null:
+		check(false, "%s: %s" % [film_id, FilmHarness.load_reason])
 		main.queue_free()
 		return
 

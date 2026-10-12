@@ -2,6 +2,7 @@
 # Run: tools/godot/godot --headless --path game --script tests/run_rung01_replan3_timeline.gd
 extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
@@ -324,15 +325,8 @@ func _checker(args: Array) -> void:
 	var repo := ProjectSettings.globalize_path("res://").trim_suffix("/").get_base_dir()
 	var checker := repo.path_join("tools/check_rung01.py")
 	check(FileAccess.file_exists(checker), "tools/check_rung01.py exists")
-	var argv := PackedStringArray()
-	argv.append(checker)
-	for a in args:
-		argv.append(str(a))
-	var output: Array = []
-	var code := OS.execute("python3", argv, output, true)
-	var text := "\n".join(output)
-	print(text)
-	check(code == 0, "check_rung01.py %s exit %d" % [" ".join(args), code])
+	var result := SxChecker.run("rung01", args)
+	check(int(result["code"]) == 0, "check_rung01.py %s exit %d" % [" ".join(args), int(result["code"])])
 
 
 func _click_empty_viewport(ctx: FilmContext) -> void:

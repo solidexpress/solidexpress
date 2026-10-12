@@ -6,7 +6,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -102,7 +101,7 @@ func test_part_a_polygon_preview(ctx: FilmContext) -> void:
 
 	# Typed AF 20 on a fresh centre, pointer off-axis, real keys into the AF blank.
 	print("-- Part A: type AF 20, flats horizontal")
-	_status_log.clear()
+	status_log.clear()
 	sm.set_tool(SketchMode.Tool.POLYGON)
 	await _click_uv_local(ctx, Vector2.ZERO, "Typed hex centre")
 	await _motion_uv(ctx, steered_tip)
@@ -526,10 +525,8 @@ func _zoom_model(ctx: FilmContext, model_pivot: Vector3, size_mm: float) -> void
 
 
 func _joined_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return " | ".join(_status_log)
+	return " | ".join(status_log)
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)

@@ -1,9 +1,7 @@
 #include "sx/features.hpp"
 
 #include "features/ops.hpp"
-#include "features/topo_cue.h"
 
-#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <gp_Pln.hxx>
@@ -957,132 +955,6 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
 }
 
 
-// Record every currently resolvable edge so a later rebuild can find it
-// after topological naming mints a new id for the same geometry.
-static void remember_live_edges(FeatureGraph& graph, Document& doc) {
-    for (const auto& body_id : doc.body_ids()) {
-        const Body* body = doc.body(body_id);
-        if (!body) continue;
-        auto it = body->subshape_ids.find(EntityKind::Edge);
-        if (it == body->subshape_ids.end()) continue;
-        for (const auto& eid : it->second) {
-            TopoDS_Shape shape = doc.resolve(eid);
-            if (shape.IsNull() || shape.ShapeType() != TopAbs_EDGE) continue;
-            const TopoDS_Edge edge = TopoDS::Edge(shape);
-            BRepAdaptor_Curve curve(edge);
-            gp_Pnt p;
-            gp_Vec v;
-            curve.D1(0.5 * (curve.FirstParameter() + curve.LastParameter()), p, v);
-            if (v.Magnitude() < 1e-12) continue;
-            v.Normalize();
-            graph.remember_edge(eid.str(), p.X(), p.Y(), p.Z(), v.X(), v.Y(), v.Z());
-        }
-    }
-}
-
-// True when `point`/`dir` is the same line the stored cue already names.
-// Topological naming can hand a fillet's old edge id to a different curve
-// after the blend consumes it. That must not replace the pre-fillet cue.
-static bool cue_still_names(const json& cue, const gp_Pnt& point, const gp_Vec& dir) {
-    if (!cue.is_object() || (!cue.contains("point") && !cue.contains("dir"))) return true;
-    const TopoCue stored = cue_from_json(cue);
-    return cue_names_line(stored, Vec3{point.X(), point.Y(), point.Z()},
-                          Vec3{dir.X(), dir.Y(), dir.Z()});
-}
-
-// A fillet/chamfer edge created by an earlier feature is released when the
-// base body is rebuilt, then minted again by that feature. Copy a cue onto
-// the feature while the id still resolves, or from an edge seen on a
-// previous regen. Cues are not overwritten when the id is already gone, or
-// when the id now resolves to a different curve, so a later regen keeps the
-// pre-fillet location.
-static void remember_dressup_edge_cues(FeatureGraph& graph, Feature& f, Document& doc) {
-    struct CueJob {
-        FeatureType type;
-        const char* refs;
-        const char* cues;
-        EntityKind kind;
-    };
-    // Fillet and chamfer remember edges. Shell remembers the removed faces.
-    // A new dress-up reference is another row, not another branch at the call.
-    static constexpr CueJob kJobs[] = {
-        {FeatureType::Fillet, "edges", "edge_cues", EntityKind::Edge},
-        {FeatureType::Chamfer, "edges", "edge_cues", EntityKind::Edge},
-        {FeatureType::Shell, "faces", "face_cues", EntityKind::Face},
-    };
-    const CueJob* job = nullptr;
-    for (const auto& candidate : kJobs)
-        if (candidate.type == f.type) job = &candidate;
-    if (!job) return;
-    if (!f.params.contains(job->refs) || !f.params[job->refs].is_array()) return;
-    if (!f.params.contains("target") || !f.params["target"].is_string()) return;
-    const Feature* ref =
-        graph.feature(EntityId::from_string(f.params["target"].get<std::string>()));
-    if (!ref || ref->output_body.is_null()) return;
-    const Body* tb = doc.body(ref->output_body);
-    if (!tb) return;
-    json cues = f.params.value(job->cues, json::object());
-    if (!cues.is_object()) return;
-    bool changed = false;
-    for (const auto& je : f.params[job->refs]) {
-        if (!je.is_string()) continue;
-        const std::string key = je.get<std::string>();
-        const bool have = cues.contains(key);
-        TopoDS_Shape es;
-        std::string why;
-        if (feature_ops::resolve_topo_shape(doc, *tb, job->kind, je, es, &why)) {
-            TopoCue fresh = job->kind == EntityKind::Face
-                                ? cue_from_face(TopoDS::Face(es), tb->shape)
-                                : cue_from_edge(TopoDS::Edge(es), tb->shape);
-            if (fresh.dir.x == 0.0 && fresh.dir.y == 0.0 && fresh.dir.z == 0.0) continue;
-            if (have) {
-                const TopoCue stored = cue_from_json(cues[key]);
-                const bool same = job->kind == EntityKind::Face
-                                      ? cue_names_face(stored, fresh)
-                                      : cue_names_line(stored, fresh.point, fresh.dir);
-                if (!same) continue;
-            }
-            cues[key] = cue_to_json(fresh);
-            changed = true;
-            continue;
-        }
-        if (job->kind != EntityKind::Edge) continue;
-        double px, py, pz, dx, dy, dz;
-        if (!graph.recall_edge(key, px, py, pz, dx, dy, dz)) continue;
-        gp_Pnt mem_p(px, py, pz);
-        gp_Vec mem_d(dx, dy, dz);
-        if (have && !cue_still_names(cues[key], mem_p, mem_d)) continue;
-        // A cue that already names this line keeps its fraction. Replacing it
-        // with the point/dir memory would drop the relative match.
-        if (have) continue;
-        TopoCue mem;
-        mem.point = {px, py, pz};
-        mem.dir = {dx, dy, dz};
-        mem.tol = 0.5;
-        cues[key] = cue_to_json(mem);
-        changed = true;
-    }
-    if (changed) f.params[job->cues] = std::move(cues);
-}
-
-void FeatureGraph::remember_edge(const std::string& id, double px, double py, double pz,
-                                 double dx, double dy, double dz) {
-    edge_memory_[id] = EdgeMemory{px, py, pz, dx, dy, dz};
-}
-
-bool FeatureGraph::recall_edge(const std::string& id, double& px, double& py, double& pz,
-                               double& dx, double& dy, double& dz) const {
-    auto it = edge_memory_.find(id);
-    if (it == edge_memory_.end()) return false;
-    px = it->second.px;
-    py = it->second.py;
-    pz = it->second.pz;
-    dx = it->second.dx;
-    dy = it->second.dy;
-    dz = it->second.dz;
-    return true;
-}
-
 bool FeatureGraph::regenerate(Document& doc, std::string* err) {
     // Bodies this pass will rebuild stay in the document so apply() can route
     // through replace_body_shape and the naming service keeps subshape ids
@@ -1127,10 +999,10 @@ bool FeatureGraph::regenerate(Document& doc, std::string* err) {
         }
     }
     generated_.clear();
-    remember_live_edges(*this, doc);
+    cues_.remember_live_edges(*this, doc);
     for (auto& f : timeline_) {
         if (f.suppressed) continue;
-        remember_dressup_edge_cues(*this, f, doc);
+        cues_.refresh_feature_cues(*this, f, doc);
     }
     for (size_t i = 0; i < timeline_.size(); ++i) {
         auto& f = timeline_[i];
@@ -1158,7 +1030,7 @@ bool FeatureGraph::regenerate(Document& doc, std::string* err) {
     }
     // Selections made after this regen name the ids that exist now. Remember
     // them so a later rollback (a refused fillet) can still resolve that pick.
-    remember_live_edges(*this, doc);
+    cues_.remember_live_edges(*this, doc);
     return true;
 }
 
@@ -1184,12 +1056,8 @@ json FeatureGraph::to_json() const {
         if (f.sketch) jf["sketch_data"] = sketch_to_json(*f.sketch);
         j["timeline"].push_back(jf);
     }
-    if (!edge_memory_.empty()) {
-        json mem = json::object();
-        for (const auto& [id, e] : edge_memory_)
-            mem[id] = {e.px, e.py, e.pz, e.dx, e.dy, e.dz};
-        j["edge_memory"] = std::move(mem);
-    }
+    json mem = cues_.to_json();
+    if (!mem.empty()) j["edge_memory"] = std::move(mem);
     return j;
 }
 
@@ -1213,14 +1081,7 @@ FeatureGraph FeatureGraph::from_json(const json& j) {
         if (jf.contains("sketch_data")) f.sketch = sketch_from_json(jf["sketch_data"]);
         g.timeline_.push_back(std::move(f));
     }
-    if (j.contains("edge_memory") && j["edge_memory"].is_object()) {
-        for (auto it = j["edge_memory"].begin(); it != j["edge_memory"].end(); ++it) {
-            const auto& a = it.value();
-            if (!a.is_array() || a.size() < 6) continue;
-            g.remember_edge(it.key(), a[0].get<double>(), a[1].get<double>(), a[2].get<double>(),
-                            a[3].get<double>(), a[4].get<double>(), a[5].get<double>());
-        }
-    }
+    if (j.contains("edge_memory")) g.cues_.from_json(j["edge_memory"]);
     return g;
 }
 

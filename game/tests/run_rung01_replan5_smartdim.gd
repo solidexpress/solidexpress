@@ -5,10 +5,10 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan5 WP1 smartdim")
 	FilmUI.reset_fail_count()
 	_assert_source_hygiene()
@@ -162,7 +162,7 @@ func test_nut_smart_dim_and_failed_coincident() -> void:
 	if bore != "":
 		var br := float(sm.sketch.entity_info(bore)["radius"])
 		check(absf(br - 5.0) <= 0.05, "bore radius is still 5 ± 0.05 (got %.4f)" % br)
-	_status_log.clear()
+	status_log.clear()
 	await _exit_sketch(ctx)
 	var status_text := str(ctx.main.status_label.text)
 	check(not ctx.main.sketch_mode.active, "Exit Sketch left the session")
@@ -182,7 +182,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	return ctx
@@ -196,13 +196,10 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false

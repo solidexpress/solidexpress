@@ -9,7 +9,6 @@ const JAW_ACROSS := Vector2(-0.70710678, 0.70710678)
 ## The walk's Power Trim click: 3 mm along the jaw and 8 mm across it, on the shaft side of the cutter.
 const SHAFT_SIDE := Vector2(200.0, 0.0) + Vector2(0.70710678, 0.70710678) * 3.0 + Vector2(-0.70710678, 0.70710678) * 8.0
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -209,10 +208,10 @@ func test_typed_20_45() -> void:
 	sm.sketch.add_circle(HEAD.x, HEAD.y, 22.5)
 	_commit_jaw(sm, 20.0, 45.0)
 	_add_cutter(sm, 45.0)
-	_status_log.clear()
+	status_log.clear()
 	sm.trim_at(SHAFT_SIDE)
-	check(_last_status() == "Trimmed open jaw", "status stays Trimmed open jaw (got `%s` log=%s)" % [_last_status(), str(_status_log)])
-	check(not _status_has("Dimension updated"), "Dimension updated is not re-emitted (log=%s)" % str(_status_log))
+	check(_last_status() == "Trimmed open jaw", "status stays Trimmed open jaw (got `%s` log=%s)" % [_last_status(), str(status_log)])
+	check(not _status_has("Dimension updated"), "Dimension updated is not re-emitted (log=%s)" % str(status_log))
 	_assert_trim_dims(main, sm, 20.0, 45.0, "20/45")
 	var d0: Array = _floor_distance_dims(sm)
 	var a0: Array = _wall_angle_dims(sm)
@@ -225,9 +224,9 @@ func test_typed_20_45() -> void:
 	var av1 := _user_value(sm, a1[0]) if not a1.is_empty() else INF
 	check(absf(dv1 - dv0) <= 1e-9 and absf(av1 - av0) <= 1e-9,
 			"re-solve holds the typed values (distance %.9f→%.9f angle %.9f→%.9f)" % [dv0, dv1, av0, av1])
-	_status_log.clear()
+	status_log.clear()
 	sm.trim_at(SHAFT_SIDE)
-	check(_status_has("Jaw is already open"), "a second trim_at says the jaw is already open (log=%s)" % str(_status_log))
+	check(_status_has("Jaw is already open"), "a second trim_at says the jaw is already open (log=%s)" % str(status_log))
 	check(SketchMode.profile_is_closed(sm.sketch), "trimmed Jaw profile is closed")
 	check(sm.last_conflicting.is_empty(), "last_conflicting empty (got %s last_dofs=%s status=%s)" % [
 			str(sm.last_conflicting), str(sm.last_dofs), str(sm.last_solve_status)])
@@ -243,7 +242,7 @@ func test_typed_15_30_with_hole() -> void:
 	sm.sketch.add_circle(HEAD.x, HEAD.y, 22.5)
 	_commit_jaw(sm, 15.0, 30.0)
 	_add_cutter(sm, 30.0)
-	_status_log.clear()
+	status_log.clear()
 	sm.trim_at(_shaft_side(30.0))
 	check(_last_status() == "Trimmed open jaw", "15/30 status stays Trimmed open jaw (got `%s`)" % _last_status())
 	_assert_trim_dims(main, sm, 15.0, 30.0, "15/30")
@@ -266,7 +265,7 @@ func _boot():
 	main._start_sketch()
 	var jaw_pivot: Vector3 = main.sketch_mode.to_model(HEAD)
 	await _zoom_model(main, jaw_pivot, 120.0)
-	_status_log.clear()
+	status_log.clear()
 	main.sketch_mode.status.connect(_on_status)
 	return main
 
@@ -298,21 +297,19 @@ func _zoom_model(main, model_pivot: Vector3, size_mm: float) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _status_has(needle: String) -> bool:
-	for s in _status_log:
+	for s in status_log:
 		if s.contains(needle):
 			return true
 	return false
 
 
 func _last_status() -> String:
-	if _status_log.is_empty():
+	if status_log.is_empty():
 		return ""
-	return _status_log[_status_log.size() - 1]
+	return status_log[status_log.size() - 1]
 
 
 func _shutdown(main) -> void:

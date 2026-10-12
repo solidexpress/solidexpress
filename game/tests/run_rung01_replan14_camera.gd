@@ -14,7 +14,6 @@ const FILL_FRAC := 0.60
 const BOX_SIZE := Vector3(240, 45, 10)
 const CIRCLE_R := 20.0
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
@@ -53,11 +52,11 @@ func test_part_mode_f_and_hud() -> void:
 	print("  after 8 wheel-in on end: distance=%.4f pivot=%s end_px=%s" % [
 		dist_zoomed, str(pivot_zoomed), str(end_px)])
 
-	var mark := _status_log.size()
+	var mark := status_log.size()
 	await _push_key_local(vp, KEY_F)
 	var hits := _framed_since(mark)
 	print("  after F (no selection): label=`%s` framed_hits=%s log_tail=%s" % [
-		str(main.status_label.text), str(hits), str(_status_log.slice(maxi(_status_log.size() - 6, 0)))])
+		str(main.status_label.text), str(hits), str(status_log.slice(maxi(status_log.size() - 6, 0)))])
 	check(hits.size() == 1 and hits[0] == "Framed all",
 			"1: F with nothing selected prints Framed all once (got %s)" % str(hits))
 	_assert_body_in_free_rect(ctx, body, "F all")
@@ -70,7 +69,7 @@ func test_part_mode_f_and_hud() -> void:
 	var canvas_f: Rect2 = cam.sketch_fit_canvas_rect()
 	print("  after F all: d=%.4f pivot=%s canvas=%s" % [
 		cam.distance, str(cam.pivot), str(canvas_f)])
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _push_key_local(vp, KEY_F, true)
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and hits[0] == "Framed all",
@@ -84,12 +83,12 @@ func test_part_mode_f_and_hud() -> void:
 	if fit_btn_all != null:
 		# Key F while the pointer sits on the HUD (same hover as a Frame click).
 		await _move_pointer(vp, fit_btn_all.get_global_rect().get_center())
-		mark = _status_log.size()
+		mark = status_log.size()
 		await _push_key_local(vp, KEY_F)
 		check(_pose_near(cam, pose_f_all),
 				"1b: F with pointer on HUD Frame matches canvas F (d %.4f vs %.4f)" % [
 					cam.distance, pose_f_all["distance"]])
-		mark = _status_log.size()
+		mark = status_log.size()
 		await _click_hud_frame(vp, fit_btn_all)
 		await process_frame
 		await process_frame
@@ -110,7 +109,7 @@ func test_part_mode_f_and_hud() -> void:
 	await process_frame
 	check(ctx.view.selected_body == body, "2: click selected the body (%s)" % ctx.view.selected_body)
 	await _zoom_on(vp, end_px2, true, 8)
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _push_key_local(vp, KEY_F)
 	hits = _framed_since(mark)
 	print("  after F (selected): label=`%s` framed_hits=%s" % [str(main.status_label.text), str(hits)])
@@ -119,7 +118,7 @@ func test_part_mode_f_and_hud() -> void:
 	_assert_body_in_free_rect(ctx, body, "F selection")
 
 	var pose_f := _pose_of(cam)
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _push_key_local(vp, KEY_F, true)
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and hits[0] == "Framed all",
@@ -133,7 +132,7 @@ func test_part_mode_f_and_hud() -> void:
 	pose_sel = _pose_of(cam)
 	var fit_btn := _find_labeled_button(main.view_hud, "Frame")
 	check(fit_btn != null and fit_btn.is_visible_in_tree(), "3: View HUD has a visible Frame button")
-	mark = _status_log.size()
+	mark = status_log.size()
 	if fit_btn != null:
 		await FilmUI.click_control(ctx, fit_btn, FilmUICues.alert("F", "View HUD Frame"))
 		await process_frame
@@ -151,7 +150,7 @@ func test_part_mode_f_and_hud() -> void:
 			"3: HUD Frame pose matches F within 1e-3 (d %.4f vs %.4f, pivot dist %.4f)" % [
 				cam.distance, pose_sel["distance"], cam.pivot.distance_to(pose_sel["pivot"])])
 
-	mark = _status_log.size()
+	mark = status_log.size()
 	var pose_before_20 := _pose_of(cam)
 	await _click_orient_item(ctx, "Frame selection")
 	hits = _framed_since(mark)
@@ -160,7 +159,7 @@ func test_part_mode_f_and_hud() -> void:
 	check(_pose_near(cam, pose_before_20) or _pose_near(cam, pose_sel),
 			"3: marking-menu 20 pose matches frame-selection")
 
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _click_orient_item(ctx, "Frame all")
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and hits[0] == "Framed all",
@@ -182,7 +181,7 @@ func test_part_mode_f_and_hud() -> void:
 		await process_frame
 		await _click_at(vp, _spin_arrow_pos(spin, false))
 		await process_frame
-	mark = _status_log.size()
+	mark = status_log.size()
 	var dist_pre := cam.distance
 	await _push_key_local(vp, KEY_F)
 	hits = _framed_since(mark)
@@ -209,7 +208,7 @@ func test_hud_frame_with_timeline() -> void:
 	check(main.timeline != null and main.timeline.visible, "Timeline is visible")
 	await _push_key_local(vp, KEY_ESCAPE)
 	await _push_key_local(vp, KEY_3)
-	var mark := _status_log.size()
+	var mark := status_log.size()
 	await _push_key_local(vp, KEY_F)
 	var hits := _framed_since(mark)
 	check(hits.size() == 1 and hits[0] == "Framed all",
@@ -218,7 +217,7 @@ func test_hud_frame_with_timeline() -> void:
 	var pose_f := _pose_of(cam)
 	var fit_btn := _find_labeled_button(main.view_hud, "Frame")
 	check(fit_btn != null and fit_btn.is_visible_in_tree(), "N6: Frame button visible")
-	mark = _status_log.size()
+	mark = status_log.size()
 	if fit_btn != null:
 		await _click_hud_frame(vp, fit_btn)
 		await process_frame
@@ -261,7 +260,7 @@ func test_sketch_session_end_f() -> void:
 	await process_frame
 	check(sm == null or not sm.active, "4: Exit Sketch ended the session")
 	check(not _sketch_fit_valid(cam), "4: sketch_fit is invalid after Exit Sketch")
-	var mark := _status_log.size()
+	var mark := status_log.size()
 	await _push_key_local(vp, KEY_F)
 	var hits := _framed_since(mark)
 	check(hits.size() == 1 and (hits[0] == "Framed all" or hits[0] == "Framed selection"),
@@ -286,7 +285,7 @@ func test_sketch_session_end_f() -> void:
 		await process_frame
 	check(sm == null or not sm.active, "4: Esc ended the sketch session")
 	check(not _sketch_fit_valid(cam), "4: sketch_fit is invalid after Esc")
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _push_key_local(vp, KEY_F)
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and (hits[0] == "Framed all" or hits[0] == "Framed selection"),
@@ -312,7 +311,7 @@ func test_sketch_session_end_f() -> void:
 		await process_frame
 	check(sm == null or not sm.active, "4: session ended after Save As then Exit Sketch")
 	check(not _sketch_fit_valid(cam), "4: sketch_fit is invalid after Save As re-entry then exit")
-	mark = _status_log.size()
+	mark = status_log.size()
 	await _push_key_local(vp, KEY_F)
 	hits = _framed_since(mark)
 	check(hits.size() == 1 and (hits[0] == "Framed all" or hits[0] == "Framed selection"),
@@ -606,8 +605,8 @@ func _pose_near(cam: OrbitCamera, pose: Dictionary) -> bool:
 
 func _framed_since(mark: int) -> Array[String]:
 	var hits: Array[String] = []
-	for i in range(mark, _status_log.size()):
-		var s := _status_log[i]
+	for i in range(mark, status_log.size()):
+		var s := status_log[i]
 		if s == "Framed selection" or s == "Framed all":
 			hits.append(s)
 	return hits
@@ -768,11 +767,8 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
-	if main.sketch_mode != null and not main.sketch_mode.status.is_connected(_on_status):
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null and not main.interaction.status.is_connected(_on_status):
-		main.interaction.status.connect(_on_status)
+	status_log.clear()
+	listen_status(main)
 	if main.ops_panel != null and not main.ops_panel.status.is_connected(_on_status):
 		main.ops_panel.status.connect(_on_status)
 	if main.camera != null and main.camera.has_signal("framed"):
@@ -781,8 +777,6 @@ func _boot() -> FilmContext:
 	return ctx
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
 
 
 func _shutdown(ctx: FilmContext) -> void:

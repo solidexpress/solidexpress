@@ -12,9 +12,7 @@
 #include "sx/commands_transform.hpp"
 #include <cmath>
 #include <limits>
-#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
-#include <GeomAbs_CurveType.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Dir.hxx>
@@ -814,26 +812,8 @@ String SxDocument::sketch_add_external_edge(const String& sketch_id, const Strin
     const sx::EntityId eid = parse_id(edge_id);
     sx::EntityId added;
     const bool ok = apply_graph_edit("convert edge", [&] {
-        sx::Feature* f = doc_->graph().feature(fid);
-        if (f == nullptr || !f->sketch) return false;
-        const std::string edge = eid.str();
-        for (const auto& e : f->sketch->entities()) {
-            if (e.external && e.projected_from == edge) {
-                added = e.id;
-                return true;
-            }
-        }
-        const TopoDS_Shape sh = doc_->resolve(eid);
-        if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) return false;
-        const BRepAdaptor_Curve curve(TopoDS::Edge(sh));
-        if (curve.GetType() != GeomAbs_Line) return false;
-        const gp_Pnt a = curve.Value(curve.FirstParameter());
-        const gp_Pnt b = curve.Value(curve.LastParameter());
-        if (a.Distance(b) < 1e-9) return false;
-        added = f->sketch->project_line_edge({a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, edge);
-        if (added.is_null()) return false;
-        f->sketch->set_construction(added, true);
-        return true;
+        added = sx::add_external_edge(*doc_, fid, eid);
+        return !added.is_null();
     });
     return ok ? to_gd(added.str()) : String();
 }
@@ -988,8 +968,7 @@ String SxDocument::graph_add_dressup(bool fillet, const String& target_fid,
         // A refused fillet regenerates the body and mints new edge ids. The
         // selection still names the previous id; the graph remembers its
         // geometry so the next fillet can find the rebuilt edge.
-        double px, py, pz, dx, dy, dz;
-        if (doc_->graph().recall_edge(edge_s, px, py, pz, dx, dy, dz)) {
+        if (doc_->graph().cues().find(edge_s) != nullptr) {
             edges.push_back(edge_s);
             continue;
         }

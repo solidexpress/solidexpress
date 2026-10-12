@@ -458,7 +458,7 @@ def _lint_sx_lib(errors: list[str]) -> None:
 
 
 def _python_walk_files() -> list[Path]:
-    return sorted(WALK_PKG.glob("*.py")) + [WALK_PY]
+    return sorted(WALK_PKG.rglob("*.py")) + [WALK_PY]
 
 
 def _lint_python_walk(errors: list[str]) -> None:
@@ -468,7 +468,7 @@ def _lint_python_walk(errors: list[str]) -> None:
         return
     files = _python_walk_files()
     py_files = [p for p in files if p.is_file() and p.suffix == ".py"]
-    if len(list(WALK_PKG.glob("*.py"))) < 8:
+    if len(list(WALK_PKG.rglob("*.py"))) < 8:
         errors.append("tools/walk is missing mixin modules")
     src = "\n".join(p.read_text(encoding="utf-8") for p in py_files)
     _lint_needles(src, ("infer_enabled", "text_submitted.emit", "interaction._input", "id_pressed.emit"), errors, "tools/walk:")

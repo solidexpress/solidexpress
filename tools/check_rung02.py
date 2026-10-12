@@ -8,14 +8,15 @@ Usage:
 Stages: base, rounded, shell, final. Width is 60 or 65 (default 60).
 `params` prints the PART table as JSON. Tolerances: 0.2 mm, volume 0.5 %.
 """
+import argparse
 import json
 import math
 import sys
-from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 
-from geom import R, Topology, load_3mf, ray_hits, topology_report, tri_arrays
+from geom import Report, Row, Topology, load_3mf, ray_hits, topology_report, tri_arrays
 from geom import inside as mesh_inside
 
 TOL = 0.2
@@ -72,12 +73,14 @@ def params_dict():
     return data
 
 
-class Row:
-    def __init__(self, name, ok, got, want):
-        self.name = name
-        self.ok = bool(ok)
-        self.got = got
-        self.want = want
+class Solid(Protocol):
+    """What a probe measures: bounds, volume, membership, ray hits, topology."""
+
+    def bbox(self): ...
+    def volume(self) -> float: ...
+    def inside(self, point) -> bool: ...
+    def hits(self, origin, direction) -> list[float]: ...
+    def topology(self) -> Topology: ...
 
 
 class TriMesh:
@@ -114,173 +117,6 @@ class TriMesh:
         return topology_report(self.V, self.T)
 
 
-def _in_rounded(x, y, x0, y0, x1, y1, rad):
-    if x1 - x0 <= 1e-12 or y1 - y0 <= 1e-12:
-        return False
-    rad = min(rad, (x1 - x0) / 2.0, (y1 - y0) / 2.0)
-    if rad <= 1e-12:
-        return x0 <= x <= x1 and y0 <= y <= y1
-    cx = min(max(x, x0 + rad), x1 - rad)
-    cy = min(max(y, y0 + rad), y1 - rad)
-    return (x - cx) ** 2 + (y - cy) ** 2 <= rad * rad
-
-
-@dataclass
-class ImplicitPart:
-    """Analytic rounded box, optional shell, optional hole. Tests only."""
-
-    W: float
-    R: float = 0.0
-    shell: bool = False
-    wall: tuple = (5.0, 5.0, 5.0, 5.0)  # left, right, bottom, top insets
-    closed_top: bool = False
-    hole_mode: str = "none"  # none | both-x | one-x | both-y
-    hole_d: float = 10.0
-    hole_y: float = 35.0
-    hole_z: float = 40.0
-    X: float = 100.0
-    H: float = 50.0
-
-    @staticmethod
-    def base(W):
-        return ImplicitPart(W=W, R=0.0, shell=False, hole_mode="none")
-
-    @staticmethod
-    def rounded(W, R=10.0):
-        return ImplicitPart(W=W, R=R, shell=False, hole_mode="none")
-
-    @staticmethod
-    def shell(W, R=10.0, wall=(5.0, 5.0, 5.0, 5.0), closed_top=False):
-        return ImplicitPart(W=W, R=R, shell=True, wall=tuple(wall), closed_top=closed_top, hole_mode="none")
-
-    @staticmethod
-    def final(W, R=10.0, wall=(5.0, 5.0, 5.0, 5.0), hole_mode="both-x",
-              hole_d=10.0, hole_y=35.0, hole_z=40.0, closed_top=False):
-        return ImplicitPart(
-            W=W, R=R, shell=True, wall=tuple(wall), closed_top=closed_top,
-            hole_mode=hole_mode, hole_d=hole_d, hole_y=hole_y, hole_z=hole_z)
-
-    def _inner_radius(self):
-        return max(0.0, self.R - max(self.wall))
-
-    def inside(self, p):
-        x, y, z = (float(p[0]), float(p[1]), float(p[2]))
-        if z < 0.0 or z > self.H:
-            return False
-        if not _in_rounded(x, y, 0.0, 0.0, self.X, self.W, self.R):
-            return False
-        if self.shell and self._in_cavity(x, y, z):
-            return False
-        if self._in_hole(x, y, z):
-            return False
-        return True
-
-    def _in_cavity(self, x, y, z):
-        left, right, bottom, top = self.wall
-        z_hi = self.H - (top if self.closed_top else 0.0)
-        if self.closed_top:
-            in_z = bottom < z < z_hi
-        else:
-            in_z = bottom < z <= self.H
-        if not in_z:
-            return False
-        return _in_rounded(x, y, left, bottom, self.X - right, self.W - top, self._inner_radius())
-
-    def _in_hole(self, x, y, z):
-        if self.hole_mode == "none":
-            return False
-        left, right, bottom, top = self.wall
-        r2 = (self.hole_d * 0.5) ** 2
-        if self.hole_mode in ("both-x", "one-x"):
-            if (y - self.hole_y) ** 2 + (z - self.hole_z) ** 2 <= r2:
-                if 0.0 <= x <= left:
-                    return True
-                if self.hole_mode == "both-x" and self.X - right <= x <= self.X:
-                    return True
-        if self.hole_mode == "both-y":
-            if (x - self.X * 0.5) ** 2 + (z - self.hole_z) ** 2 <= r2:
-                if 0.0 <= y <= bottom or self.W - top <= y <= self.W:
-                    return True
-        return False
-
-    def volume(self):
-        outer = self.H * _rounded_area(self.X, self.W, self.R)
-        if not self.shell:
-            return outer
-        left, right, bottom, top = self.wall
-        height = self.H - bottom - (top if self.closed_top else 0.0)
-        inner = height * _rounded_area(
-            self.X - left - right, self.W - bottom - top, self._inner_radius())
-        return outer - inner - self._hole_volume()
-
-    def _hole_volume(self):
-        if self.hole_mode == "none":
-            return 0.0
-        area = math.pi * (self.hole_d * 0.5) ** 2
-        left, right, bottom, top = self.wall
-        if self.hole_mode == "both-x":
-            return area * (left + right)
-        if self.hole_mode == "one-x":
-            return area * left
-        if self.hole_mode == "both-y":
-            return area * (bottom + top)
-        return 0.0
-
-    def bbox(self):
-        return np.array((0.0, 0.0, 0.0)), np.array((self.X, self.W, self.H))
-
-    def hits(self, origin, direction):
-        o = np.asarray(origin, float)
-        d = np.asarray(direction, float)
-        d = d / np.linalg.norm(d)
-        span = self._span(o, d)
-        if span is None:
-            return []
-        t0, t1 = span
-        step = 0.01
-        t = t0
-        prev = self.inside(o + t * d)
-        found = []
-        limit = t1 + step
-        while t < limit - 1e-15:
-            t_next = min(t + step, limit)
-            cur = self.inside(o + t_next * d)
-            if cur != prev:
-                found.append(self._bisect(o, d, t, t_next, prev))
-            prev = cur
-            t = t_next
-        return [hit for hit in found if hit > 1e-9]
-
-    def _span(self, o, d):
-        bmin = np.array((-2.0, -2.0, -2.0))
-        bmax = np.array((self.X + 2.0, self.W + 2.0, self.H + 2.0))
-        t_near, t_far = -1e9, 1e9
-        for i in range(3):
-            if abs(d[i]) < 1e-15:
-                if o[i] < bmin[i] or o[i] > bmax[i]:
-                    return None
-                continue
-            ta = (bmin[i] - o[i]) / d[i]
-            tb = (bmax[i] - o[i]) / d[i]
-            t_near = max(t_near, min(ta, tb))
-            t_far = min(t_far, max(ta, tb))
-        if t_far < max(t_near, 0.0):
-            return None
-        return max(t_near, 0.0), t_far
-
-    def _bisect(self, o, d, t_a, t_b, inside_a):
-        for _ in range(40):
-            mid = 0.5 * (t_a + t_b)
-            if self.inside(o + mid * d) == inside_a:
-                t_a = mid
-            else:
-                t_b = mid
-        return 0.5 * (t_a + t_b)
-
-    def topology(self):
-        return Topology(0, 0, 1)
-
-
 def _fmt(value):
     if value is None:
         return "none"
@@ -290,7 +126,7 @@ def _fmt(value):
 
 
 class Bbox:
-    def run(self, solid, W):
+    def run(self, solid: Solid, W):
         mn, mx = solid.bbox()
         ext = np.asarray(mx, float) - np.asarray(mn, float)
         mn = np.asarray(mn, float)
@@ -308,7 +144,7 @@ class Volume:
     def __init__(self, kind):
         self.kind = kind
 
-    def run(self, solid, W):
+    def run(self, solid: Solid, W):
         got = float(solid.volume())
         want = volumes(W)[self.kind]
         ok = abs(got - want) <= VOLUME_TOL * abs(want)
@@ -316,7 +152,7 @@ class Volume:
 
 
 class Watertight:
-    def run(self, solid, W):
+    def run(self, solid: Solid, W):
         topo = solid.topology()
         ok = topo.open_edges == 0 and topo.nonmanifold_edges == 0 and topo.components == 1
         got = f"open {topo.open_edges} nonmanifold {topo.nonmanifold_edges} components {topo.components}"
@@ -327,7 +163,7 @@ class Corner:
     def __init__(self, radius):
         self.radius = radius
 
-    def run(self, solid, W):
+    def run(self, solid: Solid, W):
         expect = self.radius * (math.sqrt(2.0) - 1.0)
         z = PART["H"] / 2.0
         X = PART["X"]
@@ -357,7 +193,7 @@ class Wall:
         self.origin_of = origin_of
         self.direction = direction
 
-    def run(self, solid, W):
+    def run(self, solid: Solid, W):
         origin = np.asarray(self.origin_of(W), float)
         d = np.asarray(self.direction, float)
         d = d / np.linalg.norm(d)
@@ -381,7 +217,7 @@ def _walls():
 
 
 class OpenTop:
-    def run(self, solid, W):
+    def run(self, solid: Solid, W):
         d = np.array((0.0, 0.0, -1.0))
         centre = np.array((PART["X"] / 2.0, W / 2.0, PART["H"] + 10.0))
         hs = solid.hits(centre, d)
@@ -400,10 +236,10 @@ class OpenTop:
 
 
 class Hole:
-    def run(self, solid, W):
+    def run(self, solid: Solid, W):
         return [self._axis(solid), self._diameter(solid), self._y_walls(solid, W)]
 
-    def _axis(self, solid):
+    def _axis(self, solid: Solid):
         # Through-ray plus the void centre. A 3 mm shift still clears a Ø10
         # centre ray, so the centre is what rejects that mutation.
         y, z = PART["HOLE_Y"], PART["HOLE_Z"]
@@ -430,7 +266,7 @@ class Hole:
         return Row("hole axis", ok, f"hits x {blocked or 'none'} centre {centres}",
                    f"through, centre y {y} z {z}")
 
-    def _diameter(self, solid):
+    def _diameter(self, solid: Solid):
         y, z = PART["HOLE_Y"], PART["HOLE_Z"]
         radius = PART["HOLE_D"] / 2.0
         bad = 0
@@ -447,13 +283,13 @@ class Hole:
                             bad += 1
         return Row("hole Ø10", bad == 0, f"{bad} samples off", f"Ø{PART['HOLE_D']:.0f} ± {2 * TOL}")
 
-    def _y_walls(self, solid, W):
+    def _y_walls(self, solid: Solid, W):
         a = solid.inside((PART["X"] / 2.0, PART["WALL"] / 2.0, PART["HOLE_Z"]))
         b = solid.inside((PART["X"] / 2.0, W - PART["WALL"] / 2.0, PART["HOLE_Z"]))
         return Row("hole only in x walls", bool(a and b), f"y-walls solid {bool(a)} {bool(b)}", "both solid")
 
 
-def _span_centre(solid, origin, axis):
+def _span_centre(solid: Solid, origin, axis):
     """Centre of the void along one axis, from the first hits each way."""
     pos = np.zeros(3)
     pos[axis] = 1.0
@@ -472,41 +308,47 @@ STAGES = {
 }
 
 
-def check(stage, solid, width):
-    rows = []
-    for probe in STAGES[stage]:
-        rows.extend(probe.run(solid, width))
-    return rows
+def check(stage, solid: Solid, width):
+    return [row for probe in STAGES[stage] for row in probe.run(solid, width)]
 
 
-def _usage(got, want):
-    report = R()
-    report.add("usage", False, got, want)
-    report.show()
-    return 1
+_FILE_WANT = "stage file.3mf [--width 60|65]"
+_STAGE_WANT = "base|rounded|shell|final"
 
 
-def _parse_rest(args):
-    path = None
-    width = 60.0
-    i = 0
-    while i < len(args):
-        if args[i] == "--width":
-            if i + 1 >= len(args):
-                return None, None, "missing width"
-            width = float(args[i + 1])
-            i += 2
-            continue
-        if path is not None:
-            return None, None, args[i]
-        path = args[i]
-        i += 1
-    return path, width, None
+class UsageParser(argparse.ArgumentParser):
+    """Bad input prints one usage row and exits 1."""
+
+    def fail_usage(self, got, want):
+        self._usage = (got, want)
+        self.error("usage-row")
+
+    def error(self, message):
+        got, want = getattr(self, "_usage", None) or _builtin_usage(message)
+        report = Report()
+        report.add("usage", False, got, want)
+        report.show()
+        raise SystemExit(1)
+
+    def parse_args(self, args=None, namespace=None):
+        args = list(sys.argv[1:] if args is None else args)
+        if args and args[0].startswith("-"):
+            self.fail_usage(args[0], _STAGE_WANT)
+        return super().parse_args(args, namespace)
+
+
+def _builtin_usage(message):
+    if "expected one argument" in message:
+        return "missing width", _FILE_WANT
+    if message.startswith("unrecognized arguments:"):
+        return message.split(":", 1)[1].strip().split()[0], _FILE_WANT
+    if "invalid choice:" in message:
+        return message.split("invalid choice: '", 1)[1].split("'", 1)[0], _STAGE_WANT
+    return message, _FILE_WANT
 
 
 def main(argv=None):
-    if argv is None:
-        argv = sys.argv[1:]
+    argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
         return 2
@@ -514,19 +356,22 @@ def main(argv=None):
         json.dump(params_dict(), sys.stdout, indent=2)
         sys.stdout.write("\n")
         return 0
-    stage = argv[0]
-    if stage not in STAGES:
-        return _usage(stage, "base|rounded|shell|final")
-    path, width, err = _parse_rest(argv[1:])
-    if err or path is None:
-        return _usage(err or "missing file", "stage file.3mf [--width 60|65]")
-    if abs(width - 60.0) > 1e-9 and abs(width - 65.0) > 1e-9:
-        return _usage(width, "60 or 65")
-    V, T = load_3mf(path)
-    rows = check(stage, TriMesh(V, T), float(width))
-    report = R()
-    for row in rows:
-        report.add(row.name, row.ok, row.got, row.want)
+    parser = UsageParser(add_help=False)
+    parser.add_argument("stage", choices=("base", "rounded", "shell", "final", "params"))
+    parser.add_argument("file", nargs="?")
+    parser.add_argument("--width", default="60")
+    try:
+        args = parser.parse_args(argv)
+        if args.file is None:
+            parser.fail_usage("missing file", _FILE_WANT)
+        width = float(args.width)
+        if abs(width - 60.0) > 1e-9 and abs(width - 65.0) > 1e-9:
+            parser.fail_usage(width, "60 or 65")
+    except SystemExit as exc:
+        return exc.code
+    V, T = load_3mf(args.file)
+    report = Report()
+    report.extend(check(args.stage, TriMesh(V, T), float(width)))
     report.show()
     return 1 if report.fail else 0
 

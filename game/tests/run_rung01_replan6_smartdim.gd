@@ -6,10 +6,10 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const HEAD := Vector2(201.5, 0)
 
-var _status_log: Array[String] = []
 
 
 func _init() -> void:
+	status_echo = true
 	print("rung01 replan6 WP1 smartdim")
 	FilmUI.reset_fail_count()
 	_assert_source_hygiene()
@@ -89,7 +89,7 @@ func test_second_centre_opens_popup() -> void:
 	await _zoom_uv(ctx, HEAD, 40.0)
 	var s1 := FilmUI.model_to_screen(ctx, sm.to_model(HEAD))
 	check(FilmUI.require_on_screen(ctx, s1, "second centre"), "second centre is on screen")
-	_status_log.clear()
+	status_log.clear()
 	await _x11_click_screen(ctx.main.get_viewport(), s1)
 	await process_frame
 	await process_frame
@@ -205,7 +205,7 @@ func _boot() -> FilmContext:
 	ctx.tree = self
 	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
 	check(root.size == ROOT_SIZE, "root is 1280×800 (got %s)" % str(root.size))
-	_status_log.clear()
+	status_log.clear()
 	if not main.sketch_mode.status.is_connected(_on_status):
 		main.sketch_mode.status.connect(_on_status)
 	return ctx
@@ -219,9 +219,6 @@ func _shutdown(ctx: FilmContext) -> void:
 	await process_frame
 
 
-func _on_status(text: String) -> void:
-	_status_log.append(text)
-	print("  status: " + text)
 
 
 func _x11_click(ctrl: Control) -> void:
