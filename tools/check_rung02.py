@@ -12,12 +12,11 @@ import argparse
 import json
 import math
 import sys
-from typing import Protocol
 
 import numpy as np
 
-from geom import Report, Row, Topology, load_3mf, ray_hits, topology_report, tri_arrays
-from geom import inside as mesh_inside
+from geom import Report, Row, load_3mf
+from solid import Solid, TriMesh
 
 TOL = 0.2
 VOLUME_TOL = 0.005
@@ -71,50 +70,6 @@ def params_dict():
     data = dict(PART)
     data["volumes"] = {str(W): volumes(W) for W in PART["widths"]}
     return data
-
-
-class Solid(Protocol):
-    """What a probe measures: bounds, volume, membership, ray hits, topology."""
-
-    def bbox(self): ...
-    def volume(self) -> float: ...
-    def inside(self, point) -> bool: ...
-    def hits(self, origin, direction) -> list[float]: ...
-    def topology(self) -> Topology: ...
-
-
-class TriMesh:
-    """Solid from a triangle mesh. Geometry goes through `geom`."""
-
-    def __init__(self, V, T):
-        self.V = np.asarray(V, float)
-        self.T = np.asarray(T, int)
-        self._tris = tri_arrays(self.V, self.T)
-
-    def bbox(self):
-        return self.V.min(0), self.V.max(0)
-
-    def volume(self):
-        a, b, c = self._tris
-        signed = float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6.0)
-        return abs(signed)
-
-    def inside(self, p):
-        return bool(mesh_inside(self._tris, p))
-
-    def hits(self, origin, direction):
-        d = np.asarray(direction, float)
-        d = d / np.linalg.norm(d)
-        ts = ray_hits(self._tris, np.asarray(origin, float), d)
-        out = []
-        for t in ts:
-            tf = float(t)
-            if not out or tf - out[-1] > 1e-5:
-                out.append(tf)
-        return out
-
-    def topology(self):
-        return topology_report(self.V, self.T)
 
 
 def _fmt(value):
