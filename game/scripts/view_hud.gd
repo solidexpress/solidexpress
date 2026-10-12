@@ -5,6 +5,10 @@ extends PanelContainer
 
 signal display_cycle_requested
 signal section_toggle_requested
+## Open the Front/Top/Right menu (or refuse when there are no bodies).
+signal section_menu_requested
+## Named plane from the Section popup (Front / Top / Right).
+signal section_plane_requested(plane_name: String)
 signal explode_toggle_requested(on: bool)
 signal zebra_toggle_requested(on: bool)
 signal fit_requested
@@ -26,6 +30,8 @@ const DEFAULT_VIEWS := [
 
 var _display_btn: Button
 var _section_btn: Button
+var _section_popup: PopupMenu
+var _view: DocumentView
 ## Exploded view lives here beside Section: both are ways of seeing, not docks.
 var _explode_btn: Button
 var _zebra_btn: Button
@@ -63,11 +69,21 @@ func _ready() -> void:
 	_display_btn.pressed.connect(func() -> void: display_cycle_requested.emit())
 	btn_col.add_child(_display_btn)
 	_section_btn = Button.new()
+	_section_btn.name = "Section"
 	_section_btn.text = "Section"
 	_section_btn.toggle_mode = true
-	_section_btn.tooltip_text = "Toggle section view (K)"
-	_section_btn.toggled.connect(func(_on: bool) -> void: section_toggle_requested.emit())
+	_section_btn.tooltip_text = "Section view — choose Front / Top / Right, or K"
+	_section_btn.set_meta("sx_auto", "hud:Section")
+	_section_btn.toggled.connect(_on_section_toggled)
 	btn_col.add_child(_section_btn)
+	_section_popup = PopupMenu.new()
+	_section_popup.name = "SectionPlanePopup"
+	for plane_name in SectionPlane.names():
+		_section_popup.add_item(plane_name)
+		_section_popup.set_item_metadata(_section_popup.item_count - 1, plane_name)
+	_section_popup.id_pressed.connect(_on_section_plane_chosen)
+	_section_popup.popup_hide.connect(_on_section_popup_hide)
+	add_child(_section_popup)
 	_explode_btn = Button.new()
 	_explode_btn.name = "ExplodeToggle"
 	_explode_btn.text = "Explode"
@@ -177,6 +193,7 @@ func set_camera(cam: OrbitCamera) -> void:
 func sync_from_view(view: DocumentView) -> void:
 	if view == null:
 		return
+	_view = view
 	var labels := ["Shade", "Edges", "Wire"]
 	var i: int = clampi(int(view.display_mode), 0, 2)
 	_display_btn.text = labels[i]
@@ -185,6 +202,46 @@ func sync_from_view(view: DocumentView) -> void:
 	_explode_btn.visible = view.doc.instance_list().size() > 0
 	_explode_btn.set_pressed_no_signal(view.doc.is_exploded())
 	_zebra_btn.set_pressed_no_signal(view.zebra_enabled)
+
+
+func _on_section_toggled(on: bool) -> void:
+	if on:
+		section_menu_requested.emit()
+	else:
+		section_toggle_requested.emit()
+
+
+## Called by main after section_menu_requested when bodies exist.
+func open_section_popup() -> void:
+	_show_section_popup()
+
+
+func unpress_section() -> void:
+	_section_btn.set_pressed_no_signal(false)
+
+
+func _show_section_popup() -> void:
+	if _section_popup == null:
+		return
+	# Tag items as popup:Front|Top|Right for the automation bridge.
+	for i in _section_popup.item_count:
+		var n := str(_section_popup.get_item_metadata(i))
+		_section_popup.set_item_metadata(i, n)
+	var r := _section_btn.get_global_rect()
+	_section_popup.reset_size()
+	var sz := _section_popup.get_contents_minimum_size()
+	_section_popup.popup(Rect2(r.position.x, r.position.y - sz.y - 4.0, sz.x, sz.y))
+
+
+func _on_section_plane_chosen(id: int) -> void:
+	var name := str(_section_popup.get_item_metadata(id))
+	section_plane_requested.emit(name)
+
+
+func _on_section_popup_hide() -> void:
+	# Cancelled without a plane: match the live view (unpress if still off).
+	if _view == null or not _view.section_enabled:
+		_section_btn.set_pressed_no_signal(false)
 
 
 ## Flatten button chrome so icon / ▼ sit tight next to the View label.

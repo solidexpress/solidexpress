@@ -118,6 +118,8 @@ var _body_shader: Shader
 var _section_shader: Shader
 var _section_point := Vector3.ZERO
 var _section_normal := Vector3.RIGHT
+## Last named preset ("Front"/"Top"/"Right"), or "" for the default +X cut.
+var section_plane_name := ""
 
 
 func _ready() -> void:
@@ -253,6 +255,7 @@ render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 uniform vec4 albedo_color : source_color = vec4(0.72, 0.74, 0.78, 1.0);
 uniform vec3 section_point = vec3(0.0);
 uniform vec3 section_normal = vec3(1.0, 0.0, 0.0);
+uniform vec4 cap_colour : source_color = vec4(0.62, 0.66, 0.72, 1.0);
 uniform float metallic : hint_range(0.0, 1.0) = 0.92;
 uniform float roughness : hint_range(0.0, 1.0) = 0.35;
 uniform vec4 emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
@@ -278,7 +281,15 @@ void fragment() {
 		discard;
 	}
 	bool back = !FRONT_FACING;
-	vec3 base = albedo_color.rgb * (back ? 0.55 : 1.0);
+	// Flat cap on the cut: back faces of the kept half.
+	if (section_on && back) {
+		ALBEDO = cap_colour.rgb;
+		METALLIC = 0.05;
+		ROUGHNESS = 0.85;
+		EMISSION = vec3(0.0);
+		return;
+	}
+	vec3 base = albedo_color.rgb;
 	if (zebra_on) {
 		vec3 n = normalize(world_normal);
 		float bands = sin(dot(n, vec3(8.0, 0.4, 2.0)) * 6.0) * 0.5 + 0.5;
@@ -299,6 +310,7 @@ func _make_section_material(albedo: Color, emission: Color = Color(0, 0, 0), emi
 	m.set_shader_parameter("albedo_color", albedo)
 	m.set_shader_parameter("section_point", _section_point)
 	m.set_shader_parameter("section_normal", _section_normal)
+	m.set_shader_parameter("cap_colour", SectionPlane.CAP_COLOUR)
 	m.set_shader_parameter("metallic", _body_metal())
 	m.set_shader_parameter("roughness", _body_rough())
 	m.set_shader_parameter("emission_color", emission)
@@ -382,7 +394,16 @@ func set_section_plane(point: Vector3, normal: Vector3) -> void:
 	section_changed.emit(true)
 
 
+func section_point() -> Vector3:
+	return _section_point
+
+
+func section_normal() -> Vector3:
+	return _section_normal
+
+
 ## Disable section-view clipping and restore body ShaderMaterials.
+## Keeps `section_plane_name` so K can restore the last preset.
 func clear_section_plane() -> void:
 	section_enabled = false
 	_apply_selection_materials()

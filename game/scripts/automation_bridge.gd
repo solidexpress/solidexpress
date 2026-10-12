@@ -975,6 +975,8 @@ func _refresh_ids() -> void:
 		"FlipSide": "finish:Flip",
 		"Frame": "hud:Frame",
 		"ViewsDrop": "hud:View",
+		"Section": "hud:Section",
+		"SectionPlanePopup": "popup:SectionPlane",
 		"TimelineTitle": "timeline:title",
 	}
 	for node_name in names.keys():
@@ -1399,9 +1401,27 @@ func _state_full() -> Dictionary:
 		"features": _features_state(view),
 		"card": _card_text(main),
 		"window": _window_state(main),
+		"section": _section_state(view),
 		"last_click": str(ix.last_click_disposition) if ix != null else "",
 		"trace_cursor": _trace.size(),
 		"dialogs": _dialog_state(),
+	}
+
+
+func _section_state(view) -> Dictionary:
+	if view == null:
+		return {"on": false, "plane": "", "point": [0.0, 0.0, 0.0], "normal": [1.0, 0.0, 0.0]}
+	var point := Vector3.ZERO
+	var normal := Vector3.RIGHT
+	if view.has_method("section_point"):
+		point = view.section_point()
+	if view.has_method("section_normal"):
+		normal = view.section_normal()
+	return {
+		"on": bool(view.section_enabled),
+		"plane": str(view.section_plane_name),
+		"point": _v3(point),
+		"normal": _v3(normal),
 	}
 
 

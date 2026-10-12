@@ -5731,15 +5731,36 @@ func _bodies_aabb_center() -> Vector3:
 	return (united_min + united_max) * 0.5
 
 
-## Toggle section-view clipping through the combined body AABB center (+X).
+## Toggle section-view. With a last named plane, restore it; otherwise the
+## default +X cut through the AABB centre (K with no plane chosen).
 func toggle_section() -> void:
 	if view.section_enabled:
 		view.clear_section_plane()
 		status.emit("Section view off")
-	else:
-		var center := _bodies_aabb_center()
-		view.set_section_plane(center, Vector3(1, 0, 0))
-		status.emit("Section view on")
+		return
+	var plane_name := str(view.section_plane_name)
+	if plane_name != "" and not SectionPlane.preset(plane_name).is_empty():
+		apply_section_plane(plane_name)
+		return
+	var center := _bodies_aabb_center()
+	view.section_plane_name = ""
+	view.set_section_plane(center, Vector3(1, 0, 0))
+	status.emit("Section view on")
+
+
+## Named preset from the HUD popup (Front / Top / Right).
+func apply_section_plane(plane_name: String) -> void:
+	if view.doc != null and view.doc.body_ids().is_empty():
+		status.emit("Section: no bodies")
+		return
+	var cam := get_viewport().get_camera_3d()
+	var cam_pos := cam.global_position if cam != null else Vector3(100, 100, 100)
+	var state := SectionPlane.apply(view, cam_pos, plane_name)
+	if state.is_empty():
+		status.emit("Section: unknown plane")
+		return
+	view.section_plane_name = plane_name
+	status.emit("Section %s" % plane_name)
 
 
 func _dim_line_edit() -> LineEdit:

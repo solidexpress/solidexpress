@@ -33,13 +33,20 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `finish:Ok` | Shell OK |
 | `finish:Op` | Extrude operation (Extrude / Cut) |
 | `finish:End` | Extrude end condition |
+| `hud:Section` | Section view button (opens Front / Top / Right) |
+| `popup:Front` | Section plane Front (`z = 0`, normal ±Z) |
+| `popup:Top` | Section plane Top (`y = 0`, normal ±Y) |
+| `popup:Right` | Section plane Right (`x = 0`, normal ±X) |
 | `plane=` | With `face_normal`, the aligned face whose `n·pick` is nearest this millimetre offset |
 | `state.faces[].pick` | World point on the face; `click(face=)` and `click(face_normal=)` aim here |
 | `state.faces[].plane` | `n·pick` in millimetres |
+| `state.section` | `{on, plane, point, normal}` — named plane and kept-half normal |
 
 `state.faces` records are `id`, `body`, `centre`, `normal`, `area`, `screen`, `pick`, `plane`. The list is cached by document revision, camera transform, projection, and size, so `screen` is recomputed when the view moves. `pick` is a point on the face (an annular face's `centre` lies in the hole). `plane` is `n·pick`. `click(face=<id>)` and `click(face_normal=[x,y,z])` project `pick` through the camera at click time. `click(face_normal=[x,y,z])` chooses the face whose normal aligns with that direction (|dot| ≥ 0.999); if several faces share it, the one furthest along the normal is used (the outer wall). `click(face_normal=[x,y,z], plane=<mm>)` instead chooses the aligned face whose `plane` is nearest `<mm>` (`z = 30` versus `z = 55`). When that click lands within the viewport's edge tolerance, the bridge clicks the same point once more so the face is selected. The click reply includes that face's `normal`.
 
-`state` returns one JSON snapshot: status text, focus, armed tool, which rail buttons are lit, visible controls (path, rect, text, disabled), open popups, finish-bar fields, the DOF chip, sketch mode, timeline rows, undo/redo labels, selection, drawn dimension labels (text, rect, visible, occluded), constraint badges, contour tags, camera, and body bounding boxes plus the feature list. `trace` returns `[input-trace]`, `[key-trace]`, `[status-trace]`, `[popup-trace]`, and `[hover-trace]` lines since a cursor. `screenshot` writes a PNG only when a check is visual and the rects cannot answer it.
+`state.section` is `{on, plane, point, normal}`. `plane` is `Front` / `Top` / `Right` (or `""` for the default +X AABB cut). The kept half is away from the camera at apply time, so `normal` points toward the camera. `click(hud:Section)` opens the plane popup when bodies exist; with no bodies the status is `Section: no bodies`. `click(popup:Top)` (etc.) chooses the plane while that popup is open. A second `hud:Section` click turns the section off. `K` toggles the last named plane (or the default +X cut).
+
+`state` returns one JSON snapshot: status text, focus, armed tool, which rail buttons are lit, visible controls (path, rect, text, disabled), open popups, finish-bar fields, the DOF chip, sketch mode, timeline rows, undo/redo labels, selection, drawn dimension labels (text, rect, visible, occluded), constraint badges, contour tags, camera, section, and body bounding boxes plus the feature list. `trace` returns `[input-trace]`, `[key-trace]`, `[status-trace]`, `[popup-trace]`, and `[hover-trace]` lines since a cursor. `screenshot` writes a PNG only when a check is visual and the rects cannot answer it.
 
 ## Client
 

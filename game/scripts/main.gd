@@ -793,6 +793,15 @@ func _build_ui() -> void:
 	view_hud.section_toggle_requested.connect(func() -> void:
 		interaction.toggle_section()
 		view_hud.sync_from_view(view))
+	view_hud.section_menu_requested.connect(func() -> void:
+		if view.doc != null and view.doc.body_ids().is_empty():
+			_on_status("Section: no bodies")
+			view_hud.unpress_section()
+		else:
+			view_hud.open_section_popup())
+	view_hud.section_plane_requested.connect(func(plane_name: String) -> void:
+		interaction.apply_section_plane(plane_name)
+		view_hud.sync_from_view(view))
 	view_hud.zebra_toggle_requested.connect(func(on: bool) -> void:
 		view.set_zebra(on)
 		view_hud.sync_from_view(view)
