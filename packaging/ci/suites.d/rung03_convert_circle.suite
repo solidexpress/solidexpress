@@ -1,0 +1,3 @@
+script=tests/run_rung03_convert_circle.gd
+tier=ci
+timeout=180

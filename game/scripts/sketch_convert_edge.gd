@@ -49,6 +49,18 @@ func click(uv: Vector2) -> void:
 	var lines: Dictionary = ctx.doc.get_edge_lines(body)
 	var world := ctx.plane.to_world(uv)
 	var on_face := _nearest(lines, face_edges, world, FACE_TOL, true)
+	print("  DBG world %s face_edges %s line_keys %d on_face %s" % [
+		str(world), str(face_edges.keys()), lines.size(), on_face])
+	for edge_id in lines:
+		var key := str(edge_id)
+		if not face_edges.has(key):
+			continue
+		var pts: PackedVector3Array = lines[edge_id]
+		var best_d := 1e9
+		for i in range(pts.size() - 1):
+			best_d = minf(best_d, SketchGeom.point_segment_distance_3d(world, pts[i], pts[i + 1]))
+		print("  DBG face edge %s pts %d dist %.3f p0 %s" % [
+			key.substr(0, 8), pts.size(), best_d, str(pts[0] if pts.size() else Vector3.INF)])
 	if on_face != "":
 		var id := str(ctx.doc.sketch_add_external_edge(fid, on_face))
 		if id == "":
@@ -66,6 +78,8 @@ func click(uv: Vector2) -> void:
 
 func _face_edge_set(ctx: Context, body: String) -> Dictionary:
 	var edges: PackedStringArray = ctx.doc.edges_of_face(ctx.host_face_id)
+	print("  DBG host %s initial_edges %d body %s" % [
+		ctx.host_face_id, edges.size(), body])
 	if edges.is_empty() and body != "" and ctx.support_normal.length_squared() > 1e-8:
 		var want := ctx.support_normal.normalized()
 		var best: Dictionary = {}
