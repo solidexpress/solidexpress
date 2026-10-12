@@ -37,16 +37,17 @@ func _init(ctx: Context) -> void:
 	_ctx = ctx
 
 
-func click(uv: Vector2) -> void:
+## Returns the new (or existing) external entity id, or "" on refusal / miss.
+func click(uv: Vector2) -> String:
 	var ctx := _ctx
 	if ctx.doc == null or ctx.view == null:
-		return
+		return ""
 	if ctx.host_face_id == "" or ctx.support_host == "":
 		ctx.fallback.call()
-		return
+		return ""
 	var fid := str(ctx.ensure_feature.call())
 	if fid == "":
-		return
+		return ""
 	var body := str(ctx.view.body_of_feature(ctx.support_host))
 	var face_edges := _face_edge_set(ctx, body)
 	var lines: Dictionary = ctx.doc.get_edge_lines(body)
@@ -56,15 +57,16 @@ func click(uv: Vector2) -> void:
 		var id := str(ctx.doc.sketch_add_external_edge(fid, on_face))
 		if id == "":
 			ctx.status.call(NOT_SUPPORTED)
-			return
+			return ""
 		ctx.commit.call("Convert")
 		ctx.status.call(_added_status(lines, on_face))
-		return
+		return id
 	var other := _nearest(lines, face_edges, world, OTHER_TOL, false)
 	if other != "":
 		ctx.status.call(NOT_ON_FACE)
-		return
+		return ""
 	ctx.fallback.call()
+	return ""
 
 
 func _added_status(lines: Dictionary, edge_id: String) -> String:

@@ -80,6 +80,7 @@ static func _ensure() -> void:
 	_add(T.EXTEND, "extend", "Extend", "Extend")
 	_add(T.SMART_DIM, "smart_dim", "Smart Dim", "Dimension")
 	_add(T.CONVERT, "convert", "Convert", "Convert")
+	_add(T.OFFSET, "offset", "Offset", "Offset")
 	_add(T.MIRROR, "mirror", "Mirror", "Mirror")
 	_add(T.PATTERN, "pattern", "Pattern", "Pattern")
 	_add(T.SPLINE, "spline", "Spline", "Spline")
@@ -103,6 +104,7 @@ static func _ensure() -> void:
 	_rail_row(T.EXTEND, "extend", "Extend to next", "")
 	_rail_row(T.SMART_DIM, "dimension", "Smart Dimension (D)", "D")
 	_rail_row(T.CONVERT, "convert", "Convert entities", "")
+	_rail_row(T.OFFSET, "offset", "Offset entities", "")
 	_rail_row(T.MIRROR, "mirror", "Mirror selection", "")
 	_rail_row(T.PATTERN, "pattern", "Linear / circular pattern", "")
 
@@ -120,6 +122,7 @@ static func _ensure() -> void:
 	_hint(T.EXTEND, "Extend — click a segment to extend it to the next")
 	_hint(T.SMART_DIM, "Smart Dim — click geometry to dimension it")
 	_hint(T.CONVERT, "Convert — click an edge of this face")
+	_hint(T.OFFSET, "Offset — click an entity or a face edge")
 	_hint(T.MIRROR, "Mirror — select geometry and a mirror axis, then click")
 	_hint(T.PATTERN, "Pattern — select geometry, then a linear or circular variant")
 	_hint(T.CENTERLINE, "Centerline — click 2 points (construction, never part of the profile)")

@@ -11,10 +11,13 @@ signal status(text: String)
 enum Tool {
 	NONE, LINE, RECT, CIRCLE, ARC, POLYGON, SELECT, TRIM,
 	EXTEND, SMART_DIM, CONVERT, MIRROR, PATTERN, SPLINE, POINT,
-	CENTERLINE, ELLIPSE, SLOT, CHAMFER,
+	CENTERLINE, ELLIPSE, SLOT, CHAMFER, OFFSET,
 }
 
 signal selection_changed(ids: Array)
+
+## Set by main from SketchContextChrome; owns the Offset panel and click path.
+var offset_ui: SketchOffset
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
@@ -1506,9 +1509,9 @@ func set_tool(t: Tool) -> void:
 	_trim_drag_ids.clear()
 	_free_trim_trail()
 	draw_construction = (t == Tool.CENTERLINE)
-	# Convert's Esc drops the tool. A leftover Smart Dim selection would
-	# spend that key on "selection cleared" and leave Convert armed.
-	if t == Tool.CONVERT:
+	# Convert / Offset Esc drops the tool. A leftover Smart Dim selection
+	# would spend that key on "selection cleared" and leave the tool armed.
+	if t == Tool.CONVERT or t == Tool.OFFSET:
 		_set_selected([])
 		if selected_constraint != "":
 			select_constraint("")
@@ -2929,6 +2932,7 @@ func fillet_selected(radius: float) -> String:
 
 
 ## Offset all selected entities by signed distance. Returns new entity ids.
+## Same kernel OFFSETTERS table as rail:Offset (chip:Offset path).
 func offset_selected(distance: float) -> Array:
 	if not active or selected.is_empty():
 		status.emit("Offset needs a selection")
@@ -2941,6 +2945,7 @@ func offset_selected(distance: float) -> Array:
 		status.emit("Offset failed")
 		return []
 	_undo_note("Offset")
+	run_solve()
 	_redraw()
 	_redraw_selected()
 	var out: Array = []
@@ -5100,6 +5105,8 @@ func click(pos2: Vector2) -> void:
 			_click_smart_dim(pos2)
 		Tool.CONVERT:
 			_convert_edge_click(pos2)
+		Tool.OFFSET:
+			_offset_click(pos2)
 		Tool.MIRROR:
 			# Selection must already include axis + geometry; click confirms.
 			mirror_selected()
@@ -5473,6 +5480,30 @@ func _convert_edge_click(uv: Vector2) -> void:
 		status.emit(text)
 	ctx.fallback = convert_pierce_points
 	SketchConvertEdge.new(ctx).click(uv)
+	host_face_id = ctx.host_face_id
+
+
+func _offset_click(uv: Vector2) -> void:
+	if offset_ui == null or sketch == null or view == null or view.doc == null:
+		return
+	var ctx := SketchOffset.Context.new()
+	ctx.doc = view.doc
+	ctx.view = view
+	ctx.plane = plane
+	ctx.sketch = sketch
+	ctx.host_face_id = host_face_id
+	ctx.support_host = support_host
+	ctx.support_normal = support_normal
+	ctx.ensure_feature = _ensure_sketch_feature
+	ctx.nearest_entity = _nearest_entity_at
+	ctx.pick_tol = _pick_tolerance()
+	ctx.commit = func(label: String) -> void:
+		_undo_note(label)
+		run_solve()
+		_redraw()
+	ctx.status = func(text: String) -> void:
+		status.emit(text)
+	offset_ui.click(ctx, uv)
 	host_face_id = ctx.host_face_id
 
 

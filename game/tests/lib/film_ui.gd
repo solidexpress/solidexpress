@@ -570,6 +570,8 @@ static func select_sketch_tool(ctx: FilmContext, sm: SketchMode, tool: int) -> v
 			label = "Point"
 		SketchMode.Tool.CONVERT:
 			label = "Convert"
+		SketchMode.Tool.OFFSET:
+			label = "Offset"
 		SketchMode.Tool.ELLIPSE:
 			label = "Ellipse"
 		SketchMode.Tool.SLOT:

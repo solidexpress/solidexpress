@@ -94,25 +94,47 @@ TEST_CASE("offset_entities offsets a line by +2", "[sketchtools]") {
     REQUIRE(std::hypot(n1[0] - o1[0], n1[1] - o1[1]) == Approx(2.0).margin(1e-9));
 }
 
-TEST_CASE("offset_entities offsets and skips circles by radius", "[sketchtools]") {
+TEST_CASE("offset_entities offsets circles with Concentric and Radius",
+          "[sketchtools][rung03]") {
     Sketch sk("OffCirc");
-    auto c = sk.add_circle(1, 2, 5);
+    auto c = sk.add_circle(0, 0, 35);
 
-    auto ok = offset_entities(sk, {c.str()}, -2.0);
-    REQUIRE(ok.size() == 1);
-    EntityId nid = EntityId::from_string(ok[0]);
+    auto inward = offset_entities(sk, {c.str()}, -5.0);
+    REQUIRE(inward.size() == 1);
+    EntityId nid = EntityId::from_string(inward[0]);
     const SketchEntity* ne = sk.entity(nid);
     REQUIRE(ne->type == SketchEntityType::Circle);
-    REQUIRE(sk.param(ne->params[0]) == Approx(1.0));
-    REQUIRE(sk.param(ne->params[1]) == Approx(2.0));
-    REQUIRE(sk.param(ne->params[2]) == Approx(3.0).margin(1e-9));
+    REQUIRE(sk.param(ne->params[0]) == Approx(0.0));
+    REQUIRE(sk.param(ne->params[1]) == Approx(0.0));
+    REQUIRE(sk.param(ne->params[2]) == Approx(30.0).margin(1e-9));
+    REQUIRE(sk.param(sk.entity(c)->params[2]) == Approx(35.0));
 
-    // Original still r=5.
-    REQUIRE(sk.param(sk.entity(c)->params[2]) == Approx(5.0));
+    bool has_concentric = false;
+    bool has_radius = false;
+    for (const auto& con : sk.constraints()) {
+        if (con.type == ConstraintType::Concentric && con.refs.size() >= 2) {
+            if ((con.refs[0].entity == nid && con.refs[1].entity == c) ||
+                (con.refs[1].entity == nid && con.refs[0].entity == c)) {
+                has_concentric = true;
+            }
+        }
+        if (con.type == ConstraintType::Radius && !con.refs.empty() &&
+            con.refs[0].entity == nid && con.driving) {
+            has_radius = std::abs(con.value - 30.0) < 1e-9;
+        }
+    }
+    REQUIRE(has_concentric);
+    REQUIRE(has_radius);
+
+    auto outward = offset_entities(sk, {c.str()}, 5.0);
+    REQUIRE(outward.size() == 1);
+    EntityId oid = EntityId::from_string(outward[0]);
+    REQUIRE(sk.param(sk.entity(oid)->params[2]) == Approx(40.0).margin(1e-9));
 
     size_t n_before = sk.entities().size();
-    auto bad = offset_entities(sk, {c.str()}, -6.0);
-    REQUIRE(bad.empty());
+    REQUIRE(offset_entities(sk, {c.str()}, -35.0).empty());
+    REQUIRE(offset_entities(sk, {c.str()}, -40.0).empty());
+    REQUIRE(offset_entities(sk, {c.str()}, 0.0).empty());
     REQUIRE(sk.entities().size() == n_before);
 }
 

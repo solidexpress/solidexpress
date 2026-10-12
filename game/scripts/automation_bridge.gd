@@ -953,6 +953,7 @@ func _refresh_ids() -> void:
 		"ToolExtend": "rail:Extend",
 		"ToolSmartDim": "rail:SmartDim",
 		"ToolConvert": "rail:Convert",
+		"ToolOffset": "rail:Offset",
 		"ToolMirror": "rail:Mirror",
 		"ToolPattern": "rail:Pattern",
 		"ExitSketch": "rail:ExitSketch",
@@ -1019,6 +1020,9 @@ func _refresh_ids() -> void:
 	_tag(main.find_child("StripShell", true, false), "strip:shell")
 	_tag(main.find_child("ThicknessLineEdit", true, false), "finish:Thickness")
 	_tag(main.find_child("ShellOk", true, false), "finish:Ok")
+	_tag_spin_edit(main.find_child("OffsetDistance", true, false), "offset:Distance")
+	_tag(main.find_child("OffsetReverse", true, false), "offset:Reverse")
+	_tag(main.find_child("OffsetOk", true, false), "offset:Ok")
 
 
 func _tag(node: Node, id: String) -> void:

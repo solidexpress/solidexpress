@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace sx::sketch_tools {
@@ -368,41 +369,64 @@ std::string fillet_corner(Sketch& s, const std::string& line_a_id,
     return arc.str();
 }
 
+namespace {
+
+using Offsetter = bool (*)(Sketch&, const SketchEntity&, EntityId, double,
+                           std::vector<std::string>&);
+
+bool offset_line(Sketch& s, const SketchEntity& e, EntityId /*id*/, double distance,
+                 std::vector<std::string>& out) {
+    double x1 = s.param(e.params[0]);
+    double y1 = s.param(e.params[1]);
+    double x2 = s.param(e.params[2]);
+    double y2 = s.param(e.params[3]);
+    Vec2 dir = {x2 - x1, y2 - y1};
+    double len = hypot2(dir);
+    if (len < 1e-15) return false;
+    // Left normal of the direction vector.
+    Vec2 n = {-dir.y / len, dir.x / len};
+    Vec2 o = mul(n, distance);
+    EntityId nid = s.add_line(x1 + o.x, y1 + o.y, x2 + o.x, y2 + o.y);
+    out.push_back(nid.str());
+    return true;
+}
+
+bool offset_circle(Sketch& s, const SketchEntity& e, EntityId id, double distance,
+                   std::vector<std::string>& out) {
+    double cx = s.param(e.params[0]);
+    double cy = s.param(e.params[1]);
+    double r = s.param(e.params[2]);
+    double nr = r + distance;
+    if (nr <= k_eps) return false;
+    EntityId nid = s.add_circle(cx, cy, nr);
+    s.add_constraint(ConstraintType::Concentric,
+                     {{nid, PointRole::Center}, {id, PointRole::Center}});
+    s.add_constraint(ConstraintType::Radius, {{nid, PointRole::Self}}, nr, true);
+    out.push_back(nid.str());
+    return true;
+}
+
+const std::unordered_map<SketchEntityType, Offsetter> kOffsetters = {
+    {SketchEntityType::Line, offset_line},
+    {SketchEntityType::Circle, offset_circle},
+};
+
+}  // namespace
+
 std::vector<std::string> offset_entities(Sketch& s,
                                          const std::vector<std::string>& entity_ids,
                                          double distance) {
     std::vector<std::string> out;
+    if (std::abs(distance) <= k_eps) return out;
     out.reserve(entity_ids.size());
 
     for (const std::string& sid : entity_ids) {
         EntityId id = EntityId::from_string(sid);
         const SketchEntity* e = s.entity(id);
         if (!e) continue;
-
-        if (e->type == SketchEntityType::Line) {
-            double x1 = s.param(e->params[0]);
-            double y1 = s.param(e->params[1]);
-            double x2 = s.param(e->params[2]);
-            double y2 = s.param(e->params[3]);
-            Vec2 dir = {x2 - x1, y2 - y1};
-            double len = hypot2(dir);
-            if (len < 1e-15) continue;
-            // Left normal of the direction vector.
-            Vec2 n = {-dir.y / len, dir.x / len};
-            Vec2 o = mul(n, distance);
-            EntityId nid =
-                s.add_line(x1 + o.x, y1 + o.y, x2 + o.x, y2 + o.y);
-            out.push_back(nid.str());
-        } else if (e->type == SketchEntityType::Circle) {
-            double cx = s.param(e->params[0]);
-            double cy = s.param(e->params[1]);
-            double r = s.param(e->params[2]);
-            double nr = r + distance;
-            if (nr <= 0) continue;
-            EntityId nid = s.add_circle(cx, cy, nr);
-            out.push_back(nid.str());
-        }
-        // Arcs and other kinds skipped in v1.
+        const auto it = kOffsetters.find(e->type);
+        if (it == kOffsetters.end()) continue;  // Arc and other kinds skipped.
+        it->second(s, *e, id, distance, out);
     }
     return out;
 }

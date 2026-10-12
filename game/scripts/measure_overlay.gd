@@ -107,6 +107,7 @@ func _is_rail_geometry_status(text: String) -> bool:
 			or text.begins_with("Jaw committed") \
 			or text.begins_with("Trimmed") \
 			or text.begins_with("Convert") \
+			or text.begins_with("Offset") \
 			or text.begins_with("Contours")
 
 

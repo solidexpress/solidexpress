@@ -981,6 +981,7 @@ func _build_ui() -> void:
 	sketch_chrome.sketch_mode = sketch_mode
 	sketch_chrome.visible = false
 	ui.add_child(sketch_chrome)
+	sketch_mode.offset_ui = sketch_chrome.offset_tool
 	sketch_chrome.variant_chosen.connect(_on_sketch_variant)
 	sketch_mode.tool_variant_changed.connect(sketch_chrome.sync_variant_highlight)
 	sketch_chrome.action_chosen.connect(_on_sketch_action)
