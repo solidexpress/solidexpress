@@ -5122,7 +5122,17 @@ func _click_rect(pos2: Vector2) -> void:
 				var d := corner - c
 				var a := c - d
 				var b := c + d
+				var had := {}
+				for existing in sketch.entity_ids():
+					had[str(existing)] = true
 				_add_rect_lines(a, b)
+				if infer_enabled:
+					var added: Array[String] = []
+					for existing in sketch.entity_ids():
+						if not had.has(str(existing)):
+							added.append(str(existing))
+					SketchOriginAnchor.apply(sketch, added, "rect.center", c)
+					run_solve()
 				_tool_points.clear()
 		"three_point":
 			if _tool_points.size() == 3:
@@ -5249,6 +5259,9 @@ func _click_circle(pos2: Vector2) -> void:
 					circle_radius = r
 					_last_commit_text = "Circle r=%.4f (Ø%.4f)" % [r, r * 2.0]
 					status.emit(_last_commit_text)
+					if infer_enabled and circ_id != "":
+						SketchOriginAnchor.apply(sketch, [circ_id], "circle.center", c)
+						run_solve()
 					if typed and circ_id != "":
 						var rcid: String = sketch.add_constraint(
 								"radius", [{"entity": circ_id, "role": "self"}], r)
@@ -6183,40 +6196,10 @@ func _centers_share_horizontal(ida: String, idb: String) -> bool:
 	return false
 
 
+## Centre-distance dims use the circle.center rule. Draw-time calls are the
+## other caller; both go through SketchOriginAnchor so this is not a second pin.
 func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
-	if center.length() > ORIGIN_PIN_TOL:
-		return
-	var anchor := _origin_anchor_point()
-	if anchor == "":
-		# A distance between two circles is free to slide along the sketch.
-		# Lock a centre that is already on the origin so the pair stays put.
-		# A full Fix also locks the radius. A centre-only Fix does not, and
-		# it adds no point and no construction line (T14).
-		if not _entity_has_constraint(id, "fix"):
-			sketch.add_constraint("fix", [{"entity": id, "role": "center"}], 0.0)
-		return
-	for cid in sketch.constraint_ids():
-		var info: Dictionary = sketch.constraint_info(cid)
-		if str(info.get("type", "")) != "coincident":
-			continue
-		var refs: Array = info.get("refs", [])
-		if refs.size() == 2 and str(refs[0].get("entity", "")) == id and str(refs[1].get("entity", "")) == anchor:
-			return
-	sketch.add_constraint("coincident", [
-		{"entity": id, "role": "center"},
-		{"entity": anchor, "role": "self"}], 0.0)
-
-
-func _origin_anchor_point() -> String:
-	for id in sketch.entity_ids():
-		var info: Dictionary = sketch.entity_info(id)
-		if str(info.get("type", "")) == "point" and sketch.is_construction(id) \
-				and _entity_has_constraint(id, "fix"):
-			return id
-	# Smart Dim between two circles must not invent a construction point at
-	# the origin (T14). Pin only when that point already exists; otherwise
-	# the centre-only Fix is used.
-	return ""
+	SketchOriginAnchor.apply(sketch, [id], "circle.center", center)
 
 
 ## Lock every sized circle (typed radius on the wrench bosses).
