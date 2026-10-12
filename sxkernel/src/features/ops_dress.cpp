@@ -6,12 +6,10 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
-#include <BRepClass_FaceClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
-#include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <GProp_GProps.hxx>
@@ -30,7 +28,6 @@
 #include <gp_Dir.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Pln.hxx>
-#include <gp_Pnt2d.hxx>
 #include <gp_Vec.hxx>
 
 #include <algorithm>
@@ -41,6 +38,7 @@
 #include "sx/variables.hpp"
 #include "sx/measure.hpp"
 #include "sx/log.hpp"
+#include "face_interior.hpp"
 
 namespace sx::feature_ops {
 
@@ -472,33 +470,6 @@ bool contains_edge(const std::vector<TopoDS_Edge>& edges, const TopoDS_Edge& edg
     return false;
 }
 
-// The grid sample inside the face that sits nearest the middle of its UV box.
-bool face_interior_point(const TopoDS_Face& face, gp_Pnt& out) {
-    double u0, u1, v0, v1;
-    BRepTools::UVBounds(face, u0, u1, v0, v1);
-    BRepAdaptor_Surface surf(face);
-    const int n = 16;
-    double best = 1e300;
-    bool found = false;
-    for (int i = 1; i < n; ++i) {
-        for (int j = 1; j < n; ++j) {
-            const double fu = static_cast<double>(i) / n;
-            const double fv = static_cast<double>(j) / n;
-            const double u = u0 + (u1 - u0) * fu;
-            const double v = v0 + (v1 - v0) * fv;
-            BRepClass_FaceClassifier cl(face, gp_Pnt2d(u, v), 1e-7);
-            if (cl.State() != TopAbs_IN) continue;
-            const double d = (fu - 0.5) * (fu - 0.5) + (fv - 0.5) * (fv - 0.5);
-            if (d < best) {
-                best = d;
-                out = surf.Value(u, v);
-                found = true;
-            }
-        }
-    }
-    return found;
-}
-
 nlohmann::json face_cues_for(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& edges) {
     nlohmann::json cues = nlohmann::json::array();
     sx::occt::ShapeIndexedMap faces;
@@ -518,7 +489,7 @@ nlohmann::json face_cues_for(const TopoDS_Shape& shape, const std::vector<TopoDS
         }
         if (!covered) continue;
         gp_Pnt p;
-        if (!face_interior_point(face, p)) continue;
+        if (!sx::measure::face_interior_point(face, p)) continue;
         cues.push_back({{"point", {p.X(), p.Y(), p.Z()}}, {"normal", {n.X(), n.Y(), n.Z()}}});
     }
     return cues;

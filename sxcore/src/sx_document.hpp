@@ -84,6 +84,8 @@ public:
                                        const godot::Vector3& from) const;
     // UV midpoint of a face in model space, or ZERO if invalid.
     godot::Vector3 face_midpoint(const godot::String& face_id) const;
+    // A point guaranteed on the face (inside a hole's UV box the midpoint is not).
+    godot::Vector3 face_pick_point(const godot::String& face_id) const;
     // {min: Vector3, max: Vector3} or {}.
     godot::Dictionary measure_bbox(const godot::String& id) const;
     // {volume, surface_area, center_of_mass: Vector3} or {}.

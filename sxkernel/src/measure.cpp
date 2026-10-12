@@ -4,7 +4,9 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepClass_FaceClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
+#include <TopExp_Explorer.hxx>
 #include <BRepGProp.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepTools.hxx>
@@ -15,6 +17,9 @@
 #include <gp_Dir.hxx>
 #include <gp_Mat.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Pnt2d.hxx>
+
+#include "face_interior.hpp"
 
 namespace sx::measure {
 
@@ -64,6 +69,113 @@ std::optional<std::array<double, 3>> face_midpoint(const Document& doc,
     double umin = 0, umax = 0, vmin = 0, vmax = 0;
     BRepTools::UVBounds(f, umin, umax, vmin, vmax);
     const gp_Pnt p = surf->Value(0.5 * (umin + umax), 0.5 * (vmin + vmax));
+    return std::array<double, 3>{p.X(), p.Y(), p.Z()};
+}
+
+namespace {
+
+bool point_inside_face(const TopoDS_Face& face, const gp_Pnt& p) {
+    BRepClass_FaceClassifier cl(face, p, 1e-5);
+    return cl.State() == TopAbs_IN;
+}
+
+// Distance from `p` to the nearest non-degenerate edge, and that foot.
+double boundary_clearance(const TopoDS_Face& face, const gp_Pnt& p, gp_Pnt& foot) {
+    double best = 1e300;
+    TopoDS_Vertex v = BRepBuilderAPI_MakeVertex(p);
+    for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More(); ex.Next()) {
+        const TopoDS_Edge edge = TopoDS::Edge(ex.Current());
+        if (BRep_Tool::Degenerated(edge)) continue;
+        BRepExtrema_DistShapeShape dist(v, edge);
+        if (!dist.IsDone() || dist.NbSolution() < 1) continue;
+        if (dist.Value() < best) {
+            best = dist.Value();
+            foot = dist.PointOnShape2(1);
+        }
+    }
+    return best;
+}
+
+// Grid sample nearest the UV-box centre that lies inside the face. A full
+// rectangle lands on its centre. An annulus lands just outside the hole.
+bool uv_centre_sample(const TopoDS_Face& face, gp_Pnt& out) {
+    double u0, u1, v0, v1;
+    BRepTools::UVBounds(face, u0, u1, v0, v1);
+    BRepAdaptor_Surface surf(face);
+    const int n = 16;
+    double best = 1e300;
+    bool found = false;
+    for (int i = 1; i < n; ++i) {
+        for (int j = 1; j < n; ++j) {
+            const double fu = static_cast<double>(i) / n;
+            const double fv = static_cast<double>(j) / n;
+            const double u = u0 + (u1 - u0) * fu;
+            const double v = v0 + (v1 - v0) * fv;
+            BRepClass_FaceClassifier cl(face, gp_Pnt2d(u, v), 1e-7);
+            if (cl.State() != TopAbs_IN) continue;
+            const double d = (fu - 0.5) * (fu - 0.5) + (fv - 0.5) * (fv - 0.5);
+            if (d < best) {
+                best = d;
+                out = surf.Value(u, v);
+                found = true;
+            }
+        }
+    }
+    return found;
+}
+
+// Walk the sample away from the nearest boundary until clearance stops
+// growing. A rectangle is already at its centre, so it does not move. An
+// annulus walks to the ring midline, far enough that a 2.5 mm edge snap
+// does not steal the click.
+void walk_to_interior(const TopoDS_Face& face, gp_Pnt& p) {
+    BRepAdaptor_Surface surf(face);
+    if (surf.GetType() != GeomAbs_Plane) return;
+    const gp_Dir n = surf.Plane().Axis().Direction();
+    for (int iter = 0; iter < 16; ++iter) {
+        gp_Pnt foot;
+        const double d = boundary_clearance(face, p, foot);
+        if (d > 1e6) return;
+        gp_Vec away(foot, p);
+        const gp_Vec normal(n);
+        away -= normal * away.Dot(normal);
+        if (away.SquareMagnitude() < 1e-12) return;
+        away.Normalize();
+        bool stepped = false;
+        double step = 4.0;
+        for (int attempt = 0; attempt < 8 && step > 0.05; ++attempt) {
+            const gp_Pnt trial = p.Translated(away * step);
+            if (!point_inside_face(face, trial)) {
+                step *= 0.5;
+                continue;
+            }
+            gp_Pnt foot2;
+            const double d2 = boundary_clearance(face, trial, foot2);
+            if (d2 > d + 1e-3) {
+                p = trial;
+                stepped = true;
+                break;
+            }
+            step *= 0.5;
+        }
+        if (!stepped) return;
+    }
+}
+
+}  // namespace
+
+bool face_interior_point(const TopoDS_Face& face, gp_Pnt& out) {
+    if (!uv_centre_sample(face, out)) return false;
+    walk_to_interior(face, out);
+    return point_inside_face(face, out);
+}
+
+std::optional<std::array<double, 3>> face_pick_point(const Document& doc,
+                                                     const EntityId& face) {
+    TopoDS_Shape s = doc.resolve(face);
+    if (s.IsNull() || s.ShapeType() != TopAbs_FACE) return std::nullopt;
+    gp_Pnt p;
+    if (!face_interior_point(TopoDS::Face(s), p)) return std::nullopt;
     return std::array<double, 3>{p.X(), p.Y(), p.Z()};
 }
 

@@ -326,6 +326,7 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 		await _click_at(vp, pos, true)
 	else:
 		await _click_at(vp, pos, false)
+		await _retry_face_if_edge(spec)
 	_activate_missed_button(spec)
 	var out := {"at": _v2(pos)}
 	if spec.has("id"):
@@ -335,6 +336,21 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 	if spec.has("occluded"):
 		out["occluded"] = spec["occluded"]
 	return out
+
+
+## A face click within 2.5 mm of a boundary selects that edge. The next click
+## on the same point takes the face. A named face follows that second click.
+func _retry_face_if_edge(spec: Dictionary) -> void:
+	if not bool(spec.get("retry_face", false)):
+		return
+	var view = _main().get("view")
+	if view == null:
+		return
+	if str(view.selected_face) == str(spec.get("id", "")):
+		return
+	if str(view.selected_edge) == "":
+		return
+	await _click_at(spec["vp"], spec["pos"], false)
 
 
 func _cmd_drag(req: Dictionary) -> Dictionary:
@@ -1893,11 +1909,14 @@ func _build_faces(view: DocumentView) -> Array:
 	return out
 
 
-## One record: identity, the face frame (centre, normal, area), and where it sits now.
+## One record: identity, the face frame, a point on the face, and its plane offset.
 func _face_record(view: DocumentView, body: String, fid: String) -> Dictionary:
 	var centre: Vector3 = view.doc.face_midpoint(fid)
 	var normal: Vector3 = view.face_normal(body, fid)
 	var area := float(view.doc.measure_face_area(fid))
+	var pick := FacePick.point(view.doc, fid)
+	if pick == Vector3.ZERO:
+		pick = centre
 	return {
 		"id": fid,
 		"body": body,
@@ -1905,10 +1924,12 @@ func _face_record(view: DocumentView, body: String, fid: String) -> Dictionary:
 		"normal": _v3(normal),
 		"area": snappedf(area, 0.001),
 		"screen": _v2(_model_to_screen(centre)),
+		"pick": _v3(pick),
+		"plane": snappedf(FacePick.plane_offset(normal, pick), 0.001),
 	}
 
 
-## Click the face centre through the camera at click time, not a stored pixel.
+## Click a point on the face through the camera at click time, not a stored pixel.
 func _resolve_face_query(req: Dictionary, offset: Vector2) -> Dictionary:
 	var face := {}
 	if req.has("face"):
@@ -1916,46 +1937,27 @@ func _resolve_face_query(req: Dictionary, offset: Vector2) -> Dictionary:
 		if face.is_empty():
 			return {"error": "face not found: %s" % str(req["face"])}
 	else:
-		face = _find_face_by_normal(_vec3(req["face_normal"]))
+		var plane: Variant = req["plane"] if req.has("plane") else null
+		face = _find_face_by_normal(_vec3(req["face_normal"]), plane)
 		if face.is_empty():
 			return {"error": "face not found for normal %s" % str(req["face_normal"])}
-	var centre := _vec3(face["centre"])
+	var aim := _vec3(face["pick"]) if face.has("pick") else _vec3(face["centre"])
 	return {
 		"vp": _main().get_viewport(),
-		"pos": _model_to_screen(centre) + offset,
+		"pos": _model_to_screen(aim) + offset,
 		"id": str(face["id"]),
 		"normal": face.get("normal", []),
+		"retry_face": true,
 	}
 
 
-## Faces whose normal aligns with `want`. Several (a shell's inner and outer wall)
-## resolve to the one furthest along that normal — the outer face.
-func _find_face_by_normal(want: Vector3) -> Dictionary:
-	if want.length_squared() < 1e-8:
-		return {}
-	want = want.normalized()
+## Faces whose normal aligns with `want`. With no plane, the one furthest along
+## that normal (a shell's outer wall). `plane` names one of several parallel faces.
+func _find_face_by_normal(want: Vector3, plane: Variant = null) -> Dictionary:
 	var view = _main().get("view")
 	if view == null or view.doc == null:
 		return {}
-	var best := {}
-	var best_along := -1.0e30
-	for body_id in view.doc.body_ids():
-		for face in view.faces_matching(str(body_id), want, 0.999):
-			var centre: Vector3 = face["centre"]
-			var along := Vector3(
-					snappedf(centre.x, 0.001),
-					snappedf(centre.y, 0.001),
-					snappedf(centre.z, 0.001)).dot(want)
-			if best.is_empty() or along > best_along:
-				best = face
-				best_along = along
-	if best.is_empty():
-		return {}
-	var best_id := str(best["id"])
-	for f in _faces_cached(view):
-		if str(f["id"]) == best_id:
-			return f
-	return {}
+	return FacePick.match_normal(_faces_cached(view), want, plane)
 
 
 func _build_edges(view) -> Array:

@@ -385,6 +385,12 @@ Vector3 SxDocument::face_midpoint(const String& face_id) const {
     return Vector3((*r)[0], (*r)[1], (*r)[2]);
 }
 
+Vector3 SxDocument::face_pick_point(const String& face_id) const {
+    auto r = sx::measure::face_pick_point(*doc_, parse_id(face_id));
+    if (!r) return Vector3();
+    return Vector3((*r)[0], (*r)[1], (*r)[2]);
+}
+
 Dictionary SxDocument::measure_bbox(const String& id) const {
     Dictionary out;
     auto r = sx::measure::bounding_box(*doc_, parse_id(id));
@@ -2474,6 +2480,7 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("closest_point_on", "shape_id", "from"),
                          &SxDocument::closest_point_on);
     ClassDB::bind_method(D_METHOD("face_midpoint", "face_id"), &SxDocument::face_midpoint);
+    ClassDB::bind_method(D_METHOD("face_pick_point", "face_id"), &SxDocument::face_pick_point);
     ClassDB::bind_method(D_METHOD("measure_bbox", "id"), &SxDocument::measure_bbox);
     ClassDB::bind_method(D_METHOD("measure_mass", "body_id"), &SxDocument::measure_mass);
     ClassDB::bind_method(D_METHOD("measure_edge_length", "edge_id"), &SxDocument::measure_edge_length);
