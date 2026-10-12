@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import walk.app  # noqa: E402, F401
 import walk.app02  # noqa: E402, F401
+import walk.app03  # noqa: E402, F401
 from walk import registry  # noqa: E402
 from walk.expect import CHECKS, State, gate  # noqa: E402
 from walk.rung import Expect  # noqa: E402
@@ -56,6 +57,25 @@ FROZEN_CHUNKS_02 = {
 }
 
 
+# 46 checklist ids. Chunks are the slices in docs/loop/rung-03-plan.md.
+FROZEN_ROWS_03 = [
+    "N1", "A1", "A2", "L1", "A3", "N2", "A4", "A5",
+    "A6", "L2", "A7", "A8", "N3", "A9", "A10",
+    "A11", "A12", "L3", "N4", "A13", "N5", "A14", "L4", "A15",
+    "A16", "L5", "A17", "N6", "A18", "N7", "N8", "A19", "A20",
+    "A21", "L6", "N9", "A22", "N10", "A23", "L7", "A24", "N11",
+    "A25", "N12", "L8", "A26",
+]
+FROZEN_CHUNKS_03 = {
+    1: FROZEN_ROWS_03[0:8],
+    2: FROZEN_ROWS_03[8:15],
+    3: FROZEN_ROWS_03[15:24],
+    4: FROZEN_ROWS_03[24:33],
+    5: FROZEN_ROWS_03[33:42],
+    6: FROZEN_ROWS_03[42:46],
+}
+
+
 class WalkRegistryTests(unittest.TestCase):
     def test_frozen_id_list_is_registry_order(self) -> None:
         self.assertEqual(list(registry.RUNG1.rows), FROZEN_ROWS)
@@ -91,6 +111,20 @@ class WalkRegistryTests(unittest.TestCase):
             self.assertTrue(callable(rung.handlers[rid]))
         self.assertEqual(rung.checker, "check_rung02.py")
         self.assertEqual(rung.checkpoints[2], "box.sxp")
+
+    def test_rung3_rows_and_chunks(self) -> None:
+        rung = getattr(registry, "RUNG3", None)
+        self.assertIsNotNone(rung, "rung 3 has no rows")
+        self.assertEqual(list(rung.rows), FROZEN_ROWS_03)
+        self.assertEqual({n: list(rows) for n, rows in rung.chunks.items()}, FROZEN_CHUNKS_03)
+        self.assertEqual(len(FROZEN_ROWS_03), 46)
+        for rid in FROZEN_ROWS_03:
+            self.assertIn(rid, rung.handlers)
+            self.assertTrue(callable(rung.handlers[rid]))
+            self.assertEqual(rung.handlers[rid].__name__, "row_" + rid)
+        self.assertEqual(rung.checker, "check_rung03.py")
+        self.assertEqual(rung.checkpoints[2], "base.sxp")
+        self.assertEqual(rung.checkpoints[5], "rounded.sxp")
 
     def test_gate_walks_the_check_table(self) -> None:
         self.assertEqual(list(CHECKS), ["mode", "sketch", "bodies", "bbox", "timeline", "finish_bar"])

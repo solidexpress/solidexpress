@@ -84,6 +84,17 @@ python3 tools/walk_rung02.py --rows A1,A2,A3,A4,A5 --out /tmp/sx-rung02
 python3 tools/walk_rung02.py --from A7 --checkpoint --out /tmp/sx-rung02
 ```
 
+## Lesson 1 parts runner (rung 3)
+
+`tools/walk_rung03.py` is the same command as `tools/walk_rung02.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 46-row Lesson 1 parts checklist. It runs `tools/check_rung03.py`. `--checkpoint` reloads `base.sxp` (chunk 2), `boss.sxp` (chunk 3), `cut.sxp` (chunk 4), `rounded.sxp` (chunk 5), or `final.sxp` (chunk 6). Face picks use `face_normal` with optional `plane=` for parallel faces (`z = 30` vs `z = 55`). Export rows assert S0 first: one body whose name starts with `extrude` (the body keeps its first feature's name), and a bbox of `120 × 120 × H` ± 0.1 (`H = 30` after the base, `55` after the boss). Pixel clauses project a model point and compare to `SectionPlane.CAP_COLOUR` (± 6). A26 needs `--a15` for the headless evidence tier.
+
+```bash
+python3 tools/walk_rung03.py --out /tmp/sx-rung03
+python3 tools/walk_rung03.py --rows N1,A1,A2,L1,A3 --dry-run
+python3 tools/walk_rung03.py --rows A1,A2,L1,A3,N2,A4,A5 --out /tmp/sx-rung03
+python3 tools/walk_rung03.py --from A6 --checkpoint --out /tmp/sx-rung03 --a15
+```
+
 ## sx-042 runner rules (re-PLAN 21)
 
 Statuses that a row judges are the `[status-trace] … kind=result text=…` lines since that row's mark (`Walk.status_since`). The live status label is only for hover hints. Every `click(screen=[x, y])` uses a bridge selector (`target=`, `model=`, `sketch=`, `edge=`, `face=`, `face_normal=`) or a position taken from `bodies[i].screen` / `project`. The only fixed offsets that remain are inside `jaw_px`, which is derived from the measured head.
