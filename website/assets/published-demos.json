@@ -1,5 +1,6 @@
 [
   "extrude_cylinder",
+  "lesson2_box",
   "loft_guide_rail",
   "path_merge_sweep",
   "pliers_motion",

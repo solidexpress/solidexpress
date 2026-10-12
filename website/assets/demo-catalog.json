@@ -50,6 +50,11 @@
       "id": "ubc_wrench",
       "title": "Parametric wrench: blank to 3MF",
       "blurb": "Blank part to a printable 3MF: circles, shaft, open jaw, slot, fillets, thickness 14."
+    },
+    {
+      "id": "lesson2_box",
+      "title": "Lesson 2 box: sketch, fillet, shell, side hole, resize",
+      "blurb": "Rectangle, extrude, one fillet, shell, a hole from the side, then resize — the features follow."
     }
   ]
 }
