@@ -32,6 +32,34 @@ func _run() -> void:
 	ctx.main.queue_free()
 
 
+func _control_rect(controls: Array, id: String) -> Array:
+	for c in controls:
+		if str(c.get("id", "")) == id:
+			return c.get("rect", [])
+	return []
+
+
+## Walk L3 covered(): a smaller visible control contains this rect's centre.
+## Skips the three offset ids, matching rows03_chunk3.py.
+func _covered_by(controls: Array, rect: Array) -> String:
+	if rect.size() < 4:
+		return "missing rect"
+	var cx := float(rect[0]) + float(rect[2]) * 0.5
+	var cy := float(rect[1]) + float(rect[3]) * 0.5
+	var skip := ["offset:Distance", "offset:Reverse", "offset:Ok"]
+	for c in controls:
+		if str(c.get("id", "")) in skip:
+			continue
+		var other: Array = c.get("rect", [])
+		if other.size() < 4:
+			continue
+		if float(other[0]) <= cx and cx <= float(other[0]) + float(other[2]) \
+				and float(other[1]) <= cy and cy <= float(other[1]) + float(other[3]):
+			if float(other[2]) * float(other[3]) < float(rect[2]) * float(rect[3]):
+				return "%s id=%s rect=%s" % [str(c.get("path", "")), str(c.get("id", "")), str(other)]
+	return ""
+
+
 func _build_boss(ctx: FilmContext) -> bool:
 	await FilmUI.enter_sketch(ctx)
 	var sm: SketchMode = ctx.main.sketch_mode
@@ -79,6 +107,15 @@ func _offset_rim(ctx: FilmContext) -> void:
 				and r.end.x <= float(ROOT_SIZE.x) + 1.0
 				and r.end.y <= float(ROOT_SIZE.y) + 1.0,
 				"%s inside 1280×800 (%s)" % [ctrl.name, str(r)])
+	var bridge = load("res://scripts/automation_bridge.gd").new()
+	ctx.main.add_child(bridge)
+	var controls: Array = bridge._controls()
+	bridge.queue_free()
+	for cid in ["offset:Distance", "offset:Reverse", "offset:Ok"]:
+		var mine := _control_rect(controls, cid)
+		var cover := _covered_by(controls, mine)
+		print("  %s rect %s cover %s" % [cid, str(mine), cover])
+		check(cover == "", "%s is not covered (by %s)" % [cid, cover])
 	check(str(rev.text).contains("Reverse"), "Reverse has a visible label")
 	check(str(ok.text).contains("OK"), "OK has a visible label")
 	# Distance 0 refused.

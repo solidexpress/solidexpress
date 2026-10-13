@@ -1520,7 +1520,10 @@ func _walk_controls(n: Node, out: Array) -> void:
 	# that edit (finish:StripR), so the census has to step inside the spin.
 	if n is SpinBox:
 		var edit := (n as SpinBox).get_line_edit()
-		if edit != null:
+		# Untagged edits are the spin's own text. Listing them marks the spin
+		# covered by a smaller control (offset:Distance at L3). Tagged edits
+		# (finish:StripR) stay in the census.
+		if edit != null and str(edit.get_meta("sx_auto", "")) != "":
 			_walk_controls(edit, out)
 
 
