@@ -28,6 +28,7 @@ func _run() -> void:
 	await _section_top_and_cap(ctx)
 	await _k_restores_last_plane(ctx)
 	await _k_default_plus_x(ctx)
+	await _shell_last_thickness_and_k(ctx)
 	ctx.main.queue_free()
 
 
@@ -169,6 +170,66 @@ func _k_default_plus_x(ctx: FilmContext) -> void:
 			"default point near AABB centre (got %s)" % str(p))
 	await _push_key(ctx.main.get_viewport(), KEY_K, 0)
 	await process_frame
+
+
+func _shell_last_thickness_and_k(ctx: FilmContext) -> void:
+	print("- shell 1 mm releases focus; refusal restores 1; K still toggles")
+	if ctx.view.section_enabled:
+		ctx.view.clear_section_plane()
+		await process_frame
+	var ids: PackedStringArray = ctx.view.doc.body_ids()
+	check(not ids.is_empty(), "body exists for shell")
+	if ids.is_empty():
+		return
+	var body := str(ids[0])
+	var face := ""
+	for fid in ctx.view.doc.get_face_ids(body):
+		var n: Vector3 = ctx.view.face_normal(body, str(fid))
+		if n.length_squared() < 1e-8:
+			continue
+		if n.normalized().dot(Vector3(0, 0, 1)) > 0.99:
+			face = str(fid)
+			break
+	check(face != "", "planar top face for shell")
+	if face == "":
+		return
+	await FilmUI.select_face(ctx, body, face)
+	if ctx.view.selected_face != face:
+		return
+	var chip: Button = ctx.main.find_child("StripShell", true, false) as Button
+	check(chip != null and chip.is_visible_in_tree(), "Shell chip is visible")
+	if chip == null or not chip.is_visible_in_tree():
+		return
+	await _x11_click(chip)
+	await process_frame
+	var field: LineEdit = ctx.main.find_child("ThicknessLineEdit", true, false) as LineEdit
+	check(field != null and field.is_visible_in_tree(), "thickness field is open")
+	if field == null:
+		return
+	field.text = "1"
+	field.text_submitted.emit("1")
+	await process_frame
+	await process_frame
+	var joined := " | ".join(_status_log)
+	check(joined.contains("Shell 1.0000 mm applied"), "shell 1 mm applied (got '%s')" % joined)
+	var owner: Control = ctx.main.get_viewport().gui_get_focus_owner()
+	check(owner != field, "thickness field released focus (owner %s)" % str(owner))
+	var was := ctx.view.section_enabled
+	await _push_key(ctx.main.get_viewport(), KEY_K, 0)
+	await process_frame
+	await process_frame
+	check(ctx.view.section_enabled != was, "K toggles section after shell")
+	var btn: Button = ctx.main.find_child("Section", true, false) as Button
+	if btn != null and ctx.main.view_hud != null:
+		ctx.main.view_hud.sync_from_view(ctx.view)
+		check(btn.button_pressed == ctx.view.section_enabled, "HUD button follows K after shell")
+	await _x11_click(chip)
+	await process_frame
+	field.text = "30"
+	field.text_submitted.emit("30")
+	await process_frame
+	await process_frame
+	check(field.text == "1", "refused 30 mm restores last thickness 1 (got '%s')" % field.text)
 
 
 func _assert_cap_pixels(ctx: FilmContext, section_on: bool) -> void:
