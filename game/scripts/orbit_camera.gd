@@ -702,6 +702,9 @@ func apply_standard_view(
 		orthogonal := false) -> void:
 	if sketch_orientation_locked:
 		return
+	# A snap must not be overwritten by a pose tween that is still running.
+	if not animated:
+		_finish_pose_tween()
 	var from := capture_pose()
 	yaw = new_yaw
 	pitch = clampf(new_pitch, -STANDARD_PITCH_LIMIT, STANDARD_PITCH_LIMIT)

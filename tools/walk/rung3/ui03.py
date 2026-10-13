@@ -514,7 +514,10 @@ class WalkUI03:
         self.select_body()
         self.click("chip:Fillet")
         shown = self.type_into("finish:StripR", radius)
-        self.d.key("tab")
+        # Enter commits the radius and releases the LineEdit. Tab left it
+        # focused, and the next 2/6 was typed into the field instead of
+        # changing the view — the far vertical then toggled the near one.
+        self.d.key("enter")
         self.d.wait_idle(frames=2)
         self.refresh("status", "finish", "controls")
         return {"status": self.S(), "radius": shown or self.field("finish:StripR")}
@@ -544,8 +547,12 @@ class WalkUI03:
     def pick_corner_edges(self) -> list[dict]:
         picked = []
         for x, y, view in CORNERS:
+            self._release_numeric_focus()
             self.d.key(view)
-            self.d.wait_idle(frames=2)
+            # Number-row views snap, but a running pose tween and the radius
+            # field's focus release both need more than a couple of frames
+            # before the corner's screen point is the near edge.
+            self.d.wait_idle(frames=8)
             edge = self._z_edge_at(x, y)
             if edge is None:
                 picked.append({"ok": False, "status": f"no edge at {(x, y)}", "id": "", "view": view})
@@ -564,10 +571,18 @@ class WalkUI03:
         self.ctx["corner_edges"] = picked
         return picked
 
+    def _release_numeric_focus(self) -> None:
+        focus = str(self.refresh("focus").get("focus", ""))
+        if "LineEdit" not in focus and "Spin" not in focus:
+            return
+        self.d.key("enter")
+        self.d.wait_idle(frames=2)
+
     def pick_edge_again(self, edge_id: str, view: str = "") -> str:
         if view:
+            self._release_numeric_focus()
             self.d.key(view)
-            self.d.wait_idle(frames=2)
+            self.d.wait_idle(frames=8)
         mark = self.mark()
         reply = self.d.click(edge=edge_id, along=0.5)
         return " | ".join(self.result_texts(mark)) or str(reply.get("status", self.S()))

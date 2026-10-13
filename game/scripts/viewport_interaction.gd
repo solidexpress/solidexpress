@@ -5952,7 +5952,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if camera != null:
 		var block_nav := false
 		if event is InputEventKey:
-			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
+			block_nav = _nav_blocked_by_text()
 		if not block_nav and camera.is_nav_event(event, allow_scroll):
 			if camera.handle_input(event, allow_scroll):
 				_emit_view_key_status(event)
@@ -6114,7 +6114,7 @@ func _input(event: InputEvent) -> void:
 	if camera != null:
 		var block_nav := false
 		if event is InputEventKey:
-			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
+			block_nav = _nav_blocked_by_text()
 		if not block_nav and camera.is_nav_event(event, allow_scroll):
 			if camera.handle_input(event, allow_scroll):
 				_emit_view_key_status(event)
@@ -6347,6 +6347,21 @@ func _text_field_has_focus() -> bool:
 		return false
 	var f := vp.gui_get_focus_owner()
 	return f is LineEdit or f is TextEdit or f is CodeEdit
+
+
+## View keys (1/2/3/6/7/…) belong to the camera unless a text field is
+## actually taking digits. A tracked radius line that is not mid-entry
+## keeps focus; swallowing 2/6 there left corner picks on the previous side.
+func _nav_blocked_by_text() -> bool:
+	if _sketch_keys_blocked():
+		return true
+	if not _text_field_has_focus():
+		return false
+	var owner := get_viewport().gui_get_focus_owner()
+	if owner is LineEdit and _line_is_tracked_numeric(owner as LineEdit) \
+			and not SxUi.mid_entry(owner as LineEdit):
+		return false
+	return true
 
 
 ## Ctrl+A selects the numeric field's text. A selection drawn without keyboard

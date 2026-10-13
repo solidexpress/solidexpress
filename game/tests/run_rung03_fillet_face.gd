@@ -80,13 +80,22 @@ func _fillet_edges_then_face(ctx: FilmContext) -> void:
 	# Corner table: each view makes that vertical reachable (M12).
 	for row in FilletPick.CORNERS:
 		var key: Key = row["view"] as Key
+		var focus := ctx.main.get_viewport().gui_get_focus_owner()
+		if focus is LineEdit:
+			(focus as LineEdit).release_focus()
 		await _push_key(ctx.main.get_viewport(), key, 0)
-		await process_frame
+		# The view key snaps, then framing settles. One frame was enough for
+		# the camera to still be on the previous side, so the far corner
+		# toggled the near vertical.
+		for _frame in 6:
+			await process_frame
 		var pt := FilletPick.pick_point_for_corner(float(row["x"]), float(row["y"]), 15.0)
 		var mark := _status_log.size()
 		await _click_model(ctx, pt, "vertical corner")
 		var st := _status_since(mark)
-		print("  corner %s,%s view %s -> %s" % [str(row["x"]), str(row["y"]), str(key), st])
+		print("  corner %s,%s view %s edges %d -> %s" % [
+			str(row["x"]), str(row["y"]), str(key),
+			ctx.view.selected_edges.size(), st])
 		check(st.contains("mm vertical"), "corner pick is a vertical (got '%s')" % st)
 	check(ctx.view.selected_edges.size() == 4, "four verticals armed (got %d)" % ctx.view.selected_edges.size())
 	# Shift+face on z=30 → 9 edges.
