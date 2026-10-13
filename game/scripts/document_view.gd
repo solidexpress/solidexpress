@@ -283,10 +283,11 @@ void fragment() {
 	bool back = !FRONT_FACING;
 	// Flat cap on the cut: back faces of the kept half.
 	if (section_on && back) {
-		ALBEDO = cap_colour.rgb;
+		// Emission skips the lighting pass so the cap stays CAP_COLOUR.
+		ALBEDO = vec3(0.0);
 		METALLIC = 0.05;
 		ROUGHNESS = 0.85;
-		EMISSION = vec3(0.0);
+		EMISSION = cap_colour.rgb;
 		return;
 	}
 	vec3 base = albedo_color.rgb;
