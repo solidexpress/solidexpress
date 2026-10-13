@@ -56,6 +56,23 @@ REFUSE_FACE = (
 )
 
 
+def _kernel_failure_tail(result: subprocess.CompletedProcess) -> str:
+    """Tail of one binary, with the FAILED assertion line when the summary hides it."""
+    text = ((result.stdout or "") + (result.stderr or "")).strip()
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return "no output"
+    last = lines[-1]
+    named = ""
+    for ln in reversed(lines):
+        if "FAILED" in ln:
+            named = ln
+            break
+    if named and named != last:
+        return f"{named} — {last}"
+    return last
+
+
 class WalkUI03:
     def part(self) -> dict:
         cached = self.ctx.get("part")
@@ -954,11 +971,26 @@ class WalkUI03:
             log_fp.close()
 
     def _kernel_tests(self) -> subprocess.CompletedProcess:
-        chunks = []
+        # Keep each binary's own (name, result). A later passer (sxvoice_tests
+        # prints "All tests passed") must not become the A26 kernel evidence
+        # when an earlier binary failed — proc.tail() of a blind concatenation
+        # is exactly that bug.
+        pairs: list[tuple[str, subprocess.CompletedProcess]] = []
         code = 0
         for rel in ("./build/sxkernel/sxkernel_tests", "./build/sxvoice/sxvoice_tests"):
             result = proc.run([rel], cwd=self.repo)
-            chunks.append((result.stdout or "") + (result.stderr or ""))
-            if result.returncode != 0:
+            pairs.append((rel, result))
+            if result.returncode != 0 and code == 0:
                 code = result.returncode
+        chunks = [(result.stdout or "") + (result.stderr or "") for _name, result in pairs]
+        if code != 0:
+            labelled = [
+                f"{name}: {_kernel_failure_tail(result)}"
+                for name, result in pairs
+                if result.returncode != 0
+            ]
+            # First failing binary leads. headless() still takes proc.tail of
+            # this stream, so the labelled line has to be last — and a26-kernel.log
+            # still contains every binary's full output above it.
+            chunks.append(" | ".join(labelled))
         return subprocess.CompletedProcess(["kernel"], code, "\n".join(chunks), "")
