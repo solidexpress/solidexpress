@@ -1,0 +1,5 @@
+PASS  bbox        got 120.000×120.000×30.000 min (-60.000,-60.000,0.000)  want 120×120×30 min (-60,-60,0) ± 0.2
+PASS  volume      got 432000.0  want 432000.0 ± 0.5%
+PASS  watertight  got open 0 nonmanifold 0 components 1  want closed, one component
+
+3/3 passed

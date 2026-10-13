@@ -1,0 +1,23 @@
+46 rows  BLOCKED-by-A13 1  BLOCKED-by-A14 2  FAIL 19  PASS 24  wall 1997.6s
+A3 FAIL: label 120=ok: ['120']; label 120 (2)=FAIL: ['120']; dof 0=ok: dof='OK'; lines length=ok: top=120.0 right=120.0
+L2 FAIL: framed=ok: Sketch view fit; outline inside=ok: [572.68, 610.32]; [981.32, 610.32]; [572.68, 201.68]; [981.32, 201.68]; view top=FAIL: look=[0.0, -1.0, 0.0] 
+L3 FAIL: inside=ok: rects=[[137.0, 48.0, 120.0, 31.0], [263.0, 48.0, 110.0, 31.0], [379.0, 48.0, 31.0, 31.0]]; labels=ok: rev='Reverse' ok='OK'; not covered=FAIL: covered=True; wheel=ok: di
+N4 FAIL: zero refused=FAIL: Offset: nothing there — click an entity or a face edge; too far refused=FAIL: Offset: nothing there — click an entity or a face edge; no entity=ok: 0 -> 0/0; fie
+A13 FAIL: status=FAIL: Offset: nothing there — click an entity or a face edge; circle r 30=FAIL: profile=[]; external r 35=FAIL: external=[]; concentric=FAIL: centre=None; dof 0=FAIL: dof='—
+N5 FAIL: refused=ok: Offset: nothing there — click an entity or a face edge; unchanged=ok: p 0->0 e 0->0; esc disarms=FAIL: lit=['Offset'] status=Sketch cancelled
+A14 BLOCKED-by-A13: BLOCKED-by-A13: sketch not active status='Sketch cancelled'
+L4 BLOCKED-by-A14: BLOCKED-by-A14: sketch not active status='Sketch cancelled'
+A15 BLOCKED-by-A14: BLOCKED-by-A14: sketch not active status='Sketch cancelled'
+A17 FAIL: pick 1=ok: Fillet: 1 edge(s) — 30.0 mm vertical — click more, Enter to apply, Esc cancel; pick 2=ok: Fillet: 2 edge(s) — 30.0 mm vertical, 30.0 mm vertical — click more, Enter to a
+N6 FAIL: toggled off=ok: Fillet: 3 edge(s) — 30.0 mm vertical, 30.0 mm vertical, 30.0 mm vertical — click more, Enter to apply, Esc cancel; restored 4=FAIL: Fillet: 2 edge(s) — 30.0 mm vert
+A18 FAIL: shift held=ok: Fillet: 7 edge(s) — 30.0 mm vertical, 30.0 mm vertical, 120.0 mm line, 120.0 mm line, 120.0 mm line, 120.0 mm line, 219.9 mm line — click more, Enter to apply, Esc c
+N7 FAIL: refused=ok: No edge near click — click on an edge (a face click fillets the whole face only as the first pick) | No edge near click — click on an edge (a face click fillets the who
+N8 FAIL: refused=ok: Fillet r=30.00 — 7 edge(s) selected. Edit Radius, Enter to apply | Fillet r=30.00 exceeds the 12.500 mm limit set by the 219.911 mm arc edge — click it again to remove 
+A19 FAIL: applied=FAIL: Fillet r=5.00 — 7 edge(s) selected. Edit Radius, Enter to apply | Fillet 7 edges 5.00 applied — View ▸ Timeline to edit parameters — Fillet no longer armed; one featu
+A20 FAIL: armed 1.5=ok: {'status': 'Fillet r=1.50 — edit Radius, click edges, Enter', 'radius': '1.5'}; two edges=FAIL: Fillet: 1 edge(s) — 219.9 mm line — click more, Enter to apply, Esc ca
+N9 FAIL: refused=ok: Shell thickness 30.0000 mm is at least half the 55.0000 mm extent (limit) — nothing added; unchanged=ok: ['sketch 1', 'extrude 2', 'sketch 3', 'extrude 4', 'sketch 5', 
+A22 FAIL: panel=ok: strip:shell; thickness 1=ok: shown='1'; status=ok: Shell 1.0000 mm applied; order=ok: ['sketch 1', 'extrude 2', 'sketch 3', 'extrude 4', 'sketch 5', 'fillet 6', 'fillet 7
+L7 FAIL: cap colour=FAIL: got=[109, 112, 123] want=(158, 168, 184); removed is background=ok: removed=[75, 67, 75] cap=[109, 112, 123]; outline inside=ok: [620.39, 499.54]; [659.61, 300.46]
+N11 FAIL: K on=FAIL: {'normal': [0.0, 1.0, 0.0], 'on': False, 'plane': 'Top', 'point': [0.0, 0.0, 0.0]}; K off=ok: {'normal': [0.0, 1.0, 0.0], 'on': False, 'plane': 'Top', 'point': [0.0, 0.0
+N12 FAIL: reopened=ok: Opened /workspace/sx-047/confirm/walk3/final.sxp; order=ok: ['sketch 1', 'extrude 2', 'sketch 3', 'extrude 4', 'sketch 5', 'fillet 6', 'fillet 7', 'Shell 1.0000 mm']; 
+A26 FAIL: kernel=FAIL: All tests passed (8 assertions in 1 test case); godot=FAIL: suites: 213 run, 10 failed; lint=ok: lint_suites: 217 suites ok (67 ci, 146 full, 4 known-red); unit=ok: OK
