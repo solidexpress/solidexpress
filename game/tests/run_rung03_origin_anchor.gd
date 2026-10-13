@@ -43,6 +43,15 @@ func _centre_rect_origin(ctx: FilmContext) -> void:
 		return
 	if not await _dim_line_to(ctx, Vector2(60, 40), "120"):
 		return
+	for i in range(sm.dimensions.size()):
+		var dim: Dictionary = sm.dimensions[i]
+		print("  dim %d type=%s ids=%s label_pos=%s text=%s" % [
+			i, str(dim.get("type", "")), str(dim.get("ids", [])),
+			str(dim.get("label_pos", null)), sm._dimension_label_text(dim)])
+	var label_rects: Array = sm.dimension_label_screen_rects()
+	print("  dimension records %d screen rects %d" % [sm.dimensions.size(), label_rects.size()])
+	check(sm.dimensions.size() == 2, "two dimension records (got %d)" % sm.dimensions.size())
+	check(label_rects.size() == 2, "two dimension label rects (got %d)" % label_rects.size())
 	check(_driving_sides(sm) == 2, "two driving side lengths (%d)" % _driving_sides(sm))
 	_expect_dof(ctx, true, "centre rect origin after 120 and 120")
 	check(_label_has(sm, "120"), "labels include 120 (%s)" % _label_texts(sm))

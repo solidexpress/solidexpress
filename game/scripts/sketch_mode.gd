@@ -6870,13 +6870,13 @@ func _restore_dimensions_from_sketch() -> void:
 
 
 ## One label record per dimensional constraint, deduped by
-## (type, sorted ids, value rounded to 1e-4) then by display text.
+## (type, sorted ids, value rounded to 1e-4). Display text is not a key:
+## two driving lengths that both read "120" are two labels.
 func _dimension_records_from_sketch() -> Array:
 	var out: Array = []
 	if sketch == null:
 		return out
 	var seen_fact := {}
-	var seen_text := {}
 	for cid in sketch.constraint_ids():
 		var rec := _dimension_record_from_cid(str(cid))
 		if rec.is_empty():
@@ -6884,12 +6884,7 @@ func _dimension_records_from_sketch() -> Array:
 		var key := _dimension_fact_key(rec)
 		if seen_fact.has(key):
 			continue
-		var text := _dimension_label_text(rec)
-		if text != "" and seen_text.has(text):
-			continue
 		seen_fact[key] = true
-		if text != "":
-			seen_text[text] = true
 		out.append(rec)
 	return out
 
