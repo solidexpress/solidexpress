@@ -1093,6 +1093,19 @@ func _ensure_sketch_feature() -> String:
 	return sk_fid
 
 
+## sketch_add_external_edge writes the graph copy. Put that profile back into
+## the editor sketch without replacing the object Offset still holds.
+func _adopt_converted_sketch() -> void:
+	if editing_fid == "" or sketch == null or view == null or view.doc == null:
+		return
+	if not view.doc.has_method("graph_get_sketch"):
+		return
+	var loaded: SxSketch = view.doc.graph_get_sketch(editing_fid)
+	if loaded == null or not loaded.has_method("snapshot") or not sketch.has_method("restore"):
+		return
+	sketch.restore(loaded.snapshot())
+
+
 ## Replace the in-memory sketch with the graph's last accepted profile.
 func _reload_editing_sketch() -> bool:
 	if editing_fid == "" or view == null or view.doc == null:
@@ -5472,6 +5485,7 @@ func _convert_edge_click(uv: Vector2) -> void:
 	ctx.support_host = support_host
 	ctx.support_normal = support_normal
 	ctx.ensure_feature = _ensure_sketch_feature
+	ctx.adopt = _adopt_converted_sketch
 	ctx.commit = func(label: String) -> void:
 		_undo_note(label)
 		run_solve()
@@ -5495,6 +5509,7 @@ func _offset_click(uv: Vector2) -> void:
 	ctx.support_host = support_host
 	ctx.support_normal = support_normal
 	ctx.ensure_feature = _ensure_sketch_feature
+	ctx.adopt = _adopt_converted_sketch
 	ctx.nearest_entity = _nearest_entity_at
 	ctx.pick_tol = _pick_tolerance()
 	ctx.commit = func(label: String) -> void:

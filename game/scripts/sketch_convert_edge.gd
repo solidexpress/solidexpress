@@ -28,6 +28,9 @@ class Context:
 	var commit: Callable
 	var status: Callable
 	var fallback: Callable
+	## Session pulls the graph sketch (where the external entity landed) back
+	## into the editor sketch. Offset and Convert share this one hook.
+	var adopt: Callable
 
 
 var _ctx: Context
@@ -58,6 +61,10 @@ func click(uv: Vector2) -> String:
 		if id == "":
 			ctx.status.call(NOT_SUPPORTED)
 			return ""
+		# The kernel writes the external entity onto the graph sketch. The
+		# editor still holds the pre-convert copy until the session adopts it.
+		if ctx.adopt.is_valid():
+			ctx.adopt.call()
 		ctx.commit.call("Convert")
 		ctx.status.call(_added_status(lines, on_face))
 		return id
@@ -84,8 +91,15 @@ func _edge_kind(lines: Dictionary, edge_id: String) -> String:
 
 
 func _face_edge_set(ctx: Context, body: String) -> Dictionary:
-	ctx.host_face_id = _resolve_host_face(ctx, body)
-	var edges: PackedStringArray = ctx.doc.edges_of_face(ctx.host_face_id)
+	# The face the sketch was opened on is already correct. Re-deriving it
+	# from every parallel face picks the wrong cap when two +Z faces exist
+	# (boss top vs base top) and the rim is then "not on this face".
+	var edges := PackedStringArray()
+	if ctx.host_face_id != "":
+		edges = ctx.doc.edges_of_face(ctx.host_face_id)
+	if edges.is_empty():
+		ctx.host_face_id = _resolve_host_face(ctx, body)
+		edges = ctx.doc.edges_of_face(ctx.host_face_id)
 	var set := {}
 	for id in edges:
 		set[str(id)] = true

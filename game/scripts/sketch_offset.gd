@@ -32,6 +32,7 @@ class Context:
 	var nearest_entity: Callable
 	var commit: Callable
 	var status: Callable
+	var adopt: Callable
 	var pick_tol := 2.5
 
 
@@ -41,6 +42,8 @@ var panel: PanelContainer
 var _distance_spin: SpinBox
 var _reverse: CheckButton
 var _ok: Button
+## Last Convert refusal, so a miss is not always the generic "nothing there".
+var _convert_note := ""
 
 
 func build(parent: Control) -> void:
@@ -116,15 +119,19 @@ func signed_distance() -> float:
 func click(ctx: Context, uv: Vector2) -> void:
 	if ctx == null or ctx.sketch == null:
 		return
+	# The distance SpinBox keeps typed text until focus leaves. A rim click
+	# in the 3D view does not commit it, so read the line edit first.
+	_pull_typed_distance()
 	if distance <= 1e-9:
 		ctx.status.call(ZERO_REFUSED)
 		return
 	var prior := {}
 	for id in ctx.sketch.entity_ids():
 		prior[str(id)] = true
+	_convert_note = ""
 	var source := _resolve_source(ctx, uv)
 	if source == "":
-		ctx.status.call(NOTHING)
+		ctx.status.call(_convert_note if _convert_note != "" else NOTHING)
 		return
 	var converted := not prior.has(source)
 	var info: Dictionary = ctx.sketch.entity_info(source)
@@ -180,13 +187,26 @@ func _convert_edge(ctx: Context, uv: Vector2) -> String:
 	convert_ctx.support_host = ctx.support_host
 	convert_ctx.support_normal = ctx.support_normal
 	convert_ctx.ensure_feature = ctx.ensure_feature
+	convert_ctx.adopt = ctx.adopt
 	convert_ctx.commit = func(_label: String) -> void: pass
-	convert_ctx.status = func(_text: String) -> void: pass
+	convert_ctx.status = func(text: String) -> void:
+		_convert_note = text
 	convert_ctx.fallback = func() -> void: pass
 	var edge := SketchConvertEdge.new(convert_ctx)
 	var id := edge.click(uv)
 	ctx.host_face_id = convert_ctx.host_face_id
 	return id
+
+
+func _pull_typed_distance() -> void:
+	if _distance_spin == null:
+		return
+	var edit := _distance_spin.get_line_edit()
+	if edit != null:
+		var typed := str(edit.text).strip_edges()
+		if typed.is_valid_float():
+			_distance_spin.set_value_no_signal(float(typed))
+	distance = _distance_spin.value
 
 
 func _on_distance(v: float) -> void:
