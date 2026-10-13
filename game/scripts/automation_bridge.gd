@@ -1875,14 +1875,24 @@ func _measure_state(ix) -> Array:
 func _camera_state(cam) -> Dictionary:
 	if cam == null:
 		return {}
+	# BBoxes and face normals are kernel Z-up. The orbit rig is Godot Y-up,
+	# so a correct top view sits on world +Y. Report the same kernel frame
+	# or a top-face sketch reads as look (0,-1,0) instead of (0,0,-1).
+	var pos: Vector3 = cam.global_position
+	var target: Vector3 = cam.pivot
+	var ms = _main().get("model_space")
+	if ms != null and cam.is_inside_tree():
+		var inv: Transform3D = ms.global_transform.affine_inverse()
+		pos = inv * pos
+		target = inv * target
 	return {
-		"target": _v3(cam.pivot),
+		"target": _v3(target),
 		"distance": cam.distance,
 		"yaw": cam.yaw,
 		"pitch": cam.pitch,
 		"ortho": cam.projection == Camera3D.PROJECTION_ORTHOGONAL,
 		"size": cam.size,
-		"position": _v3(cam.global_position),
+		"position": _v3(pos),
 	}
 
 

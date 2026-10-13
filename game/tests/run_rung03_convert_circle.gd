@@ -185,7 +185,33 @@ func _open_z_face(ctx: FilmContext, z: float) -> bool:
 		await process_frame
 	var sm: SketchMode = ctx.main.sketch_mode
 	check(sm.active, "face sketch is active")
+	if sm.active:
+		_check_face_sketch_look(ctx, sm)
 	return sm.active and sm.sketch != null
+
+
+## Kernel look of the live camera. ModelSpace is Rx(-90), so a top view's
+## world look is (0,-1,0) and its kernel look is (0,0,-1).
+func _check_face_sketch_look(ctx: FilmContext, sm: SketchMode) -> void:
+	var cam: OrbitCamera = ctx.main.camera
+	var ms: Node3D = ctx.main.model_space
+	if cam == null or ms == null:
+		check(false, "camera and model space exist for the face sketch")
+		return
+	var inv: Transform3D = ms.global_transform.affine_inverse()
+	var pos_m: Vector3 = inv * cam.global_position
+	var piv_m: Vector3 = inv * cam.pivot
+	var delta := piv_m - pos_m
+	var look := Vector3.ZERO
+	if delta.length_squared() > 1e-8:
+		look = delta.normalized()
+	var world := cam.pivot - cam.global_position
+	if world.length_squared() > 1e-8:
+		world = world.normalized()
+	print("  plane.normal %s yaw %.4f pitch %.4f world_look %s model_look %s" % [
+		str(sm.plane_normal()), cam.yaw, cam.pitch, str(world), str(look)])
+	check(look.distance_to(Vector3(0.0, 0.0, -1.0)) <= 1e-2,
+			"face sketch looks down -Z (got %s)" % str(look))
 
 
 func _face_at_z(ctx: FilmContext, body: String, z: float) -> String:
