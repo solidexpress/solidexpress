@@ -32,6 +32,7 @@ func _init() -> void:
 	test_profile_is_closed()
 	test_dimension_distance_label(main)
 	test_dimension_radius_label(main)
+	test_dimension_diameter_label(main)
 	test_dimensions_visible_toggle(main)
 	test_dimension_labels_cleared_on_exit(main)
 	test_trim_end_segment(main)
@@ -537,12 +538,31 @@ func test_dimension_radius_label(main) -> void:
 	check(sm.dimensions.size() == 1, "dimensions array has one radius entry")
 	var texts := _dimension_label_texts(sm)
 	check(texts.size() == 1, "one Label3D for radius dimension")
-	var expected := "Ø" + sm._format_dimension(30.0)
-	check(texts[0] == expected, "full-circle size is the diameter '%s' (got '%s')" % [expected, texts[0]])
-	check(sm.set_dimension_value(0, 20.0) != "failed", "diameter edit commits")
+	var expected := sm._format_dimension(15.0)
+	check(texts[0] == expected, "radius label text is '%s' (got '%s')" % [expected, texts[0]])
+	sm.cancel()
+
+
+func test_dimension_diameter_label(main) -> void:
+	print("- diameter dimension is the callout and the stored size")
+	var sm: SketchMode = main.sketch_mode
+	main.view.clear_selection()
+	main._start_sketch()
+	sm.set_tool(SketchMode.Tool.SELECT)
+	var cid: String = sm.sketch.add_circle(0, 0, 10)
+	sm._set_selected([cid])
+	check(sm.constrain("diameter", 20.0) == "success", "diameter constraint solves")
+	var texts := _dimension_label_texts(sm)
+	check(texts.size() == 1, "one Label3D for diameter dimension")
+	var expected := "Ø" + sm._format_dimension(20.0)
+	check(texts[0] == expected, "diameter label is '%s' (got '%s')" % [expected, texts[0]])
+	var solved: Dictionary = sm.sketch.entity_info(cid)
+	check(absf(float(solved.get("radius", 0.0)) - 10.0) <= 0.05,
+			"diameter 20 is radius 10 (got %s)" % str(solved.get("radius", "")))
+	check(sm.set_dimension_value(0, 30.0) != "failed", "diameter edit commits")
 	var after: Dictionary = sm.sketch.entity_info(cid)
-	check(absf(float(after.get("radius", 0.0)) - 10.0) <= 0.05,
-			"typed diameter 20 stores radius 10 (got %s)" % str(after.get("radius", "")))
+	check(absf(float(after.get("radius", 0.0)) - 15.0) <= 0.05,
+			"typed diameter 30 stores radius 15 (got %s)" % str(after.get("radius", "")))
 	sm.cancel()
 
 
