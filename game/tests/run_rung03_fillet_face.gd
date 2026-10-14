@@ -89,6 +89,11 @@ func _fillet_edges_then_face(ctx: FilmContext) -> void:
 		# toggled the near vertical.
 		for _frame in 6:
 			await process_frame
+		var edge_id := _vertical_near(ctx, body, float(row["x"]), float(row["y"]))
+		check(edge_id != "", "vertical at %s,%s" % [str(row["x"]), str(row["y"])])
+		# Same screen pixel as the far twin in an ortho side view. The named
+		# id is the pick; the ray must not toggle the other vertical.
+		ctx.view.offer_edge(edge_id)
 		var pt := FilletPick.pick_point_for_corner(float(row["x"]), float(row["y"]), 15.0)
 		var mark := _status_log.size()
 		await _click_model(ctx, pt, "vertical corner")
@@ -97,6 +102,7 @@ func _fillet_edges_then_face(ctx: FilmContext) -> void:
 			str(row["x"]), str(row["y"]), str(key),
 			ctx.view.selected_edges.size(), st])
 		check(st.contains("mm vertical"), "corner pick is a vertical (got '%s')" % st)
+		check(ctx.view.selected_edges.has(edge_id), "named vertical %s stays selected" % edge_id)
 	check(ctx.view.selected_edges.size() == 4, "four verticals armed (got %d)" % ctx.view.selected_edges.size())
 	# Shift+face on z=30 → 9 edges.
 	await _push_key(ctx.main.get_viewport(), KEY_3, 0)
@@ -202,11 +208,18 @@ func _arm_fillet(ctx: FilmContext, radius: float) -> bool:
 		return false
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Fillet", "Fillet"))
 	await process_frame
-	ctx.main.ops_panel.set_dressup_radius(radius)
 	var spin: SpinBox = ctx.main.find_child("StripRadius", true, false)
-	if spin != null:
-		spin.value = radius
+	check(spin != null and spin.is_visible_in_tree(), "StripRadius visible")
+	if spin == null:
+		return false
+	var line := spin.get_line_edit()
+	await _x11_click_screen(ctx.main.get_viewport(), line.get_global_rect().get_center())
 	await process_frame
+	var text := "1.5" if absf(radius - 1.5) < 0.01 else str(int(round(radius)))
+	await _type_text(ctx.main.get_viewport(), text)
+	await process_frame
+	check(is_equal_approx(ctx.main.ops_panel.dressup_radius(), radius),
+			"typed %s is dressup radius (got %s)" % [text, str(ctx.main.ops_panel.dressup_radius())])
 	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES, "Fillet armed")
 	return ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES
 
@@ -294,6 +307,27 @@ func _click_model(ctx: FilmContext, model: Vector3, desc: String) -> void:
 	check(FilmUI.require_on_screen(ctx, screen, desc), "%s on screen" % desc)
 	await FilmUI.viewport_click(ctx, screen, FilmUICues.sketch_click(desc))
 	await process_frame
+
+
+func _vertical_near(ctx: FilmContext, body: String, x: float, y: float) -> String:
+	var lines: Dictionary = ctx.view.doc.get_edge_lines(body)
+	var best := ""
+	var best_d := 4.0
+	for id in lines.keys():
+		var pts: PackedVector3Array = lines[id]
+		if pts.size() < 2:
+			continue
+		var a: Vector3 = pts[0]
+		var b: Vector3 = pts[pts.size() - 1]
+		var delta := b - a
+		if delta.length() < 1.0 or absf(delta.normalized().z) < 0.9:
+			continue
+		var centre := (a + b) * 0.5
+		var dist := Vector2(centre.x - x, centre.y - y).length()
+		if dist < best_d:
+			best_d = dist
+			best = str(id)
+	return best
 
 
 func _only_body(ctx: FilmContext) -> String:

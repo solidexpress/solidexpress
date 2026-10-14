@@ -45,6 +45,9 @@ var selected_edge := ""
 var selected_bodies: Array[String] = []
 var selected_faces: Array[String] = []
 var selected_edges: Array[String] = []
+## One click may name an edge the screen cannot (orthographic twins).
+## The next dressup pick consumes it; a leftover is dropped by the caller.
+var _offered_edge := ""
 ## Selected component instance (viewport click on an instance mesh).
 var selected_instance := ""
 # World-space point of the most recent viewport pick (armed hole/ops flows).
@@ -1592,6 +1595,16 @@ func edge_screen_distance(body_id: String, edge_id: String, camera: Camera3D, sc
 	if pts.size() < 2:
 		return INF
 	return _polyline_screen_distance(camera, screen, pts)
+
+
+func offer_edge(edge_id: String) -> void:
+	_offered_edge = edge_id
+
+
+func take_offered_edge() -> String:
+	var id := _offered_edge
+	_offered_edge = ""
+	return id
 
 
 func select_edge(body_id: String, edge_id: String) -> void:

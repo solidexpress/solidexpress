@@ -6358,8 +6358,12 @@ func _nav_blocked_by_text() -> bool:
 	if not _text_field_has_focus():
 		return false
 	var owner := get_viewport().gui_get_focus_owner()
-	if owner is LineEdit and _line_is_tracked_numeric(owner as LineEdit) \
-			and not SxUi.mid_entry(owner as LineEdit):
+	if owner is LineEdit and _line_is_tracked_numeric(owner as LineEdit):
+		var line := owner as LineEdit
+		# A click armed replace, or a digit already landed: the field owns
+		# 0–8. Focus left behind with no replace arm still lets 2/6 orbit.
+		if SxUi.replace_armed(line) or SxUi.mid_entry(line) or line.has_selection():
+			return true
 		return false
 	return true
 

@@ -313,6 +313,12 @@ func _click_at(vp: Viewport, pos: Vector2, as_double: bool) -> void:
 
 
 func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
+	# A named edge is the pick. The screen point of its midpoint is only
+	# where the pointer goes; ortho side views share that pixel.
+	if kind != "hover" and req.has("edge"):
+		var view = _main().get("view")
+		if view != null and view.has_method("offer_edge"):
+			view.offer_edge(str(req["edge"]))
 	var spec := _resolve_point(req)
 	if spec.has("error"):
 		return spec
@@ -327,6 +333,10 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 	else:
 		await _click_at(vp, pos, false)
 		await _retry_face_if_edge(spec)
+	if kind != "hover" and req.has("edge"):
+		var view = _main().get("view")
+		if view != null and view.has_method("take_offered_edge"):
+			view.take_offered_edge()
 	_activate_missed_button(spec)
 	var out := {"at": _v2(pos)}
 	if spec.has("id"):

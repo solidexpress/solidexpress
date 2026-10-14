@@ -2226,11 +2226,27 @@ func _dressup_radius_refused() -> bool:
 	return why.contains("limit ") or why.contains("fillet failed") or why.contains("chamfer failed")
 
 
+func _consume_offered_edge(body: String) -> bool:
+	if view == null or not view.has_method("take_offered_edge"):
+		return false
+	var edge := str(view.take_offered_edge())
+	if edge == "":
+		return false
+	if body == "":
+		body = _pending_body if _pending_body != "" else view.selected_body
+	if body == "":
+		return false
+	_toggle_dressup_edge(body, edge)
+	return true
+
+
 func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "",
 		shift: bool = false) -> void:
 	if body == "" or view == null:
 		return
 	if _pending != Pending.FILLET_EDGES and _pending != Pending.CHAMFER_EDGES:
+		return
+	if _consume_offered_edge(body):
 		return
 	if _pending_body != "" and body != _pending_body:
 		status.emit("Fillet/Chamfer: pick edges on the same body")
@@ -2313,6 +2329,9 @@ func _dressup_has_edges() -> bool:
 ## anything else is a named miss.
 func handle_viewport_miss(screen: Vector2, camera: Camera3D) -> void:
 	var body := _pending_body if _pending_body != "" else view.selected_body
+	if (_pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES) \
+			and _consume_offered_edge(body):
+		return
 	if (_pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES) \
 			and body != "" and camera != null:
 		var edge := view.edge_near_screen(body, camera, screen, DRESSUP_SILHOUETTE_PX)
