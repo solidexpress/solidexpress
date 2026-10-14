@@ -34,10 +34,19 @@ func _init() -> void:
 		var film_id := str(entry.get("id", ""))
 		if film_id.is_empty():
 			continue
+		if _suite_owns(film_id):
+			print("- smoke skip %s owned by film_%s_tests" % [film_id, film_id])
+			continue
 		await _run_one(entry)
 
 	print("%d films, %d failures" % [films_run, failures])
 	quit(1 if failures > 0 else 0)
+
+
+func _suite_owns(film_id: String) -> bool:
+	var root := ProjectSettings.globalize_path("res://")
+	var path := root.path_join("../packaging/ci/suites.d/film_%s_tests.suite" % film_id)
+	return FileAccess.file_exists(path)
 
 
 func _load_manifest() -> Array:
