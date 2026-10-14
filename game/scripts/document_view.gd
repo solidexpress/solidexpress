@@ -1318,25 +1318,43 @@ func model_to_screen(camera: Camera3D, point: Vector3) -> Vector2:
 ## Closest edge of `body_id` to a screen position, within `max_px`, "" when none.
 ## Edges within EDGE_PICK_SCREEN_TIE_PX of each other prefer the one most
 ## parallel to the view ray (an end-on vertical beats the arc it meets).
+## Equal alignment keeps the edge nearer the camera, so a side-view click on a
+## stacked silhouette takes the visible vertical, not the one 120 mm behind it.
 func edge_near_screen(body_id: String, camera: Camera3D, screen: Vector2, max_px: float) -> String:
 	var lines: Dictionary = doc.get_edge_lines(body_id)
 	var ray := (-camera.global_transform.basis.z).normalized()
 	var best_id := ""
 	var best_px := INF
 	var best_align := -1.0
+	var best_cam := INF
 	for edge_id in lines:
 		var near := _polyline_screen_nearest(camera, screen, lines[edge_id])
 		var px: float = near["px"]
 		if px > max_px or not _edge_point_visible(camera, near["point"]):
 			continue
 		var align := absf(_model_to_world_dir(edge_direction(body_id, str(edge_id))).dot(ray))
+		var cam_d := camera.global_position.distance_to(_model_to_world(near["point"]))
 		var closer := px < best_px - EDGE_PICK_SCREEN_TIE_PX
 		var tie := absf(px - best_px) <= EDGE_PICK_SCREEN_TIE_PX
-		if best_id == "" or closer or (tie and align > best_align + 0.05):
+		var align_wins := tie and align > best_align + 0.05
+		var depth_wins := tie and absf(align - best_align) <= 0.05 and cam_d + 1.0 < best_cam
+		if best_id == "" or closer or align_wins or depth_wins:
 			best_id = str(edge_id)
 			best_px = px
 			best_align = align
+			best_cam = cam_d
 	return best_id
+
+
+## Millimetres from `camera` to the midpoint of `edge_id`.
+func edge_camera_distance(body_id: String, edge_id: String, camera: Camera3D) -> float:
+	if camera == null or edge_id == "":
+		return INF
+	var pts := _edge_polyline(body_id, edge_id)
+	if pts.size() < 2:
+		return INF
+	var mid: Vector3 = pts[0].lerp(pts[pts.size() - 1], 0.5)
+	return camera.global_position.distance_to(_model_to_world(mid))
 
 
 func _model_to_world(p: Vector3) -> Vector3:
