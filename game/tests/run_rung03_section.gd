@@ -112,8 +112,8 @@ func _section_top_and_cap(ctx: FilmContext) -> void:
 	var n := ctx.view.section_normal()
 	check(absf(n.x) < 0.01 and absf(n.z) < 0.01 and absf(absf(n.y) - 1.0) < 0.01,
 			"normal is ±Y (got %s)" % str(n))
-	var cam := ctx.main.get_viewport().get_camera_3d()
-	var cam_pos := cam.global_position if cam != null else Vector3(100, 100, 100)
+	var cam: Camera3D = ctx.main.get_viewport().get_camera_3d()
+	var cam_pos: Vector3 = cam.global_position if cam != null else Vector3(100, 100, 100)
 	var kept := SectionPlane.kept_side(cam_pos, Vector3.ZERO, Vector3(0, 1, 0))
 	check(n.is_equal_approx(kept), "kept half is away from the camera")
 	var status_text := "" if ctx.main.status_label == null else str(ctx.main.status_label.text)
@@ -239,11 +239,11 @@ func _assert_cap_pixels(ctx: FilmContext, section_on: bool) -> void:
 		return
 	RenderingServer.force_draw(true)
 	await RenderingServer.frame_post_draw
-	var vp := ctx.main.get_viewport()
+	var vp: Viewport = ctx.main.get_viewport()
 	if vp == null or vp.get_texture() == null:
 		check(false, "viewport texture exists for cap sample")
 		return
-	var img := vp.get_texture().get_image()
+	var img: Image = vp.get_texture().get_image()
 	if img == null:
 		check(false, "viewport image readable")
 		return
@@ -277,32 +277,22 @@ func _near_colour(a: Color, b: Color, tol: float) -> bool:
 
 
 func _click_popup_item(ctx: FilmContext, popup: PopupMenu, idx: int) -> void:
-	# Window-local centre of the row (same geometry as the automation bridge).
-	var panel: Control = null
-	for c in popup.get_children(true):
-		if c is PanelContainer:
-			panel = c as Control
-			break
-	var origin := Vector2.ZERO
-	var width := float(popup.size.x)
-	if panel != null:
-		origin = panel.position
-		width = maxf(panel.size.x, 8.0)
-	var style := popup.get_theme_stylebox("panel")
-	var top := style.get_margin(SIDE_TOP) if style != null else 4.0
-	var font := popup.get_theme_font("font")
-	if font == null:
-		font = ThemeDB.fallback_font
-	var fs := popup.get_theme_font_size("font_size")
-	if fs <= 0:
-		fs = 16
-	var vsep := float(popup.get_theme_constant("v_separation"))
-	var row := float(font.get_height(fs)) + vsep
-	var y := origin.y + top
-	for i in idx:
-		y += row
-	var local := Vector2(origin.x + width * 0.5, y + row * 0.35)
-	await SxInput.x11_click_screen(popup, local)
+	# push_input on the popup never reaches Window._input_from_window, so the
+	# row does not activate. The automation bridge forwards the click through
+	# the embedder; that is the path the walk uses for popup:Top.
+	var label := popup.get_item_text(idx)
+	var bridge = ctx.main.get_node_or_null("AutomationBridge")
+	var owned := false
+	if bridge == null:
+		bridge = load("res://scripts/automation_bridge.gd").new()
+		bridge.name = "AutomationBridge"
+		ctx.main.add_child(bridge)
+		owned = true
+	var res: Dictionary = await bridge._cmd_pointer({"target": "popup:%s" % label}, "click")
+	print("  popup:%s %s" % [label, str(res)])
+	if owned and is_instance_valid(bridge):
+		bridge.queue_free()
+	await process_frame
 
 
 func _status_since(mark: int) -> String:

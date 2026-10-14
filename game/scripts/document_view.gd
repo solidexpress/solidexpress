@@ -284,25 +284,27 @@ void fragment() {
 		discard;
 	}
 	bool back = !FRONT_FACING;
-	// Flat cap on the cut: back faces of the kept half.
-	if (section_on && back) {
-		// Emission skips the lighting pass so the cap stays CAP_COLOUR.
-		ALBEDO = vec3(0.0);
-		METALLIC = 0.05;
-		ROUGHNESS = 0.85;
-		EMISSION = cap_colour.rgb;
-		return;
-	}
+	// Flat cap on the cut: back faces of the kept half. Emission skips the
+	// lighting pass so the cap stays CAP_COLOUR. No return: the dummy
+	// renderer rejects return inside fragment().
+	bool cap = section_on && back;
 	vec3 base = albedo_color.rgb;
-	if (zebra_on) {
+	if (!cap && zebra_on) {
 		vec3 n = normalize(world_normal);
 		float bands = sin(dot(n, vec3(8.0, 0.4, 2.0)) * 6.0) * 0.5 + 0.5;
 		base = mix(vec3(0.08, 0.08, 0.09), vec3(0.92, 0.92, 0.90), bands);
 	}
-	ALBEDO = base;
-	METALLIC = metallic;
-	ROUGHNESS = roughness;
-	EMISSION = emission_color.rgb * emission_energy;
+	if (cap) {
+		ALBEDO = vec3(0.0);
+		METALLIC = 0.05;
+		ROUGHNESS = 0.85;
+		EMISSION = cap_colour.rgb;
+	} else {
+		ALBEDO = base;
+		METALLIC = metallic;
+		ROUGHNESS = roughness;
+		EMISSION = emission_color.rgb * emission_energy;
+	}
 }
 """
 	return s
