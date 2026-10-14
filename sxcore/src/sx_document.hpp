@@ -132,6 +132,10 @@ public:
     // Tessellation: ArrayMesh with one surface per face; surface index order
     // matches get_face_ids(body_id).
     godot::Ref<godot::ArrayMesh> get_mesh(const godot::String& body_id) const;
+    // Filled cross-section of one body on the plane (model space). One surface.
+    godot::Ref<godot::ArrayMesh> section_cap_mesh(const godot::String& body_id,
+                                                  const godot::Vector3& point,
+                                                  const godot::Vector3& normal) const;
     godot::PackedStringArray get_face_ids(const godot::String& body_id) const;
     godot::PackedStringArray get_edge_ids(const godot::String& body_id) const;
     // Boundary edges of one face (stable edge ids). Empty if `face_id` is not a face.
