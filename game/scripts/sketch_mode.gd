@@ -3895,6 +3895,22 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		{"entity": hx, "role": "self"},
 		{"entity": str(walls[0]["id"]), "role": "self"}], ang)
 	_record_dimension("angle", [hx, str(walls[0]["id"])], _normalize_jaw_angle_rad(ang), ang_cid, "jaw_angle")
+	# The rectangle already drove this wall with its own angle. A second
+	# constraint draws a second 45° and makes the solve redundant.
+	var angle_ids: PackedStringArray = sketch.constraint_ids()
+	for cid in angle_ids:
+		if str(cid) == ang_cid:
+			continue
+		var cinfo: Dictionary = sketch.constraint_info(str(cid))
+		if cinfo.is_empty() or str(cinfo.get("type", "")) != "angle":
+			continue
+		var names_wall := false
+		for ref in cinfo.get("refs", []):
+			if typeof(ref) == TYPE_DICTIONARY and wall_ids.has(str(ref.get("entity", ""))):
+				names_wall = true
+				break
+		if names_wall:
+			sketch.remove_constraint(str(cid))
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "circle" or sketch.is_construction(id):
@@ -4936,7 +4952,11 @@ func click(pos2: Vector2) -> void:
 	# Jaw click 2 near a typed-circle radius label.
 	# Line and Centerline still place the point: the jaw-width "20" label sits
 	# on the 45° ray, and #164's rect hit ate the centreline's second click.
-	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE
+	# An in-progress Jaw (click 2 already down) must place click 3 too. The
+	# 8 px pad around a shaft "22.5" covers the half-width point, and opening
+	# that editor drops the gesture.
+	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE \
+			or has_pending_draw_point()
 	# A badge's drawn rect wins over the entity underneath it. Snap would
 	# pull this press onto the head circle and the glyph would never select.
 	if tool == Tool.SELECT:
@@ -7576,7 +7596,12 @@ func _rebuild_dimension_labels() -> void:
 		return
 	_sync_missing_radius_records()
 	_dimension_labels.visible = dimensions_visible
+	# Save re-entry holds the camera and the live callouts. Re-resolving the
+	# overlap at the restored zoom still slides 20 and 45° by a few pixels
+	# (the live clamp is not a fixed point of a fresh pass).
+	var preserve := _label_restack_hold != 0 and _label_restack_hold == _camera_reassert_gen
 	var taken: Array[Vector2] = []
+	var all_stable := true
 	for i in range(dimensions.size()):
 		var dim: Dictionary = dimensions[i]
 		if typeof(dim) != TYPE_DICTIONARY:
@@ -7588,11 +7613,19 @@ func _rebuild_dimension_labels() -> void:
 		# Save re-entry: keep the live stack when the geometry did not move.
 		# Recomputing from mm-proximity at 150 px parks 45° on 20 (N1b).
 		var prev_pos: Variant = dim.get("label_pos", null)
-		var stack := 0
-		var reuse := prev_pos != null and typeof(prev_pos) == TYPE_VECTOR2 \
-				and (prev_pos as Vector2).distance_to(pos) < 0.5 \
+		var stable := prev_pos is Vector2 and (prev_pos as Vector2).distance_to(pos) < 0.5 \
 				and dim.has("label_stack")
-		if reuse:
+		if preserve and stable:
+			var kept_text := _dimension_label_text(dim)
+			if str(dim.get("type", "")) == "angle":
+				var kept_shown := snappedf(_dimension_display_value(dim), 0.01)
+				kept_text = _format_dimension(kept_shown) + "°"
+			dim["label_text"] = kept_text
+			dimensions[i] = dim
+			continue
+		all_stable = false
+		var stack := 0
+		if stable:
 			stack = int(dim["label_stack"])
 		else:
 			for t in taken:
@@ -7609,7 +7642,8 @@ func _rebuild_dimension_labels() -> void:
 		dim["label_text"] = text
 		dimensions[i] = dim
 	_rebuild_constraint_glyphs()
-	_resolve_label_overlaps()
+	if not (preserve and all_stable):
+		_resolve_label_overlaps()
 	for dim in dimensions:
 		if typeof(dim) != TYPE_DICTIONARY:
 			continue
