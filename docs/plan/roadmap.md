@@ -271,6 +271,7 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 | Section shader and cap | `document_view.gd` `_make_section_shader` discards the near half and the back faces. `section_cap.gd` fills the cut | Do not merge them in this pass | The shader discards; `SectionCap` fills |
 | Suite render flag | `render=viewport` as `--headless` without dummy, so `rung03_section` and `rung01_replan16_chrome` read pixels, and smoke skips films that have their own suite | Godot 4.7 `--display-driver headless` allows only the dummy renderer. `frame_post_draw` never arrives, so both pixel suites time out inside the sample | Two attempts. The specified argv cannot draw. The smoke skip stays out with it |
 | Near-match walk helpers | `try_extrude`, `clear_sketch_selection`, `rail_label_nodes`, `select_body`, `_headless_report`, `apply_shell`, `pick_edge_again` | One `WalkChrome` method when the diff is a name or a number | ★ WP6 not started. WP3 is parked, so WP1–WP5 are not all green |
+| Offset kind table | `SketchOffset.click` still branches on `kind == "circle"` | `KINDS` rows: applied text and whether Reverse can eat the radius | ★ WP7 not started. WP3 is parked, so WP1–WP5 are not all green |
 
 ---
 
