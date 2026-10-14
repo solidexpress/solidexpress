@@ -258,7 +258,6 @@ render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 uniform vec4 albedo_color : source_color = vec4(0.72, 0.74, 0.78, 1.0);
 uniform vec3 section_point = vec3(0.0);
 uniform vec3 section_normal = vec3(1.0, 0.0, 0.0);
-uniform vec4 cap_colour : source_color = vec4(0.62, 0.66, 0.72, 1.0);
 uniform float metallic : hint_range(0.0, 1.0) = 0.92;
 uniform float roughness : hint_range(0.0, 1.0) = 0.35;
 uniform vec4 emission_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
@@ -278,35 +277,28 @@ void vertex() {
 }
 
 void fragment() {
-	if (section_on && dot(model_position - section_point, section_normal) > 0.0) {
+	// Open the cut. A 1 mm shell has no face on the plane; the sample lands
+	// on a back face just off it, and that face would cover the canvas cap.
+	// FRONT_FACING stays so the cut can still be told apart.
+	float section_side = dot(model_position - section_point, section_normal);
+	bool back = !FRONT_FACING;
+	if (section_on && (section_side > -5.0 || back)) {
 		discard;
 	}
 	// Wireframe mode hides solid faces via transparent albedo.
 	if (albedo_color.a < 0.01) {
 		discard;
 	}
-	bool back = !FRONT_FACING;
-	// Flat cap on the cut: back faces of the kept half. Emission skips the
-	// lighting pass so the cap stays CAP_COLOUR. No return: the dummy
-	// renderer rejects return inside fragment().
-	bool cap = section_on && back;
 	vec3 base = albedo_color.rgb;
-	if (!cap && zebra_on) {
+	if (zebra_on) {
 		vec3 n = normalize(world_normal);
 		float bands = sin(dot(n, vec3(8.0, 0.4, 2.0)) * 6.0) * 0.5 + 0.5;
 		base = mix(vec3(0.08, 0.08, 0.09), vec3(0.92, 0.92, 0.90), bands);
 	}
-	if (cap) {
-		ALBEDO = vec3(0.0);
-		METALLIC = 0.05;
-		ROUGHNESS = 0.85;
-		EMISSION = cap_colour.rgb;
-	} else {
-		ALBEDO = base;
-		METALLIC = metallic;
-		ROUGHNESS = roughness;
-		EMISSION = emission_color.rgb * emission_energy;
-	}
+	ALBEDO = base;
+	METALLIC = metallic;
+	ROUGHNESS = roughness;
+	EMISSION = emission_color.rgb * emission_energy;
 }
 """
 	return s
@@ -318,7 +310,6 @@ func _make_section_material(albedo: Color, emission: Color = Color(0, 0, 0), emi
 	m.set_shader_parameter("albedo_color", albedo)
 	m.set_shader_parameter("section_point", _section_point)
 	m.set_shader_parameter("section_normal", _section_normal)
-	m.set_shader_parameter("cap_colour", SectionPlane.CAP_COLOUR)
 	m.set_shader_parameter("metallic", _body_metal())
 	m.set_shader_parameter("roughness", _body_rough())
 	m.set_shader_parameter("emission_color", emission)

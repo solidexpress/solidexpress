@@ -4,7 +4,7 @@ extends RefCounted
 ## it does not hard-code Front/Top/Right normals.
 
 
-## Flat colour on the cut (back-facing fragments while clipped).
+## Flat colour on the cut, as 8-bit framebuffer bytes (158, 168, 184).
 const CAP_COLOUR := Color(0.62, 0.66, 0.72, 1.0)
 
 ## SOLIDWORKS names on our axes. point_rule "origin" = world origin.

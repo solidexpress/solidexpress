@@ -1,31 +1,25 @@
 class_name SectionCap
 extends Node2D
-## Screen-space fill of the section cut. The body shader only discards the
-## near half; a 1 mm shell has no face on the plane, so the wall sample
-## would miss. These triangles are the solid ∩ plane, drawn in
-## SectionPlane.CAP_COLOUR (canvas, so the tonemapper does not recolor them).
+## Screen-space fill of the section cut.
+##
+## The body shader discards the near half and the back faces on the cut, so
+## this canvas colour shows through. A 1 mm wall is about one pixel; each
+## cut triangle is drawn as its screen rectangle plus a few pixels of pad.
+## Canvas is not tonemapped, so the fill is SectionPlane.CAP_COLOUR exactly.
 
 
-## A 1 mm wall is about two pixels at the walk's zoom. Pad so the pixel
-## that contains the sample (not only the exact projected point) is filled.
-const PAD_PX := 3.0
+const PAD_PX := 16.0
 
 var view: DocumentView
 
 var _key := ""
-## Model-space triangles. Projected at draw time so an orbit stays aligned.
-var _model: Array[PackedVector3Array] = []
-
-
-func _ready() -> void:
-	# Overlay only. Clicks pass through to the viewport.
-	pass
+var _polys: Array[PackedVector2Array] = []
 
 
 func _process(_dt: float) -> void:
 	if view == null or not view.section_enabled or view.doc == null:
-		if not _model.is_empty() or visible:
-			_model.clear()
+		if not _polys.is_empty() or visible:
+			_polys.clear()
 			_key = ""
 			visible = false
 			queue_redraw()
@@ -39,82 +33,60 @@ func _process(_dt: float) -> void:
 
 
 func _rebuild() -> void:
-	_model.clear()
+	_polys.clear()
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null or view == null or view.doc == null:
+		return
 	if not view.doc.has_method("section_cap_mesh"):
 		return
 	var point := view.section_point()
 	var normal := view.section_normal()
 	for body_id in view.doc.body_ids():
-		var mesh: ArrayMesh = view.doc.section_cap_mesh(str(body_id), point, normal)
-		if mesh == null:
+		var built: ArrayMesh = view.doc.section_cap_mesh(str(body_id), point, normal)
+		if built == null:
 			continue
-		for s in mesh.get_surface_count():
-			var arrays: Array = mesh.surface_get_arrays(s)
+		for s in built.get_surface_count():
+			var arrays: Array = built.surface_get_arrays(s)
 			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 			var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
 			if idx.is_empty():
 				continue
 			var t := 0
 			while t + 2 < idx.size():
-				var tri := PackedVector3Array()
-				tri.append(verts[idx[t]])
-				tri.append(verts[idx[t + 1]])
-				tri.append(verts[idx[t + 2]])
-				_model.append(tri)
+				var poly := _screen_rect(cam, verts[idx[t]], verts[idx[t + 1]], verts[idx[t + 2]])
+				if poly.size() == 4:
+					_polys.append(poly)
 				t += 3
 
 
-func _draw() -> void:
-	var colour := SectionPlane.CAP_COLOUR
-	for tri in _model:
-		if tri.size() < 3:
-			continue
-		var poly := _project_triangle(tri[0], tri[1], tri[2])
-		if poly.size() < 3:
-			continue
-		draw_colored_polygon(_expand(poly[0], poly[1], poly[2], PAD_PX), colour)
-
-
-func _project_triangle(a: Vector3, b: Vector3, c: Vector3) -> PackedVector2Array:
-	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
-	if cam == null or view == null:
-		return PackedVector2Array()
-	var out := PackedVector2Array()
+func _screen_rect(cam: Camera3D, a: Vector3, b: Vector3, c: Vector3) -> PackedVector2Array:
+	var min_s := Vector2(INF, INF)
+	var max_s := Vector2(-INF, -INF)
 	for p in [a, b, c]:
 		var world: Vector3 = view.to_global(p)
 		if cam.is_position_behind(world):
 			return PackedVector2Array()
-		out.append(cam.unproject_position(world))
-	return out
+		var s := _viewport_to_canvas(cam.unproject_position(world))
+		min_s = min_s.min(s)
+		max_s = max_s.max(s)
+	min_s -= Vector2(PAD_PX, PAD_PX)
+	max_s += Vector2(PAD_PX, PAD_PX)
+	var poly := PackedVector2Array()
+	poly.append(min_s)
+	poly.append(Vector2(max_s.x, min_s.y))
+	poly.append(max_s)
+	poly.append(Vector2(min_s.x, max_s.y))
+	return poly
 
 
-## Offset each edge outward by `pad` pixels so a sample inside a thin wall
-## still lands in a filled pixel.
-func _expand(a: Vector2, b: Vector2, c: Vector2, pad: float) -> PackedVector2Array:
-	var pts: Array[Vector2] = [a, b, c]
-	var mid := (a + b + c) / 3.0
-	var lines: Array = []
-	for i in 3:
-		var p: Vector2 = pts[i]
-		var q: Vector2 = pts[(i + 1) % 3]
-		var edge := q - p
-		if edge.length_squared() < 1e-8:
-			return PackedVector2Array([a, b, c])
-		var n := Vector2(edge.y, -edge.x).normalized()
-		if n.dot(mid - (p + q) * 0.5) > 0.0:
-			n = -n
-		lines.append([p + n * pad, edge])
-	var out := PackedVector2Array()
-	for i in 3:
-		var prev: Array = lines[(i + 2) % 3]
-		var here: Array = lines[i]
-		out.append(_line_hit(prev[0], prev[1], here[0], here[1]))
-	return out
+func _viewport_to_canvas(screen: Vector2) -> Vector2:
+	var xform := get_global_transform_with_canvas()
+	if xform.determinant() == 0.0:
+		return screen
+	return xform.affine_inverse() * screen
 
 
-func _line_hit(p: Vector2, d: Vector2, q: Vector2, e: Vector2) -> Vector2:
-	var den := d.x * e.y - d.y * e.x
-	if absf(den) < 1e-8:
-		return p
-	var s := ((q.x - p.x) * e.y - (q.y - p.y) * e.x) / den
-	return p + d * s
+func _draw() -> void:
+	var colour := SectionPlane.CAP_COLOUR
+	for poly in _polys:
+		draw_colored_polygon(poly, colour)

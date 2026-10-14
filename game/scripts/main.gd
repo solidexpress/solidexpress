@@ -295,10 +295,11 @@ func _build_world() -> void:
 	view.name = "DocumentView"
 	view.section_changed.connect(_on_section_changed)
 	model_space.add_child(view)
-	# Flat section cap. A canvas layer added before the HUD so the cut
-	# paints over the 3D view and the chrome paints over the cap.
+	# Canvas cap, above the other overlays so the cut colour wins the wall
+	# pixel. The polygons stay on the cut, so the HUD stays clear.
 	var cap_layer := CanvasLayer.new()
 	cap_layer.name = "SectionCapLayer"
+	cap_layer.layer = 5
 	add_child(cap_layer)
 	var cap := SectionCap.new()
 	cap.name = "SectionCap"
