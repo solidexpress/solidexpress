@@ -6716,10 +6716,8 @@ func _set_arc_ends(id: String, c: Vector2, r: float, sa: float, ea: float) -> vo
 func _dimension_value_for_solver(dim: Dictionary, value: float) -> float:
 	if str(dim.get("type", "")) == "angle" and absf(value) > PI:
 		return deg_to_rad(value)
-	# The editor speaks the diameter the label shows. The constraint stores
-	# the radius.
-	if str(dim.get("type", "")) == "radius" and _full_circle_dimension(dim):
-		return value * 0.5
+	# Radius constraints store the radius. A diameter constraint stores the
+	# diameter. The label and the editor both speak that stored value.
 	return value
 
 
@@ -7405,11 +7403,9 @@ func _dimension_display_value(dim: Dictionary) -> float:
 		var dinfo: Dictionary = sketch.entity_info(str(ids[0]))
 		if str(dinfo.get("type", "")) in ["circle", "arc"]:
 			return float(dinfo.get("radius", 0.0)) * 2.0
-	# A full circle's radius constraint is the diameter the callout shows.
-	# An arc stays a radius (the wrench head is 22.5, not Ø45).
-	if type == "radius" and _full_circle_dimension(dim):
-		var cinfo: Dictionary = sketch.entity_info(str(ids[0]))
-		return float(cinfo.get("radius", 0.0)) * 2.0
+	# A radius constraint stays a radius on a full circle and on an arc
+	# (the pivot hole is 5, the wrench head is 22.5). Diameter constraints
+	# are the ones that read Ø.
 	if str(dim.get("callout", "")) == "point_line" and ids.size() >= 2 and sketch != null:
 		var p2l := _point_line_label_value(ids)
 		if p2l >= 0.0:
@@ -7549,7 +7545,7 @@ func _dimension_label_text(dim: Dictionary) -> String:
 	var shown := snappedf(_dimension_display_value(dim), 0.0001)
 	var text := _format_dimension(shown)
 	var kind := str(dim.get("type", ""))
-	if kind == "diameter" or (kind == "radius" and _full_circle_dimension(dim)):
+	if kind == "diameter":
 		text = "Ø" + text
 	if str(dim.get("type", "")) == "angle":
 		text = text + "°"
@@ -8876,6 +8872,32 @@ func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[R
 	batch_pending.append(item)
 
 
+## Keep each badge's reprojected screen distance at or under the 40 px cap.
+## `centre` is chosen in screen space; storing it through the sketch plane
+## and reading it back is not an exact inverse under perspective.
+func _cap_glyph_leader_span(items: Array, cam: Camera3D) -> void:
+	var limit := GLYPH_MAX_OFFSET_PX - 0.5
+	for item in items:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var anchor: Vector2 = item["anchor"]
+		var centre: Vector2 = item["centre"]
+		var origin := cam.unproject_position(to_global(to_model(anchor)))
+		var delta := centre - origin
+		if delta.length() > limit:
+			centre = origin + delta.normalized() * limit
+			item["centre"] = centre
+		var pos := _sketch_from_screen(cam, centre, anchor)
+		var back := cam.unproject_position(to_global(to_model(pos)))
+		var got := origin.distance_to(back)
+		if got > GLYPH_MAX_OFFSET_PX and got > 1.0:
+			pos = anchor + (pos - anchor) * (limit / got)
+			back = cam.unproject_position(to_global(to_model(pos)))
+			got = origin.distance_to(back)
+		item["pos"] = pos
+		item["offset_px"] = got
+
+
 func _rebuild_constraint_glyphs() -> void:
 	_refresh_coincident_keep()
 	# A click moves the pointer from the vertex onto the badge, which drops
@@ -8938,6 +8960,9 @@ func _rebuild_constraint_glyphs() -> void:
 	if cam != null:
 		_restore_pinned_coincident(pending, pinned_coincident, cam)
 		_clamp_coincident_leaders(pending, cam)
+		# Screen→sketch is a local linearisation. A badge parked on the 40 px
+		# cap can reproject a fraction past it, which is what the walk rejects.
+		_cap_glyph_leader_span(pending, cam)
 	for item in pending:
 		var gtype := str(item["type"])
 		var gcid := str(item["cid"])
