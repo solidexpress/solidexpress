@@ -94,7 +94,7 @@ TEST_CASE("offset_entities offsets a line by +2", "[sketchtools]") {
     REQUIRE(std::hypot(n1[0] - o1[0], n1[1] - o1[1]) == Approx(2.0).margin(1e-9));
 }
 
-TEST_CASE("offset_entities offsets circles with Concentric and Radius",
+TEST_CASE("offset_entities offsets circles with Concentric and Diameter",
           "[sketchtools][rung03]") {
     Sketch sk("OffCirc");
     auto c = sk.add_circle(0, 0, 35);
@@ -110,7 +110,7 @@ TEST_CASE("offset_entities offsets circles with Concentric and Radius",
     REQUIRE(sk.param(sk.entity(c)->params[2]) == Approx(35.0));
 
     bool has_concentric = false;
-    bool has_radius = false;
+    bool has_diameter = false;
     for (const auto& con : sk.constraints()) {
         if (con.type == ConstraintType::Concentric && con.refs.size() >= 2) {
             if ((con.refs[0].entity == nid && con.refs[1].entity == c) ||
@@ -118,13 +118,13 @@ TEST_CASE("offset_entities offsets circles with Concentric and Radius",
                 has_concentric = true;
             }
         }
-        if (con.type == ConstraintType::Radius && !con.refs.empty() &&
+        if (con.type == ConstraintType::Diameter && !con.refs.empty() &&
             con.refs[0].entity == nid && con.driving) {
-            has_radius = std::abs(con.value - 30.0) < 1e-9;
+            has_diameter = std::abs(con.value - 60.0) < 1e-9;
         }
     }
     REQUIRE(has_concentric);
-    REQUIRE(has_radius);
+    REQUIRE(has_diameter);
 
     auto outward = offset_entities(sk, {c.str()}, 5.0);
     REQUIRE(outward.size() == 1);

@@ -401,7 +401,9 @@ bool offset_circle(Sketch& s, const SketchEntity& e, EntityId id, double distanc
     EntityId nid = s.add_circle(cx, cy, nr);
     s.add_constraint(ConstraintType::Concentric,
                      {{nid, PointRole::Center}, {id, PointRole::Center}});
-    s.add_constraint(ConstraintType::Radius, {{nid, PointRole::Self}}, nr, true);
+    // The driving size of a full-circle offset is the diameter the callout
+    // shows. The radius stays the circle parameter.
+    s.add_constraint(ConstraintType::Diameter, {{nid, PointRole::Self}}, nr * 2.0, true);
     out.push_back(nid.str());
     return true;
 }
