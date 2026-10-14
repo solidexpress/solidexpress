@@ -23,8 +23,9 @@ func _init() -> void:
 
 
 func _run() -> void:
-	var ctx := await _boot()
-	if not await _build_boss(ctx):
+	var ctx := await Tutor1Fixture.boot(self, ROOT_SIZE, _on_status, ["sketch_mode", "interaction"])
+	check(root.size == ROOT_SIZE, "root is 1280×800")
+	if not await Tutor1Fixture.build_boss(self, ctx, _check_base):
 		ctx.main.queue_free()
 		return
 	if not await _open_z_face(ctx, 55.0):
@@ -39,43 +40,9 @@ func _run() -> void:
 	ctx.main.queue_free()
 
 
-func _build_boss(ctx: FilmContext) -> bool:
-	await FilmUI.enter_sketch(ctx)
-	var sm: SketchMode = ctx.main.sketch_mode
-	check(sm != null and sm.active, "ground sketch is open")
-	if sm == null or not sm.active:
-		return false
-	await _zoom(ctx, Vector3.ZERO, 280.0)
-	if not await _arm_rect_center(ctx):
-		return false
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(0, 0))
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(60, 60))
-	await process_frame
-	if not await _extrude(ctx, "30", 0):
-		return false
-	var base := _volume(ctx)
-	print("  base volume %s" % str(base))
-	check(absf(base - 432000.0) < 5.0, "base volume 432000 (got %s)" % str(base))
-	if absf(base - 432000.0) >= 5.0:
-		return false
-	if not await _open_z_face(ctx, 30.0):
-		return false
-	sm = ctx.main.sketch_mode
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(0, 0))
-	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(35, 0))
-	await process_frame
-	if not await _extrude(ctx, "25", 2):
-		return false
-	var boss := _volume(ctx)
-	print("  boss volume %s" % str(boss))
-	check(absf(boss - 528211.3) < 5.0, "boss volume 528211 (got %s)" % str(boss))
-	return absf(boss - 528211.3) < 5.0
-
-
 func _convert_rim(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
-	var body := _only_body(ctx)
+	var body := Tutor1Fixture.only_body(ctx)
 	for face_id in ctx.view.doc.get_face_ids(body):
 		var fid := str(face_id)
 		var n := ctx.view.face_normal(body, fid)
@@ -92,8 +59,8 @@ func _convert_rim(ctx: FilmContext) -> void:
 	print("  host after arm %s edges %d" % [
 		sm.host_face_id, ctx.view.doc.edges_of_face(sm.host_face_id).size()])
 	var mark := _status_log.size()
-	await _click_model(ctx, Vector3(35, 0, 55), "boss rim")
-	var added := _status_since(mark)
+	await Tutor1Fixture.click_model(self, ctx, Vector3(35, 0, 55), "boss rim")
+	var added := Tutor1Fixture.status_since(_status_log, mark)
 	print("  rim status: %s" % added)
 	var circles := _external_circles(sm)
 	print("  external circles %d" % circles.size())
@@ -110,8 +77,8 @@ func _convert_rim(ctx: FilmContext) -> void:
 	# Outside FACE_TOL the host rim is not taken; inside OTHER_TOL the root is refused.
 	var before := _external_circles(sm).size()
 	mark = _status_log.size()
-	await _click_model(ctx, Vector3(35.0 + FACE_BAND + 2.5, 0, 55), "root circle")
-	var refused := _status_since(mark)
+	await Tutor1Fixture.click_model(self, ctx, Vector3(35.0 + FACE_BAND + 2.5, 0, 55), "root circle")
+	var refused := Tutor1Fixture.status_since(_status_log, mark)
 	print("  root status: %s" % refused)
 	check(_external_circles(sm).size() == before, "root click adds no entity (got %d)" % _external_circles(sm).size())
 	check(refused.contains("Convert: edge is not on this face"),
@@ -125,8 +92,8 @@ func _refuse_other_rim(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CONVERT)
 	var before := _entity_count(sm)
 	var mark := _status_log.size()
-	await _click_model(ctx, Vector3(35.0 + FACE_BAND + 2.5, 0, 30), "z=55 rim")
-	var refused := _status_since(mark)
+	await Tutor1Fixture.click_model(self, ctx, Vector3(35.0 + FACE_BAND + 2.5, 0, 30), "z=55 rim")
+	var refused := Tutor1Fixture.status_since(_status_log, mark)
 	print("  z55 rim status: %s" % refused)
 	check(_entity_count(sm) == before, "z=55 rim adds no entity (got %d)" % _entity_count(sm))
 	check(refused.contains("Convert: edge is not on this face"),
@@ -155,11 +122,11 @@ func _open_z_face(ctx: FilmContext, z: float) -> bool:
 	await _push_key(ctx.main.get_viewport(), KEY_3, 0)
 	await process_frame
 	await process_frame
-	var body := _only_body(ctx)
+	var body := Tutor1Fixture.only_body(ctx)
 	check(body != "", "one body before the z=%.0f sketch" % z)
 	if body == "":
 		return false
-	var face := _face_at_z(ctx, body, z)
+	var face := Tutor1Fixture.face_at_z(ctx, body, z)
 	check(face != "", "face at z=%.0f" % z)
 	if face == "":
 		return false
@@ -167,10 +134,10 @@ func _open_z_face(ctx: FilmContext, z: float) -> bool:
 	print("  z=%.0f face %s pick %s" % [z, face, str(pick)])
 	check(pick != Vector3.ZERO, "pick point on z=%.0f" % z)
 	if ctx.view.selected_bodies.is_empty() and ctx.view.selected_face == "":
-		await _click_model(ctx, Vector3(50, 0, 15), "select body")
-	await _click_model(ctx, pick, "select z=%.0f face" % z)
+		await Tutor1Fixture.click_model(self, ctx, Vector3(50, 0, 15), "select body")
+	await Tutor1Fixture.click_model(self, ctx, pick, "select z=%.0f face" % z)
 	if ctx.view.selected_face != face:
-		await _click_model(ctx, pick, "drill z=%.0f face" % z)
+		await Tutor1Fixture.click_model(self, ctx, pick, "drill z=%.0f face" % z)
 	check(ctx.view.selected_face == face, "z=%.0f face selected (got %s)" % [z, ctx.view.selected_face])
 	if ctx.view.selected_face != face:
 		return false
@@ -214,46 +181,6 @@ func _check_face_sketch_look(ctx: FilmContext, sm: SketchMode) -> void:
 			"face sketch looks down -Z (got %s)" % str(look))
 
 
-func _face_at_z(ctx: FilmContext, body: String, z: float) -> String:
-	var best := ""
-	var best_gap := 1.0
-	var want := Vector3(0, 0, 1)
-	for face_id in ctx.view.doc.get_face_ids(body):
-		var fid := str(face_id)
-		var n := ctx.view.face_normal(body, fid)
-		if n.length_squared() < 1e-8 or n.normalized().dot(want) < 0.99:
-			continue
-		var off := FacePick.plane_offset(n, FacePick.point(ctx.view.doc, fid))
-		var gap := absf(off - z)
-		if gap < best_gap:
-			best_gap = gap
-			best = fid
-	return best
-
-
-func _arm_rect_center(ctx: FilmContext) -> bool:
-	var sm: SketchMode = ctx.main.sketch_mode
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.RECT)
-	var bar: Node = ctx.main.sketch_chrome.find_child("VariantBar", true, false)
-	var chip: Button = null
-	if bar != null:
-		for c in bar.get_children():
-			var b := c as Button
-			if b != null and b.text == "Center":
-				chip = b
-	check(chip != null and chip.is_visible_in_tree(), "Center variant chip is visible")
-	if chip == null or not await FilmUI.click_control(ctx, chip, FilmUICues.alert("Center", "Center")):
-		return false
-	return sm.tool_variant == "center"
-
-
-func _click_model(ctx: FilmContext, model: Vector3, desc: String) -> void:
-	var screen := FilmUI.model_to_screen(ctx, model)
-	check(FilmUI.require_on_screen(ctx, screen, desc), "%s is on screen" % desc)
-	await FilmUI.viewport_click(ctx, screen, FilmUICues.sketch_click(desc))
-	await process_frame
-
-
 func _external_circles(sm: SketchMode) -> Array:
 	var out: Array = []
 	if sm.sketch == null:
@@ -272,48 +199,13 @@ func _entity_count(sm: SketchMode) -> int:
 	return sm.sketch.entity_ids().size()
 
 
-func _only_body(ctx: FilmContext) -> String:
-	var ids: PackedStringArray = ctx.view.doc.body_ids()
-	if ids.size() != 1:
-		return ""
-	return str(ids[0])
-
-
-func _volume(ctx: FilmContext) -> float:
-	var body := _only_body(ctx)
-	if body == "":
-		return -1.0
-	var mass: Dictionary = ctx.view.doc.measure_mass(body)
-	return float(mass.get("volume", -1.0))
-
-
-func _status_since(mark: int) -> String:
-	if mark >= _status_log.size():
-		return ""
-	return " | ".join(_status_log.slice(mark))
-
-
-func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	check(root.size == ROOT_SIZE, "root is 1280×800")
-	if main.sketch_mode != null:
-		main.sketch_mode.status.connect(_on_status)
-	if main.interaction != null:
-		main.interaction.status.connect(_on_status)
-	return ctx
-
-
 func _on_status(text: String) -> void:
-	if text == "":
-		return
-	_status_log.append(text)
-	print("  status: " + text)
+	Tutor1Fixture.note(_status_log, text)
+
+
+func _check_base(ctx: FilmContext) -> bool:
+	var base := Tutor1Fixture.volume(ctx)
+	print("  base volume %s" % str(base))
+	check(absf(base - 432000.0) < 5.0, "base volume 432000 (got %s)" % str(base))
+	return absf(base - 432000.0) < 5.0
 

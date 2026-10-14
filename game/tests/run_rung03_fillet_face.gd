@@ -20,7 +20,7 @@ func _init() -> void:
 
 
 func _run() -> void:
-	var ctx := await _boot()
+	var ctx := await Tutor1Fixture.boot(self, ROOT_SIZE, _on_status_local, ["sketch_mode", "interaction", "ops_panel"])
 	if not await _build_cut(ctx):
 		ctx.main.queue_free()
 		return
@@ -65,14 +65,14 @@ func _build_cut(ctx: FilmContext) -> bool:
 	await _click_uv(ctx, ctx.main.get_viewport(), Vector2(30, 0))
 	if not await _extrude_cut(ctx):
 		return false
-	var vol := _volume(ctx)
+	var vol := Tutor1Fixture.volume(ctx)
 	print("  cut volume %s" % str(vol))
 	check(absf(vol - 372702.4) < 5.0, "cut volume 372702 (got %s)" % str(vol))
 	return absf(vol - 372702.4) < 5.0
 
 
 func _fillet_edges_then_face(ctx: FilmContext) -> void:
-	var body := _only_body(ctx)
+	var body := Tutor1Fixture.only_body(ctx)
 	ctx.view.select_entity(body, "")
 	await process_frame
 	if not await _arm_fillet(ctx, 5.0):
@@ -97,7 +97,7 @@ func _fillet_edges_then_face(ctx: FilmContext) -> void:
 		var pt := FilletPick.pick_point_for_corner(float(row["x"]), float(row["y"]), 15.0)
 		var mark := _status_log.size()
 		await _click_model(ctx, pt, "vertical corner")
-		var st := _status_since(mark)
+		var st := Tutor1Fixture.status_since(_status_log, mark)
 		print("  corner %s,%s view %s edges %d -> %s" % [
 			str(row["x"]), str(row["y"]), str(key),
 			ctx.view.selected_edges.size(), st])
@@ -107,20 +107,20 @@ func _fillet_edges_then_face(ctx: FilmContext) -> void:
 	# Shift+face on z=30 → 9 edges.
 	await _push_key(ctx.main.get_viewport(), KEY_3, 0)
 	await process_frame
-	var face30 := _face_at_z(ctx, body, 30.0)
+	var face30 := Tutor1Fixture.face_at_z(ctx, body, 30.0)
 	check(face30 != "", "z=30 face")
 	var pick := FacePick.point(ctx.view.doc, face30)
 	var mark2 := _status_log.size()
 	await FilmUI._viewport_click_shift(ctx, FilmUI.model_to_screen(ctx, pick))
 	await process_frame
-	var after_shift := _status_since(mark2)
+	var after_shift := Tutor1Fixture.status_since(_status_log, mark2)
 	print("  shift+face: %s edges=%d" % [after_shift, ctx.view.selected_edges.size()])
 	check(ctx.view.selected_edges.size() == 9, "Shift+face → 9 edges (got %d)" % ctx.view.selected_edges.size())
 	check(after_shift.contains("Fillet: 9 edge(s)"), "status names 9 edges (got '%s')" % after_shift)
 	# Plain face click refused; count stays 9.
 	var mark3 := _status_log.size()
 	await _click_model(ctx, pick, "plain face")
-	var refused := _status_since(mark3)
+	var refused := Tutor1Fixture.status_since(_status_log, mark3)
 	check(ctx.view.selected_edges.size() == 9, "plain face keeps 9 (got %d)" % ctx.view.selected_edges.size())
 	check(refused.contains(FilletPick.REFUSE_FACE) or refused.contains("No edge near click"),
 			"plain face refused with pinned message (got '%s')" % refused)
@@ -133,7 +133,7 @@ func _fillet_edges_then_face(ctx: FilmContext) -> void:
 	print("  applied: %s" % applied)
 	check(applied.contains("Fillet 9 edges 5.00 applied"),
 			"status Fillet 9 edges 5.00 applied (got '%s')" % applied)
-	var vol := _volume(ctx)
+	var vol := Tutor1Fixture.volume(ctx)
 	check(absf(vol - 370784.6) / 370784.6 < 0.002, "r5 volume (got %s)" % str(vol))
 
 
@@ -141,14 +141,14 @@ func _fillet_face_first(ctx: FilmContext) -> void:
 	# Fresh cut body for the face-first path: undo the r5 fillet if possible,
 	# otherwise rebuild is too heavy — select body and arm with face first on
 	# the annulus for R1.5 (M10 path, still pinned).
-	var body := _only_body(ctx)
+	var body := Tutor1Fixture.only_body(ctx)
 	ctx.view.select_entity(body, "")
 	await process_frame
 	if not await _arm_fillet(ctx, 1.5):
 		return
 	await _push_key(ctx.main.get_viewport(), KEY_3, 0)
 	await process_frame
-	var face55 := _face_at_z(ctx, body, 55.0)
+	var face55 := Tutor1Fixture.face_at_z(ctx, body, 55.0)
 	check(face55 != "", "z=55 annulus")
 	var mark := _status_log.size()
 	# The walk names the face. A lone edge used to steal that click, and the
@@ -158,7 +158,7 @@ func _fillet_face_first(ctx: FilmContext) -> void:
 	await process_frame
 	var reply: Dictionary = await bridge._cmd_pointer({"face_normal": [0, 0, 1], "plane": 55.0}, "click")
 	bridge.queue_free()
-	var st := _status_since(mark)
+	var st := Tutor1Fixture.status_since(_status_log, mark)
 	print("  face-first: %s edges=%d at=%s" % [st, ctx.view.selected_edges.size(), str(reply.get("at", []))])
 	check(ctx.view.selected_edges.size() == 2, "face-first takes 2 rims (got %d)" % ctx.view.selected_edges.size())
 	var before := _fillet_count(ctx)
@@ -170,14 +170,14 @@ func _fillet_face_first(ctx: FilmContext) -> void:
 	print("  applied: %s" % applied)
 	check(applied.contains("Fillet 2 edges 1.50 applied"),
 			"status Fillet 2 edges 1.50 applied (got '%s')" % applied)
-	var vol := _volume(ctx)
+	var vol := Tutor1Fixture.volume(ctx)
 	check(absf(vol - 370587.4) / 370587.4 < 0.002, "rounded volume (got %s)" % str(vol))
 
 
 func _shell_back(ctx: FilmContext) -> void:
 	await _push_key(ctx.main.get_viewport(), KEY_8, 0)
 	await process_frame
-	var body := _only_body(ctx)
+	var body := Tutor1Fixture.only_body(ctx)
 	ctx.view.select_entity(body, "")
 	await process_frame
 	await _click_model(ctx, Vector3(50, 0, 0), "back face")
@@ -205,7 +205,7 @@ func _shell_back(ctx: FilmContext) -> void:
 	var ext: Vector3 = bb["max"] - bb["min"]
 	check(absf(ext.x - 120.0) < 0.3 and absf(ext.y - 120.0) < 0.3 and absf(ext.z - 55.0) < 0.3,
 			"bbox unchanged 120×120×55 (got %s)" % str(ext))
-	var vol := _volume(ctx)
+	var vol := Tutor1Fixture.volume(ctx)
 	check(absf(vol - 39311.0) / 39311.0 < 0.002, "final volume (got %s)" % str(vol))
 
 
@@ -283,10 +283,10 @@ func _open_z_face(ctx: FilmContext, z: float) -> bool:
 		await FilmUI.exit_sketch(ctx)
 	await _push_key(ctx.main.get_viewport(), KEY_3, 0)
 	await process_frame
-	var body := _only_body(ctx)
+	var body := Tutor1Fixture.only_body(ctx)
 	if body == "":
 		return false
-	var face := _face_at_z(ctx, body, z)
+	var face := Tutor1Fixture.face_at_z(ctx, body, z)
 	if face == "":
 		return false
 	var pick := FacePick.point(ctx.view.doc, face)
@@ -305,23 +305,6 @@ func _open_z_face(ctx: FilmContext, z: float) -> bool:
 	for _i in 4:
 		await process_frame
 	return ctx.main.sketch_mode.active
-
-
-func _face_at_z(ctx: FilmContext, body: String, z: float) -> String:
-	var best := ""
-	var best_gap := 1.0
-	var want := Vector3(0, 0, 1)
-	for face_id in ctx.view.doc.get_face_ids(body):
-		var fid := str(face_id)
-		var n := ctx.view.face_normal(body, fid)
-		if n.length_squared() < 1e-8 or n.normalized().dot(want) < 0.99:
-			continue
-		var off := FacePick.plane_offset(n, FacePick.point(ctx.view.doc, fid))
-		var gap := absf(off - z)
-		if gap < best_gap:
-			best_gap = gap
-			best = fid
-	return best
 
 
 func _click_model(ctx: FilmContext, model: Vector3, desc: String) -> void:
@@ -352,45 +335,5 @@ func _vertical_near(ctx: FilmContext, body: String, x: float, y: float) -> Strin
 	return best
 
 
-func _only_body(ctx: FilmContext) -> String:
-	var ids: PackedStringArray = ctx.view.doc.body_ids()
-	return str(ids[0]) if ids.size() == 1 else ""
-
-
-func _volume(ctx: FilmContext) -> float:
-	var body := _only_body(ctx)
-	if body == "":
-		return -1.0
-	return float(ctx.view.doc.measure_mass(body).get("volume", -1.0))
-
-
-func _status_since(mark: int) -> String:
-	if mark >= _status_log.size():
-		return ""
-	return " | ".join(_status_log.slice(mark))
-
-
-func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	if main.sketch_mode != null:
-		main.sketch_mode.status.connect(_on_status_local)
-	if main.interaction != null:
-		main.interaction.status.connect(_on_status_local)
-	if main.ops_panel != null:
-		main.ops_panel.status.connect(_on_status_local)
-	return ctx
-
-
 func _on_status_local(text: String) -> void:
-	if text == "":
-		return
-	_status_log.append(text)
-	print("  status: " + text)
+	Tutor1Fixture.note(_status_log, text)
