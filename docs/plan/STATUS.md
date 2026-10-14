@@ -8,11 +8,32 @@ Shipped: origin anchor, face `pick` / `plane`, circle convert, Offset Entities, 
 
 ## Post-rung-3 cleanup
 
-Part A shipped WP1, WP2, WP4, WP5. WP3 parked: Godot 4.7 headless display cannot draw, so the pixel suites still return early and stay in the 213. Smoke still runs `ubc_wrench` and `lesson2_box`. ★ WP6 and WP7 parked because WP3 parked (WP1–WP5 were not all green).
+Part A shipped WP1, WP2, WP4, WP5. WP3, ★ WP6, and ★ WP7 are still parked (`roadmap.md` §9) until this pass retries them.
 
-Part B parked (`roadmap.md` §9). The click film's R5 fillet kept the boss top rim and regen stopped, so `29/29` did not pass. WP8 reverted. No `tutor1` film and no video.
+Part B: film `tutor1` and `docs/howto/tutor1.md` (WP8), `run_film_tutor1_tests.gd` (`tier=full`, WP9), poster `website/assets/screenshots/tutor1.png` (WP10). The movie caption bar was taking the click meant for the distance chip, so the boss stayed at the 20 mm default and the fillet radius stayed 2 mm. Captions ignore the mouse, and the typed 25 and both fillets land. `lint_suites: 218 suites ok (67 ci, 147 full, 4 known-red)` so the tier is **214 run + 4 known-red**. R5 on the green film run is 9 edges; R1.5 is 2. `check_rung03.py final` is 29/29.
 
-`tools/confirm_all.sh`: walks 46/46, 77/77, 44/44. Checkers in `docs/loop/post-rung-03-result.md`. Headless **213 run, 0 failed**. Lint `217 suites ok (67 ci, 146 full, 4 known-red)`.
+The WebM is VP9 1600×900 at 30 fps. Container duration 61.800 s matches the caption timeline (last cue ends at 01:01.800). The poster is that timeline's last picture on the video track (frame 1053 of 1054). The writer drops duplicate presents, so the video track ends at 35.133 s and a seek on the muxed file goes past it. `precision_plate` calibrated at 101 s wall for a 33.4 s film, so tutor1 stayed at 30 fps (169 s wall).
+
+`tutor1.webm` is not on Release `demo-movies` (this token cannot upload). It is not in `published-demos.json` or `demo-catalog.json`. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card. The WebM and VTT stay outside git (`/opt/cursor/artifacts/tutor1.webm` and `.vtt`).
+
+Pending publish:
+
+```
+gh release upload demo-movies -R solidexpress/solidexpress.github.io --clobber tutor1.webm tutor1.vtt
+SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature tutor1
+```
+
+Then one follow-up commit of the two JSON files, by a person who can upload. Dry-run (`SX_MOVIES_OUT=/tmp/sx-movies scripts/sx-publish-demo-movies --dry-run --feature tutor1`) wrote nothing:
+
+```
+dry-run poster: tutor1 → website/assets/screenshots/tutor1.png
+dry-run upload 2 assets to solidexpress/solidexpress.github.io@demo-movies: /tmp/sx-movies/tutor1.webm /tmp/sx-movies/tutor1.vtt
+dry-run published-demos → website/assets/published-demos.json (11 ids, append ['tutor1'])
+dry-run demo-catalog featured append ['tutor1'] → 11 rows
+dry-run: no gh call, no file change
+```
+
+The previous `tools/confirm_all.sh` (before this film suite) was walks 46/46, 77/77, 44/44, headless **213 run, 0 failed**. WP11 re-runs it.
 
 ## Rung 2 — Lesson 2 box (PR #246)
 
