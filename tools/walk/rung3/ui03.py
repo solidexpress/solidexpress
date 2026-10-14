@@ -764,31 +764,6 @@ class WalkUI03:
             return None
         return node
 
-    def shell_back(self, thickness: str = "1") -> dict:
-        view = self.view_key("8")
-        self.select_body()
-        selected = self.select_face([0, 0, -1])
-        chip = self.shell_chip()
-        shown = ""
-        status = ""
-        names: list[str] = []
-        if chip is not None:
-            self.click("strip:shell")
-            self.refresh("controls")
-            shown = self.type_into("finish:Thickness", thickness)
-            mark = self.mark()
-            self.enter()
-            status = " | ".join(self.result_texts(mark)) or self.S()
-            names = self.feature_names()
-        return {
-            "view": view,
-            "selected": selected,
-            "chip": chip,
-            "shown": shown,
-            "status": status,
-            "names": names,
-        }
-
     def apply_shell(self, text: str) -> dict:
         self.click("strip:shell")
         self.refresh("controls")

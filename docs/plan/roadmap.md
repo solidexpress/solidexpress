@@ -264,6 +264,14 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 
 ---
 
+## 9. Structural debt found after rung 3
+
+| Item | What | Design | Why parked |
+|---|---|---|---|
+| Section shader and cap | `document_view.gd` `_make_section_shader` discards the near half and the back faces. `section_cap.gd` fills the cut | Do not merge them in this pass | The shader discards; `SectionCap` fills |
+
+---
+
 ## Related
 
 - [README.md](README.md) — plan index (park later ideas here, not in chat)
@@ -274,4 +282,5 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 - [implementation-plan.md](implementation-plan.md) — how we build
 - [STATUS.md](STATUS.md) — what has landed
 - §8 — structural debt found after rung 2
+- §9 — structural debt found after rung 3
 - [education-research.md](../education-research.md) — how the command names should be taught

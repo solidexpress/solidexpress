@@ -2,13 +2,17 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Rung 3 — Tutor1 (PR #252)
+
+Shipped: origin anchor, face `pick` / `plane`, circle convert, Offset Entities, Shift+face fillet, section presets and cap, 46-row walk, `check_rung03.py`. Bars: the table in `rung-03-result.md`. Suites **213 run + 4 known-red**.
+
 ## Rung 2 — Lesson 2 box (PR #246)
 
 Shipped: `PlaneBasis`, `TopoCue`, Shell chip, Convert on a face, point-line Smart Dim, bridge face identity, `Rung` descriptor, `check_rung02.py`, 44-row walk. Suites **206 run + 4 known-red**. Checker bar: `check_rung02.py` base 3/3, rounded 7/7, shell 13/13, final 16/16 at width 60 and at width 65.
 
 ## Post-rung-2 cleanup
 
-Organization pass after rung 2, before the lesson-2 film. Behaviour unchanged. History: `git log -- docs/loop/post-rung-02-cleanup.md`.
+Organization pass after rung 2, before the lesson-2 film. Behaviour unchanged. History: `git log -- docs/loop`.
 
 Shipped Part A WP1–WP12. WP12 adds `FilmSteps` (click-only film steps) and `BoxFixture` (the 100×60×50 validation box). `film_ubc_wrench.gd` is 303 lines. That extraction is net −63 lines. Suites stay **206 run + 4 known-red** (`lint_suites: 210 suites ok (62 ci, 144 full, 4 known-red)`). No ★ work package was parked (WP4, WP7, WP10 shipped). The Revert rule fired for none. Plane-basis check count stays 76 (WP8's +6).
 
