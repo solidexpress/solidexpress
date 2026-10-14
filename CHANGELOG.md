@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 — 2026-10-14
+
+- Official Learn SOLIDWORKS Lesson 1: Parts (Tutor1, ladder rung 3) is now fully makeable end to end, with all rung 1 and rung 2 walks still passing.
+- Test runs are faster: each suite is owned by one parallel runner, and object-model tests run without rendering.
+
 ## 0.1.1 — 2026-10-11
 
 - SolidWorks Student Guide Lesson 2 box (ladder rung 2) is now fully makeable: Shell with an open face, upright sketches on side faces, Through All cuts, and references that survive a driving-dimension edit.
