@@ -6716,6 +6716,10 @@ func _set_arc_ends(id: String, c: Vector2, r: float, sa: float, ea: float) -> vo
 func _dimension_value_for_solver(dim: Dictionary, value: float) -> float:
 	if str(dim.get("type", "")) == "angle" and absf(value) > PI:
 		return deg_to_rad(value)
+	# The editor speaks the diameter the label shows. The constraint stores
+	# the radius.
+	if str(dim.get("type", "")) == "radius" and _full_circle_dimension(dim):
+		return value * 0.5
 	return value
 
 
@@ -7401,6 +7405,11 @@ func _dimension_display_value(dim: Dictionary) -> float:
 		var dinfo: Dictionary = sketch.entity_info(str(ids[0]))
 		if str(dinfo.get("type", "")) in ["circle", "arc"]:
 			return float(dinfo.get("radius", 0.0)) * 2.0
+	# A full circle's radius constraint is the diameter the callout shows.
+	# An arc stays a radius (the wrench head is 22.5, not Ø45).
+	if type == "radius" and _full_circle_dimension(dim):
+		var cinfo: Dictionary = sketch.entity_info(str(ids[0]))
+		return float(cinfo.get("radius", 0.0)) * 2.0
 	if str(dim.get("callout", "")) == "point_line" and ids.size() >= 2 and sketch != null:
 		var p2l := _point_line_label_value(ids)
 		if p2l >= 0.0:
@@ -7539,7 +7548,8 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 func _dimension_label_text(dim: Dictionary) -> String:
 	var shown := snappedf(_dimension_display_value(dim), 0.0001)
 	var text := _format_dimension(shown)
-	if str(dim.get("type", "")) == "diameter":
+	var kind := str(dim.get("type", ""))
+	if kind == "diameter" or (kind == "radius" and _full_circle_dimension(dim)):
 		text = "Ø" + text
 	if str(dim.get("type", "")) == "angle":
 		text = text + "°"

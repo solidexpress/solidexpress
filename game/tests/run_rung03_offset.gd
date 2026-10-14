@@ -151,6 +151,8 @@ func _offset_rim(ctx: FilmContext) -> void:
 				"profile centre at origin")
 		check(absf(float(profile[0]["radius"]) - 30.0) <= 0.05,
 				"profile r = 30 (got %s)" % str(profile[0]["radius"]))
+	var callouts := _dimension_label_texts(sm)
+	check(callouts.has("Ø60"), "offset circle callout is Ø60 (got %s)" % str(callouts))
 	if external.size() == 1:
 		check(absf(float(external[0]["radius"]) - 35.0) <= 0.05,
 				"external r = 35 (got %s)" % str(external[0]["radius"]))
@@ -203,6 +205,16 @@ func _chip_offset_still_works(ctx: FilmContext) -> void:
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Offset", "chip Offset"))
 	await process_frame
 	check(_entity_count(sm) == before + 1, "chip Offset still produces a circle")
+
+
+func _dimension_label_texts(sm: SketchMode) -> Array:
+	var texts: Array = []
+	if sm._dimension_labels == null:
+		return texts
+	for child in sm._dimension_labels.get_children():
+		if child is Label3D:
+			texts.append((child as Label3D).text)
+	return texts
 
 
 func _profile_circles(sm: SketchMode) -> Array:

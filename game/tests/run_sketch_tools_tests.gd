@@ -537,8 +537,12 @@ func test_dimension_radius_label(main) -> void:
 	check(sm.dimensions.size() == 1, "dimensions array has one radius entry")
 	var texts := _dimension_label_texts(sm)
 	check(texts.size() == 1, "one Label3D for radius dimension")
-	var expected := sm._format_dimension(15.0)
-	check(texts[0] == expected, "radius label text is '%s' (got '%s')" % [expected, texts[0]])
+	var expected := "Ø" + sm._format_dimension(30.0)
+	check(texts[0] == expected, "full-circle size is the diameter '%s' (got '%s')" % [expected, texts[0]])
+	check(sm.set_dimension_value(0, 20.0) != "failed", "diameter edit commits")
+	var after: Dictionary = sm.sketch.entity_info(cid)
+	check(absf(float(after.get("radius", 0.0)) - 10.0) <= 0.05,
+			"typed diameter 20 stores radius 10 (got %s)" % str(after.get("radius", "")))
 	sm.cancel()
 
 
