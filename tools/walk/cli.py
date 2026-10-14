@@ -52,7 +52,15 @@ def main(app_cls: type, rung, description: str, default_out: str) -> int:
         print("missing --app binary: " + str(app), file=sys.stderr)
         return 2
     walk = app_cls(
-        Path(args.out), args.port, godot, args.display, args.a15, args.checkpoint, app, args.resolution, rung,
+        Path(args.out),
+        args.port,
+        godot,
+        args.display,
+        args.a15 or bool(os.environ.get("SX_CONFIRM_DIR", "").strip()),
+        args.checkpoint,
+        app,
+        args.resolution,
+        rung,
     )
     try:
         if args.no_launch:

@@ -11,7 +11,7 @@ import sys
 
 from sxdrive import SxError
 from walk import proc
-from walk.gates import parse_tier, run_tier
+from walk.gates import parse_tier, run_kernel, run_tier, take
 from walk.gestures import label_reads
 
 # Vertical corner → view key. Iso (yaw -35) shows the two y=0 edges.
@@ -731,6 +731,11 @@ class WalkUI02:
         # Read the walk log first: stopping the GUI closes it, and the
         # relaunch below truncates the file.
         errors = self.log_errors()
+        owned = take("kernel")
+        if owned is not None:
+            return self._headless_report(
+                owned, run_tier(self), take("lint_suites"), take("unit_rung02"), take("registry"), errors,
+            )
         self._release_project()
         try:
             # `make test-kernel` re-runs cmake. This snapshot's configure does
@@ -744,6 +749,9 @@ class WalkUI02:
             # The row's dialog check still talks to the bridge.
             if getattr(self, "proc", None) is None or self.proc.poll() is not None:
                 self.launch()
+        return self._headless_report(kernel, godot, lint, unit, registry, errors)
+
+    def _headless_report(self, kernel, godot, lint, unit, registry, errors) -> dict[str, dict]:
         godot_text = (godot.stdout or "") + (godot.stderr or "")
         (self.out / "a25-godot.log").write_text(godot_text)
         (self.out / "a25-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
@@ -778,11 +786,4 @@ class WalkUI02:
 
 
     def _kernel_tests(self) -> subprocess.CompletedProcess:
-        chunks = []
-        code = 0
-        for rel in ("./build/sxkernel/sxkernel_tests", "./build/sxvoice/sxvoice_tests"):
-            result = proc.run([rel], cwd=self.repo)
-            chunks.append((result.stdout or "") + (result.stderr or ""))
-            if result.returncode != 0:
-                code = result.returncode
-        return subprocess.CompletedProcess(["kernel"], code, "\n".join(chunks), "")
+        return run_kernel(self.repo)

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from sxdrive import SxError
 from walk import proc
-from walk.gates import parse_tier, run_tier
+from walk.gates import parse_tier, run_kernel, run_tier, take
 from walk.gestures import label_reads
 
 # Vertical corner → view key (FilletPick.CORNERS / WP6).
@@ -54,23 +54,6 @@ REFUSE_FACE = (
     "No edge near click — click on an edge "
     "(a face click fillets the whole face only as the first pick)"
 )
-
-
-def _kernel_failure_tail(result: subprocess.CompletedProcess) -> str:
-    """Tail of one binary, with the FAILED assertion line when the summary hides it."""
-    text = ((result.stdout or "") + (result.stderr or "")).strip()
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    if not lines:
-        return "no output"
-    last = lines[-1]
-    named = ""
-    for ln in reversed(lines):
-        if "FAILED" in ln:
-            named = ln
-            break
-    if named and named != last:
-        return f"{named} — {last}"
-    return last
 
 
 class WalkUI03:
@@ -939,6 +922,16 @@ class WalkUI03:
             blocked = "BLOCKED-by-flag: pass --a15"
             return {key: {"ok": False, "evidence": blocked} for key in keys}
         errors = self.log_errors()
+        owned = take("kernel")
+        if owned is not None:
+            return self._headless_report(
+                owned,
+                run_tier(self),
+                take("lint_suites"),
+                take("unit_rung03"),
+                take("registry"),
+                errors,
+            )
         self._release_project()
         try:
             kernel = self._kernel_tests()
@@ -949,6 +942,9 @@ class WalkUI03:
         finally:
             if getattr(self, "proc", None) is None or self.proc.poll() is not None:
                 self.launch()
+        return self._headless_report(kernel, godot, lint, unit, registry, errors)
+
+    def _headless_report(self, kernel, godot, lint, unit, registry, errors) -> dict[str, dict]:
         godot_text = (godot.stdout or "") + (godot.stderr or "")
         (self.out / "a26-godot.log").write_text(godot_text)
         (self.out / "a26-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
@@ -986,26 +982,5 @@ class WalkUI03:
             log_fp.close()
 
     def _kernel_tests(self) -> subprocess.CompletedProcess:
-        # Keep each binary's own (name, result). A later passer (sxvoice_tests
-        # prints "All tests passed") must not become the A26 kernel evidence
-        # when an earlier binary failed — proc.tail() of a blind concatenation
-        # is exactly that bug.
-        pairs: list[tuple[str, subprocess.CompletedProcess]] = []
-        code = 0
-        for rel in ("./build/sxkernel/sxkernel_tests", "./build/sxvoice/sxvoice_tests"):
-            result = proc.run([rel], cwd=self.repo)
-            pairs.append((rel, result))
-            if result.returncode != 0 and code == 0:
-                code = result.returncode
-        chunks = [(result.stdout or "") + (result.stderr or "") for _name, result in pairs]
-        if code != 0:
-            labelled = [
-                f"{name}: {_kernel_failure_tail(result)}"
-                for name, result in pairs
-                if result.returncode != 0
-            ]
-            # First failing binary leads. headless() still takes proc.tail of
-            # this stream, so the labelled line has to be last — and a26-kernel.log
-            # still contains every binary's full output above it.
-            chunks.append(" | ".join(labelled))
-        return subprocess.CompletedProcess(["kernel"], code, "\n".join(chunks), "")
+        # Labelled by run_kernel so a later passer cannot hide an earlier failure.
+        return run_kernel(self.repo)
