@@ -469,13 +469,5 @@
     "enabled": true,
     "quit_after": 3600,
     "blurb": "Rectangle, extrude, one fillet, shell, a hole from the side, then resize — the features follow."
-  },
-  {
-    "id": "tutor1",
-    "title": "Tutor1: boss, offset cut, fillets, shell, section",
-    "script": "res://tests/films/film_tutor1.gd",
-    "enabled": true,
-    "quit_after": 4800,
-    "blurb": "Centre rectangle, a boss, an inward offset cut, two fillets, a 1 mm shell, and a Top section."
   }
 ]
