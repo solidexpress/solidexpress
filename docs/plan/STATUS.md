@@ -8,7 +8,7 @@ Shipped: origin anchor, face `pick` / `plane`, circle convert, Offset Entities, 
 
 ## Post-rung-3 cleanup
 
-Part A shipped WP1, WP2, WP4, WP5. WP3, ★ WP6, and ★ WP7 are still parked (`roadmap.md` §9) until this pass retries them.
+Part A shipped WP1, WP2, WP4, WP5. WP3 was retried and stays parked: X11 + Vulkan draws, then `rung03_section` fails because the removed-half sample is the cap colour. ★ WP6 and WP7 were not started (`roadmap.md` §9).
 
 Part B: film `tutor1` and `docs/howto/tutor1.md` (WP8), `run_film_tutor1_tests.gd` (`tier=full`, WP9), poster `website/assets/screenshots/tutor1.png` (WP10). The movie caption bar was taking the click meant for the distance chip, so the boss stayed at the 20 mm default and the fillet radius stayed 2 mm. Captions ignore the mouse, and the typed 25 and both fillets land. `lint_suites: 218 suites ok (67 ci, 147 full, 4 known-red)` so the tier is **214 run + 4 known-red**. R5 on the green film run is 9 edges; R1.5 is 2. `check_rung03.py final` is 29/29.
 
@@ -33,7 +33,7 @@ dry-run demo-catalog featured append ['tutor1'] → 11 rows
 dry-run: no gh call, no file change
 ```
 
-The previous `tools/confirm_all.sh` (before this film suite) was walks 46/46, 77/77, 44/44, headless **213 run, 0 failed**. WP11 re-runs it.
+`tools/confirm_all.sh`: walks 45/46, 76/77, 43/44. The single miss on each walk is the headless gate (A26, A15, A25). Checkers in `docs/loop/post-rung-03-result.md` (rung 3 final 29/29, rung 2 16/16, wrench 28/28, DIAG 18/22). Headless **214 run, 1 failed** (`run_rung01_replan21_pick.gd`: the WP8 nearer-edge tie-break takes a horizontal at the neck junction). `film_tutor1_tests` is in the 214 and passed (13 checks, `29/29`). Lint `218 suites ok (67 ci, 147 full, 4 known-red)`.
 
 ## Rung 2 — Lesson 2 box (PR #246)
 
