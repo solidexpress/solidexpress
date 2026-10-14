@@ -3,12 +3,16 @@
 
 #include <catch.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <GeomAbs_CurveType.hxx>
+#include <GeomAbs_SurfaceType.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
@@ -16,6 +20,7 @@
 
 #include "sx/document.hpp"
 #include "sx/features.hpp"
+#include "sx/query.hpp"
 #include "sx/sketch.hpp"
 #include "sx/sketch3d.hpp"
 #include "sx/solver.hpp"
@@ -101,6 +106,25 @@ EntityId circle_edge_at(const Document& doc, const EntityId& body, double z, dou
     return {};
 }
 
+EntityId planar_face_z(const Document& doc, const EntityId& body, double z) {
+    const Body* b = doc.body(body);
+    if (b == nullptr) return {};
+    auto it = b->subshape_ids.find(EntityKind::Face);
+    if (it == b->subshape_ids.end()) return {};
+    for (const auto& fid : it->second) {
+        const TopoDS_Shape shape = doc.resolve(fid);
+        if (shape.IsNull() || shape.ShapeType() != TopAbs_FACE) continue;
+        const BRepAdaptor_Surface surf(TopoDS::Face(shape));
+        if (surf.GetType() != GeomAbs_Plane) continue;
+        const gp_Pln pl = surf.Plane();
+        const gp_Dir n = pl.Axis().Direction();
+        if (std::abs(std::abs(n.Z()) - 1.0) > 0.02) continue;
+        if (std::abs(pl.Location().Z() - z) > 0.2) continue;
+        return fid;
+    }
+    return {};
+}
+
 EntityId sketch_on_z(FeatureGraph& graph, double z) {
     SketchPlane pl;
     pl.origin = {0, 0, z};
@@ -113,6 +137,18 @@ EntityId sketch_on_z(FeatureGraph& graph, double z) {
 }
 
 }  // namespace
+
+TEST_CASE("edges_of_face includes the boss rim on the top face", "[sketch][rung03]") {
+    Document doc;
+    FeatureGraph& graph = doc.graph();
+    const EntityId body = build_boss(doc, graph);
+    const EntityId rim = circle_edge_at(doc, body, 55.0, 35.0);
+    const EntityId top = planar_face_z(doc, body, 55.0);
+    REQUIRE_FALSE(rim.is_null());
+    REQUIRE_FALSE(top.is_null());
+    const auto edges = edges_of_face(doc, top);
+    CHECK(std::find(edges.begin(), edges.end(), rim) != edges.end());
+}
 
 TEST_CASE("add_external_edge projects the boss rim as a fixed circle", "[sketch][rung03]") {
     Document doc;

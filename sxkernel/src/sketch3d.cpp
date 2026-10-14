@@ -99,9 +99,28 @@ namespace {
 
 constexpr double kTwoPi = 6.283185307179586;
 
-bool normals_parallel(const std::array<double, 3>& a, const gp_Dir& b) {
-    const double dot = std::abs(a[0] * b.X() + a[1] * b.Y() + a[2] * b.Z());
-    return dot > 0.99;
+// A full circle projects when the curve itself lies in the sketch plane.
+// The circle axis is not that test: a rim whose 3D points sit on the face
+// can still report an axis that is not the plane normal.
+double plane_gap(const SketchPlane& plane, const gp_Pnt& p) {
+    const auto n = plane.normal();
+    const double nlen = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+    if (nlen < 1e-12) return 1e9;
+    const double dx = p.X() - plane.origin[0];
+    const double dy = p.Y() - plane.origin[1];
+    const double dz = p.Z() - plane.origin[2];
+    return std::abs((dx * n[0] + dy * n[1] + dz * n[2]) / nlen);
+}
+
+bool circle_lies_in_plane(const BRepAdaptor_Curve& curve, const SketchPlane& plane) {
+    if (plane_gap(plane, curve.Circle().Location()) > 0.05) return false;
+    const double t0 = curve.FirstParameter();
+    const double t1 = curve.LastParameter();
+    for (int i = 0; i < 3; ++i) {
+        const double t = t0 + (t1 - t0) * ((i + 0.5) / 3.0);
+        if (plane_gap(plane, curve.Value(t)) > 0.05) return false;
+    }
+    return true;
 }
 
 EntityId project_line(Sketch* sketch, const BRepAdaptor_Curve& curve, const std::string& edge) {
@@ -121,7 +140,7 @@ EntityId project_circle(Sketch* sketch, const BRepAdaptor_Curve& curve, const Sk
     const double span = std::abs(curve.LastParameter() - curve.FirstParameter());
     if (span < kTwoPi - 0.05) return {};
     const gp_Circ circ = curve.Circle();
-    if (!normals_parallel(plane.normal(), circ.Axis().Direction())) return {};
+    if (!circle_lies_in_plane(curve, plane)) return {};
     const gp_Pnt c = circ.Location();
     const EntityId added = sketch->project_circle_edge({c.X(), c.Y(), c.Z()}, circ.Radius(), edge);
     if (added.is_null()) return {};
