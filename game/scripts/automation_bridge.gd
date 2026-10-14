@@ -1945,6 +1945,37 @@ func _camera_state(cam) -> Dictionary:
 	}
 
 
+## Face sample closest to the camera. A nearer face is in front of the
+## hole, so its screen point is metal rather than the void at the centre.
+func _body_aim(view, body_id: String) -> Vector3:
+	if view == null or view.doc == null or body_id == "":
+		return Vector3.ZERO
+	var host := _main()
+	var ms = host.get("model_space") if host != null else null
+	var cam: Camera3D = null
+	if host != null:
+		cam = host.get_viewport().get_camera_3d()
+	var cam_pos := Vector3.ZERO
+	var have_cam := cam != null and ms != null
+	if have_cam:
+		cam_pos = cam.global_position
+	var best := Vector3.ZERO
+	var best_d := 1.0e30
+	var found := false
+	for fid in view.doc.get_face_ids(body_id):
+		var pick := FacePick.point(view.doc, str(fid))
+		if pick == Vector3.ZERO:
+			continue
+		var dist := 0.0
+		if have_cam:
+			dist = ms.to_global(pick).distance_squared_to(cam_pos)
+		if not found or dist < best_d:
+			best = pick
+			best_d = dist
+			found = true
+	return best
+
+
 func _bodies_state(view) -> Array:
 	var out: Array = []
 	if view == null or view.doc == null:
@@ -1956,8 +1987,14 @@ func _bodies_state(view) -> Array:
 		if bb.has("min") and bb.has("max"):
 			rec["min"] = _v3(bb["min"])
 			rec["max"] = _v3(bb["max"])
-			var mid: Vector3 = (bb["min"] + bb["max"]) * 0.5
-			rec["screen"] = _v2(_model_to_screen(mid))
+			# The bounding-box centre of a through-hole is empty. A click
+			# there selects nothing, so the point is a face sample nearest
+			# the camera — that ray meets the solid.
+			var aim := _body_aim(view, str(bid))
+			if aim == Vector3.ZERO:
+				aim = (bb["min"] + bb["max"]) * 0.5
+			rec["aim"] = _v3(aim)
+			rec["screen"] = _v2(_model_to_screen(aim))
 		out.append(rec)
 	return out
 

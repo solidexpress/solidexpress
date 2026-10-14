@@ -225,6 +225,16 @@ func _case_annular_faces() -> void:
 	var front_id := str(front.get("id", ""))
 	var top_id := str(top.get("id", ""))
 	var back_id := str(back.get("id", ""))
+	await _clear_selection()
+	var aimed := await _state(["bodies", "selection"])
+	var body_rows: Array = aimed.get("bodies", [])
+	var aim_screen: Array = body_rows[0].get("screen", []) if not body_rows.is_empty() else []
+	var aim_pt: Array = body_rows[0].get("aim", []) if not body_rows.is_empty() else []
+	await _rpc({"cmd": "click", "screen": aim_screen, "frames": 4})
+	var aimed_body := str((await _state(["selection"])).get("selection", {}).get("body", ""))
+	print("  body aim %s screen %s selected %s" % [str(aim_pt), str(aim_screen), aimed_body])
+	check(aimed_body != "", "body screen point selects the holed solid (aim %s at %s)" % [str(aim_pt), str(aim_screen)])
+	await _clear_selection()
 	print("  ids front=%s top=%s back=%s faces=%d" % [front_id, top_id, back_id, faces.size()])
 	check(front_id != "" and top_id != "" and back_id != "",
 			"front, boss top, and back faces are listed")
