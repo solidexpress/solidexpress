@@ -54,8 +54,9 @@ func click(uv: Vector2) -> String:
 	var body := str(ctx.view.body_of_feature(ctx.support_host))
 	var face_edges := _face_edge_set(ctx, body)
 	var lines: Dictionary = ctx.doc.get_edge_lines(body)
-	var world := ctx.plane.to_world(uv)
-	var on_face := _nearest(lines, face_edges, world, FACE_TOL, true)
+	# Distance is in the sketch plane. A circle on a parallel face (the root,
+	# 25 mm below) is still "near" the click; a 3D gap would hide it.
+	var on_face := _nearest(lines, face_edges, ctx.plane, uv, FACE_TOL, true)
 	if on_face != "":
 		var id := str(ctx.doc.sketch_add_external_edge(fid, on_face))
 		if id == "":
@@ -68,7 +69,7 @@ func click(uv: Vector2) -> String:
 		ctx.commit.call("Convert")
 		ctx.status.call(_added_status(lines, on_face))
 		return id
-	var other := _nearest(lines, face_edges, world, OTHER_TOL, false)
+	var other := _nearest(lines, face_edges, ctx.plane, uv, OTHER_TOL, false)
 	if other != "":
 		ctx.status.call(NOT_ON_FACE)
 		return ""
@@ -90,10 +91,12 @@ func _edge_kind(lines: Dictionary, edge_id: String) -> String:
 	return "line"
 
 
+## The sketch's face. Adding the sketch feature retires the id the session
+## stored, and the view mesh still names the other cap, so the kernel
+## midpoint on the sketch plane is the host.
 func _face_edge_set(ctx: Context, body: String) -> Dictionary:
-	# The face the sketch was opened on is already correct. Re-deriving it
-	# from every parallel face picks the wrong cap when two +Z faces exist
-	# (boss top vs base top) and the rim is then "not on this face".
+	if not _face_on_plane(ctx, ctx.host_face_id):
+		ctx.host_face_id = _resolve_host_face(ctx, body)
 	var edges := PackedStringArray()
 	if ctx.host_face_id != "":
 		edges = ctx.doc.edges_of_face(ctx.host_face_id)
@@ -106,21 +109,36 @@ func _face_edge_set(ctx: Context, body: String) -> Dictionary:
 	return set
 
 
+func _face_on_plane(ctx: Context, face_id: String) -> bool:
+	if face_id == "" or ctx.doc == null or not ctx.doc.has_method("face_midpoint"):
+		return false
+	var mid: Variant = ctx.doc.face_midpoint(face_id)
+	if not (mid is Vector3):
+		return false
+	var n := ctx.plane.normal
+	if n.length_squared() < 1e-12:
+		return false
+	return absf(Plane(n, ctx.plane.origin).distance_to(mid as Vector3)) <= 0.75
+
+
 func _resolve_host_face(ctx: Context, body: String) -> String:
-	if body == "" or ctx.support_normal.length_squared() < 1e-8:
+	if body == "" or ctx.doc == null or not ctx.doc.has_method("get_face_ids"):
 		return ctx.host_face_id
-	var want := ctx.support_normal.normalized()
+	var n := ctx.plane.normal
+	if n.length_squared() < 1e-8:
+		n = ctx.support_normal
+	if n.length_squared() < 1e-8:
+		return ctx.host_face_id
 	var origin := ctx.plane.origin
+	var plane := Plane(n.normalized(), origin)
 	var best_id := ctx.host_face_id
 	var best_gap := 1.0e9
-	for face in ctx.view.faces_matching(body, want, 0.7):
-		var fid := str(face["id"])
-		var n: Vector3 = face["normal"] as Vector3
-		if n.length_squared() < 1e-12:
+	for face_id in ctx.doc.get_face_ids(body):
+		var fid := str(face_id)
+		var mid: Variant = ctx.doc.face_midpoint(fid)
+		if not (mid is Vector3):
 			continue
-		n = n.normalized()
-		var pick := FacePick.point(ctx.doc, fid)
-		var gap := absf(FacePick.plane_offset(n, pick) - FacePick.plane_offset(n, origin))
+		var gap := absf(plane.distance_to(mid as Vector3))
 		if gap < best_gap:
 			best_gap = gap
 			best_id = fid
@@ -128,7 +146,8 @@ func _resolve_host_face(ctx: Context, body: String) -> String:
 
 
 ## `on_face` keeps edges in `face_edges`; otherwise it keeps every other edge.
-func _nearest(lines: Dictionary, face_edges: Dictionary, world: Vector3,
+## Distance is measured in the sketch plane, so a parallel circle still counts.
+func _nearest(lines: Dictionary, face_edges: Dictionary, plane: PlaneBasis, uv: Vector2,
 		tol: float, on_face: bool) -> String:
 	var best := ""
 	var best_d := tol
@@ -138,8 +157,10 @@ func _nearest(lines: Dictionary, face_edges: Dictionary, world: Vector3,
 			continue
 		var pts: PackedVector3Array = lines[edge_id]
 		for i in range(pts.size() - 1):
-			var d := SketchGeom.point_segment_distance_3d(world, pts[i], pts[i + 1])
+			var d := SketchGeom.point_segment_distance(
+					uv, plane.to_uv(pts[i]), plane.to_uv(pts[i + 1]))
 			if d < best_d:
 				best_d = d
 				best = key
 	return best
+
