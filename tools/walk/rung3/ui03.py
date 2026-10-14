@@ -594,11 +594,21 @@ class WalkUI03:
         self.refresh("status", "selection")
         return {"status": status, "count": self.fillet_count(status)}
 
+    def selected_edge_count(self) -> int:
+        sel = (self.refresh("selection").get("selection") or {})
+        edges = sel.get("edges") or []
+        return len(edges) if isinstance(edges, list) else 0
+
     def plain_click_face(self, normal, plane: float) -> dict:
         mark = self.mark()
         reply = self.click(face_normal=list(normal), plane=float(plane))
         status = " | ".join(self.result_texts(mark)) or str(reply.get("status", self.S()))
-        return {"status": status, "count": self.fillet_count(self.S())}
+        # The refusal replaces the "Fillet: N edge(s)" line. The picks are
+        # still the selection; the status text no longer carries the count.
+        count = self.fillet_count(status)
+        if count is None:
+            count = self.selected_edge_count()
+        return {"status": status, "count": count}
 
     def chip_rect(self, cid: str) -> list:
         node = self.control(cid) or {}
