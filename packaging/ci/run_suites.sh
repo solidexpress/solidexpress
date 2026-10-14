@@ -258,6 +258,12 @@ failed_names=()
 # Headless object-model / bridge suites never open a window. The dummy
 # renderer skips Vulkan; pixel rows stay on the walk's own display.
 GODOT_RUN=(--headless --rendering-driver dummy --path "${ROOT_DIR}/game")
+# Each suite gets its own HOME (below), which would hide pip --user packages
+# such as numpy from the python3 checkers. Pin the user site to the real one.
+if [[ -z "${PYTHONUSERBASE:-}" ]]; then
+  PYTHONUSERBASE="$(python3 -m site --user-base 2>/dev/null || true)"
+fi
+[[ -n "${PYTHONUSERBASE:-}" ]] && export PYTHONUSERBASE
 if [[ ${#selected_scripts[@]} -gt 0 ]]; then
   work="$(mktemp -d)"
   slot=0
