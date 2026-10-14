@@ -52,8 +52,9 @@ class Rows03Chunk5:
             f"{tried['names']} size={self.body_size()}",
         )
         field = tried["field"] or str((self.control("finish:Thickness") or {}).get("text", ""))
-        # Shell chrome resets to a legal default (1 for this part).
-        self.clause("field 1", field.startswith("1") or "1" in field, f"field={field!r}")
+        # Shared chrome default is 5 mm (rung 2 N7). A refusal restores that
+        # last legal thickness; nothing has applied 1 mm yet.
+        self.clause("field 5", field.startswith("5"), f"field={field!r}")
 
     @row("A22", chunk=5, on="rung03", expect={"blocker": "A21", "part": True, "min_bodies": 1})
     def row_A22(self) -> None:

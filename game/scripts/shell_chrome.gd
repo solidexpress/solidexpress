@@ -87,6 +87,7 @@ func cancel() -> bool:
 	if _panel == null or not _panel.visible:
 		return false
 	_panel.visible = false
+	_release_field()
 	return true
 
 
@@ -207,6 +208,8 @@ func _mm_text(mm: float) -> String:
 func _release_field() -> void:
 	if _field == null or not is_instance_valid(_field):
 		return
+	if _field.has_focus():
+		_field.release_focus()
 	var tree := get_tree()
 	if tree == null:
 		if _field.has_focus():

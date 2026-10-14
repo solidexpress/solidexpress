@@ -809,15 +809,29 @@ class WalkUI03:
         moved = abs(float(after.get("distance", 0)) - float(before.get("distance", 0))) > 0.05
         return {"moved": moved, "before": before, "after": after, "rect": rect}
 
-    def covered(self, rect: list, skip_ids: tuple[str, ...] = ("strip:shell",)) -> bool:
+    def covered(self, rect: list, skip_ids: tuple[str, ...] = ("strip:shell",),
+                owner_path: str = "") -> bool:
         if len(rect) < 4:
             return True
         cx, cy = rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5
         for c in (self.refresh("controls").get("controls") or []):
             if c.get("id") in skip_ids:
                 continue
+            path = str(c.get("path") or "")
+            if owner_path and (path == owner_path or path.startswith(owner_path + "/")):
+                continue
             other = c.get("rect") or []
             if len(other) < 4:
+                continue
+            # The widget's own chrome sits inside its rect. A cover is a
+            # different control that reaches the centre from outside.
+            inside = (
+                other[0] >= rect[0] - 1.0
+                and other[1] >= rect[1] - 1.0
+                and other[0] + other[2] <= rect[0] + rect[2] + 1.0
+                and other[1] + other[3] <= rect[1] + rect[3] + 1.0
+            )
+            if inside:
                 continue
             if other[0] <= cx <= other[0] + other[2] and other[1] <= cy <= other[1] + other[3]:
                 if float(other[2]) * float(other[3]) < float(rect[2]) * float(rect[3]):

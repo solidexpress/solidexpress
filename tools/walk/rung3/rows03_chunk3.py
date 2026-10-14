@@ -54,7 +54,14 @@ class Rows03Chunk3:
             and ("OK" in str(ok.get("text", "")) or "Ok" in str(ok.get("text", "")))
         )
         self.clause("labels", has_labels or labels_ok, f"rev={rev.get('text')!r} ok={ok.get('text')!r}")
-        covered = any(self.covered(list(n.get("rect") or []), skip_ids=("offset:Distance", "offset:Reverse", "offset:Ok")) for n in nodes if n.get("rect"))
+        covered = any(
+            self.covered(
+                list(n.get("rect") or []),
+                skip_ids=("offset:Distance", "offset:Reverse", "offset:Ok"),
+                owner_path=str(n.get("path") or ""),
+            )
+            for n in nodes if n.get("rect")
+        )
         self.clause("not covered", not covered, f"covered={covered}")
         wheel = self.wheel_over("offset:Distance")
         self.clause(
