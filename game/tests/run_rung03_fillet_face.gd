@@ -80,7 +80,7 @@ func _fillet_edges_then_face(ctx: FilmContext) -> void:
 	# Corner table: each view makes that vertical reachable (M12).
 	for row in FilletPick.CORNERS:
 		var key: Key = row["view"] as Key
-		var focus := ctx.main.get_viewport().gui_get_focus_owner()
+		var focus = ctx.main.get_viewport().gui_get_focus_owner()
 		if focus is LineEdit:
 			(focus as LineEdit).release_focus()
 		await _push_key(ctx.main.get_viewport(), key, 0)
@@ -161,6 +161,10 @@ func _fillet_face_first(ctx: FilmContext) -> void:
 	for _i in 8:
 		await process_frame
 	check(_fillet_count(ctx) == before + 1, "R1.5 fillet feature")
+	var applied := "" if ctx.main.status_label == null else str(ctx.main.status_label.text)
+	print("  applied: %s" % applied)
+	check(applied.contains("Fillet 2 edges 1.50 applied"),
+			"status Fillet 2 edges 1.50 applied (got '%s')" % applied)
 	var vol := _volume(ctx)
 	check(absf(vol - 370587.4) / 370587.4 < 0.002, "rounded volume (got %s)" % str(vol))
 
@@ -215,11 +219,24 @@ func _arm_fillet(ctx: FilmContext, radius: float) -> bool:
 	var line := spin.get_line_edit()
 	await _x11_click_screen(ctx.main.get_viewport(), line.get_global_rect().get_center())
 	await process_frame
+	await SxInput.push_key(ctx.main.get_viewport(), KEY_A, 0, KEY_MASK_CTRL)
 	var text := "1.5" if absf(radius - 1.5) < 0.01 else str(int(round(radius)))
 	await _type_text(ctx.main.get_viewport(), text)
-	await process_frame
+	for _i in 4:
+		await process_frame
 	check(is_equal_approx(ctx.main.ops_panel.dressup_radius(), radius),
-			"typed %s is dressup radius (got %s)" % [text, str(ctx.main.ops_panel.dressup_radius())])
+			"typed %s is dressup radius (got %s line '%s')" % [text, str(ctx.main.ops_panel.dressup_radius()), line.text])
+	# Enter commits and gives the keys back. A following 2/3/6 must orbit,
+	# not append a digit (1.5 + Top became 1.53).
+	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)
+	for _i in 4:
+		await process_frame
+	check(is_equal_approx(ctx.main.ops_panel.dressup_radius(), radius),
+			"Enter keeps dressup radius %s (got %s)" % [str(radius), str(ctx.main.ops_panel.dressup_radius())])
+	var st := "" if ctx.main.status_label == null else str(ctx.main.status_label.text)
+	var shown := "%.2f" % radius
+	check(st.contains("r=" + shown), "status shows r=%s (got '%s')" % [shown, st])
+	check(not st.contains("applied"), "field Enter does not apply (got '%s')" % st)
 	check(ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES, "Fillet armed")
 	return ctx.main.ops_panel._pending == OpsPanel.Pending.FILLET_EDGES
 

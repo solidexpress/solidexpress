@@ -609,8 +609,13 @@ func _build_selection_strip() -> void:
 		# Arrow clicks focus the line before the value moves. A partial typed
 		# string must not be overwritten; an arrow step must reach the panel
 		# or focus-exit writes the old panel value back over the step.
+		# A partial or finished type owns the characters. Push the parsed line,
+		# not the spin's snapped value, and do not rewrite the line.
 		if _strip_radius_editing and _strip_user_typed():
-			return
+			var typing := _strip_radius.get_line_edit()
+			if typing != null and SxUi.mid_entry(typing):
+				_push_parsed_strip_radius()
+				return
 		if ops_panel != null and ops_panel.has_method("set_dressup_radius"):
 			ops_panel.set_dressup_radius(v)
 		# Godot's deferred editing toggle reformats the line after reveal.
@@ -7078,10 +7083,46 @@ func _on_dressup_radius_changed(v: float) -> void:
 		return
 	# Only skip when the user is mid-typing in the strip. A latched partial
 	# ("0.0" vs panel 10) is not a user edit — overwrite it.
+	# An echo of the number just parsed from this line is the same edit.
 	if _strip_line_focused() and _strip_user_typed():
-		_panel_changed_while_strip_focused = true
+		if _typed_strip_disagrees(v):
+			_panel_changed_while_strip_focused = true
 		return
 	_write_strip_radius(v)
+
+
+## True when `v` is not the number currently typed in the strip.
+## A matching echo must not make commit throw the line away.
+func _typed_strip_disagrees(v: float) -> bool:
+	var typed := _parsed_strip_radius()
+	if is_nan(typed) or _strip_radius == null:
+		return true
+	var clamped := clampf(typed, _strip_radius.min_value, _strip_radius.max_value)
+	return not is_equal_approx(clamped, v)
+
+
+func _parsed_strip_radius() -> float:
+	if _strip_radius == null:
+		return NAN
+	var le := _strip_radius.get_line_edit()
+	if le == null:
+		return NAN
+	return _parse_strip_radius_text(le.text)
+
+
+## The typed line is the radius. The spin's `.value` can be a step snap
+## (1.5 → 1.53 was a later digit, but a snap must not land either).
+func _push_parsed_strip_radius() -> void:
+	if ops_panel == null or not ops_panel.has_method("set_dressup_radius"):
+		return
+	var parsed := _parsed_strip_radius()
+	if is_nan(parsed) or _strip_radius == null:
+		return
+	var clamped := clampf(parsed, _strip_radius.min_value, _strip_radius.max_value)
+	if ops_panel.has_method("dressup_radius") \
+			and is_equal_approx(ops_panel.dressup_radius(), clamped):
+		return
+	ops_panel.set_dressup_radius(clamped)
 
 
 func _parse_strip_radius_text(text: String) -> float:
@@ -7146,7 +7187,7 @@ func _commit_strip_radius() -> void:
 	var clamped := clampf(parsed, _strip_radius.min_value, _strip_radius.max_value)
 	SxUi.reveal_committed_spin(_strip_radius, clamped)
 	if ops_panel.has_method("set_dressup_radius"):
-		ops_panel.set_dressup_radius(_strip_radius.value)
+		ops_panel.set_dressup_radius(clamped)
 	_strip_radius_editing = was_editing
 	if le != null:
 		_strip_focus_text = le.text
@@ -7172,7 +7213,9 @@ func _sync_strip_dressup_radius() -> void:
 	if not armed:
 		return
 	if _strip_line_focused() and _strip_user_typed():
-		_panel_changed_while_strip_focused = true
+		if ops_panel != null and ops_panel.has_method("dressup_radius") \
+				and _typed_strip_disagrees(ops_panel.dressup_radius()):
+			_panel_changed_while_strip_focused = true
 		return
 	if ops_panel != null and ops_panel.has_method("dressup_radius"):
 		_write_strip_radius(ops_panel.dressup_radius())
