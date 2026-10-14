@@ -47,6 +47,9 @@ Part B: film `ubc_wrench` + `run_film_ubc_wrench_tests.gd` (`tier=full`). Suites
 
 `ubc_wrench` is on Release `demo-movies` and in `published-demos.json` and `demo-catalog.json`.
 
+## 0.1.2 — rung 3 (Tutor1)
+- SolidExpress `VERSION` is 0.1.2. Rung 3 (Learn SOLIDWORKS Lesson 1: Parts, Tutor1) is fully makeable (#252).
+
 ## 0.1.1 — rung 2 (Student Guide box)
 - SolidExpress `VERSION` is 0.1.1. Rung 2 (SolidWorks Student Guide Lesson 2 box) is fully makeable (#246).
 
