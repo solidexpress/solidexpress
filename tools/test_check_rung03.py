@@ -212,6 +212,36 @@ class CliTests(unittest.TestCase):
             self.assertIn("PASS", proc.stdout)
 
 
+class RayEdgeTests(unittest.TestCase):
+    def test_fillet_seam_edge_is_a_hit(self):
+        # Outer R1.5 torus, the +X seam. The probe rides the shared edge.
+        # u+v comes out 1+1ulp, and a strict barycentric test drops it, so
+        # the checker reports the hole wall behind the fillet.
+        V = np.array([
+            [34.2621, 5.16418, 54.4642],
+            [34.4642, 0.0, 54.6491],
+            [34.6491, 0.0, 54.4642],
+        ])
+        T = np.array([[0, 1, 2]])
+        direction = np.array([1.0, 0.0, 1.0])
+        direction /= np.linalg.norm(direction)
+        origin = np.array([35.0, 0.0, 55.0]) + 5.0 * direction
+        hits = geom.ray_hits(geom.tri_arrays(V, T), origin, -direction)
+        self.assertGreaterEqual(len(hits), 1)
+        self.assertAlmostEqual(float(hits[0]), 5.627, delta=0.02)
+
+    def test_ray_missing_the_triangle_stays_empty(self):
+        V = np.array([
+            [34.2621, 5.16418, 54.4642],
+            [34.4642, 0.0, 54.6491],
+            [34.6491, 0.0, 54.4642],
+        ])
+        T = np.array([[0, 1, 2]])
+        origin = np.array([0.0, 80.0, 0.0])
+        hits = geom.ray_hits(geom.tri_arrays(V, T), origin, np.array([0.0, 1.0, 0.0]))
+        self.assertEqual(len(hits), 0)
+
+
 class _VolumeStub:
     def __init__(self, volume):
         self._volume = float(volume)
