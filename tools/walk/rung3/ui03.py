@@ -27,7 +27,8 @@ CORNERS = (
 # SectionPlane.CAP_COLOUR = Color(0.62, 0.66, 0.72) → 8-bit RGB.
 CAP_COLOUR = (158, 168, 184)
 WALL_POINT = (-59.5, 0.0, 12.0)
-REMOVED_POINT = (0.0, 40.0, 15.0)
+# Iso (key 7) sits on model −Y, so Top keeps +Y and the removed half is −Y.
+REMOVED_POINT = (0.0, -40.0, 15.0)
 
 _REGEN_BAD = ("[ERROR]", "soft-skip", "regenerate stopped", "lost on rebuild")
 _ENGINE_NOISE = (

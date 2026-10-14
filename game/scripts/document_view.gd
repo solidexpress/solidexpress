@@ -266,17 +266,19 @@ uniform float emission_energy : hint_range(0.0, 2.0) = 0.0;
 uniform bool zebra_on = false;
 uniform bool section_on = false;
 
-varying vec3 world_position;
 varying vec3 world_normal;
+varying vec3 model_position;
 
 void vertex() {
-	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// VERTEX is model space here. fragment() sees VERTEX in view space,
+	// so the clip has to ride a varying. section_point / section_normal
+	// are model coordinates (the uniform run_display_tests pins).
+	model_position = VERTEX;
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 }
 
 void fragment() {
-	// Discard the half-space in front of the section plane.
-	if (section_on && dot(world_position - section_point, section_normal) > 0.0) {
+	if (section_on && dot(model_position - section_point, section_normal) > 0.0) {
 		discard;
 	}
 	// Wireframe mode hides solid faces via transparent albedo.

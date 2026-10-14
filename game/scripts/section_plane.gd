@@ -44,7 +44,12 @@ static func apply(view: DocumentView, camera_pos: Vector3, plane_name: String) -
 	if row.is_empty() or view == null:
 		return {}
 	var point: Vector3 = row["point"]
-	var normal := kept_side(camera_pos, point, row["normal"] as Vector3)
+	# kept_side compares the camera to the model normal. The orbit camera
+	# lives in world space; the preset normal is model space.
+	var cam := camera_pos
+	if view.is_inside_tree():
+		cam = view.to_local(camera_pos)
+	var normal := kept_side(cam, point, row["normal"] as Vector3)
 	view.set_section_plane(point, normal)
 	return {
 		"on": true,

@@ -114,7 +114,8 @@ func _section_top_and_cap(ctx: FilmContext) -> void:
 			"normal is ±Y (got %s)" % str(n))
 	var cam: Camera3D = ctx.main.get_viewport().get_camera_3d()
 	var cam_pos: Vector3 = cam.global_position if cam != null else Vector3(100, 100, 100)
-	var kept := SectionPlane.kept_side(cam_pos, Vector3.ZERO, Vector3(0, 1, 0))
+	var cam_model: Vector3 = ctx.view.to_local(cam_pos)
+	var kept := SectionPlane.kept_side(cam_model, Vector3.ZERO, Vector3(0, 1, 0))
 	check(n.is_equal_approx(kept), "kept half is away from the camera")
 	var status_text := "" if ctx.main.status_label == null else str(ctx.main.status_label.text)
 	var joined := " | ".join(_status_log)
@@ -219,6 +220,29 @@ func _shell_last_thickness_and_k(ctx: FilmContext) -> void:
 	await process_frame
 	await process_frame
 	check(ctx.view.section_enabled != was, "K toggles section after shell")
+	# The walk's L7 sample is this wall, after a real 1 mm shell, with Top on.
+	if ctx.view.section_enabled:
+		ctx.view.clear_section_plane()
+		await process_frame
+	await _push_key(ctx.main.get_viewport(), KEY_7, 0)
+	await process_frame
+	var btn_top: Button = ctx.main.find_child("Section", true, false) as Button
+	await FilmUI.click_control(ctx, btn_top, FilmUICues.alert("Section", "Section view"))
+	await process_frame
+	var popup: PopupMenu = ctx.main.find_child("SectionPlanePopup", true, false) as PopupMenu
+	if popup != null and popup.visible:
+		var top_idx := -1
+		for i in popup.item_count:
+			if str(popup.get_item_text(i)) == "Top":
+				top_idx = i
+				break
+		if top_idx >= 0:
+			await _click_popup_item(ctx, popup, top_idx)
+			await process_frame
+			await process_frame
+	check(ctx.view.section_enabled and str(ctx.view.section_plane_name) == "Top",
+			"Top section on the 1 mm shell")
+	await _assert_cap_pixels(ctx, true)
 	var btn: Button = ctx.main.find_child("Section", true, false) as Button
 	if btn != null and ctx.main.view_hud != null:
 		ctx.main.view_hud.sync_from_view(ctx.view)
@@ -247,9 +271,10 @@ func _assert_cap_pixels(ctx: FilmContext, section_on: bool) -> void:
 	if img == null:
 		check(false, "viewport image readable")
 		return
-	# Wall point on the cut plane (y=0) and a removed-half point.
+	# Wall point on the cut. Iso (key 7) sits on model −Y, so the removed
+	# half is negative Y — (0, +40, 15) is the kept body.
 	var wall := FilmUI.model_to_screen(ctx, Vector3(-59.5, 0.0, 12.0))
-	var removed := FilmUI.model_to_screen(ctx, Vector3(0.0, 40.0, 15.0))
+	var removed := FilmUI.model_to_screen(ctx, Vector3(0.0, -40.0, 15.0))
 	var wall_c := _sample(img, wall)
 	var rem_c := _sample(img, removed)
 	print("  wall pixel %s removed pixel %s" % [str(wall_c), str(rem_c)])
