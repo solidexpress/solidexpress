@@ -817,6 +817,8 @@ class WalkUI03:
         for c in (self.refresh("controls").get("controls") or []):
             if c.get("id") in skip_ids:
                 continue
+            if c.get("blocks_mouse", True) is False:
+                continue
             path = str(c.get("path") or "")
             if owner_path and (path == owner_path or path.startswith(owner_path + "/")):
                 continue

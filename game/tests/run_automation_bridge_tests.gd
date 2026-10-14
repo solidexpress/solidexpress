@@ -47,7 +47,7 @@ func _check_tool_names() -> void:
 	var expect := PackedStringArray([
 		"None", "Line", "Rect", "Circle", "Arc", "Polygon", "Select", "Trim",
 		"Extend", "Smart Dim", "Convert", "Mirror", "Pattern", "Spline", "Point",
-		"Centerline", "Ellipse", "Slot", "Chamfer",
+		"Centerline", "Ellipse", "Slot", "Chamfer", "Offset",
 	])
 	var got: PackedStringArray = _ToolSpec.tool_names()
 	var same := got.size() == expect.size()

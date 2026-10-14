@@ -50,6 +50,8 @@ func _covered_by(controls: Array, rect: Array) -> String:
 	for c in controls:
 		if str(c.get("id", "")) in skip:
 			continue
+		if c.get("blocks_mouse", true) == false:
+			continue
 		var other: Array = c.get("rect", [])
 		if other.size() < 4:
 			continue
@@ -102,7 +104,7 @@ func _offset_rim(ctx: FilmContext) -> void:
 	if dist == null or rev == null or ok == null:
 		return
 	for ctrl in [dist as Control, rev as Control, ok as Control]:
-		var r := ctrl.get_global_rect()
+		var r: Rect2 = ctrl.get_global_rect()
 		check(r.position.x >= -1.0 and r.position.y >= -1.0
 				and r.end.x <= float(ROOT_SIZE.x) + 1.0
 				and r.end.y <= float(ROOT_SIZE.y) + 1.0,
@@ -117,7 +119,7 @@ func _offset_rim(ctx: FilmContext) -> void:
 		print("  %s rect %s cover %s" % [cid, str(mine), cover])
 		check(cover == "", "%s is not covered (by %s)" % [cid, cover])
 	check(str(rev.text).contains("Reverse"), "Reverse has a visible label")
-	check(str(ok.text).contains("OK"), "OK has a visible label")
+	check(str(ok.text).contains("Apply"), "Apply has a visible label")
 	# Distance 0 refused.
 	dist.value = 0.0
 	var before := _entity_count(sm)
@@ -152,12 +154,14 @@ func _offset_rim(ctx: FilmContext) -> void:
 				"external r = 35 (got %s)" % str(external[0]["radius"]))
 	await process_frame
 	var dof := _dof(ctx)
-	print("  dof %s" % str(dof))
+	print("  dof %s label '%s'" % [str(dof), "" if ctx.main.dof_label == null else str(ctx.main.dof_label.text)])
 	check(dof == 0, "DOF chip is 0 after offset (got %s)" % str(dof))
 	# Empty space refused; Esc disarms.
 	before = _entity_count(sm)
 	mark = _status_log.size()
-	await FilmUI.viewport_click(ctx, Vector2(40, 40), FilmUICues.sketch_click("empty"))
+	var empty_uv := Vector2(80, 80)
+	var empty_screen: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(empty_uv))
+	await FilmUI.viewport_click(ctx, empty_screen, FilmUICues.sketch_click("empty"))
 	await process_frame
 	check(_entity_count(sm) == before, "empty click adds no entity")
 	check(_status_since(mark).contains("nothing there"),
@@ -231,6 +235,9 @@ func _dof(ctx: FilmContext) -> int:
 	if lbl == null:
 		return -1
 	var t := str(lbl.text).strip_edges()
+	# A solved sketch prints OK, not the digit 0.
+	if t == "OK":
+		return 0
 	if t.is_valid_int():
 		return int(t)
 	for part in t.split(" "):

@@ -78,7 +78,7 @@ func build(parent: Control) -> void:
 	box.add_child(_reverse)
 	_ok = Button.new()
 	_ok.name = "OffsetOk"
-	_ok.text = "OK"
+	_ok.text = "Apply"
 	_ok.set_meta("sx_auto", "offset:Ok")
 	_ok.pressed.connect(hide_panel)
 	box.add_child(_ok)

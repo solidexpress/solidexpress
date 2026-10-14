@@ -49,7 +49,7 @@ func _case_rail() -> void:
 			var rect := btn.get_global_rect()
 			check(window.encloses(rect),
 					"rail label `%s` is fully inside 1280×800 %s" % [btn.text, rect])
-	check(labels.size() == 19, "19 rail labels (got %d: %s)" % [labels.size(), str(labels)])
+	check(labels.size() == 20, "20 rail labels (got %d: %s)" % [labels.size(), str(labels)])
 
 	await FilmUI.select_sketch_tool(ctx, ctx.main.sketch_mode, SketchMode.Tool.LINE)
 	await FilmUI.click_sketch(ctx, ctx.main.sketch_mode, Vector2(0, 0), "line start")

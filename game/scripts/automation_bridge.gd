@@ -1520,6 +1520,8 @@ func _walk_controls(n: Node, out: Array) -> void:
 				"text": _control_text(c),
 				"visible": true,
 				"disabled": bool(c.get("disabled")) if c is BaseButton else false,
+				# Spacers (mouse ignore) sit in the rect but do not take the click.
+				"blocks_mouse": c.mouse_filter != Control.MOUSE_FILTER_IGNORE,
 			}
 			if c is BaseButton:
 				rec["pressed"] = (c as BaseButton).button_pressed
