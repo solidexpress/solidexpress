@@ -78,6 +78,108 @@ static func x11_click(ctrl: Control) -> void:
 	await x11_click_screen(vp, pos)
 
 
+## PopupMenu rows activate from the embedder, one frame between press and release.
+## A click in the shadow margin closes the menu without choosing the row.
+static func click_popup_label(popup: PopupMenu, label: String) -> bool:
+	if popup == null or not popup.visible:
+		return false
+	var idx := -1
+	for i in popup.item_count:
+		if popup.get_item_text(i) == label:
+			idx = i
+			break
+	if idx < 0:
+		return false
+	var local := _popup_row_local(popup, idx)
+	if popup.is_embedded():
+		var parent := popup.get_parent()
+		if parent == null:
+			return false
+		await _press_release(parent.get_viewport(), Vector2(popup.position) + local)
+		return true
+	await _press_release_window(popup, local)
+	return true
+
+
+static func _popup_row_local(popup: PopupMenu, idx: int) -> Vector2:
+	var origin := Vector2.ZERO
+	var width := float(popup.size.x)
+	var panel: Control = null
+	for c in popup.get_children(true):
+		if c is PanelContainer:
+			panel = c as Control
+			break
+	if panel != null:
+		origin = panel.position
+		width = maxf(panel.size.x, 8.0)
+	var style := popup.get_theme_stylebox("panel")
+	var top := style.get_margin(SIDE_TOP) if style != null else 4.0
+	var font := popup.get_theme_font("font")
+	if font == null:
+		font = ThemeDB.fallback_font
+	var fs := popup.get_theme_font_size("font_size")
+	if fs <= 0:
+		fs = 16
+	var vsep := float(popup.get_theme_constant("v_separation"))
+	var row := float(font.get_height(fs)) + vsep
+	var y := origin.y + top
+	for i in idx:
+		var step := row
+		if popup.is_item_separator(i):
+			step = maxf(8.0, vsep + 4.0)
+		y += step
+	return Vector2(origin.x + width * 0.5, y + row * 0.35)
+
+
+static func _press_release(host: Viewport, at: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = at
+	motion.global_position = at
+	motion.relative = Vector2(0.2, 0.2)
+	host.push_input(motion)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = at
+	down.global_position = at
+	host.push_input(down)
+	await _tree().process_frame
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = at
+	up.global_position = at
+	host.push_input(up)
+	await _tree().process_frame
+
+
+static func _press_release_window(win: Window, at: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = at
+	motion.global_position = at
+	motion.relative = Vector2(0.2, 0.2)
+	motion.window_id = win.get_window_id()
+	Input.parse_input_event(motion)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = at
+	down.global_position = at
+	down.window_id = win.get_window_id()
+	Input.parse_input_event(down)
+	Input.flush_buffered_events()
+	await _tree().process_frame
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = at
+	up.global_position = at
+	up.window_id = win.get_window_id()
+	Input.parse_input_event(up)
+	Input.flush_buffered_events()
+	await _tree().process_frame
+
+
 static func keycode_for_char(ch: String) -> Key:
 	var c := ch.unicode_at(0)
 	if ch == "/":

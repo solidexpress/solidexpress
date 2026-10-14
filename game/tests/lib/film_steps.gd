@@ -258,7 +258,7 @@ static func shell_selected_face(ctx: FilmContext, mm: float) -> void:
 	await FilmUI.wait_frames(ctx.tree, 4)
 
 
-static func open_side_face_sketch(ctx: FilmContext, normal: Vector3, view_key: Key) -> void:
+static func open_side_face_sketch(ctx: FilmContext, normal: Vector3, view_key: Key, plane: float = INF) -> void:
 	var body := only_body(ctx)
 	if body == "":
 		FilmUI._fail("side sketch needs one body")
@@ -266,11 +266,16 @@ static func open_side_face_sketch(ctx: FilmContext, normal: Vector3, view_key: K
 	await _release_line_focus(ctx)
 	await SxInput.push_key(ctx.main.get_viewport(), view_key)
 	await FilmUI.wait_frames(ctx.tree, 3)
-	var face := FilmUI.find_face_by_normal(ctx.view, body, normal)
+	var face := FilmUI.find_face_by_normal(ctx.view, body, normal) if is_inf(plane) \
+			else _face_on_plane(ctx, body, normal, plane)
 	if face == "":
 		FilmUI._fail("no face for normal %s" % str(normal))
 		return
 	var pt := FilmUI.face_pick_point(ctx.view, body, face)
+	if not is_inf(plane):
+		var on_face := FacePick.point(ctx.view.doc, face)
+		if on_face != Vector3.ZERO:
+			pt = on_face
 	if pt == Vector3.INF:
 		FilmUI._fail("no pick point for the side face")
 		return
@@ -324,3 +329,146 @@ static func _release_line_focus(ctx: FilmContext) -> void:
 	var owner: Node = ctx.main.get_viewport().gui_get_focus_owner()
 	if owner is LineEdit:
 		await SxInput.push_key(ctx.main.get_viewport(), KEY_TAB)
+
+
+## Centre-rectangle: rail Rect, variant Center, centre click, corner click.
+static func centre_rect(ctx: FilmContext, centre: Vector2, corner: Vector2) -> void:
+	await press_rail(ctx, "Rect")
+	if FilmUI.fail_count > 0:
+		return
+	var bar: Node = ctx.main.sketch_chrome.find_child("VariantBar", true, false) if ctx.main.sketch_chrome != null else null
+	var chip := FilmUI.find_button(bar, "Center") if bar != null else null
+	if not await FilmUI.click_control(ctx, chip, FilmUICues.alert("Center", "Center")):
+		return
+	await click_uv(ctx, centre, "Rectangle centre", 220.0)
+	await click_uv(ctx, corner, "Rectangle corner", 220.0)
+
+
+## Offset Entities: distance, Reverse, rim click, Apply.
+static func offset_rim(ctx: FilmContext, distance: String, uv: Vector2) -> void:
+	await press_rail(ctx, "Offset")
+	if FilmUI.fail_count > 0:
+		return
+	await FilmUI.wait_frames(ctx.tree, 2)
+	await _type_offset_distance(ctx, distance)
+	if FilmUI.fail_count > 0:
+		return
+	var rev := _by_auto(ctx.main, "offset:Reverse") as BaseButton
+	if rev == null or not rev.is_visible_in_tree():
+		FilmUI._fail("offset:Reverse is hidden")
+		return
+	if not rev.button_pressed:
+		if not await FilmUI.click_control(ctx, rev, FilmUICues.alert("Reverse", "Offset inward")):
+			return
+	await click_uv(ctx, uv, "Offset rim", 140.0)
+	var ok := _by_auto(ctx.main, "offset:Ok") as Button
+	if ok == null or not ok.is_visible_in_tree():
+		FilmUI._fail("offset:Ok is hidden")
+		return
+	await FilmUI.click_control(ctx, ok, FilmUICues.alert("Apply", "Offset Apply"))
+	await FilmUI.wait_frames(ctx.tree, 2)
+
+
+## Shift+click a face. The face is the one on `plane` along `normal`.
+static func shift_click_face(ctx: FilmContext, normal: Vector3, plane: float) -> void:
+	await _click_face(ctx, normal, plane, true)
+
+
+## Plain click of the face on `plane` along `normal`.
+static func click_face(ctx: FilmContext, normal: Vector3, plane: float) -> void:
+	await _click_face(ctx, normal, plane, false)
+
+
+## Rows are FilletPick.CORNERS: x, y, view. z_mid is the click height on that vertical.
+static func pick_corner_table(ctx: FilmContext, rows: Array, z_mid: float) -> void:
+	await _release_line_focus(ctx)
+	for row in rows:
+		if FilmUI.fail_count > 0:
+			return
+		await _release_line_focus(ctx)
+		await SxInput.push_key(ctx.main.get_viewport(), row["view"] as Key)
+		await FilmUI.wait_frames(ctx.tree, 8)
+		var pt := Vector3(float(row["x"]), float(row["y"]), z_mid)
+		await SxInput.zoom(ctx, pt, 80.0)
+		var screen := FilmUI.model_to_screen(ctx, pt)
+		if not FilmUI.require_on_screen(ctx, screen, "corner edge"):
+			return
+		await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Corner edge"))
+		await FilmUI.wait_frames(ctx.tree, 2)
+
+
+static func section_top(ctx: FilmContext) -> void:
+	var btn := _by_auto(ctx.main, "hud:Section") as Button
+	if not await FilmUI.click_control(ctx, btn, FilmUICues.alert("Section", "Section")):
+		return
+	await FilmUI.wait_frames(ctx.tree, 3)
+	var popup := ctx.main.find_child("SectionPlanePopup", true, false) as PopupMenu
+	if popup == null or not popup.visible:
+		FilmUI._fail("Section plane popup is hidden")
+		return
+	if not await SxInput.click_popup_label(popup, "Top"):
+		FilmUI._fail("popup:Top did not take the click")
+		return
+	await FilmUI.wait_frames(ctx.tree, 3)
+
+
+static func section_off(ctx: FilmContext) -> void:
+	var btn := _by_auto(ctx.main, "hud:Section") as Button
+	if btn == null or not btn.is_visible_in_tree():
+		FilmUI._fail("Section button is hidden")
+		return
+	await FilmUI.click_control(ctx, btn, FilmUICues.alert("Section", "Section off"))
+	await FilmUI.wait_frames(ctx.tree, 3)
+
+
+static func _click_face(ctx: FilmContext, normal: Vector3, plane: float, shift: bool) -> void:
+	var body := only_body(ctx)
+	if body == "":
+		FilmUI._fail("face click needs one body")
+		return
+	var id := _face_on_plane(ctx, body, normal, plane)
+	if id == "":
+		FilmUI._fail("no face on plane %s" % str(plane))
+		return
+	var pt := FacePick.point(ctx.view.doc, id)
+	if pt == Vector3.ZERO:
+		pt = FilmUI.face_pick_point(ctx.view, body, id)
+	var screen := FilmUI.model_to_screen(ctx, pt)
+	if not FilmUI.require_on_screen(ctx, screen, "face"):
+		return
+	var cue := FilmUICues.alert("Shift+Click" if shift else "Click", "Face")
+	await FilmUI.viewport_click(ctx, screen, cue, false, MOUSE_BUTTON_LEFT, shift)
+	await FilmUI.wait_frames(ctx.tree, 2)
+	if shift or ctx.view.selected_face == id:
+		return
+	await FilmUI.viewport_click(ctx, screen, cue, false, MOUSE_BUTTON_LEFT, false)
+	await FilmUI.wait_frames(ctx.tree, 2)
+	if ctx.view.selected_face != id:
+		FilmUI._fail("face on plane %s not selected" % str(plane))
+
+
+static func _face_on_plane(ctx: FilmContext, body: String, normal: Vector3, plane: float) -> String:
+	var rows: Array = []
+	for face in ctx.view.faces_matching(body, normal, FacePick.ALIGN):
+		var id := str(face.get("id", ""))
+		var pick := FacePick.point(ctx.view.doc, id)
+		rows.append({
+			"id": id,
+			"normal": face.get("normal", normal),
+			"centre": face.get("centre", pick),
+			"pick": pick,
+			"plane": FacePick.plane_offset(normal, pick),
+		})
+	return str(FacePick.match_normal(rows, normal, plane).get("id", ""))
+
+
+static func _type_offset_distance(ctx: FilmContext, text: String) -> void:
+	var node := _by_auto(ctx.main, "offset:Distance")
+	var edit: LineEdit = (node as SpinBox).get_line_edit() if node is SpinBox else node as LineEdit
+	if edit == null or not edit.is_visible_in_tree():
+		FilmUI._fail("offset:Distance is hidden")
+		return
+	await SxInput.x11_click(edit)
+	edit.select_all()
+	await SxInput.type_text(edit.get_viewport(), text)
+	await FilmUI.wait_frames(ctx.tree, 1)
