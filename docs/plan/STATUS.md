@@ -6,6 +6,14 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 Shipped: origin anchor, face `pick` / `plane`, circle convert, Offset Entities, Shift+face fillet, section presets and cap, 46-row walk, `check_rung03.py`. Bars: the table in `rung-03-result.md`. Suites **213 run + 4 known-red**.
 
+## Post-rung-3 cleanup
+
+Part A shipped WP1, WP2, WP4, WP5. WP3 parked: Godot 4.7 headless display cannot draw, so the pixel suites still return early and stay in the 213. Smoke still runs `ubc_wrench` and `lesson2_box`. ★ WP6 and WP7 parked because WP3 parked (WP1–WP5 were not all green).
+
+Part B parked (`roadmap.md` §9). The click film's R5 fillet kept the boss top rim and regen stopped, so `29/29` did not pass. WP8 reverted. No `tutor1` film and no video.
+
+`tools/confirm_all.sh`: walks 46/46, 77/77, 44/44. Checkers in `docs/loop/post-rung-03-result.md`. Headless **213 run, 0 failed**. Lint `217 suites ok (67 ci, 146 full, 4 known-red)`.
+
 ## Rung 2 — Lesson 2 box (PR #246)
 
 Shipped: `PlaneBasis`, `TopoCue`, Shell chip, Convert on a face, point-line Smart Dim, bridge face identity, `Rung` descriptor, `check_rung02.py`, 44-row walk. Suites **206 run + 4 known-red**. Checker bar: `check_rung02.py` base 3/3, rounded 7/7, shell 13/13, final 16/16 at width 60 and at width 65.

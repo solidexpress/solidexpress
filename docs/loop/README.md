@@ -9,5 +9,6 @@ What remains here is the live contract, not the per-round plans:
 - `rung-03-plan.md` — rung 3 (SOLIDWORKS Lesson 1: Parts, video depth 30): measured gaps, work packages, 46-row checklist, `check_rung03.py` spec
 - `rung-03-result.md` — confirm pass (`tools/confirm_all.sh` counts)
 - `post-rung-03-cleanup.md` — layering pass after rung 3 and the Tutor1 demo film (the next cleanup deletes this file)
+- `post-rung-03-result.md` — confirm pass for that cleanup (Part B parked, headless 213)
 
 The walks are `tools/walk_rung01.py` (77 rows), `tools/walk_rung02.py` (44 rows, the Lesson 2 box), and `tools/walk_rung03.py` (46 rows, Lesson 1 parts). A walk is a `Rung` in `tools/walk/rung.py`: rows, chunks, checkpoints, checker, expectations. History of deleted per-round plans: `git log --diff-filter=D --name-only -- docs/loop`. `tools/gui_click_probe.sh` stays: it sends real X11 clicks, which the in-engine bridge does not; it is the dead-first-click probe from re-PLAN 17.
