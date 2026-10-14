@@ -18,6 +18,7 @@ func _init() -> void:
 	await _case_off()
 	await _case_real_input()
 	await _case_face_identity()
+	await _case_annular_faces()
 	finish()
 
 
@@ -46,7 +47,7 @@ func _check_tool_names() -> void:
 	var expect := PackedStringArray([
 		"None", "Line", "Rect", "Circle", "Arc", "Polygon", "Select", "Trim",
 		"Extend", "Smart Dim", "Convert", "Mirror", "Pattern", "Spline", "Point",
-		"Centerline", "Ellipse", "Slot", "Chamfer",
+		"Centerline", "Ellipse", "Slot", "Chamfer", "Offset",
 	])
 	var got: PackedStringArray = _ToolSpec.tool_names()
 	var same := got.size() == expect.size()
@@ -202,6 +203,236 @@ func _case_face_identity() -> void:
 			"face_normal [1,0,0] selects the x=100 face (centre %s)" % str(got_c))
 	check(_vec_near(got_n, [1, 0, 0], 0.02), "face_normal pick reports +X (got %s)" % str(got_n))
 	await _shutdown(main)
+
+
+## Boss + Ø60 cut. Annular faces are named by a point on the face, and
+## face_normal plane= splits z=30 from z=55.
+func _case_annular_faces() -> void:
+	print("- annular faces: pick, plane, back")
+	var main: Node = await _boot()
+	if main == null:
+		return
+	check(await _connect(), "annulus client connected")
+	if not await _build_cut_part():
+		await _shutdown(main)
+		return
+	await _rpc({"cmd": "key", "combo": "3", "frames": 6})
+	var st := await _state(["faces", "bodies", "selection"])
+	var faces: Array = st.get("faces", [])
+	var front := _face_on_axis(faces, 2, 30.0, 1.0)
+	var top := _face_on_axis(faces, 2, 55.0, 1.0)
+	var back := _face_on_axis(faces, 2, 0.0, -1.0)
+	var front_id := str(front.get("id", ""))
+	var top_id := str(top.get("id", ""))
+	var back_id := str(back.get("id", ""))
+	await _clear_selection()
+	var aimed := await _state(["bodies", "selection"])
+	var body_rows: Array = aimed.get("bodies", [])
+	var aim_screen: Array = body_rows[0].get("screen", []) if not body_rows.is_empty() else []
+	var aim_pt: Array = body_rows[0].get("aim", []) if not body_rows.is_empty() else []
+	await _rpc({"cmd": "click", "screen": aim_screen, "frames": 4})
+	var aimed_body := str((await _state(["selection"])).get("selection", {}).get("body", ""))
+	print("  body aim %s screen %s selected %s" % [str(aim_pt), str(aim_screen), aimed_body])
+	check(aimed_body != "", "body screen point selects the holed solid (aim %s at %s)" % [str(aim_pt), str(aim_screen)])
+	await _clear_selection()
+	print("  ids front=%s top=%s back=%s faces=%d" % [front_id, top_id, back_id, faces.size()])
+	check(front_id != "" and top_id != "" and back_id != "",
+			"front, boss top, and back faces are listed")
+	check(front.has("pick") and front.has("plane"),
+			"face record has pick and plane (keys %s)" % str(front.keys()))
+	check(_near(front.get("plane", 1e9), 30.0, 0.05),
+			"front plane offset is 30 (got %s)" % str(front.get("plane", "")))
+	check(_near(top.get("plane", 1e9), 55.0, 0.05),
+			"boss-top plane offset is 55 (got %s)" % str(top.get("plane", "")))
+	if front_id == "":
+		await _shutdown(main)
+		return
+	await _select_solid()
+	var hit := await _rpc({"cmd": "click", "face": front_id, "frames": 4})
+	var sel := await _state(["selection"])
+	var selected := str((sel.get("selection", {}) as Dictionary).get("face", ""))
+	print("  click face=%s selected=%s at=%s reply=%s" % [front_id, selected, str(hit.get("at", [])), str(hit.get("id", ""))])
+	check(selected == front_id, "click(face=<z=30 id>) selects that face (got %s)" % selected)
+	await _select_solid()
+	var at_30 := await _click_normal([0, 0, 1], 30.0)
+	var id_30 := str((await _state(["selection"])).get("selection", {}).get("face", ""))
+	print("  plane=30 face=%s reply=%s" % [id_30, str(at_30.get("id", ""))])
+	check(id_30 == front_id, "face_normal +Z plane=30 selects z=30 (got %s)" % id_30)
+	await _select_solid()
+	var at_55 := await _click_normal([0, 0, 1], 55.0)
+	var id_55 := str((await _state(["selection"])).get("selection", {}).get("face", ""))
+	print("  plane=55 face=%s reply=%s" % [id_55, str(at_55.get("id", ""))])
+	check(id_55 == top_id, "face_normal +Z plane=55 selects z=55 (got %s)" % id_55)
+	await _select_solid()
+	var at_far := await _click_normal([0, 0, 1], null)
+	var id_far := str((await _state(["selection"])).get("selection", {}).get("face", ""))
+	print("  normal alone face=%s reply=%s" % [id_far, str(at_far.get("id", ""))])
+	check(id_far == top_id, "face_normal +Z alone still selects z=55 (got %s)" % id_far)
+	await _select_solid()
+	await _rpc({"cmd": "key", "combo": "8", "frames": 6})
+	var at_back := await _click_normal([0, 0, -1], null)
+	var after := await _state(["selection"])
+	var id_back := str((after.get("selection", {}) as Dictionary).get("face", ""))
+	var edge_back := str((after.get("selection", {}) as Dictionary).get("edges", ""))
+	print("  back face=%s edges=%s reply=%s" % [id_back, edge_back, str(at_back.get("id", ""))])
+	check(id_back == back_id, "key 8 then face_normal -Z selects the back face (got %s edges %s)" % [id_back, edge_back])
+	await _shutdown(main)
+
+
+func _build_cut_part() -> bool:
+	if not await _sketch_ground():
+		return false
+	var rect := await _rpc({"cmd": "click", "target": "rail:Rect"})
+	check(bool(rect.get("ok", false)), "Rect tool (%s)" % str(rect.get("error", "")))
+	var a := await _rpc({"cmd": "click", "sketch": [-60, -60]})
+	var b := await _rpc({"cmd": "click", "sketch": [60, 60]})
+	check(bool(a.get("ok", false)) and bool(b.get("ok", false)), "base corners")
+	if not await _extrude_finish("30", "New", "Blind"):
+		return false
+	var base := await _body_volume()
+	print("  base volume=%s" % str(base))
+	check(_near(base, 432000.0, 5.0), "base volume 432000 (got %s)" % str(base))
+	if not _near(base, 432000.0, 5.0):
+		return false
+	if not await _face_sketch([0, 0, 1]):
+		return false
+	var boss_plane := await _sketch_origin_z()
+	print("  boss sketch z=%s" % str(boss_plane))
+	check(_near(boss_plane, 30.0, 0.5), "boss sketch on z=30 (got %s)" % str(boss_plane))
+	await _rpc({"cmd": "click", "target": "rail:Circle"})
+	await _rpc({"cmd": "click", "sketch": [0, 0]})
+	await _rpc({"cmd": "click", "sketch": [35, 0]})
+	if not await _extrude_finish("25", "Fuse", "Blind"):
+		return false
+	var boss := await _body_volume()
+	print("  boss volume=%s" % str(boss))
+	check(_near(boss, 528211.3, 5.0), "boss volume 528211 (got %s)" % str(boss))
+	if not _near(boss, 528211.3, 5.0):
+		return false
+	if not await _face_sketch([0, 0, 1]):
+		return false
+	var cut_plane := await _sketch_origin_z()
+	print("  cut sketch z=%s" % str(cut_plane))
+	check(_near(cut_plane, 55.0, 0.5), "cut sketch on z=55 (got %s)" % str(cut_plane))
+	await _rpc({"cmd": "click", "target": "rail:Circle"})
+	await _rpc({"cmd": "click", "sketch": [0, 0]})
+	await _rpc({"cmd": "click", "sketch": [30, 0]})
+	if not await _extrude_finish("10", "Cut", "Through All"):
+		return false
+	var cut := await _body_volume()
+	print("  cut volume=%s" % str(cut))
+	check(_near(cut, 372702.4, 5.0), "cut volume 372702 (got %s)" % str(cut))
+	return _near(cut, 372702.4, 5.0)
+
+
+func _sketch_ground() -> bool:
+	var sketch := await _rpc({"cmd": "click", "target": "rail:Sketch"})
+	check(bool(sketch.get("ok", false)), "Sketch rail (%s)" % str(sketch.get("error", "")))
+	var ground := await _rpc({"cmd": "click", "screen": [900, 450]})
+	check(bool(ground.get("ok", false)), "ground plane (%s)" % str(ground.get("error", "")))
+	var st := await _state(["sketch"])
+	return bool((st.get("sketch", {}) as Dictionary).get("active", false))
+
+
+func _extrude_finish(distance: String, op: String, end: String) -> bool:
+	var op_hit := await _set_option("finish:Op", op)
+	var end_hit := await _set_option("finish:End", end)
+	check(bool(op_hit.get("ok", false)) and bool(end_hit.get("ok", false)),
+			"finish %s / %s (%s / %s)" % [op, end, str(op_hit.get("error", "")), str(end_hit.get("error", ""))])
+	await _type_field("finish:Distance", distance)
+	var extruded := await _rpc({"cmd": "click", "target": "finish:Extrude", "frames": 12})
+	var status := str(extruded.get("status", ""))
+	print("  extrude %s %s %s -> %s" % [op, end, distance, status])
+	check(bool(extruded.get("ok", false)) and status.contains("Extrude"),
+			"extrude %s (%s)" % [op, status])
+	if bool((await _state(["sketch"])).get("sketch", {}).get("active", false)):
+		await _rpc({"cmd": "click", "target": "rail:ExitSketch", "frames": 4})
+	return bool(extruded.get("ok", false)) and status.contains("Extrude")
+
+
+func _face_sketch(normal: Array) -> bool:
+	await _rpc({"cmd": "key", "combo": "3", "frames": 4})
+	await _select_solid()
+	var drilled := await _drill_face_normal(normal)
+	var sel := await _state(["selection"])
+	var face := str((sel.get("selection", {}) as Dictionary).get("face", ""))
+	print("  host face=%s normal=%s" % [face, str(drilled.get("normal", []))])
+	check(face != "", "face selected before Sketch (%s)" % str(sel.get("selection", {})))
+	var chip := await _rpc({"cmd": "click", "target": "chip:Sketch", "frames": 6})
+	check(bool(chip.get("ok", false)), "chip:Sketch (%s)" % str(chip.get("error", "")))
+	var st := await _state(["sketch"])
+	return bool((st.get("sketch", {}) as Dictionary).get("active", false))
+
+
+func _select_solid() -> void:
+	var sel := await _state(["selection"])
+	if str((sel.get("selection", {}) as Dictionary).get("body", "")) != "":
+		return
+	var live := await _rpc({"cmd": "project", "model": [50, 0, 15]})
+	await _rpc({"cmd": "click", "screen": live.get("screen", [400, 400]), "frames": 3})
+
+
+func _click_normal(normal: Array, plane) -> Dictionary:
+	var req := {"cmd": "click", "face_normal": normal, "frames": 4}
+	if plane != null:
+		req["plane"] = plane
+	return await _rpc(req)
+
+
+func _body_volume() -> float:
+	var st := await _state(["bodies"])
+	var bodies: Array = st.get("bodies", [])
+	if bodies.is_empty() or not (bodies[0] is Dictionary):
+		return -1.0
+	return float((bodies[0] as Dictionary).get("volume", -1.0))
+
+
+func _sketch_origin_z() -> float:
+	var st := await _state(["sketch"])
+	var plane: Dictionary = (st.get("sketch", {}) as Dictionary).get("plane", {})
+	var origin: Array = plane.get("origin", [])
+	if origin.size() < 3:
+		return 1.0e9
+	return float(origin[2])
+
+
+func _face_on_axis(faces: Array, axis: int, coord: float, normal_sign: float) -> Dictionary:
+	var best := {}
+	var best_area := -1.0
+	for f in faces:
+		if not (f is Dictionary):
+			continue
+		var n: Array = f.get("normal", [])
+		var c := _face_centre(f)
+		if n.size() < 3 or c.size() < 3:
+			continue
+		if absf(float(n[axis]) - normal_sign) > 0.05:
+			continue
+		if absf(float(c[axis]) - coord) > 0.5:
+			continue
+		var area := float(f.get("area", 0.0))
+		if area > best_area:
+			best_area = area
+			best = f
+	return best
+
+
+func _near(got: Variant, want: float, tol: float) -> bool:
+	if typeof(got) != TYPE_FLOAT and typeof(got) != TYPE_INT:
+		return false
+	return absf(float(got) - want) <= tol
+
+
+func _set_option(control: String, item: String) -> Dictionary:
+	await _rpc({"cmd": "click", "target": control, "frames": 2})
+	return await _rpc({"cmd": "click", "target": "popup:%s" % item, "frames": 3})
+
+
+func _type_field(target: String, text: String) -> void:
+	await _rpc({"cmd": "click", "target": target})
+	await _rpc({"cmd": "key", "combo": "ctrl+a"})
+	await _rpc({"cmd": "type", "text": text})
+	await _rpc({"cmd": "key", "combo": "enter"})
 
 
 func _extrude_box() -> bool:

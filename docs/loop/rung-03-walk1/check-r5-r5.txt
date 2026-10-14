@@ -1,0 +1,16 @@
+PASS  bbox                got 120.000×120.000×55.000 min (-60.000,-60.000,0.000)  want 120×120×55 min (-60,-60,0) ± 0.2
+PASS  boss                got samples [True, False, True, False] top z 55.0 front z 30.0  want r 35 ± 0.2, top z 55, front z 30
+FAIL  hole Ø60            got 5 samples off, axis hits 2  want Ø60 ± 0.4, no axis hits
+PASS  corner R5 vertical  got 2.09  want 2.071 ± 0.083
+FAIL  corner R5 vertical  got 0.0  want 2.071 ± 0.083
+PASS  corner R5 vertical  got 2.09  want 2.071 ± 0.083
+FAIL  corner R5 vertical  got 0.0  want 2.071 ± 0.083
+PASS  edge R5 front       got 2.084  want 2.071 ± 0.083
+PASS  edge R5 front       got 2.084  want 2.071 ± 0.083
+PASS  edge R5 front       got 2.08  want 2.071 ± 0.083
+PASS  edge R5 front       got 2.09  want 2.071 ± 0.083
+PASS  root R5             got 7.91  want 7.929 ± 0.083
+FAIL  volume              got 526253.6  want 370784.6 ± 0.5%
+PASS  watertight          got open 0 nonmanifold 0 components 1  want closed, one component
+
+10/14 passed

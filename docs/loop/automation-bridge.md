@@ -19,20 +19,34 @@ SX_AUTOMATION=1 SX_INPUT_TRACE=1 \
 
 Pointer and key commands are real `InputEvent`s. The main window gets `Viewport.push_input` of `InputEventMouseButton`, `InputEventMouseMotion`, and `InputEventKey`. An embedded popup (File, finish-bar menus, dialogs) is clicked by pushing that same event through the parent viewport at the popup's position, which is the path Godot uses to call `Window._input_from_window` before `push_input`. A native popup uses `Input.parse_input_event` with that window's id. Nothing calls menu handlers directly, so focus, the Extrude shield, popups, hover, and `drop:shield` behave as they do for a person.
 
-Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw`, `rail:Convert`, …), finish-bar fields (`finish:Distance`, `finish:Op`, `finish:End`, `finish:Extrude`, `finish:Thickness`, `finish:Ok`), the Shell chip (`strip:shell`), the HUD (`hud:Frame`, `hud:View`), menu buttons (`menu:File`), timeline rows and pencils (`timeline:row:sketch 1`, `timeline:pencil:sketch 1`), contour chips, and the file / discard dialogs (`dialog:Name`, `dialog:Ok`, `dialog:DiscardOk`). A click can also name a node path, a sketch-plane millimetre point, a kernel 3D point, an edge or face id, a face normal (`face_normal=[x,y,z]`), or a drawn dimension label (`dim` text or `dim_id`).
+Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw`, `rail:Convert`, `rail:Offset`, …), finish-bar fields (`finish:Distance`, `finish:Op`, `finish:End`, `finish:Extrude`, `finish:Thickness`, `finish:Ok`), Offset panel fields (`offset:Distance`, `offset:Reverse`, `offset:Ok`), the Shell chip (`strip:shell`), the HUD (`hud:Frame`, `hud:View`), menu buttons (`menu:File`), timeline rows and pencils (`timeline:row:sketch 1`, `timeline:pencil:sketch 1`), contour chips, and the file / discard dialogs (`dialog:Name`, `dialog:Ok`, `dialog:DiscardOk`). A click can also name a node path, a sketch-plane millimetre point, a kernel 3D point, an edge or face id, a face normal (`face_normal=[x,y,z]`, optional `plane=<mm>`), or a drawn dimension label (`dim` text or `dim_id`).
 
 | id | control |
 |---|---|
 | `strip:shell` | Shell chip on a selected planar face |
 | `rail:Convert` | Convert (project a face edge into the sketch) |
+| `rail:Offset` | Offset Entities (distance + reverse, then a click) |
+| `offset:Distance` | Offset distance field |
+| `offset:Reverse` | Offset Reverse (inward for circles) |
+| `offset:Ok` | Offset OK (closes the panel) |
 | `finish:Thickness` | Shell thickness field |
 | `finish:Ok` | Shell OK |
 | `finish:Op` | Extrude operation (Extrude / Cut) |
 | `finish:End` | Extrude end condition |
+| `hud:Section` | Section view button (opens Front / Top / Right) |
+| `popup:Front` | Section plane Front (`z = 0`, normal ±Z) |
+| `popup:Top` | Section plane Top (`y = 0`, normal ±Y) |
+| `popup:Right` | Section plane Right (`x = 0`, normal ±X) |
+| `plane=` | With `face_normal`, the aligned face whose `n·pick` is nearest this millimetre offset |
+| `state.faces[].pick` | World point on the face; `click(face=)` and `click(face_normal=)` aim here |
+| `state.faces[].plane` | `n·pick` in millimetres |
+| `state.section` | `{on, plane, point, normal}` — named plane and kept-half normal |
 
-`state.faces` records are `id`, `body`, `centre`, `normal`, `area`, `screen`. The list is cached by document revision, camera transform, projection, and size, so `screen` is recomputed when the view moves. `click(face=<id>)` projects that face's `centre` through the camera at click time. `click(face_normal=[x,y,z])` chooses the face whose normal aligns with that direction (|dot| ≥ 0.999); if several faces share it, the one furthest along the normal is used (the outer wall). The click reply includes that face's `normal`.
+`state.faces` records are `id`, `body`, `centre`, `normal`, `area`, `screen`, `pick`, `plane`. The list is cached by document revision, camera transform, projection, and size, so `screen` is recomputed when the view moves. `pick` is a point on the face (an annular face's `centre` lies in the hole). `plane` is `n·pick`. `click(face=<id>)` and `click(face_normal=[x,y,z])` project `pick` through the camera at click time. `click(face_normal=[x,y,z])` chooses the face whose normal aligns with that direction (|dot| ≥ 0.999); if several faces share it, the one furthest along the normal is used (the outer wall). `click(face_normal=[x,y,z], plane=<mm>)` instead chooses the aligned face whose `plane` is nearest `<mm>` (`z = 30` versus `z = 55`). When that click lands within the viewport's edge tolerance, the bridge clicks the same point once more so the face is selected. The click reply includes that face's `normal`.
 
-`state` returns one JSON snapshot: status text, focus, armed tool, which rail buttons are lit, visible controls (path, rect, text, disabled), open popups, finish-bar fields, the DOF chip, sketch mode, timeline rows, undo/redo labels, selection, drawn dimension labels (text, rect, visible, occluded), constraint badges, contour tags, camera, and body bounding boxes plus the feature list. `trace` returns `[input-trace]`, `[key-trace]`, `[status-trace]`, `[popup-trace]`, and `[hover-trace]` lines since a cursor. `screenshot` writes a PNG only when a check is visual and the rects cannot answer it.
+`state.section` is `{on, plane, point, normal}`. `plane` is `Front` / `Top` / `Right` (or `""` for the default +X AABB cut). The kept half is away from the camera at apply time, so `normal` points toward the camera. `click(hud:Section)` opens the plane popup when bodies exist; with no bodies the status is `Section: no bodies`. `click(popup:Top)` (etc.) chooses the plane while that popup is open. A second `hud:Section` click turns the section off. `K` toggles the last named plane (or the default +X cut).
+
+`state` returns one JSON snapshot: status text, focus, armed tool, which rail buttons are lit, visible controls (path, rect, text, disabled), open popups, finish-bar fields, the DOF chip, sketch mode, timeline rows, undo/redo labels, selection, drawn dimension labels (text, rect, visible, occluded), constraint badges, contour tags, camera, section, and body bounding boxes plus the feature list. `trace` returns `[input-trace]`, `[key-trace]`, `[status-trace]`, `[popup-trace]`, and `[hover-trace]` lines since a cursor. `screenshot` writes a PNG only when a check is visual and the rects cannot answer it.
 
 ## Client
 
@@ -68,6 +82,17 @@ The headless proof that the bridge is real input, not a private API, is `game/te
 python3 tools/walk_rung02.py --out /tmp/sx-rung02
 python3 tools/walk_rung02.py --rows A1,A2,A3,A4,A5 --out /tmp/sx-rung02
 python3 tools/walk_rung02.py --from A7 --checkpoint --out /tmp/sx-rung02
+```
+
+## Lesson 1 parts runner (rung 3)
+
+`tools/walk_rung03.py` is the same command as `tools/walk_rung02.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 46-row Lesson 1 parts checklist. It runs `tools/check_rung03.py`. `--checkpoint` reloads `base.sxp` (chunk 2), `boss.sxp` (chunk 3), `cut.sxp` (chunk 4), `rounded.sxp` (chunk 5), or `final.sxp` (chunk 6). Face picks use `face_normal` with optional `plane=` for parallel faces (`z = 30` vs `z = 55`). Export rows assert S0 first: one body whose name starts with `extrude` (the body keeps its first feature's name), and a bbox of `120 × 120 × H` ± 0.1 (`H = 30` after the base, `55` after the boss). Pixel clauses project a model point and compare to `SectionPlane.CAP_COLOUR` (± 6). A26 needs `--a15` for the headless evidence tier.
+
+```bash
+python3 tools/walk_rung03.py --out /tmp/sx-rung03
+python3 tools/walk_rung03.py --rows N1,A1,A2,L1,A3 --dry-run
+python3 tools/walk_rung03.py --rows A1,A2,L1,A3,N2,A4,A5 --out /tmp/sx-rung03
+python3 tools/walk_rung03.py --from A6 --checkpoint --out /tmp/sx-rung03 --a15
 ```
 
 ## sx-042 runner rules (re-PLAN 21)

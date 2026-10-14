@@ -295,6 +295,16 @@ func _build_world() -> void:
 	view.name = "DocumentView"
 	view.section_changed.connect(_on_section_changed)
 	model_space.add_child(view)
+	# Canvas cap, above the other overlays so the cut colour wins the wall
+	# pixel. The polygons stay on the cut, so the HUD stays clear.
+	var cap_layer := CanvasLayer.new()
+	cap_layer.name = "SectionCapLayer"
+	cap_layer.layer = 5
+	add_child(cap_layer)
+	var cap := SectionCap.new()
+	cap.name = "SectionCap"
+	cap.view = view
+	cap_layer.add_child(cap)
 	# Bed ghost overlay (hidden by default; Form only).
 	bed_ghost = PrintBedGhost.new()
 	bed_ghost.name = "PrintBedGhost"
@@ -316,6 +326,8 @@ func _build_world() -> void:
 ## a flat clear color reads better than the canyon panorama in those modes.
 func _on_section_changed(_enabled: bool) -> void:
 	_sync_world_background()
+	if view_hud != null and view != null:
+		view_hud.sync_from_view(view)
 
 
 ## Flat clear color by default (readable cuts). Canyon HDRI only when
@@ -793,6 +805,15 @@ func _build_ui() -> void:
 	view_hud.section_toggle_requested.connect(func() -> void:
 		interaction.toggle_section()
 		view_hud.sync_from_view(view))
+	view_hud.section_menu_requested.connect(func() -> void:
+		if view.doc != null and view.doc.body_ids().is_empty():
+			_on_status("Section: no bodies")
+			view_hud.unpress_section()
+		else:
+			view_hud.open_section_popup())
+	view_hud.section_plane_requested.connect(func(plane_name: String) -> void:
+		interaction.apply_section_plane(plane_name)
+		view_hud.sync_from_view(view))
 	view_hud.zebra_toggle_requested.connect(func(on: bool) -> void:
 		view.set_zebra(on)
 		view_hud.sync_from_view(view)
@@ -981,6 +1002,7 @@ func _build_ui() -> void:
 	sketch_chrome.sketch_mode = sketch_mode
 	sketch_chrome.visible = false
 	ui.add_child(sketch_chrome)
+	sketch_mode.offset_ui = sketch_chrome.offset_tool
 	sketch_chrome.variant_chosen.connect(_on_sketch_variant)
 	sketch_mode.tool_variant_changed.connect(sketch_chrome.sync_variant_highlight)
 	sketch_chrome.action_chosen.connect(_on_sketch_action)

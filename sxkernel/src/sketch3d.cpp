@@ -1,6 +1,7 @@
 #include "sx/sketch3d.hpp"
 
 #include <cmath>
+#include <unordered_map>
 
 #include <BRepAdaptor_Curve.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
@@ -94,6 +95,79 @@ bool pierce_edge(const Document& doc, const EntityId& edge_id, const SketchPlane
 
 }  // namespace
 
+namespace {
+
+constexpr double kTwoPi = 6.283185307179586;
+
+// A full circle projects when the curve itself lies in the sketch plane.
+// The circle axis is not that test: a rim whose 3D points sit on the face
+// can still report an axis that is not the plane normal.
+double plane_gap(const SketchPlane& plane, const gp_Pnt& p) {
+    const auto n = plane.normal();
+    const double nlen = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+    if (nlen < 1e-12) return 1e9;
+    const double dx = p.X() - plane.origin[0];
+    const double dy = p.Y() - plane.origin[1];
+    const double dz = p.Z() - plane.origin[2];
+    return std::abs((dx * n[0] + dy * n[1] + dz * n[2]) / nlen);
+}
+
+bool circle_lies_in_plane(const BRepAdaptor_Curve& curve, const SketchPlane& plane) {
+    if (plane_gap(plane, curve.Circle().Location()) > 0.05) return false;
+    const double t0 = curve.FirstParameter();
+    const double t1 = curve.LastParameter();
+    for (int i = 0; i < 3; ++i) {
+        const double t = t0 + (t1 - t0) * ((i + 0.5) / 3.0);
+        if (plane_gap(plane, curve.Value(t)) > 0.05) return false;
+    }
+    return true;
+}
+
+EntityId project_line(Sketch* sketch, const BRepAdaptor_Curve& curve, const std::string& edge) {
+    const gp_Pnt a = curve.Value(curve.FirstParameter());
+    const gp_Pnt b = curve.Value(curve.LastParameter());
+    if (a.Distance(b) < 1e-9) return {};
+    const EntityId added =
+        sketch->project_line_edge({a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, edge);
+    if (added.is_null()) return {};
+    sketch->set_construction(added, true);
+    return added;
+}
+
+EntityId project_circle(Sketch* sketch, const BRepAdaptor_Curve& curve, const SketchPlane& plane,
+                        const std::string& edge) {
+    if (curve.GetType() != GeomAbs_Circle) return {};
+    const double span = std::abs(curve.LastParameter() - curve.FirstParameter());
+    if (span < kTwoPi - 0.05) return {};
+    const gp_Circ circ = curve.Circle();
+    if (!circle_lies_in_plane(curve, plane)) return {};
+    const gp_Pnt c = circ.Location();
+    const EntityId added = sketch->project_circle_edge({c.X(), c.Y(), c.Z()}, circ.Radius(), edge);
+    if (added.is_null()) return {};
+    sketch->set_construction(added, true);
+    return added;
+}
+
+using ExternalProjector = EntityId (*)(Sketch*, const BRepAdaptor_Curve&, const SketchPlane&,
+                                       const std::string&);
+
+EntityId dispatch_line(Sketch* sketch, const BRepAdaptor_Curve& curve, const SketchPlane& plane,
+                       const std::string& edge) {
+    return project_line(sketch, curve, edge);
+}
+
+EntityId dispatch_circle(Sketch* sketch, const BRepAdaptor_Curve& curve, const SketchPlane& plane,
+                         const std::string& edge) {
+    return project_circle(sketch, curve, plane, edge);
+}
+
+const std::unordered_map<GeomAbs_CurveType, ExternalProjector> kProjectors = {
+    {GeomAbs_Line, dispatch_line},
+    {GeomAbs_Circle, dispatch_circle},
+};
+
+}  // namespace
+
 EntityId add_external_edge(Document& doc, const EntityId& sketch_fid, const EntityId& edge_id) {
     Feature* f = doc.graph().feature(sketch_fid);
     if (f == nullptr || !f->sketch) return {};
@@ -104,15 +178,9 @@ EntityId add_external_edge(Document& doc, const EntityId& sketch_fid, const Enti
     const TopoDS_Shape sh = doc.resolve(edge_id);
     if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) return {};
     const BRepAdaptor_Curve curve(TopoDS::Edge(sh));
-    if (curve.GetType() != GeomAbs_Line) return {};
-    const gp_Pnt a = curve.Value(curve.FirstParameter());
-    const gp_Pnt b = curve.Value(curve.LastParameter());
-    if (a.Distance(b) < 1e-9) return {};
-    const EntityId added =
-        f->sketch->project_line_edge({a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, edge);
-    if (added.is_null()) return {};
-    f->sketch->set_construction(added, true);
-    return added;
+    const auto it = kProjectors.find(curve.GetType());
+    if (it == kProjectors.end()) return {};
+    return it->second(f->sketch.get(), curve, f->sketch->plane(), edge);
 }
 
 int convert_edges_to_sketch(Document& doc, const EntityId& sketch_fid,

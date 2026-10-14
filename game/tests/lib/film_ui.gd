@@ -346,6 +346,12 @@ static func click_control(ctx: FilmContext, button: BaseButton, cue: Dictionary)
 	# PaletteButton hooks `_pressed()` (not the pressed signal) for insert_requested.
 	if button is PaletteButton:
 		(button as PaletteButton)._pressed()
+	elif button.toggle_mode:
+		# A real click flips a toggle and emits toggled. pressed.emit() alone
+		# leaves CheckButton / Section unpressed, so Reverse and the plane
+		# menu never run.
+		button.button_pressed = not button.button_pressed
+		button.pressed.emit()
 	else:
 		button.pressed.emit()
 	await wait_frames(ctx.tree, 2)
@@ -570,6 +576,8 @@ static func select_sketch_tool(ctx: FilmContext, sm: SketchMode, tool: int) -> v
 			label = "Point"
 		SketchMode.Tool.CONVERT:
 			label = "Convert"
+		SketchMode.Tool.OFFSET:
+			label = "Offset"
 		SketchMode.Tool.ELLIPSE:
 			label = "Ellipse"
 		SketchMode.Tool.SLOT:

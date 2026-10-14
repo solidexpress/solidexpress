@@ -11,10 +11,13 @@ signal status(text: String)
 enum Tool {
 	NONE, LINE, RECT, CIRCLE, ARC, POLYGON, SELECT, TRIM,
 	EXTEND, SMART_DIM, CONVERT, MIRROR, PATTERN, SPLINE, POINT,
-	CENTERLINE, ELLIPSE, SLOT, CHAMFER,
+	CENTERLINE, ELLIPSE, SLOT, CHAMFER, OFFSET,
 }
 
 signal selection_changed(ids: Array)
+
+## Set by main from SketchContextChrome; owns the Offset panel and click path.
+var offset_ui: SketchOffset
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
@@ -1090,6 +1093,19 @@ func _ensure_sketch_feature() -> String:
 	return sk_fid
 
 
+## sketch_add_external_edge writes the graph copy. Put that profile back into
+## the editor sketch without replacing the object Offset still holds.
+func _adopt_converted_sketch() -> void:
+	if editing_fid == "" or sketch == null or view == null or view.doc == null:
+		return
+	if not view.doc.has_method("graph_get_sketch"):
+		return
+	var loaded: SxSketch = view.doc.graph_get_sketch(editing_fid)
+	if loaded == null or not loaded.has_method("snapshot") or not sketch.has_method("restore"):
+		return
+	sketch.restore(loaded.snapshot())
+
+
 ## Replace the in-memory sketch with the graph's last accepted profile.
 func _reload_editing_sketch() -> bool:
 	if editing_fid == "" or view == null or view.doc == null:
@@ -1506,9 +1522,9 @@ func set_tool(t: Tool) -> void:
 	_trim_drag_ids.clear()
 	_free_trim_trail()
 	draw_construction = (t == Tool.CENTERLINE)
-	# Convert's Esc drops the tool. A leftover Smart Dim selection would
-	# spend that key on "selection cleared" and leave Convert armed.
-	if t == Tool.CONVERT:
+	# Convert / Offset Esc drops the tool. A leftover Smart Dim selection
+	# would spend that key on "selection cleared" and leave the tool armed.
+	if t == Tool.CONVERT or t == Tool.OFFSET:
 		_set_selected([])
 		if selected_constraint != "":
 			select_constraint("")
@@ -2929,6 +2945,7 @@ func fillet_selected(radius: float) -> String:
 
 
 ## Offset all selected entities by signed distance. Returns new entity ids.
+## Same kernel OFFSETTERS table as rail:Offset (chip:Offset path).
 func offset_selected(distance: float) -> Array:
 	if not active or selected.is_empty():
 		status.emit("Offset needs a selection")
@@ -2941,6 +2958,7 @@ func offset_selected(distance: float) -> Array:
 		status.emit("Offset failed")
 		return []
 	_undo_note("Offset")
+	run_solve()
 	_redraw()
 	_redraw_selected()
 	var out: Array = []
@@ -3873,10 +3891,25 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	sketch.set_construction(hx, true)
 	sketch.add_constraint("horizontal", [{"entity": hx, "role": "self"}], 0.0)
 	var ang := jaw_angle
-	var ang_cid: String = sketch.add_constraint("angle", [
-		{"entity": hx, "role": "self"},
-		{"entity": str(walls[0]["id"]), "role": "self"}], ang)
-	_record_dimension("angle", [hx, str(walls[0]["id"])], _normalize_jaw_angle_rad(ang), ang_cid, "jaw_angle")
+	# The rectangle already drives this wall. A second angle is a second 45°
+	# and a redundant solve. Keep the one the user edited; it is the one
+	# Save restores. Add a constraint only when the wall has none.
+	var ang_cid := ""
+	for cid in sketch.constraint_ids():
+		var cinfo: Dictionary = sketch.constraint_info(str(cid))
+		if cinfo.is_empty() or str(cinfo.get("type", "")) != "angle":
+			continue
+		for ref in cinfo.get("refs", []):
+			if typeof(ref) == TYPE_DICTIONARY and wall_ids.has(str(ref.get("entity", ""))):
+				ang_cid = str(cid)
+				break
+		if ang_cid != "":
+			break
+	if ang_cid == "":
+		ang_cid = sketch.add_constraint("angle", [
+			{"entity": hx, "role": "self"},
+			{"entity": str(walls[0]["id"]), "role": "self"}], ang)
+		_record_dimension("angle", [hx, str(walls[0]["id"])], _normalize_jaw_angle_rad(ang), ang_cid, "jaw_angle")
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "circle" or sketch.is_construction(id):
@@ -4918,7 +4951,11 @@ func click(pos2: Vector2) -> void:
 	# Jaw click 2 near a typed-circle radius label.
 	# Line and Centerline still place the point: the jaw-width "20" label sits
 	# on the 45° ray, and #164's rect hit ate the centreline's second click.
-	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE
+	# An in-progress Jaw (click 2 already down) must place click 3 too. The
+	# 8 px pad around a shaft "22.5" covers the half-width point, and opening
+	# that editor drops the gesture.
+	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE \
+			or has_pending_draw_point()
 	# A badge's drawn rect wins over the entity underneath it. Snap would
 	# pull this press onto the head circle and the glyph would never select.
 	if tool == Tool.SELECT:
@@ -5100,6 +5137,8 @@ func click(pos2: Vector2) -> void:
 			_click_smart_dim(pos2)
 		Tool.CONVERT:
 			_convert_edge_click(pos2)
+		Tool.OFFSET:
+			_offset_click(pos2)
 		Tool.MIRROR:
 			# Selection must already include axis + geometry; click confirms.
 			mirror_selected()
@@ -5122,7 +5161,17 @@ func _click_rect(pos2: Vector2) -> void:
 				var d := corner - c
 				var a := c - d
 				var b := c + d
+				var had := {}
+				for existing in sketch.entity_ids():
+					had[str(existing)] = true
 				_add_rect_lines(a, b)
+				if infer_enabled:
+					var added: Array[String] = []
+					for existing in sketch.entity_ids():
+						if not had.has(str(existing)):
+							added.append(str(existing))
+					SketchOriginAnchor.apply(sketch, added, "rect.center", c)
+					run_solve()
 				_tool_points.clear()
 		"three_point":
 			if _tool_points.size() == 3:
@@ -5249,6 +5298,9 @@ func _click_circle(pos2: Vector2) -> void:
 					circle_radius = r
 					_last_commit_text = "Circle r=%.4f (Ø%.4f)" % [r, r * 2.0]
 					status.emit(_last_commit_text)
+					if infer_enabled and circ_id != "":
+						SketchOriginAnchor.apply(sketch, [circ_id], "circle.center", c)
+						run_solve()
 					if typed and circ_id != "":
 						var rcid: String = sketch.add_constraint(
 								"radius", [{"entity": circ_id, "role": "self"}], r)
@@ -5452,6 +5504,7 @@ func _convert_edge_click(uv: Vector2) -> void:
 	ctx.support_host = support_host
 	ctx.support_normal = support_normal
 	ctx.ensure_feature = _ensure_sketch_feature
+	ctx.adopt = _adopt_converted_sketch
 	ctx.commit = func(label: String) -> void:
 		_undo_note(label)
 		run_solve()
@@ -5460,6 +5513,31 @@ func _convert_edge_click(uv: Vector2) -> void:
 		status.emit(text)
 	ctx.fallback = convert_pierce_points
 	SketchConvertEdge.new(ctx).click(uv)
+	host_face_id = ctx.host_face_id
+
+
+func _offset_click(uv: Vector2) -> void:
+	if offset_ui == null or sketch == null or view == null or view.doc == null:
+		return
+	var ctx := SketchOffset.Context.new()
+	ctx.doc = view.doc
+	ctx.view = view
+	ctx.plane = plane
+	ctx.sketch = sketch
+	ctx.host_face_id = host_face_id
+	ctx.support_host = support_host
+	ctx.support_normal = support_normal
+	ctx.ensure_feature = _ensure_sketch_feature
+	ctx.adopt = _adopt_converted_sketch
+	ctx.nearest_entity = _nearest_entity_at
+	ctx.pick_tol = _pick_tolerance()
+	ctx.commit = func(label: String) -> void:
+		_undo_note(label)
+		run_solve()
+		_redraw()
+	ctx.status = func(text: String) -> void:
+		status.emit(text)
+	offset_ui.click(ctx, uv)
 	host_face_id = ctx.host_face_id
 
 
@@ -6183,40 +6261,10 @@ func _centers_share_horizontal(ida: String, idb: String) -> bool:
 	return false
 
 
+## Centre-distance dims use the circle.center rule. Draw-time calls are the
+## other caller; both go through SketchOriginAnchor so this is not a second pin.
 func _pin_circle_at_sketch_origin(id: String, center: Vector2) -> void:
-	if center.length() > ORIGIN_PIN_TOL:
-		return
-	var anchor := _origin_anchor_point()
-	if anchor == "":
-		# A distance between two circles is free to slide along the sketch.
-		# Lock a centre that is already on the origin so the pair stays put.
-		# A full Fix also locks the radius. A centre-only Fix does not, and
-		# it adds no point and no construction line (T14).
-		if not _entity_has_constraint(id, "fix"):
-			sketch.add_constraint("fix", [{"entity": id, "role": "center"}], 0.0)
-		return
-	for cid in sketch.constraint_ids():
-		var info: Dictionary = sketch.constraint_info(cid)
-		if str(info.get("type", "")) != "coincident":
-			continue
-		var refs: Array = info.get("refs", [])
-		if refs.size() == 2 and str(refs[0].get("entity", "")) == id and str(refs[1].get("entity", "")) == anchor:
-			return
-	sketch.add_constraint("coincident", [
-		{"entity": id, "role": "center"},
-		{"entity": anchor, "role": "self"}], 0.0)
-
-
-func _origin_anchor_point() -> String:
-	for id in sketch.entity_ids():
-		var info: Dictionary = sketch.entity_info(id)
-		if str(info.get("type", "")) == "point" and sketch.is_construction(id) \
-				and _entity_has_constraint(id, "fix"):
-			return id
-	# Smart Dim between two circles must not invent a construction point at
-	# the origin (T14). Pin only when that point already exists; otherwise
-	# the centre-only Fix is used.
-	return ""
+	SketchOriginAnchor.apply(sketch, [id], "circle.center", center)
 
 
 ## Lock every sized circle (typed radius on the wrench bosses).
@@ -6668,6 +6716,8 @@ func _set_arc_ends(id: String, c: Vector2, r: float, sa: float, ea: float) -> vo
 func _dimension_value_for_solver(dim: Dictionary, value: float) -> float:
 	if str(dim.get("type", "")) == "angle" and absf(value) > PI:
 		return deg_to_rad(value)
+	# Radius constraints store the radius. A diameter constraint stores the
+	# diameter. The label and the editor both speak that stored value.
 	return value
 
 
@@ -6841,13 +6891,13 @@ func _restore_dimensions_from_sketch() -> void:
 
 
 ## One label record per dimensional constraint, deduped by
-## (type, sorted ids, value rounded to 1e-4) then by display text.
+## (type, sorted ids, value rounded to 1e-4). Display text is not a key:
+## two driving lengths that both read "120" are two labels.
 func _dimension_records_from_sketch() -> Array:
 	var out: Array = []
 	if sketch == null:
 		return out
 	var seen_fact := {}
-	var seen_text := {}
 	for cid in sketch.constraint_ids():
 		var rec := _dimension_record_from_cid(str(cid))
 		if rec.is_empty():
@@ -6855,12 +6905,7 @@ func _dimension_records_from_sketch() -> Array:
 		var key := _dimension_fact_key(rec)
 		if seen_fact.has(key):
 			continue
-		var text := _dimension_label_text(rec)
-		if text != "" and seen_text.has(text):
-			continue
 		seen_fact[key] = true
-		if text != "":
-			seen_text[text] = true
 		out.append(rec)
 	return out
 
@@ -7358,6 +7403,9 @@ func _dimension_display_value(dim: Dictionary) -> float:
 		var dinfo: Dictionary = sketch.entity_info(str(ids[0]))
 		if str(dinfo.get("type", "")) in ["circle", "arc"]:
 			return float(dinfo.get("radius", 0.0)) * 2.0
+	# A radius constraint stays a radius on a full circle and on an arc
+	# (the pivot hole is 5, the wrench head is 22.5). Diameter constraints
+	# are the ones that read Ø.
 	if str(dim.get("callout", "")) == "point_line" and ids.size() >= 2 and sketch != null:
 		var p2l := _point_line_label_value(ids)
 		if p2l >= 0.0:
@@ -7496,7 +7544,8 @@ func _dimension_label_pos2(dim: Dictionary) -> Variant:
 func _dimension_label_text(dim: Dictionary) -> String:
 	var shown := snappedf(_dimension_display_value(dim), 0.0001)
 	var text := _format_dimension(shown)
-	if str(dim.get("type", "")) == "diameter":
+	var kind := str(dim.get("type", ""))
+	if kind == "diameter":
 		text = "Ø" + text
 	if str(dim.get("type", "")) == "angle":
 		text = text + "°"
@@ -7552,7 +7601,12 @@ func _rebuild_dimension_labels() -> void:
 		return
 	_sync_missing_radius_records()
 	_dimension_labels.visible = dimensions_visible
+	# Save re-entry holds the camera and the live callouts. Re-resolving the
+	# overlap at the restored zoom still slides 20 and 45° by a few pixels
+	# (the live clamp is not a fixed point of a fresh pass).
+	var preserve := _label_restack_hold != 0 and _label_restack_hold == _camera_reassert_gen
 	var taken: Array[Vector2] = []
+	var all_stable := true
 	for i in range(dimensions.size()):
 		var dim: Dictionary = dimensions[i]
 		if typeof(dim) != TYPE_DICTIONARY:
@@ -7564,11 +7618,19 @@ func _rebuild_dimension_labels() -> void:
 		# Save re-entry: keep the live stack when the geometry did not move.
 		# Recomputing from mm-proximity at 150 px parks 45° on 20 (N1b).
 		var prev_pos: Variant = dim.get("label_pos", null)
-		var stack := 0
-		var reuse := prev_pos != null and typeof(prev_pos) == TYPE_VECTOR2 \
-				and (prev_pos as Vector2).distance_to(pos) < 0.5 \
+		var stable := prev_pos is Vector2 and (prev_pos as Vector2).distance_to(pos) < 0.5 \
 				and dim.has("label_stack")
-		if reuse:
+		if preserve and stable:
+			var kept_text := _dimension_label_text(dim)
+			if str(dim.get("type", "")) == "angle":
+				var kept_shown := snappedf(_dimension_display_value(dim), 0.01)
+				kept_text = _format_dimension(kept_shown) + "°"
+			dim["label_text"] = kept_text
+			dimensions[i] = dim
+			continue
+		all_stable = false
+		var stack := 0
+		if stable:
 			stack = int(dim["label_stack"])
 		else:
 			for t in taken:
@@ -7585,7 +7647,8 @@ func _rebuild_dimension_labels() -> void:
 		dim["label_text"] = text
 		dimensions[i] = dim
 	_rebuild_constraint_glyphs()
-	_resolve_label_overlaps()
+	if not (preserve and all_stable):
+		_resolve_label_overlaps()
 	for dim in dimensions:
 		if typeof(dim) != TYPE_DICTIONARY:
 			continue
@@ -8809,6 +8872,32 @@ func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[R
 	batch_pending.append(item)
 
 
+## Keep each badge's reprojected screen distance at or under the 40 px cap.
+## `centre` is chosen in screen space; storing it through the sketch plane
+## and reading it back is not an exact inverse under perspective.
+func _cap_glyph_leader_span(items: Array, cam: Camera3D) -> void:
+	var limit := GLYPH_MAX_OFFSET_PX - 0.5
+	for item in items:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var anchor: Vector2 = item["anchor"]
+		var centre: Vector2 = item["centre"]
+		var origin := cam.unproject_position(to_global(to_model(anchor)))
+		var delta := centre - origin
+		if delta.length() > limit:
+			centre = origin + delta.normalized() * limit
+			item["centre"] = centre
+		var pos := _sketch_from_screen(cam, centre, anchor)
+		var back := cam.unproject_position(to_global(to_model(pos)))
+		var got := origin.distance_to(back)
+		if got > GLYPH_MAX_OFFSET_PX and got > 1.0:
+			pos = anchor + (pos - anchor) * (limit / got)
+			back = cam.unproject_position(to_global(to_model(pos)))
+			got = origin.distance_to(back)
+		item["pos"] = pos
+		item["offset_px"] = got
+
+
 func _rebuild_constraint_glyphs() -> void:
 	_refresh_coincident_keep()
 	# A click moves the pointer from the vertex onto the badge, which drops
@@ -8871,6 +8960,9 @@ func _rebuild_constraint_glyphs() -> void:
 	if cam != null:
 		_restore_pinned_coincident(pending, pinned_coincident, cam)
 		_clamp_coincident_leaders(pending, cam)
+		# Screen→sketch is a local linearisation. A badge parked on the 40 px
+		# cap can reproject a fraction past it, which is what the walk rejects.
+		_cap_glyph_leader_span(pending, cam)
 	for item in pending:
 		var gtype := str(item["type"])
 		var gcid := str(item["cid"])

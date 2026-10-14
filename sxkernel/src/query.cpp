@@ -125,6 +125,19 @@ std::string card_digest(const Feature& f) {
     return ss.str();
 }
 
+namespace {
+
+// MapShapes stores one orientation. A face wire often carries the other.
+// Membership is the edge, not which way the wire walks it.
+int edge_index(const sx::occt::ShapeIndexedMap& edges, TopoDS_Shape edge) {
+    const int direct = edges.FindIndex(edge);
+    if (direct >= 1) return direct;
+    edge.Reverse();
+    return edges.FindIndex(edge);
+}
+
+}  // namespace
+
 std::vector<EntityId> edges_of_face(const Document& doc, const EntityId& face) {
     std::vector<EntityId> out;
     auto ref = doc.find_subshape(face);
@@ -139,7 +152,7 @@ std::vector<EntityId> edges_of_face(const Document& doc, const EntityId& face) {
     TopExp::MapShapes(body->shape, TopAbs_EDGE, edges);
     std::vector<int> seen;
     for (TopExp_Explorer ex(face_shape, TopAbs_EDGE); ex.More(); ex.Next()) {
-        const int idx = edges.FindIndex(ex.Current());
+        const int idx = edge_index(edges, ex.Current());
         if (idx < 1 || idx > static_cast<int>(it->second.size())) continue;
         if (std::find(seen.begin(), seen.end(), idx) != seen.end()) continue;
         seen.push_back(idx);

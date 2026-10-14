@@ -6,8 +6,8 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 
 const RAIL_LABELS := ["Exit Sketch", "Select", "Line", "Arc", "Circle", "Rect", "Jaw", "Polygon",
-		"Ellipse", "Slot", "Spline", "Point", "Trim", "Extend", "Smart Dim", "Convert", "Mirror",
-		"Pattern", "Auto Dim"]
+		"Ellipse", "Slot", "Spline", "Point", "Trim", "Extend", "Smart Dim", "Convert", "Offset",
+		"Mirror", "Pattern", "Auto Dim"]
 
 
 

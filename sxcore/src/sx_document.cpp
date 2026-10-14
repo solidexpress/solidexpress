@@ -3,6 +3,7 @@
 #include <godot_cpp/core/class_db.hpp>
 
 #include <cctype>
+#include "sx/section_cap.hpp"
 #include "sx/commands_boolean.hpp"
 #include "sx/commands_draft.hpp"
 #include "sx/commands_dress.hpp"
@@ -385,6 +386,12 @@ Vector3 SxDocument::face_midpoint(const String& face_id) const {
     return Vector3((*r)[0], (*r)[1], (*r)[2]);
 }
 
+Vector3 SxDocument::face_pick_point(const String& face_id) const {
+    auto r = sx::measure::face_pick_point(*doc_, parse_id(face_id));
+    if (!r) return Vector3();
+    return Vector3((*r)[0], (*r)[1], (*r)[2]);
+}
+
 Dictionary SxDocument::measure_bbox(const String& id) const {
     Dictionary out;
     auto r = sx::measure::bounding_box(*doc_, parse_id(id));
@@ -591,6 +598,36 @@ Ref<ArrayMesh> SxDocument::get_mesh(const String& body_id) const {
         arrays[Mesh::ARRAY_INDEX] = indices;
         mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
     }
+    return mesh;
+}
+
+Ref<ArrayMesh> SxDocument::section_cap_mesh(const String& body_id, const Vector3& point,
+                                           const Vector3& normal) const {
+    Ref<ArrayMesh> mesh;
+    mesh.instantiate();
+    const sx::Body* b = doc_->body(parse_id(body_id));
+    if (!b) return mesh;
+    sx::SectionCapMesh cap = sx::section_cap(b->shape, point.x, point.y, point.z, normal.x, normal.y,
+                                             normal.z);
+    if (cap.empty()) return mesh;
+
+    PackedVector3Array positions;
+    PackedInt32Array indices;
+    const size_t n = cap.positions.size() / 3;
+    positions.resize(static_cast<int64_t>(n));
+    for (size_t i = 0; i < n; ++i) {
+        positions[static_cast<int64_t>(i)] = Vector3(cap.positions[3 * i], cap.positions[3 * i + 1],
+                                                      cap.positions[3 * i + 2]);
+    }
+    indices.resize(static_cast<int64_t>(cap.indices.size()));
+    for (size_t i = 0; i < cap.indices.size(); ++i)
+        indices[static_cast<int64_t>(i)] = static_cast<int32_t>(cap.indices[i]);
+
+    Array arrays;
+    arrays.resize(Mesh::ARRAY_MAX);
+    arrays[Mesh::ARRAY_VERTEX] = positions;
+    arrays[Mesh::ARRAY_INDEX] = indices;
+    mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
     return mesh;
 }
 
@@ -2474,6 +2511,7 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("closest_point_on", "shape_id", "from"),
                          &SxDocument::closest_point_on);
     ClassDB::bind_method(D_METHOD("face_midpoint", "face_id"), &SxDocument::face_midpoint);
+    ClassDB::bind_method(D_METHOD("face_pick_point", "face_id"), &SxDocument::face_pick_point);
     ClassDB::bind_method(D_METHOD("measure_bbox", "id"), &SxDocument::measure_bbox);
     ClassDB::bind_method(D_METHOD("measure_mass", "body_id"), &SxDocument::measure_mass);
     ClassDB::bind_method(D_METHOD("measure_edge_length", "edge_id"), &SxDocument::measure_edge_length);
@@ -2509,6 +2547,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("body_volume", "body_id"), &SxDocument::body_volume);
     ClassDB::bind_method(D_METHOD("revision"), &SxDocument::revision);
     ClassDB::bind_method(D_METHOD("get_mesh", "body_id"), &SxDocument::get_mesh);
+    ClassDB::bind_method(D_METHOD("section_cap_mesh", "body_id", "point", "normal"),
+                         &SxDocument::section_cap_mesh);
     ClassDB::bind_method(D_METHOD("get_face_ids", "body_id"), &SxDocument::get_face_ids);
     ClassDB::bind_method(D_METHOD("edges_of_face", "face_id"), &SxDocument::edges_of_face);
     ClassDB::bind_method(D_METHOD("get_edge_lines", "body_id"), &SxDocument::get_edge_lines);

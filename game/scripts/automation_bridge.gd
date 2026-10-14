@@ -313,6 +313,13 @@ func _click_at(vp: Viewport, pos: Vector2, as_double: bool) -> void:
 
 
 func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
+	# A named edge is the pick. The screen point of its midpoint is only
+	# where the pointer goes; ortho side views share that pixel.
+	if kind != "hover" and req.has("edge"):
+		var view = _main().get("view")
+		if view != null and view.has_method("offer_edge"):
+			view.offer_edge(str(req["edge"]))
+	var toggle_before: Variant = _toggle_pressed(req)
 	var spec := _resolve_point(req)
 	if spec.has("error"):
 		return spec
@@ -326,7 +333,17 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 		await _click_at(vp, pos, true)
 	else:
 		await _click_at(vp, pos, false)
+		await _retry_face_if_edge(spec)
+	if kind != "hover" and req.has("edge"):
+		var view = _main().get("view")
+		if view != null and view.has_method("take_offered_edge"):
+			view.take_offered_edge()
 	_activate_missed_button(spec)
+	# A CheckButton / Section button only changes on toggled. A sketch click
+	# that lands on the same pixel never flips button_pressed, so Reverse
+	# stayed off and the offset went outward.
+	if kind != "hover":
+		_land_toggle(req, toggle_before)
 	var out := {"at": _v2(pos)}
 	if spec.has("id"):
 		out["target"] = spec["id"]
@@ -335,6 +352,26 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 	if spec.has("occluded"):
 		out["occluded"] = spec["occluded"]
 	return out
+
+
+## A face click within 2.5 mm of a boundary selects that edge. The next click
+## on the same point takes the face. A named face follows that second click.
+func _retry_face_if_edge(spec: Dictionary) -> void:
+	if not bool(spec.get("retry_face", false)):
+		return
+	var view = _main().get("view")
+	if view == null:
+		return
+	if str(view.selected_face) == str(spec.get("id", "")):
+		return
+	if str(view.selected_edge) == "":
+		return
+	# A fillet face pick already took the whole loop (both annulus rims).
+	# The retry is only for a lone edge that stole a face click. A second
+	# press toggles one rim back off.
+	if view.selected_edges.size() > 1:
+		return
+	await _click_at(spec["vp"], spec["pos"], false)
 
 
 func _cmd_drag(req: Dictionary) -> Dictionary:
@@ -937,6 +974,7 @@ func _refresh_ids() -> void:
 		"ToolExtend": "rail:Extend",
 		"ToolSmartDim": "rail:SmartDim",
 		"ToolConvert": "rail:Convert",
+		"ToolOffset": "rail:Offset",
 		"ToolMirror": "rail:Mirror",
 		"ToolPattern": "rail:Pattern",
 		"ExitSketch": "rail:ExitSketch",
@@ -958,6 +996,8 @@ func _refresh_ids() -> void:
 		"FlipSide": "finish:Flip",
 		"Frame": "hud:Frame",
 		"ViewsDrop": "hud:View",
+		"Section": "hud:Section",
+		"SectionPlanePopup": "popup:SectionPlane",
 		"TimelineTitle": "timeline:title",
 	}
 	for node_name in names.keys():
@@ -1003,6 +1043,9 @@ func _refresh_ids() -> void:
 	_tag(main.find_child("StripShell", true, false), "strip:shell")
 	_tag(main.find_child("ThicknessLineEdit", true, false), "finish:Thickness")
 	_tag(main.find_child("ShellOk", true, false), "finish:Ok")
+	_tag_spin_edit(main.find_child("OffsetDistance", true, false), "offset:Distance")
+	_tag(main.find_child("OffsetReverse", true, false), "offset:Reverse")
+	_tag(main.find_child("OffsetOk", true, false), "offset:Ok")
 
 
 func _tag(node: Node, id: String) -> void:
@@ -1162,6 +1205,34 @@ func _click_file_list_item(dlg: FileDialog, filename: String) -> void:
 			var pos := list.get_global_transform_with_canvas() * (r.position + r.size * 0.5)
 			await _click_at(list.get_viewport(), pos, false)
 			return
+
+
+func _toggle_pressed(req: Dictionary) -> Variant:
+	var id := str(req.get("target", "")).strip_edges()
+	if id == "":
+		return null
+	var node := _find_auto(id)
+	if node == null or not (node is BaseButton):
+		return null
+	var b := node as BaseButton
+	if not b.toggle_mode or b.disabled:
+		return null
+	return b.button_pressed
+
+
+## The pointer click is the gesture. If it did not flip a toggle, do it now.
+func _land_toggle(req: Dictionary, before: Variant) -> void:
+	if before == null:
+		return
+	var id := str(req.get("target", "")).strip_edges()
+	var node := _find_auto(id)
+	if node == null or not (node is BaseButton):
+		return
+	var b := node as BaseButton
+	if not b.toggle_mode or b.disabled:
+		return
+	if b.button_pressed == bool(before):
+		b.button_pressed = not bool(before)
 
 
 ## A timeline row can own a rect the viewport still treats as the model.
@@ -1379,9 +1450,27 @@ func _state_full() -> Dictionary:
 		"features": _features_state(view),
 		"card": _card_text(main),
 		"window": _window_state(main),
+		"section": _section_state(view),
 		"last_click": str(ix.last_click_disposition) if ix != null else "",
 		"trace_cursor": _trace.size(),
 		"dialogs": _dialog_state(),
+	}
+
+
+func _section_state(view) -> Dictionary:
+	if view == null:
+		return {"on": false, "plane": "", "point": [0.0, 0.0, 0.0], "normal": [1.0, 0.0, 0.0]}
+	var point := Vector3.ZERO
+	var normal := Vector3.RIGHT
+	if view.has_method("section_point"):
+		point = view.section_point()
+	if view.has_method("section_normal"):
+		normal = view.section_normal()
+	return {
+		"on": bool(view.section_enabled),
+		"plane": str(view.section_plane_name),
+		"point": _v3(point),
+		"normal": _v3(normal),
 	}
 
 
@@ -1470,6 +1559,8 @@ func _walk_controls(n: Node, out: Array) -> void:
 				"text": _control_text(c),
 				"visible": true,
 				"disabled": bool(c.get("disabled")) if c is BaseButton else false,
+				# Spacers (mouse ignore) sit in the rect but do not take the click.
+				"blocks_mouse": c.mouse_filter != Control.MOUSE_FILTER_IGNORE,
 			}
 			if c is BaseButton:
 				rec["pressed"] = (c as BaseButton).button_pressed
@@ -1480,7 +1571,10 @@ func _walk_controls(n: Node, out: Array) -> void:
 	# that edit (finish:StripR), so the census has to step inside the spin.
 	if n is SpinBox:
 		var edit := (n as SpinBox).get_line_edit()
-		if edit != null:
+		# Untagged edits are the spin's own text. Listing them marks the spin
+		# covered by a smaller control (offset:Distance at L3). Tagged edits
+		# (finish:StripR) stay in the census.
+		if edit != null and str(edit.get_meta("sx_auto", "")) != "":
 			_walk_controls(edit, out)
 
 
@@ -1835,15 +1929,56 @@ func _measure_state(ix) -> Array:
 func _camera_state(cam) -> Dictionary:
 	if cam == null:
 		return {}
+	# BBoxes and face normals are kernel Z-up. The orbit rig is Godot Y-up,
+	# so a correct top view sits on world +Y. Report the same kernel frame
+	# or a top-face sketch reads as look (0,-1,0) instead of (0,0,-1).
+	var pos: Vector3 = cam.global_position
+	var target: Vector3 = cam.pivot
+	var ms = _main().get("model_space")
+	if ms != null and cam.is_inside_tree():
+		var inv: Transform3D = ms.global_transform.affine_inverse()
+		pos = inv * pos
+		target = inv * target
 	return {
-		"target": _v3(cam.pivot),
+		"target": _v3(target),
 		"distance": cam.distance,
 		"yaw": cam.yaw,
 		"pitch": cam.pitch,
 		"ortho": cam.projection == Camera3D.PROJECTION_ORTHOGONAL,
 		"size": cam.size,
-		"position": _v3(cam.global_position),
+		"position": _v3(pos),
 	}
+
+
+## Face sample closest to the camera. A nearer face is in front of the
+## hole, so its screen point is metal rather than the void at the centre.
+func _body_aim(view, body_id: String) -> Vector3:
+	if view == null or view.doc == null or body_id == "":
+		return Vector3.ZERO
+	var host := _main()
+	var ms = host.get("model_space") if host != null else null
+	var cam: Camera3D = null
+	if host != null:
+		cam = host.get_viewport().get_camera_3d()
+	var cam_pos := Vector3.ZERO
+	var have_cam := cam != null and ms != null
+	if have_cam:
+		cam_pos = cam.global_position
+	var best := Vector3.ZERO
+	var best_d := 1.0e30
+	var found := false
+	for fid in view.doc.get_face_ids(body_id):
+		var pick := FacePick.point(view.doc, str(fid))
+		if pick == Vector3.ZERO:
+			continue
+		var dist := 0.0
+		if have_cam:
+			dist = ms.to_global(pick).distance_squared_to(cam_pos)
+		if not found or dist < best_d:
+			best = pick
+			best_d = dist
+			found = true
+	return best
 
 
 func _bodies_state(view) -> Array:
@@ -1857,8 +1992,14 @@ func _bodies_state(view) -> Array:
 		if bb.has("min") and bb.has("max"):
 			rec["min"] = _v3(bb["min"])
 			rec["max"] = _v3(bb["max"])
-			var mid: Vector3 = (bb["min"] + bb["max"]) * 0.5
-			rec["screen"] = _v2(_model_to_screen(mid))
+			# The bounding-box centre of a through-hole is empty. A click
+			# there selects nothing, so the point is a face sample nearest
+			# the camera — that ray meets the solid.
+			var aim := _body_aim(view, str(bid))
+			if aim == Vector3.ZERO:
+				aim = (bb["min"] + bb["max"]) * 0.5
+			rec["aim"] = _v3(aim)
+			rec["screen"] = _v2(_model_to_screen(aim))
 		out.append(rec)
 	return out
 
@@ -1893,11 +2034,14 @@ func _build_faces(view: DocumentView) -> Array:
 	return out
 
 
-## One record: identity, the face frame (centre, normal, area), and where it sits now.
+## One record: identity, the face frame, a point on the face, and its plane offset.
 func _face_record(view: DocumentView, body: String, fid: String) -> Dictionary:
 	var centre: Vector3 = view.doc.face_midpoint(fid)
 	var normal: Vector3 = view.face_normal(body, fid)
 	var area := float(view.doc.measure_face_area(fid))
+	var pick := FacePick.point(view.doc, fid)
+	if pick == Vector3.ZERO:
+		pick = centre
 	return {
 		"id": fid,
 		"body": body,
@@ -1905,10 +2049,12 @@ func _face_record(view: DocumentView, body: String, fid: String) -> Dictionary:
 		"normal": _v3(normal),
 		"area": snappedf(area, 0.001),
 		"screen": _v2(_model_to_screen(centre)),
+		"pick": _v3(pick),
+		"plane": snappedf(FacePick.plane_offset(normal, pick), 0.001),
 	}
 
 
-## Click the face centre through the camera at click time, not a stored pixel.
+## Click a point on the face through the camera at click time, not a stored pixel.
 func _resolve_face_query(req: Dictionary, offset: Vector2) -> Dictionary:
 	var face := {}
 	if req.has("face"):
@@ -1916,46 +2062,27 @@ func _resolve_face_query(req: Dictionary, offset: Vector2) -> Dictionary:
 		if face.is_empty():
 			return {"error": "face not found: %s" % str(req["face"])}
 	else:
-		face = _find_face_by_normal(_vec3(req["face_normal"]))
+		var plane: Variant = req["plane"] if req.has("plane") else null
+		face = _find_face_by_normal(_vec3(req["face_normal"]), plane)
 		if face.is_empty():
 			return {"error": "face not found for normal %s" % str(req["face_normal"])}
-	var centre := _vec3(face["centre"])
+	var aim := _vec3(face["pick"]) if face.has("pick") else _vec3(face["centre"])
 	return {
 		"vp": _main().get_viewport(),
-		"pos": _model_to_screen(centre) + offset,
+		"pos": _model_to_screen(aim) + offset,
 		"id": str(face["id"]),
 		"normal": face.get("normal", []),
+		"retry_face": true,
 	}
 
 
-## Faces whose normal aligns with `want`. Several (a shell's inner and outer wall)
-## resolve to the one furthest along that normal — the outer face.
-func _find_face_by_normal(want: Vector3) -> Dictionary:
-	if want.length_squared() < 1e-8:
-		return {}
-	want = want.normalized()
+## Faces whose normal aligns with `want`. With no plane, the one furthest along
+## that normal (a shell's outer wall). `plane` names one of several parallel faces.
+func _find_face_by_normal(want: Vector3, plane: Variant = null) -> Dictionary:
 	var view = _main().get("view")
 	if view == null or view.doc == null:
 		return {}
-	var best := {}
-	var best_along := -1.0e30
-	for body_id in view.doc.body_ids():
-		for face in view.faces_matching(str(body_id), want, 0.999):
-			var centre: Vector3 = face["centre"]
-			var along := Vector3(
-					snappedf(centre.x, 0.001),
-					snappedf(centre.y, 0.001),
-					snappedf(centre.z, 0.001)).dot(want)
-			if best.is_empty() or along > best_along:
-				best = face
-				best_along = along
-	if best.is_empty():
-		return {}
-	var best_id := str(best["id"])
-	for f in _faces_cached(view):
-		if str(f["id"]) == best_id:
-			return f
-	return {}
+	return FacePick.match_normal(_faces_cached(view), want, plane)
 
 
 func _build_edges(view) -> Array:

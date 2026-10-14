@@ -23,6 +23,9 @@ var _field: LineEdit
 var _ok: Button
 var _view_of: Callable
 var _sketching: Callable
+## Last thickness that actually shelled. Refusals restore this, not the
+## SPEC default, so a 1 mm part does not snap back to 5. build() seeds it.
+var _last_mm := 5.0
 
 
 func bind(view: Callable, sketching: Callable) -> void:
@@ -31,6 +34,7 @@ func bind(view: Callable, sketching: Callable) -> void:
 
 
 func build(row: Node, overlay: Control) -> void:
+	_last_mm = float(SPEC["default_mm"])
 	_chip = Button.new()
 	_chip.name = "StripShell"
 	_chip.text = str(SPEC["label"])
@@ -83,6 +87,7 @@ func cancel() -> bool:
 	if _panel == null or not _panel.visible:
 		return false
 	_panel.visible = false
+	_release_field()
 	return true
 
 
@@ -92,17 +97,15 @@ func apply_mm(mm: float) -> void:
 		return
 	var faces := _selected_faces(view)
 	if faces.is_empty():
-		status.emit(_NO_FACE)
+		_refuse(_NO_FACE)
 		return
 	var body := view.selected_body
 	var extent := _min_extent(view, body)
 	if extent > 0.0 and mm >= extent * 0.5 - 1e-9:
-		_field.text = _default_text()
-		status.emit(_LIMIT % [mm, extent])
+		_refuse(_LIMIT % [mm, extent])
 		return
 	if mm <= 0.0:
-		_field.text = _default_text()
-		status.emit(_NO_FACE)
+		_refuse(_NO_FACE)
 		return
 	var fid := view.feature_of_body(body)
 	var added := ""
@@ -114,9 +117,11 @@ func apply_mm(mm: float) -> void:
 		added = "body"
 	if added == "":
 		var err := str(view.doc.last_graph_error())
-		status.emit("Shell failed" if err == "" else "Shell failed (%s)" % err)
+		_refuse("Shell failed" if err == "" else "Shell failed (%s)" % err)
 		return
+	_last_mm = mm
 	_panel.visible = false
+	_release_field()
 	view.graph_changed()
 	status.emit("%s applied" % feature_title(mm))
 
@@ -126,7 +131,7 @@ static func feature_title(mm: float) -> String:
 
 
 func _on_chip() -> void:
-	_field.text = _default_text()
+	_field.text = _mm_text(_last_mm)
 	_panel.visible = true
 	var want := _panel.get_combined_minimum_size()
 	_panel.size = want
@@ -183,4 +188,42 @@ func _parse_mm(text: String) -> float:
 
 
 func _default_text() -> String:
-	return str(int(SPEC["default_mm"]))
+	return _mm_text(float(SPEC["default_mm"]))
+
+
+func _mm_text(mm: float) -> String:
+	if absf(mm - round(mm)) < 1e-6:
+		return str(int(round(mm)))
+	return str(mm)
+
+
+## Every refusal puts the last legal thickness back. The field must not
+## keep a number the kernel rejected.
+func _refuse(message: String) -> void:
+	if _field != null and is_instance_valid(_field):
+		_field.text = _mm_text(_last_mm)
+	status.emit(message)
+	_release_field()
+
+
+## A focused thickness LineEdit swallows KEY_K before section toggle.
+## Same deferred release as a property-panel LineEdit.
+func _release_field() -> void:
+	if _field == null or not is_instance_valid(_field):
+		return
+	if _field.has_focus():
+		_field.release_focus()
+	var tree := get_tree()
+	if tree == null:
+		if _field.has_focus():
+			_field.release_focus()
+		return
+	tree.process_frame.connect(func() -> void:
+		if _field != null and is_instance_valid(_field) and _field.has_focus():
+			_field.release_focus()
+		if tree.root == null:
+			return
+		var ix := tree.root.find_child("Interaction", true, false)
+		if ix != null and ix.has_method("return_viewport_keys"):
+			ix.return_viewport_keys()
+	, CONNECT_ONE_SHOT)

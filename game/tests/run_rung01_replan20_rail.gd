@@ -49,7 +49,7 @@ func _case(ctx: FilmContext) -> void:
 	check(rows != null, "sketch rail rows exist")
 	var labels := _rail_labels(rows)
 	var width_before := rail.get_global_rect().size.x
-	check(labels.size() == 19, "19 rail labels (got %d: %s)" % [labels.size(), str(labels)])
+	check(labels.size() == 20, "20 rail labels (got %d: %s)" % [labels.size(), str(labels)])
 	await FilmUI.select_sketch_tool(ctx, ctx.main.sketch_mode, SketchMode.Tool.LINE)
 	await process_frame
 	_expect_lit(rows, ["Line"], "Line armed")

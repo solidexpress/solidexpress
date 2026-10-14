@@ -1,11 +1,16 @@
-// CueMemory keeps the edge_memory JSON, and add_external_edge only accepts lines.
-// These cases load a pre-change literal and a box with one circular edge.
+// CueMemory keeps the edge_memory JSON; add_external_edge projects lines and
+// full circles on a parallel sketch plane (arcs and skew circles are refused).
 
 #include <catch.hpp>
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <TopoDS.hxx>
+#include <gp_Ax2.hxx>
+#include <gp_Circ.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Pnt.hxx>
 
 #include "sx/document.hpp"
 #include "sx/features.hpp"
@@ -44,10 +49,9 @@ TEST_CASE("CueMemory loads an edge_memory array and writes it back", "[cue_memor
     CHECK(graph.cues().to_json() == literal["edge_memory"]);
 }
 
-TEST_CASE("add_external_edge projects a box line and rejects a circle", "[cue_memory]") {
+TEST_CASE("add_external_edge projects a box line and rejects partial circles", "[cue_memory]") {
     sx::Document doc;
     const sx::EntityId box = doc.add_body(sx::shape::make_box(20, 30, 10), "Box");
-    const sx::EntityId cyl = doc.add_body(sx::shape::make_cylinder(5, 12), "Cyl");
     sx::Feature sketch_feature;
     sketch_feature.type = sx::FeatureType::Sketch;
     sketch_feature.sketch = std::make_shared<sx::Sketch>("on box");
@@ -62,17 +66,7 @@ TEST_CASE("add_external_edge projects a box line and rejects a circle", "[cue_me
             break;
         }
     }
-    sx::EntityId arc_id;
-    for (const auto& eid : doc.body(cyl)->subshape_ids.at(sx::EntityKind::Edge)) {
-        const TopoDS_Shape shape = doc.resolve(eid);
-        if (shape.IsNull() || shape.ShapeType() != TopAbs_EDGE) continue;
-        if (BRepAdaptor_Curve(TopoDS::Edge(shape)).GetType() == GeomAbs_Circle) {
-            arc_id = eid;
-            break;
-        }
-    }
     REQUIRE(!line_id.is_null());
-    REQUIRE(!arc_id.is_null());
 
     const sx::EntityId first = sx::add_external_edge(doc, fid, line_id);
     REQUIRE(!first.is_null());
@@ -86,5 +80,14 @@ TEST_CASE("add_external_edge projects a box line and rejects a circle", "[cue_me
     const sx::EntityId second = sx::add_external_edge(doc, fid, line_id);
     CHECK(second == first);
     CHECK(doc.graph().feature(fid)->sketch->entities().size() == 1);
+
+    gp_Circ arc_curve(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), 12.0);
+    const sx::EntityId arc_body =
+        doc.add_body(BRepBuilderAPI_MakeEdge(arc_curve, 0.0, 1.2).Edge(), "arc");
+    sx::EntityId arc_id;
+    const sx::Body* arc = doc.body(arc_body);
+    REQUIRE(arc != nullptr);
+    for (const auto& eid : arc->subshape_ids.at(sx::EntityKind::Edge)) arc_id = eid;
+    REQUIRE(!arc_id.is_null());
     CHECK(sx::add_external_edge(doc, fid, arc_id).is_null());
 }

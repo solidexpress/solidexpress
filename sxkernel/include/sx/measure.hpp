@@ -27,8 +27,14 @@ std::optional<DistanceResult> closest_point(const Document& doc, const EntityId&
                                             const std::array<double, 3>& from);
 
 // UV-parameter midpoint of a face mapped to 3D (surface midpoint).
+// Annular faces put this point in the hole; use face_pick_point to click.
 std::optional<std::array<double, 3>> face_midpoint(const Document& doc,
                                                    const EntityId& face);
+
+// A point classified inside the face (TopAbs_IN). The same interior sample
+// dress-up cues use, so a trimmed or annular face is not named by its hole.
+std::optional<std::array<double, 3>> face_pick_point(const Document& doc,
+                                                     const EntityId& face);
 
 struct BBox {
     std::array<double, 3> min{};

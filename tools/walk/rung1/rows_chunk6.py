@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sxdrive import SxError
 from walk import proc
-from walk.gates import parse_suites, parse_tier, run_tier
+from walk.gates import parse_suites, parse_tier, run_tier, take
 from walk.registry import row
 
 class RowsChunk6:
@@ -304,8 +304,12 @@ class RowsChunk6:
                 "BLOCKED-by-flag: pass --a15 to run the lints and make test-godot",
             )
             return
-        lint_e2e = proc.run([sys.executable, "tools/lint_rung01_e2e.py"], cwd=self.repo)
-        lint_suites = proc.run([sys.executable, "tools/lint_suites.py"], cwd=self.repo)
+        lint_e2e = take("lint_e2e")
+        if lint_e2e is None:
+            lint_e2e = proc.run([sys.executable, "tools/lint_rung01_e2e.py"], cwd=self.repo)
+        lint_suites = take("lint_suites")
+        if lint_suites is None:
+            lint_suites = proc.run([sys.executable, "tools/lint_suites.py"], cwd=self.repo)
         e2e = (lint_e2e.stdout or "") + (lint_e2e.stderr or "")
         suites = (lint_suites.stdout or "") + (lint_suites.stderr or "")
         (self.out / "a15-lint-e2e.log").write_text(e2e)

@@ -26,6 +26,12 @@ def load_3mf(path):
 def tri_arrays(V, T):
     return V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]
 
+# A ray that rides a shared mesh edge lands about one ulp outside the
+# triangle (u+v = 1+1e-15). A strict test drops that hit and reports the
+# face behind it — the outer R1.5 seam reads as the hole wall.
+_EDGE_ULP = 1e-9
+
+
 def ray_hits(tris, o, d):
     """Return sorted positive t of ray o + t d against all triangles (Moller-Trumbore)."""
     a, b, c = tris
@@ -39,7 +45,7 @@ def ray_hits(tris, o, d):
     q = np.cross(s, e1)
     v = (q @ d) * inv
     t = np.einsum('ij,ij->i', e2, q) * inv
-    m = ok & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-9)
+    m = ok & (u >= -_EDGE_ULP) & (v >= -_EDGE_ULP) & (u + v <= 1.0 + _EDGE_ULP) & (t > 1e-9)
     return np.sort(t[m])
 
 def inside(tris, pt):

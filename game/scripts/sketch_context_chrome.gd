@@ -27,6 +27,8 @@ func _chip_h() -> int:
 	return int(round(UiScale.px(CHIP_H)))
 
 var sketch_mode: SketchMode
+## Offset Entities panel (rail:Offset). Built once; shown while the tool is armed.
+var offset_tool: SketchOffset
 var _variant_bar: HBoxContainer
 var _action_bar: VBoxContainer
 ## Verbs currently shown on `_action_bar`. Chips that do not fit between the
@@ -150,6 +152,8 @@ func _ready() -> void:
 	_contour_bar.visible = false
 	_variant_bar.visible = false
 	_action_bar.visible = false
+	offset_tool = SketchOffset.new()
+	offset_tool.build(self)
 
 
 func _make_bar() -> HBoxContainer:
@@ -1848,6 +1852,7 @@ func _claim_dim_keyboard() -> void:
 
 func sync_for_tool() -> void:
 	_sync_dim_affordance()
+	_sync_offset_panel()
 	if sketch_mode == null:
 		return
 	# Select does not take keyboard focus. Release a blank left over from
@@ -1867,6 +1872,16 @@ func sync_for_tool() -> void:
 		set_dim_value(own)
 	else:
 		clear_dim_blank()
+
+
+func _sync_offset_panel() -> void:
+	if offset_tool == null:
+		return
+	if sketch_mode != null and sketch_mode.active \
+			and sketch_mode.tool == SketchMode.Tool.OFFSET:
+		offset_tool.show_panel()
+	else:
+		offset_tool.hide_panel()
 	# Circle's radius blank owns the keyboard as soon as the tool is armed
 	# (a digit is Radius, not Extrude). The grab must not eat the next canvas
 	# press. Tool hotkeys still switch tools until the user types: the claim
@@ -1966,6 +1981,8 @@ func done_button() -> Button:
 
 func show_for_session(on: bool, fid: String = "") -> void:
 	_finish_bar.visible = on
+	if not on and offset_tool != null:
+		offset_tool.hide_panel()
 	if on:
 		if fid != "" and fid == _finish_owner:
 			# Same owner (Save As of an already-saved sketch): keep Op/End/D.

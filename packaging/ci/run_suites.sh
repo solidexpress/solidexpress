@@ -11,6 +11,9 @@
 #   --only <glob>    limit to suites whose script, script basename, or
 #                    manifest filename matches the shell glob
 #   --list           print the script paths that would run, one per line
+#   --jobs <n>       run up to n suites at once (default: nproc, or SX_JOBS).
+#                    Suites are headless with the dummy renderer. Pixel checks
+#                    stay on the walk displays.
 #
 # Unknown keys, a missing script, or a bad tier exit 2.
 # A failing suite exits 1 after: suites: <run> run, <failed> failed
@@ -33,6 +36,7 @@ TIER_ARG="full"
 LIST=0
 ONLY=""
 RUN=0
+JOBS="${SX_JOBS:-$(nproc)}"
 case "${KEEP_GOING:-0}" in
   1|true|yes) KEEP_GOING=1 ;;
   *) KEEP_GOING=0 ;;
@@ -63,6 +67,14 @@ while [[ $# -gt 0 ]]; do
     --run)
       RUN=1
       shift
+      ;;
+    --jobs)
+      JOBS="${2:-}"
+      if [[ -z "${JOBS}" ]] || ! [[ "${JOBS}" =~ ^[0-9]+$ ]] || [[ "${JOBS}" -lt 1 ]]; then
+        echo "bad jobs: ${JOBS:-<empty>}" >&2
+        exit 2
+      fi
+      shift 2
       ;;
     *)
       echo "unknown argument: $1" >&2
@@ -243,14 +255,69 @@ fi
 run=0
 failed=0
 failed_names=()
+# Headless object-model / bridge suites never open a window. The dummy
+# renderer skips Vulkan; pixel rows stay on the walk's own display.
+GODOT_RUN=(--headless --rendering-driver dummy --path "${ROOT_DIR}/game")
+# Each suite gets its own HOME (below), which would hide pip --user packages
+# such as numpy from the python3 checkers. Pin the user site to the real one.
+if [[ -z "${PYTHONUSERBASE:-}" ]]; then
+  PYTHONUSERBASE="$(python3 -m site --user-base 2>/dev/null || true)"
+fi
+[[ -n "${PYTHONUSERBASE:-}" ]] && export PYTHONUSERBASE
 if [[ ${#selected_scripts[@]} -gt 0 ]]; then
+  work="$(mktemp -d)"
+  slot=0
+  pids=()
   for i in "${!selected_scripts[@]}"; do
     script="${selected_scripts[$i]}"
     secs="${selected_timeouts[$i]}"
-    set +e
-    timeout --foreground "${secs}" "${GODOT_BIN}" --headless --path "${ROOT_DIR}/game" --script "${script}"
-    rc=$?
-    set -e
+    log="${work}/${i}.log"
+    rcfile="${work}/${i}.rc"
+    (
+      set +e
+      # user:// is per process so parallel suites do not share autosaves.
+      jobhome="${work}/home-${i}"
+      mkdir -p "${jobhome}/.local/share" "${jobhome}/.config"
+      HOME="${jobhome}" \
+        XDG_DATA_HOME="${jobhome}/.local/share" \
+        XDG_CONFIG_HOME="${jobhome}/.config" \
+        timeout --foreground "${secs}" "${GODOT_BIN}" "${GODOT_RUN[@]}" --script "${script}" >"${log}" 2>&1
+      echo $? >"${rcfile}"
+    ) &
+    pids+=($!)
+    slot=$((slot + 1))
+    if [[ "${slot}" -ge "${JOBS}" ]]; then
+      wait "${pids[0]}" || true
+      if [[ "${#pids[@]}" -le 1 ]]; then
+        pids=()
+      else
+        pids=("${pids[@]:1}")
+      fi
+      slot=$((slot - 1))
+    fi
+  done
+  if [[ "${#pids[@]}" -gt 0 ]]; then
+    for pid in "${pids[@]}"; do
+      wait "${pid}" || true
+    done
+  fi
+  stop_early=0
+  for i in "${!selected_scripts[@]}"; do
+    if [[ "${stop_early}" -eq 1 ]]; then
+      break
+    fi
+    script="${selected_scripts[$i]}"
+    secs="${selected_timeouts[$i]}"
+    rcfile="${work}/${i}.rc"
+    log="${work}/${i}.log"
+    if [[ ! -f "${rcfile}" ]]; then
+      continue
+    fi
+    rc="$(cat "${rcfile}")"
+    # Full script output stays in order so walk floors can see each banner.
+    if [[ -s "${log}" ]]; then
+      cat "${log}"
+    fi
     run=$((run + 1))
     if [[ "${TIER_ARG}" == known-red && "${RUN}" -eq 1 ]]; then
       if [[ "${rc}" -eq 0 ]]; then
@@ -268,11 +335,15 @@ if [[ ${#selected_scripts[@]} -gt 0 ]]; then
       fi
       failed=$((failed + 1))
       failed_names+=("${script}")
+      if [[ -s "${log}" ]]; then
+        tail -n 20 "${log}" >&2
+      fi
       if [[ "${KEEP_GOING}" != 1 ]]; then
-        break
+        stop_early=1
       fi
     fi
   done
+  rm -rf "${work}"
 fi
 
 if [[ ${#failed_names[@]} -gt 0 ]]; then

@@ -45,6 +45,9 @@ var selected_edge := ""
 var selected_bodies: Array[String] = []
 var selected_faces: Array[String] = []
 var selected_edges: Array[String] = []
+## One click may name an edge the screen cannot (orthographic twins).
+## The next dressup pick consumes it; a leftover is dropped by the caller.
+var _offered_edge := ""
 ## Selected component instance (viewport click on an instance mesh).
 var selected_instance := ""
 # World-space point of the most recent viewport pick (armed hole/ops flows).
@@ -118,6 +121,8 @@ var _body_shader: Shader
 var _section_shader: Shader
 var _section_point := Vector3.ZERO
 var _section_normal := Vector3.RIGHT
+## Last named preset ("Front"/"Top"/"Right"), or "" for the default +X cut.
+var section_plane_name := ""
 
 
 func _ready() -> void:
@@ -260,25 +265,31 @@ uniform float emission_energy : hint_range(0.0, 2.0) = 0.0;
 uniform bool zebra_on = false;
 uniform bool section_on = false;
 
-varying vec3 world_position;
 varying vec3 world_normal;
+varying vec3 model_position;
 
 void vertex() {
-	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// VERTEX is model space here. fragment() sees VERTEX in view space,
+	// so the clip has to ride a varying. section_point / section_normal
+	// are model coordinates (the uniform run_display_tests pins).
+	model_position = VERTEX;
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 }
 
 void fragment() {
-	// Discard the half-space in front of the section plane.
-	if (section_on && dot(world_position - section_point, section_normal) > 0.0) {
+	// Open the cut. A 1 mm shell has no face on the plane; the sample lands
+	// on a back face just off it, and that face would cover the canvas cap.
+	// FRONT_FACING stays so the cut can still be told apart.
+	float section_side = dot(model_position - section_point, section_normal);
+	bool back = !FRONT_FACING;
+	if (section_on && (section_side > -5.0 || back)) {
 		discard;
 	}
 	// Wireframe mode hides solid faces via transparent albedo.
 	if (albedo_color.a < 0.01) {
 		discard;
 	}
-	bool back = !FRONT_FACING;
-	vec3 base = albedo_color.rgb * (back ? 0.55 : 1.0);
+	vec3 base = albedo_color.rgb;
 	if (zebra_on) {
 		vec3 n = normalize(world_normal);
 		float bands = sin(dot(n, vec3(8.0, 0.4, 2.0)) * 6.0) * 0.5 + 0.5;
@@ -382,7 +393,16 @@ func set_section_plane(point: Vector3, normal: Vector3) -> void:
 	section_changed.emit(true)
 
 
+func section_point() -> Vector3:
+	return _section_point
+
+
+func section_normal() -> Vector3:
+	return _section_normal
+
+
 ## Disable section-view clipping and restore body ShaderMaterials.
+## Keeps `section_plane_name` so K can restore the last preset.
 func clear_section_plane() -> void:
 	section_enabled = false
 	_apply_selection_materials()
@@ -1570,6 +1590,16 @@ func edge_screen_distance(body_id: String, edge_id: String, camera: Camera3D, sc
 	if pts.size() < 2:
 		return INF
 	return _polyline_screen_distance(camera, screen, pts)
+
+
+func offer_edge(edge_id: String) -> void:
+	_offered_edge = edge_id
+
+
+func take_offered_edge() -> String:
+	var id := _offered_edge
+	_offered_edge = ""
+	return id
 
 
 func select_edge(body_id: String, edge_id: String) -> void:

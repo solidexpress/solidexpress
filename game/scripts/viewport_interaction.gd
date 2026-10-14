@@ -609,8 +609,13 @@ func _build_selection_strip() -> void:
 		# Arrow clicks focus the line before the value moves. A partial typed
 		# string must not be overwritten; an arrow step must reach the panel
 		# or focus-exit writes the old panel value back over the step.
+		# A partial or finished type owns the characters. Push the parsed line,
+		# not the spin's snapped value, and do not rewrite the line.
 		if _strip_radius_editing and _strip_user_typed():
-			return
+			var typing := _strip_radius.get_line_edit()
+			if typing != null and SxUi.mid_entry(typing):
+				_push_parsed_strip_radius()
+				return
 		if ops_panel != null and ops_panel.has_method("set_dressup_radius"):
 			ops_panel.set_dressup_radius(v)
 		# Godot's deferred editing toggle reformats the line after reveal.
@@ -4941,7 +4946,7 @@ func _on_release(pos: Vector2) -> void:
 		if not hit.is_empty():
 			ops_panel.handle_viewport_pick(
 				str(hit.get("body", "")), str(hit.get("face", "")),
-				hit.get("point", Vector3.ZERO) as Vector3)
+				hit.get("point", Vector3.ZERO) as Vector3, _additive_click)
 		else:
 			ops_panel.handle_viewport_miss(_press_pos, get_viewport().get_camera_3d())
 		_box_drag = false
@@ -5731,15 +5736,36 @@ func _bodies_aabb_center() -> Vector3:
 	return (united_min + united_max) * 0.5
 
 
-## Toggle section-view clipping through the combined body AABB center (+X).
+## Toggle section-view. With a last named plane, restore it; otherwise the
+## default +X cut through the AABB centre (K with no plane chosen).
 func toggle_section() -> void:
 	if view.section_enabled:
 		view.clear_section_plane()
 		status.emit("Section view off")
-	else:
-		var center := _bodies_aabb_center()
-		view.set_section_plane(center, Vector3(1, 0, 0))
-		status.emit("Section view on")
+		return
+	var plane_name := str(view.section_plane_name)
+	if plane_name != "" and not SectionPlane.preset(plane_name).is_empty():
+		apply_section_plane(plane_name)
+		return
+	var center := _bodies_aabb_center()
+	view.section_plane_name = ""
+	view.set_section_plane(center, Vector3(1, 0, 0))
+	status.emit("Section view on")
+
+
+## Named preset from the HUD popup (Front / Top / Right).
+func apply_section_plane(plane_name: String) -> void:
+	if view.doc != null and view.doc.body_ids().is_empty():
+		status.emit("Section: no bodies")
+		return
+	var cam := get_viewport().get_camera_3d()
+	var cam_pos := cam.global_position if cam != null else Vector3(100, 100, 100)
+	var state := SectionPlane.apply(view, cam_pos, plane_name)
+	if state.is_empty():
+		status.emit("Section: unknown plane")
+		return
+	view.section_plane_name = plane_name
+	status.emit("Section %s" % plane_name)
 
 
 func _dim_line_edit() -> LineEdit:
@@ -5931,7 +5957,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if camera != null:
 		var block_nav := false
 		if event is InputEventKey:
-			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
+			block_nav = _nav_blocked_by_text()
 		if not block_nav and camera.is_nav_event(event, allow_scroll):
 			if camera.handle_input(event, allow_scroll):
 				_emit_view_key_status(event)
@@ -6093,7 +6119,7 @@ func _input(event: InputEvent) -> void:
 	if camera != null:
 		var block_nav := false
 		if event is InputEventKey:
-			block_nav = _text_field_has_focus() or _sketch_keys_blocked()
+			block_nav = _nav_blocked_by_text()
 		if not block_nav and camera.is_nav_event(event, allow_scroll):
 			if camera.handle_input(event, allow_scroll):
 				_emit_view_key_status(event)
@@ -6306,14 +6332,10 @@ func _input(event: InputEvent) -> void:
 				and not ke.alt_pressed \
 				and (SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus()):
 			return
-		# Del/Backspace must work without Interaction focus (focus often sits on
-		# docks after placing). Never steal keystrokes from live text fields.
-		if (ke.keycode == KEY_DELETE or ke.keycode == KEY_BACKSPACE) \
-				and not _text_field_has_focus():
-			if _gui_key(ke):
-				get_viewport().set_input_as_handled()
-				return
-		if has_focus() and _gui_key(ke):
+		# View shortcuts belong to the model. A HUD button that took focus on
+		# click (Section, Shell) must not swallow K or Delete. A text field
+		# still owns its keys.
+		if not _text_field_has_focus() and _gui_key(ke):
 			get_viewport().set_input_as_handled()
 
 
@@ -6326,6 +6348,25 @@ func _text_field_has_focus() -> bool:
 		return false
 	var f := vp.gui_get_focus_owner()
 	return f is LineEdit or f is TextEdit or f is CodeEdit
+
+
+## View keys (1/2/3/6/7/…) belong to the camera unless a text field is
+## actually taking digits. A tracked radius line that is not mid-entry
+## keeps focus; swallowing 2/6 there left corner picks on the previous side.
+func _nav_blocked_by_text() -> bool:
+	if _sketch_keys_blocked():
+		return true
+	if not _text_field_has_focus():
+		return false
+	var owner := get_viewport().gui_get_focus_owner()
+	if owner is LineEdit and _line_is_tracked_numeric(owner as LineEdit):
+		var line := owner as LineEdit
+		# A click armed replace, or a digit already landed: the field owns
+		# 0–8. Focus left behind with no replace arm still lets 2/6 orbit.
+		if SxUi.replace_armed(line) or SxUi.mid_entry(line) or line.has_selection():
+			return true
+		return false
+	return true
 
 
 ## Ctrl+A selects the numeric field's text. A selection drawn without keyboard
@@ -7038,10 +7079,46 @@ func _on_dressup_radius_changed(v: float) -> void:
 		return
 	# Only skip when the user is mid-typing in the strip. A latched partial
 	# ("0.0" vs panel 10) is not a user edit — overwrite it.
+	# An echo of the number just parsed from this line is the same edit.
 	if _strip_line_focused() and _strip_user_typed():
-		_panel_changed_while_strip_focused = true
+		if _typed_strip_disagrees(v):
+			_panel_changed_while_strip_focused = true
 		return
 	_write_strip_radius(v)
+
+
+## True when `v` is not the number currently typed in the strip.
+## A matching echo must not make commit throw the line away.
+func _typed_strip_disagrees(v: float) -> bool:
+	var typed := _parsed_strip_radius()
+	if is_nan(typed) or _strip_radius == null:
+		return true
+	var clamped := clampf(typed, _strip_radius.min_value, _strip_radius.max_value)
+	return not is_equal_approx(clamped, v)
+
+
+func _parsed_strip_radius() -> float:
+	if _strip_radius == null:
+		return NAN
+	var le := _strip_radius.get_line_edit()
+	if le == null:
+		return NAN
+	return _parse_strip_radius_text(le.text)
+
+
+## The typed line is the radius. The spin's `.value` can be a step snap
+## (1.5 → 1.53 was a later digit, but a snap must not land either).
+func _push_parsed_strip_radius() -> void:
+	if ops_panel == null or not ops_panel.has_method("set_dressup_radius"):
+		return
+	var parsed := _parsed_strip_radius()
+	if is_nan(parsed) or _strip_radius == null:
+		return
+	var clamped := clampf(parsed, _strip_radius.min_value, _strip_radius.max_value)
+	if ops_panel.has_method("dressup_radius") \
+			and is_equal_approx(ops_panel.dressup_radius(), clamped):
+		return
+	ops_panel.set_dressup_radius(clamped)
 
 
 func _parse_strip_radius_text(text: String) -> float:
@@ -7106,7 +7183,7 @@ func _commit_strip_radius() -> void:
 	var clamped := clampf(parsed, _strip_radius.min_value, _strip_radius.max_value)
 	SxUi.reveal_committed_spin(_strip_radius, clamped)
 	if ops_panel.has_method("set_dressup_radius"):
-		ops_panel.set_dressup_radius(_strip_radius.value)
+		ops_panel.set_dressup_radius(clamped)
 	_strip_radius_editing = was_editing
 	if le != null:
 		_strip_focus_text = le.text
@@ -7132,7 +7209,9 @@ func _sync_strip_dressup_radius() -> void:
 	if not armed:
 		return
 	if _strip_line_focused() and _strip_user_typed():
-		_panel_changed_while_strip_focused = true
+		if ops_panel != null and ops_panel.has_method("dressup_radius") \
+				and _typed_strip_disagrees(ops_panel.dressup_radius()):
+			_panel_changed_while_strip_focused = true
 		return
 	if ops_panel != null and ops_panel.has_method("dressup_radius"):
 		_write_strip_radius(ops_panel.dressup_radius())

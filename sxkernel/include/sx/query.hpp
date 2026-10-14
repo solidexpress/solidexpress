@@ -25,7 +25,8 @@ std::vector<QueryHit> run_query(const Document& doc, const std::string& query);
 std::string card_digest(const Feature& f);
 
 // Boundary edges of a face, in TopExp order, without duplicates.
-// Empty when `face` is missing or is not a face.
+// Orientation is not part of identity: a wire edge reversed relative to
+// MapShapes is still that edge. Empty when `face` is missing or is not a face.
 std::vector<EntityId> edges_of_face(const Document& doc, const EntityId& face);
 
 }  // namespace sx

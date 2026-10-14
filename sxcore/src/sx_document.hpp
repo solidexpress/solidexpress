@@ -84,6 +84,8 @@ public:
                                        const godot::Vector3& from) const;
     // UV midpoint of a face in model space, or ZERO if invalid.
     godot::Vector3 face_midpoint(const godot::String& face_id) const;
+    // A point guaranteed on the face (inside a hole's UV box the midpoint is not).
+    godot::Vector3 face_pick_point(const godot::String& face_id) const;
     // {min: Vector3, max: Vector3} or {}.
     godot::Dictionary measure_bbox(const godot::String& id) const;
     // {volume, surface_area, center_of_mass: Vector3} or {}.
@@ -130,6 +132,10 @@ public:
     // Tessellation: ArrayMesh with one surface per face; surface index order
     // matches get_face_ids(body_id).
     godot::Ref<godot::ArrayMesh> get_mesh(const godot::String& body_id) const;
+    // Filled cross-section of one body on the plane (model space). One surface.
+    godot::Ref<godot::ArrayMesh> section_cap_mesh(const godot::String& body_id,
+                                                  const godot::Vector3& point,
+                                                  const godot::Vector3& normal) const;
     godot::PackedStringArray get_face_ids(const godot::String& body_id) const;
     godot::PackedStringArray get_edge_ids(const godot::String& body_id) const;
     // Boundary edges of one face (stable edge ids). Empty if `face_id` is not a face.
