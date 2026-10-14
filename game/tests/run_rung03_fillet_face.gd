@@ -150,11 +150,16 @@ func _fillet_face_first(ctx: FilmContext) -> void:
 	await process_frame
 	var face55 := _face_at_z(ctx, body, 55.0)
 	check(face55 != "", "z=55 annulus")
-	var pick := FacePick.point(ctx.view.doc, face55)
 	var mark := _status_log.size()
-	await _click_model(ctx, pick, "annulus first pick")
+	# The walk names the face. A lone edge used to steal that click, and the
+	# bridge's second press then toggled one rim off.
+	var bridge := preload("res://scripts/automation_bridge.gd").new()
+	ctx.main.add_child(bridge)
+	await process_frame
+	var reply: Dictionary = await bridge._cmd_pointer({"face_normal": [0, 0, 1], "plane": 55.0}, "click")
+	bridge.queue_free()
 	var st := _status_since(mark)
-	print("  face-first: %s edges=%d" % [st, ctx.view.selected_edges.size()])
+	print("  face-first: %s edges=%d at=%s" % [st, ctx.view.selected_edges.size(), str(reply.get("at", []))])
 	check(ctx.view.selected_edges.size() == 2, "face-first takes 2 rims (got %d)" % ctx.view.selected_edges.size())
 	var before := _fillet_count(ctx)
 	await _push_key(ctx.main.get_viewport(), KEY_ENTER, 0)

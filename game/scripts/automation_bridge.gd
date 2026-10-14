@@ -366,6 +366,11 @@ func _retry_face_if_edge(spec: Dictionary) -> void:
 		return
 	if str(view.selected_edge) == "":
 		return
+	# A fillet face pick already took the whole loop (both annulus rims).
+	# The retry is only for a lone edge that stole a face click. A second
+	# press toggles one rim back off.
+	if view.selected_edges.size() > 1:
+		return
 	await _click_at(spec["vp"], spec["pos"], false)
 
 
