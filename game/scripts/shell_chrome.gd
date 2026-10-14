@@ -97,20 +97,15 @@ func apply_mm(mm: float) -> void:
 		return
 	var faces := _selected_faces(view)
 	if faces.is_empty():
-		status.emit(_NO_FACE)
-		_release_field()
+		_refuse(_NO_FACE)
 		return
 	var body := view.selected_body
 	var extent := _min_extent(view, body)
 	if extent > 0.0 and mm >= extent * 0.5 - 1e-9:
-		_field.text = _mm_text(_last_mm)
-		status.emit(_LIMIT % [mm, extent])
-		_release_field()
+		_refuse(_LIMIT % [mm, extent])
 		return
 	if mm <= 0.0:
-		_field.text = _mm_text(_last_mm)
-		status.emit(_NO_FACE)
-		_release_field()
+		_refuse(_NO_FACE)
 		return
 	var fid := view.feature_of_body(body)
 	var added := ""
@@ -122,8 +117,7 @@ func apply_mm(mm: float) -> void:
 		added = "body"
 	if added == "":
 		var err := str(view.doc.last_graph_error())
-		status.emit("Shell failed" if err == "" else "Shell failed (%s)" % err)
-		_release_field()
+		_refuse("Shell failed" if err == "" else "Shell failed (%s)" % err)
 		return
 	_last_mm = mm
 	_panel.visible = false
@@ -201,6 +195,15 @@ func _mm_text(mm: float) -> String:
 	if absf(mm - round(mm)) < 1e-6:
 		return str(int(round(mm)))
 	return str(mm)
+
+
+## Every refusal puts the last legal thickness back. The field must not
+## keep a number the kernel rejected.
+func _refuse(message: String) -> void:
+	if _field != null and is_instance_valid(_field):
+		_field.text = _mm_text(_last_mm)
+	status.emit(message)
+	_release_field()
 
 
 ## A focused thickness LineEdit swallows KEY_K before section toggle.

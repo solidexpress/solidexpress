@@ -6332,14 +6332,10 @@ func _input(event: InputEvent) -> void:
 				and not ke.alt_pressed \
 				and (SxUi.numeric_field_focused(get_viewport()) or _text_field_has_focus()):
 			return
-		# Del/Backspace must work without Interaction focus (focus often sits on
-		# docks after placing). Never steal keystrokes from live text fields.
-		if (ke.keycode == KEY_DELETE or ke.keycode == KEY_BACKSPACE) \
-				and not _text_field_has_focus():
-			if _gui_key(ke):
-				get_viewport().set_input_as_handled()
-				return
-		if has_focus() and _gui_key(ke):
+		# View shortcuts belong to the model. A HUD button that took focus on
+		# click (Section, Shell) must not swallow K or Delete. A text field
+		# still owns its keys.
+		if not _text_field_has_focus() and _gui_key(ke):
 			get_viewport().set_input_as_handled()
 
 
