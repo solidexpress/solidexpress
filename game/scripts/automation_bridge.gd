@@ -319,6 +319,7 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 		var view = _main().get("view")
 		if view != null and view.has_method("offer_edge"):
 			view.offer_edge(str(req["edge"]))
+	var toggle_before: Variant = _toggle_pressed(req)
 	var spec := _resolve_point(req)
 	if spec.has("error"):
 		return spec
@@ -338,6 +339,11 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 		if view != null and view.has_method("take_offered_edge"):
 			view.take_offered_edge()
 	_activate_missed_button(spec)
+	# A CheckButton / Section button only changes on toggled. A sketch click
+	# that lands on the same pixel never flips button_pressed, so Reverse
+	# stayed off and the offset went outward.
+	if kind != "hover":
+		_land_toggle(req, toggle_before)
 	var out := {"at": _v2(pos)}
 	if spec.has("id"):
 		out["target"] = spec["id"]
@@ -1194,6 +1200,34 @@ func _click_file_list_item(dlg: FileDialog, filename: String) -> void:
 			var pos := list.get_global_transform_with_canvas() * (r.position + r.size * 0.5)
 			await _click_at(list.get_viewport(), pos, false)
 			return
+
+
+func _toggle_pressed(req: Dictionary) -> Variant:
+	var id := str(req.get("target", "")).strip_edges()
+	if id == "":
+		return null
+	var node := _find_auto(id)
+	if node == null or not (node is BaseButton):
+		return null
+	var b := node as BaseButton
+	if not b.toggle_mode or b.disabled:
+		return null
+	return b.button_pressed
+
+
+## The pointer click is the gesture. If it did not flip a toggle, do it now.
+func _land_toggle(req: Dictionary, before: Variant) -> void:
+	if before == null:
+		return
+	var id := str(req.get("target", "")).strip_edges()
+	var node := _find_auto(id)
+	if node == null or not (node is BaseButton):
+		return
+	var b := node as BaseButton
+	if not b.toggle_mode or b.disabled:
+		return
+	if b.button_pressed == bool(before):
+		b.button_pressed = not bool(before)
 
 
 ## A timeline row can own a rect the viewport still treats as the model.

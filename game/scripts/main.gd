@@ -316,6 +316,8 @@ func _build_world() -> void:
 ## a flat clear color reads better than the canyon panorama in those modes.
 func _on_section_changed(_enabled: bool) -> void:
 	_sync_world_background()
+	if view_hud != null and view != null:
+		view_hud.sync_from_view(view)
 
 
 ## Flat clear color by default (readable cuts). Canyon HDRI only when

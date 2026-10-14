@@ -3891,26 +3891,25 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	sketch.set_construction(hx, true)
 	sketch.add_constraint("horizontal", [{"entity": hx, "role": "self"}], 0.0)
 	var ang := jaw_angle
-	var ang_cid: String = sketch.add_constraint("angle", [
-		{"entity": hx, "role": "self"},
-		{"entity": str(walls[0]["id"]), "role": "self"}], ang)
-	_record_dimension("angle", [hx, str(walls[0]["id"])], _normalize_jaw_angle_rad(ang), ang_cid, "jaw_angle")
-	# The rectangle already drove this wall with its own angle. A second
-	# constraint draws a second 45° and makes the solve redundant.
-	var angle_ids: PackedStringArray = sketch.constraint_ids()
-	for cid in angle_ids:
-		if str(cid) == ang_cid:
-			continue
+	# The rectangle already drives this wall. A second angle is a second 45°
+	# and a redundant solve. Keep the one the user edited; it is the one
+	# Save restores. Add a constraint only when the wall has none.
+	var ang_cid := ""
+	for cid in sketch.constraint_ids():
 		var cinfo: Dictionary = sketch.constraint_info(str(cid))
 		if cinfo.is_empty() or str(cinfo.get("type", "")) != "angle":
 			continue
-		var names_wall := false
 		for ref in cinfo.get("refs", []):
 			if typeof(ref) == TYPE_DICTIONARY and wall_ids.has(str(ref.get("entity", ""))):
-				names_wall = true
+				ang_cid = str(cid)
 				break
-		if names_wall:
-			sketch.remove_constraint(str(cid))
+		if ang_cid != "":
+			break
+	if ang_cid == "":
+		ang_cid = sketch.add_constraint("angle", [
+			{"entity": hx, "role": "self"},
+			{"entity": str(walls[0]["id"]), "role": "self"}], ang)
+		_record_dimension("angle", [hx, str(walls[0]["id"])], _normalize_jaw_angle_rad(ang), ang_cid, "jaw_angle")
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "circle" or sketch.is_construction(id):

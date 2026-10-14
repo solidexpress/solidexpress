@@ -112,7 +112,6 @@ func _offset_rim(ctx: FilmContext) -> void:
 	var bridge = load("res://scripts/automation_bridge.gd").new()
 	ctx.main.add_child(bridge)
 	var controls: Array = bridge._controls()
-	bridge.queue_free()
 	for cid in ["offset:Distance", "offset:Reverse", "offset:Ok"]:
 		var mine := _control_rect(controls, cid)
 		var cover := _covered_by(controls, mine)
@@ -131,8 +130,11 @@ func _offset_rim(ctx: FilmContext) -> void:
 	# Happy path: 5, Reverse, click rim.
 	dist.value = 5.0
 	if not rev.button_pressed:
-		await FilmUI.click_control(ctx, rev, FilmUICues.alert("Reverse", "Offset Reverse"))
+		var rev_click: Dictionary = await bridge._cmd_pointer({"target": "offset:Reverse"}, "click")
+		print("  reverse click %s pressed %s" % [str(rev_click), str(rev.button_pressed)])
 	check(rev.button_pressed, "Reverse is on")
+	if is_instance_valid(bridge):
+		bridge.queue_free()
 	mark = _status_log.size()
 	await _click_model(ctx, Vector3(35, 0, 55), "boss rim")
 	var added := _status_since(mark)

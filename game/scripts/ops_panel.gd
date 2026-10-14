@@ -2449,14 +2449,14 @@ func _edge_length_kind(body: String, edge_id: String) -> String:
 	var kind := "line"
 	if absf(dir.z) >= 0.95 and absf(dir.x) < 0.2 and absf(dir.y) < 0.2:
 		kind = "vertical"
-	elif dir == Vector3.ZERO:
-		kind = "line"
 	else:
+		# A closed circle has no first→last direction. That is an arc, not a line.
 		var pts: PackedVector3Array = view.doc.get_edge_lines(body).get(edge_id, PackedVector3Array())
+		var chord := length
 		if pts.size() >= 2:
-			var chord: float = pts[0].distance_to(pts[pts.size() - 1])
-			if length > 0.5 and chord < length * 0.95:
-				kind = "arc"
+			chord = pts[0].distance_to(pts[pts.size() - 1])
+		if length > 0.5 and chord < length * 0.95:
+			kind = "arc"
 	return "%.1f mm %s" % [length, kind]
 
 
