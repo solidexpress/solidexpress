@@ -97,6 +97,10 @@ func _ready() -> void:
 	_toast.add_theme_font_size_override("font_size", 20)
 	_toast.add_theme_color_override("font_color", Color(0.95, 0.98, 1))
 	_toast_panel.add_child(_toast)
+	# Captions sit on top of the distance chip. They are not controls; a click
+	# must reach the field a person would hit.
+	for node in [_root, _cc_panel, _cc, _badge, _toast_panel, _toast, _pointer]:
+		(node as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 ## Show a closed caption and open a soft-subtitle cue (ended by the next caption or finish).

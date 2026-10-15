@@ -2,13 +2,46 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Rung 3 — Tutor1 (PR #252)
+
+Shipped: origin anchor, face `pick` / `plane`, circle convert, Offset Entities, Shift+face fillet, section presets and cap, 46-row walk, `check_rung03.py`. Bars: the table in `rung-03-result.md`. Suites **213 run + 4 known-red**.
+
+## Post-rung-3 cleanup
+
+Part A shipped WP1, WP2, WP4, WP5. WP3 was retried and stays parked: X11 + Vulkan draws, then `rung03_section` fails because the removed-half sample is the cap colour. ★ WP6 and WP7 were not started (`roadmap.md` §9).
+
+Part B: film `tutor1` and `docs/howto/tutor1.md` (WP8), `run_film_tutor1_tests.gd` (`tier=full`, WP9), poster `website/assets/screenshots/tutor1.png` (WP10). The movie caption bar was taking the click meant for the distance chip, so the boss stayed at the 20 mm default and the fillet radius stayed 2 mm. Captions ignore the mouse, and the typed 25 and both fillets land. `lint_suites: 218 suites ok (67 ci, 147 full, 4 known-red)` so the tier is **214 run + 4 known-red**. R5 on the green film run is 9 edges; R1.5 is 2. `check_rung03.py final` is 29/29.
+
+The WebM is VP9 1600×900 at 30 fps. Container duration 61.800 s matches the caption timeline (last cue ends at 01:01.800). The poster is that timeline's last picture on the video track (frame 1053 of 1054). The writer drops duplicate presents, so the video track ends at 35.133 s and a seek on the muxed file goes past it. `precision_plate` calibrated at 101 s wall for a 33.4 s film, so tutor1 stayed at 30 fps (169 s wall).
+
+`tutor1.webm` is not on Release `demo-movies` (this token cannot upload). It is not in `published-demos.json` or `demo-catalog.json`. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card. The WebM and VTT stay outside git (`/opt/cursor/artifacts/tutor1.webm` and `.vtt`).
+
+Pending publish:
+
+```
+gh release upload demo-movies -R solidexpress/solidexpress.github.io --clobber tutor1.webm tutor1.vtt
+SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature tutor1
+```
+
+Then one follow-up commit of the two JSON files, by a person who can upload. Dry-run (`SX_MOVIES_OUT=/tmp/sx-movies scripts/sx-publish-demo-movies --dry-run --feature tutor1`) wrote nothing:
+
+```
+dry-run poster: tutor1 → website/assets/screenshots/tutor1.png
+dry-run upload 2 assets to solidexpress/solidexpress.github.io@demo-movies: /tmp/sx-movies/tutor1.webm /tmp/sx-movies/tutor1.vtt
+dry-run published-demos → website/assets/published-demos.json (11 ids, append ['tutor1'])
+dry-run demo-catalog featured append ['tutor1'] → 11 rows
+dry-run: no gh call, no file change
+```
+
+`tools/confirm_all.sh`: walks 46/46, 77/77, 44/44. Checkers in `docs/loop/post-rung-03-result.md` (rung 3 final 29/29, rung 2 16/16, wrench 28/28, DIAG 18/22). Headless **214 run, 0 failed**. `EdgeScreenPick` keeps the edge under the cursor; depth wins only for a stacked twin, so the wrench neck stays vertical and Tutor1 R5 stays 9 edges. `film_tutor1_tests` is in the 214 (13 checks, `29/29`). Lint `218 suites ok (67 ci, 147 full, 4 known-red)`. Tutor1 WebM re-rendered (18,808,869 bytes, container 61.800 s); the film script did not change, so the poster is unchanged.
+
 ## Rung 2 — Lesson 2 box (PR #246)
 
 Shipped: `PlaneBasis`, `TopoCue`, Shell chip, Convert on a face, point-line Smart Dim, bridge face identity, `Rung` descriptor, `check_rung02.py`, 44-row walk. Suites **206 run + 4 known-red**. Checker bar: `check_rung02.py` base 3/3, rounded 7/7, shell 13/13, final 16/16 at width 60 and at width 65.
 
 ## Post-rung-2 cleanup
 
-Organization pass after rung 2, before the lesson-2 film. Behaviour unchanged. History: `git log -- docs/loop/post-rung-02-cleanup.md`.
+Organization pass after rung 2, before the lesson-2 film. Behaviour unchanged. History: `git log -- docs/loop`.
 
 Shipped Part A WP1–WP12. WP12 adds `FilmSteps` (click-only film steps) and `BoxFixture` (the 100×60×50 validation box). `film_ubc_wrench.gd` is 303 lines. That extraction is net −63 lines. Suites stay **206 run + 4 known-red** (`lint_suites: 210 suites ok (62 ci, 144 full, 4 known-red)`). No ★ work package was parked (WP4, WP7, WP10 shipped). The Revert rule fired for none. Plane-basis check count stays 76 (WP8's +6).
 

@@ -20,7 +20,8 @@ func _init() -> void:
 
 
 func _run() -> void:
-	var ctx := await _boot()
+	var ctx := await Tutor1Fixture.boot(self, ROOT_SIZE, _on_status_local, ["interaction"])
+	check(root.size == ROOT_SIZE, "root is 1280×800")
 	await _no_bodies_refuses(ctx)
 	if not await _build_base(ctx):
 		ctx.main.queue_free()
@@ -320,30 +321,5 @@ func _click_popup_item(ctx: FilmContext, popup: PopupMenu, idx: int) -> void:
 	await process_frame
 
 
-func _status_since(mark: int) -> String:
-	if mark >= _status_log.size():
-		return ""
-	return " | ".join(_status_log.slice(mark))
-
-
-func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
-	check(root.size == ROOT_SIZE, "root is 1280×800")
-	if main.interaction != null:
-		main.interaction.status.connect(_on_status_local)
-	return ctx
-
-
 func _on_status_local(text: String) -> void:
-	if text == "":
-		return
-	_status_log.append(text)
-	print("  status: " + text)
+	Tutor1Fixture.note(_status_log, text)

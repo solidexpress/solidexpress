@@ -43,12 +43,5 @@ static func decide(first_pick: bool, shift: bool, hit_kind: String) -> String:
 	return "miss"
 
 
-static func view_for_corner(x: float, y: float) -> Key:
-	for row in CORNERS:
-		if absf(float(row["x"]) - x) < 0.5 and absf(float(row["y"]) - y) < 0.5:
-			return row["view"] as Key
-	return KEY_7
-
-
 static func pick_point_for_corner(x: float, y: float, z_mid: float = 15.0) -> Vector3:
 	return Vector3(x, y, z_mid)

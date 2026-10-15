@@ -4,16 +4,14 @@ Rows call these helpers. Pixel positions come from project(), never literals.
 """
 from __future__ import annotations
 
-import json
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 from sxdrive import SxError
 from walk import proc
+from walk.chrome import WalkChrome
 from walk.gates import parse_tier, run_kernel, run_tier, take
-from walk.gestures import label_reads
 
 # Vertical corner → view key (FilletPick.CORNERS / WP6).
 # Right (2) shows +X corners; Left (6) shows −X. Mid-height z=15.
@@ -30,26 +28,6 @@ WALL_POINT = (-59.5, 0.0, 12.0)
 # Iso (key 7) sits on model −Y, so Top keeps +Y and the removed half is −Y.
 REMOVED_POINT = (0.0, -40.0, 15.0)
 
-_REGEN_BAD = ("[ERROR]", "soft-skip", "regenerate stopped", "lost on rebuild")
-_ENGINE_NOISE = (
-    "already connected",
-    "nonexistent connection",
-    "tree_exited",
-    "Vulkan",
-    "ERR_CANT_OPEN",
-)
-_INTENDED = (
-    "Dimension must be a positive number",
-    "limit",
-    "nothing added",
-    "Extrude failed",
-    "fillet failed",
-    "Fillet could not be built",
-    "Offset: distance must be greater than 0",
-    "Offset: inward distance is at least the radius",
-    "Offset: nothing there",
-    "regenerate stopped at feature fillet",
-)
 
 REFUSE_FACE = (
     "No edge near click — click on an edge "
@@ -57,18 +35,22 @@ REFUSE_FACE = (
 )
 
 
-class WalkUI03:
+class WalkUI03(WalkChrome):
+    _INTENDED = (
+        "Dimension must be a positive number",
+        "limit",
+        "nothing added",
+        "Extrude failed",
+        "fillet failed",
+        "Fillet could not be built",
+        "Offset: distance must be greater than 0",
+        "Offset: inward distance is at least the radius",
+        "Offset: nothing there",
+        "regenerate stopped at feature fillet",
+    )
+
     def part(self) -> dict:
-        cached = self.ctx.get("part")
-        if isinstance(cached, dict):
-            return cached
-        result = proc.run(
-            [sys.executable, str(self.repo / "tools" / "check_rung03.py"), "params"],
-            cwd=self.repo,
-        )
-        data = json.loads(result.stdout)
-        self.ctx["part"] = data
-        return data
+        return WalkChrome.part(self, "check_rung03.py")
 
     def side(self) -> float:
         return float(self.part()["PART"]["SIDE"])
@@ -76,64 +58,6 @@ class WalkUI03:
     def height(self) -> float:
         part = self.part()["PART"]
         return float(self.ctx.get("height", part["H0"]))
-
-    def _view_centre(self) -> list[float]:
-        size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
-        return [float(size[0]) * 0.5, float(size[1]) * 0.5]
-
-    def _uv_inside(self, uv) -> bool:
-        try:
-            screen = self.d.project(sketch=list(uv))["screen"]
-        except SxError:
-            return False
-        size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
-        x, y = float(screen[0]), float(screen[1])
-        return 8 <= x <= float(size[0]) - 8 and 40 <= y <= float(size[1]) - 8
-
-    def fit_sketch(self) -> str:
-        mark = self.mark()
-        self.d.key("f")
-        self.d.wait_idle(frames=2)
-        return " | ".join(self.result_texts(mark))
-
-    def show_sketch_point(self, uv) -> None:
-        self.fit_sketch()
-        centre = self._view_centre()
-        for _ in range(8):
-            if self._uv_inside(uv):
-                return
-            self.d.wheel(notches=-2, screen=centre)
-            self.d.wait_idle(frames=1)
-
-    def new_part(self) -> str:
-        self.file_new("ok")
-        self.refresh("status")
-        return self.S()
-
-    def chrome_nodes(self) -> dict:
-        st = self.refresh("window", "controls", "rail")
-        win = st.get("window") or {}
-        size = win.get("size") or [0, 0]
-        return {
-            "window": win,
-            "size": size,
-            "status": self.control("hud:Status"),
-            "menu": self.control("menu:File"),
-            "rail": (self.refresh("rail").get("rail") or [None])[0],
-        }
-
-    def node_inside(self, node: dict | None, size) -> bool:
-        if not node:
-            return False
-        rect = node.get("rect") or []
-        if len(rect) < 4:
-            return False
-        return (
-            rect[0] >= -2
-            and rect[1] >= -2
-            and rect[0] + rect[2] <= float(size[0]) + 2
-            and rect[1] + rect[3] <= float(size[1]) + 2
-        )
 
     def arm_rect_centre(self) -> dict:
         self.click("rail:Rect")
@@ -150,29 +74,6 @@ class WalkUI03:
             "centre": bool(variant.get("pressed") or variant.get("lit")
                            or "Center" in str(variant.get("text", ""))),
         }
-
-    def profile_lines(self) -> list[dict]:
-        self.refresh("sketch")
-        return [
-            e for e in self._entities()
-            if e.get("type") == "line" and not e.get("construction") and not e.get("external")
-        ]
-
-    def _pt(self, value) -> tuple[float, float]:
-        return float(value[0]), float(value[1])
-
-    def sketch_bbox(self) -> dict | None:
-        pts = []
-        for line in self.profile_lines():
-            if line.get("start"):
-                pts.append(self._pt(line["start"]))
-            if line.get("end"):
-                pts.append(self._pt(line["end"]))
-        if not pts:
-            return None
-        xs = [p[0] for p in pts]
-        ys = [p[1] for p in pts]
-        return {"min": (min(xs), min(ys)), "max": (max(xs), max(ys)), "pts": pts}
 
     def centre_rect(self, a=(0.0, 0.0), b=(60.0, 60.0)) -> dict:
         armed = self.arm_rect_centre()
@@ -199,10 +100,6 @@ class WalkUI03:
             "status": " | ".join(results) or self.S(),
         }
 
-    def _line_mid(self, line: dict) -> list[float]:
-        a, b = self._pt(line["start"]), self._pt(line["end"])
-        return [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5]
-
     def top_line(self) -> dict | None:
         horiz = [
             ln for ln in self.profile_lines()
@@ -217,72 +114,11 @@ class WalkUI03:
         ]
         return max(vert, key=lambda ln: self._pt(ln["start"])[0], default=None)
 
-    def line_length(self, line: dict | None) -> float | None:
-        if not line:
-            return None
-        a, b = self._pt(line["start"]), self._pt(line["end"])
-        return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
-
     def clear_sketch_selection(self) -> None:
         self.click("rail:Select")
         self.show_sketch_point([30, 20])
         self.click(sketch=[30, 20])
         self.refresh("selection", "status")
-
-    def dimension_line(self, line: dict, value: str) -> dict:
-        self.clear_sketch_selection()
-        self.click("rail:SmartDim")
-        before = {str(d.get("text", "")) for d in self.dims()}
-        mid = self._line_mid(line)
-        self.show_sketch_point(mid)
-        self.click(sketch=mid)
-        self.d.wait_idle(frames=3)
-        fresh = [
-            d for d in self.dims()
-            if str(d.get("text", "")) not in before and "°" not in str(d.get("text", ""))
-        ]
-        dim = fresh[-1] if fresh else None
-        opened = False
-        if dim is not None:
-            opened = self.open_label(dim)
-            self._type_dim_editor(value)
-            self.enter()
-        self.refresh("dims", "dof", "status")
-        return {"opened": opened, "texts": self.dim_texts(), "status": self.S()}
-
-    def dof_text(self) -> str:
-        return str(self.refresh("dof").get("dof", "")).strip()
-
-    def dof_zero(self) -> bool:
-        return self.dof_text() in ("OK", "0")
-
-    def label_has(self, token: str) -> bool:
-        return any(self._reads(token, text) for text in self.dim_texts())
-
-    def _reads(self, token: str, text: str) -> bool:
-        return label_reads(token, text)
-
-    def refuse_dim(self, token: str, bad: str) -> dict:
-        dim = self.find_dim(lambda d: self._reads(token, str(d.get("text", ""))))
-        before = self.dim_texts()
-        mark = self.mark()
-        if dim is not None:
-            self.edit_dim(dim, bad)
-        results = " | ".join(self.result_texts(mark))
-        return {"results": results or self.S(), "before": before, "after": self.dim_texts()}
-
-    def esc_editor(self) -> dict:
-        dim = self.dims()[-1] if self.dims() else None
-        opened = self.open_label(dim) if dim else False
-        self.esc()
-        return {"opened": opened, "editor": self._dim_editor_open(), "texts": self.dim_texts()}
-
-    def label_boxes(self, tokens: list[str]) -> list[dict]:
-        found = []
-        for dim in self.dims():
-            if any(self._reads(tok, str(dim.get("text", ""))) for tok in tokens):
-                found.append(dim)
-        return found
 
     def rects_overlap(self, a, b) -> bool:
         if len(a) < 4 or len(b) < 4:
@@ -293,11 +129,6 @@ class WalkUI03:
             and a[1] < b[1] + b[3]
             and b[1] < a[1] + a[3]
         )
-
-    def arm_by_key(self, key: str) -> dict:
-        self.d.key(key)
-        self.refresh("status", "rail")
-        return {"status": self.S(), "lit": self.lit_names()}
 
     def rail_label_nodes(self) -> list[dict]:
         want = {"Rect", "Smart Dim", "Circle", "Convert", "Offset", "Select"}
@@ -388,9 +219,6 @@ class WalkUI03:
             "check_text": check_text,
             "volume": guard.get("volume"),
         }
-
-    def feature_names(self) -> list[str]:
-        return [str(r.get("name", "")) for r in self._timeline_names(show=True, records=True)]
 
     def select_body(self) -> str:
         self.refresh("bodies", "selection")
@@ -506,19 +334,6 @@ class WalkUI03:
         self.refresh("status", "finish", "controls")
         return {"status": self.S(), "radius": shown or self.field("finish:StripR")}
 
-    def _z_edge_at(self, x: float, y: float) -> dict | None:
-        best = None
-        best_d = 4.0
-        for edge in self.edges():
-            direction = edge.get("dir") or [0, 0, 0]
-            if abs(float(direction[2])) < 0.9:
-                continue
-            centre = self._edge_centre(edge)
-            dist = ((centre[0] - x) ** 2 + (centre[1] - y) ** 2) ** 0.5
-            if dist < best_d:
-                best, best_d = edge, dist
-        return best
-
     def _edge_centre(self, edge: dict) -> tuple[float, float, float]:
         a = edge.get("a") or edge.get("mid") or [0, 0, 0]
         b = edge.get("b") or a
@@ -571,18 +386,6 @@ class WalkUI03:
         reply = self.d.click(edge=edge_id, along=0.5)
         return " | ".join(self.result_texts(mark)) or str(reply.get("status", self.S()))
 
-    def fillet_count(self, status: str) -> int | None:
-        match = re.search(r"Fillet:\s*(\d+)\s+edge", status)
-        return int(match.group(1)) if match else None
-
-    def fillet_armed_count(self) -> int | None:
-        return self.fillet_count(self.S())
-
-    def disarm_fillet(self) -> None:
-        if self.fillet_armed_count() not in (None, 0):
-            self.esc()
-            self.refresh("status")
-
     def shift_click_face(self, normal, plane: float) -> dict:
         self.d.key("shift", action="down")
         self.d.wait_idle(frames=1)
@@ -611,10 +414,6 @@ class WalkUI03:
             count = self.selected_edge_count()
         return {"status": status, "count": count}
 
-    def chip_rect(self, cid: str) -> list:
-        node = self.control(cid) or {}
-        return list(node.get("rect") or [])
-
     def apply_enter(self) -> str:
         mark = self.mark()
         focus = str(self.refresh("focus").get("focus", ""))
@@ -623,32 +422,6 @@ class WalkUI03:
             self.d.wait_idle(frames=1)
         self.enter()
         return " | ".join(self.result_texts(mark)) or self.S()
-
-    def view_key(self, key: str) -> str:
-        mark = self.mark()
-        self.d.key(key)
-        self.d.wait_idle(frames=2)
-        self.refresh("status", "camera")
-        return " | ".join(self.result_texts(mark)) or self.S()
-
-    def camera(self) -> dict:
-        return dict(self.refresh("camera").get("camera") or {})
-
-    def window_size(self) -> list:
-        return (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
-
-    def project_model(self, model) -> list:
-        return list(self.d.project(model=list(model))["screen"])
-
-    def look_vector(self, camera: dict) -> list[float] | None:
-        pos, target = camera.get("position"), camera.get("target")
-        if not pos or not target:
-            return None
-        vec = [float(target[i]) - float(pos[i]) for i in range(3)]
-        length = sum(v * v for v in vec) ** 0.5
-        if length < 1e-6:
-            return None
-        return [v / length for v in vec]
 
     def _ensure_finish_bar(self) -> None:
         snap = self.refresh("sketch", "controls")
@@ -664,21 +437,6 @@ class WalkUI03:
             if "finish:Op" in shown:
                 return
             self.d.wait_idle(frames=2)
-
-    def exit_sketch(self) -> str:
-        mark = self.mark()
-        self.click("rail:ExitSketch")
-        self.d.wait_idle(frames=3)
-        self.refresh("sketch", "status")
-        return " | ".join(self.result_texts(mark)) or self.S()
-
-    def _pencil(self, name: str) -> str:
-        self._show_timeline()
-        mark = self.mark()
-        self.click(f"timeline:pencil:{name}")
-        self.d.wait_idle(frames=3)
-        self.refresh("status", "sketch", "timeline")
-        return " | ".join(self.result_texts(mark)) or self.S()
 
     def offset_arm(self) -> dict:
         mark = self.mark()
@@ -756,39 +514,6 @@ class WalkUI03:
             "external": self.external_circles(),
         }
 
-    def shell_chip(self) -> dict | None:
-        node = self.control("strip:shell")
-        if not node:
-            return None
-        if node.get("visible") is False:
-            return None
-        return node
-
-    def shell_back(self, thickness: str = "1") -> dict:
-        view = self.view_key("8")
-        self.select_body()
-        selected = self.select_face([0, 0, -1])
-        chip = self.shell_chip()
-        shown = ""
-        status = ""
-        names: list[str] = []
-        if chip is not None:
-            self.click("strip:shell")
-            self.refresh("controls")
-            shown = self.type_into("finish:Thickness", thickness)
-            mark = self.mark()
-            self.enter()
-            status = " | ".join(self.result_texts(mark)) or self.S()
-            names = self.feature_names()
-        return {
-            "view": view,
-            "selected": selected,
-            "chip": chip,
-            "shown": shown,
-            "status": status,
-            "names": names,
-        }
-
     def apply_shell(self, text: str) -> dict:
         self.click("strip:shell")
         self.refresh("controls")
@@ -803,22 +528,6 @@ class WalkUI03:
             "status": " | ".join(results) or self.S(),
             "names": self.feature_names(),
         }
-
-    def clear_faces(self) -> None:
-        self.esc_until("Selection cleared", 4)
-        self.refresh("selection")
-
-    def wheel_over(self, cid: str) -> dict:
-        before = dict(self.refresh("camera").get("camera") or {})
-        rect = self.chip_rect(cid)
-        if len(rect) < 4:
-            return {"moved": True, "before": before, "after": {}, "rect": rect}
-        centre = [rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5]
-        self.d.wheel(notches=1, screen=centre)
-        self.d.wait_idle(frames=2)
-        after = dict(self.refresh("camera").get("camera") or {})
-        moved = abs(float(after.get("distance", 0)) - float(before.get("distance", 0))) > 0.05
-        return {"moved": moved, "before": before, "after": after, "rect": rect}
 
     def covered(self, rect: list, skip_ids: tuple[str, ...] = ("strip:shell",),
                 owner_path: str = "") -> bool:
@@ -903,12 +612,6 @@ class WalkUI03:
         ok = all(abs(got[i] - colour[i]) <= tol for i in range(3))
         return {"ok": ok, "got": got, "want": colour}
 
-    def body_size(self) -> tuple[float, float, float] | None:
-        bodies = list(self.refresh("bodies").get("bodies") or [])
-        if len(bodies) != 1:
-            return None
-        return self._bbox_size(bodies[0])
-
     def reopen(self, name: str) -> dict:
         self.file_new("ok")
         self.open_file(name)
@@ -918,30 +621,6 @@ class WalkUI03:
             "names": self.feature_names(),
             "section": self.section_state(),
         }
-
-    def timeline_panel_rect(self) -> list:
-        for row in self.refresh("timeline").get("timeline") or []:
-            if row.get("kind") == "panel":
-                return list(row.get("rect") or [])
-        return []
-
-    def regen_report(self, mark: int) -> dict:
-        lines = self.trace_from(mark)
-        bad = [ln for ln in lines if any(tok in ln for tok in _REGEN_BAD)]
-        return {"lines": lines, "bad": bad, "names": self.feature_names()}
-
-    def log_errors(self) -> list[str]:
-        path = self.out / "input-trace.log"
-        if not path.is_file():
-            return []
-        bad = []
-        for line in path.read_text(errors="replace").splitlines():
-            if "[ERROR]" not in line:
-                continue
-            if any(tok in line for tok in _ENGINE_NOISE) or any(tok in line for tok in _INTENDED):
-                continue
-            bad.append(line)
-        return bad
 
     def headless(self) -> dict[str, dict]:
         keys = ("kernel", "godot", "lint", "unit", "registry", "errors")

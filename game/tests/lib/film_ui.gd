@@ -501,7 +501,8 @@ static func viewport_click(
 		screen_pos: Vector2,
 		cue: Dictionary,
 		ctrl: bool = false,
-		button_index: int = MOUSE_BUTTON_LEFT
+		button_index: int = MOUSE_BUTTON_LEFT,
+		shift: bool = false
 ) -> void:
 	var ix = ctx.main.interaction
 	if ix == null:
@@ -511,6 +512,9 @@ static func viewport_click(
 		return
 	if ctrl:
 		_set_ctrl_held(true)
+	if shift:
+		_set_shift_held(true)
+	if ctrl or shift:
 		await wait_frames(ctx.tree, 1)
 	var down := InputEventMouseButton.new()
 	down.button_index = button_index
@@ -518,6 +522,7 @@ static func viewport_click(
 	down.position = screen_pos
 	down.ctrl_pressed = ctrl
 	down.meta_pressed = ctrl
+	down.shift_pressed = shift
 	ix._input(down)
 	await wait_frames(ctx.tree, 1)
 	var up := InputEventMouseButton.new()
@@ -526,10 +531,13 @@ static func viewport_click(
 	up.position = screen_pos
 	up.ctrl_pressed = ctrl
 	up.meta_pressed = ctrl
+	up.shift_pressed = shift
 	ix._input(up)
 	await wait_frames(ctx.tree, 2)
 	if ctrl:
 		_set_ctrl_held(false)
+	if shift:
+		_set_shift_held(false)
 	await wait_frames(ctx.tree, 2)
 
 

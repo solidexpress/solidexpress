@@ -1,6 +1,6 @@
 # Rung 3 result — confirm pass on `d94cd82`
 
-**PASS.** `tools/confirm_all.sh` on this VM (OCCT 8.0.1, Godot 4.7-stable), after the sketch-tools suite was put back to a radius label. Critique 2 (`rung-03-critique-2.md`, score 4/10 on `f355557`) is unchanged.
+**PASS.** `tools/confirm_all.sh` on this VM (OCCT 8.0.1, Godot 4.7-stable), after the sketch-tools suite was put back to a radius label. The 4/10 score is history: `git log -- docs/loop`.
 
 | Bar | Count |
 |---|---|

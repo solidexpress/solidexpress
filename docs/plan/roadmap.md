@@ -264,6 +264,18 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 
 ---
 
+## 9. Structural debt found after rung 3
+
+| Item | What | Design | Why parked |
+|---|---|---|---|
+| Section shader and cap | `document_view.gd` `_make_section_shader` discards the near half and the back faces. `section_cap.gd` fills the cut | Do not merge them in this pass | The shader discards; `SectionCap` fills |
+| Suite render flag | `rung03_section` and `rung01_replan16_chrome` read pixels. Smoke skip already landed in WP9 | `render=viewport` starts Godot on X11 + Vulkan, without `--headless`, and keeps `XAUTHORITY` when `HOME` is per-job | Two attempts. The window draws and `frame_post_draw` arrives, then `rung03_section` fails: the removed-half sample is the cap colour, the same value as the wall (`(0.62, 0.66, 0.72)` at two on-screen points). The chrome suite was not run. Dummy stays the starter. Do not loosen the cap check |
+| Near-match walk helpers | `try_extrude`, `clear_sketch_selection`, `rail_label_nodes`, `select_body`, `_headless_report`, `apply_shell`, `pick_edge_again` | One `WalkChrome` method when the diff is a name or a number | ★ WP6 not started. WP3 is still red after the retry, so WP1–WP5 are not all green |
+| Offset kind table | `SketchOffset.click` still branches on `kind == "circle"` | `KINDS` rows: applied text and whether Reverse can eat the radius | ★ WP7 not started. WP3 is still red after the retry, so WP1–WP5 are not all green |
+| Junction nearer-edge tie-break | `EdgeScreenPick` ranks `edge_near_screen`: closer to the cursor, then more parallel to the view, then nearer the camera only for a stacked twin (same direction, same pixel) | A crossing edge at the wrench neck does not win on depth. A side-view pair of verticals still takes the visible one | Shipped. Confirm walks 46/46, 77/77, 44/44. Headless 214 run, 0 failed |
+
+---
+
 ## Related
 
 - [README.md](README.md) — plan index (park later ideas here, not in chat)
@@ -274,4 +286,5 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 - [implementation-plan.md](implementation-plan.md) — how we build
 - [STATUS.md](STATUS.md) — what has landed
 - §8 — structural debt found after rung 2
+- §9 — structural debt found after rung 3
 - [education-research.md](../education-research.md) — how the command names should be taught

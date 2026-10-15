@@ -2387,6 +2387,11 @@ func _prefer_selected_dressup_edge_screen(body: String, resolved: String,
 			best_id = id
 	if best_id != "" and best_d <= DRESSUP_SILHOUETTE_PX \
 			and best_d <= d_new + 8.0:
+		# Same pixel, but the picked edge is the hidden twin. Keep the visible one.
+		if view.has_method("edge_camera_distance") \
+				and view.edge_camera_distance(body, best_id, camera) \
+				> view.edge_camera_distance(body, want, camera) + 1.0:
+			return want
 		return best_id
 	return want
 

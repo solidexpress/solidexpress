@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from check_rung03 import VOLUMES
+from check_rung03 import PART, VOLUMES
 from geom import Topology
 
 
@@ -20,11 +20,11 @@ class ImplicitPart03:
     """Outer solid minus the hole, then minus the shell cavity when `wall` > 0."""
 
     stage: str
-    h0: float = 30.0
-    boss_d: float = 70.0
-    boss_h: float = 25.0
-    hole_d: float = 60.0
-    side: float = 120.0
+    h0: float = PART["H0"]
+    boss_d: float = PART["BOSS_D"]
+    boss_h: float = PART["BOSS_H"]
+    hole_d: float = PART["HOLE_D"]
+    side: float = PART["SIDE"]
     r_vert: float = 0.0
     r_front: float = 0.0
     r_root: float = 0.0
@@ -53,7 +53,8 @@ class ImplicitPart03:
     @staticmethod
     def for_stage(stage, **overrides):
         common = dict(
-            h0=30.0, boss_d=70.0, boss_h=25.0, hole_d=60.0,
+            h0=PART["H0"], boss_d=PART["BOSS_D"], boss_h=PART["BOSS_H"],
+            hole_d=PART["HOLE_D"], side=PART["SIDE"],
             r_vert=0.0, r_front=0.0, r_root=0.0,
             r_outer_rim=0.0, r_inner_rim=0.0, wall=0.0,
         )

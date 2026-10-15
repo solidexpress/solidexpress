@@ -107,10 +107,6 @@ func hide_panel() -> void:
 		panel.visible = false
 
 
-func is_panel_visible() -> bool:
-	return panel != null and panel.visible
-
-
 func signed_distance() -> float:
 	var d := absf(distance)
 	return -d if reverse else d
