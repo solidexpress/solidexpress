@@ -5371,13 +5371,18 @@ func _click_circle(pos2: Vector2) -> void:
 				var p1 := _tool_points[0]
 				var p2 := _tool_points[1]
 				var p3 := _tool_points[2]
-				var c_v: Variant = _circumcenter(p1, p2, p3)
-				if c_v != null:
-					var c: Vector2 = c_v
-					var r: float = c.distance_to(p1)
-					if r > 1e-6:
-						sketch.add_circle(c.x, c.y, r)
-						circle_radius = r
+				var tangent := tool_variant == "perimeter" \
+						and SketchCircleTangent.two_lines(sketch, p1, p2, _pick_tolerance())
+				if tangent:
+					_place_tangent_circle(p1, p2, p3)
+				else:
+					var c_v: Variant = _circumcenter(p1, p2, p3)
+					if c_v != null:
+						var c: Vector2 = c_v
+						var r: float = c.distance_to(p1)
+						if r > 1e-6:
+							sketch.add_circle(c.x, c.y, r)
+							circle_radius = r
 				_tool_points.clear()
 		_:  # center
 			if _tool_points.size() == 1:
@@ -5400,6 +5405,19 @@ func _click_circle(pos2: Vector2) -> void:
 						_record_dimension("radius", [circ_id], r, rcid)
 				_tool_points.clear()
 	_redraw()
+
+
+## Two line picks and a side click. A zero inset adds no circle.
+func _place_tangent_circle(p1: Vector2, p2: Vector2, side: Vector2) -> void:
+	var circ_id := SketchCircleTangent.build(sketch, p1, p2, side, _pick_tolerance())
+	if circ_id == "":
+		status.emit("Circle refused")
+		return
+	var r := float(sketch.entity_info(circ_id).get("radius", 0.0))
+	circle_radius = r
+	_last_commit_text = "Tangent circle Ø%.4f" % (r * 2.0)
+	status.emit(_last_commit_text)
+	run_solve()
 
 
 func _circumcenter(a: Vector2, b: Vector2, c: Vector2) -> Variant:

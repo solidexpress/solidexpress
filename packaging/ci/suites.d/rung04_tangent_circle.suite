@@ -1,0 +1,3 @@
+script=tests/run_rung04_tangent_circle.gd
+tier=ci
+timeout=180
