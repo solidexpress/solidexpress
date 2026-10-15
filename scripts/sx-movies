@@ -20,7 +20,8 @@ GODOT="${GODOT:-$ROOT/tools/godot/godot}"
 GAME="$ROOT/game"
 MANIFEST="$GAME/tests/ui_movie_manifest.json"
 OUT="${SX_MOVIES_OUT:-$ROOT/dist/movies}"
-FPS="${SX_MOVIES_FPS:-30}"
+# FPS is a single source of truth: keep in sync with FilmPresentation.FPS.
+FPS="30"
 
 if [[ ! -x "$GODOT" ]]; then
   echo "sx-movies: Godot not found at $GODOT" >&2
@@ -113,7 +114,7 @@ render_one() {
 
   if [[ ! -f "$webm_abs" ]] || [[ $(stat -c%s "$webm_abs" 2>/dev/null || echo 0) -lt 4096 ]]; then
     echo "sx-movies: Godot/ffmpeg failed (exit $godot_ec); missing or tiny $webm_abs" >&2
-    exit "${godot_ec:-1}"
+    return "${godot_ec:-1}"
   fi
   if [[ $godot_ec -ne 0 ]]; then
     echo "sx-movies: warning: Godot exited $godot_ec after writing $webm_abs (known MovieWriter teardown bug on some builds)" >&2
@@ -151,10 +152,18 @@ PY
     render_one "$id" "$quit_after"
     ;;
   all)
+    fails=()
     while IFS=$'\t' read -r id quit_after <&3; do
       [[ -z "$id" ]] && continue
-      render_one "$id" "$quit_after"
+      if ! render_one "$id" "$quit_after"; then
+        echo "sx-movies: FAILED $id" >&2
+        fails+=("$id")
+      fi
     done 3< <(enabled_rows)
+    if [[ ${#fails[@]} -gt 0 ]]; then
+      echo "sx-movies: failures: ${fails[*]}" >&2
+      exit 1
+    fi
     echo "sx-movies: done → $OUT"
     ;;
   *)

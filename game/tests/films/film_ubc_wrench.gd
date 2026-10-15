@@ -12,7 +12,6 @@ const PERP := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
 
 
 func run_film(ctx: FilmContext) -> void:
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1600, 900))
 	var sm: SketchMode = ctx.main.sketch_mode
 
 	await ctx.movie_toast("A parametric wrench, from a blank part to a print file", 2.0)
