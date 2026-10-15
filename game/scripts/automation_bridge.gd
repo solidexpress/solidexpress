@@ -709,6 +709,11 @@ func _resolve_point(req: Dictionary) -> Dictionary:
 		if sp == Vector2.INF:
 			return {"error": "sketch point is not on screen (no active sketch camera)"}
 		return {"vp": _main().get_viewport(), "pos": sp + offset}
+	if req.has("datum"):
+		var picked: Variant = OriginPlanes.pick_point(str(req["datum"]))
+		if not (picked is Vector3):
+			return {"error": "datum not found: %s" % str(req["datum"])}
+		return {"vp": _main().get_viewport(), "pos": _model_to_screen(picked) + offset}
 	if req.has("model") or req.has("world"):
 		var mp := _vec3(req["model"] if req.has("model") else req["world"])
 		return {"vp": _main().get_viewport(), "pos": _model_to_screen(mp) + offset}

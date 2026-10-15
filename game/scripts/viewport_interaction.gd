@@ -2334,6 +2334,11 @@ func _commit_pick_sketch_host(screen_pos: Vector2) -> void:
 		_picking_sketch_host = false
 		sketch_host_picked.emit("face", face_id, body_id, "")
 		return
+	var datum_name := OriginPlanes.ray_hit(view, ray[0], ray[1])
+	if datum_name != "":
+		_picking_sketch_host = false
+		sketch_host_picked.emit("datum", datum_name, "", "")
+		return
 	# Empty ground → XY sketch.
 	if hit.is_empty() and ground_point(screen_pos) != null:
 		_picking_sketch_host = false

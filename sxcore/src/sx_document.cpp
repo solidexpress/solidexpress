@@ -1417,6 +1417,12 @@ bool SxDocument::remove_datum(const String& id) {
     return doc_->remove_datum(eid);
 }
 
+bool SxDocument::rename_datum(const String& id, const String& name) {
+    auto eid = parse_id(id);
+    if (eid.is_null()) return false;
+    return doc_->rename_datum(eid, to_std(name));
+}
+
 // Axis-angle (degrees) → unit quaternion (x, y, z, w). Degenerate axis → identity.
 static std::array<double, 4> axis_angle_to_quat(const Vector3& axis, double angle_deg) {
     gp_Vec ax(axis.x, axis.y, axis.z);
@@ -2630,6 +2636,7 @@ void SxDocument::_bind_methods() {
                          &SxDocument::graph_add_datum_point);
     ClassDB::bind_method(D_METHOD("datum_list"), &SxDocument::datum_list);
     ClassDB::bind_method(D_METHOD("remove_datum", "id"), &SxDocument::remove_datum);
+    ClassDB::bind_method(D_METHOD("rename_datum", "id", "name"), &SxDocument::rename_datum);
     ClassDB::bind_method(D_METHOD("add_instance", "source_body", "translation", "rotation_axis",
                                   "rotation_angle_deg", "name"),
                          &SxDocument::add_instance);

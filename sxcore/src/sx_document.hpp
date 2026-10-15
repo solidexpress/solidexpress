@@ -273,6 +273,7 @@ public:
     godot::String graph_add_datum_point(const godot::Vector3& position);
     godot::Array datum_list() const;
     bool remove_datum(const godot::String& id);
+    bool rename_datum(const godot::String& id, const godot::String& name);
 
     // --- instances (assembly placements; direct doc mutation, not undoable v1) ---
     // rotation_axis + rotation_angle_deg are converted to a unit quaternion for

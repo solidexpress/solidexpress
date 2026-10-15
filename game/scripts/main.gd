@@ -1370,6 +1370,8 @@ func _on_sketch_host_picked(kind: String, face_id: String, body_id: String, pad_
 		_on_sketch_pad_clicked(pad_fid, false)
 	elif kind == "face":
 		_start_sketch_on_face(face_id, body_id)
+	elif kind == "datum":
+		OriginPlanes.begin(self, face_id)
 	else:
 		_start_sketch_on_ground()
 

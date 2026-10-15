@@ -185,6 +185,7 @@ func _ready() -> void:
 	_selection_corners.name = "SelectionCorners"
 	_selection_corners.material_override = corner_mat
 	add_child(_selection_corners)
+	OriginPlanes.seed(doc)
 	refresh()
 
 
@@ -2429,6 +2430,7 @@ func load_from(path: String) -> bool:
 func new_document() -> void:
 	doc = SxDocument.new()
 	units = "mmgs"
+	OriginPlanes.seed(doc)
 	clear_selection()
 	hidden_bodies.clear()
 	_clipboard_bodies.clear()
@@ -2610,14 +2612,11 @@ func _rebuild_datum(d: Dictionary) -> void:
 
 
 func _make_datum_plane_mesh(d: Dictionary) -> ArrayMesh:
-	var origin: Vector3 = d["origin"]
-	var normal: Vector3 = d["normal"]
-	var x_dir: Vector3 = d["x_dir"]
-	var y_dir := normal.cross(x_dir).normalized()
-	if y_dir.length_squared() < 1e-12:
-		y_dir = Vector3.UP if absf(normal.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
-		y_dir = normal.cross(y_dir).normalized()
-	x_dir = y_dir.cross(normal).normalized()
+	var fr := OriginPlanes.frame(d)
+	var origin: Vector3 = fr["origin"]
+	var normal: Vector3 = fr["normal"]
+	var x_dir: Vector3 = fr["x"]
+	var y_dir: Vector3 = fr["y"]
 	var hx := x_dir * DATUM_PLANE_HALF
 	var hy := y_dir * DATUM_PLANE_HALF
 	var c0 := origin - hx - hy

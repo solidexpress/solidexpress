@@ -1,0 +1,115 @@
+class_name OriginPlanes
+extends RefCounted
+## The three origin planes of a new part. BASIS is the sketch frame.
+## The stored datum x_dir is only the visible quad. Callers do not branch.
+
+
+## name, plane normal, sketch X, sketch Y, how a click starts the sketch,
+## and a point that lies on this quad and not the other two.
+const BASIS: Array[Dictionary] = [
+	{
+		"name": "Front",
+		"normal": Vector3(0, 0, 1),
+		"x": Vector3(1, 0, 0),
+		"y": Vector3(0, 1, 0),
+		"entry": "ground",
+		"pick": Vector3(4, -6, 0),
+	},
+	{
+		"name": "Top",
+		"normal": Vector3(0, 1, 0),
+		"x": Vector3(1, 0, 0),
+		"y": Vector3(0, 0, 1),
+		"entry": "plane",
+		"pick": Vector3(10, 0, 10),
+	},
+	{
+		"name": "Right",
+		"normal": Vector3(1, 0, 0),
+		"x": Vector3(0, 0, 1),
+		"y": Vector3(0, 1, 0),
+		"entry": "plane",
+		"pick": Vector3(0, 10, 10),
+	},
+]
+
+
+## Idempotent. A document that already has Front is left alone, so load
+## does not grow a second set.
+static func seed(doc) -> void:
+	if doc == null:
+		return
+	for d in doc.datum_list():
+		if str(d.get("name", "")) == "Front":
+			return
+	for row in BASIS:
+		var id := str(doc.add_datum_plane(Vector3.ZERO, row["normal"]))
+		if id == "":
+			continue
+		doc.rename_datum(id, str(row["name"]))
+
+
+static func row(name: String) -> Dictionary:
+	for row in BASIS:
+		if str(row["name"]) == name:
+			return row
+	return {}
+
+
+static func pick_point(name: String) -> Variant:
+	var found := row(name)
+	if found.is_empty():
+		return null
+	return found["pick"]
+
+
+## Front uses the ground sketch. Right and Top use their BASIS row.
+static func begin(main, name: String) -> void:
+	var found := row(name)
+	if found.is_empty() or str(found.get("entry", "")) == "ground":
+		main._start_sketch_on_ground()
+		return
+	main._start_sketch_on_plane(Vector3.ZERO, found["x"], found["y"])
+
+
+## Same frame as the visible quad in DocumentView.
+static func frame(d: Dictionary) -> Dictionary:
+	var origin: Vector3 = d["origin"]
+	var normal: Vector3 = (d["normal"] as Vector3).normalized()
+	var x_dir: Vector3 = d["x_dir"]
+	var y_dir := normal.cross(x_dir).normalized()
+	if y_dir.length_squared() < 1e-12:
+		y_dir = Vector3.UP if absf(normal.dot(Vector3.UP)) < 0.9 else Vector3.RIGHT
+		y_dir = normal.cross(y_dir).normalized()
+	x_dir = y_dir.cross(normal).normalized()
+	return {"origin": origin, "normal": normal, "x": x_dir, "y": y_dir}
+
+
+## Nearest finite quad the ray hits, or "" . Faces are decided by the caller.
+static func ray_hit(view, ray_origin: Vector3, ray_dir: Vector3) -> String:
+	if view == null or view.doc == null:
+		return ""
+	var half := DocumentView.DATUM_PLANE_HALF
+	var best_t := INF
+	var best := ""
+	var dir := ray_dir.normalized()
+	for d in view.doc.datum_list():
+		if str(d.get("kind", "")) != "plane":
+			continue
+		var fr := frame(d)
+		var normal: Vector3 = fr["normal"]
+		var denom := dir.dot(normal)
+		if absf(denom) < 1e-8:
+			continue
+		var t := ((fr["origin"] as Vector3) - ray_origin).dot(normal) / denom
+		if t < 1e-4 or t >= best_t:
+			continue
+		var p := ray_origin + dir * t
+		var rel := p - (fr["origin"] as Vector3)
+		var u := rel.dot(fr["x"])
+		var v := rel.dot(fr["y"])
+		if absf(u) > half or absf(v) > half:
+			continue
+		best_t = t
+		best = str(d.get("name", ""))
+	return best
