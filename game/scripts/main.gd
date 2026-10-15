@@ -540,6 +540,8 @@ func _build_ui() -> void:
 			if view != null:
 				view.unhide_all()
 				_on_status("All shown")
+		elif id == 90:
+			normal_to_view()
 		elif id >= 100:
 			var idx := _view_popup.get_item_index(id)
 			if idx >= 0:
@@ -1243,9 +1245,36 @@ func _install_orientation_menu() -> void:
 		sc.events.append(ev)
 		_view_popup.set_item_shortcut(idx, sc, false)
 	_view_popup.add_separator()
+	_view_popup.add_item("Normal To", 90)
 
 
 ## Menu bar, HUD View list, and the number keys share this.
+## Ctrl+8 and View → Normal To. The active sketch wins. With no sketch, a
+## named origin plane in `view.datum_focus` is framed from its BASIS row.
+func normal_to_view() -> void:
+	if camera == null:
+		return
+	if sketch_mode != null and sketch_mode.active:
+		var center: Vector3 = sketch_mode.plane.origin
+		var radius := 40.0
+		var ext: Dictionary = sketch_mode.sketch_extents(0.2) if sketch_mode.has_method("sketch_extents") else {}
+		if not ext.is_empty():
+			center = ext.get("center", center)
+			radius = float(ext.get("radius", radius))
+		camera.enter_sketch_view(sketch_mode.plane_normal(), center, radius, sketch_mode.plane_y)
+		_on_status("Normal to")
+		return
+	var focus := ""
+	if view != null:
+		focus = str(view.get("datum_focus"))
+	var row := OriginPlanes.row(focus)
+	if row.is_empty():
+		_on_status("Normal to needs an active sketch")
+		return
+	camera.enter_sketch_view(row["normal"], Vector3.ZERO, DocumentView.DATUM_PLANE_HALF, row["y"])
+	_on_status("Normal to")
+
+
 func _apply_named_standard_view(view_id: String) -> void:
 	if camera == null:
 		return

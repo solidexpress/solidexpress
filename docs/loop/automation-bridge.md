@@ -39,6 +39,7 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `popup:Right` | Section plane Right (`x = 0`, normal ±X) |
 | `plane=` | With `face_normal`, the aligned face whose `n·pick` is nearest this millimetre offset |
 | `datum=Front\|Top\|Right` | A point on that origin quad and not the other two (`click` while sketch-host pick is armed) |
+| `popup:Normal To` | View menu item. Ctrl+8 runs the same re-face. Key 8 stays Bottom. |
 | `state.faces[].pick` | World point on the face; `click(face=)` and `click(face_normal=)` aim here |
 | `state.faces[].plane` | `n·pick` in millimetres |
 | `state.section` | `{on, plane, point, normal}` — named plane and kept-half normal |

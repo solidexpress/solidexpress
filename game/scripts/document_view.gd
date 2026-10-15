@@ -36,6 +36,8 @@ enum DisplayMode { SHADED, SHADED_EDGES, WIREFRAME }
 var doc: SxDocument = SxDocument.new()
 ## Length unit of a new part. Millimetres; no converter and no dialog.
 var units := "mmgs"
+## Plane name Normal To frames when no sketch is active. Empty skips it.
+var datum_focus := ""
 ## True while graph_changed is clearing selection so panels can keep a hole edit.
 var refreshing_graph := false
 ## Primary (most recent) selection — single-select API, kept for panels/tests.
