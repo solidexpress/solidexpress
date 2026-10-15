@@ -165,10 +165,11 @@ bool apply_sweep(ApplyCtx& ctx) {
                     guide_ptr = &guide_path;
                 }
                 const double thin = num_param(params, "thin_thickness", 0.0, env);
+                const bool contact = params.value("contact", false);
 
                 TopoDS_Shape result;
                 try {
-                    result = sweep_along_polyline(face, path, guide_ptr, thin);
+                    result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
                 } catch (const Standard_Failure& e) {
                     return fail(std::string("sweep failed: ") + e.what());
                 } catch (const std::runtime_error& e) {

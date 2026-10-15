@@ -963,6 +963,7 @@ func _refresh_ids() -> void:
 	_tag(main.get("file_dialog"), "dialog:File")
 	_tag_dialog_buttons(main)
 	var names := {
+		"SweepBoss": "sweep:Boss",
 		"PaletteSketch": "rail:Sketch",
 		"JawTool": "rail:Jaw",
 		"ToolSelect": "rail:Select",

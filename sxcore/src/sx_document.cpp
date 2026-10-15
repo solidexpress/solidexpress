@@ -933,7 +933,7 @@ String SxDocument::graph_add_sweep(const String& sketch_fid, const PackedVector3
 }
 
 String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const String& path_fid,
-                                              const PackedStringArray& guide_fids) {
+                                              const PackedStringArray& guide_fids, bool contact) {
     if (sketch_fid.is_empty() || path_fid.is_empty()) return {};
     sx::EntityId fid;
     bool ok = apply_graph_edit("sweep", [&] {
@@ -941,6 +941,7 @@ String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const St
         f.type = sx::FeatureType::Sweep;
         f.params["sketch"] = to_std(sketch_fid);
         f.params["path_feature"] = to_std(path_fid);
+        if (contact) f.params["contact"] = true;
         if (guide_fids.size() > 0) {
             nlohmann::json guides = nlohmann::json::array();
             for (int i = 0; i < guide_fids.size(); ++i) guides.push_back(to_std(guide_fids[i]));
@@ -2584,8 +2585,9 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid",
-                                  "guide_fids"),
-                         &SxDocument::graph_add_sweep_along_path, DEFVAL(PackedStringArray()));
+                                  "guide_fids", "contact"),
+                         &SxDocument::graph_add_sweep_along_path, DEFVAL(PackedStringArray()),
+                         DEFVAL(false));
     ClassDB::bind_method(D_METHOD("graph_add_path", "sketch_fids", "mode"), &SxDocument::graph_add_path);
     ClassDB::bind_method(D_METHOD("graph_add_loft", "sketch_fids", "ruled", "guide_fids"),
                          &SxDocument::graph_add_loft, DEFVAL(PackedStringArray()));

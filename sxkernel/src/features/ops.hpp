@@ -111,7 +111,7 @@ nlohmann::json pnt_to_json(const gp_Pnt& p);
 TopoDS_Wire make_polyline_wire(const nlohmann::json& path);
 TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const nlohmann::json& path,
                                   const nlohmann::json* guide_path = nullptr,
-                                  double thin_thickness = 0.0);
+                                  double thin_thickness = 0.0, bool contact = false);
 TopoDS_Shape helix_sweep_solid(const gp_Ax2& axis, double helix_r, double pitch,
                                double turns, bool left_handed, double profile_r);
 TopoDS_Shape thread_cutter_solid(const gp_Ax2& axis, double major_radius, double pitch,

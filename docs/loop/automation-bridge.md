@@ -44,6 +44,10 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `state.faces[].plane` | `n·pick` in millimetres |
 | `state.section` | `{on, plane, point, normal}` — named plane and kept-half normal |
 | `state.units` | Length unit of the open part. A new part is `mmgs`. No dialog and no conversion. |
+| `sweep:Boss` | Swept Boss. Arms profile then path picks. Ctrl+click pads still sweep. |
+| `sweep:Profile` | Next pad or timeline sketch is the profile. |
+| `sweep:Path` | Next pad or timeline sketch is the path (open chain). |
+| `sweep:Ok` | Builds the solid. Refuses when the path is missing. |
 
 `state.faces` records are `id`, `body`, `centre`, `normal`, `area`, `screen`, `pick`, `plane`. The list is cached by document revision, camera transform, projection, and size, so `screen` is recomputed when the view moves. `pick` is a point on the face (an annular face's `centre` lies in the hole). `plane` is `n·pick`. `click(face=<id>)` and `click(face_normal=[x,y,z])` project `pick` through the camera at click time. `click(face_normal=[x,y,z])` chooses the face whose normal aligns with that direction (|dot| ≥ 0.999); if several faces share it, the one furthest along the normal is used (the outer wall). `click(face_normal=[x,y,z], plane=<mm>)` instead chooses the aligned face whose `plane` is nearest `<mm>` (`z = 30` versus `z = 55`). When that click lands within the viewport's edge tolerance, the bridge clicks the same point once more so the face is selected. The click reply includes that face's `normal`.
 
