@@ -281,6 +281,82 @@ TEST_CASE("trim_entity replaces circle with remaining arc",
     REQUIRE(sweep > 3.14159265358979323846);  // more than half remains
 }
 
+TEST_CASE("trim_entity keeps the quarter circle against two construction lines",
+          "[sketchtools][trim]") {
+    Sketch sk("TrimConstrElbow");
+    auto hx = sk.add_line(0, 0, 40, 0);
+    auto hy = sk.add_line(0, 0, 0, 40);
+    sk.set_construction(hx, true);
+    sk.set_construction(hy, true);
+    auto c = sk.add_circle(15, 15, 15);
+
+    // Outer pick (away from the corner). The kept arc is the inner quarter.
+    REQUIRE(trim_entity(sk, c.str(), 30.0, 15.0));
+    REQUIRE(sk.entity(c) == nullptr);
+    REQUIRE(sk.entity(hx) != nullptr);
+    REQUIRE(sk.entity(hy) != nullptr);
+    REQUIRE(sk.is_construction(hx));
+    REQUIRE(sk.is_construction(hy));
+
+    const SketchEntity* arc = nullptr;
+    int arcs = 0;
+    int lines = 0;
+    for (const auto& e : sk.entities()) {
+        if (e.type == SketchEntityType::Arc) {
+            arc = &e;
+            ++arcs;
+        } else if (e.type == SketchEntityType::Line) {
+            ++lines;
+        }
+    }
+    REQUIRE(arcs == 1);
+    REQUIRE(lines == 2);
+    REQUIRE(arc != nullptr);
+    REQUIRE(sk.param(arc->params[2]) == Approx(15.0).margin(1e-6));
+
+    double sa = sk.param(arc->params[3]);
+    double ea = sk.param(arc->params[4]);
+    double sweep = ea - sa;
+    while (sweep < 0) sweep += 2.0 * 3.14159265358979323846;
+    REQUIRE(sweep == Approx(3.14159265358979323846 / 2.0).margin(3.14159265358979323846 / 180.0));
+
+    auto at = [&](double ang) {
+        return std::pair<double, double>{
+            sk.param(arc->params[0]) + 15.0 * std::cos(ang),
+            sk.param(arc->params[1]) + 15.0 * std::sin(ang)};
+    };
+    auto p0 = at(sa);
+    auto p1 = at(ea);
+    auto near = [](std::pair<double, double> p, double x, double y) {
+        return std::hypot(p.first - x, p.second - y) < 1e-4;
+    };
+    bool ends = (near(p0, 15, 0) && near(p1, 0, 15)) || (near(p0, 0, 15) && near(p1, 15, 0));
+    REQUIRE(ends);
+}
+
+TEST_CASE("trim_entity ignores a construction line when a solid line already cuts",
+          "[sketchtools][trim]") {
+    Sketch sk("TrimSolidWins");
+    auto c = sk.add_circle(0, 0, 10);
+    sk.add_line(-20, 0, 20, 0);
+    auto v = sk.add_line(0, -20, 0, 20);
+    sk.set_construction(v, true);
+
+    REQUIRE(trim_entity(sk, c.str(), 0.0, 10.0));
+    const SketchEntity* arc = nullptr;
+    for (const auto& e : sk.entities()) {
+        if (e.type == SketchEntityType::Arc) arc = &e;
+    }
+    REQUIRE(arc != nullptr);
+    REQUIRE(sk.param(arc->params[2]) == Approx(10.0).margin(1e-6));
+    double sa = sk.param(arc->params[3]);
+    double ea = sk.param(arc->params[4]);
+    double sweep = ea - sa;
+    while (sweep < 0) sweep += 2.0 * 3.14159265358979323846;
+    REQUIRE(sweep == Approx(3.14159265358979323846).margin(1e-3));
+    REQUIRE(sk.is_construction(v));
+}
+
 TEST_CASE("extend_entity lengthens line to perpendicular ahead",
           "[sketchtools][extend]") {
     Sketch sk("ExtAhead");

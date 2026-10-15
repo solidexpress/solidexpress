@@ -131,24 +131,40 @@ double normalize_angle(double a) {
     return a;
 }
 
+// Solid cutters first. Construction fills in only while fewer than two solid
+// hits exist: a real crossing is unchanged, and a construction-only corner
+// can still trim.
+void merge_construction_hits(std::vector<double>& solid, std::vector<double>& construction) {
+    unique_sorted(solid);
+    if (solid.size() >= 2) return;
+    unique_sorted(construction);
+    solid.insert(solid.end(), construction.begin(), construction.end());
+    unique_sorted(solid);
+}
+
 bool collect_line_intersections(const Sketch& s, const SketchEntity& line,
                                 EntityId self_id, std::vector<double>& ts) {
     Vec2 a0 = line_end(s, line, PointRole::Start);
     Vec2 a1 = line_end(s, line, PointRole::End);
+    std::vector<double> solid;
+    std::vector<double> construction;
     for (const SketchEntity& other : s.entities()) {
-        if (other.id == self_id || other.construction) continue;
+        if (other.id == self_id) continue;
+        std::vector<double> hits;
         if (other.type == SketchEntityType::Line) {
             Vec2 b0 = line_end(s, other, PointRole::Start);
             Vec2 b1 = line_end(s, other, PointRole::End);
-            if (auto t = line_line_intersect_t(a0, a1, b0, b1)) ts.push_back(*t);
+            if (auto t = line_line_intersect_t(a0, a1, b0, b1)) hits.push_back(*t);
         } else if (other.type == SketchEntityType::Circle) {
             Vec2 c = {s.param(other.params[0]), s.param(other.params[1])};
             double r = s.param(other.params[2]);
-            auto hits = line_circle_intersect_t(a0, a1, c, r);
-            ts.insert(ts.end(), hits.begin(), hits.end());
+            hits = line_circle_intersect_t(a0, a1, c, r);
         }
+        auto& dest = other.construction ? construction : solid;
+        dest.insert(dest.end(), hits.begin(), hits.end());
     }
-    unique_sorted(ts);
+    merge_construction_hits(solid, construction);
+    ts = std::move(solid);
     return !ts.empty();
 }
 
@@ -156,24 +172,30 @@ bool collect_circle_intersections(const Sketch& s, const SketchEntity& circ,
                                   EntityId self_id, std::vector<double>& angs) {
     Vec2 c = {s.param(circ.params[0]), s.param(circ.params[1])};
     double r = s.param(circ.params[2]);
+    std::vector<double> solid;
+    std::vector<double> construction;
     for (const SketchEntity& other : s.entities()) {
-        if (other.id == self_id || other.construction) continue;
+        if (other.id == self_id) continue;
+        std::vector<double> hits;
         if (other.type == SketchEntityType::Line) {
             Vec2 a0 = line_end(s, other, PointRole::Start);
             Vec2 a1 = line_end(s, other, PointRole::End);
             for (double t : line_circle_intersect_t(a0, a1, c, r)) {
                 Vec2 p = add(a0, mul(sub(a1, a0), t));
-                angs.push_back(std::atan2(p.y - c.y, p.x - c.x));
+                hits.push_back(std::atan2(p.y - c.y, p.x - c.x));
             }
         } else if (other.type == SketchEntityType::Circle) {
             Vec2 oc = {s.param(other.params[0]), s.param(other.params[1])};
             double or_ = s.param(other.params[2]);
-            auto hits = circle_circle_intersect_angles(c, r, oc, or_);
-            angs.insert(angs.end(), hits.begin(), hits.end());
+            hits = circle_circle_intersect_angles(c, r, oc, or_);
         }
+        auto& dest = other.construction ? construction : solid;
+        dest.insert(dest.end(), hits.begin(), hits.end());
     }
-    for (double& a : angs) a = normalize_angle(a);
-    unique_sorted(angs);
+    for (double& a : solid) a = normalize_angle(a);
+    for (double& a : construction) a = normalize_angle(a);
+    merge_construction_hits(solid, construction);
+    angs = std::move(solid);
     return angs.size() >= 2;
 }
 

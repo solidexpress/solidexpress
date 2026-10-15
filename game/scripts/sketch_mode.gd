@@ -3305,8 +3305,8 @@ func _catmull(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> V
 
 
 ## Trim the entity nearest to pos2 at its intersections. Returns true on success.
-## A construction centreline within 40 mm opens the jaw on the clicked side
-## (kernel trim ignores construction geometry).
+## A construction centreline within 40 mm opens the jaw on the clicked side.
+## Kernel trim uses a construction cutter only when solid hits are fewer than two.
 func trim_at(pos2: Vector2) -> bool:
 	if not active or sketch == null:
 		status.emit("Trim failed")
