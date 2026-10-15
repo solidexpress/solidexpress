@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 — 2026-10-15
+
+- Pano Central hex key Swept Boss (ladder rung 4) is now fully makeable end to end, with all rung 1, 2, and 3 walks still passing.
+
 ## 0.1.2 — 2026-10-14
 
 - Official Learn SOLIDWORKS Lesson 1: Parts (Tutor1, ladder rung 3) is now fully makeable end to end, with all rung 1 and rung 2 walks still passing.
