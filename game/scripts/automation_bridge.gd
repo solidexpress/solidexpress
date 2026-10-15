@@ -296,6 +296,7 @@ func _click_at(vp: Viewport, pos: Vector2, as_double: bool) -> void:
 	down.double_click = as_double
 	down.position = pos
 	down.global_position = pos
+	_stamp(down)
 	_mouse_down = true
 	_deliver_pointer(vp, down)
 	# A popup item highlights on the press and activates on the release.

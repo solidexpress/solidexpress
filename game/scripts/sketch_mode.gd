@@ -3770,6 +3770,10 @@ func _jaw_discard_side_on_cutter(origin_a: Vector2, normal: Vector2) -> float:
 ## other, close it with a floor on the cutter and the keep-side arc of the
 ## circle centred on the cutter. The Ø10 (centre far from the cutter) stays.
 func _trim_open_jaw(pos2: Vector2) -> bool:
+	# Jaw mouth trim is two long parallel walls plus a centreline. A tangent
+	# path circle (hex key) is ordinary trim-to-closest, not this opener.
+	if _jaw_long_sides().size() != 2:
+		return false
 	var cutter := _jaw_cutter_for_click(pos2)
 	if cutter.is_empty():
 		return false

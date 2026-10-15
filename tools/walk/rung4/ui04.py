@@ -116,12 +116,16 @@ class WalkUI04(WalkChrome):
     def vertical_vertex_pair(self) -> dict:
         r_val = self.r_vertex()
         self.click("rail:Select")
-        self.show_sketch_point((40, 40))
-        self.click(sketch=[40, 40])
+        # Esc clears leftover dim-edit / selection. A click at (40, 40) zooms
+        # that UV onto the Delete chip and wipes the hex.
+        self.d.key("escape")
+        self.d.wait_idle(frames=2)
         self.show_sketch_point((r_val, 0))
         self.click(sketch=[r_val, 0])
         self.show_sketch_point((-r_val, 0))
+        self.d.key("shift", action="down")
         self.click(sketch=[-r_val, 0])
+        self.d.key("shift", action="up")
         self.refresh("controls", "status", "selection")
         self.click_verb("Vertical")
         self.d.wait_idle(frames=3)

@@ -93,6 +93,7 @@ func build(parent: Node) -> void:
 	_path_btn = _chip(box, "SweepPathPick", "Path", "sweep:Path")
 	_path_btn.pressed.connect(func() -> void: _arm_slot(Slot.PATH))
 	_ok = _chip(box, "SweepOk", "OK", "sweep:Ok")
+	UIIcons.apply(_ok, "ok", "Create the swept solid")
 	_ok.toggle_mode = false
 	_ok.pressed.connect(ok)
 	panel.position = Vector2(320, 44)
@@ -151,14 +152,20 @@ func consume_pad(fid: String, role_name: String) -> bool:
 
 func ok() -> void:
 	if profile_fid == "" or path_fid == "":
+		if panel != null and not panel.visible:
+			return
 		_say(REFUSED)
 		return
-	if apply.is_valid():
-		apply.call(profile_fid, path_fid)
+	var p := profile_fid
+	var q := path_fid
+	profile_fid = ""
+	path_fid = ""
 	slot = Slot.NONE
 	if panel != null:
 		panel.visible = false
 	_sync_chips()
+	if apply.is_valid():
+		apply.call(p, q)
 
 
 func _take_profile(fid: String, role_name: String) -> bool:

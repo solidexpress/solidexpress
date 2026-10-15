@@ -74,6 +74,9 @@ static func begin(main, name: String) -> void:
 
 ## A hit this close to another origin plane sits on an axis, not a unique quad.
 const AXIS_BAND := 5.0
+## Iso glances through a quad (|dir·n| ~ 0.64). Named Front/Right/Top views
+## are face-on (~1). Empty space behind a glancing quad stays ground.
+const FACE_ON := 0.75
 
 
 ## Same frame as the visible quad in DocumentView.
@@ -115,6 +118,8 @@ static func ray_hit(view, ray_origin: Vector3, ray_dir: Vector3) -> String:
 		var u := rel.dot(fr["x"])
 		var v := rel.dot(fr["y"])
 		if absf(u) > half or absf(v) > half:
+			continue
+		if absf(denom) < FACE_ON:
 			continue
 		if not _exclusive(p, d, datums):
 			continue

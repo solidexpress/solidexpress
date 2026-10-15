@@ -32,6 +32,8 @@ func _planes(ctx: FilmContext) -> void:
 	check(names == ["Front", "Right", "Top"], "origin planes Front, Top, Right (got %s)" % str(names))
 	var origin_hit := OriginPlanes.ray_hit(ctx.view, Vector3(40, 40, 40), Vector3(-1, -1, -1))
 	check(origin_hit == "", "origin ray is a miss, not a datum (got %s)" % origin_hit)
+	var iso_hit := OriginPlanes.ray_hit(ctx.view, Vector3(80, 80, 80), Vector3(-0.44, -0.64, -0.63))
+	check(iso_hit == "", "isometric glance through the quads is a miss (got %s)" % iso_hit)
 	var right_hit := OriginPlanes.ray_hit(ctx.view, Vector3(40, 10, 10), Vector3(-1, 0, 0))
 	check(right_hit == "Right", "unique Right quad (got %s)" % right_hit)
 	var top_hit := OriginPlanes.ray_hit(ctx.view, Vector3(10, 40, 10), Vector3(0, -1, 0))
