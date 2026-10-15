@@ -2,6 +2,12 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Post-rung-4 cleanup (`cursor/post-rung-04-cleanup-20261015`)
+
+Shipped: `SketchRegions` (host-face split + click-to-index), `IntentResolver` on region pick (Cut + Through All), finish-bar contour chips hidden on a host face, wrench Trim kept (mouth cap pick parked), `SketchOffset.KINDS`, WP3 dummy `render=` + `run_tier` cache, click budget 129→92 on the wrench film, film `hexkey` + `docs/howto/hexkey.md`. Counts: `docs/loop/post-rung-04-result.md`. Confirm: walks 77/77, 44/44, 46/46, 32/32; headless 223/0.
+
+Parked: CommandBus / stay-armed fillet, Jaw as a parametric template, mouth-cap region pick, SelectionContext carry-over, view-independent pick, HintLayer, keymap-as-data, pixel `render=viewport` (still the §9 cap-colour miss).
+
 ## Rung 4 — hex key / Swept Boss (`cursor/rung-04-20261015`)
 
 WP1–WP9 and WP11 shipped. WP10 skipped (polyline `check_rung04.py final` already 5/5). WP12 `tools/confirm_all.sh` **met the bar**: walks 77/77, 44/44, 46/46, 32/32; `check_rung04` final 5/5; headless 221 run / 0 failed; critique **9/10**. Details: `docs/loop/rung-04-result.md`. Iso empty space stays ground: `OriginPlanes.ray_hit` uses orbit yaw/pitch (`FACE_ON`), not the pick ray.

@@ -35,8 +35,8 @@ class RowsChunk3:
         self.pick_mouth()
         self.refresh("finish")
         self.clause(
-            "cut through all",
-            self.field("finish:Op") == "Cut" and "Through All" in self.field("finish:End"),
+            "cut up to",
+            self.field("finish:Op") == "Cut" and "Up To" in self.field("finish:End"),
             str(self.st.get("finish")),
         )
 
@@ -470,7 +470,7 @@ class RowsChunk3:
         self.refresh("finish", "sketch")
         self.clause(
             "finish kept",
-            self.field("finish:Op") == "Cut" and "Through All" in self.field("finish:End"),
+            self.field("finish:Op") == "Cut" and "Up To" in self.field("finish:End"),
             str(self.st.get("finish")),
         )
 
@@ -499,7 +499,7 @@ class RowsChunk3:
         after = path.stat().st_mtime if path.exists() else 0
         self.clause("overwritten", after > before, f"{before} -> {after} {self.S()}")
         self.refresh("finish")
-        self.clause("finish stays", "Through All" in self.field("finish:End"), str(self.st.get("finish")))
+        self.clause("finish stays", "Up To" in self.field("finish:End"), str(self.st.get("finish")))
         self.d.key("ctrl+z")
         self.refresh("status")
         self.clause("sketch undo", self.S().startswith("Undo"), self.S())
@@ -510,7 +510,7 @@ class RowsChunk3:
         reply = self.click("finish:Extrude", frames=10)
         self.refresh("status", "bodies")
         status = str(reply.get("status", self.S()))
-        self.clause("cut", "Through All" in status and "Extrude" in status, status)
+        self.clause("cut", "Extrude Up To Surface 10.0000 mm" in status, status)
         bodies = self.st.get("bodies") or []
         if bodies and bodies[0].get("min") and bodies[0].get("max"):
             ext = [bodies[0]["max"][i] - bodies[0]["min"][i] for i in range(3)]

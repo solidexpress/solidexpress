@@ -117,11 +117,15 @@ class WalkJaw:
         return [h[0] + du * ux[0] + dv * uy[0], h[1] + du * ux[1] + dv * uy[1]]
 
     def pick_mouth(self) -> str:
-        """Cut + Through All after the jaw is open. Region pick of the mouth
-        cap is parked: the cap is thinner than stroke pick, so Trim still
-        closes the profile and empty contours cut every region."""
+        """Cut after the jaw is open. Through All is the region-pick default;
+        the walk keeps Up To Surface + Opposite so thickness 10→14 stays
+        through (sketch plane on the old top face)."""
         self.set_option("finish:Op", "Cut")
-        self.set_option("finish:End", "Through All")
+        self.set_option("finish:End", "Up To Surface")
+        try:
+            self.click("finish:OppositeFace")
+        except SxError:
+            pass
         self.refresh("status", "finish")
         return self.S()
 

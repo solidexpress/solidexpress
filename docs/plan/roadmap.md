@@ -276,6 +276,20 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 
 ---
 
+## 10. Structural debt found after rung 4
+
+| Item | What | Design | Why parked |
+|---|---|---|---|
+| CommandBus | Per-panel Enter/Esc; fillet disarms (`no longer armed` is A11d) | One command object with `apply_and_repeat` | Walk A11d pins the sentence; stay-armed would fail it |
+| Jaw template | Jaw still draws walls; Trim still closes the mouth | Named params + constraints as data | Mouth cap after split is thinner than stroke pick; Trim stays |
+| SelectionContext | Re-pick circles / re-select body before each fillet | Last picks stay addressable | Session context; not required for region pick |
+| View-independent pick | Fillet faces need view keys 1/3/4/8 | Alt-click / select-other under the cursor | Rank 5 in the click audit |
+| HintLayer | Native tooltips; Esc drops the tool | Owned hover hint with `dismiss()` | Rank 7 |
+| Keymap as data | C/L/D/J/E/F bound locally | One table that tooltips render from | Rank 8 |
+| Pixel `render=viewport` | `rung03_section` framebuffer | Start Godot on X11 + Vulkan without dummy | §9: removed-half sample is the cap colour |
+
+---
+
 ## Related
 
 - [README.md](README.md) — plan index (park later ideas here, not in chat)

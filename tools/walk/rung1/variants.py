@@ -75,7 +75,7 @@ class WalkVariants:
         self.refresh("status")
         self.pick_mouth()
         self.refresh("status", "dims")
-        self.clause("region", True, "trim kept; Cut + Through All")
+        self.clause("region", True, "trim kept; Cut + Up To Surface")
         texts = self.dim_texts()
         neg = any("-" in str(t) for t in texts)
         has_45 = any(self._label_is("45", t) for t in texts)
