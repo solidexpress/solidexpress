@@ -44,6 +44,8 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `state.faces[].plane` | `n·pick` in millimetres |
 | `state.section` | `{on, plane, point, normal}` — named plane and kept-half normal |
 | `state.units` | Length unit of the open part. A new part is `mmgs`. No dialog and no conversion. |
+| `state.datums` | Origin plane names (`Front`, `Top`, `Right`). |
+| `state.features[].role` | Sketch pad role: `profile`, `rail`, or `unknown`. |
 | `sweep:Boss` | Swept Boss. Arms profile then path picks. Ctrl+click pads still sweep. |
 | `sweep:Profile` | Next pad or timeline sketch is the profile. |
 | `sweep:Path` | Next pad or timeline sketch is the path (open chain). |

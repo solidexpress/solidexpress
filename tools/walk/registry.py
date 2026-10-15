@@ -48,6 +48,13 @@ RUNG2_ROWS = [
     "A22", "A23", "N11", "A24", "N12", "L7", "A25",
 ]
 
+# Hex key (rung 4). Order is the checklist, not import order.
+RUNG4_ROWS = [
+    "N1", "A1", "A2", "L1", "A3", "A4", "N2", "A5", "L2", "A6",
+    "A7", "A8", "L3", "A9", "A10", "L4", "A11", "N3", "A12", "L5", "A13", "A14",
+    "N4", "A15", "A16", "A17", "A18", "A19", "L6", "A20", "N5", "A21",
+]
+
 # Lesson 1 parts (rung 3). Order is the checklist, not import order.
 RUNG3_ROWS = [
     "N1", "A1", "A2", "L1", "A3", "N2", "A4", "A5",
@@ -90,6 +97,14 @@ _RUNG_SPEC = {
         "canonical": RUNG3_ROWS,
         "chunk_start": checkpoint_reload,
         "report_title": "rung-03 walk",
+        "checkpoint_after": (),
+    },
+    "rung04": {
+        "checker": "check_rung04.py",
+        "checkpoints": {2: "hex.sxp", 3: "path.sxp"},
+        "canonical": RUNG4_ROWS,
+        "chunk_start": checkpoint_reload,
+        "report_title": "rung-04 walk",
         "checkpoint_after": (),
     },
 }
@@ -144,3 +159,4 @@ def install(name: str, app_cls: type) -> Rung:
 RUNG1: Rung | None = None
 RUNG2: Rung | None = None
 RUNG3: Rung | None = None
+RUNG4: Rung | None = None

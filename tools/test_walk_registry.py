@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import walk.app  # noqa: E402, F401
 import walk.app02  # noqa: E402, F401
 import walk.app03  # noqa: E402, F401
+import walk.app04  # noqa: E402, F401
 from walk import registry  # noqa: E402
 from walk.expect import CHECKS, State, gate  # noqa: E402
 from walk.rung import Expect  # noqa: E402
@@ -76,6 +77,19 @@ FROZEN_CHUNKS_03 = {
 }
 
 
+# 32 checklist ids. Chunks are the slices in docs/loop/rung-04-plan.md.
+FROZEN_ROWS_04 = [
+    "N1", "A1", "A2", "L1", "A3", "A4", "N2", "A5", "L2", "A6",
+    "A7", "A8", "L3", "A9", "A10", "L4", "A11", "N3", "A12", "L5", "A13", "A14",
+    "N4", "A15", "A16", "A17", "A18", "A19", "L6", "A20", "N5", "A21",
+]
+FROZEN_CHUNKS_04 = {
+    1: FROZEN_ROWS_04[0:10],
+    2: FROZEN_ROWS_04[10:22],
+    3: FROZEN_ROWS_04[22:32],
+}
+
+
 class WalkRegistryTests(unittest.TestCase):
     def test_frozen_id_list_is_registry_order(self) -> None:
         self.assertEqual(list(registry.RUNG1.rows), FROZEN_ROWS)
@@ -125,6 +139,20 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertEqual(rung.checker, "check_rung03.py")
         self.assertEqual(rung.checkpoints[2], "base.sxp")
         self.assertEqual(rung.checkpoints[5], "rounded.sxp")
+
+    def test_rung4_rows_and_chunks(self) -> None:
+        rung = getattr(registry, "RUNG4", None)
+        self.assertIsNotNone(rung, "rung 4 has no rows")
+        self.assertEqual(list(rung.rows), FROZEN_ROWS_04)
+        self.assertEqual({n: list(rows) for n, rows in rung.chunks.items()}, FROZEN_CHUNKS_04)
+        self.assertEqual(len(FROZEN_ROWS_04), 32)
+        for rid in FROZEN_ROWS_04:
+            self.assertIn(rid, rung.handlers)
+            self.assertTrue(callable(rung.handlers[rid]))
+            self.assertEqual(rung.handlers[rid].__name__, "row_" + rid)
+        self.assertEqual(rung.checker, "check_rung04.py")
+        self.assertEqual(rung.checkpoints[2], "hex.sxp")
+        self.assertEqual(rung.checkpoints[3], "path.sxp")
 
     def test_gate_walks_the_check_table(self) -> None:
         self.assertEqual(list(CHECKS), ["mode", "sketch", "bodies", "bbox", "timeline", "finish_bar"])

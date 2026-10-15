@@ -964,6 +964,9 @@ func _refresh_ids() -> void:
 	_tag_dialog_buttons(main)
 	var names := {
 		"SweepBoss": "sweep:Boss",
+		"SweepOk": "sweep:Ok",
+		"SweepProfile": "sweep:Profile",
+		"SweepPathPick": "sweep:Path",
 		"PaletteSketch": "rail:Sketch",
 		"JawTool": "rail:Jaw",
 		"ToolSelect": "rail:Select",
@@ -1461,6 +1464,7 @@ func _state_full() -> Dictionary:
 		"trace_cursor": _trace.size(),
 		"dialogs": _dialog_state(),
 		"units": _document_units(view),
+		"datums": _datums_state(view),
 	}
 
 
@@ -1468,6 +1472,16 @@ func _document_units(view) -> String:
 	if view == null:
 		return ""
 	return str(view.get("units"))
+
+
+func _datums_state(view) -> Array:
+	var out: Array = []
+	if view == null or view.doc == null or not view.doc.has_method("datum_list"):
+		return out
+	for d in view.doc.datum_list():
+		if d is Dictionary:
+			out.append({"name": str(d.get("name", ""))})
+	return out
 
 
 func _section_state(view) -> Dictionary:
@@ -2153,6 +2167,8 @@ func _features_state(view) -> Array:
 				var val: Variant = (f as Dictionary)[k]
 				if typeof(val) in [TYPE_FLOAT, TYPE_INT, TYPE_STRING, TYPE_BOOL]:
 					rec[str(k)] = val
+			if str(rec.get("type", "")) == "sketch":
+				rec["role"] = SweepBoss.role(view.doc.graph_get_sketch(str(rec.get("id", ""))))
 			out.append(rec)
 	return out
 
