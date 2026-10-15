@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Rung 4 — hex key / Swept Boss (`cursor/rung-04-20261015`)
+
+WP1–WP9 and WP11 shipped. WP10 skipped (polyline `check_rung04.py final` already 5/5 in `rung04_sweep.suite`). WP12 `tools/confirm_all.sh` **missed the bar**: walks 76/58-fail, 44/25, 46/20, 32/18; headless 221 run / 41 failed; critique **6/10**. Details: `docs/loop/rung-04-result.md`. Sweep command and origin-plane path are in the product; the confirm walk did not finish Vertical + trim + solid.
+
 ## Rung 3 — Tutor1 (PR #252)
 
 Shipped: origin anchor, face `pick` / `plane`, circle convert, Offset Entities, Shift+face fillet, section presets and cap, 46-row walk, `check_rung03.py`. Bars: the table in `rung-03-result.md`. Suites **213 run + 4 known-red**.
