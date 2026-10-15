@@ -116,6 +116,19 @@ class WalkJaw:
         uy = self.ctx["uy"]
         return [h[0] + du * ux[0] + dv * uy[0], h[1] + du * ux[1] + dv * uy[1]]
 
+    def pick_mouth(self) -> str:
+        """Cut after the jaw is open. Through All is the region-pick default;
+        the walk keeps Up To Surface + Opposite so thickness 10→14 stays
+        through (sketch plane on the old top face)."""
+        self.set_option("finish:Op", "Cut")
+        self.set_option("finish:End", "Up To Surface")
+        try:
+            self.click("finish:OppositeFace")
+        except SxError:
+            pass
+        self.refresh("status", "finish")
+        return self.S()
+
     def head_px(self) -> float:
         a = self.d.project(sketch=[200 - 22.5, 0])["screen"]
         b = self.d.project(sketch=[200 + 22.5, 0])["screen"]

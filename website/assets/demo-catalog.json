@@ -55,6 +55,11 @@
       "id": "lesson2_box",
       "title": "Lesson 2 box: sketch, fillet, shell, side hole, resize",
       "blurb": "Rectangle, extrude, one fillet, shell, a hole from the side, then resize — the features follow."
+    },
+    {
+      "id": "hexkey",
+      "title": "Hex key: Swept Boss",
+      "blurb": "A 7.65 mm across-flats hex swept along a Right-plane path."
     }
   ]
 }

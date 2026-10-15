@@ -477,5 +477,13 @@
     "enabled": true,
     "quit_after": 4800,
     "blurb": "Centre rectangle, a boss, an inward offset cut, two fillets, a 1 mm shell, and a Top section."
+  },
+  {
+    "id": "hexkey",
+    "title": "Hex key: Swept Boss",
+    "script": "res://tests/films/film_hexkey.gd",
+    "enabled": true,
+    "quit_after": 4800,
+    "blurb": "A 7.65 mm across-flats hex swept along a Right-plane path."
   }
 ]

@@ -165,6 +165,41 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertEqual(reasons, ["sketch not active status='x'", "lines=1"])
         self.assertEqual(registry.RUNG1.expectations["A2"].mode, "sketch")
 
+    def test_run_tier_uses_confirm_cache(self) -> None:
+        import os
+        import tempfile
+        from unittest import mock
+        from walk.gates import run_tier
+
+        class FakeWalk:
+            repo = str(ROOT)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "godot.log").write_text("cached-tier\n", encoding="utf-8")
+            Path(tmp, "godot.rc").write_text("0\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"SX_CONFIRM_DIR": tmp}):
+                with mock.patch("walk.proc.run") as run:
+                    got = run_tier(FakeWalk())
+        run.assert_not_called()
+        self.assertEqual(got.returncode, 0)
+        self.assertEqual(got.stdout, "cached-tier\n")
+
+    def test_click_budget_counts_press_and_key(self) -> None:
+        from walk.click_budget import check_log, count_trace
+
+        text = (
+            "[input-trace] t=1.0 press (10,10) sketch shift=0 additive=0\n"
+            "[key-trace] t=1.1 key=A unicode=97 pressed=1 echo=0 accepted=1 focus=\n"
+            "[key-trace] t=1.2 key=A unicode=97 pressed=1 echo=1 accepted=0 focus=\n"
+        )
+        got = count_trace(text)
+        self.assertEqual(got, {"clicks": 1, "keys": 1, "actions": 2})
+        ok, note = check_log(text, "ubc_wrench", {"ubc_wrench": {"max_actions": 1}})
+        self.assertFalse(ok)
+        self.assertIn("budget 1", note)
+        ok, _ = check_log(text, "ubc_wrench", {"ubc_wrench": {"max_actions": 2}})
+        self.assertTrue(ok)
+
 
 if __name__ == "__main__":
     unittest.main()

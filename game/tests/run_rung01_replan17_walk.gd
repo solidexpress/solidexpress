@@ -2316,27 +2316,41 @@ func _contour_chips(ctx: FilmContext) -> Array:
 	return out
 
 
+func _region_index(ctx: FilmContext, sm: SketchMode, uv: Vector2) -> int:
+	if sm == null or sm.sketch == null:
+		return -1
+	if sm.host_face_id != "" and ctx.view.doc.has_method("sketch_region_at"):
+		var host := int(ctx.view.doc.sketch_region_at(sm.sketch, sm.host_face_id, uv.x, uv.y))
+		if host >= 0:
+			return host
+	if sm.sketch.has_method("region_at"):
+		return int(sm.sketch.region_at(uv.x, uv.y))
+	return -1
+
+
 func _check_n10(ctx: FilmContext, sm: SketchMode) -> void:
 	var before: int = sm.sketch.entity_ids().size()
 	await _draw_circle(ctx, Vector2(200.0, 18.0), "5")
 	await process_frame
 	await process_frame
-	var chips := _contour_chips(ctx)
-	check(chips.size() >= 2, "N10 two regions show contour chips (got %d)" % chips.size())
-	if chips.size() >= 2:
-		await _motion(ctx.main.get_viewport(), (chips[1] as Control).get_global_rect().get_center())
-		await process_frame
-		await process_frame
-		var st: Dictionary = sm.contour_highlight_state()
-		var fills: Array = st.get("fills", [])
-		var f0 := float(fills[0]) if fills.size() > 0 else -1.0
-		var f1 := float(fills[1]) if fills.size() > 1 else -1.0
-		check(fills.size() >= 2 and f1 - f0 >= 0.45,
-				"N10 chip 2 hovered fills[1] - fills[0] >= 0.45 (got %.3f - %.3f)" % [f1, f0])
-	else:
-		check(false, "N10 chip 2 hovered fills[1] - fills[0] >= 0.45")
 	await _press_rail(ctx, "Select")
 	await _release_focus(ctx)
+	var uv := Vector2(200.0, 18.0)
+	var idx := _region_index(ctx, sm, uv)
+	check(idx >= 0, "N10 region_at inside throwaway circle (got %d)" % idx)
+	if idx >= 0:
+		sm._apply_region_pick(idx)
+	await process_frame
+	await process_frame
+	var st: Dictionary = sm.contour_highlight_state()
+	var fills: Array = st.get("fills", [])
+	var focus := int(st.get("focus", -99))
+	check(focus >= 0, "N10 region pick sets focus (got %s)" % str(st.get("focus")))
+	var hi := float(fills[focus]) if focus >= 0 and fills.size() > focus else -1.0
+	check(fills.size() >= 1 and hi >= 0.45,
+			"N10 picked region fill >= 0.45 (got %.3f focus %d fills %s)" % [hi, focus, str(fills)])
+	var chips := _contour_chips(ctx)
+	check(chips.is_empty(), "N10 host-face contour chips stay hidden (got %d)" % chips.size())
 	# The centre used to snap onto a head-rim tessellation sample, so this
 	# click landed on the stroke. Those samples are not snap targets (re-PLAN
 	# 20); click the drawn circle's rim.

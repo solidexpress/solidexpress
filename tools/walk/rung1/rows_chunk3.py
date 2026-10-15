@@ -32,6 +32,13 @@ class RowsChunk3:
         self.d.drag({"sketch": [250, 10]}, {"sketch": [190, 10]})
         self.refresh("status")
         self.clause("second trim", "already open" in self.S() or "nothing left" in self.S().lower() or "Trimmed" in self.S(), self.S())
+        self.pick_mouth()
+        self.refresh("finish")
+        self.clause(
+            "cut up to",
+            self.field("finish:Op") == "Cut" and "Up To" in self.field("finish:End"),
+            str(self.st.get("finish")),
+        )
 
     @row('L4', chunk=3, expect={'blocker': 'A9', 'sketch': True})
     def row_L4(self) -> None:
@@ -93,7 +100,7 @@ class RowsChunk3:
         editor = ""
         angle = self.find_dim(lambda d: "°" in str(d.get("text", "")))
         if angle is not None:
-            # Trim is still armed after A9; it consumes the label click.
+            # Select is armed after the mouth pick.
             # The Label3D billboard rect (rect) sits on the jaw wall, so a
             # click there drags the entity. dimension_hit uses hit_rect.
             # Esc with focus on the rail exits the sketch, so only dismiss
@@ -457,19 +464,15 @@ class RowsChunk3:
 
     @row('A9c', chunk=3, expect={'blocker': 'A9', 'sketch': True})
     def row_A9c(self) -> None:
-        self.set_option("finish:Op", "Cut")
-        self.set_option("finish:End", "Up To Surface")
-        try:
-            self.click("finish:OppositeFace")
-            face = self.bottom_face()
-            self.click(face=face["id"])
-        except SxError as exc:
-            self.clause("opposite face", False, str(exc))
         self.refresh("finish", "status")
         path = self.save_as("pre-cut.sxp")
         self.clause("saved", "Saved" in self.S() and Path(path).exists(), self.S())
         self.refresh("finish", "sketch")
-        self.clause("finish kept", self.field("finish:Op") == "Cut" and "Up To" in self.field("finish:End"), str(self.st.get("finish")))
+        self.clause(
+            "finish kept",
+            self.field("finish:Op") == "Cut" and "Up To" in self.field("finish:End"),
+            str(self.st.get("finish")),
+        )
 
     @row('N1b', chunk=3, expect={'blocker': 'A9', 'sketch': True})
     def row_N1b(self) -> None:
@@ -506,7 +509,8 @@ class RowsChunk3:
     def row_A9b(self) -> None:
         reply = self.click("finish:Extrude", frames=10)
         self.refresh("status", "bodies")
-        self.clause("cut", "Extrude Up To Surface 10.0000 mm" in str(reply.get("status", self.S())), str(reply.get("status", self.S())))
+        status = str(reply.get("status", self.S()))
+        self.clause("cut", "Extrude Up To Surface 10.0000 mm" in status, status)
         bodies = self.st.get("bodies") or []
         if bodies and bodies[0].get("min") and bodies[0].get("max"):
             ext = [bodies[0]["max"][i] - bodies[0]["min"][i] for i in range(3)]

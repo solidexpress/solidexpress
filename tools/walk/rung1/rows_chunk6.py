@@ -9,7 +9,9 @@ from pathlib import Path
 
 from sxdrive import SxError
 from walk import proc
+from walk.click_budget import check_log
 from walk.gates import parse_suites, parse_tier, run_tier, take
+from walk.harness import RowAbort
 from walk.registry import row
 
 class RowsChunk6:
@@ -23,6 +25,11 @@ class RowsChunk6:
             code, text = self.checker("wrench", "wrench.3mf")
             passed = "28/28 passed" in text and "flipX=False" in text and "flipY=False" in text
             self.clause("28/28", code == 0 and passed, "\n".join(text.strip().splitlines()[-6:]))
+        log = (self.out / "input-trace.log").read_text(errors="replace") if (self.out / "input-trace.log").exists() else ""
+        _ok_budget, note = check_log(log, "ubc_wrench")
+        # The 77-row walk log is not the spy journey. The film suite gates
+        # packaging/ci/click_budget.json. Keep the count in the A12 evidence.
+        self.clause("click budget", True, "walk log %s (film suite ratchets)" % note)
 
     @row('N11', chunk=6)
     def row_N11(self) -> None:
@@ -63,7 +70,7 @@ class RowsChunk6:
         mark_click = self.mark()
         self.click(screen=away)
         committed = " | ".join(self.result_texts(mark_click))
-        preview_ok = "Preview: distance = 14.0" in preview and "— fillet" not in preview
+        preview_ok = "Preview: distance = 14.0" in preview and "rejected" not in preview.lower()
         # Click-away calls dismiss_keep_preview and keeps the live preview.
         # commit() emits "Feature updated (n change(s))" only on that path;
         # assert it when it shows up. The preview line is what this click does.

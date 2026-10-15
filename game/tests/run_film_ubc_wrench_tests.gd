@@ -32,8 +32,14 @@ func _init() -> void:
 	if film == null:
 		finish()
 		return
+	SxUi.trace_enabled_override = true
+	if ctx.main != null and ctx.main.interaction != null:
+		ctx.main.interaction.press_trace_log.clear()
+	SxUi.key_trace_log.clear()
 	await film.run_film(ctx)
+	SxUi.trace_enabled_override = null
 	check(FilmUI.fail_count == 0, "FilmUI.fail_count == 0 (got %d)" % FilmUI.fail_count)
+	_assert_click_budget(ctx)
 
 	var doc: SxDocument = ctx.view.doc
 	var bodies: Array = doc.body_ids()
@@ -59,6 +65,30 @@ func _init() -> void:
 	finish()
 
 
+func _assert_click_budget(ctx: FilmContext) -> void:
+	var clicks := 0
+	if ctx != null and ctx.main != null and ctx.main.interaction != null:
+		for line in ctx.main.interaction.press_trace_log:
+			if str(line).contains(" press "):
+				clicks += 1
+	var keys := 0
+	for line in SxUi.key_trace_log:
+		var s := str(line)
+		if s.contains("pressed=1") and s.contains("echo=0"):
+			keys += 1
+	var repo := ProjectSettings.globalize_path("res://").simplify_path().get_base_dir()
+	var raw := FileAccess.get_file_as_string(repo.path_join("packaging/ci/click_budget.json"))
+	var data = JSON.parse_string(raw)
+	var cap := 129
+	if typeof(data) == TYPE_DICTIONARY:
+		var row: Variant = data.get("ubc_wrench", {})
+		if typeof(row) == TYPE_DICTIONARY:
+			cap = int(row.get("max_actions", 129))
+	var actions := clicks + keys
+	print("  click budget ubc_wrench: %dC %dK = %d (budget %d)" % [clicks, keys, actions, cap])
+	check(actions <= cap, "click budget %dC %dK = %d (budget %d)" % [clicks, keys, actions, cap])
+
+
 func _assert_features(doc: SxDocument) -> void:
 	var kinds: Array[String] = []
 	for f in doc.graph_features():
@@ -67,7 +97,12 @@ func _assert_features(doc: SxDocument) -> void:
 			var parsed = JSON.parse_string(str(f.get("params", "{}")))
 			if typeof(parsed) == TYPE_DICTIONARY and str(parsed.get("op", "")) == "cut":
 				var end := str(parsed.get("end", ""))
-				kinds.append("cut_face" if end == "to_face" else "cut_blind")
+				if end == "through_all":
+					kinds.append("cut_through")
+				elif end == "to_face":
+					kinds.append("cut_face")
+				else:
+					kinds.append("cut_blind")
 			else:
 				kinds.append("extrude")
 		else:
@@ -79,7 +114,7 @@ func _assert_features(doc: SxDocument) -> void:
 	check(kinds[0] == "sketch", "0 sketch (got %s)" % kinds[0])
 	check(kinds[1] == "extrude", "1 extrude (got %s)" % kinds[1])
 	check(kinds[2] == "sketch", "2 sketch (got %s)" % kinds[2])
-	check(kinds[3] == "cut_face", "3 cut up-to-surface (got %s)" % kinds[3])
+	check(kinds[3] == "cut_through", "3 cut through all (got %s)" % kinds[3])
 	check(kinds[4] == "sketch", "4 sketch (got %s)" % kinds[4])
 	check(kinds[5] == "cut_blind", "5 cut blind (got %s)" % kinds[5])
 	var n_fil := 0

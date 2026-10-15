@@ -1,0 +1,6 @@
+{
+  "ubc_wrench": {
+    "max_actions": 92,
+    "note": "Critique baseline 129 (85C 44K). Film ratchet 47C 45K = 92."
+  }
+}

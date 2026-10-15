@@ -891,7 +891,7 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	# so those pre-seal indices are no longer the post-seal faces — pass an
 	# empty list and the kernel keeps every region.
 	var wanted_all := false
-	if sketch != null and sketch.has_method("contour_count"):
+	if host_face_id == "" and sketch != null and sketch.has_method("contour_count"):
 		var before_seal := int(sketch.contour_count())
 		if before_seal > 0 and selected_contours.size() >= before_seal:
 			wanted_all = true
@@ -918,7 +918,7 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	if wanted_all:
 		selected_contours = []
 	var open_prof := not profile_is_closed(sketch)
-	if thin_thickness <= 0.0 and open_prof:
+	if thin_thickness <= 0.0 and open_prof and selected_contours.is_empty():
 		if op == "cut" or op == "fuse":
 			_refuse_extrude(_chain_breaker_status())
 		else:
@@ -1075,6 +1075,8 @@ func _write_sketch_support(fid: String) -> void:
 	params["support_host"] = support_host
 	params["support_normal"] = [support_normal.x, support_normal.y, support_normal.z]
 	params["support_side"] = support_side if support_side != "" else "max"
+	if host_face_id != "":
+		params["host_face"] = host_face_id
 	view.doc.graph_set_params_no_regen(fid, JSON.stringify(params))
 
 
@@ -1370,7 +1372,7 @@ func _sync_contour_bar() -> void:
 	# changing entity ids, and the filled disc must follow.
 	var ids: PackedStringArray = sketch.entity_ids()
 	var id_sig := ",".join(ids)
-	var full := id_sig + "|" + _contour_geom_sig()
+	var full := id_sig + "|" + _contour_geom_sig() + "|" + host_face_id
 	if full == _contour_sig:
 		return
 	var ids_changed := id_sig != _contour_id_sig
@@ -2454,6 +2456,15 @@ func _nearest_entity_at(pos2: Vector2) -> String:
 
 func _select_at(pos2: Vector2) -> void:
 	var best_id := _nearest_entity_at(pos2)
+	var region_idx := _region_index_at(pos2)
+	var on_stroke := false
+	if best_id != "":
+		var stroke := minf(0.75, _pick_tolerance() * 0.35)
+		on_stroke = _entity_distance(sketch.entity_info(best_id), pos2) < stroke
+	if region_idx >= 0 and not on_stroke:
+		_set_selected([])
+		_apply_region_pick(region_idx)
+		return
 	if best_id == "":
 		_set_selected([])
 		return
@@ -2476,6 +2487,41 @@ func _select_at(pos2: Vector2) -> void:
 	for pick in picks:
 		stored.append({"id": pick["entity"], "role": pick["role"]})
 	_set_picks(stored)
+
+
+func _region_index_at(uv: Vector2) -> int:
+	if sketch == null or view == null or view.doc == null:
+		return -1
+	if host_face_id != "" and view.doc.has_method("sketch_region_at"):
+		return int(view.doc.sketch_region_at(sketch, host_face_id, uv.x, uv.y))
+	if sketch.has_method("region_at"):
+		return int(sketch.region_at(uv.x, uv.y))
+	return -1
+
+
+func _try_pick_region(uv: Vector2) -> void:
+	var idx := _region_index_at(uv)
+	if idx < 0:
+		return
+	_apply_region_pick(idx)
+
+
+func _apply_region_pick(idx: int) -> void:
+	var chrome := _sketch_chrome()
+	if chrome != null and chrome.has_method("pick_region"):
+		chrome.pick_region(idx)
+	IntentResolver.apply_finish(chrome, host_face_id, target_fid)
+	status.emit("Region %d — %s %s" % [
+		idx + 1,
+		IntentResolver.finish_op(host_face_id, target_fid).capitalize(),
+		"Through All" if IntentResolver.finish_end(host_face_id, target_fid) == "through_all" else "Blind",
+	])
+	var included: Array = [idx]
+	if chrome != null:
+		included = chrome._selected_contours.duplicate()
+		if not included.has(idx):
+			included.append(idx)
+	set_contour_highlight(included, idx)
 
 
 ## A click nearer an endpoint than the line midpoint stores that endpoint.
@@ -4666,16 +4712,15 @@ func contour_label(index: int) -> String:
 
 
 func contour_highlight_state() -> Dictionary:
-	var live := _contour_node != null and _contour_node.mesh != null
 	var tag := ""
 	if _contour_tag != null and _contour_tag.visible:
 		tag = _contour_tag.text
 	return {
-		"count": _contour_fill_alphas.size() if live else 0,
+		"count": _contour_fill_alphas.size(),
 		"included": _contour_included.duplicate(),
-		"focus": _contour_focus if live else -1,
-		"fills": _contour_fill_alphas.duplicate() if live else [],
-		"outlines": _contour_outline_count if live else 0,
+		"focus": _contour_focus,
+		"fills": _contour_fill_alphas.duplicate(),
+		"outlines": _contour_outline_count,
 		"tag": tag,
 	}
 
@@ -4800,11 +4845,18 @@ func _sketch_point_screen(p: Vector2) -> Vector2:
 
 
 func _contour_regions() -> Array:
-	if sketch == null or not sketch.has_method("contour_outlines"):
+	if sketch == null:
 		return []
-	if _contour_cache_sig != _contour_sig:
-		_contour_cache = sketch.contour_outlines()
-		_contour_cache_sig = _contour_sig
+	var sig := _contour_geom_sig() + "|" + host_face_id
+	if _contour_cache_sig != sig:
+		if host_face_id != "" and view != null and view.doc != null \
+				and view.doc.has_method("sketch_region_outlines"):
+			_contour_cache = view.doc.sketch_region_outlines(sketch, host_face_id)
+		elif sketch.has_method("contour_outlines"):
+			_contour_cache = sketch.contour_outlines()
+		else:
+			_contour_cache = []
+		_contour_cache_sig = sig
 	return _contour_cache
 
 
@@ -4827,12 +4879,20 @@ func _redraw_contour_highlight() -> void:
 		_contour_tag.visible = false
 		_contour_tag.text = ""
 		_contour_tag.set_meta("leader", false)
-	if _contour_node == null:
-		return
 	var regions := _contour_regions()
-	if sketch == null or not _contour_bar_visible() or regions.size() < 2:
-		_contour_node.mesh = null
-		_contour_focus = -1
+	var show := not _contour_included.is_empty() or _contour_bar_visible()
+	if sketch == null or regions.is_empty() or not show:
+		if _contour_node != null:
+			_contour_node.mesh = null
+		return
+	if _contour_node == null:
+		for i in regions.size():
+			var on := _contour_is_on(i)
+			var focused := i == _contour_focus
+			var fill_alpha := 0.0
+			if on:
+				fill_alpha = CONTOUR_FOCUS_ALPHA if focused else CONTOUR_FILL_ALPHA
+			_contour_fill_alphas.append(fill_alpha)
 		return
 	var tris := PackedVector2Array()
 	var tri_cols := PackedColorArray()

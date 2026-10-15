@@ -4546,40 +4546,33 @@ func _b15_hover(vp: Viewport, pos: Vector2) -> void:
 func _b15_contour_row(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var vp: Viewport = ctx.main.get_viewport()
 	await process_frame
 	var chips := _b15_contour_chips(chrome)
 	var bar_on := chrome != null and chrome._contour_bar != null and chrome._contour_bar.visible
-	check(bar_on and chips.size() >= 2,
-			"B15.2 bar visible with ≥ 2 chips (n=%d vis=%s)" % [chips.size(), str(bar_on)])
-	if chips.size() < 2:
-		return
-	await _b15_hover(vp, chips[1].get_global_rect().get_center())
+	check(not bar_on and chips.is_empty(),
+			"B15.2 host-face contour chips stay hidden (n=%d vis=%s)" % [chips.size(), str(bar_on)])
+	await _press_rail_label(ctx, "Select")
+	_status_log.clear()
+	var uv := Vector2(120, 15)
+	var idx := -1
+	if sm.host_face_id != "" and ctx.view.doc.has_method("sketch_region_at"):
+		idx = int(ctx.view.doc.sketch_region_at(sm.sketch, sm.host_face_id, uv.x, uv.y))
+	if idx < 0 and sm.sketch.has_method("region_at"):
+		idx = int(sm.sketch.region_at(uv.x, uv.y))
+	check(idx >= 0, "B15.2 region_at inside fallback circle (got %d)" % idx)
+	if idx >= 0:
+		sm._apply_region_pick(idx)
+	await process_frame
+	await process_frame
 	var st: Dictionary = sm.contour_highlight_state()
 	var fills: Array = st.get("fills", [])
-	check(int(st.get("focus", -99)) == 1, "B15.2 focus == 1 (got %s)" % str(st.get("focus")))
-	check(fills.size() >= 2 and absf(float(fills[1]) - 0.70) < 0.02 and absf(float(fills[0]) - 0.20) < 0.02,
-			"B15.2 fills[1] ≈ 0.70 and fills[0] ≈ 0.20 (got %s)" % str(fills))
-	_status_log.clear()
-	await _x11_click(chips[0])
-	await process_frame
-	st = sm.contour_highlight_state()
-	fills = st.get("fills", [])
-	check(fills.size() >= 1 and float(fills[0]) == 0.0, "B15.2 fills[0] == 0 after off-click (got %s)" % str(fills))
+	var focus := int(st.get("focus", -99))
+	check(focus >= 0, "B15.2 region pick sets focus (got %s)" % str(st.get("focus")))
+	var hi := float(fills[focus]) if focus >= 0 and fills.size() > focus else -1.0
+	check(fills.size() >= 1 and hi >= 0.45,
+			"B15.2 picked region fill >= 0.45 (got %.3f focus %d fills %s)" % [hi, focus, str(fills)])
 	var last := _status_log[_status_log.size() - 1] if not _status_log.is_empty() else ""
-	check(last.begins_with("Contour 1 of") and last.ends_with("— skipped"),
-			"B15.2 off-click status starts Contour 1 of and ends — skipped (got `%s`)" % last)
-	_status_log.clear()
-	chips = _b15_contour_chips(chrome)
-	await _x11_click(chips[0])
-	await process_frame
-	last = _status_log[_status_log.size() - 1] if not _status_log.is_empty() else ""
-	check(last.ends_with("— included"), "B15.2 on-click status ends — included (got `%s`)" % last)
-	var all_on := true
-	for c in _b15_contour_chips(chrome):
-		if not (c as CheckButton).button_pressed:
-			all_on = false
-	check(all_on, "B15.2 every contour chip is on")
+	check(last.begins_with("Region "), "B15.2 status starts Region (got `%s`)" % last)
 
 
 func _b15_contours(ctx: FilmContext) -> void:
@@ -4589,12 +4582,7 @@ func _b15_contours(ctx: FilmContext) -> void:
 	if sm.sketch != null and sm.sketch.has_method("contour_count"):
 		ncont = int(sm.sketch.contour_count())
 	print("  contour_count=%d" % ncont)
-	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	await process_frame
-	var bar_on := chrome != null and chrome._contour_bar != null and chrome._contour_bar.visible
-	if ncont >= 2 and bar_on:
-		await _b15_contour_row(ctx)
-		return
 	print("  B15.2 fallback circle")
 	var before := sm.sketch.entity_ids().size()
 	await _press_rail_label(ctx, "Circle")

@@ -41,6 +41,7 @@
 #include "sx/occt_types.hpp"
 #include "sx/curves.hpp"
 #include "sx/document.hpp"
+#include "sx/sketch_regions.hpp"
 #include "sx/interop.hpp"
 #include "sx/log.hpp"
 #include "sx/shape_utils.hpp"
@@ -113,8 +114,14 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                             if (v.is_number_integer()) contour_idxs.push_back(v.get<int>());
                         }
                     }
+                    TopoDS_Shape host;
+                    if (skf->params.contains("host_face") && skf->params["host_face"].is_string()) {
+                        host = doc.resolve(EntityId::from_string(
+                            skf->params["host_face"].get<std::string>()));
+                        if (!host.IsNull() && host.ShapeType() != TopAbs_FACE) host.Nullify();
+                    }
                     if (!contour_idxs.empty()) {
-                        face = skf->sketch->profile_face_selected(contour_idxs, &perr);
+                        face = skf->sketch->profile_face_selected(contour_idxs, host, &perr);
                     } else {
                         face = skf->sketch->profile_face(&perr);
                     }

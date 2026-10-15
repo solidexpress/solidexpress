@@ -69,11 +69,15 @@ static func type_distance(ctx: FilmContext, text: String) -> void:
 
 
 static func pick_finish(ctx: FilmContext, op_index: int, end_index: int) -> void:
+	if op_index < 0 and end_index < 0:
+		return
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	var op: OptionButton = chrome.find_child("FinishOp", true, false) as OptionButton
 	var endp: OptionButton = chrome.find_child("FinishEnd", true, false) as OptionButton
-	await pick_option(ctx, op, op_index, "FinishOp")
-	await pick_option(ctx, endp, end_index, "FinishEnd")
+	if op_index >= 0:
+		await pick_option(ctx, op, op_index, "FinishOp")
+	if end_index >= 0:
+		await pick_option(ctx, endp, end_index, "FinishEnd")
 
 
 static func pick_option(ctx: FilmContext, opt: OptionButton, index: int, desc: String) -> void:
@@ -131,10 +135,11 @@ static func arm_fillet(ctx: FilmContext, radius: float) -> void:
 		FilmUI._fail("fillet radius blank missing")
 		return
 	var edit: LineEdit = spin.get_line_edit()
-	await SxInput.x11_click(edit)
-	var digits := str(int(round(radius))) if is_equal_approx(radius, round(radius)) else str(radius)
-	await SxInput.type_text(edit.get_viewport(), digits)
-	await SxInput.push_key(edit.get_viewport(), KEY_ENTER)
+	if not is_equal_approx(float(spin.value), radius):
+		await SxInput.x11_click(edit)
+		var digits := str(int(round(radius))) if is_equal_approx(radius, round(radius)) else str(radius)
+		await SxInput.type_text(edit.get_viewport(), digits)
+		await SxInput.push_key(edit.get_viewport(), KEY_ENTER)
 	await FilmUI.wait_frames(ctx.tree, 2)
 
 

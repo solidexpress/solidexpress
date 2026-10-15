@@ -20,14 +20,12 @@ class RowsChunk2:
 
     @row('L2', chunk=2, expect={'blocker': 'A7', 'sketch': True})
     def row_L2(self) -> None:
-        self.set_option("finish:Op", "Cut")
-        self.set_option("finish:End", "Up To Surface")
-        self.type_into("finish:Distance", "7")
-        self.enter()
         self.refresh("finish")
-        self.clause("cut up to", self.field("finish:Op") == "Cut" and "Up To" in self.field("finish:End"), str(self.st.get("finish")))
+        op = self.field("finish:Op")
+        end = self.field("finish:End")
+        self.clause("finish ready", op == "New" and "Blind" in end, str(self.st.get("finish")))
 
-    @row('A6', chunk=2, expect={'blocker': 'L2', 'sketch': True, 'finish_op': 'Cut', 'finish_end': 'Up To'})
+    @row('A6', chunk=2, expect={'blocker': 'L2', 'sketch': True, 'finish_op': 'New', 'finish_end': 'Blind'})
     def row_A6(self) -> None:
         self.click("rail:Circle")
         self.click(sketch=[40, 30])

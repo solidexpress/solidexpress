@@ -77,12 +77,8 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok():
 		return
 
-	await ctx.beat("Cut up to the bottom face", 0.4)
-	await FilmSteps.pick_finish(ctx, 1, 3)
-	var opp: Button = ctx.main.sketch_chrome.opposite_face_button()
-	if not await FilmUI.click_control(ctx, opp, FilmUICues.alert("Click", "Opposite face")):
-		return
-	await FilmUI.wait_frames(ctx.tree, 3)
+	await ctx.beat("Cut through the mouth", 0.4)
+	await FilmSteps.pick_finish(ctx, 1, 1)
 	await FilmUI.apply_extrude(ctx, 10.0)
 	if not _ok():
 		return

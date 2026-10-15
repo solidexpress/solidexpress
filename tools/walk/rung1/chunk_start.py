@@ -73,13 +73,8 @@ def build_cut_file(walk) -> bool:
     walk.d.drag({"sketch": [250, 0]}, {"sketch": [190, 0]})
     walk.refresh("status")
     print(f"checkpoint: cut trim {walk.S()!r}", flush=True)
-    walk.set_option("finish:Op", "Cut")
-    walk.set_option("finish:End", "Up To Surface")
-    try:
-        walk.click("finish:OppositeFace")
-        walk.click(face=walk.bottom_face()["id"])
-    except SxError as exc:
-        print(f"checkpoint: opposite face {exc}", flush=True)
+    walk.pick_mouth()
+    print(f"checkpoint: mouth region {walk.S()!r}", flush=True)
     walk.click("finish:Extrude", frames=10)
     walk.refresh("status")
     path = walk.save_as("cut.sxp")

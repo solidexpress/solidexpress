@@ -1,0 +1,4 @@
+script=tests/run_sketch_regions_tests.gd
+tier=ci
+timeout=60
+render=dummy

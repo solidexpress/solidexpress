@@ -190,6 +190,16 @@ class LintSuitesTests(unittest.TestCase):
         self.assertIn(manifest, proc.stderr)
         self.assertIn("missing reason", proc.stderr)
 
+    def test_bad_render_exits_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "no_such_suite.suite").write_text(
+                "script=tests/run_no_such_suite.gd\ntier=full\nrender=gpu\n",
+                encoding="utf-8",
+            )
+            errors, _suites = lint_suites.manifest_errors(Path(tmp))
+        blob = "\n".join(errors)
+        self.assertIn("bad render", blob)
+
     def test_reason_on_ci_suite_exits_1(self):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "rung01_wrench.suite").write_text(

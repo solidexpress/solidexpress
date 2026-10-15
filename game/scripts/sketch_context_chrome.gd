@@ -314,7 +314,6 @@ func _build_finish_bar() -> void:
 	for n in ["New", "Cut", "Fuse"]:
 		_finish_op.add_item(n)
 	_finish_op.custom_minimum_size = Vector2(64, _chip_h())
-	# Cut must not auto-select Through All; that silently drops Up To Surface.
 	_finish_end_row.add_child(_finish_op)
 	_thin_feature = CheckButton.new()
 	_thin_feature.name = "ThinFeature"
@@ -1760,7 +1759,7 @@ func reset_finish_defaults() -> void:
 		_dim_syncing = false
 
 
-## New face/plane sketch (not File > New, not begin_edit): Blind, New, default D.
+## New sketch: New / Blind. Region pick asks IntentResolver for Cut + Through All.
 func reset_finish_for_new_sketch() -> void:
 	reset_finish_defaults()
 	if _extrude_spin != null:
@@ -1905,10 +1904,24 @@ func flip_side_button() -> CheckButton:
 	return _flip_side
 
 
+func pick_region(index: int) -> void:
+	if _selected_contours.has(index):
+		return
+	_selected_contours.append(index)
+	_selected_contours.sort()
+
+
 ## Refresh Selected Contours chips from the live sketch (SW multi-region pick).
+## A host-face sketch uses region click instead of the checkbox row.
 func refresh_contours(sketch: SxSketch) -> void:
 	_clear_bar(_contour_bar)
 	_selected_contours.clear()
+	if sketch_mode != null and sketch_mode.host_face_id != "":
+		_contour_bar.visible = false
+		# Entity ids changed: drop the last region pick so a deleted
+		# circle does not keep a stale fill.
+		sketch_mode.set_contour_highlight([], -1)
+		return
 	if sketch == null or not sketch.has_method("contour_count"):
 		_contour_bar.visible = false
 		if sketch_mode != null:

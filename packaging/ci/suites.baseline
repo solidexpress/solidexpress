@@ -10,6 +10,7 @@ run_critic_walk_tests.gd
 run_dead_chrome_tests.gd
 run_display_tests.gd
 run_drag_tests.gd
+run_film_hexkey_tests.gd
 run_film_manifest_smoke.gd
 run_help_tests.gd
 run_hole_wizard_tests.gd
@@ -132,6 +133,7 @@ run_select_tests.gd
 run_sketch_expr_dim_tests.gd
 run_sketch_fully_defined_tests.gd
 run_sketch_parity_tests.gd
+run_sketch_regions_tests.gd
 run_sketch_tests.gd
 run_sketch_to_3d_ui_tests.gd
 run_sketch_tools_tests.gd

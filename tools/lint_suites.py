@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SUITES = ROOT / "packaging" / "ci" / "suites.d"
 BASELINE = ROOT / "packaging" / "ci" / "suites.baseline"
 GAME = ROOT / "game"
-ALLOWED_KEYS = {"script", "tier", "timeout", "reason"}
+ALLOWED_KEYS = {"script", "tier", "timeout", "reason", "render"}
+RENDERS = {"dummy", "viewport"}
 TIERS = {"ci", "full", "known-red"}
 REASON_RE = re.compile(r"^(env|stale-feature|product): .+")
 
@@ -75,6 +76,8 @@ def parse_manifest(path: Path) -> tuple[dict[str, str], list[str]]:
             errors.append(f"{path.name}: bad reason class")
     elif "reason" in data:
         errors.append(f"{path.name}: reason only allowed on known-red")
+    if "render" in data and data["render"] not in RENDERS:
+        errors.append(f"{path.name}: bad render {data['render']}")
     return data, errors
 
 
