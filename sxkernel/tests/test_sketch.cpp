@@ -73,6 +73,28 @@ TEST_CASE("planegcs solves a dimensioned rectangle", "[sketch][solver]") {
     REQUIRE(p0[1] == Approx(p1[1]).margin(1e-6));
 }
 
+TEST_CASE("vertical on two points shares x", "[sketch][solver]") {
+    Sketch sk("VertPair");
+    auto left = sk.add_line(-4.0, 1.0, -4.0, 3.0);
+    auto right = sk.add_line(3.0, -1.0, 5.0, 2.0);
+    sk.add_constraint(ConstraintType::Vertical,
+                      {{left, PointRole::Start}, {right, PointRole::Start}});
+
+    auto solver = make_planegcs_backend();
+    REQUIRE(solver->solve(sk).ok());
+    auto p = *sk.point_pos({left, PointRole::Start});
+    auto q = *sk.point_pos({right, PointRole::Start});
+    REQUIRE(p[0] == Approx(q[0]).margin(1e-5));
+    // A single line still goes vertical (the one-ref form).
+    Sketch line("VertLine");
+    auto horiz = line.add_line(0.0, 0.0, 6.0, 0.2);
+    line.add_constraint(ConstraintType::Vertical, {{horiz, PointRole::Self}});
+    REQUIRE(solver->solve(line).ok());
+    auto a = *line.point_pos({horiz, PointRole::Start});
+    auto b = *line.point_pos({horiz, PointRole::End});
+    REQUIRE(a[0] == Approx(b[0]).margin(1e-5));
+}
+
 TEST_CASE("planegcs solves circle radius constraint", "[sketch][solver]") {
     Sketch sk("Circ");
     auto c = sk.add_circle(10, 10, 7);

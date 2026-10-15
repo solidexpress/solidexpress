@@ -1,0 +1,3 @@
+script=tests/run_rung04_normal_to.gd
+tier=ci
+timeout=180

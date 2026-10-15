@@ -38,9 +38,18 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `popup:Top` | Section plane Top (`y = 0`, normal ±Y) |
 | `popup:Right` | Section plane Right (`x = 0`, normal ±X) |
 | `plane=` | With `face_normal`, the aligned face whose `n·pick` is nearest this millimetre offset |
+| `datum=Front\|Top\|Right` | A point on that origin quad and not the other two (`click` while sketch-host pick is armed) |
+| `popup:Normal To` | View menu item. Ctrl+8 runs the same re-face. Key 8 stays Bottom. |
 | `state.faces[].pick` | World point on the face; `click(face=)` and `click(face_normal=)` aim here |
 | `state.faces[].plane` | `n·pick` in millimetres |
 | `state.section` | `{on, plane, point, normal}` — named plane and kept-half normal |
+| `state.units` | Length unit of the open part. A new part is `mmgs`. No dialog and no conversion. |
+| `state.datums` | Origin plane names (`Front`, `Top`, `Right`). |
+| `state.features[].role` | Sketch pad role: `profile`, `rail`, or `unknown`. |
+| `sweep:Boss` | Swept Boss. Arms profile then path picks. Ctrl+click pads still sweep. |
+| `sweep:Profile` | Next pad or timeline sketch is the profile. |
+| `sweep:Path` | Next pad or timeline sketch is the path (open chain). |
+| `sweep:Ok` | Builds the solid. Refuses when the path is missing. |
 
 `state.faces` records are `id`, `body`, `centre`, `normal`, `area`, `screen`, `pick`, `plane`. The list is cached by document revision, camera transform, projection, and size, so `screen` is recomputed when the view moves. `pick` is a point on the face (an annular face's `centre` lies in the hole). `plane` is `n·pick`. `click(face=<id>)` and `click(face_normal=[x,y,z])` project `pick` through the camera at click time. `click(face_normal=[x,y,z])` chooses the face whose normal aligns with that direction (|dot| ≥ 0.999); if several faces share it, the one furthest along the normal is used (the outer wall). `click(face_normal=[x,y,z], plane=<mm>)` instead chooses the aligned face whose `plane` is nearest `<mm>` (`z = 30` versus `z = 55`). When that click lands within the viewport's edge tolerance, the bridge clicks the same point once more so the face is selected. The click reply includes that face's `normal`.
 

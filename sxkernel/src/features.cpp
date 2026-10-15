@@ -501,7 +501,7 @@ json simplify_path_for_sweep(const json& path) {
 
 TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
                                   const json* guide_path,
-                                  double thin_thickness) {
+                                  double thin_thickness, bool contact) {
     json simplified = simplify_path_for_sweep(path);
     TopoDS_Wire spine = make_polyline_wire(simplified);
     TopoDS_Wire profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
@@ -520,8 +520,7 @@ TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
         shell.SetMode();
     }
     shell.SetTransitionMode(BRepBuilderAPI_RightCorner);
-    shell.Add(profile_wire, /*withContact=*/false,
-              /*withCorrection=*/true);
+    shell.Add(profile_wire, contact, /*withCorrection=*/true);
     shell.Build();
     if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");
     if (!shell.MakeSolid()) throw std::runtime_error("MakePipeShell could not make solid");
@@ -648,39 +647,96 @@ std::vector<gp_Pnt> sketch_line_points(const Sketch& sk) {
     return pts;
 }
 
-// Ordered polyline through line entities (preserves spline densification order).
+// Join open pieces at both ends so a middle arc still grows into one rail.
+json chain_polylines(std::vector<json> segs) {
+    json path = json::array();
+    std::vector<bool> used(segs.size(), false);
+    size_t start = 0;
+    for (; start < segs.size(); ++start) {
+        if (segs[start].is_array() && segs[start].size() >= 2) break;
+    }
+    if (start >= segs.size()) return path;
+    for (const auto& p : segs[start]) path.push_back(p);
+    used[start] = true;
+    const double join_eps = 1e-3;
+    auto attach = [&]() -> bool {
+        gp_Pnt head = pnt_from(path.front());
+        gp_Pnt tail = pnt_from(path.back());
+        double best = join_eps;
+        int pick = -1;
+        int how = -1;  // 0 tail+a, 1 tail+b, 2 head+a, 3 head+b
+        for (size_t i = 0; i < segs.size(); ++i) {
+            if (used[i] || !segs[i].is_array() || segs[i].size() < 2) continue;
+            gp_Pnt a = pnt_from(segs[i].front());
+            gp_Pnt b = pnt_from(segs[i].back());
+            const double d[4] = {tail.Distance(a), tail.Distance(b), head.Distance(a),
+                                 head.Distance(b)};
+            for (int h = 0; h < 4; ++h) {
+                if (d[h] < best) {
+                    best = d[h];
+                    pick = static_cast<int>(i);
+                    how = h;
+                }
+            }
+        }
+        if (pick < 0) return false;
+        const json& s = segs[static_cast<size_t>(pick)];
+        json grown = json::array();
+        if (how == 0) {
+            for (size_t k = 1; k < s.size(); ++k) path.push_back(s[k]);
+        } else if (how == 1) {
+            for (int k = static_cast<int>(s.size()) - 2; k >= 0; --k) path.push_back(s[k]);
+        } else if (how == 2) {
+            for (int k = static_cast<int>(s.size()) - 1; k >= 1; --k) grown.push_back(s[k]);
+            for (const auto& p : path) grown.push_back(p);
+            path = std::move(grown);
+        } else {
+            for (size_t k = 0; k + 1 < s.size(); ++k) grown.push_back(s[k]);
+            for (const auto& p : path) grown.push_back(p);
+            path = std::move(grown);
+        }
+        used[static_cast<size_t>(pick)] = true;
+        return true;
+    };
+    while (attach()) {
+    }
+    if (path.size() >= 2) {
+        gp_Pnt o(0, 0, 0);
+        if (pnt_from(path.front()).Distance(o) > pnt_from(path.back()).Distance(o) + join_eps) {
+            json rev = json::array();
+            for (int k = static_cast<int>(path.size()) - 1; k >= 0; --k) rev.push_back(path[k]);
+            path = std::move(rev);
+        }
+    }
+    return path;
+}
+
+// Ordered polyline through line/arc/spline entities. Construction is skipped.
 json sketch_ordered_polyline(const Sketch& sk) {
     const double eps = 1e-9;
-    json path = json::array();
     const auto& pl = sk.plane();
-    gp_Pnt last;
-    bool have_last = false;
-    auto append_seg = [&](gp_Pnt a, gp_Pnt b) {
-        if (!have_last) {
-            path.push_back(pnt_to_json(a));
-            if (a.Distance(b) >= eps) path.push_back(pnt_to_json(b));
-            last = b;
-            have_last = true;
-            return;
-        }
-        if (last.Distance(a) < eps) {
-            if (last.Distance(b) >= eps) path.push_back(pnt_to_json(b));
-            last = b;
-        } else if (last.Distance(b) < eps) {
-            if (last.Distance(a) >= eps) path.push_back(pnt_to_json(a));
-            last = a;
-        } else {
-            path.push_back(pnt_to_json(a));
-            if (a.Distance(b) >= eps) path.push_back(pnt_to_json(b));
-            last = b;
-        }
+    std::vector<json> segs;
+    auto push_line = [&](gp_Pnt a, gp_Pnt b) {
+        if (a.Distance(b) < eps) return;
+        json s = json::array();
+        s.push_back(pnt_to_json(a));
+        s.push_back(pnt_to_json(b));
+        segs.push_back(std::move(s));
     };
     for (const auto& e : sk.entities()) {
         if (e.construction) continue;
+        json piece = json::array();
+        auto add = [&](const gp_Pnt& p) {
+            if (!piece.empty()) {
+                gp_Pnt prev = pnt_from(piece.back());
+                if (prev.Distance(p) < eps) return;
+            }
+            piece.push_back(pnt_to_json(p));
+        };
         if (e.type == SketchEntityType::Line && e.params.size() >= 4) {
             gp_Pnt a = sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1]));
             gp_Pnt b = sketch_uv_to_3d(pl, sk.param(e.params[2]), sk.param(e.params[3]));
-            append_seg(a, b);
+            push_line(a, b);
         } else if (e.type == SketchEntityType::Arc && e.params.size() >= 5) {
             const double cx = sk.param(e.params[0]);
             const double cy = sk.param(e.params[1]);
@@ -688,32 +744,26 @@ json sketch_ordered_polyline(const Sketch& sk) {
             double a0 = sk.param(e.params[3]);
             double a1 = sk.param(e.params[4]);
             if (r < eps) continue;
-            // Sweep CCW from start to end (same convention as Sketch::add_arc).
             while (a1 <= a0) a1 += 2.0 * M_PI;
             const double span = a1 - a0;
             const int samples = std::max(8, static_cast<int>(std::ceil(span / (M_PI / 12.0))));
-            gp_Pnt prev = sketch_uv_to_3d(pl, cx + r * std::cos(a0), cy + r * std::sin(a0));
-            for (int s = 1; s <= samples; ++s) {
+            for (int s = 0; s <= samples; ++s) {
                 double t = a0 + span * (static_cast<double>(s) / samples);
-                gp_Pnt cur = sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t));
-                append_seg(prev, cur);
-                prev = cur;
+                add(sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t)));
             }
+            if (piece.size() >= 2) segs.push_back(std::move(piece));
         } else if (e.type == SketchEntityType::Circle && e.params.size() >= 3) {
             const double cx = sk.param(e.params[0]);
             const double cy = sk.param(e.params[1]);
             const double r = sk.param(e.params[2]);
             if (r < eps) continue;
             const int samples = 32;
-            gp_Pnt prev = sketch_uv_to_3d(pl, cx + r, cy);
-            for (int s = 1; s <= samples; ++s) {
+            for (int s = 0; s <= samples; ++s) {
                 double t = 2.0 * M_PI * (static_cast<double>(s) / samples);
-                gp_Pnt cur = sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t));
-                append_seg(prev, cur);
-                prev = cur;
+                add(sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t)));
             }
+            if (piece.size() >= 2) segs.push_back(std::move(piece));
         } else if (e.type == SketchEntityType::Spline) {
-            // Sample the interpolating B-spline (not just fit-point chords).
             auto fits = sk.spline_fit_points(e.id);
             if (fits.size() < 2) continue;
             sx::occt::Array1OfPnt poles(1, static_cast<int>(fits.size()));
@@ -722,27 +772,23 @@ json sketch_ordered_polyline(const Sketch& sk) {
                                                       fits[static_cast<size_t>(i)][1]));
             GeomAPI_PointsToBSpline mk(poles);
             if (!mk.IsDone()) {
-                for (size_t i = 1; i < fits.size(); ++i) {
-                    gp_Pnt a = sketch_uv_to_3d(pl, fits[i - 1][0], fits[i - 1][1]);
-                    gp_Pnt b = sketch_uv_to_3d(pl, fits[i][0], fits[i][1]);
-                    append_seg(a, b);
-                }
+                for (size_t i = 0; i < fits.size(); ++i)
+                    add(sketch_uv_to_3d(pl, fits[i][0], fits[i][1]));
+                if (piece.size() >= 2) segs.push_back(std::move(piece));
                 continue;
             }
             Handle(Geom_BSplineCurve) curve = mk.Curve();
             const int samples = std::max(8, static_cast<int>(fits.size()) * 8);
             double u0 = curve->FirstParameter();
             double u1 = curve->LastParameter();
-            gp_Pnt prev = curve->Value(u0);
-            for (int s = 1; s <= samples; ++s) {
+            for (int s = 0; s <= samples; ++s) {
                 double u = u0 + (u1 - u0) * (static_cast<double>(s) / samples);
-                gp_Pnt cur = curve->Value(u);
-                append_seg(prev, cur);
-                prev = cur;
+                add(curve->Value(u));
             }
+            if (piece.size() >= 2) segs.push_back(std::move(piece));
         }
     }
-    return path;
+    return chain_polylines(std::move(segs));
 }
 
 // Append polyline b onto a, connecting at the nearest pair of endpoints.

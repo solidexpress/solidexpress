@@ -933,7 +933,7 @@ String SxDocument::graph_add_sweep(const String& sketch_fid, const PackedVector3
 }
 
 String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const String& path_fid,
-                                              const PackedStringArray& guide_fids) {
+                                              const PackedStringArray& guide_fids, bool contact) {
     if (sketch_fid.is_empty() || path_fid.is_empty()) return {};
     sx::EntityId fid;
     bool ok = apply_graph_edit("sweep", [&] {
@@ -941,6 +941,7 @@ String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const St
         f.type = sx::FeatureType::Sweep;
         f.params["sketch"] = to_std(sketch_fid);
         f.params["path_feature"] = to_std(path_fid);
+        if (contact) f.params["contact"] = true;
         if (guide_fids.size() > 0) {
             nlohmann::json guides = nlohmann::json::array();
             for (int i = 0; i < guide_fids.size(); ++i) guides.push_back(to_std(guide_fids[i]));
@@ -1415,6 +1416,12 @@ bool SxDocument::remove_datum(const String& id) {
     auto eid = parse_id(id);
     if (eid.is_null()) return false;
     return doc_->remove_datum(eid);
+}
+
+bool SxDocument::rename_datum(const String& id, const String& name) {
+    auto eid = parse_id(id);
+    if (eid.is_null()) return false;
+    return doc_->rename_datum(eid, to_std(name));
 }
 
 // Axis-angle (degrees) → unit quaternion (x, y, z, w). Degenerate axis → identity.
@@ -2578,8 +2585,9 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid",
-                                  "guide_fids"),
-                         &SxDocument::graph_add_sweep_along_path, DEFVAL(PackedStringArray()));
+                                  "guide_fids", "contact"),
+                         &SxDocument::graph_add_sweep_along_path, DEFVAL(PackedStringArray()),
+                         DEFVAL(false));
     ClassDB::bind_method(D_METHOD("graph_add_path", "sketch_fids", "mode"), &SxDocument::graph_add_path);
     ClassDB::bind_method(D_METHOD("graph_add_loft", "sketch_fids", "ruled", "guide_fids"),
                          &SxDocument::graph_add_loft, DEFVAL(PackedStringArray()));
@@ -2630,6 +2638,7 @@ void SxDocument::_bind_methods() {
                          &SxDocument::graph_add_datum_point);
     ClassDB::bind_method(D_METHOD("datum_list"), &SxDocument::datum_list);
     ClassDB::bind_method(D_METHOD("remove_datum", "id"), &SxDocument::remove_datum);
+    ClassDB::bind_method(D_METHOD("rename_datum", "id", "name"), &SxDocument::rename_datum);
     ClassDB::bind_method(D_METHOD("add_instance", "source_body", "translation", "rotation_axis",
                                   "rotation_angle_deg", "name"),
                          &SxDocument::add_instance);

@@ -2334,6 +2334,11 @@ func _commit_pick_sketch_host(screen_pos: Vector2) -> void:
 		_picking_sketch_host = false
 		sketch_host_picked.emit("face", face_id, body_id, "")
 		return
+	var datum_name := OriginPlanes.ray_hit(view, ray[0], ray[1])
+	if datum_name != "":
+		_picking_sketch_host = false
+		sketch_host_picked.emit("datum", datum_name, "", "")
+		return
 	# Empty ground → XY sketch.
 	if hit.is_empty() and ground_point(screen_pos) != null:
 		_picking_sketch_host = false
@@ -4047,6 +4052,11 @@ func _sketch_input(event: InputEvent) -> void:
 					accept_event()
 			KEY_Z, KEY_Y:
 				if _gui_key(ke):
+					accept_event()
+			KEY_8:
+				var main_n := _find_main()
+				if main_n != null and main_n.has_method("normal_to_view"):
+					main_n.normal_to_view()
 					accept_event()
 	elif event is InputEventKey and event.pressed and not event.ctrl_pressed:
 		var ke := event as InputEventKey

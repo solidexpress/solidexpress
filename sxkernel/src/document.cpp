@@ -298,6 +298,16 @@ void Document::regenerate_cards_for_body(const Body& b) {
     }
 }
 
+bool Document::rename_datum(const EntityId& id, const std::string& name) {
+    if (name.empty()) return false;
+    auto it = datum_index_.find(id);
+    if (it == datum_index_.end()) return false;
+    std::visit([&](auto& x) { x.name = name; }, datums_[it->second]);
+    upsert_card_for_datum(datums_[it->second]);
+    bump_revision();
+    return true;
+}
+
 void Document::index_datum(Datum&& d) {
     const EntityId id = datum_entity_id(d);
     datum_index_[id] = datums_.size();

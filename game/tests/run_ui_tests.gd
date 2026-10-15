@@ -736,7 +736,7 @@ func test_datums(main) -> void:
 
 	view.refresh()
 	var listed: Array = view.doc.datum_list()
-	check(listed.size() == 3, "datum_list has 3 entries")
+	check(listed.size() == 6, "datum_list has 6 entries")
 	var kinds := {}
 	for d in listed:
 		kinds[d["kind"]] = true
@@ -751,16 +751,16 @@ func test_datums(main) -> void:
 
 	check(view.doc.remove_datum(axis_id), "remove_datum axis")
 	view.refresh()
-	check(view.doc.datum_list().size() == 2, "datum_list size after remove")
+	check(view.doc.datum_list().size() == 5, "datum_list size after remove")
 	check(view.datum_node(axis_id) == null, "axis visual cleared")
 
 	var path := "/tmp/sx_ui_datums.sxp"
 	check(view.save(path), "save datums document")
 	view.new_document()
-	check(view.doc.datum_list().size() == 0, "new document has no datums")
+	check(view.doc.datum_list().size() == 3, "new document has the three origin planes")
 	check(view.load_from(path), "reload datums file")
 	var reloaded: Array = view.doc.datum_list()
-	check(reloaded.size() == 2, "two datums after reload")
+	check(reloaded.size() == 5, "five datums after reload")
 	var re_ids := {}
 	for d in reloaded:
 		re_ids[d["id"]] = d["kind"]

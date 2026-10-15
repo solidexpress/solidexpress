@@ -11,6 +11,7 @@ const ORIGIN_PIN_TOL := 0.5
 const RULES: Array[Dictionary] = [
 	{"tool": "rect.center", "lock": "diagonal", "enabled": true},
 	{"tool": "circle.center", "lock": "centre", "enabled": true},
+	{"tool": "polygon.af", "lock": "centre", "enabled": true},
 ]
 
 
@@ -26,7 +27,7 @@ static func apply(sketch, entity_ids: Array, tool_key: String, centre: Vector2) 
 			"diagonal":
 				_lock_rect(sketch, entity_ids)
 			"centre":
-				_lock_circle(sketch, entity_ids)
+				_lock_centre(sketch, entity_ids)
 		return
 
 
@@ -74,6 +75,18 @@ static func _lock_rect(sketch, entity_ids: Array) -> void:
 	sketch.add_constraint("midpoint", [
 		{"entity": anchor, "role": "self"},
 		{"entity": diag, "role": "self"}], 0.0)
+
+
+## Circle: fix or coincident the centre. Loop (AF hex): origin point only;
+## the inscribed construction circle pins the loop, without a diagonal line.
+static func _lock_centre(sketch, entity_ids: Array) -> void:
+	if entity_ids.is_empty():
+		return
+	var info: Dictionary = sketch.entity_info(str(entity_ids[0]))
+	if str(info.get("type", "")) == "circle":
+		_lock_circle(sketch, entity_ids)
+		return
+	_ensure_origin_point(sketch)
 
 
 ## Centre-only fix, or coincident to an origin anchor that already exists.

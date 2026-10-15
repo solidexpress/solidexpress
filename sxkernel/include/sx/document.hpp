@@ -113,6 +113,8 @@ public:
     EntityId add_datum_point(const std::array<double, 3>& position,
                              const EntityId& keep_id = {});
     bool remove_datum(const EntityId& id);
+    // Display name only. Geometry stays. Empty name is refused.
+    bool rename_datum(const EntityId& id, const std::string& name);
     const std::vector<Datum>& datums() const { return datums_; }
     // Used by the .sxp loader to restore persisted datums exactly.
     // Also upserts a semantic card for the datum (aliases/notes preserved).

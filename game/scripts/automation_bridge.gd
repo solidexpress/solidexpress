@@ -296,6 +296,7 @@ func _click_at(vp: Viewport, pos: Vector2, as_double: bool) -> void:
 	down.double_click = as_double
 	down.position = pos
 	down.global_position = pos
+	_stamp(down)
 	_mouse_down = true
 	_deliver_pointer(vp, down)
 	# A popup item highlights on the press and activates on the release.
@@ -709,6 +710,11 @@ func _resolve_point(req: Dictionary) -> Dictionary:
 		if sp == Vector2.INF:
 			return {"error": "sketch point is not on screen (no active sketch camera)"}
 		return {"vp": _main().get_viewport(), "pos": sp + offset}
+	if req.has("datum"):
+		var picked: Variant = OriginPlanes.pick_point(str(req["datum"]))
+		if not (picked is Vector3):
+			return {"error": "datum not found: %s" % str(req["datum"])}
+		return {"vp": _main().get_viewport(), "pos": _model_to_screen(picked) + offset}
 	if req.has("model") or req.has("world"):
 		var mp := _vec3(req["model"] if req.has("model") else req["world"])
 		return {"vp": _main().get_viewport(), "pos": _model_to_screen(mp) + offset}
@@ -958,6 +964,10 @@ func _refresh_ids() -> void:
 	_tag(main.get("file_dialog"), "dialog:File")
 	_tag_dialog_buttons(main)
 	var names := {
+		"SweepBoss": "sweep:Boss",
+		"SweepOk": "sweep:Ok",
+		"SweepProfile": "sweep:Profile",
+		"SweepPathPick": "sweep:Path",
 		"PaletteSketch": "rail:Sketch",
 		"JawTool": "rail:Jaw",
 		"ToolSelect": "rail:Select",
@@ -1454,7 +1464,25 @@ func _state_full() -> Dictionary:
 		"last_click": str(ix.last_click_disposition) if ix != null else "",
 		"trace_cursor": _trace.size(),
 		"dialogs": _dialog_state(),
+		"units": _document_units(view),
+		"datums": _datums_state(view),
 	}
+
+
+func _document_units(view) -> String:
+	if view == null:
+		return ""
+	return str(view.get("units"))
+
+
+func _datums_state(view) -> Array:
+	var out: Array = []
+	if view == null or view.doc == null or not view.doc.has_method("datum_list"):
+		return out
+	for d in view.doc.datum_list():
+		if d is Dictionary:
+			out.append({"name": str(d.get("name", ""))})
+	return out
 
 
 func _section_state(view) -> Dictionary:
@@ -2140,6 +2168,8 @@ func _features_state(view) -> Array:
 				var val: Variant = (f as Dictionary)[k]
 				if typeof(val) in [TYPE_FLOAT, TYPE_INT, TYPE_STRING, TYPE_BOOL]:
 					rec[str(k)] = val
+			if str(rec.get("type", "")) == "sketch":
+				rec["role"] = SweepBoss.role(view.doc.graph_get_sketch(str(rec.get("id", ""))))
 			out.append(rec)
 	return out
 

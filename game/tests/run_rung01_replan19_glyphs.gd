@@ -223,15 +223,21 @@ func _glyph_presses(ctx: FilmContext, sm: SketchMode) -> void:
 		if type == "coincident" or seen.has(type):
 			continue
 		seen[type] = true
-		var rect: Rect2 = g["rect"]
-		var at := rect.get_center()
-		if not FilmUI.require_on_screen(ctx, at, type):
-			continue
-		_log.clear()
-		await _click_screen(ctx.main.get_viewport(), at)
+		var picked := false
+		for live in sm.constraint_glyph_screen_rects():
+			if str(live.get("type", "")) != type:
+				continue
+			var at: Vector2 = live["rect"].get_center()
+			if not FilmUI.require_on_screen(ctx, at, type):
+				continue
+			_log.clear()
+			await _click_screen(ctx.main.get_viewport(), at)
+			if _saw("Constraint selected: %s — Del removes it" % type):
+				picked = true
+				break
+			await _tap_key(ctx.main.get_viewport(), KEY_ESCAPE)
 		presses += 1
-		check(_saw("Constraint selected: %s — Del removes it" % type),
-				"press on %s glyph selects it (log %s)" % [type, " | ".join(_log)])
+		check(picked, "press on %s glyph selects it (log %s)" % [type, " | ".join(_log)])
 		await _tap_key(ctx.main.get_viewport(), KEY_ESCAPE)
 	check(presses >= 1, "pressed at least one non-coincident glyph")
 

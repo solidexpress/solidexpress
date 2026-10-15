@@ -52,6 +52,7 @@ var _rail_extrude: Button
 var _rail_revolve: Button
 var _rail_sweep: Button
 var _rail_loft: Button
+var sweep_boss: SweepBoss
 var dim_value: SpinBox
 var _datum_offset: SpinBox
 var _datum_dialog: ConfirmationDialog
@@ -540,6 +541,8 @@ func _build_ui() -> void:
 			if view != null:
 				view.unhide_all()
 				_on_status("All shown")
+		elif id == 90:
+			normal_to_view()
 		elif id >= 100:
 			var idx := _view_popup.get_item_index(id)
 			if idx >= 0:
@@ -658,7 +661,9 @@ func _build_ui() -> void:
 	_rail_revolve.pressed.connect(_rail_finish_revolve)
 	vbox.add_child(_rail_revolve)
 	_rail_sweep = UIIcons.button("arc", "",
-		"Sweep: Ctrl+click profile + rail pads, then Sweep")
+		"Swept Boss: pick a profile sketch and a path sketch, then OK")
+	_rail_sweep.name = "SweepBoss"
+	_rail_sweep.set_meta("sx_auto", "sweep:Boss")
 	_rail_sweep.pressed.connect(_rail_finish_sweep)
 	vbox.add_child(_rail_sweep)
 	_rail_loft = UIIcons.button("area", "",
@@ -1002,6 +1007,10 @@ func _build_ui() -> void:
 	sketch_chrome.sketch_mode = sketch_mode
 	sketch_chrome.visible = false
 	ui.add_child(sketch_chrome)
+	sweep_boss = SweepBoss.new()
+	sweep_boss.build(ui)
+	sweep_boss.status = _on_status
+	sweep_boss.apply = _apply_swept_boss
 	sketch_mode.offset_ui = sketch_chrome.offset_tool
 	sketch_chrome.variant_chosen.connect(_on_sketch_variant)
 	sketch_mode.tool_variant_changed.connect(sketch_chrome.sync_variant_highlight)
@@ -1243,9 +1252,36 @@ func _install_orientation_menu() -> void:
 		sc.events.append(ev)
 		_view_popup.set_item_shortcut(idx, sc, false)
 	_view_popup.add_separator()
+	_view_popup.add_item("Normal To", 90)
 
 
 ## Menu bar, HUD View list, and the number keys share this.
+## Ctrl+8 and View → Normal To. The active sketch wins. With no sketch, a
+## named origin plane in `view.datum_focus` is framed from its BASIS row.
+func normal_to_view() -> void:
+	if camera == null:
+		return
+	if sketch_mode != null and sketch_mode.active:
+		var center: Vector3 = sketch_mode.plane.origin
+		var radius := 40.0
+		var ext: Dictionary = sketch_mode.sketch_extents(0.2) if sketch_mode.has_method("sketch_extents") else {}
+		if not ext.is_empty():
+			center = ext.get("center", center)
+			radius = float(ext.get("radius", radius))
+		camera.enter_sketch_view(sketch_mode.plane_normal(), center, radius, sketch_mode.plane_y)
+		_on_status("Normal to")
+		return
+	var focus := ""
+	if view != null:
+		focus = str(view.get("datum_focus"))
+	var row := OriginPlanes.row(focus)
+	if row.is_empty():
+		_on_status("Normal to needs an active sketch")
+		return
+	camera.enter_sketch_view(row["normal"], Vector3.ZERO, DocumentView.DATUM_PLANE_HALF, row["y"])
+	_on_status("Normal to")
+
+
 func _apply_named_standard_view(view_id: String) -> void:
 	if camera == null:
 		return
@@ -1295,7 +1331,8 @@ func _apply_constraint(type: String, value: float) -> void:
 	if result == "":
 		_on_status("Select entities with the Sel tool first (%s)" % type)
 	else:
-		_on_status("%s: %s" % [type, result])
+		var shown := "Vertical" if type == "vertical" else type
+		_on_status("%s: %s" % [shown, result])
 
 
 func _apply_dimension() -> void:
@@ -1369,12 +1406,16 @@ func _on_sketch_host_picked(kind: String, face_id: String, body_id: String, pad_
 		_on_sketch_pad_clicked(pad_fid, false)
 	elif kind == "face":
 		_start_sketch_on_face(face_id, body_id)
+	elif kind == "datum":
+		OriginPlanes.begin(self, face_id)
 	else:
 		_start_sketch_on_ground()
 
 
 func _on_sketch_pad_clicked(fid: String, additive: bool = false) -> void:
 	if sketch_mode.active:
+		return
+	if sweep_boss != null and sweep_boss.consume_pad(fid, _sketch_pad_role(fid)):
 		return
 	# Ctrl/Cmd+click accumulates pads for Merge sketches… (SW 3D-sketch substitute).
 	var multi := additive or Input.is_key_pressed(KEY_CTRL) or Input.is_key_pressed(KEY_META)
@@ -1409,23 +1450,7 @@ func _refresh_merge_chrome() -> void:
 
 ## Classify a committed sketch pad for multi-sketch → 3D workflows.
 func _sketch_pad_role(fid: String) -> String:
-	var sk: SxSketch = view.doc.graph_get_sketch(fid)
-	if sk == null:
-		return "unknown"
-	var has_circle := false
-	var line_count := 0
-	for id in sk.entity_ids():
-		var info: Dictionary = sk.entity_info(id)
-		match str(info.get("type", "")):
-			"circle":
-				has_circle = true
-			"line", "arc":
-				line_count += 1
-	if has_circle:
-		return "profile"
-	if line_count >= 1:
-		return "rail"
-	return "unknown"
+	return SweepBoss.role(view.doc.graph_get_sketch(fid))
 
 func _sketch_to_3d_actions() -> Array:
 	var actions: Array = []
@@ -1467,6 +1492,9 @@ func _sketch_to_3d_actions() -> Array:
 
 
 func _on_timeline_feature_selected(fid: String, ftype: String) -> void:
+	if sweep_boss != null and sweep_boss.armed() and ftype == "sketch":
+		sweep_boss.consume_pad(fid, _sketch_pad_role(fid))
+		return
 	if ftype == "path":
 		selected_path_fid = fid
 		_on_status("Path selected — Ctrl+click a profile pad, then Sweep along path")
@@ -1502,7 +1530,7 @@ func _loft_selected_sketches(ruled: bool) -> void:
 	_on_document_changed()
 
 
-func _sweep_profile_along_path() -> void:
+func _sweep_profile_along_path(contact: bool = false) -> String:
 	var profiles := PackedStringArray()
 	var rails := PackedStringArray()
 	for fid in selected_sketch_pads:
@@ -1513,7 +1541,7 @@ func _sweep_profile_along_path() -> void:
 				rails.append(fid)
 	if profiles.size() != 1:
 		_on_status("Select exactly one closed profile pad for Sweep")
-		return
+		return ""
 	var prof_fid: String = profiles[0]
 	var path_fid := selected_path_fid
 	var guides := PackedStringArray()
@@ -1525,15 +1553,16 @@ func _sweep_profile_along_path() -> void:
 		path_fid = view.doc.graph_add_path(rails, "join_endpoints")
 		if path_fid == "":
 			_on_status("Could not create Path from selected rail(s)")
-			return
+			return ""
 		selected_path_fid = path_fid
 	else:
 		_on_status("Select a Path on the timeline, or select profile + rail(s)")
-		return
-	var sw_fid: String = view.doc.graph_add_sweep_along_path(prof_fid, path_fid, guides)
+		return ""
+	var sw_fid: String = view.doc.graph_add_sweep_along_path(prof_fid, path_fid, guides, contact)
 	if sw_fid == "":
-		_on_status("Sweep along path failed")
-		return
+		var err := str(view.doc.last_graph_error())
+		_on_status("Sweep along path failed" if err == "" else "Sweep along path failed (%s)" % err)
+		return ""
 	selected_sketch_pads.clear()
 	_refresh_merge_chrome()
 	var note := ""
@@ -1542,6 +1571,42 @@ func _sweep_profile_along_path() -> void:
 	_on_status("Sweep solid created along path%s" % note)
 	view.refresh()
 	_on_document_changed()
+	return sw_fid
+
+
+func _apply_swept_boss(profile: String, path: String) -> void:
+	selected_sketch_pads.clear()
+	selected_sketch_pads.append(profile)
+	selected_sketch_pads.append(path)
+	selected_path_fid = ""
+	var sw_fid := _sweep_profile_along_path(false)
+	if not _sweep_needs_contact(sw_fid):
+		return
+	if sw_fid != "":
+		view.doc.undo()
+	var path_feat := selected_path_fid
+	selected_sketch_pads.clear()
+	selected_sketch_pads.append(profile)
+	if path_feat == "":
+		selected_sketch_pads.append(path)
+		selected_path_fid = ""
+	else:
+		selected_path_fid = path_feat
+	_sweep_profile_along_path(true)
+
+
+func _sweep_needs_contact(sw_fid: String) -> bool:
+	if sw_fid == "":
+		return true
+	var bodies: PackedStringArray = view.doc.body_ids()
+	if bodies.is_empty():
+		return true
+	var bb: Dictionary = view.doc.measure_bbox(bodies[0])
+	if bb.is_empty():
+		return true
+	var mn: Vector3 = bb["min"]
+	var mx: Vector3 = bb["max"]
+	return mn.x > 0.5 or mx.x < -0.5 or absf((mn.x + mx.x) * 0.5) > 1.0
 
 
 func _merge_selected_sketches(mode: String) -> void:
@@ -2650,6 +2715,12 @@ func _rail_finish_revolve() -> void:
 
 
 func _rail_finish_sweep() -> void:
+	if sweep_boss != null and sweep_boss.one_shot_ready(selected_sketch_pads, _sketch_pad_role):
+		_sweep_profile_along_path()
+		return
+	if sweep_boss != null:
+		sweep_boss.arm()
+		return
 	_sweep_profile_along_path()
 
 
@@ -4482,6 +4553,9 @@ func _notification(what: int) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
+			if sweep_boss != null and sweep_boss.cancel():
+				get_viewport().set_input_as_handled()
+				return
 			if _file_dialog_is_visible():
 				file_dialog.hide()
 				get_viewport().set_input_as_handled()

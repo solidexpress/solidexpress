@@ -193,7 +193,8 @@ public:
     // Sweep along a Path feature (params rebuilt associatively from source sketches).
     godot::String graph_add_sweep_along_path(const godot::String& sketch_fid,
                                              const godot::String& path_fid,
-                                             const godot::PackedStringArray& guide_fids = {});
+                                             const godot::PackedStringArray& guide_fids = {},
+                                             bool contact = false);
     // Composite 3D path from two or more planar sketches (SW 3D-sketch substitute).
     // mode: "join_endpoints" | "bridge_spline" | "composite"
     godot::String graph_add_path(const godot::PackedStringArray& sketch_fids,
@@ -273,6 +274,7 @@ public:
     godot::String graph_add_datum_point(const godot::Vector3& position);
     godot::Array datum_list() const;
     bool remove_datum(const godot::String& id);
+    bool rename_datum(const godot::String& id, const godot::String& name);
 
     // --- instances (assembly placements; direct doc mutation, not undoable v1) ---
     // rotation_axis + rotation_angle_deg are converted to a unit quaternion for
