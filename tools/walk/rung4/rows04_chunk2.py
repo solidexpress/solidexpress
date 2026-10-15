@@ -115,9 +115,7 @@ class Rows04Chunk2:
 
     @row("A12", chunk=2, on="rung04", expect={"blocker": "A11", "sketch": True})
     def row_A12(self) -> None:
-        self.trim_at((7, 30))
-        if self.ents("circle"):
-            self.trim_at((7, 15))
+        self.trim_outer_circle()
         arcs = self.ents("arc")
         circles = self.ents("circle")
         self.clause("one arc", len(arcs) == 1 and len(circles) == 0, f"arcs={len(arcs)} circles={len(circles)}")

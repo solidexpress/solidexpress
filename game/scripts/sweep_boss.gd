@@ -29,14 +29,48 @@ static func role(sk) -> String:
 		return "unknown"
 	if sk.has_method("contour_count") and int(sk.contour_count()) >= 1:
 		return "profile"
+	var segs: Array = []
+	var open := false
 	for id in sk.entity_ids():
 		var info: Dictionary = sk.entity_info(id)
 		if bool(info.get("construction", false)):
 			continue
 		match str(info.get("type", "")):
-			"line", "arc", "spline":
-				return "rail"
+			"circle":
+				return "profile"
+			"line", "arc":
+				var a: Vector2 = info.get("start", Vector2.ZERO)
+				var b: Vector2 = info.get("end", Vector2.ZERO)
+				segs.append([a, b])
+			"spline":
+				open = true
+	if _closed_chain(segs):
+		return "profile"
+	if open or segs.size() >= 1:
+		return "rail"
 	return "unknown"
+
+
+static func _closed_chain(segs: Array) -> bool:
+	if segs.size() < 3:
+		return false
+	var eps := 0.08
+	var deg: Dictionary = {}
+	for seg in segs:
+		for p in seg:
+			var key := _pt_key(p, eps)
+			deg[key] = int(deg.get(key, 0)) + 1
+	if deg.is_empty():
+		return false
+	for k in deg.keys():
+		if int(deg[k]) != 2:
+			return false
+	return true
+
+
+static func _pt_key(p: Vector2, eps: float) -> String:
+	var s := 1.0 / eps
+	return "%d,%d" % [roundi(p.x * s), roundi(p.y * s)]
 
 
 func build(parent: Node) -> void:

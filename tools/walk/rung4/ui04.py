@@ -101,6 +101,18 @@ class WalkUI04(WalkChrome):
         self.refresh("dims", "dof", "status")
         return {"opened": opened, "texts": self.dim_texts(), "status": self.S()}
 
+    def click_verb(self, name: str) -> None:
+        chip = self.control(f"chip:{name}")
+        if chip and chip.get("visible") is not False:
+            self.click(f"chip:{name}")
+            return
+        more = self.control("chip:… More") or self.control("chip:More")
+        if not more:
+            raise SxError(f"control not found: chip:{name}")
+        self.click("chip:… More" if self.control("chip:… More") else "chip:More")
+        self.d.wait_idle(frames=2)
+        self.click(f"popup:{name}")
+
     def vertical_vertex_pair(self) -> dict:
         r_val = self.r_vertex()
         self.click("rail:Select")
@@ -110,8 +122,8 @@ class WalkUI04(WalkChrome):
         self.click(sketch=[r_val, 0])
         self.show_sketch_point((-r_val, 0))
         self.click(sketch=[-r_val, 0])
-        self.refresh("controls", "status")
-        self.click("chip:Vertical")
+        self.refresh("controls", "status", "selection")
+        self.click_verb("Vertical")
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status", "dof")
         return {"status": self.S(), "dof": self.dof_text()}
@@ -169,6 +181,14 @@ class WalkUI04(WalkChrome):
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status")
         return self.S()
+
+    def trim_outer_circle(self) -> str:
+        status = ""
+        for uv in ((7.0, 15.0), (11.4, 25.6), (22.0, 0.0)):
+            status = self.trim_at(uv)
+            if self.ents("arc") and not self.ents("circle"):
+                break
+        return status
 
     def sketch_roles(self) -> list[str]:
         roles = []
