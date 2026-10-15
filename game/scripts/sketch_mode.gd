@@ -2418,6 +2418,21 @@ func _pick_tolerance() -> float:
 	return tol
 
 
+## Nearest non-construction entity. Construction geometry loses a tie.
+func _nearest_profile_entity_at(pos2: Vector2) -> String:
+	var best_id := ""
+	var best_d := _pick_tolerance()
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		if bool(info.get("construction", false)):
+			continue
+		var d := _entity_distance(info, pos2)
+		if d < best_d:
+			best_d = d
+			best_id = str(id)
+	return best_id
+
+
 ## Nearest entity id within the pick radius of pos2, or "" if none.
 func _nearest_entity_at(pos2: Vector2) -> String:
 	var best_id := ""
@@ -5034,13 +5049,6 @@ func click(pos2: Vector2) -> void:
 	# that editor drops the gesture.
 	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE \
 			or has_pending_draw_point()
-	# A badge's drawn rect wins over the entity underneath it. Snap would
-	# pull this press onto the head circle and the glyph would never select.
-	if tool == Tool.SELECT:
-		var glyph_id := constraint_hit(select_pos)
-		if glyph_id != "":
-			select_constraint(glyph_id)
-			return
 	var dhit_raw := -1
 	if not place_point:
 		dhit_raw = dimension_hit(pos2, tool != Tool.SELECT and tool != Tool.SMART_DIM)
@@ -5080,8 +5088,11 @@ func click(pos2: Vector2) -> void:
 		pos2 = _polygon_pointer_tip(_tool_points[0], pos2)
 	match tool:
 		Tool.SELECT:
-			var chit := constraint_hit(pos2)
-			if chit != "":
+			# A badge parked beside a short edge can cover the vertex. The nearer
+			# target wins: the endpoint when the click is on it, the badge when
+			# the click is on the badge.
+			var chit := constraint_hit(select_pos)
+			if chit != "" and not _endpoint_nearer_than_glyph(select_pos, chit):
 				select_constraint(chit)
 				return
 			if selected_constraint != "":
@@ -5168,6 +5179,10 @@ func click(pos2: Vector2) -> void:
 							var ed: Vector2 = einfo["end"] - einfo["start"]
 							if absf(ed.y) <= 1e-6 and absf(ed.x) > 1e-6:
 								sketch.add_constraint("horizontal", [{"entity": lid, "role": "self"}], 0.0)
+						PolygonPose.regularize(sketch, lids)
+						if c.length() <= SketchOriginAnchor.ORIGIN_PIN_TOL:
+							SketchOriginAnchor.apply(sketch, lids, "polygon.af", c)
+							PolygonPose.inscribed_circle(sketch, lids)
 					run_solve()
 					_weld_loop(lids)
 					remember_numeric(drag)
@@ -5643,7 +5658,11 @@ func _click_smart_dim(pos2: Vector2) -> void:
 			status.emit(SMART_DIM_PICK_HINT)
 		_smart_dim_first = null
 		return
-	var hit := _nearest_entity_at(pos2)
+	# Construction (the incircle) shares the flat's tangent point. The profile
+	# line is the dimension the click asked for.
+	var hit := _nearest_profile_entity_at(pos2)
+	if hit == "":
+		hit = _nearest_entity_at(pos2)
 	if hit == "":
 		if not _smart_dim_pending.is_empty():
 			status.emit(SMART_DIM_MISS_HINT)
@@ -5723,13 +5742,16 @@ func _dispatch_smart_dim(channel: SmartDimTable.Channel, a: Dictionary, b: Dicti
 	var idb := str(b.get("entity", ""))
 	if ida == "" or idb == "":
 		return false
-	var intent := SmartDimTable.resolve(channel, _smart_dim_kind(a), _smart_dim_kind(b))
+	var hint := "parallel" if _lines_parallel(ida, idb) else ""
+	var intent := SmartDimTable.resolve(channel, _smart_dim_kind(a), _smart_dim_kind(b), hint)
 	if intent.is_empty():
 		return false
 	_set_selected([ida, idb])
 	match str(intent.get("form", "")):
 		"point_line":
 			_apply_point_line_dim(a, b, intent)
+		"parallel_distance":
+			_apply_parallel_distance_dim(ida, idb, intent)
 		"centres":
 			_apply_centre_distance_dim(ida, idb, intent)
 		"angle":
@@ -5737,6 +5759,64 @@ func _dispatch_smart_dim(channel: SmartDimTable.Channel, a: Dictionary, b: Dicti
 		_:
 			return false
 	return true
+
+
+func _drop_solo_line_length(entity_id: String) -> void:
+	if sketch == null or entity_id == "":
+		return
+	var drop: Array[String] = []
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(str(cid))
+		if str(info.get("type", "")) != "distance":
+			continue
+		var refs: Array = info.get("refs", [])
+		if refs.size() != 2:
+			continue
+		var only := true
+		for ref in refs:
+			if typeof(ref) != TYPE_DICTIONARY or str(ref.get("entity", "")) != entity_id:
+				only = false
+		if only:
+			drop.append(str(cid))
+	for cid in drop:
+		sketch.remove_constraint(cid)
+	for i in range(dimensions.size() - 1, -1, -1):
+		var ids: Array = dimensions[i].get("ids", [])
+		if ids.size() == 1 and str(ids[0]) == entity_id and str(dimensions[i].get("type", "")) == "distance":
+			dimensions.remove_at(i)
+
+
+func _lines_parallel(ida: String, idb: String) -> bool:
+	var ia: Dictionary = sketch.entity_info(ida)
+	var ib: Dictionary = sketch.entity_info(idb)
+	if str(ia.get("type", "")) != "line" or str(ib.get("type", "")) != "line":
+		return false
+	var da: Vector2 = ia["end"] - ia["start"]
+	var db: Vector2 = ib["end"] - ib["start"]
+	if da.length_squared() < 1e-12 or db.length_squared() < 1e-12:
+		return false
+	return absf(da.cross(db)) <= 1e-4 * da.length() * db.length()
+
+
+func _apply_parallel_distance_dim(ida: String, idb: String, intent: Dictionary) -> void:
+	# The first line click armed a length. The flat-to-flat distance replaces it
+	# so the hex keeps one driving dimension.
+	_drop_solo_line_length(ida)
+	_drop_solo_line_length(idb)
+	var ia: Dictionary = sketch.entity_info(ida)
+	var ib: Dictionary = sketch.entity_info(idb)
+	var dist := SketchGeom.point_line_distance(ia["start"], ib["start"], ib["end"])
+	var cid: String = sketch.add_constraint("distance", [
+		{"entity": ida, "role": "start"},
+		{"entity": idb, "role": "self"}], dist)
+	var ids := [ida, idb]
+	_record_dimension("distance", ids, dist, cid, "parallel_distance")
+	_tag_label_anchor(intent, ids)
+	_last_commit_text = "flat-to-flat %.4f" % dist
+	status.emit(_last_commit_text)
+	_undo_note("Dimension")
+	run_solve()
+	_redraw()
 
 
 func _apply_smart_dim_single(ref: Dictionary, intent: Dictionary) -> void:
@@ -9371,6 +9451,31 @@ func glyph_debug() -> Array:
 	return out
 
 
+## True when the click is on a line endpoint and that point is nearer than
+## the constraint badge. The badge still wins a click on its own centre.
+func _endpoint_nearer_than_glyph(pos2: Vector2, glyph_id: String) -> bool:
+	var id := _nearest_entity_at(pos2)
+	if id == "":
+		return false
+	var role := _endpoint_role_at(id, pos2)
+	if role != "start" and role != "end":
+		return false
+	var info: Dictionary = sketch.entity_info(id)
+	var ep: Vector2 = info["end"] if role == "end" else info["start"]
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return true
+	var click_s := cam.unproject_position(to_global(to_model(pos2)))
+	var ep_s := cam.unproject_position(to_global(to_model(ep)))
+	var glyph_s := click_s
+	for a in _glyph_anchors:
+		if str(a.get("cid", "")) != glyph_id:
+			continue
+		glyph_s = cam.unproject_position(to_global(to_model(a["pos"])))
+		break
+	return click_s.distance_to(ep_s) < click_s.distance_to(glyph_s)
+
+
 ## Constraint whose drawn glyph rect contains pos2, or "".
 ## The badge wins over the entity under it. A press that misses the rect
 ## still selects the curve. Without a camera, fall back to GLYPH_PICK_RADIUS.
@@ -9809,8 +9914,9 @@ func _dimension_claims_click(pos2: Vector2, hit: int) -> bool:
 	if _dimension_text_contains(pos2, hit) or _dimension_anchor_contains(pos2, hit):
 		return true
 	# dimension_hit still includes an 8 px pad and a 22 px halo. At 1280×800
-	# that halo covers the upper shaft line. Select keeps the curve.
-	if tool == Tool.SELECT and entity_at(pos2) != "":
+	# that halo covers the upper shaft line, and on a 7.65 mm hex it covers
+	# the opposite flat. Select and Smart Dim keep the entity under the pointer.
+	if (tool == Tool.SELECT or tool == Tool.SMART_DIM) and entity_at(pos2) != "":
 		return false
 	if _radius_label_on_own_rim(hit, pos2):
 		return false

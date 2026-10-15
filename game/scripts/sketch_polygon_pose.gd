@@ -1,96 +1,168 @@
 class_name PolygonPose
 extends RefCounted
-## Vertical pair on a closed loop: two endpoints share X, and that loop's
-## horizontals drop. Other lines keep theirs. sketch_mode only calls this.
+## AF hex pose. regularize and inscribed_circle run at commit.
+## vertical_pair turns two opposite vertices onto X = 0.
+## sketch_mode calls these; it does not branch on the hex.
 
 
 const _WELD := 0.001
 const _ORIGIN_TOL := 0.5
 
 
+## Drop this loop's horizontals, turn the chord vertical, and lock that pose.
+## Horizontals on any other line stay.
 static func vertical_pair(sketch, endpoint_a: Dictionary, endpoint_b: Dictionary) -> String:
 	if sketch == null:
 		return ""
 	var lines := _loop_lines(sketch, endpoint_a, endpoint_b)
 	if lines.is_empty():
 		return ""
-	var verts := _ordered_vertices(sketch, lines)
-	var locks := _lock_regular(sketch, lines, verts)
-	_pin_centre(sketch, endpoint_a, endpoint_b)
+	var before := str(sketch.snapshot()) if sketch.has_method("snapshot") else ""
 	var flats := _drop_loop_horizontals(sketch, lines)
+	_seed_share_x(sketch, lines, endpoint_a, endpoint_b)
 	var cid := str(sketch.add_constraint("vertical", [endpoint_a, endpoint_b], 0.0))
 	if cid == "":
 		_restore_horizontals(sketch, flats)
 		return ""
+	# The second horizontal locked rotation. A flat that is now vertical does.
+	_vertical_on_flat(sketch, flats)
 	var res: Dictionary = sketch.solve()
-	if str(res.get("status", "")) == "failed":
-		sketch.remove_constraint(cid)
-		for lock in locks:
-			if lock != "":
-				sketch.remove_constraint(lock)
-		_restore_horizontals(sketch, flats)
+	if str(res.get("status", "")) == "failed" and before != "":
+		sketch.restore(before)
 		return ""
 	return cid
 
 
-static func _lock_regular(sketch, lines: Array[String], verts: Array) -> Array[String]:
-	var locks: Array[String] = []
-	if lines.is_empty():
-		return locks
-	var first := lines[0]
-	var info: Dictionary = sketch.entity_info(first)
-	var length: float = (info["end"] as Vector2).distance_to(info["start"])
-	locks.append(_distance(sketch, {"entity": first, "role": "start"},
-			{"entity": first, "role": "end"}, length))
-	for i in range(1, lines.size()):
-		var cid := str(sketch.add_constraint("equal", [
+## Equal edges, and opposite edges parallel, so the hex stays regular
+## after the flat horizontals drop. Not a driving dimension.
+static func regularize(sketch, line_ids: Array) -> void:
+	if sketch == null or line_ids.size() < 3:
+		return
+	var first := str(line_ids[0])
+	for i in range(1, line_ids.size()):
+		sketch.add_constraint("equal", [
 			{"entity": first, "role": "self"},
-			{"entity": lines[i], "role": "self"}], 0.0))
-		_tag(sketch, cid)
-		locks.append(cid)
-	var n := verts.size()
-	if n < 4 or n % 2 != 0:
-		return locks
+			{"entity": str(line_ids[i]), "role": "self"}], 0.0)
+	var n := line_ids.size()
+	if n % 2 != 0:
+		return
 	var half := n / 2
 	for i in half:
-		var pa: Dictionary = verts[i]
-		var pb: Dictionary = verts[i + half]
-		var dist: float = (pa["p"] as Vector2).distance_to(pb["p"])
-		locks.append(_distance(sketch, {"entity": pa["entity"], "role": pa["role"]},
-				{"entity": pb["entity"], "role": pb["role"]}, dist))
-	return locks
+		sketch.add_constraint("parallel", [
+			{"entity": str(line_ids[i]), "role": "self"},
+			{"entity": str(line_ids[i + half]), "role": "self"}], 0.0)
 
 
-static func _distance(sketch, a: Dictionary, b: Dictionary, value: float) -> String:
-	var cid := str(sketch.add_constraint("distance", [a, b], value))
-	_tag(sketch, cid)
+## Construction incircle. Tangency follows the one driving flat distance.
+## The circle is not a second dimension and is not part of the profile.
+static func inscribed_circle(sketch, line_ids: Array) -> String:
+	if sketch == null or line_ids.size() < 4:
+		return ""
+	var flats := _opposite_flats(sketch, line_ids)
+	if flats.size() != 2:
+		return ""
+	var a: Dictionary = sketch.entity_info(flats[0])
+	var b: Dictionary = sketch.entity_info(flats[1])
+	var ma: Vector2 = (a["start"] + a["end"]) * 0.5
+	var mb: Vector2 = (b["start"] + b["end"]) * 0.5
+	var centre := (ma + mb) * 0.5
+	var radius := ma.distance_to(mb) * 0.5
+	if radius < 1e-6:
+		return ""
+	var cid := str(sketch.add_circle(centre.x, centre.y, radius))
+	if cid == "":
+		return ""
+	sketch.set_construction(cid, true)
+	var origin := _origin_point(sketch)
+	if origin != "":
+		sketch.add_constraint("coincident", [
+			{"entity": cid, "role": "center"},
+			{"entity": origin, "role": "self"}], 0.0)
+	for id in line_ids:
+		sketch.add_constraint("tangent", [
+			{"entity": str(id), "role": "self"},
+			{"entity": cid, "role": "self"}], 0.0)
 	return cid
 
 
-static func _tag(sketch, cid: String) -> void:
-	if cid != "" and sketch.has_method("set_constraint_expr"):
-		sketch.set_constraint_expr(cid, "pose-lock")
-
-
-static func _pin_centre(sketch, endpoint_a: Dictionary, endpoint_b: Dictionary) -> void:
+static func _seed_share_x(sketch, lines: Array[String], endpoint_a: Dictionary, endpoint_b: Dictionary) -> void:
 	var pa := _pos(sketch, endpoint_a)
 	var pb := _pos(sketch, endpoint_b)
-	if ((pa + pb) * 0.5).length() > _ORIGIN_TOL:
+	var chord := pb - pa
+	if chord.length_squared() < 1e-12:
 		return
-	var diag := str(sketch.add_line(pa.x, pa.y, pb.x, pb.y))
-	if diag == "":
+	var theta := _angle_to_vertical(chord)
+	if absf(theta) < 1e-8:
 		return
-	sketch.set_construction(diag, true)
-	sketch.add_constraint("coincident", [
-		endpoint_a, {"entity": diag, "role": "start"}], 0.0)
-	sketch.add_constraint("coincident", [
-		endpoint_b, {"entity": diag, "role": "end"}], 0.0)
-	var anchor := _origin_point(sketch)
-	if anchor == "":
+	var centre := (pa + pb) * 0.5
+	var verts: Array[Vector2] = []
+	for id in lines:
+		var info: Dictionary = sketch.entity_info(id)
+		verts.append(info["start"])
+		verts.append(info["end"])
+	for id in lines:
+		_rotate_line(sketch, id, centre, theta)
+	for id in sketch.entity_ids():
+		var sid := str(id)
+		if lines.has(sid):
+			continue
+		var info: Dictionary = sketch.entity_info(sid)
+		if str(info.get("type", "")) != "line" or not bool(info.get("construction", false)):
+			continue
+		if _near_any(info["start"], verts) or _near_any(info["end"], verts):
+			_rotate_line(sketch, sid, centre, theta)
+
+
+static func _angle_to_vertical(v: Vector2) -> float:
+	var ang := atan2(v.y, v.x)
+	var up := _wrap(PI * 0.5 - ang)
+	var down := _wrap(-PI * 0.5 - ang)
+	return up if absf(up) <= absf(down) else down
+
+
+static func _wrap(a: float) -> float:
+	while a > PI:
+		a -= TAU
+	while a < -PI:
+		a += TAU
+	return a
+
+
+static func _rotate_line(sketch, id: String, centre: Vector2, theta: float) -> void:
+	var info: Dictionary = sketch.entity_info(id)
+	if info.is_empty():
 		return
-	sketch.add_constraint("midpoint", [
-		{"entity": anchor, "role": "self"},
-		{"entity": diag, "role": "self"}], 0.0)
+	sketch.set_entity_geometry(id, {
+		"start": _rot(info["start"], centre, theta),
+		"end": _rot(info["end"], centre, theta),
+	})
+
+
+static func _rot(p: Vector2, centre: Vector2, theta: float) -> Vector2:
+	var d := p - centre
+	var c := cos(theta)
+	var s := sin(theta)
+	return centre + Vector2(d.x * c - d.y * s, d.x * s + d.y * c)
+
+
+static func _near_any(p: Vector2, pts: Array[Vector2]) -> bool:
+	for q in pts:
+		if p.distance_to(q) <= _WELD:
+			return true
+	return false
+
+
+static func _vertical_on_flat(sketch, flats: Array[String]) -> String:
+	for lid in flats:
+		var info: Dictionary = sketch.entity_info(lid)
+		if info.is_empty():
+			continue
+		var a: Vector2 = info["start"]
+		var b: Vector2 = info["end"]
+		if absf(a.x - b.x) <= 0.05 and absf(a.y - b.y) > 0.5:
+			return str(sketch.add_constraint("vertical", [
+				{"entity": lid, "role": "self"}], 0.0))
+	return ""
 
 
 static func _origin_point(sketch) -> String:
@@ -98,9 +170,7 @@ static func _origin_point(sketch) -> String:
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "point":
 			continue
-		if not bool(info.get("construction", false)):
-			continue
-		if not _has_fix(sketch, str(id)):
+		if not bool(info.get("construction", false)) or not _has_fix(sketch, str(id)):
 			continue
 		var p: Vector2 = info["position"]
 		if p.length() <= _ORIGIN_TOL:
@@ -122,6 +192,28 @@ static func _has_fix(sketch, id: String) -> bool:
 			if typeof(ref) == TYPE_DICTIONARY and str(ref.get("entity", "")) == id:
 				return true
 	return false
+
+
+static func _opposite_flats(sketch, line_ids: Array) -> Array[String]:
+	var best := -1.0
+	var pair: Array[String] = []
+	for i in line_ids.size():
+		var ia: Dictionary = sketch.entity_info(str(line_ids[i]))
+		var da: Vector2 = ia["end"] - ia["start"]
+		for j in range(i + 1, line_ids.size()):
+			var ib: Dictionary = sketch.entity_info(str(line_ids[j]))
+			var db: Vector2 = ib["end"] - ib["start"]
+			if da.length_squared() < 1e-12 or db.length_squared() < 1e-12:
+				continue
+			if absf(da.cross(db)) > 1e-3 * da.length() * db.length():
+				continue
+			var ma: Vector2 = (ia["start"] + ia["end"]) * 0.5
+			var mb: Vector2 = (ib["start"] + ib["end"]) * 0.5
+			var gap := ma.distance_to(mb)
+			if gap > best:
+				best = gap
+				pair = [str(line_ids[i]), str(line_ids[j])]
+	return pair
 
 
 static func _drop_loop_horizontals(sketch, lines: Array[String]) -> Array[String]:
@@ -201,50 +293,6 @@ static func _union(parent: Dictionary, a: String, b: String) -> void:
 	var rb := _find(parent, b)
 	if ra != "" and rb != "" and ra != rb:
 		parent[rb] = ra
-
-
-static func _ordered_vertices(sketch, lines: Array[String]) -> Array:
-	if lines.is_empty():
-		return []
-	var unused := {}
-	for id in lines:
-		unused[id] = true
-	var cur := lines[0]
-	var info: Dictionary = sketch.entity_info(cur)
-	var origin: Vector2 = info["start"]
-	var verts: Array = [{"entity": cur, "role": "start", "p": origin}]
-	var depart := "end"
-	var guard := 0
-	while guard < lines.size():
-		guard += 1
-		var at: Dictionary = sketch.entity_info(cur)
-		var next: Vector2 = at["end"] if depart == "end" else at["start"]
-		unused.erase(cur)
-		if unused.is_empty():
-			break
-		if next.distance_to(origin) <= _WELD:
-			break
-		var found := ""
-		var next_depart := ""
-		for id in lines:
-			if not unused.has(id):
-				continue
-			var other: Dictionary = sketch.entity_info(id)
-			if (other["start"] as Vector2).distance_to(next) <= _WELD:
-				found = id
-				next_depart = "end"
-				break
-			if (other["end"] as Vector2).distance_to(next) <= _WELD:
-				found = id
-				next_depart = "start"
-				break
-		if found == "":
-			break
-		var role := "start" if next_depart == "end" else "end"
-		verts.append({"entity": found, "role": role, "p": next})
-		cur = found
-		depart = next_depart
-	return verts
 
 
 static func _pos(sketch, ref: Dictionary) -> Vector2:

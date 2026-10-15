@@ -46,7 +46,15 @@ const _RULES: Array[Dictionary] = [
 	},
 	{
 		"channel": Channel.BETWEEN, "a": Class.LINE_LIKE, "b": Class.LINE_LIKE,
+		"form": "parallel_distance", "when": "parallel", "label_anchor": "mid",
+	},
+	{
+		"channel": Channel.BETWEEN, "a": Class.LINE_LIKE, "b": Class.LINE_LIKE,
 		"form": "angle", "label_anchor": "vertex",
+	},
+	{
+		"channel": Channel.SELECTION, "a": Class.LINE_LIKE, "b": Class.LINE_LIKE,
+		"form": "parallel_distance", "when": "parallel", "label_anchor": "mid",
 	},
 	{
 		"channel": Channel.SELECTION, "a": Class.LINE_LIKE, "b": Class.LINE_LIKE,
@@ -72,13 +80,16 @@ static func end_for(type: String, role: String, external: bool) -> End:
 	return End.make(kind as Kind, external and type == "line")
 
 
-static func resolve(channel: Channel, a: End, b: End = null) -> Dictionary:
+static func resolve(channel: Channel, a: End, b: End = null, hint: String = "") -> Dictionary:
 	var ca := _class_of(a)
 	var cb := _class_of(b)
 	for rule in _RULES:
 		if int(rule["channel"]) != channel:
 			continue
 		if int(rule["a"]) != ca or int(rule["b"]) != cb:
+			continue
+		var when := str(rule.get("when", ""))
+		if when != "" and when != hint:
 			continue
 		if not _external_ok(rule, a, b):
 			continue
