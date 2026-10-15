@@ -27,7 +27,7 @@ SHOTS = SITE / "assets" / "screenshots"
 MANIFEST_GAME = ROOT / "game" / "tests" / "ui_movie_manifest.json"
 MANIFEST_SITE = SITE / "assets" / "ui_movie_manifest.json"
 DEFAULT_BASE = (
-    "https://github.com/solidexpress/solidexpress.github.io/"
+    "https://github.com/solidexpress/solidexpress/"
     "releases/download/demo-movies/"
 )
 
@@ -184,7 +184,7 @@ def main() -> int:
     base = str(demo.get("base") or DEFAULT_BASE)
     api = str(
         demo.get("api")
-        or "https://api.github.com/repos/solidexpress/solidexpress.github.io/releases/tags/demo-movies"
+        or "https://api.github.com/repos/solidexpress/solidexpress/releases/tags/demo-movies"
     )
     if not args.offline:
         names = release_asset_names(api, args.timeout)

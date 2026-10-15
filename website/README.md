@@ -23,6 +23,11 @@ make check-website-demos          # HEAD every published WebM; CI runs this
 scripts/sx-sync-website           # also copies ui_movie_manifest.json
 ```
 
+Releases regenerate all enabled demo films: the release workflow renders every
+manifest entry and refreshes the `demo-movies` Release assets. Posters are kept
+in this repo and in `solidexpress.github.io` (only assets are updated — the
+Pages repo's `.gitignore` and `README.md` are never overwritten).
+
 ## Download links (hard rule)
 
 Every platform button must hydrate from **`/repos/solidexpress/solidexpress/releases/latest` only**.
