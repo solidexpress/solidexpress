@@ -7,6 +7,7 @@ const MANIFEST_PATH := "res://tests/ui_movie_manifest.json"
 # Boot FilmUI before dynamically loaded film scripts (headless cache may omit new class_name).
 const _FILM_UI_BOOT := preload("res://tests/lib/film_ui.gd")
 const _FILM_CHROME_BOOT := preload("res://tests/lib/film_chrome.gd")
+const _FILM_PRESENTATION := preload("res://tests/lib/film_presentation.gd")
 
 
 func _init() -> void:
@@ -55,7 +56,7 @@ func _init() -> void:
 	ctx.clock = FilmClock.new()
 	ctx.tree = self
 	FilmUI.reset_fail_count()
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1600, 900))
+	await _FILM_PRESENTATION.apply(ctx)
 	if str(OS.get_environment("SX_TEST_WINDOW")).to_lower() not in ["onscreen", "1", "show", "visible"]:
 		print("film window: off-screen / no-focus (SX_TEST_WINDOW=onscreen to watch)")
 

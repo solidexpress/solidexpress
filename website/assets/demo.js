@@ -8,8 +8,8 @@
   var PUBLISHED_URL = "assets/published-demos.json";
   var MANIFEST_URL = "assets/ui_movie_manifest.json";
   var POSTER_BASE = "assets/screenshots/";
-  var DEFAULT_BASE = "https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/";
-  var DEFAULT_API = "https://api.github.com/repos/solidexpress/solidexpress.github.io/releases/tags/demo-movies";
+  var DEFAULT_BASE = "https://github.com/solidexpress/solidexpress/releases/download/demo-movies/";
+  var DEFAULT_API = "https://api.github.com/repos/solidexpress/solidexpress/releases/tags/demo-movies";
 
   function fetchJson(url) {
     return fetch(url, { cache: "no-cache" }).then(function (r) {
@@ -55,6 +55,18 @@
   function movieUrl(catalog, id) {
     var demo = (catalog && catalog.demo_release) || {};
     return (demo.base || DEFAULT_BASE) + id + ".webm";
+  }
+
+  function releaseManifestUrl(catalog) {
+    var demo = (catalog && catalog.demo_release) || {};
+    return (demo.base || DEFAULT_BASE) + "ui_movie_manifest.json";
+  }
+
+  function fetchManifest(catalog) {
+    // Prefer manifest from release assets; fallback to baked file if blocked.
+    return fetchJson(releaseManifestUrl(catalog))
+      .catch(function () { return fetchJson(MANIFEST_URL); })
+      .catch(function () { return []; });
   }
 
   function bindLightbox(catalog) {
@@ -157,12 +169,13 @@
   function hydrateLibrary(gridId, searchId) {
     var grid = document.getElementById(gridId);
     if (!grid) return;
-    Promise.all([fetchJson(CATALOG_URL), fetchJson(MANIFEST_URL)])
+    Promise.all([fetchJson(CATALOG_URL)])
       .then(function (pair) {
         var catalog = pair[0];
-        var manifest = Array.isArray(pair[1]) ? pair[1] : [];
         var lightbox = bindLightbox(catalog);
-        return loadAvailable(catalog).then(function (available) {
+        return Promise.all([loadAvailable(catalog), fetchManifest(catalog)]).then(function (got) {
+          var available = got[0];
+          var manifest = Array.isArray(got[1]) ? got[1] : [];
           var films = manifest.filter(function (e) {
             return e && e.enabled !== false && e.id && available[e.id];
           }).map(function (e) {

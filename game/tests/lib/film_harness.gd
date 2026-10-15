@@ -20,10 +20,12 @@ static func boot(tree: SceneTree, size := Vector2i(0, 0)) -> FilmContext:
 	ctx.camera = FilmCamera.new(main.camera)
 	ctx.clock = FilmClock.new()
 	ctx.tree = tree
-	if size == Vector2i.ZERO:
-		await FilmUI.ensure_test_viewport(ctx)
-	else:
+	var _pres = preload("res://tests/lib/film_presentation.gd")
+	if size != Vector2i.ZERO:
+		# Override only when a caller asserts a non-default size.
 		await FilmUI.ensure_test_viewport(ctx, size)
+	else:
+		await _pres.apply(ctx)
 	return ctx
 
 

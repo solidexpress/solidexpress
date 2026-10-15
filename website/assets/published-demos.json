@@ -1,5 +1,6 @@
 [
   "extrude_cylinder",
+  "hexkey",
   "lesson2_box",
   "loft_guide_rail",
   "path_merge_sweep",
@@ -8,6 +9,6 @@
   "revolve_washer",
   "sketch_edit_in_out",
   "sketch_tools",
-  "ubc_wrench",
-  "hexkey"
+  "tutor1",
+  "ubc_wrench"
 ]

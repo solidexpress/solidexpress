@@ -90,6 +90,9 @@ Part B: film `ubc_wrench` + `run_film_ubc_wrench_tests.gd` (`tier=full`). Suites
 
 `ubc_wrench` is on Release `demo-movies` and in `published-demos.json` and `demo-catalog.json`.
 
+## 0.1.3 — rung 4 (hex key)
+- SolidExpress `VERSION` is 0.1.3. Rung 4 (Pano Central hex key Swept Boss) is fully makeable (#256).
+
 ## 0.1.2 — rung 3 (Tutor1)
 - SolidExpress `VERSION` is 0.1.2. Rung 3 (Learn SOLIDWORKS Lesson 1: Parts, Tutor1) is fully makeable (#252).
 
