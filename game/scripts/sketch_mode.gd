@@ -153,6 +153,8 @@ var plane_y: Vector3:
 
 ## Selected entity ids (SELECT tool), most recent last, max 2.
 var selected: Array[String] = []
+## Parallel to `selected`. "self" is the whole line; "start"/"end" is an endpoint.
+var selected_roles: Array[String] = []
 ## Selected constraint id (click its glyph with the SELECT tool); Del removes.
 var selected_constraint := ""
 
@@ -1874,6 +1876,8 @@ func selection_actions() -> Array:
 		return acts
 	acts.append("construction")
 	acts.append("delete")
+	if selected.size() == 1 and _role_at(0) != "self":
+		acts.append("vertical")
 	if selected.size() == 2:
 		var t0: String = sketch.entity_info(selected[0]).get("type", "")
 		var t1: String = sketch.entity_info(selected[1]).get("type", "")
@@ -2238,11 +2242,33 @@ func _snap_mid_centers(id: String) -> Array[Vector2]:
 # --- selection & constraints ---
 
 func _set_selected(ids: Array[String]) -> void:
+	var picks: Array = []
+	for id in ids:
+		picks.append({"id": id, "role": "self"})
+	_set_picks(picks)
+
+
+func _set_picks(picks: Array) -> void:
+	var ids: Array[String] = []
+	selected_roles.clear()
+	for pick in picks:
+		ids.append(str(pick.get("id", "")))
+		selected_roles.append(str(pick.get("role", "self")))
 	selected = ids
 	_redraw_selected()
 	_rebuild_constraint_glyphs()
 	selection_changed.emit(selected)
 	selection_actions_needed.emit()
+
+
+func _role_at(index: int) -> String:
+	if index < 0 or index >= selected_roles.size():
+		return "self"
+	return selected_roles[index]
+
+
+func _ref_at(index: int) -> Dictionary:
+	return {"entity": selected[index], "role": _role_at(index)}
 
 
 ## Select every sketch entity (Ctrl+A). Returns count selected.
@@ -2409,15 +2435,59 @@ func _select_at(pos2: Vector2) -> void:
 	if best_id == "":
 		_set_selected([])
 		return
-	var ids := selected.duplicate()
-	if ids.has(best_id):
-		ids.erase(best_id)  # click again to deselect
+	var role := _endpoint_role_at(best_id, pos2)
+	var picks: Array = []
+	for i in selected.size():
+		picks.append(_ref_at(i))
+	var existing := -1
+	for i in picks.size():
+		if str(picks[i]["entity"]) == best_id and str(picks[i]["role"]) == role:
+			existing = i
+			break
+	if existing >= 0:
+		picks.remove_at(existing)
 	else:
-		ids.append(best_id)
-		# Soft cap so relation chips stay usable; Mirror/Pattern need 2+.
-		while ids.size() > 8:
-			ids.pop_front()
-	_set_selected(ids)
+		picks.append({"entity": best_id, "role": role})
+		while picks.size() > 8:
+			picks.pop_front()
+	var stored: Array = []
+	for pick in picks:
+		stored.append({"id": pick["entity"], "role": pick["role"]})
+	_set_picks(stored)
+
+
+## A click nearer an endpoint than the line midpoint stores that endpoint.
+func _endpoint_pick() -> bool:
+	for i in selected.size():
+		if _role_at(i) != "self":
+			return true
+	return false
+
+
+func _is_point_pair(refs: Array) -> bool:
+	if refs.size() != 2:
+		return false
+	for ref in refs:
+		if typeof(ref) != TYPE_DICTIONARY:
+			return false
+		var role := str(ref.get("role", "self"))
+		if role != "start" and role != "end":
+			return false
+	return true
+
+
+func _endpoint_role_at(id: String, pos2: Vector2) -> String:
+	var info: Dictionary = sketch.entity_info(id)
+	if str(info.get("type", "")) != "line":
+		return "self"
+	var a: Vector2 = info["start"]
+	var b: Vector2 = info["end"]
+	var mid := (a + b) * 0.5
+	var ds := pos2.distance_to(a)
+	var de := pos2.distance_to(b)
+	if minf(ds, de) < pos2.distance_to(mid):
+		return "start" if ds <= de else "end"
+	return "self"
 
 
 func _entity_distance(info: Dictionary, p: Vector2) -> float:
@@ -2659,10 +2729,18 @@ func constrain(type: String, value: float = 0.0) -> String:
 	var cid := ""  # id of the (last) constraint added, kept for editable dims
 	match type:
 		"horizontal", "vertical":
-			for id in selected:
-				if sketch.entity_info(id).get("type", "") == "line":
-					cid = sketch.add_constraint(type, [{"entity": id, "role": "self"}], 0.0)
-					added = true
+			if type == "vertical" and _endpoint_pick():
+				if selected.size() == 2 and _role_at(0) != "self" and _role_at(1) != "self":
+					cid = PolygonPose.vertical_pair(sketch, _ref_at(0), _ref_at(1))
+					added = cid != ""
+				else:
+					status.emit("Vertical needs two endpoints")
+					return ""
+			else:
+				for id in selected:
+					if sketch.entity_info(id).get("type", "") == "line":
+						cid = sketch.add_constraint(type, [{"entity": id, "role": "self"}], 0.0)
+						added = true
 		"parallel", "perpendicular", "equal":
 			if selected.size() == 2:
 				cid = sketch.add_constraint(type, [
@@ -7335,6 +7413,7 @@ func _clear_meshes() -> void:
 	_contour_fill_alphas = []
 	_contour_outline_count = 0
 	selected = []
+	selected_roles.clear()
 	selected_constraint = ""
 	dimensions.clear()
 	_clear_dimension_labels()
@@ -8702,9 +8781,12 @@ func _constraint_anchor(cinfo: Dictionary) -> Variant:
 				if contact != null:
 					return contact
 		"point_on_line", "parallel", "perpendicular", "equal", "horizontal", "vertical":
-			var line_info := _line_ref_info(refs)
-			if not line_info.is_empty():
-				return _nudge_off_line(line_info)
+			# Two endpoints: the badge sits between them (the mean below).
+			# A line still sits beside the line. Two centres stay hidden (T14).
+			if not (str(cinfo.get("type", "")) == "vertical" and _is_point_pair(refs)):
+				var line_info := _line_ref_info(refs)
+				if not line_info.is_empty():
+					return _nudge_off_line(line_info)
 	var sum := Vector2.ZERO
 	var n := 0
 	for ref in refs:

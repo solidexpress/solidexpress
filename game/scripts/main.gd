@@ -1295,7 +1295,8 @@ func _apply_constraint(type: String, value: float) -> void:
 	if result == "":
 		_on_status("Select entities with the Sel tool first (%s)" % type)
 	else:
-		_on_status("%s: %s" % [type, result])
+		var shown := "Vertical" if type == "vertical" else type
+		_on_status("%s: %s" % [shown, result])
 
 
 func _apply_dimension() -> void:

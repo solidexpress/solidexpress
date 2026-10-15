@@ -1,0 +1,3 @@
+script=tests/run_rung04_vertical.gd
+tier=ci
+timeout=180

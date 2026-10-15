@@ -224,6 +224,14 @@ struct Xlate {
                 return true;
             }
             case ConstraintType::Vertical: {
+                // Two points: same X, the form Horizontal already has.
+                if (c.refs.size() >= 2) {
+                    GCS::Point a = point_of(c.refs[0], ok1);
+                    GCS::Point b = point_of(c.refs[1], ok2);
+                    if (!ok1 || !ok2) return false;
+                    sys.addConstraintVertical(a, b, tag, drv);
+                    return true;
+                }
                 auto it = lines.find(c.refs.at(0).entity);
                 if (it == lines.end()) return false;
                 sys.addConstraintVertical(it->second, tag, drv);
