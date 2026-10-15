@@ -33,7 +33,7 @@ dry-run demo-catalog featured append ['tutor1'] → 11 rows
 dry-run: no gh call, no file change
 ```
 
-`tools/confirm_all.sh`: walks 45/46, 76/77, 43/44. The single miss on each walk is the headless gate (A26, A15, A25). Checkers in `docs/loop/post-rung-03-result.md` (rung 3 final 29/29, rung 2 16/16, wrench 28/28, DIAG 18/22). Headless **214 run, 1 failed** (`run_rung01_replan21_pick.gd`: the WP8 nearer-edge tie-break takes a horizontal at the neck junction). `film_tutor1_tests` is in the 214 and passed (13 checks, `29/29`). Lint `218 suites ok (67 ci, 147 full, 4 known-red)`.
+`tools/confirm_all.sh`: walks 46/46, 77/77, 44/44. Checkers in `docs/loop/post-rung-03-result.md` (rung 3 final 29/29, rung 2 16/16, wrench 28/28, DIAG 18/22). Headless **214 run, 0 failed**. `EdgeScreenPick` keeps the edge under the cursor; depth wins only for a stacked twin, so the wrench neck stays vertical and Tutor1 R5 stays 9 edges. `film_tutor1_tests` is in the 214 (13 checks, `29/29`). Lint `218 suites ok (67 ci, 147 full, 4 known-red)`. Tutor1 WebM re-rendered (18,808,869 bytes, container 61.800 s); the film script did not change, so the poster is unchanged.
 
 ## Rung 2 — Lesson 2 box (PR #246)
 
