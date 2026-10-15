@@ -16,6 +16,8 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Shape.hxx>
+#include <TopAbs_ShapeEnum.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
@@ -49,6 +51,7 @@
 #include "sx/features.hpp"
 #include "sx/interop.hpp"
 #include "sx/sketch_json.hpp"
+#include "sx/sketch_regions.hpp"
 #include "sx_sketch.hpp"
 #include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
@@ -645,6 +648,59 @@ PackedStringArray SxDocument::edges_of_face(const String& face_id) const {
     for (const auto& id : sx::edges_of_face(*doc_, parse_id(face_id)))
         out.push_back(to_gd(id.str()));
     return out;
+}
+
+namespace {
+Array outlines_to_array(const std::vector<sx::Sketch::ContourOutline>& regions) {
+    Array out;
+    for (const auto& region : regions) {
+        Dictionary d;
+        PackedVector2Array outer;
+        outer.resize(static_cast<int>(region.outer.size()));
+        for (int i = 0; i < outer.size(); ++i) {
+            const auto& p = region.outer[static_cast<size_t>(i)];
+            outer[i] = Vector2(p[0], p[1]);
+        }
+        Array holes;
+        for (const auto& hole : region.holes) {
+            PackedVector2Array hp;
+            hp.resize(static_cast<int>(hole.size()));
+            for (int i = 0; i < hp.size(); ++i) {
+                const auto& p = hole[static_cast<size_t>(i)];
+                hp[i] = Vector2(p[0], p[1]);
+            }
+            holes.push_back(hp);
+        }
+        d["outer"] = outer;
+        d["holes"] = holes;
+        d["area"] = region.area;
+        d["min"] = Vector2(region.min[0], region.min[1]);
+        d["size"] = Vector2(region.size[0], region.size[1]);
+        d["center"] = Vector2(region.center[0], region.center[1]);
+        out.push_back(d);
+    }
+    return out;
+}
+
+TopoDS_Shape host_face_of(const sx::Document& doc, const String& face_id) {
+    if (face_id.is_empty()) return {};
+    TopoDS_Shape host = doc.resolve(parse_id(face_id));
+    if (host.IsNull() || host.ShapeType() != TopAbs_FACE) return {};
+    return host;
+}
+}  // namespace
+
+int SxDocument::sketch_region_at(const Ref<SxSketch>& sketch, const String& face_id, double u,
+                                 double v) const {
+    if (sketch.is_null() || !sketch->sketch()) return -1;
+    auto arranged = sx::SketchRegions::arrange(*sketch->sketch(), host_face_of(*doc_, face_id));
+    return arranged.containing_uv(*sketch->sketch(), u, v);
+}
+
+Array SxDocument::sketch_region_outlines(const Ref<SxSketch>& sketch, const String& face_id) const {
+    if (sketch.is_null() || !sketch->sketch()) return Array();
+    auto arranged = sx::SketchRegions::arrange(*sketch->sketch(), host_face_of(*doc_, face_id));
+    return outlines_to_array(arranged.outlines(*sketch->sketch()));
 }
 
 PackedStringArray SxDocument::get_edge_ids(const String& body_id) const {
@@ -2558,6 +2614,10 @@ void SxDocument::_bind_methods() {
                          &SxDocument::section_cap_mesh);
     ClassDB::bind_method(D_METHOD("get_face_ids", "body_id"), &SxDocument::get_face_ids);
     ClassDB::bind_method(D_METHOD("edges_of_face", "face_id"), &SxDocument::edges_of_face);
+    ClassDB::bind_method(D_METHOD("sketch_region_at", "sketch", "face_id", "u", "v"),
+                         &SxDocument::sketch_region_at);
+    ClassDB::bind_method(D_METHOD("sketch_region_outlines", "sketch", "face_id"),
+                         &SxDocument::sketch_region_outlines);
     ClassDB::bind_method(D_METHOD("get_edge_lines", "body_id"), &SxDocument::get_edge_lines);
     ClassDB::bind_method(D_METHOD("pick", "origin", "direction"), &SxDocument::pick);
     ClassDB::bind_method(D_METHOD("card_markdown", "entity_id"), &SxDocument::card_markdown);

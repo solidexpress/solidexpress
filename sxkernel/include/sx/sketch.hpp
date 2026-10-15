@@ -188,9 +188,13 @@ public:
                                                  std::string* err = nullptr) const;
 
     // profile_face restricted to contour indices (empty = all). Indices match
-    // contour_faces() order.
+    // contour_faces() order. Host face empty uses sketch-only contours; a
+    // planar host splits that face by the sketch curves (region pick).
     TopoDS_Shape profile_face_selected(const std::vector<int>& indices,
                                        std::string* err = nullptr) const;
+    TopoDS_Shape profile_face_selected(const std::vector<int>& indices,
+                                       const TopoDS_Shape& host_face,
+                                       std::string* err) const;
 
     // Builds a planar face by in-plane offsetting an open (or closed)
     // non-construction polyline profile to the given wall thickness.

@@ -1,4 +1,5 @@
 #include "sx/sketch.hpp"
+#include "sx/sketch_regions.hpp"
 #include "sx/shape_utils.hpp"
 #include "sx/variables.hpp"
 
@@ -974,10 +975,16 @@ std::vector<Sketch::ContourOutline> Sketch::contour_outlines(double deflection,
 
 TopoDS_Shape Sketch::profile_face_selected(const std::vector<int>& indices,
                                            std::string* err) const {
-    std::string cerr;
-    auto contours = contour_faces(&cerr);
+    return profile_face_selected(indices, {}, err);
+}
+
+TopoDS_Shape Sketch::profile_face_selected(const std::vector<int>& indices,
+                                           const TopoDS_Shape& host_face,
+                                           std::string* err) const {
+    auto arranged = SketchRegions::arrange(*this, host_face);
+    auto contours = arranged.faces;
     if (contours.empty()) {
-        if (err) *err = cerr.empty() ? "no contours" : cerr;
+        if (err) *err = arranged.error.empty() ? "no contours" : arranged.error;
         return {};
     }
     std::vector<TopoDS_Shape> picked;
@@ -993,7 +1000,6 @@ TopoDS_Shape Sketch::profile_face_selected(const std::vector<int>& indices,
         }
     }
     if (picked.size() == 1) return picked[0];
-    // Compound of faces — MakePrism accepts a compound of planar faces.
     TopoDS_Compound comp;
     BRep_Builder builder;
     builder.MakeCompound(comp);

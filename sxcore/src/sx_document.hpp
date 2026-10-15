@@ -140,6 +140,11 @@ public:
     godot::PackedStringArray get_edge_ids(const godot::String& body_id) const;
     // Boundary edges of one face (stable edge ids). Empty if `face_id` is not a face.
     godot::PackedStringArray edges_of_face(const godot::String& face_id) const;
+    // Sketch + host-face regions (empty face_id = sketch-only contours).
+    int sketch_region_at(const godot::Ref<class SxSketch>& sketch, const godot::String& face_id,
+                         double u, double v) const;
+    godot::Array sketch_region_outlines(const godot::Ref<class SxSketch>& sketch,
+                                        const godot::String& face_id) const;
     // Edge wireframe as a Dictionary {edge_uuid: PackedVector3Array}.
     godot::Dictionary get_edge_lines(const godot::String& body_id) const;
 
