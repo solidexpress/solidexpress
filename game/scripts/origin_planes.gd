@@ -74,9 +74,9 @@ static func begin(main, name: String) -> void:
 
 ## A hit this close to another origin plane sits on an axis, not a unique quad.
 const AXIS_BAND := 5.0
-## Iso glances through a quad (|dir·n| ~ 0.64). Named Front/Right/Top views
-## are face-on (~1). Empty space behind a glancing quad stays ground.
-const FACE_ON := 0.75
+## Orbit yaw/pitch vs the datum normal. Iso look·n is ~0.44–0.64; named
+## Front/Right/Top are ~1. Empty space behind a glancing quad stays ground.
+const FACE_ON := 0.90
 
 
 ## Same frame as the visible quad in DocumentView.
@@ -102,11 +102,14 @@ static func ray_hit(view, ray_origin: Vector3, ray_dir: Vector3) -> String:
 	var best_t := INF
 	var best := ""
 	var dir := ray_dir.normalized()
+	var look := _look(view, dir)
 	for d in datums:
 		if str(d.get("kind", "")) != "plane":
 			continue
 		var fr := frame(d)
 		var normal: Vector3 = fr["normal"]
+		if absf(look.dot(normal)) < FACE_ON:
+			continue
 		var denom := dir.dot(normal)
 		if absf(denom) < 1e-8:
 			continue
@@ -119,13 +122,39 @@ static func ray_hit(view, ray_origin: Vector3, ray_dir: Vector3) -> String:
 		var v := rel.dot(fr["y"])
 		if absf(u) > half or absf(v) > half:
 			continue
-		if absf(denom) < FACE_ON:
-			continue
 		if not _exclusive(p, d, datums):
 			continue
 		best_t = t
 		best = str(d.get("name", ""))
 	return best
+
+
+## Orbit yaw/pitch in kernel Z-up, not `-basis.z` (empty-scene Y-bias tilts
+## that under FACE_ON) and not the pick ray (iso screen-right can align with
+## Right). Iso look·n is ~0.44–0.64; named Right/Front/Top are ~1.
+static func _look(view, ray_dir: Vector3) -> Vector3:
+	if view != null and view.is_inside_tree():
+		var vp: Viewport = view.get_viewport()
+		var cam: Camera3D = vp.get_camera_3d() if vp != null else null
+		if cam != null:
+			var world := _world_look(cam)
+			var inv: Transform3D = view.global_transform.affine_inverse()
+			return (inv.basis * world).normalized()
+	return ray_dir.normalized()
+
+
+static func _world_look(cam: Camera3D) -> Vector3:
+	if cam is OrbitCamera:
+		var oc: OrbitCamera = cam
+		var yaw: float = oc.yaw
+		var pitch: float = oc.pitch
+		var sp := sin(pitch)
+		var cp := cos(pitch)
+		if absf(absf(pitch) - PI * 0.5) < 1e-5:
+			sp = signf(pitch)
+			cp = 0.0
+		return Vector3(-cp * sin(yaw), -sp, -cp * cos(yaw)).normalized()
+	return -cam.global_transform.basis.z.normalized()
 
 
 static func _exclusive(p: Vector3, chosen: Dictionary, datums: Array) -> bool:

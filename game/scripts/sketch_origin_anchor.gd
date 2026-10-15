@@ -27,10 +27,7 @@ static func apply(sketch, entity_ids: Array, tool_key: String, centre: Vector2) 
 			"diagonal":
 				_lock_rect(sketch, entity_ids)
 			"centre":
-				if _first_is_line(sketch, entity_ids):
-					_lock_rect(sketch, entity_ids)
-				else:
-					_lock_circle(sketch, entity_ids)
+				_lock_centre(sketch, entity_ids)
 		return
 
 
@@ -80,11 +77,16 @@ static func _lock_rect(sketch, entity_ids: Array) -> void:
 		{"entity": diag, "role": "self"}], 0.0)
 
 
-static func _first_is_line(sketch, entity_ids: Array) -> bool:
+## Circle: fix or coincident the centre. Loop (AF hex): origin point only;
+## the inscribed construction circle pins the loop, without a diagonal line.
+static func _lock_centre(sketch, entity_ids: Array) -> void:
 	if entity_ids.is_empty():
-		return false
+		return
 	var info: Dictionary = sketch.entity_info(str(entity_ids[0]))
-	return str(info.get("type", "")) == "line"
+	if str(info.get("type", "")) == "circle":
+		_lock_circle(sketch, entity_ids)
+		return
+	_ensure_origin_point(sketch)
 
 
 ## Centre-only fix, or coincident to an origin anchor that already exists.

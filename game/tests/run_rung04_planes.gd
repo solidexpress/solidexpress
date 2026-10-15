@@ -34,8 +34,13 @@ func _planes(ctx: FilmContext) -> void:
 	check(origin_hit == "", "origin ray is a miss, not a datum (got %s)" % origin_hit)
 	var iso_hit := OriginPlanes.ray_hit(ctx.view, Vector3(80, 80, 80), Vector3(-0.44, -0.64, -0.63))
 	check(iso_hit == "", "isometric glance through the quads is a miss (got %s)" % iso_hit)
+	ctx.main.camera.apply_standard_view_id("right")
+	await process_frame
 	var right_hit := OriginPlanes.ray_hit(ctx.view, Vector3(40, 10, 10), Vector3(-1, 0, 0))
 	check(right_hit == "Right", "unique Right quad (got %s)" % right_hit)
+	# Kernel Top (Y=0) is face-on in Front (world +Z), not in world-Top.
+	ctx.main.camera.apply_standard_view_id("front")
+	await process_frame
 	var top_hit := OriginPlanes.ray_hit(ctx.view, Vector3(10, 40, 10), Vector3(0, -1, 0))
 	check(top_hit == "Top", "unique Top quad (got %s)" % top_hit)
 	await _click_datum(ctx, "Front", "front")
