@@ -18,6 +18,8 @@ signal selection_changed(ids: Array)
 
 ## Set by main from SketchContextChrome; owns the Offset panel and click path.
 var offset_ui: SketchOffset
+## Circular Sketch Pattern panel (Count / Angle / Ok). Linear still uses click.
+var pattern_ui: SketchCircularPattern
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
@@ -1537,6 +1539,10 @@ func set_tool(t: Tool) -> void:
 	var spec := SketchToolSpec.of(int(t))
 	if spec.sets_default_variant:
 		tool_variant = spec.default_variant_of(self)
+	if t == Tool.PATTERN and pattern_ui != null:
+		pattern_ui.reset_centre()
+		pattern_ui.count = int(SketchCircularPattern.SPEC["count"])
+		pattern_ui.angle_deg = float(SketchCircularPattern.SPEC["angle_deg"])
 	# Do not clear selection on tool switch — completed geometry must stay
 	# visible/selectable (polygon/circle vanishing after another tool was a bug).
 	_snap_marker = null
@@ -3132,31 +3138,67 @@ func extend_at(pos2: Vector2) -> bool:
 
 ## Linear or circular pattern of the selection.
 func pattern_selected(dx: float, dy: float, count: int) -> Array:
+	if tool_variant == "circular":
+		return apply_circular_pattern()
 	if not active or selected.is_empty():
 		status.emit("Pattern needs a selection")
 		return []
 	var ids := PackedStringArray()
 	for id in selected:
 		ids.append(id)
-	var new_ids: PackedStringArray
-	if tool_variant == "circular":
-		# Approximate circular pattern as rotated copies about selection centroid.
-		var c := _selection_centroid()
-		new_ids = PackedStringArray()
-		for i in range(1, count):
-			var ang := TAU * float(i) / float(count)
-			var ca := cos(ang)
-			var sa := sin(ang)
-			for id in ids:
-				var info: Dictionary = sketch.entity_info(id)
-				_add_rotated_copy(info, c, ca, sa, new_ids)
-	else:
-		new_ids = sketch.pattern_entities(ids, dx, dy, count)
+	var new_ids: PackedStringArray = sketch.pattern_entities(ids, dx, dy, count)
 	if new_ids.is_empty():
 		status.emit("Pattern failed")
 		return []
 	_undo_note("Pattern")
 	_redraw()
+	var out: Array = []
+	for id2 in new_ids:
+		out.append(id2)
+	return out
+
+
+## 8-about-origin (SPEC) circular pattern. Count includes the seed.
+func apply_circular_pattern() -> Array:
+	if not active:
+		return []
+	if pattern_ui != null:
+		pattern_ui.pull_fields()
+	var n := int(pattern_ui.count) if pattern_ui != null else 8
+	var ang_deg := float(pattern_ui.angle_deg) if pattern_ui != null else 360.0
+	var c: Vector2 = pattern_ui.centre if pattern_ui != null else Vector2.ZERO
+	if selected.is_empty():
+		status.emit(SketchCircularPattern.REFUSALS["empty"])
+		return []
+	if n < 2:
+		status.emit(SketchCircularPattern.REFUSALS["count"])
+		if pattern_ui != null:
+			pattern_ui.restore_count_default()
+		return []
+	if is_zero_approx(ang_deg):
+		status.emit(SketchCircularPattern.REFUSALS["angle"])
+		return []
+	var ids := PackedStringArray()
+	var kinds: Array = pattern_ui.kinds() if pattern_ui != null else ["circle"]
+	for id in selected:
+		var kind := str(sketch.entity_info(id).get("type", ""))
+		if kind in kinds:
+			ids.append(id)
+	if ids.is_empty():
+		status.emit(SketchCircularPattern.REFUSALS["empty"])
+		return []
+	if not sketch.has_method("circular_pattern_entities"):
+		status.emit(SketchCircularPattern.REFUSALS["failed"])
+		return []
+	var new_ids: PackedStringArray = sketch.circular_pattern_entities(
+			ids, c.x, c.y, n, deg_to_rad(ang_deg))
+	if new_ids.is_empty():
+		status.emit(SketchCircularPattern.REFUSALS["failed"])
+		return []
+	_undo_note("Pattern")
+	run_solve()
+	_redraw()
+	status.emit(SketchCircularPattern.APPLIED % n)
 	var out: Array = []
 	for id2 in new_ids:
 		out.append(id2)
@@ -5307,7 +5349,10 @@ func click(pos2: Vector2) -> void:
 			# Selection must already include axis + geometry; click confirms.
 			mirror_selected()
 		Tool.PATTERN:
-			pattern_selected(_pattern_spacing, 0.0, _pattern_count)
+			if tool_variant == "circular":
+				_pattern_centre_click(pos2)
+			else:
+				pattern_selected(_pattern_spacing, 0.0, _pattern_count)
 		Tool.CHAMFER:
 			chamfer_selected(2.0)
 	_update_preview()
@@ -5721,6 +5766,15 @@ func _offset_click(uv: Vector2) -> void:
 		status.emit(text)
 	offset_ui.click(ctx, uv)
 	host_face_id = ctx.host_face_id
+
+
+func _pattern_centre_click(uv: Vector2) -> void:
+	if pattern_ui == null or sketch == null:
+		return
+	if pattern_ui.pick_centre(sketch, uv, _pick_tolerance()):
+		status.emit("Pattern centre at (%.4f, %.4f)" % [pattern_ui.centre.x, pattern_ui.centre.y])
+	else:
+		status.emit("Pattern centre is the origin")
 
 
 func _smart_dim_kind(ref: Dictionary) -> SmartDimTable.End:

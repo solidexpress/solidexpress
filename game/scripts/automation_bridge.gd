@@ -1056,6 +1056,9 @@ func _refresh_ids() -> void:
 	_tag_spin_edit(main.find_child("OffsetDistance", true, false), "offset:Distance")
 	_tag(main.find_child("OffsetReverse", true, false), "offset:Reverse")
 	_tag(main.find_child("OffsetOk", true, false), "offset:Ok")
+	_tag_spin_edit(main.find_child("PatternCount", true, false), "pattern:Count")
+	_tag_spin_edit(main.find_child("PatternAngle", true, false), "pattern:Angle")
+	_tag(main.find_child("PatternOk", true, false), "pattern:Ok")
 
 
 func _tag(node: Node, id: String) -> void:

@@ -1012,6 +1012,10 @@ func _build_ui() -> void:
 	sweep_boss.status = _on_status
 	sweep_boss.apply = _apply_swept_boss
 	sketch_mode.offset_ui = sketch_chrome.offset_tool
+	sketch_mode.pattern_ui = sketch_chrome.pattern_tool
+	if sketch_mode.pattern_ui != null:
+		sketch_mode.pattern_ui.on_ok = sketch_mode.apply_circular_pattern
+		sketch_mode.pattern_ui.reset_centre()
 	sketch_chrome.variant_chosen.connect(_on_sketch_variant)
 	sketch_mode.tool_variant_changed.connect(sketch_chrome.sync_variant_highlight)
 	sketch_chrome.action_chosen.connect(_on_sketch_action)
