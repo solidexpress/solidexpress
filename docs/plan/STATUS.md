@@ -4,7 +4,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 ## Rung 4 — hex key / Swept Boss (`cursor/rung-04-20261015`)
 
-WP1–WP9 and WP11 shipped. WP10 skipped (polyline `check_rung04.py final` already 5/5 in `rung04_sweep.suite`). WP12 `tools/confirm_all.sh` **missed the bar**: walks 76/58-fail, 44/25, 46/20, 32/18; headless 221 run / 41 failed; critique **6/10**. Details: `docs/loop/rung-04-result.md`. Sweep command and origin-plane path are in the product; the confirm walk did not finish Vertical + trim + solid.
+WP1–WP9 and WP11 shipped. WP10 skipped (polyline `check_rung04.py final` already 5/5). WP12 `tools/confirm_all.sh` **met the bar**: walks 77/77, 44/44, 46/46, 32/32; `check_rung04` final 5/5; headless 221 run / 0 failed; critique **9/10**. Details: `docs/loop/rung-04-result.md`. Iso empty space stays ground: `OriginPlanes.ray_hit` uses orbit yaw/pitch (`FACE_ON`), not the pick ray.
 
 ## Rung 3 — Tutor1 (PR #252)
 
