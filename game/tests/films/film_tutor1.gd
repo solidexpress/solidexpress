@@ -9,7 +9,6 @@ const SxInput = preload("res://tests/lib/sx_input.gd")
 
 
 func run_film(ctx: FilmContext) -> void:
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1600, 900))
 	await ctx.movie_toast("A boss, an offset cut, two fillets, a shell, and a section", 2.0)
 
 	await ctx.beat("Sketch a 120 by 120 rectangle from the centre", 0.4)
