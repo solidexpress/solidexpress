@@ -36,12 +36,13 @@ static func role(sk) -> String:
 		if bool(info.get("construction", false)):
 			continue
 		match str(info.get("type", "")):
-			"circle":
+			"circle", "polygon":
 				return "profile"
 			"line", "arc":
 				var a: Vector2 = info.get("start", Vector2.ZERO)
 				var b: Vector2 = info.get("end", Vector2.ZERO)
-				segs.append([a, b])
+				if a.distance_to(b) > 0.08:
+					segs.append([a, b])
 			"spline":
 				open = true
 	if _closed_chain(segs):
@@ -52,11 +53,15 @@ static func role(sk) -> String:
 
 
 static func _closed_chain(segs: Array) -> bool:
-	if segs.size() < 3:
-		return false
 	var eps := 0.08
-	var deg: Dictionary = {}
+	var live: Array = []
 	for seg in segs:
+		if (seg[0] as Vector2).distance_to(seg[1]) > eps:
+			live.append(seg)
+	if live.size() < 3:
+		return false
+	var deg: Dictionary = {}
+	for seg in live:
 		for p in seg:
 			var key := _pt_key(p, eps)
 			deg[key] = int(deg.get(key, 0)) + 1

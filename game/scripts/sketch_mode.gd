@@ -1879,6 +1879,11 @@ func selection_actions() -> Array:
 	if selected.size() == 1 and _role_at(0) != "self":
 		acts.append("vertical")
 	if selected.size() == 2:
+		# Endpoint pair first so Vertical/Horizontal stay on the chip row
+		# instead of … More (a More click would drop the selection).
+		if _endpoint_pick():
+			acts.append("horizontal")
+			acts.append("vertical")
 		var t0: String = sketch.entity_info(selected[0]).get("type", "")
 		var t1: String = sketch.entity_info(selected[1]).get("type", "")
 		if (t0 == "circle" or t0 == "arc") and (t1 == "circle" or t1 == "arc"):
@@ -1886,8 +1891,10 @@ func selection_actions() -> Array:
 		if t0 == "line" and t1 == "line":
 			acts.append("fillet")
 			acts.append("chamfer")
-		acts.append_array(["horizontal", "vertical", "parallel", "perpendicular",
-				"equal", "coincident", "tangent", "midpoint", "symmetric"])
+		for v in ["horizontal", "vertical", "parallel", "perpendicular",
+				"equal", "coincident", "tangent", "midpoint", "symmetric"]:
+			if not acts.has(v):
+				acts.append(v)
 	if selected.size() >= 1:
 		acts.append("offset")
 		acts.append("pattern")

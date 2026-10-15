@@ -2237,6 +2237,7 @@ func _chip_row_max_width(local_x: float) -> float:
 
 func _make_action_chip(verb: String) -> Button:
 	var b := Button.new()
+	b.name = verb
 	b.text = verb.capitalize().replace("_", " ")
 	b.tooltip_text = verb
 	b.custom_minimum_size = Vector2(0, _chip_h())

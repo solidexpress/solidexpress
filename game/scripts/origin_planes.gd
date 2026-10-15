@@ -72,6 +72,10 @@ static func begin(main, name: String) -> void:
 	main._start_sketch_on_plane(Vector3.ZERO, found["x"], found["y"])
 
 
+## A hit this close to another origin plane sits on an axis, not a unique quad.
+const AXIS_BAND := 5.0
+
+
 ## Same frame as the visible quad in DocumentView.
 static func frame(d: Dictionary) -> Dictionary:
 	var origin: Vector3 = d["origin"]
@@ -85,15 +89,17 @@ static func frame(d: Dictionary) -> Dictionary:
 	return {"origin": origin, "normal": normal, "x": x_dir, "y": y_dir}
 
 
-## Nearest finite quad the ray hits, or "" . Faces are decided by the caller.
+## Nearest unique finite quad, or "". Origin and the axes miss so empty
+## space (and the walk's ground click at the origin) still starts XY.
 static func ray_hit(view, ray_origin: Vector3, ray_dir: Vector3) -> String:
 	if view == null or view.doc == null:
 		return ""
+	var datums: Array = view.doc.datum_list()
 	var half := DocumentView.DATUM_PLANE_HALF
 	var best_t := INF
 	var best := ""
 	var dir := ray_dir.normalized()
-	for d in view.doc.datum_list():
+	for d in datums:
 		if str(d.get("kind", "")) != "plane":
 			continue
 		var fr := frame(d)
@@ -110,6 +116,25 @@ static func ray_hit(view, ray_origin: Vector3, ray_dir: Vector3) -> String:
 		var v := rel.dot(fr["y"])
 		if absf(u) > half or absf(v) > half:
 			continue
+		if not _exclusive(p, d, datums):
+			continue
 		best_t = t
 		best = str(d.get("name", ""))
 	return best
+
+
+static func _exclusive(p: Vector3, chosen: Dictionary, datums: Array) -> bool:
+	var chosen_n: Vector3 = (chosen["normal"] as Vector3).normalized()
+	var chosen_o: Vector3 = chosen.get("origin", Vector3.ZERO)
+	for other in datums:
+		if str(other.get("kind", "")) != "plane":
+			continue
+		var on: Vector3 = (other["normal"] as Vector3).normalized()
+		var oo: Vector3 = other.get("origin", Vector3.ZERO)
+		if absf(on.dot(chosen_n)) > 0.99 and oo.distance_squared_to(chosen_o) < 1e-12:
+			continue
+		var fr := frame(other)
+		var dist := absf((p - (fr["origin"] as Vector3)).dot(fr["normal"]))
+		if dist <= AXIS_BAND:
+			return false
+	return true
