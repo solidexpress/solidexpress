@@ -1454,7 +1454,14 @@ func _state_full() -> Dictionary:
 		"last_click": str(ix.last_click_disposition) if ix != null else "",
 		"trace_cursor": _trace.size(),
 		"dialogs": _dialog_state(),
+		"units": _document_units(view),
 	}
+
+
+func _document_units(view) -> String:
+	if view == null:
+		return ""
+	return str(view.get("units"))
 
 
 func _section_state(view) -> Dictionary:

@@ -34,6 +34,8 @@ const DATUM_POINT_COLOR := Color(0.2, 0.7, 0.45)
 enum DisplayMode { SHADED, SHADED_EDGES, WIREFRAME }
 
 var doc: SxDocument = SxDocument.new()
+## Length unit of a new part. Millimetres; no converter and no dialog.
+var units := "mmgs"
 ## True while graph_changed is clearing selection so panels can keep a hole edit.
 var refreshing_graph := false
 ## Primary (most recent) selection — single-select API, kept for panels/tests.
@@ -2426,6 +2428,7 @@ func load_from(path: String) -> bool:
 
 func new_document() -> void:
 	doc = SxDocument.new()
+	units = "mmgs"
 	clear_selection()
 	hidden_bodies.clear()
 	_clipboard_bodies.clear()
