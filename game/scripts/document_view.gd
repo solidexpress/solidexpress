@@ -79,6 +79,7 @@ var _clipboard_paste_count := 0
 var _clipboard_cut := false
 
 const EDGE_PICK_TOLERANCE := 2.5  # model units (mm)
+## Same band as EdgeScreenPick.TIE_PX. A model-point pick has no stacked twin.
 const EDGE_PICK_SCREEN_TIE_PX := 8.0
 const DATUM_PLANE_HALF := 20.0  # ~40 unit square
 const DATUM_AXIS_HALF_LEN := 100.0
@@ -1303,7 +1304,7 @@ func edge_near_point(body_id: String, point: Vector3, tolerance_mm: float = EDGE
 		var align := absf(_model_to_world_dir(edge_direction(body_id, str(edge_id))).dot(ray))
 		var closer := px < best_px - EDGE_PICK_SCREEN_TIE_PX
 		var tie := absf(px - best_px) <= EDGE_PICK_SCREEN_TIE_PX
-		if best_id == "" or closer or (tie and align > best_align + 0.05):
+		if best_id == "" or closer or (tie and align > best_align + EdgeScreenPick.ALIGN):
 			best_id = str(edge_id)
 			best_px = px
 			best_align = align
@@ -1316,33 +1317,25 @@ func model_to_screen(camera: Camera3D, point: Vector3) -> Vector2:
 
 
 ## Closest edge of `body_id` to a screen position, within `max_px`, "" when none.
-## Edges within EDGE_PICK_SCREEN_TIE_PX of each other prefer the one most
-## parallel to the view ray (an end-on vertical beats the arc it meets).
-## Equal alignment keeps the edge nearer the camera, so a side-view click on a
-## stacked silhouette takes the visible vertical, not the one 120 mm behind it.
+## Ranking is EdgeScreenPick: the edge under the cursor, then the end-on
+## edge, then the nearer of two stacked twins.
 func edge_near_screen(body_id: String, camera: Camera3D, screen: Vector2, max_px: float) -> String:
 	var lines: Dictionary = doc.get_edge_lines(body_id)
 	var ray := (-camera.global_transform.basis.z).normalized()
 	var best_id := ""
-	var best_px := INF
-	var best_align := -1.0
-	var best_cam := INF
+	var best: EdgeScreenPick = null
 	for edge_id in lines:
 		var near := _polyline_screen_nearest(camera, screen, lines[edge_id])
 		var px: float = near["px"]
 		if px > max_px or not _edge_point_visible(camera, near["point"]):
 			continue
-		var align := absf(_model_to_world_dir(edge_direction(body_id, str(edge_id))).dot(ray))
+		var edge_dir := _model_to_world_dir(edge_direction(body_id, str(edge_id)))
+		var align := absf(edge_dir.dot(ray))
 		var cam_d := camera.global_position.distance_to(_model_to_world(near["point"]))
-		var closer := px < best_px - EDGE_PICK_SCREEN_TIE_PX
-		var tie := absf(px - best_px) <= EDGE_PICK_SCREEN_TIE_PX
-		var align_wins := tie and align > best_align + 0.05
-		var depth_wins := tie and absf(align - best_align) <= 0.05 and cam_d + 1.0 < best_cam
-		if best_id == "" or closer or align_wins or depth_wins:
+		var rank := EdgeScreenPick.new(px, align, cam_d, edge_dir)
+		if best == null or rank.beats(best):
+			best = rank
 			best_id = str(edge_id)
-			best_px = px
-			best_align = align
-			best_cam = cam_d
 	return best_id
 
 
