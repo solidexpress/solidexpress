@@ -408,3 +408,54 @@ jobs:
         run: |
           chmod +x scripts/sx-publish-demo-movies
           ./scripts/sx-publish-demo-movies
+
+  sync-website:
+    needs: demo-movies
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Prepare baked manifest in website/
+        run: |
+          cp -f game/tests/ui_movie_manifest.json website/assets/ui_movie_manifest.json
+
+      - name: Checkout Pages repo with deploy key
+        uses: actions/checkout@v4
+        with:
+          repository: solidexpress/solidexpress.github.io
+          ssh-key: ${{ secrets.SITE_DEPLOY_KEY }}
+          persist-credentials: false
+          path: pages
+
+      - name: Sync website (exclude Pages .gitignore and README)
+        run: |
+          rsync -a --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'assets/movies/' \
+            --exclude '*.webm' \
+            --exclude '*.mp4' \
+            --exclude '*.avi' \
+            --exclude '*.mov' \
+            --exclude '*.vtt' \
+            --exclude '.gitignore' \
+            --exclude 'README.md' \
+            website/ pages/
+
+      - name: Commit and push if changed
+        working-directory: pages
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add -A
+            git commit -m "sync website from app repo (CI)"
+            git push origin HEAD:main
+          else
+            echo "No website changes to publish"
+          fi
