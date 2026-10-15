@@ -7,9 +7,11 @@ extends RefCounted
 
 ## Entity kinds this tool builds. A new kind is one row; sketch_mode does not
 ## branch on type.
-const BUILDERS := {
-	"circle": true,
-	"line": true,
+# kind → applied status key and whether Reverse can eat the radius.
+# The kernel kOffsetters table decides what is built.
+const KINDS := {
+	"circle": {"applied": "circle", "inward_limit": true},
+	"line": {"applied": "line", "inward_limit": false},
 }
 
 const ARM_HINT := "Offset — click an entity or a face edge"
@@ -132,11 +134,12 @@ func click(ctx: Context, uv: Vector2) -> void:
 	var converted := not prior.has(source)
 	var info: Dictionary = ctx.sketch.entity_info(source)
 	var kind := str(info.get("type", ""))
-	if not bool(BUILDERS.get(kind, false)):
+	var spec: Variant = KINDS.get(kind, null)
+	if spec == null:
 		_rollback_convert(ctx, source, converted)
 		ctx.status.call(NOTHING)
 		return
-	if kind == "circle" and reverse:
+	if bool(spec["inward_limit"]) and reverse:
 		var r := float(info.get("radius", 0.0))
 		if distance >= r - 1e-9:
 			_rollback_convert(ctx, source, converted)
@@ -146,13 +149,13 @@ func click(ctx: Context, uv: Vector2) -> void:
 	var new_ids: PackedStringArray = ctx.sketch.offset_entities(ids, signed_distance())
 	if new_ids.is_empty():
 		_rollback_convert(ctx, source, converted)
-		if kind == "circle" and reverse:
+		if bool(spec["inward_limit"]) and reverse:
 			ctx.status.call(TOO_FAR)
 		else:
 			ctx.status.call(NOTHING)
 		return
 	ctx.commit.call("Offset")
-	if kind == "circle":
+	if str(spec["applied"]) == "circle":
 		var created: Dictionary = ctx.sketch.entity_info(str(new_ids[0]))
 		ctx.status.call(APPLIED_CIRCLE % float(created.get("radius", 0.0)))
 	else:
@@ -169,7 +172,7 @@ func _resolve_source(ctx: Context, uv: Vector2) -> String:
 		var hit := str(ctx.nearest_entity.call(uv))
 		if hit != "":
 			var info: Dictionary = ctx.sketch.entity_info(hit)
-			if bool(BUILDERS.get(str(info.get("type", "")), false)):
+			if KINDS.has(str(info.get("type", ""))):
 				return hit
 	return _convert_edge(ctx, uv)
 

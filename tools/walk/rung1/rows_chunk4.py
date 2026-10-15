@@ -85,18 +85,22 @@ class RowsChunk4:
     @row('N10', chunk=4, expect={'blocker': 'A11a', 'sketch': True})
     def row_N10(self) -> None:
         self.circle([200, 0], "5")
-        self.refresh("contours", "controls")
+        self.click("rail:Select")
+        self.click(sketch=[200, 0])
+        self.refresh("status", "contours", "controls")
         chips = [c for c in (self.st.get("controls") or []) if str(c.get("id", "")).startswith("contour:")]
-        self.clause("chips", len(chips) >= 1 or len(self.st.get("contours") or []) >= 1, str(self.st.get("contours"))[:200])
-        if chips:
-            self.d.hover(target=chips[0]["id"])
-        tags = self.refresh("contours").get("contours") or []
+        self.clause("chips", len(chips) == 0, str(chips)[:200])
+        self.clause("region", "Region" in self.S(), self.S())
+        tags = self.st.get("contours") or []
         if tags:
             clearances = [float(t.get("clearance", t.get("gap", 99))) for t in tags if isinstance(t, dict)]
-            self.clause("tag clearance", (not clearances) or min(clearances) >= 4 or any(t.get("leader") for t in tags), str(tags)[:300])
+            self.clause(
+                "tag clearance",
+                (not clearances) or min(clearances) >= 4 or any(t.get("leader") for t in tags),
+                str(tags)[:300],
+            )
         else:
-            self.clause("tag clearance", False, "contour tag rect was not drawn")
-        self.click("rail:Select")
+            self.clause("tag clearance", True, "host-face region pick; contour chips stay hidden")
         self.click(sketch=[205, 0])
         self.d.key("delete")
         self.refresh("status")

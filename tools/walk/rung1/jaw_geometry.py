@@ -116,6 +116,15 @@ class WalkJaw:
         uy = self.ctx["uy"]
         return [h[0] + du * ux[0] + dv * uy[0], h[1] + du * ux[1] + dv * uy[1]]
 
+    def pick_mouth(self) -> str:
+        """Cut + Through All after the jaw is open. Region pick of the mouth
+        cap is parked: the cap is thinner than stroke pick, so Trim still
+        closes the profile and empty contours cut every region."""
+        self.set_option("finish:Op", "Cut")
+        self.set_option("finish:End", "Through All")
+        self.refresh("status", "finish")
+        return self.S()
+
     def head_px(self) -> float:
         a = self.d.project(sketch=[200 - 22.5, 0])["screen"]
         b = self.d.project(sketch=[200 + 22.5, 0])["screen"]

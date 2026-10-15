@@ -68,14 +68,15 @@ func run_film(ctx: FilmContext) -> void:
 	await FilmSteps.click_uv(ctx, Vector2(40, 40), "Hole rim", 120.0)
 	await FilmSteps.convert_edge(ctx, Vector3(100, 10, 25))
 	await FilmSteps.convert_edge(ctx, Vector3(100, 30, 0))
-	await _dim_line(ctx, Vector2(50, 20), Vector2(40, 40), "10")
-	await _dim_pair(ctx, Vector2(50, 20), Vector2(35, 40), Vector2(10, 25), "25")
-	await _dim_pair(ctx, Vector2(50, 20), Vector2(35, 40), Vector2(30, 0), "40")
+	await _dim_line(ctx, Vector2(90, 90), Vector2(40, 40), "10")
+	await _dim_pair(ctx, Vector2(90, 90), Vector2(35, 40), Vector2(10, 25), "25")
+	await _dim_pair(ctx, Vector2(90, 90), Vector2(35, 40), Vector2(30, 0), "40")
 	if not _ok():
 		return
 
 	await ctx.beat("Cut through all", 0.35)
-	await FilmSteps.pick_finish(ctx, 1, 1)
+	await FilmUI.select_sketch_tool(ctx, ctx.main.sketch_mode, SketchMode.Tool.SELECT)
+	await FilmSteps.click_uv(ctx, Vector2(35, 40), "Hole region", 80.0)
 	await _extrude(ctx, "")
 	if not _ok():
 		return

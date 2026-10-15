@@ -103,7 +103,7 @@ trim() {
   printf '%s' "${s}"
 }
 
-# Parse one manifest. Sets SCRIPT, TIER, TIMEOUT, REASON. Echoes errors and returns 2.
+# Parse one manifest. Sets SCRIPT, TIER, TIMEOUT, REASON, RENDER. Echoes errors and returns 2.
 parse_manifest() {
   local file="$1"
   local line key val
@@ -111,7 +111,8 @@ parse_manifest() {
   TIER=""
   TIMEOUT="900"
   REASON=""
-  local seen_script=0 seen_tier=0 seen_timeout=0 seen_reason=0
+  RENDER="dummy"
+  local seen_script=0 seen_tier=0 seen_timeout=0 seen_reason=0 seen_render=0
   while IFS= read -r line || [[ -n "${line}" ]]; do
     line="${line%$'\r'}"
     line="${line%%#*}"
@@ -156,6 +157,14 @@ parse_manifest() {
         seen_reason=1
         REASON="${val}"
         ;;
+      render)
+        if [[ "${seen_render}" -eq 1 ]]; then
+          echo "duplicate render key in $(basename "${file}")" >&2
+          return 2
+        fi
+        seen_render=1
+        RENDER="${val}"
+        ;;
       *)
         echo "unknown key ${key} in $(basename "${file}")" >&2
         return 2
@@ -187,6 +196,10 @@ parse_manifest() {
     echo "bad timeout ${TIMEOUT} in $(basename "${file}")" >&2
     return 2
   fi
+  if [[ "${RENDER}" != dummy && "${RENDER}" != viewport ]]; then
+    echo "bad render ${RENDER:-<empty>} in $(basename "${file}")" >&2
+    return 2
+  fi
   if [[ ! -f "${ROOT_DIR}/game/${SCRIPT}" ]]; then
     echo "missing script file ${SCRIPT}" >&2
     return 2
@@ -203,11 +216,13 @@ done < <(find "${SUITES_DIR}" -maxdepth 1 -name '*.suite' -printf '%f\n' | LC_AL
 selected_scripts=()
 selected_timeouts=()
 selected_reasons=()
+selected_renders=()
 for f in "${files_sorted[@]}"; do
   SCRIPT=""
   TIER=""
   TIMEOUT=""
   REASON=""
+  RENDER="dummy"
   parse_manifest "${f}" || exit 2
   if [[ "${TIER_ARG}" == ci && "${TIER}" != ci ]]; then
     continue
@@ -228,6 +243,7 @@ for f in "${files_sorted[@]}"; do
   selected_scripts+=("${SCRIPT}")
   selected_timeouts+=("${TIMEOUT}")
   selected_reasons+=("${REASON}")
+  selected_renders+=("${RENDER}")
 done
 
 if [[ "${LIST}" -eq 1 ]]; then
@@ -256,8 +272,16 @@ run=0
 failed=0
 failed_names=()
 # Headless object-model / bridge suites never open a window. The dummy
-# renderer skips Vulkan; pixel rows stay on the walk's own display.
-GODOT_RUN=(--headless --rendering-driver dummy --path "${ROOT_DIR}/game")
+# renderer skips Vulkan. render=viewport (parked for pixel suites) drops
+# --rendering-driver dummy and keeps --headless.
+godot_argv_for_render() {
+  local mode="$1"
+  if [[ "${mode}" == viewport ]]; then
+    printf '%s\n' --headless --path "${ROOT_DIR}/game"
+  else
+    printf '%s\n' --headless --rendering-driver dummy --path "${ROOT_DIR}/game"
+  fi
+}
 # Each suite gets its own HOME (below), which would hide pip --user packages
 # such as numpy from the python3 checkers. Pin the user site to the real one.
 if [[ -z "${PYTHONUSERBASE:-}" ]]; then
@@ -278,6 +302,7 @@ if [[ ${#selected_scripts[@]} -gt 0 ]]; then
       # user:// is per process so parallel suites do not share autosaves.
       jobhome="${work}/home-${i}"
       mkdir -p "${jobhome}/.local/share" "${jobhome}/.config"
+      mapfile -t GODOT_RUN < <(godot_argv_for_render "${selected_renders[$i]}")
       HOME="${jobhome}" \
         XDG_DATA_HOME="${jobhome}/.local/share" \
         XDG_CONFIG_HOME="${jobhome}/.config" \

@@ -1,0 +1,6 @@
+{
+  "ubc_wrench": {
+    "max_actions": 129,
+    "note": "Critique baseline 129 (85C 44K). Ratchet down after a green walk."
+  }
+}
