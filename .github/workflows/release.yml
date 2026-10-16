@@ -454,7 +454,8 @@ jobs:
         with:
           repository: solidexpress/solidexpress.github.io
           ssh-key: ${{ secrets.SITE_DEPLOY_KEY }}
-          persist-credentials: false
+          # Keep the deploy key configured so the later git push can authenticate.
+          persist-credentials: true
           path: pages
 
       - name: Sync website (exclude Pages .gitignore and README)
