@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import re
 import sys
 import urllib.error
@@ -180,6 +181,14 @@ def main() -> int:
     )
     if not args.offline:
         names = release_asset_names(api, args.timeout)
+        # The Releases API lags just after `gh release upload`; re-poll briefly
+        # before reporting missing WebMs.
+        want = {pid + ".webm" for pid in published_ids}
+        for _ in range(12):
+            if names is not None and want <= names:
+                break
+            time.sleep(10)
+            names = release_asset_names(api, args.timeout) or names
         if names is not None:
             for pid in published_ids:
                 asset = pid + ".webm"
