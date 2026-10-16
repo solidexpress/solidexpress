@@ -21,6 +21,8 @@ var status_label: Label
 var show_variables := false  # View-menu toggle (default off — plate stays clear)
 var show_timeline := false  # View-menu toggle ONLY — never auto-show on feature create
 var show_scenic_bg := false  # Canyon HDRI; default flat for readable cuts
+## Films set this so View → Scenic cannot flip the locked flat background.
+var presentation_lock := false
 var _view_popup: PopupMenu
 var autosave_timer: Timer
 var sketch_mode: SketchMode
@@ -275,6 +277,7 @@ func _build_world() -> void:
 	# Soft key light for crisp shadows; canyon HDRI supplies most illumination
 	# and the specular/reflection content metals need.
 	var sun := DirectionalLight3D.new()
+	sun.name = "KeyLight"
 	sun.rotation_degrees = Vector3(-45, -30, 0)
 	sun.light_energy = 0.55
 	sun.shadow_enabled = true
@@ -348,6 +351,84 @@ func _sync_world_background() -> void:
 	else:
 		e.background_mode = Environment.BG_COLOR
 		e.background_color = Color(0.16, 0.17, 0.20)
+
+
+## Lock the flat backdrop, hide origin-plane quads. Camera pose is set by
+## FilmPresentation (oblique iso fitted to the workplane).
+func apply_film_presentation() -> void:
+	presentation_lock = true
+	show_scenic_bg = false
+	_sync_world_background()
+	if view != null and view.has_method("set_origin_planes_visible"):
+		view.set_origin_planes_visible(false)
+	if view != null and view.has_method("set_scenic_reflections"):
+		view.set_scenic_reflections(false)
+	_sync_view_menu_checks()
+
+
+## Brighter key + readable part albedo for films. Does not change app defaults
+## unless called (FilmPresentation.apply).
+func apply_film_look(
+		key_energy: float = 1.65,
+		part_color: Color = Color(0.78, 0.84, 0.92),
+		emission: float = 0.16) -> void:
+	var sun := get_node_or_null("KeyLight") as DirectionalLight3D
+	if sun == null:
+		for c in get_children():
+			if c is DirectionalLight3D:
+				sun = c
+				break
+	if sun != null:
+		sun.light_energy = key_energy
+		sun.light_color = Color(0.96, 0.97, 1.0)
+	if _world_env != null and _world_env.environment != null:
+		var e := _world_env.environment
+		e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		e.ambient_light_color = Color(0.70, 0.74, 0.82)
+		e.ambient_light_energy = 1.15
+		e.tonemap_exposure = 1.12
+	if view != null and view.has_method("apply_film_body_look"):
+		view.apply_film_body_look(part_color, emission)
+
+
+## End-shot hygiene: close popups, leave sketch, drop picks, hide gizmos/dims/planes.
+func film_prepare_outro() -> void:
+	_close_film_popups()
+	if sketch_mode != null and sketch_mode.active:
+		sketch_mode.exit_sketch()
+	selected_sketch_pads.clear()
+	selected_path_fid = ""
+	if view != null:
+		view.clear_selection()
+		if view.has_method("set_origin_planes_visible"):
+			view.set_origin_planes_visible(false)
+	if interaction != null:
+		if interaction.triball != null and interaction.triball.has_method("cancel"):
+			interaction.triball.cancel()
+		if interaction.world_gizmos != null:
+			interaction.world_gizmos.set_gizmos_visible(false)
+		if interaction.transform_hud != null:
+			interaction.transform_hud.hide_dims()
+			interaction.transform_hud.hide_move_delta()
+		if interaction.measure_overlay != null:
+			interaction.measure_overlay.clear_all()
+	_update_panel_visibility()
+
+
+## Hide exclusive/transient Windows and PopupMenus so the outro is not a dialog.
+func _close_film_popups() -> void:
+	var main_win := get_window()
+	var from: Node = get_tree().root if get_tree() != null else self
+	for node in from.find_children("*", "Window", true, false):
+		var win := node as Window
+		if win == null or not win.visible:
+			continue
+		if win == main_win:
+			continue
+		win.hide()
+	for popup in from.find_children("*", "Popup", true, false):
+		if popup.visible:
+			popup.hide()
 
 
 ## Canyon HDRI as infinite background + IBL. The sky shader pins the workplane
@@ -522,12 +603,15 @@ func _build_ui() -> void:
 			_sync_view_menu_checks()
 			_update_panel_visibility()
 		elif id == 5:
-			show_scenic_bg = not show_scenic_bg
-			_sync_view_menu_checks()
-			_sync_world_background()
-			if view != null and view.has_method("set_scenic_reflections"):
-				view.set_scenic_reflections(show_scenic_bg)
-			_on_status("Scenic background on" if show_scenic_bg else "Flat background")
+			if presentation_lock:
+				_on_status("Scenic background locked (presentation)")
+			else:
+				show_scenic_bg = not show_scenic_bg
+				_sync_view_menu_checks()
+				_sync_world_background()
+				if view != null and view.has_method("set_scenic_reflections"):
+					view.set_scenic_reflections(show_scenic_bg)
+				_on_status("Scenic background on" if show_scenic_bg else "Flat background")
 		elif id == 6:
 			_on_mode_menu(5)  # Form
 			_on_print_analyze()

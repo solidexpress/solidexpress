@@ -18,14 +18,28 @@
     "title": "Loft two profiles with a guide rail",
     "script": "res://tests/films/film_loft_guide_rail.gd",
     "enabled": true,
-    "quit_after": 1500
+    "quit_after": 1500,
+    "website": {
+      "feature": "Sweep & loft",
+      "title": "Sweep & loft",
+      "caption": "Two profiles plus a rail that steers the waist of the loft.",
+      "order": 5,
+      "hero": false
+    }
   },
   {
     "id": "pliers_motion",
     "title": "Mate jaws to a pin, then drag to open",
     "script": "res://tests/films/film_pliers_motion.gd",
     "enabled": true,
-    "quit_after": 1500
+    "quit_after": 1500,
+    "website": {
+      "feature": "Assembly motion",
+      "title": "Assembly motion",
+      "caption": "Mate jaws to a pin, then drag the leftover revolute to open them.",
+      "order": 9,
+      "hero": false
+    }
   },
   {
     "id": "precision_plate",
@@ -39,21 +53,42 @@
     "title": "Block + fit spline, then extend",
     "script": "res://tests/films/film_sketch_tools.gd",
     "enabled": true,
-    "quit_after": 1200
+    "quit_after": 1200,
+    "website": {
+      "feature": "Sketch tools",
+      "title": "Sketch tools",
+      "caption": "Line, circle, spline, trim, and extend \u2014 the everyday sketch toolset.",
+      "order": 1,
+      "hero": false
+    }
   },
   {
     "id": "revolve_washer",
     "title": "Revolve washer profile 360\u00b0",
     "script": "res://tests/films/film_revolve_washer.gd",
     "enabled": true,
-    "quit_after": 1000
+    "quit_after": 1000,
+    "website": {
+      "feature": "Revolve",
+      "title": "Revolve",
+      "caption": "Sketch a profile beside an axis and revolve it 360\u00b0 into a washer.",
+      "order": 4,
+      "hero": false
+    }
   },
   {
     "id": "sketch_edit_in_out",
     "title": "Exit sketch pad and reopen to edit",
     "script": "res://tests/films/film_sketch_edit_in_out.gd",
     "enabled": true,
-    "quit_after": 1300
+    "quit_after": 1300,
+    "website": {
+      "feature": "Edit in place",
+      "title": "Edit in place",
+      "caption": "Leave a sketch, come back, and keep editing the same profile.",
+      "order": 8,
+      "hero": false
+    }
   },
   {
     "id": "fasten_bolt",
@@ -67,7 +102,14 @@
     "title": "Through-all plate cut, thickness unchanged",
     "script": "res://tests/films/film_extrude_through_all.gd",
     "enabled": true,
-    "quit_after": 1500
+    "quit_after": 1500,
+    "website": {
+      "feature": "Extrude & cut",
+      "title": "Extrude & cut",
+      "caption": "Boss and through-all cut from a sketch. Thickness stays put.",
+      "order": 2,
+      "hero": false
+    }
   },
   {
     "id": "direct_edit_import",
@@ -81,7 +123,14 @@
     "title": "TriBall rotate-copy into a bolt circle",
     "script": "res://tests/films/film_triball_hole_circle.gd",
     "enabled": true,
-    "quit_after": 900
+    "quit_after": 900,
+    "website": {
+      "feature": "Patterns",
+      "title": "Patterns",
+      "caption": "Rotate-copy a hole into a bolt circle with TriBall.",
+      "order": 6,
+      "hero": false
+    }
   },
   {
     "id": "sketch_mounting_plate",
@@ -95,14 +144,28 @@
     "title": "Four M6 holes; mass = steel \u00d7 volume",
     "script": "res://tests/films/film_hole_wizard_m6.gd",
     "enabled": true,
-    "quit_after": 900
+    "quit_after": 900,
+    "website": {
+      "feature": "Hole wizard",
+      "title": "Hole wizard",
+      "caption": "Place standard M6 holes; mass follows steel \u00d7 volume.",
+      "order": 7,
+      "hero": false
+    }
   },
   {
     "id": "fillet_chain_pocket",
     "title": "Variable fillet on a pocket chain",
     "script": "res://tests/films/film_fillet_chain_pocket.gd",
     "enabled": true,
-    "quit_after": 900
+    "quit_after": 900,
+    "website": {
+      "feature": "Fillets",
+      "title": "Fillets",
+      "caption": "Round a pocket chain in one fillet feature.",
+      "order": 3,
+      "hero": false
+    }
   },
   {
     "id": "marking_menu_pick",
@@ -144,7 +207,14 @@
     "title": "Drawing dim follows a parameter edit",
     "script": "res://tests/films/film_drawing_follows_model.gd",
     "enabled": true,
-    "quit_after": 900
+    "quit_after": 900,
+    "website": {
+      "feature": "Drawings",
+      "title": "Drawings",
+      "caption": "A drawing dimension updates when the model parameter changes.",
+      "order": 10,
+      "hero": false
+    }
   },
   {
     "id": "drawing_bom",
@@ -438,7 +508,14 @@
     "title": "Open in Slicer prepares per-body 3MF",
     "script": "res://tests/films/film_open_in_slicer.gd",
     "enabled": true,
-    "quit_after": 900
+    "quit_after": 900,
+    "website": {
+      "feature": "Export to print",
+      "title": "Export to print",
+      "caption": "Export bodies to 3MF and hand them to a slicer.",
+      "order": 11,
+      "hero": false
+    }
   },
   {
     "id": "thread_standard",
@@ -460,7 +537,14 @@
     "script": "res://tests/films/film_ubc_wrench.gd",
     "enabled": true,
     "quit_after": 3600,
-    "blurb": "Blank part to a printable 3MF: circles, shaft, open jaw, slot, fillets, thickness 14."
+    "blurb": "Blank part to a printable 3MF: circles, shaft, open jaw, slot, fillets, thickness 14.",
+    "website": {
+      "feature": "Parametric wrench",
+      "title": "Parametric wrench, end to end",
+      "caption": "Blank part to a printable wrench: sketch, shaft, jaw, slot, fillets.",
+      "order": 0,
+      "hero": true
+    }
   },
   {
     "id": "lesson2_box",
@@ -468,7 +552,7 @@
     "script": "res://tests/films/film_lesson2_box.gd",
     "enabled": true,
     "quit_after": 3600,
-    "blurb": "Rectangle, extrude, one fillet, shell, a hole from the side, then resize — the features follow."
+    "blurb": "Rectangle, extrude, one fillet, shell, a hole from the side, then resize \u2014 the features follow."
   },
   {
     "id": "tutor1",

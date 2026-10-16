@@ -1,0 +1,176 @@
+name: publish-demo-movies
+
+# Publish curated website demo WebMs + sync solid.express without rebuilding
+# the app installers. Reuse a prior release run's demo-movies artifact when
+# render already succeeded but publish/check failed (e.g. run 38925835622).
+on:
+  workflow_dispatch:
+    inputs:
+      movies_run_id:
+        description: >
+          Actions run id whose demo-movies artifact to reuse (skips Godot
+          render). Leave empty to render curated films in this workflow.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  OCCT_VERSION: "8.0.1"
+
+jobs:
+  demo-movies:
+    runs-on: ubuntu-24.04
+    env:
+      LD_LIBRARY_PATH: /opt/occt-8.0.1/lib
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install runtime deps (publish path)
+        if: ${{ inputs.movies_run_id != '' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg ca-certificates curl
+
+      - name: Download demo-movies artifact from prior run
+        if: ${{ inputs.movies_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: demo-movies
+          run-id: ${{ inputs.movies_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist/movies
+
+      - name: Install build/runtime dependencies (render path)
+        if: ${{ inputs.movies_run_id == '' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ unzip curl ca-certificates \
+            libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
+            libfreetype-dev libfontconfig-dev rapidjson-dev \
+            libx11-dev libxi-dev libxext-dev libxmu-dev libgl1-mesa-dev \
+            mesa-vulkan-drivers ffmpeg xvfb
+
+      - name: Cache OCCT ${{ env.OCCT_VERSION }}
+        if: ${{ inputs.movies_run_id == '' }}
+        uses: actions/cache@v4
+        with:
+          path: /opt/occt-${{ env.OCCT_VERSION }}
+          key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
+
+      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
+        if: ${{ inputs.movies_run_id == '' }}
+        run: |
+          chmod +x packaging/ci/install_occt.sh
+          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
+          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
+          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
+
+      - name: Fetch pinned Godot editor (4.7-stable)
+        if: ${{ inputs.movies_run_id == '' }}
+        run: |
+          chmod +x packaging/ci/fetch_godot.sh
+          GODOT_VERSION=4.7-stable packaging/ci/fetch_godot.sh
+          tools/godot/godot --version
+
+      - name: Configure + build (GDExtension + kernel)
+        if: ${{ inputs.movies_run_id == '' }}
+        run: |
+          export CMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          make build
+
+      - name: Render curated website demo movies
+        if: ${{ inputs.movies_run_id == '' }}
+        env:
+          SX_MOVIES_XVFB: "1"
+        run: |
+          chmod +x scripts/sx-movies
+          ./scripts/sx-movies release
+
+      - name: Verify movies directory
+        run: |
+          test -d dist/movies
+          webms=$(find dist/movies -name '*.webm' | wc -l)
+          echo "webms=$webms"
+          test "$webms" -ge 12
+
+      - name: Publish demo movies to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x scripts/sx-publish-demo-movies
+          ./scripts/sx-publish-demo-movies
+
+      - name: Upload website demo assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-website-assets
+          path: |
+            website/assets/screenshots/*.png
+            website/assets/published-demos.json
+            website/assets/demo-catalog.json
+          if-no-files-found: error
+
+  sync-website:
+    needs: demo-movies
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Prepare baked manifest in website/
+        run: |
+          cp -f game/tests/ui_movie_manifest.json website/assets/ui_movie_manifest.json
+
+      - name: Overlay freshly published demo posters + JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: demo-website-assets
+          path: website/assets
+
+      - name: Checkout Pages repo with deploy key
+        uses: actions/checkout@v4
+        with:
+          repository: solidexpress/solidexpress.github.io
+          ssh-key: ${{ secrets.SITE_DEPLOY_KEY }}
+          # Keep the deploy key configured so the later git push can authenticate.
+          persist-credentials: true
+          path: pages
+
+      - name: Sync website (exclude Pages .gitignore and README)
+        run: |
+          rsync -a --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'assets/movies/' \
+            --exclude '*.webm' \
+            --exclude '*.mp4' \
+            --exclude '*.avi' \
+            --exclude '*.mov' \
+            --exclude '*.vtt' \
+            --exclude '.gitignore' \
+            --exclude 'README.md' \
+            website/ pages/
+
+      - name: Commit and push if changed
+        working-directory: pages
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add -A
+            git commit -m "sync website from app repo (CI)"
+            git push origin HEAD:main
+          else
+            echo "No website changes to publish"
+          fi

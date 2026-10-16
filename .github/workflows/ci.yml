@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Refuse unpublished frontpage / features demos
         run: |
-          chmod +x scripts/sx-check-website-demos
+          chmod +x scripts/sx-check-website-demos tools/website_demos.py
           ./scripts/sx-check-website-demos
 
   kernel:

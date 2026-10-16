@@ -15,7 +15,9 @@ on the Pages-repo GitHub Release
 — never in this git tree, and never in `solidexpress.github.io` git. **Never put
 a play button on a film that is not on that Release** — `assets/demo.js` hydrates
 cards from the live asset list (fallback: `assets/published-demos.json`).
-Featured titles live in `assets/demo-catalog.json`.
+Featured titles live in `assets/demo-catalog.json` and are generated from the
+manifest `website` objects by `tools/website_demos.py` (hero first, all 12
+curated rows, hero flagged).
 
 ```bash
 make movies && scripts/sx-publish-demo-movies

@@ -5,6 +5,9 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 ## Demo: needle-nose pliers MVP — two jaws + pin, mates leave a revolute DOF,
 ## drag opens the pliers. Geometry/mates match run_pliers_motion_tests.gd;
 ## pacing uses wait_frames so Movie Maker (--fixed-fps) records full length.
+##
+## Does not call SxDocument.instance_revolute_axis (not on main's sxcore).
+## The pin is a Z cylinder at the origin; that axis is the leftover DOF.
 
 
 func _cyl_face(doc: SxDocument, body: String) -> String:
@@ -36,31 +39,32 @@ func _hold(ctx: FilmContext, caption: String, frames: int) -> void:
 	await FilmUI.wait_frames(ctx.tree, maxi(frames, 1))
 
 
-func _apply_revolute(view: DocumentView, vi: ViewportInteraction, jaw_id: String,
+func _apply_revolute(view: DocumentView, jaw_id: String,
 		start_xform: Transform3D, axis_pt: Vector3, axis_dir: Vector3, deg: float) -> void:
 	var inode = view.instance_node(jaw_id)
 	if inode == null:
 		return
 	var ang := deg_to_rad(deg)
-	inode.transform = Transform3D(
-		Basis(Quaternion(axis_dir, ang)) * start_xform.basis,
-		vi._rotate_point_about_axis(start_xform.origin, axis_pt, axis_dir, ang))
-	var rot: Array = vi._instance_rotation_from_xform(inode.transform)
-	view.doc.set_instance_transform(jaw_id, inode.transform.origin, rot[0], rot[1])
+	var dir := axis_dir.normalized()
+	var q := Quaternion(dir, ang)
+	var new_basis := Basis(q) * start_xform.basis
+	var new_origin: Vector3 = axis_pt + q * (start_xform.origin - axis_pt)
+	inode.transform = Transform3D(new_basis, new_origin)
+	var q2 := new_basis.get_rotation_quaternion()
+	var axis := q2.get_axis()
+	if axis.length_squared() < 1e-12:
+		axis = dir
+	view.doc.set_instance_transform(jaw_id, new_origin, axis, rad_to_deg(q2.get_angle()))
 	view.doc.solve_mates()
 	view.refresh()
 
 
 func run_film(ctx: FilmContext) -> void:
 	var view: DocumentView = ctx.view
-	var vi: ViewportInteraction = ctx.main.interaction
 	var doc: SxDocument = view.doc
 	var cam = ctx.main.camera
 
-	await ctx.movie_toast("Needle-nose pliers — mate jaws to a pin, then drag to open", 0.05)
-	await _hold(ctx, "Needle-nose pliers — mate jaws to a pin, then drag to open", 100)
-
-	await _hold(ctx, "Pin + jaw blank with a through-bore", 36)
+	await _hold(ctx, "Pin + jaw blank with a through-bore", 16)
 	view.new_document()
 	doc = view.doc
 	var pin: String = doc.add_cylinder(3, 24, Vector3.ZERO)
@@ -71,18 +75,18 @@ func run_film(ctx: FilmContext) -> void:
 		await _hold(ctx, "Jaw bore failed", 60)
 		return
 	view.refresh()
-	await FilmUI.wait_frames(ctx.tree, 4)
+	await FilmUI.wait_frames(ctx.tree, 2)
 	if cam != null and cam.has_method("set_view"):
+		if "_look_at_content" in cam:
+			cam._look_at_content = true
 		cam.pivot = Vector3(60, 0, 4)
 		cam.distance = 160.0
 		cam.set_view(deg_to_rad(-28.0), deg_to_rad(40.0), false)
-	await _hold(ctx, "Pin and bored jaw ready", 48)
-
-	await _hold(ctx, "Instance both jaws on the pin", 40)
+	await _hold(ctx, "Instance both jaws on the pin", 16)
 	var jaw_a: String = doc.add_instance(jaw, Vector3(30, 0, 4), Vector3(0, 0, 1), -12.0, "Jaw-A")
 	var jaw_b: String = doc.add_instance(jaw, Vector3(30, 0, 4), Vector3(0, 0, 1), 12.0, "Jaw-B")
 	view.refresh()
-	await FilmUI.wait_frames(ctx.tree, 4)
+	await FilmUI.wait_frames(ctx.tree, 2)
 	var pin_face := _cyl_face(doc, pin)
 	var hole_face := _cyl_face(doc, jaw)
 	var jaw_bottom := _planar_face_z(doc, jaw, 0.0)
@@ -92,7 +96,7 @@ func run_film(ctx: FilmContext) -> void:
 		await _hold(ctx, "Mate faces missing", 60)
 		return
 
-	await _hold(ctx, "Concentric + coincident mates leave a revolute DOF", 50)
+	await _hold(ctx, "Concentric + coincident mates leave a revolute DOF", 20)
 	# Radial tolerance 0.2 mm (hole − pin); axial face gap 0.5 mm (no kissing jaws).
 	if doc.add_mate("concentric", "", pin_face, jaw_a, hole_face, 0.2, false, "A-pin") == "":
 		FilmUI._fail("concentric A failed")
@@ -107,28 +111,24 @@ func run_film(ctx: FilmContext) -> void:
 		FilmUI._fail("solve_mates failed")
 		return
 	view.refresh()
-	await FilmUI.wait_frames(ctx.tree, 4)
+	await FilmUI.wait_frames(ctx.tree, 2)
 
 	if cam != null and cam.has_method("set_view"):
 		cam.pivot = Vector3(20, 0, 4)
 		cam.distance = 110.0
 		cam.set_view(deg_to_rad(-32.0), deg_to_rad(48.0), false)
-		await FilmUI.wait_frames(ctx.tree, 4)
+		await FilmUI.wait_frames(ctx.tree, 2)
 
-	var ax_b: Dictionary = doc.instance_revolute_axis(jaw_b)
-	if not bool(ax_b.get("ok", false)):
-		FilmUI._fail("Jaw-B has no revolute axis")
-		await _hold(ctx, "No revolute DOF", 60)
-		return
+	# Pin is a Z-cylinder at the origin; that is the leftover revolute.
+	var axis_pt := Vector3.ZERO
+	var axis_dir := Vector3(0, 0, 1)
 
-	await _hold(ctx, "Drag a jaw — it rotates about the pin", 40)
+	await _hold(ctx, "Drag a jaw — it rotates about the pin", 12)
 	var inode = view.instance_node(jaw_b)
 	if inode == null:
 		FilmUI._fail("Jaw-B node missing")
 		return
 	var start_xform: Transform3D = inode.transform
-	var axis_pt: Vector3 = ax_b["point"]
-	var axis_dir: Vector3 = (ax_b["dir"] as Vector3).normalized()
 	var tip_local := Vector3(45, 0, 4)
 
 	var tip0: Vector3 = start_xform * tip_local
@@ -136,38 +136,22 @@ func run_film(ctx: FilmContext) -> void:
 	if ctx.chrome != null and FilmUI.is_on_screen(ctx, screen0):
 		await ctx.chrome.animate_pointer_click(screen0, "Drag", "Open Jaw-B about the pin")
 
-	for step in 48:
-		var t: float = float(step) / 47.0
+	for step in 28:
+		var t: float = float(step) / 27.0
 		var deg: float = lerpf(0.0, 50.0, t)
-		_apply_revolute(view, vi, jaw_b, start_xform, axis_pt, axis_dir, deg)
-		await FilmUI.wait_frames(ctx.tree, 2)
+		_apply_revolute(view, jaw_b, start_xform, axis_pt, axis_dir, deg)
+		await FilmUI.wait_frames(ctx.tree, 1)
 
-	await _hold(ctx, "Open — mates hold the pin axis", 48)
+	await _hold(ctx, "Open — mates hold the pin axis", 16)
 
-	await _hold(ctx, "Close again", 30)
+	await _hold(ctx, "Close again", 10)
 	inode = view.instance_node(jaw_b)
 	if inode != null:
 		start_xform = inode.transform
-		ax_b = doc.instance_revolute_axis(jaw_b)
-		axis_pt = ax_b["point"]
-		axis_dir = (ax_b["dir"] as Vector3).normalized()
-		for step in 36:
-			var t2: float = float(step) / 35.0
+		for step in 18:
+			var t2: float = float(step) / 17.0
 			var deg2: float = lerpf(0.0, -32.0, t2)
-			_apply_revolute(view, vi, jaw_b, start_xform, axis_pt, axis_dir, deg2)
-			await FilmUI.wait_frames(ctx.tree, 2)
-
-	await _hold(ctx, "Assemblies with motion — pliers demo", 50)
-	if cam != null and cam.has_method("set_view"):
-		cam.pivot = Vector3(18, 0, 4)
-		cam.distance = 100.0
-	# Frame-based orbit (avoid tween timers under Movie Maker).
-	if cam != null:
-		var yaw0: float = cam.yaw
-		for step in 90:
-			var t3: float = float(step) / 89.0
-			cam.yaw = yaw0 + deg_to_rad(lerpf(0.0, 55.0, t3))
-			cam.pitch = deg_to_rad(lerpf(-32.0, -34.0, t3))
-			if cam.has_method("_update_transform"):
-				cam._update_transform()
+			_apply_revolute(view, jaw_b, start_xform, axis_pt, axis_dir, deg2)
 			await FilmUI.wait_frames(ctx.tree, 1)
+
+	await _hold(ctx, "Assemblies with motion — pliers demo", 16)

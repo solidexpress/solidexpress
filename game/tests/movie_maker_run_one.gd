@@ -8,6 +8,8 @@ const MANIFEST_PATH := "res://tests/ui_movie_manifest.json"
 const _FILM_UI_BOOT := preload("res://tests/lib/film_ui.gd")
 const _FILM_CHROME_BOOT := preload("res://tests/lib/film_chrome.gd")
 const _FILM_PRESENTATION := preload("res://tests/lib/film_presentation.gd")
+const _FILM_SHOTS := preload("res://tests/lib/film_shots.gd")
+const _FILM_OUTRO := preload("res://tests/lib/film_outro_strategy.gd")
 
 
 func _init() -> void:
@@ -77,10 +79,21 @@ func _init() -> void:
 		return
 
 	# Arm the raw MovieWriter only for the film body (skip boot / teardown frames).
+	# Intro/outro run inside this span so title cards and the end orbit encode.
 	OS.set_environment("SX_MOVIE_RECORD", "1")
+	if chrome.has_method("begin_record"):
+		chrome.begin_record()
+	var website: Variant = entry.get("website", null)
+	var is_website := typeof(website) == TYPE_DICTIONARY
+	if is_website:
+		var intro_title := str(website.get("title", entry.get("title", film_id)))
+		var intro_feature := str(website.get("feature", ""))
+		await _FILM_SHOTS.intro(ctx, intro_title, intro_feature)
 	await film.run_film(ctx)
-	# Brief hold so the last caption/showcase is on screen, then stop recording.
-	await create_timer(0.6).timeout
+	if is_website:
+		await _FILM_SHOTS.outro(ctx)
+	# One unique hold frame so the last orbit pose is encoded, then stop.
+	await process_frame
 	OS.set_environment("SX_MOVIE_RECORD", "0")
 	chrome.finish_captions()
 	var captions_out := _arg_value("--captions-out")

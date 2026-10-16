@@ -478,6 +478,22 @@ func pick_pad_visible(ray_origin: Vector3, ray_dir: Vector3, solid_t: float = IN
 			best_fid = fid
 	return best_fid
 
+func pad_frames() -> Array:
+	var out: Array = []
+	for fid in _pads.keys():
+		var p: Dictionary = _pads[fid]
+		out.append({
+			"fid": fid,
+			"origin": p["origin"],
+			"x": p["x"],
+			"y": p["y"],
+			"normal": p["normal"],
+			"min2": p["min2"],
+			"max2": p["max2"],
+		})
+	return out
+
+
 func pad_screen_aabb(fid: String, camera: Camera3D, model_space: Node3D) -> Rect2:
 	if not _pads.has(fid) or camera == null:
 		return Rect2()

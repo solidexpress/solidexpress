@@ -354,8 +354,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   demo-movies:
-    # Independent job: renders all films and publishes WebMs/posters.
+    # Independent job: renders curated website films and publishes WebMs/posters.
     runs-on: ubuntu-24.04
+    env:
+      LD_LIBRARY_PATH: /opt/occt-8.0.1/lib  # keep in sync with OCCT_VERSION (env context not allowed at job level)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -377,6 +379,13 @@ jobs:
           path: /opt/occt-${{ env.OCCT_VERSION }}
           key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
 
+      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
+        run: |
+          chmod +x packaging/ci/install_occt.sh
+          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
+          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
+          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
+
       - name: Fetch pinned Godot editor (4.7-stable)
         run: |
           chmod +x packaging/ci/fetch_godot.sh
@@ -386,21 +395,21 @@ jobs:
       - name: Configure + build (GDExtension + kernel)
         run: |
           export CMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
-          export LD_LIBRARY_PATH="/opt/occt-${OCCT_VERSION}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           make build
 
-      - name: Render all demo movies
+      - name: Render curated website demo movies
         env:
           SX_MOVIES_XVFB: "1"
         run: |
           chmod +x scripts/sx-movies
-          ./scripts/sx-movies all
+          ./scripts/sx-movies release
 
       - name: Upload movies artifact
         uses: actions/upload-artifact@v4
         with:
           name: demo-movies
           path: dist/movies
+          if-no-files-found: error
 
       - name: Publish demo movies to Release
         env:
@@ -408,6 +417,19 @@ jobs:
         run: |
           chmod +x scripts/sx-publish-demo-movies
           ./scripts/sx-publish-demo-movies
+
+      # sync-website checks out the repo fresh, so hand it the posters and
+      # published/catalog JSON this job just wrote; otherwise the site only
+      # gets whatever was last committed.
+      - name: Upload website demo assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-website-assets
+          path: |
+            website/assets/screenshots/*.png
+            website/assets/published-demos.json
+            website/assets/demo-catalog.json
+          if-no-files-found: error
 
   sync-website:
     needs: demo-movies
@@ -421,12 +443,19 @@ jobs:
         run: |
           cp -f game/tests/ui_movie_manifest.json website/assets/ui_movie_manifest.json
 
+      - name: Overlay freshly published demo posters + JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: demo-website-assets
+          path: website/assets
+
       - name: Checkout Pages repo with deploy key
         uses: actions/checkout@v4
         with:
           repository: solidexpress/solidexpress.github.io
           ssh-key: ${{ secrets.SITE_DEPLOY_KEY }}
-          persist-credentials: false
+          # Keep the deploy key configured so the later git push can authenticate.
+          persist-credentials: true
           path: pages
 
       - name: Sync website (exclude Pages .gitignore and README)

@@ -1,14 +1,14 @@
 [
-  "extrude_cylinder",
-  "hexkey",
-  "lesson2_box",
-  "loft_guide_rail",
-  "path_merge_sweep",
-  "pliers_motion",
-  "precision_plate",
-  "revolve_washer",
-  "sketch_edit_in_out",
+  "ubc_wrench",
   "sketch_tools",
-  "tutor1",
-  "ubc_wrench"
+  "extrude_through_all",
+  "fillet_chain_pocket",
+  "revolve_washer",
+  "loft_guide_rail",
+  "triball_hole_circle",
+  "hole_wizard_m6",
+  "sketch_edit_in_out",
+  "pliers_motion",
+  "drawing_follows_model",
+  "open_in_slicer"
 ]
