@@ -2531,7 +2531,9 @@ func commit_select_drag(release_uv: Vector2) -> void:
 			pick_entity(at, true, _endpoint_role_at(at, release_uv), false)
 		return
 	if keep:
-		toggle_pick_entity(grabbed, role)
+		# Replace, do not toggle: SmartDim leaves both circles selected, and
+		# a first Ø130 click would otherwise drop it (A12 Vertical).
+		pick_entity(grabbed, false, role, false)
 	else:
 		click(release_uv)
 

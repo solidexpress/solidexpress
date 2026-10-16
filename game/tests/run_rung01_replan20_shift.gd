@@ -353,6 +353,18 @@ func _case_a12_scale_rims(ctx: FilmContext) -> void:
 			"Shift+Ø10 rim keeps both (got %s)" % str(_sm.selected))
 	check(_sm.selection_actions().has("vertical"),
 			"Ø130+Ø10 offer Vertical (got %s)" % str(_sm.selection_actions()))
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(-65, 0)), false)
+	await process_frame
+	await process_frame
+	check(_sm.selected.size() == 1 and _has(big) and not _has(hole),
+			"unshifted Ø130 rim replaces leftover pair (got %s)" % str(_sm.selected))
+	await _click_shift_press_plain_release(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(-5, 94)))
+	await process_frame
+	await process_frame
+	check(_sm.selected.size() == 2 and _has(big) and _has(hole),
+			"then Shift+Ø10 restores both (got %s)" % str(_sm.selected))
+	check(_sm.selection_actions().has("vertical"),
+			"replaced then Shift still offers Vertical (got %s)" % str(_sm.selection_actions()))
 
 
 func _click_at(vp: Viewport, pos: Vector2, shift: bool) -> void:
