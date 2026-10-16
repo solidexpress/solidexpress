@@ -96,10 +96,23 @@ for id in "${IDS[@]}"; do
     echo "dry-run poster: $id → $poster"
   else
     echo "poster: $id → $poster"
-    ffmpeg -y -loglevel error -sseof -0.1 -i "$webm" -frames:v 1 "$poster" </dev/null
+    rm -f "$poster"
+    # -sseof -0.1 can land past the last decodable frame and write nothing
+    # (exit 0). Fall back to earlier seeks, then the first frame.
+    for seek in "-sseof -0.1" "-sseof -1" "-sseof -3" ""; do
+      # shellcheck disable=SC2086
+      ffmpeg -y -loglevel error $seek -i "$webm" -frames:v 1 "$poster" </dev/null || true
+      [[ -s "$poster" ]] && break
+      rm -f "$poster"
+    done
+    if [[ ! -s "$poster" ]]; then
+      echo "sx-publish-demo-movies: warning: could not extract poster for $id; skipping poster" >&2
+    fi
   fi
   assets+=("$webm")
-  assets+=("$poster")
+  if [[ "$DRY_RUN" -eq 1 || -s "$poster" ]]; then
+    assets+=("$poster")
+  fi
   if [[ -f "$vtt" ]]; then
     assets+=("$vtt")
   fi
