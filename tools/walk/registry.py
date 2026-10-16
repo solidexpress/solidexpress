@@ -55,6 +55,14 @@ RUNG4_ROWS = [
     "N4", "A15", "A16", "A17", "A18", "A19", "L6", "A20", "N5", "A21",
 ]
 
+# Pipe section (rung 5). Order is the checklist, not import order.
+RUNG5_ROWS = [
+    "N1", "A1", "A2", "L1", "A3", "A4", "A5", "N2", "A6", "A7",
+    "A8", "A9", "A10", "A11", "A12", "L2", "A13", "L3", "N3", "A14", "A15", "A16",
+    "N4", "A17", "A18", "L4", "A19", "A20", "A21",
+    "A22", "N5", "A23", "L5", "A24", "N6", "A25",
+]
+
 # Lesson 1 parts (rung 3). Order is the checklist, not import order.
 RUNG3_ROWS = [
     "N1", "A1", "A2", "L1", "A3", "N2", "A4", "A5",
@@ -105,6 +113,14 @@ _RUNG_SPEC = {
         "canonical": RUNG4_ROWS,
         "chunk_start": checkpoint_reload,
         "report_title": "rung-04 walk",
+        "checkpoint_after": (),
+    },
+    "rung05": {
+        "checker": "check_rung05.py",
+        "checkpoints": {2: "shelled.sxp", 3: "cut.sxp", 4: "reshell.sxp"},
+        "canonical": RUNG5_ROWS,
+        "chunk_start": checkpoint_reload,
+        "report_title": "rung-05 walk",
         "checkpoint_after": (),
     },
 }
@@ -160,3 +176,4 @@ RUNG1: Rung | None = None
 RUNG2: Rung | None = None
 RUNG3: Rung | None = None
 RUNG4: Rung | None = None
+RUNG5: Rung | None = None
