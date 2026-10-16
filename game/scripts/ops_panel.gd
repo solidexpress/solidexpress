@@ -3095,6 +3095,7 @@ func _resolve_mirror_pick(body: String, face: String) -> void:
 	var pt := view.doc.face_midpoint(face)
 	if _mirror_features != null and _mirror_features.collecting():
 		_mirror_features.set_plane(pt, n.normalized())
+		view.select_entity(face_body, face)
 		return
 	_do_mirror(src, pt, n.normalized())
 	view.select_entity(src, "")

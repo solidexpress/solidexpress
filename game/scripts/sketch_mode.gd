@@ -10094,16 +10094,16 @@ func delete_selected_constraint() -> bool:
 func _dimension_claims_click(pos2: Vector2, hit: int) -> bool:
 	if hit < 0:
 		return false
+	# Select / Smart Dim keep the entity under the pointer, even when a
+	# diameter label's text rect covers the rim (A12 two-circle Vertical).
+	if (tool == Tool.SELECT or tool == Tool.SMART_DIM) and entity_at(pos2) != "":
+		return false
 	# The letters, and the label anchor itself, open the editor. A headless
 	# viewport clamps the drawn rect off that anchor; the anchor is still the
 	# point dimension_hit reports and the point a click on the value uses.
 	if _dimension_text_contains(pos2, hit) or _dimension_anchor_contains(pos2, hit):
 		return true
-	# dimension_hit still includes an 8 px pad and a 22 px halo. At 1280×800
-	# that halo covers the upper shaft line, and on a 7.65 mm hex it covers
-	# the opposite flat. Select and Smart Dim keep the entity under the pointer.
-	if (tool == Tool.SELECT or tool == Tool.SMART_DIM) and entity_at(pos2) != "":
-		return false
+	# dimension_hit still includes an 8 px pad and a 22 px halo.
 	if _radius_label_on_own_rim(hit, pos2):
 		return false
 	return true
