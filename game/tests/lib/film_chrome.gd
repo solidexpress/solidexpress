@@ -119,6 +119,15 @@ func set_pointer_center(screen_pos: Vector2) -> void:
 	_pointer_placed = true
 
 
+func set_nav_badge(text: String) -> void:
+	if _pointer != null and _pointer.has_method("set_badge"):
+		_pointer.set_badge(text)
+
+
+func clear_nav_badge() -> void:
+	set_nav_badge("")
+
+
 ## Nudge caption alpha so MovieWriter cannot collapse a static hold to one frame.
 func tick_unique(i: int) -> void:
 	if _caption != null:

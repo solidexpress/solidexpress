@@ -41,3 +41,5 @@ func after_regen() -> void:
 		main._on_document_changed()
 	await tree.process_frame
 	await tree.process_frame
+	if actor != null and actor.has_method("credit_pose"):
+		actor.credit_pose()

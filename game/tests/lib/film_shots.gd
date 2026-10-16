@@ -37,13 +37,23 @@ static func outro(ctx) -> void:
 	if ctx == null:
 		return
 	var kind := _Outro.choose(ctx)
-	if ctx.chrome != null and ctx.chrome.has_method("hide_pointer"):
-		ctx.chrome.hide_pointer()
 	if ctx.main != null and ctx.main.has_method("film_prepare_outro"):
 		ctx.main.film_prepare_outro()
 	if ctx.tree != null:
 		await ctx.tree.process_frame
 		await ctx.tree.process_frame
+	if kind == _Outro.Kind.SOLID and ctx.actor != null and ctx.actor.has_method("orbit_yaw"):
+		if ctx.camera != null and ctx.camera.has_method("fit_oblique_fill"):
+			var cam = ctx.main.camera if ctx.main != null else null
+			var from: Dictionary = cam.capture_pose() if cam != null else {}
+			ctx.camera.fit_oblique_fill(FilmPresentation.OUTRO_FILL_FRAC)
+			var to: Dictionary = cam.capture_pose() if cam != null else {}
+			if not from.is_empty() and cam != null:
+				cam.apply_pose(from)
+			if not to.is_empty() and ctx.actor.has_method("apply_pose_animated"):
+				await ctx.actor.apply_pose_animated(to, "Frame the part", "look")
+		await ctx.actor.orbit_yaw(FilmPresentation.OUTRO_ORBIT_DEG, FilmPresentation.OUTRO_SEC, "Orbit")
+		return
 	await _Outro.play(ctx, kind)
 
 

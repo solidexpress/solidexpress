@@ -95,8 +95,8 @@ static func zoom_point_clear_of_edges(ctx: FilmContext, body: String, world: Vec
 	var edges: PackedStringArray = doc.get_edge_ids(body)
 	if edges.is_empty():
 		return
-	# Wheel zoom orbits the current pivot, so the slot walks off the window
-	# before its long edges clear 12 px. Park the pivot on the click first.
+	# Compute the distance that clears the 12 px edge band, then lerp via Actor.
+	var from: Dictionary = cam.capture_pose() if cam.has_method("capture_pose") else {}
 	var ms: Node3D = ctx.main.model_space
 	cam.pivot = ms.to_global(world) if ms != null else world
 	cam._look_at_content = true
@@ -104,21 +104,24 @@ static func zoom_point_clear_of_edges(ctx: FilmContext, body: String, world: Vec
 		cam._finish_pose_tween()
 	if cam.has_method("_update_transform"):
 		cam._update_transform()
-	await wait_frames(ctx.tree, 1)
 	for _step in 12:
 		var screen := model_to_screen(ctx, world)
 		if not is_on_screen(ctx, screen, 8.0):
-			return
+			break
 		var nearest := INF
 		for eid in edges:
 			nearest = minf(nearest, float(ctx.view.edge_screen_distance(
 					body, str(eid), cam, screen)))
 		if nearest >= min_px or cam.distance <= 8.0 + 0.01:
-			return
+			break
 		cam.distance = maxf(cam.distance * 0.7, 8.0)
 		if cam.has_method("_update_transform"):
 			cam._update_transform()
-		await wait_frames(ctx.tree, 1)
+	var to: Dictionary = cam.capture_pose() if cam.has_method("capture_pose") else {}
+	if not from.is_empty():
+		cam.apply_pose(from)
+	if not to.is_empty():
+		await FilmActor.of(ctx).apply_pose_animated(to, "Zoom clear of edges", "wheel")
 
 
 static func _fail(msg: String) -> void:
@@ -622,6 +625,7 @@ static func enter_sketch(ctx: FilmContext) -> void:
 		_fail("sketch session did not start after Sketch + ground click")
 	elif sm.editing_fid != "":
 		_fail("ground sketch reopened existing pad %s" % sm.editing_fid)
+	FilmActor.of(ctx).credit_pose()
 
 
 ## Visible ConfirmationDialog, preferring the empty-sketch discard prompt.
@@ -681,7 +685,9 @@ static func exit_sketch(ctx: FilmContext) -> String:
 		return editing
 	# New sketch: only return a feature id if the graph actually grew.
 	if after != "" and after != before:
+		FilmActor.of(ctx).credit_pose()
 		return after
+	FilmActor.of(ctx).credit_pose()
 	return ""
 
 
@@ -717,11 +723,8 @@ static func enter_sketch_on_face(ctx: FilmContext, body_id: String, face_id: Str
 	# Frame the face so the pick ray is not edge-on / behind the camera.
 	var look_btn := find_button(ctx.main, "Look at")
 	var cam = ctx.main.camera
-	if cam != null and cam.has_method("set_view"):
-		cam.pivot = pt
-		cam.distance = maxf(cam.distance, 35.0)
-		cam.set_view(deg_to_rad(-40.0), deg_to_rad(28.0), false)
-		await wait_frames(ctx.tree, 2)
+	if cam != null:
+		await FilmActor.of(ctx).frame_look(pt, -40.0, 28.0, maxf(cam.distance, 35.0), "Look at face")
 	var face_screen := model_to_screen(ctx, pt)
 	if is_on_screen(ctx, face_screen):
 		if ctx.view.selected_body != body_id or ctx.view.selected_face != face_id:
@@ -772,6 +775,7 @@ static func enter_sketch_on_face(ctx: FilmContext, body_id: String, face_id: Str
 		_fail("sketch session did not start on face %s" % face_id)
 	elif sm.editing_fid != "":
 		_fail("face sketch reopened pad %s instead of new face sketch" % sm.editing_fid)
+	FilmActor.of(ctx).credit_pose()
 
 
 ## Removed as a film helper: arbitrary planes are not clickable in the UI yet.
@@ -826,23 +830,12 @@ static func select_sketch_pad_ctrl(ctx: FilmContext, feature_id: String) -> void
 	if sm != null and sm.active:
 		await exit_sketch(ctx)
 		await wait_frames(ctx.tree, 2)
-	var cam = ctx.main.camera
-	if cam != null and cam.has_method("set_view"):
-		# Stable three-quarter view; avoid frame_contents after Hide (empty AABB).
-		# Centre the pads (_look_at_content) so they are not biased into the
-		# bottom caption band.
-		if "_look_at_content" in cam:
-			cam._look_at_content = true
-		var already: bool = cam.pivot.distance_to(Vector3(0, 0, 2)) < 1.0 \
-				and absf(cam.distance - 40.0) < 1.0
-		if not already:
-			cam.pivot = Vector3(0, 0, 2)
-			cam.distance = 40.0
-			cam.set_view(deg_to_rad(-45.0), deg_to_rad(30.0), false)
-			await wait_frames(ctx.tree, 2)
 	if ctx.view != null:
 		ctx.view.refresh_sketch_pads("")
 		await wait_frames(ctx.tree, 1)
+	var world := pad_world_center(ctx, feature_id)
+	if world != Vector3.INF:
+		await FilmActor.of(ctx).frame_look(world, -45.0, 30.0, 70.0, "Frame pad")
 	var screen_pos := pad_screen_center(ctx, feature_id)
 	if screen_pos == Vector2.ZERO:
 		_fail("could not project pad %s to screen" % feature_id)
@@ -958,6 +951,12 @@ static func draw_circle(ctx: FilmContext, sm: SketchMode, center: Vector2, rim: 
 	await select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await click_sketch(ctx, sm, center, "Circle — center")
 	await click_sketch(ctx, sm, rim, "Circle — radius")
+
+
+static func draw_ellipse(ctx: FilmContext, sm: SketchMode, center: Vector2, corner: Vector2) -> void:
+	await select_sketch_tool(ctx, sm, SketchMode.Tool.ELLIPSE)
+	await click_sketch(ctx, sm, center, "Ellipse — centre")
+	await click_sketch(ctx, sm, corner, "Ellipse — corner")
 
 
 static func apply_extrude(ctx: FilmContext, depth: float) -> void:
@@ -1120,11 +1119,8 @@ static func select_face(ctx: FilmContext, body_id: String, face_id: String) -> v
 		_fail("select_face: no pick point for %s/%s" % [body_id, face_id])
 		return
 	var cam = ctx.main.camera
-	if cam != null and cam.has_method("set_view"):
-		cam.pivot = pt
-		cam.distance = maxf(cam.distance, 90.0)
-		cam.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
-		await wait_frames(ctx.tree, 2)
+	if cam != null:
+		await FilmActor.of(ctx).frame_look(pt, -35.0, 40.0, maxf(cam.distance, 90.0), "Look at face")
 	var screen := model_to_screen(ctx, pt)
 	if not is_on_screen(ctx, screen):
 		_fail("select_face: face not on screen")
@@ -1133,10 +1129,8 @@ static func select_face(ctx: FilmContext, body_id: String, face_id: String) -> v
 	await wait_frames(ctx.tree, 2)
 	if ctx.view.selected_face != face_id:
 		# Retry once with a slightly higher camera.
-		if cam != null and cam.has_method("set_view"):
-			cam.distance = maxf(cam.distance, 120.0)
-			cam.set_view(deg_to_rad(-55.0), deg_to_rad(20.0), false)
-			await wait_frames(ctx.tree, 2)
+		if cam != null:
+			await FilmActor.of(ctx).frame_look(pt, -55.0, 20.0, maxf(cam.distance, 120.0), "Look at face")
 		screen = model_to_screen(ctx, pt)
 		if is_on_screen(ctx, screen):
 			await viewport_click(ctx, screen, FilmUICues.alert("Click", "Select face"))
@@ -1205,16 +1199,15 @@ static func find_face_by_normal(view: DocumentView, body_id: String, want_normal
 	return str(best.get("id", ""))
 
 
-static func pad_screen_center(ctx: FilmContext, fid: String) -> Vector2:
-	var doc: SxDocument = ctx.view.doc
-	if doc == null or fid.is_empty():
-		return Vector2.ZERO
-	var sk: SxSketch = doc.graph_get_sketch(fid)
+static func pad_world_center(ctx: FilmContext, fid: String) -> Vector3:
+	if ctx == null or ctx.view == null or ctx.view.doc == null or fid.is_empty():
+		return Vector3.INF
+	var sk: SxSketch = ctx.view.doc.graph_get_sketch(fid)
 	if sk == null:
-		return Vector2.ZERO
+		return Vector3.INF
 	var pi: Dictionary = sk.plane_info()
 	if pi.is_empty():
-		return Vector2.ZERO
+		return Vector3.INF
 	var mn := Vector2(INF, INF)
 	var mx := Vector2(-INF, -INF)
 	for id in sk.entity_ids():
@@ -1243,12 +1236,18 @@ static func pad_screen_center(ctx: FilmContext, fid: String) -> Vector2:
 			_:
 				pass
 	if not is_finite(mn.x):
-		return Vector2.ZERO
+		return Vector3.INF
 	var center2 := (mn + mx) * 0.5
 	var origin: Vector3 = pi["origin"]
 	var x_dir: Vector3 = (pi["x_dir"] as Vector3).normalized()
 	var y_dir: Vector3 = (pi["y_dir"] as Vector3).normalized()
-	var world := origin + x_dir * center2.x + y_dir * center2.y
+	return origin + x_dir * center2.x + y_dir * center2.y
+
+
+static func pad_screen_center(ctx: FilmContext, fid: String) -> Vector2:
+	var world := pad_world_center(ctx, fid)
+	if world == Vector3.INF:
+		return Vector2.ZERO
 	return model_to_screen(ctx, world)
 
 

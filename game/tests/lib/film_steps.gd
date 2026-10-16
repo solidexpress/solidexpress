@@ -26,7 +26,7 @@ static func press_rail(ctx: FilmContext, label: String) -> void:
 static func click_uv(ctx: FilmContext, uv: Vector2, desc: String, span: float = 80.0) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	if span > 0.0:
-		await SxInput.zoom(ctx, sm.to_model(uv), span)
+		await FilmActor.of(ctx).zoom_to(sm.to_model(uv), span, "Zoom %s" % desc)
 	var screen := FilmUI.sketch_uv_to_screen(ctx, uv)
 	if screen == Vector2.ZERO:
 		screen = FilmUI.model_to_screen(ctx, sm.to_model(uv))
@@ -90,8 +90,8 @@ static func pick_option(ctx: FilmContext, opt: OptionButton, index: int, desc: S
 
 
 static func select_body(ctx: FilmContext, body: String) -> void:
-	await SxInput.push_key(ctx.main.get_viewport(), KEY_4)
-	await FilmUI.wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).view_key(KEY_4, "Back view")
+	await FilmActor.of(ctx).dwell()
 	var screen := FilmUI.model_to_screen(ctx, Vector3(100, 0, 7))
 	if FilmUI.is_on_screen(ctx, screen):
 		await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Select wrench"))
@@ -117,10 +117,8 @@ static func arm_fillet(ctx: FilmContext, radius: float) -> void:
 	if spin == null or not spin.is_visible_in_tree():
 		FilmUI._fail("fillet radius blank missing")
 		return
-	var edit: LineEdit = spin.get_line_edit()
-	if not is_equal_approx(float(spin.value), radius):
-		var digits := str(int(round(radius))) if is_equal_approx(radius, round(radius)) else str(radius)
-		await FilmActor.of(ctx).edit_field(edit, digits, "Fillet r=%s" % digits)
+	var digits := str(int(round(radius))) if is_equal_approx(radius, round(radius)) else str(radius)
+	await FilmActor.of(ctx).edit_field(spin, digits, "Fillet r=%s" % digits)
 	await FilmActor.of(ctx).dwell()
 
 
@@ -131,8 +129,8 @@ static func commit_fillet(ctx: FilmContext) -> void:
 
 static func fillet_at(ctx: FilmContext, body: String, point: Vector3, radius: float, view_key: Key) -> void:
 	await arm_fillet(ctx, radius)
-	await SxInput.push_key(ctx.main.get_viewport(), view_key)
-	await FilmUI.wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).view_key(view_key)
+	await FilmActor.of(ctx).dwell()
 	if radius <= 1.01 and absf(point.z - 7.5) < 0.2:
 		await FilmUI.zoom_point_clear_of_edges(ctx, body, point)
 	var screen := FilmUI.model_to_screen(ctx, point)
@@ -164,21 +162,13 @@ static func export_3mf(ctx: FilmContext) -> void:
 	var file_btn := FilmUI.find_button(ctx.main, "File") as MenuButton
 	if not await FilmUI.activate_menu_id(ctx, file_btn, 11, FilmUICues.alert("File", "Export 3MF")):
 		return
-	await FilmUI.wait_frames(ctx.tree, 6)
+	await FilmActor.of(ctx).dwell()
 	var dlg: FileDialog = ctx.main.file_dialog
 	if dlg == null or not dlg.visible:
 		FilmUI._fail("Export 3MF dialog did not open")
 		return
 	var dest := "/tmp/sx-film-ubc-wrench.3mf"
-	var name_edit: LineEdit = null
-	if dlg.has_method("get_line_edit"):
-		var le: Variant = dlg.get_line_edit()
-		if le is LineEdit:
-			name_edit = le as LineEdit
-	if name_edit == null:
-		for c in dlg.find_children("*", "LineEdit", true, false):
-			name_edit = c as LineEdit
-			break
+	var name_edit := _file_dialog_name_edit(dlg)
 	if name_edit == null:
 		FilmUI._fail("export filename field missing")
 		return
@@ -210,10 +200,9 @@ static func pick_corner_edges(ctx: FilmContext, body: String) -> void:
 	for spec in _BOX_CORNERS:
 		var x := mx.x if bool(spec["x_max"]) else mn.x
 		var y := mx.y if bool(spec["y_max"]) else mn.y
-		await SxInput.push_key(ctx.main.get_viewport(), spec["key"] as Key)
-		await FilmUI.wait_frames(ctx.tree, 3)
+		await FilmActor.of(ctx).view_key(spec["key"] as Key)
 		var world := Vector3(x, y, mid_z)
-		await SxInput.zoom(ctx, world, 70.0)
+		await FilmActor.of(ctx).zoom_to(world, 70.0, "Frame corner")
 		var screen := FilmUI.model_to_screen(ctx, world)
 		if not FilmUI.require_on_screen(ctx, screen, "corner edge"):
 			return
@@ -249,8 +238,7 @@ static func open_side_face_sketch(ctx: FilmContext, normal: Vector3, view_key: K
 		FilmUI._fail("side sketch needs one body")
 		return
 	await _release_line_focus(ctx)
-	await SxInput.push_key(ctx.main.get_viewport(), view_key)
-	await FilmUI.wait_frames(ctx.tree, 3)
+	await FilmActor.of(ctx).view_key(view_key)
 	var face := FilmUI.find_face_by_normal(ctx.view, body, normal) if is_inf(plane) \
 			else _face_on_plane(ctx, body, normal, plane)
 	if face == "":
@@ -275,8 +263,7 @@ static func open_side_face_sketch(ctx: FilmContext, normal: Vector3, view_key: K
 	if ctx.view.selected_face != face:
 		FilmUI._fail("side face not selected")
 		return
-	await SxInput.push_key(ctx.main.get_viewport(), view_key)
-	await FilmUI.wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).view_key(view_key)
 	var strip: Node = ctx.main.find_child("SelectionStrip", true, false)
 	var chip := FilmUI.find_button(strip, "Sketch") if strip != null else null
 	if chip == null or not chip.is_visible_in_tree():
@@ -293,7 +280,7 @@ static func convert_edge(ctx: FilmContext, world: Vector3) -> void:
 	await press_rail(ctx, "Convert")
 	if FilmUI.fail_count > 0:
 		return
-	await SxInput.zoom(ctx, world, 140.0)
+	await FilmActor.of(ctx).zoom_to(world, 140.0, "Frame convert edge")
 	var screen := FilmUI.model_to_screen(ctx, world)
 	if not FilmUI.require_on_screen(ctx, screen, "Convert edge"):
 		return
@@ -371,10 +358,9 @@ static func pick_corner_table(ctx: FilmContext, rows: Array, z_mid: float) -> vo
 		if FilmUI.fail_count > 0:
 			return
 		await _release_line_focus(ctx)
-		await SxInput.push_key(ctx.main.get_viewport(), row["view"] as Key)
-		await FilmUI.wait_frames(ctx.tree, 8)
+		await FilmActor.of(ctx).view_key(row["view"] as Key)
 		var pt := Vector3(float(row["x"]), float(row["y"]), z_mid)
-		await SxInput.zoom(ctx, pt, 80.0)
+		await FilmActor.of(ctx).zoom_to(pt, 80.0, "Frame corner")
 		var screen := FilmUI.model_to_screen(ctx, pt)
 		if not FilmUI.require_on_screen(ctx, screen, "corner edge"):
 			return
@@ -445,6 +431,27 @@ static func _face_on_plane(ctx: FilmContext, body: String, normal: Vector3, plan
 			"plane": FacePick.plane_offset(normal, pick),
 		})
 	return str(FacePick.match_normal(rows, normal, plane).get("id", ""))
+
+
+static func _file_dialog_name_edit(dlg: FileDialog) -> LineEdit:
+	if dlg == null:
+		return null
+	var best: LineEdit = null
+	var best_w := 0.0
+	if dlg.has_method("get_line_edit"):
+		var le: Variant = dlg.get_line_edit()
+		if le is LineEdit and (le as LineEdit).is_visible_in_tree():
+			best = le as LineEdit
+			best_w = best.get_global_rect().size.x
+	for c in dlg.find_children("*", "LineEdit", true, false):
+		var edit := c as LineEdit
+		if edit == null or not edit.is_visible_in_tree():
+			continue
+		var w := edit.get_global_rect().size.x
+		if w > best_w:
+			best_w = w
+			best = edit
+	return best
 
 
 static func _type_offset_distance(ctx: FilmContext, text: String) -> void:

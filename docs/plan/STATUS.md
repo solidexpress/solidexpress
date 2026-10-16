@@ -4,7 +4,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 ## Website wrench film — pointer, pacing, flat backdrop (`cursor/wrench-film-polish`)
 
-Shipped: every film click and field edit goes through `FilmActor` (pointer travels first). `FilmPresentation` owns one pacing model (travel speed, typing CPS, dwell, result pause). Scenic/HDRI stays locked off for films (`presentation_lock`). Gate: `run_film_ubc_wrench_pointer_tests.gd`.
+Shipped: every film click and field edit goes through `FilmActor` (pointer travels first). `FilmPresentation` owns one pacing model (travel speed, typing CPS, dwell, result pause). Scenic/HDRI stays locked off for films (`presentation_lock`). View changes (named-view keys, zoom, orbit) go through the same Actor with a key/wheel/RMB badge and a lerped camera. Gate: `run_film_ubc_wrench_pointer_tests.gd` (wrench + hull loft). `loft_guide_rail` is a U-transom → oval-bow hull.
 
 ## Post-rung-4 cleanup (`cursor/post-rung-04-cleanup-20261015`)
 

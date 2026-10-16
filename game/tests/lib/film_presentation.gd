@@ -43,6 +43,7 @@ const POINTER_AFTER_CLICK_SEC := 0.0
 const ACTION_DWELL_SEC := 0.42
 const TYPING_CPS := 6.0
 const RESULT_PAUSE_SEC := 0.90
+const VIEW_ANIM_SEC := 0.55
 const POINTER_START := Vector2(88, 56)
 
 ## Empty-scene iso: pull back past DATUM_PLANE_HALF so the camera is not inside the quads.
@@ -86,6 +87,8 @@ static func apply(ctx: FilmContext) -> void:
 	if main != null and main.has_method("apply_film_look"):
 		main.apply_film_look(KEY_LIGHT_ENERGY, PART_ALBEDO, PART_EMISSION)
 	_apply_opening_camera(ctx)
+	if ctx.actor != null and ctx.actor.has_method("credit_pose"):
+		ctx.actor.credit_pose()
 	if ctx.chrome != null:
 		if "pointer_move_sec" in ctx.chrome:
 			ctx.chrome.pointer_move_sec = POINTER_MOVE_SEC

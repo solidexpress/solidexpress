@@ -22,7 +22,7 @@ func run_film(ctx: FilmContext) -> void:
 	await _typed_circle(ctx, Vector2.ZERO, "10")
 	if not _ok():
 		return
-	await SxInput.zoom(ctx, Vector3(100, 0, 0), 320.0)
+	await FilmActor.of(ctx).zoom_to(Vector3(100, 0, 0), 320.0, "Frame head")
 	await _typed_circle(ctx, HEAD, "22.5")
 	if not _ok():
 		return
@@ -57,7 +57,7 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok() or sm == null or not sm.active:
 		FilmUI._fail("jaw sketch did not start on the top face")
 		return
-	await SxInput.zoom(ctx, sm.to_model(HEAD), 120.0)
+	await FilmActor.of(ctx).zoom_to(sm.to_model(HEAD), 120.0, "Frame jaw")
 	await FilmSteps.press_rail(ctx, "Jaw")
 	await FilmJaw.draw_on_axis(ctx, HEAD, 20.0, -10.0)
 	await _edit_jaw_labels(ctx)
@@ -87,11 +87,11 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok() or not ctx.main.sketch_mode.active:
 		FilmUI._fail("slot sketch did not start")
 		return
-	await SxInput.zoom(ctx, ctx.main.sketch_mode.to_model(Vector2(90, 0)), 220.0)
+	await FilmActor.of(ctx).zoom_to(ctx.main.sketch_mode.to_model(Vector2(90, 0)), 220.0, "Frame slot")
 	await FilmSteps.press_rail(ctx, "Slot")
 	await FilmSteps.type_dim(ctx, "5")
 	await FilmSteps.click_uv(ctx, Vector2(18.5, 0), "Slot first centre", 0.0)
-	await SxInput.zoom(ctx, ctx.main.sketch_mode.to_model(Vector2(90, 0)), 220.0)
+	await FilmActor.of(ctx).zoom_to(ctx.main.sketch_mode.to_model(Vector2(90, 0)), 220.0, "Frame slot length")
 	await FilmUI.hover_uv(ctx, Vector2(168.5, 0), "Slot second centre")
 	await FilmSteps.type_dim(ctx, "150")
 	await FilmSteps.pick_finish(ctx, 1, 0)
@@ -169,7 +169,7 @@ func _shaft_lines(ctx: FilmContext) -> void:
 		FilmUI._fail("need two circles for Shaft Lines (got %d)" % circs.size())
 		return
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await SxInput.zoom(ctx, Vector3(100, 0, 0), 280.0)
+	await FilmActor.of(ctx).zoom_to(Vector3(100, 0, 0), 280.0, "Frame shaft")
 	await FilmSteps.click_uv(ctx, Vector2(100, 80), "Clear selection", 0.0)
 	for c in circs:
 		var top: Vector2 = (c["center"] as Vector2) + Vector2(0.0, float(c["radius"]))
@@ -206,7 +206,7 @@ func _draw_centreline(ctx: FilmContext, center: Vector2, along: Vector2) -> void
 	if not await FilmUI.click_control(ctx, chip, FilmUICues.alert("Click", "Centerline")):
 		return
 	var dir := along.normalized()
-	await SxInput.zoom(ctx, sm.to_model(center), 70.0)
+	await FilmActor.of(ctx).zoom_to(sm.to_model(center), 70.0, "Frame centreline")
 	await FilmSteps.click_uv(ctx, center - dir * 25.0, "Centreline start")
 	await FilmSteps.click_uv(ctx, center + dir * 25.0, "Centreline end")
 
@@ -225,12 +225,10 @@ func _end_line(ctx: FilmContext, at_uv: Vector2) -> void:
 
 func _fillet_neck(ctx: FilmContext, body: String, neck_x: float) -> void:
 	await FilmSteps.arm_fillet(ctx, 10.0)
-	await SxInput.push_key(ctx.main.get_viewport(), KEY_1)
-	await FilmActor.of(ctx).dwell()
+	await FilmActor.of(ctx).view_key(KEY_1, "Front")
 	await FilmUI.viewport_click(ctx, FilmUI.model_to_screen(ctx, Vector3(neck_x, -10, 5)),
 			FilmUICues.alert("Click", "Neck −Y"))
-	await SxInput.push_key(ctx.main.get_viewport(), KEY_4)
-	await FilmActor.of(ctx).dwell()
+	await FilmActor.of(ctx).view_key(KEY_4, "Back")
 	await FilmUI.viewport_click(ctx, FilmUI.model_to_screen(ctx, Vector3(neck_x, 10, 5)),
 			FilmUICues.alert("Click", "Neck +Y"))
 	await FilmSteps.commit_fillet(ctx)
