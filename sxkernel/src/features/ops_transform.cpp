@@ -148,6 +148,36 @@ EntityId resolve_feature_body(ApplyCtx& ctx, const Feature& ref) {
     return {};
 }
 
+// FeatureMirror.POLICY: (source type, op) → replay. New fuses onto the
+// target body; Shell/Fillet/Chamfer skip; unknown types fail.
+struct FeatureMirror {
+    enum class Action { Fuse, Cut, Skip, Fail };
+    struct Row {
+        FeatureType type;
+        const char* op;  // nullptr = any op
+        Action action;
+    };
+    static constexpr Row POLICY[] = {
+        {FeatureType::Extrude, "new", Action::Fuse},
+        {FeatureType::Extrude, "fuse", Action::Fuse},
+        {FeatureType::Extrude, "cut", Action::Cut},
+        {FeatureType::Revolve, "new", Action::Fuse},
+        {FeatureType::Revolve, "fuse", Action::Fuse},
+        {FeatureType::Revolve, "cut", Action::Cut},
+        {FeatureType::Shell, nullptr, Action::Skip},
+        {FeatureType::Fillet, nullptr, Action::Skip},
+        {FeatureType::Chamfer, nullptr, Action::Skip},
+    };
+    static Action lookup(FeatureType type, const std::string& op) {
+        for (const auto& row : POLICY) {
+            if (row.type != type) continue;
+            if (row.op != nullptr && op != row.op) continue;
+            return row.action;
+        }
+        return Action::Fail;
+    }
+};
+
 bool apply_feature_mirror(ApplyCtx& ctx) {
     const auto& ids = ctx.params.at("source_feature_ids");
     if (!ids.is_array() || ids.empty()) return ctx.fail("source_feature_ids empty");
@@ -202,25 +232,34 @@ bool apply_feature_mirror(ApplyCtx& ctx) {
         return id;
     };
 
+    nlohmann::json skipped = nlohmann::json::array();
     for (const auto& src_ref : ordered) {
         const Feature* src = ctx.graph.feature(src_ref.id);
         if (!src) return ctx.fail("missing source feature");
         if (src->suppressed) continue;
 
-        if (src->type == FeatureType::Fillet || src->type == FeatureType::Chamfer) {
-            return ctx.fail("feature mirror of Fillet/Chamfer not supported yet");
-        }
-        if (src->type != FeatureType::Extrude && src->type != FeatureType::Revolve) {
-            return ctx.fail(std::string("feature mirror unsupported type: ") + to_string(src->type));
-        }
-
         nlohmann::json src_params = resolve_params(src->params, ctx.env);
-        std::string op = src_params.value("op", "new");
+        const std::string op = src_params.value("op", "new");
+        const FeatureMirror::Action action = FeatureMirror::lookup(src->type, op);
 
+        if (action == FeatureMirror::Action::Skip) {
+            skipped.push_back(src_ref.id.str());
+            ctx.graph.add_warning(ctx.feature.id,
+                                  std::string("skipped ") + to_string(src->type));
+            continue;
+        }
+        if (action == FeatureMirror::Action::Fail) {
+            if (src->type == FeatureType::Extrude || src->type == FeatureType::Revolve)
+                return ctx.fail("unsupported extrude op: " + op);
+            return ctx.fail(std::string("feature mirror unsupported type: ") +
+                            to_string(src->type));
+        }
+
+        const bool do_cut = (action == FeatureMirror::Action::Cut);
+        EntityId target_body = explicit_target;
         const Body* extent_hint = nullptr;
-        EntityId target_body;
-        if (op == "cut" || op == "fuse") {
-            target_body = explicit_target;
+        // Cut/fuse always need a body; New fuses into `target` when one is set.
+        if (do_cut || op == "fuse" || !target_body.is_null()) {
             if (target_body.is_null()) {
                 if (!src_params.contains("target") || !src_params["target"].is_string())
                     return ctx.fail("cut/fuse source missing target");
@@ -242,23 +281,22 @@ bool apply_feature_mirror(ApplyCtx& ctx) {
         if (mirrored.IsNull() || !shape::is_valid(mirrored))
             return ctx.fail("mirror of tool failed");
 
-        if (op == "new") {
+        if (target_body.is_null()) {
             EntityId bid = next_new_body_id();
             put_body(ctx.doc, bid, mirrored, "Mirror of " + src->name);
-        } else if (op == "cut" || op == "fuse") {
-            const Body* tb = ctx.doc.body(target_body);
-            if (!tb) return ctx.fail("missing target body");
-            TopoDS_Shape merged =
-                (op == "cut")
-                    ? TopoDS_Shape(BRepAlgoAPI_Cut(tb->shape, mirrored).Shape())
-                    : TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, mirrored).Shape());
-            if (merged.IsNull() || !shape::is_valid(merged))
-                return ctx.fail("mirrored boolean failed");
-            ctx.doc.replace_body_shape(target_body, merged);
-        } else {
-            return ctx.fail("unsupported extrude op: " + op);
+            continue;
         }
+
+        const Body* tb = ctx.doc.body(target_body);
+        if (!tb) return ctx.fail("missing target body");
+        TopoDS_Shape merged =
+            do_cut ? TopoDS_Shape(BRepAlgoAPI_Cut(tb->shape, mirrored).Shape())
+                   : TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, mirrored).Shape());
+        if (merged.IsNull() || !shape::is_valid(merged))
+            return ctx.fail("mirrored boolean failed");
+        ctx.doc.replace_body_shape(target_body, merged);
     }
+    if (!skipped.empty()) ctx.feature.params["skipped_feature_ids"] = std::move(skipped);
     return true;
 }
 

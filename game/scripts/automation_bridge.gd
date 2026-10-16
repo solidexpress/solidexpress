@@ -541,6 +541,12 @@ func _send_key(key: Key, pressed: bool, unicode: int, flags: Dictionary) -> void
 	ev.ctrl_pressed = bool(flags.get("ctrl", false)) or bool(_mods["ctrl"])
 	ev.alt_pressed = bool(flags.get("alt", false)) or bool(_mods["alt"])
 	ev.meta_pressed = bool(flags.get("meta", false)) or bool(_mods["meta"])
+	# push_input delivers to the tree but does not update Input.is_key_pressed.
+	# A12's Shift+second circle reads that singleton (and the mouse event's
+	# shift flag is overwritten from it). parse_input_event is the keyboard.
+	if _is_pure_mod(key):
+		Input.parse_input_event(ev)
+		Input.flush_buffered_events()
 	_key_viewport().push_input(ev)
 
 
@@ -1056,6 +1062,13 @@ func _refresh_ids() -> void:
 	_tag_spin_edit(main.find_child("OffsetDistance", true, false), "offset:Distance")
 	_tag(main.find_child("OffsetReverse", true, false), "offset:Reverse")
 	_tag(main.find_child("OffsetOk", true, false), "offset:Ok")
+	_tag_spin_edit(main.find_child("PatternCount", true, false), "pattern:Count")
+	_tag_spin_edit(main.find_child("PatternAngle", true, false), "pattern:Angle")
+	_tag(main.find_child("PatternOk", true, false), "pattern:Ok")
+	_tag(main.find_child("MirrorFeaturesBtn", true, false), "mirror:Features")
+	_tag(main.find_child("MirrorPlane", true, false), "mirror:Plane")
+	_tag(main.find_child("MirrorAdd", true, false), "mirror:Add")
+	_tag(main.find_child("MirrorOk", true, false), "mirror:Ok")
 
 
 func _tag(node: Node, id: String) -> void:

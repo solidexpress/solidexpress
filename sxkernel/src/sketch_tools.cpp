@@ -619,4 +619,95 @@ std::vector<std::string> pattern_entities(Sketch& s,
     return out;
 }
 
+namespace {
+
+// Snapshot of a seed circle. Pointers into Sketch::entities_ dangle after add_*.
+struct CircleSeed {
+    EntityId id;
+    double x = 0;
+    double y = 0;
+    double r = 0;
+};
+
+using CircularCopyFn = bool (*)(Sketch&, const CircleSeed&, Vec2, double, double,
+                                EntityId, EntityId, std::vector<std::string>&);
+
+bool copy_circle(Sketch& s, const CircleSeed& seed, Vec2 origin, double ca,
+                 double sa, EntityId layout, EntityId seed_ray,
+                 std::vector<std::string>& out) {
+    double dx = seed.x - origin.x;
+    double dy = seed.y - origin.y;
+    double nx = origin.x + dx * ca - dy * sa;
+    double ny = origin.y + dx * sa + dy * ca;
+    EntityId copy = s.add_circle(nx, ny, seed.r);
+    s.add_constraint(ConstraintType::Equal,
+                     {{copy, PointRole::Self}, {seed.id, PointRole::Self}});
+    EntityId ray = s.add_line(origin.x, origin.y, nx, ny);
+    s.set_construction(ray, true);
+    s.add_constraint(ConstraintType::Coincident,
+                     {{ray, PointRole::Start}, {layout, PointRole::Center}});
+    s.add_constraint(ConstraintType::Coincident,
+                     {{ray, PointRole::End}, {copy, PointRole::Center}});
+    s.add_constraint(ConstraintType::Equal,
+                     {{ray, PointRole::Self}, {seed_ray, PointRole::Self}});
+    out.push_back(copy.str());
+    return true;
+}
+
+const std::unordered_map<SketchEntityType, CircularCopyFn> kCircularKinds = {
+    {SketchEntityType::Circle, copy_circle},
+};
+
+}  // namespace
+
+std::vector<std::string> circular_pattern_entities(
+    Sketch& s, const std::vector<std::string>& entity_ids, double cx, double cy,
+    int count, double total_angle) {
+    std::vector<std::string> out;
+    if (count < 2 || std::abs(total_angle) <= k_eps || entity_ids.empty()) {
+        return out;
+    }
+
+    std::vector<CircleSeed> seeds;
+    seeds.reserve(entity_ids.size());
+    for (const std::string& sid : entity_ids) {
+        EntityId id = EntityId::from_string(sid);
+        const SketchEntity* e = s.entity(id);
+        if (!e || kCircularKinds.find(e->type) == kCircularKinds.end()) continue;
+        CircleSeed seed;
+        seed.id = id;
+        seed.x = s.param(e->params[0]);
+        seed.y = s.param(e->params[1]);
+        seed.r = s.param(e->params[2]);
+        seeds.push_back(seed);
+    }
+    if (seeds.empty()) return out;
+
+    Vec2 origin{cx, cy};
+    const CircleSeed& first = seeds.front();
+    double pitch = std::hypot(first.x - cx, first.y - cy);
+    if (pitch <= k_eps) return out;
+
+    EntityId layout = s.add_circle(cx, cy, pitch);
+    s.set_construction(layout, true);
+    s.add_constraint(ConstraintType::Fix, {{layout, PointRole::Center}});
+
+    const double step = total_angle / static_cast<double>(count);
+    for (const CircleSeed& seed : seeds) {
+        EntityId this_ray = s.add_line(cx, cy, seed.x, seed.y);
+        s.set_construction(this_ray, true);
+        s.add_constraint(ConstraintType::Coincident,
+                         {{this_ray, PointRole::Start}, {layout, PointRole::Center}});
+        s.add_constraint(ConstraintType::Coincident,
+                         {{this_ray, PointRole::End}, {seed.id, PointRole::Center}});
+        auto it = kCircularKinds.find(SketchEntityType::Circle);
+        for (int i = 1; i < count; ++i) {
+            double ang = step * static_cast<double>(i);
+            it->second(s, seed, origin, std::cos(ang), std::sin(ang), layout,
+                       this_ray, out);
+        }
+    }
+    return out;
+}
+
 }  // namespace sx::sketch_tools

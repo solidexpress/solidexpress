@@ -1,4 +1,5 @@
 #include "ops.hpp"
+#include "shell_open_half.hpp"
 #include "topo_cue.h"
 
 #include <BRepAdaptor_Curve.hxx>
@@ -701,10 +702,10 @@ bool apply_shell(ApplyCtx& ctx) {
     if (cues_changed) ctx.feature.params["face_cues"] = std::move(stored_cues);
     if (remove_faces.IsEmpty()) return ctx.fail("no faces to remove");
     double thickness = num_param(ctx.params, "thickness", 1.0, ctx.env);
-    BRepOffsetAPI_MakeThickSolid mk;
-    mk.MakeThickSolidByJoin(tb->shape, remove_faces, -thickness, 1e-3);
-    if (!mk.IsDone()) return ctx.fail("shell failed");
-    TopoDS_Shape result = mk.Shape();
+    TopoDS_Shape result;
+    std::string why;
+    if (!shell_keeping_open_walls(tb->shape, remove_faces, thickness, result, &why))
+        return ctx.fail(why.empty() ? "shell failed" : why);
     if (result.IsNull() || !shape::is_valid(result))
         return ctx.fail("shell result invalid");
     ctx.doc.replace_body_shape(target, result);

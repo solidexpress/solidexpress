@@ -112,7 +112,7 @@ func apply_mm(mm: float) -> void:
 	if fid != "":
 		added = view.doc.graph_add_shell(fid, faces, mm)
 		if added != "":
-			view.doc.graph_rename_no_undo(added, feature_title(mm))
+			view.doc.graph_rename_no_undo(added, unique_title(view, mm, added))
 	elif view.doc.shell_body(faces, mm):
 		added = "body"
 	if added == "":
@@ -128,6 +128,23 @@ func apply_mm(mm: float) -> void:
 
 static func feature_title(mm: float) -> String:
 	return "Shell %.4f mm" % mm
+
+
+static func unique_title(view, mm: float, skip_id: String = "") -> String:
+	var title := feature_title(mm)
+	if view == null or view.doc == null:
+		return title
+	var used := {}
+	for f in view.doc.graph_features():
+		if skip_id != "" and str(f.get("id", "")) == skip_id:
+			continue
+		used[str(f.get("name", ""))] = true
+	if not used.has(title):
+		return title
+	var n := 2
+	while used.has("%s %d" % [title, n]):
+		n += 1
+	return "%s %d" % [title, n]
 
 
 func _on_chip() -> void:

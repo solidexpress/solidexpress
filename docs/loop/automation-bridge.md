@@ -19,7 +19,7 @@ SX_AUTOMATION=1 SX_INPUT_TRACE=1 \
 
 Pointer and key commands are real `InputEvent`s. The main window gets `Viewport.push_input` of `InputEventMouseButton`, `InputEventMouseMotion`, and `InputEventKey`. An embedded popup (File, finish-bar menus, dialogs) is clicked by pushing that same event through the parent viewport at the popup's position, which is the path Godot uses to call `Window._input_from_window` before `push_input`. A native popup uses `Input.parse_input_event` with that window's id. Nothing calls menu handlers directly, so focus, the Extrude shield, popups, hover, and `drop:shield` behave as they do for a person.
 
-Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw`, `rail:Convert`, `rail:Offset`, …), finish-bar fields (`finish:Distance`, `finish:Op`, `finish:End`, `finish:Extrude`, `finish:Thickness`, `finish:Ok`), Offset panel fields (`offset:Distance`, `offset:Reverse`, `offset:Ok`), the Shell chip (`strip:shell`), the HUD (`hud:Frame`, `hud:View`), menu buttons (`menu:File`), timeline rows and pencils (`timeline:row:sketch 1`, `timeline:pencil:sketch 1`), contour chips, and the file / discard dialogs (`dialog:Name`, `dialog:Ok`, `dialog:DiscardOk`). A click can also name a node path, a sketch-plane millimetre point, a kernel 3D point, an edge or face id, a face normal (`face_normal=[x,y,z]`, optional `plane=<mm>`), or a drawn dimension label (`dim` text or `dim_id`).
+Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw`, `rail:Convert`, `rail:Offset`, `rail:Pattern`, …), finish-bar fields (`finish:Distance`, `finish:Op`, `finish:End`, `finish:Extrude`, `finish:Thickness`, `finish:Ok`), Offset panel fields (`offset:Distance`, `offset:Reverse`, `offset:Ok`), Circular Sketch Pattern fields (`pattern:Count`, `pattern:Angle`, `pattern:Ok`), Feature Mirror (`mirror:Features`, `mirror:Plane`, `mirror:Add`, `mirror:Ok`), the Shell chip (`strip:shell`), the HUD (`hud:Frame`, `hud:View`), menu buttons (`menu:File`), timeline rows and pencils (`timeline:row:sketch 1`, `timeline:pencil:sketch 1`), contour chips, and the file / discard dialogs (`dialog:Name`, `dialog:Ok`, `dialog:DiscardOk`). A click can also name a node path, a sketch-plane millimetre point, a kernel 3D point, an edge or face id, a face normal (`face_normal=[x,y,z]`, optional `plane=<mm>`), or a drawn dimension label (`dim` text or `dim_id`).
 
 | id | control |
 |---|---|
@@ -29,6 +29,15 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `offset:Distance` | Offset distance field |
 | `offset:Reverse` | Offset Reverse (inward for circles) |
 | `offset:Ok` | Offset OK (closes the panel) |
+| `pattern:Count` | Circular Sketch Pattern instance count (includes the seed) |
+| `pattern:Angle` | Circular Sketch Pattern total angle (degrees) |
+| `pattern:Ok` | Circular Sketch Pattern OK |
+| `mirror:Features` | Feature Mirror arm (plane + timeline collector) |
+| `mirror:Plane` | Feature Mirror: next click is the planar face |
+| `mirror:Add` | Feature Mirror: add the timeline selection |
+| `mirror:Ok` | Feature Mirror OK. Zero features is a refuse. |
+| `variant:Circular` | Pattern tool circular variant (total instances about the origin) |
+| `timeline:row:…` | Timeline feature row. Shift+click adds to the Feature Mirror collector. |
 | `finish:Thickness` | Shell thickness field |
 | `finish:Ok` | Shell OK |
 | `finish:Op` | Extrude operation (Extrude / Cut) |
@@ -102,6 +111,16 @@ python3 tools/walk_rung03.py --out /tmp/sx-rung03
 python3 tools/walk_rung03.py --rows N1,A1,A2,L1,A3 --dry-run
 python3 tools/walk_rung03.py --rows A1,A2,L1,A3,N2,A4,A5 --out /tmp/sx-rung03
 python3 tools/walk_rung03.py --from A6 --checkpoint --out /tmp/sx-rung03 --a15
+```
+
+## Pipe section runner (rung 5)
+
+`tools/walk_rung05.py` is the same command as `tools/walk_rung04.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 36-row UBC pipe-section checklist. It runs `tools/check_rung05.py`. `--checkpoint` reloads `shelled.sxp` (chunk 2), `cut.sxp` (chunk 3), or `reshell.sxp` (chunk 4). Face picks use `face_normal` with `plane=` as `n·pick` (the −Z flange at `z = −260` is `face_normal=[0,0,−1]`, `plane=260`). Circular Sketch Pattern is `rail:Pattern` then `variant:Circular`, then `pattern:Count` / `pattern:Angle` / `pattern:Ok`. Feature Mirror is `mirror:Features`, a planar face, Shift+click `timeline:row:…`, `mirror:Ok`. Two-face Shell is Shift+click both planar ends, `strip:shell`, `finish:Thickness`, `finish:Ok`. Export rows share one 3MF per stage. A25 needs `--a15` (without it: `BLOCKED-by-flag`).
+
+```bash
+python3 tools/walk_rung05.py --out /tmp/sx-rung05
+python3 tools/walk_rung05.py --rows N1,A1,A2 --dry-run
+python3 tools/walk_rung05.py --from A8 --checkpoint --out /tmp/sx-rung05 --a15
 ```
 
 ## sx-042 runner rules (re-PLAN 21)

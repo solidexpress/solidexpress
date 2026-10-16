@@ -18,6 +18,9 @@ signal selection_changed(ids: Array)
 
 ## Set by main from SketchContextChrome; owns the Offset panel and click path.
 var offset_ui: SketchOffset
+## Circular Sketch Pattern panel (Count / Angle / Ok). Linear still uses click.
+var pattern_ui: SketchCircularPattern
+const _SketchVertical := preload("res://scripts/sketch_vertical.gd")
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
@@ -25,6 +28,9 @@ const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## radius with the view, capped so a zoomed-out part does not select everything.
 const PICK_SCREEN_PX := 14.0
 const PICK_TOLERANCE_MAX_MM := 8.0
+## Circle/arc Select: the inner half of the disk is fill (lesson 2 hole);
+## the rim band is the outer half plus pick_tol (A12 Vertical).
+const STROKE_FILL_FRAC := 0.5
 const SNAP_RADIUS := 1.25  # tighter magnet (Fusion/Onshape-scale at typical zoom)
 const GLYPH_PICK_RADIUS := 2.0  # constraint badges are small, precise targets
 
@@ -157,6 +163,9 @@ var selected: Array[String] = []
 var selected_roles: Array[String] = []
 ## Selected constraint id (click its glyph with the SELECT tool); Del removes.
 var selected_constraint := ""
+## Shift/Ctrl/Meta from the live pointer event. `push_input` keys do not update
+## `Input.is_key_pressed`; A12 still has to add the second circle.
+var _pointer_additive := false
 
 ## Applied dimensional constraints: {type, ids, value}. Rebuilt into Label3Ds.
 var dimensions: Array = []
@@ -1537,6 +1546,10 @@ func set_tool(t: Tool) -> void:
 	var spec := SketchToolSpec.of(int(t))
 	if spec.sets_default_variant:
 		tool_variant = spec.default_variant_of(self)
+	if t == Tool.PATTERN and pattern_ui != null:
+		pattern_ui.reset_centre()
+		pattern_ui.count = int(SketchCircularPattern.SPEC["count"])
+		pattern_ui.angle_deg = float(SketchCircularPattern.SPEC["angle_deg"])
 	# Do not clear selection on tool switch — completed geometry must stay
 	# visible/selectable (polygon/circle vanishing after another tool was a bug).
 	_snap_marker = null
@@ -1878,7 +1891,7 @@ func selection_actions() -> Array:
 		return acts
 	acts.append("construction")
 	acts.append("delete")
-	if selected.size() == 1 and _role_at(0) != "self":
+	if selected.size() == 1 and _SketchVertical.offers(sketch, selected, selected_roles):
 		acts.append("vertical")
 	if selected.size() == 2:
 		# Endpoint pair first so Vertical/Horizontal stay on the chip row
@@ -1890,6 +1903,9 @@ func selection_actions() -> Array:
 		var t1: String = sketch.entity_info(selected[1]).get("type", "")
 		if (t0 == "circle" or t0 == "arc") and (t1 == "circle" or t1 == "arc"):
 			acts.append("shaft_lines")
+		# Two circle centres: Vertical sits next to Shaft Lines, not in More.
+		if _SketchVertical.offers(sketch, selected, selected_roles) and not acts.has("vertical"):
+			acts.append("vertical")
 		if t0 == "line" and t1 == "line":
 			acts.append("fillet")
 			acts.append("chamfer")
@@ -2457,10 +2473,15 @@ func _nearest_entity_at(pos2: Vector2) -> String:
 func _select_at(pos2: Vector2) -> void:
 	var best_id := _nearest_entity_at(pos2)
 	var region_idx := _region_index_at(pos2)
-	var on_stroke := false
-	if best_id != "":
-		var stroke := minf(0.75, _pick_tolerance() * 0.35)
-		on_stroke = _entity_distance(sketch.entity_info(best_id), pos2) < stroke
+	# Stroke vs fill: a 0.75 mm rim is Vertical (A12); the interior of a
+	# Ø10 is a cut-region click (lesson 2). Zoomed-out pick_tol is wider.
+	var on_stroke := best_id != "" and _on_stroke(best_id, pos2)
+	# Additive is selection arithmetic. A region fill is a finish gesture
+	# and must not run under Shift (A12 second circle).
+	if _additive_pick():
+		if best_id != "":
+			toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+		return
 	if region_idx >= 0 and not on_stroke:
 		_set_selected([])
 		_apply_region_pick(region_idx)
@@ -2468,19 +2489,131 @@ func _select_at(pos2: Vector2) -> void:
 	if best_id == "":
 		_set_selected([])
 		return
-	var role := _endpoint_role_at(best_id, pos2)
+	toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+
+
+## Pointer additive from the mouse *press*. The release event may omit
+## Shift even while the key is still down (automation mouse-up).
+func set_pointer_additive(on: bool) -> void:
+	_pointer_additive = on
+
+
+func _additive_pick() -> bool:
+	return _pointer_additive \
+			or Input.is_key_pressed(KEY_SHIFT) \
+			or Input.is_key_pressed(KEY_CTRL) \
+			or Input.is_key_pressed(KEY_META)
+
+
+## Jitter-release of a SELECT drag. A stroke grab stays an entity pick.
+## Shift keeps a fill grab so the second circle is added (A12) instead of
+## a region click that clears the first.
+func keep_drag_pick(on_stroke: bool) -> bool:
+	if drag_entity_id() == "":
+		return false
+	return on_stroke or _additive_pick()
+
+
+## Drop the geometry drag and resolve it as a SELECT pick.
+## Additive never toggles the grab off: a Shift fill that hit-tested the
+## already-selected Ø130 would otherwise empty the list (A12 Vertical).
+func commit_select_drag(release_uv: Vector2) -> void:
+	var grabbed := drag_entity_id()
+	var role := drag_pick_role()
+	var keep := keep_drag_pick(drag_on_stroke())
+	var additive := _additive_pick()
+	cancel_drag()
+	if additive:
+		if grabbed != "":
+			pick_entity(grabbed, true, role, false)
+		var at := _nearest_profile_entity_at(release_uv)
+		if at != "" and at != grabbed:
+			pick_entity(at, true, _endpoint_role_at(at, release_uv), false)
+		return
+	if keep:
+		# SmartDim leaves both circles selected. Toggle would drop the Ø130
+		# (A12). Isolate it when it is already one of several; a new id still
+		# adds so two unshifted circle clicks keep Shaft Lines (rung 1 A4).
+		if selected.size() > 1 and selected.has(grabbed):
+			pick_entity(grabbed, false, role, false)
+		else:
+			toggle_pick_entity(grabbed, role)
+	else:
+		click(release_uv)
+
+
+## Stroke width for Select: rim vs region fill. Lines stay 0.75 mm.
+func _stroke_mm() -> float:
+	return minf(0.75, _pick_tolerance() * 0.35)
+
+
+func _on_stroke(id: String, pos2: Vector2) -> bool:
+	if sketch == null or id == "":
+		return false
+	var info: Dictionary = sketch.entity_info(id)
+	var kind := str(info.get("type", ""))
+	if kind == "circle" or kind == "arc":
+		var centre: Vector2 = info["center"]
+		var radius := float(info.get("radius", 0.0))
+		var dc := pos2.distance_to(centre)
+		if dc < radius * STROKE_FILL_FRAC:
+			return false
+		return absf(dc - radius) < _pick_tolerance()
+	return _entity_distance(info, pos2) < _stroke_mm()
+
+
+## Entity id under an in-progress SELECT drag, or "".
+func drag_entity_id() -> String:
+	return str(_drag.get("id", "")) if not _drag.is_empty() else ""
+
+
+## True when the SELECT drag grabbed the curve, not a circle's interior.
+func drag_on_stroke() -> bool:
+	if _drag.is_empty():
+		return false
+	var grab: Vector2 = _drag.get("grab_pos", Vector2.ZERO)
+	return _on_stroke(str(_drag.get("id", "")), grab)
+
+
+## Endpoint role for a SELECT drag, or "self" for a whole entity / rim.
+func drag_pick_role() -> String:
+	if _drag.is_empty():
+		return "self"
+	var part := str(_drag.get("part", "whole"))
+	if part == "start" or part == "end":
+		return part
+	return "self"
+
+
+## Toggle one entity on the SELECT list (circle click after a jittered drag).
+func toggle_pick_entity(id: String, role: String = "self") -> void:
+	pick_entity(id, true, role, true)
+
+
+## SELECT a grabbed entity. additive keeps others; replace=false clears first.
+## toggle_off removes an already-selected id (plain click on it).
+func pick_entity(id: String, additive: bool = false, role: String = "self",
+		toggle_off: bool = false) -> void:
+	if not active or id == "":
+		return
+	if not additive:
+		_set_picks([{"id": id, "role": role}])
+		return
 	var picks: Array = []
 	for i in selected.size():
 		picks.append(_ref_at(i))
 	var existing := -1
 	for i in picks.size():
-		if str(picks[i]["entity"]) == best_id and str(picks[i]["role"]) == role:
+		if str(picks[i]["entity"]) == id and str(picks[i]["role"]) == role:
 			existing = i
 			break
 	if existing >= 0:
-		picks.remove_at(existing)
+		if toggle_off:
+			picks.remove_at(existing)
+		else:
+			return
 	else:
-		picks.append({"entity": best_id, "role": role})
+		picks.append({"entity": id, "role": role})
 		while picks.size() > 8:
 			picks.pop_front()
 	var stored: Array = []
@@ -2605,7 +2738,8 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	var best_id := ""
 	var best_part := ""
 	var best_d := _pick_tolerance()
-	# Pass 1: endpoints / centers
+	# Pass 1: endpoints / centers. A vertex click must stay an endpoint
+	# (rung 4 hex Vertical), even when the line body is equally close.
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match info.get("type", ""):
@@ -2618,7 +2752,11 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 						best_part = pair[0]
 			"circle", "arc":
 				var d2: float = pos2.distance_to(info["center"])
-				if d2 <= best_d:
+				var d_curve := absf(d2 - float(info.get("radius", 0.0)))
+				# Centre handle only when nearer the centre than the rim.
+				# pick_tol is often larger than a Ø10, so a rim click must
+				# not become a centre grab (A12 Vertical).
+				if d2 <= best_d and d2 < d_curve:
 					best_d = d2
 					best_id = id
 					best_part = "center"
@@ -2797,12 +2935,12 @@ func constrain(type: String, value: float = 0.0) -> String:
 	var cid := ""  # id of the (last) constraint added, kept for editable dims
 	match type:
 		"horizontal", "vertical":
-			if type == "vertical" and _endpoint_pick():
-				if selected.size() == 2 and _role_at(0) != "self" and _role_at(1) != "self":
-					cid = PolygonPose.vertical_pair(sketch, _ref_at(0), _ref_at(1))
-					added = cid != ""
-				else:
-					status.emit("Vertical needs two endpoints")
+			if type == "vertical":
+				cid = _SketchVertical.apply(sketch, selected, selected_roles)
+				added = cid != ""
+				if not added:
+					if _endpoint_pick() and selected.size() != 2:
+						status.emit("Vertical needs two endpoints")
 					return ""
 			else:
 				for id in selected:
@@ -3132,31 +3270,67 @@ func extend_at(pos2: Vector2) -> bool:
 
 ## Linear or circular pattern of the selection.
 func pattern_selected(dx: float, dy: float, count: int) -> Array:
+	if tool_variant == "circular":
+		return apply_circular_pattern()
 	if not active or selected.is_empty():
 		status.emit("Pattern needs a selection")
 		return []
 	var ids := PackedStringArray()
 	for id in selected:
 		ids.append(id)
-	var new_ids: PackedStringArray
-	if tool_variant == "circular":
-		# Approximate circular pattern as rotated copies about selection centroid.
-		var c := _selection_centroid()
-		new_ids = PackedStringArray()
-		for i in range(1, count):
-			var ang := TAU * float(i) / float(count)
-			var ca := cos(ang)
-			var sa := sin(ang)
-			for id in ids:
-				var info: Dictionary = sketch.entity_info(id)
-				_add_rotated_copy(info, c, ca, sa, new_ids)
-	else:
-		new_ids = sketch.pattern_entities(ids, dx, dy, count)
+	var new_ids: PackedStringArray = sketch.pattern_entities(ids, dx, dy, count)
 	if new_ids.is_empty():
 		status.emit("Pattern failed")
 		return []
 	_undo_note("Pattern")
 	_redraw()
+	var out: Array = []
+	for id2 in new_ids:
+		out.append(id2)
+	return out
+
+
+## 8-about-origin (SPEC) circular pattern. Count includes the seed.
+func apply_circular_pattern() -> Array:
+	if not active:
+		return []
+	if pattern_ui != null:
+		pattern_ui.pull_fields()
+	var n := int(pattern_ui.count) if pattern_ui != null else 8
+	var ang_deg := float(pattern_ui.angle_deg) if pattern_ui != null else 360.0
+	var c: Vector2 = pattern_ui.centre if pattern_ui != null else Vector2.ZERO
+	if selected.is_empty():
+		status.emit(SketchCircularPattern.REFUSALS["empty"])
+		return []
+	if n < 2:
+		status.emit(SketchCircularPattern.REFUSALS["count"])
+		if pattern_ui != null:
+			pattern_ui.restore_count_default()
+		return []
+	if is_zero_approx(ang_deg):
+		status.emit(SketchCircularPattern.REFUSALS["angle"])
+		return []
+	var ids := PackedStringArray()
+	var kinds: Array = pattern_ui.kinds() if pattern_ui != null else ["circle"]
+	for id in selected:
+		var kind := str(sketch.entity_info(id).get("type", ""))
+		if kind in kinds:
+			ids.append(id)
+	if ids.is_empty():
+		status.emit(SketchCircularPattern.REFUSALS["empty"])
+		return []
+	if not sketch.has_method("circular_pattern_entities"):
+		status.emit(SketchCircularPattern.REFUSALS["failed"])
+		return []
+	var new_ids: PackedStringArray = sketch.circular_pattern_entities(
+			ids, c.x, c.y, n, deg_to_rad(ang_deg))
+	if new_ids.is_empty():
+		status.emit(SketchCircularPattern.REFUSALS["failed"])
+		return []
+	_undo_note("Pattern")
+	run_solve()
+	_redraw()
+	status.emit(SketchCircularPattern.APPLIED % n)
 	var out: Array = []
 	for id2 in new_ids:
 		out.append(id2)
@@ -5307,7 +5481,10 @@ func click(pos2: Vector2) -> void:
 			# Selection must already include axis + geometry; click confirms.
 			mirror_selected()
 		Tool.PATTERN:
-			pattern_selected(_pattern_spacing, 0.0, _pattern_count)
+			if tool_variant == "circular":
+				_pattern_centre_click(pos2)
+			else:
+				pattern_selected(_pattern_spacing, 0.0, _pattern_count)
 		Tool.CHAMFER:
 			chamfer_selected(2.0)
 	_update_preview()
@@ -5650,6 +5827,11 @@ func esc_keep_sketch() -> String:
 	_hide_infer_hint()
 	if not active or sketch == null:
 		return ""
+	# Convert / Offset / Pattern Esc drops the tool. A leftover selection
+	# would spend that key on "selection cleared" and leave the panel armed.
+	if tool == Tool.CONVERT or tool == Tool.OFFSET or tool == Tool.PATTERN:
+		set_tool(Tool.SELECT)
+		return "Tool dropped — Esc again exits the sketch"
 	# A selection (entity or constraint glyph) always spends this Esc.
 	# Honouring the exit promise first left the sketch on the same key that
 	# should have cleared a Select click made after a hover measure.
@@ -5721,6 +5903,15 @@ func _offset_click(uv: Vector2) -> void:
 		status.emit(text)
 	offset_ui.click(ctx, uv)
 	host_face_id = ctx.host_face_id
+
+
+func _pattern_centre_click(uv: Vector2) -> void:
+	if pattern_ui == null or sketch == null:
+		return
+	if pattern_ui.pick_centre(sketch, uv, _pick_tolerance()):
+		status.emit("Pattern centre at (%.4f, %.4f)" % [pattern_ui.centre.x, pattern_ui.centre.y])
+	else:
+		status.emit("Pattern centre is the origin")
 
 
 func _smart_dim_kind(ref: Dictionary) -> SmartDimTable.End:
@@ -8015,7 +8206,9 @@ func _segments_share_endpoint(a: Dictionary, b: Dictionary) -> bool:
 	return false
 
 
-## Select click on a circle's own radius label that has been stacked onto the rim.
+## Select on a circle's own diameter/radius: the curve wins when it is
+## nearer than the letters or tied (A12 −X rim). A click on the letters
+## still opens the editor.
 func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
 	if tool != Tool.SELECT or index < 0 or index >= dimensions.size():
 		return false
@@ -8025,7 +8218,16 @@ func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
 	var ids: Array = dim.get("ids", [])
 	if ids.is_empty():
 		return false
-	return _nearest_entity_at(pos2) == str(ids[0])
+	var eid := str(ids[0])
+	if _nearest_entity_at(pos2) != eid:
+		return false
+	var lp: Variant = _dimension_label_pos2(dim)
+	if lp != null:
+		var to_letters := pos2.distance_to(lp as Vector2)
+		var to_curve := _entity_distance(sketch.entity_info(eid), pos2)
+		if to_letters < to_curve:
+			return false
+	return true
 
 
 ## Nudge labels (never glyphs) along the label_stack axis until no label
@@ -9992,10 +10194,13 @@ func delete_selected_constraint() -> bool:
 ## `rect_only` skips the halo so an armed Jaw/Trim click on nearby geometry
 ## is not stolen by a typed-circle radius label.
 ## True when this click should open the dimension editor.
-## Select yields to a curve under the pointer unless the text rect itself
-## contains the click. Draw tools keep the rect-only hit they already asked for.
+## Select on a circle's own diameter/radius stacked on the rim picks the
+## curve (A12). Letters and the label anchor still open the editor otherwise.
+## Draw tools keep the rect-only hit they already asked for.
 func _dimension_claims_click(pos2: Vector2, hit: int) -> bool:
 	if hit < 0:
+		return false
+	if _radius_label_on_own_rim(hit, pos2):
 		return false
 	# The letters, and the label anchor itself, open the editor. A headless
 	# viewport clamps the drawn rect off that anchor; the anchor is still the
@@ -10006,8 +10211,6 @@ func _dimension_claims_click(pos2: Vector2, hit: int) -> bool:
 	# that halo covers the upper shaft line, and on a 7.65 mm hex it covers
 	# the opposite flat. Select and Smart Dim keep the entity under the pointer.
 	if (tool == Tool.SELECT or tool == Tool.SMART_DIM) and entity_at(pos2) != "":
-		return false
-	if _radius_label_on_own_rim(hit, pos2):
 		return false
 	return true
 

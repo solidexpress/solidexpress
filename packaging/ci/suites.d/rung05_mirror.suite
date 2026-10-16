@@ -1,0 +1,3 @@
+script=tests/run_rung05_mirror.gd
+tier=full
+timeout=420

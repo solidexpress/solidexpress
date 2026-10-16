@@ -50,6 +50,9 @@ public:
     bool extend_entity(const godot::String& id, double px, double py);
     godot::PackedStringArray pattern_entities(const godot::PackedStringArray& ids,
                                               double dx, double dy, int count);
+    godot::PackedStringArray circular_pattern_entities(
+        const godot::PackedStringArray& ids, double cx, double cy, int count,
+        double total_angle);
 
     godot::Dictionary entity_info(const godot::String& id) const;
     bool set_entity_geometry(const godot::String& id, const godot::Dictionary& geo);

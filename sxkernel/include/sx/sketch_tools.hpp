@@ -56,4 +56,14 @@ std::vector<std::string> pattern_entities(Sketch& s,
                                           const std::vector<std::string>& entity_ids,
                                           double dx, double dy, int count);
 
+// Circular sketch pattern about (cx, cy). Count is total instances including
+// the seed. Copies are profile circles with Equal radius to the seed; centres
+// sit on a construction layout circle through the seed centre (not a profile).
+// Construction radial lines of Equal length keep pitch when the seed's 94
+// moves. count < 2, |total_angle| ≈ 0, or empty ids → empty, unchanged.
+// total_angle is radians. Returns ids of the new profile copies.
+std::vector<std::string> circular_pattern_entities(
+    Sketch& s, const std::vector<std::string>& entity_ids, double cx, double cy,
+    int count, double total_angle);
+
 }  // namespace sx::sketch_tools

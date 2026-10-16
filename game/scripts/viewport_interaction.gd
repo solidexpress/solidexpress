@@ -3777,6 +3777,8 @@ func _dimension_blocks_curve(p2: Vector2) -> bool:
 func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and sketch_mode != null:
+			sketch_mode.set_pointer_additive(bool(_press_modifiers(mb)["additive"]))
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			# A new canvas press starts a new length-entry; leftover-10's
 			# KEY_2 KEY_0 buffer must not leak into a later focused _type_dim.
@@ -3849,7 +3851,9 @@ func _sketch_input(event: InputEvent) -> void:
 						and sketch_mode.constraint_hit(p2) == "" \
 						and not _dimension_blocks_curve(p2) \
 						and not sketch_mode.drag_hit(p2).is_empty():
-					_note_click("sketch-drag:" + tool_key, mb.position)
+					var drag_mods := _press_modifiers(mb)
+					_note_click("sketch-drag:" + tool_key, mb.position,
+							bool(drag_mods["shift"]), bool(drag_mods["additive"]))
 					sketch_mode.begin_drag(p2)
 					_sketch_dragging = true
 				elif typeof(typed_len) == TYPE_FLOAT or typeof(typed_len) == TYPE_INT:
@@ -3936,8 +3940,10 @@ func _sketch_input(event: InputEvent) -> void:
 			elif travel_up < CLICK_SLOP and p2_up != null:
 				# Jitter on a thin line used to count as a drag, so the release
 				# never selected and the next Esc left the sketch.
-				sketch_mode.cancel_drag()
-				sketch_mode.click(p2_up)
+				# Re-hit-testing the release often lands in a face-sketch
+				# region (A12 Vertical on two circles). Keep a stroke grab;
+				# Shift keeps a fill grab so the second circle is added.
+				sketch_mode.commit_select_drag(p2_up)
 				_clear_select_click_measure()
 			else:
 				sketch_mode.end_drag()
@@ -3996,6 +4002,8 @@ func _sketch_input(event: InputEvent) -> void:
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
 			sketch_mode.end_chain()
 			accept_event()
+		if not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and sketch_mode != null:
+			sketch_mode.set_pointer_additive(false)
 	elif event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
 		_infer_sketch_press_from_motion(motion)
