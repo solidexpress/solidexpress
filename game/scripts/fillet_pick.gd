@@ -43,5 +43,15 @@ static func decide(first_pick: bool, shift: bool, hit_kind: String) -> String:
 	return "miss"
 
 
+## A circular rim or bolt hole on a face is a face click. Linear corners
+## stay edges so a vertical still arms from the 2 mm band (M12).
+static func hit_kind(edge: String, face: String, circular: bool) -> String:
+	if edge != "" and (face == "" or not circular):
+		return "edge"
+	if face != "":
+		return "face"
+	return "miss"
+
+
 static func pick_point_for_corner(x: float, y: float, z_mid: float = 15.0) -> Vector3:
 	return Vector3(x, y, z_mid)

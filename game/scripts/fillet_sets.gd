@@ -25,6 +25,11 @@ static func edges_of_face(doc, body: String, face: String) -> PackedStringArray:
 	return rims_of(doc, body, doc.edges_of_face(face))
 
 
+## True when `edge` is a circular wire (closed or open arc), not a seam.
+static func circular(doc, body: String, edge: String) -> bool:
+	return _circle_radius(doc, body, str(edge)) > 0.0
+
+
 ## Annulus rims from a face loop. Bolt holes (small circles) drop; a
 ## rectangle-plus-boss keeps the mixed set.
 static func rims_of(doc, body: String, edges: PackedStringArray) -> PackedStringArray:
@@ -91,8 +96,17 @@ static func _circular_edge(doc, body: String, edge: String, length: float) -> bo
 	if not doc.has_method("get_edge_lines"):
 		return false
 	var lines: Dictionary = doc.get_edge_lines(body)
-	var pts: PackedVector3Array = lines.get(edge, PackedVector3Array())
+	var pts := _polyline(lines, edge)
 	if pts.size() < 2:
 		return false
 	var chord := pts[0].distance_to(pts[pts.size() - 1])
 	return chord < length * 0.95
+
+
+static func _polyline(lines: Dictionary, edge: String) -> PackedVector3Array:
+	if lines.has(edge) and lines[edge] is PackedVector3Array:
+		return lines[edge]
+	for k in lines.keys():
+		if str(k) == edge and lines[k] is PackedVector3Array:
+			return lines[k]
+	return PackedVector3Array()

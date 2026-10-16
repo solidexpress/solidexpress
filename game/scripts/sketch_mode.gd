@@ -1897,6 +1897,9 @@ func selection_actions() -> Array:
 		var t1: String = sketch.entity_info(selected[1]).get("type", "")
 		if (t0 == "circle" or t0 == "arc") and (t1 == "circle" or t1 == "arc"):
 			acts.append("shaft_lines")
+		# Two circle centres: Vertical sits next to Shaft Lines, not in More.
+		if _SketchVertical.offers(sketch, selected, selected_roles) and not acts.has("vertical"):
+			acts.append("vertical")
 		if t0 == "line" and t1 == "line":
 			acts.append("fillet")
 			acts.append("chamfer")
@@ -2467,7 +2470,7 @@ func _select_at(pos2: Vector2) -> void:
 	# Stroke vs fill: a 0.75 mm rim is Vertical (A12); the interior of a
 	# Ø10 is a cut-region click (lesson 2). Zoomed-out pick_tol is wider.
 	var on_stroke := best_id != "" and _on_stroke(best_id, pos2)
-	if region_idx >= 0 and not on_stroke:
+	if region_idx >= 0 and not on_stroke and not _shift_adds_circle(best_id):
 		_set_selected([])
 		_apply_region_pick(region_idx)
 		return
@@ -2475,6 +2478,19 @@ func _select_at(pos2: Vector2) -> void:
 		_set_selected([])
 		return
 	toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+
+
+## Shift+Select on a second circle's fill keeps the entity (A12 centres).
+## A first, unshifted fill stays a region (lesson 2 hole).
+func _shift_adds_circle(id: String) -> bool:
+	if id == "" or sketch == null or not Input.is_key_pressed(KEY_SHIFT):
+		return false
+	if str(sketch.entity_info(id).get("type", "")) not in _SketchVertical.CENTRE_KINDS:
+		return false
+	for existing in selected:
+		if str(sketch.entity_info(str(existing)).get("type", "")) in _SketchVertical.CENTRE_KINDS:
+			return true
+	return false
 
 
 ## Stroke width for Select: rim vs region fill.
@@ -8127,9 +8143,8 @@ func _segments_share_endpoint(a: Dictionary, b: Dictionary) -> bool:
 	return false
 
 
-## Select on a circle's own diameter/radius: the curve wins when it is
-## nearer than the letters (A12 −X rim). A click on the letters still
-## opens the editor (tie goes to the label).
+## Select on a circle's stroke picks the curve (A12 −X rim). Letters
+## still open the editor when the click is off the stroke.
 func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
 	if tool != Tool.SELECT or index < 0 or index >= dimensions.size():
 		return false
@@ -8142,13 +8157,7 @@ func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
 	var eid := str(ids[0])
 	if _nearest_entity_at(pos2) != eid:
 		return false
-	var lp: Variant = _dimension_label_pos2(dim)
-	if lp != null:
-		var to_letters := pos2.distance_to(lp as Vector2)
-		var to_curve := _entity_distance(sketch.entity_info(eid), pos2)
-		if to_letters <= to_curve:
-			return false
-	return true
+	return _on_stroke(eid, pos2)
 
 
 ## Nudge labels (never glyphs) along the label_stack axis until no label
