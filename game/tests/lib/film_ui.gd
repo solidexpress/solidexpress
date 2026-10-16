@@ -392,11 +392,15 @@ static func select_sketch_pads_box_ui(ctx: FilmContext, feature_ids: Array) -> v
 		_fail("box-select: no feature ids")
 		return
 	var cam = ctx.main.camera
-	if cam != null and cam.has_method("set_view"):
+	if cam != null and cam.has_method("capture_pose"):
+		var from: Dictionary = cam.capture_pose()
 		cam.pivot = Vector3(0, 0, 2)
 		cam.distance = 55.0
-		cam.set_view(deg_to_rad(-45.0), deg_to_rad(35.0), false)
-		await wait_frames(ctx.tree, 3)
+		if cam.has_method("set_view"):
+			cam.set_view(deg_to_rad(-45.0), deg_to_rad(35.0), false)
+		var to: Dictionary = cam.capture_pose()
+		cam.apply_pose(from)
+		await FilmActor.of(ctx).apply_pose_animated(to, "Frame pads", "look")
 	if ctx.view != null:
 		ctx.view.refresh_sketch_pads("")
 		await wait_frames(ctx.tree, 2)

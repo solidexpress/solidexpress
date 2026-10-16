@@ -84,5 +84,15 @@ func _init() -> void:
 		{"kind": "camera", "x": 10.0, "y": 10.0},
 	])
 	check(not cam_silent.is_empty(), "camera without via/badge is a gap")
+	var cam_unknown := FilmActorScript.camera_gaps([
+		{"kind": "pointer_move", "x": 10.0, "y": 10.0},
+		{"kind": "camera", "x": 10.0, "y": 10.0, "via": "teleport"},
+	])
+	check(not cam_unknown.is_empty(), "camera with unknown via is a gap")
+	var cam_wheel := FilmActorScript.camera_gaps([
+		{"kind": "pointer_move", "x": 200.0, "y": 200.0},
+		{"kind": "camera", "x": 200.0, "y": 242.0, "via": "wheel", "keys": "Wheel"},
+	])
+	check(cam_wheel.is_empty(), "wheel camera with pointer is fine")
 	print("%d failures" % failures)
 	quit(1 if failures > 0 else 0)

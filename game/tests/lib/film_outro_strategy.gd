@@ -30,7 +30,14 @@ static func play(ctx, kind_id: int) -> void:
 			await _hold_unique(ctx, _Pres.DRAWING_HOLD_SEC)
 		Kind.SKETCH:
 			if ctx.camera != null and ctx.camera.has_method("fit_sketch_top_down"):
+				var cam = ctx.main.camera if ctx.main != null else null
+				var from: Dictionary = cam.capture_pose() if cam != null and cam.has_method("capture_pose") else {}
 				ctx.camera.fit_sketch_top_down(ctx)
+				var to: Dictionary = cam.capture_pose() if cam != null and cam.has_method("capture_pose") else {}
+				if not from.is_empty() and cam != null:
+					cam.apply_pose(from)
+				if not to.is_empty() and ctx.actor != null and ctx.actor.has_method("apply_pose_animated"):
+					await ctx.actor.apply_pose_animated(to, "Frame sketch", "look")
 			await _hold_unique(ctx, _Pres.OUTRO_SEC)
 		_:
 			if ctx.camera != null:

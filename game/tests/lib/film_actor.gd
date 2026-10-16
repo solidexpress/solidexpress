@@ -7,6 +7,7 @@ extends RefCounted
 const _Pres := preload("res://tests/lib/film_presentation.gd")
 const _SxInput := preload("res://tests/lib/sx_input.gd")
 const SLACK_PX := 8.0
+const CAM_VIA := ["key", "wheel", "orbit", "pan", "look"]
 
 var ctx: FilmContext
 ## Ordered events: pointer_move, click, edit, camera. Positions are screen pixels.
@@ -109,8 +110,7 @@ func click_screen(
 		FilmUI._set_ctrl_held(false)
 	if shift:
 		FilmUI._set_shift_held(false)
-	credit_pose()
-	await dwell()
+	await _finish_action(cue)
 	return true
 
 
@@ -123,8 +123,7 @@ func tap_x11(screen_pos: Vector2, cue: Dictionary, double_click: bool = false) -
 		await _frames(2)
 	await _SxInput.x11_click_screen(vp, screen_pos, double_click)
 	_log("click", screen_pos, cue)
-	credit_pose()
-	await dwell()
+	await _finish_action(cue)
 	return true
 
 
@@ -149,8 +148,7 @@ func press(button: BaseButton, cue: Dictionary) -> bool:
 	else:
 		button.pressed.emit()
 	_log("click", center, cue)
-	credit_pose()
-	await dwell()
+	await _finish_action(cue)
 	return true
 
 
@@ -212,8 +210,7 @@ func choose_popup_id(popup: PopupMenu, id: int, cue: Dictionary) -> bool:
 		return false
 	popup.id_pressed.emit(id)
 	_log("click", pos, cue)
-	credit_pose()
-	await dwell()
+	await _finish_action(cue)
 	return true
 
 
@@ -261,8 +258,7 @@ func drag_screen(
 	ix._input(up)
 	if shift:
 		FilmUI._set_shift_held(false)
-	credit_pose()
-	await dwell()
+	await _finish_action(cue)
 	return true
 
 
@@ -289,8 +285,7 @@ func edit_field(control: Control, text: String, desc: String = "") -> bool:
 	await _type_paced(vp, text)
 	await _SxInput.push_key(vp, KEY_ENTER)
 	_log("edit", screen_center, cue, text)
-	credit_pose()
-	await dwell()
+	await _finish_action(cue)
 	return true
 
 
@@ -307,6 +302,7 @@ func view_key(code: Key, desc: String = "") -> bool:
 		return false
 	var badge := _key_badge(code)
 	var cue := {"keys": badge, "desc": desc if desc != "" else str(spec.get("label", badge)), "via": "key"}
+	await _ensure_pointer_visible(cue)
 	_show_badge(badge)
 	if cam.sketch_orientation_locked:
 		cam.sketch_orientation_locked = false
@@ -376,9 +372,9 @@ func apply_pose_animated(to: Dictionary, desc: String, via: String = "look") -> 
 	audit_camera("before pose")
 	if _cam() == null or to.is_empty():
 		return false
-	var cue := {"keys": via.capitalize(), "desc": desc, "via": via}
-	if via == "wheel":
-		_show_badge("Wheel")
+	var cue := {"keys": _nav_badge(via, via.capitalize()), "desc": desc, "via": via}
+	await _ensure_pointer_visible(cue)
+	_show_badge(str(cue.get("keys", "")))
 	await _lerp_pose(to, _Pres.VIEW_ANIM_SEC, cue)
 	_show_badge("")
 	await dwell()
@@ -394,9 +390,12 @@ func frame_look(world: Vector3, yaw_deg: float, pitch_deg: float, distance: floa
 	if cam.sketch_orientation_locked:
 		cam.sketch_orientation_locked = false
 	var screen := FilmUI.model_to_screen(ctx, world)
-	var cue := {"keys": "Move", "desc": desc, "via": "look"}
+	var cue := {"keys": "Look", "desc": desc, "via": "look"}
 	if FilmUI.is_on_screen(ctx, screen):
 		await move_to(screen, cue)
+	else:
+		await _ensure_pointer_visible(cue)
+	_show_badge("Look")
 	var ms: Node3D = ctx.main.model_space
 	var pivot: Vector3 = ms.to_global(world) if ms != null else world
 	var from: Dictionary = cam.capture_pose()
@@ -407,6 +406,7 @@ func frame_look(world: Vector3, yaw_deg: float, pitch_deg: float, distance: floa
 	to["pivot"] = pivot
 	to["look_at_content"] = true
 	await _lerp_pose(to, _Pres.VIEW_ANIM_SEC, cue)
+	_show_badge("")
 	await dwell()
 	return true
 
@@ -434,6 +434,58 @@ func audit_camera(tag: String = "") -> void:
 
 func camera_uncredited() -> PackedStringArray:
 	return _camera_gaps
+
+
+func _finish_action(cue: Dictionary = {}) -> void:
+	await _playback_app_camera(cue)
+	await dwell()
+
+
+## If a click/edit made the app jump the camera, play that move with a badge.
+func _playback_app_camera(cue: Dictionary) -> void:
+	var cam := _cam()
+	if cam == null or _credited_pose.is_empty() or not cam.has_method("capture_pose"):
+		credit_pose()
+		return
+	var to: Dictionary = cam.capture_pose()
+	if _pose_drift(to, _credited_pose) <= 0.04:
+		credit_pose()
+		return
+	var from: Dictionary = _credited_pose.duplicate()
+	cam.apply_pose(from)
+	var play := cue.duplicate()
+	if str(play.get("via", "")) == "":
+		play["via"] = "look"
+	if str(play.get("keys", "")) == "":
+		play["keys"] = "Look"
+	else:
+		play["keys"] = _nav_badge(str(play.get("via", "look")), str(play.get("keys", "Look")))
+	_show_badge(str(play.get("keys", "Look")))
+	await _lerp_pose(to, _Pres.VIEW_ANIM_SEC, play)
+	_show_badge("")
+
+
+func _ensure_pointer_visible(cue: Dictionary) -> void:
+	var pt := pointer_pos()
+	if ctx == null or not FilmUI.is_on_screen(ctx, pt, 24.0):
+		pt = _viewport_center()
+	await move_to(pt, cue)
+
+
+func _nav_badge(via: String, keys: String) -> String:
+	match via:
+		"wheel":
+			return "Wheel"
+		"orbit":
+			return "RMB"
+		"pan":
+			return "MMB"
+		"key":
+			return keys if keys != "" else "1"
+		_:
+			if keys == "Wheel" or keys == "RMB" or keys == "MMB" or keys == "LMB":
+				return keys
+			return "Look" if keys == "" or keys == "Move" or keys == "Look" else keys
 
 
 func dwell() -> void:
@@ -482,9 +534,10 @@ static func camera_gaps(log: Array, slack_px: float = SLACK_PX) -> PackedStringA
 			continue
 		if kind != "camera":
 			continue
-		var via := str(ev.get("via", ev.get("keys", "")))
-		if via.is_empty():
-			errs.append("camera at entry %d has no via/badge" % i)
+		var via := str(ev.get("via", ""))
+		var keys := str(ev.get("keys", ""))
+		if not CAM_VIA.has(via):
+			errs.append("camera at entry %d has no via/badge (via='%s' keys='%s')" % [i, via, keys])
 		if last_move.x == INF:
 			errs.append("camera at entry %d has no preceding pointer_move" % i)
 	return errs
