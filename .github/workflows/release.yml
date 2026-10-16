@@ -418,6 +418,19 @@ jobs:
           chmod +x scripts/sx-publish-demo-movies
           ./scripts/sx-publish-demo-movies
 
+      # sync-website checks out the repo fresh, so hand it the posters and
+      # published/catalog JSON this job just wrote; otherwise the site only
+      # gets whatever was last committed.
+      - name: Upload website demo assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-website-assets
+          path: |
+            website/assets/screenshots/*.png
+            website/assets/published-demos.json
+            website/assets/demo-catalog.json
+          if-no-files-found: error
+
   sync-website:
     needs: demo-movies
     runs-on: ubuntu-24.04
@@ -429,6 +442,12 @@ jobs:
       - name: Prepare baked manifest in website/
         run: |
           cp -f game/tests/ui_movie_manifest.json website/assets/ui_movie_manifest.json
+
+      - name: Overlay freshly published demo posters + JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: demo-website-assets
+          path: website/assets
 
       - name: Checkout Pages repo with deploy key
         uses: actions/checkout@v4
