@@ -1059,6 +1059,10 @@ func _refresh_ids() -> void:
 	_tag_spin_edit(main.find_child("PatternCount", true, false), "pattern:Count")
 	_tag_spin_edit(main.find_child("PatternAngle", true, false), "pattern:Angle")
 	_tag(main.find_child("PatternOk", true, false), "pattern:Ok")
+	_tag(main.find_child("MirrorFeaturesBtn", true, false), "mirror:Features")
+	_tag(main.find_child("MirrorPlane", true, false), "mirror:Plane")
+	_tag(main.find_child("MirrorAdd", true, false), "mirror:Add")
+	_tag(main.find_child("MirrorOk", true, false), "mirror:Ok")
 
 
 func _tag(node: Node, id: String) -> void:

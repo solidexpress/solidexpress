@@ -19,7 +19,7 @@ SX_AUTOMATION=1 SX_INPUT_TRACE=1 \
 
 Pointer and key commands are real `InputEvent`s. The main window gets `Viewport.push_input` of `InputEventMouseButton`, `InputEventMouseMotion`, and `InputEventKey`. An embedded popup (File, finish-bar menus, dialogs) is clicked by pushing that same event through the parent viewport at the popup's position, which is the path Godot uses to call `Window._input_from_window` before `push_input`. A native popup uses `Input.parse_input_event` with that window's id. Nothing calls menu handlers directly, so focus, the Extrude shield, popups, hover, and `drop:shield` behave as they do for a person.
 
-Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw`, `rail:Convert`, `rail:Offset`, `rail:Pattern`, …), finish-bar fields (`finish:Distance`, `finish:Op`, `finish:End`, `finish:Extrude`, `finish:Thickness`, `finish:Ok`), Offset panel fields (`offset:Distance`, `offset:Reverse`, `offset:Ok`), Circular Sketch Pattern fields (`pattern:Count`, `pattern:Angle`, `pattern:Ok`), the Shell chip (`strip:shell`), the HUD (`hud:Frame`, `hud:View`), menu buttons (`menu:File`), timeline rows and pencils (`timeline:row:sketch 1`, `timeline:pencil:sketch 1`), contour chips, and the file / discard dialogs (`dialog:Name`, `dialog:Ok`, `dialog:DiscardOk`). A click can also name a node path, a sketch-plane millimetre point, a kernel 3D point, an edge or face id, a face normal (`face_normal=[x,y,z]`, optional `plane=<mm>`), or a drawn dimension label (`dim` text or `dim_id`).
+Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw`, `rail:Convert`, `rail:Offset`, `rail:Pattern`, …), finish-bar fields (`finish:Distance`, `finish:Op`, `finish:End`, `finish:Extrude`, `finish:Thickness`, `finish:Ok`), Offset panel fields (`offset:Distance`, `offset:Reverse`, `offset:Ok`), Circular Sketch Pattern fields (`pattern:Count`, `pattern:Angle`, `pattern:Ok`), Feature Mirror (`mirror:Features`, `mirror:Plane`, `mirror:Add`, `mirror:Ok`), the Shell chip (`strip:shell`), the HUD (`hud:Frame`, `hud:View`), menu buttons (`menu:File`), timeline rows and pencils (`timeline:row:sketch 1`, `timeline:pencil:sketch 1`), contour chips, and the file / discard dialogs (`dialog:Name`, `dialog:Ok`, `dialog:DiscardOk`). A click can also name a node path, a sketch-plane millimetre point, a kernel 3D point, an edge or face id, a face normal (`face_normal=[x,y,z]`, optional `plane=<mm>`), or a drawn dimension label (`dim` text or `dim_id`).
 
 | id | control |
 |---|---|
@@ -32,6 +32,10 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `pattern:Count` | Circular Sketch Pattern instance count (includes the seed) |
 | `pattern:Angle` | Circular Sketch Pattern total angle (degrees) |
 | `pattern:Ok` | Circular Sketch Pattern OK |
+| `mirror:Features` | Feature Mirror arm (plane + timeline collector) |
+| `mirror:Plane` | Feature Mirror: next click is the planar face |
+| `mirror:Add` | Feature Mirror: add the timeline selection |
+| `mirror:Ok` | Feature Mirror OK. Zero features is a refuse. |
 | `finish:Thickness` | Shell thickness field |
 | `finish:Ok` | Shell OK |
 | `finish:Op` | Extrude operation (Extrude / Cut) |

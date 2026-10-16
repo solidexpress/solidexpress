@@ -14,6 +14,8 @@ signal dressup_armed_changed(armed: bool, is_fillet: bool)
 signal dressup_radius_changed(value: float)
 signal sketch_requested
 
+const _MirrorFeatures := preload("res://scripts/mirror_features.gd")
+
 enum Pending { NONE, BOOLEAN, MEASURE, HOLE, HOLE_WIZARD, HEX_PLACE, HOLE_MOVE,
 		LINEAR, CIRCULAR, MIRROR, FILLET_EDGES, CHAMFER_EDGES }
 
@@ -21,6 +23,8 @@ var view: DocumentView
 var timeline_panel: TimelinePanel
 ## Optional: ViewportInteraction for hole markers / fillet arm feedback.
 var interaction: ViewportInteraction
+## Feature Mirror collector (plane + timeline list). Empty keeps body-mode.
+var _mirror_features
 
 var _body_ops: VBoxContainer
 var _face_ops: VBoxContainer
@@ -331,6 +335,13 @@ func _build_body_ops() -> void:
 		"Arm: click an edge or face to set the pattern axis")
 	_op_button(pat_pick_row, "Mirror…", _arm_mirror, "mirror",
 		"Arm: click a planar face to set the mirror plane")
+	var feat_btn := Button.new()
+	feat_btn.name = "MirrorFeaturesBtn"
+	feat_btn.text = "Features"
+	feat_btn.tooltip_text = "Feature Mirror: pick a plane and Shift+click timeline features"
+	feat_btn.set_meta("sx_auto", str(_MirrorFeatures.SPEC["arm_id"]))
+	feat_btn.pressed.connect(_arm_mirror_features)
+	pat_pick_row.add_child(feat_btn)
 
 	# Instance placement (direct doc mutation — not undoable in v1).
 	_body_ops.add_child(HSeparator.new())
@@ -1227,6 +1238,9 @@ func _find_main() -> Node:
 
 
 func _mirror() -> void:
+	if _mirror_features != null and _mirror_features.collecting():
+		_mirror_features.ok()
+		return
 	var body := view.selected_body
 	if body == "":
 		return
@@ -1235,7 +1249,7 @@ func _mirror() -> void:
 		return
 	# Feature mode: mid-X of bbox. Body mode: +X extent (keeps body tests green).
 	var plane_x: float = bb["max"].x
-	if _mirror_source_feature_id(body) != "":
+	if _mirror_source_ids(body).size() > 0:
 		plane_x = (bb["min"].x + bb["max"].x) * 0.5
 	_do_mirror(body, Vector3(plane_x, 0, 0), Vector3(1, 0, 0))
 
@@ -1255,44 +1269,57 @@ func _circular_pattern() -> void:
 
 
 func _mirror_source_feature_id(body: String) -> String:
+	var ids := _mirror_source_ids(body)
+	return ids[0] if ids.size() == 1 else ""
+
+
+func _mirror_source_ids(body: String) -> PackedStringArray:
+	var out := PackedStringArray()
 	if timeline_panel == null:
-		return ""
-	var selected_fid := timeline_panel.selected_feature_id()
-	if selected_fid == "":
-		return ""
+		return out
+	var selected: PackedStringArray = timeline_panel.selected_feature_ids()
+	if selected.is_empty():
+		var one := timeline_panel.selected_feature_id()
+		if one != "":
+			selected.append(one)
 	var target_fid := view.feature_of_body(body)
 	if target_fid == "":
-		return ""
+		return out
 	const MODIFYING := {
 		"extrude": true, "revolve": true, "fillet": true, "chamfer": true,
 		"hole": true, "shell": true, "draft": true, "push_pull": true,
 	}
-	for f in view.doc.graph_features():
-		if str(f.get("id", "")) != selected_fid:
-			continue
-		var ftype := str(f.get("type", ""))
-		if not MODIFYING.has(ftype):
-			return ""
-		# Modifying features target a body via params.target (feature id).
-		var params: Dictionary = f.get("params", {})
-		var tgt := str(params.get("target", ""))
-		if tgt == target_fid or tgt == body:
-			return selected_fid
-		# Also accept when the selected feature's output is this body (rare).
-		if str(f.get("output_body", "")) == body:
-			return selected_fid
-		return ""
-	return ""
+	for fid in selected:
+		for f in view.doc.graph_features():
+			if str(f.get("id", "")) != fid:
+				continue
+			var ftype := str(f.get("type", ""))
+			if not MODIFYING.has(ftype):
+				break
+			var params := {}
+			var raw = f.get("params", {})
+			if raw is Dictionary:
+				params = raw
+			elif typeof(raw) == TYPE_STRING:
+				var parsed = JSON.parse_string(str(raw))
+				if parsed is Dictionary:
+					params = parsed
+			var tgt := str(params.get("target", ""))
+			if tgt == target_fid or tgt == body or str(f.get("output_body", "")) == body:
+				out.append(fid)
+			break
+	return out
 
 
-func _do_mirror(body: String, plane_point: Vector3, plane_normal: Vector3) -> void:
+func _do_mirror(body: String, plane_point: Vector3, plane_normal: Vector3,
+		sources_override: PackedStringArray = PackedStringArray()) -> void:
 	var fid := view.feature_of_body(body)
 	var created := ""
 	var feature_mode := false
-	var source_fid := _mirror_source_feature_id(body)
-	if source_fid != "" and fid != "":
-		var sources := PackedStringArray()
-		sources.append(source_fid)
+	var sources := sources_override
+	if sources.is_empty() and (_mirror_features == null or not _mirror_features.collecting()):
+		sources = _mirror_source_ids(body)
+	if sources.size() > 0 and fid != "":
 		created = view.doc.graph_add_mirror(fid, plane_point, plane_normal, sources)
 		feature_mode = true
 	elif fid != "":
@@ -1303,7 +1330,7 @@ func _do_mirror(body: String, plane_point: Vector3, plane_normal: Vector3) -> vo
 	if created == "":
 		status.emit("Mirror failed")
 	elif feature_mode:
-		status.emit("Mirrored feature")
+		status.emit(_MirrorFeatures.APPLIED)
 	else:
 		status.emit("Mirrored body")
 
@@ -1988,6 +2015,10 @@ func _set_hole_position(hole_fid: String, position: Vector3) -> bool:
 func cancel_pending_pick() -> bool:
 	# An open hole editor is not its own Esc layer — one Esc clears the
 	# selection (and the editor with it). Only an armed pick consumes Esc.
+	if _mirror_features != null and _mirror_features.collecting():
+		_mirror_features.cancel()
+		_pending = Pending.NONE
+		return true
 	if _pending == Pending.NONE:
 		return false
 	var was_wizard := _pending == Pending.HOLE_WIZARD
@@ -2578,11 +2609,69 @@ func _arm_mirror() -> void:
 	var body := view.selected_body
 	if body == "":
 		return
+	if _mirror_features != null and _mirror_features.collecting():
+		_pending = Pending.MIRROR
+		_pending_body = _mirror_features.body_id if _mirror_features.body_id != "" else body
+		status.emit(str(_MirrorFeatures.HINTS["arm"]))
+		return
 	_pending = Pending.MIRROR
 	_pending_body = body
 	_pending_fid = view.feature_of_body(body)
 	_pending_first = body
 	status.emit("Mirror: click a planar face for the mirror plane")
+
+
+func _arm_mirror_features() -> void:
+	var body := view.selected_body
+	if body == "":
+		status.emit(str(_MirrorFeatures.REFUSALS["body"]))
+		return
+	_ensure_mirror_ui()
+	_bind_mirror_timeline()
+	_mirror_features.arm(body)
+	_pending = Pending.MIRROR
+	_pending_body = body
+	_pending_fid = view.feature_of_body(body)
+	_pending_first = body
+
+
+func _ensure_mirror_ui() -> void:
+	if _mirror_features == null:
+		_mirror_features = _MirrorFeatures.new()
+		_mirror_features.status = func(t: String) -> void: status.emit(t)
+		_mirror_features.apply = _apply_feature_mirror
+		_mirror_features.add_current = _add_timeline_to_mirror
+		_mirror_features.on_plane_arm = func() -> void:
+			_pending = Pending.MIRROR
+	if _mirror_features.panel != null:
+		return
+	var host: Node = interaction if interaction != null else get_parent()
+	_mirror_features.build(host)
+
+
+func _bind_mirror_timeline() -> void:
+	if timeline_panel == null:
+		return
+	if not timeline_panel.feature_clicked.is_connected(_on_timeline_feature_clicked):
+		timeline_panel.feature_clicked.connect(_on_timeline_feature_clicked)
+
+
+func _on_timeline_feature_clicked(fid: String, _additive: bool) -> void:
+	if _mirror_features != null and _mirror_features.collecting():
+		_mirror_features.add(fid)
+
+
+func _add_timeline_to_mirror() -> void:
+	if _mirror_features == null or timeline_panel == null:
+		return
+	for fid in timeline_panel.selected_feature_ids():
+		_mirror_features.add(str(fid))
+
+
+func _apply_feature_mirror(body: String, plane_point: Vector3, plane_normal: Vector3,
+		sources: PackedStringArray) -> void:
+	_pending = Pending.NONE
+	_do_mirror(body, plane_point, plane_normal, sources)
 
 
 func _resolve_pending(body: String, face: String, point: Vector3) -> void:
@@ -2967,6 +3056,9 @@ func _resolve_mirror_pick(body: String, face: String) -> void:
 		status.emit("Mirror cancelled (need a planar face)")
 		return
 	var pt := view.doc.face_midpoint(face)
+	if _mirror_features != null and _mirror_features.collecting():
+		_mirror_features.set_plane(pt, n.normalized())
+		return
 	_do_mirror(src, pt, n.normalized())
 	view.select_entity(src, "")
 

@@ -11,6 +11,7 @@ const ChromeDock := preload("res://scripts/chrome_dock.gd")
 
 signal status(text: String)
 signal feature_selected(fid: String, ftype: String)
+signal feature_clicked(fid: String, additive: bool)
 
 ## Double-click a row: focus this schema key. A sketch still opens for edit.
 const _ROW_FOCUS_KEY := {
@@ -27,6 +28,8 @@ var view: DocumentView
 var _list: VBoxContainer
 var _rows := {}  # feature id -> row control
 var _selected_fid := ""
+var _selected_ids: PackedStringArray = PackedStringArray()
+var _row_shift := false
 var _editor_box: VBoxContainer
 var _params_edit: TextEdit
 var _json_toggle: CheckButton
@@ -40,6 +43,14 @@ var last_left_press_msec := -1
 
 func selected_feature_id() -> String:
 	return _selected_fid
+
+
+func selected_feature_ids() -> PackedStringArray:
+	if not _selected_ids.is_empty():
+		return _selected_ids.duplicate()
+	if _selected_fid != "":
+		return PackedStringArray([_selected_fid])
+	return PackedStringArray()
 
 
 ## Left presses on a row (and the panel chrome) stamp the relayout guard
@@ -250,6 +261,13 @@ func refresh() -> void:
 	if _selected_fid != "" and not _has_feature(feats, _selected_fid):
 		_selected_fid = ""
 		_editor_box.visible = false
+	var kept := PackedStringArray()
+	for id in _selected_ids:
+		if _has_feature(feats, id):
+			kept.append(id)
+	_selected_ids = kept
+	if _selected_fid == "" and not _selected_ids.is_empty():
+		_selected_fid = _selected_ids[_selected_ids.size() - 1]
 	_refreshing = false
 
 
@@ -339,12 +357,21 @@ func _make_row(f: Dictionary, index: int, count: int) -> Control:
 	if f["suppressed"]:
 		name_btn.modulate = Color(1, 1, 1, 0.45)
 	name_btn.set_meta("sx_auto", "timeline:row:%s" % str(f.get("name", fid)))
-	name_btn.pressed.connect(_select_feature.bind(fid))
+	name_btn.pressed.connect(func() -> void:
+		var additive := _row_shift or Input.is_key_pressed(KEY_SHIFT)
+		_row_shift = false
+		_select_feature(fid, additive)
+	)
+	if _selected_ids.has(fid) or fid == _selected_fid:
+		name_btn.self_modulate = Color(0.7, 0.88, 1.0)
 	# A left press focuses this button before gui_input runs, and the
 	# double-click release focuses it again. While Distance is open that
 	# steals the keys (1/4 become Front/Back). Hand them back.
 	name_btn.focus_entered.connect(_on_row_focus_entered.bind(fid))
 	name_btn.gui_input.connect(func(ev: InputEvent) -> void:
+		if ev is InputEventMouseButton and ev.pressed \
+				and ev.button_index == MOUSE_BUTTON_LEFT:
+			_row_shift = ev.shift_pressed
 		if ev is InputEventKey and ev.pressed and not ev.echo and ev.keycode == KEY_F2:
 			var focused := get_viewport().gui_get_focus_owner() if get_viewport() != null else null
 			if focused is LineEdit or focused is TextEdit:
@@ -639,25 +666,49 @@ func _flash_row(fid: String) -> void:
 	tw.tween_property(row, "modulate", Color.WHITE, 0.6)
 
 
-func _select_feature(fid: String) -> void:
-	_selected_fid = fid
+func _select_feature(fid: String, additive: bool = false) -> void:
+	var feat: Dictionary = {}
 	for f in view.doc.graph_features():
-		if f["id"] != fid:
-			continue
-		feature_selected.emit(fid, str(f.get("type", "")))
-		_params_edit.text = _pretty_json(f["params"])
-		_editor_box.visible = true
-		# Typed property editor when the feature type has a schema; the JSON
-		# editor stays available behind the advanced toggle either way.
-		if PropertyPanel.has_schema(f["type"]):
-			property_panel.open(fid)
-			_clamp_height()
-		else:
-			property_panel.visible = false
-		var body: String = f["output_body"]
-		if body != "":
-			view.select_entity(body, "")
+		if f["id"] == fid:
+			feat = f
+			break
+	if feat.is_empty():
 		return
+	if additive:
+		if not _selected_ids.has(fid):
+			_selected_ids.append(fid)
+		_selected_fid = fid
+		_sync_selection_paint()
+		feature_clicked.emit(fid, true)
+		return
+	_selected_ids = PackedStringArray([fid])
+	_selected_fid = fid
+	feature_clicked.emit(fid, false)
+	feature_selected.emit(fid, str(feat.get("type", "")))
+	_params_edit.text = _pretty_json(feat["params"])
+	_editor_box.visible = true
+	# Typed property editor when the feature type has a schema; the JSON
+	# editor stays available behind the advanced toggle either way.
+	if PropertyPanel.has_schema(feat["type"]):
+		property_panel.open(fid)
+		_clamp_height()
+	else:
+		property_panel.visible = false
+	var body: String = feat["output_body"]
+	if body != "":
+		view.select_entity(body, "")
+	_sync_selection_paint()
+
+
+func _sync_selection_paint() -> void:
+	for fid in _rows:
+		var btn := _row_name_button(str(fid))
+		if btn == null:
+			continue
+		if _selected_ids.has(fid) or str(fid) == _selected_fid:
+			btn.self_modulate = Color(0.7, 0.88, 1.0)
+		else:
+			btn.self_modulate = Color.WHITE
 
 
 func _pretty_json(raw: String) -> String:
