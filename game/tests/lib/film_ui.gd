@@ -727,8 +727,12 @@ static func enter_sketch_on_face(ctx: FilmContext, body_id: String, face_id: Str
 	# Frame the face so the pick ray is not edge-on / behind the camera.
 	var look_btn := find_button(ctx.main, "Look at")
 	var cam = ctx.main.camera
-	if cam != null:
-		await FilmActor.of(ctx).frame_look(pt, -40.0, 28.0, maxf(cam.distance, 35.0), "Look at face")
+	if cam != null and cam.has_method("set_view"):
+		cam.pivot = pt
+		cam.distance = maxf(cam.distance, 35.0)
+		cam.set_view(deg_to_rad(-40.0), deg_to_rad(28.0), false)
+		await wait_frames(ctx.tree, 2)
+		FilmActor.of(ctx).credit_pose()
 	var face_screen := model_to_screen(ctx, pt)
 	if is_on_screen(ctx, face_screen):
 		if ctx.view.selected_body != body_id or ctx.view.selected_face != face_id:
