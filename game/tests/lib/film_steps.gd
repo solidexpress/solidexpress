@@ -6,6 +6,7 @@ extends RefCounted
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const SxInput = preload("res://tests/lib/sx_input.gd")
+const _FilmActorBoot = preload("res://tests/lib/film_actor.gd")
 
 ## Lesson 2 box: four vertical corners. Iso shows the y-min pair;
 ## Right and Left show the y-max pair (the walk's CORNERS table).
@@ -31,8 +32,7 @@ static func click_uv(ctx: FilmContext, uv: Vector2, desc: String, span: float = 
 		screen = FilmUI.model_to_screen(ctx, sm.to_model(uv))
 	if not FilmUI.require_on_screen(ctx, screen, desc):
 		return
-	await SxInput.x11_click_screen(ctx.main.get_viewport(), screen)
-	await FilmUI.wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).tap_x11(screen, FilmUICues.alert("Click", desc))
 
 
 static func type_dim(ctx: FilmContext, text: String) -> void:
@@ -46,10 +46,7 @@ static func type_dim(ctx: FilmContext, text: String) -> void:
 	if edit == null or not edit.is_visible_in_tree():
 		FilmUI._fail("DimLineEdit missing for %s" % text)
 		return
-	await SxInput.x11_click(edit)
-	await SxInput.type_text(edit.get_viewport(), text)
-	await SxInput.push_key(edit.get_viewport(), KEY_ENTER)
-	await FilmUI.wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).edit_field(edit, text, "Dimension %s" % text)
 
 
 static func type_distance(ctx: FilmContext, text: String) -> void:
@@ -63,9 +60,7 @@ static func type_distance(ctx: FilmContext, text: String) -> void:
 	if edit == null or not edit.is_visible_in_tree():
 		FilmUI._fail("DistanceLineEdit missing for %s" % text)
 		return
-	await SxInput.x11_click(edit)
-	await SxInput.type_text(edit.get_viewport(), text)
-	await FilmUI.wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).edit_field(edit, text, "Distance %s" % text)
 
 
 static func pick_finish(ctx: FilmContext, op_index: int, end_index: int) -> void:
@@ -84,26 +79,14 @@ static func pick_option(ctx: FilmContext, opt: OptionButton, index: int, desc: S
 	if opt == null or not opt.is_visible_in_tree():
 		FilmUI._fail("%s missing" % desc)
 		return
-	await SxInput.x11_click(opt)
+	await FilmActor.of(ctx).press(opt, FilmUICues.alert("Click", desc))
 	opt.show_popup()
-	await FilmUI.wait_frames(ctx.tree, 10)
+	await FilmUI.wait_frames(ctx.tree, 4)
 	var popup: PopupMenu = opt.get_popup()
 	if popup == null or not popup.visible:
 		FilmUI._fail("%s popup not visible" % desc)
 		return
-	var font: Font = popup.get_theme_font("font")
-	var fs: int = popup.get_theme_font_size("font_size")
-	var font_h: int = font.get_height(fs) if font != null else fs
-	var v_sep: int = popup.get_theme_constant("v_separation")
-	var top := 0.0
-	if popup.has_theme_stylebox("panel"):
-		var panel: StyleBox = popup.get_theme_stylebox("panel")
-		if panel != null:
-			top = panel.get_margin(SIDE_TOP)
-	var y := top + (float(font_h) + float(v_sep)) * (float(index) + 0.5)
-	var pos := Vector2(popup.position) + Vector2(float(popup.size.x) * 0.5, y)
-	await SxInput.x11_click_screen(ctx.main.get_viewport(), pos)
-	await FilmUI.wait_frames(ctx.tree, 4)
+	await FilmActor.of(ctx).pick_popup_row(popup, index, FilmUICues.alert("Click", "%s item" % desc))
 
 
 static func select_body(ctx: FilmContext, body: String) -> void:
@@ -136,11 +119,9 @@ static func arm_fillet(ctx: FilmContext, radius: float) -> void:
 		return
 	var edit: LineEdit = spin.get_line_edit()
 	if not is_equal_approx(float(spin.value), radius):
-		await SxInput.x11_click(edit)
 		var digits := str(int(round(radius))) if is_equal_approx(radius, round(radius)) else str(radius)
-		await SxInput.type_text(edit.get_viewport(), digits)
-		await SxInput.push_key(edit.get_viewport(), KEY_ENTER)
-	await FilmUI.wait_frames(ctx.tree, 2)
+		await FilmActor.of(ctx).edit_field(edit, digits, "Fillet r=%s" % digits)
+	await FilmActor.of(ctx).dwell()
 
 
 static func commit_fillet(ctx: FilmContext) -> void:
@@ -201,15 +182,15 @@ static func export_3mf(ctx: FilmContext) -> void:
 	if name_edit == null:
 		FilmUI._fail("export filename field missing")
 		return
-	await SxInput.x11_click(name_edit)
-	await SxInput.type_text(name_edit.get_viewport(), dest)
-	await FilmUI.wait_frames(ctx.tree, 2)
-	var ok_btn := dlg.get_ok_button()
-	if ok_btn == null:
-		FilmUI._fail("export OK missing")
-		return
-	await SxInput.x11_click(ok_btn)
-	await FilmUI.wait_frames(ctx.tree, 6)
+	await FilmActor.of(ctx).edit_field(name_edit, dest, "Export path")
+	# Enter in the filename field often confirms the dialog; click Save if it stays up.
+	if dlg.visible:
+		var ok_btn := dlg.get_ok_button()
+		if ok_btn == null or not ok_btn.is_visible_in_tree():
+			FilmUI._fail("export OK missing")
+			return
+		await FilmUI.click_control(ctx, ok_btn, FilmUICues.alert("Save", "Export 3MF"))
+	await FilmActor.of(ctx).result_pause()
 	if dlg.visible:
 		dlg.hide()
 
@@ -253,8 +234,7 @@ static func shell_selected_face(ctx: FilmContext, mm: float) -> void:
 		FilmUI._fail("Shell thickness field is hidden")
 		return
 	var digits := str(int(round(mm))) if is_equal_approx(mm, round(mm)) else str(mm)
-	await SxInput.type_text(field.get_viewport(), digits)
-	await FilmUI.wait_frames(ctx.tree, 1)
+	await FilmActor.of(ctx).edit_field(field, digits, "Shell %s mm" % digits)
 	var ok := _by_auto(ctx.main, "finish:Ok") as Button
 	if ok == null or not ok.is_visible_in_tree():
 		FilmUI._fail("Shell Apply is hidden")
@@ -411,8 +391,7 @@ static func section_top(ctx: FilmContext) -> void:
 	if popup == null or not popup.visible:
 		FilmUI._fail("Section plane popup is hidden")
 		return
-	if not await SxInput.click_popup_label(popup, "Top"):
-		FilmUI._fail("popup:Top did not take the click")
+	if not await FilmActor.of(ctx).pick_popup_label(popup, "Top", FilmUICues.alert("Top", "Section plane Top")):
 		return
 	await FilmUI.wait_frames(ctx.tree, 3)
 
@@ -474,7 +453,4 @@ static func _type_offset_distance(ctx: FilmContext, text: String) -> void:
 	if edit == null or not edit.is_visible_in_tree():
 		FilmUI._fail("offset:Distance is hidden")
 		return
-	await SxInput.x11_click(edit)
-	edit.select_all()
-	await SxInput.type_text(edit.get_viewport(), text)
-	await FilmUI.wait_frames(ctx.tree, 1)
+	await FilmActor.of(ctx).edit_field(edit, text, "Offset %s" % text)

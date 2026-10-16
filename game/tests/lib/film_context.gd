@@ -8,6 +8,7 @@ var main
 var view: DocumentView
 var camera: FilmCamera
 var chrome: FilmChrome
+var actor # FilmActor — director for pointer-first clicks/edits
 var clock: FilmClock
 var tree: SceneTree
 
@@ -21,7 +22,7 @@ func movie_toast(text: String, hold_sec: float = 2.0) -> void:
 
 
 ## Advance the narrative: closed caption + film hold + a beat of reading time.
-func beat(caption: String, hold_sec: float = 0.75) -> void:
+func beat(caption: String, hold_sec: float = 0.0) -> void:
 	if chrome != null:
 		chrome.show_caption(caption)
 	await tree.process_frame

@@ -38,11 +38,11 @@ func play_click_flash(sec: float = 0.12) -> void:
 	var up := minf(0.05, dur * 0.4)
 	var down := maxf(0.04, dur - up)
 	_flash_tween = create_tween()
-	_flash_tween.tween_method(_set_flash, 0.0, 1.0, up)
-	_flash_tween.tween_method(_set_flash, 1.0, 0.0, down)
+	_flash_tween.tween_method(set_flash, 0.0, 1.0, up)
+	_flash_tween.tween_method(set_flash, 1.0, 0.0, down)
 	await _flash_tween.finished
 
 
-func _set_flash(v: float) -> void:
+func set_flash(v: float) -> void:
 	_flash = v
 	queue_redraw()

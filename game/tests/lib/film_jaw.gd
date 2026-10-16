@@ -3,6 +3,7 @@ extends RefCounted
 ## Not a suite: lint_rung01_e2e.py does not scan this file.
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const FilmSteps = preload("res://tests/lib/film_steps.gd")
 
 
 static func drawn_labels(sm: SketchMode) -> Array:
@@ -149,27 +150,28 @@ static func push_click(vp: Viewport, pos: Vector2) -> void:
 
 
 static func click_label_first_glyph(vp: Viewport, sm: SketchMode, want_degree: bool) -> Vector2:
+	var pos := label_first_glyph_pos(sm, want_degree)
+	if pos == Vector2.INF:
+		return pos
+	push_click(vp, pos)
+	return pos
+
+
+static func label_first_glyph_pos(sm: SketchMode, want_degree: bool) -> Vector2:
 	var entry := find_label(sm, want_degree)
 	if entry.is_empty():
 		return Vector2.INF
 	var lab: Label3D = entry.get("node")
-	var pos := first_glyph(sm, lab)
-	push_click(vp, pos)
-	return pos
+	return first_glyph(sm, lab)
 
 
 ## Three jaw clicks in sketch UV: centre, on-axis long side, half-width.
 ## The caller arms Jaw and awaits a frame around this.
 static func draw_on_axis(ctx: FilmContext, center: Vector2, along_mm: float, across_mm: float) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	var vp: Viewport = ctx.main.get_viewport()
 	var pts: Array[Vector2] = [
 		center,
 		center + Vector2(along_mm, 0.0),
 		center + Vector2(along_mm, across_mm),
 	]
 	for uv in pts:
-		var screen: Vector2 = FilmUI.model_to_screen(ctx, sm.to_model(uv))
-		push_click(vp, screen)
-		await ctx.tree.process_frame
-		await ctx.tree.process_frame
+		await FilmSteps.click_uv(ctx, uv, "Jaw point", 0.0)

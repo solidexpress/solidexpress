@@ -101,6 +101,12 @@ static func click_popup_label(popup: PopupMenu, label: String) -> bool:
 	return true
 
 
+static func popup_item_screen(popup: PopupMenu, idx: int) -> Vector2:
+	if popup == null:
+		return Vector2.ZERO
+	return Vector2(popup.position) + _popup_row_local(popup, idx)
+
+
 static func _popup_row_local(popup: PopupMenu, idx: int) -> Vector2:
 	var origin := Vector2.ZERO
 	var width := float(popup.size.x)

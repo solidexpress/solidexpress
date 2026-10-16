@@ -339,8 +339,10 @@ func _on_section_changed(_enabled: bool) -> void:
 func _sync_world_background() -> void:
 	if _world_env == null or _world_env.environment == null:
 		return
+	if presentation_lock:
+		show_scenic_bg = false
 	var e := _world_env.environment
-	var flat := not show_scenic_bg \
+	var flat := presentation_lock or not show_scenic_bg \
 			or (view != null and view.section_enabled) \
 			or (sketch_mode != null and sketch_mode.active)
 	if flat:
