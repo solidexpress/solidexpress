@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import re
 import sys
@@ -71,26 +72,56 @@ def head_ok(url: str, timeout: float) -> bool:
         return False
 
 
+def _api_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "sx-check-website-demos",
+        "Cache-Control": "no-cache",
+    }
+    # Unauthenticated calls share a 60/hr per-IP limit on CI runners and can
+    # be served stale; use the job token when one is present.
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _get_json(url: str, timeout: float):
+    req = urllib.request.Request(url, headers=_api_headers())
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
+
+
 def release_asset_names(api_url: str, timeout: float) -> set[str] | None:
     """Return asset filenames from the demo-movies Release, or None on failure.
 
     Prefer the Releases API over HEAD on download CDN URLs — CI runners often
     see flaky 404/redirect failures on releases/download even when assets exist.
+    Lists assets via the paginated /releases/<id>/assets endpoint so a large or
+    freshly-updated Release is never judged from a truncated embedded list.
     """
-    req = urllib.request.Request(
-        api_url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "sx-check-website-demos",
-        },
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode())
+        data = _get_json(api_url, timeout)
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
         return None
-    assets = data.get("assets") or []
-    return {str(a.get("name", "")) for a in assets if isinstance(a, dict)}
+    names = {str(a.get("name", "")) for a in (data.get("assets") or []) if isinstance(a, dict)}
+    assets_url = data.get("assets_url")
+    if assets_url:
+        paged: set[str] = set()
+        page = 1
+        try:
+            while True:
+                batch = _get_json(f"{assets_url}?per_page=100&page={page}", timeout)
+                if not isinstance(batch, list) or not batch:
+                    break
+                paged.update(str(a.get("name", "")) for a in batch if isinstance(a, dict))
+                if len(batch) < 100:
+                    break
+                page += 1
+            names |= paged
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+            pass
+    return names
 
 
 def main() -> int:
@@ -188,11 +219,14 @@ def main() -> int:
             if names is not None and want <= names:
                 break
             time.sleep(10)
-            names = release_asset_names(api, args.timeout) or names
+            names = (release_asset_names(api, args.timeout) or set()) | (names or set())
         if names is not None:
             for pid in published_ids:
                 asset = pid + ".webm"
-                if asset not in names:
+                # API still disagrees: confirm directly before failing.
+                if asset not in names and not (
+                    head_ok(base + asset, args.timeout) or head_ok(base + asset, args.timeout)
+                ):
                     errors.append(
                         f"Release WebM missing on demo-movies tag: {asset} "
                         f"(listed {len(names)} assets via API)"
