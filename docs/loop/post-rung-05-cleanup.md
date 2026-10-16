@@ -1,6 +1,6 @@
 # Post-rung-05 cleanup — layering, one fixture, then the flanged-pipe demo film
 
-Status: planned. Docs only. Baseline: `main` `8bd01c3` (`Rung 5: flanged pipe, mirror + circular pattern (9/10)`, PR #270; `git log 962a820..8bd01c3` is that one squash, +6,333 / −138, 59 files). Rung 5 walk 36/36. `check_rung05` final 10/10. Rung 1 walk 77/77. Rung 2 44/44. Rung 3 46/46. Rung 4 32/32. Headless: 228 run, 0 failed. Manifests on this sha: **232** (`75 ci`, `153 full`, `4 known-red`), so the tier runs `75 + 153 = 228`. Checklists: [`rung-05-plan.md`](rung-05-plan.md), [`rung-05-result.md`](rung-05-result.md). Previous cleanup, same shape: [`post-rung-03-cleanup.md`](post-rung-03-cleanup.md) (WP2 deletes it). What post-rung-4 shipped is [`post-rung-04-result.md`](post-rung-04-result.md) (PR #258): region pick, dummy `render=`, click budget, hexkey film.
+Status: planned. Docs only. Baseline: `main` `8bd01c3` (`Rung 5: flanged pipe, mirror + circular pattern (9/10)`, PR #270; `git log 962a820..8bd01c3` is that one squash, +6,333 / −138, 59 files). Rung 5 walk 36/36. `check_rung05` final 10/10. Rung 1 walk 77/77. Rung 2 44/44. Rung 3 46/46. Rung 4 32/32. Headless: 228 run, 0 failed. Manifests on this sha: **232** (`75 ci`, `153 full`, `4 known-red`), so the tier runs `75 + 153 = 228`. Checklists: [`rung-05-plan.md`](rung-05-plan.md), [`rung-05-result.md`](rung-05-result.md). Previous cleanup, same shape: history `git log -- docs/loop`. What post-rung-4 shipped is [`post-rung-04-result.md`](post-rung-04-result.md) (PR #258): region pick, dummy `render=`, click budget, hexkey film.
 
 **Prompt for ONE BUILD agent.** Execute the work packages below in order, one commit per WP, on the branch you were given. Push that branch. Do not open a PR. This file is the only prompt. Part A (WP1–WP5, and WP6–WP7 only when the ★ rule says so) does not change product behaviour. Part B (WP8–WP10) is the flanged-pipe film, its test, the rendered video, the poster, the how-to, and the website wiring. Part B is not optional and outranks every ★ WP. WP11 is the only full test pass. Do not build, walk, or run the tier before WP11 except for the cheap check named in that WP.
 
@@ -16,7 +16,7 @@ Rung 5 landed green as one squash. The new code already uses tables in the place
 | Missing `.uid` | `run_rung05_fillet.gd`, `run_rung05_mirror.gd`, `run_rung05_reshell.gd`, `sketch_vertical.gd`. Shell and CSP already have theirs. `class_name SketchVertical` has no uid | `game/tests/run_rung05_*.gd`, `game/scripts/sketch_vertical.gd` |
 | One starter, dummy by default | already true. `run_suites.sh` default `--jobs nproc`, per-job `HOME`, `--rendering-driver dummy` unless `render=viewport`. Smoke skips `film_<id>_tests.suite`. Pixel `render=viewport` stays parked (§9 / §10) | `packaging/ci/run_suites.sh`, `game/tests/run_film_manifest_smoke.gd`, `docs/plan/roadmap.md` §9–§10 |
 | Same film, two starters | 69 enabled films. `run_film_manifest_smoke.gd` runs those without a dedicated suite. `film_ubc_wrench_tests`, `film_lesson2_box_tests`, `film_tutor1_tests`, `film_hexkey_tests` own those four. A flanged-pipe suite would make a fifth double unless smoke skips it | `game/tests/run_film_manifest_smoke.gd`, `packaging/ci/suites.d/film_*_tests.suite` |
-| Spent loop docs | `post-rung-03-cleanup.md` says the next cleanup deletes it. Keep the live contracts (rung plans/results, post-rung-03/04 results, this file) | `docs/loop/README.md` |
+| Spent loop docs | the post-rung-3 cleanup plan (deleted; history: `git log -- docs/loop`). Keep the live contracts (rung plans/results, post-rung-03/04 results, this file) | `docs/loop/README.md` |
 | No rung-5 status entry | `docs/plan/STATUS.md` starts at Post-rung-4. The rung PR was told not to edit it | `STATUS.md` |
 
 Not in this pass (already parked, or a second painter that is doing a different job): splitting `SketchMode` / `ViewportInteraction` ([roadmap.md §7](../plan/roadmap.md)), the §8–§10 rows, pixel `render=viewport`, CommandBus, Jaw template. Kernel `FeatureMirror.POLICY`, `SketchCircularPattern.SPEC`, and `SketchOffset.KINDS` already exist — do not re-table them.
@@ -105,7 +105,7 @@ Goal: the loop directory keeps the live contract, STATUS names rung 5, four unre
 
 Files / symbols:
 
-- Delete `docs/loop/post-rung-03-cleanup.md` (this file replaces it; history: `git log -- docs/loop`).
+- Delete the spent post-rung-3 cleanup plan (this file replaces it; history: `git log -- docs/loop`).
 - Keep `rung-05-plan.md` and `rung-05-result.md`. Keep `post-rung-03-result.md` and `post-rung-04-result.md`. Keep `rung-04-prep.md` and `rung-04-checklist.md` (the rung-4 plan cites them).
 - `docs/loop/README.md`: list what remains and say this file is deleted by the next cleanup.
 - `docs/plan/STATUS.md`: add **Rung 5 — flanged pipe (PR #270)** above the Post-rung-4 entry. Shipped: two-face Shell chip, Circular Sketch Pattern 8/360 about origin, Feature Mirror (fuse New, skip Shell, one body), re-shell that does not thicken +Z walls, Fillet R5 on both flange outer faces, 36-row walk, `check_rung05.py`. Bars: the table in `rung-05-result.md`. Suites **228 run + 4 known-red**.
@@ -117,7 +117,7 @@ Change: `git rm` the spent doc. Grep the repo outside `.git` for that basename f
 
 Expected delta: about −400 lines of docs, −40 lines of code, +4 uid files.
 
-Check: C-grep finds no remaining path to `post-rung-03-cleanup.md` outside `.git`. C-tools. The GDScript finder and the Python finder print none of the four names. C-lint still `232 suites ok`.
+Check: C-grep finds no remaining path to the deleted cleanup-plan basename outside `.git`. C-tools. The GDScript finder and the Python finder print none of the four names. C-lint still `232 suites ok`.
 
 Revert: revert the commit if C-tools is red after two attempts. Doc deletions that already match the grep can stay only if the code deletion is what failed; in that case revert the whole commit anyway (one commit, one revert) and re-land the docs as a fresh commit with the same message plus `code deletions parked`.
 

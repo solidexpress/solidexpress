@@ -512,13 +512,6 @@ class WalkUI05(WalkChrome):
             self.click(sketch=[0.0, self.mm("PCD") + hole_r])
         self.refresh("selection", "status")
 
-    def features_of(self, kind: str) -> list[dict]:
-        found = []
-        for feat in self.refresh("features").get("features") or []:
-            if str(feat.get("type", "")) == kind:
-                found.append(feat)
-        return found
-
     def mirror_source_names(self) -> list[str]:
         by_type: dict[str, list[str]] = {}
         for feat in self.refresh("features").get("features") or []:

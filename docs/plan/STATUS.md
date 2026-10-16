@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Rung 5 — flanged pipe (PR #270)
+
+Shipped: two-face Shell chip, Circular Sketch Pattern 8/360 about origin, Feature Mirror (fuse New, skip Shell, one body), re-shell that does not thicken +Z walls, Fillet R5 on both flange outer faces, 36-row walk, `check_rung05.py`. Bars: the table in [`rung-05-result.md`](../loop/rung-05-result.md). Suites **228 run + 4 known-red**.
+
 ## Post-rung-4 cleanup (`cursor/post-rung-04-cleanup-20261015`)
 
 Shipped: `SketchRegions` (host-face split + click-to-index), `IntentResolver` on region pick (Cut + Through All), finish-bar contour chips hidden on a host face, wrench Trim kept (mouth cap pick parked), `SketchOffset.KINDS`, WP3 dummy `render=` + `run_tier` cache, click budget 129→92 on the wrench film, film `hexkey` + `docs/howto/hexkey.md`. Counts: `docs/loop/post-rung-04-result.md`. Confirm: walks 77/77, 44/44, 46/46, 32/32; headless 223/0.

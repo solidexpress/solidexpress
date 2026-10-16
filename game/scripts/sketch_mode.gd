@@ -2632,13 +2632,6 @@ func _region_index_at(uv: Vector2) -> int:
 	return -1
 
 
-func _try_pick_region(uv: Vector2) -> void:
-	var idx := _region_index_at(uv)
-	if idx < 0:
-		return
-	_apply_region_pick(idx)
-
-
 func _apply_region_pick(idx: int) -> void:
 	var chrome := _sketch_chrome()
 	if chrome != null and chrome.has_method("pick_region"):
@@ -3335,39 +3328,6 @@ func apply_circular_pattern() -> Array:
 	for id2 in new_ids:
 		out.append(id2)
 	return out
-
-
-func _selection_centroid() -> Vector2:
-	var sum := Vector2.ZERO
-	var n := 0
-	for id in selected:
-		for ep in _snap_endpoints(id):
-			sum += ep
-			n += 1
-	return sum / float(n) if n > 0 else Vector2.ZERO
-
-
-func _add_rotated_copy(info: Dictionary, c: Vector2, ca: float, sa: float,
-		out_ids: PackedStringArray) -> void:
-	var rot := func(p: Vector2) -> Vector2:
-		var d := p - c
-		return c + Vector2(d.x * ca - d.y * sa, d.x * sa + d.y * ca)
-	match str(info.get("type", "")):
-		"line":
-			var a: Vector2 = rot.call(info["start"])
-			var b: Vector2 = rot.call(info["end"])
-			out_ids.append(sketch.add_line(a.x, a.y, b.x, b.y))
-		"circle":
-			var ctr: Vector2 = rot.call(info["center"])
-			out_ids.append(sketch.add_circle(ctr.x, ctr.y, float(info["radius"])))
-		"arc":
-			var ctr2: Vector2 = rot.call(info["center"])
-			out_ids.append(sketch.add_arc(ctr2.x, ctr2.y, float(info["radius"]),
-					float(info["start_angle"]) + atan2(sa, ca),
-					float(info["end_angle"]) + atan2(sa, ca)))
-		"point":
-			var p: Vector2 = rot.call(info.get("position", Vector2.ZERO))
-			out_ids.append(sketch.add_point(p.x, p.y))
 
 
 ## Mirror selected entities about a selected line axis (or sketch Y if none).

@@ -290,6 +290,14 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 
 ---
 
+## 11. Structural debt found after rung 5
+
+| Item | What | Design | Why parked |
+|---|---|---|---|
+| Pixel `render=viewport` | `rung03_section` framebuffer | Start Godot on X11 + Vulkan without dummy | §9: removed-half sample is the cap colour. Do not reopen it in this pass |
+
+---
+
 ## Related
 
 - [README.md](README.md) — plan index (park later ideas here, not in chat)
@@ -301,4 +309,6 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 - [STATUS.md](STATUS.md) — what has landed
 - §8 — structural debt found after rung 2
 - §9 — structural debt found after rung 3
+- §10 — structural debt found after rung 4
+- §11 — structural debt found after rung 5
 - [education-research.md](../education-research.md) — how the command names should be taught
