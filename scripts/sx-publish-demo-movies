@@ -145,6 +145,33 @@ if [[ "${SX_SKIP_UPLOAD:-}" == "" ]]; then
   fi
   echo "uploading ${#assets[@]} assets to $REPO@$TAG"
   gh release upload "$TAG" -R "$REPO" --clobber "${assets[@]}"
+  # gh upload can return before the Releases API lists every asset; the
+  # trailing sx-check then false-fails (run 38918525777 saw 24/37 for ~2min).
+  echo "waiting for Releases API to list all curated WebMs..."
+  release_id="$(gh api "repos/$REPO/releases/tags/$TAG" --jq .id)"
+  missing=("${IDS[@]}")
+  deadline=$((SECONDS + 600))
+  while (( SECONDS < deadline )); do
+    mapfile -t listed < <(gh api "repos/$REPO/releases/$release_id/assets?per_page=100" --paginate --jq '.[].name')
+    missing=()
+    for id in "${IDS[@]}"; do
+      found=0
+      for n in "${listed[@]}"; do
+        if [[ "$n" == "${id}.webm" ]]; then found=1; break; fi
+      done
+      if [[ $found -eq 0 ]]; then missing+=("${id}.webm"); fi
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+      echo "Release listing has all ${#IDS[@]} curated WebMs (${#listed[@]} assets total)"
+      break
+    fi
+    echo "  still missing ${#missing[@]} (${missing[*]}) — retry in 15s"
+    sleep 15
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "sx-publish-demo-movies: Releases API still missing: ${missing[*]}" >&2
+    exit 1
+  fi
   if [[ "$CLI_IDS" -eq 0 ]]; then
     # Full curated publish: drop stale non-curated webms/posters/vtts.
     mapfile -t KEEP < <(curated_ids)
