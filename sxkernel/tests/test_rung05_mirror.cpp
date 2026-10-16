@@ -1,17 +1,22 @@
 // Rung 5 WP4 — feature-mirror the four PDF features about z = 0.
 // One body, −Z half solid; Shell in the list is a skip, not a fail.
+// WP6 continues: re-shell the −Z half; +Z walls stay 10.
 
 #include <catch.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
 
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
+#include <BRepIntCurveSurface_Inter.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Lin.hxx>
 #include <gp_Pnt.hxx>
 
 #include "sx/document.hpp"
@@ -28,6 +33,7 @@ namespace {
 const double kPi = 3.14159265358979323846;
 const double kMirrorVol = 6034606.788;
 const double kShelled = 1099557.429;
+const double kReshell = 2716299.548;
 
 bool point_inside(const TopoDS_Shape& shape, const gp_Pnt& p) {
     for (TopExp_Explorer ex(shape, TopAbs_SOLID); ex.More(); ex.Next()) {
@@ -66,6 +72,60 @@ std::shared_ptr<Sketch> flange_cut_sketch() {
         sk->add_circle(94.0 * std::sin(ang), 94.0 * std::cos(ang), 5.0);
     }
     return sk;
+}
+
+std::vector<double> ray_hits(const TopoDS_Shape& shape, const gp_Pnt& origin, const gp_Dir& dir) {
+    BRepIntCurveSurface_Inter inter;
+    inter.Init(shape, gp_Lin(origin, dir), 1e-6);
+    std::vector<double> ts;
+    for (; inter.More(); inter.Next()) ts.push_back(inter.W());
+    std::sort(ts.begin(), ts.end());
+    std::vector<double> unique;
+    for (double t : ts) {
+        if (unique.empty() || std::abs(t - unique.back()) > 1e-4) unique.push_back(t);
+    }
+    return unique;
+}
+
+json planar_faces_at_z(const Document& doc, const Body& body, double z, double nz) {
+    json out = json::array();
+    for (const auto& fid : body.subshape_ids.at(EntityKind::Face)) {
+        TopoDS_Shape fs = doc.resolve(fid);
+        if (fs.IsNull() || fs.ShapeType() != TopAbs_FACE) continue;
+        const TopoDS_Face face = TopoDS::Face(fs);
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() != GeomAbs_Plane) continue;
+        gp_Dir n = surf.Plane().Axis().Direction();
+        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        if (nz != 0.0 && n.Z() * nz < 0.99) continue;
+        auto pick = measure::face_pick_point(doc, fid);
+        if (!pick) continue;
+        const double fz = (*pick)[2];
+        if (std::abs(fz - z) > 0.5) continue;
+        out.push_back(fid.str());
+    }
+    return out;
+}
+
+std::string dump_planar_z(const Document& doc, const Body& body) {
+    std::string s;
+    for (const auto& fid : body.subshape_ids.at(EntityKind::Face)) {
+        TopoDS_Shape fs = doc.resolve(fid);
+        if (fs.IsNull() || fs.ShapeType() != TopAbs_FACE) continue;
+        const TopoDS_Face face = TopoDS::Face(fs);
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() != GeomAbs_Plane) continue;
+        gp_Dir n = surf.Plane().Axis().Direction();
+        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        if (std::abs(n.Z()) < 0.99) continue;
+        auto pick = measure::face_pick_point(doc, fid);
+        const double fz = pick ? (*pick)[2] : 1e9;
+        s += " nZ=" + std::to_string(n.Z()) + " z=" + std::to_string(fz);
+        if (pick)
+            s += " r=" + std::to_string(std::hypot((*pick)[0], (*pick)[1]));
+        s += ";";
+    }
+    return s;
 }
 
 json planar_z_faces(const Document& doc, const Body& body) {
@@ -167,6 +227,23 @@ PipeCut add_cut_pipe(FeatureGraph& graph, Document& doc) {
     return ids;
 }
 
+EntityId add_mirrored_pipe(FeatureGraph& graph, Document& doc) {
+    const PipeCut ids = add_cut_pipe(graph, doc);
+    Feature mir;
+    mir.type = FeatureType::Mirror;
+    mir.name = "mirror";
+    mir.params = {{"source_feature_ids", json::array({ids.ext.str(), ids.shell.str(), ids.flange.str(),
+                                                      ids.cut.str()})},
+                  {"plane_point", json::array({0.0, 0.0, 0.0})},
+                  {"plane_normal", json::array({0.0, 0.0, 1.0})},
+                  {"target", ids.ext.str()}};
+    graph.add(std::move(mir));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    INFO(err);
+    return ids.ext;
+}
+
 }  // namespace
 
 TEST_CASE("rung05 feature-mirror of four PDF features is one solid half", "[rung05][mirror]") {
@@ -266,4 +343,61 @@ TEST_CASE("rung05 feature-mirror skips Shell-only as a no-op", "[rung05][mirror]
     CHECK_FALSE(point_inside(after->shape, gp_Pnt(0, 0, 125)));
     REQUIRE_FALSE(graph.warnings().empty());
     CHECK(graph.warnings().front().second.find("skipped shell") != std::string::npos);
+}
+
+TEST_CASE("rung05 re-shell of mirrored half keeps +Z walls 10", "[rung05][reshell]") {
+    Document doc;
+    FeatureGraph graph;
+    const EntityId ext_id = add_mirrored_pipe(graph, doc);
+    const Body* mirrored = doc.body(graph.feature(ext_id)->output_body);
+    REQUIRE(mirrored != nullptr);
+    REQUIRE(point_inside(mirrored->shape, gp_Pnt(0, 0, -125)));
+
+    INFO(dump_planar_z(doc, *mirrored));
+    json remove = planar_faces_at_z(doc, *mirrored, -260.0, 0.0);
+    REQUIRE_FALSE(remove.empty());
+    const json plug_neg = planar_faces_at_z(doc, *mirrored, 0.0, -1.0);
+    const json plug_pos = planar_faces_at_z(doc, *mirrored, 0.0, 1.0);
+    for (const auto& id : plug_neg) remove.push_back(id);
+    for (const auto& id : plug_pos) remove.push_back(id);
+
+    Feature sh;
+    sh.type = FeatureType::Shell;
+    sh.name = "reshell";
+    sh.params = {{"target", ext_id.str()}, {"faces", remove}, {"thickness", 10.0}};
+    graph.add(std::move(sh));
+    std::string err;
+    const bool ok = graph.regenerate(doc, &err);
+    INFO(err);
+    REQUIRE(ok);
+
+    REQUIRE(doc.body_ids().size() == 1);
+    const Body* body = doc.body(graph.feature(ext_id)->output_body);
+    REQUIRE(body != nullptr);
+    REQUIRE(shape::is_valid(body->shape));
+    REQUIRE(solid_count(body->shape) == 1);
+    REQUIRE(shape::volume(body->shape) == Approx(kReshell).epsilon(0.005));
+    CHECK_FALSE(point_inside(body->shape, gp_Pnt(0, 0, -125)));
+    CHECK_FALSE(point_inside(body->shape, gp_Pnt(0, 0, 125)));
+    CHECK(point_inside(body->shape, gp_Pnt(70, 0, 125)));
+    CHECK(point_inside(body->shape, gp_Pnt(70, 0, -125)));
+
+    auto hits_at = [&](double z) {
+        const auto ts = ray_hits(body->shape, gp_Pnt(-150.0, 0.0, z), gp_Dir(1.0, 0.0, 0.0));
+        std::vector<double> xs;
+        for (double t : ts) xs.push_back(-150.0 + t);
+        return xs;
+    };
+    const auto pos = hits_at(125.0);
+    const auto neg = hits_at(-125.0);
+    REQUIRE(pos.size() == 4);
+    REQUIRE(neg.size() == 4);
+    CHECK(pos[0] == Approx(-75.0).margin(0.2));
+    CHECK(pos[1] == Approx(-65.0).margin(0.2));
+    CHECK(pos[2] == Approx(65.0).margin(0.2));
+    CHECK(pos[3] == Approx(75.0).margin(0.2));
+    CHECK(neg[0] == Approx(-75.0).margin(0.2));
+    CHECK(neg[1] == Approx(-65.0).margin(0.2));
+    CHECK(neg[2] == Approx(65.0).margin(0.2));
+    CHECK(neg[3] == Approx(75.0).margin(0.2));
 }
