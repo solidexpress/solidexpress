@@ -95,10 +95,14 @@ func run_film(ctx: FilmContext) -> void:
 		FilmUI._fail("hull loft failed (vol %.1f)" % vol)
 		return
 	await ctx.beat("Hull loft — U transom into an oval bow")
+	if main.has_method("film_prepare_outro"):
+		main.film_prepare_outro()
+	if ctx.view != null and ctx.view.sketch_pads != null:
+		ctx.view.sketch_pads.visible = false
 	if ctx.camera != null:
-		ctx.camera.iso_yaw_deg = 68.0
-		ctx.camera.iso_pitch_deg = 16.0
-	await actor.frame_look(Vector3(0, 0, 0), 68.0, 16.0, 155.0, "Quarter the hull")
+		ctx.camera.iso_yaw_deg = 52.0
+		ctx.camera.iso_pitch_deg = 28.0
+	await actor.frame_look(Vector3(0, 0, 0), 52.0, 28.0, 88.0, "Quarter the hull")
 	await actor.orbit_yaw(48.0, 3.2, "Orbit the hull")
 	ctx.showcase_played = true
 	await actor.result_pause()
