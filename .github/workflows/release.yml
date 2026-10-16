@@ -357,7 +357,7 @@ jobs:
     # Independent job: renders curated website films and publishes WebMs/posters.
     runs-on: ubuntu-24.04
     env:
-      LD_LIBRARY_PATH: /opt/occt-${{ env.OCCT_VERSION }}/lib
+      LD_LIBRARY_PATH: /opt/occt-8.0.1/lib  # keep in sync with OCCT_VERSION (env context not allowed at job level)
     steps:
       - uses: actions/checkout@v4
         with:
