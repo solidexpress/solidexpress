@@ -28,9 +28,9 @@ const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## radius with the view, capped so a zoomed-out part does not select everything.
 const PICK_SCREEN_PX := 14.0
 const PICK_TOLERANCE_MAX_MM := 8.0
-## Circle/arc Select stroke, as a fraction of radius. The inner disk stays
-## a region (lesson 2 Ø10). Lines keep the 0.75 mm world stroke.
-const STROKE_FILL_FRAC := 0.25
+## Circle/arc Select: the inner half of the disk is fill (lesson 2 hole);
+## the rim band is the outer half plus pick_tol (A12 Vertical).
+const STROKE_FILL_FRAC := 0.5
 const SNAP_RADIUS := 1.25  # tighter magnet (Fusion/Onshape-scale at typical zoom)
 const GLYPH_PICK_RADIUS := 2.0  # constraint badges are small, precise targets
 
@@ -2496,8 +2496,7 @@ func _shift_adds_circle(id: String) -> bool:
 	return false
 
 
-## Stroke width for Select: rim vs region fill. Lines stay 0.75 mm so a
-## slot floor is still a face; circles use a fraction of their own radius.
+## Stroke width for Select: rim vs region fill. Lines stay 0.75 mm.
 func _stroke_mm() -> float:
 	return minf(0.75, _pick_tolerance() * 0.35)
 
@@ -2506,11 +2505,15 @@ func _on_stroke(id: String, pos2: Vector2) -> bool:
 	if sketch == null or id == "":
 		return false
 	var info: Dictionary = sketch.entity_info(id)
-	var cap := _stroke_mm()
 	var kind := str(info.get("type", ""))
 	if kind == "circle" or kind == "arc":
-		cap = maxf(cap, float(info.get("radius", 0.0)) * STROKE_FILL_FRAC)
-	return _entity_distance(info, pos2) < cap
+		var centre: Vector2 = info["center"]
+		var radius := float(info.get("radius", 0.0))
+		var dc := pos2.distance_to(centre)
+		if dc < radius * STROKE_FILL_FRAC:
+			return false
+		return absf(dc - radius) < _pick_tolerance()
+	return _entity_distance(info, pos2) < _stroke_mm()
 
 
 ## Entity id under an in-progress SELECT drag, or "".
@@ -8152,8 +8155,9 @@ func _segments_share_endpoint(a: Dictionary, b: Dictionary) -> bool:
 	return false
 
 
-## Select on a circle's stroke picks the curve (A12 −X rim). Letters
-## still open the editor when the click is off the stroke.
+## Select on a circle's own diameter/radius: the curve wins when it is
+## nearer than the letters or tied (A12 −X rim). A click on the letters
+## still opens the editor.
 func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
 	if tool != Tool.SELECT or index < 0 or index >= dimensions.size():
 		return false
@@ -8166,7 +8170,13 @@ func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
 	var eid := str(ids[0])
 	if _nearest_entity_at(pos2) != eid:
 		return false
-	return _on_stroke(eid, pos2)
+	var lp: Variant = _dimension_label_pos2(dim)
+	if lp != null:
+		var to_letters := pos2.distance_to(lp as Vector2)
+		var to_curve := _entity_distance(sketch.entity_info(eid), pos2)
+		if to_letters < to_curve:
+			return false
+	return true
 
 
 ## Nudge labels (never glyphs) along the label_stack axis until no label
