@@ -541,6 +541,12 @@ func _send_key(key: Key, pressed: bool, unicode: int, flags: Dictionary) -> void
 	ev.ctrl_pressed = bool(flags.get("ctrl", false)) or bool(_mods["ctrl"])
 	ev.alt_pressed = bool(flags.get("alt", false)) or bool(_mods["alt"])
 	ev.meta_pressed = bool(flags.get("meta", false)) or bool(_mods["meta"])
+	# push_input delivers to the tree but does not update Input.is_key_pressed.
+	# A12's Shift+second circle reads that singleton (and the mouse event's
+	# shift flag is overwritten from it). parse_input_event is the keyboard.
+	if _is_pure_mod(key):
+		Input.parse_input_event(ev)
+		Input.flush_buffered_events()
 	_key_viewport().push_input(ev)
 
 

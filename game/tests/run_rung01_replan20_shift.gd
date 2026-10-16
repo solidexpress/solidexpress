@@ -269,6 +269,25 @@ func _case_shift_second_circle(ctx: FilmContext) -> void:
 			"Shift+fill on the second circle keeps both (got %s)" % str(_sm.selected))
 	check(_sm.selection_actions().has("vertical"),
 			"two circles offer Vertical (got %s)" % str(_sm.selection_actions()))
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(-10, -25)), false)
+	await process_frame
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(46, 36)), false)
+	await process_frame
+	var sh := InputEventKey.new()
+	sh.keycode = KEY_SHIFT
+	sh.physical_keycode = KEY_SHIFT
+	sh.pressed = true
+	sh.shift_pressed = true
+	Input.parse_input_event(sh)
+	await process_frame
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(40, 70)), false)
+	await process_frame
+	await process_frame
+	sh.pressed = false
+	sh.shift_pressed = false
+	Input.parse_input_event(sh)
+	check(_has(_circle) and _has(hole),
+			"Input Shift + fill mouse (no event flag) keeps both (got %s)" % str(_sm.selected))
 
 
 func _click_at(vp: Viewport, pos: Vector2, shift: bool) -> void:

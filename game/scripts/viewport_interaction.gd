@@ -3851,7 +3851,9 @@ func _sketch_input(event: InputEvent) -> void:
 						and sketch_mode.constraint_hit(p2) == "" \
 						and not _dimension_blocks_curve(p2) \
 						and not sketch_mode.drag_hit(p2).is_empty():
-					_note_click("sketch-drag:" + tool_key, mb.position)
+					var drag_mods := _press_modifiers(mb)
+					_note_click("sketch-drag:" + tool_key, mb.position,
+							bool(drag_mods["shift"]), bool(drag_mods["additive"]))
 					sketch_mode.begin_drag(p2)
 					_sketch_dragging = true
 				elif typeof(typed_len) == TYPE_FLOAT or typeof(typed_len) == TYPE_INT:
