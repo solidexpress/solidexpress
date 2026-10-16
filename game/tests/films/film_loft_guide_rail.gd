@@ -10,9 +10,7 @@ func run_film(ctx: FilmContext) -> void:
 	var doc: SxDocument = ctx.view.doc
 	var sm: SketchMode = main.sketch_mode
 
-	await ctx.movie_toast("Loft with a guide rail (open pad steers the waist)", 1.9)
-
-	await ctx.beat("Sketch a large circle on the ground plane", 0.5)
+	await ctx.beat("Sketch a large circle on the ground plane", 0.08)
 	await FilmUI.enter_sketch(ctx)
 	await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(10, 0))
 	var fid_bot := await FilmUI.exit_sketch(ctx)
@@ -21,7 +19,7 @@ func run_film(ctx: FilmContext) -> void:
 		await ctx.beat("Bottom profile failed", 1.0)
 		return
 
-	await ctx.beat("Place a box, then sketch a smaller circle on its top face", 0.55)
+	await ctx.beat("Place a box, then sketch a smaller circle on its top face", 0.08)
 	await FilmUI.place_primitive(ctx, "box")
 	await ctx.after_regen()
 	var bodies: Array = doc.body_ids()
@@ -42,7 +40,7 @@ func run_film(ctx: FilmContext) -> void:
 		await ctx.beat("Top profile failed", 1.0)
 		return
 
-	await ctx.beat("Sketch an open guide rail beside the profiles", 0.55)
+	await ctx.beat("Sketch an open guide rail beside the profiles", 0.08)
 	await FilmUI.enter_sketch(ctx)
 	sm = main.sketch_mode
 	# Single segment stays cyan (rail); Auto-close needs 2+ segments.
@@ -56,7 +54,7 @@ func run_film(ctx: FilmContext) -> void:
 		await ctx.beat("Guide pad is not an open rail", 1.0)
 		return
 
-	await ctx.beat("Hide the box, then Ctrl+click top, guide, and bottom pads", 0.55)
+	await ctx.beat("Hide the box, then Ctrl+click top, guide, and bottom pads", 0.08)
 	await FilmUI.clear_pad_selection(ctx)
 	var hide_btn := FilmUI.find_button(main, "Hide")
 	if hide_btn != null and hide_btn.is_visible_in_tree():
@@ -79,7 +77,7 @@ func run_film(ctx: FilmContext) -> void:
 		await ctx.beat("Need two profiles plus the guide rail selected", 1.0)
 		return
 
-	await ctx.beat("Loft smooth — open rail becomes a guide curve", 0.55)
+	await ctx.beat("Loft smooth — open rail becomes a guide curve", 0.08)
 	main._refresh_merge_chrome()
 	await ctx.tree.process_frame
 	await FilmUI.loft_profiles_ui(ctx, false)
@@ -109,5 +107,4 @@ func run_film(ctx: FilmContext) -> void:
 		await ctx.beat("Guided loft failed", 1.0)
 		return
 
-	await ctx.beat("Guided loft solid — %.0f mm³" % absf(vol), 0.7)
-	await ctx.camera.showcase_smooth(1.4, 40.0)
+	await ctx.beat("Guided loft solid — %.0f mm³" % absf(vol), 0.12)

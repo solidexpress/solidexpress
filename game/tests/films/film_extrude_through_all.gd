@@ -6,9 +6,7 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 func run_film(ctx: FilmContext) -> void:
 	var doc: SxDocument = ctx.view.doc
 	var sm: SketchMode = ctx.main.sketch_mode
-	await ctx.movie_toast("Through-all cut — plate thickness stays put", 1.6)
-
-	await ctx.beat("Place a plate", 0.4)
+	await ctx.beat("Place a plate", 0.25)
 	await FilmUI.place_primitive(ctx, "box")
 	await ctx.after_regen()
 	var plate := FilmUI.last_feature_id(doc, "primitive")
@@ -21,7 +19,7 @@ func run_film(ctx: FilmContext) -> void:
 		var bb: Dictionary = doc.measure_bbox(plate_body)
 		z0 = (bb["max"] as Vector3).z - (bb["min"] as Vector3).z
 
-	await ctx.beat("Sketch a pocket on the top and extrude", 0.45)
+	await ctx.beat("Sketch a pocket on the top and extrude", 0.3)
 	await FilmUI.enter_sketch(ctx)
 	await FilmUI.draw_polyline(ctx, sm, PackedVector2Array([
 		Vector2(10, 10), Vector2(30, 10), Vector2(30, 30), Vector2(10, 30), Vector2(10, 10),
@@ -41,7 +39,6 @@ func run_film(ctx: FilmContext) -> void:
 		var bb2: Dictionary = doc.measure_bbox(plate_body)
 		z1 = (bb2["max"] as Vector3).z - (bb2["min"] as Vector3).z
 		vol = doc.body_volume(plate_body)
-	await ctx.beat("Thickness %.1f mm (was %.1f) — hole through, stock unchanged" % [z1, z0], 0.9)
+	await ctx.beat("Thickness %.1f mm (was %.1f) — hole through, stock unchanged" % [z1, z0], 0.6)
 	if vol > 0.0:
-		await ctx.beat("Volume %.0f mm³ after the through cut" % vol, 0.5)
-	await ctx.camera.showcase_smooth(1.2, 36.0)
+		await ctx.beat("Volume %.0f mm³ after the through cut" % vol, 0.35)

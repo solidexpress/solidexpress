@@ -19,30 +19,28 @@ func run_film(ctx: FilmContext) -> void:
 	var main = ctx.main
 	var sm: SketchMode = main.sketch_mode
 
-	await ctx.movie_toast("Sketch tools — blocks, splines, and extend", 1.6)
-
-	await ctx.beat("Enter sketch mode", 0.45)
+	await ctx.beat("Enter sketch mode", 0.3)
 	await FilmUI.enter_sketch(ctx)
 
-	await ctx.beat("Create a line and save it as a block", 0.4)
+	await ctx.beat("Create a line and save it as a block", 0.25)
 	var a: String = sm.sketch.add_line(0, 0, 5, 0)
 	sm._set_selected([a])
 	sm.create_block("Blk1")
 	sm.place_block("Blk1", Vector2(0, 6))
 	_reframe(sm)
 	await FilmUI.wait_frames(ctx.tree, 2)
-	await ctx.clock.wait_sec(ctx.tree, 0.35)
+	await ctx.clock.wait_sec(ctx.tree, 0.2)
 
-	await ctx.beat("Fit a spline through successive clicks", 0.4)
+	await ctx.beat("Fit a spline through successive clicks", 0.25)
 	var sketch_pts := PackedVector2Array([
 		Vector2(0, 10), Vector2(4, 12), Vector2(8, 10),
 	])
 	_reframe(sm)
 	await FilmUI.wait_frames(ctx.tree, 2)
 	await FilmUI.draw_spline_through(ctx, sm, sketch_pts)
-	await ctx.clock.wait_sec(ctx.tree, 0.4)
+	await ctx.clock.wait_sec(ctx.tree, 0.2)
 
-	await ctx.beat("Sketch a short line and a vertical target, then Extend", 0.45)
+	await ctx.beat("Sketch a short line and a vertical target, then Extend", 0.25)
 	var _line: String = sm.sketch.add_line(0, -4, 6, -4)
 	var _target: String = sm.sketch.add_line(10, -7, 10, -1)
 	_reframe(sm)
@@ -56,10 +54,9 @@ func run_film(ctx: FilmContext) -> void:
 	var cue: Dictionary = FilmUICues.tool_keys(SketchMode.Tool.EXTEND)
 	await ctx.chrome.animate_pointer_click(screen, str(cue.keys), str(cue.desc))
 	sm.extend_at(hit)
-	await ctx.clock.wait_sec(ctx.tree, 0.5)
+	await ctx.clock.wait_sec(ctx.tree, 0.25)
 	ctx.chrome.clear_keys()
 
 	await FilmUI.exit_sketch(ctx)
 	await ctx.after_regen()
-	await ctx.beat("Block, spline, and extended line on one pad", 0.8)
-	await ctx.camera.showcase_smooth(1.0, 32.0)
+	await ctx.beat("Block, spline, and extended line on one pad", 0.4)

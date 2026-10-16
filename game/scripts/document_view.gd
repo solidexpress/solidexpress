@@ -62,6 +62,9 @@ var hovered_face := ""
 var hovered_edge := ""
 var display_mode := DisplayMode.SHADED_EDGES
 var _scenic_reflections := false
+## Presentation-only body albedo/emission (films). a=0 means off.
+var _film_part_color := Color(0, 0, 0, 0)
+var _film_part_emission := 0.0
 ## True while a section (clipping) plane is active on body meshes.
 ## Edge overlay lines are not clipped in v1.
 var section_enabled := false
@@ -75,6 +78,9 @@ var _thin_faces := {}        # face_id -> true
 var _overhang_faces := {}    # face_id -> true
 ## Body ids currently hidden from view / picking (id -> true).
 var hidden_bodies := {}
+## Origin-plane quads (Front/Top/Right). Films hide these so the camera is
+## not inside huge translucent sheets.
+var origin_planes_visible := true
 ## Body ids remembered by Copy/Cut for Paste (cut clones may be hidden).
 var _clipboard_bodies: Array[String] = []
 ## Pastes since last copy — scales the XY offset so each paste lands further away.
@@ -233,6 +239,31 @@ func set_scenic_reflections(on: bool) -> void:
 	_scenic_reflections = on
 	_refresh_body_material_params()
 	refresh()
+
+
+func apply_film_body_look(color: Color, emission_energy: float = 0.16) -> void:
+	_film_part_color = color
+	_film_part_emission = emission_energy
+	_refresh_film_body_materials()
+
+
+func _film_part_look() -> bool:
+	return _film_part_color.a > 0.01
+
+
+func _refresh_film_body_materials() -> void:
+	if not _film_part_look():
+		return
+	for mid in _body_materials.keys():
+		var m: ShaderMaterial = _body_materials[mid]
+		if m != null:
+			m.set_shader_parameter("albedo_color", _film_part_color)
+			m.set_shader_parameter("metallic", _body_metal())
+			m.set_shader_parameter("roughness", _body_rough())
+			m.set_shader_parameter("emission_energy", _film_part_emission)
+	if _base_material != null:
+		_base_material.set_shader_parameter("albedo_color", _film_part_color)
+		_base_material.set_shader_parameter("emission_energy", _film_part_emission)
 
 
 func _body_metal() -> float:
@@ -2568,6 +2599,11 @@ func instance_node(instance_id: String) -> MeshInstance3D:
 	return _instance_nodes.get(instance_id)
 
 
+func set_origin_planes_visible(on: bool) -> void:
+	origin_planes_visible = on
+	_refresh_datums()
+
+
 func _refresh_datums() -> void:
 	var live := {}
 	for d in doc.datum_list():
@@ -2592,9 +2628,10 @@ func _rebuild_datum(d: Dictionary) -> void:
 	var mi := node as MeshInstance3D
 	match kind:
 		"plane":
-			mi.mesh = _make_datum_plane_mesh(d)
+			mi.mesh = _make_datum_plane_mesh(d) if origin_planes_visible else null
 			mi.material_override = _datum_plane_material
 			mi.transform = Transform3D.IDENTITY
+			mi.visible = origin_planes_visible
 		"axis":
 			mi.mesh = _make_datum_axis_mesh(d)
 			mi.material_override = _datum_axis_material
@@ -2719,7 +2756,9 @@ func _rebuild_body(body_id: String) -> void:
 			else Transform3D.IDENTITY
 	node.mesh = doc.get_mesh(body_id)
 	_face_ids[body_id] = doc.get_face_ids(body_id)
-	_body_materials[body_id] = _make_material(doc.get_body_color(body_id))
+	var albedo := _film_part_color if _film_part_look() else doc.get_body_color(body_id)
+	var emit := _film_part_emission if _film_part_look() else 0.0
+	_body_materials[body_id] = _make_material(albedo, emit)
 	_rebuild_edges(node.get_node("Edges") as MeshInstance3D, body_id)
 	var shown := not hidden_bodies.has(body_id)
 	node.visible = shown

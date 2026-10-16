@@ -31,12 +31,15 @@ func _draw() -> void:
 	draw_circle(center, 5.0, Color(1, 1, 1, 0.95))
 
 
-func play_click_flash() -> void:
+func play_click_flash(sec: float = 0.12) -> void:
 	if _flash_tween != null and _flash_tween.is_valid():
 		_flash_tween.kill()
+	var dur := maxf(sec, 0.06)
+	var up := minf(0.05, dur * 0.4)
+	var down := maxf(0.04, dur - up)
 	_flash_tween = create_tween()
-	_flash_tween.tween_method(_set_flash, 0.0, 1.0, 0.07)
-	_flash_tween.tween_method(_set_flash, 1.0, 0.0, 0.2)
+	_flash_tween.tween_method(_set_flash, 0.0, 1.0, up)
+	_flash_tween.tween_method(_set_flash, 1.0, 0.0, down)
 	await _flash_tween.finished
 
 

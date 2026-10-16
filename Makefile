@@ -87,7 +87,7 @@ sync-website:
 
 # Fail if the marketing site would show a demo whose WebM/poster is missing.
 check-website-demos:
-	chmod +x scripts/sx-check-website-demos
+	chmod +x scripts/sx-check-website-demos tools/website_demos.py
 	./scripts/sx-check-website-demos
 
 fetch-godot-templates:

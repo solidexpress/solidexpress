@@ -7,59 +7,112 @@
   },
   "featured": [
     {
-      "id": "pliers_motion",
-      "title": "Assemblies that move",
-      "blurb": "Mate jaws to a pin — leftover revolute DOF lets you drag the pliers open and closed."
-    },
-    {
-      "id": "extrude_cylinder",
-      "title": "Sketch → dimension → extrude",
-      "blurb": "Draw closed profiles, drive them with dimensions, and extrude solid bodies."
-    },
-    {
-      "id": "path_merge_sweep",
-      "title": "Path merge → sweep",
-      "blurb": "Merge open sketch pads into a path, then sweep a profile into a solid."
-    },
-    {
-      "id": "loft_guide_rail",
-      "title": "Loft with a guide rail",
-      "blurb": "Two circular profiles plus an open rail that steers the waist of the loft."
-    },
-    {
-      "id": "precision_plate",
-      "title": "Precision plate",
-      "blurb": "Place a plate and snap holes inset from the corners — dimensions you can trust."
-    },
-    {
-      "id": "revolve_washer",
-      "title": "Revolve a washer",
-      "blurb": "Sketch a profile offset from an axis and revolve it 360° into a washer."
-    },
-    {
-      "id": "sketch_edit_in_out",
-      "title": "Edit a sketch pad",
-      "blurb": "Exit a sketch to a yellow pad, reopen it, and keep editing the same profile."
+      "id": "ubc_wrench",
+      "feature": "Parametric wrench",
+      "title": "Parametric wrench, end to end",
+      "blurb": "Blank part to a printable wrench: sketch, shaft, jaw, slot, fillets.",
+      "caption": "Blank part to a printable wrench: sketch, shaft, jaw, slot, fillets.",
+      "order": 0,
+      "hero": true
     },
     {
       "id": "sketch_tools",
+      "feature": "Sketch tools",
       "title": "Sketch tools",
-      "blurb": "Block and fit a spline, then extend — the everyday sketch toolset."
+      "blurb": "Line, circle, spline, trim, and extend \u2014 the everyday sketch toolset.",
+      "caption": "Line, circle, spline, trim, and extend \u2014 the everyday sketch toolset.",
+      "order": 1,
+      "hero": false
     },
     {
-      "id": "ubc_wrench",
-      "title": "Parametric wrench: blank to 3MF",
-      "blurb": "Blank part to a printable 3MF: circles, shaft, open jaw, slot, fillets, thickness 14."
+      "id": "extrude_through_all",
+      "feature": "Extrude & cut",
+      "title": "Extrude & cut",
+      "blurb": "Boss and through-all cut from a sketch. Thickness stays put.",
+      "caption": "Boss and through-all cut from a sketch. Thickness stays put.",
+      "order": 2,
+      "hero": false
     },
     {
-      "id": "lesson2_box",
-      "title": "Lesson 2 box: sketch, fillet, shell, side hole, resize",
-      "blurb": "Rectangle, extrude, one fillet, shell, a hole from the side, then resize — the features follow."
+      "id": "fillet_chain_pocket",
+      "feature": "Fillets",
+      "title": "Fillets",
+      "blurb": "Round a pocket chain in one fillet feature.",
+      "caption": "Round a pocket chain in one fillet feature.",
+      "order": 3,
+      "hero": false
     },
     {
-      "id": "hexkey",
-      "title": "Hex key: Swept Boss",
-      "blurb": "A 7.65 mm across-flats hex swept along a Right-plane path."
+      "id": "revolve_washer",
+      "feature": "Revolve",
+      "title": "Revolve",
+      "blurb": "Sketch a profile beside an axis and revolve it 360\u00b0 into a washer.",
+      "caption": "Sketch a profile beside an axis and revolve it 360\u00b0 into a washer.",
+      "order": 4,
+      "hero": false
+    },
+    {
+      "id": "loft_guide_rail",
+      "feature": "Sweep & loft",
+      "title": "Sweep & loft",
+      "blurb": "Two profiles plus a rail that steers the waist of the loft.",
+      "caption": "Two profiles plus a rail that steers the waist of the loft.",
+      "order": 5,
+      "hero": false
+    },
+    {
+      "id": "triball_hole_circle",
+      "feature": "Patterns",
+      "title": "Patterns",
+      "blurb": "Rotate-copy a hole into a bolt circle with TriBall.",
+      "caption": "Rotate-copy a hole into a bolt circle with TriBall.",
+      "order": 6,
+      "hero": false
+    },
+    {
+      "id": "hole_wizard_m6",
+      "feature": "Hole wizard",
+      "title": "Hole wizard",
+      "blurb": "Place standard M6 holes; mass follows steel \u00d7 volume.",
+      "caption": "Place standard M6 holes; mass follows steel \u00d7 volume.",
+      "order": 7,
+      "hero": false
+    },
+    {
+      "id": "sketch_edit_in_out",
+      "feature": "Edit in place",
+      "title": "Edit in place",
+      "blurb": "Leave a sketch, come back, and keep editing the same profile.",
+      "caption": "Leave a sketch, come back, and keep editing the same profile.",
+      "order": 8,
+      "hero": false
+    },
+    {
+      "id": "pliers_motion",
+      "feature": "Assembly motion",
+      "title": "Assembly motion",
+      "blurb": "Mate jaws to a pin, then drag the leftover revolute to open them.",
+      "caption": "Mate jaws to a pin, then drag the leftover revolute to open them.",
+      "order": 9,
+      "hero": false
+    },
+    {
+      "id": "drawing_follows_model",
+      "feature": "Drawings",
+      "title": "Drawings",
+      "blurb": "A drawing dimension updates when the model parameter changes.",
+      "caption": "A drawing dimension updates when the model parameter changes.",
+      "order": 10,
+      "hero": false
+    },
+    {
+      "id": "open_in_slicer",
+      "feature": "Export to print",
+      "title": "Export to print",
+      "blurb": "Export bodies to 3MF and hand them to a slicer.",
+      "caption": "Export bodies to 3MF and hand them to a slicer.",
+      "order": 11,
+      "hero": false
     }
   ]
 }

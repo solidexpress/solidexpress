@@ -3,6 +3,8 @@
 #
 # Usage:
 #   scripts/sx-movies              # render all enabled films → dist/movies/
+#   scripts/sx-movies all          # same
+#   scripts/sx-movies release      # curated website entries only
 #   scripts/sx-movies list         # show manifest entries
 #   scripts/sx-movies one ID         # render single film
 #
@@ -71,6 +73,32 @@ for e in data:
 PY
 }
 
+website_rows() {
+  python3 - "$MANIFEST" "$ROOT/tools/website_demos.py" <<'PY'
+import json, runpy, sys
+manifest_path, helper = sys.argv[1], sys.argv[2]
+mod = runpy.run_path(helper)
+by_id = {e["id"]: e for e in json.load(open(manifest_path))}
+for row in mod["curated"]():
+    e = by_id.get(row["id"], {})
+    q = int(e.get("quit_after", 1200))
+    print(f"{row['id']}\t{q}")
+PY
+}
+
+# Rewrite Cues so ffprobe duration matches decoded length (stdin VP9 often
+# leaves a too-long duration after Godot closes the pipe).
+remux_cues() {
+  local webm="$1"
+  local tmp="${webm}.cues.webm"
+  if ! ffmpeg -y -loglevel error -i "$webm" -c copy -avoid_negative_ts make_zero "$tmp" </dev/null; then
+    rm -f "$tmp"
+    echo "sx-movies: warning: cue remux failed for $webm" >&2
+    return 0
+  fi
+  mv -f "$tmp" "$webm"
+}
+
 mux_vtt_if_present() {
   local webm="$1"
   local vtt="$2"
@@ -92,11 +120,13 @@ render_one() {
   local pipe="$OUT/${id}.sxpipe"
   local webm="$OUT/${id}.webm"
   local vtt="$OUT/${id}.vtt"
-  local pipe_abs webm_abs vtt_abs
+  local log="$OUT/${id}.log"
+  local pipe_abs webm_abs vtt_abs log_abs
   pipe_abs="$(cd "$(dirname "$pipe")" && pwd)/$(basename "$pipe")"
   webm_abs="$(cd "$(dirname "$webm")" && pwd)/$(basename "$webm")"
   vtt_abs="$(cd "$(dirname "$vtt")" && pwd)/$(basename "$vtt")"
-  rm -f "$pipe_abs" "$webm_abs" "$OUT/${id}.avi"
+  log_abs="$(cd "$(dirname "$log")" && pwd)/$(basename "$log")"
+  rm -f "$pipe_abs" "$webm_abs" "$OUT/${id}.avi" "$log_abs"
 
   # quit_after is a safety ceiling only; the film script quit()s when done.
   echo "=== sx-movies: $id → $webm_abs (raw RGB24 → ffmpeg, max $quit_after frames @ ${FPS}fps)"
@@ -107,20 +137,28 @@ render_one() {
     --disable-vsync \
     --quit-after "$quit_after" \
     --script tests/movie_maker_run_one.gd -- \
-      --film-id "$id" --movie-capture 1 --captions-out "$vtt_abs"
-  godot_ec=$?
+      --film-id "$id" --movie-capture 1 --captions-out "$vtt_abs" \
+    2>&1 | tee "$log_abs"
+  godot_ec=${PIPESTATUS[0]}
   set -e
   rm -f "$pipe_abs" # marker path only; writer never keeps it as a media file
 
+  if [[ -f "$log_abs" ]] && grep -q "SCRIPT ERROR" "$log_abs"; then
+    echo "sx-movies: SCRIPT ERROR in $id (see $log_abs)" >&2
+    return 1
+  fi
   if [[ ! -f "$webm_abs" ]] || [[ $(stat -c%s "$webm_abs" 2>/dev/null || echo 0) -lt 4096 ]]; then
     echo "sx-movies: Godot/ffmpeg failed (exit $godot_ec); missing or tiny $webm_abs" >&2
-    return "${godot_ec:-1}"
+    return 1
   fi
   if [[ $godot_ec -ne 0 ]]; then
-    echo "sx-movies: warning: Godot exited $godot_ec after writing $webm_abs (known MovieWriter teardown bug on some builds)" >&2
+    echo "sx-movies: Godot exited $godot_ec after writing $webm_abs" >&2
+    return 1
   fi
 
+  remux_cues "$webm_abs"
   mux_vtt_if_present "$webm_abs" "$vtt_abs"
+  remux_cues "$webm_abs"
 
   if [[ -f "$vtt_abs" ]]; then
     echo "    vtt: $vtt_abs"
@@ -128,6 +166,35 @@ render_one() {
     echo "sx-movies: warning: no captions at $vtt_abs" >&2
   fi
   echo "    webm: $webm_abs"
+}
+
+preflight() {
+  echo "=== sx-movies: preflight GDExtension + film caption tests"
+  if ! godot_cmd --headless --path "$GAME" --script tests/preflight_sxcore.gd; then
+    echo "sx-movies: preflight failed (libsxcore / main.gd did not load)" >&2
+    exit 1
+  fi
+  if ! godot_cmd --headless --path "$GAME" --script tests/run_film_caption_tests.gd; then
+    echo "sx-movies: preflight failed (run_film_caption_tests.gd)" >&2
+    exit 1
+  fi
+}
+
+render_loop() {
+  local rows_fn="$1"
+  local fails=()
+  while IFS=$'\t' read -r id quit_after <&3; do
+    [[ -z "$id" ]] && continue
+    if ! render_one "$id" "$quit_after"; then
+      echo "sx-movies: FAILED $id" >&2
+      fails+=("$id")
+    fi
+  done 3< <("$rows_fn")
+  if [[ ${#fails[@]} -gt 0 ]]; then
+    echo "sx-movies: failures: ${fails[*]}" >&2
+    exit 1
+  fi
+  echo "sx-movies: done → $OUT"
 }
 
 cmd="${1:-all}"
@@ -152,22 +219,15 @@ PY
     render_one "$id" "$quit_after"
     ;;
   all)
-    fails=()
-    while IFS=$'\t' read -r id quit_after <&3; do
-      [[ -z "$id" ]] && continue
-      if ! render_one "$id" "$quit_after"; then
-        echo "sx-movies: FAILED $id" >&2
-        fails+=("$id")
-      fi
-    done 3< <(enabled_rows)
-    if [[ ${#fails[@]} -gt 0 ]]; then
-      echo "sx-movies: failures: ${fails[*]}" >&2
-      exit 1
-    fi
-    echo "sx-movies: done → $OUT"
+    preflight
+    render_loop enabled_rows
+    ;;
+  release)
+    preflight
+    render_loop website_rows
     ;;
   *)
-    echo "usage: sx-movies [all|list|one FILM_ID]" >&2
+    echo "usage: sx-movies [all|release|list|one FILM_ID]" >&2
     exit 1
     ;;
 esac

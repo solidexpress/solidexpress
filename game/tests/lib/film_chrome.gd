@@ -4,6 +4,9 @@ extends CanvasLayer
 ## On-screen closed captions + soft-subtitle cue list (WebVTT).
 
 var fps := 30.0
+var pointer_move_sec := 0.22
+var pointer_after_click_sec := 0.04
+var pointer_flash_sec := 0.12
 
 var _root: Control
 var _caption: FilmCaption
@@ -16,6 +19,8 @@ var _pointer: Control
 var _toast_panel: PanelContainer
 var _toast: Label
 var _move_tween: Tween
+## Engine.get_frames_drawn() when SX_MOVIE_RECORD was armed — VTT times are relative.
+var _record_origin_frame := 0
 
 ## Closed cues: { "start_frame": int, "end_frame": int, "text": String }
 var cues: Array[Dictionary] = []
@@ -84,6 +89,36 @@ func _ready() -> void:
 	_click_shots_dir = str(OS.get_environment("SX_FILM_CLICK_SHOTS_DIR"))
 	# Stabilise frame-rate expectations across headless/editor runs.
 	fps = _FilmPresentation.FPS
+	pointer_move_sec = _FilmPresentation.POINTER_MOVE_SEC
+	pointer_after_click_sec = _FilmPresentation.POINTER_AFTER_CLICK_SEC
+	pointer_flash_sec = _FilmPresentation.POINTER_FLASH_SEC
+	layout_caption()
+
+
+func overlay_root() -> Control:
+	return _root
+
+
+func hide_pointer() -> void:
+	if _pointer != null:
+		_pointer.visible = false
+
+
+## Nudge caption alpha so MovieWriter cannot collapse a static hold to one frame.
+func tick_unique(i: int) -> void:
+	if _caption != null:
+		_caption.modulate.a = 0.992 + 0.008 * sin(float(i) * 0.37)
+
+
+func begin_record() -> void:
+	_record_origin_frame = Engine.get_frames_drawn()
+	layout_caption()
+
+
+func layout_caption() -> void:
+	if _caption == null:
+		return
+	_caption.layout_in_viewport()
 
 
 ## Show a closed caption and open a soft-subtitle cue (ended by the next caption or finish).
@@ -93,6 +128,8 @@ func show_caption(text: String) -> void:
 	_caption_start_frame = Engine.get_frames_drawn()
 	_caption.set_text(_caption_text)
 	_caption.visible = not _caption_text.is_empty()
+	if _caption.visible:
+		_caption.layout_in_viewport()
 
 
 func finish_captions() -> void:
@@ -194,7 +231,9 @@ func animate_pointer_click(screen_pos: Vector2, keys: String = "Click", desc: St
 		FilmUI.fail_count += 1
 		return
 	show_action_alert(keys, desc)
-	# Reposition caption so it never covers the click target.
+	await get_tree().process_frame
+	# Reposition caption so it never covers the click target (toast is an
+	# obstacle for the top dock, not hidden).
 	var tgt := Rect2(screen_pos - Vector2(FilmPointer.DIAM, FilmPointer.DIAM) * 0.5,
 			Vector2(FilmPointer.DIAM, FilmPointer.DIAM))
 	await _avoid_hud_for_click(tgt)
@@ -211,17 +250,17 @@ func animate_pointer_click(screen_pos: Vector2, keys: String = "Click", desc: St
 		_pointer.set_moving(true)
 	_move_tween = create_tween()
 	_move_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	_move_tween.tween_property(_pointer, "global_position", target, 0.55)
+	_move_tween.tween_property(_pointer, "global_position", target, pointer_move_sec)
 	await _move_tween.finished
 	if _pointer.has_method("set_moving"):
 		_pointer.set_moving(false)
 	if _pointer.has_method("play_click_flash"):
-		await _pointer.play_click_flash()
+		await _pointer.play_click_flash(pointer_flash_sec)
 	# Click frame evidence + safety: the caption must not intersect the click.
 	_log_and_check_click(tgt)
 	# Optional screenshot sample per click.
 	_capture_click_shot()
-	await get_tree().create_timer(0.08).timeout
+	await get_tree().create_timer(pointer_after_click_sec).timeout
 
 
 func click_at(screen_pos: Vector2, label: String = "Click") -> void:
@@ -229,19 +268,24 @@ func click_at(screen_pos: Vector2, label: String = "Click") -> void:
 	_pointer.visible = true
 	_pointer.global_position = screen_pos - _pointer.size * 0.5
 	if _pointer.has_method("play_click_flash"):
-		_pointer.play_click_flash()
+		_pointer.play_click_flash(pointer_flash_sec)
 	var tgt := Rect2(screen_pos - Vector2(FilmPointer.DIAM, FilmPointer.DIAM) * 0.5,
 			Vector2(FilmPointer.DIAM, FilmPointer.DIAM))
 	_log_and_check_click(tgt)
 	_capture_click_shot()
 
 
+func _recorded_frame(engine_frame: int) -> int:
+	return maxi(0, engine_frame - _record_origin_frame)
+
+
 func _close_open_cue(end_frame: int) -> void:
 	if _caption_text.is_empty():
 		return
-	var end_f := maxi(end_frame, _caption_start_frame + 1)
+	var start_f := _recorded_frame(_caption_start_frame)
+	var end_f := maxi(_recorded_frame(end_frame), start_f + 1)
 	cues.append({
-		"start_frame": _caption_start_frame,
+		"start_frame": start_f,
 		"end_frame": end_f,
 		"text": _caption_text,
 	})
@@ -249,15 +293,18 @@ func _close_open_cue(end_frame: int) -> void:
 
 
 func _avoid_hud_for_click(tgt: Rect2) -> void:
-	# Hide toast during clicks to avoid covering controls; caption hops.
-	if _toast_panel.visible:
-		_toast_panel.visible = false
-	await _caption.avoid_rect(tgt)
+	# Hop considers the toast as an obstacle (top dock sits below it) rather
+	# than hiding the banner — the click target still wins.
+	var extras: Array = []
+	if _toast_panel != null and _toast_panel.visible:
+		extras.append(_toast_panel.get_global_rect())
+	if _caption != null:
+		await _caption.avoid_rect(tgt, extras)
 
 
 func _log_and_check_click(tgt: Rect2) -> void:
 	var frame := Engine.get_frames_drawn()
-	var cap_r := _caption.get_global_rect()
+	var cap_r := _caption.current_rect() if _caption != null else Rect2()
 	click_log.append({
 		"frame": frame,
 		"target_rect": {
@@ -267,7 +314,7 @@ func _log_and_check_click(tgt: Rect2) -> void:
 			"x": cap_r.position.x, "y": cap_r.position.y, "w": cap_r.size.x, "h": cap_r.size.y
 		}
 	})
-	if cap_r.intersects(tgt):
+	if _caption != null and _caption.visible and cap_r.intersects(tgt):
 		push_error("FilmChrome: caption overlapped click target at frame %d" % frame)
 		FilmUI.fail_count += 1
 

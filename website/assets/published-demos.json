@@ -1,14 +1,8 @@
 [
-  "extrude_cylinder",
-  "hexkey",
-  "lesson2_box",
-  "loft_guide_rail",
-  "path_merge_sweep",
-  "pliers_motion",
-  "precision_plate",
-  "revolve_washer",
-  "sketch_edit_in_out",
+  "ubc_wrench",
   "sketch_tools",
-  "tutor1",
-  "ubc_wrench"
+  "revolve_washer",
+  "loft_guide_rail",
+  "sketch_edit_in_out",
+  "pliers_motion"
 ]

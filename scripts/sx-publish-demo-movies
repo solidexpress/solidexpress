@@ -2,22 +2,25 @@
 # sx-publish-demo-movies — sync UI films to the marketing site without committing WebMs.
 #
 # Workflow:
-#   1. make movies                         # → dist/movies/*.webm (+ .vtt)
-#   2. scripts/sx-publish-demo-movies      # posters → github.io; WebMs → GitHub Release
+#   1. make movies / scripts/sx-movies release
+#   2. scripts/sx-publish-demo-movies      # curated set only (no ids)
 #
-# With IDs: render nothing; require $SX_MOVIES_OUT/<id>.webm; extract poster;
-# upload only those assets; append ids to website/assets/published-demos.json.
-# --feature also appends {id,title,blurb} to demo-catalog.json featured.
+# No IDs: publish the curated website set, delete stale non-curated Release
+# assets, regenerate published-demos.json + demo-catalog featured from
+# tools/website_demos.py (single source of truth).
+#
+# With IDs: require $SX_MOVIES_OUT/<id>.webm; extract poster; upload those
+# assets; still regenerate JSON from the curated set.
 # --dry-run prints those actions and writes nothing.
 #
 # Env overrides:
 #   SX_MOVIES_OUT          default: <repo>/dist/movies
-#   SX_SITE_ROOT           unused (no cross-repo writes)
 #   SX_DEMO_RELEASE_REPO   default: solidexpress/solidexpress
 #   SX_DEMO_RELEASE_TAG    default: demo-movies
 #   SX_SKIP_UPLOAD         if set, skip gh release upload
 #   SX_PUBLISHED_JSON      default: <repo>/website/assets/published-demos.json
 #   SX_CATALOG_JSON        default: <repo>/website/assets/demo-catalog.json
+#   SX_POSTER_DIR          default: <repo>/website/assets/screenshots
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,12 +28,15 @@ OUT="${SX_MOVIES_OUT:-$ROOT/dist/movies}"
 REPO="${SX_DEMO_RELEASE_REPO:-solidexpress/solidexpress}"
 TAG="${SX_DEMO_RELEASE_TAG:-demo-movies}"
 MANIFEST="$ROOT/game/tests/ui_movie_manifest.json"
+HELPER="$ROOT/tools/website_demos.py"
 PUBLISHED="${SX_PUBLISHED_JSON:-$ROOT/website/assets/published-demos.json}"
 CATALOG="${SX_CATALOG_JSON:-$ROOT/website/assets/demo-catalog.json}"
 CANON_SHOTS="$ROOT/website/assets/screenshots"
+SHOTS="${SX_POSTER_DIR:-$CANON_SHOTS}"
 
 DRY_RUN=0
 FEATURE=0
+CLI_IDS=0
 IDS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,18 +47,18 @@ while [[ $# -gt 0 ]]; do
       echo "sx-publish-demo-movies: unknown flag $1" >&2
       exit 2
       ;;
-    *) IDS+=("$1"); shift ;;
+    *) IDS+=("$1"); CLI_IDS=1; shift ;;
   esac
 done
 while [[ $# -gt 0 ]]; do
-  IDS+=("$1"); shift
+  IDS+=("$1"); CLI_IDS=1; shift
 done
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
   echo "sx-publish-demo-movies: ffmpeg required" >&2
   exit 1
 fi
-if [[ "$DRY_RUN" -eq 0 ]] && ! command -v gh >/dev/null 2>&1; then
+if [[ "$DRY_RUN" -eq 0 && "${SX_SKIP_UPLOAD:-}" == "" ]] && ! command -v gh >/dev/null 2>&1; then
   echo "sx-publish-demo-movies: gh CLI required" >&2
   exit 1
 fi
@@ -60,15 +66,14 @@ if [[ ! -f "$MANIFEST" ]]; then
   echo "sx-publish-demo-movies: missing $MANIFEST" >&2
   exit 1
 fi
+if [[ ! -f "$HELPER" ]]; then
+  echo "sx-publish-demo-movies: missing $HELPER" >&2
+  exit 1
+fi
 
 if [[ ${#IDS[@]} -eq 0 ]]; then
-  mapfile -t IDS < <(python3 - "$MANIFEST" <<'PY'
-import json, sys
-for e in json.load(open(sys.argv[1])):
-    if e.get("enabled", True):
-        print(e["id"])
-PY
-)
+  mapfile -t IDS < <(python3 "$HELPER" ids)
+  CLI_IDS=0
 fi
 
 if [[ ${#IDS[@]} -eq 0 ]]; then
@@ -76,8 +81,7 @@ if [[ ${#IDS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-SHOTS="$CANON_SHOTS"
-mkdir -p "$SHOTS" "$CANON_SHOTS"
+mkdir -p "$SHOTS"
 
 assets=()
 for id in "${IDS[@]}"; do
@@ -100,36 +104,19 @@ for id in "${IDS[@]}"; do
     assets+=("$vtt")
   fi
 done
-# Upload the manifest alongside media so the website can fetch it from the Release.
 assets+=("$MANIFEST")
+
+curated_ids() {
+  python3 "$HELPER" ids
+}
+
+emit_json() {
+  python3 "$HELPER" emit --published "$PUBLISHED" --catalog "$CATALOG"
+}
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "dry-run upload ${#assets[@]} assets to $REPO@$TAG: ${assets[*]}"
-  python3 - "$PUBLISHED" "$CATALOG" "$MANIFEST" "$FEATURE" "${IDS[@]}" <<'PY'
-import json, sys
-from pathlib import Path
-published_path, catalog_path, manifest_path, feature = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4] == "1"
-ids = sys.argv[5:]
-have = json.loads(published_path.read_text()) if published_path.exists() else []
-merged = sorted(set(have) | set(ids))
-print(f"dry-run published-demos → {published_path} ({len(merged)} ids, append {ids})")
-if feature:
-    manifest = {e["id"]: e for e in json.load(open(manifest_path))}
-    cat = json.loads(catalog_path.read_text())
-    featured = list(cat.get("featured", []))
-    have_ids = {row.get("id") for row in featured}
-    for i in ids:
-        if i in have_ids:
-            continue
-        entry = manifest.get(i, {})
-        featured.append({
-            "id": i,
-            "title": entry.get("title", i),
-            "blurb": entry.get("blurb", ""),
-        })
-        have_ids.add(i)
-    print(f"dry-run demo-catalog featured append {ids} → {len(featured)} rows")
-PY
+  echo "dry-run emit curated published-demos + demo-catalog featured (append ${IDS[*]})"
   echo "dry-run: no gh call, no file change"
   exit 0
 fi
@@ -145,59 +132,49 @@ if [[ "${SX_SKIP_UPLOAD:-}" == "" ]]; then
   fi
   echo "uploading ${#assets[@]} assets to $REPO@$TAG"
   gh release upload "$TAG" -R "$REPO" --clobber "${assets[@]}"
+  if [[ "$CLI_IDS" -eq 0 ]]; then
+    # Full curated publish: drop stale non-curated webms/posters/vtts.
+    mapfile -t KEEP < <(curated_ids)
+    keep_pat=$(printf '%s\n' "${KEEP[@]}")
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      stem="${name%.*}"
+      ext="${name##*.}"
+      case "$ext" in
+        webm|png|vtt) ;;
+        *) continue ;;
+      esac
+      if ! grep -Fxq "$stem" <<<"$keep_pat"; then
+        echo "deleting stale Release asset $name"
+        gh release delete-asset "$TAG" "$name" -R "$REPO" --yes || true
+      fi
+    done < <(gh release view "$TAG" -R "$REPO" --json assets -q '.assets[].name')
+  fi
 else
   echo "SX_SKIP_UPLOAD=1: skipping gh release upload (${#assets[@]} assets)"
 fi
 
-if [[ ${#IDS[@]} -gt 0 ]]; then
-  python3 - "$PUBLISHED" "$CATALOG" "$MANIFEST" "$FEATURE" "${IDS[@]}" <<'PY'
-import json, sys
-from pathlib import Path
-published_path, catalog_path, manifest_path, feature = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4] == "1"
-ids = sys.argv[5:]
-have = json.loads(published_path.read_text()) if published_path.exists() else []
-merged = sorted(set(str(x) for x in have) | set(ids))
-published_path.write_text(json.dumps(merged, indent=2) + "\n")
-print(f"published-demos → {published_path} ({len(merged)} ids)")
-if feature:
-    manifest = {e["id"]: e for e in json.load(open(manifest_path))}
-    cat = json.loads(catalog_path.read_text())
-    featured = list(cat.get("featured", []))
-    have_ids = {row.get("id") for row in featured}
-    for i in ids:
-        if i in have_ids:
-            continue
-        entry = manifest.get(i, {})
-        featured.append({
-            "id": i,
-            "title": entry.get("title", i),
-            "blurb": entry.get("blurb", ""),
-        })
-        have_ids.add(i)
-    cat["featured"] = featured
-    catalog_path.write_text(json.dumps(cat, indent=2) + "\n")
-    print(f"demo-catalog featured → {len(featured)} rows")
-PY
-else
-  python3 -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); ids=sys.argv[2:]; p.write_text(json.dumps(ids, indent=2)+"\n"); print(f"published-demos → {p} ({len(ids)} ids)")' \
-    "$PUBLISHED" "${IDS[@]}"
-fi
+emit_json
 
-for id in "${IDS[@]}"; do
-  src="$SHOTS/${id}.png"
-  if [[ -f "$src" && "$src" != "$CANON_SHOTS/${id}.png" ]]; then
-    cp -f "$src" "$CANON_SHOTS/${id}.png"
-  fi
-done
+if [[ -z "${SX_POSTER_DIR:-}" ]]; then
+  for id in "${IDS[@]}"; do
+    src="$SHOTS/${id}.png"
+    if [[ -f "$src" && "$src" != "$CANON_SHOTS/${id}.png" ]]; then
+      mkdir -p "$CANON_SHOTS"
+      cp -f "$src" "$CANON_SHOTS/${id}.png"
+    fi
+  done
+fi
 
 base="https://github.com/${REPO}/releases/download/${TAG}"
 echo
 echo "sx-publish-demo-movies: done"
-echo "  posters → $SHOTS and $CANON_SHOTS"
+echo "  posters → $SHOTS"
 echo "  webms   → $base/<id>.webm"
-echo "Commit and push poster PNG changes to the website Pages repo once (manual sync)."
-echo "Also commit website/assets/published-demos.json + posters in the app repo."
-echo "Do not commit .webm / .mp4 / .vtt to either git repo — Release $TAG only."
-if [[ -x "$ROOT/scripts/sx-check-website-demos" ]]; then
+echo "Commit poster PNG + published-demos.json + demo-catalog.json in the app repo."
+echo "Do not commit .webm / .mp4 / .vtt — Release $TAG only."
+
+default_pub="$ROOT/website/assets/published-demos.json"
+if [[ -z "${SX_POSTER_DIR:-}" && "$PUBLISHED" == "$default_pub" && -x "$ROOT/scripts/sx-check-website-demos" ]]; then
   "$ROOT/scripts/sx-check-website-demos"
 fi

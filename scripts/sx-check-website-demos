@@ -2,11 +2,11 @@
 """Fail if the marketing site would show a demo whose WebM is missing.
 
 Hard rule: a play button is only allowed for a film that has
-  1. a poster PNG in website/assets/screenshots/<id>.png
+  1. a poster PNG in website/assets/screenshots/<id>.png (or $SX_POSTER_DIR)
   2. an entry in website/assets/published-demos.json
   3. a .webm on the demo-movies Release (HEAD 200), unless --offline
 
-Featured ids in demo-catalog.json must be a subset of published-demos.json.
+Curated featured rows come from tools/website_demos.py (all 12, hero included).
 HTML must not hardcode data-demo= or /demo-movies/<id>.webm for unpublished ids.
 """
 from __future__ import annotations
@@ -20,10 +20,14 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+TOOLS = ROOT / "tools"
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+import website_demos  # noqa: E402
 SITE = ROOT / "website"
 CATALOG_PATH = SITE / "assets" / "demo-catalog.json"
 PUBLISHED_PATH = SITE / "assets" / "published-demos.json"
-SHOTS = SITE / "assets" / "screenshots"
+SHOTS = website_demos.poster_dir()
 MANIFEST_GAME = ROOT / "game" / "tests" / "ui_movie_manifest.json"
 MANIFEST_SITE = SITE / "assets" / "ui_movie_manifest.json"
 DEFAULT_BASE = (
@@ -117,28 +121,16 @@ def main() -> int:
 
     catalog = load_json(CATALOG_PATH)
     published = load_json(PUBLISHED_PATH)
+    errors.extend(website_demos.validate_curated(published=published, catalog=catalog))
     if not isinstance(published, list) or not published:
         errors.append("published-demos.json must be a non-empty JSON array of ids")
         return fail(errors)
     published_ids = [str(x) for x in published]
     published_set = set(published_ids)
-    if len(published_set) != len(published_ids):
-        errors.append("published-demos.json has duplicate ids")
-
     featured = catalog.get("featured") or []
     featured_ids = [str(e.get("id", "")) for e in featured if isinstance(e, dict)]
     if not featured_ids:
         errors.append("demo-catalog.json featured list is empty")
-
-    for fid in featured_ids:
-        if not fid:
-            errors.append("featured entry missing id")
-            continue
-        if fid not in published_set:
-            errors.append(
-                f"featured {fid!r} is not in published-demos.json — "
-                "do not advertise a film until its WebM is on the demo-movies Release"
-            )
 
     for pid in published_ids:
         poster = SHOTS / f"{pid}.png"

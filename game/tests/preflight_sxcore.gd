@@ -10,5 +10,10 @@ func _init() -> void:
 				+ "export LD_LIBRARY_PATH=/opt/occt-8.0.1/lib:$LD_LIBRARY_PATH")
 		quit(2)
 		return
-	print("preflight ok: SxDocument is registered")
+	var packed: PackedScene = load("res://scenes/main.tscn") as PackedScene
+	if packed == null:
+		printerr("PREFLIGHT FAIL: res://scenes/main.tscn failed to load (parse error in main.gd?)")
+		quit(1)
+		return
+	print("preflight ok: SxDocument is registered; main.tscn loads")
 	quit(0)
