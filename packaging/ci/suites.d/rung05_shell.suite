@@ -1,0 +1,3 @@
+script=tests/run_rung05_shell.gd
+tier=ci
+timeout=180
