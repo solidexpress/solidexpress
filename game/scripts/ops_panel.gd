@@ -633,9 +633,7 @@ func _on_selection_changed(body: String, face: String) -> void:
 		_clamp_height()
 		return
 	visible = body != ""
-	# Feature Mirror's Features chip lives in body ops; a face pick (the
-	# mirror plane) must not hide it. Face tools still stack below.
-	_body_ops.visible = body != ""
+	_body_ops.visible = body != "" and face == ""
 	_face_ops.visible = face != ""
 	if body != "" and face == "":
 		# Prefer feature display name (Box) over raw body id label.
