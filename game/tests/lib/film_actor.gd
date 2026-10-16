@@ -448,6 +448,12 @@ func _playback_app_camera(cue: Dictionary) -> void:
 	if cam == null or _credited_pose.is_empty() or not cam.has_method("capture_pose"):
 		credit_pose()
 		return
+	# The app may frame a frame later (deferred sketch fit) or via its own
+	# view tween; let both settle and snap the tween to its target so we play
+	# back the pose the app meant, not an in-between frame.
+	await _frames(2)
+	if cam.has_method("_finish_pose_tween"):
+		cam._finish_pose_tween()
 	var to: Dictionary = cam.capture_pose()
 	if _pose_drift(to, _credited_pose) <= 0.04:
 		credit_pose()
