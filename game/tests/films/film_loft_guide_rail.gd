@@ -1,8 +1,10 @@
 extends RefCounted
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 
-## Ship hull: U transom lofted into an oval bow on a parallel face.
+## Ship hull: U transom (flat floor, vertical sides, capped deck) lofted
+## into a smaller oval bow on the parallel end face.
 
 
 func run_film(ctx: FilmContext) -> void:
@@ -10,8 +12,8 @@ func run_film(ctx: FilmContext) -> void:
 	var doc: SxDocument = ctx.view.doc
 	var actor := FilmActor.of(ctx)
 
-	await ctx.beat("Place a long blank — the two ends become hull stations")
-	await FilmUI.place_primitive_at(ctx, "box", Vector3(0, 0, 0), Vector3(140, 48, 36))
+	await ctx.beat("Place a hull blank — ends become the transom and bow")
+	await FilmUI.place_primitive_at(ctx, "box", Vector3(0, 0, 0), Vector3(100, 52, 34))
 	await ctx.after_regen()
 	var bodies: Array = doc.body_ids()
 	if bodies.is_empty():
@@ -24,14 +26,18 @@ func run_film(ctx: FilmContext) -> void:
 		FilmUI._fail("blank is missing transom / bow faces")
 		return
 
-	await ctx.beat("Sketch a U transom — flat floor, nearly vertical sides")
+	await ctx.beat("Sketch a U transom — flat floor, vertical sides, capped deck")
 	await FilmUI.enter_sketch_on_face(ctx, host, stern)
 	var sm: SketchMode = main.sketch_mode
 	if sm == null or not sm.active:
 		FilmUI._fail("transom sketch did not start")
 		return
+	# −X face: +V is world +Z (up). Hexagon U: narrow keel, vertical sides, wide deck.
 	var u := PackedVector2Array([
-		Vector2(-18, -14), Vector2(18, -14), Vector2(16, 14), Vector2(-16, 14), Vector2(-18, -14),
+		Vector2(-9, -13), Vector2(9, -13),
+		Vector2(17, -5), Vector2(17, 12),
+		Vector2(-17, 12), Vector2(-17, -5),
+		Vector2(-9, -13),
 	])
 	await FilmUI.draw_polyline(ctx, sm, u)
 	var fid_stern := await FilmUI.exit_sketch(ctx)
@@ -40,13 +46,13 @@ func run_film(ctx: FilmContext) -> void:
 		FilmUI._fail("transom profile failed")
 		return
 
-	await ctx.beat("Sketch an oval at the bow")
+	await ctx.beat("Sketch an oval at the bow, smaller and lower")
 	await FilmUI.enter_sketch_on_face(ctx, host, bow)
 	sm = main.sketch_mode
 	if sm == null or not sm.active:
 		FilmUI._fail("bow sketch did not start")
 		return
-	await FilmUI.draw_ellipse(ctx, sm, Vector2.ZERO, Vector2(11, 8))
+	await FilmUI.draw_ellipse(ctx, sm, Vector2(0, -2), Vector2(8, 4))
 	var fid_bow := await FilmUI.exit_sketch(ctx)
 	await ctx.after_regen()
 	if fid_bow.is_empty() or fid_bow == fid_stern:
@@ -89,4 +95,6 @@ func run_film(ctx: FilmContext) -> void:
 		FilmUI._fail("hull loft failed (vol %.1f)" % vol)
 		return
 	await ctx.beat("Hull loft — U transom into an oval bow")
+	await actor.frame_look(Vector3(0, 0, 0), 68.0, 16.0, 155.0, "Quarter the hull")
+	await actor.orbit_yaw(48.0, 3.2, "Orbit the hull")
 	await actor.result_pause()

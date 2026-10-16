@@ -23,7 +23,7 @@
     "website": {
       "feature": "Sweep & loft",
       "title": "Ship hull loft",
-      "caption": "Sketch a U transom and an oval bow, then loft the hull.",
+      "caption": "Sketch a U transom and an oval bow, loft, then orbit the hull.",
       "order": 5,
       "hero": false
     }
