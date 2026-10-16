@@ -447,6 +447,10 @@ func _playback_app_camera(cue: Dictionary) -> void:
 	if cam == null or _credited_pose.is_empty() or not cam.has_method("capture_pose"):
 		credit_pose()
 		return
+	# Let an app view tween (e.g. face-sketch auto-frame) land before we
+	# capture its target; killing it mid-flight strands the camera.
+	while cam._view_tween != null and cam._view_tween.is_valid() and cam._view_tween.is_running():
+		await ctx.tree.process_frame
 	var to: Dictionary = cam.capture_pose()
 	if _pose_drift(to, _credited_pose) <= 0.04:
 		credit_pose()
