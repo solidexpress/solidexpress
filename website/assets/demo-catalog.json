@@ -1,9 +1,9 @@
 {
   "demo_release": {
-    "repo": "solidexpress/solidexpress.github.io",
+    "repo": "solidexpress/solidexpress",
     "tag": "demo-movies",
-    "api": "https://api.github.com/repos/solidexpress/solidexpress.github.io/releases/tags/demo-movies",
-    "base": "https://github.com/solidexpress/solidexpress.github.io/releases/download/demo-movies/"
+    "api": "https://api.github.com/repos/solidexpress/solidexpress/releases/tags/demo-movies",
+    "base": "https://github.com/solidexpress/solidexpress/releases/download/demo-movies/"
   },
   "featured": [
     {
