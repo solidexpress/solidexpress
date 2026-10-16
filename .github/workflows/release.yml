@@ -354,8 +354,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   demo-movies:
-    # Independent job: renders all films and publishes WebMs/posters.
+    # Independent job: renders curated website films and publishes WebMs/posters.
     runs-on: ubuntu-24.04
+    env:
+      LD_LIBRARY_PATH: /opt/occt-${{ env.OCCT_VERSION }}/lib
     steps:
       - uses: actions/checkout@v4
         with:
@@ -377,6 +379,13 @@ jobs:
           path: /opt/occt-${{ env.OCCT_VERSION }}
           key: occt-${{ env.OCCT_VERSION }}-linux-x64-shared-tbb-freetype-rapidjson-v1
 
+      - name: Install OCCT ${{ env.OCCT_VERSION }} from source
+        run: |
+          chmod +x packaging/ci/install_occt.sh
+          sudo mkdir -p "/opt/occt-${OCCT_VERSION}"
+          sudo chown "$(id -u):$(id -g)" "/opt/occt-${OCCT_VERSION}"
+          OCCT_PREFIX="/opt/occt-${OCCT_VERSION}" packaging/ci/install_occt.sh
+
       - name: Fetch pinned Godot editor (4.7-stable)
         run: |
           chmod +x packaging/ci/fetch_godot.sh
@@ -386,21 +395,21 @@ jobs:
       - name: Configure + build (GDExtension + kernel)
         run: |
           export CMAKE_PREFIX_PATH="/opt/occt-${OCCT_VERSION}${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
-          export LD_LIBRARY_PATH="/opt/occt-${OCCT_VERSION}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           make build
 
-      - name: Render all demo movies
+      - name: Render curated website demo movies
         env:
           SX_MOVIES_XVFB: "1"
         run: |
           chmod +x scripts/sx-movies
-          ./scripts/sx-movies all
+          ./scripts/sx-movies release
 
       - name: Upload movies artifact
         uses: actions/upload-artifact@v4
         with:
           name: demo-movies
           path: dist/movies
+          if-no-files-found: error
 
       - name: Publish demo movies to Release
         env:

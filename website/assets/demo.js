@@ -113,14 +113,23 @@
     return { open: openDemo };
   }
 
-  function card(entry, lightbox) {
-    var article = document.createElement("article");
-    article.className = "feature-card";
+  function displayTitle(entry) {
+    return (entry && (entry.feature || entry.title)) || (entry && entry.id) || "Demo";
+  }
+
+  function displayCaption(entry) {
+    return (entry && (entry.caption || entry.blurb)) || "";
+  }
+
+  function posterButton(entry, lightbox, playable) {
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "demo-open";
-    btn.setAttribute("data-demo", entry.id);
-    btn.setAttribute("aria-label", "Play demo: " + (entry.title || entry.id));
+    btn.setAttribute("aria-label", (playable ? "Play demo: " : "") + displayTitle(entry));
+    if (playable) {
+      btn.setAttribute("data-demo", entry.id);
+      btn.addEventListener("click", function () { lightbox.open(btn); });
+    }
     var img = document.createElement("img");
     img.loading = "lazy";
     img.alt = "";
@@ -128,36 +137,81 @@
     img.height = 900;
     img.src = POSTER_BASE + entry.id + ".png";
     img.onerror = function () { img.style.display = "none"; };
-    var play = document.createElement("span");
-    play.className = "play";
-    play.setAttribute("aria-hidden", "true");
     btn.appendChild(img);
-    btn.appendChild(play);
-    btn.addEventListener("click", function () { lightbox.open(btn); });
+    if (playable) {
+      var play = document.createElement("span");
+      play.className = "play";
+      play.setAttribute("aria-hidden", "true");
+      btn.appendChild(play);
+    }
+    return btn;
+  }
+
+  function card(entry, lightbox, playable) {
+    var article = document.createElement("article");
+    article.className = "feature-card";
+    article.appendChild(posterButton(entry, lightbox, playable));
     var h3 = document.createElement("h3");
-    h3.textContent = entry.title || entry.id;
+    h3.textContent = displayTitle(entry);
     var p = document.createElement("p");
-    p.textContent = entry.blurb || ("Enables: " + (entry.title || entry.id));
-    article.appendChild(btn);
+    p.textContent = displayCaption(entry);
     article.appendChild(h3);
     article.appendChild(p);
     return article;
   }
 
-  function hydrateFeatured(gridId) {
+  function fillHero(heroEl, entry, lightbox, playable) {
+    heroEl.innerHTML = "";
+    heroEl.appendChild(posterButton(entry, lightbox, playable));
+    var h3 = document.createElement("h3");
+    h3.textContent = displayTitle(entry);
+    var p = document.createElement("p");
+    p.textContent = displayCaption(entry);
+    heroEl.appendChild(h3);
+    heroEl.appendChild(p);
+  }
+
+  function orderedFeatured(catalog) {
+    return (catalog.featured || []).slice().sort(function (a, b) {
+      var ha = a && a.hero ? 0 : 1;
+      var hb = b && b.hero ? 0 : 1;
+      if (ha !== hb) return ha - hb;
+      return (a.order || 0) - (b.order || 0);
+    });
+  }
+
+  function hydrateFeatured(gridId, heroId, searchId) {
     var grid = document.getElementById(gridId);
     if (!grid) return;
+    var heroEl = heroId ? document.getElementById(heroId) : null;
     fetchJson(CATALOG_URL)
       .then(function (catalog) {
         var lightbox = bindLightbox(catalog);
         return loadAvailable(catalog).then(function (available) {
-          grid.innerHTML = "";
-          (catalog.featured || []).forEach(function (entry) {
-            if (!entry || !entry.id || !available[entry.id]) return;
-            grid.appendChild(card(entry, lightbox));
-          });
-          if (!grid.children.length) {
-            grid.innerHTML = "<p class='lead'>Demo movies are being refreshed. See the Features page shortly.</p>";
+          var featured = orderedFeatured(catalog);
+          var hero = featured.filter(function (e) { return e && e.hero; })[0] || featured[0];
+          if (heroEl && hero) {
+            fillHero(heroEl, hero, lightbox, !!(hero.id && available[hero.id]));
+          }
+          function render(list) {
+            grid.innerHTML = "";
+            list.forEach(function (entry) {
+              if (!entry || !entry.id) return;
+              grid.appendChild(card(entry, lightbox, !!available[entry.id]));
+            });
+            if (!grid.children.length) {
+              grid.innerHTML = "<p class='lead'>Demo movies are being refreshed. See the Features page shortly.</p>";
+            }
+          }
+          render(featured);
+          var q = searchId ? document.getElementById(searchId) : null;
+          if (q) {
+            q.addEventListener("input", function () {
+              var term = q.value.trim().toLowerCase();
+              render(!term ? featured : featured.filter(function (m) {
+                return (displayTitle(m) + " " + displayCaption(m) + " " + (m.id || "")).toLowerCase().indexOf(term) !== -1;
+              }));
+            });
           }
         });
       })
@@ -179,15 +233,20 @@
           var films = manifest.filter(function (e) {
             return e && e.enabled !== false && e.id && available[e.id];
           }).map(function (e) {
+            var site = e.website || {};
             return {
               id: e.id,
-              title: e.title || e.id,
-              blurb: "Enables: " + (e.title || e.id)
+              feature: site.feature || e.title || e.id,
+              title: site.title || e.title || e.id,
+              blurb: site.caption || e.blurb || "",
+              caption: site.caption || e.blurb || "",
+              hero: !!site.hero,
+              order: site.order || 0
             };
           });
           function render(list) {
             grid.innerHTML = "";
-            list.forEach(function (entry) { grid.appendChild(card(entry, lightbox)); });
+            list.forEach(function (entry) { grid.appendChild(card(entry, lightbox, true)); });
             if (!grid.children.length) {
               grid.innerHTML = "<p class='lead'>No published demo movies match that filter.</p>";
             }

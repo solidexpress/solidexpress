@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Coverage for scripts/sx-publish-demo-movies ID mode against temp JSON copies."""
+"""Coverage for scripts/sx-publish-demo-movies against temp JSON + poster dirs."""
 from __future__ import annotations
 
 import json
@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "sx-publish-demo-movies"
+HELPER = ROOT / "tools" / "website_demos.py"
 PUB = ROOT / "website" / "assets" / "published-demos.json"
 CAT = ROOT / "website" / "assets" / "demo-catalog.json"
 POSTER = ROOT / "website" / "assets" / "screenshots" / "ubc_wrench.png"
@@ -28,34 +29,37 @@ class PublishDemoMoviesTests(unittest.TestCase):
             self.skipTest("ffmpeg absent")
         self._pub_before = PUB.read_bytes()
         self._cat_before = CAT.read_bytes()
-        self._poster_before = POSTER.read_bytes() if POSTER.exists() else None
+        self._poster_bytes = POSTER.read_bytes() if POSTER.exists() else None
 
     def tearDown(self) -> None:
-        if self._poster_before is None:
-            if POSTER.exists():
-                POSTER.unlink()
-        else:
-            POSTER.write_bytes(self._poster_before)
+        if PUB.read_bytes() != self._pub_before:
+            PUB.write_bytes(self._pub_before)
+        if CAT.read_bytes() != self._cat_before:
+            CAT.write_bytes(self._cat_before)
+        if self._poster_bytes is not None and POSTER.exists():
+            if POSTER.read_bytes() != self._poster_bytes:
+                POSTER.write_bytes(self._poster_bytes)
 
-    def _temp_json(self, directory: Path) -> tuple[Path, Path, bytes, bytes]:
+    def _temp_json(self, directory: Path) -> tuple[Path, Path]:
         published = directory / "published-demos.json"
         catalog = directory / "demo-catalog.json"
         published.write_bytes(self._pub_before)
         catalog.write_bytes(self._cat_before)
         ids = [str(item) for item in json.loads(published.read_text()) if str(item) != FILM_ID]
         published.write_text(json.dumps(ids, indent=2) + "\n")
-        return published, catalog, published.read_bytes(), catalog.read_bytes()
+        return published, catalog
 
-    def _env(self, movies: Path, published: Path, catalog: Path) -> dict[str, str]:
+    def _env(self, movies: Path, published: Path, catalog: Path, posters: Path) -> dict[str, str]:
         env = os.environ.copy()
         env["SX_MOVIES_OUT"] = str(movies)
         env["SX_PUBLISHED_JSON"] = str(published)
         env["SX_CATALOG_JSON"] = str(catalog)
+        env["SX_POSTER_DIR"] = str(posters)
         return env
 
     def _run(self, args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["bash", str(SCRIPT), *args],
+            [str(SCRIPT), *args],
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -67,29 +71,37 @@ class PublishDemoMoviesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             tmp = Path(raw)
             movies = tmp / "movies"
+            posters = tmp / "posters"
             movies.mkdir()
+            posters.mkdir()
             (movies / f"{FILM_ID}.webm").write_bytes(b"webm")
-            published, catalog, pub_bytes, cat_bytes = self._temp_json(tmp)
+            published, catalog = self._temp_json(tmp)
+            pub_bytes, cat_bytes = published.read_bytes(), catalog.read_bytes()
             proc = self._run(
                 ["--dry-run", "--feature", FILM_ID],
-                self._env(movies, published, catalog),
+                self._env(movies, published, catalog, posters),
             )
             self.assertEqual(proc.returncode, 0, proc.stdout + "\n" + proc.stderr)
             out = proc.stdout
             self.assertIn(f"dry-run poster: {FILM_ID}", out)
             self.assertIn("dry-run upload", out)
-            self.assertIn(f"append ['{FILM_ID}']", out)
+            self.assertIn(FILM_ID, out)
             self.assertIn("dry-run: no gh call, no file change", out)
             self.assertEqual(published.read_bytes(), pub_bytes)
             self.assertEqual(catalog.read_bytes(), cat_bytes)
+            self.assertFalse(any(posters.iterdir()))
         self.assertEqual(PUB.read_bytes(), self._pub_before)
         self.assertEqual(CAT.read_bytes(), self._cat_before)
+        if self._poster_bytes is not None:
+            self.assertEqual(POSTER.read_bytes(), self._poster_bytes)
 
     def test_skip_upload_appends_id_once_and_leaves_repo_json_untouched(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             tmp = Path(raw)
             movies = tmp / "movies"
+            posters = tmp / "posters"
             movies.mkdir()
+            posters.mkdir()
             webm = movies / f"{FILM_ID}.webm"
             made = subprocess.run(
                 [
@@ -103,19 +115,36 @@ class PublishDemoMoviesTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(made.returncode, 0, made.stderr)
-            published, catalog, _pub_bytes, _cat_bytes = self._temp_json(tmp)
-            env = self._env(movies, published, catalog)
+            published, catalog = self._temp_json(tmp)
+            env = self._env(movies, published, catalog, posters)
             env["SX_SKIP_UPLOAD"] = "1"
             proc = self._run(["--feature", FILM_ID], env)
             self.assertEqual(proc.returncode, 0, proc.stdout + "\n" + proc.stderr)
             got = [str(item) for item in json.loads(published.read_text())]
-            self.assertEqual(got, sorted(got))
-            self.assertEqual(got, sorted(set(got)))
+            self.assertEqual(len(got), len(set(got)))
             self.assertEqual(got.count(FILM_ID), 1)
             featured = json.loads(catalog.read_text()).get("featured", [])
             self.assertEqual(sum(1 for row in featured if row.get("id") == FILM_ID), 1)
+            self.assertEqual(len(featured), 12)
+            self.assertTrue((posters / f"{FILM_ID}.png").is_file())
         self.assertEqual(PUB.read_bytes(), self._pub_before)
         self.assertEqual(CAT.read_bytes(), self._cat_before)
+        if self._poster_bytes is not None:
+            self.assertEqual(POSTER.read_bytes(), self._poster_bytes)
+
+    def test_website_demos_helper_exists_and_lists_twelve(self) -> None:
+        self.assertTrue(HELPER.is_file())
+        proc = subprocess.run(
+            ["python3", str(HELPER), "ids"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        ids = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+        self.assertEqual(len(ids), 12)
+        self.assertEqual(ids[0], FILM_ID)
 
 
 if __name__ == "__main__":

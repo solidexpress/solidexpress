@@ -900,6 +900,23 @@ func _visible_contents_aabb() -> AABB:
 	return united
 
 
+## Fit so the visible AABB fills `frac` of the frustum height (no chrome pad).
+## Presentation helper — Frame / F still uses `frame_contents`.
+func frame_fill_frac(frac: float = 0.60) -> void:
+	_look_at_content = true
+	if not _has_visible_body():
+		pivot = Vector3.ZERO
+		distance = DEFAULT_DISTANCE
+		_update_transform()
+		return
+	var united := _visible_contents_aabb()
+	pivot = united.get_center()
+	var tight := _fit_distance_for_world_aabb(united) / FRAME_PADDING
+	var fill := clampf(frac, 0.35, 0.85)
+	distance = clampf(tight / fill, MIN_DISTANCE, MAX_DISTANCE)
+	_update_transform()
+
+
 ## CAD zoom-extents: pivot on the AABB center, look straight at it, and set
 ## distance so every corner fits the chrome-free canvas (same free rect as
 ## sketch fit), then pan so the AABB sits in that rect rather than under the

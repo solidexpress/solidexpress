@@ -14,9 +14,7 @@ const PERP := Vector2(-sqrt(2.0) / 2.0, sqrt(2.0) / 2.0)
 func run_film(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 
-	await ctx.movie_toast("A parametric wrench, from a blank part to a print file", 2.0)
-
-	await ctx.beat("Draw the pivot and head circles", 0.45)
+	await ctx.beat("Draw the pivot and head circles", 0.08)
 	await FilmUI.enter_sketch(ctx)
 	if not _ok():
 		return
@@ -28,17 +26,17 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok():
 		return
 
-	await ctx.beat("Dimension the centres 200 apart", 0.4)
+	await ctx.beat("Dimension the centres 200 apart", 0.08)
 	await _smart_dim_centres(ctx, "200")
 	if not _ok():
 		return
 
-	await ctx.beat("Add the shaft lines", 0.4)
+	await ctx.beat("Add the shaft lines", 0.08)
 	await _shaft_lines(ctx)
 	if not _ok():
 		return
 
-	await ctx.beat("Extrude 10", 0.4)
+	await ctx.beat("Extrude 10", 0.08)
 	await FilmUI.apply_extrude(ctx, 10.0)
 	if not _ok():
 		return
@@ -54,7 +52,7 @@ func run_film(ctx: FilmContext) -> void:
 		FilmUI._fail("missing top/bottom faces")
 		return
 
-	await ctx.beat("Open the jaw: centrelines, then Power Trim", 0.45)
+	await ctx.beat("Open the jaw: centrelines, then Power Trim", 0.08)
 	await FilmUI.enter_sketch_on_face(ctx, body, top)
 	if not _ok() or sm == null or not sm.active:
 		FilmUI._fail("jaw sketch did not start on the top face")
@@ -77,14 +75,14 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok():
 		return
 
-	await ctx.beat("Cut through the mouth", 0.4)
+	await ctx.beat("Cut through the mouth", 0.08)
 	await FilmSteps.pick_finish(ctx, 1, 1)
 	await FilmUI.apply_extrude(ctx, 10.0)
 	if not _ok():
 		return
 	await ctx.after_regen()
 
-	await ctx.beat("Grip slot", 0.4)
+	await ctx.beat("Grip slot", 0.08)
 	body = FilmSteps.only_body(ctx)
 	top = FilmUI.find_face_by_normal(ctx.view, body, Vector3(0, 0, 1))
 	await FilmUI.enter_sketch_on_face(ctx, body, top)
@@ -104,7 +102,7 @@ func run_film(ctx: FilmContext) -> void:
 		return
 	await ctx.after_regen()
 
-	await ctx.beat("Round the neck and faces", 0.45)
+	await ctx.beat("Round the neck and faces", 0.08)
 	body = FilmSteps.only_body(ctx)
 	var far_x := 200.0 - sqrt(22.5 * 22.5 - 10.0 * 10.0)
 	await FilmSteps.select_body(ctx, body)
@@ -118,18 +116,15 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok():
 		return
 
-	await ctx.beat("Change the thickness to 14 — the jaw and slot stay through", 0.5)
+	await ctx.beat("Change the thickness to 14 — the jaw and slot stay through", 0.1)
 	await _set_boss_distance(ctx, "14")
 	if not _ok():
 		return
 
-	await ctx.beat("Export 3MF", 0.4)
+	await ctx.beat("Export 3MF", 0.08)
 	await FilmSteps.export_3mf(ctx)
 	if not _ok():
 		return
-
-	if ctx.camera != null:
-		await ctx.camera.showcase_smooth(1.2, 48.0)
 
 
 func _ok() -> bool:

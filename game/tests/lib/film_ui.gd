@@ -890,10 +890,17 @@ static func select_sketch_pad_ctrl(ctx: FilmContext, feature_id: String) -> void
 	var cam = ctx.main.camera
 	if cam != null and cam.has_method("set_view"):
 		# Stable three-quarter view; avoid frame_contents after Hide (empty AABB).
-		cam.pivot = Vector3(0, 0, 2)
-		cam.distance = 40.0
-		cam.set_view(deg_to_rad(-45.0), deg_to_rad(30.0), false)
-		await wait_frames(ctx.tree, 2)
+		# Centre the pads (_look_at_content) so they are not biased into the
+		# bottom caption band.
+		if "_look_at_content" in cam:
+			cam._look_at_content = true
+		var already: bool = cam.pivot.distance_to(Vector3(0, 0, 2)) < 1.0 \
+				and absf(cam.distance - 40.0) < 1.0
+		if not already:
+			cam.pivot = Vector3(0, 0, 2)
+			cam.distance = 40.0
+			cam.set_view(deg_to_rad(-45.0), deg_to_rad(30.0), false)
+			await wait_frames(ctx.tree, 2)
 	if ctx.view != null:
 		ctx.view.refresh_sketch_pads("")
 		await wait_frames(ctx.tree, 1)

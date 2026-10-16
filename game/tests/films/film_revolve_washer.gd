@@ -9,9 +9,7 @@ func run_film(ctx: FilmContext) -> void:
 	var doc: SxDocument = ctx.view.doc
 	var sm: SketchMode = ctx.main.sketch_mode
 
-	await ctx.movie_toast("Revolve a washer profile around the Y axis", 1.8)
-
-	await ctx.beat("Sketch a rectangle offset from the Y axis", 0.5)
+	await ctx.beat("Sketch a rectangle offset from the Y axis", 0.3)
 	await FilmUI.enter_sketch(ctx)
 	if sm.has_method("set_snap"):
 		sm.set_snap(false)
@@ -21,7 +19,7 @@ func run_film(ctx: FilmContext) -> void:
 	if sm.has_method("set_snap"):
 		sm.set_snap(true)
 
-	await ctx.beat("Revolve the profile 360° into a washer", 0.5)
+	await ctx.beat("Revolve the profile 360° into a washer", 0.3)
 	await FilmUI.apply_revolve(ctx, TAU, "new")
 	await FilmUI.exit_sketch(ctx)
 	await ctx.after_regen()
@@ -37,5 +35,4 @@ func run_film(ctx: FilmContext) -> void:
 		await ctx.beat("Revolve failed — closed profile on one side of axis?", 1.0)
 		return
 
-	await ctx.beat("Washer solid — %.0f mm³" % vol, 0.7)
-	await ctx.camera.showcase_smooth(1.2, 32.0)
+	await ctx.beat("Washer solid — %.0f mm³" % vol, 0.4)

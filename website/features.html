@@ -19,6 +19,14 @@ h1{font-size:1.85rem;margin:0 0 .5rem}
 .search{margin:1rem 0 1.25rem}
 .search input{width:100%;max-width:520px;padding:.7rem .9rem;border-radius:10px;border:1px solid var(--border);background:#121a26;color:var(--text);font:inherit}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem}
+.hero-demo{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:1rem 0 1.25rem}
+.hero-demo .demo-open{position:relative;display:block;width:100%;padding:0;border:0;background:#000;cursor:pointer;aspect-ratio:16/9}
+.hero-demo .demo-open img{width:100%;height:100%;object-fit:cover;display:block}
+.hero-demo .demo-open .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:3.4rem;height:3.4rem;border-radius:999px;background:rgba(15,20,25,.72);border:2px solid rgba(221,226,234,.85);display:grid;place-items:center;pointer-events:none}
+.hero-demo .demo-open .play::before{content:"";display:block;margin-left:.18rem;border-style:solid;border-width:.7rem 0 .7rem 1.1rem;border-color:transparent transparent transparent #dde2ea}
+.hero-demo h3{margin:.9rem 1.15rem .35rem;font-size:1.35rem}
+.hero-demo p{margin:0 1.15rem 1.15rem;color:var(--muted)}
+.hero-demo .demo-open:not([data-demo]){cursor:default}
 .feature-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}
 .feature-card .demo-open{position:relative;display:block;width:100%;padding:0;border:0;background:#000;cursor:pointer;aspect-ratio:16/10}
 .feature-card .demo-open img{width:100%;height:100%;object-fit:cover;display:block}
@@ -52,9 +60,10 @@ footer{text-align:center;color:var(--muted);padding:2rem;border-top:1px solid va
 </nav>
 <main>
 <h1>Features</h1>
-<p class="lead">Published UI films — only clips whose WebM is on the demo-movies Release. Each one is a short example of what that feature enables.</p>
+<p class="lead">One film per headline feature. Play buttons appear only when that WebM is on the demo-movies Release.</p>
+<article class="hero-demo" id="hero-demo"></article>
 <div class="search">
-<input id="q" type="search" placeholder="Filter (sheet metal, drawing, print, joint, sketch…)" />
+<input id="q" type="search" placeholder="Filter (sketch, fillet, drawing, print…)" />
 </div>
 <div class="grid" id="feature-grid"></div>
 <p class="note">Only films that exist on the <code>demo-movies</code> Release are listed — a missing WebM never becomes a play button. Refresh with <code>make movies && scripts/sx-publish-demo-movies</code>, then <code>make check-website-demos</code>.</p>
@@ -80,6 +89,6 @@ Built with ❤️ by the Express Consortium<br/>
 <a href="https://github.com/solidexpress/solidexpress">github.com/solidexpress/solidexpress</a>
 </footer>
 <script src="assets/demo.js"></script>
-<script>SxDemos.hydrateLibrary("feature-grid", "q");</script>
+<script>SxDemos.hydrateFeatured("feature-grid", "hero-demo", "q");</script>
 </body>
 </html>
