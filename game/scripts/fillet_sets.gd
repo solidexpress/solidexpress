@@ -1,8 +1,14 @@
 class_name FilletSets
 extends RefCounted
-## Face → edge list for one fillet feature.
-## OpsPanel stays on the single-edge path (WP1). Callers pass this list to
-## graph_add_fillet, or select the edges and click Fillet.
+## Face → edge list for one fillet feature. FACE_LOOP drops bolt-hole
+## circles on an annulus so face-first Fillet is ID+OD, not every wire.
+
+
+## All-circle faces: keep rims with r >= keep_frac * r_max (OD + bore).
+## Mixed faces (rung 3 z=30) keep every edge.
+const FACE_LOOP := {
+	"keep_frac": 0.4,
+}
 
 
 ## Boundary edges of `face` on `body`. `body` selects which solid the face
@@ -14,6 +20,50 @@ static func edges_of_face(doc, body: String, face: String) -> PackedStringArray:
 		var faces: PackedStringArray = doc.get_face_ids(body)
 		if faces.find(face) < 0:
 			return PackedStringArray()
-	if doc.has_method("edges_of_face"):
-		return doc.edges_of_face(face)
-	return PackedStringArray()
+	if not doc.has_method("edges_of_face"):
+		return PackedStringArray()
+	return rims_of(doc, body, doc.edges_of_face(face))
+
+
+## Annulus rims from a face loop. Bolt holes (small circles) drop; a
+## rectangle-plus-boss keeps the mixed set.
+static func rims_of(doc, body: String, edges: PackedStringArray) -> PackedStringArray:
+	if edges.size() < 3 or body == "" or doc == null or not doc.has_method("get_edge_lines"):
+		return edges
+	var radii: Array[float] = []
+	var r_max := 0.0
+	for e in edges:
+		var r := _circle_radius(doc, body, str(e))
+		if r <= 0.0:
+			return edges
+		radii.append(r)
+		if r > r_max:
+			r_max = r
+	var floor_r := float(FACE_LOOP["keep_frac"]) * r_max
+	var out := PackedStringArray()
+	for i in edges.size():
+		if radii[i] >= floor_r:
+			out.append(str(edges[i]))
+	return out if not out.is_empty() else edges
+
+
+static func _circle_radius(doc, body: String, edge: String) -> float:
+	if not doc.has_method("measure_edge_length"):
+		return 0.0
+	var length := float(doc.measure_edge_length(edge))
+	if length < 1.0:
+		return 0.0
+	if not _closed_loop(doc, body, edge, length):
+		return 0.0
+	return length / TAU
+
+
+static func _closed_loop(doc, body: String, edge: String, length: float) -> bool:
+	if not doc.has_method("get_edge_lines"):
+		return false
+	var lines: Dictionary = doc.get_edge_lines(body)
+	var pts: PackedVector3Array = lines.get(edge, PackedVector3Array())
+	if pts.size() < 8:
+		return false
+	var chord := pts[0].distance_to(pts[pts.size() - 1])
+	return chord <= 1.0 or chord < length * 0.05

@@ -1,0 +1,3 @@
+script=tests/run_rung05_fillet.gd
+tier=full
+timeout=240
