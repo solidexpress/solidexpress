@@ -71,7 +71,7 @@ func build(parent: Control) -> void:
 	box.add_child(_angle_spin)
 	_ok = Button.new()
 	_ok.name = "PatternOk"
-	_ok.text = "OK"
+	_ok.text = "Apply"
 	_ok.set_meta("sx_auto", "pattern:Ok")
 	_ok.pressed.connect(_emit_ok)
 	box.add_child(_ok)

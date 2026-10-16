@@ -20,6 +20,7 @@ signal selection_changed(ids: Array)
 var offset_ui: SketchOffset
 ## Circular Sketch Pattern panel (Count / Angle / Ok). Linear still uses click.
 var pattern_ui: SketchCircularPattern
+const _SketchVertical := preload("res://scripts/sketch_vertical.gd")
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
@@ -2474,19 +2475,53 @@ func _select_at(pos2: Vector2) -> void:
 	if best_id == "":
 		_set_selected([])
 		return
-	var role := _endpoint_role_at(best_id, pos2)
+	toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+
+
+## Entity id under an in-progress SELECT drag, or "".
+func drag_entity_id() -> String:
+	return str(_drag.get("id", "")) if not _drag.is_empty() else ""
+
+
+## Endpoint role for a SELECT drag, or "self" for a whole entity / rim.
+func drag_pick_role() -> String:
+	if _drag.is_empty():
+		return "self"
+	var part := str(_drag.get("part", "whole"))
+	if part == "start" or part == "end":
+		return part
+	return "self"
+
+
+## Toggle one entity on the SELECT list (circle click after a jittered drag).
+func toggle_pick_entity(id: String, role: String = "self") -> void:
+	pick_entity(id, true, role, true)
+
+
+## SELECT a grabbed entity. additive keeps others; replace=false clears first.
+## toggle_off removes an already-selected id (plain click on it).
+func pick_entity(id: String, additive: bool = false, role: String = "self",
+		toggle_off: bool = false) -> void:
+	if not active or id == "":
+		return
+	if not additive:
+		_set_picks([{"id": id, "role": role}])
+		return
 	var picks: Array = []
 	for i in selected.size():
 		picks.append(_ref_at(i))
 	var existing := -1
 	for i in picks.size():
-		if str(picks[i]["entity"]) == best_id and str(picks[i]["role"]) == role:
+		if str(picks[i]["entity"]) == id and str(picks[i]["role"]) == role:
 			existing = i
 			break
 	if existing >= 0:
-		picks.remove_at(existing)
+		if toggle_off:
+			picks.remove_at(existing)
+		else:
+			return
 	else:
-		picks.append({"entity": best_id, "role": role})
+		picks.append({"entity": id, "role": role})
 		while picks.size() > 8:
 			picks.pop_front()
 	var stored: Array = []
@@ -2803,12 +2838,12 @@ func constrain(type: String, value: float = 0.0) -> String:
 	var cid := ""  # id of the (last) constraint added, kept for editable dims
 	match type:
 		"horizontal", "vertical":
-			if type == "vertical" and _endpoint_pick():
-				if selected.size() == 2 and _role_at(0) != "self" and _role_at(1) != "self":
-					cid = PolygonPose.vertical_pair(sketch, _ref_at(0), _ref_at(1))
-					added = cid != ""
-				else:
-					status.emit("Vertical needs two endpoints")
+			if type == "vertical":
+				cid = _SketchVertical.apply(sketch, selected, selected_roles)
+				added = cid != ""
+				if not added:
+					if _endpoint_pick() and selected.size() != 2:
+						status.emit("Vertical needs two endpoints")
 					return ""
 			else:
 				for id in selected:
@@ -5695,6 +5730,11 @@ func esc_keep_sketch() -> String:
 	_hide_infer_hint()
 	if not active or sketch == null:
 		return ""
+	# Convert / Offset / Pattern Esc drops the tool. A leftover selection
+	# would spend that key on "selection cleared" and leave the panel armed.
+	if tool == Tool.CONVERT or tool == Tool.OFFSET or tool == Tool.PATTERN:
+		set_tool(Tool.SELECT)
+		return "Tool dropped — Esc again exits the sketch"
 	# A selection (entity or constraint glyph) always spends this Esc.
 	# Honouring the exit promise first left the sketch on the same key that
 	# should have cleared a Select click made after a hover measure.

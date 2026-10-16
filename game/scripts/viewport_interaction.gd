@@ -3936,8 +3936,16 @@ func _sketch_input(event: InputEvent) -> void:
 			elif travel_up < CLICK_SLOP and p2_up != null:
 				# Jitter on a thin line used to count as a drag, so the release
 				# never selected and the next Esc left the sketch.
+				# Re-hit-testing the release often lands in a face-sketch
+				# region (A12 Vertical on two circles); keep the grabbed id
+				# and toggle it the same way a Select click does.
+				var grabbed := sketch_mode.drag_entity_id()
+				var role := sketch_mode.drag_pick_role()
 				sketch_mode.cancel_drag()
-				sketch_mode.click(p2_up)
+				if grabbed != "":
+					sketch_mode.toggle_pick_entity(grabbed, role)
+				else:
+					sketch_mode.click(p2_up)
 				_clear_select_click_measure()
 			else:
 				sketch_mode.end_drag()

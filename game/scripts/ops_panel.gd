@@ -335,13 +335,10 @@ func _build_body_ops() -> void:
 		"Arm: click an edge or face to set the pattern axis")
 	_op_button(pat_pick_row, "Mirror…", _arm_mirror, "mirror",
 		"Arm: click a planar face to set the mirror plane")
-	var feat_btn := Button.new()
+	var feat_btn := _op_button(pat_pick_row, "Features", _arm_mirror_features, "mirror",
+		"Feature Mirror: pick a plane and Shift+click timeline features")
 	feat_btn.name = "MirrorFeaturesBtn"
-	feat_btn.text = "Features"
-	feat_btn.tooltip_text = "Feature Mirror: pick a plane and Shift+click timeline features"
 	feat_btn.set_meta("sx_auto", str(_MirrorFeatures.SPEC["arm_id"]))
-	feat_btn.pressed.connect(_arm_mirror_features)
-	pat_pick_row.add_child(feat_btn)
 
 	# Instance placement (direct doc mutation — not undoable in v1).
 	_body_ops.add_child(HSeparator.new())
@@ -2645,8 +2642,16 @@ func _ensure_mirror_ui() -> void:
 			_pending = Pending.MIRROR
 	if _mirror_features.panel != null:
 		return
-	var host: Node = interaction if interaction != null else get_parent()
-	_mirror_features.build(host)
+	_mirror_features.build(_mirror_chrome_host())
+
+
+func _mirror_chrome_host() -> Node:
+	var n: Node = self
+	while n != null:
+		if n.name == "UI":
+			return n
+		n = n.get_parent()
+	return self
 
 
 func _bind_mirror_timeline() -> void:

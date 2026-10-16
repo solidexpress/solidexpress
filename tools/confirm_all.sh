@@ -38,8 +38,15 @@ record() {
   printf '%s\n' "${rc}" >"${OUT}/${name}.rc"
 }
 
+# Same steps as Makefile `build`. GNU make is not in the VM snapshot.
+confirm_build() {
+  cmake -S . -B build -G Ninja \
+    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
+    && cmake --build build -j "${JOBS}"
+}
+
 echo "confirm: build" >&2
-record build make build
+record build confirm_build
 if [[ "$(cat "${OUT}/build.rc")" != "0" ]]; then
   echo "BUILD FAIL (see ${OUT}/build.log)"
   exit 1

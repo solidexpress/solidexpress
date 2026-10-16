@@ -96,12 +96,52 @@ class WalkUI05(WalkChrome):
         ]
 
     def draw_circle(self, centre=(0.0, 0.0), rim=(75.0, 0.0)) -> dict:
-        self.show_sketch_point(rim)
-        made = self.circle(list(centre), rim=list(rim))
+        dx = float(rim[0]) - float(centre[0])
+        dy = float(rim[1]) - float(centre[1])
+        radius = (dx * dx + dy * dy) ** 0.5
+        self.show_sketch_point(centre)
+        # Ø10 is ~14 px after flange fit; a rim click does not commit. Type it.
+        if radius < 20.0:
+            made = self.circle(list(centre), radius=f"{radius:g}")
+        else:
+            made = self.circle(list(centre), rim=list(rim))
         return {
             "status": made["status"] if isinstance(made, dict) else str(made),
             "circles": self.profile_circles(),
         }
+
+    def _dim_cids(self) -> set[str]:
+        found: set[str] = set()
+        for dim in self.dims():
+            raw = dim.get("raw") or {}
+            cid = str(raw.get("cid") or dim.get("cid") or "")
+            if cid:
+                found.add(cid)
+        return found
+
+    def _newest_dim(self, before: set[str]) -> dict | None:
+        newest = None
+        for dim in self.dims():
+            raw = dim.get("raw") or {}
+            cid = str(raw.get("cid") or dim.get("cid") or "")
+            if cid and cid not in before:
+                newest = dim
+        return newest
+
+    def _commit_dim_editor(self) -> None:
+        if self._dim_editor_open():
+            self.enter()
+            self.d.wait_idle(frames=1)
+
+    def _drive_new_dim(self, before: set[str], value: str) -> None:
+        dim = self._newest_dim(before)
+        if dim is None:
+            self._commit_dim_editor()
+            return
+        if not self._dim_editor_open():
+            self.open_label(dim)
+        self._type_dim_editor(value)
+        self.enter()
 
     def dimension_diameter(self, value: str, centre=None) -> dict:
         circles = self.profile_circles()
@@ -113,22 +153,32 @@ class WalkUI05(WalkChrome):
             ]
         if not circles:
             return {"texts": self.dim_texts(), "status": "no circle"}
-        c0 = circles[-1]["center"]
-        radius = float(circles[-1].get("radius") or 5)
-        rim = [float(c0[0]) + radius, float(c0[1])]
+        self._commit_dim_editor()
+        before = self._dim_cids()
+        rim = self._rim_of(circles[-1]["center"])
         self.click("rail:SmartDim")
         self.show_sketch_point(rim)
         self.click(sketch=rim)
         self.d.wait_idle(frames=2)
-        dim = self.dims()[-1] if self.dims() else None
-        if dim is not None:
-            self.open_label(dim)
-            self._type_dim_editor(value)
-            self.enter()
+        self.refresh("dims", "status")
+        self._drive_new_dim(before, value)
         self.refresh("dims", "dof", "status")
         return {"texts": self.dim_texts(), "status": self.S()}
 
+    def _rim_of(self, centre) -> list[float]:
+        cx, cy = float(centre[0]), float(centre[1])
+        for circle in self.profile_circles():
+            cc = circle["center"]
+            if abs(float(cc[0]) - cx) <= 0.5 and abs(float(cc[1]) - cy) <= 0.5:
+                radius = float(circle.get("radius") or 5)
+                # −X stays on the 1280 canvas after sketch-fit (the +X Ø130
+                # rim lands at x≈1282 and becomes a drag).
+                return [cx - radius, cy]
+        return [cx, cy]
+
     def dimension_centres(self, a, b, value: str) -> dict:
+        self._commit_dim_editor()
+        before = self._dim_cids()
         self.click("rail:SmartDim")
         self.show_sketch_point(a)
         self.click(sketch=list(a))
@@ -136,15 +186,15 @@ class WalkUI05(WalkChrome):
         self.click(sketch=list(b))
         self.d.wait_idle(frames=3)
         self.refresh("dims", "status")
-        dim = self.find_dim(
-            lambda d: "Ø" not in str(d.get("text", "")) and "°" not in str(d.get("text", ""))
-        )
-        if dim is not None:
-            self.open_label(dim)
-            self._type_dim_editor(value)
-            self.enter()
+        self._drive_new_dim(before, value)
         self.refresh("dims", "dof", "status")
         return {"texts": self.dim_texts(), "status": self.S()}
+
+    def last_index(self, items, value) -> int:
+        for i in range(len(items) - 1, -1, -1):
+            if items[i] == value:
+                return i
+        return -1
 
     def click_verb(self, name: str) -> None:
         chip = self.control(f"chip:{name}")
@@ -160,14 +210,20 @@ class WalkUI05(WalkChrome):
 
     def vertical_centres(self, a, b) -> dict:
         self.click("rail:Select")
-        self.d.key("escape")
         self.d.wait_idle(frames=2)
-        self.show_sketch_point(a)
-        self.click(sketch=list(a))
-        self.show_sketch_point(b)
+        # Centres are region fills on a face sketch. The +X Ø130 rim sits off
+        # the 1280 window after fit; the −X rim and hole +X rim stay on canvas.
+        pa = self._rim_of(a)
+        pb = self._rim_of(b)
+        self.show_sketch_point(pa)
+        self.click(sketch=pa)
+        self.d.wait_idle(frames=2)
+        self.show_sketch_point(pb)
         self.d.key("shift", action="down")
-        self.click(sketch=list(b))
+        self.d.wait_idle(frames=2)
+        self.click(sketch=pb)
         self.d.key("shift", action="up")
+        self.d.wait_idle(frames=4)
         self.refresh("controls", "status", "selection")
         self.click_verb("Vertical")
         self.d.wait_idle(frames=3)
@@ -419,11 +475,40 @@ class WalkUI05(WalkChrome):
             "layout": self.construction_circles(),
         }
 
-    def select_seed(self) -> None:
+    def _seed_circle(self) -> dict | None:
+        holes = self.hole_ring()
+        if holes:
+            on_y = [
+                h for h in holes
+                if abs(float(h["center"][0])) <= 0.5 and float(h["center"][1]) > 0.0
+            ]
+            return on_y[0] if on_y else holes[0]
         pcd = self.mm("PCD")
+        ranked: list[tuple[float, dict]] = []
+        for circle in self.profile_circles():
+            cx, cy = float(circle["center"][0]), float(circle["center"][1])
+            pitch = (cx * cx + cy * cy) ** 0.5
+            if abs(pitch - pcd) > 0.5:
+                continue
+            ranked.append((float(circle.get("radius") or 1e9), circle))
+        ranked.sort(key=lambda item: item[0])
+        return ranked[0][1] if ranked else None
+
+    def select_seed(self) -> None:
         self.click("rail:Select")
-        self.show_sketch_point((0, pcd))
-        self.click(sketch=[0, pcd])
+        self.d.wait_idle(frames=2)
+        seed = self._seed_circle()
+        if seed is None:
+            rim = self._rim_of((0.0, self.mm("PCD")))
+        else:
+            rim = self._rim_of(seed["center"])
+        self.show_sketch_point(rim)
+        self.click(sketch=rim)
+        self.d.wait_idle(frames=2)
+        sel = (self.refresh("selection").get("selection") or {})
+        if not (sel.get("sketch") or sel.get("entities")):
+            hole_r = self.mm("HOLE_D") * 0.5
+            self.click(sketch=[0.0, self.mm("PCD") + hole_r])
         self.refresh("selection", "status")
 
     def features_of(self, kind: str) -> list[dict]:
@@ -471,9 +556,15 @@ class WalkUI05(WalkChrome):
         mark = self.mark()
         self.click("mirror:Features")
         self.d.wait_idle(frames=2)
+        self.refresh("controls", "status")
         return {"status": " | ".join(self.result_texts(mark)) or self.S()}
 
     def mirror_ok(self) -> dict:
+        for _ in range(16):
+            if self.control("mirror:Ok"):
+                break
+            self.d.wait_idle(frames=2)
+            self.refresh("controls")
         mark = self.mark()
         self.click("mirror:Ok")
         self.d.wait_idle(frames=10)

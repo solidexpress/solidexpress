@@ -73,7 +73,11 @@ class Rows05Chunk3:
         selected = self.pick_face("reshell")
         made = self.apply_shell("10")
         types = [str(f.get("type", "")) for f in (self.refresh("features").get("features") or [])]
-        shell_after = "mirror" in types and "shell" in types and types.rindex("shell") > types.index("mirror")
+        shell_after = (
+            "mirror" in types
+            and "shell" in types
+            and self.last_index(types, "shell") > types.index("mirror")
+        )
         self.clause("face selected", bool(selected.get("face")), selected.get("status", ""))
         self.clause(
             "thickness 10",

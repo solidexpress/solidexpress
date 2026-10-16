@@ -86,8 +86,8 @@ func avoid(point: Vector2) -> void:
 
 func avoid_rect(target: Rect2) -> void:
 	# Pick a dock that avoids the click target; if both intersect, pick smaller overlap.
-	var bottom_rect := _rect_for_dock(Dock.BOTTOM)
-	var top_rect := _rect_for_dock(Dock.TOP)
+	var bottom_rect: Rect2 = await _rect_for_dock(Dock.BOTTOM)
+	var top_rect: Rect2 = await _rect_for_dock(Dock.TOP)
 	var want := Dock.BOTTOM
 	if bottom_rect.grow(_hop_margin).intersects(target):
 		want = Dock.TOP

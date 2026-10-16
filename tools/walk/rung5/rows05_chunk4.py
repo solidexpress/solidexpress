@@ -70,8 +70,8 @@ class Rows05Chunk4:
             "mirror" in types
             and "shell" in types
             and "fillet" in types
-            and types.index("mirror") < types.rindex("shell")
-            and types.rindex("shell") < types.index("fillet")
+            and types.index("mirror") < self.last_index(types, "shell")
+            and self.last_index(types, "shell") < types.index("fillet")
         )
         rims = int(self.ctx.get("fillet_edges") or 0) == 4 or "4 edges" in str(self.ctx.get("fillet_status", ""))
         self.clause("order", order_ok, str(types))

@@ -70,7 +70,7 @@ func build(parent: Node) -> void:
 		_say(HINTS["arm"]))
 	_add_btn = _chip(box, "MirrorAdd", "Add", str(SPEC["add_id"]))
 	_add_btn.pressed.connect(_on_add)
-	_ok = _chip(box, "MirrorOk", "OK", str(SPEC["ok_id"]))
+	_ok = _chip(box, "MirrorOk", "Apply", str(SPEC["ok_id"]))
 	_ok.toggle_mode = false
 	_ok.pressed.connect(ok)
 	panel.position = Vector2(320, 44)
@@ -83,6 +83,7 @@ func arm(body: String) -> void:
 	_live = true
 	if panel != null:
 		panel.visible = true
+		panel.reset_size()
 	_sync()
 	_say(HINTS["arm"])
 
