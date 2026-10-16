@@ -94,14 +94,63 @@ def _get_json(url: str, timeout: float):
         return json.loads(resp.read().decode())
 
 
+def _gh_release_asset_names(repo: str, tag: str) -> set[str] | None:
+    """List Release assets via `gh api --paginate` (same path as sx-publish)."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("gh"):
+        return None
+    try:
+        rel = subprocess.run(
+            ["gh", "api", f"repos/{repo}/releases/tags/{tag}", "--jq", ".id"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        release_id = rel.stdout.strip()
+        if not release_id.isdigit():
+            return None
+        listed = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/releases/{release_id}/assets?per_page=100",
+                "--paginate",
+                "--jq",
+                ".[].name",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return {n for n in listed.stdout.splitlines() if n}
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return None
+
+
 def release_asset_names(api_url: str, timeout: float) -> set[str] | None:
     """Return asset filenames from the demo-movies Release, or None on failure.
 
-    Prefer the Releases API over HEAD on download CDN URLs — CI runners often
-    see flaky 404/redirect failures on releases/download even when assets exist.
-    Lists assets via the paginated /releases/<id>/assets endpoint so a large or
-    freshly-updated Release is never judged from a truncated embedded list.
+    Prefer `gh api --paginate` when available (matches sx-publish-demo-movies).
+    Fall back to the Releases API with explicit pagination so a large Release
+    is never judged from a truncated embedded list alone.
     """
+    # api_url like .../repos/owner/repo/releases/tags/demo-movies
+    parts = api_url.rstrip("/").split("/")
+    if len(parts) >= 4 and parts[-2] == "tags":
+        tag = parts[-1]
+        # .../repos/{owner}/{repo}/releases/tags/{tag}
+        try:
+            repo_idx = parts.index("repos")
+            repo = f"{parts[repo_idx + 1]}/{parts[repo_idx + 2]}"
+            via_gh = _gh_release_asset_names(repo, tag)
+            if via_gh is not None:
+                return via_gh
+        except (ValueError, IndexError):
+            pass
     try:
         data = _get_json(api_url, timeout)
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
@@ -120,7 +169,8 @@ def release_asset_names(api_url: str, timeout: float) -> set[str] | None:
                 if len(batch) < 100:
                     break
                 page += 1
-            names |= paged
+            if paged:
+                names = paged  # prefer full paginated list over truncated embed
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
             pass
     return names
@@ -213,45 +263,36 @@ def main() -> int:
         or "https://api.github.com/repos/solidexpress/solidexpress/releases/tags/demo-movies"
     )
     if not args.offline:
-        names = release_asset_names(api, args.timeout)
-        # The Releases API (and CDN) lag just after `gh release upload`; poll
-        # for several minutes and accept a successful download probe even when
-        # the listing is still short (run 38918525777: 24/37 for >2 min).
+        # Fresh uploads can lag on some API replicas / CDN edges (runs
+        # 38918525777 + 38925835622 listed 24/37 for many minutes while another
+        # client already saw all 37). Prefer a full listing; if short, prove
+        # each WebM via ranged GET before failing.
         want = {pid + ".webm" for pid in published_ids}
-        for _ in range(40):
+        names = release_asset_names(api, args.timeout)
+        for _ in range(20):
             if names is not None and want <= names:
                 break
             time.sleep(15)
-            names = (release_asset_names(api, args.timeout) or set()) | (names or set())
-        if names is not None:
-            for pid in published_ids:
-                asset = pid + ".webm"
-                if asset in names:
-                    continue
-                url = base + asset
-                ok = False
-                for _ in range(6):
-                    if head_ok(url, args.timeout):
-                        ok = True
-                        break
-                    time.sleep(10)
-                if not ok:
-                    errors.append(
-                        f"Release WebM missing on demo-movies tag: {asset} "
-                        f"(listed {len(names)} assets via API)"
-                    )
-        else:
-            # API unreachable — fall back to per-file probes with retries.
-            for pid in published_ids:
-                url = base + pid + ".webm"
-                ok = False
-                for _ in range(6):
-                    if head_ok(url, args.timeout):
-                        ok = True
-                        break
-                    time.sleep(10)
-                if not ok:
-                    errors.append(f"Release WebM missing or unreachable: {url}")
+            names = release_asset_names(api, args.timeout)
+        missing = sorted(want - (names or set())) if names is not None else list(want)
+        if missing:
+            print(
+                f"sx-check-website-demos: listing incomplete "
+                f"({0 if names is None else len(names)} assets); "
+                f"probing downloads for {len(missing)} WebMs",
+                flush=True,
+            )
+        for asset in missing:
+            url = base + asset
+            ok = False
+            for _ in range(30):
+                if head_ok(url, args.timeout):
+                    ok = True
+                    break
+                time.sleep(10)
+            if not ok:
+                n = "unreachable" if names is None else f"listed {len(names)} assets via API"
+                errors.append(f"Release WebM missing on demo-movies tag: {asset} ({n})")
 
     if errors:
         return fail(errors)

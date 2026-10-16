@@ -216,5 +216,9 @@ echo "Do not commit .webm / .mp4 / .vtt — Release $TAG only."
 
 default_pub="$ROOT/website/assets/published-demos.json"
 if [[ -z "${SX_POSTER_DIR:-}" && "$PUBLISHED" == "$default_pub" && -x "$ROOT/scripts/sx-check-website-demos" ]]; then
-  "$ROOT/scripts/sx-check-website-demos"
+  # Live Release listing was just verified above. Re-probing the same API/CDN
+  # here false-fails for ~10+ minutes on a stale replica (runs 38918525777 and
+  # 38925835622: wait saw 37 assets, check still listed 24 and CDN 404'd).
+  # Offline still validates posters, published-demos, catalog, and HTML.
+  "$ROOT/scripts/sx-check-website-demos" --offline
 fi
