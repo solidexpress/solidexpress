@@ -2300,16 +2300,16 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "",
 		edge = view.edge_near_point(body, point, 12.0, cam)
 	var circular := edge != "" and FilletSets.circular(view.doc, body, str(edge))
 	var kind := FilletPick.hit_kind(str(edge), face, circular)
+	# Press+release is two picks. After take_face, a linear seam on the
+	# cylinder wall must not join the annulus loop (A22 10 mm vertical).
+	if _dressup_from_face and not shift:
+		return
 	if kind == "edge":
 		edge = _prefer_selected_dressup_edge(body, str(edge), point)
 		_toggle_dressup_edge(body, edge)
 		return
 	if kind != "face":
 		status.emit("No edge near click — zoom in or click closer to an edge")
-		return
-	# Press+release is two picks. The loop is already armed; a second
-	# non-shift face click would toggle one rim off (A22).
-	if _dressup_from_face and not shift:
 		return
 	var action := FilletPick.decide(first_pick, shift, "face")
 	match action:

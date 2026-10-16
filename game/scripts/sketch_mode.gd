@@ -28,6 +28,11 @@ const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## radius with the view, capped so a zoomed-out part does not select everything.
 const PICK_SCREEN_PX := 14.0
 const PICK_TOLERANCE_MAX_MM := 8.0
+## Select stroke vs fill: at least 0.75 mm, grown to this many pixels so a
+## flange-fit rim still hits (A12). Capped per circle so a Ø10 interior
+## stays a region (lesson 2).
+const STROKE_SCREEN_PX := 6.0
+const STROKE_FILL_FRAC := 0.35
 const SNAP_RADIUS := 1.25  # tighter magnet (Fusion/Onshape-scale at typical zoom)
 const GLYPH_PICK_RADIUS := 2.0  # constraint badges are small, precise targets
 
@@ -2493,15 +2498,26 @@ func _shift_adds_circle(id: String) -> bool:
 	return false
 
 
-## Stroke width for Select: rim vs region fill.
+## Stroke width for Select: rim vs region fill. Screen floor for a
+## zoomed-out flange; never past pick_tol.
 func _stroke_mm() -> float:
-	return minf(0.75, _pick_tolerance() * 0.35)
+	var mm := 0.75
+	if camera != null and camera.has_method("pixels_per_mm_at_pivot"):
+		var ppm := float(camera.pixels_per_mm_at_pivot())
+		if ppm > 1e-4:
+			mm = maxf(mm, STROKE_SCREEN_PX / ppm)
+	return minf(mm, _pick_tolerance())
 
 
 func _on_stroke(id: String, pos2: Vector2) -> bool:
 	if sketch == null or id == "":
 		return false
-	return _entity_distance(sketch.entity_info(id), pos2) < _stroke_mm()
+	var info: Dictionary = sketch.entity_info(id)
+	var cap := _stroke_mm()
+	var kind := str(info.get("type", ""))
+	if kind == "circle" or kind == "arc":
+		cap = minf(cap, float(info.get("radius", 0.0)) * STROKE_FILL_FRAC)
+	return _entity_distance(info, pos2) < cap
 
 
 ## Entity id under an in-progress SELECT drag, or "".

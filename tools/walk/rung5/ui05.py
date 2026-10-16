@@ -56,6 +56,7 @@ class WalkUI05(WalkChrome):
         "fillet failed",
         "Fillet could not be built",
         "could not be built",
+        "regenerate stopped at feature fillet",
     )
 
     def part(self) -> dict:
