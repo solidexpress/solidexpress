@@ -45,7 +45,10 @@ static func decide(first_pick: bool, shift: bool, hit_kind: String) -> String:
 
 ## A circular rim or bolt hole on a face is a face click. Linear corners
 ## stay edges so a vertical still arms from the 2 mm band (M12).
-static func hit_kind(edge: String, face: String, circular: bool) -> String:
+## Shift+face always adds the loop, even if a 10 mm seam is in the band (A22).
+static func hit_kind(edge: String, face: String, circular: bool, shift: bool = false) -> String:
+	if shift and face != "":
+		return "face"
 	if edge != "" and (face == "" or not circular):
 		return "edge"
 	if face != "":

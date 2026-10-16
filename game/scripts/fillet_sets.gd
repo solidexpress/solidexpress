@@ -8,7 +8,6 @@ extends RefCounted
 ## Mixed faces (rung 3 z=30) keep every edge.
 const FACE_LOOP := {
 	"keep_frac": 0.4,
-	"seam_mm": 20.0,
 }
 
 
@@ -59,15 +58,15 @@ static func rims_of(doc, body: String, edges: PackedStringArray) -> PackedString
 	if circles.size() >= 2 and not others.is_empty() and _short_seams(doc, others, circ_len_max):
 		edges = circles
 	elif not others.is_empty():
-		return _drop_short_seams(doc, edges)
+		return edges
 	if edges.size() < 3:
-		return _drop_short_seams(doc, edges)
+		return edges
 	var floor_r := float(FACE_LOOP["keep_frac"]) * r_max
 	var out := PackedStringArray()
 	for i in circles.size():
 		if radii[i] >= floor_r:
 			out.append(str(circles[i]))
-	return _drop_short_seams(doc, out if not out.is_empty() else edges)
+	return out if not out.is_empty() else edges
 
 
 static func _short_seams(doc, others: PackedStringArray, circ_len_max: float) -> bool:
@@ -78,21 +77,6 @@ static func _short_seams(doc, others: PackedStringArray, circ_len_max: float) ->
 		if float(doc.measure_edge_length(str(e))) > cap:
 			return false
 	return true
-
-
-## A 10 mm flange seam drops when two longer rims exist. Rung 3's 30 mm
-## verticals stay (they are at or above seam_mm).
-static func _drop_short_seams(doc, edges: PackedStringArray) -> PackedStringArray:
-	if edges.size() < 3 or not doc.has_method("measure_edge_length"):
-		return edges
-	var seam := float(FACE_LOOP["seam_mm"])
-	var kept := PackedStringArray()
-	for e in edges:
-		if float(doc.measure_edge_length(str(e))) >= seam:
-			kept.append(str(e))
-	if kept.size() >= 2 and kept.size() < edges.size():
-		return kept
-	return edges
 
 
 static func _circle_radius(doc, body: String, edge: String) -> float:

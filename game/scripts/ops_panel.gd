@@ -2299,7 +2299,7 @@ func _accumulate_dressup_edge(body: String, point: Vector3, face: String = "",
 	if edge == "" and face == "":
 		edge = view.edge_near_point(body, point, 12.0, cam)
 	var circular := edge != "" and FilletSets.circular(view.doc, body, str(edge))
-	var kind := FilletPick.hit_kind(str(edge), face, circular)
+	var kind := FilletPick.hit_kind(str(edge), face, circular, shift)
 	# Press+release is two picks. After take_face, a linear seam on the
 	# cylinder wall must not join the annulus loop (A22 10 mm vertical).
 	if _dressup_from_face and not shift:
