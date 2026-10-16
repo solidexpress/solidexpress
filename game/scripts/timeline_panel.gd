@@ -30,6 +30,9 @@ var _rows := {}  # feature id -> row control
 var _selected_fid := ""
 var _selected_ids: PackedStringArray = PackedStringArray()
 var _row_shift := false
+## Feature Mirror (and any other collector) — clicks add to the list and
+## never open the property editor or body-select a preview.
+var _collecting := false
 var _editor_box: VBoxContainer
 var _params_edit: TextEdit
 var _json_toggle: CheckButton
@@ -51,6 +54,20 @@ func selected_feature_ids() -> PackedStringArray:
 	if _selected_fid != "":
 		return PackedStringArray([_selected_fid])
 	return PackedStringArray()
+
+
+func begin_collect() -> void:
+	_collecting = true
+	if property_panel != null:
+		property_panel.visible = false
+
+
+func end_collect() -> void:
+	_collecting = false
+
+
+func collecting() -> bool:
+	return _collecting
 
 
 ## Left presses on a row (and the panel chrome) stamp the relayout guard
@@ -673,6 +690,13 @@ func _select_feature(fid: String, additive: bool = false) -> void:
 			feat = f
 			break
 	if feat.is_empty():
+		return
+	if _collecting:
+		if not _selected_ids.has(fid):
+			_selected_ids.append(fid)
+		_selected_fid = fid
+		_sync_selection_paint()
+		feature_clicked.emit(fid, true)
 		return
 	if additive:
 		if not _selected_ids.has(fid):

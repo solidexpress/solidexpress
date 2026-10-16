@@ -36,6 +36,8 @@ var apply: Callable
 var status: Callable
 var add_current: Callable
 var on_plane_arm: Callable
+## True when the collector is live. Timeline uses this to skip the property editor.
+var on_live: Callable
 
 var _live := false
 var _plane_btn: Button
@@ -80,10 +82,8 @@ func arm(body: String) -> void:
 	body_id = body
 	has_plane = false
 	feature_ids = PackedStringArray()
-	_live = true
-	if panel != null:
-		panel.visible = true
-		panel.reset_size()
+	_set_live(true)
+	_place()
 	_sync()
 	_say(HINTS["arm"])
 
@@ -148,12 +148,31 @@ func _on_add() -> void:
 
 
 func _finish() -> void:
-	_live = false
+	_set_live(false)
 	has_plane = false
 	feature_ids = PackedStringArray()
 	if panel != null:
 		panel.visible = false
 	_sync()
+
+
+func _set_live(live: bool) -> void:
+	_live = live
+	if on_live.is_valid():
+		on_live.call(live)
+
+
+func _place() -> void:
+	if panel == null:
+		return
+	panel.visible = true
+	panel.reset_size()
+	var want := panel.get_combined_minimum_size()
+	if want.x < 8.0 or want.y < 8.0:
+		want = Vector2(280, 36)
+	panel.size = want
+	panel.position = Vector2(320, 44)
+	panel.move_to_front()
 
 
 func _sync() -> void:
@@ -169,6 +188,7 @@ func _chip(box: Node, node_name: String, label: String, auto_id: String) -> Butt
 	b.text = label
 	b.toggle_mode = true
 	b.focus_mode = Control.FOCUS_CLICK
+	b.custom_minimum_size = Vector2(UiScale.px(64), 0)
 	b.set_meta("sx_auto", auto_id)
 	box.add_child(b)
 	return b

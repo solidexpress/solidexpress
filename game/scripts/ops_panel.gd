@@ -128,6 +128,7 @@ func _ready() -> void:
 	clip_contents = true
 	_lock_modify_width()
 	call_deferred("_remeasure_modify_width")
+	call_deferred("_ensure_mirror_ui")
 	_on_selection_changed(view.selected_body, view.selected_face)
 
 
@@ -632,7 +633,9 @@ func _on_selection_changed(body: String, face: String) -> void:
 		_clamp_height()
 		return
 	visible = body != ""
-	_body_ops.visible = body != "" and face == ""
+	# Feature Mirror's Features chip lives in body ops; a face pick (the
+	# mirror plane) must not hide it. Face tools still stack below.
+	_body_ops.visible = body != ""
 	_face_ops.visible = face != ""
 	if body != "" and face == "":
 		# Prefer feature display name (Box) over raw body id label.
@@ -2619,7 +2622,7 @@ func _arm_mirror() -> void:
 
 
 func _arm_mirror_features() -> void:
-	var body := view.selected_body
+	var body := _mirror_target_body()
 	if body == "":
 		status.emit(str(_MirrorFeatures.REFUSALS["body"]))
 		return
@@ -2632,6 +2635,15 @@ func _arm_mirror_features() -> void:
 	_pending_first = body
 
 
+func _mirror_target_body() -> String:
+	if view.selected_body != "":
+		return view.selected_body
+	if view.doc == null or not view.doc.has_method("body_ids"):
+		return ""
+	var ids: PackedStringArray = view.doc.body_ids()
+	return str(ids[0]) if ids.size() == 1 else ""
+
+
 func _ensure_mirror_ui() -> void:
 	if _mirror_features == null:
 		_mirror_features = _MirrorFeatures.new()
@@ -2640,18 +2652,40 @@ func _ensure_mirror_ui() -> void:
 		_mirror_features.add_current = _add_timeline_to_mirror
 		_mirror_features.on_plane_arm = func() -> void:
 			_pending = Pending.MIRROR
+		_mirror_features.on_live = func(live: bool) -> void:
+			if timeline_panel == null:
+				return
+			if live:
+				timeline_panel.begin_collect()
+			else:
+				timeline_panel.end_collect()
 	if _mirror_features.panel != null:
 		return
 	_mirror_features.build(_mirror_chrome_host())
 
 
 func _mirror_chrome_host() -> Node:
+	var ui := _ui_layer()
+	if ui == null:
+		return self
+	var host := ui.get_node_or_null("MirrorChromeHost") as Control
+	if host != null:
+		return host
+	host = Control.new()
+	host.name = "MirrorChromeHost"
+	host.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(host)
+	return host
+
+
+func _ui_layer() -> Node:
 	var n: Node = self
 	while n != null:
 		if n.name == "UI":
 			return n
 		n = n.get_parent()
-	return self
+	return null
 
 
 func _bind_mirror_timeline() -> void:

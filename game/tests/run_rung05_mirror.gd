@@ -323,10 +323,17 @@ func _shift_click_four(ctx: FilmContext) -> void:
 	if extrudes.size() >= 3:
 		rows.append(extrudes[2])
 	check(rows.size() == 4, "four feature rows (got %d)" % rows.size())
-	for row in rows:
-		if row == null:
+	if rows.is_empty():
+		return
+	await _click_row(ctx, rows[0], false)
+	await process_frame
+	var panel = ctx.main.timeline.property_panel
+	check(panel == null or not panel.visible,
+			"collecting timeline click does not open the property panel")
+	for i in range(1, rows.size()):
+		if rows[i] == null:
 			continue
-		await _click_row(ctx, row, true)
+		await _click_row(ctx, rows[i], true)
 		await process_frame
 	var ids: PackedStringArray = ctx.main.timeline.selected_feature_ids()
 	check(ids.size() == 4, "Shift+click collected four features (got %d)" % ids.size())
