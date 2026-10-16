@@ -2515,11 +2515,21 @@ func keep_drag_pick(on_stroke: bool) -> bool:
 
 
 ## Drop the geometry drag and resolve it as a SELECT pick.
+## Additive never toggles the grab off: a Shift fill that hit-tested the
+## already-selected Ø130 would otherwise empty the list (A12 Vertical).
 func commit_select_drag(release_uv: Vector2) -> void:
 	var grabbed := drag_entity_id()
 	var role := drag_pick_role()
 	var keep := keep_drag_pick(drag_on_stroke())
+	var additive := _additive_pick()
 	cancel_drag()
+	if additive:
+		if grabbed != "":
+			pick_entity(grabbed, true, role, false)
+		var at := _nearest_profile_entity_at(release_uv)
+		if at != "" and at != grabbed:
+			pick_entity(at, true, _endpoint_role_at(at, release_uv), false)
+		return
 	if keep:
 		toggle_pick_entity(grabbed, role)
 	else:
@@ -2722,8 +2732,8 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	var best_id := ""
 	var best_part := ""
 	var best_d := _pick_tolerance()
-	# Handles and curves compete. A line endpoint 5 mm from a Ø10 rim used
-	# to win Pass 1 and never see the rim (A12 Shift+second circle).
+	# Pass 1: endpoints / centers. A vertex click must stay an endpoint
+	# (rung 4 hex Vertical), even when the line body is equally close.
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match info.get("type", ""):
@@ -2744,11 +2754,17 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 					best_d = d2
 					best_id = id
 					best_part = "center"
-		var d3 := _entity_distance(info, pos2)
-		if d3 < best_d:
+	if best_id != "":
+		return {"id": best_id, "part": best_part}
+	# Pass 2: whole entity / rim
+	best_d = _pick_tolerance()
+	for id in sketch.entity_ids():
+		var info2: Dictionary = sketch.entity_info(id)
+		var d3 := _entity_distance(info2, pos2)
+		if d3 <= best_d:
 			best_d = d3
 			best_id = id
-			match info.get("type", ""):
+			match info2.get("type", ""):
 				"line":
 					best_part = "whole"
 				"circle", "arc":
