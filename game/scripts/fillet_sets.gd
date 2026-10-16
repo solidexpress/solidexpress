@@ -8,6 +8,7 @@ extends RefCounted
 ## Mixed faces (rung 3 z=30) keep every edge.
 const FACE_LOOP := {
 	"keep_frac": 0.4,
+	"seam_mm": 20.0,
 }
 
 
@@ -53,6 +54,9 @@ static func rims_of(doc, body: String, edges: PackedStringArray) -> PackedString
 	if circles.size() >= 2 and not others.is_empty() and _short_seams(doc, others, circ_len_max):
 		edges = circles
 	elif not others.is_empty():
+		var dropped := _drop_short_seams(doc, edges)
+		if dropped.size() >= 2 and dropped.size() < edges.size():
+			return dropped
 		return edges
 	if edges.size() < 3:
 		return edges
@@ -87,12 +91,37 @@ static func _circle_radius(doc, body: String, edge: String) -> float:
 
 ## Same chord test as dressup "arc" vs "line": a 10 mm flange seam is a
 ## line (chord ≈ length); an open circular rim is an arc (chord ≪ length).
+static func _drop_short_seams(doc, edges: PackedStringArray) -> PackedStringArray:
+	if not doc.has_method("measure_edge_length"):
+		return edges
+	var seam := float(FACE_LOOP["seam_mm"])
+	var kept := PackedStringArray()
+	var n_long := 0
+	for e in edges:
+		var length := float(doc.measure_edge_length(str(e)))
+		if length >= seam:
+			n_long += 1
+			kept.append(str(e))
+	if n_long >= 2 and kept.size() < edges.size():
+		return kept
+	return edges
+
+
 static func _circular_edge(doc, body: String, edge: String, length: float) -> bool:
 	if not doc.has_method("get_edge_lines"):
 		return false
 	var lines: Dictionary = doc.get_edge_lines(body)
-	var pts: PackedVector3Array = lines.get(edge, PackedVector3Array())
+	var pts := _polyline(lines, edge)
 	if pts.size() < 2:
 		return false
 	var chord := pts[0].distance_to(pts[pts.size() - 1])
 	return chord < length * 0.95
+
+
+static func _polyline(lines: Dictionary, edge: String) -> PackedVector3Array:
+	if lines.has(edge) and lines[edge] is PackedVector3Array:
+		return lines[edge]
+	for k in lines.keys():
+		if str(k) == edge and lines[k] is PackedVector3Array:
+			return lines[k]
+	return PackedVector3Array()
