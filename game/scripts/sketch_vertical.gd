@@ -7,6 +7,20 @@ extends RefCounted
 const CENTRE_KINDS := ["circle", "arc"]
 
 
+## True when the current selection can take a Vertical constraint.
+static func offers(sketch, ids: Array, roles: Array) -> bool:
+	if sketch == null or ids.is_empty():
+		return false
+	if ids.size() == 1:
+		var role := str(roles[0]) if roles.size() >= 1 else "self"
+		return role != "self"
+	if ids.size() != 2:
+		return false
+	if _any_endpoint(roles):
+		return roles.size() >= 2 and str(roles[0]) != "self" and str(roles[1]) != "self"
+	return _both(sketch, ids, CENTRE_KINDS)
+
+
 static func apply(sketch, ids: Array, roles: Array) -> String:
 	if sketch == null or ids.is_empty():
 		return ""

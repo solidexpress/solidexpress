@@ -1885,14 +1885,16 @@ func selection_actions() -> Array:
 		return acts
 	acts.append("construction")
 	acts.append("delete")
-	if selected.size() == 1 and _role_at(0) != "self":
+	# Vertical (and Horizontal on an endpoint pair) sit early so they stay
+	# on the chip row instead of … More. Two circle centres use the same
+	# Vertical chip as two endpoints.
+	if _SketchVertical.offers(sketch, selected, selected_roles):
 		acts.append("vertical")
 	if selected.size() == 2:
-		# Endpoint pair first so Vertical/Horizontal stay on the chip row
+		# Endpoint pair first so Horizontal stays on the chip row
 		# instead of … More (a More click would drop the selection).
 		if _endpoint_pick():
 			acts.append("horizontal")
-			acts.append("vertical")
 		var t0: String = sketch.entity_info(selected[0]).get("type", "")
 		var t1: String = sketch.entity_info(selected[1]).get("type", "")
 		if (t0 == "circle" or t0 == "arc") and (t1 == "circle" or t1 == "arc"):
@@ -2462,20 +2464,18 @@ func _nearest_entity_at(pos2: Vector2) -> String:
 
 
 func _select_at(pos2: Vector2) -> void:
+	# Entity hit-test wins. Region fill is the miss, so a rim click on a
+	# face-sketch circle (A12 Vertical) is not stolen by the interior.
 	var best_id := _nearest_entity_at(pos2)
-	var region_idx := _region_index_at(pos2)
-	var on_stroke := false
 	if best_id != "":
-		var stroke := minf(0.75, _pick_tolerance() * 0.35)
-		on_stroke = _entity_distance(sketch.entity_info(best_id), pos2) < stroke
-	if region_idx >= 0 and not on_stroke:
+		toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+		return
+	var region_idx := _region_index_at(pos2)
+	if region_idx >= 0:
 		_set_selected([])
 		_apply_region_pick(region_idx)
 		return
-	if best_id == "":
-		_set_selected([])
-		return
-	toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+	_set_selected([])
 
 
 ## Entity id under an in-progress SELECT drag, or "".
