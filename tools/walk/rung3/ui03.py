@@ -258,14 +258,6 @@ class WalkUI03(WalkChrome):
             "record": record,
         }
 
-    def _face_record(self, face_id: str) -> dict | None:
-        if not face_id:
-            return None
-        for face in (self.refresh("faces").get("faces") or []):
-            if str(face.get("id")) == face_id:
-                return face
-        return None
-
     def face_sketch(self, normal, plane: float, view_key: str = "3") -> dict:
         self.ctx["camera_before_sketch"] = dict(self.refresh("camera").get("camera") or {})
         self.select_body()
@@ -398,11 +390,6 @@ class WalkUI03(WalkChrome):
         self.refresh("status", "selection")
         return {"status": status, "count": self.fillet_count(status)}
 
-    def selected_edge_count(self) -> int:
-        sel = (self.refresh("selection").get("selection") or {})
-        edges = sel.get("edges") or []
-        return len(edges) if isinstance(edges, list) else 0
-
     def plain_click_face(self, normal, plane: float) -> dict:
         mark = self.mark()
         reply = self.click(face_normal=list(normal), plane=float(plane))
@@ -413,30 +400,6 @@ class WalkUI03(WalkChrome):
         if count is None:
             count = self.selected_edge_count()
         return {"status": status, "count": count}
-
-    def apply_enter(self) -> str:
-        mark = self.mark()
-        focus = str(self.refresh("focus").get("focus", ""))
-        if "LineEdit" in focus or "SpinBox" in focus:
-            self.d.key("tab")
-            self.d.wait_idle(frames=1)
-        self.enter()
-        return " | ".join(self.result_texts(mark)) or self.S()
-
-    def _ensure_finish_bar(self) -> None:
-        snap = self.refresh("sketch", "controls")
-        active = bool((snap.get("sketch") or {}).get("active"))
-        ids = {str(c.get("id", "")) for c in (snap.get("controls") or [])}
-        if active and "finish:Op" in ids:
-            return
-        sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
-        if sketches:
-            self._pencil(sketches[-1])
-        for _ in range(6):
-            shown = {str(c.get("id", "")) for c in (self.refresh("controls").get("controls") or [])}
-            if "finish:Op" in shown:
-                return
-            self.d.wait_idle(frames=2)
 
     def offset_arm(self) -> dict:
         mark = self.mark()
@@ -483,15 +446,6 @@ class WalkUI03(WalkChrome):
             "external": self.external_circles(),
             "dof": self.dof_text(),
         }
-
-    def profile_circles(self) -> list[dict]:
-        self.refresh("sketch")
-        return [
-            e for e in self._entities()
-            if e.get("type") == "circle"
-            and not e.get("construction")
-            and not e.get("external")
-        ]
 
     def external_circles(self) -> list[dict]:
         self.refresh("sketch")
@@ -672,20 +626,6 @@ class WalkUI03(WalkChrome):
             },
             "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
         }
-
-    def _release_project(self) -> None:
-        self.d.close()
-        proc_obj = getattr(self, "proc", None)
-        if proc_obj is not None and proc_obj.poll() is None:
-            proc_obj.terminate()
-            try:
-                proc_obj.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                proc_obj.kill()
-                proc_obj.wait(timeout=5)
-        log_fp = getattr(self, "log_fp", None)
-        if log_fp is not None and not log_fp.closed:
-            log_fp.close()
 
     def _kernel_tests(self) -> subprocess.CompletedProcess:
         # Labelled by run_kernel so a later passer cannot hide an earlier failure.

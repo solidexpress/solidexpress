@@ -1,9 +1,10 @@
-# Shared click and read helpers for rung 2 and rung 3.
+# Shared click and read helpers for the rung walks.
 # Each UI class sets `_INTENDED`; these helpers only read it.
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 
 from sxdrive import SxError
@@ -310,3 +311,88 @@ class WalkChrome:
 
     def window_size(self) -> list:
         return (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
+
+    def apply_enter(self) -> str:
+        mark = self.mark()
+        focus = str(self.refresh("focus").get("focus", ""))
+        if "LineEdit" in focus or "SpinBox" in focus:
+            self.d.key("tab")
+            self.d.wait_idle(frames=1)
+        self.enter()
+        return " | ".join(self.result_texts(mark)) or self.S()
+
+    def check_probe(self, text: str, name: str) -> tuple[bool, str]:
+        for line in text.splitlines():
+            bits = line.split()
+            if len(bits) >= 2 and bits[1] == name:
+                return bits[0] == "PASS", line.strip()
+        return False, f"missing {name}"
+
+    def click_verb(self, name: str) -> None:
+        chip = self.control(f"chip:{name}")
+        if chip and chip.get("visible") is not False:
+            self.click(f"chip:{name}")
+            return
+        more = self.control("chip:… More") or self.control("chip:More")
+        if not more:
+            raise SxError(f"control not found: chip:{name}")
+        self.click("chip:… More" if self.control("chip:… More") else "chip:More")
+        self.d.wait_idle(frames=2)
+        self.click(f"popup:{name}")
+
+    def _ensure_finish_bar(self) -> None:
+        snap = self.refresh("sketch", "controls")
+        active = bool((snap.get("sketch") or {}).get("active"))
+        ids = {str(c.get("id", "")) for c in (snap.get("controls") or [])}
+        if active and "finish:Op" in ids:
+            return
+        sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
+        if sketches:
+            self._pencil(sketches[-1])
+        for _ in range(6):
+            shown = {str(c.get("id", "")) for c in (self.refresh("controls").get("controls") or [])}
+            if "finish:Op" in shown:
+                return
+            self.d.wait_idle(frames=2)
+
+    def _face_record(self, face_id: str) -> dict | None:
+        if not face_id:
+            return None
+        for face in (self.refresh("faces").get("faces") or []):
+            if str(face.get("id")) == face_id:
+                return face
+        return None
+
+    def profile_circles(self) -> list[dict]:
+        self.refresh("sketch")
+        return [
+            e for e in self._entities()
+            if e.get("type") == "circle"
+            and not e.get("construction")
+            and not e.get("external")
+        ]
+
+    def _release_project(self) -> None:
+        self.d.close()
+        proc_obj = getattr(self, "proc", None)
+        if proc_obj is not None and proc_obj.poll() is None:
+            proc_obj.terminate()
+            try:
+                proc_obj.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                proc_obj.kill()
+                proc_obj.wait(timeout=5)
+        log_fp = getattr(self, "log_fp", None)
+        if log_fp is not None and not log_fp.closed:
+            log_fp.close()
+
+    def reopen(self, name: str) -> dict:
+        self.file_new("ok")
+        self.open_file(name)
+        self.refresh("status", "timeline", "sketch", "bodies")
+        return {"status": self.S(), "names": self.feature_names()}
+
+    def selected_edge_count(self) -> int:
+        sel = (self.refresh("selection").get("selection") or {})
+        edges = sel.get("edges") or []
+        return len(edges) if isinstance(edges, list) else 0

@@ -4,7 +4,6 @@ Rows call these helpers. Face picks are the FACES table; plane= is n·pick.
 """
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -79,15 +78,6 @@ class WalkUI05(WalkChrome):
             "active": bool(sk.get("active")),
             "plane": sk.get("plane") or {},
         }
-
-    def profile_circles(self) -> list[dict]:
-        self.refresh("sketch")
-        return [
-            e for e in self._entities()
-            if e.get("type") == "circle"
-            and not e.get("construction")
-            and not e.get("external")
-        ]
 
     def construction_circles(self) -> list[dict]:
         self.refresh("sketch")
@@ -197,18 +187,6 @@ class WalkUI05(WalkChrome):
                 return i
         return -1
 
-    def click_verb(self, name: str) -> None:
-        chip = self.control(f"chip:{name}")
-        if chip and chip.get("visible") is not False:
-            self.click(f"chip:{name}")
-            return
-        more = self.control("chip:… More") or self.control("chip:More")
-        if not more:
-            raise SxError(f"control not found: chip:{name}")
-        self.click("chip:… More" if self.control("chip:… More") else "chip:More")
-        self.d.wait_idle(frames=2)
-        self.click(f"popup:{name}")
-
     def vertical_centres(self, a, b) -> dict:
         self.click("rail:Select")
         self.d.wait_idle(frames=2)
@@ -242,21 +220,6 @@ class WalkUI05(WalkChrome):
             if abs(pitch - pcd) <= 0.2 and abs(radius - hole_r) <= 0.2:
                 found.append(circle)
         return found
-
-    def _ensure_finish_bar(self) -> None:
-        snap = self.refresh("sketch", "controls")
-        active = bool((snap.get("sketch") or {}).get("active"))
-        ids = {str(c.get("id", "")) for c in (snap.get("controls") or [])}
-        if active and "finish:Op" in ids:
-            return
-        sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
-        if sketches:
-            self._pencil(sketches[-1])
-        for _ in range(6):
-            shown = {str(c.get("id", "")) for c in (self.refresh("controls").get("controls") or [])}
-            if "finish:Op" in shown:
-                return
-            self.d.wait_idle(frames=2)
 
     def try_extrude(
         self, distance: str, op: str = "New", end: str = "Blind", apply: bool = True,
@@ -330,14 +293,6 @@ class WalkUI05(WalkChrome):
             "record": record,
         }
 
-    def _face_record(self, face_id: str) -> dict | None:
-        if not face_id:
-            return None
-        for face in (self.refresh("faces").get("faces") or []):
-            if str(face.get("id")) == face_id:
-                return face
-        return None
-
     def pick_face(self, key: str, shift: bool = False) -> dict:
         normal, world_z, view = FACES[key]
         self.view_key(view)
@@ -369,11 +324,6 @@ class WalkUI05(WalkChrome):
     def selected_faces(self) -> list:
         sel = (self.refresh("selection").get("selection") or {})
         return list(sel.get("faces") or [])
-
-    def selected_edge_count(self) -> int:
-        sel = (self.refresh("selection").get("selection") or {})
-        edges = sel.get("edges") or []
-        return len(edges) if isinstance(edges, list) else 0
 
     def face_sketch(self, key: str) -> dict:
         self.ctx["camera_before_sketch"] = dict(self.refresh("camera").get("camera") or {})
@@ -579,15 +529,6 @@ class WalkUI05(WalkChrome):
         self.refresh("status", "finish", "controls")
         return {"status": self.S(), "radius": shown or self.field("finish:StripR")}
 
-    def apply_enter(self) -> str:
-        mark = self.mark()
-        focus = str(self.refresh("focus").get("focus", ""))
-        if "LineEdit" in focus or "SpinBox" in focus:
-            self.d.key("tab")
-            self.d.wait_idle(frames=1)
-        self.enter()
-        return " | ".join(self.result_texts(mark)) or self.S()
-
     def rects_overlap(self, a, b) -> bool:
         if len(a) < 4 or len(b) < 4:
             return False
@@ -605,13 +546,6 @@ class WalkUI05(WalkChrome):
         mn = bodies[0].get("min") or [0, 0, 0]
         mx = bodies[0].get("max") or [0, 0, 0]
         return float(mn[2]), float(mx[2])
-
-    def check_probe(self, text: str, name: str) -> tuple[bool, str]:
-        for line in text.splitlines():
-            bits = line.split()
-            if len(bits) >= 2 and bits[1] == name:
-                return bits[0] == "PASS", line.strip()
-        return False, f"missing {name}"
 
     def stage_report(self, stage: str) -> dict:
         cached = self.ctx.get(f"report:{stage}")
@@ -640,12 +574,6 @@ class WalkUI05(WalkChrome):
         }
         self.ctx[f"report:{stage}"] = report
         return report
-
-    def reopen(self, name: str) -> dict:
-        self.file_new("ok")
-        self.open_file(name)
-        self.refresh("status", "timeline", "sketch", "bodies")
-        return {"status": self.S(), "names": self.feature_names()}
 
     def headless(self) -> dict[str, dict]:
         keys = ("kernel", "godot", "lint", "unit", "registry", "errors")
@@ -697,17 +625,3 @@ class WalkUI05(WalkChrome):
             },
             "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
         }
-
-    def _release_project(self) -> None:
-        self.d.close()
-        proc_obj = getattr(self, "proc", None)
-        if proc_obj is not None and proc_obj.poll() is None:
-            proc_obj.terminate()
-            try:
-                proc_obj.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                proc_obj.kill()
-                proc_obj.wait(timeout=5)
-        log_fp = getattr(self, "log_fp", None)
-        if log_fp is not None and not log_fp.closed:
-            log_fp.close()

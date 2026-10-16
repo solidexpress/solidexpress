@@ -5,7 +5,6 @@ Rows call these helpers. Pixel positions come from project(), never literals.
 from __future__ import annotations
 
 import math
-import subprocess
 import sys
 from pathlib import Path
 
@@ -100,18 +99,6 @@ class WalkUI04(WalkChrome):
             self.enter()
         self.refresh("dims", "dof", "status")
         return {"opened": opened, "texts": self.dim_texts(), "status": self.S()}
-
-    def click_verb(self, name: str) -> None:
-        chip = self.control(f"chip:{name}")
-        if chip and chip.get("visible") is not False:
-            self.click(f"chip:{name}")
-            return
-        more = self.control("chip:… More") or self.control("chip:More")
-        if not more:
-            raise SxError(f"control not found: chip:{name}")
-        self.click("chip:… More" if self.control("chip:… More") else "chip:More")
-        self.d.wait_idle(frames=2)
-        self.click(f"popup:{name}")
 
     def vertical_vertex_pair(self) -> dict:
         r_val = self.r_vertex()
@@ -276,13 +263,6 @@ class WalkUI04(WalkChrome):
     def world_near(self, got, want, tol=0.2) -> bool:
         return all(abs(float(got[i]) - want[i]) <= tol for i in range(3))
 
-    def check_probe(self, text: str, name: str) -> tuple[bool, str]:
-        for line in text.splitlines():
-            bits = line.split()
-            if len(bits) >= 2 and bits[1] == name:
-                return bits[0] == "PASS", line.strip()
-        return False, f"missing {name}"
-
     def final_report(self) -> dict:
         cached = self.ctx.get("final_report")
         if isinstance(cached, dict):
@@ -296,12 +276,6 @@ class WalkUI04(WalkChrome):
         }
         self.ctx["final_report"] = report
         return report
-
-    def reopen(self, name: str) -> dict:
-        self.file_new("ok")
-        self.open_file(name)
-        self.refresh("status", "timeline", "sketch", "bodies")
-        return {"status": self.S(), "names": self.feature_names()}
 
     def headless(self) -> dict[str, dict]:
         keys = ("kernel", "godot", "lint", "unit", "registry", "errors")
@@ -353,17 +327,3 @@ class WalkUI04(WalkChrome):
             },
             "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
         }
-
-    def _release_project(self) -> None:
-        self.d.close()
-        proc_obj = getattr(self, "proc", None)
-        if proc_obj is not None and proc_obj.poll() is None:
-            proc_obj.terminate()
-            try:
-                proc_obj.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                proc_obj.kill()
-                proc_obj.wait(timeout=5)
-        log_fp = getattr(self, "log_fp", None)
-        if log_fp is not None and not log_fp.closed:
-            log_fp.close()
