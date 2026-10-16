@@ -2478,10 +2478,8 @@ func _select_at(pos2: Vector2) -> void:
 
 
 ## Stroke width for Select: rim vs region fill.
-## Widen with pick_tol so a flange-fit rim click still hits (A12); cap
-## below a Ø10 radius so the hole interior stays a region (lesson 2).
 func _stroke_mm() -> float:
-	return clampf(_pick_tolerance() * 0.5, 0.75, 4.0)
+	return minf(0.75, _pick_tolerance() * 0.35)
 
 
 func _on_stroke(id: String, pos2: Vector2) -> bool:
