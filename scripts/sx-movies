@@ -157,7 +157,9 @@ render_one() {
   fi
 
   remux_cues "$webm_abs"
-  mux_vtt_if_present "$webm_abs" "$vtt_abs"
+  # Captions are burned into the frames; muxing the .vtt doubled them in players
+  # and its process-clock timing doubled the reported length.
+  # mux_vtt_if_present "$webm_abs" "$vtt_abs"
   remux_cues "$webm_abs"
 
   if [[ -f "$vtt_abs" ]]; then

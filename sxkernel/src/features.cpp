@@ -994,7 +994,7 @@ bool FeatureGraph::apply(Document& doc, Feature& f,
         }
         return kApplyHandlers[idx](ctx);
     } catch (const Standard_Failure& e) {
-        return fail(e.what());
+        return fail(e.GetMessageString());
     } catch (const std::exception& e) {
         return fail(e.what());
     }

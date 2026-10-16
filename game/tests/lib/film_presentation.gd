@@ -44,6 +44,11 @@ const ACTION_DWELL_SEC := 0.42
 const TYPING_CPS := 6.0
 const RESULT_PAUSE_SEC := 0.90
 const VIEW_ANIM_SEC := 0.55
+## Scroll zoom: brisk, short settle.
+const WHEEL_ANIM_SEC := 0.35
+const WHEEL_DWELL_SEC := 0.15
+## Hold a typed value on screen before Enter so it can be read.
+const TYPED_READ_SEC := 0.2
 const POINTER_START := Vector2(88, 56)
 
 ## Empty-scene iso: pull back past DATUM_PLANE_HALF so the camera is not inside the quads.

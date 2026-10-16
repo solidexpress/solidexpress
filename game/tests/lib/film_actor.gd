@@ -283,6 +283,7 @@ func edit_field(control: Control, text: String, desc: String = "") -> bool:
 		edit.grab_focus()
 		edit.select_all()
 	await _type_paced(vp, text)
+	await wait_sec(_Pres.TYPED_READ_SEC)
 	await _SxInput.push_key(vp, KEY_ENTER)
 	_log("edit", screen_center, cue, text)
 	await _finish_action(cue)
@@ -336,9 +337,9 @@ func zoom_to(center: Vector3, span: float, desc: String = "Zoom") -> bool:
 	var to: Dictionary = cam.capture_pose()
 	cam.apply_pose(from)
 	var nudge := pointer_pos() + Vector2(0, 42)
-	await _lerp_pose_and_pointer(to, nudge, _Pres.VIEW_ANIM_SEC, cue)
+	await _lerp_pose_and_pointer(to, nudge, _Pres.WHEEL_ANIM_SEC, cue)
 	_show_badge("")
-	await dwell()
+	await wait_sec(_Pres.WHEEL_DWELL_SEC)
 	return true
 
 
@@ -726,11 +727,14 @@ func _lerp_pose_and_pointer(to: Dictionary, end_ptr: Vector2, sec: float, cue: D
 		t = t * t * (3.0 - 2.0 * t)
 		cam.yaw = lerpf(start_yaw, end_yaw, t)
 		cam.pitch = lerpf(start_pitch, end_pitch, t)
-		cam.distance = lerpf(start_dist, end_dist, t)
+		# Geometric: equal ratios per frame, like wheel notches.
+		cam.distance = start_dist * pow(end_dist / start_dist, t) \
+				if start_dist > 1e-6 and end_dist > 1e-6 else lerpf(start_dist, end_dist, t)
 		cam.pivot = start_pivot.lerp(end_pivot, t)
 		if to.has("look_at_content"):
 			cam._look_at_content = bool(to.get("look_at_content"))
-		if t >= 0.5 and to.has("projection"):
+		var swap_at := 0.0 if cue.get("via", "") == "wheel" else 0.5
+		if t >= swap_at and to.has("projection"):
 			cam.projection = int(to.get("projection")) as Camera3D.ProjectionType
 		cam._update_transform()
 		if ctx != null and ctx.chrome != null:
