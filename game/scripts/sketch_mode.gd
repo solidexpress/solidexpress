@@ -2476,7 +2476,13 @@ func _select_at(pos2: Vector2) -> void:
 	# Stroke vs fill: a 0.75 mm rim is Vertical (A12); the interior of a
 	# Ø10 is a cut-region click (lesson 2). Zoomed-out pick_tol is wider.
 	var on_stroke := best_id != "" and _on_stroke(best_id, pos2)
-	if region_idx >= 0 and not on_stroke and not _shift_adds_circle(best_id):
+	# Additive is selection arithmetic. A region fill is a finish gesture
+	# and must not run under Shift (A12 second circle).
+	if _additive_pick():
+		if best_id != "":
+			toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+		return
+	if region_idx >= 0 and not on_stroke:
 		_set_selected([])
 		_apply_region_pick(region_idx)
 		return
@@ -2486,8 +2492,8 @@ func _select_at(pos2: Vector2) -> void:
 	toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
 
 
-## Pointer additive from the mouse event (Shift/Ctrl/Meta). Automation stamps
-## those flags on the click; `Input.is_key_pressed` may still be false.
+## Pointer additive from the mouse *press*. The release event may omit
+## Shift even while the key is still down (automation mouse-up).
 func set_pointer_additive(on: bool) -> void:
 	_pointer_additive = on
 
@@ -2508,17 +2514,16 @@ func keep_drag_pick(on_stroke: bool) -> bool:
 	return on_stroke or _additive_pick()
 
 
-## Shift+Select on a second circle's fill keeps the entity (A12 centres).
-## A first, unshifted fill stays a region (lesson 2 hole).
-func _shift_adds_circle(id: String) -> bool:
-	if id == "" or sketch == null or not _additive_pick():
-		return false
-	if str(sketch.entity_info(id).get("type", "")) not in _SketchVertical.CENTRE_KINDS:
-		return false
-	for existing in selected:
-		if str(sketch.entity_info(str(existing)).get("type", "")) in _SketchVertical.CENTRE_KINDS:
-			return true
-	return false
+## Drop the geometry drag and resolve it as a SELECT pick.
+func commit_select_drag(release_uv: Vector2) -> void:
+	var grabbed := drag_entity_id()
+	var role := drag_pick_role()
+	var keep := keep_drag_pick(drag_on_stroke())
+	cancel_drag()
+	if keep:
+		toggle_pick_entity(grabbed, role)
+	else:
+		click(release_uv)
 
 
 ## Stroke width for Select: rim vs region fill. Lines stay 0.75 mm.
@@ -2717,7 +2722,8 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	var best_id := ""
 	var best_part := ""
 	var best_d := _pick_tolerance()
-	# Pass 1: endpoints / centers
+	# Handles and curves compete. A line endpoint 5 mm from a Ø10 rim used
+	# to win Pass 1 and never see the rim (A12 Shift+second circle).
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match info.get("type", ""):
@@ -2738,17 +2744,11 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 					best_d = d2
 					best_id = id
 					best_part = "center"
-	if best_id != "":
-		return {"id": best_id, "part": best_part}
-	# Pass 2: whole entity / rim
-	best_d = _pick_tolerance()
-	for id in sketch.entity_ids():
-		var info2: Dictionary = sketch.entity_info(id)
-		var d3 := _entity_distance(info2, pos2)
-		if d3 <= best_d:
+		var d3 := _entity_distance(info, pos2)
+		if d3 < best_d:
 			best_d = d3
 			best_id = id
-			match info2.get("type", ""):
+			match info.get("type", ""):
 				"line":
 					best_part = "whole"
 				"circle", "arc":

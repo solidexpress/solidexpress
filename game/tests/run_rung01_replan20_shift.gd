@@ -32,6 +32,8 @@ func _story() -> void:
 	await _case_ctrl_meta_and_directions(ctx)
 	await _case_key_trace(ctx)
 	await _case_shift_second_circle(ctx)
+	await _case_shift_release_drops_flag(ctx)
+	await _case_a12_scale_rims(ctx)
 
 
 func _boot() -> FilmContext:
@@ -290,8 +292,97 @@ func _case_shift_second_circle(ctx: FilmContext) -> void:
 			"Input Shift + fill mouse (no event flag) keeps both (got %s)" % str(_sm.selected))
 
 
+func _case_shift_release_drops_flag(ctx: FilmContext) -> void:
+	print("- Shift on press, mouse-up omits it, fill still adds (A12)")
+	await FilmUI.select_sketch_tool(ctx, _sm, SketchMode.Tool.SELECT)
+	ctx.main.interaction.grab_focus()
+	await process_frame
+	var vp: Viewport = ctx.main.get_viewport()
+	var hole := ""
+	for id in _sm.sketch.entity_ids():
+		var info: Dictionary = _sm.sketch.entity_info(id)
+		if str(info.get("type", "")) == "circle":
+			var c: Vector2 = info["center"]
+			if absf(c.y - 70.0) < 1.0:
+				hole = str(id)
+	check(hole != "", "Ø10 hole still exists")
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(-10, -25)), false)
+	await process_frame
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(46, 36)), false)
+	await process_frame
+	await _click_shift_press_plain_release(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(40, 70)))
+	await process_frame
+	await process_frame
+	check(_has(_circle) and _has(hole),
+			"press-Shift / release-plain fill keeps both (got %s)" % str(_sm.selected))
+
+
+func _case_a12_scale_rims(ctx: FilmContext) -> void:
+	print("- Ø130 + Ø10 at 94 mm, walk zoom, Shift+rim keeps both")
+	await _zoom_local(ctx, Vector2(0, 47), 1.81)
+	await _draw_circle(ctx, Vector2(0, 0), "65")
+	await _draw_circle(ctx, Vector2(0, 94), "5")
+	var big := ""
+	var hole := ""
+	for id in _sm.sketch.entity_ids():
+		var info: Dictionary = _sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		var c: Vector2 = info["center"]
+		var r := float(info.get("radius", 0.0))
+		if c.length() < 1.0 and absf(r - 65.0) < 1.0:
+			big = str(id)
+		elif absf(c.y - 94.0) < 1.0 and absf(r - 5.0) < 1.0:
+			hole = str(id)
+	check(big != "" and hole != "", "Ø130 and Ø10 exist (got %s)" % str(_sm.sketch.entity_ids()))
+	await FilmUI.select_sketch_tool(ctx, _sm, SketchMode.Tool.SELECT)
+	ctx.main.interaction.grab_focus()
+	await process_frame
+	var vp: Viewport = ctx.main.get_viewport()
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(-90, -40)), false)
+	await process_frame
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(-65, 0)), false)
+	await process_frame
+	await process_frame
+	check(_sm.selected.size() == 1 and _has(big) and not _has(hole),
+			"Ø130 rim selects only the flange bore (got %s)" % str(_sm.selected))
+	await _click_shift_press_plain_release(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(-5, 94)))
+	await process_frame
+	await process_frame
+	check(_sm.selected.size() == 2 and _has(big) and _has(hole),
+			"Shift+Ø10 rim keeps both (got %s)" % str(_sm.selected))
+	check(_sm.selection_actions().has("vertical"),
+			"Ø130+Ø10 offer Vertical (got %s)" % str(_sm.selection_actions()))
+
+
 func _click_at(vp: Viewport, pos: Vector2, shift: bool) -> void:
 	_drag(vp, pos, pos, shift, false, false)
+
+
+## Walk-style click: Shift is on the press, the mouse-up event has no flag.
+func _click_shift_press_plain_release(vp: Viewport, pos: Vector2) -> void:
+	# Caller awaits this: one frame between down and up, like automation.
+	var hover := InputEventMouseMotion.new()
+	hover.position = pos
+	hover.global_position = pos
+	hover.relative = Vector2(0.2, 0.2)
+	vp.push_input(hover)
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = pos
+	down.global_position = pos
+	down.shift_pressed = true
+	down.button_mask = MOUSE_BUTTON_MASK_LEFT
+	vp.push_input(down)
+	await process_frame
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = pos
+	up.global_position = pos
+	up.shift_pressed = false
+	vp.push_input(up)
 
 
 func _select_wall(ctx: FilmContext) -> void:

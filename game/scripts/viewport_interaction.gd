@@ -3777,7 +3777,7 @@ func _dimension_blocks_curve(p2: Vector2) -> bool:
 func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT and sketch_mode != null:
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and sketch_mode != null:
 			sketch_mode.set_pointer_additive(bool(_press_modifiers(mb)["additive"]))
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			# A new canvas press starts a new length-entry; leftover-10's
@@ -3943,15 +3943,7 @@ func _sketch_input(event: InputEvent) -> void:
 				# Re-hit-testing the release often lands in a face-sketch
 				# region (A12 Vertical on two circles). Keep a stroke grab;
 				# Shift keeps a fill grab so the second circle is added.
-				var grabbed := sketch_mode.drag_entity_id()
-				var role := sketch_mode.drag_pick_role()
-				var on_stroke := sketch_mode.drag_on_stroke()
-				var keep := sketch_mode.keep_drag_pick(on_stroke)
-				sketch_mode.cancel_drag()
-				if keep:
-					sketch_mode.toggle_pick_entity(grabbed, role)
-				else:
-					sketch_mode.click(p2_up)
+				sketch_mode.commit_select_drag(p2_up)
 				_clear_select_click_measure()
 			else:
 				sketch_mode.end_drag()
@@ -4010,6 +4002,8 @@ func _sketch_input(event: InputEvent) -> void:
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
 			sketch_mode.end_chain()
 			accept_event()
+		if not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and sketch_mode != null:
+			sketch_mode.set_pointer_additive(false)
 	elif event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
 		_infer_sketch_press_from_motion(motion)
