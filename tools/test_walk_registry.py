@@ -196,6 +196,24 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertEqual(reasons, ["sketch not active status='x'", "lines=1"])
         self.assertEqual(registry.RUNG1.expectations["A2"].mode, "sketch")
 
+    def test_suite_check_counts_reads_past_80k(self) -> None:
+        from walk.gates import suite_check_counts
+
+        filler = ("status-trace " + ("x" * 200) + "\n") * 500
+        log = (
+            "rung01 replan19 keys\n"
+            + filler
+            + "157 checks, 0 failures\n"
+            "Godot Engine v4.7.stable\n"
+            "rung01 wrench walk (replan-6 WP4 sx-026 sequence)\n"
+            + filler
+            + "711 checks, 0 failures\n"
+        )
+        self.assertGreater(log.find("157 checks"), 80_000)
+        self.assertEqual(suite_check_counts(log, "rung01 replan19 keys"), (157, 0))
+        self.assertEqual(suite_check_counts(log, "rung01 wrench walk"), (711, 0))
+        self.assertIsNone(suite_check_counts(log, "rung01 replan19 shield"))
+
     def test_run_tier_uses_confirm_cache(self) -> None:
         import os
         import tempfile
