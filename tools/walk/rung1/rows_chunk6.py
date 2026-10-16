@@ -10,7 +10,7 @@ from pathlib import Path
 from sxdrive import SxError
 from walk import proc
 from walk.click_budget import check_log
-from walk.gates import parse_suites, parse_tier, run_tier, take
+from walk.gates import parse_suites, parse_tier, run_tier, suite_check_counts, take
 from walk.harness import RowAbort
 from walk.registry import row
 
@@ -289,17 +289,10 @@ class RowsChunk6:
         self.clause("AF bearings", same, " | ".join(readings))
 
     def _a15_floor(self, log: str, banner: str, floor: int) -> tuple[bool, str]:
-        idx = log.find(banner)
-        if idx < 0:
-            return False, f"missing {banner}"
-        window = log[idx:idx + 80000]
-        nxt = window.find("\nrung01 ", len(banner))
-        if nxt > 0:
-            window = window[:nxt]
-        match = re.search(r"(\d+) checks, (\d+) failures", window)
-        if not match:
-            return False, f"{banner}: no checks line"
-        n, failed = int(match.group(1)), int(match.group(2))
+        counts = suite_check_counts(log, banner)
+        if counts is None:
+            return False, f"{banner}: no checks line" if banner in log else f"missing {banner}"
+        n, failed = counts
         return failed == 0 and n >= floor, f"{banner}: {n} checks, {failed} failures (floor {floor})"
 
     @row('A15', chunk=6)

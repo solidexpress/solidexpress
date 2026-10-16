@@ -15,6 +15,7 @@ _SUITES = re.compile(
     r"lint_suites:\s*(\d+)\s+suites ok\s+\((\d+)\s+ci,\s+(\d+)\s+full,\s+(\d+)\s+known-red\)"
 )
 _TIER = re.compile(r"suites:\s*(\d+)\s+run,\s*(\d+)\s+failed")
+_CHECKS_LINE = re.compile(r"(?m)^(\d+) checks, (\d+) failures$")
 
 
 def parse_suites(text: str) -> tuple[int, int, int] | None:
@@ -31,6 +32,25 @@ def parse_tier(text: str) -> tuple[int, int] | None:
         return None
     run, failed = found[-1]
     return int(run), int(failed)
+
+
+def suite_check_counts(log: str, banner: str) -> tuple[int, int] | None:
+    """Counts line for one concatenated suite, even when its body is >80k.
+
+    run_suites.sh cats each suite log in full, so the Catch2 summary sits
+    after that suite's banner and before the next Godot Engine header.
+    """
+    idx = log.find(banner)
+    if idx < 0:
+        return None
+    rest = log[idx:]
+    end = rest.find("\nGodot Engine", 1)
+    block = rest if end < 0 else rest[:end]
+    found = list(_CHECKS_LINE.finditer(block))
+    if not found:
+        return None
+    n, failed = found[-1].groups()
+    return int(n), int(failed)
 
 
 def _failure_tail(result: subprocess.CompletedProcess) -> str:

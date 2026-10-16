@@ -13,6 +13,7 @@ import walk.app  # noqa: E402, F401
 import walk.app02  # noqa: E402, F401
 import walk.app03  # noqa: E402, F401
 import walk.app04  # noqa: E402, F401
+import walk.app05  # noqa: E402, F401
 from walk import registry  # noqa: E402
 from walk.expect import CHECKS, State, gate  # noqa: E402
 from walk.rung import Expect  # noqa: E402
@@ -90,6 +91,21 @@ FROZEN_CHUNKS_04 = {
 }
 
 
+# 36 checklist ids. Chunks are the slices in docs/loop/rung-05-plan.md.
+FROZEN_ROWS_05 = [
+    "N1", "A1", "A2", "L1", "A3", "A4", "A5", "N2", "A6", "A7",
+    "A8", "A9", "A10", "A11", "A12", "L2", "A13", "L3", "N3", "A14", "A15", "A16",
+    "N4", "A17", "A18", "L4", "A19", "A20", "A21",
+    "A22", "N5", "A23", "L5", "A24", "N6", "A25",
+]
+FROZEN_CHUNKS_05 = {
+    1: FROZEN_ROWS_05[0:10],
+    2: FROZEN_ROWS_05[10:22],
+    3: FROZEN_ROWS_05[22:29],
+    4: FROZEN_ROWS_05[29:36],
+}
+
+
 class WalkRegistryTests(unittest.TestCase):
     def test_frozen_id_list_is_registry_order(self) -> None:
         self.assertEqual(list(registry.RUNG1.rows), FROZEN_ROWS)
@@ -154,6 +170,21 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertEqual(rung.checkpoints[2], "hex.sxp")
         self.assertEqual(rung.checkpoints[3], "path.sxp")
 
+    def test_rung5_rows_and_chunks(self) -> None:
+        rung = getattr(registry, "RUNG5", None)
+        self.assertIsNotNone(rung, "rung 5 has no rows")
+        self.assertEqual(list(rung.rows), FROZEN_ROWS_05)
+        self.assertEqual({n: list(rows) for n, rows in rung.chunks.items()}, FROZEN_CHUNKS_05)
+        self.assertEqual(len(FROZEN_ROWS_05), 36)
+        for rid in FROZEN_ROWS_05:
+            self.assertIn(rid, rung.handlers)
+            self.assertTrue(callable(rung.handlers[rid]))
+            self.assertEqual(rung.handlers[rid].__name__, "row_" + rid)
+        self.assertEqual(rung.checker, "check_rung05.py")
+        self.assertEqual(rung.checkpoints[2], "shelled.sxp")
+        self.assertEqual(rung.checkpoints[3], "cut.sxp")
+        self.assertEqual(rung.checkpoints[4], "reshell.sxp")
+
     def test_gate_walks_the_check_table(self) -> None:
         self.assertEqual(list(CHECKS), ["mode", "sketch", "bodies", "bbox", "timeline", "finish_bar"])
         state = State(
@@ -164,6 +195,24 @@ class WalkRegistryTests(unittest.TestCase):
         reasons = gate(state, Expect(blocker="A1", mode="sketch", sketch={"min_lines": 4}))
         self.assertEqual(reasons, ["sketch not active status='x'", "lines=1"])
         self.assertEqual(registry.RUNG1.expectations["A2"].mode, "sketch")
+
+    def test_suite_check_counts_reads_past_80k(self) -> None:
+        from walk.gates import suite_check_counts
+
+        filler = ("status-trace " + ("x" * 200) + "\n") * 500
+        log = (
+            "rung01 replan19 keys\n"
+            + filler
+            + "157 checks, 0 failures\n"
+            "Godot Engine v4.7.stable\n"
+            "rung01 wrench walk (replan-6 WP4 sx-026 sequence)\n"
+            + filler
+            + "711 checks, 0 failures\n"
+        )
+        self.assertGreater(log.find("157 checks"), 80_000)
+        self.assertEqual(suite_check_counts(log, "rung01 replan19 keys"), (157, 0))
+        self.assertEqual(suite_check_counts(log, "rung01 wrench walk"), (711, 0))
+        self.assertIsNone(suite_check_counts(log, "rung01 replan19 shield"))
 
     def test_run_tier_uses_confirm_cache(self) -> None:
         import os

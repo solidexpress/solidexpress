@@ -48,6 +48,7 @@ test-tools:
 	python3 tools/test_check_rung02.py
 	python3 tools/test_check_rung03.py
 	python3 tools/test_check_rung04.py
+	python3 tools/test_check_rung05.py
 	python3 tools/lint_suites.py
 	python3 tools/test_lint_suites.py
 	python3 tools/test_lint_rung01_e2e.py

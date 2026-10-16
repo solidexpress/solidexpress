@@ -154,6 +154,20 @@ PackedStringArray SxSketch::pattern_entities(const PackedStringArray& ids,
     return out;
 }
 
+PackedStringArray SxSketch::circular_pattern_entities(const PackedStringArray& ids,
+                                                      double cx, double cy,
+                                                      int count,
+                                                      double total_angle) {
+    std::vector<std::string> entity_ids;
+    entity_ids.reserve(ids.size());
+    for (int i = 0; i < ids.size(); ++i) entity_ids.push_back(to_std(ids[i]));
+    auto result = sx::sketch_tools::circular_pattern_entities(
+        *sketch_, entity_ids, cx, cy, count, total_angle);
+    PackedStringArray out;
+    for (const auto& rid : result) out.push_back(to_gd(rid));
+    return out;
+}
+
 Dictionary SxSketch::entity_info(const String& id) const {
     Dictionary out;
     const sx::SketchEntity* e = sketch_->entity(parse_id(id));
@@ -492,6 +506,9 @@ void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("extend_entity", "id", "px", "py"), &SxSketch::extend_entity);
     ClassDB::bind_method(D_METHOD("pattern_entities", "ids", "dx", "dy", "count"),
                          &SxSketch::pattern_entities);
+    ClassDB::bind_method(D_METHOD("circular_pattern_entities", "ids", "cx", "cy",
+                                 "count", "total_angle"),
+                         &SxSketch::circular_pattern_entities);
     ClassDB::bind_method(D_METHOD("entity_info", "id"), &SxSketch::entity_info);
     ClassDB::bind_method(D_METHOD("set_entity_geometry", "id", "geo"),
                          &SxSketch::set_entity_geometry);

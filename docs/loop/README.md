@@ -11,8 +11,10 @@ What remains here is the live contract, not the per-round plans:
 - `rung-04-plan.md` — rung 4 (Pano Central hex key, Swept Boss): measured gaps, work packages, 32-row checklist, `check_rung04.py` spec
 - `rung-04-checklist.md` — 32 walk rows
 - `walk_rung04.py` listed with the other walks
+- `rung-05-plan.md` — rung 5 (UBC ELEC391 Exercise 3: pipe section): measured gaps, work packages, 36-row checklist, `check_rung05.py` spec
+- `walk_rung05.py` listed with the other walks
 - `post-rung-03-cleanup.md` — layering pass after rung 3 and the Tutor1 demo film (the next cleanup deletes this file)
 - `post-rung-03-result.md` — confirm pass for that cleanup (Part B parked, headless 213)
 - `post-rung-04-result.md` — confirm pass after region pick, click budget, hexkey film
 
-The walks are `tools/walk_rung01.py` (77 rows), `tools/walk_rung02.py` (44 rows, the Lesson 2 box), `tools/walk_rung03.py` (46 rows, Lesson 1 parts), and `tools/walk_rung04.py` (32 rows, hex key). A walk is a `Rung` in `tools/walk/rung.py`: rows, chunks, checkpoints, checker, expectations. History of deleted per-round plans: `git log --diff-filter=D --name-only -- docs/loop`. `tools/gui_click_probe.sh` stays: it sends real X11 clicks, which the in-engine bridge does not; it is the dead-first-click probe from re-PLAN 17.
+The walks are `tools/walk_rung01.py` (77 rows), `tools/walk_rung02.py` (44 rows, the Lesson 2 box), `tools/walk_rung03.py` (46 rows, Lesson 1 parts), `tools/walk_rung04.py` (32 rows, hex key), and `tools/walk_rung05.py` (36 rows, pipe section). A walk is a `Rung` in `tools/walk/rung.py`: rows, chunks, checkpoints, checker, expectations. History of deleted per-round plans: `git log --diff-filter=D --name-only -- docs/loop`. `tools/gui_click_probe.sh` stays: it sends real X11 clicks, which the in-engine bridge does not; it is the dead-first-click probe from re-PLAN 17.

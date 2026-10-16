@@ -29,6 +29,8 @@ func _chip_h() -> int:
 var sketch_mode: SketchMode
 ## Offset Entities panel (rail:Offset). Built once; shown while the tool is armed.
 var offset_tool: SketchOffset
+## Circular Sketch Pattern panel (Count / Angle / Ok).
+var pattern_tool: SketchCircularPattern
 var _variant_bar: HBoxContainer
 var _action_bar: VBoxContainer
 ## Verbs currently shown on `_action_bar`. Chips that do not fit between the
@@ -154,6 +156,8 @@ func _ready() -> void:
 	_action_bar.visible = false
 	offset_tool = SketchOffset.new()
 	offset_tool.build(self)
+	pattern_tool = SketchCircularPattern.new()
+	pattern_tool.build(self)
 
 
 func _make_bar() -> HBoxContainer:
@@ -1852,6 +1856,7 @@ func _claim_dim_keyboard() -> void:
 func sync_for_tool() -> void:
 	_sync_dim_affordance()
 	_sync_offset_panel()
+	_sync_pattern_panel()
 	if sketch_mode == null:
 		return
 	# Select does not take keyboard focus. Release a blank left over from
@@ -1881,6 +1886,19 @@ func _sync_offset_panel() -> void:
 		offset_tool.show_panel()
 	else:
 		offset_tool.hide_panel()
+
+
+func _sync_pattern_panel() -> void:
+	if pattern_tool == null:
+		return
+	if sketch_mode != null and sketch_mode.active \
+			and sketch_mode.tool == SketchMode.Tool.PATTERN:
+		if sketch_mode.tool_variant == "circular":
+			pattern_tool.show_panel()
+		else:
+			pattern_tool.hide_panel()
+	else:
+		pattern_tool.hide_panel()
 	# Circle's radius blank owns the keyboard as soon as the tool is armed
 	# (a digit is Radius, not Extrude). The grab must not eat the next canvas
 	# press. Tool hotkeys still switch tools until the user types: the claim
@@ -1996,6 +2014,8 @@ func show_for_session(on: bool, fid: String = "") -> void:
 	_finish_bar.visible = on
 	if not on and offset_tool != null:
 		offset_tool.hide_panel()
+	if not on and pattern_tool != null:
+		pattern_tool.hide_panel()
 	if on:
 		if fid != "" and fid == _finish_owner:
 			# Same owner (Save As of an already-saved sketch): keep Op/End/D.
@@ -2073,6 +2093,7 @@ func _active_variant() -> String:
 ## Exactly one chip is pressed: the active variant. A toggle chip pressed twice
 ## would un-press itself, so every press re-syncs.
 func sync_variant_highlight() -> void:
+	_sync_pattern_panel()
 	if _variant_bar == null:
 		return
 	var active := _active_variant()
