@@ -163,6 +163,9 @@ var selected: Array[String] = []
 var selected_roles: Array[String] = []
 ## Selected constraint id (click its glyph with the SELECT tool); Del removes.
 var selected_constraint := ""
+## Shift/Ctrl/Meta from the live pointer event. `push_input` keys do not update
+## `Input.is_key_pressed`; A12 still has to add the second circle.
+var _pointer_additive := false
 
 ## Applied dimensional constraints: {type, ids, value}. Rebuilt into Label3Ds.
 var dimensions: Array = []
@@ -2483,10 +2486,32 @@ func _select_at(pos2: Vector2) -> void:
 	toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
 
 
+## Pointer additive from the mouse event (Shift/Ctrl/Meta). Automation stamps
+## those flags on the click; `Input.is_key_pressed` may still be false.
+func set_pointer_additive(on: bool) -> void:
+	_pointer_additive = on
+
+
+func _additive_pick() -> bool:
+	return _pointer_additive \
+			or Input.is_key_pressed(KEY_SHIFT) \
+			or Input.is_key_pressed(KEY_CTRL) \
+			or Input.is_key_pressed(KEY_META)
+
+
+## Jitter-release of a SELECT drag. A stroke grab stays an entity pick.
+## Shift keeps a fill grab so the second circle is added (A12) instead of
+## a region click that clears the first.
+func keep_drag_pick(on_stroke: bool) -> bool:
+	if drag_entity_id() == "":
+		return false
+	return on_stroke or _additive_pick()
+
+
 ## Shift+Select on a second circle's fill keeps the entity (A12 centres).
 ## A first, unshifted fill stays a region (lesson 2 hole).
 func _shift_adds_circle(id: String) -> bool:
-	if id == "" or sketch == null or not Input.is_key_pressed(KEY_SHIFT):
+	if id == "" or sketch == null or not _additive_pick():
 		return false
 	if str(sketch.entity_info(id).get("type", "")) not in _SketchVertical.CENTRE_KINDS:
 		return false
@@ -2705,7 +2730,11 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 						best_part = pair[0]
 			"circle", "arc":
 				var d2: float = pos2.distance_to(info["center"])
-				if d2 <= best_d:
+				var d_curve := absf(d2 - float(info.get("radius", 0.0)))
+				# Centre handle only when nearer the centre than the rim.
+				# pick_tol is often larger than a Ø10, so a rim click must
+				# not become a centre grab (A12 Vertical).
+				if d2 <= best_d and d2 < d_curve:
 					best_d = d2
 					best_id = id
 					best_part = "center"

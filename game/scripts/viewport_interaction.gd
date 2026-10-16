@@ -3777,6 +3777,8 @@ func _dimension_blocks_curve(p2: Vector2) -> bool:
 func _sketch_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT and sketch_mode != null:
+			sketch_mode.set_pointer_additive(bool(_press_modifiers(mb)["additive"]))
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
 			# A new canvas press starts a new length-entry; leftover-10's
 			# KEY_2 KEY_0 buffer must not leak into a later focused _type_dim.
@@ -3938,12 +3940,13 @@ func _sketch_input(event: InputEvent) -> void:
 				# never selected and the next Esc left the sketch.
 				# Re-hit-testing the release often lands in a face-sketch
 				# region (A12 Vertical on two circles). Keep a stroke grab;
-				# a circle-interior grab is a region click (lesson 2 hole).
+				# Shift keeps a fill grab so the second circle is added.
 				var grabbed := sketch_mode.drag_entity_id()
 				var role := sketch_mode.drag_pick_role()
 				var on_stroke := sketch_mode.drag_on_stroke()
+				var keep := sketch_mode.keep_drag_pick(on_stroke)
 				sketch_mode.cancel_drag()
-				if grabbed != "" and on_stroke:
+				if keep:
 					sketch_mode.toggle_pick_entity(grabbed, role)
 				else:
 					sketch_mode.click(p2_up)

@@ -31,6 +31,7 @@ func _story() -> void:
 	await _case_shift_tapped(ctx)
 	await _case_ctrl_meta_and_directions(ctx)
 	await _case_key_trace(ctx)
+	await _case_shift_second_circle(ctx)
 
 
 func _boot() -> FilmContext:
@@ -235,6 +236,43 @@ func _case_key_trace(ctx: FilmContext) -> void:
 	check(second + 0.0001 >= first and first >= 1000.0 - 0.001,
 			"t= is monotonic (%.3f then %.3f)" % [first, second])
 	ctx.main._clock_override_msec = -1
+
+
+func _case_shift_second_circle(ctx: FilmContext) -> void:
+	print("- Shift+fill on a second circle keeps both (A12)")
+	await _draw_circle(ctx, Vector2(40, 70), "5")
+	var hole := ""
+	for id in _sm.sketch.entity_ids():
+		var info: Dictionary = _sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		var c: Vector2 = info["center"]
+		if absf(c.y - 70.0) < 1.0:
+			hole = str(id)
+	check(hole != "" and _circle != "" and hole != _circle, "two circles exist")
+	await FilmUI.select_sketch_tool(ctx, _sm, SketchMode.Tool.SELECT)
+	ctx.main.interaction.grab_focus()
+	await process_frame
+	_log.clear()
+	var vp: Viewport = ctx.main.get_viewport()
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(-10, -25)), false)
+	await process_frame
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(46, 36)), false)
+	await process_frame
+	await process_frame
+	check(_has(_circle) and not _has(hole),
+			"first rim click selects only the first circle (got %s)" % str(_sm.selected))
+	_click_at(vp, FilmUI.sketch_uv_to_screen(ctx, Vector2(40, 70)), true)
+	await process_frame
+	await process_frame
+	check(_has(_circle) and _has(hole),
+			"Shift+fill on the second circle keeps both (got %s)" % str(_sm.selected))
+	check(_sm.selection_actions().has("vertical"),
+			"two circles offer Vertical (got %s)" % str(_sm.selection_actions()))
+
+
+func _click_at(vp: Viewport, pos: Vector2, shift: bool) -> void:
+	_drag(vp, pos, pos, shift, false, false)
 
 
 func _select_wall(ctx: FilmContext) -> void:
