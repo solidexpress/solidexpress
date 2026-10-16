@@ -356,9 +356,10 @@ jobs:
   demo-movies:
     # Independent job: renders curated website films and publishes WebMs/posters.
     runs-on: ubuntu-24.04
-    env:
-      LD_LIBRARY_PATH: /opt/occt-${{ env.OCCT_VERSION }}/lib
     steps:
+      # Job-level env cannot read workflow env; export OCCT libs for every later step.
+      - name: Export OCCT library path
+        run: echo "LD_LIBRARY_PATH=/opt/occt-${OCCT_VERSION}/lib" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           submodules: recursive
