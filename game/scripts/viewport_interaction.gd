@@ -3937,12 +3937,13 @@ func _sketch_input(event: InputEvent) -> void:
 				# Jitter on a thin line used to count as a drag, so the release
 				# never selected and the next Esc left the sketch.
 				# Re-hit-testing the release often lands in a face-sketch
-				# region (A12 Vertical on two circles); keep the grabbed id
-				# and toggle it the same way a Select click does.
+				# region (A12 Vertical on two circles). Keep a stroke grab;
+				# a circle-interior grab is a region click (lesson 2 hole).
 				var grabbed := sketch_mode.drag_entity_id()
 				var role := sketch_mode.drag_pick_role()
+				var on_stroke := sketch_mode.drag_on_stroke()
 				sketch_mode.cancel_drag()
-				if grabbed != "":
+				if grabbed != "" and on_stroke:
 					sketch_mode.toggle_pick_entity(grabbed, role)
 				else:
 					sketch_mode.click(p2_up)

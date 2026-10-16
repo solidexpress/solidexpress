@@ -2464,26 +2464,41 @@ func _nearest_entity_at(pos2: Vector2) -> String:
 func _select_at(pos2: Vector2) -> void:
 	var best_id := _nearest_entity_at(pos2)
 	var region_idx := _region_index_at(pos2)
-	if best_id != "":
-		var kind := str(sketch.entity_info(best_id).get("type", ""))
-		# Face-sketch circle rims sit inside a region fill. A 0.75 mm stroke
-		# is less than a pixel after flange fit (A12 Vertical on two centres).
-		if kind in _SketchVertical.CENTRE_KINDS or region_idx < 0:
-			toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
-			return
-	if region_idx >= 0:
+	# Stroke vs fill: a 0.75 mm rim is Vertical (A12); the interior of a
+	# Ø10 is a cut-region click (lesson 2). Zoomed-out pick_tol is wider.
+	var on_stroke := best_id != "" and _on_stroke(best_id, pos2)
+	if region_idx >= 0 and not on_stroke:
 		_set_selected([])
 		_apply_region_pick(region_idx)
 		return
-	if best_id != "":
-		toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+	if best_id == "":
+		_set_selected([])
 		return
-	_set_selected([])
+	toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+
+
+## Stroke width for Select: rim vs region fill.
+func _stroke_mm() -> float:
+	return minf(0.75, _pick_tolerance() * 0.35)
+
+
+func _on_stroke(id: String, pos2: Vector2) -> bool:
+	if sketch == null or id == "":
+		return false
+	return _entity_distance(sketch.entity_info(id), pos2) < _stroke_mm()
 
 
 ## Entity id under an in-progress SELECT drag, or "".
 func drag_entity_id() -> String:
 	return str(_drag.get("id", "")) if not _drag.is_empty() else ""
+
+
+## True when the SELECT drag grabbed the curve, not a circle's interior.
+func drag_on_stroke() -> bool:
+	if _drag.is_empty():
+		return false
+	var grab: Vector2 = _drag.get("grab_pos", Vector2.ZERO)
+	return _on_stroke(str(_drag.get("id", "")), grab)
 
 
 ## Endpoint role for a SELECT drag, or "self" for a whole entity / rim.
@@ -8112,7 +8127,9 @@ func _segments_share_endpoint(a: Dictionary, b: Dictionary) -> bool:
 	return false
 
 
-## Select click on a circle's own radius label that has been stacked onto the rim.
+## Select on a circle's own diameter/radius: the curve wins when it is
+## nearer than the letters (A12 −X rim). A click on the letters still
+## opens the editor (tie goes to the label).
 func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
 	if tool != Tool.SELECT or index < 0 or index >= dimensions.size():
 		return false
@@ -8122,7 +8139,16 @@ func _radius_label_on_own_rim(index: int, pos2: Vector2) -> bool:
 	var ids: Array = dim.get("ids", [])
 	if ids.is_empty():
 		return false
-	return _nearest_entity_at(pos2) == str(ids[0])
+	var eid := str(ids[0])
+	if _nearest_entity_at(pos2) != eid:
+		return false
+	var lp: Variant = _dimension_label_pos2(dim)
+	if lp != null:
+		var to_letters := pos2.distance_to(lp as Vector2)
+		var to_curve := _entity_distance(sketch.entity_info(eid), pos2)
+		if to_letters <= to_curve:
+			return false
+	return true
 
 
 ## Nudge labels (never glyphs) along the label_stack axis until no label

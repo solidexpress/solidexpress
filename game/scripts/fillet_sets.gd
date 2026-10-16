@@ -80,17 +80,19 @@ static func _circle_radius(doc, body: String, edge: String) -> float:
 	var length := float(doc.measure_edge_length(edge))
 	if length < 1.0:
 		return 0.0
-	if not _closed_loop(doc, body, edge, length):
+	if not _circular_edge(doc, body, edge, length):
 		return 0.0
 	return length / TAU
 
 
-static func _closed_loop(doc, body: String, edge: String, length: float) -> bool:
+## Same chord test as dressup "arc" vs "line": a 10 mm flange seam is a
+## line (chord ≈ length); an open circular rim is an arc (chord ≪ length).
+static func _circular_edge(doc, body: String, edge: String, length: float) -> bool:
 	if not doc.has_method("get_edge_lines"):
 		return false
 	var lines: Dictionary = doc.get_edge_lines(body)
 	var pts: PackedVector3Array = lines.get(edge, PackedVector3Array())
-	if pts.size() < 8:
+	if pts.size() < 2:
 		return false
 	var chord := pts[0].distance_to(pts[pts.size() - 1])
-	return chord <= 1.0 or chord < length * 0.05
+	return chord < length * 0.95
