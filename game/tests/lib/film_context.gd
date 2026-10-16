@@ -11,6 +11,8 @@ var chrome: FilmChrome
 var actor # FilmActor — director for pointer-first clicks/edits
 var clock: FilmClock
 var tree: SceneTree
+## Film already played the solid orbit; FilmShots.outro holds instead of repeating.
+var showcase_played := false
 
 
 ## Top-level film intent banner (shown at start of each demo).

@@ -42,6 +42,9 @@ static func outro(ctx) -> void:
 	if ctx.tree != null:
 		await ctx.tree.process_frame
 		await ctx.tree.process_frame
+	if ctx.showcase_played:
+		await _Outro._hold_unique(ctx, 1.2)
+		return
 	if kind == _Outro.Kind.SOLID and ctx.actor != null and ctx.actor.has_method("orbit_yaw"):
 		if ctx.camera != null and ctx.camera.has_method("fit_oblique_fill"):
 			var cam = ctx.main.camera if ctx.main != null else null
