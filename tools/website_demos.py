@@ -102,11 +102,27 @@ def write_published(path: Path, rows: list[dict] | None = None) -> list[str]:
     return ids
 
 
-def write_featured(catalog_path: Path, rows: list[dict] | None = None) -> list[dict]:
+def demo_release(repo: str, tag: str) -> dict:
+    """Where the browser fetches demo WebMs: the Release the publisher uploaded to."""
+    return {
+        "repo": repo,
+        "tag": tag,
+        "api": f"https://api.github.com/repos/{repo}/releases/tags/{tag}",
+        "base": f"https://github.com/{repo}/releases/download/{tag}/",
+    }
+
+
+def write_featured(
+    catalog_path: Path,
+    rows: list[dict] | None = None,
+    release: dict | None = None,
+) -> list[dict]:
     cat = load_json(catalog_path) if catalog_path.is_file() else {}
     if not isinstance(cat, dict):
         cat = {}
     featured = featured_rows(rows)
+    if release is not None:
+        cat["demo_release"] = release
     cat["featured"] = featured
     catalog_path.parent.mkdir(parents=True, exist_ok=True)
     catalog_path.write_text(json.dumps(cat, indent=2) + "\n")
@@ -117,10 +133,11 @@ def emit(
     published_path: Path | None = None,
     catalog_path: Path | None = None,
     manifest_path: Path | None = None,
+    release: dict | None = None,
 ) -> tuple[list[str], list[dict]]:
     rows = curated(load_manifest(manifest_path) if manifest_path else None)
     ids = write_published(published_path or PUBLISHED_PATH, rows)
-    featured = write_featured(catalog_path or CATALOG_PATH, rows)
+    featured = write_featured(catalog_path or CATALOG_PATH, rows, release)
     return ids, featured
 
 
@@ -213,6 +230,7 @@ def _cmd_emit(args: argparse.Namespace) -> int:
     ids, featured = emit(
         published_path=Path(args.published) if args.published else None,
         catalog_path=Path(args.catalog) if args.catalog else None,
+        release=demo_release(args.repo, args.tag) if args.repo else None,
     )
     print(f"published-demos → {len(ids)} ids")
     print(f"demo-catalog featured → {len(featured)} rows")
@@ -230,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
     p_emit = sub.add_parser("emit", help="write published-demos.json + catalog featured")
     p_emit.add_argument("--published", default="")
     p_emit.add_argument("--catalog", default="")
+    p_emit.add_argument("--repo", default="", help="Release repo the WebMs were uploaded to")
+    p_emit.add_argument("--tag", default="demo-movies")
     p_check = sub.add_parser("check", help="validate curated set vs catalog")
     p_check.add_argument("--offline", action="store_true", default=True)
     args = parser.parse_args(argv)

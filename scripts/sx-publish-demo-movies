@@ -124,7 +124,7 @@ curated_ids() {
 }
 
 emit_json() {
-  python3 "$HELPER" emit --published "$PUBLISHED" --catalog "$CATALOG"
+  python3 "$HELPER" emit --published "$PUBLISHED" --catalog "$CATALOG" --repo "$REPO" --tag "$TAG"
 }
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
