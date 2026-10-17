@@ -1170,6 +1170,13 @@ void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f) {
     }
     if (!have) return;
     SketchPlane pl = f.sketch->plane();
+    const double current =
+        gp_Vec(pl.origin[0], pl.origin[1], pl.origin[2]).Dot(want);
+    // Follow the host when it grows. Do not snap a face sketch at y=220 onto a
+    // false y=0 hit (revolved rims often fail the plane test).
+    const bool better =
+        (side == "min") ? (best < current - 0.5) : (best > current + 0.5);
+    if (!better) return;
     pl.origin = {want.X() * best, want.Y() * best, want.Z() * best};
     f.sketch->set_plane(std::move(pl));
 }

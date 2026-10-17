@@ -239,6 +239,62 @@ TEST_CASE("rung06 support side wins over a stale host_face", "[features][rung06]
     REQUIRE(hf->sketch->plane().origin[1] == Approx(220.0).margin(0.2));
 }
 
+TEST_CASE("rung06 rebind does not pull a top sketch down to y=0", "[features][rung06][draft]") {
+    Document doc;
+    FeatureGraph graph;
+
+    Feature profile;
+    profile.type = FeatureType::Sketch;
+    auto sk = std::make_shared<Sketch>("Stem");
+    sk->add_line(0, 0, 20, 0);
+    sk->add_line(20, 0, 20, 220);
+    sk->add_line(20, 220, 0, 220);
+    sk->add_line(0, 220, 0, 0);
+    profile.sketch = sk;
+    const auto profile_id = graph.add(std::move(profile));
+
+    Feature rev;
+    rev.type = FeatureType::Revolve;
+    rev.params = {{"sketch", profile_id.str()},
+                  {"axis_point", {0.0, 0.0}},
+                  {"axis_dir", {0.0, 1.0}},
+                  {"angle", 6.283185307179586},
+                  {"op", "new"}};
+    const auto rev_id = graph.add(std::move(rev));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+
+    SketchPlane pl;
+    pl.origin = {0, 220, 0};
+    pl.x_dir = {-1, 0, 0};
+    pl.y_dir = {0, 0, 1};
+    Feature hole_sk;
+    hole_sk.type = FeatureType::Sketch;
+    hole_sk.sketch = std::make_shared<Sketch>("Hole", pl);
+    hole_sk.sketch->add_circle(0.0, 0.0, 15.0);
+    hole_sk.params = {{"support_host", rev_id.str()},
+                      {"support_normal", {0.0, 1.0, 0.0}},
+                      {"support_side", "max"}};
+    const auto hole_id = graph.add(std::move(hole_sk));
+    REQUIRE(graph.regenerate(doc, &err));
+    REQUIRE(graph.feature(hole_id)->sketch->plane().origin[1] == Approx(220.0).margin(0.2));
+
+    Feature cut;
+    cut.type = FeatureType::Extrude;
+    cut.params = {{"sketch", hole_id.str()},
+                  {"distance", -25.0},
+                  {"op", "cut"},
+                  {"target", rev_id.str()},
+                  {"end", "blind"},
+                  {"draft_deg", 15.0},
+                  {"draft_inward", true}};
+    graph.add(std::move(cut));
+    err.clear();
+    REQUIRE(graph.regenerate(doc, &err));
+    INFO(err);
+    REQUIRE(graph.feature(hole_id)->sketch->plane().origin[1] == Approx(220.0).margin(0.2));
+}
+
 TEST_CASE("rung06 draft 75 refused", "[features][rung06][draft]") {
     Document doc;
     FeatureGraph graph;
