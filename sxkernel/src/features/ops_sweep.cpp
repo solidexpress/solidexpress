@@ -285,7 +285,22 @@ bool apply_sweep(ApplyCtx& ctx) {
                     }
                 }
                 if (ribbons.empty()) return fail("sweep result is not a solid");
+                auto shape_xmax = [](const TopoDS_Shape& s) -> double {
+                    if (s.IsNull()) return -1.0e99;
+                    Bnd_Box box;
+                    BRepBndLib::Add(s, box);
+                    if (box.IsVoid()) return -1.0e99;
+                    double x0, y0, z0, x1, y1, z1;
+                    box.Get(x0, y0, z0, x1, y1, z1);
+                    return x1;
+                };
+                // Frenet follow-path is first in `ribbons` and reaches ~5 mm
+                // past the hook. A later polyline ribbon can still fuse when
+                // Frenet's boolean is messy — keep the farthest +X solid.
                 TopoDS_Shape result = ribbons.front();
+                for (const auto& ribbon : ribbons) {
+                    if (shape_xmax(ribbon) > shape_xmax(result)) result = ribbon;
+                }
 
                 std::string op = params.value("op", "new");
                 auto close_solid = [&](TopoDS_Shape s) -> TopoDS_Shape {
@@ -314,9 +329,15 @@ bool apply_sweep(ApplyCtx& ctx) {
                     if (op == "cut") {
                         merged = BRepAlgoAPI_Cut(tb->shape, result).Shape();
                     } else {
+                        double best_x = -1.0e99;
                         for (const auto& ribbon : ribbons) {
-                            merged = fuse_ribbon(tb->shape, ribbon);
-                            if (usable(merged)) break;
+                            TopoDS_Shape m = fuse_ribbon(tb->shape, ribbon);
+                            if (!usable(m)) continue;
+                            const double x = shape_xmax(m);
+                            if (x > best_x) {
+                                best_x = x;
+                                merged = m;
+                            }
                         }
                     }
                     if (!usable(merged)) return fail("boolean failed");

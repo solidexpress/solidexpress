@@ -800,8 +800,25 @@ class WalkUI06(WalkChrome):
             return False
         return abs(float(origin[1]) - 220.0) <= 2.0 and abs(float(normal[1]) - 1.0) <= 0.08
 
+    def select_body(self) -> str:
+        self.refresh("bodies", "selection")
+        if str((self.st.get("selection") or {}).get("body") or ""):
+            return self.S()
+        bodies = self.st.get("bodies") or []
+        if not bodies:
+            return self.S()
+        screen = bodies[0].get("screen")
+        if screen:
+            self.click(screen=screen)
+            self.d.wait_idle(frames=2)
+            self.refresh("selection", "status")
+        return self.S()
+
     def open_top_disc_sketch(self) -> dict:
+        self.d.wait_idle(frames=6)
+        self.select_body()
         picked = self.pick_top_disc()
+        self.d.wait_idle(frames=3)
         if self.control("chip:Sketch"):
             self.click("chip:Sketch")
         else:
@@ -812,6 +829,7 @@ class WalkUI06(WalkChrome):
             if bool((self.st.get("sketch") or {}).get("active")):
                 self.exit_sketch()
             picked = self.pick_top_disc()
+            self.d.wait_idle(frames=3)
             if self.control("chip:Sketch"):
                 self.click("chip:Sketch")
             else:
