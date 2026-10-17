@@ -2764,9 +2764,11 @@ func _coincident_ellipse_to_path(eid: String, centre: Vector2) -> void:
 		if d < best_d:
 			best_d = d
 			best = hit
-	if best.is_empty():
+	var uv := centre
+	if not best.is_empty():
+		uv = best["uv"]
+	elif centre == Vector2.ZERO and rad > 0.0:
 		return
-	var uv: Vector2 = best["uv"]
 	var pid: String = sketch.add_point(uv.x, uv.y)
 	if pid == "":
 		return
@@ -6045,16 +6047,20 @@ func _click_smart_dim(pos2: Vector2) -> void:
 	if hit == "":
 		hit = _nearest_entity_at(pos2)
 	if hit == "":
-		if not _smart_dim_pending.is_empty():
+		var first := _smart_dim_pending
+		if first.is_empty() and selected.size() == 1:
+			first = {"entity": selected[0], "role": "self"}
+		if not first.is_empty():
 			var sid := _convert_silhouette_at(pos2)
 			if sid != "":
 				var second := {"entity": sid, "role": "self"}
-				if _dispatch_smart_dim(SmartDimTable.Channel.BETWEEN, _smart_dim_pending, second):
+				if _dispatch_smart_dim(SmartDimTable.Channel.BETWEEN, first, second):
 					_smart_dim_pending.clear()
 					_smart_dim_first = null
 					return
-			status.emit(SMART_DIM_MISS_HINT)
-			return
+			if not _smart_dim_pending.is_empty():
+				status.emit(SMART_DIM_MISS_HINT)
+				return
 		_smart_dim_first = null
 		return
 	var hit_ref := {"entity": hit, "role": "self"}

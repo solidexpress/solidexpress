@@ -41,17 +41,30 @@ func _init(ctx: Context) -> void:
 	_ctx = ctx
 
 
+## Origin-plane sketches (Front / Top / Right through the origin) always
+## project a silhouette, even when a leftover host face is remembered.
+func _origin_plane() -> bool:
+	var plane = _ctx.plane if _ctx != null else null
+	if plane == null:
+		return false
+	if plane.origin.length() > 0.75:
+		return false
+	var n: Vector3 = plane.normal.abs()
+	return n.x > 0.95 or n.y > 0.95 or n.z > 0.95
+
+
 ## Returns the new (or existing) external entity id, or "" on refusal / miss.
 func click(uv: Vector2) -> String:
 	var ctx := _ctx
 	if ctx.doc == null or ctx.view == null:
 		return ""
-	if ctx.host_face_id == "" or ctx.support_host == "":
+	if ctx.host_face_id == "" or ctx.support_host == "" or _origin_plane():
 		var sid := _origin_silhouette(uv)
 		if sid != "":
 			return sid
-		ctx.fallback.call()
-		return ""
+		if ctx.host_face_id == "" or ctx.support_host == "":
+			ctx.fallback.call()
+			return ""
 	var fid := str(ctx.ensure_feature.call())
 	if fid == "":
 		return ""

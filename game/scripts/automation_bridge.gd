@@ -1010,6 +1010,8 @@ func _refresh_ids() -> void:
 		"OppositeFaceButton": "finish:OppositeFace",
 		"ThinFeature": "finish:ThinCheck",
 		"FlipSide": "finish:Flip",
+		"DraftToggle": "finish:Draft",
+		"DraftAngleSpin": "finish:DraftAngle",
 		"Frame": "hud:Frame",
 		"ViewsDrop": "hud:View",
 		"Section": "hud:Section",
@@ -1025,6 +1027,9 @@ func _refresh_ids() -> void:
 	var dim_spin := main.find_child("DimSpin", true, false) as SpinBox
 	if dim_spin != null:
 		_tag(dim_spin.get_line_edit(), "finish:Radius")
+	var draft_spin := main.find_child("DraftAngleSpin", true, false) as SpinBox
+	if draft_spin != null:
+		_tag(draft_spin.get_line_edit(), "finish:DraftAngle")
 	var timeline := main.find_child("Timeline", true, false)
 	_tag(timeline, "timeline:panel")
 	var menu_bar := main.find_child("FileMenu", true, false)
@@ -1035,6 +1040,7 @@ func _refresh_ids() -> void:
 				continue
 			_tag(mb, "menu:%s" % mb.text)
 			_tag(mb.get_popup(), "popup:%s" % mb.text)
+	_tag(main.find_child("TemporaryAxes", true, false), "menu:TemporaryAxes")
 	_tag_every_named(main, "SelectionStrip", "chip:")
 	_tag_every_named(main, "ActionBar", "chip:")
 	_tag_every_named(main, "VariantBar", "variant:")

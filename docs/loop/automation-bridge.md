@@ -59,6 +59,11 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `sweep:Profile` | Next pad or timeline sketch is the profile. |
 | `sweep:Path` | Next pad or timeline sketch is the path (open chain). |
 | `sweep:Ok` | Builds the solid. Refuses when the path is missing. |
+| `variant:Tangent` | Arc flyout: Tangent Arc (host endpoint, then end). |
+| `variant:Three Point` | Arc flyout: 3-point arc. |
+| `menu:TemporaryAxes` | Toggle dashed revolve-axis overlay (also View → Temporary Axes). |
+| `finish:Draft` | Extrude Cut draft toggle. Off is a prism. |
+| `finish:DraftAngle` | Draft angle in degrees (inward when Draft is on). |
 
 `state.faces` records are `id`, `body`, `centre`, `normal`, `area`, `screen`, `pick`, `plane`. The list is cached by document revision, camera transform, projection, and size, so `screen` is recomputed when the view moves. `pick` is a point on the face (an annular face's `centre` lies in the hole). `plane` is `n·pick`. `click(face=<id>)` and `click(face_normal=[x,y,z])` project `pick` through the camera at click time. `click(face_normal=[x,y,z])` chooses the face whose normal aligns with that direction (|dot| ≥ 0.999); if several faces share it, the one furthest along the normal is used (the outer wall). `click(face_normal=[x,y,z], plane=<mm>)` instead chooses the aligned face whose `plane` is nearest `<mm>` (`z = 30` versus `z = 55`). When that click lands within the viewport's edge tolerance, the bridge clicks the same point once more so the face is selected. The click reply includes that face's `normal`.
 
@@ -121,6 +126,16 @@ python3 tools/walk_rung03.py --from A6 --checkpoint --out /tmp/sx-rung03 --a15
 python3 tools/walk_rung05.py --out /tmp/sx-rung05
 python3 tools/walk_rung05.py --rows N1,A1,A2 --dry-run
 python3 tools/walk_rung05.py --from A8 --checkpoint --out /tmp/sx-rung05 --a15
+```
+
+## Candlestick runner (rung 6)
+
+`tools/walk_rung06.py` is the same command as `tools/walk_rung05.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 46-row Revolve & Sweep candlestick checklist. It runs `tools/check_rung06.py`. `--checkpoint` reloads `revolve.sxp` (chunk 2), `path.sxp` (chunk 3), or `sweep.sxp` (chunk 4). Ellipse is three clicks (centre, major, minor) after `rail:Ellipse`. Temporary Axes is `menu:TemporaryAxes`. Extrude Cut draft is `finish:Draft` then `finish:DraftAngle`. Arc flyout uses `variant:Tangent` / `variant:Three Point`. Export rows share one 3MF per stage. A36 needs `--a15` (without it: `BLOCKED-by-flag`).
+
+```bash
+python3 tools/walk_rung06.py --out /tmp/sx-rung06
+python3 tools/walk_rung06.py --rows N1,A1,A2 --dry-run
+python3 tools/walk_rung06.py --from A16 --checkpoint --out /tmp/sx-rung06 --a15
 ```
 
 ## sx-042 runner rules (re-PLAN 21)

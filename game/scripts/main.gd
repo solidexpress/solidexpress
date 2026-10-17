@@ -23,6 +23,7 @@ var show_timeline := false  # View-menu toggle ONLY — never auto-show on featu
 var show_scenic_bg := false  # Canyon HDRI; default flat for readable cuts
 ## Films set this so View → Scenic cannot flip the locked flat background.
 var presentation_lock := false
+var show_temp_axes := true
 var _view_popup: PopupMenu
 var autosave_timer: Timer
 var sketch_mode: SketchMode
@@ -592,6 +593,8 @@ func _build_ui() -> void:
 	_view_popup.add_item("Set Active Plane…", 1)
 	_view_popup.add_item("Reset Active Plane (ground)", 2)
 	_view_popup.add_item("Unhide all", 3)
+	_view_popup.add_separator()
+	_view_popup.add_check_item("Temporary Axes", 8)
 	_install_orientation_menu()
 	_sync_view_menu_checks()
 	_view_popup.id_pressed.connect(func(id: int) -> void:
@@ -627,6 +630,8 @@ func _build_ui() -> void:
 			if view != null:
 				view.unhide_all()
 				_on_status("All shown")
+		elif id == 8:
+			_toggle_temp_axes()
 		elif id == 90:
 			normal_to_view()
 		elif id >= 100:
@@ -1106,6 +1111,12 @@ func _build_ui() -> void:
 	sketch_mode.tool_variant_changed.connect(sketch_chrome.sync_variant_highlight)
 	sketch_chrome.action_chosen.connect(_on_sketch_action)
 	sketch_chrome.finish_requested.connect(_on_sketch_finish)
+	var temp_axes_btn := Button.new()
+	temp_axes_btn.name = "TemporaryAxes"
+	temp_axes_btn.visible = false
+	temp_axes_btn.set_meta("sx_auto", "menu:TemporaryAxes")
+	temp_axes_btn.pressed.connect(_toggle_temp_axes)
+	ui.add_child(temp_axes_btn)
 	sketch_chrome.dim_submitted.connect(_on_sketch_dim_submitted)
 	# WP1 owns the signal. Until it exists, skip the connect so the shell still
 	# boots; run_rung01_replan_shell.gd fails that gap instead of skipping it.
@@ -1421,7 +1432,11 @@ func _apply_constraint(type: String, value: float) -> void:
 	if result == "":
 		_on_status("Select entities with the Sel tool first (%s)" % type)
 	else:
-		var shown := "Vertical" if type == "vertical" else type
+		var shown := type
+		if type == "vertical":
+			shown = "Vertical"
+		elif type == "horizontal":
+			shown = "Horizontal"
 		_on_status("%s: %s" % [shown, result])
 
 
@@ -1824,6 +1839,10 @@ func _start_sketch_on_ground() -> void:
 
 
 func _on_sketch_session_started(msg: String) -> void:
+	if interaction != null and interaction.world_gizmos != null:
+		interaction.world_gizmos.set_grid_visible(true)
+	if sketch_mode != null:
+		sketch_mode.temp_axes_visible = show_temp_axes
 	_remember_sketch_host_face()
 	_update_panel_visibility()
 	_sync_world_background()
@@ -1855,6 +1874,8 @@ func _on_sketch_session_ended() -> void:
 	# next part-mode Esc, and drop the host face so its card does not cover
 	# the rail. A body the extrude finish just selected is not the host face
 	# and stays.
+	if interaction != null and interaction.world_gizmos != null:
+		interaction.world_gizmos.set_grid_visible(false)
 	if interaction != null and interaction.has_method("drop_up_to_face_pick"):
 		interaction.drop_up_to_face_pick()
 	_release_sketch_host_face()
@@ -2142,11 +2163,22 @@ func _on_sketch_finish(op: String, distance: float, end: String = "blind",
 		if is_finite(solved):
 			status_dist = solved
 			have_uts_depth = true
-	sketch_mode.finish_extrude(distance, op, end, thin_thickness, thin_type, flip_side, selected_contours)
+	var draft := 0.0
+	var inward := true
+	if sketch_chrome != null and sketch_chrome.has_method("draft_deg"):
+		draft = sketch_chrome.draft_deg()
+	sketch_mode.finish_extrude(distance, op, end, thin_thickness, thin_type, flip_side,
+			selected_contours, draft, inward)
+	if absf(draft) >= 75.0 and sketch_mode != null and sketch_mode.active:
+		if sketch_chrome != null and sketch_chrome.has_method("set_draft_deg"):
+			sketch_chrome.set_draft_deg(15.0)
 	# Failures keep the sketch open and already wrote the failure sentence.
 	if sketch_mode != null and not sketch_mode.active:
 		if end == "to_face" and not have_uts_depth:
 			_on_status("Extrude %s" % _extrude_end_label(end))
+		elif absf(draft) > 1e-6:
+			_on_status("Cut Blind %.4f mm, draft %.0f° inward" % [absf(status_dist), draft] if op == "cut"
+					else "Extrude %s %.4f mm, draft %.0f°" % [_extrude_end_label(end), status_dist, draft])
 		else:
 			_on_status("Extrude %s %.4f mm" % [_extrude_end_label(end), status_dist])
 
@@ -2747,6 +2779,19 @@ func _sync_view_menu_checks() -> void:
 		_view_popup.set_item_checked(vi, show_variables)
 	if si >= 0:
 		_view_popup.set_item_checked(si, show_scenic_bg)
+	var ai := _view_popup.get_item_index(8)
+	if ai >= 0:
+		_view_popup.set_item_checked(ai, show_temp_axes)
+
+func _toggle_temp_axes() -> void:
+	show_temp_axes = not show_temp_axes
+	if sketch_mode != null:
+		sketch_mode.temp_axes_visible = show_temp_axes
+		if sketch_mode.active:
+			sketch_mode._redraw()
+	_sync_view_menu_checks()
+	_on_status("Temporary Axes on" if show_temp_axes else "Temporary Axes off")
+
 
 func _reset_panel_layout() -> void:
 	if FileAccess.file_exists(ChromeDock.CFG_PATH):
@@ -3514,6 +3559,10 @@ func _do_new() -> void:
 		if interaction.triball != null:
 			interaction.triball.cancel()
 	view.new_document()
+	if view.has_method("set_origin_planes_visible"):
+		view.set_origin_planes_visible(false)
+	if interaction != null and interaction.world_gizmos != null:
+		interaction.world_gizmos.set_grid_visible(false)
 	current_path = ""
 	_reset_document_tool_state()
 	# Empty part on the Top plane (XY through the origin). The Box primitive

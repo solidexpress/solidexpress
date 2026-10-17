@@ -1,0 +1,3 @@
+script=tests/run_rung06_refs.gd
+tier=ci
+timeout=240
