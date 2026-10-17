@@ -25,11 +25,11 @@
       "hero": false
     },
     {
-      "id": "extrude_through_all",
-      "feature": "Extrude & cut",
-      "title": "Extrude & cut",
-      "blurb": "Boss and through-all cut from a sketch. Thickness stays put.",
-      "caption": "Boss and through-all cut from a sketch. Thickness stays put.",
+      "id": "tutor1",
+      "feature": "Boss, cut & shell",
+      "title": "Tutor 1: boss, cut, fillets, shell",
+      "blurb": "A boss, an offset cut, two fillets, a 1 mm shell, then a Top section view.",
+      "caption": "A boss, an offset cut, two fillets, a 1 mm shell, then a Top section view.",
       "order": 2,
       "hero": false
     },
@@ -70,11 +70,11 @@
       "hero": false
     },
     {
-      "id": "hole_wizard_m6",
-      "feature": "Hole wizard",
-      "title": "Hole wizard",
-      "blurb": "Place standard M6 holes; mass follows steel \u00d7 volume.",
-      "caption": "Place standard M6 holes; mass follows steel \u00d7 volume.",
+      "id": "hexkey",
+      "feature": "Swept boss",
+      "title": "Hex key",
+      "blurb": "Sweep a 7.65 mm hex along a bent path into a hex key.",
+      "caption": "Sweep a 7.65 mm hex along a bent path into a hex key.",
       "order": 7,
       "hero": false
     },
@@ -97,11 +97,11 @@
       "hero": false
     },
     {
-      "id": "drawing_follows_model",
-      "feature": "Drawings",
-      "title": "Drawings",
-      "blurb": "A drawing dimension updates when the model parameter changes.",
-      "caption": "A drawing dimension updates when the model parameter changes.",
+      "id": "flanged_pipe",
+      "feature": "Shell, pattern & mirror",
+      "title": "Flanged pipe",
+      "blurb": "Shell a tube, pattern 8 flange holes, mirror the flange, round the rims.",
+      "caption": "Shell a tube, pattern 8 flange holes, mirror the flange, round the rims.",
       "order": 10,
       "hero": false
     },
