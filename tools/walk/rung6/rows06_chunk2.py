@@ -54,8 +54,6 @@ class Rows06Chunk2:
         b = self._pt(arc["end"]) if arc else [183.6, 75]
         outer = b if abs(b[1] - 10.0) > abs(a[1] - 10.0) else a
         self.dim_arc_end_to_line(outer, (30.0, 10.0), "65")
-        if not self.label_has("65"):
-            self.dim_two_points(a, b, "65", snap=True)
         self.clause("vertical 65", self.label_has("65"), str(self.dim_texts()))
         self.clause("r150 ends", arc is not None, str(arc))
 

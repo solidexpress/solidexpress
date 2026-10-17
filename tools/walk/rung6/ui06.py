@@ -504,18 +504,25 @@ class WalkUI06(WalkChrome):
         """Vertical 65: Smart Dim the R150 outer end, then the 60 mm line.
 
         Two clicks on the same arc are radius. An endpoint pick plus a line
-        is point-line Δy.
+        is point-line Δy. Fit once so both clicks stay on-screen; do not
+        F-fit between them (that parks the second click on a dim label).
         """
         before = {str(d.get("text", "")) for d in self.dims()}
         self.clear_sketch_selection()
-        self._zoom_uv(end_uv, notches=10)
+        self.fit_sketch()
+        self.d.wait_idle(frames=2)
         self.click("rail:SmartDim")
         was = self._set_snap(True)
         self.click(sketch=list(end_uv))
         self.d.wait_idle(frames=2)
         self._set_snap(False)
-        self.show_sketch_point(line_uv)
-        self.click(sketch=list(line_uv))
+        last = {}
+        for off in ([0, 4], [0, -4], [6, 0], [-6, 0], [0, 0]):
+            last = self.click(sketch=list(line_uv), offset=list(off))
+            disp = str(last.get("disposition", ""))
+            if "dim-label" not in disp:
+                break
+        del last
         self._set_snap(was)
         self.d.wait_idle(frames=3)
         fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
@@ -782,16 +789,15 @@ class WalkUI06(WalkChrome):
         self.set_option("finish:End", "Blind")
         shown = self.type_into("finish:Distance", distance)
         if draft is not None:
-            toggle = self.control("finish:Draft")
-            if toggle and not toggle.get("pressed"):
-                self.click("finish:Draft")
-                self.d.wait_idle(frames=3)
-            elif not toggle:
+            for _ in range(3):
+                toggle = self.control("finish:Draft")
+                if toggle and toggle.get("pressed"):
+                    break
                 try:
                     self.click("finish:Draft")
-                    self.d.wait_idle(frames=3)
                 except SxError:
-                    pass
+                    break
+                self.d.wait_idle(frames=2)
             self.type_into("finish:DraftAngle", draft)
             self.d.wait_idle(frames=2)
         shown_draft = self.field("finish:DraftAngle")
