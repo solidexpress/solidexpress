@@ -632,22 +632,33 @@ func _adopt_support(support: Dictionary) -> void:
 	target_fid = support_host
 
 
-## Cut/fuse target: the live session, then the saved host, then the host face.
+## Cut/fuse target: the live session, then the saved host, then the host face,
+## then the only body in the part (jaw cut after a pencil reopen).
 func _boolean_target_fid() -> String:
 	if target_fid != "":
 		return target_fid
 	if support_host != "":
 		return support_host
-	if host_face_id == "" or view == null:
+	if host_face_id != "" and view != null:
+		var body := ""
+		if view.has_method("body_of_face"):
+			body = view.body_of_face(host_face_id)
+		if body == "" and view.has_method("body_of_feature"):
+			body = view.body_of_feature(support_host)
+		if body != "" and view.has_method("feature_of_body"):
+			var from_face := str(view.feature_of_body(body))
+			if from_face != "":
+				return from_face
+	return _sole_body_feature()
+
+
+func _sole_body_feature() -> String:
+	if view == null or view.doc == null or not view.has_method("feature_of_body"):
 		return ""
-	var body := ""
-	if view.has_method("body_of_face"):
-		body = view.body_of_face(host_face_id)
-	if body == "" and view.has_method("body_of_feature"):
-		body = view.body_of_feature(support_host)
-	if body != "" and view.has_method("feature_of_body"):
-		return view.feature_of_body(body)
-	return ""
+	var ids: PackedStringArray = view.doc.body_ids()
+	if ids.size() != 1:
+		return ""
+	return str(view.feature_of_body(ids[0]))
 
 
 ## True when `face_id`'s midpoint sits on the active sketch plane.

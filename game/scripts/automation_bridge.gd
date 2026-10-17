@@ -383,7 +383,8 @@ func _retry_face_if_edge(spec: Dictionary) -> void:
 
 
 ## Named `face=` clicks that miss (pad steal, edge-on top disc) still select
-## that face so Sketch can take the selected-face fast path.
+## that face so Sketch can take the selected-face fast path. Do not clobber a
+## fillet/chamfer face-loop that already landed on `selected_edges`.
 func _select_named_face(spec: Dictionary) -> void:
 	if not bool(spec.get("retry_face", false)):
 		return
@@ -392,6 +393,8 @@ func _select_named_face(spec: Dictionary) -> void:
 		return
 	var fid := str(spec.get("id", ""))
 	if fid == "" or str(view.selected_face) == fid:
+		return
+	if view.selected_edges.size() > 0:
 		return
 	var rec := _find_face(fid)
 	var body := str(rec.get("body", ""))
