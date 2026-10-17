@@ -67,7 +67,9 @@ class WalkChrome:
             return False
         size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
         x, y = float(screen[0]), float(screen[1])
-        return 8 <= x <= float(size[0]) - 8 and 40 <= y <= float(size[1]) - 8
+        # Keep clicks off the left rail (ToolPoint ~x=41) and the finish bar
+        # (DimSpin ~y=61). Those dispositions drop the sketch click.
+        return 96.0 <= x <= float(size[0]) - 8 and 110.0 <= y <= float(size[1]) - 24
 
     def _view_centre(self) -> list[float]:
         size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
@@ -123,7 +125,11 @@ class WalkChrome:
     def clear_sketch_selection(self) -> None:
         """Empty click so Smart Dim does not reuse the last sketch pick."""
         self.click("rail:Select")
-        empty = list(getattr(self, "_EMPTY_SKETCH", (-15.0, 40.0)))
+        box = self.sketch_bbox()
+        if box:
+            empty = [float(box["min"][0]) - 25.0, float(box["max"][1]) + 25.0]
+        else:
+            empty = list(getattr(self, "_EMPTY_SKETCH", (-15.0, 40.0)))
         self.show_sketch_point(empty)
         self.click(sketch=empty)
         self.refresh("selection", "status")
@@ -281,12 +287,31 @@ class WalkChrome:
     def show_sketch_point(self, uv) -> None:
         if self._uv_inside(uv):
             return
-        self.fit_sketch()
-        centre = self._view_centre()
-        for _ in range(8):
+        # PageDown zooms out at the view centre (wheel can land on chrome).
+        for _ in range(20):
             if self._uv_inside(uv):
                 return
-            self.d.wheel(notches=-2, screen=centre)
+            self.d.key("pagedown")
+            self.d.wait_idle(frames=1)
+        size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
+        for _ in range(30):
+            if self._uv_inside(uv):
+                return
+            try:
+                screen = self.d.project(sketch=list(uv))["screen"]
+            except SxError:
+                return
+            x, y = float(screen[0]), float(screen[1])
+            if y < 110:
+                self.d.key("down")
+            elif y > float(size[1]) - 24:
+                self.d.key("up")
+            elif x < 96:
+                self.d.key("right")
+            elif x > float(size[0]) - 8:
+                self.d.key("left")
+            else:
+                return
             self.d.wait_idle(frames=1)
 
     def sketch_bbox(self) -> dict | None:

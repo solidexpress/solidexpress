@@ -115,12 +115,6 @@ class WalkUI03(WalkChrome):
         ]
         return max(vert, key=lambda ln: self._pt(ln["start"])[0], default=None)
 
-    def clear_sketch_selection(self) -> None:
-        self.click("rail:Select")
-        self.show_sketch_point([30, 20])
-        self.click(sketch=[30, 20])
-        self.refresh("selection", "status")
-
     def rail_label_nodes(self) -> list[dict]:
         want = {"Rect", "Smart Dim", "Circle", "Convert", "Offset", "Select"}
         nodes = []

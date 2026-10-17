@@ -145,9 +145,20 @@ class WalkUI05(WalkChrome):
             cc = circle["center"]
             if abs(float(cc[0]) - cx) <= 0.5 and abs(float(cc[1]) - cy) <= 0.5:
                 radius = float(circle.get("radius") or 5)
-                # −X stays on the 1280 canvas after sketch-fit (the +X Ø130
-                # rim lands at x≈1282 and becomes a drag).
-                return [cx - radius, cy]
+                # Cardinal rims: −X can land on the left rail, +X off the
+                # right edge after fit. Prefer a rim that is on-canvas.
+                candidates = (
+                    [cx, cy + radius],
+                    [cx, cy - radius],
+                    [cx + radius * 0.7, cy + radius * 0.7],
+                    [cx - radius * 0.7, cy + radius * 0.7],
+                    [cx - radius, cy],
+                    [cx + radius, cy],
+                )
+                for uv in candidates:
+                    if self._uv_inside(uv):
+                        return uv
+                return [cx, cy + radius]
         return [cx, cy]
 
     def dimension_centres(self, a, b, value: str) -> dict:

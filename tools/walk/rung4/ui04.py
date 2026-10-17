@@ -101,10 +101,13 @@ class WalkUI04(WalkChrome):
         return {"status": self.S(), "dof": self.dof_text()}
 
     def draw_line(self, a, b) -> None:
-        self.click("rail:Line")
+        self.click("rail:Select")
+        self.d.wait_idle(frames=1)
         self.show_sketch_point(a)
-        self.click(sketch=list(a))
         self.show_sketch_point(b)
+        self.click("rail:Line")
+        self.d.wait_idle(frames=3)
+        self.click(sketch=list(a))
         self.click(sketch=list(b))
         self.refresh("sketch", "status")
 

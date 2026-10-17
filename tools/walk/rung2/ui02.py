@@ -81,12 +81,6 @@ class WalkUI02(WalkChrome):
         vert = [ln for ln in self.profile_lines() if abs(self._pt(ln["start"])[0] - self._pt(ln["end"])[0]) < 0.5]
         return max(vert, key=lambda ln: self._pt(ln["start"])[0], default=None)
 
-    def clear_sketch_selection(self) -> None:
-        self.click("rail:Select")
-        self.show_sketch_point([50, 30])
-        self.click(sketch=[50, 30])
-        self.refresh("selection", "status")
-
     def rail_label_nodes(self) -> list[dict]:
         want = {"Rect", "Smart Dim", "Circle", "Convert", "Select"}
         nodes = []

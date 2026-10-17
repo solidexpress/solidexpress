@@ -1637,7 +1637,9 @@ func set_tool(t: Tool) -> void:
 	draw_construction = (t == Tool.CENTERLINE)
 	# Convert / Offset Esc drops the tool. A leftover Smart Dim selection
 	# would spend that key on "selection cleared" and leave the tool armed.
-	if t == Tool.CONVERT or t == Tool.OFFSET:
+	# Arming Smart Dim must not keep the last line selected — a second
+	# length dim would become an angle between that line and the new pick.
+	if t == Tool.CONVERT or t == Tool.OFFSET or t == Tool.SMART_DIM:
 		_set_selected([])
 		if selected_constraint != "":
 			select_constraint("")
@@ -2153,7 +2155,10 @@ func snap_point(p: Vector2) -> Vector2:
 		centers.append(ip)
 	for mp in centers:
 		var d2 := p.distance_to(mp)
-		if d2 <= best_d:
+		# A Ø150 rim click is 75 mm from the origin; a view-scaled snap
+		# must not pull it onto the centre (Smart Dim would wait for a
+		# second pick instead of emitting diameter).
+		if d2 <= best_d and not _snap_blocked_by_curve(p, mp):
 			best_d = d2
 			best_pt = mp
 			found = true
@@ -2862,6 +2867,19 @@ func _coincident_ellipse_to_path(eid: String, centre: Vector2) -> void:
 	sketch.add_constraint("coincident", [
 		{"entity": eid, "role": "center"},
 		{"entity": pid, "role": "self"}], 0.0)
+
+
+## True when `p` sits on a circle/arc/ellipse curve closer than `centre`.
+func _snap_blocked_by_curve(p: Vector2, centre: Vector2) -> bool:
+	var to_c := p.distance_to(centre)
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind != "circle" and kind != "arc" and kind != "ellipse":
+			continue
+		if _entity_distance(info, p) + 1.0e-6 < to_c:
+			return true
+	return false
 
 
 func _entity_distance(info: Dictionary, p: Vector2) -> float:
