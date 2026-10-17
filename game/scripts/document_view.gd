@@ -22,9 +22,9 @@ const BODY_ROUGHNESS := 0.35
 const BODY_METALLIC_FLAT := 0.0
 const BODY_ROUGHNESS_FLAT := 0.78
 const SELECTED_BODY_COLOR := Color(0.55, 0.68, 0.9)
-const SELECTED_FACE_COLOR := Color(1.0, 0.62, 0.15)
+const SELECTED_FACE_COLOR := Color(1.0, 0.76, 0.03)
 const HOVER_BODY_COLOR := Color(0.78, 0.84, 0.92)
-const HOVER_FACE_COLOR := Color(0.95, 0.82, 0.45)
+const HOVER_FACE_COLOR := Color(0.45, 0.78, 0.95)
 const MATE_ANCHOR_COLOR := Color(0.35, 0.85, 0.45)
 const EDGE_COLOR := Color(0.22, 0.24, 0.28)
 const DATUM_PLANE_COLOR := Color(0.35, 0.55, 0.85, 0.22)
@@ -2926,64 +2926,8 @@ func _apply_selection_materials() -> void:
 	_rebuild_selection_corners()
 
 
-## Draw an AABB frame + corner brackets around the current selection.
+## AABB corners are dimmed (survey #6): node stays, mesh is empty.
 func _rebuild_selection_corners() -> void:
 	if _selection_corners == null:
 		return
-	var ids: Array[String] = []
-	for b in selected_bodies:
-		ids.append(b)
-	if ids.is_empty() and selected_body != "":
-		ids.append(selected_body)
-	if ids.is_empty():
-		_selection_corners.mesh = null
-		return
-	var mn := Vector3(1e12, 1e12, 1e12)
-	var mx := Vector3(-1e12, -1e12, -1e12)
-	var any := false
-	for id in ids:
-		var bb: Dictionary = doc.measure_bbox(id)
-		if bb.is_empty():
-			continue
-		any = true
-		mn = mn.min(bb["min"])
-		mx = mx.max(bb["max"])
-	if not any:
-		_selection_corners.mesh = null
-		return
-	# Slight pad so brackets sit outside the solid.
-	var pad := (mx - mn).length() * 0.02 + 0.5
-	mn -= Vector3(pad, pad, pad)
-	mx += Vector3(pad, pad, pad)
-	var im := ImmediateMesh.new()
-	im.surface_begin(Mesh.PRIMITIVE_LINES)
-	var corners: Array[Vector3] = [
-		Vector3(mn.x, mn.y, mn.z), Vector3(mx.x, mn.y, mn.z),
-		Vector3(mx.x, mx.y, mn.z), Vector3(mn.x, mx.y, mn.z),
-		Vector3(mn.x, mn.y, mx.z), Vector3(mx.x, mn.y, mx.z),
-		Vector3(mx.x, mx.y, mx.z), Vector3(mn.x, mx.y, mx.z),
-	]
-	# Full wire AABB
-	var edges := [
-		[0, 1], [1, 2], [2, 3], [3, 0],
-		[4, 5], [5, 6], [6, 7], [7, 4],
-		[0, 4], [1, 5], [2, 6], [3, 7],
-	]
-	for e in edges:
-		im.surface_add_vertex(corners[e[0]])
-		im.surface_add_vertex(corners[e[1]])
-	# Corner brackets: short ticks along each axis from every corner.
-	var tick := (mx - mn) * 0.12
-	tick = Vector3(maxf(tick.x, 2.0), maxf(tick.y, 2.0), maxf(tick.z, 2.0))
-	for c in corners:
-		var sx := 1.0 if c.x > (mn.x + mx.x) * 0.5 else -1.0
-		var sy := 1.0 if c.y > (mn.y + mx.y) * 0.5 else -1.0
-		var sz := 1.0 if c.z > (mn.z + mx.z) * 0.5 else -1.0
-		im.surface_add_vertex(c)
-		im.surface_add_vertex(c + Vector3(-sx * tick.x, 0, 0))
-		im.surface_add_vertex(c)
-		im.surface_add_vertex(c + Vector3(0, -sy * tick.y, 0))
-		im.surface_add_vertex(c)
-		im.surface_add_vertex(c + Vector3(0, 0, -sz * tick.z))
-	im.surface_end()
-	_selection_corners.mesh = im
+	_selection_corners.mesh = null

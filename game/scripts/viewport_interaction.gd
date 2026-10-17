@@ -7943,7 +7943,7 @@ func _draw_pull_handle() -> void:
 		return
 	var a: Vector2 = _model_to_screen(pull["anchor"])
 	var t: Vector2 = _model_to_screen(pull["point"])
-	var col2 := Color(1.0, 0.62, 0.15, 0.95)
+	var col2 := Color(1.0, 0.76, 0.03, 0.95)
 	_draw_stretch_arrow(a, t, col2)
 	draw_string(ThemeDB.fallback_font, t + Vector2(8, -8), "Pull", HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), col2)
 

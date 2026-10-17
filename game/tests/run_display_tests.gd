@@ -171,7 +171,7 @@ func test_selection_corners(view: DocumentView) -> void:
 	check(view._selection_corners != null, "SelectionCorners node exists")
 	check(view._selection_corners.mesh == null, "no corner mesh when unselected")
 	view.select_entity(id, "")
-	check(view._selection_corners.mesh != null, "corner mesh built on select")
+	check(view._selection_corners.mesh == null, "corner mesh dimmed on select")
 	view.clear_selection()
 	check(view._selection_corners.mesh == null, "corner mesh cleared on deselect")
 
