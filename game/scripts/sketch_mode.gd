@@ -363,6 +363,15 @@ func _ready() -> void:
 	add_child(_dimension_labels)
 	_dimension_geom = MeshInstance3D.new()
 	_dimension_geom.name = "DimensionGeometry"
+	var dim_mat := StandardMaterial3D.new()
+	dim_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dim_mat.vertex_color_use_as_albedo = true
+	dim_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dim_mat.no_depth_test = true
+	dim_mat.render_priority = 2
+	dim_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	dim_mat.albedo_color = Color.WHITE
+	_dimension_geom.material_override = dim_mat
 	add_child(_dimension_geom)
 	_constraint_glyphs = Node3D.new()
 	_constraint_glyphs.name = "ConstraintGlyphs"
@@ -8336,8 +8345,11 @@ func _append_dim_arrow(im: ImmediateMesh, cam: Camera3D, tip: Vector2, from_pt: 
 	var head := 2.2
 	var left := tip - dir * head + n * (head * 0.45)
 	var right := tip - dir * head - n * (head * 0.45)
-	_append_leader_ribbon(im, cam, tip, left, 1.6, col)
-	_append_leader_ribbon(im, cam, tip, right, 1.6, col)
+	var lift := plane_normal() * 0.35
+	im.surface_set_color(col)
+	im.surface_add_vertex(_to3(tip) + lift)
+	im.surface_add_vertex(_to3(left) + lift)
+	im.surface_add_vertex(_to3(right) + lift)
 
 
 ## True for a radius/diameter on a full circle (not a jaw arc).
