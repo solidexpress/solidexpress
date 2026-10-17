@@ -8887,6 +8887,7 @@ func _park_labels_outside_host_face(cam: Camera3D, k: float) -> void:
 	var face := _host_face_screen_rect(cam)
 	if face.size.x < 4.0 or face.size.y < 4.0:
 		return
+	var placed: Array[Rect2] = []
 	for i in range(dimensions.size()):
 		var dim: Dictionary = dimensions[i]
 		if typeof(dim) != TYPE_DICTIONARY:
@@ -8894,11 +8895,13 @@ func _park_labels_outside_host_face(cam: Camera3D, k: float) -> void:
 		var rect := _projected_label_rect(dim, cam, k)
 		var centre := rect.get_center()
 		if not face.has_point(centre):
+			placed.append(rect)
 			continue
-		var push := _shortest_exit(centre, face)
 		var prev: Vector2 = dim.get("label_clamp", Vector2.ZERO)
+		var push := _exit_clear_of_labels(centre, face, dim, prev, cam, k, placed)
 		dim["label_clamp"] = prev + Vector2(push.x / k, -push.y / k)
 		dimensions[i] = dim
+		placed.append(_projected_label_rect(dim, cam, k))
 
 
 ## Screen box of the body this face sketch sits on, in the same space as labels.
@@ -8922,17 +8925,40 @@ func _host_face_screen_rect(cam: Camera3D) -> Rect2:
 
 ## Screen delta that moves `centre` just past the nearest side of `face`.
 func _shortest_exit(centre: Vector2, face: Rect2) -> Vector2:
+	return _face_exits(centre, face)[0]["push"]
+
+
+func _face_exits(centre: Vector2, face: Rect2) -> Array:
 	var exits := [
 		{"gap": centre.x - face.position.x, "push": Vector2(-(centre.x - face.position.x + 2.0), 0.0)},
 		{"gap": face.end.x - centre.x, "push": Vector2(face.end.x - centre.x + 2.0, 0.0)},
 		{"gap": centre.y - face.position.y, "push": Vector2(0.0, -(centre.y - face.position.y + 2.0))},
 		{"gap": face.end.y - centre.y, "push": Vector2(0.0, face.end.y - centre.y + 2.0)},
 	]
-	var best: Dictionary = exits[0]
-	for exit in exits:
-		if float(exit["gap"]) < float(best["gap"]):
-			best = exit
-	return best["push"]
+	exits.sort_custom(func(a, b): return float(a["gap"]) < float(b["gap"]))
+	return exits
+
+
+## Prefer the shortest face-edge exit whose parked plate misses labels already
+## in the margin (Ø130 / Ø10 / 94 on the flange must not share one edge).
+func _exit_clear_of_labels(centre: Vector2, face: Rect2, dim: Dictionary,
+		prev: Vector2, cam: Camera3D, k: float, placed: Array[Rect2]) -> Vector2:
+	var fallback := Vector2.ZERO
+	for exit in _face_exits(centre, face):
+		var push: Vector2 = exit["push"]
+		if fallback == Vector2.ZERO:
+			fallback = push
+		var trial := dim.duplicate()
+		trial["label_clamp"] = prev + Vector2(push.x / k, -push.y / k)
+		var rect := _projected_label_rect(trial, cam, k)
+		var clash := false
+		for other in placed:
+			if rect.intersects(other):
+				clash = true
+				break
+		if not clash:
+			return push
+	return fallback
 
 
 func _seat_full_circle_labels(cam: Camera3D, k: float) -> void:
