@@ -4,13 +4,10 @@ Rows call these helpers. Face picks are the FACES table; plane= is n·pick.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from sxdrive import SxError
-from walk import proc
 from walk.chrome import WalkChrome
-from walk.gates import parse_tier, run_kernel, run_tier, take
 
 PINNED_NEW = "New — empty part, Top plane (XY). View ▸ Timeline to edit features"
 
@@ -63,21 +60,6 @@ class WalkUI05(WalkChrome):
 
     def mm(self, key: str) -> float:
         return float(self.part()["PART"][key])
-
-    def sketch_on_datum(self, name: str, view_key: str) -> dict:
-        self.d.key(view_key)
-        self.d.wait_idle(frames=2)
-        self.click("rail:Sketch")
-        self.refresh("status")
-        self.click(datum=name)
-        self.d.wait_idle(frames=3)
-        self.refresh("sketch", "status", "camera")
-        sk = self.st.get("sketch") or {}
-        return {
-            "status": self.S(),
-            "active": bool(sk.get("active")),
-            "plane": sk.get("plane") or {},
-        }
 
     def construction_circles(self) -> list[dict]:
         self.refresh("sketch")
@@ -269,29 +251,6 @@ class WalkUI05(WalkChrome):
         self.click(screen=screen)
         self.refresh("selection", "status")
         return self.S()
-
-    def select_face(self, normal, plane=None) -> dict:
-        fields: dict = {"face_normal": list(normal)}
-        if plane is not None:
-            fields["plane"] = float(plane)
-        reply = self.click(**fields)
-        self.refresh("selection", "status", "faces")
-        sel = self.st.get("selection") or {}
-        if not sel.get("face"):
-            reply = self.click(**fields)
-            self.refresh("selection", "status", "controls", "faces")
-            sel = self.st.get("selection") or {}
-        else:
-            self.refresh("controls", "faces")
-        face_id = str(sel.get("face") or "")
-        record = self._face_record(face_id)
-        return {
-            "face": face_id,
-            "status": str(reply.get("status", self.S())),
-            "normal": reply.get("normal") or (record or {}).get("normal"),
-            "plane": (record or {}).get("plane"),
-            "record": record,
-        }
 
     def pick_face(self, key: str, shift: bool = False) -> dict:
         normal, world_z, view = FACES[key]
@@ -529,16 +488,6 @@ class WalkUI05(WalkChrome):
         self.refresh("status", "finish", "controls")
         return {"status": self.S(), "radius": shown or self.field("finish:StripR")}
 
-    def rects_overlap(self, a, b) -> bool:
-        if len(a) < 4 or len(b) < 4:
-            return False
-        return (
-            a[0] < b[0] + b[2]
-            and b[0] < a[0] + a[2]
-            and a[1] < b[1] + b[3]
-            and b[1] < a[1] + a[3]
-        )
-
     def z_extent(self) -> tuple[float, float] | None:
         bodies = list(self.refresh("bodies").get("bodies") or [])
         if len(bodies) != 1:
@@ -576,52 +525,4 @@ class WalkUI05(WalkChrome):
         return report
 
     def headless(self) -> dict[str, dict]:
-        keys = ("kernel", "godot", "lint", "unit", "registry", "errors")
-        if not self.run_a15:
-            blocked = "BLOCKED-by-flag: pass --a15"
-            return {key: {"ok": False, "evidence": blocked} for key in keys}
-        errors = self.log_errors()
-        owned = take("kernel")
-        if owned is not None:
-            return self._headless_report(
-                owned,
-                run_tier(self),
-                take("lint_suites"),
-                take("unit_rung05"),
-                take("registry"),
-                errors,
-            )
-        self._release_project()
-        try:
-            kernel = run_kernel(self.repo)
-            godot = run_tier(self)
-            lint = proc.run([sys.executable, "tools/lint_suites.py"], cwd=self.repo)
-            unit = proc.run([sys.executable, "tools/test_check_rung05.py"], cwd=self.repo)
-            registry = proc.run([sys.executable, "tools/test_walk_registry.py"], cwd=self.repo)
-        finally:
-            if getattr(self, "proc", None) is None or self.proc.poll() is not None:
-                self.launch()
-        return self._headless_report(kernel, godot, lint, unit, registry, errors)
-
-    def _headless_report(self, kernel, godot, lint, unit, registry, errors) -> dict[str, dict]:
-        godot_text = (godot.stdout or "") + (godot.stderr or "")
-        (self.out / "a25-godot.log").write_text(godot_text)
-        (self.out / "a25-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
-        ran = parse_tier(godot_text)
-        return {
-            "kernel": {"ok": kernel.returncode == 0, "evidence": proc.tail(kernel.stdout, kernel.stderr)},
-            "godot": {
-                "ok": ran is not None and ran[1] == 0,
-                "evidence": (
-                    f"suites: {ran[0]} run, {ran[1]} failed"
-                    if ran else proc.tail(godot.stdout, godot.stderr)
-                ),
-            },
-            "lint": {"ok": lint.returncode == 0, "evidence": proc.tail(lint.stdout, lint.stderr)},
-            "unit": {"ok": unit.returncode == 0, "evidence": proc.tail(unit.stdout, unit.stderr)},
-            "registry": {
-                "ok": registry.returncode == 0,
-                "evidence": proc.tail(registry.stdout, registry.stderr),
-            },
-            "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
-        }
+        return WalkChrome.headless(self, "tools/test_check_rung05.py", "unit_rung05", "a25")

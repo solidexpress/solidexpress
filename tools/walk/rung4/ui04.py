@@ -5,13 +5,9 @@ Rows call these helpers. Pixel positions come from project(), never literals.
 from __future__ import annotations
 
 import math
-import sys
 from pathlib import Path
 
-from sxdrive import SxError
-from walk import proc
 from walk.chrome import WalkChrome
-from walk.gates import parse_tier, run_kernel, run_tier, take
 
 PINNED_NEW = "New — empty part, Top plane (XY). View ▸ Timeline to edit features"
 
@@ -33,22 +29,6 @@ class WalkUI04(WalkChrome):
 
     def r_vertex(self) -> float:
         return float(self.part()["PART"]["R"])
-
-    def sketch_on_datum(self, name: str, view_key: str) -> dict:
-        self.d.key(view_key)
-        self.d.wait_idle(frames=2)
-        self.click("rail:Sketch")
-        self.refresh("status")
-        self.click(datum=name)
-        self.d.wait_idle(frames=3)
-        self.refresh("sketch", "status", "camera")
-        sk = self.st.get("sketch") or {}
-        plane = sk.get("plane") or {}
-        return {
-            "status": self.S(),
-            "active": bool(sk.get("active")),
-            "plane": plane,
-        }
 
     def uv_world(self, uv) -> list[float]:
         plane = (self.refresh("sketch").get("sketch") or {}).get("plane") or {}
@@ -278,52 +258,4 @@ class WalkUI04(WalkChrome):
         return report
 
     def headless(self) -> dict[str, dict]:
-        keys = ("kernel", "godot", "lint", "unit", "registry", "errors")
-        if not self.run_a15:
-            blocked = "BLOCKED-by-flag: pass --a15"
-            return {key: {"ok": False, "evidence": blocked} for key in keys}
-        errors = self.log_errors()
-        owned = take("kernel")
-        if owned is not None:
-            return self._headless_report(
-                owned,
-                run_tier(self),
-                take("lint_suites"),
-                take("unit_rung04"),
-                take("registry"),
-                errors,
-            )
-        self._release_project()
-        try:
-            kernel = run_kernel(self.repo)
-            godot = run_tier(self)
-            lint = proc.run([sys.executable, "tools/lint_suites.py"], cwd=self.repo)
-            unit = proc.run([sys.executable, "tools/test_check_rung04.py"], cwd=self.repo)
-            registry = proc.run([sys.executable, "tools/test_walk_registry.py"], cwd=self.repo)
-        finally:
-            if getattr(self, "proc", None) is None or self.proc.poll() is not None:
-                self.launch()
-        return self._headless_report(kernel, godot, lint, unit, registry, errors)
-
-    def _headless_report(self, kernel, godot, lint, unit, registry, errors) -> dict[str, dict]:
-        godot_text = (godot.stdout or "") + (godot.stderr or "")
-        (self.out / "a21-godot.log").write_text(godot_text)
-        (self.out / "a21-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
-        ran = parse_tier(godot_text)
-        return {
-            "kernel": {"ok": kernel.returncode == 0, "evidence": proc.tail(kernel.stdout, kernel.stderr)},
-            "godot": {
-                "ok": ran is not None and ran[1] == 0,
-                "evidence": (
-                    f"suites: {ran[0]} run, {ran[1]} failed"
-                    if ran else proc.tail(godot.stdout, godot.stderr)
-                ),
-            },
-            "lint": {"ok": lint.returncode == 0, "evidence": proc.tail(lint.stdout, lint.stderr)},
-            "unit": {"ok": unit.returncode == 0, "evidence": proc.tail(unit.stdout, unit.stderr)},
-            "registry": {
-                "ok": registry.returncode == 0,
-                "evidence": proc.tail(registry.stdout, registry.stderr),
-            },
-            "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
-        }
+        return WalkChrome.headless(self, "tools/test_check_rung04.py", "unit_rung04", "a21")

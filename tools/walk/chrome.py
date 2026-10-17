@@ -9,6 +9,7 @@ import sys
 
 from sxdrive import SxError
 from walk import proc
+from walk.gates import parse_tier, run_kernel, run_tier, take
 from walk.gestures import label_reads
 
 _REGEN_BAD = ("[ERROR]", "soft-skip", "regenerate stopped", "lost on rebuild")
@@ -396,3 +397,103 @@ class WalkChrome:
         sel = (self.refresh("selection").get("selection") or {})
         edges = sel.get("edges") or []
         return len(edges) if isinstance(edges, list) else 0
+
+    def rects_overlap(self, a, b) -> bool:
+        if len(a) < 4 or len(b) < 4:
+            return False
+        return (
+            a[0] < b[0] + b[2]
+            and b[0] < a[0] + a[2]
+            and a[1] < b[1] + b[3]
+            and b[1] < a[1] + a[3]
+        )
+
+    def select_face(self, normal, plane=None) -> dict:
+        fields: dict = {"face_normal": list(normal)}
+        if plane is not None:
+            fields["plane"] = float(plane)
+        reply = self.click(**fields)
+        self.refresh("selection", "status", "faces")
+        sel = self.st.get("selection") or {}
+        if not sel.get("face"):
+            reply = self.click(**fields)
+            self.refresh("selection", "status", "controls", "faces")
+            sel = self.st.get("selection") or {}
+        else:
+            self.refresh("controls", "faces")
+        face_id = str(sel.get("face") or "")
+        record = self._face_record(face_id)
+        return {
+            "face": face_id,
+            "status": str(reply.get("status", self.S())),
+            "normal": reply.get("normal") or (record or {}).get("normal"),
+            "plane": (record or {}).get("plane"),
+            "record": record,
+        }
+
+    def sketch_on_datum(self, name: str, view_key: str) -> dict:
+        self.d.key(view_key)
+        self.d.wait_idle(frames=2)
+        self.click("rail:Sketch")
+        self.refresh("status")
+        self.click(datum=name)
+        self.d.wait_idle(frames=3)
+        self.refresh("sketch", "status", "camera")
+        sk = self.st.get("sketch") or {}
+        return {
+            "status": self.S(),
+            "active": bool(sk.get("active")),
+            "plane": sk.get("plane") or {},
+        }
+
+    def headless(self, unit_script: str, unit_key: str, log_stem: str) -> dict[str, dict]:
+        keys = ("kernel", "godot", "lint", "unit", "registry", "errors")
+        if not self.run_a15:
+            blocked = "BLOCKED-by-flag: pass --a15"
+            return {key: {"ok": False, "evidence": blocked} for key in keys}
+        errors = self.log_errors()
+        owned = take("kernel")
+        if owned is not None:
+            return self._headless_report(
+                owned,
+                run_tier(self),
+                take("lint_suites"),
+                take(unit_key),
+                take("registry"),
+                errors,
+                log_stem,
+            )
+        self._release_project()
+        try:
+            kernel = run_kernel(self.repo)
+            godot = run_tier(self)
+            lint = proc.run([sys.executable, "tools/lint_suites.py"], cwd=self.repo)
+            unit = proc.run([sys.executable, unit_script], cwd=self.repo)
+            registry = proc.run([sys.executable, "tools/test_walk_registry.py"], cwd=self.repo)
+        finally:
+            if getattr(self, "proc", None) is None or self.proc.poll() is not None:
+                self.launch()
+        return self._headless_report(kernel, godot, lint, unit, registry, errors, log_stem)
+
+    def _headless_report(self, kernel, godot, lint, unit, registry, errors, log_stem: str) -> dict[str, dict]:
+        godot_text = (godot.stdout or "") + (godot.stderr or "")
+        (self.out / f"{log_stem}-godot.log").write_text(godot_text)
+        (self.out / f"{log_stem}-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
+        ran = parse_tier(godot_text)
+        return {
+            "kernel": {"ok": kernel.returncode == 0, "evidence": proc.tail(kernel.stdout, kernel.stderr)},
+            "godot": {
+                "ok": ran is not None and ran[1] == 0,
+                "evidence": (
+                    f"suites: {ran[0]} run, {ran[1]} failed"
+                    if ran else proc.tail(godot.stdout, godot.stderr)
+                ),
+            },
+            "lint": {"ok": lint.returncode == 0, "evidence": proc.tail(lint.stdout, lint.stderr)},
+            "unit": {"ok": unit.returncode == 0, "evidence": proc.tail(unit.stdout, unit.stderr)},
+            "registry": {
+                "ok": registry.returncode == 0,
+                "evidence": proc.tail(registry.stdout, registry.stderr),
+            },
+            "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
+        }
