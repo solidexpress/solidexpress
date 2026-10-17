@@ -2491,6 +2491,8 @@ func _arm_place(kind: String) -> void:
 	model_space.add_child(_place_ghost)
 	_update_ghost(_screen_center())
 	_refresh_transform_hud()
+	if world_gizmos != null:
+		world_gizmos.set_grid_visible(true)
 	place_changed.emit(true)
 
 
@@ -2763,6 +2765,8 @@ func _disarm_place(emit_cancel: bool) -> void:
 	if emit_cancel:
 		status.emit("Placement cancelled")
 	_refresh_transform_hud()
+	if world_gizmos != null and (sketch_mode == null or not sketch_mode.active):
+		world_gizmos.set_grid_visible(false)
 	place_changed.emit(false)
 
 
@@ -5212,8 +5216,8 @@ func _gui_key(event: InputEventKey) -> bool:
 				return true
 		KEY_G:
 			if not event.ctrl_pressed and world_gizmos != null:
-				world_gizmos.set_gizmos_visible(not world_gizmos.gizmos_visible)
-				status.emit("Gizmos " + ("on" if world_gizmos.gizmos_visible else "off"))
+				world_gizmos.set_grid_visible(not world_gizmos.grid_visible)
+				status.emit("Grid " + ("on" if world_gizmos.grid_visible else "off"))
 				return true
 		KEY_H:
 			if not event.ctrl_pressed:

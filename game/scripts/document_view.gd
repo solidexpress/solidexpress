@@ -80,7 +80,7 @@ var _overhang_faces := {}    # face_id -> true
 var hidden_bodies := {}
 ## Origin-plane quads (Front/Top/Right). Films hide these so the camera is
 ## not inside huge translucent sheets.
-var origin_planes_visible := true
+var origin_planes_visible := false
 ## Body ids remembered by Copy/Cut for Paste (cut clones may be hidden).
 var _clipboard_bodies: Array[String] = []
 ## Pastes since last copy — scales the XY offset so each paste lands further away.
