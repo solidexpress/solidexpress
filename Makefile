@@ -2,14 +2,17 @@ BUILD_DIR := build
 GODOT := tools/godot/godot
 JOBS := $(shell nproc)
 
-.PHONY: all configure build test test-kernel test-godot test-godot-known-red preflight test-tools lint-rung01-e2e clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
+.PHONY: all occt configure build test test-kernel test-godot test-godot-known-red preflight test-tools lint-rung01-e2e clean import movies publish-demo-movies sync-website check-website-demos release-linux fetch-godot-templates
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 
 # OCCT shared libraries must be on the loader path or libsxcore does not load
 # and every Godot script dies with "Could not find type SxDocument".
 -include packaging/occt.version
-OCCT_PREFIX ?= /opt/occt-$(OCCT_VERSION)
+# Pinned OCCT lives in /opt (CI) or ~/.local/opt (no-sudo dev boxes; `make occt`).
+OCCT_USER_PREFIX := $(HOME)/.local/opt/occt-$(OCCT_VERSION)
+OCCT_PREFIX ?= $(firstword $(wildcard /opt/occt-$(OCCT_VERSION) $(OCCT_USER_PREFIX)) /opt/occt-$(OCCT_VERSION))
+OCCT_CMAKE_DIR := $(OCCT_PREFIX)/lib/cmake/opencascade
 ifneq ($(wildcard $(OCCT_PREFIX)/lib),)
 export LD_LIBRARY_PATH := $(OCCT_PREFIX)/lib$(if $(LD_LIBRARY_PATH),:$(LD_LIBRARY_PATH))
 export CMAKE_PREFIX_PATH := $(OCCT_PREFIX)$(if $(CMAKE_PREFIX_PATH),:$(CMAKE_PREFIX_PATH))
@@ -18,8 +21,22 @@ endif
 all: build
 
 configure:
+	@[ -d "$(OCCT_PREFIX)/lib" ] || echo "warning: OCCT $(OCCT_VERSION) not found in /opt or ~/.local/opt; run 'make occt' (falling back to system OCCT)" >&2
 	cmake -S . -B $(BUILD_DIR) -G Ninja \
-		$(if $(CMAKE_PREFIX_PATH),-DCMAKE_PREFIX_PATH="$(CMAKE_PREFIX_PATH)")
+		$(if $(CMAKE_PREFIX_PATH),-DCMAKE_PREFIX_PATH="$(CMAKE_PREFIX_PATH)") \
+		$(if $(wildcard $(OCCT_CMAKE_DIR)),-DOpenCASCADE_DIR="$(OCCT_CMAKE_DIR)")
+
+# Build the pinned OCCT (packaging/occt.version). Uses /opt when writable,
+# else ~/.local/opt; fetches header-only RapidJSON to ~/.local/src if absent.
+RAPIDJSON_DIR ?= $(HOME)/.local/src/rapidjson
+occt:
+	@prefix=/opt/occt-$(OCCT_VERSION); [ -w /opt ] || prefix=$(OCCT_USER_PREFIX); \
+	extra=""; \
+	if [ ! -f /usr/include/rapidjson/document.h ]; then \
+	  [ -d "$(RAPIDJSON_DIR)" ] || git clone -q --depth 1 https://github.com/Tencent/rapidjson "$(RAPIDJSON_DIR)"; \
+	  extra="-D3RDPARTY_RAPIDJSON_INCLUDE_DIR=$(RAPIDJSON_DIR)/include"; \
+	fi; \
+	OCCT_PREFIX=$$prefix OCCT_EXTRA_CMAKE_ARGS="$$extra" bash packaging/ci/install_occt.sh
 
 build: configure
 	cmake --build $(BUILD_DIR) -j $(JOBS)
