@@ -715,8 +715,12 @@ std::vector<TopoDS_Shape> Sketch::arrangement_faces(std::string* err) const {
     return contour_faces_impl(err, nullptr, true);
 }
 
+std::vector<TopoDS_Shape> Sketch::chained_faces(std::string* err) const {
+    return contour_faces_impl(err, nullptr, false, false);
+}
+
 std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* stray_open,
-                                                     bool prefer_split) const {
+                                                     bool prefer_split, bool allow_split) const {
     if (stray_open) *stray_open = false;
     // Build closed wires (same chaining as profile_face), then classify
     // nesting: nested → holes; disjoint → separate Selected Contours solids.
@@ -963,7 +967,7 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
     const double chain_a = max_area(contours);
     if (prefer_split && split_a >= chain_a * 0.8 && !split.empty())
         return split;
-    if (split_a > chain_a * 1.2)
+    if (allow_split && split_a > chain_a * 1.2)
         return split;
     if (contours.empty()) {
         if (!split.empty()) return split;

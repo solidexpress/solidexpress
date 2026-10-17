@@ -210,7 +210,8 @@ bool apply_sweep(ApplyCtx& ctx) {
                     }
                 };
                 auto usable = [&](const TopoDS_Shape& s) {
-                    return !s.IsNull() && shape::count(s).solids >= 1;
+                    return !s.IsNull() && shape::count(s).solids >= 1
+                           && std::abs(shape::volume(s)) > 1.0e-3;
                 };
                 auto keep_solid = [&](const TopoDS_Shape& s) -> TopoDS_Shape {
                     if (!usable(s)) return s;
@@ -303,9 +304,20 @@ bool apply_sweep(ApplyCtx& ctx) {
                 // Frenet follow-path is first in `ribbons` and reaches ~5 mm
                 // past the hook. A later polyline ribbon can still fuse when
                 // Frenet's boolean is messy — keep the farthest +X solid.
+                // Same xmax: pick the larger volume so a 0-volume Transformed
+                // pipe does not beat a filled cylinder.
+                double best_x = -1.0e99;
+                for (const auto& ribbon : ribbons)
+                    best_x = std::max(best_x, shape_xmax(ribbon));
                 TopoDS_Shape result = ribbons.front();
+                double best_vol = -1.0;
                 for (const auto& ribbon : ribbons) {
-                    if (shape_xmax(ribbon) > shape_xmax(result)) result = ribbon;
+                    if (shape_xmax(ribbon) < best_x - 0.5) continue;
+                    const double v = std::abs(shape::volume(ribbon));
+                    if (v > best_vol) {
+                        best_vol = v;
+                        result = ribbon;
+                    }
                 }
 
                 std::string op = params.value("op", "new");
@@ -382,10 +394,36 @@ bool apply_loft(ApplyCtx& ctx) {
                         solver->solve(*skf->sketch);
                     }
                     std::string perr;
-                    TopoDS_Shape face_shape = skf->sketch->profile_face(&perr);
+                    auto chained = skf->sketch->chained_faces(&perr);
+                    TopoDS_Shape face_shape;
+                    double best_a = -1.0;
+                    for (const auto& c : chained) {
+                        if (c.IsNull() || c.ShapeType() != TopAbs_FACE) continue;
+                        const double a = std::abs(shape::area(c));
+                        if (a > best_a) {
+                            best_a = a;
+                            face_shape = c;
+                        }
+                    }
+                    if (face_shape.IsNull())
+                        face_shape = skf->sketch->profile_face(&perr);
                     if (face_shape.IsNull())
                         return fail("profile " + std::to_string(i) + ": " + perr);
-                    TopoDS_Wire wire = BRepTools::OuterWire(TopoDS::Face(face_shape));
+                    TopoDS_Wire wire;
+                    if (face_shape.ShapeType() == TopAbs_FACE) {
+                        wire = BRepTools::OuterWire(TopoDS::Face(face_shape));
+                    } else {
+                        json pl = sketch_ordered_polyline(*skf->sketch);
+                        if (pl.is_array() && pl.size() >= 3) {
+                            if (pnt_from(pl.front()).Distance(pnt_from(pl.back())) > 1e-6)
+                                pl.push_back(pl.front());
+                            try {
+                                wire = make_polyline_wire(pl);
+                            } catch (...) {
+                                wire = {};
+                            }
+                        }
+                    }
                     if (wire.IsNull())
                         return fail("profile " + std::to_string(i) + ": no outer wire");
                     sections.push_back(wire);

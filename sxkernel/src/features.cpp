@@ -961,29 +961,51 @@ bool spine_has_circle_radius(const TopoDS_Wire& wire, double radius, double tol)
     return false;
 }
 
+bool pipe_solid_ok(const TopoDS_Shape& s) {
+    return !s.IsNull() && shape::count(s).solids >= 1 && std::abs(shape::volume(s)) > 1.0e-3;
+}
+
 TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spine,
                                double thin_thickness, bool contact, bool frenet,
                                bool correction) {
     if (spine.IsNull()) throw std::runtime_error("empty spine wire");
-    TopoDS_Wire profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
-    if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
-    BRepOffsetAPI_MakePipeShell shell(spine);
-    shell.SetMode(frenet);  // true = Frenet follow-path; false = CorrectedFrenet
-    // Follow-path must rotate the ellipse at the hook. RightCorner on a
-    // slightly-not-G1 walk spine left xmax at the path instead of +5 mm.
-    shell.SetTransitionMode(BRepBuilderAPI_Transformed);
-    shell.Add(profile_wire, contact, correction);
-    shell.Build();
-    if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");
-    if (!shell.MakeSolid()) throw std::runtime_error("MakePipeShell could not make solid");
-    TopoDS_Shape result = shell.Shape();
-    if (thin_thickness > 0.0) {
-        BRepOffsetAPI_MakeThickSolid mk;
-        sx::occt::ShapeList closing;
-        mk.MakeThickSolidByJoin(result, closing, -thin_thickness, 1e-3);
-        if (!mk.IsDone()) throw std::runtime_error("thin wall shell failed");
-        result = mk.Shape();
+    TopoDS_Wire profile_wire;
+    if (face.ShapeType() == TopAbs_FACE) {
+        profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
+    } else {
+        for (TopExp_Explorer ex(face, TopAbs_FACE); ex.More(); ex.Next()) {
+            profile_wire = BRepTools::OuterWire(TopoDS::Face(ex.Current()));
+            if (!profile_wire.IsNull()) break;
+        }
     }
+    if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
+    auto try_mode = [&](BRepBuilderAPI_TransitionMode mode) -> TopoDS_Shape {
+        try {
+            BRepOffsetAPI_MakePipeShell shell(spine);
+            shell.SetMode(frenet);  // true = Frenet follow-path
+            shell.SetTransitionMode(mode);
+            shell.Add(profile_wire, contact, correction);
+            shell.Build();
+            if (!shell.IsDone() || !shell.MakeSolid()) return {};
+            TopoDS_Shape result = shell.Shape();
+            if (thin_thickness > 0.0) {
+                BRepOffsetAPI_MakeThickSolid mk;
+                sx::occt::ShapeList closing;
+                mk.MakeThickSolidByJoin(result, closing, -thin_thickness, 1e-3);
+                if (!mk.IsDone()) return {};
+                result = mk.Shape();
+            }
+            return pipe_solid_ok(result) ? result : TopoDS_Shape{};
+        } catch (const Standard_Failure&) {
+            return {};
+        }
+    };
+    // Follow-path must rotate the ellipse at the hook. Transformed on a
+    // coplanar circle+line (featsweep path) yields a 0-volume solid; RightCorner
+    // fills that cylinder. Walk spines still prefer Transformed for xmax.
+    TopoDS_Shape result = try_mode(BRepBuilderAPI_Transformed);
+    if (result.IsNull()) result = try_mode(BRepBuilderAPI_RightCorner);
+    if (result.IsNull()) throw std::runtime_error("MakePipeShell failed");
     return result;
 }
 
@@ -1172,11 +1194,32 @@ void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f) {
     SketchPlane pl = f.sketch->plane();
     const double current =
         gp_Vec(pl.origin[0], pl.origin[1], pl.origin[2]).Dot(want);
-    // Follow the host when it grows. Do not snap a face sketch at y=220 onto a
-    // false y=0 hit (revolved rims often fail the plane test).
-    const bool better =
-        (side == "min") ? (best < current - 0.5) : (best > current + 0.5);
-    if (!better) return;
+    // Follow the host face, including a shrink (plate 14→10). Refuse a jump
+    // onto the opposite end of the body (candlestick y=220 → a false y=0
+    // revolution-cap hit).
+    Bnd_Box box;
+    BRepBndLib::Add(body->shape, box);
+    if (!box.IsVoid()) {
+        double x1 = 0, y1 = 0, z1 = 0, x2 = 0, y2 = 0, z2 = 0;
+        box.Get(x1, y1, z1, x2, y2, z2);
+        double emin = 1.0e300;
+        double emax = -1.0e300;
+        for (double x : {x1, x2}) {
+            for (double y : {y1, y2}) {
+                for (double z : {z1, z2}) {
+                    const double d = gp_Vec(x, y, z).Dot(want);
+                    emin = std::min(emin, d);
+                    emax = std::max(emax, d);
+                }
+            }
+        }
+        const double mid = 0.5 * (emin + emax);
+        const bool current_on_side =
+            (side == "min") ? (current <= mid + 0.5) : (current >= mid - 0.5);
+        const bool best_on_side =
+            (side == "min") ? (best <= mid + 0.5) : (best >= mid - 0.5);
+        if (current_on_side && !best_on_side) return;
+    }
     pl.origin = {want.X() * best, want.Y() * best, want.Z() * best};
     f.sketch->set_plane(std::move(pl));
 }

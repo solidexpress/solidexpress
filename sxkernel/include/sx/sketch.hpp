@@ -184,6 +184,9 @@ public:
     // Planar-split regions. A chained wire of the same area can still be a
     // complement that MakeRevol rejects; the arrangement cell does not.
     std::vector<TopoDS_Shape> arrangement_faces(std::string* err = nullptr) const;
+    // Closed chained loops only — no planar-split upgrade. Loft sections
+    // need that single wire; a dense polyline's split is a cell compound.
+    std::vector<TopoDS_Shape> chained_faces(std::string* err = nullptr) const;
 
     // Closed region outlines in sketch UV, same order as contour_faces()
     // (area descending, then centroid x, then y). Chip i is entry i.
@@ -251,7 +254,8 @@ private:
     // stray_open is set when a dangling chain was ignored so closed regions
     // could still be returned. Whole-sketch extrude treats that as open.
     std::vector<TopoDS_Shape> contour_faces_impl(std::string* err, bool* stray_open,
-                                                 bool prefer_split = false) const;
+                                                 bool prefer_split = false,
+                                                 bool allow_split = true) const;
 
     EntityId id_;
     std::string name_;
