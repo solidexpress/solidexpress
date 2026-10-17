@@ -9696,7 +9696,8 @@ func _rebuild_constraint_glyphs() -> void:
 			var pad := MeshInstance3D.new()
 			pad.name = "GlyphPad"
 			var quad := QuadMesh.new()
-			quad.size = Vector2(0.072, 0.072)
+			# 14×14 px at Label3D.pixel_size 0.004 (survey #4 green squares).
+			quad.size = Vector2(0.056, 0.056)
 			pad.mesh = quad
 			var pad_mat := StandardMaterial3D.new()
 			pad_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
