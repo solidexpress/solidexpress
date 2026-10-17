@@ -189,29 +189,44 @@ bool apply_sweep(ApplyCtx& ctx) {
                 const double thin = num_param(params, "thin_thickness", 0.0, env);
                 const bool contact = params.value("contact", false);
 
-                TopoDS_Shape result;
-                try {
-                    if (!spine.IsNull() && guide_ptr == nullptr) {
-                        try {
-                            result = sweep_along_spine(face, spine, thin, contact);
-                        } catch (...) {
-                            result = TopoDS_Shape();
-                        }
+                auto pipe = [&](bool frenet) -> TopoDS_Shape {
+                    if (spine.IsNull() || guide_ptr != nullptr) return {};
+                    try {
+                        return sweep_along_spine(face, spine, thin, contact, frenet);
+                    } catch (...) {
+                        return {};
                     }
-                    if (result.IsNull())
+                };
+                auto polyline = [&]() -> TopoDS_Shape {
+                    try {
+                        return sweep_along_polyline(face, path, guide_ptr, thin, contact);
+                    } catch (...) {
+                        return {};
+                    }
+                };
+                auto usable = [&](const TopoDS_Shape& s) {
+                    return !s.IsNull() && shape::count(s).solids >= 1;
+                };
+                TopoDS_Shape result = pipe(true);
+                if (!usable(result)) result = pipe(false);
+                if (!usable(result)) result = polyline();
+                if (!usable(result)) {
+                    try {
                         result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
-                } catch (const Standard_Failure& e) {
-                    return fail(std::string("sweep failed: ") + e.GetMessageString());
-                } catch (const std::runtime_error& e) {
-                    return fail(e.what());
+                    } catch (const Standard_Failure& e) {
+                        return fail(std::string("sweep failed: ") + e.GetMessageString());
+                    } catch (const std::runtime_error& e) {
+                        return fail(e.what());
+                    }
                 }
-                if (result.IsNull() || !shape::is_valid(result))
+                if (!usable(result) || !shape::is_valid(result))
                     return fail("sweep result invalid");
                 if (shape::count(result).solids < 1) return fail("sweep result is not a solid");
 
                 std::string op = params.value("op", "new");
                 auto close_solid = [&](TopoDS_Shape s) -> TopoDS_Shape {
                     if (s.IsNull()) return s;
+                    const TopoDS_Shape orig = s;
                     std::string report;
                     TopoDS_Shape healed = interop::heal_shape(s, &report);
                     if (!healed.IsNull()) s = healed;
@@ -238,6 +253,7 @@ bool apply_sweep(ApplyCtx& ctx) {
                         }
                     }
                     if (!s.IsNull() && shape::volume(s) < 0.0) s.Reverse();
+                    if (!usable(s)) return orig;
                     return s;
                 };
                 auto fuzzy_fuse = [&](const TopoDS_Shape& a, const TopoDS_Shape& b) -> TopoDS_Shape {
@@ -269,19 +285,18 @@ bool apply_sweep(ApplyCtx& ctx) {
                         merged = BRepAlgoAPI_Cut(tb->shape, result).Shape();
                     } else {
                         merged = fuzzy_fuse(tb->shape, result);
-                        if (merged.IsNull() && !spine.IsNull()) {
-                            try {
-                                result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
-                            } catch (...) {
-                                result = TopoDS_Shape();
-                            }
-                            if (!result.IsNull()) merged = fuzzy_fuse(tb->shape, result);
+                        if (!usable(merged)) {
+                            result = pipe(false);
+                            if (usable(result)) merged = fuzzy_fuse(tb->shape, result);
+                        }
+                        if (!usable(merged)) {
+                            result = polyline();
+                            if (usable(result)) merged = fuzzy_fuse(tb->shape, result);
                         }
                     }
-                    if (merged.IsNull()) return fail("boolean failed");
-                    merged = close_solid(merged);
-                    if (merged.IsNull() || shape::count(merged).solids < 1)
-                        return fail("boolean failed");
+                    if (!usable(merged)) return fail("boolean failed");
+                    TopoDS_Shape closed = close_solid(merged);
+                    if (usable(closed)) merged = closed;
                     doc.replace_body_shape(target, merged);
                 }
                 return true;

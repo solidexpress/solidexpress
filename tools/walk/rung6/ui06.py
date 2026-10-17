@@ -517,8 +517,13 @@ class WalkUI06(WalkChrome):
         self.d.wait_idle(frames=2)
         self._set_snap(False)
         last = {}
-        for off in ([0, 4], [0, -4], [6, 0], [-6, 0], [0, 0]):
-            last = self.click(sketch=list(line_uv), offset=list(off))
+        hits = (
+            [12.0, 10.0], [48.0, 10.0], [8.0, 10.0], [52.0, 10.0],
+            [list(line_uv)[0], list(line_uv)[1] + 5.0],
+            [list(line_uv)[0], list(line_uv)[1] - 5.0],
+        )
+        for uv in hits:
+            last = self.click(sketch=list(uv))
             disp = str(last.get("disposition", ""))
             if "dim-label" not in disp:
                 break

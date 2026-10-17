@@ -520,7 +520,7 @@ TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
         // Auxiliary spine steers profile orientation / scale along the path.
         shell.SetMode(aux, /*CurvilinearEquivalence=*/false);
     } else {
-        shell.SetMode(true);  // Frenet = follow-path (candlestick hook xmax)
+        shell.SetMode();  // CorrectedFrenet — polyline fallback must fuse
     }
     shell.SetTransitionMode(BRepBuilderAPI_RightCorner);
     shell.Add(profile_wire, contact, /*withCorrection=*/true);
@@ -964,12 +964,12 @@ bool spine_has_circle_radius(const TopoDS_Wire& wire, double radius, double tol)
 }
 
 TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spine,
-                               double thin_thickness, bool contact) {
+                               double thin_thickness, bool contact, bool frenet) {
     if (spine.IsNull()) throw std::runtime_error("empty spine wire");
     TopoDS_Wire profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
     if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
     BRepOffsetAPI_MakePipeShell shell(spine);
-    shell.SetMode(true);  // Frenet = follow-path (candlestick hook xmax)
+    shell.SetMode(frenet);  // true = Frenet follow-path; false = CorrectedFrenet
     shell.SetTransitionMode(spine_g1(spine) ? BRepBuilderAPI_Transformed
                                             : BRepBuilderAPI_RightCorner);
     shell.Add(profile_wire, contact, /*withCorrection=*/true);
