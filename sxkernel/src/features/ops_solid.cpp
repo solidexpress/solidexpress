@@ -426,7 +426,8 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     if (!result.IsNull()) {
                         std::string report;
                         TopoDS_Shape healed = interop::heal_shape(result, &report);
-                        if (!healed.IsNull()) result = healed;
+                        if (!healed.IsNull() && shape::count(healed).solids >= 1)
+                            result = healed;
                         if (shape::volume(result) < 0.0) result.Reverse();
                     }
                     if (result.IsNull()) {

@@ -58,6 +58,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 using nlohmann::json;
 
@@ -207,21 +208,84 @@ bool apply_sweep(ApplyCtx& ctx) {
                 auto usable = [&](const TopoDS_Shape& s) {
                     return !s.IsNull() && shape::count(s).solids >= 1;
                 };
-                TopoDS_Shape result = pipe(true);
-                if (!usable(result)) result = pipe(false);
-                if (!usable(result)) result = polyline();
-                if (!usable(result)) {
+                auto keep_solid = [&](const TopoDS_Shape& s) -> TopoDS_Shape {
+                    if (!usable(s)) return s;
+                    std::string report;
+                    TopoDS_Shape healed = interop::heal_shape(s, &report);
+                    return usable(healed) ? healed : s;
+                };
+                auto run_fuse = [&](const TopoDS_Shape& a, const TopoDS_Shape& b,
+                                    double fuzzy) -> TopoDS_Shape {
+                    BRepAlgoAPI_Fuse opf;
+                    TopTools_ListOfShape args;
+                    TopTools_ListOfShape tools;
+                    args.Append(a);
+                    tools.Append(b);
+                    opf.SetArguments(args);
+                    opf.SetTools(tools);
+                    opf.SetFuzzyValue(fuzzy);
+                    opf.Build();
+                    if (opf.IsDone() && usable(opf.Shape())) return opf.Shape();
+                    return {};
+                };
+                auto run_cut = [&](const TopoDS_Shape& a, const TopoDS_Shape& b,
+                                   double fuzzy) -> TopoDS_Shape {
+                    BRepAlgoAPI_Cut opc;
+                    TopTools_ListOfShape args;
+                    TopTools_ListOfShape tools;
+                    args.Append(a);
+                    tools.Append(b);
+                    opc.SetArguments(args);
+                    opc.SetTools(tools);
+                    opc.SetFuzzyValue(fuzzy);
+                    opc.Build();
+                    if (opc.IsDone() && usable(opc.Shape())) return opc.Shape();
+                    return {};
+                };
+                // Heal that sews a solid into a shell must not be the fuse input.
+                // The ribbon starts on the axis and runs through the body, so a
+                // full union can fail; attach the outside remainder instead.
+                auto fuse_ribbon = [&](const TopoDS_Shape& body,
+                                       const TopoDS_Shape& ribbon) -> TopoDS_Shape {
+                    const TopoDS_Shape left = keep_solid(body);
+                    const TopoDS_Shape right = keep_solid(ribbon);
+                    const double fuzzies[] = {1.0e-4, 1.0e-3, 0.05};
+                    for (double fuzzy : fuzzies) {
+                        TopoDS_Shape m = run_fuse(body, ribbon, fuzzy);
+                        if (usable(m)) return m;
+                        m = run_fuse(left, right, fuzzy);
+                        if (usable(m)) return m;
+                    }
+                    for (double fuzzy : fuzzies) {
+                        TopoDS_Shape outside = run_cut(ribbon, body, fuzzy);
+                        if (!usable(outside)) outside = run_cut(right, left, fuzzy);
+                        if (!usable(outside)) continue;
+                        TopoDS_Shape m = run_fuse(body, outside, fuzzy);
+                        if (usable(m)) return m;
+                        m = run_fuse(left, outside, fuzzy);
+                        if (usable(m)) return m;
+                    }
+                    return {};
+                };
+
+                std::vector<TopoDS_Shape> ribbons;
+                auto add_ribbon = [&](const TopoDS_Shape& s) {
+                    if (usable(s)) ribbons.push_back(s);
+                };
+                add_ribbon(pipe(true));
+                add_ribbon(pipe(false));
+                add_ribbon(polyline());
+                if (ribbons.empty()) {
                     try {
-                        result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
+                        add_ribbon(sweep_along_polyline(face, path, guide_ptr, thin, contact));
                     } catch (const Standard_Failure& e) {
                         return fail(std::string("sweep failed: ") + e.GetMessageString());
                     } catch (const std::runtime_error& e) {
                         return fail(e.what());
                     }
                 }
-                if (!usable(result) || !shape::is_valid(result))
-                    return fail("sweep result invalid");
-                if (shape::count(result).solids < 1) return fail("sweep result is not a solid");
+                if (ribbons.empty()) return fail("sweep result is not a solid");
+                TopoDS_Shape result = ribbons.front();
 
                 std::string op = params.value("op", "new");
                 auto close_solid = [&](TopoDS_Shape s) -> TopoDS_Shape {
@@ -233,24 +297,6 @@ bool apply_sweep(ApplyCtx& ctx) {
                     if (!s.IsNull() && shape::volume(s) < 0.0) s.Reverse();
                     return usable(s) ? s : orig;
                 };
-                auto fuzzy_fuse = [&](const TopoDS_Shape& a, const TopoDS_Shape& b) -> TopoDS_Shape {
-                    std::string report;
-                    TopoDS_Shape left = interop::heal_shape(a, &report);
-                    TopoDS_Shape right = interop::heal_shape(b, &report);
-                    if (left.IsNull()) left = a;
-                    if (right.IsNull()) right = b;
-                    BRepAlgoAPI_Fuse opf;
-                    TopTools_ListOfShape args;
-                    TopTools_ListOfShape tools;
-                    args.Append(left);
-                    tools.Append(right);
-                    opf.SetArguments(args);
-                    opf.SetTools(tools);
-                    opf.SetFuzzyValue(1.0e-4);
-                    opf.Build();
-                    if (opf.IsDone() && !opf.Shape().IsNull()) return opf.Shape();
-                    return BRepAlgoAPI_Fuse(left, right).Shape();
-                };
                 if (op == "new") {
                     put_body(doc, f.output_body, result, f.name);
                 } else {
@@ -261,14 +307,9 @@ bool apply_sweep(ApplyCtx& ctx) {
                     if (op == "cut") {
                         merged = BRepAlgoAPI_Cut(tb->shape, result).Shape();
                     } else {
-                        merged = fuzzy_fuse(tb->shape, result);
-                        if (!usable(merged)) {
-                            result = pipe(false);
-                            if (usable(result)) merged = fuzzy_fuse(tb->shape, result);
-                        }
-                        if (!usable(merged)) {
-                            result = polyline();
-                            if (usable(result)) merged = fuzzy_fuse(tb->shape, result);
+                        for (const auto& ribbon : ribbons) {
+                            merged = fuse_ribbon(tb->shape, ribbon);
+                            if (usable(merged)) break;
                         }
                     }
                     if (!usable(merged)) return fail("boolean failed");
