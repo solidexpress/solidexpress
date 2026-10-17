@@ -678,7 +678,7 @@ func begin(origin: Vector3, normal: Vector3, support: Dictionary = {}) -> void:
 		host_face_id = str(support.get("face", ""))
 	_setup_plane(origin, normal)
 	sketch = SxSketch.new()
-	sketch.set_plane(origin, plane_x, plane_y)
+	sketch.set_plane(plane.origin, plane_x, plane_y)
 	_activate_session()
 	status.emit("Sketch: Select · Line · Rect · Circle · Exit Sketch · Esc discard")
 

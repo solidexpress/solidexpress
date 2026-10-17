@@ -100,6 +100,73 @@ TEST_CASE("rung06 drafted cut frustum", "[features][rung06][draft]") {
     REQUIRE(point_inside(b1->shape, gp_Pnt(13.0, 195.0, 0.0)));
 }
 
+TEST_CASE("rung06 face sketch stays on the revolve top", "[features][rung06][draft]") {
+    Document doc;
+    FeatureGraph graph;
+
+    Feature profile;
+    profile.type = FeatureType::Sketch;
+    auto sk = std::make_shared<Sketch>("Stem");
+    sk->add_line(0, 0, 20, 0);
+    sk->add_line(20, 0, 20, 220);
+    sk->add_line(20, 220, 0, 220);
+    sk->add_line(0, 220, 0, 0);
+    profile.sketch = sk;
+    const auto profile_id = graph.add(std::move(profile));
+
+    Feature rev;
+    rev.type = FeatureType::Revolve;
+    rev.params = {{"sketch", profile_id.str()},
+                  {"axis_point", {0.0, 0.0}},
+                  {"axis_dir", {0.0, 1.0}},
+                  {"angle", 6.283185307179586},
+                  {"op", "new"}};
+    const auto rev_id = graph.add(std::move(rev));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    INFO(err);
+
+    Feature hole_sk;
+    hole_sk.type = FeatureType::Sketch;
+    hole_sk.sketch = hole_profile();
+    hole_sk.params = {{"support_host", rev_id.str()},
+                      {"support_normal", {0.0, 1.0, 0.0}},
+                      {"support_side", "max"}};
+    const auto hole_id = graph.add(std::move(hole_sk));
+    err.clear();
+    REQUIRE(graph.regenerate(doc, &err));
+    INFO(err);
+    const Feature* hf = graph.feature(hole_id);
+    REQUIRE(hf != nullptr);
+    REQUIRE(hf->sketch != nullptr);
+    REQUIRE(hf->sketch->plane().origin[1] == Approx(220.0).margin(0.2));
+
+    const Body* b0 = doc.body(graph.feature(rev_id)->output_body);
+    REQUIRE(b0 != nullptr);
+    const double vol0 = shape::volume(b0->shape);
+
+    Feature cut;
+    cut.type = FeatureType::Extrude;
+    cut.params = {{"sketch", hole_id.str()},
+                  {"distance", -25.0},
+                  {"op", "cut"},
+                  {"target", rev_id.str()},
+                  {"end", "blind"},
+                  {"draft_deg", 15.0},
+                  {"draft_inward", true}};
+    graph.add(std::move(cut));
+    err.clear();
+    REQUIRE(graph.regenerate(doc, &err));
+    INFO(err);
+    const Feature* hf2 = graph.feature(hole_id);
+    REQUIRE(hf2 != nullptr);
+    REQUIRE(hf2->sketch->plane().origin[1] == Approx(220.0).margin(0.2));
+    const Body* b1 = doc.body(graph.feature(rev_id)->output_body);
+    REQUIRE(b1 != nullptr);
+    REQUIRE(vol0 - shape::volume(b1->shape) == Approx(10954.475).epsilon(0.05));
+    REQUIRE(point_inside(b1->shape, gp_Pnt(13.0, 195.0, 0.0)));
+}
+
 TEST_CASE("rung06 draft 75 refused", "[features][rung06][draft]") {
     Document doc;
     FeatureGraph graph;

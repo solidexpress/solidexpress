@@ -885,6 +885,25 @@ class WalkUI06(WalkChrome):
             self.dimension_diameter("30")
         return opened
 
+    def discard_active_sketch(self) -> None:
+        """Leave part mode without committing a throwaway (N4 75° refuse)."""
+        for _ in range(10):
+            sketch = (self.refresh("sketch").get("sketch") or {})
+            if not bool(sketch.get("active")):
+                return
+            if self.control("rail:Select"):
+                try:
+                    self.click("rail:Select")
+                except SxError:
+                    pass
+            self.esc()
+            self.d.wait_idle(frames=2)
+        sketch = (self.refresh("sketch").get("sketch") or {})
+        if not bool(sketch.get("active")):
+            return
+        if int(sketch.get("entity_count") or 0) == 0:
+            self.exit_sketch()
+
     def try_extrude_cut(self, distance: str, draft: str | None = "15") -> dict:
         self._ensure_finish_bar()
         self.set_option("finish:Op", "Cut")

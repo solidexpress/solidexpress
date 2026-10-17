@@ -1095,6 +1095,39 @@ bool sketch_closed_contour(const Sketch& sk) {
     return !sk.profile_face(&ignored).IsNull();
 }
 
+// Offset of a support face along `want`. Use a point on the face (centre of
+// mass, or the UV midpoint for a revolution cap that is not GeomAbs_Plane).
+// gp_Pln::Location() of a revolved disc sits at the sketch origin, which
+// pulled the Ø30 candlestick cut down to y = 0.
+bool face_offset_along(const TopoDS_Face& face, const gp_Vec& want, double* offset) {
+    BRepAdaptor_Surface surf(face);
+    gp_Pnt c;
+    gp_Dir n;
+    if (surf.GetType() == GeomAbs_Plane) {
+        n = surf.Plane().Axis().Direction();
+        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(face, props);
+        if (props.Mass() <= 1e-18) return false;
+        c = props.CentreOfMass();
+    } else {
+        double umin = 0.0, umax = 0.0, vmin = 0.0, vmax = 0.0;
+        BRepTools::UVBounds(face, umin, umax, vmin, vmax);
+        gp_Vec d1u, d1v;
+        surf.D1(0.5 * (umin + umax), 0.5 * (vmin + vmax), c, d1u, d1v);
+        gp_Vec nn = d1u.Crossed(d1v);
+        if (nn.Magnitude() < 1e-12) return false;
+        n = gp_Dir(nn);
+        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(face, props);
+        if (props.Mass() > 1e-18) c = props.CentreOfMass();
+    }
+    if (gp_Vec(n).Dot(want) < 0.999) return false;
+    *offset = gp_Vec(c.XYZ()).Dot(want);
+    return true;
+}
+
 void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f) {
     if (!f.sketch) return;
     if (!f.params.contains("support_host") || !f.params["support_host"].is_string()) return;
@@ -1115,17 +1148,25 @@ void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f) {
         side = f.params["support_side"].get<std::string>();
     bool have = false;
     double best = 0.0;
-    for (TopExp_Explorer ex(body->shape, TopAbs_FACE); ex.More(); ex.Next()) {
-        const TopoDS_Face face = TopoDS::Face(ex.Current());
-        BRepAdaptor_Surface surf(face);
-        if (surf.GetType() != GeomAbs_Plane) continue;
-        gp_Dir n = surf.Plane().Axis().Direction();
-        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
-        if (gp_Vec(n).Dot(want) < 0.999) continue;
-        const double offset = gp_Vec(surf.Plane().Location().XYZ()).Dot(want);
-        if (!have || (side == "min" ? offset < best : offset > best)) {
-            best = offset;
+    if (f.params.contains("host_face") && f.params["host_face"].is_string()) {
+        TopoDS_Shape named = doc.resolve(
+            EntityId::from_string(f.params["host_face"].get<std::string>()));
+        double off = 0.0;
+        if (!named.IsNull() && named.ShapeType() == TopAbs_FACE &&
+            face_offset_along(TopoDS::Face(named), want, &off)) {
+            best = off;
             have = true;
+        }
+    }
+    if (!have) {
+        for (TopExp_Explorer ex(body->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            const TopoDS_Face face = TopoDS::Face(ex.Current());
+            double off = 0.0;
+            if (!face_offset_along(face, want, &off)) continue;
+            if (!have || (side == "min" ? off < best : off > best)) {
+                best = off;
+                have = true;
+            }
         }
     }
     if (!have) return;
