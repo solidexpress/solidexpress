@@ -753,9 +753,10 @@ class WalkUI06(WalkChrome):
             "reply": last,
         }
 
-    def pick_top_disc(self) -> dict:
-        self.d.key("3")
-        self.d.wait_idle(frames=4)
+    def pick_top_disc(self, orient: bool = True) -> dict:
+        if orient:
+            self.d.key("3")
+            self.d.wait_idle(frames=6)
         self.refresh("faces")
         disc = None
         disc_err = 1e9
@@ -778,17 +779,24 @@ class WalkUI06(WalkChrome):
                 disc = face
         best = disc
         if best and best.get("id"):
+            screen = best.get("screen") or best.get("pick")
+            if screen:
+                self.click(screen=screen)
+                self.d.wait_idle(frames=2)
             self.click(face=str(best["id"]))
             self.d.wait_idle(frames=2)
             self.refresh("selection", "status", "faces")
             sel = self.st.get("selection") or {}
             if not sel.get("face"):
+                if screen:
+                    self.click(screen=screen)
+                    self.d.wait_idle(frames=2)
                 self.click(face=str(best["id"]))
                 self.d.wait_idle(frames=2)
                 self.refresh("selection", "status", "faces")
                 sel = self.st.get("selection") or {}
-            face_id = str(sel.get("face") or best.get("id") or "")
-            record = self._face_record(face_id) or best
+            face_id = str(sel.get("face") or "")
+            record = self._face_record(face_id) or (best if face_id == str(best.get("id") or "") else {})
             return {
                 "face": face_id,
                 "status": self.S(),
@@ -825,18 +833,27 @@ class WalkUI06(WalkChrome):
             self.exit_sketch()
         self.esc()
         self.d.wait_idle(frames=4)
-        picked = self.pick_top_disc()
+        picked = self.pick_top_disc(orient=True)
         self.d.wait_idle(frames=4)
+        if picked.get("face"):
+            look = self.control("Look at")
+            if look:
+                self.click("Look at")
+                self.d.wait_idle(frames=4)
         self.click("rail:Sketch")
         self.d.wait_idle(frames=4)
         self.refresh("sketch", "status")
         if not self._plane_on_top_disc():
             if bool((self.st.get("sketch") or {}).get("active")):
                 self.exit_sketch()
-            picked = self.pick_top_disc()
-            self.d.wait_idle(frames=3)
-            self.click("rail:Sketch")
+            # Pick-host path: Sketch is armed, click the disc without re-framing.
+            picked = self.pick_top_disc(orient=False)
             self.d.wait_idle(frames=4)
+            if not self._plane_on_top_disc():
+                self.click("rail:Sketch")
+                self.d.wait_idle(frames=3)
+                picked = self.pick_top_disc(orient=False)
+                self.d.wait_idle(frames=4)
             if not bool((self.refresh("sketch").get("sketch") or {}).get("active")):
                 if self.control("chip:Sketch"):
                     self.click("chip:Sketch")
@@ -849,6 +866,24 @@ class WalkUI06(WalkChrome):
             "status": self.S(),
             "plane": (self.st.get("sketch") or {}).get("plane") or {},
         }
+
+    def ensure_disc_cut_sketch(self) -> dict:
+        """Re-enter the Ø30 top-disc sketch, or draw it if A30 did not land."""
+        if self._plane_on_top_disc():
+            return {"on_disc": True, "status": self.S()}
+        if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.exit_sketch()
+        for name in reversed(self.sketch_names()):
+            self._pencil(name)
+            if self._plane_on_top_disc():
+                return {"on_disc": True, "status": self.S(), "name": name}
+            if bool((self.st.get("sketch") or {}).get("active")):
+                self.exit_sketch()
+        opened = self.open_top_disc_sketch()
+        if opened.get("on_disc") and not self.ents("circle"):
+            self.circle([0.0, 0.0], rim=[15.0, 0.0])
+            self.dimension_diameter("30")
+        return opened
 
     def try_extrude_cut(self, distance: str, draft: str | None = "15") -> dict:
         self._ensure_finish_bar()

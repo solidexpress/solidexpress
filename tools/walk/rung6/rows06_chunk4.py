@@ -18,17 +18,17 @@ class Rows06Chunk4:
             self.exit_sketch()
         elif bool(opened.get("active")):
             self.exit_sketch()
+        n = picked.get("normal") or []
+        ny = float(n[1]) if len(n) > 1 else 0.0
         self.clause("face selected", bool(picked.get("face")), str(picked))
-        self.clause("is top disc", True, str(picked.get("normal")))
+        self.clause("is top disc", ny >= 0.85, str(picked.get("normal")))
         self.clause("sketch on face", bool(opened.get("on_disc")), str(opened.get("plane")))
         self.clause("diameter 30", self.label_has("30") or True, str(self.dim_texts()))
         self.clause("centre origin", True, "origin")
 
     @row("A31", chunk=4, on="rung06", expect={"blocker": "A30"})
     def row_A31(self) -> None:
-        names = self.sketch_names()
-        if names:
-            self._pencil(names[-1])
+        self.ensure_disc_cut_sketch()
         made = self.try_extrude_cut("25", "15")
         self.clause("op cut", "Cut" in made.get("op", "") or "cut" in made["status"].lower(), str(made))
         self.clause("blind 25", "25" in str(made.get("field", "")) or "25" in made["status"], str(made))

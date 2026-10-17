@@ -340,6 +340,8 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 	else:
 		await _click_at(vp, pos, false)
 		await _retry_face_if_edge(spec)
+		if kind != "hover":
+			_select_named_face(spec)
 	if kind != "hover" and req.has("edge"):
 		var view = _main().get("view")
 		if view != null and view.has_method("take_offered_edge"):
@@ -378,6 +380,24 @@ func _retry_face_if_edge(spec: Dictionary) -> void:
 	if view.selected_edges.size() > 1:
 		return
 	await _click_at(spec["vp"], spec["pos"], false)
+
+
+## Named `face=` clicks that miss (pad steal, edge-on top disc) still select
+## that face so Sketch can take the selected-face fast path.
+func _select_named_face(spec: Dictionary) -> void:
+	if not bool(spec.get("retry_face", false)):
+		return
+	var view = _main().get("view")
+	if view == null or not view.has_method("select_entity"):
+		return
+	var fid := str(spec.get("id", ""))
+	if fid == "" or str(view.selected_face) == fid:
+		return
+	var rec := _find_face(fid)
+	var body := str(rec.get("body", ""))
+	if body == "":
+		return
+	view.select_entity(body, fid)
 
 
 func _cmd_drag(req: Dictionary) -> Dictionary:

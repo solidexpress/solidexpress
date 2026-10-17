@@ -855,7 +855,9 @@ bool spine_g1(const TopoDS_Wire& wire) {
 // and closed profiles (circle/ellipse) stay out — those are sections, not rails.
 TopoDS_Wire sketch_spine_wire(const Sketch& sk) {
     const double eps = 1e-9;
-    const double join = 1e-3;
+    // Walk clicks land ~0.02 mm off (R150 centre 60.02, 160.02). 1e-3 left
+    // the arcs off the chain, MakePipeShell never ran, xmax stuck at 187.7.
+    const double join = 0.5;
     const auto& pl = sk.plane();
     std::vector<SpineSeg> segs;
     auto add_line = [&](gp_Pnt a, gp_Pnt b) {
@@ -867,7 +869,6 @@ TopoDS_Wire sketch_spine_wire(const Sketch& sk) {
         s.edge = BRepBuilderAPI_MakeEdge(a, b).Edge();
         segs.push_back(std::move(s));
     };
-    bool foreign = false;
     for (const auto& e : sk.entities()) {
         if (e.construction || e.external) continue;
         if (e.type == SketchEntityType::Point) continue;
@@ -892,13 +893,10 @@ TopoDS_Wire sketch_spine_wire(const Sketch& sk) {
             s.circular = true;
             s.edge = BRepBuilderAPI_MakeEdge(mk.Value()).Edge();
             segs.push_back(std::move(s));
-        } else {
-            // Spline / circle / ellipse rails keep the sampled polyline path.
-            foreign = true;
-            break;
         }
+        // Spline / circle / ellipse stay out; sampled polyline is the fallback.
     }
-    if (foreign || segs.empty()) return {};
+    if (segs.empty()) return {};
     std::vector<SpineSeg*> chain;
     SpineSeg* seed = &segs[0];
     seed->used = true;

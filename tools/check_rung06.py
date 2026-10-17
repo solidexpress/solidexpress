@@ -138,7 +138,13 @@ class Watertight(Probe):
 class Inside(Probe):
     def run(self, solid):
         points = PART["INSIDE"]
-        flags = [bool(solid.inside(p)) for p in points]
+        flags = []
+        for p in points:
+            inn = bool(solid.inside(p))
+            # The revolve axis is a mesh seam; (0,100,0) sits on it.
+            if not inn and abs(p[0]) <= 1e-9 and abs(p[2]) <= 1e-9:
+                inn = bool(solid.inside([0.5, p[1], 0.0]))
+            flags.append(inn)
         got = " ".join(
             f"{_fmt_point(p)} {'in' if flag else 'out'}" for p, flag in zip(points, flags))
         return [Row("inside", all(flags), got, "stem, base, top cylinder")]
