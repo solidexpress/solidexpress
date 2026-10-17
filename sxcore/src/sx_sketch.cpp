@@ -4,6 +4,7 @@
 #include <godot_cpp/variant/vector2.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 
 #include "sx/sketch_json.hpp"
@@ -32,6 +33,8 @@ static sx::PointRole parse_role(const String& s) {
     if (r == "start") return sx::PointRole::Start;
     if (r == "end") return sx::PointRole::End;
     if (r == "center") return sx::PointRole::Center;
+    if (r == "minor_start") return sx::PointRole::MinorStart;
+    if (r == "minor_end") return sx::PointRole::MinorEnd;
     return sx::PointRole::Self;
 }
 
@@ -81,6 +84,11 @@ String SxSketch::add_circle(double cx, double cy, double r) {
 String SxSketch::add_arc(double cx, double cy, double r, double a0, double a1) {
     return to_gd(sketch_->add_arc(cx, cy, r, a0, a1).str());
 }
+String SxSketch::add_ellipse(double cx, double cy, double rx, double ry, double angle) {
+    auto id = sketch_->add_ellipse(cx, cy, rx, ry, angle);
+    return id.is_null() ? String() : to_gd(id.str());
+}
+
 String SxSketch::add_spline(const PackedVector2Array& fit_points) {
     std::vector<std::array<double, 2>> pts;
     pts.reserve(fit_points.size());
@@ -208,6 +216,26 @@ Dictionary SxSketch::entity_info(const String& id) const {
             out["fit_points"] = pts;
             break;
         }
+        case sx::SketchEntityType::Ellipse: {
+            out["type"] = "ellipse";
+            auto ax = sketch_->ellipse_axes(e->id);
+            if (ax) {
+                const double cx = (*ax)[0], cy = (*ax)[1], rx = (*ax)[2], ry = (*ax)[3],
+                             ang = (*ax)[4];
+                const double ca = std::cos(ang), sa = std::sin(ang);
+                out["center"] = Vector2(cx, cy);
+                out["rx"] = rx;
+                out["ry"] = ry;
+                out["angle"] = ang;
+                out["major_start"] = Vector2(cx + rx * ca, cy + rx * sa);
+                out["major_end"] = Vector2(cx - rx * ca, cy - rx * sa);
+                out["minor_start"] = Vector2(cx - ry * sa, cy + ry * ca);
+                out["minor_end"] = Vector2(cx + ry * sa, cy - ry * ca);
+                out["start"] = out["major_start"];
+                out["end"] = out["major_end"];
+            }
+            break;
+        }
     }
     return out;
 }
@@ -244,6 +272,9 @@ bool SxSketch::set_entity_geometry(const String& id, const Dictionary& geo) {
             set_num("end_angle", 4);
             set_vec("start", 5, 6);
             set_vec("end", 7, 8);
+            break;
+        case sx::SketchEntityType::Ellipse:
+            set_vec("center", 0, 1);
             break;
         case sx::SketchEntityType::Spline:
             if (geo.has("fit_points")) {
@@ -322,6 +353,8 @@ static const char* role_to_string(sx::PointRole r) {
         case sx::PointRole::Start: return "start";
         case sx::PointRole::End: return "end";
         case sx::PointRole::Center: return "center";
+        case sx::PointRole::MinorStart: return "minor_start";
+        case sx::PointRole::MinorEnd: return "minor_end";
         case sx::PointRole::Self: break;
     }
     return "self";
@@ -490,6 +523,8 @@ void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("add_arc", "cx", "cy", "r", "start_angle", "end_angle"),
                          &SxSketch::add_arc);
     ClassDB::bind_method(D_METHOD("add_spline", "fit_points"), &SxSketch::add_spline);
+    ClassDB::bind_method(D_METHOD("add_ellipse", "cx", "cy", "rx", "ry", "angle"),
+                         &SxSketch::add_ellipse, DEFVAL(0.0));
     ClassDB::bind_method(D_METHOD("remove_entity", "id"), &SxSketch::remove_entity);
     ClassDB::bind_method(D_METHOD("set_construction", "id", "construction"),
                          &SxSketch::set_construction);

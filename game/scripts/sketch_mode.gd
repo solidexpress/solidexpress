@@ -2764,11 +2764,9 @@ func _coincident_ellipse_to_path(eid: String, centre: Vector2) -> void:
 		if d < best_d:
 			best_d = d
 			best = hit
-	var uv := centre
-	if not best.is_empty():
-		uv = best["uv"]
-	elif centre == Vector2.ZERO and rad > 0.0:
+	if best.is_empty():
 		return
+	var uv: Vector2 = best["uv"]
 	var pid: String = sketch.add_point(uv.x, uv.y)
 	if pid == "":
 		return
@@ -4927,18 +4925,16 @@ func _redraw_selected() -> void:
 		return
 	var im := ImmediateMesh.new()
 	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	var any := false
 	for id in selected:
 		var info: Dictionary = sketch.entity_info(id)
-		match info.get("type", ""):
-			"line":
-				im.surface_add_vertex(_to3(info["start"]))
-				im.surface_add_vertex(_to3(info["end"]))
-			"circle", "arc":
-				var c: Vector2 = info["center"]
-				var r: float = info["radius"]
-				for i in range(48):
-					im.surface_add_vertex(_to3(c + Vector2.from_angle(TAU * i / 48.0) * r))
-					im.surface_add_vertex(_to3(c + Vector2.from_angle(TAU * (i + 1) / 48.0) * r))
+		if info.is_empty():
+			continue
+		_append_entity_lines(im, info)
+		any = true
+	if not any:
+		_selected_node.mesh = null
+		return
 	im.surface_end()
 	_selected_node.mesh = im
 
@@ -10868,6 +10864,19 @@ func _update_preview() -> void:
 					var a1 := TAU * (i + 1) / steps
 					im.surface_add_vertex(_to3(c + Vector2(cos(a0), sin(a0)) * r))
 					im.surface_add_vertex(_to3(c + Vector2(cos(a1), sin(a1)) * r))
+			Tool.ELLIPSE:
+				var c := _tool_points[0]
+				if _tool_points.size() == 1:
+					im.surface_add_vertex(_to3(c))
+					im.surface_add_vertex(_to3(tip))
+				else:
+					var posed := SketchEllipse.pose(c, _tool_points[1], tip)
+					if posed.is_empty():
+						im.surface_add_vertex(_to3(c))
+						im.surface_add_vertex(_to3(tip))
+					else:
+						posed["type"] = "ellipse"
+						_append_entity_lines(im, posed)
 			Tool.ARC:
 				var c := _tool_points[0]
 				if _tool_points.size() == 1:

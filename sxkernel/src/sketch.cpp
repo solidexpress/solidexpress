@@ -30,12 +30,14 @@
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <Geom_Circle.hxx>
+#include <Geom_Ellipse.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
 #include "sx/occt_types.hpp"
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
+#include <gp_Elips.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
@@ -185,6 +187,27 @@ EntityId Sketch::add_arc(double cx, double cy, double r, double start_angle,
     size_t base = push_params({cx, cy, r, start_angle, end_angle, sx, sy, ex, ey});
     e.params.resize(9);
     for (size_t i = 0; i < 9; ++i) e.params[i] = base + i;
+    entities_.push_back(e);
+    ++revision_;
+    return e.id;
+}
+
+EntityId Sketch::add_ellipse(double cx, double cy, double rx, double ry, double angle) {
+    if (rx < 0.0) rx = -rx;
+    if (ry < 0.0) ry = -ry;
+    if (rx < 1e-9 || ry < 1e-9) return {};
+    if (rx < ry) {
+        std::swap(rx, ry);
+        angle += kPi * 0.5;
+    }
+    const double c = std::sqrt(std::max(0.0, rx * rx - ry * ry));
+    const double f1x = cx + c * std::cos(angle);
+    const double f1y = cy + c * std::sin(angle);
+    SketchEntity e;
+    e.id = EntityId::generate();
+    e.type = SketchEntityType::Ellipse;
+    size_t base = push_params({cx, cy, f1x, f1y, ry});
+    e.params = {base, base + 1, base + 2, base + 3, base + 4};
     entities_.push_back(e);
     ++revision_;
     return e.id;
@@ -427,6 +450,21 @@ std::optional<std::array<double, 2>> Sketch::point_pos(const PointRef& ref) cons
             if (ref.role == PointRole::End) return fits.back();
             return fits.front();  // Self / Start
         }
+        case SketchEntityType::Ellipse: {
+            auto ax = ellipse_axes(ref.entity);
+            if (!ax) return std::nullopt;
+            const double cx = (*ax)[0], cy = (*ax)[1], rx = (*ax)[2], ry = (*ax)[3], ang = (*ax)[4];
+            const double ca = std::cos(ang), sa = std::sin(ang);
+            if (ref.role == PointRole::Center || ref.role == PointRole::Self)
+                return std::array<double, 2>{cx, cy};
+            if (ref.role == PointRole::Start) return std::array<double, 2>{cx + rx * ca, cy + rx * sa};
+            if (ref.role == PointRole::End) return std::array<double, 2>{cx - rx * ca, cy - rx * sa};
+            if (ref.role == PointRole::MinorStart)
+                return std::array<double, 2>{cx - ry * sa, cy + ry * ca};
+            if (ref.role == PointRole::MinorEnd)
+                return std::array<double, 2>{cx + ry * sa, cy - ry * ca};
+            return std::nullopt;
+        }
     }
     return std::nullopt;
 }
@@ -441,6 +479,22 @@ std::vector<std::array<double, 2>> Sketch::spline_fit_points(const EntityId& id)
         out.push_back({params_[e->params[1 + 2 * i]], params_[e->params[2 + 2 * i]]});
     }
     return out;
+}
+
+std::optional<std::array<double, 5>> Sketch::ellipse_axes(const EntityId& id) const {
+    const SketchEntity* e = entity(id);
+    if (!e || e->type != SketchEntityType::Ellipse || e->params.size() < 5) return std::nullopt;
+    const double cx = params_[e->params[0]];
+    const double cy = params_[e->params[1]];
+    const double f1x = params_[e->params[2]];
+    const double f1y = params_[e->params[3]];
+    const double b = std::abs(params_[e->params[4]]);
+    const double dx = f1x - cx;
+    const double dy = f1y - cy;
+    const double c = std::hypot(dx, dy);
+    const double a = std::sqrt(c * c + b * b);
+    const double ang = (c < 1e-12) ? 0.0 : std::atan2(dy, dx);
+    return std::array<double, 5>{cx, cy, a, b, ang};
 }
 
 // --- profile face construction ---
@@ -694,6 +748,25 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
         }
         return {mf.Face()};
     }
+    if (drawn.size() == 1 && drawn[0]->type == SketchEntityType::Ellipse) {
+        auto axes = ellipse_axes(drawn[0]->id);
+        if (!axes) {
+            if (err) *err = "ellipse params missing";
+            return {};
+        }
+        const double cx = (*axes)[0], cy = (*axes)[1], rx = (*axes)[2], ry = (*axes)[3],
+                     ang = (*axes)[4];
+        gp_XYZ xell = ax.XDirection().XYZ() * std::cos(ang) + ax.YDirection().XYZ() * std::sin(ang);
+        gp_Elips el(gp_Ax2(to3d(cx, cy), nd, gp_Dir(xell)), rx, ry);
+        TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(el).Edge();
+        TopoDS_Wire wire = BRepBuilderAPI_MakeWire(edge).Wire();
+        BRepBuilderAPI_MakeFace mf(pln, wire);
+        if (!mf.IsDone()) {
+            if (err) *err = "ellipse contour failed";
+            return {};
+        }
+        return {mf.Face()};
+    }
 
     std::vector<Segment> segs;
     std::vector<TopoDS_Wire> circle_wires;
@@ -735,6 +808,15 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
         } else if (e.type == SketchEntityType::Circle) {
             gp_Circ circ(gp_Ax2(to3d(p(e, 0), p(e, 1)), nd, xd), p(e, 2));
             TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(circ).Edge();
+            circle_wires.push_back(BRepBuilderAPI_MakeWire(edge).Wire());
+        } else if (e.type == SketchEntityType::Ellipse) {
+            auto axes = ellipse_axes(e.id);
+            if (!axes) continue;
+            const double cx = (*axes)[0], cy = (*axes)[1], rx = (*axes)[2], ry = (*axes)[3],
+                         ang = (*axes)[4];
+            gp_XYZ xell = ax.XDirection().XYZ() * std::cos(ang) + ax.YDirection().XYZ() * std::sin(ang);
+            gp_Elips el(gp_Ax2(to3d(cx, cy), nd, gp_Dir(xell)), rx, ry);
+            TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(el).Edge();
             circle_wires.push_back(BRepBuilderAPI_MakeWire(edge).Wire());
         }
     }
@@ -1035,7 +1117,8 @@ TopoDS_Shape Sketch::thin_profile_face(double thickness, bool midplane, bool fli
         for (const auto& e : entities_) {
             if (e.construction) continue;
             if (e.type == SketchEntityType::Line) line = true;
-            else if (e.type == SketchEntityType::Circle || e.type == SketchEntityType::Arc)
+            else if (e.type == SketchEntityType::Circle || e.type == SketchEntityType::Arc
+                     || e.type == SketchEntityType::Ellipse)
                 curve = true;
         }
         if (err) {

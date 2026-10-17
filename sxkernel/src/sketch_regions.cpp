@@ -27,6 +27,7 @@
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
+#include <gp_Elips.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
@@ -106,6 +107,15 @@ std::vector<TopoDS_Edge> sketch_edges(const Sketch& sk) {
                 Handle(Geom_BSplineCurve) crv = mk.Curve();
                 edges.push_back(BRepBuilderAPI_MakeEdge(crv).Edge());
             }
+        } else if (e.type == SketchEntityType::Ellipse) {
+            auto axes = sk.ellipse_axes(e.id);
+            if (!axes) continue;
+            const double cx = (*axes)[0], cy = (*axes)[1], rx = (*axes)[2], ry = (*axes)[3],
+                         ang = (*axes)[4];
+            gp_Dir yd(sk.plane().y_dir[0], sk.plane().y_dir[1], sk.plane().y_dir[2]);
+            gp_XYZ xell = xd.XYZ() * std::cos(ang) + yd.XYZ() * std::sin(ang);
+            gp_Elips el(gp_Ax2(at(cx, cy), nd, gp_Dir(xell)), rx, ry);
+            edges.push_back(BRepBuilderAPI_MakeEdge(el).Edge());
         }
     }
     return edges;

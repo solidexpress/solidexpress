@@ -763,6 +763,20 @@ json sketch_ordered_polyline(const Sketch& sk) {
                 add(sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t)));
             }
             if (piece.size() >= 2) segs.push_back(std::move(piece));
+        } else if (e.type == SketchEntityType::Ellipse) {
+            auto axes = sk.ellipse_axes(e.id);
+            if (!axes) continue;
+            const double cx = (*axes)[0], cy = (*axes)[1], rx = (*axes)[2], ry = (*axes)[3],
+                         ang = (*axes)[4];
+            if (rx < eps || ry < eps) continue;
+            const int samples = 48;
+            for (int s = 0; s <= samples; ++s) {
+                double t = 2.0 * M_PI * (static_cast<double>(s) / samples);
+                double u = cx + rx * std::cos(t) * std::cos(ang) - ry * std::sin(t) * std::sin(ang);
+                double v = cy + rx * std::cos(t) * std::sin(ang) + ry * std::sin(t) * std::cos(ang);
+                add(sketch_uv_to_3d(pl, u, v));
+            }
+            if (piece.size() >= 2) segs.push_back(std::move(piece));
         } else if (e.type == SketchEntityType::Spline) {
             auto fits = sk.spline_fit_points(e.id);
             if (fits.size() < 2) continue;
@@ -891,7 +905,9 @@ std::string thin_wall_on_error(double mm) {
 
 bool sketch_closed_contour(const Sketch& sk) {
     for (const auto& e : sk.entities()) {
-        if (!e.construction && e.type == SketchEntityType::Circle) return true;
+        if (!e.construction && (e.type == SketchEntityType::Circle
+                                || e.type == SketchEntityType::Ellipse))
+            return true;
     }
     std::string ignored;
     return !sk.profile_face(&ignored).IsNull();

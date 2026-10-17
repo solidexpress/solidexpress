@@ -19,10 +19,10 @@
 
 namespace sx {
 
-enum class SketchEntityType { Point, Line, Circle, Arc, Spline };
+enum class SketchEntityType { Point, Line, Circle, Arc, Spline, Ellipse };
 
 // Which point of an entity a constraint references.
-enum class PointRole { Self, Start, End, Center };
+enum class PointRole { Self, Start, End, Center, MinorStart, MinorEnd };
 
 struct SketchEntity {
     EntityId id;
@@ -37,6 +37,7 @@ struct SketchEntity {
     //   Circle: [cx, cy, r]
     //   Arc:    [cx, cy, r, start_angle, end_angle, sx, sy, ex, ey]
     //   Spline: [n, x0, y0, x1, y1, ...]  n = fit-point count (as double)
+    //   Ellipse:[cx, cy, f1x, f1y, radmin]  GCS native; rx/ry/angle derived
     std::vector<size_t> params;
 };
 
@@ -113,6 +114,9 @@ public:
     EntityId add_arc(double cx, double cy, double r, double start_angle, double end_angle);
     // Fit-point spline (n >= 2). Stored as B-spline for profile/path output.
     EntityId add_spline(const std::vector<std::array<double, 2>>& fit_points);
+    // Full ellipse. rx/ry are semi-axes; angle is the major-axis direction.
+    // Stored as centre + focus1 + radmin for PlaneGCS.
+    EntityId add_ellipse(double cx, double cy, double rx, double ry, double angle = 0.0);
     bool remove_entity(const EntityId& id);  // drops dependent constraints too
     void set_construction(const EntityId& id, bool construction);
     bool is_construction(const EntityId& id) const;
@@ -159,6 +163,8 @@ public:
 
     // Fit points of a spline entity (empty if not a spline).
     std::vector<std::array<double, 2>> spline_fit_points(const EntityId& id) const;
+    // cx, cy, rx, ry, angle. Empty if `id` is not an ellipse.
+    std::optional<std::array<double, 5>> ellipse_axes(const EntityId& id) const;
 
     // --- geometry output ---
     // Builds a planar face from the closed profile formed by all

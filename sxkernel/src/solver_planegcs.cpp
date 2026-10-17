@@ -66,6 +66,18 @@ struct Xlate {
     std::unordered_map<EntityId, GCS::Circle> circles;
     std::unordered_map<EntityId, GCS::Arc> arcs;
     std::unordered_map<EntityId, GCS::BSpline> splines;
+    std::unordered_map<EntityId, GCS::Ellipse> ellipses;
+    struct EllipseVerts {
+        GCS::Point major_p;
+        GCS::Point major_m;
+        GCS::Point minor_p;
+        GCS::Point minor_m;
+    };
+    std::unordered_map<EntityId, EllipseVerts> ellipse_verts;
+    // Axis-end points live outside Sketch params; declare them so Horizontal
+    // / Distance on major/minor ends can move the ellipse instead of locking
+    // two constant coordinates (and so diagnose counts their 8 extra DOF).
+    std::vector<double*> extra_unknowns;
     std::vector<EntityId> constraint_by_tag;  // tag-1 -> constraint id
 
     explicit Xlate(Sketch& s) : sketch(s) {}
@@ -163,6 +175,46 @@ struct Xlate {
                     points[e.id] = bsp.start;
                     break;
                 }
+                case SketchEntityType::Ellipse: {
+                    if (e.params.size() < 5) break;
+                    GCS::Ellipse el;
+                    el.center.x = param(e.params[0]);
+                    el.center.y = param(e.params[1]);
+                    el.focus1.x = param(e.params[2]);
+                    el.focus1.y = param(e.params[3]);
+                    el.radmin = param(e.params[4]);
+                    ellipses[e.id] = el;
+                    const double cx = *el.center.x;
+                    const double cy = *el.center.y;
+                    const double dx = *el.focus1.x - cx;
+                    const double dy = *el.focus1.y - cy;
+                    const double c = std::hypot(dx, dy);
+                    const double b = std::abs(*el.radmin);
+                    const double a = std::sqrt(c * c + b * b);
+                    const double ca = (c < 1e-12) ? 1.0 : dx / c;
+                    const double sa = (c < 1e-12) ? 0.0 : dy / c;
+                    auto mkpt = [&](double x, double y) {
+                        GCS::Point pt;
+                        pt.x = new double(x);
+                        pt.y = new double(y);
+                        owned.push_back(pt.x);
+                        owned.push_back(pt.y);
+                        extra_unknowns.push_back(pt.x);
+                        extra_unknowns.push_back(pt.y);
+                        return pt;
+                    };
+                    EllipseVerts v;
+                    v.major_p = mkpt(cx + a * ca, cy + a * sa);
+                    v.major_m = mkpt(cx - a * ca, cy - a * sa);
+                    v.minor_p = mkpt(cx - b * sa, cy + b * ca);
+                    v.minor_m = mkpt(cx + b * sa, cy - b * ca);
+                    sys.addConstraintInternalAlignmentEllipseMajorDiameter(
+                        ellipses[e.id], v.major_p, v.major_m);
+                    sys.addConstraintInternalAlignmentEllipseMinorDiameter(
+                        ellipses[e.id], v.minor_p, v.minor_m);
+                    ellipse_verts[e.id] = v;
+                    break;
+                }
             }
         }
     }
@@ -193,6 +245,18 @@ struct Xlate {
         if (sit != splines.end()) {
             if (ref.role == PointRole::End) return sit->second.end;
             return sit->second.start;
+        }
+        auto eit = ellipses.find(ref.entity);
+        if (eit != ellipses.end()) {
+            auto vit = ellipse_verts.find(ref.entity);
+            if (ref.role == PointRole::Center || ref.role == PointRole::Self)
+                return eit->second.center;
+            if (vit != ellipse_verts.end()) {
+                if (ref.role == PointRole::Start) return vit->second.major_p;
+                if (ref.role == PointRole::End) return vit->second.major_m;
+                if (ref.role == PointRole::MinorStart) return vit->second.minor_p;
+                if (ref.role == PointRole::MinorEnd) return vit->second.minor_m;
+            }
         }
         ok = false;
         return {};
@@ -288,11 +352,18 @@ struct Xlate {
                     sys.addConstraintTangent(c2b->second, a1b->second, tag, drv);
                     return true;
                 }
-                // line-arc
+                // line-arc (either order)
                 auto ai = arcs.find(c.refs.at(1).entity);
                 if (l != lines.end() && ai != arcs.end()) {
                     GCS::Line oriented = tangent_line_oriented(l->second, ai->second.center);
                     sys.addConstraintTangent(oriented, ai->second, /*ccw=*/true, tag, drv);
+                    return true;
+                }
+                auto l2 = lines.find(c.refs.at(1).entity);
+                auto a0 = arcs.find(c.refs.at(0).entity);
+                if (l2 != lines.end() && a0 != arcs.end()) {
+                    GCS::Line oriented = tangent_line_oriented(l2->second, a0->second.center);
+                    sys.addConstraintTangent(oriented, a0->second, /*ccw=*/true, tag, drv);
                     return true;
                 }
                 return false;
@@ -368,6 +439,17 @@ struct Xlate {
                 auto ai = arcs.find(c.refs.at(0).entity);
                 if (ai != arcs.end()) {
                     sys.addConstraintArcDiameter(ai->second, &dim_values.back(), tag, drv);
+                    return true;
+                }
+                auto eit = ellipses.find(c.refs.at(0).entity);
+                if (eit != ellipses.end()) {
+                    auto vit = ellipse_verts.find(c.refs.at(0).entity);
+                    if (vit == ellipse_verts.end()) return false;
+                    const bool minor = c.refs[0].role == PointRole::MinorStart
+                            || c.refs[0].role == PointRole::MinorEnd;
+                    GCS::Point a = minor ? vit->second.minor_p : vit->second.major_p;
+                    GCS::Point b = minor ? vit->second.minor_m : vit->second.major_m;
+                    sys.addConstraintP2PDistance(a, b, &dim_values.back(), tag, drv);
                     return true;
                 }
                 return false;
@@ -495,6 +577,7 @@ SolveResult PlaneGCSBackendImpl::solve(Sketch& sketch) {
 
     GCS::VEC_pD unknowns;
     for (auto& [idx, p] : x.by_index) unknowns.push_back(p);
+    for (double* p : x.extra_unknowns) unknowns.push_back(p);
 
     x.sys.declareUnknowns(unknowns);
     x.sys.initSolution();
