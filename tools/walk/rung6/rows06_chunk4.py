@@ -38,9 +38,9 @@ class Rows06Chunk4:
 
     @row("N4", chunk=4, on="rung06", expect={"blocker": "A31"})
     def row_N4(self) -> None:
-        names = self.sketch_names()
-        if names:
-            self._pencil(names[-1])
+        # Do not pencil the consumed Ø30 sketch — that rolls the cut back.
+        if not bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.open_top_disc_sketch()
         before = self.feature_names()
         made = self.try_extrude_cut("25", "75")
         refused = any(tok in made["status"].lower() for tok in ("draft", "too large", "refused", "nothing"))
@@ -50,9 +50,13 @@ class Rows06Chunk4:
         shown = self.type_into("finish:DraftAngle", "15")
         self.clause("field 15", "15" in shown or "15" in self.field("finish:DraftAngle"), shown or self.field("finish:DraftAngle"))
         self.esc()
+        if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.esc()
 
     @row("A32", chunk=4, on="rung06", expect={"blocker": "A31", "part": True, "min_bodies": 1})
     def row_A32(self) -> None:
+        if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.esc()
         report = self.stage_report("final")
         ok, line = self.check_probe(report["text"], "bbox")
         self.ctx["final_report"] = report

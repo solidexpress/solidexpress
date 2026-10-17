@@ -909,14 +909,19 @@ class WalkUI06(WalkChrome):
         self.d.wait_idle(frames=8)
         results = self.result_texts(mark)
         self.refresh("status", "sketch", "finish", "bodies", "features")
+        bodies = list(self.st.get("bodies") or [])
+        if not bodies:
+            self.d.wait_idle(frames=8)
+            self.refresh("bodies", "status", "features", "sketch")
+            bodies = list(self.st.get("bodies") or [])
         return {
             "field": shown,
             "draft": shown_draft or self.field("finish:DraftAngle"),
             "reply": reply,
             "results": results,
             "status": " | ".join(results) or str(reply.get("status", self.S())),
-            "sketch": bool((self.refresh("sketch").get("sketch") or {}).get("active")),
-            "bodies": list(self.st.get("bodies") or []),
+            "sketch": bool((self.st.get("sketch") or {}).get("active")),
+            "bodies": bodies,
             "names": self.feature_names(),
         }
 
