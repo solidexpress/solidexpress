@@ -120,6 +120,14 @@ class WalkChrome:
         self.esc_until("Selection cleared", 4)
         self.refresh("selection")
 
+    def clear_sketch_selection(self) -> None:
+        """Empty click so Smart Dim does not reuse the last sketch pick."""
+        self.click("rail:Select")
+        empty = list(getattr(self, "_EMPTY_SKETCH", (-15.0, 40.0)))
+        self.show_sketch_point(empty)
+        self.click(sketch=empty)
+        self.refresh("selection", "status")
+
     def dimension_line(self, line: dict, value: str) -> dict:
         self.clear_sketch_selection()
         self.click("rail:SmartDim")

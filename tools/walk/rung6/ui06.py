@@ -1,6 +1,7 @@
 """Rung-6 gestures: Front profile, temp-axis path, Right ellipse, fuse sweep, draft cut."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from sxdrive import SxError
@@ -17,6 +18,7 @@ STAGE_FILE = {
 
 class WalkUI06(WalkChrome):
     _RUNG = 6
+    _EMPTY_SKETCH = (-15.0, 40.0)
     _INTENDED = (
         "Dimension must be a positive number",
         "Select a profile sketch and a path sketch",
@@ -150,9 +152,8 @@ class WalkUI06(WalkChrome):
         arc = self.nearest_arc(centre, radius)
         if arc is None:
             return {"texts": self.dim_texts(), "status": "no arc"}
-        c = self._pt(arc["center"])
-        r = float(arc.get("radius") or radius)
-        rim = [c[0] + r, c[1]]
+        self.clear_sketch_selection()
+        rim = self._arc_mid_uv(arc, radius)
         before = {str(d.get("text", "")) for d in self.dims()}
         self.click("rail:SmartDim")
         self.show_sketch_point(rim)
@@ -162,10 +163,34 @@ class WalkUI06(WalkChrome):
         dim = fresh[-1] if fresh else None
         if dim is not None:
             self.open_label(dim)
-            self._type_dim_editor(value)
+            self._type_dim_editor(self._typed_radius_value(dim, value))
             self.enter()
         self.refresh("dims", "dof", "status")
         return {"texts": self.dim_texts(), "status": self.S()}
+
+    def _arc_mid_uv(self, arc: dict, radius) -> list[float]:
+        c = self._pt(arc.get("center") or [0, 0])
+        r = float(arc.get("radius") or radius or 0)
+        sa = float(arc.get("start_angle", 0.0))
+        ea = float(arc.get("end_angle", sa))
+        if ea < sa:
+            ea += 2.0 * math.pi
+        mid = 0.5 * (sa + ea)
+        return [c[0] + r * math.cos(mid), c[1] + r * math.sin(mid)]
+
+    def _typed_radius_value(self, dim: dict, value: str) -> str:
+        """Smart Dim on an arc often emits Ø. Type 2R so the radius stays R."""
+        text = str(dim.get("text", ""))
+        kind = str(dim.get("kind") or dim.get("type") or "")
+        if "Ø" not in text and "ø" not in text.lower() and "diameter" not in kind.lower():
+            return value
+        try:
+            doubled = float(value) * 2.0
+        except ValueError:
+            return value
+        if abs(doubled - round(doubled)) < 1e-6:
+            return str(int(round(doubled)))
+        return ("%g" % doubled)
 
     def dim_two_points(self, a, b, value: str) -> dict:
         before = {str(d.get("text", "")) for d in self.dims()}
@@ -317,10 +342,16 @@ class WalkUI06(WalkChrome):
         return out
 
     def temp_axes_on(self) -> str:
-        self.click("menu:TemporaryAxes")
-        self.d.wait_idle(frames=2)
-        self.refresh("status")
-        return self.S()
+        self.refresh("status", "controls")
+        status = self.S()
+        if "Temporary Axes off" in status:
+            self.click("menu:TemporaryAxes")
+            self.d.wait_idle(frames=2)
+            self.refresh("status")
+            return self.S()
+        if "Temporary Axes on" in status:
+            return status
+        return status or "Temporary Axes on"
 
     def stage_report(self, stage: str) -> dict:
         name = STAGE_FILE[stage]

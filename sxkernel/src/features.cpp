@@ -867,8 +867,10 @@ TopoDS_Wire sketch_spine_wire(const Sketch& sk) {
         s.edge = BRepBuilderAPI_MakeEdge(a, b).Edge();
         segs.push_back(std::move(s));
     };
+    bool foreign = false;
     for (const auto& e : sk.entities()) {
         if (e.construction) continue;
+        if (e.type == SketchEntityType::Point) continue;
         if (e.type == SketchEntityType::Line && e.params.size() >= 4) {
             add_line(sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1])),
                      sketch_uv_to_3d(pl, sk.param(e.params[2]), sk.param(e.params[3])));
@@ -890,9 +892,13 @@ TopoDS_Wire sketch_spine_wire(const Sketch& sk) {
             s.circular = true;
             s.edge = BRepBuilderAPI_MakeEdge(mk.Value()).Edge();
             segs.push_back(std::move(s));
+        } else {
+            // Spline / circle / ellipse rails keep the sampled polyline path.
+            foreign = true;
+            break;
         }
     }
-    if (segs.empty()) return {};
+    if (foreign || segs.empty()) return {};
     std::vector<SpineSeg*> chain;
     SpineSeg* seed = &segs[0];
     seed->used = true;

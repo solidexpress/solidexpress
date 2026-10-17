@@ -2629,10 +2629,12 @@ func _rebuild_datum(d: Dictionary) -> void:
 	var mi := node as MeshInstance3D
 	match kind:
 		"plane":
-			mi.mesh = _make_datum_plane_mesh(d) if origin_planes_visible else null
+			var origin_quad := OriginPlanes.is_origin_name(str(d.get("name", "")))
+			var show_quad := origin_planes_visible or not origin_quad
+			mi.mesh = _make_datum_plane_mesh(d) if show_quad else null
 			mi.material_override = _datum_plane_material
 			mi.transform = Transform3D.IDENTITY
-			mi.visible = origin_planes_visible
+			mi.visible = show_quad
 		"axis":
 			mi.mesh = _make_datum_axis_mesh(d)
 			mi.material_override = _datum_axis_material
