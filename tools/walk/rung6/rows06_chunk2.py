@@ -52,10 +52,17 @@ class Rows06Chunk2:
         arc = self.nearest_arc(None, 150)
         a = self._pt(arc["start"]) if arc else [60, 10]
         b = self._pt(arc["end"]) if arc else [183.6, 75]
-        outer = b if abs(b[1] - 10.0) > abs(a[1] - 10.0) else a
-        self.dim_arc_end_to_line(outer, (45.0, 10.0), "65")
         dy = abs(float(a[1]) - float(b[1]))
-        self.clause("vertical 65", self.label_has("65") or abs(dy - 65.0) <= 1.0,
+        # The tangent R150 already spans 65 in Y. A second Smart Dim on that
+        # arc is another radius 150 and yanks the hook off Horizontal.
+        if abs(dy - 65.0) > 1.0:
+            outer = b if abs(b[1] - 10.0) > abs(a[1] - 10.0) else a
+            self.dim_arc_end_to_line(outer, (45.0, 10.0), "65")
+            arc = self.nearest_arc(None, 150) or arc
+            a = self._pt(arc["start"]) if arc else a
+            b = self._pt(arc["end"]) if arc else b
+            dy = abs(float(a[1]) - float(b[1]))
+        self.clause("vertical 65", abs(dy - 65.0) <= 1.0 or self.label_has("65"),
                     f"{self.dim_texts()} dy={dy}")
         self.clause("r150 ends", arc is not None, str(arc))
 
