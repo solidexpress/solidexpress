@@ -4,7 +4,7 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 ## Post-rung-5 cleanup (`cursor/post-rung-05-cleanup-20261016`)
 
-WP8–WP9 added film `flanged_pipe`, `docs/howto/flanged-pipe.md`, and `run_film_flanged_pipe_tests.gd` (`tier=full`). Suites **229 run + 4 known-red**. Poster `website/assets/screenshots/flanged_pipe.png`. Counts: `docs/loop/post-rung-05-result.md` after WP11.
+WP8–WP9 added film `flanged_pipe`, `docs/howto/flanged-pipe.md`, and `run_film_flanged_pipe_tests.gd` (`tier=full`). Poster `website/assets/screenshots/flanged_pipe.png`. WP11 confirm: walks 77/77, 44/44, 46/46, 32/32, 36/36; `check_rung05` 10/10; headless **229/0**. Counts: [`post-rung-05-result.md`](../loop/post-rung-05-result.md).
 
 `precision_plate` calibrated at 110 s wall for a 29.6 s film, so flanged_pipe stayed at 30 fps (194 s wall). The WebM is VP9 1600×900 at 30 fps. Container duration 60.800 s matches the caption timeline (last cue ends at 01:00.800). The poster is that timeline's last picture on the video track (1084 frames). The writer drops duplicate presents, so the video track ends at 36.133 s and a seek on the muxed file goes past it.
 
