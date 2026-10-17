@@ -582,23 +582,31 @@ static func _click_face(ctx: FilmContext, normal: Vector3, plane: float, shift: 
 	var pt := FacePick.point(ctx.view.doc, id)
 	if pt == Vector3.ZERO:
 		pt = FilmUI.face_pick_point(ctx.view, body, id)
-	var bb: Dictionary = ctx.view.doc.measure_bbox(id)
-	if not bb.is_empty() and Vector2(pt.x, pt.y).length() < 40.0:
-		var mx: Vector3 = bb["max"] as Vector3
-		pt = Vector3(mx.x * 0.65, mx.y * 0.35, pt.z)
-	var screen := FilmUI.model_to_screen(ctx, pt)
-	if not FilmUI.require_on_screen(ctx, screen, "face"):
-		return
 	var cue := FilmUICues.alert("Shift+Click" if shift else "Click", "Face")
+	if await _click_face_at(ctx, pt, cue, shift, id):
+		return
+	# Annulus centroid sits in the hole; FacePick.point then misses. Outer rim is meat.
+	var bb: Dictionary = ctx.view.doc.measure_bbox(id)
+	if not bb.is_empty():
+		var mx: Vector3 = bb["max"] as Vector3
+		var rim := Vector3(mx.x * 0.92, 0.0, pt.z)
+		if await _click_face_at(ctx, rim, cue, shift, id):
+			return
+	FilmUI._fail("face on plane %s not selected" % str(plane))
+
+
+static func _click_face_at(ctx: FilmContext, pt: Vector3, cue: Dictionary, shift: bool, id: String) -> bool:
+	var screen := FilmUI.model_to_screen(ctx, pt)
+	if not FilmUI.is_on_screen(ctx, screen):
+		return false
 	await FilmUI.viewport_click(ctx, screen, cue, false, MOUSE_BUTTON_LEFT, shift)
 	await FilmUI.wait_frames(ctx.tree, 2)
 	# Fillet replaces the face with its loop. A second click would toggle one rim off.
 	if shift or ctx.view.selected_face == id or not ctx.view.selected_edges.is_empty():
-		return
+		return true
 	await FilmUI.viewport_click(ctx, screen, cue, false, MOUSE_BUTTON_LEFT, false)
 	await FilmUI.wait_frames(ctx.tree, 2)
-	if ctx.view.selected_face != id:
-		FilmUI._fail("face on plane %s not selected" % str(plane))
+	return ctx.view.selected_face == id or not ctx.view.selected_edges.is_empty()
 
 
 static func _face_on_plane(ctx: FilmContext, body: String, normal: Vector3, plane: float) -> String:
