@@ -821,9 +821,12 @@ class WalkUI06(WalkChrome):
         return self.S()
 
     def open_top_disc_sketch(self) -> dict:
+        if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.exit_sketch()
+        self.esc()
         self.d.wait_idle(frames=4)
         picked = self.pick_top_disc()
-        self.d.wait_idle(frames=3)
+        self.d.wait_idle(frames=4)
         self.click("rail:Sketch")
         self.d.wait_idle(frames=4)
         self.refresh("sketch", "status")

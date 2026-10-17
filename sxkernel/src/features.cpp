@@ -964,7 +964,8 @@ bool spine_has_circle_radius(const TopoDS_Wire& wire, double radius, double tol)
 }
 
 TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spine,
-                               double thin_thickness, bool contact, bool frenet) {
+                               double thin_thickness, bool contact, bool frenet,
+                               bool correction) {
     if (spine.IsNull()) throw std::runtime_error("empty spine wire");
     TopoDS_Wire profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
     if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
@@ -973,7 +974,7 @@ TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spin
     // Follow-path must rotate the ellipse at the hook. RightCorner on a
     // slightly-not-G1 walk spine left xmax at the path instead of +5 mm.
     shell.SetTransitionMode(BRepBuilderAPI_Transformed);
-    shell.Add(profile_wire, contact, /*withCorrection=*/true);
+    shell.Add(profile_wire, contact, correction);
     shell.Build();
     if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");
     if (!shell.MakeSolid()) throw std::runtime_error("MakePipeShell could not make solid");

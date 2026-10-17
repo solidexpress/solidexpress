@@ -194,10 +194,10 @@ bool apply_sweep(ApplyCtx& ctx) {
                 const double thin = num_param(params, "thin_thickness", 0.0, env);
                 const bool contact = params.value("contact", false);
 
-                auto pipe = [&](bool frenet) -> TopoDS_Shape {
+                auto pipe = [&](bool frenet, bool corr) -> TopoDS_Shape {
                     if (spine.IsNull() || guide_ptr != nullptr) return {};
                     try {
-                        return sweep_along_spine(face, spine, thin, contact, frenet);
+                        return sweep_along_spine(face, spine, thin, contact, frenet, corr);
                     } catch (...) {
                         return {};
                     }
@@ -276,8 +276,10 @@ bool apply_sweep(ApplyCtx& ctx) {
                 auto add_ribbon = [&](const TopoDS_Shape& s) {
                     if (usable(s)) ribbons.push_back(s);
                 };
-                add_ribbon(pipe(true));
-                add_ribbon(pipe(false));
+                add_ribbon(pipe(true, true));
+                add_ribbon(pipe(true, false));
+                add_ribbon(pipe(false, true));
+                add_ribbon(pipe(false, false));
                 add_ribbon(polyline());
                 if (ribbons.empty()) {
                     try {
