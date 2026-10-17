@@ -103,8 +103,9 @@ class WalkUI04(WalkChrome):
     def draw_line(self, a, b) -> None:
         self.click("rail:Select")
         self.d.wait_idle(frames=1)
-        self.show_sketch_point(a)
-        self.show_sketch_point(b)
+        # Do not F-fit a short first segment: that zooms in until the other
+        # end sits on the finish bar. Frame both endpoints, then arm Line.
+        self.frame_clickable(a, b)
         self.click("rail:Line")
         self.d.wait_idle(frames=3)
         self.click(sketch=list(a))

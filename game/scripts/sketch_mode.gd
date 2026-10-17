@@ -1637,9 +1637,14 @@ func set_tool(t: Tool) -> void:
 	draw_construction = (t == Tool.CENTERLINE)
 	# Convert / Offset Esc drops the tool. A leftover Smart Dim selection
 	# would spend that key on "selection cleared" and leave the tool armed.
-	# Arming Smart Dim must not keep the last line selected — a second
-	# length dim would become an angle between that line and the new pick.
-	if t == Tool.CONVERT or t == Tool.OFFSET or t == Tool.SMART_DIM:
+	if t == Tool.CONVERT or t == Tool.OFFSET:
+		_set_selected([])
+		if selected_constraint != "":
+			select_constraint("")
+	# A single leftover entity makes the next Smart Dim a BETWEEN/angle
+	# (rung 3 two 120s). Two-circle selection must stay so the chip row
+	# still shows (replan12 chiprow).
+	if t == Tool.SMART_DIM and selected.size() == 1:
 		_set_selected([])
 		if selected_constraint != "":
 			select_constraint("")

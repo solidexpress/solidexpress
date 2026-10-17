@@ -132,6 +132,7 @@ class WalkUI05(WalkChrome):
         rim = self._rim_of(circles[-1]["center"])
         self.click("rail:SmartDim")
         self.show_sketch_point(rim)
+        self.frame_clickable(rim)
         self.click(sketch=rim)
         self.d.wait_idle(frames=2)
         self.refresh("dims", "status")
@@ -156,7 +157,7 @@ class WalkUI05(WalkChrome):
                     [cx + radius, cy],
                 )
                 for uv in candidates:
-                    if self._uv_inside(uv):
+                    if self._uv_clickable(uv):
                         return uv
                 return [cx, cy + radius]
         return [cx, cy]
