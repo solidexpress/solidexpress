@@ -119,6 +119,7 @@ static func arm_fillet(ctx: FilmContext, radius: float) -> void:
 		return
 	var digits := str(int(round(radius))) if is_equal_approx(radius, round(radius)) else str(radius)
 	await FilmActor.of(ctx).edit_field(spin, digits, "Fillet r=%s" % digits)
+	await _release_line_focus(ctx)
 	await FilmActor.of(ctx).dwell()
 
 
@@ -224,12 +225,100 @@ static func shell_selected_face(ctx: FilmContext, mm: float) -> void:
 		return
 	var digits := str(int(round(mm))) if is_equal_approx(mm, round(mm)) else str(mm)
 	await FilmActor.of(ctx).edit_field(field, digits, "Shell %s mm" % digits)
+	await _release_line_focus(ctx)
+	await FilmUI.wait_frames(ctx.tree, 2)
 	var ok := _by_auto(ctx.main, "finish:Ok") as Button
-	if ok == null or not ok.is_visible_in_tree():
-		FilmUI._fail("Shell Apply is hidden")
+	if ok != null and ok.is_visible_in_tree():
+		await FilmUI.click_control(ctx, ok, FilmUICues.alert("Apply", "Shell %s mm" % digits))
+		await FilmUI.wait_frames(ctx.tree, 4)
+
+
+## Two planar faces then Shell thickness. first/second are {normal, plane, view_key}.
+static func two_face_shell(ctx: FilmContext, first: Dictionary, second: Dictionary, mm: float) -> void:
+	await _face_from_row(ctx, first, false)
+	if FilmUI.fail_count > 0:
 		return
-	await FilmUI.click_control(ctx, ok, FilmUICues.alert("Apply", "Shell %s mm" % digits))
-	await FilmUI.wait_frames(ctx.tree, 4)
+	await _face_from_row(ctx, second, true)
+	if FilmUI.fail_count > 0:
+		return
+	await shell_selected_face(ctx, mm)
+
+
+## Circular Sketch Pattern: rail Pattern, Circular chip, Count, Angle, Ok.
+## Seed selection is the caller's click, not a private set_selected.
+static func circular_pattern(ctx: FilmContext, count: int, angle: float) -> void:
+	await press_rail(ctx, "Pattern")
+	if FilmUI.fail_count > 0:
+		return
+	await FilmUI.wait_frames(ctx.tree, 2)
+	var bar: Node = ctx.main.sketch_chrome.find_child("VariantBar", true, false) \
+			if ctx.main.sketch_chrome != null else null
+	var chip := FilmUI.find_button(bar, "Circular") if bar != null else null
+	if chip == null or not chip.is_visible_in_tree():
+		chip = _by_auto(ctx.main, "variant:Circular") as BaseButton
+	if chip == null or not chip.is_visible_in_tree():
+		FilmUI._fail("Circular variant is hidden")
+		return
+	if not await FilmUI.click_control(ctx, chip, FilmUICues.alert("Circular", "circular variant")):
+		return
+	await _type_auto_spin(ctx, "pattern:Count", str(count))
+	if FilmUI.fail_count > 0:
+		return
+	var ang := str(int(round(angle))) if is_equal_approx(angle, round(angle)) else str(angle)
+	await _type_auto_spin(ctx, "pattern:Angle", ang)
+	if FilmUI.fail_count > 0:
+		return
+	var ok := _by_auto(ctx.main, "pattern:Ok") as Button
+	if ok == null or not ok.is_visible_in_tree():
+		FilmUI._fail("pattern:Ok is hidden")
+		return
+	await FilmUI.click_control(ctx, ok, FilmUICues.alert("Apply", "Pattern %d / %s" % [count, ang]))
+	await FilmUI.wait_frames(ctx.tree, 2)
+
+
+## Feature Mirror: arm Features, click the plane face, Shift+click timeline rows, Ok.
+static func feature_mirror(ctx: FilmContext, plane_normal: Vector3, plane_offset: float, names: Array) -> void:
+	await _release_line_focus(ctx)
+	var arm := _by_auto(ctx.main, "mirror:Features") as BaseButton
+	if arm == null or not arm.is_visible_in_tree():
+		FilmUI._fail("mirror:Features is hidden")
+		return
+	if not await FilmUI.click_control(ctx, arm, FilmUICues.alert("Features", "Feature Mirror")):
+		return
+	await FilmUI.wait_frames(ctx.tree, 2)
+	await _release_line_focus(ctx)
+	await _view_for_normal(ctx, plane_normal)
+	var body := only_body(ctx)
+	var face_id := _face_on_plane(ctx, body, plane_normal, plane_offset)
+	var aim := FacePick.point(ctx.view.doc, face_id)
+	if aim == Vector3.ZERO:
+		aim = plane_normal * plane_offset
+	await FilmActor.of(ctx).zoom_to(aim, 220.0, "Frame mirror plane")
+	await click_face(ctx, plane_normal, plane_offset)
+	if FilmUI.fail_count > 0:
+		return
+	for i in names.size():
+		if FilmUI.fail_count > 0:
+			return
+		var name := str(names[i])
+		var row := _by_auto(ctx.main, "timeline:row:%s" % name) as BaseButton
+		if row == null or not row.is_visible_in_tree():
+			FilmUI._fail("timeline:row:%s is hidden" % name)
+			return
+		FilmUI.ensure_control_visible(row)
+		await FilmUI.wait_frames(ctx.tree, 1)
+		if i == 0:
+			if not await FilmUI.click_control(ctx, row, FilmUICues.alert("Click", "timeline row")):
+				return
+		else:
+			await _shift_click_control(ctx, row)
+		await FilmUI.wait_frames(ctx.tree, 1)
+	var ok := _by_auto(ctx.main, "mirror:Ok") as Button
+	if ok == null or not ok.is_visible_in_tree():
+		FilmUI._fail("mirror:Ok is hidden")
+		return
+	await FilmUI.click_control(ctx, ok, FilmUICues.alert("OK", "Mirror OK"))
+	await FilmUI.wait_frames(ctx.tree, 8)
 
 
 static func open_side_face_sketch(ctx: FilmContext, normal: Vector3, view_key: Key, plane: float = INF) -> void:
@@ -295,6 +384,59 @@ static func _by_auto(root: Node, id: String) -> Control:
 		if str(c.get_meta("sx_auto", "")) == id:
 			return c as Control
 	return null
+
+
+static func _face_from_row(ctx: FilmContext, row: Dictionary, shift: bool) -> void:
+	await _release_line_focus(ctx)
+	var key: Key = row.get("view_key", row.get("view", KEY_7)) as Key
+	await FilmActor.of(ctx).view_key(key)
+	var n: Vector3 = row["normal"] as Vector3
+	var plane := float(row["plane"])
+	await FilmActor.of(ctx).zoom_to(n * plane, 220.0, "Frame face")
+	if shift:
+		await shift_click_face(ctx, n, plane)
+	else:
+		await click_face(ctx, n, plane)
+
+
+static func _view_for_normal(ctx: FilmContext, normal: Vector3) -> void:
+	await _release_line_focus(ctx)
+	var key := KEY_7
+	if normal.dot(Vector3(0, 0, 1)) > 0.9:
+		key = KEY_3
+	elif normal.dot(Vector3(0, 0, -1)) > 0.9:
+		key = KEY_8
+	await FilmActor.of(ctx).view_key(key)
+
+
+static func _type_auto_spin(ctx: FilmContext, auto_id: String, text: String) -> void:
+	var node := _by_auto(ctx.main, auto_id)
+	var edit: LineEdit = (node as SpinBox).get_line_edit() if node is SpinBox else node as LineEdit
+	if edit == null or not edit.is_visible_in_tree():
+		FilmUI._fail("%s is hidden" % auto_id)
+		return
+	await SxInput.x11_click(edit)
+	edit.select_all()
+	await SxInput.type_text(edit.get_viewport(), text)
+	await _release_line_focus(ctx)
+
+
+static func _shift_click_control(ctx: FilmContext, button: BaseButton) -> void:
+	var ke := InputEventKey.new()
+	ke.keycode = KEY_SHIFT
+	ke.physical_keycode = KEY_SHIFT
+	ke.pressed = true
+	ke.shift_pressed = true
+	Input.parse_input_event(ke)
+	await FilmUI.wait_frames(ctx.tree, 1)
+	if not await FilmUI.click_control(ctx, button, FilmUICues.alert("Shift+Click", "timeline row")):
+		ke.pressed = false
+		ke.shift_pressed = false
+		Input.parse_input_event(ke)
+		return
+	ke.pressed = false
+	ke.shift_pressed = false
+	Input.parse_input_event(ke)
 
 
 static func _release_line_focus(ctx: FilmContext) -> void:
@@ -403,19 +545,31 @@ static func _click_face(ctx: FilmContext, normal: Vector3, plane: float, shift: 
 	var pt := FacePick.point(ctx.view.doc, id)
 	if pt == Vector3.ZERO:
 		pt = FilmUI.face_pick_point(ctx.view, body, id)
-	var screen := FilmUI.model_to_screen(ctx, pt)
-	if not FilmUI.require_on_screen(ctx, screen, "face"):
-		return
 	var cue := FilmUICues.alert("Shift+Click" if shift else "Click", "Face")
+	if await _click_face_at(ctx, pt, cue, shift, id):
+		return
+	# Annulus centroid sits in the hole; FacePick.point then misses. Outer rim is meat.
+	var bb: Dictionary = ctx.view.doc.measure_bbox(id)
+	if not bb.is_empty():
+		var mx: Vector3 = bb["max"] as Vector3
+		var rim := Vector3(mx.x * 0.92, 0.0, pt.z)
+		if await _click_face_at(ctx, rim, cue, shift, id):
+			return
+	FilmUI._fail("face on plane %s not selected" % str(plane))
+
+
+static func _click_face_at(ctx: FilmContext, pt: Vector3, cue: Dictionary, shift: bool, id: String) -> bool:
+	var screen := FilmUI.model_to_screen(ctx, pt)
+	if not FilmUI.is_on_screen(ctx, screen):
+		return false
 	await FilmUI.viewport_click(ctx, screen, cue, false, MOUSE_BUTTON_LEFT, shift)
 	await FilmUI.wait_frames(ctx.tree, 2)
 	# Fillet replaces the face with its loop. A second click would toggle one rim off.
 	if shift or ctx.view.selected_face == id or not ctx.view.selected_edges.is_empty():
-		return
+		return true
 	await FilmUI.viewport_click(ctx, screen, cue, false, MOUSE_BUTTON_LEFT, false)
 	await FilmUI.wait_frames(ctx.tree, 2)
-	if ctx.view.selected_face != id:
-		FilmUI._fail("face on plane %s not selected" % str(plane))
+	return ctx.view.selected_face == id or not ctx.view.selected_edges.is_empty()
 
 
 static func _face_on_plane(ctx: FilmContext, body: String, normal: Vector3, plane: float) -> String:

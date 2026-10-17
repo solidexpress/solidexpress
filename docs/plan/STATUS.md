@@ -2,9 +2,37 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Post-rung-5 cleanup (`cursor/post-rung-05-cleanup-20261016`)
+
+WP8–WP9 added film `flanged_pipe`, `docs/howto/flanged-pipe.md`, and `run_film_flanged_pipe_tests.gd` (`tier=full`). Poster `website/assets/screenshots/flanged_pipe.png`. WP11 confirm: walks 77/77, 44/44, 46/46, 32/32, 36/36; `check_rung05` 10/10; headless **229/0**. Counts: [`post-rung-05-result.md`](../loop/post-rung-05-result.md).
+
+`precision_plate` calibrated at 110 s wall for a 29.6 s film, so flanged_pipe stayed at 30 fps (194 s wall). The WebM is VP9 1600×900 at 30 fps. Container duration 60.800 s matches the caption timeline (last cue ends at 01:00.800). The poster is that timeline's last picture on the video track (1084 frames). The writer drops duplicate presents, so the video track ends at 36.133 s and a seek on the muxed file goes past it.
+
+`flanged_pipe.webm` is not on Release `demo-movies` (this token cannot upload). It is not in `published-demos.json` or `demo-catalog.json`. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card. The WebM and VTT stay outside git (`/opt/cursor/artifacts/flanged_pipe.webm` and `.vtt`).
+
+Pending publish:
+
+```
+gh release upload demo-movies -R solidexpress/solidexpress --clobber flanged_pipe.webm flanged_pipe.vtt
+SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature flanged_pipe
+```
+
+Then one follow-up commit of the two JSON files (and the `website` object + `EXPECTED_COUNT`) by a person who can upload. Dry-run (`SX_MOVIES_OUT=/tmp/sx-movies scripts/sx-publish-demo-movies --dry-run --feature flanged_pipe`) wrote nothing:
+
+```
+dry-run poster: flanged_pipe → website/assets/screenshots/flanged_pipe.png
+dry-run upload 4 assets to solidexpress/solidexpress@demo-movies: /tmp/sx-movies/flanged_pipe.webm website/assets/screenshots/flanged_pipe.png /tmp/sx-movies/flanged_pipe.vtt game/tests/ui_movie_manifest.json
+dry-run emit curated published-demos + demo-catalog featured (append flanged_pipe)
+dry-run: no gh call, no file change
+```
+
 ## Website wrench film — pointer, pacing, flat backdrop (`cursor/wrench-film-polish`)
 
 Shipped: every film click and field edit goes through `FilmActor` (pointer travels first). `FilmPresentation` owns one pacing model (travel speed, typing CPS, dwell, result pause). Scenic/HDRI stays locked off for films (`presentation_lock`). View changes (named-view keys, zoom, orbit, Look-at, sketch-plane snap) go through the same Actor: pointer first, a key pill or mouse-button glyph on the ring, camera lerped. App jumps after a click are replayed. Gate: `run_film_ubc_wrench_pointer_tests.gd` (wrench + hull loft). `loft_guide_rail` is a U-transom → oval-bow hull.
+
+## Rung 5 — flanged pipe (PR #270)
+
+Shipped: two-face Shell chip, Circular Sketch Pattern 8/360 about origin, Feature Mirror (fuse New, skip Shell, one body), re-shell that does not thicken +Z walls, Fillet R5 on both flange outer faces, 36-row walk, `check_rung05.py`. Bars: the table in [`rung-05-result.md`](../loop/rung-05-result.md). Suites **228 run + 4 known-red**.
 
 ## Post-rung-4 cleanup (`cursor/post-rung-04-cleanup-20261015`)
 

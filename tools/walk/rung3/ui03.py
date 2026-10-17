@@ -11,7 +11,7 @@ from pathlib import Path
 from sxdrive import SxError
 from walk import proc
 from walk.chrome import WalkChrome
-from walk.gates import parse_tier, run_kernel, run_tier, take
+from walk.gates import run_kernel, run_tier, take
 
 # Vertical corner → view key (FilletPick.CORNERS / WP6).
 # Right (2) shows +X corners; Left (6) shows −X. Mid-height z=15.
@@ -36,6 +36,7 @@ REFUSE_FACE = (
 
 
 class WalkUI03(WalkChrome):
+    _RUNG = 3
     _INTENDED = (
         "Dimension must be a positive number",
         "limit",
@@ -119,16 +120,6 @@ class WalkUI03(WalkChrome):
         self.show_sketch_point([30, 20])
         self.click(sketch=[30, 20])
         self.refresh("selection", "status")
-
-    def rects_overlap(self, a, b) -> bool:
-        if len(a) < 4 or len(b) < 4:
-            return False
-        return (
-            a[0] < b[0] + b[2]
-            and b[0] < a[0] + a[2]
-            and a[1] < b[1] + b[3]
-            and b[1] < a[1] + a[3]
-        )
 
     def rail_label_nodes(self) -> list[dict]:
         want = {"Rect", "Smart Dim", "Circle", "Convert", "Offset", "Select"}
@@ -233,38 +224,6 @@ class WalkUI03(WalkChrome):
         self.click(screen=screen)
         self.refresh("selection", "status")
         return self.S()
-
-    def select_face(self, normal, plane=None) -> dict:
-        # First click selects the body; the second drills to the face.
-        fields: dict = {"face_normal": list(normal)}
-        if plane is not None:
-            fields["plane"] = float(plane)
-        reply = self.click(**fields)
-        self.refresh("selection", "status", "faces")
-        sel = self.st.get("selection") or {}
-        if not sel.get("face"):
-            reply = self.click(**fields)
-            self.refresh("selection", "status", "controls", "faces")
-            sel = self.st.get("selection") or {}
-        else:
-            self.refresh("controls", "faces")
-        face_id = str(sel.get("face") or "")
-        record = self._face_record(face_id)
-        return {
-            "face": face_id,
-            "status": str(reply.get("status", self.S())),
-            "normal": reply.get("normal") or (record or {}).get("normal"),
-            "plane": (record or {}).get("plane"),
-            "record": record,
-        }
-
-    def _face_record(self, face_id: str) -> dict | None:
-        if not face_id:
-            return None
-        for face in (self.refresh("faces").get("faces") or []):
-            if str(face.get("id")) == face_id:
-                return face
-        return None
 
     def face_sketch(self, normal, plane: float, view_key: str = "3") -> dict:
         self.ctx["camera_before_sketch"] = dict(self.refresh("camera").get("camera") or {})
@@ -398,11 +357,6 @@ class WalkUI03(WalkChrome):
         self.refresh("status", "selection")
         return {"status": status, "count": self.fillet_count(status)}
 
-    def selected_edge_count(self) -> int:
-        sel = (self.refresh("selection").get("selection") or {})
-        edges = sel.get("edges") or []
-        return len(edges) if isinstance(edges, list) else 0
-
     def plain_click_face(self, normal, plane: float) -> dict:
         mark = self.mark()
         reply = self.click(face_normal=list(normal), plane=float(plane))
@@ -413,30 +367,6 @@ class WalkUI03(WalkChrome):
         if count is None:
             count = self.selected_edge_count()
         return {"status": status, "count": count}
-
-    def apply_enter(self) -> str:
-        mark = self.mark()
-        focus = str(self.refresh("focus").get("focus", ""))
-        if "LineEdit" in focus or "SpinBox" in focus:
-            self.d.key("tab")
-            self.d.wait_idle(frames=1)
-        self.enter()
-        return " | ".join(self.result_texts(mark)) or self.S()
-
-    def _ensure_finish_bar(self) -> None:
-        snap = self.refresh("sketch", "controls")
-        active = bool((snap.get("sketch") or {}).get("active"))
-        ids = {str(c.get("id", "")) for c in (snap.get("controls") or [])}
-        if active and "finish:Op" in ids:
-            return
-        sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
-        if sketches:
-            self._pencil(sketches[-1])
-        for _ in range(6):
-            shown = {str(c.get("id", "")) for c in (self.refresh("controls").get("controls") or [])}
-            if "finish:Op" in shown:
-                return
-            self.d.wait_idle(frames=2)
 
     def offset_arm(self) -> dict:
         mark = self.mark()
@@ -483,15 +413,6 @@ class WalkUI03(WalkChrome):
             "external": self.external_circles(),
             "dof": self.dof_text(),
         }
-
-    def profile_circles(self) -> list[dict]:
-        self.refresh("sketch")
-        return [
-            e for e in self._entities()
-            if e.get("type") == "circle"
-            and not e.get("construction")
-            and not e.get("external")
-        ]
 
     def external_circles(self) -> list[dict]:
         self.refresh("sketch")
@@ -649,43 +570,6 @@ class WalkUI03(WalkChrome):
             if getattr(self, "proc", None) is None or self.proc.poll() is not None:
                 self.launch()
         return self._headless_report(kernel, godot, lint, unit, registry, errors)
-
-    def _headless_report(self, kernel, godot, lint, unit, registry, errors) -> dict[str, dict]:
-        godot_text = (godot.stdout or "") + (godot.stderr or "")
-        (self.out / "a26-godot.log").write_text(godot_text)
-        (self.out / "a26-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
-        ran = parse_tier(godot_text)
-        return {
-            "kernel": {"ok": kernel.returncode == 0, "evidence": proc.tail(kernel.stdout, kernel.stderr)},
-            "godot": {
-                "ok": ran is not None and ran[1] == 0,
-                "evidence": (
-                    f"suites: {ran[0]} run, {ran[1]} failed"
-                    if ran else proc.tail(godot.stdout, godot.stderr)
-                ),
-            },
-            "lint": {"ok": lint.returncode == 0, "evidence": proc.tail(lint.stdout, lint.stderr)},
-            "unit": {"ok": unit.returncode == 0, "evidence": proc.tail(unit.stdout, unit.stderr)},
-            "registry": {
-                "ok": registry.returncode == 0,
-                "evidence": proc.tail(registry.stdout, registry.stderr),
-            },
-            "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
-        }
-
-    def _release_project(self) -> None:
-        self.d.close()
-        proc_obj = getattr(self, "proc", None)
-        if proc_obj is not None and proc_obj.poll() is None:
-            proc_obj.terminate()
-            try:
-                proc_obj.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                proc_obj.kill()
-                proc_obj.wait(timeout=5)
-        log_fp = getattr(self, "log_fp", None)
-        if log_fp is not None and not log_fp.closed:
-            log_fp.close()
 
     def _kernel_tests(self) -> subprocess.CompletedProcess:
         # Labelled by run_kernel so a later passer cannot hide an earlier failure.

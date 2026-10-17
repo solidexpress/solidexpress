@@ -9,8 +9,6 @@ const FilmSteps = preload("res://tests/lib/film_steps.gd")
 const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
 const APPLIED := "Shell 10.0000 mm applied"
-const PITCH := 94.0
-const HOLE_R := 5.0
 
 
 func _init() -> void:
@@ -26,7 +24,7 @@ func _run() -> void:
 	var ctx := await _boot()
 	if ctx == null or ctx.main == null:
 		return
-	var ext := _build_mirrored(ctx.view.doc)
+	var ext := PipeFixture.build_mirrored(ctx.view.doc)
 	check(ext != "", "mirrored pipe on the document")
 	if ext == "":
 		ctx.main.queue_free()
@@ -41,60 +39,9 @@ func _run() -> void:
 
 
 func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	listen_status(main)
-	if main.ops_panel != null and not main.ops_panel.status.is_connected(_on_status):
-		main.ops_panel.status.connect(_on_status)
-	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
+	var ctx := await PipeFixture.boot(self, ROOT_SIZE, _on_status, ["ops_panel"])
+	listen_status(ctx.main)
 	return ctx
-
-
-func _build_mirrored(doc: SxDocument) -> String:
-	var sk := SxSketch.new()
-	sk.add_circle(0, 0, 75)
-	var sk_fid := doc.graph_add_sketch(sk)
-	if sk_fid == "":
-		return ""
-	var ext := doc.graph_add_extrude(sk_fid, 250.0, false, "new", "")
-	if ext == "":
-		return ""
-	var body := _output_body(doc, ext)
-	var ends := _z_faces(doc, body)
-	if ends.size() != 2:
-		return ""
-	var sh := doc.graph_add_shell(ext, ends, 10.0)
-	if sh == "":
-		return ""
-	var fl_sk := SxSketch.new()
-	fl_sk.set_plane(Vector3(0, 0, 250), Vector3(1, 0, 0), Vector3(0, 1, 0))
-	fl_sk.add_circle(0, 0, 112.5)
-	var fl_sk_fid := doc.graph_add_sketch(fl_sk)
-	var flange := doc.graph_add_extrude(fl_sk_fid, 10.0, false, "fuse", ext)
-	if flange == "":
-		return ""
-	var cut_sk := SxSketch.new()
-	cut_sk.set_plane(Vector3(0, 0, 260), Vector3(1, 0, 0), Vector3(0, 1, 0))
-	cut_sk.add_circle(0, 0, 65)
-	for k in 8:
-		var ang := float(k) * PI / 4.0
-		cut_sk.add_circle(PITCH * sin(ang), PITCH * cos(ang), HOLE_R)
-	var cut_sk_fid := doc.graph_add_sketch(cut_sk)
-	var cut := doc.graph_add_extrude(cut_sk_fid, -10.0, false, "cut", ext)
-	if cut == "":
-		return ""
-	var sources := PackedStringArray([ext, sh, flange, cut])
-	var mir := doc.graph_add_mirror(ext, Vector3.ZERO, Vector3(0, 0, 1), sources)
-	if mir == "":
-		return ""
-	return ext
 
 
 func _reshell_chip(ctx: FilmContext) -> void:
@@ -104,15 +51,15 @@ func _reshell_chip(ctx: FilmContext) -> void:
 	# Bottom view, outward −Z. FacePick.plane_offset is n·pick = 260 at z=−260.
 	await FilmSteps.click_face(ctx, Vector3(0, 0, -1), 260.0)
 	check(ctx.view.selected_face != "", "face selected at z=−260")
-	var chip := _find_auto(ctx.main, "strip:shell") as Control
+	var chip := PipeFixture.find_auto(ctx.main, "strip:shell") as Control
 	check(chip != null and chip.is_visible_in_tree(), "strip:shell is visible")
 	if chip == null or not chip.is_visible_in_tree():
 		return
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Shell", "Open re-shell"))
 	for _i in 3:
 		await process_frame
-	var field := _find_auto(ctx.main, "finish:Thickness") as LineEdit
-	var ok_btn := _find_auto(ctx.main, "finish:Ok") as Button
+	var field := PipeFixture.find_auto(ctx.main, "finish:Thickness") as LineEdit
+	var ok_btn := PipeFixture.find_auto(ctx.main, "finish:Ok") as Button
 	check(field != null and field.is_visible_in_tree(), "finish:Thickness is visible")
 	check(ok_btn != null and ok_btn.is_visible_in_tree(), "finish:Ok is visible")
 	if field == null or ok_btn == null:
@@ -140,27 +87,6 @@ func _reshell_chip(ctx: FilmContext) -> void:
 			"checker reports wall at z=+125")
 
 
-func _z_faces(doc: SxDocument, body: String) -> PackedStringArray:
-	var out := PackedStringArray()
-	if body == "":
-		return out
-	for fid in doc.get_face_ids(body):
-		var bb: Dictionary = doc.measure_bbox(str(fid))
-		if bb.is_empty():
-			continue
-		var ext: Vector3 = (bb["max"] as Vector3) - (bb["min"] as Vector3)
-		if ext.z <= 0.2 and ext.x > 10.0 and ext.y > 10.0:
-			out.append(str(fid))
-	return out
-
-
-func _output_body(doc: SxDocument, fid: String) -> String:
-	for f in doc.graph_features():
-		if str(f.get("id", "")) == fid:
-			return str(f.get("output_body", ""))
-	return ""
-
-
 func _shell_count(ctx: FilmContext) -> int:
 	var n := 0
 	for f in ctx.view.doc.graph_features():
@@ -169,13 +95,3 @@ func _shell_count(ctx: FilmContext) -> int:
 	return n
 
 
-func _find_auto(node: Node, id: String) -> Node:
-	if node == null:
-		return null
-	if str(node.get_meta("sx_auto", "")) == id:
-		return node
-	for c in node.get_children():
-		var hit := _find_auto(c, id)
-		if hit != null:
-			return hit
-	return null

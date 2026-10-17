@@ -1,13 +1,15 @@
-# Shared click and read helpers for rung 2 and rung 3.
+# Shared click and read helpers for the rung walks.
 # Each UI class sets `_INTENDED`; these helpers only read it.
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 
 from sxdrive import SxError
 from walk import proc
+from walk.gates import parse_tier, run_kernel, run_tier, take
 from walk.gestures import label_reads
 
 _REGEN_BAD = ("[ERROR]", "soft-skip", "regenerate stopped", "lost on rebuild")
@@ -18,6 +20,12 @@ _ENGINE_NOISE = (
     "Vulkan",
     "ERR_CANT_OPEN",
 )
+_HEADLESS = {
+    2: {"unit": "tools/test_check_rung02.py", "unit_key": "unit_rung02", "log": "a25"},
+    3: {"unit": "tools/test_check_rung03.py", "unit_key": "unit_rung03", "log": "a26"},
+    4: {"unit": "tools/test_check_rung04.py", "unit_key": "unit_rung04", "log": "a21"},
+    5: {"unit": "tools/test_check_rung05.py", "unit_key": "unit_rung05", "log": "a25"},
+}
 
 
 class WalkChrome:
@@ -310,3 +318,198 @@ class WalkChrome:
 
     def window_size(self) -> list:
         return (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
+
+    def apply_enter(self) -> str:
+        mark = self.mark()
+        focus = str(self.refresh("focus").get("focus", ""))
+        if "LineEdit" in focus or "SpinBox" in focus:
+            self.d.key("tab")
+            self.d.wait_idle(frames=1)
+        self.enter()
+        return " | ".join(self.result_texts(mark)) or self.S()
+
+    def check_probe(self, text: str, name: str) -> tuple[bool, str]:
+        for line in text.splitlines():
+            bits = line.split()
+            if len(bits) >= 2 and bits[1] == name:
+                return bits[0] == "PASS", line.strip()
+        return False, f"missing {name}"
+
+    def click_verb(self, name: str) -> None:
+        chip = self.control(f"chip:{name}")
+        if chip and chip.get("visible") is not False:
+            self.click(f"chip:{name}")
+            return
+        more = self.control("chip:… More") or self.control("chip:More")
+        if not more:
+            raise SxError(f"control not found: chip:{name}")
+        self.click("chip:… More" if self.control("chip:… More") else "chip:More")
+        self.d.wait_idle(frames=2)
+        self.click(f"popup:{name}")
+
+    def _ensure_finish_bar(self) -> None:
+        snap = self.refresh("sketch", "controls")
+        active = bool((snap.get("sketch") or {}).get("active"))
+        ids = {str(c.get("id", "")) for c in (snap.get("controls") or [])}
+        if active and "finish:Op" in ids:
+            return
+        sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
+        if sketches:
+            self._pencil(sketches[-1])
+        for _ in range(6):
+            shown = {str(c.get("id", "")) for c in (self.refresh("controls").get("controls") or [])}
+            if "finish:Op" in shown:
+                return
+            self.d.wait_idle(frames=2)
+
+    def _face_record(self, face_id: str) -> dict | None:
+        if not face_id:
+            return None
+        for face in (self.refresh("faces").get("faces") or []):
+            if str(face.get("id")) == face_id:
+                return face
+        return None
+
+    def profile_circles(self) -> list[dict]:
+        self.refresh("sketch")
+        return [
+            e for e in self._entities()
+            if e.get("type") == "circle"
+            and not e.get("construction")
+            and not e.get("external")
+        ]
+
+    def _release_project(self) -> None:
+        self.d.close()
+        proc_obj = getattr(self, "proc", None)
+        if proc_obj is not None and proc_obj.poll() is None:
+            proc_obj.terminate()
+            try:
+                proc_obj.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                proc_obj.kill()
+                proc_obj.wait(timeout=5)
+        log_fp = getattr(self, "log_fp", None)
+        if log_fp is not None and not log_fp.closed:
+            log_fp.close()
+
+    def reopen(self, name: str) -> dict:
+        self.file_new("ok")
+        self.open_file(name)
+        self.refresh("status", "timeline", "sketch", "bodies")
+        return {"status": self.S(), "names": self.feature_names()}
+
+    def selected_edge_count(self) -> int:
+        sel = (self.refresh("selection").get("selection") or {})
+        edges = sel.get("edges") or []
+        return len(edges) if isinstance(edges, list) else 0
+
+    def rects_overlap(self, a, b) -> bool:
+        if len(a) < 4 or len(b) < 4:
+            return False
+        return (
+            a[0] < b[0] + b[2]
+            and b[0] < a[0] + a[2]
+            and a[1] < b[1] + b[3]
+            and b[1] < a[1] + a[3]
+        )
+
+    def select_face(self, normal, plane=None) -> dict:
+        fields: dict = {"face_normal": list(normal)}
+        if plane is not None:
+            fields["plane"] = float(plane)
+        reply = self.click(**fields)
+        self.refresh("selection", "status", "faces")
+        sel = self.st.get("selection") or {}
+        if not sel.get("face"):
+            reply = self.click(**fields)
+            self.refresh("selection", "status", "controls", "faces")
+            sel = self.st.get("selection") or {}
+        else:
+            self.refresh("controls", "faces")
+        face_id = str(sel.get("face") or "")
+        record = self._face_record(face_id)
+        return {
+            "face": face_id,
+            "status": str(reply.get("status", self.S())),
+            "normal": reply.get("normal") or (record or {}).get("normal"),
+            "plane": (record or {}).get("plane"),
+            "record": record,
+        }
+
+    def sketch_on_datum(self, name: str, view_key: str) -> dict:
+        self.d.key(view_key)
+        self.d.wait_idle(frames=2)
+        self.click("rail:Sketch")
+        self.refresh("status")
+        self.click(datum=name)
+        self.d.wait_idle(frames=3)
+        self.refresh("sketch", "status", "camera")
+        sk = self.st.get("sketch") or {}
+        return {
+            "status": self.S(),
+            "active": bool(sk.get("active")),
+            "plane": sk.get("plane") or {},
+        }
+
+    def _rung(self) -> int:
+        return int(getattr(self, "_RUNG", 0))
+
+    def headless(self, unit_script: str | None = None, unit_key: str | None = None,
+                 log_stem: str | None = None) -> dict[str, dict]:
+        row = _HEADLESS[self._rung()]
+        unit_script = unit_script or row["unit"]
+        unit_key = unit_key or row["unit_key"]
+        log_stem = log_stem or row["log"]
+        keys = ("kernel", "godot", "lint", "unit", "registry", "errors")
+        if not self.run_a15:
+            blocked = "BLOCKED-by-flag: pass --a15"
+            return {key: {"ok": False, "evidence": blocked} for key in keys}
+        errors = self.log_errors()
+        owned = take("kernel")
+        if owned is not None:
+            return self._headless_report(
+                owned,
+                run_tier(self),
+                take("lint_suites"),
+                take(unit_key),
+                take("registry"),
+                errors,
+                log_stem,
+            )
+        self._release_project()
+        try:
+            kernel = run_kernel(self.repo)
+            godot = run_tier(self)
+            lint = proc.run([sys.executable, "tools/lint_suites.py"], cwd=self.repo)
+            unit = proc.run([sys.executable, unit_script], cwd=self.repo)
+            registry = proc.run([sys.executable, "tools/test_walk_registry.py"], cwd=self.repo)
+        finally:
+            if getattr(self, "proc", None) is None or self.proc.poll() is not None:
+                self.launch()
+        return self._headless_report(kernel, godot, lint, unit, registry, errors, log_stem)
+
+    def _headless_report(self, kernel, godot, lint, unit, registry, errors,
+                        log_stem: str | None = None) -> dict[str, dict]:
+        log_stem = log_stem or _HEADLESS[self._rung()]["log"]
+        godot_text = (godot.stdout or "") + (godot.stderr or "")
+        (self.out / f"{log_stem}-godot.log").write_text(godot_text)
+        (self.out / f"{log_stem}-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
+        ran = parse_tier(godot_text)
+        return {
+            "kernel": {"ok": kernel.returncode == 0, "evidence": proc.tail(kernel.stdout, kernel.stderr)},
+            "godot": {
+                "ok": ran is not None and ran[1] == 0,
+                "evidence": (
+                    f"suites: {ran[0]} run, {ran[1]} failed"
+                    if ran else proc.tail(godot.stdout, godot.stderr)
+                ),
+            },
+            "lint": {"ok": lint.returncode == 0, "evidence": proc.tail(lint.stdout, lint.stderr)},
+            "unit": {"ok": unit.returncode == 0, "evidence": proc.tail(unit.stdout, unit.stderr)},
+            "registry": {
+                "ok": registry.returncode == 0,
+                "evidence": proc.tail(registry.stdout, registry.stderr),
+            },
+            "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
+        }

@@ -1266,11 +1266,6 @@ func _circular_pattern() -> void:
 	_do_circular(body, Vector3.ZERO, Vector3(0, 0, 1))
 
 
-func _mirror_source_feature_id(body: String) -> String:
-	var ids := _mirror_source_ids(body)
-	return ids[0] if ids.size() == 1 else ""
-
-
 func _mirror_source_ids(body: String) -> PackedStringArray:
 	var out := PackedStringArray()
 	if timeline_panel == null:

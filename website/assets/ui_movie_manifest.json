@@ -570,5 +570,13 @@
     "enabled": true,
     "quit_after": 4800,
     "blurb": "A 7.65 mm across-flats hex swept along a Right-plane path."
+  },
+  {
+    "id": "flanged_pipe",
+    "title": "Flanged pipe: shell, pattern, mirror, fillet",
+    "script": "res://tests/films/film_flanged_pipe.gd",
+    "enabled": true,
+    "quit_after": 4800,
+    "blurb": "Ø150 tube, two-face shell, flange with an 8-hole circular pattern, feature mirror, re-shell, R5 rims."
   }
 ]

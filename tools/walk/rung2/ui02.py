@@ -10,7 +10,7 @@ import sys
 from sxdrive import SxError
 from walk import proc
 from walk.chrome import WalkChrome
-from walk.gates import parse_tier, run_kernel, run_tier, take
+from walk.gates import run_kernel, run_tier, take
 
 # Vertical corner → view key. Iso (yaw -35) shows the two y=0 edges.
 # Right and Left show the y=W edges on the +X and -X faces.
@@ -34,6 +34,7 @@ FEATURE_ORDER = (
 
 
 class WalkUI02(WalkChrome):
+    _RUNG = 2
     _INTENDED = (
         "Dimension must be a positive number",
         "limit",
@@ -85,11 +86,6 @@ class WalkUI02(WalkChrome):
         self.show_sketch_point([50, 30])
         self.click(sketch=[50, 30])
         self.refresh("selection", "status")
-
-    def rects_overlap(self, a, b) -> bool:
-        if len(a) < 4 or len(b) < 4:
-            return False
-        return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
 
     def rail_label_nodes(self) -> list[dict]:
         want = {"Rect", "Smart Dim", "Circle", "Convert", "Select"}
@@ -455,22 +451,6 @@ class WalkUI02(WalkChrome):
                 self.launch()
         return self._headless_report(kernel, godot, lint, unit, registry, errors)
 
-    def _headless_report(self, kernel, godot, lint, unit, registry, errors) -> dict[str, dict]:
-        godot_text = (godot.stdout or "") + (godot.stderr or "")
-        (self.out / "a25-godot.log").write_text(godot_text)
-        (self.out / "a25-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))
-        ran = parse_tier(godot_text)
-        return {
-            "kernel": {"ok": kernel.returncode == 0, "evidence": proc.tail(kernel.stdout, kernel.stderr)},
-            "godot": {
-                "ok": ran is not None and ran[1] == 0,
-                "evidence": f"suites: {ran[0]} run, {ran[1]} failed" if ran else proc.tail(godot.stdout, godot.stderr),
-            },
-            "lint": {"ok": lint.returncode == 0, "evidence": proc.tail(lint.stdout, lint.stderr)},
-            "unit": {"ok": unit.returncode == 0, "evidence": proc.tail(unit.stdout, unit.stderr)},
-            "registry": {"ok": registry.returncode == 0, "evidence": proc.tail(registry.stdout, registry.stderr)},
-            "errors": {"ok": not errors, "evidence": "; ".join(errors[:3]) or "none"},
-        }
 
 
     def _release_project(self) -> None:

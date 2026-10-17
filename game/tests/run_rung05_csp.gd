@@ -6,8 +6,6 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-const PITCH := 94.0
-const HOLE_R := 5.0
 const TOL := 0.2
 
 
@@ -45,17 +43,8 @@ func _run() -> void:
 
 
 func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	listen_status(main)
-	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
+	var ctx := await PipeFixture.boot(self, ROOT_SIZE)
+	listen_status(ctx.main)
 	return ctx
 
 
@@ -65,18 +54,18 @@ func _draw_seed(ctx: FilmContext) -> void:
 	var vp: Viewport = ctx.main.get_viewport()
 	await _click_uv(ctx, vp, Vector2.ZERO)
 	await _click_uv(ctx, vp, Vector2(65, 0))
-	await _click_uv(ctx, vp, Vector2(0, PITCH))
-	await _click_uv(ctx, vp, Vector2(0, PITCH + HOLE_R))
+	await _click_uv(ctx, vp, Vector2(0, PipeFixture.mm("PCD")))
+	await _click_uv(ctx, vp, Vector2(0, PipeFixture.mm("PCD") + (PipeFixture.mm("HOLE_D") * 0.5)))
 	await process_frame
-	var holes := _profile_circles(sm, HOLE_R)
+	var holes := _profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5))
 	if holes.is_empty():
 		sm.sketch.add_circle(0, 0, 65.0)
-		sm.sketch.add_circle(0, PITCH, HOLE_R)
+		sm.sketch.add_circle(0, PipeFixture.mm("PCD"), (PipeFixture.mm("HOLE_D") * 0.5))
 		sm.run_solve()
-		holes = _profile_circles(sm, HOLE_R)
+		holes = _profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5))
 	check(holes.size() == 1, "one Ø10 seed (got %d)" % holes.size())
 	if holes.size() == 1:
-		check((holes[0]["center"] as Vector2).distance_to(Vector2(0, PITCH)) <= TOL,
+		check((holes[0]["center"] as Vector2).distance_to(Vector2(0, PipeFixture.mm("PCD"))) <= TOL,
 				"seed centre at (0, 94)")
 	_drive_seed(sm)
 
@@ -86,10 +75,10 @@ func _drive_seed(sm: SketchMode) -> void:
 	var bore := _bore_id(sm)
 	if seed == "" or bore == "":
 		return
-	sm.sketch.add_constraint("diameter", [{"entity": seed, "role": "self"}], HOLE_R * 2.0)
+	sm.sketch.add_constraint("diameter", [{"entity": seed, "role": "self"}], (PipeFixture.mm("HOLE_D") * 0.5) * 2.0)
 	sm.sketch.add_constraint("distance", [
 		{"entity": bore, "role": "center"},
-		{"entity": seed, "role": "center"}], PITCH)
+		{"entity": seed, "role": "center"}], PipeFixture.mm("PCD"))
 	sm.run_solve()
 
 
@@ -108,10 +97,10 @@ func _pattern_count_one_refuses(ctx: FilmContext) -> void:
 			or str(count.get_line_edit().get_meta("sx_auto", "")) == "pattern:Count",
 			"pattern:Count id")
 	count.value = 1
-	var before := _profile_circles(sm, HOLE_R).size()
+	var before := _profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5)).size()
 	var mark := status_log.size()
 	await FilmUI.click_control(ctx, ok, FilmUICues.alert("OK", "Pattern OK count 1"))
-	check(_profile_circles(sm, HOLE_R).size() == before, "count 1 adds no copy")
+	check(_profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5)).size() == before, "count 1 adds no copy")
 	var note := _status_since(mark)
 	check(note.to_lower().contains("count") or note.to_lower().contains("refused")
 			or note.to_lower().contains("at least"),
@@ -151,7 +140,7 @@ func _arm_circular(ctx: FilmContext) -> void:
 
 
 func _assert_ring(sm: SketchMode) -> void:
-	var holes := _profile_circles(sm, HOLE_R)
+	var holes := _profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5))
 	check(holes.size() == 8, "eight profile Ø10 (got %d)" % holes.size())
 	var on_pitch := 0
 	var at_top := false
@@ -159,11 +148,11 @@ func _assert_ring(sm: SketchMode) -> void:
 	for h in holes:
 		var c: Vector2 = h["center"]
 		var r := c.length()
-		if absf(r - PITCH) <= TOL:
+		if absf(r - PipeFixture.mm("PCD")) <= TOL:
 			on_pitch += 1
-		if c.distance_to(Vector2(0, PITCH)) <= TOL:
+		if c.distance_to(Vector2(0, PipeFixture.mm("PCD"))) <= TOL:
 			at_top = true
-		if c.distance_to(Vector2(PITCH, 0)) <= TOL:
+		if c.distance_to(Vector2(PipeFixture.mm("PCD"), 0)) <= TOL:
 			at_plus_x = true
 	check(on_pitch == 8, "centres on radius 94 ± 0.2 (%d / 8)" % on_pitch)
 	check(at_top, "seed still at (0, 94)")
@@ -171,10 +160,10 @@ func _assert_ring(sm: SketchMode) -> void:
 
 
 func _assert_not_centroid(sm: SketchMode) -> void:
-	var holes := _profile_circles(sm, HOLE_R)
+	var holes := _profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5))
 	var piled := 0
 	for h in holes:
-		if (h["center"] as Vector2).distance_to(Vector2(0, PITCH)) <= TOL:
+		if (h["center"] as Vector2).distance_to(Vector2(0, PipeFixture.mm("PCD"))) <= TOL:
 			piled += 1
 	check(piled == 1, "centroid is not the pattern centre (piled %d at seed)" % piled)
 
@@ -187,7 +176,7 @@ func _assert_layout_not_profile(sm: SketchMode) -> void:
 		if str(info.get("type", "")) != "circle":
 			continue
 		var r := float(info.get("radius", 0.0))
-		if absf(r - PITCH) > 1.0:
+		if absf(r - PipeFixture.mm("PCD")) > 1.0:
 			continue
 		if sm.sketch.is_construction(id):
 			layout += 1
@@ -226,7 +215,7 @@ func _assert_copies_follow_seed(sm: SketchMode) -> void:
 			if absf((h["center"] as Vector2).length() - 80.0) <= TOL:
 				follow_p += 1
 		if follow_p == 0:
-			for h in _profile_circles(sm, HOLE_R):
+			for h in _profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5)):
 				if absf((h["center"] as Vector2).length() - 80.0) <= TOL:
 					follow_p += 1
 		check(follow_p == 8, "edit 94, copies follow (got %d at r=80)" % follow_p)
@@ -264,10 +253,10 @@ func _profile_circles(sm: SketchMode, radius: float) -> Array:
 
 
 func _seed_id(sm: SketchMode) -> String:
-	for h in _profile_circles(sm, HOLE_R):
-		if (h["center"] as Vector2).distance_to(Vector2(0, PITCH)) <= TOL:
+	for h in _profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5)):
+		if (h["center"] as Vector2).distance_to(Vector2(0, PipeFixture.mm("PCD"))) <= TOL:
 			return str(h["id"])
-	var holes := _profile_circles(sm, HOLE_R)
+	var holes := _profile_circles(sm, (PipeFixture.mm("HOLE_D") * 0.5))
 	return str(holes[0]["id"]) if not holes.is_empty() else ""
 
 
