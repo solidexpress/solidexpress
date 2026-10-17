@@ -4,6 +4,9 @@ class_name PipeFixture
 extends RefCounted
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
+const FilmSteps = preload("res://tests/lib/film_steps.gd")
+const SxInput = preload("res://tests/lib/sx_input.gd")
 const SxChecker = preload("res://tests/lib/sx_checker.gd")
 
 static var _part: Dictionary = {}
@@ -159,3 +162,145 @@ static func build_reshelled(doc: SxDocument) -> String:
 	if sh == "":
 		return ""
 	return ext
+
+
+static func click_front(ctx: FilmContext) -> void:
+	ctx.main.camera.apply_standard_view_id("front")
+	await ctx.tree.process_frame
+	var sketch_btn := FilmUI.find_palette_sketch_button(ctx.main)
+	if not await FilmUI.click_control(ctx, sketch_btn, FilmUICues.toolbar_sketch()):
+		return
+	await ctx.tree.process_frame
+	var pt: Vector3 = OriginPlanes.pick_point("Front")
+	var screen := FilmUI.model_to_screen(ctx, pt)
+	if not FilmUI.require_on_screen(ctx, screen, "Front"):
+		return
+	await FilmUI.viewport_click(ctx, screen, FilmUICues.sketch_click("Front"))
+	await FilmUI.wait_frames(ctx.tree, 4)
+
+
+static func extrude_blind(ctx: FilmContext, distance: String, op: int) -> void:
+	await FilmSteps.pick_finish(ctx, op, 0)
+	if FilmUI.fail_count > 0:
+		return
+	if distance != "":
+		await FilmSteps.type_distance(ctx, distance)
+		await SxInput.push_key(ctx.main.get_viewport(), KEY_ENTER)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var ex: Button = chrome.extrude_button() if chrome != null else null
+	if not await FilmUI.click_control(ctx, ex, FilmUICues.alert("OK", "Extrude")):
+		return
+	await ctx.after_regen()
+	if ctx.main.sketch_mode != null and ctx.main.sketch_mode.active:
+		await FilmUI.exit_sketch(ctx)
+
+
+static func dim_diameter(ctx: FilmContext, rim: Vector2, text: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
+	await FilmSteps.click_uv(ctx, rim, "Ø%s rim" % text, 280.0)
+	await _type_last_label(ctx, text)
+
+
+static func _type_last_label(ctx: FilmContext, text: String) -> void:
+	await FilmUI.wait_frames(ctx.tree, 3)
+	var sm: SketchMode = ctx.main.sketch_mode
+	var rects: Array = sm.dimension_label_screen_rects() if sm != null else []
+	var hit: Dictionary = {}
+	for i in range(rects.size() - 1, -1, -1):
+		var row: Dictionary = rects[i]
+		if not str(row.get("text", "")).ends_with("°"):
+			hit = row
+			break
+	if hit.is_empty():
+		FilmUI._fail("no dimension label to set %s" % text)
+		return
+	var center: Vector2 = (hit["rect"] as Rect2).get_center()
+	if not FilmUI.require_on_screen(ctx, center, "dimension %s" % text):
+		return
+	await FilmUI.viewport_click(ctx, center, FilmUICues.alert("Click", "Dimension %s" % text))
+	await FilmUI.wait_frames(ctx.tree, 4)
+	var line := ctx.main.find_child("DimEditLine", true, false) as LineEdit
+	if line == null or not line.is_visible_in_tree():
+		FilmUI._fail("dimension editor did not open for %s" % text)
+		return
+	await SxInput.x11_click(line)
+	line.select_all()
+	await SxInput.type_text(line.get_viewport(), text)
+	await SxInput.push_key(line.get_viewport(), KEY_ENTER)
+	await FilmUI.wait_frames(ctx.tree, 3)
+
+
+static func dim_distance(ctx: FilmContext, a: Vector2, b: Vector2, text: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	await FilmSteps.click_uv(ctx, Vector2(40, 40), "Clear selection", 220.0)
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
+	await FilmSteps.click_uv(ctx, a, "Dim first", 220.0)
+	await FilmSteps.click_uv(ctx, b, "Dim second", 220.0)
+	await _type_last_label(ctx, text)
+
+
+static func vertical_centres(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	await FilmSteps.click_uv(ctx, Vector2(40, 40), "Clear selection", 220.0)
+	await FilmSteps.click_uv(ctx, a, "First centre", 160.0)
+	await FilmSteps.click_uv(ctx, b, "Second centre", 160.0)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var btn := FilmUI.find_button(chrome, "Vertical")
+	if btn != null and btn.is_visible_in_tree():
+		await FilmUI.click_control(ctx, btn, FilmUICues.alert("Vertical", "Vertical"))
+		return
+	var more := FilmUI.find_button(chrome, "… More")
+	if more is MenuButton:
+		var popup := (more as MenuButton).get_popup()
+		for i in popup.item_count:
+			if popup.get_item_text(i) == "Vertical":
+				await FilmUI.activate_menu_id(ctx, more as MenuButton, popup.get_item_id(i),
+						FilmUICues.alert("Vertical", "Vertical"))
+				return
+	FilmUI._fail("Vertical is hidden")
+
+
+static func select_seed(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var pcd := mm("PCD")
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	await FilmSteps.click_uv(ctx, Vector2(40, 40), "Clear selection", 220.0)
+	await FilmSteps.click_uv(ctx, Vector2(0, pcd), "Ø10 seed", 160.0)
+
+
+static func show_timeline(ctx: FilmContext) -> void:
+	if ctx.main.timeline != null and ctx.main.timeline.visible:
+		return
+	var view_btn := FilmUI.find_button(ctx.main, "View") as MenuButton
+	if view_btn == null or not view_btn.is_visible_in_tree():
+		FilmUI._fail("View menu is hidden")
+		return
+	await FilmUI.activate_menu_id(ctx, view_btn, 4, FilmUICues.alert("View", "Timeline"))
+	await FilmUI.wait_frames(ctx.tree, 4)
+	if ctx.main.timeline == null or not ctx.main.timeline.visible:
+		FilmUI._fail("Timeline is hidden")
+
+
+static func source_names(doc: SxDocument) -> Array:
+	var extrudes: Array = []
+	var shells: Array = []
+	for f in doc.graph_features():
+		var t := str(f.get("type", ""))
+		var n := str(f.get("name", ""))
+		if t == "extrude":
+			extrudes.append(n)
+		elif t == "shell":
+			shells.append(n)
+	var names: Array = []
+	if extrudes.size() >= 1:
+		names.append(extrudes[0])
+	if shells.size() >= 1:
+		names.append(shells[0])
+	if extrudes.size() >= 2:
+		names.append(extrudes[1])
+	if extrudes.size() >= 3:
+		names.append(extrudes[2])
+	return names
