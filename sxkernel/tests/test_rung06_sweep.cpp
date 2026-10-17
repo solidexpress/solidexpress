@@ -230,4 +230,25 @@ TEST_CASE("rung06 sweep fuses via FeatureGraph", "[rung06][sweep][graph]") {
     CHECK(shape::volume(body->shape) == Approx(1741298.0).epsilon(0.005));
     sx::test::TmpFile tmp("rung06_sweep.3mf");
     REQUIRE(interop::export_3mf(doc, tmp.path, &err));
+
+    SketchPlane hole_pl;
+    hole_pl.origin = {0, 220, 0};
+    hole_pl.x_dir = {-1, 0, 0};
+    hole_pl.y_dir = {0, 0, 1};
+    Feature hole_sk;
+    hole_sk.type = FeatureType::Sketch;
+    hole_sk.sketch = std::make_shared<Sketch>("Hole", hole_pl);
+    hole_sk.sketch->add_circle(0.0, 0.0, 15.0);
+    hole_sk.params = {{"support_host", rv_id.str()},
+                      {"support_normal", {0.0, 1.0, 0.0}},
+                      {"support_side", "max"}};
+    const auto hole_id = graph.add(std::move(hole_sk));
+    err.clear();
+    REQUIRE(graph.regenerate(doc, &err));
+    INFO(err);
+    const Feature* hf = graph.feature(hole_id);
+    REQUIRE(hf != nullptr);
+    REQUIRE(hf->sketch != nullptr);
+    INFO("hole origin y=" << hf->sketch->plane().origin[1]);
+    REQUIRE(hf->sketch->plane().origin[1] == Approx(220.0).margin(0.2));
 }

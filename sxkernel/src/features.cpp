@@ -1100,30 +1100,41 @@ bool sketch_closed_contour(const Sketch& sk) {
 // gp_Pln::Location() of a revolved disc sits at the sketch origin, which
 // pulled the Ø30 candlestick cut down to y = 0.
 bool face_offset_along(const TopoDS_Face& face, const gp_Vec& want, double* offset) {
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(face, props);
+    if (props.Mass() <= 1e-18) return false;
+    const gp_Pnt c = props.CentreOfMass();
+    Bnd_Box box;
+    BRepBndLib::Add(face, box);
+    if (box.IsVoid()) return false;
+    double x1 = 0.0, y1 = 0.0, z1 = 0.0, x2 = 0.0, y2 = 0.0, z2 = 0.0;
+    box.Get(x1, y1, z1, x2, y2, z2);
+    const double span = std::abs(gp_Vec(x2 - x1, y2 - y1, z2 - z1).Dot(want));
+    const bool thin = span <= 1.0;
+
     BRepAdaptor_Surface surf(face);
-    gp_Pnt c;
     gp_Dir n;
+    bool have_n = false;
     if (surf.GetType() == GeomAbs_Plane) {
         n = surf.Plane().Axis().Direction();
         if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
-        GProp_GProps props;
-        BRepGProp::SurfaceProperties(face, props);
-        if (props.Mass() <= 1e-18) return false;
-        c = props.CentreOfMass();
+        have_n = true;
     } else {
         double umin = 0.0, umax = 0.0, vmin = 0.0, vmax = 0.0;
         BRepTools::UVBounds(face, umin, umax, vmin, vmax);
+        gp_Pnt pu;
         gp_Vec d1u, d1v;
-        surf.D1(0.5 * (umin + umax), 0.5 * (vmin + vmax), c, d1u, d1v);
+        surf.D1(0.5 * (umin + umax), 0.5 * (vmin + vmax), pu, d1u, d1v);
         gp_Vec nn = d1u.Crossed(d1v);
-        if (nn.Magnitude() < 1e-12) return false;
-        n = gp_Dir(nn);
-        if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
-        GProp_GProps props;
-        BRepGProp::SurfaceProperties(face, props);
-        if (props.Mass() > 1e-18) c = props.CentreOfMass();
+        if (nn.Magnitude() > 1e-12) {
+            n = gp_Dir(nn);
+            if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+            have_n = true;
+        }
     }
-    if (gp_Vec(n).Dot(want) < 0.999) return false;
+    const double aligned = have_n ? gp_Vec(n).Dot(want) : 0.0;
+    // Revolved rims stay SurfaceOfRevolution; 0.999 dropped the y=220 disc.
+    if (aligned < 0.95 && !(thin && aligned > 0.5)) return false;
     *offset = gp_Vec(c.XYZ()).Dot(want);
     return true;
 }
