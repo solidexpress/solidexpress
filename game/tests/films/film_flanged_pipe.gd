@@ -6,6 +6,7 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const FilmSteps = preload("res://tests/lib/film_steps.gd")
 const SxInput = preload("res://tests/lib/sx_input.gd")
+const _FilmActorBoot = preload("res://tests/lib/film_actor.gd")
 
 
 func run_film(ctx: FilmContext) -> void:
@@ -100,8 +101,11 @@ func run_film(ctx: FilmContext) -> void:
 	await ctx.after_regen()
 
 	await ctx.beat("Shell the mirrored half 10", 0.4)
-	await SxInput.push_key(ctx.main.get_viewport(), KEY_8)
-	await FilmUI.wait_frames(ctx.tree, 6)
+	await PipeFixture.hide_timeline(ctx)
+	var shell_focus = ctx.main.get_viewport().gui_get_focus_owner()
+	if shell_focus is LineEdit:
+		(shell_focus as LineEdit).release_focus()
+	await FilmActor.of(ctx).view_key(KEY_8)
 	await FilmSteps.click_face(ctx, Vector3(0, 0, -1), 260.0)
 	if not _ok():
 		return
