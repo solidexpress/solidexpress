@@ -53,7 +53,7 @@ class Rows06Chunk2:
         a = self._pt(arc["start"]) if arc else [60, 10]
         b = self._pt(arc["end"]) if arc else [183.6, 75]
         outer = b if abs(b[1] - 10.0) > abs(a[1] - 10.0) else a
-        self.dim_vertical_between(outer, "65", line_y=10.0)
+        self.dim_arc_end_to_line(outer, (30.0, 10.0), "65")
         if not self.label_has("65"):
             self.dim_two_points(a, b, "65", snap=True)
         self.clause("vertical 65", self.label_has("65"), str(self.dim_texts()))

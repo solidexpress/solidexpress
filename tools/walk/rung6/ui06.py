@@ -500,27 +500,32 @@ class WalkUI06(WalkChrome):
         self.refresh("dims", "dof", "status")
         return {"texts": self.dim_texts(), "status": self.S()}
 
-    def dim_vertical_between(self, top, value: str, *, line_y: float = 10.0) -> dict:
-        """Vertical 65: construction drop from an arc end to the 60 mm line's Y.
+    def dim_arc_end_to_line(self, end_uv, line_uv, value: str) -> dict:
+        """Vertical 65: Smart Dim the R150 outer end, then the 60 mm line.
 
-        Smart Dim on both R150 ends hits the same arc twice (radius, not Δy).
-        A construction vertical is not a rail (`sketch_spine_wire` skips it).
+        Two clicks on the same arc are radius. An endpoint pick plus a line
+        is point-line Δy.
         """
-        foot = [float(top[0]), float(line_y)]
-        self.draw_line(top, foot)
-        made = self.dim_line(top, foot, value)
-        line = self.nearest_line(top, foot)
-        if line is not None:
-            mid = self._line_mid(line)
-            self.click("rail:Select")
-            self.show_sketch_point(mid)
-            was = self._set_snap(False)
-            self.click(sketch=mid)
-            self._set_snap(was)
-            self.d.key("x")
-            self.d.wait_idle(frames=2)
-        self.refresh("dims", "dof", "sketch", "status")
-        return made
+        before = {str(d.get("text", "")) for d in self.dims()}
+        self.clear_sketch_selection()
+        self._zoom_uv(end_uv, notches=10)
+        self.click("rail:SmartDim")
+        was = self._set_snap(True)
+        self.click(sketch=list(end_uv))
+        self.d.wait_idle(frames=2)
+        self._set_snap(False)
+        self.show_sketch_point(line_uv)
+        self.click(sketch=list(line_uv))
+        self._set_snap(was)
+        self.d.wait_idle(frames=3)
+        fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
+        dim = fresh[-1] if fresh else None
+        if dim is not None:
+            self.open_label(dim)
+            self._type_dim_editor(value)
+            self.enter()
+        self.refresh("dims", "dof", "status")
+        return {"texts": self.dim_texts(), "status": self.S()}
 
     def power_trim(self, uv) -> str:
         before = len(self.profile_lines())
@@ -780,13 +785,16 @@ class WalkUI06(WalkChrome):
             toggle = self.control("finish:Draft")
             if toggle and not toggle.get("pressed"):
                 self.click("finish:Draft")
-                self.d.wait_idle(frames=1)
+                self.d.wait_idle(frames=3)
             elif not toggle:
                 try:
                     self.click("finish:Draft")
+                    self.d.wait_idle(frames=3)
                 except SxError:
                     pass
             self.type_into("finish:DraftAngle", draft)
+            self.d.wait_idle(frames=2)
+        shown_draft = self.field("finish:DraftAngle")
         mark = self.mark()
         reply = self.click("finish:Extrude", frames=8)
         self.d.wait_idle(frames=8)
@@ -794,7 +802,7 @@ class WalkUI06(WalkChrome):
         self.refresh("status", "sketch", "finish", "bodies", "features")
         return {
             "field": shown,
-            "draft": self.field("finish:DraftAngle"),
+            "draft": shown_draft or self.field("finish:DraftAngle"),
             "reply": reply,
             "results": results,
             "status": " | ".join(results) or str(reply.get("status", self.S())),

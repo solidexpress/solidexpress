@@ -6026,9 +6026,13 @@ func _smart_dim_kind(ref: Dictionary) -> SmartDimTable.End:
 	var id := str(ref.get("entity", ""))
 	if id == "" or sketch == null:
 		return null
+	var role := str(ref.get("role", "self"))
+	# An arc/line vertex is a point. BETWEEN + a line is then point_line
+	# (candlestick path vertical 65 from the R150 end to the 60 mm line).
+	if role == "start" or role == "end":
+		return SmartDimTable.end_for("circle", "center", false)
 	var info: Dictionary = sketch.entity_info(id)
-	return SmartDimTable.end_for(str(info.get("type", "")), str(ref.get("role", "self")),
-			sketch.is_external(id))
+	return SmartDimTable.end_for(str(info.get("type", "")), role, sketch.is_external(id))
 
 
 func _click_smart_dim(pos2: Vector2) -> void:
@@ -6068,9 +6072,15 @@ func _click_smart_dim(pos2: Vector2) -> void:
 				return
 		_smart_dim_first = null
 		return
-	var hit_ref := {"entity": hit, "role": "self"}
+	var hit_role := "self"
+	if str(sketch.entity_info(hit).get("type", "")) == "arc":
+		var ep := _endpoint_role_at(hit, pos2)
+		if ep == "start" or ep == "end":
+			hit_role = ep
+	var hit_ref := {"entity": hit, "role": hit_role}
 	if not _smart_dim_pending.is_empty():
 		if str(_smart_dim_pending["entity"]) == hit \
+				and str(_smart_dim_pending.get("role", "self")) == hit_role \
 				and str(sketch.entity_info(hit).get("type", "")) in ["circle", "arc"]:
 			status.emit(SMART_DIM_SAME_HINT)
 			return
@@ -6087,6 +6097,14 @@ func _click_smart_dim(pos2: Vector2) -> void:
 			_smart_dim_pending.clear()
 			return
 		_smart_dim_pending.clear()
+		_smart_dim_first = null
+		return
+	# First pick on an arc vertex waits for the second pick. Curve clicks
+	# still emit radius immediately (SINGLE ROUND).
+	if hit_role == "start" or hit_role == "end":
+		_smart_dim_pending = hit_ref
+		_set_selected([hit])
+		status.emit(SMART_DIM_PICK_HINT)
 		_smart_dim_first = null
 		return
 	if selected.size() == 1 and str(selected[0]) != hit:
