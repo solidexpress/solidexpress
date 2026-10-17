@@ -63,6 +63,15 @@ RUNG5_ROWS = [
     "A22", "N5", "A23", "L5", "A24", "N6", "A25",
 ]
 
+# Candlestick (rung 6). Order is the checklist, not import order.
+RUNG6_ROWS = [
+    "N1", "A1", "A2", "L1", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "N2",
+    "A10", "A11", "A12", "L2", "A13", "A14", "A15",
+    "A16", "A17", "A18", "A19", "A20", "A21", "A22", "L3", "A23",
+    "N3", "A24", "A25", "A26", "A27", "A28", "L4", "A29",
+    "A30", "A31", "N4", "A32", "A33", "A34", "L5", "A35", "N5", "A36",
+]
+
 # Lesson 1 parts (rung 3). Order is the checklist, not import order.
 RUNG3_ROWS = [
     "N1", "A1", "A2", "L1", "A3", "N2", "A4", "A5",
@@ -123,6 +132,14 @@ _RUNG_SPEC = {
         "report_title": "rung-05 walk",
         "checkpoint_after": (),
     },
+    "rung06": {
+        "checker": "check_rung06.py",
+        "checkpoints": {2: "revolve.sxp", 3: "path.sxp", 4: "sweep.sxp"},
+        "canonical": RUNG6_ROWS,
+        "chunk_start": checkpoint_reload,
+        "report_title": "rung-06 walk",
+        "checkpoint_after": (),
+    },
 }
 
 
@@ -177,3 +194,4 @@ RUNG2: Rung | None = None
 RUNG3: Rung | None = None
 RUNG4: Rung | None = None
 RUNG5: Rung | None = None
+RUNG6: Rung | None = None
