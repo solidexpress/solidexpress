@@ -186,7 +186,9 @@ public:
                                     const godot::String& thin_type = godot::String("one_side"),
                                     bool flip_side = false,
                                     const godot::Array& selected_contours = godot::Array(),
-                                    const godot::String& to_face = godot::String());
+                                    const godot::String& to_face = godot::String(),
+                                    double draft_deg = 0.0,
+                                    bool draft_inward = true);
     // Axis in sketch 2D coordinates (point + direction on the sketch plane).
     godot::String graph_add_revolve(const godot::String& sketch_fid,
                                     const godot::Vector2& axis_point,
