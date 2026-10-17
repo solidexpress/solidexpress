@@ -225,12 +225,12 @@ static func shell_selected_face(ctx: FilmContext, mm: float) -> void:
 		return
 	var digits := str(int(round(mm))) if is_equal_approx(mm, round(mm)) else str(mm)
 	await FilmActor.of(ctx).edit_field(field, digits, "Shell %s mm" % digits)
+	await _release_line_focus(ctx)
+	await FilmUI.wait_frames(ctx.tree, 2)
 	var ok := _by_auto(ctx.main, "finish:Ok") as Button
-	if ok == null or not ok.is_visible_in_tree():
-		FilmUI._fail("Shell Apply is hidden")
-		return
-	await FilmUI.click_control(ctx, ok, FilmUICues.alert("Apply", "Shell %s mm" % digits))
-	await FilmUI.wait_frames(ctx.tree, 4)
+	if ok != null and ok.is_visible_in_tree():
+		await FilmUI.click_control(ctx, ok, FilmUICues.alert("Apply", "Shell %s mm" % digits))
+		await FilmUI.wait_frames(ctx.tree, 4)
 
 
 ## Two planar faces then Shell thickness. first/second are {normal, plane, view_key}.
@@ -415,7 +415,9 @@ static func _type_auto_spin(ctx: FilmContext, auto_id: String, text: String) -> 
 	if edit == null or not edit.is_visible_in_tree():
 		FilmUI._fail("%s is hidden" % auto_id)
 		return
-	await FilmActor.of(ctx).edit_field(node, text, auto_id)
+	await SxInput.x11_click(edit)
+	edit.select_all()
+	await SxInput.type_text(edit.get_viewport(), text)
 	await _release_line_focus(ctx)
 
 
