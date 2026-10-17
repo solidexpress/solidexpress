@@ -1818,6 +1818,8 @@ func _start_sketch_on_face(face_id: String, body_id: String) -> void:
 	var normal := Vector3(0, 0, 1)
 	var plane_msg := "Sketch on ground (XY)"
 	sketch_mode.target_fid = ""
+	if face_id != "" and body_id == "" and view.has_method("body_of_face"):
+		body_id = view.body_of_face(face_id)
 	if face_id != "" and body_id != "":
 		sketch_mode.target_fid = view.feature_of_body(body_id)
 		var fn := view.face_normal(body_id, face_id)

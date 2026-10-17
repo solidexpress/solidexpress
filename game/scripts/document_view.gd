@@ -655,6 +655,17 @@ func feature_of_body(body_id: String) -> String:
 	return ""
 
 
+## Body that owns `face_id`. Prefers the live kernel list over the mesh cache.
+func body_of_face(face_id: String) -> String:
+	if face_id == "" or doc == null:
+		return ""
+	for body_id in doc.body_ids():
+		if doc.get_face_ids(body_id).has(face_id):
+			return str(body_id)
+	var cached := _owner_body_of(face_id)
+	return cached if cached != selected_body else ""
+
+
 ## Nearest hole/hex feature whose axis is within the tool radius of `point`
 ## (distance measured in the plane perpendicular to the hole direction so
 ## pocket-floor clicks still resolve).

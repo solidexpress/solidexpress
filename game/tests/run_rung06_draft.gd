@@ -65,6 +65,14 @@ func _case(ctx: FilmContext) -> void:
 	sm.sketch.add_circle(0.0, 0.0, 15.0)
 	sm.run_solve()
 	await process_frame
+	var sk_fid := sm.exit_sketch()
+	check(sk_fid != "", "Ø30 face sketch saved")
+	sm.target_fid = ""
+	sm.support_host = ""
+	sm.host_face_id = ""
+	check(sm.begin_edit(sk_fid), "pencil reopens the cut sketch")
+	check(sm.target_fid != "", "begin_edit restores the cut target")
+	await process_frame
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	chrome.set_draft_on(true)
 	chrome.set_draft_deg(15.0)

@@ -589,6 +589,67 @@ func _clear_support() -> void:
 	host_face_id = ""
 
 
+func _feature_params_dict(fid: String) -> Dictionary:
+	if view == null or view.doc == null or fid == "":
+		return {}
+	for f in view.doc.graph_features():
+		if str(f.get("id", "")) != fid:
+			continue
+		var parsed = JSON.parse_string(str(f.get("params", "{}")))
+		if typeof(parsed) == TYPE_DICTIONARY:
+			return parsed
+		return {}
+	return {}
+
+
+## Host/face/normal stored on a committed face sketch (`_write_sketch_support`).
+func _support_from_feature(fid: String) -> Dictionary:
+	var params := _feature_params_dict(fid)
+	var host := str(params.get("support_host", ""))
+	if host == "":
+		return {}
+	var n: Variant = params.get("support_normal", [0, 0, 0])
+	var normal := Vector3.ZERO
+	if n is Array and n.size() >= 3:
+		normal = Vector3(float(n[0]), float(n[1]), float(n[2]))
+	return {
+		"host": host,
+		"normal": normal,
+		"side": str(params.get("support_side", "max")),
+		"face": str(params.get("host_face", "")),
+	}
+
+
+func _adopt_support(support: Dictionary) -> void:
+	_clear_support()
+	if support.is_empty():
+		target_fid = ""
+		return
+	support_host = str(support.get("host", ""))
+	support_normal = support.get("normal", Vector3.ZERO)
+	support_side = str(support.get("side", "max"))
+	host_face_id = str(support.get("face", ""))
+	target_fid = support_host
+
+
+## Cut/fuse target: the live session, then the saved host, then the host face.
+func _boolean_target_fid() -> String:
+	if target_fid != "":
+		return target_fid
+	if support_host != "":
+		return support_host
+	if host_face_id == "" or view == null:
+		return ""
+	var body := ""
+	if view.has_method("body_of_face"):
+		body = view.body_of_face(host_face_id)
+	if body == "" and view.has_method("body_of_feature"):
+		body = view.body_of_feature(support_host)
+	if body != "" and view.has_method("feature_of_body"):
+		return view.feature_of_body(body)
+	return ""
+
+
 ## True when `face_id`'s midpoint sits on the active sketch plane.
 func face_lies_on_plane(face_id: String) -> bool:
 	if face_id == "" or view == null or view.doc == null:
@@ -658,7 +719,9 @@ func begin_edit(fid: String, announce: bool = true) -> bool:
 			(pi["y_dir"] as Vector3).normalized())
 	sketch = loaded
 	_edit_baseline = loaded.snapshot() if loaded.has_method("snapshot") else ""
-	_clear_support()
+	# Pencil/timeline reopen must put Cut back on the body this sketch sat on.
+	# Exit clears host_face_id so the selection card does not cover the rail.
+	_adopt_support(_support_from_feature(fid))
 	_activate_session()
 	if announce:
 		status.emit("Editing sketch — Exit Sketch to save · Esc discard")
@@ -954,9 +1017,12 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		else:
 			_refuse_extrude(_open_profile_status())
 		return
-	if op != "new" and target_fid == "":
+	var cut_tgt := _boolean_target_fid()
+	if op != "new" and cut_tgt == "":
 		_refuse_extrude("No target body — sketch on a face to cut/fuse")
 		return
+	if cut_tgt != "":
+		target_fid = cut_tgt
 	if op == "cut":
 		distance = -absf(distance)
 	# Up To Surface with nothing picked must not extrude the host face.
@@ -1073,9 +1139,12 @@ func _cut_refusal(before: float, after: float) -> String:
 func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 	if not active:
 		return
-	if op != "new" and target_fid == "":
+	var cut_tgt := _boolean_target_fid()
+	if op != "new" and cut_tgt == "":
 		status.emit("No target body — sketch on a face to cut/fuse")
 		return
+	if cut_tgt != "":
+		target_fid = cut_tgt
 	# Close a dangling line chain. Do not weld arc ends onto neighbours —
 	# that pulls them off the circle and GC_MakeArcOfCircle then skips the
 	# rim (candlestick R12.5), which is the open-loop refuse.
@@ -1100,14 +1169,7 @@ func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 func _write_sketch_support(fid: String) -> void:
 	if support_host == "" or view == null or view.doc == null:
 		return
-	var params := {}
-	for f in view.doc.graph_features():
-		if str(f.get("id", "")) != fid:
-			continue
-		var parsed = JSON.parse_string(str(f.get("params", "{}")))
-		if typeof(parsed) == TYPE_DICTIONARY:
-			params = parsed
-		break
+	var params := _feature_params_dict(fid)
 	params["support_host"] = support_host
 	params["support_normal"] = [support_normal.x, support_normal.y, support_normal.z]
 	params["support_side"] = support_side if support_side != "" else "max"

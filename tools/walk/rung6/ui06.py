@@ -773,8 +773,14 @@ class WalkUI06(WalkChrome):
                 best = face
         if best and best.get("id"):
             self.click(face=str(best["id"]))
+            self.d.wait_idle(frames=2)
             self.refresh("selection", "status", "faces")
             sel = self.st.get("selection") or {}
+            if not sel.get("face"):
+                self.click(face=str(best["id"]))
+                self.d.wait_idle(frames=2)
+                self.refresh("selection", "status", "faces")
+                sel = self.st.get("selection") or {}
             face_id = str(sel.get("face") or best.get("id") or "")
             record = self._face_record(face_id) or best
             return {
@@ -785,6 +791,40 @@ class WalkUI06(WalkChrome):
                 "record": record,
             }
         return self.select_face([0.0, 1.0, 0.0], plane=220.0)
+
+    def _plane_on_top_disc(self) -> bool:
+        plane = (self.refresh("sketch").get("sketch") or {}).get("plane") or {}
+        origin = plane.get("origin") or [0.0, 0.0, 0.0]
+        normal = plane.get("normal") or [0.0, 0.0, 0.0]
+        if len(origin) < 2 or len(normal) < 2:
+            return False
+        return abs(float(origin[1]) - 220.0) <= 2.0 and abs(float(normal[1]) - 1.0) <= 0.08
+
+    def open_top_disc_sketch(self) -> dict:
+        picked = self.pick_top_disc()
+        if self.control("chip:Sketch"):
+            self.click("chip:Sketch")
+        else:
+            self.click("rail:Sketch")
+        self.d.wait_idle(frames=4)
+        self.refresh("sketch", "status")
+        if not self._plane_on_top_disc():
+            if bool((self.st.get("sketch") or {}).get("active")):
+                self.exit_sketch()
+            picked = self.pick_top_disc()
+            if self.control("chip:Sketch"):
+                self.click("chip:Sketch")
+            else:
+                self.click("rail:Sketch")
+            self.d.wait_idle(frames=4)
+            self.refresh("sketch", "status")
+        return {
+            "picked": picked,
+            "active": bool((self.st.get("sketch") or {}).get("active")),
+            "on_disc": self._plane_on_top_disc(),
+            "status": self.S(),
+            "plane": (self.st.get("sketch") or {}).get("plane") or {},
+        }
 
     def try_extrude_cut(self, distance: str, draft: str | None = "15") -> dict:
         self._ensure_finish_bar()

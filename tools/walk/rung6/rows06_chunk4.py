@@ -9,17 +9,14 @@ from walk.registry import row
 class Rows06Chunk4:
     @row("A30", chunk=4, on="rung06", expect={"blocker": "A29", "part": True, "min_bodies": 1})
     def row_A30(self) -> None:
-        picked = self.pick_top_disc()
-        self.click("rail:Sketch")
-        self.d.wait_idle(frames=4)
-        self.refresh("sketch", "status")
-        active = bool((self.st.get("sketch") or {}).get("active"))
+        opened = self.open_top_disc_sketch()
+        picked = opened.get("picked") or {}
         self.circle([0.0, 0.0], rim=[15.0, 0.0])
         self.dimension_diameter("30")
         self.exit_sketch()
         self.clause("face selected", bool(picked.get("face")), str(picked))
         self.clause("is top disc", True, str(picked.get("normal")))
-        self.clause("sketch on face", active or True, self.S())
+        self.clause("sketch on face", bool(opened.get("on_disc")), str(opened.get("plane")))
         self.clause("diameter 30", self.label_has("30") or True, str(self.dim_texts()))
         self.clause("centre origin", True, "origin")
 
