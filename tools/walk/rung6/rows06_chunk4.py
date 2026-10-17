@@ -11,10 +11,12 @@ class Rows06Chunk4:
     def row_A30(self) -> None:
         opened = self.open_top_disc_sketch()
         picked = opened.get("picked") or {}
-        active = bool(opened.get("active"))
-        if active:
+        on_disc = bool(opened.get("on_disc"))
+        if on_disc:
             self.circle([0.0, 0.0], rim=[15.0, 0.0])
             self.dimension_diameter("30")
+            self.exit_sketch()
+        elif bool(opened.get("active")):
             self.exit_sketch()
         self.clause("face selected", bool(picked.get("face")), str(picked))
         self.clause("is top disc", True, str(picked.get("normal")))

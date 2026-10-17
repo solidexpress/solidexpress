@@ -757,20 +757,26 @@ class WalkUI06(WalkChrome):
         self.d.key("3")
         self.d.wait_idle(frames=4)
         self.refresh("faces")
-        best = None
-        best_area = -1.0
+        disc = None
+        disc_err = 1e9
+        want_area = 3.1415926535 * 20.0 * 20.0
         for face in list(self.st.get("faces") or []):
             n = face.get("normal") or [0.0, 0.0, 0.0]
-            if len(n) < 3 or abs(float(n[1]) - 1.0) > 0.08:
-                continue
             c = face.get("centre") or [0.0, 0.0, 0.0]
-            y = float(c[1]) if len(c) > 1 else 0.0
-            if abs(y - 220.0) > 2.0:
+            if len(n) < 3 or len(c) < 2:
                 continue
+            ny = float(n[1])
+            y = float(c[1])
             area = float(face.get("area") or 0.0)
-            if area > best_area:
-                best_area = area
-                best = face
+            if ny < 0.85 or abs(y - 220.0) > 6.0:
+                continue
+            if area < 400.0 or area > 2500.0:
+                continue
+            err = abs(ny - 1.0) * 200.0 + abs(y - 220.0) + abs(area - want_area) * 0.01
+            if err < disc_err:
+                disc_err = err
+                disc = face
+        best = disc
         if best and best.get("id"):
             self.click(face=str(best["id"]))
             self.d.wait_idle(frames=2)
@@ -790,7 +796,7 @@ class WalkUI06(WalkChrome):
                 "plane": (record or {}).get("plane"),
                 "record": record,
             }
-        return self.select_face([0.0, 1.0, 0.0], plane=220.0)
+        return {"face": "", "status": self.S(), "normal": None, "plane": None, "record": {}}
 
     def _plane_on_top_disc(self) -> bool:
         plane = (self.refresh("sketch").get("sketch") or {}).get("plane") or {}
@@ -815,8 +821,7 @@ class WalkUI06(WalkChrome):
         return self.S()
 
     def open_top_disc_sketch(self) -> dict:
-        self.d.wait_idle(frames=6)
-        self.select_body()
+        self.d.wait_idle(frames=4)
         picked = self.pick_top_disc()
         self.d.wait_idle(frames=3)
         self.click("rail:Sketch")
