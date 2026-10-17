@@ -36,6 +36,7 @@ REFUSE_FACE = (
 
 
 class WalkUI03(WalkChrome):
+    _RUNG = 3
     _INTENDED = (
         "Dimension must be a positive number",
         "limit",
@@ -569,11 +570,6 @@ class WalkUI03(WalkChrome):
             if getattr(self, "proc", None) is None or self.proc.poll() is not None:
                 self.launch()
         return self._headless_report(kernel, godot, lint, unit, registry, errors)
-
-    def _headless_report(self, kernel, godot, lint, unit, registry, errors) -> dict[str, dict]:
-        return WalkChrome._headless_report(
-            self, kernel, godot, lint, unit, registry, errors, "a26",
-        )
 
     def _kernel_tests(self) -> subprocess.CompletedProcess:
         # Labelled by run_kernel so a later passer cannot hide an earlier failure.

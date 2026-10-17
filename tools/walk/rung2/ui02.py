@@ -34,6 +34,7 @@ FEATURE_ORDER = (
 
 
 class WalkUI02(WalkChrome):
+    _RUNG = 2
     _INTENDED = (
         "Dimension must be a positive number",
         "limit",
@@ -450,10 +451,6 @@ class WalkUI02(WalkChrome):
                 self.launch()
         return self._headless_report(kernel, godot, lint, unit, registry, errors)
 
-    def _headless_report(self, kernel, godot, lint, unit, registry, errors) -> dict[str, dict]:
-        return WalkChrome._headless_report(
-            self, kernel, godot, lint, unit, registry, errors, "a25",
-        )
 
 
     def _release_project(self) -> None:

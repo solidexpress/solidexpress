@@ -42,6 +42,7 @@ def plane_of(normal, world_z: float) -> float:
 
 
 class WalkUI05(WalkChrome):
+    _RUNG = 5
     _INTENDED = (
         "Dimension must be a positive number",
         "limit",
@@ -524,5 +525,3 @@ class WalkUI05(WalkChrome):
         self.ctx[f"report:{stage}"] = report
         return report
 
-    def headless(self) -> dict[str, dict]:
-        return WalkChrome.headless(self, "tools/test_check_rung05.py", "unit_rung05", "a25")

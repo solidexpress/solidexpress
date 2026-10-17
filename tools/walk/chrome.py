@@ -20,6 +20,12 @@ _ENGINE_NOISE = (
     "Vulkan",
     "ERR_CANT_OPEN",
 )
+_HEADLESS = {
+    2: {"unit": "tools/test_check_rung02.py", "unit_key": "unit_rung02", "log": "a25"},
+    3: {"unit": "tools/test_check_rung03.py", "unit_key": "unit_rung03", "log": "a26"},
+    4: {"unit": "tools/test_check_rung04.py", "unit_key": "unit_rung04", "log": "a21"},
+    5: {"unit": "tools/test_check_rung05.py", "unit_key": "unit_rung05", "log": "a25"},
+}
 
 
 class WalkChrome:
@@ -446,7 +452,15 @@ class WalkChrome:
             "plane": sk.get("plane") or {},
         }
 
-    def headless(self, unit_script: str, unit_key: str, log_stem: str) -> dict[str, dict]:
+    def _rung(self) -> int:
+        return int(getattr(self, "_RUNG", 0))
+
+    def headless(self, unit_script: str | None = None, unit_key: str | None = None,
+                 log_stem: str | None = None) -> dict[str, dict]:
+        row = _HEADLESS[self._rung()]
+        unit_script = unit_script or row["unit"]
+        unit_key = unit_key or row["unit_key"]
+        log_stem = log_stem or row["log"]
         keys = ("kernel", "godot", "lint", "unit", "registry", "errors")
         if not self.run_a15:
             blocked = "BLOCKED-by-flag: pass --a15"
@@ -475,7 +489,9 @@ class WalkChrome:
                 self.launch()
         return self._headless_report(kernel, godot, lint, unit, registry, errors, log_stem)
 
-    def _headless_report(self, kernel, godot, lint, unit, registry, errors, log_stem: str) -> dict[str, dict]:
+    def _headless_report(self, kernel, godot, lint, unit, registry, errors,
+                        log_stem: str | None = None) -> dict[str, dict]:
+        log_stem = log_stem or _HEADLESS[self._rung()]["log"]
         godot_text = (godot.stdout or "") + (godot.stderr or "")
         (self.out / f"{log_stem}-godot.log").write_text(godot_text)
         (self.out / f"{log_stem}-kernel.log").write_text((kernel.stdout or "") + (kernel.stderr or ""))

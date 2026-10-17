@@ -13,6 +13,7 @@ PINNED_NEW = "New — empty part, Top plane (XY). View ▸ Timeline to edit feat
 
 
 class WalkUI04(WalkChrome):
+    _RUNG = 4
     _INTENDED = (
         "Dimension must be a positive number",
         "Select a profile sketch and a path sketch",
@@ -257,5 +258,3 @@ class WalkUI04(WalkChrome):
         self.ctx["final_report"] = report
         return report
 
-    def headless(self) -> dict[str, dict]:
-        return WalkChrome.headless(self, "tools/test_check_rung04.py", "unit_rung04", "a21")
