@@ -54,10 +54,32 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
+#include <vector>
 
 using nlohmann::json;
 
 namespace sx::feature_ops {
+namespace {
+
+std::vector<double> sketch_params(const Sketch& sk) {
+    std::vector<double> out;
+    out.reserve(sk.param_count());
+    for (size_t i = 0; i < sk.param_count(); ++i) out.push_back(sk.param(i));
+    return out;
+}
+
+void restore_sketch_params(Sketch& sk, const std::vector<double>& saved) {
+    const size_t n = std::min(saved.size(), sk.param_count());
+    for (size_t i = 0; i < n; ++i) sk.param_mut(i) = saved[i];
+}
+
+bool sketch_has_closed_region(const Sketch& sk) {
+    std::string ignored;
+    return !sk.profile_face_selected({}, &ignored).IsNull();
+}
+
+}  // namespace
 
 bool apply_primitive(ApplyCtx& ctx) {
     Document& doc = ctx.doc;
@@ -90,11 +112,26 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                 const Feature* skf = feature(sketch_fid);
                 if (!skf || !skf->sketch) return fail("missing sketch feature");
                 // Resolve "=expr" dimensions from VariableTable and solve before use.
+                // A click-built profile can already be closed while leftover
+                // constraints still fight; PlaneGCS then splits coincident
+                // joints. Keep the pre-solve geometry when that happens.
                 {
                     std::string xerr;
                     skf->sketch->resolve_expressions(env, &xerr);
-                    auto solver = make_planegcs_backend();
-                    solver->solve(*skf->sketch);
+                    auto saved = sketch_params(*skf->sketch);
+                    const bool closed_before = sketch_has_closed_region(*skf->sketch);
+                    // Click-built revolved rims are already closed; leftover
+                    // dims still fight and PlaneGCS then self-intersects the
+                    // toe (candlestick R12.5). Keep the drawn region.
+                    if (!(f.type == FeatureType::Revolve && closed_before)) {
+                        auto solver = make_planegcs_backend();
+                        solver->solve(*skf->sketch);
+                        skf->sketch->reconcile_arc_angles();
+                        if (closed_before && !sketch_has_closed_region(*skf->sketch)) {
+                            restore_sketch_params(*skf->sketch, saved);
+                            skf->sketch->reconcile_arc_angles();
+                        }
+                    }
                 }
                 std::string perr;
                 TopoDS_Shape face;
@@ -123,6 +160,29 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     }
                     if (!contour_idxs.empty()) {
                         face = skf->sketch->profile_face_selected(contour_idxs, host, &perr);
+                    } else if (f.type == FeatureType::Revolve) {
+                        // Sketch-only closed regions. A leftover open chain is
+                        // common on a click-built revolve profile and must not
+                        // refuse. Do not split a host datum — that face is the
+                        // whole plane and MakeRevol then throws BRep_API.
+                        // A compound of two regions (lens + candlestick) also
+                        // makes MakeRevol IsDone false; take the largest face.
+                        auto pick_largest = [](const std::vector<TopoDS_Shape>& regions) {
+                            TopoDS_Shape best;
+                            double best_a = 0.0;
+                            for (const auto& c : regions) {
+                                const double a = std::abs(shape::area(c));
+                                if (a > best_a) {
+                                    best_a = a;
+                                    best = c;
+                                }
+                            }
+                            return best;
+                        };
+                        auto regions = skf->sketch->arrangement_faces(&perr);
+                        face = pick_largest(regions);
+                        if (face.IsNull())
+                            face = pick_largest(skf->sketch->contour_faces(&perr));
                     } else {
                         face = skf->sketch->profile_face(&perr);
                     }
@@ -297,6 +357,10 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         result = BRepPrimAPI_MakePrism(profile, dir * dist).Shape();
                     }
                 } else {
+                    if (face.IsNull())
+                        return fail(std::string("revolve profile: ") +
+                                    (perr.empty() ? "empty" : perr));
+                    const double raw_area = shape::area(face);
                     const auto& pl = skf->sketch->plane();
                     auto at = [&](double u, double v) {
                         return gp_Pnt(pl.origin[0] + pl.x_dir[0] * u + pl.y_dir[0] * v,
@@ -308,11 +372,58 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     gp_Pnt p0 = at(ap[0].get<double>(), ap[1].get<double>());
                     gp_Pnt p1 = at(ap[0].get<double>() + ad[0].get<double>(),
                                    ap[1].get<double>() + ad[1].get<double>());
-                    result = BRepPrimAPI_MakeRevol(face, gp_Ax1(p0, gp_Dir(gp_Vec(p0, p1))),
-                                                   num_param(params, "angle", 6.283185307179586, env))
-                                 .Shape();
+                    if (p0.Distance(p1) < 1e-9)
+                        return fail("revolve axis is degenerate");
+                    gp_Ax1 axis(p0, gp_Dir(gp_Vec(p0, p1)));
+                    const double ang = num_param(params, "angle", 6.283185307179586, env);
+                    auto revol = [&](const TopoDS_Shape& src) -> TopoDS_Shape {
+                        try {
+                            BRepPrimAPI_MakeRevol mk(src, axis, ang);
+                            return mk.IsDone() ? mk.Shape() : TopoDS_Shape();
+                        } catch (const Standard_Failure&) {
+                            return {};
+                        }
+                    };
+                    result = revol(face);
+                    if (result.IsNull()) result = revol(face.Reversed());
+                    if (result.IsNull()) {
+                        auto regions = skf->sketch->contour_faces(nullptr);
+                        for (const auto& c : regions) {
+                            result = revol(c);
+                            if (result.IsNull()) result = revol(c.Reversed());
+                            if (!result.IsNull()) break;
+                        }
+                    }
+                    if (!result.IsNull() && shape::volume(result) < 0.0)
+                        result.Reverse();
+                    if (!result.IsNull()) {
+                        std::string report;
+                        TopoDS_Shape healed = interop::heal_shape(result, &report);
+                        if (!healed.IsNull()) result = healed;
+                        if (shape::volume(result) < 0.0) result.Reverse();
+                    }
+                    if (result.IsNull()) {
+                        const double fa = face.IsNull() ? 0.0 : shape::area(face);
+                        Bnd_Box fb;
+                        if (!face.IsNull()) BRepBndLib::Add(face, fb);
+                        std::ostringstream os;
+                        os << "geometry generation failed raw=" << raw_area << " area=" << fa;
+                        if (!fb.IsVoid()) {
+                            double x0, y0, z0, x1, y1, z1;
+                            fb.Get(x0, y0, z0, x1, y1, z1);
+                            os << " bbox=[" << x0 << "," << y0 << "," << z0 << " .. "
+                               << x1 << "," << y1 << "," << z1 << "]";
+                        }
+                        os << " axis=(" << p0.X() << "," << p0.Y() << "," << p0.Z()
+                           << ")+(" << (p1.X() - p0.X()) << "," << (p1.Y() - p0.Y())
+                           << "," << (p1.Z() - p0.Z()) << ")";
+                        if (!perr.empty()) os << " " << perr;
+                        return fail(os.str());
+                    }
                 }
-                if (result.IsNull()) return fail("geometry generation failed");
+                if (result.IsNull())
+                    return fail(std::string("geometry generation failed") +
+                                (perr.empty() ? "" : (": " + perr)));
 
                 std::string op = params.value("op", "new");
                 if (op == "new") {

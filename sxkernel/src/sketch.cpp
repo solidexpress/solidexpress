@@ -30,6 +30,7 @@
 #include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <Geom_Circle.hxx>
+#include <Geom_TrimmedCurve.hxx>
 #include <Geom_Ellipse.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
@@ -662,7 +663,7 @@ std::vector<TopoDS_Shape> contours_by_planar_split(const gp_Pln& pln, const gp_A
     splitter.SetArguments(args);
     for (const auto& e : edges) tools.Append(e);
     splitter.SetTools(tools);
-    splitter.SetFuzzyValue(1e-6);
+    splitter.SetFuzzyValue(0.05);
     splitter.Build();
     if (!splitter.IsDone()) {
         if (err) *err = "planar contour split failed";
@@ -707,10 +708,15 @@ std::vector<TopoDS_Shape> contours_by_planar_split(const gp_Pln& pln, const gp_A
 }  // namespace
 
 std::vector<TopoDS_Shape> Sketch::contour_faces(std::string* err) const {
-    return contour_faces_impl(err, nullptr);
+    return contour_faces_impl(err, nullptr, false);
 }
 
-std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* stray_open) const {
+std::vector<TopoDS_Shape> Sketch::arrangement_faces(std::string* err) const {
+    return contour_faces_impl(err, nullptr, true);
+}
+
+std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* stray_open,
+                                                     bool prefer_split) const {
     if (stray_open) *stray_open = false;
     // Build closed wires (same chaining as profile_face), then classify
     // nesting: nested → holes; disjoint → separate Selected Contours solids.
@@ -785,13 +791,23 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
                 sa = sa_fix;
                 ea = ea_fix;
             }
-            double mid_angle = (sa + ea) / 2.0;
-            if (ea < sa) mid_angle += kPi;
-            gp_Pnt m = to3d(p(e, 0) + p(e, 2) * std::cos(mid_angle),
-                            p(e, 1) + p(e, 2) * std::sin(mid_angle));
-            GC_MakeArcOfCircle mk(a, m, b);
-            if (!mk.IsDone()) continue;
-            segs.push_back({a, b, BRepBuilderAPI_MakeEdge(mk.Value()).Edge()});
+            if (ea < sa) ea += kTwoPi;
+            gp_Circ circ(gp_Ax2(to3d(p(e, 0), p(e, 1)), nd, xd), p(e, 2));
+            TopoDS_Edge edge;
+            Handle(Geom_Circle) gc = new Geom_Circle(circ);
+            Handle(Geom_TrimmedCurve) tr = new Geom_TrimmedCurve(gc, sa, ea);
+            BRepBuilderAPI_MakeEdge mk(tr);
+            if (mk.IsDone()) {
+                edge = mk.Edge();
+            } else {
+                double mid_angle = 0.5 * (sa + ea);
+                gp_Pnt m = to3d(p(e, 0) + p(e, 2) * std::cos(mid_angle),
+                                p(e, 1) + p(e, 2) * std::sin(mid_angle));
+                GC_MakeArcOfCircle mk3(a, m, b);
+                if (!mk3.IsDone()) continue;
+                edge = BRepBuilderAPI_MakeEdge(mk3.Value()).Edge();
+            }
+            segs.push_back({a, b, edge});
         } else if (e.type == SketchEntityType::Spline) {
             auto fits = spline_fit_points(e.id);
             if (fits.size() < 2) continue;
@@ -825,7 +841,9 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
         return {};
     }
 
-    constexpr double tol = 1e-6;
+    // 1e-6 loses float32 arc-angle round-trips (r=60 → ~6e-6 mm). 0.05 mm is
+    // still tiny on millimetre parts and matches the pre-revolve endpoint weld.
+    constexpr double tol = 0.05;
     std::vector<TopoDS_Edge> all_edges;
     for (const auto& s : segs) all_edges.push_back(s.edge);
     for (const auto& cw : circle_wires) {
@@ -935,7 +953,20 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
     }
 
     auto contours = nest_solid_contours(pln, simple_faces, wires, err);
+    auto split = contours_by_planar_split(pln, ax, all_edges, nullptr);
+    auto max_area = [](const std::vector<TopoDS_Shape>& fs) {
+        double m = 0.0;
+        for (const auto& f : fs) m = std::max(m, std::abs(shape::area(f)));
+        return m;
+    };
+    const double split_a = max_area(split);
+    const double chain_a = max_area(contours);
+    if (prefer_split && split_a >= chain_a * 0.8 && !split.empty())
+        return split;
+    if (split_a > chain_a * 1.2)
+        return split;
     if (contours.empty()) {
+        if (!split.empty()) return split;
         if (err && err->empty()) *err = "no solid contours";
         return {};
     }

@@ -15,6 +15,12 @@ STAGE_FILE = {
     "final": "final.3mf",
 }
 
+# Locked rim (plan / Rung06Part). Checker clips y ≥ 0 at x = 108.998.
+R60_TAN = (97.861, 20.517)
+R12_BULGE = (111.999, 8.125)
+R12_CLIP = (108.998, 0.0)
+BASE_END = (90.0, 0.0)
+
 
 class WalkUI06(WalkChrome):
     _RUNG = 6
@@ -181,6 +187,201 @@ class WalkUI06(WalkChrome):
         self.refresh("sketch", "status")
         return {"arcs": self.ents("arc"), "status": self.S()}
 
+    def connecting_rim(self, start, end=(90.0, 0.0), *, snap_end: bool = True) -> dict:
+        """3-point from the R60 free end to `end`.
+
+        Fit once, then arm. Snap on at the R60 vertex so the loop joins; snap
+        off at the outer bulge so the click does not stick to R60 or the base.
+        `_click_sketch_geom` skips dim labels that sit on the R60 end.
+        Bulge (112, 8) is the locked R12.50 rightmost (t0350 / pass-bar).
+        The y ≥ 0 clip at (108.998, 0) is not an existing vertex — snap_end
+        must be false or the click sticks to the 90 mm end.
+        """
+        bulge = R12_BULGE
+        self.fit_sketch()
+        self.d.wait_idle(frames=2)
+        self._arm_sketch_tool("rail:Arc")
+        self.variant("Three Point")
+        self.d.wait_idle(frames=2)
+        was = self._set_snap(True)
+        self._click_sketch_geom(start)
+        self.d.wait_idle(frames=2)
+        self._set_snap(False)
+        self.click(sketch=list(bulge))
+        self.d.wait_idle(frames=2)
+        if snap_end:
+            self._set_snap(True)
+            self._click_sketch_geom(end)
+        else:
+            self._set_snap(False)
+            self.click(sketch=list(end))
+        self._set_snap(was)
+        self.d.wait_idle(frames=3)
+        self.refresh("sketch", "status")
+        return {"arcs": self.ents("arc"), "status": self.S()}
+
+    def prepare_lower_stem(self) -> None:
+        """Replace the ~150 leftover with a 50 mm stem so R60 starts at y=80.
+
+        Smart Dim on that remnant also emits angle-to-horizontal, which adds a
+        construction line through the mid and a 90° label. Redrawing avoids both.
+        """
+        stems = self.hanging_stems()
+        if not stems:
+            return
+        lower = stems[-1]
+        length = self.line_length(lower) or 0.0
+        if abs(length - 50.0) <= 1.0:
+            return
+        sa, sb = self._pt(lower["start"]), self._pt(lower["end"])
+        tip = sa if sa[1] < sb[1] else sb
+        self.click("rail:Select")
+        self.show_sketch_point(tip)
+        was = self._set_snap(False)
+        self.click(sketch=list(tip), offset=[0, -4])
+        self._set_snap(was)
+        self.d.key("delete")
+        self.d.wait_idle(frames=2)
+        was = self._set_snap(True)
+        self.draw_line((30.0, 130.0), (30.0, 80.0))
+        self._set_snap(was)
+        if self.nearest_line((30.0, 210.0), (30.0, 170.0)) is None:
+            self.draw_line((30.0, 210.0), (30.0, 170.0))
+        for stem in self.hanging_stems():
+            self.make_vertical(stem)
+
+    def join_rim_ends(self, r60_end, base=(90.0, 0.0)) -> None:
+        known = (10.0, 20.0, 60.0)
+        rim = [
+            a for a in self.ents("arc")
+            if min(abs(float(a.get("radius") or 0) - k) for k in known) > 3.0
+        ]
+        if not rim:
+            return
+        arc = rim[-1]
+        for key in ("start", "end"):
+            p = self._pt(arc.get(key) or [0, 0])
+            if abs(p[0] - float(base[0])) <= 8.0 and abs(p[1] - float(base[1])) <= 8.0:
+                self.coincident_points(p, base)
+            if ((p[0] - float(r60_end[0])) ** 2 + (p[1] - float(r60_end[1])) ** 2) ** 0.5 <= 8.0:
+                self.coincident_points(p, r60_end)
+
+    def coincident_points(self, a, b) -> None:
+        self.click("rail:Select")
+        was = self._set_snap(True)
+        self.click(sketch=list(a))
+        self.d.key("shift", action="down")
+        self.click(sketch=list(b))
+        self.d.key("shift", action="up")
+        self._set_snap(was)
+        self.d.wait_idle(frames=2)
+        try:
+            self.click_verb("Coincident")
+        except SxError:
+            pass
+        self.d.wait_idle(frames=2)
+
+    def purge_stray_arcs(self) -> None:
+        """Drop micro-arcs that are not R10/R20/R60 and do not hit (90, 0)."""
+        for arc in list(self.ents("arc")):
+            r = float(arc.get("radius") or 0)
+            if any(abs(r - k) <= 2.5 for k in (10.0, 20.0, 60.0, 12.5)):
+                continue
+            if self.endpoint_near(arc, (90.0, 0.0), tol=2.0):
+                continue
+            a = self._pt(arc.get("start") or [0, 0])
+            b = self._pt(arc.get("end") or [0, 0])
+            chord = ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+            if chord < 8.0:
+                self.delete_arc(arc)
+
+    def dim_height_from_base(self, uv, value: str) -> dict:
+        """Vertical dim: R60 centre (or `uv`) to the 90 mm baseline.
+
+        Smart Dim BETWEEN an arc centre and a line is point-line distance, not
+        the 90° angle you get from two line picks.
+        """
+        arc = self.nearest_arc(None, 60)
+        if arc:
+            uv = self._pt(arc.get("center") or uv)
+        before = {str(d.get("text", "")) for d in self.dims()}
+        self.clear_sketch_selection()
+        self.fit_sketch()
+        self.click("rail:SmartDim")
+        was = self._set_snap(False)
+        self.click(sketch=list(uv))
+        self.d.wait_idle(frames=2)
+        self.click(sketch=[65.0, 0.0])
+        self._set_snap(was)
+        self.d.wait_idle(frames=3)
+        fresh = [
+            d for d in self.dims()
+            if str(d.get("text", "")) not in before and "°" not in str(d.get("text", ""))
+        ]
+        dim = fresh[-1] if fresh else None
+        if dim is not None:
+            self.open_label(dim)
+            self._type_dim_editor(value)
+            self.enter()
+        self.refresh("dims", "dof", "status")
+        return {"texts": self.dim_texts(), "status": self.S()}
+
+    def delete_angle_dims(self) -> None:
+        for dim in list(self.dims()):
+            if "°" not in str(dim.get("text", "")):
+                continue
+            try:
+                rect = dim.get("rect") or dim.get("hit_rect") or []
+                self.click("rail:Select")
+                if len(rect) >= 2:
+                    self.d.click(screen=[float(rect[0]) + 4, float(rect[1]) + 4])
+                self.d.key("delete")
+                self.d.wait_idle(frames=2)
+            except SxError:
+                break
+        self.refresh("dims", "status")
+
+    def purge_stray_lines(self) -> None:
+        for ln in list(self.profile_lines()):
+            sa, sb = self._pt(ln.get("start") or [0, 0]), self._pt(ln.get("end") or [0, 0])
+            if abs(sa[0]) <= 0.8 and abs(sb[0]) <= 0.8:
+                continue
+            if abs(sa[1]) <= 0.8 and abs(sb[1]) <= 0.8:
+                continue
+            if abs(sa[1] - 220.0) <= 0.8 and abs(sb[1] - 220.0) <= 0.8:
+                continue
+            if abs(sa[0] - 30.0) <= 3.0 and abs(sb[0] - 30.0) <= 3.0:
+                continue
+            if self.endpoint_near({"start": sa, "end": sb}, (90.0, 0.0), tol=2.0):
+                continue
+            mid = self._line_mid(ln)
+            self.click("rail:Select")
+            self.show_sketch_point(mid)
+            was = self._set_snap(False)
+            self.click(sketch=mid)
+            self._set_snap(was)
+            self.d.key("delete")
+            self.d.wait_idle(frames=2)
+            self.refresh("sketch", "status")
+
+    def endpoint_near(self, ent, uv, tol: float = 1.5) -> bool:
+        for key in ("start", "end"):
+            p = self._pt(ent.get(key) or [0, 0])
+            if abs(p[0] - float(uv[0])) <= tol and abs(p[1] - float(uv[1])) <= tol:
+                return True
+        return False
+
+    def delete_arc(self, arc: dict) -> None:
+        mid = self._arc_mid_uv(arc, arc.get("radius"))
+        self.click("rail:Select")
+        self.show_sketch_point(mid)
+        was = self._set_snap(False)
+        self._click_sketch_geom(mid)
+        self._set_snap(was)
+        self.d.key("delete")
+        self.d.wait_idle(frames=2)
+        self.refresh("sketch", "status")
+
     def dim_line(self, a, b, value: str) -> dict:
         line = self.nearest_line(a, b)
         want = ((float(a[0]) - float(b[0])) ** 2 + (float(a[1]) - float(b[1])) ** 2) ** 0.5
@@ -279,11 +480,13 @@ class WalkUI06(WalkChrome):
 
     def dim_two_points(self, a, b, value: str) -> dict:
         before = {str(d.get("text", "")) for d in self.dims()}
+        self.clear_sketch_selection()
         self.click("rail:SmartDim")
-        self.show_sketch_point(a)
-        self.click(sketch=list(a))
-        self.show_sketch_point(b)
-        self.click(sketch=list(b))
+        was = self._set_snap(False)
+        self._click_sketch_geom(a)
+        self.d.wait_idle(frames=2)
+        self._click_sketch_geom(b)
+        self._set_snap(was)
         self.d.wait_idle(frames=3)
         fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
         dim = fresh[-1] if fresh else None
@@ -321,6 +524,21 @@ class WalkUI06(WalkChrome):
             return [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5]
         return None
 
+    def make_vertical(self, line: dict) -> None:
+        self.click("rail:Select")
+        mid = self._line_mid(line)
+        self.show_sketch_point(mid)
+        was = self._set_snap(False)
+        self.click(sketch=mid)
+        self._set_snap(was)
+        self.d.wait_idle(frames=2)
+        self.refresh("controls", "status")
+        try:
+            self.click_verb("Vertical")
+        except SxError:
+            pass
+        self.d.wait_idle(frames=2)
+
     def hanging_stems(self) -> list[dict]:
         stems = []
         for line in self.profile_lines():
@@ -349,13 +567,9 @@ class WalkUI06(WalkChrome):
         return a if da >= db else b
 
     def r60_end(self, start, radius: float = 60.0, end_y: float = 20.0):
-        """End UV for a vertical-tangent arc of `radius` landing at y=end_y."""
-        sx, sy = float(start[0]), float(start[1])
-        dy = end_y - sy
-        # r = (dx^2 + dy^2) / (2 dx)  =>  dx^2 - 2 r dx + dy^2 = 0
-        disc = max(0.0, (2.0 * radius) ** 2 - 4.0 * (dy * dy))
-        dx = radius + 0.5 * (disc ** 0.5)
-        return (sx + dx, end_y)
+        """Locked R60/R12.50 tangent (plan). `start`/`radius`/`end_y` unused."""
+        del start, radius, end_y
+        return R60_TAN
 
     def axis_line(self) -> dict | None:
         best = None
@@ -550,3 +764,79 @@ class WalkUI06(WalkChrome):
     def constraint_types(self) -> list[str]:
         sk = self.refresh("sketch").get("sketch") or {}
         return [str(c.get("type", "")) for c in (sk.get("constraints") or [])]
+
+    def connecting_arcs(self) -> list[dict]:
+        """R12.50 clip rim only. |10−12.5|=2.5, so a 3 mm window also matches R10."""
+        out = []
+        for arc in self.ents("arc"):
+            r = float(arc.get("radius") or 0)
+            if any(abs(r - k) <= 1.5 for k in (10.0, 20.0, 60.0)):
+                continue
+            if abs(r - 12.5) <= 1.5 or self.endpoint_near(arc, R12_CLIP, tol=2.0):
+                out.append(arc)
+        return out
+
+    def _ensure_clip_stub(self) -> None:
+        if any(
+            self.endpoint_near(ln, BASE_END) and self.endpoint_near(ln, R12_CLIP)
+            for ln in self.profile_lines()
+        ):
+            return
+        self._arm_sketch_tool("rail:Line")
+        self._frame_uv(BASE_END, R12_CLIP)
+        was = self._set_snap(True)
+        self.click(sketch=list(BASE_END))
+        self._set_snap(False)
+        self.click(sketch=list(R12_CLIP))
+        self._set_snap(was)
+        self.refresh("sketch", "status")
+
+    def clip_rim_for_revolve(self) -> None:
+        """Replace the unclipped toe with the y ≥ 0 locked rim.
+
+        A11 joins the tutorial 90 mm end. The checker sits on y = 0 at
+        x = 108.998, so A13 deletes that inner connecting arc (it keeps the
+        revolved rim at r=90 and inverts the solid) and redraws R12.50 to
+        the clip. A collinear stub from the 90 end keeps the 90 dim.
+        """
+        r60 = self.nearest_arc(None, 60)
+        start = self.arc_free_end(r60, (30.0, 80.0)) if r60 else R60_TAN
+        connecting = self.connecting_arcs()
+        if not connecting:
+            self.connecting_rim(start, R12_CLIP, snap_end=False)
+        else:
+            # Two CLIP arcs with the same ends make a lens; MakeRevol then
+            # throws BRep_API: command not done.
+            for extra in connecting[1:]:
+                self.delete_arc(extra)
+        self._ensure_clip_stub()
+        self.purge_stray_arcs()
+        self.delete_angle_dims()
+
+    def keep_one_label(self, token: str) -> None:
+        """Drop duplicate labels of `token`. Never Esc (that exits the sketch)."""
+        for _ in range(6):
+            matches = [
+                d for d in self.dims()
+                if self._reads(token, str(d.get("text", "")))
+            ]
+            n = len(matches)
+            if n <= 1:
+                return
+            dim = matches[-1]
+            try:
+                rect = dim.get("rect") or dim.get("hit_rect") or []
+                if len(rect) < 2:
+                    return
+                self.click("rail:Select")
+                self.d.click(screen=[float(rect[0]) + 4, float(rect[1]) + 4])
+                self.d.key("delete")
+                self.d.wait_idle(frames=2)
+            except SxError:
+                return
+            self.refresh("dims", "status")
+            if len([
+                d for d in self.dims()
+                if self._reads(token, str(d.get("text", "")))
+            ]) >= n:
+                return

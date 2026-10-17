@@ -1076,6 +1076,10 @@ func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 	if op != "new" and target_fid == "":
 		status.emit("No target body — sketch on a face to cut/fuse")
 		return
+	# Close a dangling line chain. Do not weld arc ends onto neighbours —
+	# that pulls them off the circle and GC_MakeArcOfCircle then skips the
+	# rim (candlestick R12.5), which is the open-loop refuse.
+	_try_close_open_chain()
 	var axis_point := Vector2.ZERO
 	var axis_dir := Vector2(0, 1)
 	if selected.size() == 1:
@@ -1083,7 +1087,8 @@ func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 		if info.get("type", "") == "line":
 			axis_point = info["start"]
 			axis_dir = (info["end"] - info["start"]).normalized()
-			sketch.set_construction(selected[0], true)
+			# Keep the line in the profile. Marking it construction drops the
+			# closing side of a revolve-about-itself sketch (candlestick 220).
 	var sk_fid := _ensure_sketch_feature()
 	if sk_fid == "":
 		return

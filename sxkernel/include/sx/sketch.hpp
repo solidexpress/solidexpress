@@ -181,6 +181,9 @@ public:
     // chain that does not meet those wires is ignored so it cannot erase
     // the closed regions. Whole-sketch profile_face still refuses that sketch.
     std::vector<TopoDS_Shape> contour_faces(std::string* err = nullptr) const;
+    // Planar-split regions. A chained wire of the same area can still be a
+    // complement that MakeRevol rejects; the arrangement cell does not.
+    std::vector<TopoDS_Shape> arrangement_faces(std::string* err = nullptr) const;
 
     // Closed region outlines in sketch UV, same order as contour_faces()
     // (area descending, then centroid x, then y). Chip i is entry i.
@@ -247,7 +250,8 @@ private:
 
     // stray_open is set when a dangling chain was ignored so closed regions
     // could still be returned. Whole-sketch extrude treats that as open.
-    std::vector<TopoDS_Shape> contour_faces_impl(std::string* err, bool* stray_open) const;
+    std::vector<TopoDS_Shape> contour_faces_impl(std::string* err, bool* stray_open,
+                                                 bool prefer_split = false) const;
 
     EntityId id_;
     std::string name_;
