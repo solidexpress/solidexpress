@@ -26,6 +26,10 @@ dry-run emit curated published-demos + demo-catalog featured (append flanged_pip
 dry-run: no gh call, no file change
 ```
 
+## Website wrench film — pointer, pacing, flat backdrop (`cursor/wrench-film-polish`)
+
+Shipped: every film click and field edit goes through `FilmActor` (pointer travels first). `FilmPresentation` owns one pacing model (travel speed, typing CPS, dwell, result pause). Scenic/HDRI stays locked off for films (`presentation_lock`). View changes (named-view keys, zoom, orbit, Look-at, sketch-plane snap) go through the same Actor: pointer first, a key pill or mouse-button glyph on the ring, camera lerped. App jumps after a click are replayed. Gate: `run_film_ubc_wrench_pointer_tests.gd` (wrench + hull loft). `loft_guide_rail` is a U-transom → oval-bow hull.
+
 ## Rung 5 — flanged pipe (PR #270)
 
 Shipped: two-face Shell chip, Circular Sketch Pattern 8/360 about origin, Feature Mirror (fuse New, skip Shell, one body), re-shell that does not thicken +Z walls, Fillet R5 on both flange outer faces, 36-row walk, `check_rung05.py`. Bars: the table in [`rung-05-result.md`](../loop/rung-05-result.md). Suites **228 run + 4 known-red**.
@@ -117,6 +121,9 @@ WP10 pins File menu ids in `run_menu_tests.gd` (`test_file_menu_ids`, +32 checks
 Part B: film `ubc_wrench` + `run_film_ubc_wrench_tests.gd` (`tier=full`). Suites **203 run + 4 known-red**.
 
 `ubc_wrench` is on Release `demo-movies` and in `published-demos.json` and `demo-catalog.json`.
+
+## 0.1.4 — rung 5 (flanged pipe)
+- SolidExpress `VERSION` is 0.1.4. Rung 5 (UBC ELEC391 Exercise 3 flanged pipe) is fully makeable (#270).
 
 ## 0.1.3 — rung 4 (hex key)
 - SolidExpress `VERSION` is 0.1.3. Rung 4 (Pano Central hex key Swept Boss) is fully makeable (#256).

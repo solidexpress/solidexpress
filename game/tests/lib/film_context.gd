@@ -8,8 +8,11 @@ var main
 var view: DocumentView
 var camera: FilmCamera
 var chrome: FilmChrome
+var actor # FilmActor — director for pointer-first clicks/edits
 var clock: FilmClock
 var tree: SceneTree
+## Film already played the solid orbit; FilmShots.outro holds instead of repeating.
+var showcase_played := false
 
 
 ## Top-level film intent banner (shown at start of each demo).
@@ -21,7 +24,7 @@ func movie_toast(text: String, hold_sec: float = 2.0) -> void:
 
 
 ## Advance the narrative: closed caption + film hold + a beat of reading time.
-func beat(caption: String, hold_sec: float = 0.75) -> void:
+func beat(caption: String, hold_sec: float = 0.0) -> void:
 	if chrome != null:
 		chrome.show_caption(caption)
 	await tree.process_frame
@@ -40,3 +43,5 @@ func after_regen() -> void:
 		main._on_document_changed()
 	await tree.process_frame
 	await tree.process_frame
+	if actor != null and actor.has_method("credit_pose"):
+		actor.credit_pose()

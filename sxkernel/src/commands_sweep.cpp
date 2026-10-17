@@ -160,7 +160,7 @@ void SweepCommand::execute(Document& doc) {
     } catch (const std::runtime_error&) {
         throw;
     } catch (const Standard_Failure& e) {
-        throw std::runtime_error(std::string("Sweep: path build failed: ") + e.what());
+        throw std::runtime_error(std::string("Sweep: path build failed: ") + e.GetMessageString());
     }
 
     // MakePipe requires a G1-continuous spine and only sweeps the first smooth
@@ -194,7 +194,7 @@ void SweepCommand::execute(Document& doc) {
     } catch (const std::runtime_error&) {
         throw;
     } catch (const Standard_Failure& e) {
-        throw std::runtime_error(std::string("Sweep: pipe failed: ") + e.what());
+        throw std::runtime_error(std::string("Sweep: pipe failed: ") + e.GetMessageString());
     }
 
     if (solid.IsNull() || !shape::is_valid(solid))
@@ -249,7 +249,7 @@ void LoftCommand::execute(Document& doc) {
         throw;
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("Loft: ThruSections failed: ") +
-                                 e.what());
+                                 e.GetMessageString());
     }
 
     if (solid.IsNull() || !shape::is_valid(solid))

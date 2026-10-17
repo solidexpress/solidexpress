@@ -19,6 +19,7 @@ var _pointer: Control
 var _toast_panel: PanelContainer
 var _toast: Label
 var _move_tween: Tween
+var _pointer_placed := false
 ## Engine.get_frames_drawn() when SX_MOVIE_RECORD was armed — VTT times are relative.
 var _record_origin_frame := 0
 
@@ -102,6 +103,29 @@ func overlay_root() -> Control:
 func hide_pointer() -> void:
 	if _pointer != null:
 		_pointer.visible = false
+
+
+func pointer_center() -> Vector2:
+	if _pointer == null:
+		return Vector2.ZERO
+	return _pointer.global_position + _pointer.size * 0.5
+
+
+func set_pointer_center(screen_pos: Vector2) -> void:
+	if _pointer == null:
+		return
+	_pointer.visible = true
+	_pointer.global_position = screen_pos - _pointer.size * 0.5
+	_pointer_placed = true
+
+
+func set_nav_badge(text: String) -> void:
+	if _pointer != null and _pointer.has_method("set_badge"):
+		_pointer.set_badge(text)
+
+
+func clear_nav_badge() -> void:
+	set_nav_badge("")
 
 
 ## Nudge caption alpha so MovieWriter cannot collapse a static hold to one frame.
@@ -224,55 +248,66 @@ func show_action_alert(keys: String, desc: String) -> void:
 
 ## Move pointer, flash white on click, update alerts. Await before applying the real action.
 func animate_pointer_click(screen_pos: Vector2, keys: String = "Click", desc: String = "") -> void:
+	await travel_and_flash(screen_pos, keys, desc)
+
+
+## Frame-based travel (speed from FilmPresentation) so movie --fixed-fps and
+## headless process_frame share one clock. Never teleports; first appearance
+## starts near the File menu and runs to the target.
+func travel_and_flash(screen_pos: Vector2, keys: String = "Click", desc: String = "") -> void:
+	var tgt := await travel_to(screen_pos, keys, desc)
+	if tgt.size == Vector2.ZERO:
+		return
+	await _flash_frames()
+	_log_and_check_click(tgt)
+	_capture_click_shot()
+
+
+## Pointer travel with no click flash — hover, drag follow.
+func travel_to(screen_pos: Vector2, keys: String = "Move", desc: String = "") -> Rect2:
 	var vp := get_viewport().get_visible_rect().grow(-2.0)
 	if not vp.has_point(screen_pos):
 		push_error("FilmChrome: cursor offscreen for %s at %s (vp %s)" % [
 			desc if desc != "" else keys, str(screen_pos), str(get_viewport().get_visible_rect())])
 		FilmUI.fail_count += 1
-		return
+		return Rect2()
 	show_action_alert(keys, desc)
 	await get_tree().process_frame
-	# Reposition caption so it never covers the click target (toast is an
-	# obstacle for the top dock, not hidden).
 	var tgt := Rect2(screen_pos - Vector2(FilmPointer.DIAM, FilmPointer.DIAM) * 0.5,
 			Vector2(FilmPointer.DIAM, FilmPointer.DIAM))
 	await _avoid_hud_for_click(tgt)
-	_pointer.visible = true
-	var half: Vector2 = _pointer.size * 0.5
-	var target: Vector2 = screen_pos - half
 	if _move_tween != null and _move_tween.is_valid():
 		_move_tween.kill()
-	var start: Vector2 = _pointer.global_position
-	if not _pointer.visible or start == Vector2.ZERO:
-		start = target
-		_pointer.global_position = start
+		_move_tween = null
+	_pointer.visible = true
+	var half: Vector2 = _pointer.size * 0.5
+	if not _pointer_placed:
+		_pointer.global_position = _FilmPresentation.POINTER_START - half
+		_pointer_placed = true
+	var start: Vector2 = _pointer.global_position + half
+	var dist := start.distance_to(screen_pos)
+	var sec := clampf(
+			dist / maxf(_FilmPresentation.POINTER_PX_PER_SEC, 1.0),
+			_FilmPresentation.POINTER_MIN_MOVE_SEC,
+			_FilmPresentation.POINTER_MAX_MOVE_SEC)
+	if dist < 0.5:
+		sec = _FilmPresentation.POINTER_MIN_MOVE_SEC * 0.45
+	var frames := maxi(1, int(round(sec * _FilmPresentation.FPS)))
 	if _pointer.has_method("set_moving"):
 		_pointer.set_moving(true)
-	_move_tween = create_tween()
-	_move_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	_move_tween.tween_property(_pointer, "global_position", target, pointer_move_sec)
-	await _move_tween.finished
+	for i in frames:
+		var t := float(i + 1) / float(frames)
+		t = t * t * (3.0 - 2.0 * t)
+		set_pointer_center(start.lerp(screen_pos, t))
+		await get_tree().process_frame
+	set_pointer_center(screen_pos)
 	if _pointer.has_method("set_moving"):
 		_pointer.set_moving(false)
-	if _pointer.has_method("play_click_flash"):
-		await _pointer.play_click_flash(pointer_flash_sec)
-	# Click frame evidence + safety: the caption must not intersect the click.
-	_log_and_check_click(tgt)
-	# Optional screenshot sample per click.
-	_capture_click_shot()
-	await get_tree().create_timer(pointer_after_click_sec).timeout
+	return tgt
 
 
 func click_at(screen_pos: Vector2, label: String = "Click") -> void:
-	show_action_alert(label, label)
-	_pointer.visible = true
-	_pointer.global_position = screen_pos - _pointer.size * 0.5
-	if _pointer.has_method("play_click_flash"):
-		_pointer.play_click_flash(pointer_flash_sec)
-	var tgt := Rect2(screen_pos - Vector2(FilmPointer.DIAM, FilmPointer.DIAM) * 0.5,
-			Vector2(FilmPointer.DIAM, FilmPointer.DIAM))
-	_log_and_check_click(tgt)
-	_capture_click_shot()
+	await travel_and_flash(screen_pos, label, label)
 
 
 func _recorded_frame(engine_frame: int) -> int:
@@ -319,13 +354,29 @@ func _log_and_check_click(tgt: Rect2) -> void:
 		FilmUI.fail_count += 1
 
 
+func _flash_frames() -> void:
+	var n := maxi(2, int(round(_FilmPresentation.POINTER_FLASH_SEC * _FilmPresentation.FPS)))
+	if _pointer == null or not _pointer.has_method("set_flash"):
+		for _i in n:
+			await get_tree().process_frame
+		return
+	for i in n:
+		var t := float(i) / float(maxi(n - 1, 1))
+		var flash := t * 2.0 if t < 0.5 else (1.0 - t) * 2.0
+		_pointer.set_flash(clampf(flash, 0.0, 1.0))
+		await get_tree().process_frame
+	_pointer.set_flash(0.0)
+
+
 func _capture_click_shot() -> void:
 	if _click_shots_dir.is_empty():
 		return
-	var img := get_viewport().get_texture().get_image()
+	var vp := get_viewport()
+	if vp == null or vp.get_texture() == null:
+		return
+	var img := vp.get_texture().get_image()
 	if img == null:
 		return
-	var idx := str(click_log.size())
 	DirAccess.make_dir_recursive_absolute(_click_shots_dir)
 	var path := _click_shots_dir.path_join("%02d.png" % int(click_log.size()))
 	img.save_png(path)

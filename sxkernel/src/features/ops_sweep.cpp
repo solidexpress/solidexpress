@@ -171,7 +171,7 @@ bool apply_sweep(ApplyCtx& ctx) {
                 try {
                     result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
                 } catch (const Standard_Failure& e) {
-                    return fail(std::string("sweep failed: ") + e.what());
+                    return fail(std::string("sweep failed: ") + e.GetMessageString());
                 } catch (const std::runtime_error& e) {
                     return fail(e.what());
                 }
@@ -338,7 +338,7 @@ bool apply_loft(ApplyCtx& ctx) {
                     if (!loft.IsDone()) return fail("ThruSections failed");
                     result = loft.Shape();
                 } catch (const Standard_Failure& e) {
-                    return fail(std::string("ThruSections failed: ") + e.what());
+                    return fail(std::string("ThruSections failed: ") + e.GetMessageString());
                 }
                 if (result.IsNull() || !shape::is_valid(result))
                     return fail("loft result invalid");
@@ -371,7 +371,7 @@ bool apply_helix_sweep(ApplyCtx& ctx) {
                     result = helix_sweep_solid(axis, radius, pitch, turns, left_handed,
                                                profile_r);
                 } catch (const Standard_Failure& e) {
-                    return fail(std::string("helix sweep failed: ") + e.what());
+                    return fail(std::string("helix sweep failed: ") + e.GetMessageString());
                 } catch (const std::runtime_error& e) {
                     return fail(e.what());
                 }
@@ -410,7 +410,7 @@ bool apply_thread(ApplyCtx& ctx) {
                     cutter = thread_cutter_solid(axis, major_radius, pitch, turns, depth,
                                                  angle_deg);
                 } catch (const Standard_Failure& e) {
-                    return fail(std::string("thread cutter failed: ") + e.what());
+                    return fail(std::string("thread cutter failed: ") + e.GetMessageString());
                 } catch (const std::runtime_error& e) {
                     return fail(e.what());
                 }

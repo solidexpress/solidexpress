@@ -54,9 +54,9 @@
     {
       "id": "loft_guide_rail",
       "feature": "Sweep & loft",
-      "title": "Sweep & loft",
-      "blurb": "Two profiles plus a rail that steers the waist of the loft.",
-      "caption": "Two profiles plus a rail that steers the waist of the loft.",
+      "title": "Ship hull loft",
+      "blurb": "Sketch a U transom and an oval bow, loft, then orbit the hull.",
+      "caption": "Sketch a U transom and an oval bow, loft, then orbit the hull.",
       "order": 5,
       "hero": false
     },

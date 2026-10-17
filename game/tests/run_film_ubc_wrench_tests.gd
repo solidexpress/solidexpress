@@ -4,6 +4,8 @@ extends "res://tests/lib/sx_suite.gd"
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmHarness = preload("res://tests/lib/film_harness.gd")
+const FilmPresentation = preload("res://tests/lib/film_presentation.gd")
+const FilmActorScript = preload("res://tests/lib/film_actor.gd")
 const SxChecker = preload("res://tests/lib/sx_checker.gd")
 # Walk T=14 mesh /tmp/sx-base/walk/wrench-t14.3mf (film ends after timeline 10→14).
 # T=10 checkpoint /tmp/sx-base/walk/wrench.3mf is 43832.52 mm³.
@@ -39,6 +41,10 @@ func _init() -> void:
 	await film.run_film(ctx)
 	SxUi.trace_enabled_override = null
 	check(FilmUI.fail_count == 0, "FilmUI.fail_count == 0 (got %d)" % FilmUI.fail_count)
+	var actor = FilmActorScript.of(ctx)
+	var gaps: PackedStringArray = FilmActorScript.pointer_gaps(actor.action_log)
+	check(gaps.is_empty(), "pointer precedes every click/edit (%d gaps)" % gaps.size())
+	check(FilmPresentation.scenic_is_flat(ctx.main), "scenic background stayed flat")
 	_assert_click_budget(ctx)
 
 	var doc: SxDocument = ctx.view.doc

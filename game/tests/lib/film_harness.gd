@@ -4,6 +4,7 @@ class_name FilmHarness
 extends RefCounted
 
 const MANIFEST_PATH := "res://tests/ui_movie_manifest.json"
+const _FilmActor := preload("res://tests/lib/film_actor.gd")
 
 static var load_reason := ""
 
@@ -20,13 +21,25 @@ static func boot(tree: SceneTree, size := Vector2i(0, 0)) -> FilmContext:
 	ctx.camera = FilmCamera.new(main.camera)
 	ctx.clock = FilmClock.new()
 	ctx.tree = tree
+	attach_overlay(ctx)
 	var _pres = preload("res://tests/lib/film_presentation.gd")
-	if size != Vector2i.ZERO:
-		# Override only when a caller asserts a non-default size.
+	await _pres.apply(ctx)
+	if size != Vector2i.ZERO and size != _pres.RESOLUTION:
 		await FilmUI.ensure_test_viewport(ctx, size)
-	else:
-		await _pres.apply(ctx)
 	return ctx
+
+
+## Caption + pointer overlay and the Actor every film action goes through.
+static func attach_overlay(ctx: FilmContext) -> void:
+	if ctx == null or ctx.tree == null:
+		return
+	if ctx.chrome == null:
+		var chrome := FilmChrome.new()
+		ctx.tree.root.add_child(chrome)
+		ctx.chrome = chrome
+	if ctx.actor == null:
+		ctx.actor = _FilmActor.new()
+		ctx.actor.bind(ctx)
 
 
 static func manifest_entry(id: String) -> Dictionary:
