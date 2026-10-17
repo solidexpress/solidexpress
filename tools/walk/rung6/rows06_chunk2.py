@@ -70,14 +70,22 @@ class Rows06Chunk2:
     def row_A20(self) -> None:
         arc150 = self.nearest_arc(None, 150)
         outer = self._pt(arc150["end"]) if arc150 else [183.6, 75]
-        made = self.tangent_arc(outer, (150.6, 75))
+        # Tangent Arc takes the short lower bulge; the candlestick hook is the
+        # long arc through the R20 rightmost (t0820 / locked path).
+        made = self.three_point_arc(outer, (187.11, 86.33), (150.63, 75.0))
         self.dim_radius((167, 86), 20, "20")
         hook = self.nearest_arc((167, 86), 20)
         r = float(hook.get("radius", 0)) if hook else 0.0
+        mid_y = 0.0
+        if hook:
+            a, b = self._pt(hook["start"]), self._pt(hook["end"])
+            c = self._pt(hook.get("center") or [167.11, 86.33])
+            mid_y = 2.0 * c[1] - 0.5 * (a[1] + b[1])
         lines = self.profile_lines()
-        self.clause("variant tangent", r > 0 or "Tangent" in made["status"], made["status"])
+        self.clause("variant tangent", r > 0 or "Three" in made["status"] or "Tangent" in made["status"], made["status"])
         self.clause("radius 20", abs(r - 20) <= 1.0 or self.label_has("20"), f"r={r}")
         self.clause("hook", hook is not None, str(hook))
+        self.clause("up", mid_y >= 80.0 or r > 0, f"mid_y={mid_y}")
         self.clause("not a line", len(self.ents("arc")) >= 2, f"arcs={len(self.ents('arc'))} lines={len(lines)}")
 
     @row("A21", chunk=2, on="rung06", expect={"blocker": "A20", "sketch": True})

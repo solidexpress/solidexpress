@@ -1,5 +1,7 @@
 #include <catch.hpp>
 
+#include "test_temp.hpp"
+
 #include <cmath>
 #include <string>
 
@@ -11,6 +13,7 @@
 #include "features/ops.hpp"
 #include "sx/document.hpp"
 #include "sx/features.hpp"
+#include "sx/interop.hpp"
 #include "sx/shape_utils.hpp"
 #include "sx/sketch.hpp"
 
@@ -225,4 +228,6 @@ TEST_CASE("rung06 sweep fuses via FeatureGraph", "[rung06][sweep][graph]") {
     INFO("xmax=" << bb[3] << " vol=" << shape::volume(body->shape));
     CHECK(bb[3] == Approx(192.1).margin(0.2));
     CHECK(shape::volume(body->shape) == Approx(1741298.0).epsilon(0.005));
+    sx::test::TmpFile tmp("rung06_sweep.3mf");
+    REQUIRE(interop::export_3mf(doc, tmp.path, &err));
 }

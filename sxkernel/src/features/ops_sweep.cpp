@@ -294,6 +294,13 @@ bool apply_sweep(ApplyCtx& ctx) {
                     std::string report;
                     TopoDS_Shape healed = interop::heal_shape(s, &report);
                     if (usable(healed)) s = healed;
+                    try {
+                        ShapeUpgrade_UnifySameDomain unify(s, true, true, true);
+                        unify.SetLinearTolerance(1.0e-4);
+                        unify.Build();
+                        if (usable(unify.Shape())) s = unify.Shape();
+                    } catch (...) {
+                    }
                     if (!s.IsNull() && shape::volume(s) < 0.0) s.Reverse();
                     return usable(s) ? s : orig;
                 };

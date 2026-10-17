@@ -758,15 +758,18 @@ class WalkUI06(WalkChrome):
         self.d.wait_idle(frames=4)
         self.refresh("faces")
         best = None
-        best_y = -1.0e9
+        best_area = -1.0
         for face in list(self.st.get("faces") or []):
             n = face.get("normal") or [0.0, 0.0, 0.0]
             if len(n) < 3 or abs(float(n[1]) - 1.0) > 0.08:
                 continue
             c = face.get("centre") or [0.0, 0.0, 0.0]
             y = float(c[1]) if len(c) > 1 else 0.0
-            if y > best_y:
-                best_y = y
+            if abs(y - 220.0) > 2.0:
+                continue
+            area = float(face.get("area") or 0.0)
+            if area > best_area:
+                best_area = area
                 best = face
         if best and best.get("id"):
             self.click(face=str(best["id"]))
