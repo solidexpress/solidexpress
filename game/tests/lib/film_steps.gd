@@ -140,6 +140,7 @@ static func arm_fillet(ctx: FilmContext, radius: float) -> void:
 		var digits := str(int(round(radius))) if is_equal_approx(radius, round(radius)) else str(radius)
 		await SxInput.type_text(edit.get_viewport(), digits)
 		await SxInput.push_key(edit.get_viewport(), KEY_ENTER)
+	await _release_line_focus(ctx)
 	await FilmUI.wait_frames(ctx.tree, 2)
 
 
@@ -308,6 +309,7 @@ static func circular_pattern(ctx: FilmContext, count: int, angle: float) -> void
 
 ## Feature Mirror: arm Features, click the plane face, Shift+click timeline rows, Ok.
 static func feature_mirror(ctx: FilmContext, plane_normal: Vector3, plane_offset: float, names: Array) -> void:
+	await _release_line_focus(ctx)
 	var arm := _by_auto(ctx.main, "mirror:Features") as BaseButton
 	if arm == null or not arm.is_visible_in_tree():
 		FilmUI._fail("mirror:Features is hidden")
@@ -315,8 +317,14 @@ static func feature_mirror(ctx: FilmContext, plane_normal: Vector3, plane_offset
 	if not await FilmUI.click_control(ctx, arm, FilmUICues.alert("Features", "Feature Mirror")):
 		return
 	await FilmUI.wait_frames(ctx.tree, 2)
+	await _release_line_focus(ctx)
 	await _view_for_normal(ctx, plane_normal)
-	await SxInput.zoom(ctx, plane_normal * plane_offset, 220.0)
+	var body := only_body(ctx)
+	var face_id := _face_on_plane(ctx, body, plane_normal, plane_offset)
+	var aim := FacePick.point(ctx.view.doc, face_id)
+	if aim == Vector3.ZERO:
+		aim = plane_normal * plane_offset
+	await SxInput.zoom(ctx, aim, 220.0)
 	await click_face(ctx, plane_normal, plane_offset)
 	if FilmUI.fail_count > 0:
 		return
@@ -412,6 +420,7 @@ static func _by_auto(root: Node, id: String) -> Control:
 
 
 static func _face_from_row(ctx: FilmContext, row: Dictionary, shift: bool) -> void:
+	await _release_line_focus(ctx)
 	var key: Key = row.get("view_key", row.get("view", KEY_7)) as Key
 	await SxInput.push_key(ctx.main.get_viewport(), key)
 	await FilmUI.wait_frames(ctx.tree, 6)
@@ -425,6 +434,7 @@ static func _face_from_row(ctx: FilmContext, row: Dictionary, shift: bool) -> vo
 
 
 static func _view_for_normal(ctx: FilmContext, normal: Vector3) -> void:
+	await _release_line_focus(ctx)
 	var key := KEY_7
 	if normal.dot(Vector3(0, 0, 1)) > 0.9:
 		key = KEY_3
@@ -572,6 +582,10 @@ static func _click_face(ctx: FilmContext, normal: Vector3, plane: float, shift: 
 	var pt := FacePick.point(ctx.view.doc, id)
 	if pt == Vector3.ZERO:
 		pt = FilmUI.face_pick_point(ctx.view, body, id)
+	var bb: Dictionary = ctx.view.doc.measure_bbox(id)
+	if not bb.is_empty() and Vector2(pt.x, pt.y).length() < 40.0:
+		var mx: Vector3 = bb["max"] as Vector3
+		pt = Vector3(mx.x * 0.65, mx.y * 0.35, pt.z)
 	var screen := FilmUI.model_to_screen(ctx, pt)
 	if not FilmUI.require_on_screen(ctx, screen, "face"):
 		return

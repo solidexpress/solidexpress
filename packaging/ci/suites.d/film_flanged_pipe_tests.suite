@@ -1,0 +1,3 @@
+script=tests/run_film_flanged_pipe_tests.gd
+tier=full
+timeout=420

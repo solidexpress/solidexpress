@@ -244,9 +244,10 @@ static func dim_distance(ctx: FilmContext, a: Vector2, b: Vector2, text: String)
 static func vertical_centres(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await FilmSteps.click_uv(ctx, Vector2(40, 40), "Clear selection", 220.0)
-	await FilmSteps.click_uv(ctx, a, "First centre", 160.0)
-	await FilmSteps.click_uv(ctx, b, "Second centre", 160.0)
+	await _click_select_uv(ctx, Vector2(40, 40), "Clear selection", 220.0, false)
+	await _click_select_uv(ctx, _rim_of(sm, a), "First rim", 160.0, false)
+	await _click_select_uv(ctx, _rim_of(sm, b), "Second rim", 160.0, true)
+	await FilmUI.wait_frames(ctx.tree, 4)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	var btn := FilmUI.find_button(chrome, "Vertical")
 	if btn != null and btn.is_visible_in_tree():
@@ -260,15 +261,44 @@ static func vertical_centres(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
 				await FilmUI.activate_menu_id(ctx, more as MenuButton, popup.get_item_id(i),
 						FilmUICues.alert("Vertical", "Vertical"))
 				return
-	FilmUI._fail("Vertical is hidden")
+	var acts: Array = sm.selection_actions() if sm != null else []
+	FilmUI._fail("Vertical is hidden (selected %d, acts %s)" % [sm.selected.size() if sm != null else 0, str(acts)])
 
 
 static func select_seed(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	var pcd := mm("PCD")
+	var hole_r := mm("HOLE_D") * 0.5
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await FilmSteps.click_uv(ctx, Vector2(40, 40), "Clear selection", 220.0)
-	await FilmSteps.click_uv(ctx, Vector2(0, pcd), "Ø10 seed", 160.0)
+	await _click_select_uv(ctx, Vector2(40, 40), "Clear selection", 220.0, false)
+	var rim := _rim_of(sm, Vector2(0, pcd))
+	await _click_select_uv(ctx, rim, "Ø10 seed rim", 160.0, false)
+	if sm != null and sm.selected.is_empty():
+		await _click_select_uv(ctx, Vector2(0, pcd + hole_r), "Ø10 seed +Y rim", 160.0, false)
+
+
+static func _rim_of(sm: SketchMode, centre: Vector2) -> Vector2:
+	if sm == null:
+		return centre
+	for info in FilmSteps.circles(sm):
+		var c: Vector2 = info.get("center", Vector2.ZERO)
+		if c.distance_to(centre) <= 0.5:
+			return Vector2(c.x - float(info.get("radius", 5.0)), c.y)
+	return centre
+
+
+static func _click_select_uv(ctx: FilmContext, uv: Vector2, desc: String, span: float, shift: bool) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and span > 0.0:
+		await SxInput.zoom(ctx, sm.to_model(uv), span)
+	var screen := FilmUI.sketch_uv_to_screen(ctx, uv)
+	if screen == Vector2.ZERO and sm != null:
+		screen = FilmUI.model_to_screen(ctx, sm.to_model(uv))
+	if not FilmUI.require_on_screen(ctx, screen, desc):
+		return
+	var cue := FilmUICues.alert("Shift+Click" if shift else "Click", desc)
+	await FilmUI.viewport_click(ctx, screen, cue, false, MOUSE_BUTTON_LEFT, shift)
+	await FilmUI.wait_frames(ctx.tree, 2)
 
 
 static func show_timeline(ctx: FilmContext) -> void:
@@ -282,6 +312,34 @@ static func show_timeline(ctx: FilmContext) -> void:
 	await FilmUI.wait_frames(ctx.tree, 4)
 	if ctx.main.timeline == null or not ctx.main.timeline.visible:
 		FilmUI._fail("Timeline is hidden")
+
+
+static func hide_timeline(ctx: FilmContext) -> void:
+	if ctx.main.timeline == null or not ctx.main.timeline.visible:
+		return
+	var view_btn := FilmUI.find_button(ctx.main, "View") as MenuButton
+	if view_btn == null or not view_btn.is_visible_in_tree():
+		return
+	await FilmUI.activate_menu_id(ctx, view_btn, 4, FilmUICues.alert("View", "Timeline"))
+	await FilmUI.wait_frames(ctx.tree, 4)
+
+
+static func select_from_timeline(ctx: FilmContext, name: String) -> void:
+	await show_timeline(ctx)
+	if FilmUI.fail_count > 0:
+		return
+	var row := find_auto(ctx.main, "timeline:row:%s" % name) as BaseButton
+	if row == null or not row.is_visible_in_tree():
+		FilmUI._fail("timeline:row:%s is hidden" % name)
+		return
+	FilmUI.ensure_control_visible(row)
+	await FilmUI.wait_frames(ctx.tree, 1)
+	if not await FilmUI.click_control(ctx, row, FilmUICues.alert("Click", "timeline row")):
+		return
+	await FilmUI.wait_frames(ctx.tree, 4)
+	var owner: Node = ctx.main.get_viewport().gui_get_focus_owner()
+	if owner is LineEdit:
+		await SxInput.push_key(ctx.main.get_viewport(), KEY_TAB)
 
 
 static func source_names(doc: SxDocument) -> Array:

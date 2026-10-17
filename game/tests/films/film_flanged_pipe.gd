@@ -70,11 +70,9 @@ func run_film(ctx: FilmContext) -> void:
 	await FilmSteps.press_rail(ctx, "Circle")
 	await FilmSteps.click_uv(ctx, Vector2.ZERO, "Ø130 centre", 280.0)
 	await FilmSteps.click_uv(ctx, Vector2(id_r, 0), "Ø130 rim", 280.0)
-	await PipeFixture.dim_diameter(ctx, Vector2(id_r, 0), "130")
 	await FilmSteps.press_rail(ctx, "Circle")
 	await FilmSteps.click_uv(ctx, Vector2(0, pcd), "Ø10 centre", 160.0)
 	await FilmSteps.click_uv(ctx, Vector2(0, pcd + hole_r), "Ø10 rim", 80.0)
-	await PipeFixture.dim_diameter(ctx, Vector2(0, pcd + hole_r), "10")
 	await PipeFixture.dim_distance(ctx, Vector2.ZERO, Vector2(0, pcd), "94")
 	await PipeFixture.vertical_centres(ctx, Vector2.ZERO, Vector2(0, pcd))
 	if not _ok():
@@ -89,13 +87,12 @@ func run_film(ctx: FilmContext) -> void:
 	await ctx.after_regen()
 
 	await ctx.beat("Mirror the four features about z = 0", 0.4)
-	await _select_body(ctx)
-	await PipeFixture.show_timeline(ctx)
-	if not _ok():
-		return
 	var names: Array = PipeFixture.source_names(ctx.view.doc)
 	if names.size() != 4:
 		FilmUI._fail("need four timeline names (got %s)" % str(names))
+		return
+	await PipeFixture.select_from_timeline(ctx, str(names[0]))
+	if not _ok():
 		return
 	await FilmSteps.feature_mirror(ctx, Vector3(0, 0, -1), 0.0, names)
 	if not _ok():
@@ -114,18 +111,24 @@ func run_film(ctx: FilmContext) -> void:
 	await ctx.after_regen()
 
 	await ctx.beat("Fillet R5 on both flange faces", 0.4)
-	await _select_body(ctx)
+	var fillet_names: Array = PipeFixture.source_names(ctx.view.doc)
+	if fillet_names.is_empty():
+		FilmUI._fail("no timeline names for fillet")
+		return
+	await PipeFixture.select_from_timeline(ctx, str(fillet_names[0]))
 	if not _ok():
 		return
+	await PipeFixture.hide_timeline(ctx)
 	await FilmSteps.arm_fillet(ctx, PipeFixture.mm("FILLET"))
-	await SxInput.push_key(ctx.main.get_viewport(), KEY_3)
-	await FilmUI.wait_frames(ctx.tree, 6)
-	await SxInput.zoom(ctx, Vector3(0, 0, 260), 280.0)
-	await FilmSteps.click_face(ctx, Vector3(0, 0, 1), 260.0)
-	await SxInput.push_key(ctx.main.get_viewport(), KEY_8)
-	await FilmUI.wait_frames(ctx.tree, 6)
-	await SxInput.zoom(ctx, Vector3(0, 0, -260), 280.0)
-	await FilmSteps.shift_click_face(ctx, Vector3(0, 0, -1), 260.0)
+	var z_rim := PipeFixture.mm("L0") + PipeFixture.mm("FLANGE_T")
+	var ring := Vector3(PipeFixture.mm("OD") * 0.5 + PipeFixture.mm("WALL"),
+			PipeFixture.mm("WALL") * 3.0, z_rim)
+	await _fillet_rim(ctx, KEY_3, ring, false)
+	ring.z = -z_rim
+	await _fillet_rim(ctx, KEY_8, ring, true)
+	var focus = ctx.main.get_viewport().gui_get_focus_owner()
+	if focus is LineEdit:
+		(focus as LineEdit).release_focus()
 	await FilmSteps.commit_fillet(ctx)
 	if not _ok():
 		return
@@ -137,6 +140,21 @@ func run_film(ctx: FilmContext) -> void:
 
 func _ok() -> bool:
 	return FilmUI.fail_count == 0
+
+
+func _fillet_rim(ctx: FilmContext, view_key: Key, point: Vector3, shift: bool) -> void:
+	var focus = ctx.main.get_viewport().gui_get_focus_owner()
+	if focus is LineEdit:
+		(focus as LineEdit).release_focus()
+	await SxInput.push_key(ctx.main.get_viewport(), view_key)
+	await FilmUI.wait_frames(ctx.tree, 6)
+	await SxInput.zoom(ctx, point, 280.0)
+	var screen := FilmUI.model_to_screen(ctx, point)
+	if not FilmUI.require_on_screen(ctx, screen, "fillet rim"):
+		return
+	await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Shift+Click" if shift else "Click", "Fillet rim"),
+			false, MOUSE_BUTTON_LEFT, shift)
+	await FilmUI.wait_frames(ctx.tree, 2)
 
 
 func _select_body(ctx: FilmContext) -> void:
