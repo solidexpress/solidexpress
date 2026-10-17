@@ -328,10 +328,6 @@ class Rows06Chunk1:
                 "k": e.get("construction"),
             })
         axis = self.axis_line() or self.nearest_line((0, 0), (0, 220))
-        if axis:
-            self.click("rail:Select")
-            self.show_sketch_point(self._line_mid(axis))
-            self.click(sketch=self._line_mid(axis))
         made = self.try_revolve()
         skst = self.refresh("sketch").get("sketch") or {}
         (self.out / "entities-a13.json").write_text(

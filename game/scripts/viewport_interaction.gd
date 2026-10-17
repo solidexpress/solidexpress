@@ -1915,6 +1915,18 @@ func cancel_pick_sketch_host() -> void:
 	status.emit("Sketch pick cancelled")
 
 
+## Named origin plane from the walk (`datum=Front`). A 3D pick at the
+## plane's sample point hits the revolved solid / yellow pad first.
+func try_named_sketch_datum(name: String) -> bool:
+	if not _picking_sketch_host:
+		return false
+	if not OriginPlanes.is_origin_name(name):
+		return false
+	_picking_sketch_host = false
+	sketch_host_picked.emit("datum", name, "", "")
+	return true
+
+
 func _chrome_wants_face_pick() -> bool:
 	return sketch_chrome != null \
 			and sketch_chrome.has_method("wants_face_pick") \

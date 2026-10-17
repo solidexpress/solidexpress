@@ -7,6 +7,7 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
@@ -20,11 +21,15 @@
 #include <GProp_GProps.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <ShapeFix_Solid.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
+#include <TopAbs_ShapeEnum.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Shell.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_Wire.hxx>
@@ -133,8 +138,14 @@ bool apply_sweep(ApplyCtx& ctx) {
                 {
                     std::string xerr;
                     skf->sketch->resolve_expressions(env, &xerr);
-                    auto solver = make_planegcs_backend();
-                    solver->solve(*skf->sketch);
+                    std::string closed_err;
+                    // A fully defined ellipse is already a closed profile.
+                    // Solving leftover dims warps it and the pipe then
+                    // fails to fuse onto the revolve.
+                    if (skf->sketch->profile_face(&closed_err).IsNull()) {
+                        auto solver = make_planegcs_backend();
+                        solver->solve(*skf->sketch);
+                    }
                 }
                 std::string perr;
                 TopoDS_Shape face = skf->sketch->profile_face(&perr);
@@ -199,17 +210,78 @@ bool apply_sweep(ApplyCtx& ctx) {
                 if (shape::count(result).solids < 1) return fail("sweep result is not a solid");
 
                 std::string op = params.value("op", "new");
+                auto close_solid = [&](TopoDS_Shape s) -> TopoDS_Shape {
+                    if (s.IsNull()) return s;
+                    std::string report;
+                    TopoDS_Shape healed = interop::heal_shape(s, &report);
+                    if (!healed.IsNull()) s = healed;
+                    try {
+                        ShapeUpgrade_UnifySameDomain unif(s, true, true, true);
+                        unif.SetLinearTolerance(1.0e-4);
+                        unif.SetAngularTolerance(1.0e-3);
+                        unif.Build();
+                        if (!unif.Shape().IsNull() && shape::count(unif.Shape()).solids >= 1)
+                            s = unif.Shape();
+                    } catch (const Standard_Failure&) {
+                    }
+                    BRepBuilderAPI_Sewing sew(0.05);
+                    sew.Add(s);
+                    sew.Perform();
+                    TopoDS_Shape sewn = sew.SewedShape();
+                    if (!sewn.IsNull()) {
+                        if (sewn.ShapeType() == TopAbs_SHELL) {
+                            ShapeFix_Solid fixer;
+                            TopoDS_Shape solid = fixer.SolidFromShell(TopoDS::Shell(sewn));
+                            if (!solid.IsNull() && shape::count(solid).solids >= 1) s = solid;
+                        } else if (shape::count(sewn).solids >= 1) {
+                            s = sewn;
+                        }
+                    }
+                    if (!s.IsNull() && shape::volume(s) < 0.0) s.Reverse();
+                    return s;
+                };
+                auto fuzzy_fuse = [&](const TopoDS_Shape& a, const TopoDS_Shape& b) -> TopoDS_Shape {
+                    std::string report;
+                    TopoDS_Shape left = interop::heal_shape(a, &report);
+                    TopoDS_Shape right = interop::heal_shape(b, &report);
+                    if (left.IsNull()) left = a;
+                    if (right.IsNull()) right = b;
+                    BRepAlgoAPI_Fuse opf;
+                    TopTools_ListOfShape args;
+                    TopTools_ListOfShape tools;
+                    args.Append(left);
+                    tools.Append(right);
+                    opf.SetArguments(args);
+                    opf.SetTools(tools);
+                    opf.SetFuzzyValue(1.0e-4);
+                    opf.Build();
+                    if (opf.IsDone() && !opf.Shape().IsNull()) return opf.Shape();
+                    return BRepAlgoAPI_Fuse(left, right).Shape();
+                };
                 if (op == "new") {
                     put_body(doc, f.output_body, result, f.name);
                 } else {
                     EntityId target = find_feature_body("target");
                     const Body* tb = doc.body(target);
                     if (!tb) return fail("missing target body");
-                    TopoDS_Shape merged =
-                        (op == "cut")
-                            ? TopoDS_Shape(BRepAlgoAPI_Cut(tb->shape, result).Shape())
-                            : TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, result).Shape());
+                    TopoDS_Shape merged;
+                    if (op == "cut") {
+                        merged = BRepAlgoAPI_Cut(tb->shape, result).Shape();
+                    } else {
+                        merged = fuzzy_fuse(tb->shape, result);
+                        if (merged.IsNull() && !spine.IsNull()) {
+                            try {
+                                result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
+                            } catch (...) {
+                                result = TopoDS_Shape();
+                            }
+                            if (!result.IsNull()) merged = fuzzy_fuse(tb->shape, result);
+                        }
+                    }
                     if (merged.IsNull()) return fail("boolean failed");
+                    merged = close_solid(merged);
+                    if (merged.IsNull() || shape::count(merged).solids < 1)
+                        return fail("boolean failed");
                     doc.replace_body_shape(target, merged);
                 }
                 return true;

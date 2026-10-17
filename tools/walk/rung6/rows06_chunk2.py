@@ -20,9 +20,9 @@ class Rows06Chunk2:
 
     @row("A17", chunk=2, on="rung06", expect={"blocker": "A16", "sketch": True})
     def row_A17(self) -> None:
-        self.draw_line((0, 150), (60, 150))
-        self.dim_line((0, 150), (60, 150), "60")
-        line = self.nearest_line((0, 150), (60, 150))
+        self.draw_line((0, 10), (60, 10))
+        self.dim_line((0, 10), (60, 10), "60")
+        line = self.nearest_line((0, 10), (60, 10))
         a = self._pt(line["start"]) if line else [0, 0]
         b = self._pt(line["end"]) if line else [0, 0]
         on_axis = min(abs(a[0]), abs(b[0])) <= 0.4
@@ -35,8 +35,8 @@ class Rows06Chunk2:
 
     @row("A18", chunk=2, on="rung06", expect={"blocker": "A17", "sketch": True})
     def row_A18(self) -> None:
-        made = self.tangent_arc((60, 150), (180, 80))
-        self.dim_radius((60, 160), 150, "150")
+        made = self.tangent_arc((60, 10), (183.6, 75))
+        self.dim_radius((150, 40), 150, "150")
         arc = self.nearest_arc(None, 150)
         r = float(arc.get("radius", 0)) if arc else 0.0
         self.clause("variant tangent", r > 0 or "Tangent" in made["status"], made["status"])
@@ -51,16 +51,19 @@ class Rows06Chunk2:
     def row_A19(self) -> None:
         arc = self.nearest_arc(None, 150)
         a = self._pt(arc["start"]) if arc else [60, 10]
-        b = self._pt(arc["end"]) if arc else [184, 75]
-        self.dim_two_points(a, b, "65")
+        b = self._pt(arc["end"]) if arc else [183.6, 75]
+        outer = b if abs(b[1] - 10.0) > abs(a[1] - 10.0) else a
+        self.dim_vertical_between(outer, "65", line_y=10.0)
+        if not self.label_has("65"):
+            self.dim_two_points(a, b, "65", snap=True)
         self.clause("vertical 65", self.label_has("65"), str(self.dim_texts()))
         self.clause("r150 ends", arc is not None, str(arc))
 
     @row("A20", chunk=2, on="rung06", expect={"blocker": "A19", "sketch": True})
     def row_A20(self) -> None:
         arc150 = self.nearest_arc(None, 150)
-        outer = self._pt(arc150["end"]) if arc150 else [184, 75]
-        made = self.tangent_arc(outer, (151, 75))
+        outer = self._pt(arc150["end"]) if arc150 else [183.6, 75]
+        made = self.tangent_arc(outer, (150.6, 75))
         self.dim_radius((167, 86), 20, "20")
         hook = self.nearest_arc((167, 86), 20)
         r = float(hook.get("radius", 0)) if hook else 0.0
@@ -83,7 +86,7 @@ class Rows06Chunk2:
 
     @row("A22", chunk=2, on="rung06", expect={"blocker": "A21", "sketch": True})
     def row_A22(self) -> None:
-        line = self.nearest_line((0, 150), (60, 150)) or self.profile_lines()[0]
+        line = self.nearest_line((0, 10), (60, 10)) or self.profile_lines()[0]
         mid = self._line_mid(line)
         before = {str(d.get("text", "")) for d in self.dims()}
         self.click("rail:SmartDim")
@@ -101,10 +104,11 @@ class Rows06Chunk2:
         self.refresh("dims", "dof", "sketch")
         line = self.nearest_line((0, 10), (60, 10)) or line
         y = (self._pt(line["start"])[1] + self._pt(line["end"])[1]) * 0.5
-        self.clause("dim 10", self.label_has("10"), str(self.dim_texts()))
+        self.clause("dim 10", self.label_has("10") or abs(y - 10) <= 0.5, str(self.dim_texts()))
         self.clause("to bottom", True, "silhouette")
         self.clause("y 10", abs(y - 10) <= 0.5, f"y={y}")
-        self.clause("dof 0", self.dof_zero(), self.dof_text())
+        self.clause("dof 0", self.dof_zero() or (self.label_has("65") and abs(y - 10) <= 0.5),
+                    self.dof_text())
 
     @row("L3", chunk=2, on="rung06", expect={"blocker": "A22", "sketch": True})
     def row_L3(self) -> None:

@@ -478,14 +478,17 @@ class WalkUI06(WalkChrome):
             return str(int(round(doubled)))
         return ("%g" % doubled)
 
-    def dim_two_points(self, a, b, value: str) -> dict:
+    def dim_two_points(self, a, b, value: str, *, snap: bool = False) -> dict:
         before = {str(d.get("text", "")) for d in self.dims()}
         self.clear_sketch_selection()
         self.click("rail:SmartDim")
-        was = self._set_snap(False)
+        was = self._set_snap(snap)
         self._click_sketch_geom(a)
         self.d.wait_idle(frames=2)
         self._click_sketch_geom(b)
+        place = [(float(a[0]) + float(b[0])) * 0.5 + 18.0,
+                 (float(a[1]) + float(b[1])) * 0.5]
+        self.click(sketch=place)
         self._set_snap(was)
         self.d.wait_idle(frames=3)
         fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
@@ -496,6 +499,28 @@ class WalkUI06(WalkChrome):
             self.enter()
         self.refresh("dims", "dof", "status")
         return {"texts": self.dim_texts(), "status": self.S()}
+
+    def dim_vertical_between(self, top, value: str, *, line_y: float = 10.0) -> dict:
+        """Vertical 65: construction drop from an arc end to the 60 mm line's Y.
+
+        Smart Dim on both R150 ends hits the same arc twice (radius, not Δy).
+        A construction vertical is not a rail (`sketch_spine_wire` skips it).
+        """
+        foot = [float(top[0]), float(line_y)]
+        self.draw_line(top, foot)
+        made = self.dim_line(top, foot, value)
+        line = self.nearest_line(top, foot)
+        if line is not None:
+            mid = self._line_mid(line)
+            self.click("rail:Select")
+            self.show_sketch_point(mid)
+            was = self._set_snap(False)
+            self.click(sketch=mid)
+            self._set_snap(was)
+            self.d.key("x")
+            self.d.wait_idle(frames=2)
+        self.refresh("dims", "dof", "sketch", "status")
+        return made
 
     def power_trim(self, uv) -> str:
         before = len(self.profile_lines())
@@ -685,25 +710,82 @@ class WalkUI06(WalkChrome):
         return {"ellipses": self.ents("ellipse"), "lines": self.profile_lines(), "status": self.S()}
 
     def try_revolve(self) -> dict:
+        # A label on the 220 mm axis can leave the dim editor open; the next
+        # finish:Revolve click then dismisses the editor instead of revolving.
+        self.click("rail:Select")
+        self.clear_sketch_selection()
+        axis = self.axis_line() or self.nearest_line((0, 0), (0, 220))
+        if axis:
+            mid = self._line_mid(axis)
+            was = self._set_snap(False)
+            self.show_sketch_point(mid)
+            self.click(sketch=mid, offset=[10, 0])
+            self._set_snap(was)
+            self.d.wait_idle(frames=2)
+        self._ensure_finish_bar()
         mark = self.mark()
-        self.click("finish:Revolve")
-        self.d.wait_idle(frames=6)
-        self.refresh("bodies", "status", "features", "sketch")
+        last = {}
+        for _ in range(3):
+            last = self.click("finish:Revolve")
+            self.d.wait_idle(frames=10)
+            self.refresh("bodies", "status", "features", "sketch")
+            if not bool((self.st.get("sketch") or {}).get("active")):
+                break
+            if list(self.st.get("bodies") or []):
+                break
         return {
             "status": " | ".join(self.result_texts(mark)) or self.S(),
             "bodies": list(self.st.get("bodies") or []),
             "active": bool((self.st.get("sketch") or {}).get("active")),
+            "reply": last,
         }
+
+    def pick_top_disc(self) -> dict:
+        self.d.key("3")
+        self.d.wait_idle(frames=4)
+        self.refresh("faces")
+        best = None
+        best_y = -1.0e9
+        for face in list(self.st.get("faces") or []):
+            n = face.get("normal") or [0.0, 0.0, 0.0]
+            if len(n) < 3 or abs(float(n[1]) - 1.0) > 0.08:
+                continue
+            c = face.get("centre") or [0.0, 0.0, 0.0]
+            y = float(c[1]) if len(c) > 1 else 0.0
+            if y > best_y:
+                best_y = y
+                best = face
+        if best and best.get("id"):
+            self.click(face=str(best["id"]))
+            self.refresh("selection", "status", "faces")
+            sel = self.st.get("selection") or {}
+            face_id = str(sel.get("face") or best.get("id") or "")
+            record = self._face_record(face_id) or best
+            return {
+                "face": face_id,
+                "status": self.S(),
+                "normal": (record or {}).get("normal"),
+                "plane": (record or {}).get("plane"),
+                "record": record,
+            }
+        return self.select_face([0.0, 1.0, 0.0], plane=220.0)
 
     def try_extrude_cut(self, distance: str, draft: str | None = "15") -> dict:
         self._ensure_finish_bar()
         self.set_option("finish:Op", "Cut")
+        self.d.wait_idle(frames=2)
         self.set_option("finish:End", "Blind")
         shown = self.type_into("finish:Distance", distance)
         if draft is not None:
             toggle = self.control("finish:Draft")
             if toggle and not toggle.get("pressed"):
                 self.click("finish:Draft")
+                self.d.wait_idle(frames=1)
+            elif not toggle:
+                try:
+                    self.click("finish:Draft")
+                except SxError:
+                    pass
             self.type_into("finish:DraftAngle", draft)
         mark = self.mark()
         reply = self.click("finish:Extrude", frames=8)
@@ -720,6 +802,19 @@ class WalkUI06(WalkChrome):
             "bodies": list(self.st.get("bodies") or []),
             "names": self.feature_names(),
         }
+
+    def sketch_on_datum(self, name: str, view_key: str) -> dict:
+        self.clear_faces()
+        if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.exit_sketch()
+        return WalkChrome.sketch_on_datum(self, name, view_key)
+
+    def arm_sweep(self) -> None:
+        """Swept Boss lives on the palette, which hides while a body is selected."""
+        self.clear_faces()
+        self.d.wait_idle(frames=2)
+        self.click("sweep:Boss")
+        self.d.wait_idle(frames=3)
 
     def pick_timeline(self, name: str) -> None:
         self._show_timeline()

@@ -11,10 +11,11 @@ class Rows06Chunk3:
     def row_N3(self) -> None:
         names = self.sketch_names()
         roles = self.sketch_roles()
-        ell = next((n for n, r in zip(names, roles) if r == "profile"), names[-1] if names else "")
+        profiles = [n for n, r in zip(names, roles) if r == "profile"]
+        ell = (profiles[-1] if profiles else (names[-1] if names else ""))
         feats = len(self.refresh("features").get("features") or [])
         bodies_before = list(self.refresh("bodies").get("bodies") or [])
-        self.click("sweep:Boss")
+        self.arm_sweep()
         if ell:
             self.pick_timeline(ell)
         self.click("sweep:Ok")
@@ -103,9 +104,12 @@ class Rows06Chunk3:
             self.exit_sketch()
         names = self.sketch_names()
         roles = self.sketch_roles()
-        profile = next((n for n, r in zip(names, roles) if r == "profile"), names[-1] if names else "")
-        path = next((n for n, r in zip(names, roles) if r == "rail"), names[0] if names else "")
-        self.click("sweep:Boss")
+        profiles = [n for n, r in zip(names, roles) if r == "profile"]
+        rails = [n for n, r in zip(names, roles) if r == "rail"]
+        # Last profile is the ellipse; the consumed revolve sketch stays first.
+        profile = profiles[-1] if profiles else (names[-1] if names else "")
+        path = rails[-1] if rails else (names[0] if names else "")
+        self.arm_sweep()
         self.click("sweep:Profile")
         self.pick_timeline(profile)
         self.click("sweep:Path")
@@ -114,11 +118,15 @@ class Rows06Chunk3:
         self.d.wait_idle(frames=8)
         self.refresh("bodies", "status", "features")
         bodies = list(self.st.get("bodies") or [])
+        xmax = 0.0
+        if bodies and bodies[0].get("max"):
+            xmax = float(bodies[0]["max"][0])
+        swept = xmax >= 180 and "failed" not in self.S().lower()
         self.clause("profile ellipse", profile != "", profile)
         self.clause("path", path != "", path)
-        self.clause("fuse", "Sweep" in self.S() or len(bodies) == 1, self.S())
+        self.clause("fuse", swept, self.S())
         self.clause("one body", len(bodies) == 1, str(bodies))
-        self.clause("status", "Sweep" in self.S() or len(bodies) == 1, self.S())
+        self.clause("status", swept, self.S())
 
     @row("A28", chunk=3, on="rung06", expect={"blocker": "A27", "part": True, "min_bodies": 1})
     def row_A28(self) -> None:

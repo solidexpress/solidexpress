@@ -314,6 +314,11 @@ func _click_at(vp: Viewport, pos: Vector2, as_double: bool) -> void:
 
 
 func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
+	if kind != "hover" and req.has("datum"):
+		var ix = _main().get("interaction")
+		if ix != null and ix.has_method("try_named_sketch_datum"):
+			if bool(ix.try_named_sketch_datum(str(req["datum"]))):
+				return {"target": "datum:%s" % str(req["datum"])}
 	# A named edge is the pick. The screen point of its midpoint is only
 	# where the pointer goes; ortho side views share that pixel.
 	if kind != "hover" and req.has("edge"):

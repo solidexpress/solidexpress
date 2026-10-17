@@ -9,9 +9,7 @@ from walk.registry import row
 class Rows06Chunk4:
     @row("A30", chunk=4, on="rung06", expect={"blocker": "A29", "part": True, "min_bodies": 1})
     def row_A30(self) -> None:
-        self.d.key("3")
-        self.d.wait_idle(frames=4)
-        picked = self.select_face([0.0, 1.0, 0.0], plane=220.0)
+        picked = self.pick_top_disc()
         self.click("rail:Sketch")
         self.d.wait_idle(frames=4)
         self.refresh("sketch", "status")
