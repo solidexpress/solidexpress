@@ -43,17 +43,8 @@ func _run() -> void:
 
 
 func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	listen_status(main)
-	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
+	var ctx := await PipeFixture.boot(self, ROOT_SIZE)
+	listen_status(ctx.main)
 	return ctx
 
 
@@ -127,7 +118,7 @@ func _pick_ends(ctx: FilmContext) -> void:
 
 
 func _shell_chip(ctx: FilmContext) -> void:
-	var chip := _find_auto(ctx.main, "strip:shell") as Control
+	var chip := PipeFixture.find_auto(ctx.main, "strip:shell") as Control
 	check(chip != null and chip.is_visible_in_tree(),
 			"strip:shell stays visible with two planar faces")
 	if chip == null or not chip.is_visible_in_tree():
@@ -136,8 +127,8 @@ func _shell_chip(ctx: FilmContext) -> void:
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Shell", "Open shell"))
 	for _i in 3:
 		await process_frame
-	var field := _find_auto(ctx.main, "finish:Thickness") as LineEdit
-	var ok_btn := _find_auto(ctx.main, "finish:Ok") as Button
+	var field := PipeFixture.find_auto(ctx.main, "finish:Thickness") as LineEdit
+	var ok_btn := PipeFixture.find_auto(ctx.main, "finish:Ok") as Button
 	check(field != null and field.is_visible_in_tree(), "finish:Thickness is visible")
 	check(ok_btn != null and ok_btn.is_visible_in_tree(), "finish:Ok is visible")
 	if field == null or ok_btn == null:
@@ -222,13 +213,3 @@ func _feature_count(ctx: FilmContext) -> int:
 	return ctx.view.doc.graph_features().size()
 
 
-func _find_auto(node: Node, id: String) -> Node:
-	if node == null:
-		return null
-	if str(node.get_meta("sx_auto", "")) == id:
-		return node
-	for c in node.get_children():
-		var hit := _find_auto(c, id)
-		if hit != null:
-			return hit
-	return null

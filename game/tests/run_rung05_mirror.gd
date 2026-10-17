@@ -8,8 +8,6 @@ const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const FilmSteps = preload("res://tests/lib/film_steps.gd")
 const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const ROOT_SIZE := Vector2i(1280, 800)
-const PITCH := 94.0
-const HOLE_R := 5.0
 
 
 func _init() -> void:
@@ -45,19 +43,8 @@ func _run() -> void:
 
 
 func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	listen_status(main)
-	if main.ops_panel != null and not main.ops_panel.status.is_connected(_on_status):
-		main.ops_panel.status.connect(_on_status)
-	await FilmUI.ensure_test_viewport(ctx, ROOT_SIZE)
+	var ctx := await PipeFixture.boot(self, ROOT_SIZE, _on_status, ["ops_panel"])
+	listen_status(ctx.main)
 	return ctx
 
 
@@ -71,7 +58,7 @@ func _body_mirror_box(ctx: FilmContext) -> void:
 	if bodies.is_empty():
 		return
 	await _select_body(ctx)
-	var feat := _find_auto(ctx.main, "mirror:Features") as BaseButton
+	var feat := PipeFixture.find_auto(ctx.main, "mirror:Features") as BaseButton
 	check(feat != null and feat.is_visible_in_tree(), "mirror:Features is visible")
 	var one := _body_mirror_button(ctx)
 	check(one != null and one.is_visible_in_tree(), "one-click Mirror is visible")
@@ -149,15 +136,15 @@ func _shell_ends(ctx: FilmContext) -> void:
 	await FilmSteps.shift_click_face(ctx, Vector3(0, 0, -1), 0.0)
 	check(ctx.view.selected_faces.size() == 2,
 			"two faces in selected_faces (got %d)" % ctx.view.selected_faces.size())
-	var chip := _find_auto(ctx.main, "strip:shell") as Control
+	var chip := PipeFixture.find_auto(ctx.main, "strip:shell") as Control
 	check(chip != null and chip.is_visible_in_tree(), "strip:shell is visible")
 	if chip == null:
 		return
 	await FilmUI.click_control(ctx, chip, FilmUICues.alert("Shell", "Open shell"))
 	for _i in 3:
 		await process_frame
-	var field := _find_auto(ctx.main, "finish:Thickness") as LineEdit
-	var ok_btn := _find_auto(ctx.main, "finish:Ok") as Button
+	var field := PipeFixture.find_auto(ctx.main, "finish:Thickness") as LineEdit
+	var ok_btn := PipeFixture.find_auto(ctx.main, "finish:Ok") as Button
 	check(field != null and ok_btn != null, "shell thickness/Ok")
 	if field == null or ok_btn == null:
 		return
@@ -203,11 +190,11 @@ func _cut(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	await FilmSteps.click_uv(ctx, Vector2.ZERO, "Ø130 centre", 280.0)
 	await FilmSteps.click_uv(ctx, Vector2(65, 0), "Ø130 rim", 280.0)
-	await FilmSteps.click_uv(ctx, Vector2(0, PITCH), "Ø10 centre", 160.0)
-	await FilmSteps.click_uv(ctx, Vector2(0, PITCH + HOLE_R), "Ø10 rim", 80.0)
+	await FilmSteps.click_uv(ctx, Vector2(0, PipeFixture.mm("PCD")), "Ø10 centre", 160.0)
+	await FilmSteps.click_uv(ctx, Vector2(0, PipeFixture.mm("PCD") + (PipeFixture.mm("HOLE_D") * 0.5)), "Ø10 rim", 80.0)
 	await process_frame
 	if _seed_id(sm) == "":
-		sm.sketch.add_circle(0, PITCH, HOLE_R)
+		sm.sketch.add_circle(0, PipeFixture.mm("PCD"), (PipeFixture.mm("HOLE_D") * 0.5))
 		sm.run_solve()
 		await process_frame
 	check(_seed_id(sm) != "", "Ø10 seed at (0, 94)")
@@ -255,14 +242,14 @@ func _n4_empty_collector(ctx: FilmContext) -> void:
 	await _select_body(ctx)
 	var before_bodies := ctx.view.doc.body_ids().size()
 	var before_feats := ctx.view.doc.graph_features().size()
-	var arm := _find_auto(ctx.main, "mirror:Features") as BaseButton
+	var arm := PipeFixture.find_auto(ctx.main, "mirror:Features") as BaseButton
 	check(arm != null and arm.is_visible_in_tree(), "mirror:Features is visible for N4")
 	if arm == null:
 		return
 	await FilmUI.click_control(ctx, arm, FilmUICues.alert("Features", "Arm feature mirror"))
 	await process_frame
 	await _pick_z0(ctx)
-	var ok := _find_auto(ctx.main, "mirror:Ok") as Button
+	var ok := PipeFixture.find_auto(ctx.main, "mirror:Ok") as Button
 	check(ok != null and ok.is_visible_in_tree(), "mirror:Ok is visible")
 	if ok == null:
 		return
@@ -280,7 +267,7 @@ func _a17_four_features(ctx: FilmContext) -> void:
 	print("- A17 four features")
 	await _select_body(ctx)
 	await _show_timeline(ctx)
-	var arm := _find_auto(ctx.main, "mirror:Features") as BaseButton
+	var arm := PipeFixture.find_auto(ctx.main, "mirror:Features") as BaseButton
 	check(arm != null and arm.is_visible_in_tree(), "mirror:Features is visible for A17")
 	if arm == null:
 		return
@@ -288,7 +275,7 @@ func _a17_four_features(ctx: FilmContext) -> void:
 	await process_frame
 	await _pick_z0(ctx)
 	await _shift_click_four(ctx)
-	var ok := _find_auto(ctx.main, "mirror:Ok") as Button
+	var ok := PipeFixture.find_auto(ctx.main, "mirror:Ok") as Button
 	check(ok != null and ok.is_visible_in_tree(), "mirror:Ok is visible for A17")
 	if ok == null:
 		return
@@ -435,7 +422,7 @@ func _rows_of_type(ctx: FilmContext, ftype: String) -> Array[Control]:
 		if str(f.get("type", "")) != ftype:
 			continue
 		var name := str(f.get("name", ""))
-		var btn := _find_auto(ctx.main, "timeline:row:%s" % name) as Control
+		var btn := PipeFixture.find_auto(ctx.main, "timeline:row:%s" % name) as Control
 		if btn != null:
 			out.append(btn)
 	return out
@@ -467,24 +454,12 @@ func _seed_id(sm: SketchMode) -> String:
 		var info: Dictionary = sm.sketch.entity_info(id)
 		if str(info.get("type", "")) != "circle":
 			continue
-		if absf(float(info.get("radius", 0.0)) - HOLE_R) > 0.2:
+		if absf(float(info.get("radius", 0.0)) - (PipeFixture.mm("HOLE_D") * 0.5)) > 0.2:
 			continue
-		if (info["center"] as Vector2).distance_to(Vector2(0, PITCH)) <= 0.2:
+		if (info["center"] as Vector2).distance_to(Vector2(0, PipeFixture.mm("PCD"))) <= 0.2:
 			return str(id)
 	return ""
 
 
 func _spin(ctx: FilmContext, node_name: String) -> SpinBox:
 	return ctx.main.find_child(node_name, true, false) as SpinBox
-
-
-func _find_auto(node: Node, id: String) -> Node:
-	if node == null:
-		return null
-	if str(node.get_meta("sx_auto", "")) == id:
-		return node
-	for c in node.get_children():
-		var hit := _find_auto(c, id)
-		if hit != null:
-			return hit
-	return null
