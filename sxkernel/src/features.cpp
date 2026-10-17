@@ -869,7 +869,7 @@ TopoDS_Wire sketch_spine_wire(const Sketch& sk) {
     };
     bool foreign = false;
     for (const auto& e : sk.entities()) {
-        if (e.construction) continue;
+        if (e.construction || e.external) continue;
         if (e.type == SketchEntityType::Point) continue;
         if (e.type == SketchEntityType::Line && e.params.size() >= 4) {
             add_line(sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1])),
@@ -970,8 +970,9 @@ TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spin
     if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
     BRepOffsetAPI_MakePipeShell shell(spine);
     shell.SetMode(frenet);  // true = Frenet follow-path; false = CorrectedFrenet
-    shell.SetTransitionMode(spine_g1(spine) ? BRepBuilderAPI_Transformed
-                                            : BRepBuilderAPI_RightCorner);
+    // Follow-path must rotate the ellipse at the hook. RightCorner on a
+    // slightly-not-G1 walk spine left xmax at the path instead of +5 mm.
+    shell.SetTransitionMode(BRepBuilderAPI_Transformed);
     shell.Add(profile_wire, contact, /*withCorrection=*/true);
     shell.Build();
     if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");

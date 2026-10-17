@@ -819,10 +819,7 @@ class WalkUI06(WalkChrome):
         self.select_body()
         picked = self.pick_top_disc()
         self.d.wait_idle(frames=3)
-        if self.control("chip:Sketch"):
-            self.click("chip:Sketch")
-        else:
-            self.click("rail:Sketch")
+        self.click("rail:Sketch")
         self.d.wait_idle(frames=4)
         self.refresh("sketch", "status")
         if not self._plane_on_top_disc():
@@ -830,11 +827,12 @@ class WalkUI06(WalkChrome):
                 self.exit_sketch()
             picked = self.pick_top_disc()
             self.d.wait_idle(frames=3)
-            if self.control("chip:Sketch"):
-                self.click("chip:Sketch")
-            else:
-                self.click("rail:Sketch")
+            self.click("rail:Sketch")
             self.d.wait_idle(frames=4)
+            if not bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+                if self.control("chip:Sketch"):
+                    self.click("chip:Sketch")
+                    self.d.wait_idle(frames=4)
             self.refresh("sketch", "status")
         return {
             "picked": picked,

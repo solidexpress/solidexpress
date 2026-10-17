@@ -156,19 +156,23 @@ bool apply_sweep(ApplyCtx& ctx) {
                 if (params.contains("path_feature") && params["path_feature"].is_string()) {
                     const Feature* pf =
                         feature(EntityId::from_string(params["path_feature"].get<std::string>()));
-                    if (!pf || pf->type != FeatureType::Path)
+                    if (pf && pf->type == FeatureType::Path) {
+                        // Prefer live params on the path feature (regenerated earlier).
+                        path = pf->params.value("path", json::array());
+                        // Circular spine is the whole rail of one line+arc sketch
+                        // (candlestick path). Multi-sketch Path features keep the
+                        // merged polyline — taking the first child would drop legs.
+                        const json& rails = pf->params.value("sketches", json::array());
+                        if (rails.is_array() && rails.size() == 1) {
+                            const Feature* psk =
+                                feature(EntityId::from_string(rails[0].get<std::string>()));
+                            if (psk && psk->sketch)
+                                spine = sketch_spine_wire(*psk->sketch);
+                        }
+                    } else if (pf && pf->sketch) {
+                        spine = sketch_spine_wire(*pf->sketch);
+                    } else if (!pf) {
                         return fail("missing path feature");
-                    // Prefer live params on the path feature (regenerated earlier).
-                    path = pf->params.value("path", json::array());
-                    // Circular spine is the whole rail of one line+arc sketch
-                    // (candlestick path). Multi-sketch Path features keep the
-                    // merged polyline — taking the first child would drop legs.
-                    const json& rails = pf->params.value("sketches", json::array());
-                    if (rails.is_array() && rails.size() == 1) {
-                        const Feature* psk =
-                            feature(EntityId::from_string(rails[0].get<std::string>()));
-                        if (psk && psk->sketch)
-                            spine = sketch_spine_wire(*psk->sketch);
                     }
                 }
                 if (!path.is_array() || path.size() < 2)
