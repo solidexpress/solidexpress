@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Website wrench film — pointer, pacing, flat backdrop (`cursor/wrench-film-polish`)
+
+Shipped: every film click and field edit goes through `FilmActor` (pointer travels first). `FilmPresentation` owns one pacing model (travel speed, typing CPS, dwell, result pause). Scenic/HDRI stays locked off for films (`presentation_lock`). View changes (named-view keys, zoom, orbit, Look-at, sketch-plane snap) go through the same Actor: pointer first, a key pill or mouse-button glyph on the ring, camera lerped. App jumps after a click are replayed. Gate: `run_film_ubc_wrench_pointer_tests.gd` (wrench + hull loft). `loft_guide_rail` is a U-transom → oval-bow hull.
+
 ## Post-rung-4 cleanup (`cursor/post-rung-04-cleanup-20261015`)
 
 Shipped: `SketchRegions` (host-face split + click-to-index), `IntentResolver` on region pick (Cut + Through All), finish-bar contour chips hidden on a host face, wrench Trim kept (mouth cap pick parked), `SketchOffset.KINDS`, WP3 dummy `render=` + `run_tier` cache, click budget 129→92 on the wrench film, film `hexkey` + `docs/howto/hexkey.md`. Counts: `docs/loop/post-rung-04-result.md`. Confirm: walks 77/77, 44/44, 46/46, 32/32; headless 223/0.

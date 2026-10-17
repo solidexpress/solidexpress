@@ -4,6 +4,9 @@ extends RefCounted
 const _Pres := preload("res://tests/lib/film_presentation.gd")
 
 var _cam: OrbitCamera
+## Outro iso; films of long parts set a beam-quarter so end profiles read.
+var iso_yaw_deg := _Pres.OPEN_ISO_YAW_DEG
+var iso_pitch_deg := _Pres.OPEN_ISO_PITCH_DEG
 
 
 func _init(camera: OrbitCamera) -> void:
@@ -36,8 +39,8 @@ func fit_oblique_fill(fill_frac: float = 0.60) -> void:
 	if _cam.sketch_orientation_locked:
 		_cam.sketch_orientation_locked = false
 	_cam.projection = Camera3D.PROJECTION_PERSPECTIVE
-	_cam.yaw = deg_to_rad(_Pres.OPEN_ISO_YAW_DEG)
-	_cam.pitch = deg_to_rad(_Pres.OPEN_ISO_PITCH_DEG)
+	_cam.yaw = deg_to_rad(iso_yaw_deg)
+	_cam.pitch = deg_to_rad(iso_pitch_deg)
 	_cam._look_at_content = true
 	if _cam.has_method("frame_fill_frac"):
 		_cam.frame_fill_frac(fill_frac)

@@ -7,6 +7,7 @@ const MANIFEST_PATH := "res://tests/ui_movie_manifest.json"
 # Boot FilmUI before dynamically loaded film scripts (headless cache may omit new class_name).
 const _FILM_UI_BOOT := preload("res://tests/lib/film_ui.gd")
 const _FILM_CHROME_BOOT := preload("res://tests/lib/film_chrome.gd")
+const _FILM_ACTOR_BOOT := preload("res://tests/lib/film_actor.gd")
 const _FILM_PRESENTATION := preload("res://tests/lib/film_presentation.gd")
 const _FILM_SHOTS := preload("res://tests/lib/film_shots.gd")
 const _FILM_OUTRO := preload("res://tests/lib/film_outro_strategy.gd")
@@ -55,6 +56,8 @@ func _init() -> void:
 	ctx.view = main.view
 	ctx.camera = FilmCamera.new(main.camera)
 	ctx.chrome = chrome
+	ctx.actor = _FILM_ACTOR_BOOT.new()
+	ctx.actor.bind(ctx)
 	ctx.clock = FilmClock.new()
 	ctx.tree = self
 	FilmUI.reset_fail_count()
@@ -96,6 +99,8 @@ func _init() -> void:
 	await process_frame
 	OS.set_environment("SX_MOVIE_RECORD", "0")
 	chrome.finish_captions()
+	if ctx.actor != null:
+		ctx.actor.dump_log()
 	var captions_out := _arg_value("--captions-out")
 	if not captions_out.is_empty():
 		if chrome.write_webvtt(captions_out):

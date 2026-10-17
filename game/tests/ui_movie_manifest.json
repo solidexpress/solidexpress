@@ -15,14 +15,15 @@
   },
   {
     "id": "loft_guide_rail",
-    "title": "Loft two profiles with a guide rail",
+    "title": "Ship hull loft — U transom to oval bow",
     "script": "res://tests/films/film_loft_guide_rail.gd",
     "enabled": true,
-    "quit_after": 1500,
+    "quit_after": 2400,
+    "blurb": "A U-shaped transom lofted into an oval bow on a parallel station.",
     "website": {
       "feature": "Sweep & loft",
-      "title": "Sweep & loft",
-      "caption": "Two profiles plus a rail that steers the waist of the loft.",
+      "title": "Ship hull loft",
+      "caption": "Sketch a U transom and an oval bow, loft, then orbit the hull.",
       "order": 5,
       "hero": false
     }
@@ -536,7 +537,7 @@
     "title": "Parametric wrench: blank to 3MF",
     "script": "res://tests/films/film_ubc_wrench.gd",
     "enabled": true,
-    "quit_after": 3600,
+    "quit_after": 7200,
     "blurb": "Blank part to a printable 3MF: circles, shaft, open jaw, slot, fillets, thickness 14.",
     "website": {
       "feature": "Parametric wrench",

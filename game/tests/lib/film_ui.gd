@@ -2,6 +2,7 @@ class_name FilmUI
 extends RefCounted
 
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
+const _FilmActorBoot = preload("res://tests/lib/film_actor.gd")
 
 ## Drive films / UI smoke tests only through visible, clickable controls and
 ## viewport pointer events — the same path a user takes.
@@ -94,8 +95,8 @@ static func zoom_point_clear_of_edges(ctx: FilmContext, body: String, world: Vec
 	var edges: PackedStringArray = doc.get_edge_ids(body)
 	if edges.is_empty():
 		return
-	# Wheel zoom orbits the current pivot, so the slot walks off the window
-	# before its long edges clear 12 px. Park the pivot on the click first.
+	# Compute the distance that clears the 12 px edge band, then lerp via Actor.
+	var from: Dictionary = cam.capture_pose() if cam.has_method("capture_pose") else {}
 	var ms: Node3D = ctx.main.model_space
 	cam.pivot = ms.to_global(world) if ms != null else world
 	cam._look_at_content = true
@@ -103,21 +104,24 @@ static func zoom_point_clear_of_edges(ctx: FilmContext, body: String, world: Vec
 		cam._finish_pose_tween()
 	if cam.has_method("_update_transform"):
 		cam._update_transform()
-	await wait_frames(ctx.tree, 1)
 	for _step in 12:
 		var screen := model_to_screen(ctx, world)
 		if not is_on_screen(ctx, screen, 8.0):
-			return
+			break
 		var nearest := INF
 		for eid in edges:
 			nearest = minf(nearest, float(ctx.view.edge_screen_distance(
 					body, str(eid), cam, screen)))
 		if nearest >= min_px or cam.distance <= 8.0 + 0.01:
-			return
+			break
 		cam.distance = maxf(cam.distance * 0.7, 8.0)
 		if cam.has_method("_update_transform"):
 			cam._update_transform()
-		await wait_frames(ctx.tree, 1)
+	var to: Dictionary = cam.capture_pose() if cam.has_method("capture_pose") else {}
+	if not from.is_empty():
+		cam.apply_pose(from)
+	if not to.is_empty():
+		await FilmActor.of(ctx).apply_pose_animated(to, "Zoom clear of edges", "wheel")
 
 
 static func _fail(msg: String) -> void:
@@ -156,6 +160,23 @@ static func clamp_to_screen(ctx: FilmContext, screen_pos: Vector2, inset: float 
 		clampf(screen_pos.y, vp.position.y, vp.position.y + vp.size.y))
 
 
+## Screen position of a control's centre. Native popups (PopupPanel, FileDialog)
+## report global_rect in window space; add the window origin so the film pointer
+## lands on the field instead of the embedder's (0,0) chrome.
+static func control_screen_center(control: Control) -> Vector2:
+	if control == null:
+		return Vector2.ZERO
+	var center := control.get_global_rect().get_center()
+	var win := control.get_window()
+	var root: Window = control.get_tree().root if control.get_tree() != null else null
+	# PopupPanel / FileDialog live in their own Window. global_rect is local to
+	# that window even when is_embedded() is true; Window.position is the screen
+	# origin of the popup (same as ViewportInteraction's dim-popup hit test).
+	if win != null and root != null and win != root:
+		return Vector2(win.position) + center
+	return center
+
+
 ## Scroll parent ScrollContainers so `control` is visible, then return its center.
 static func ensure_control_visible(control: Control) -> Vector2:
 	if control == null:
@@ -165,7 +186,7 @@ static func ensure_control_visible(control: Control) -> Vector2:
 		if n is ScrollContainer:
 			(n as ScrollContainer).ensure_control_visible(control)
 		n = n.get_parent()
-	return control.get_global_rect().get_center()
+	return control_screen_center(control)
 
 
 static func find_button(root: Node, text: String) -> Button:
@@ -195,12 +216,12 @@ static func set_checkbox(ctx: FilmContext, cb: CheckBox, pressed: bool, cue: Dic
 		return false
 	var center := ensure_control_visible(cb)
 	await wait_frames(ctx.tree, 2)
-	center = cb.get_global_rect().get_center()
+	center = control_screen_center(cb)
 	if not await _cue_click(ctx, center, cue):
 		return false
 	if cb.button_pressed != pressed:
 		cb.button_pressed = pressed
-	await wait_frames(ctx.tree, 2)
+	await _commit_click(ctx, center, cue)
 	return true
 
 
@@ -209,16 +230,18 @@ static func activate_menu_id(ctx: FilmContext, menu_btn: MenuButton, id: int, cu
 	if menu_btn == null or not menu_btn.is_visible_in_tree():
 		_fail("menu button missing (%s)" % str(cue.get("desc", "?")))
 		return false
-	var center := ensure_control_visible(menu_btn)
-	if not await _cue_click(ctx, center, cue):
+	if not await click_control(ctx, menu_btn, cue):
 		return false
 	var popup := menu_btn.get_popup()
 	if popup == null:
 		_fail("menu popup missing (%s)" % str(cue.get("desc", "?")))
 		return false
-	popup.id_pressed.emit(id)
-	await wait_frames(ctx.tree, 2)
-	return true
+	if not popup.visible:
+		menu_btn.show_popup()
+	await wait_frames(ctx.tree, 4)
+	var item_cue := cue.duplicate()
+	item_cue["desc"] = "%s item" % str(cue.get("desc", cue.get("keys", "Menu")))
+	return await FilmActor.of(ctx).choose_popup_id(popup, id, item_cue)
 
 
 ## Click the rollback bar, then apply the same set_rollback drop-landing uses.
@@ -251,7 +274,7 @@ static func timeline_rollback_to_end(ctx: FilmContext) -> bool:
 	ev.double_click = true
 	ev.position = Vector2.ZERO
 	bar.gui_input.emit(ev)
-	await wait_frames(ctx.tree, 2)
+	await _commit_click(ctx, center, FilmUICues.alert("Rollback end", "Double-click bar"))
 	return true
 
 
@@ -316,46 +339,17 @@ static func find_palette_button(root: Node, kind: String) -> Button:
 
 
 static func _cue_click(ctx: FilmContext, screen_pos: Vector2, cue: Dictionary) -> bool:
-	var why := str(cue.get("desc", cue.get("keys", "click")))
-	if not require_on_screen(ctx, screen_pos, why):
-		return false
-	if ctx.chrome == null:
-		await wait_frames(ctx.tree, 1)
-		return true
-	var keys := str(cue.get("keys", "Click"))
-	var desc := str(cue.get("desc", ""))
-	await ctx.chrome.animate_pointer_click(screen_pos, keys, desc)
-	return true
+	return await FilmActor.of(ctx).aim(screen_pos, cue)
+
+
+static func _commit_click(ctx: FilmContext, screen_pos: Vector2, cue: Dictionary) -> void:
+	FilmActor.of(ctx).log_click(screen_pos, cue)
+	await FilmActor.of(ctx).dwell()
 
 
 ## Cue + activate a visible button. Returns false (and errors) if missing/hidden.
 static func click_control(ctx: FilmContext, button: BaseButton, cue: Dictionary) -> bool:
-	if button == null or not button.is_visible_in_tree():
-		_fail("clickable control missing or hidden (%s)" % str(cue.get("desc", cue.get("keys", "?"))))
-		return false
-	var center := ensure_control_visible(button)
-	await wait_frames(ctx.tree, 2)
-	center = button.get_global_rect().get_center()
-	if not is_on_screen(ctx, center):
-		# One more scroll pass after layout settles.
-		center = ensure_control_visible(button)
-		await wait_frames(ctx.tree, 2)
-		center = button.get_global_rect().get_center()
-	if not await _cue_click(ctx, center, cue):
-		return false
-	# PaletteButton hooks `_pressed()` (not the pressed signal) for insert_requested.
-	if button is PaletteButton:
-		(button as PaletteButton)._pressed()
-	elif button.toggle_mode:
-		# A real click flips a toggle and emits toggled. pressed.emit() alone
-		# leaves CheckButton / Section unpressed, so Reverse and the plane
-		# menu never run.
-		button.button_pressed = not button.button_pressed
-		button.pressed.emit()
-	else:
-		button.pressed.emit()
-	await wait_frames(ctx.tree, 2)
-	return true
+	return await FilmActor.of(ctx).press(button, cue)
 
 
 static func click_button(ctx: FilmContext, text: String, cue: Dictionary = {}) -> void:
@@ -398,11 +392,15 @@ static func select_sketch_pads_box_ui(ctx: FilmContext, feature_ids: Array) -> v
 		_fail("box-select: no feature ids")
 		return
 	var cam = ctx.main.camera
-	if cam != null and cam.has_method("set_view"):
+	if cam != null and cam.has_method("capture_pose"):
+		var from: Dictionary = cam.capture_pose()
 		cam.pivot = Vector3(0, 0, 2)
 		cam.distance = 55.0
-		cam.set_view(deg_to_rad(-45.0), deg_to_rad(35.0), false)
-		await wait_frames(ctx.tree, 3)
+		if cam.has_method("set_view"):
+			cam.set_view(deg_to_rad(-45.0), deg_to_rad(35.0), false)
+		var to: Dictionary = cam.capture_pose()
+		cam.apply_pose(from)
+		await FilmActor.of(ctx).apply_pose_animated(to, "Frame pads", "look")
 	if ctx.view != null:
 		ctx.view.refresh_sketch_pads("")
 		await wait_frames(ctx.tree, 2)
@@ -432,39 +430,10 @@ static func select_sketch_pads_box_ui(ctx: FilmContext, feature_ids: Array) -> v
 	var b := clamp_to_screen(ctx, union.position + union.size + Vector2(24, 24))
 	if a.distance_to(b) < 8.0:
 		b = clamp_to_screen(ctx, a + Vector2(48, 48))
-	await _cue_click(ctx, a, FilmUICues.alert("Shift+RMB Drag", "Crossing-box select sketch pads"))
-	_set_shift_held(true)
-	await wait_frames(ctx.tree, 1)
-	var ix = ctx.main.interaction
-	if ix == null:
-		_set_shift_held(false)
-		_fail("interaction missing for box select")
-		return
 	# Shift+RMB drag → crossing box select (viewport_interaction RMB path).
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_RIGHT
-	down.pressed = true
-	down.position = a
-	down.shift_pressed = true
-	ix._input(down)
-	await wait_frames(ctx.tree, 1)
-	var mid := (a + b) * 0.5
-	for pt in [mid, b]:
-		var move := InputEventMouseMotion.new()
-		move.position = pt
-		move.relative = Vector2(20, 20)
-		move.shift_pressed = true
-		ix._input(move)
-		await wait_frames(ctx.tree, 1)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_RIGHT
-	up.pressed = false
-	up.position = b
-	up.shift_pressed = true
-	ix._input(up)
-	await wait_frames(ctx.tree, 4)
-	_set_shift_held(false)
-	await wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).drag_screen(
+			a, b, FilmUICues.alert("Shift+RMB Drag", "Crossing-box select sketch pads"),
+			6, MOUSE_BUTTON_RIGHT, true)
 	var selected: Array = ctx.main.selected_sketch_pads
 	if selected.size() < feature_ids.size():
 		_fail("box-select got %d pads, want %d (have %s)" \
@@ -504,41 +473,7 @@ static func viewport_click(
 		button_index: int = MOUSE_BUTTON_LEFT,
 		shift: bool = false
 ) -> void:
-	var ix = ctx.main.interaction
-	if ix == null:
-		_fail("interaction missing for viewport click")
-		return
-	if not await _cue_click(ctx, screen_pos, cue):
-		return
-	if ctrl:
-		_set_ctrl_held(true)
-	if shift:
-		_set_shift_held(true)
-	if ctrl or shift:
-		await wait_frames(ctx.tree, 1)
-	var down := InputEventMouseButton.new()
-	down.button_index = button_index
-	down.pressed = true
-	down.position = screen_pos
-	down.ctrl_pressed = ctrl
-	down.meta_pressed = ctrl
-	down.shift_pressed = shift
-	ix._input(down)
-	await wait_frames(ctx.tree, 1)
-	var up := InputEventMouseButton.new()
-	up.button_index = button_index
-	up.pressed = false
-	up.position = screen_pos
-	up.ctrl_pressed = ctrl
-	up.meta_pressed = ctrl
-	up.shift_pressed = shift
-	ix._input(up)
-	await wait_frames(ctx.tree, 2)
-	if ctrl:
-		_set_ctrl_held(false)
-	if shift:
-		_set_shift_held(false)
-	await wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).click_screen(screen_pos, cue, ctrl, button_index, shift)
 
 
 static func model_to_screen(ctx: FilmContext, model_pt: Vector3) -> Vector2:
@@ -609,16 +544,27 @@ static func click_sketch(ctx: FilmContext, _sm: SketchMode, uv: Vector2, desc: S
 	await viewport_click(ctx, screen, FilmUICues.sketch_click(desc))
 
 
+static func hover_uv(ctx: FilmContext, uv: Vector2, desc: String = "Hover") -> void:
+	var screen := sketch_uv_to_screen(ctx, uv)
+	if screen == Vector2.ZERO:
+		_fail("could not project hover UV %s to screen" % str(uv))
+		return
+	await FilmActor.of(ctx).hover(screen, FilmUICues.alert("Move", desc))
+
+
 static func set_sketch_dim(ctx: FilmContext, value: float) -> void:
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	if chrome == null or not chrome.visible:
 		_fail("sketch chrome not visible for dimension")
 		return
-	# Drive the on-canvas SpinBox (user can type the same value).
-	if chrome.has_method("set_dim_value"):
-		chrome.set_dim_value(value)
-	var dim_btn := find_button(chrome, "Dim")
-	await click_control(ctx, dim_btn, FilmUICues.dim_value(value))
+	var edit: LineEdit = chrome.find_child("DimLineEdit", true, false) as LineEdit
+	if edit == null and chrome.get("_dim_spin") != null:
+		edit = (chrome._dim_spin as SpinBox).get_line_edit()
+	if edit == null or not edit.is_visible_in_tree():
+		_fail("DimLineEdit missing for dimension")
+		return
+	await FilmActor.of(ctx).edit_field(edit, FilmActor.format_typed(value),
+			"Dimension %s" % FilmActor.format_typed(value))
 
 
 static func enter_sketch(ctx: FilmContext) -> void:
@@ -683,6 +629,7 @@ static func enter_sketch(ctx: FilmContext) -> void:
 		_fail("sketch session did not start after Sketch + ground click")
 	elif sm.editing_fid != "":
 		_fail("ground sketch reopened existing pad %s" % sm.editing_fid)
+	FilmActor.of(ctx).credit_pose()
 
 
 ## Visible ConfirmationDialog, preferring the empty-sketch discard prompt.
@@ -742,7 +689,9 @@ static func exit_sketch(ctx: FilmContext) -> String:
 		return editing
 	# New sketch: only return a feature id if the graph actually grew.
 	if after != "" and after != before:
+		FilmActor.of(ctx).credit_pose()
 		return after
+	FilmActor.of(ctx).credit_pose()
 	return ""
 
 
@@ -783,6 +732,7 @@ static func enter_sketch_on_face(ctx: FilmContext, body_id: String, face_id: Str
 		cam.distance = maxf(cam.distance, 35.0)
 		cam.set_view(deg_to_rad(-40.0), deg_to_rad(28.0), false)
 		await wait_frames(ctx.tree, 2)
+		FilmActor.of(ctx).credit_pose()
 	var face_screen := model_to_screen(ctx, pt)
 	if is_on_screen(ctx, face_screen):
 		if ctx.view.selected_body != body_id or ctx.view.selected_face != face_id:
@@ -833,6 +783,7 @@ static func enter_sketch_on_face(ctx: FilmContext, body_id: String, face_id: Str
 		_fail("sketch session did not start on face %s" % face_id)
 	elif sm.editing_fid != "":
 		_fail("face sketch reopened pad %s instead of new face sketch" % sm.editing_fid)
+	FilmActor.of(ctx).credit_pose()
 
 
 ## Removed as a film helper: arbitrary planes are not clickable in the UI yet.
@@ -887,23 +838,12 @@ static func select_sketch_pad_ctrl(ctx: FilmContext, feature_id: String) -> void
 	if sm != null and sm.active:
 		await exit_sketch(ctx)
 		await wait_frames(ctx.tree, 2)
-	var cam = ctx.main.camera
-	if cam != null and cam.has_method("set_view"):
-		# Stable three-quarter view; avoid frame_contents after Hide (empty AABB).
-		# Centre the pads (_look_at_content) so they are not biased into the
-		# bottom caption band.
-		if "_look_at_content" in cam:
-			cam._look_at_content = true
-		var already: bool = cam.pivot.distance_to(Vector3(0, 0, 2)) < 1.0 \
-				and absf(cam.distance - 40.0) < 1.0
-		if not already:
-			cam.pivot = Vector3(0, 0, 2)
-			cam.distance = 40.0
-			cam.set_view(deg_to_rad(-45.0), deg_to_rad(30.0), false)
-			await wait_frames(ctx.tree, 2)
 	if ctx.view != null:
 		ctx.view.refresh_sketch_pads("")
 		await wait_frames(ctx.tree, 1)
+	var world := pad_world_center(ctx, feature_id)
+	if world != Vector3.INF:
+		await FilmActor.of(ctx).frame_look(world, -45.0, 30.0, 70.0, "Frame pad")
 	var screen_pos := pad_screen_center(ctx, feature_id)
 	if screen_pos == Vector2.ZERO:
 		_fail("could not project pad %s to screen" % feature_id)
@@ -936,28 +876,9 @@ static func select_sketch_pad_ctrl(ctx: FilmContext, feature_id: String) -> void
 
 
 static func _viewport_click_shift(ctx: FilmContext, screen_pos: Vector2) -> void:
-	var ix = ctx.main.interaction
-	if ix == null:
-		return
-	await _cue_click(ctx, screen_pos, FilmUICues.alert("Shift+Click", "Add sketch pad to selection"))
-	_set_shift_held(true)
-	await wait_frames(ctx.tree, 1)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = screen_pos
-	down.shift_pressed = true
-	ix._input(down)
-	await wait_frames(ctx.tree, 1)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = screen_pos
-	up.shift_pressed = true
-	ix._input(up)
-	await wait_frames(ctx.tree, 2)
-	_set_shift_held(false)
-	await wait_frames(ctx.tree, 2)
+	await viewport_click(ctx, screen_pos,
+			FilmUICues.alert("Shift+Click", "Add sketch pad to selection"),
+			false, MOUSE_BUTTON_LEFT, true)
 
 
 static func clear_pad_selection(ctx: FilmContext) -> void:
@@ -1040,17 +961,28 @@ static func draw_circle(ctx: FilmContext, sm: SketchMode, center: Vector2, rim: 
 	await click_sketch(ctx, sm, rim, "Circle — radius")
 
 
+static func draw_ellipse(ctx: FilmContext, sm: SketchMode, center: Vector2, corner: Vector2) -> void:
+	await select_sketch_tool(ctx, sm, SketchMode.Tool.ELLIPSE)
+	await click_sketch(ctx, sm, center, "Ellipse — centre")
+	await click_sketch(ctx, sm, corner, "Ellipse — corner")
+
+
 static func apply_extrude(ctx: FilmContext, depth: float) -> void:
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
 	if chrome == null or not chrome.visible:
 		_fail("sketch chrome not visible for Extrude")
 		return
-	if chrome.has_method("set_extrude_distance"):
-		chrome.set_extrude_distance(depth)
+	var dist := distance_edit(ctx)
+	if dist == null or not dist.is_visible_in_tree():
+		_fail("DistanceLineEdit missing for extrude")
+		return
+	await FilmActor.of(ctx).edit_field(dist, FilmActor.format_typed(depth),
+			"Extrude %s mm" % FilmActor.format_typed(depth))
 	var ex := chrome.extrude_button() if chrome.has_method("extrude_button") else null
 	if not await click_control(ctx, ex, FilmUICues.extrude(depth)):
 		return
 	await ctx.after_regen()
+	await FilmActor.of(ctx).result_pause()
 	if ctx.chrome != null:
 		ctx.chrome.clear_keys()
 
@@ -1124,7 +1056,7 @@ static func find_labeled_spin(root: Node, label: String) -> SpinBox:
 	return null
 
 
-## Cue the labeled SpinBox, then set its value (same path as typing a number).
+## Cue the labeled SpinBox, then type its value (same path as a person).
 static func set_labeled_spin(
 		ctx: FilmContext, root: Node, label: String, value: float, desc: String = ""
 ) -> bool:
@@ -1132,15 +1064,8 @@ static func set_labeled_spin(
 	if spin == null or not spin.is_visible_in_tree():
 		_fail("labeled spin '%s' missing or hidden" % label)
 		return false
-	var center := ensure_control_visible(spin)
-	await wait_frames(ctx.tree, 1)
-	center = spin.get_global_rect().get_center()
 	var cue_desc := desc if desc != "" else "Set %s to %.2f" % [label, value]
-	if not await _cue_click(ctx, center, FilmUICues.alert(label, cue_desc)):
-		return false
-	spin.value = value
-	await wait_frames(ctx.tree, 1)
-	return true
+	return await FilmActor.of(ctx).edit_field(spin, FilmActor.format_typed(value), cue_desc)
 
 
 ## Place a palette primitive by clicking the palette button then a world drop point.
@@ -1202,11 +1127,8 @@ static func select_face(ctx: FilmContext, body_id: String, face_id: String) -> v
 		_fail("select_face: no pick point for %s/%s" % [body_id, face_id])
 		return
 	var cam = ctx.main.camera
-	if cam != null and cam.has_method("set_view"):
-		cam.pivot = pt
-		cam.distance = maxf(cam.distance, 90.0)
-		cam.set_view(deg_to_rad(-35.0), deg_to_rad(40.0), false)
-		await wait_frames(ctx.tree, 2)
+	if cam != null:
+		await FilmActor.of(ctx).frame_look(pt, -35.0, 40.0, maxf(cam.distance, 90.0), "Look at face")
 	var screen := model_to_screen(ctx, pt)
 	if not is_on_screen(ctx, screen):
 		_fail("select_face: face not on screen")
@@ -1215,10 +1137,8 @@ static func select_face(ctx: FilmContext, body_id: String, face_id: String) -> v
 	await wait_frames(ctx.tree, 2)
 	if ctx.view.selected_face != face_id:
 		# Retry once with a slightly higher camera.
-		if cam != null and cam.has_method("set_view"):
-			cam.distance = maxf(cam.distance, 120.0)
-			cam.set_view(deg_to_rad(-55.0), deg_to_rad(20.0), false)
-			await wait_frames(ctx.tree, 2)
+		if cam != null:
+			await FilmActor.of(ctx).frame_look(pt, -55.0, 20.0, maxf(cam.distance, 120.0), "Look at face")
 		screen = model_to_screen(ctx, pt)
 		if is_on_screen(ctx, screen):
 			await viewport_click(ctx, screen, FilmUICues.alert("Click", "Select face"))
@@ -1287,16 +1207,15 @@ static func find_face_by_normal(view: DocumentView, body_id: String, want_normal
 	return str(best.get("id", ""))
 
 
-static func pad_screen_center(ctx: FilmContext, fid: String) -> Vector2:
-	var doc: SxDocument = ctx.view.doc
-	if doc == null or fid.is_empty():
-		return Vector2.ZERO
-	var sk: SxSketch = doc.graph_get_sketch(fid)
+static func pad_world_center(ctx: FilmContext, fid: String) -> Vector3:
+	if ctx == null or ctx.view == null or ctx.view.doc == null or fid.is_empty():
+		return Vector3.INF
+	var sk: SxSketch = ctx.view.doc.graph_get_sketch(fid)
 	if sk == null:
-		return Vector2.ZERO
+		return Vector3.INF
 	var pi: Dictionary = sk.plane_info()
 	if pi.is_empty():
-		return Vector2.ZERO
+		return Vector3.INF
 	var mn := Vector2(INF, INF)
 	var mx := Vector2(-INF, -INF)
 	for id in sk.entity_ids():
@@ -1325,12 +1244,18 @@ static func pad_screen_center(ctx: FilmContext, fid: String) -> Vector2:
 			_:
 				pass
 	if not is_finite(mn.x):
-		return Vector2.ZERO
+		return Vector3.INF
 	var center2 := (mn + mx) * 0.5
 	var origin: Vector3 = pi["origin"]
 	var x_dir: Vector3 = (pi["x_dir"] as Vector3).normalized()
 	var y_dir: Vector3 = (pi["y_dir"] as Vector3).normalized()
-	var world := origin + x_dir * center2.x + y_dir * center2.y
+	return origin + x_dir * center2.x + y_dir * center2.y
+
+
+static func pad_screen_center(ctx: FilmContext, fid: String) -> Vector2:
+	var world := pad_world_center(ctx, fid)
+	if world == Vector3.INF:
+		return Vector2.ZERO
 	return model_to_screen(ctx, world)
 
 
@@ -1391,26 +1316,4 @@ static func marking_verb(ctx: FilmContext, verb: String) -> bool:
 ## Press-drag-release in the viewport (rubber-band select, push/pull, etc.).
 static func viewport_drag(ctx: FilmContext, from: Vector2, to: Vector2, cue: Dictionary,
 		steps: int = 6) -> void:
-	var ix = ctx.main.interaction
-	if ix == null:
-		_fail("interaction missing for viewport drag")
-		return
-	await _cue_click(ctx, from, cue)
-	var down := InputEventMouseButton.new()
-	down.button_index = MOUSE_BUTTON_LEFT
-	down.pressed = true
-	down.position = from
-	ix._input(down)
-	await wait_frames(ctx.tree, 1)
-	for i in range(1, steps + 1):
-		var mm := InputEventMouseMotion.new()
-		mm.button_mask = MOUSE_BUTTON_MASK_LEFT
-		mm.position = from.lerp(to, float(i) / steps)
-		ix._input(mm)
-		await wait_frames(ctx.tree, 1)
-	var up := InputEventMouseButton.new()
-	up.button_index = MOUSE_BUTTON_LEFT
-	up.pressed = false
-	up.position = to
-	ix._input(up)
-	await wait_frames(ctx.tree, 3)
+	await FilmActor.of(ctx).drag_screen(from, to, cue, steps)

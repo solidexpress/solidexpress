@@ -1,83 +1,82 @@
 extends RefCounted
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
+const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 
-## UI: two profile pads + open guide rail → smooth loft with guide curves.
+## Ship hull: U transom (flat floor, vertical sides, capped deck) lofted
+## into a smaller oval bow on the parallel end face.
 
 
 func run_film(ctx: FilmContext) -> void:
 	var main = ctx.main
 	var doc: SxDocument = ctx.view.doc
-	var sm: SketchMode = main.sketch_mode
+	var actor := FilmActor.of(ctx)
 
-	await ctx.beat("Sketch a large circle on the ground plane", 0.08)
-	await FilmUI.enter_sketch(ctx)
-	await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(10, 0))
-	var fid_bot := await FilmUI.exit_sketch(ctx)
-	await ctx.after_regen()
-	if fid_bot.is_empty():
-		await ctx.beat("Bottom profile failed", 1.0)
-		return
-
-	await ctx.beat("Place a box, then sketch a smaller circle on its top face", 0.08)
-	await FilmUI.place_primitive(ctx, "box")
+	await ctx.beat("Place a hull blank — ends become the transom and bow")
+	await FilmUI.place_primitive_at(ctx, "box", Vector3(0, 0, 0), Vector3(100, 52, 34))
 	await ctx.after_regen()
 	var bodies: Array = doc.body_ids()
 	if bodies.is_empty():
-		await ctx.beat("Place box failed", 1.0)
+		FilmUI._fail("hull blank did not place")
 		return
-	var host: String = bodies[bodies.size() - 1]
-	var top_face := FilmUI.find_face_by_normal(ctx.view, host, Vector3(0, 0, 1))
-	if top_face.is_empty():
-		await ctx.beat("Top face not found", 1.0)
-		return
-	await FilmUI.enter_sketch_on_face(ctx, host, top_face)
-	sm = main.sketch_mode
-	await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(4, 0))
-	var fid_top := await FilmUI.exit_sketch(ctx)
-	await ctx.after_regen()
-	if fid_top.is_empty() or fid_top == fid_bot:
-		await ctx.beat("Top profile failed", 1.0)
+	var host: String = str(bodies[bodies.size() - 1])
+	var stern := FilmUI.find_face_by_normal(ctx.view, host, Vector3(-1, 0, 0))
+	var bow := FilmUI.find_face_by_normal(ctx.view, host, Vector3(1, 0, 0))
+	if stern.is_empty() or bow.is_empty():
+		FilmUI._fail("blank is missing transom / bow faces")
 		return
 
-	await ctx.beat("Sketch an open guide rail beside the profiles", 0.08)
-	await FilmUI.enter_sketch(ctx)
-	sm = main.sketch_mode
-	# Single segment stays cyan (rail); Auto-close needs 2+ segments.
-	await FilmUI.draw_line(ctx, sm, Vector2(18, 16), Vector2(26, 28))
-	var fid_guide := await FilmUI.exit_sketch(ctx)
-	await ctx.after_regen()
-	if fid_guide.is_empty() or fid_guide == fid_bot or fid_guide == fid_top:
-		await ctx.beat("Guide rail failed", 1.0)
+	await ctx.beat("Sketch a U transom — flat floor, vertical sides, capped deck")
+	await FilmUI.enter_sketch_on_face(ctx, host, stern)
+	var sm: SketchMode = main.sketch_mode
+	if sm == null or not sm.active:
+		FilmUI._fail("transom sketch did not start")
 		return
-	if main._sketch_pad_role(fid_guide) != "rail":
-		await ctx.beat("Guide pad is not an open rail", 1.0)
+	# −X face: +V is world +Z (up). Hexagon U: narrow keel, vertical sides, wide deck.
+	var u := PackedVector2Array([
+		Vector2(-9, -13), Vector2(9, -13),
+		Vector2(17, -5), Vector2(17, 12),
+		Vector2(-17, 12), Vector2(-17, -5),
+		Vector2(-9, -13),
+	])
+	await FilmUI.draw_polyline(ctx, sm, u)
+	var fid_stern := await FilmUI.exit_sketch(ctx)
+	await ctx.after_regen()
+	if fid_stern.is_empty():
+		FilmUI._fail("transom profile failed")
 		return
 
-	await ctx.beat("Hide the box, then Ctrl+click top, guide, and bottom pads", 0.08)
+	await ctx.beat("Sketch an oval at the bow, smaller and lower")
+	await FilmUI.enter_sketch_on_face(ctx, host, bow)
+	sm = main.sketch_mode
+	if sm == null or not sm.active:
+		FilmUI._fail("bow sketch did not start")
+		return
+	await FilmUI.draw_ellipse(ctx, sm, Vector2(0, -2), Vector2(8, 4))
+	var fid_bow := await FilmUI.exit_sketch(ctx)
+	await ctx.after_regen()
+	if fid_bow.is_empty() or fid_bow == fid_stern:
+		FilmUI._fail("bow profile failed")
+		return
+
+	await ctx.beat("Hide the blank, then loft the two stations")
 	await FilmUI.clear_pad_selection(ctx)
 	var hide_btn := FilmUI.find_button(main, "Hide")
 	if hide_btn != null and hide_btn.is_visible_in_tree():
-		await FilmUI.click_control(ctx, hide_btn, FilmUICues.alert("Hide", "Hide solid to reach pads"))
+		await FilmUI.click_control(ctx, hide_btn, FilmUICues.alert("Hide", "Hide blank to reach pads"))
 	elif not doc.body_ids().is_empty():
-		var face := FilmUI.find_face_by_normal(ctx.view, host, Vector3(0, 0, 1))
-		if face != "":
-			await FilmUI.viewport_click(ctx, FilmUI.model_to_screen(ctx,
-					FilmUI.face_pick_point(ctx.view, host, face)),
-					FilmUICues.alert("Click", "Select solid"))
-			hide_btn = FilmUI.find_button(main, "Hide")
-			if hide_btn != null:
-				await FilmUI.click_control(ctx, hide_btn,
-						FilmUICues.alert("Hide", "Hide solid to reach pads"))
-	main.selected_sketch_pads.clear()
-	await FilmUI.select_sketch_pad_ctrl(ctx, fid_top)
-	await FilmUI.select_sketch_pad_ctrl(ctx, fid_guide)
-	await FilmUI.select_sketch_pad_ctrl(ctx, fid_bot)
-	if main.selected_sketch_pads.size() < 3:
-		await ctx.beat("Need two profiles plus the guide rail selected", 1.0)
+		await FilmUI.viewport_click(ctx, FilmUI.model_to_screen(ctx,
+				FilmUI.face_pick_point(ctx.view, host, bow)),
+				FilmUICues.alert("Click", "Select blank"))
+		hide_btn = FilmUI.find_button(main, "Hide")
+		if hide_btn != null:
+			await FilmUI.click_control(ctx, hide_btn,
+					FilmUICues.alert("Hide", "Hide blank to reach pads"))
+	await FilmUI.select_sketch_pad_ctrl(ctx, fid_stern)
+	await FilmUI.select_sketch_pad_ctrl(ctx, fid_bow)
+	if main.selected_sketch_pads.size() < 2:
+		FilmUI._fail("need transom and bow pads selected")
 		return
-
-	await ctx.beat("Loft smooth — open rail becomes a guide curve", 0.08)
 	main._refresh_merge_chrome()
 	await ctx.tree.process_frame
 	await FilmUI.loft_profiles_ui(ctx, false)
@@ -85,26 +84,26 @@ func run_film(ctx: FilmContext) -> void:
 
 	var loft_fid := FilmUI.last_feature_id(doc, "loft")
 	var vol := 0.0
-	var has_guide := false
 	for f in doc.graph_features():
 		if str(f.get("id", "")) != loft_fid:
 			continue
 		var out_body := str(f.get("output_body", ""))
 		if out_body != "":
-			vol = doc.body_volume(out_body)
-		var raw: Variant = f.get("params", "{}")
-		var parsed: Variant = raw
-		if typeof(raw) == TYPE_STRING:
-			parsed = JSON.parse_string(str(raw))
-		if typeof(parsed) == TYPE_DICTIONARY:
-			var guides: Variant = parsed.get("guides", [])
-			if typeof(guides) == TYPE_ARRAY:
-				for g in guides:
-					if str(g) == fid_guide:
-						has_guide = true
+			vol = absf(doc.body_volume(out_body))
 		break
-	if loft_fid.is_empty() or absf(vol) <= 10.0 or not has_guide:
-		await ctx.beat("Guided loft failed", 1.0)
+	if loft_fid.is_empty() or vol <= 200.0:
+		FilmUI._fail("hull loft failed (vol %.1f)" % vol)
 		return
-
-	await ctx.beat("Guided loft solid — %.0f mm³" % absf(vol), 0.12)
+	await ctx.beat("Hull loft — U transom into an oval bow")
+	if main.has_method("film_prepare_outro"):
+		main.film_prepare_outro()
+	if ctx.view != null and ctx.view.sketch_pads != null:
+		ctx.view.sketch_pads.visible = false
+	if ctx.camera != null:
+		ctx.camera.iso_yaw_deg = 82.0
+		ctx.camera.iso_pitch_deg = 22.0
+	# Yaw ~90 is Right — looking at the −X transom so the U reads, then orbit to the side.
+	await actor.frame_look(Vector3(0, 0, 0), 82.0, 22.0, 90.0, "Stern quarter")
+	await actor.orbit_yaw(-50.0, 3.2, "Orbit the hull")
+	ctx.showcase_played = true
+	await actor.result_pause()

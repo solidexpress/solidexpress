@@ -12,6 +12,7 @@ VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 OCCT_PREFIX ?= /opt/occt-$(OCCT_VERSION)
 ifneq ($(wildcard $(OCCT_PREFIX)/lib),)
 export LD_LIBRARY_PATH := $(OCCT_PREFIX)/lib$(if $(LD_LIBRARY_PATH),:$(LD_LIBRARY_PATH))
+export CMAKE_PREFIX_PATH := $(OCCT_PREFIX)$(if $(CMAKE_PREFIX_PATH),:$(CMAKE_PREFIX_PATH))
 endif
 
 all: build

@@ -4,6 +4,7 @@ extends SceneTree
 const FilmCaptionMath := preload("res://tests/lib/film_caption_math.gd")
 const FilmPresentation := preload("res://tests/lib/film_presentation.gd")
 const FilmOutroStrategy := preload("res://tests/lib/film_outro_strategy.gd")
+const FilmActorScript := preload("res://tests/lib/film_actor.gd")
 
 var failures := 0
 
@@ -44,11 +45,54 @@ func _init() -> void:
 			"hop TOP considering toast + click")
 	check(is_equal_approx(FilmPresentation.INTRO_SEC, 2.0), "title card 2 s")
 	check(is_equal_approx(FilmPresentation.BEAT_HOLD_SEC, 0.8), "beat hold 0.8 s")
+	check(FilmPresentation.POINTER_PX_PER_SEC > 0.0, "pointer travel speed")
+	check(FilmPresentation.TYPING_CPS > 0.0, "typing chars per second")
+	check(FilmPresentation.ACTION_DWELL_SEC > 0.0, "dwell after each action")
+	check(FilmPresentation.RESULT_PAUSE_SEC > 0.0, "pause on results")
 	check(is_equal_approx(FilmPresentation.OUTRO_SEC, 4.0), "outro orbit 4 s")
 	check(is_equal_approx(FilmPresentation.DRAWING_HOLD_SEC, 1.5), "drawing hold 1.5 s")
 	check(is_equal_approx(FilmPresentation.OUTRO_FILL_FRAC, 0.70), "outro fill 70%")
 	check(FilmOutroStrategy.kind(true, false) == FilmOutroStrategy.Kind.SOLID, "solid body → orbit")
 	check(FilmOutroStrategy.kind(false, false) == FilmOutroStrategy.Kind.SKETCH, "no body → sketch top-down")
 	check(FilmOutroStrategy.kind(true, true) == FilmOutroStrategy.Kind.DRAWING, "drawing sheet wins")
+	var orphan_click := FilmActorScript.pointer_gaps([
+		{"kind": "click", "x": 40.0, "y": 40.0},
+	])
+	check(not orphan_click.is_empty(), "click without pointer_move is a gap")
+	var aligned := FilmActorScript.pointer_gaps([
+		{"kind": "pointer_move", "x": 100.0, "y": 200.0},
+		{"kind": "click", "x": 104.0, "y": 198.0},
+		{"kind": "edit", "x": 101.0, "y": 202.0},
+	])
+	check(aligned.is_empty(), "click/edit within slack of pointer_move")
+	var far := FilmActorScript.pointer_gaps([
+		{"kind": "pointer_move", "x": 10.0, "y": 10.0},
+		{"kind": "click", "x": 80.0, "y": 10.0},
+	])
+	check(not far.is_empty(), "click far from pointer_move is a gap")
+	var cam_ok := FilmActorScript.camera_gaps([
+		{"kind": "pointer_move", "x": 100.0, "y": 100.0},
+		{"kind": "camera", "x": 120.0, "y": 100.0, "via": "key", "keys": "1"},
+	])
+	check(cam_ok.is_empty(), "camera with pointer + via is fine")
+	var cam_orphan := FilmActorScript.camera_gaps([
+		{"kind": "camera", "x": 10.0, "y": 10.0, "via": "key"},
+	])
+	check(not cam_orphan.is_empty(), "camera without pointer_move is a gap")
+	var cam_silent := FilmActorScript.camera_gaps([
+		{"kind": "pointer_move", "x": 10.0, "y": 10.0},
+		{"kind": "camera", "x": 10.0, "y": 10.0},
+	])
+	check(not cam_silent.is_empty(), "camera without via/badge is a gap")
+	var cam_unknown := FilmActorScript.camera_gaps([
+		{"kind": "pointer_move", "x": 10.0, "y": 10.0},
+		{"kind": "camera", "x": 10.0, "y": 10.0, "via": "teleport"},
+	])
+	check(not cam_unknown.is_empty(), "camera with unknown via is a gap")
+	var cam_wheel := FilmActorScript.camera_gaps([
+		{"kind": "pointer_move", "x": 200.0, "y": 200.0},
+		{"kind": "camera", "x": 200.0, "y": 242.0, "via": "wheel", "keys": "Wheel"},
+	])
+	check(cam_wheel.is_empty(), "wheel camera with pointer is fine")
 	print("%d failures" % failures)
 	quit(1 if failures > 0 else 0)

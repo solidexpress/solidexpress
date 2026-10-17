@@ -30,10 +30,26 @@ const DOCK_MARGIN := 48.0
 const HOP_MARGIN := 12.0
 const HOP_DURATION_SEC := 0.18
 
-## Pointer travel for FilmChrome clicks (kept short so website films stay in budget).
-const POINTER_MOVE_SEC := 0.22
-const POINTER_AFTER_CLICK_SEC := 0.04
+## One pacing model for every film action. Pointer travel is a speed so a
+## canvas pick takes longer than a neighbouring chip; dwell is constant.
+## Wrench website demo aims at ~2 minutes including intro/outro.
+const POINTER_PX_PER_SEC := 1200.0
+const POINTER_MIN_MOVE_SEC := 0.20
+const POINTER_MAX_MOVE_SEC := 0.80
 const POINTER_FLASH_SEC := 0.12
+## Kept for FilmChrome field init; travel duration is computed from distance.
+const POINTER_MOVE_SEC := 0.28
+const POINTER_AFTER_CLICK_SEC := 0.0
+const ACTION_DWELL_SEC := 0.42
+const TYPING_CPS := 6.0
+const RESULT_PAUSE_SEC := 0.90
+const VIEW_ANIM_SEC := 0.55
+## Scroll zoom: brisk, short settle.
+const WHEEL_ANIM_SEC := 0.35
+const WHEEL_DWELL_SEC := 0.15
+## Hold a typed value on screen before Enter so it can be read.
+const TYPED_READ_SEC := 0.2
+const POINTER_START := Vector2(88, 56)
 
 ## Empty-scene iso: pull back past DATUM_PLANE_HALF so the camera is not inside the quads.
 const OPEN_ISO_YAW_DEG := -35.0
@@ -76,6 +92,8 @@ static func apply(ctx: FilmContext) -> void:
 	if main != null and main.has_method("apply_film_look"):
 		main.apply_film_look(KEY_LIGHT_ENERGY, PART_ALBEDO, PART_EMISSION)
 	_apply_opening_camera(ctx)
+	if ctx.actor != null and ctx.actor.has_method("credit_pose"):
+		ctx.actor.credit_pose()
 	if ctx.chrome != null:
 		if "pointer_move_sec" in ctx.chrome:
 			ctx.chrome.pointer_move_sec = POINTER_MOVE_SEC
@@ -106,3 +124,18 @@ static func _apply_opening_camera(ctx: FilmContext) -> void:
 		cam.pitch = deg_to_rad(OPEN_ISO_PITCH_DEG)
 		if cam.has_method("_update_transform"):
 			cam._update_transform()
+
+
+static func scenic_is_flat(main) -> bool:
+	if main == null:
+		return false
+	if bool(main.get("show_scenic_bg")):
+		return false
+	var env = main.get("_world_env")
+	if env == null or env.environment == null:
+		return true
+	var e: Environment = env.environment
+	if e.background_mode != Environment.BG_COLOR:
+		return false
+	return e.background_color.is_equal_approx(FLAT_BG) \
+			or e.background_color.is_equal_approx(Color(0.16, 0.17, 0.20))
