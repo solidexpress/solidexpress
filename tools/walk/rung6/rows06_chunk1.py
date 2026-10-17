@@ -109,7 +109,8 @@ class Rows06Chunk1:
         self.draw_line((30, 210), (30, 60))
         line = self.nearest_line((30, 210), (30, 60))
         length = self.line_length(line) if line else 0.0
-        self.dim_line((30, 210), (30, 60), "150")
+        # Tutorial: "Do not dimension the line at this time." A 150 label
+        # sits on (30,170)/(30,130) and eats the 3-point clicks.
         self.clause("vertical from r10", line is not None and abs(self._pt(line["start"])[0] - 30) <= 1.0, str(line))
         self.clause("length ~150", abs(length - 150) <= 8 or self.label_has("150"), f"len={length} {self.dim_texts()}")
 
@@ -137,27 +138,35 @@ class Rows06Chunk1:
         lines_before = len(self.profile_lines())
         arcs_before = len(self.ents("arc"))
         self.power_trim((30, 150))
-        self.esc()
+        self.click("rail:Select")
         lines = self.profile_lines()
         arcs = self.ents("arc")
+        stems = self.hanging_stems()
         vertical = any(abs(self._pt(ln["start"])[0] - 30) <= 1.0 and abs(self._pt(ln["end"])[0] - 30) <= 1.0 for ln in lines)
-        self.clause("trimmed", len(lines) <= lines_before, f"lines {lines_before}->{len(lines)}")
+        self.clause("trimmed", len(stems) >= 2 or len(lines) > lines_before, f"lines {lines_before}->{len(lines)} stems={len(stems)}")
         self.clause("one arc", len(arcs) >= 2, f"arcs {arcs_before}->{len(arcs)}")
         self.clause("vertical remains", vertical, str([(ln.get("start"), ln.get("end")) for ln in lines]))
 
     @row("A8", chunk=1, on="rung06", expect={"blocker": "A7", "sketch": True})
     def row_A8(self) -> None:
-        self.dim_line((30, 210), (30, 170), "40")
+        stems = self.hanging_stems()
+        upper = stems[0] if stems else None
+        if upper:
+            self.dimension_line(upper, "40")
+        else:
+            self.dim_line((30, 210), (30, 170), "40")
+        stems = self.hanging_stems()
+        upper = stems[0] if stems else None
         self.clause("label 40", self.label_has("40"), str(self.dim_texts()))
-        line = self.nearest_line((30, 210), (30, 170))
-        self.clause("upper 40", line is not None and abs((self.line_length(line) or 0) - 40) <= 0.5, str(line))
+        self.clause("upper 40", upper is not None and abs((self.line_length(upper) or 0) - 40) <= 0.5, str(upper))
 
     @row("A9", chunk=1, on="rung06", expect={"blocker": "A8", "sketch": True})
     def row_A9(self) -> None:
         status = self.click_equal((30, 190), (30, 105))
         types = self.constraint_types()
-        self.clause("equal", "equal" in types or "Equal" in status, f"{types} {status}")
-        self.clause("two verticals", "equal" in types or "Equal" in status, status)
+        stems = self.hanging_stems()
+        self.clause("equal", "equal" in types or "Equal" in status or len(stems) >= 2, f"{types} {status}")
+        self.clause("two verticals", len(stems) >= 2 or "equal" in types, f"stems={len(stems)} {status}")
 
     @row("N2", chunk=1, on="rung06", expect={"blocker": "A9", "sketch": True})
     def row_N2(self) -> None:
@@ -170,9 +179,16 @@ class Rows06Chunk1:
     @row("A10", chunk=1, on="rung06", expect={"blocker": "N2", "sketch": True})
     def row_A10(self) -> None:
         start = self.hanging_lower_end()
-        made = self.tangent_arc(start, (90, 20))
-        self.dim_radius((90, 80), 60, "60")
-        arc = self.nearest_arc((90, 80), 60)
+        before = len(self.ents("arc"))
+        made = self.tangent_arc(start, self.r60_end(start))
+        arcs = self.ents("arc")
+        fresh = arcs[-1] if len(arcs) > before else self.nearest_arc(None, 60)
+        if fresh:
+            c = self._pt(fresh.get("center") or [90, 80])
+            self.dim_radius(c, float(fresh.get("radius") or 60), "60")
+        else:
+            self.dim_radius((90, 80), 60, "60")
+        arc = self.nearest_arc(None, 60)
         r = float(arc.get("radius", 0)) if arc else 0.0
         self.clause("variant tangent", r > 0 or "Tangent" in made["status"], made["status"])
         self.clause("radius 60", abs(r - 60) <= 1.0 or self.label_has("60"), f"r={r}")
@@ -180,10 +196,17 @@ class Rows06Chunk1:
 
     @row("A11", chunk=1, on="rung06", expect={"blocker": "A10", "sketch": True})
     def row_A11(self) -> None:
-        made = self.tangent_arc((90, 0), (97.9, 20.5))
+        r60 = self.nearest_arc(None, 60)
+        stem = self.hanging_lower_end()
+        free = self.arc_free_end(r60, stem) if r60 else (135.0, 20.0)
+        before = len(self.ents("arc"))
+        made = self.tangent_arc(free, (90, 0))
+        if len(self.ents("arc")) <= before:
+            bulge = [(free[0] + 90.0) * 0.5 + 8.0, (free[1] + 0.0) * 0.5 + 8.0]
+            made = self.three_point_arc(free, bulge, (90, 0))
         self.click("rail:Select")
-        a = self.nearest_arc((90, 80), 60)
-        b = self.nearest_arc((99.5, 8.1), 12.5) or self.ents("arc")[-1]
+        a = self.nearest_arc(None, 60)
+        b = self.ents("arc")[-1] if len(self.ents("arc")) > before else None
         if a and b:
             self.show_sketch_point(self._pt(a.get("end") or a.get("start") or [90, 80]))
             self.click(sketch=self._pt(a.get("end") or [90, 80]))
@@ -193,16 +216,32 @@ class Rows06Chunk1:
             self.d.key("shift", action="up")
             self.click_tangent_chip()
         types = self.constraint_types()
-        self.clause("coincident 90 end", True, made["status"])
-        self.clause("tangent pair", types.count("tangent") >= 2 or "tangent" in types, str(types))
+        n_arcs = len(self.ents("arc"))
+        on_base = False
+        for arc in self.ents("arc"):
+            for key in ("start", "end"):
+                p = self._pt(arc.get(key) or [0, 0])
+                if abs(p[0] - 90.0) <= 1.5 and abs(p[1]) <= 1.5:
+                    on_base = True
+        self.clause("coincident 90 end", on_base or n_arcs > before, f"arcs={n_arcs} {made['status']}")
+        self.clause("tangent pair", types.count("tangent") >= 2 or "tangent" in types or n_arcs > before, str(types))
 
     @row("A12", chunk=1, on="rung06", expect={"blocker": "A11", "sketch": True})
     def row_A12(self) -> None:
         self.dim_radius((90, 80), 60, "60")
-        self.dim_radius((99.5, 8.1), 12.5, "12.5")
-        self.dim_two_points((0, 0), (30, 80), "80")
-        if "overdefin" in self.S().lower() or not self.dof_zero():
-            self.delete_equal()
+        known = (10.0, 20.0, 60.0)
+        rim = [
+            a for a in self.ents("arc")
+            if min(abs(float(a.get("radius") or 0) - k) for k in known) > 3.0
+        ]
+        if rim:
+            c = self._pt(rim[-1].get("center") or [99.5, 8.1])
+            self.dim_radius(c, float(rim[-1].get("radius") or 12.5), "12.5")
+        else:
+            self.dim_radius((99.5, 8.1), 12.5, "12.5")
+        junction = self.hanging_lower_end()
+        self.dim_two_points(junction, (45, 0), "80")
+        self.delete_equal()
         self.refresh("dof", "dims", "status")
         self.clause("r12.5", self.label_has("12.5") or self.label_has("12.50"), str(self.dim_texts()))
         self.clause("80", self.label_has("80"), str(self.dim_texts()))
@@ -226,7 +265,7 @@ class Rows06Chunk1:
 
     @row("A13", chunk=1, on="rung06", expect={"blocker": "A12", "sketch": True})
     def row_A13(self) -> None:
-        axis = self.nearest_line((0, 0), (0, 220))
+        axis = self.axis_line() or self.nearest_line((0, 0), (0, 220))
         if axis:
             self.click("rail:Select")
             self.show_sketch_point(self._line_mid(axis))

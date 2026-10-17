@@ -81,8 +81,8 @@ class WalkUI06(WalkChrome):
         """Click sketch UV, skipping dimension labels that sit on endpoints."""
         last = {}
         for off in (
-            [0, 0], [0, 18], [0, -18], [18, 0], [-18, 0],
-            [14, 14], [-14, 14], [14, -14], [-14, -14],
+            [0, 0], [3, 0], [-3, 0], [0, 3], [0, -3],
+            [0, 8], [0, -8], [8, 0], [-8, 0],
         ):
             last = self.click(sketch=list(uv), offset=list(off))
             disp = str(last.get("disposition", ""))
@@ -151,17 +151,16 @@ class WalkUI06(WalkChrome):
             self.click(cid)
             self.d.wait_idle(frames=2)
             return
-        self.click_verb(label)
 
     def tangent_arc(self, start, end) -> dict:
+        self._frame_uv(start, end)
         self._arm_sketch_tool("rail:Arc")
         self.variant("Tangent")
         self.d.wait_idle(frames=2)
-        self._zoom_uv(start)
         host = self._nudge_toward(start, end, 1.2)
+        was = self._set_snap(False)
         self._click_sketch_geom(host)
         self.d.wait_idle(frames=2)
-        was = self._set_snap(False)
         self.click(sketch=list(end))
         self.d.wait_idle(frames=3)
         self._set_snap(was)
@@ -169,14 +168,13 @@ class WalkUI06(WalkChrome):
         return {"arcs": self.ents("arc"), "status": self.S()}
 
     def three_point_arc(self, p1, bulge, p3) -> dict:
+        self._frame_uv(p1, bulge, p3)
         self._arm_sketch_tool("rail:Arc")
         self.variant("Three Point")
         self.d.wait_idle(frames=2)
-        self._frame_uv(p1, bulge, p3)
         was = self._set_snap(False)
         for pt in (p1, bulge, p3):
-            self.show_sketch_point(pt)
-            self.click(sketch=list(pt))
+            self._click_sketch_geom(pt)
             self.d.wait_idle(frames=2)
         self._set_snap(was)
         self.d.wait_idle(frames=3)
@@ -230,18 +228,23 @@ class WalkUI06(WalkChrome):
         if arc is None:
             return {"texts": self.dim_texts(), "status": "no arc"}
         self.clear_sketch_selection()
-        # Halfway centre→rim, matching FilmUI: on-curve can pick an endpoint.
+        # 75% of the way centre→rim: close enough to the curve for radius,
+        # far enough from the centre that Smart Dim does not pending a centre.
         rim = self._arc_mid_uv(arc, radius)
         c = self._pt(arc.get("center") or [0, 0])
-        hit = [(c[0] + rim[0]) * 0.5, (c[1] + rim[1]) * 0.5]
+        hit = [c[0] + (rim[0] - c[0]) * 0.75, c[1] + (rim[1] - c[1]) * 0.75]
         before = {str(d.get("text", "")) for d in self.dims()}
         self.click("rail:SmartDim")
         self.show_sketch_point(hit)
         was = self._set_snap(False)
         self.click(sketch=hit)
-        self._set_snap(was)
         self.d.wait_idle(frames=3)
         fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
+        if not fresh:
+            self.click(sketch=list(rim))
+            self.d.wait_idle(frames=3)
+            fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
+        self._set_snap(was)
         dim = fresh[-1] if fresh else None
         if dim is not None:
             self.open_label(dim)
@@ -337,28 +340,67 @@ class WalkUI06(WalkChrome):
         sa, sb = self._pt(line["start"]), self._pt(line["end"])
         return sa if sa[1] < sb[1] else sb
 
+    def arc_free_end(self, arc, avoid) -> tuple[float, float]:
+        a = self._pt(arc.get("start") or [0, 0])
+        b = self._pt(arc.get("end") or [0, 0])
+        ax, ay = float(avoid[0]), float(avoid[1])
+        da = (a[0] - ax) ** 2 + (a[1] - ay) ** 2
+        db = (b[0] - ax) ** 2 + (b[1] - ay) ** 2
+        return a if da >= db else b
+
+    def r60_end(self, start, radius: float = 60.0, end_y: float = 20.0):
+        """End UV for a vertical-tangent arc of `radius` landing at y=end_y."""
+        sx, sy = float(start[0]), float(start[1])
+        dy = end_y - sy
+        # r = (dx^2 + dy^2) / (2 dx)  =>  dx^2 - 2 r dx + dy^2 = 0
+        disc = max(0.0, (2.0 * radius) ** 2 - 4.0 * (dy * dy))
+        dx = radius + 0.5 * (disc ** 0.5)
+        return (sx + dx, end_y)
+
+    def axis_line(self) -> dict | None:
+        best = None
+        best_d = 4.0
+        for line in self.profile_lines():
+            sa, sb = self._pt(line["start"]), self._pt(line["end"])
+            d = abs(sa[0]) + abs(sb[0])
+            if d < best_d and abs((self.line_length(line) or 0) - 220) < 40:
+                best, best_d = line, d
+        return best
+
     def click_equal(self, a, b) -> str:
         stems = self.hanging_stems()
         if len(stems) >= 2:
             a = self._line_mid(stems[0])
             b = self._line_mid(stems[1])
+        was = self._set_snap(False)
         self.click("rail:Select")
         self.show_sketch_point(a)
         self.click(sketch=list(a))
-        self.d.wait_idle(frames=1)
+        self.d.wait_idle(frames=2)
         self.show_sketch_point(b)
         self.d.key("shift", action="down")
         self.click(sketch=list(b))
         self.d.key("shift", action="up")
-        self.d.wait_idle(frames=2)
+        self._set_snap(was)
+        self.d.wait_idle(frames=3)
         self.refresh("controls", "status")
-        try:
-            self.click_verb("Equal")
-        except SxError:
-            try:
-                self.click("chip:equal")
-            except SxError:
-                pass
+        for c in (self.st.get("controls") or []):
+            cid = str(c.get("id") or "")
+            text = str(c.get("text") or "")
+            if "equal" in cid.lower() or text.lower() == "equal":
+                try:
+                    self.click(cid)
+                    self.d.wait_idle(frames=2)
+                    break
+                except SxError:
+                    continue
+        else:
+            for name in ("Equal", "equal"):
+                try:
+                    self.click_verb(name)
+                    break
+                except SxError:
+                    continue
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status", "dof")
         return self.S()
