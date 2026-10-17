@@ -1687,12 +1687,22 @@ func _sketch_state(sm) -> Dictionary:
 	if sm == null:
 		return {}
 	var entities: Array = []
+	var constraints: Array = []
 	if sm.sketch != null and bool(sm.active):
 		for id in sm.sketch.entity_ids():
 			var info: Dictionary = sm.sketch.entity_info(id)
 			entities.append(_jsonify(info))
 			if entities.size() >= 80:
 				break
+		if sm.sketch.has_method("constraint_ids"):
+			for cid in sm.sketch.constraint_ids():
+				var cinfo: Dictionary = sm.sketch.constraint_info(str(cid))
+				constraints.append({
+					"id": str(cid),
+					"type": str(cinfo.get("type", "")),
+				})
+				if constraints.size() >= 80:
+					break
 	var plane := {}
 	if bool(sm.active):
 		plane = {
@@ -1706,6 +1716,7 @@ func _sketch_state(sm) -> Dictionary:
 		"editing": str(sm.editing_fid),
 		"entity_count": entities.size() if sm.sketch == null or not bool(sm.active) else sm.sketch.entity_ids().size(),
 		"entities": entities,
+		"constraints": constraints,
 		"plane": plane,
 	}
 

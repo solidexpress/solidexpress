@@ -279,6 +279,8 @@ class WalkChrome:
         return node
 
     def show_sketch_point(self, uv) -> None:
+        if self._uv_inside(uv):
+            return
         self.fit_sketch()
         centre = self._view_centre()
         for _ in range(8):

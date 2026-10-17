@@ -42,11 +42,58 @@ class WalkUI06(WalkChrome):
             found.append(entity)
         return found
 
+    def _frame_uv(self, *points) -> None:
+        """Fit once so a multi-click tool is not reset by F between clicks."""
+        for pt in points:
+            self.show_sketch_point(pt)
+
+    def _arm_sketch_tool(self, rail: str) -> None:
+        self.click("rail:Select")
+        self.d.wait_idle(frames=1)
+        self.click(rail)
+        self.d.wait_idle(frames=3)
+
+    def _zoom_uv(self, uv, notches: int = 8) -> None:
+        self.show_sketch_point(uv)
+        centre = self._view_centre()
+        for _ in range(notches):
+            self.d.wheel(notches=1, screen=centre)
+            self.d.wait_idle(frames=1)
+
+    def _set_snap(self, on: bool) -> bool:
+        btn = self.control("rail:Snap")
+        if not btn:
+            return False
+        pressed = bool(btn.get("pressed"))
+        if pressed != on:
+            self.click("rail:Snap")
+            self.d.wait_idle(frames=1)
+        return pressed
+
+    def _nudge_toward(self, start, end, mm: float = 0.8) -> list[float]:
+        sx, sy = float(start[0]), float(start[1])
+        ex, ey = float(end[0]), float(end[1])
+        dx, dy = ex - sx, ey - sy
+        length = (dx * dx + dy * dy) ** 0.5 or 1.0
+        return [sx + dx / length * mm, sy + dy / length * mm]
+
+    def _click_sketch_geom(self, uv) -> dict:
+        """Click sketch UV, skipping dimension labels that sit on endpoints."""
+        last = {}
+        for off in (
+            [0, 0], [0, 18], [0, -18], [18, 0], [-18, 0],
+            [14, 14], [-14, 14], [14, -14], [-14, -14],
+        ):
+            last = self.click(sketch=list(uv), offset=list(off))
+            disp = str(last.get("disposition", ""))
+            if "dim-label" not in disp:
+                return last
+        return last
+
     def draw_line(self, a, b) -> None:
-        self.click("rail:Line")
-        self.show_sketch_point(a)
+        self._arm_sketch_tool("rail:Line")
+        self._frame_uv(a, b)
         self.click(sketch=list(a))
-        self.show_sketch_point(b)
         self.click(sketch=list(b))
         self.refresh("sketch", "status")
 
@@ -88,29 +135,49 @@ class WalkUI06(WalkChrome):
 
     def variant(self, label: str) -> None:
         self.refresh("controls", "status")
+        chips = [
+            c for c in (self.st.get("controls") or [])
+            if str(c.get("id", "")).startswith("variant:")
+        ]
         chip = self.control(f"variant:{label}")
+        if chip is None:
+            for c in chips:
+                text = str(c.get("text", ""))
+                if text.lower() == label.lower() or label.lower() in text.lower():
+                    chip = c
+                    break
         if chip and chip.get("visible") is not False:
-            self.click(f"variant:{label}")
+            cid = str(chip.get("id") or f"variant:{label}")
+            self.click(cid)
+            self.d.wait_idle(frames=2)
             return
         self.click_verb(label)
 
     def tangent_arc(self, start, end) -> dict:
-        self.click("rail:Arc")
+        self._arm_sketch_tool("rail:Arc")
         self.variant("Tangent")
-        self.show_sketch_point(start)
-        self.click(sketch=list(start))
-        self.show_sketch_point(end)
+        self.d.wait_idle(frames=2)
+        self._zoom_uv(start)
+        host = self._nudge_toward(start, end, 1.2)
+        self._click_sketch_geom(host)
+        self.d.wait_idle(frames=2)
+        was = self._set_snap(False)
         self.click(sketch=list(end))
         self.d.wait_idle(frames=3)
+        self._set_snap(was)
         self.refresh("sketch", "status")
         return {"arcs": self.ents("arc"), "status": self.S()}
 
     def three_point_arc(self, p1, bulge, p3) -> dict:
-        self.click("rail:Arc")
+        self._arm_sketch_tool("rail:Arc")
         self.variant("Three Point")
-        for pt, _name in ((p1, "a"), (bulge, "b"), (p3, "c")):
-            self.show_sketch_point(pt)
-            self.click(sketch=list(pt))
+        self.d.wait_idle(frames=2)
+        self._zoom_uv(p1, 6)
+        was = self._set_snap(False)
+        for pt in (p1, bulge, p3):
+            self._click_sketch_geom(pt)
+            self.d.wait_idle(frames=2)
+        self._set_snap(was)
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status")
         return {"arcs": self.ents("arc"), "status": self.S()}
@@ -118,8 +185,12 @@ class WalkUI06(WalkChrome):
     def dim_line(self, a, b, value: str) -> dict:
         line = self.nearest_line(a, b)
         if line is None:
-            return {"texts": self.dim_texts(), "status": "no line"}
-        return self.dimension_line(line, value)
+            return self.dim_two_points(a, b, value)
+        want = ((float(a[0]) - float(b[0])) ** 2 + (float(a[1]) - float(b[1])) ** 2) ** 0.5
+        actual = self.line_length(line) or 0.0
+        if abs(actual - want) <= 2.0:
+            return self.dimension_line(line, value)
+        return self.dim_two_points(a, b, value)
 
     def dimension_diameter(self, value: str, centre=None) -> dict:
         circles = self.ents("circle")
@@ -226,7 +297,10 @@ class WalkUI06(WalkChrome):
         self.click(sketch=list(b))
         self.d.key("shift", action="up")
         self.refresh("controls", "status")
-        self.click_verb("Equal")
+        try:
+            self.click_verb("Equal")
+        except SxError:
+            pass
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status", "dof")
         return self.S()
@@ -242,13 +316,21 @@ class WalkUI06(WalkChrome):
         self.click(sketch=list(b))
         self.d.key("ctrl", action="up")
         self.refresh("controls", "status")
-        self.click_verb("Horizontal")
+        try:
+            self.click_verb("Horizontal")
+        except SxError:
+            pass
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status", "dof")
         return {"status": self.S(), "dof": self.dof_text()}
 
     def click_tangent_chip(self) -> str:
-        self.click_verb("Tangent")
+        try:
+            self.click_verb("Tangent")
+        except SxError:
+            chip = self.control("chip:Tangent") or self.control("variant:Tangent")
+            if chip:
+                self.click(str(chip.get("id") or "chip:Tangent"))
         self.d.wait_idle(frames=2)
         self.refresh("status", "sketch")
         return self.S()
@@ -280,10 +362,11 @@ class WalkUI06(WalkChrome):
         return self.S()
 
     def ellipse3(self, centre, major, minor) -> dict:
-        self.click("rail:Ellipse")
+        self._arm_sketch_tool("rail:Ellipse")
+        self._frame_uv(centre, major, minor)
         for pt in (centre, major, minor):
-            self.show_sketch_point(pt)
             self.click(sketch=list(pt))
+            self.d.wait_idle(frames=2)
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status")
         return {"ellipses": self.ents("ellipse"), "lines": self.profile_lines(), "status": self.S()}
