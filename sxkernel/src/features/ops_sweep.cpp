@@ -148,17 +148,15 @@ bool apply_sweep(ApplyCtx& ctx) {
                         return fail("missing path feature");
                     // Prefer live params on the path feature (regenerated earlier).
                     path = pf->params.value("path", json::array());
-                    if (pf->params.contains("sketches") && pf->params["sketches"].is_array()) {
-                        for (const auto& js : pf->params["sketches"]) {
-                            const Feature* psk =
-                                feature(EntityId::from_string(js.get<std::string>()));
-                            if (!psk || !psk->sketch) continue;
-                            TopoDS_Wire w = sketch_spine_wire(*psk->sketch);
-                            if (!w.IsNull()) {
-                                spine = w;
-                                break;
-                            }
-                        }
+                    // Circular spine is the whole rail of one line+arc sketch
+                    // (candlestick path). Multi-sketch Path features keep the
+                    // merged polyline — taking the first child would drop legs.
+                    const json& rails = pf->params.value("sketches", json::array());
+                    if (rails.is_array() && rails.size() == 1) {
+                        const Feature* psk =
+                            feature(EntityId::from_string(rails[0].get<std::string>()));
+                        if (psk && psk->sketch)
+                            spine = sketch_spine_wire(*psk->sketch);
                     }
                 }
                 if (!path.is_array() || path.size() < 2)
