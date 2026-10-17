@@ -213,6 +213,16 @@ bool apply_sweep(ApplyCtx& ctx) {
                     return !s.IsNull() && shape::count(s).solids >= 1
                            && std::abs(shape::volume(s)) > 1.0e-3;
                 };
+                // A fuse that "succeeds" with only the ribbon drops the stem
+                // (handle-only xmax can still be 192). Keep merges that still
+                // contain the target body.
+                auto keeps_target = [&](const TopoDS_Shape& body,
+                                        const TopoDS_Shape& m) {
+                    if (!usable(m)) return false;
+                    const double bv = std::abs(shape::volume(body));
+                    if (bv <= 1.0) return true;
+                    return std::abs(shape::volume(m)) >= bv * 0.90;
+                };
                 auto keep_solid = [&](const TopoDS_Shape& s) -> TopoDS_Shape {
                     if (!usable(s)) return s;
                     std::string report;
@@ -257,18 +267,18 @@ bool apply_sweep(ApplyCtx& ctx) {
                     const double fuzzies[] = {1.0e-4, 1.0e-3, 0.05};
                     for (double fuzzy : fuzzies) {
                         TopoDS_Shape m = run_fuse(body, ribbon, fuzzy);
-                        if (usable(m)) return m;
+                        if (keeps_target(body, m)) return m;
                         m = run_fuse(left, right, fuzzy);
-                        if (usable(m)) return m;
+                        if (keeps_target(body, m)) return m;
                     }
                     for (double fuzzy : fuzzies) {
                         TopoDS_Shape outside = run_cut(ribbon, body, fuzzy);
                         if (!usable(outside)) outside = run_cut(right, left, fuzzy);
                         if (!usable(outside)) continue;
                         TopoDS_Shape m = run_fuse(body, outside, fuzzy);
-                        if (usable(m)) return m;
+                        if (keeps_target(body, m)) return m;
                         m = run_fuse(left, outside, fuzzy);
-                        if (usable(m)) return m;
+                        if (keeps_target(body, m)) return m;
                     }
                     return {};
                 };
@@ -347,13 +357,20 @@ bool apply_sweep(ApplyCtx& ctx) {
                     if (op == "cut") {
                         merged = BRepAlgoAPI_Cut(tb->shape, result).Shape();
                     } else {
-                        double best_x = -1.0e99;
+                        std::vector<TopoDS_Shape> fused;
                         for (const auto& ribbon : ribbons) {
                             TopoDS_Shape m = fuse_ribbon(tb->shape, ribbon);
-                            if (!usable(m)) continue;
-                            const double x = shape_xmax(m);
-                            if (x > best_x) {
-                                best_x = x;
+                            if (keeps_target(tb->shape, m)) fused.push_back(m);
+                        }
+                        double best_x = -1.0e99;
+                        for (const auto& m : fused)
+                            best_x = std::max(best_x, shape_xmax(m));
+                        double best_vol = -1.0;
+                        for (const auto& m : fused) {
+                            if (shape_xmax(m) < best_x - 0.5) continue;
+                            const double v = std::abs(shape::volume(m));
+                            if (v > best_vol) {
+                                best_vol = v;
                                 merged = m;
                             }
                         }
