@@ -157,6 +157,11 @@ func _add_pad(fid: String, sk: SxSketch, draw_lines: bool = true) -> void:
 				var r: float = float(info.get("radius", 0.0))
 				mn = mn.min(c - Vector2(r, r))
 				mx = mx.max(c + Vector2(r, r))
+			"ellipse":
+				var bb := SketchEllipse.aabb(info)
+				if bb.size.x > 0.0 and bb.size.y > 0.0:
+					mn = mn.min(bb.position)
+					mx = mx.max(bb.position + bb.size)
 			"point":
 				var p: Vector2 = info["position"]
 				mn = mn.min(p)
@@ -243,6 +248,8 @@ func _collect_ink(sk: SxSketch) -> Array:
 				ink.append({"k": "circle", "c": info["center"], "r": float(info["radius"])})
 			"arc":
 				ink.append({"k": "circle", "c": info["center"], "r": float(info["radius"])})
+			"ellipse":
+				ink.append({"k": "ellipse", "info": info})
 			_:
 				pass
 	return ink
@@ -259,6 +266,8 @@ func _ink_distance(ink: Array, p: Vector2) -> float:
 			var len2 := ab.length_squared()
 			var t := 0.0 if len2 < 1e-12 else clampf((p - a).dot(ab) / len2, 0.0, 1.0)
 			d = p.distance_to(a + ab * t)
+		elif str(seg["k"]) == "ellipse":
+			d = SketchEllipse.distance(seg["info"], p)
 		else:
 			d = absf(p.distance_to(seg["c"] as Vector2) - float(seg["r"]))
 		best = minf(best, d)
@@ -367,6 +376,13 @@ func _make_profile_mesh(sk: SxSketch, origin: Vector3, x_dir: Vector3, y_dir: Ve
 					for i in range(fits.size() - 1):
 						_add_profile_seg(st, to3.call(fits[i] as Vector2),
 								to3.call(fits[i + 1] as Vector2), normal, col)
+			"ellipse":
+				var pts := SketchEllipse.polyline(info, 48)
+				if pts.size() >= 2:
+					has = true
+					for i in range(pts.size() - 1):
+						_add_profile_seg(st, to3.call(pts[i]), to3.call(pts[i + 1]),
+								normal, col)
 			_:
 				pass
 	if not has:

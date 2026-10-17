@@ -1111,7 +1111,8 @@ func _build_ui() -> void:
 	sketch_mode.tool_variant_changed.connect(sketch_chrome.sync_variant_highlight)
 	sketch_chrome.action_chosen.connect(_on_sketch_action)
 	sketch_chrome.finish_requested.connect(_on_sketch_finish)
-	var temp_axes_btn := Button.new()
+	var temp_axes_btn := UIIcons.button("revolve", "Temporary Axes",
+			"Show or hide temporary revolve axes")
 	temp_axes_btn.name = "TemporaryAxes"
 	temp_axes_btn.visible = false
 	temp_axes_btn.set_meta("sx_auto", "menu:TemporaryAxes")

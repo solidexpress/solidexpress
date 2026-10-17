@@ -1,5 +1,6 @@
 #include "sx/tessellate.hpp"
 
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
 #include <Poly_Polygon3D.hxx>
@@ -11,6 +12,7 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Shape.hxx>
 #include <gp_Trsf.hxx>
 
 #include <stdexcept>
@@ -20,19 +22,27 @@
 namespace sx {
 
 BodyMesh tessellate_body(const Document& doc, const EntityId& body_id,
-                         double linear_deflection, double angular_deflection) {
+                         double linear_deflection, double angular_deflection,
+                         bool isolate) {
     const Body* b = doc.body(body_id);
     if (!b) throw std::invalid_argument("tessellate_body: no such body");
 
     BodyMesh out;
     out.body = body_id;
 
-    // (Re)mesh. OCCT caches triangulation on the shape; this is idempotent.
-    BRepMesh_IncrementalMesh mesher(b->shape, linear_deflection, /*isRelative=*/false,
+    TopoDS_Shape work = b->shape;
+    if (isolate) {
+        BRepBuilderAPI_Copy copier(b->shape);
+        work = copier.Shape();
+    }
+
+    // (Re)mesh. OCCT caches triangulation on the shape; this is idempotent
+    // unless isolate copied first.
+    BRepMesh_IncrementalMesh mesher(work, linear_deflection, /*isRelative=*/false,
                                     angular_deflection, /*parallel=*/true);
 
     sx::occt::ShapeIndexedMap face_map;
-    TopExp::MapShapes(b->shape, TopAbs_FACE, face_map);
+    TopExp::MapShapes(work, TopAbs_FACE, face_map);
     const auto& face_ids = b->subshape_ids.at(EntityKind::Face);
 
     for (int fi = 1; fi <= face_map.Extent(); ++fi) {
@@ -82,7 +92,7 @@ BodyMesh tessellate_body(const Document& doc, const EntityId& body_id,
 
     // Edge polylines from the triangulation (for wireframe overlay).
     sx::occt::ShapeIndexedMap edge_map;
-    TopExp::MapShapes(b->shape, TopAbs_EDGE, edge_map);
+    TopExp::MapShapes(work, TopAbs_EDGE, edge_map);
     const auto& edge_ids = b->subshape_ids.at(EntityKind::Edge);
 
     for (int ei = 1; ei <= edge_map.Extent(); ++ei) {

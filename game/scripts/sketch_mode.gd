@@ -7900,6 +7900,9 @@ func _clear_meshes() -> void:
 	_snap_marker = null
 	_sync_pick_marker()
 	_selected_node.mesh = null
+	if _dimension_geom != null:
+		_dimension_geom.mesh = null
+		_dimension_geom.visible = false
 	if _contour_node != null:
 		_contour_node.mesh = null
 	if _contour_tag != null:
@@ -8250,6 +8253,10 @@ func _rebuild_dimension_labels() -> void:
 func _rebuild_dimension_geometry() -> void:
 	if _dimension_geom == null or sketch == null:
 		return
+	if not active:
+		_dimension_geom.mesh = null
+		_dimension_geom.visible = false
+		return
 	var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
 	var im := ImmediateMesh.new()
 	var started := false
@@ -8290,7 +8297,7 @@ func _rebuild_dimension_geometry() -> void:
 	if started:
 		im.surface_end()
 	_dimension_geom.mesh = im if started else null
-	_dimension_geom.visible = dimensions_visible
+	_dimension_geom.visible = dimensions_visible and active
 
 
 func _dim_witness_a(dim: Dictionary) -> Variant:
@@ -10968,6 +10975,7 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 		return false
 	var segs: Array = []  # {a: Vector2, b: Vector2}
 	var circs: Array = []  # {c: Vector2, r: float}
+	var closed_prims := 0
 	for id in sk.entity_ids():
 		if sk.is_construction(id):
 			continue
@@ -10975,6 +10983,9 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 		match str(info.get("type", "")):
 			"circle":
 				circs.append({"c": info["center"], "r": float(info.get("radius", 0.0))})
+				closed_prims += 1
+			"ellipse":
+				closed_prims += 1
 			"line":
 				var a: Vector2 = info["start"]
 				var b: Vector2 = info["end"]
@@ -10996,7 +11007,7 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 			_:
 				pass
 	if segs.is_empty():
-		return not circs.is_empty()
+		return closed_prims > 0
 	# Ends of an open chain may lie on a circle (kernel planar-split, 1e-4).
 	var on_tol := maxf(tol, 1e-4)
 	# Greedy-chain every unused segment. A chain is closed, or both ends sit

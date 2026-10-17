@@ -307,7 +307,7 @@ struct TriMesh {
 TriMesh collect_mesh(const Document& doc) {
     TriMesh m;
     for (const auto& id : doc.body_ids()) {
-        BodyMesh bm = tessellate_body(doc, id, 0.05, 0.2);
+        BodyMesh bm = tessellate_body(doc, id, 0.05, 0.2, true);
         for (const auto& face : bm.faces) {
             const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
             m.positions.insert(m.positions.end(), face.positions.begin(), face.positions.end());
@@ -319,7 +319,7 @@ TriMesh collect_mesh(const Document& doc) {
 
 TriMesh collect_mesh_for_body(const Document& doc, const EntityId& body) {
     TriMesh m;
-    BodyMesh bm = tessellate_body(doc, body, 0.05, 0.2);
+    BodyMesh bm = tessellate_body(doc, body, 0.05, 0.2, true);
     for (const auto& face : bm.faces) {
         const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
         m.positions.insert(m.positions.end(), face.positions.begin(), face.positions.end());

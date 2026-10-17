@@ -60,6 +60,37 @@ static func build(sketch, centre: Vector2, major: Vector2, minor: Vector2,
 	return eid
 
 
+## Axis-aligned bounds of the (possibly rotated) ellipse, or empty Rect2.
+static func aabb(info: Dictionary) -> Rect2:
+	var c: Vector2 = info.get("center", Vector2.ZERO)
+	var rx := float(info.get("rx", 0.0))
+	var ry := float(info.get("ry", 0.0))
+	if rx <= 1e-9 or ry <= 1e-9:
+		return Rect2()
+	var ang := float(info.get("angle", 0.0))
+	var ux := Vector2(rx, 0.0).rotated(ang)
+	var uy := Vector2(0.0, ry).rotated(ang)
+	var hw := absf(ux.x) + absf(uy.x)
+	var hh := absf(ux.y) + absf(uy.y)
+	return Rect2(c - Vector2(hw, hh), Vector2(hw * 2.0, hh * 2.0))
+
+
+## Sample the ellipse curve in sketch UV.
+static func polyline(info: Dictionary, steps := 48) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var c: Vector2 = info.get("center", Vector2.ZERO)
+	var rx := float(info.get("rx", 0.0))
+	var ry := float(info.get("ry", 0.0))
+	if rx <= 1e-9 or ry <= 1e-9:
+		return out
+	var ang := float(info.get("angle", 0.0))
+	var n := maxi(8, steps)
+	for i in range(n + 1):
+		var t := TAU * float(i) / float(n)
+		out.append(c + Vector2(rx * cos(t), ry * sin(t)).rotated(ang))
+	return out
+
+
 ## Distance from `p` to the ellipse curve (approx).
 static func distance(info: Dictionary, p: Vector2) -> float:
 	var c: Vector2 = info.get("center", Vector2.ZERO)

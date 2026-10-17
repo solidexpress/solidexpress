@@ -1238,6 +1238,11 @@ static func pad_world_center(ctx: FilmContext, fid: String) -> Vector3:
 				var r: float = float(info.get("radius", 0.0))
 				mn = mn.min(c - Vector2(r, r))
 				mx = mx.max(c + Vector2(r, r))
+			"ellipse":
+				var bb := SketchEllipse.aabb(info)
+				if bb.size.x > 0.0 and bb.size.y > 0.0:
+					mn = mn.min(bb.position)
+					mx = mx.max(bb.position + bb.size)
 			"point":
 				var p: Vector2 = info["position"]
 				mn = mn.min(p)
