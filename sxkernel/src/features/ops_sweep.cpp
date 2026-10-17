@@ -229,32 +229,9 @@ bool apply_sweep(ApplyCtx& ctx) {
                     const TopoDS_Shape orig = s;
                     std::string report;
                     TopoDS_Shape healed = interop::heal_shape(s, &report);
-                    if (!healed.IsNull()) s = healed;
-                    try {
-                        ShapeUpgrade_UnifySameDomain unif(s, true, true, true);
-                        unif.SetLinearTolerance(1.0e-4);
-                        unif.SetAngularTolerance(1.0e-3);
-                        unif.Build();
-                        if (!unif.Shape().IsNull() && shape::count(unif.Shape()).solids >= 1)
-                            s = unif.Shape();
-                    } catch (const Standard_Failure&) {
-                    }
-                    BRepBuilderAPI_Sewing sew(0.05);
-                    sew.Add(s);
-                    sew.Perform();
-                    TopoDS_Shape sewn = sew.SewedShape();
-                    if (!sewn.IsNull()) {
-                        if (sewn.ShapeType() == TopAbs_SHELL) {
-                            ShapeFix_Solid fixer;
-                            TopoDS_Shape solid = fixer.SolidFromShell(TopoDS::Shell(sewn));
-                            if (!solid.IsNull() && shape::count(solid).solids >= 1) s = solid;
-                        } else if (shape::count(sewn).solids >= 1) {
-                            s = sewn;
-                        }
-                    }
+                    if (usable(healed)) s = healed;
                     if (!s.IsNull() && shape::volume(s) < 0.0) s.Reverse();
-                    if (!usable(s)) return orig;
-                    return s;
+                    return usable(s) ? s : orig;
                 };
                 auto fuzzy_fuse = [&](const TopoDS_Shape& a, const TopoDS_Shape& b) -> TopoDS_Shape {
                     std::string report;

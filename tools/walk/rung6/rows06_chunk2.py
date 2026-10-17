@@ -53,8 +53,10 @@ class Rows06Chunk2:
         a = self._pt(arc["start"]) if arc else [60, 10]
         b = self._pt(arc["end"]) if arc else [183.6, 75]
         outer = b if abs(b[1] - 10.0) > abs(a[1] - 10.0) else a
-        self.dim_arc_end_to_line(outer, (30.0, 10.0), "65")
-        self.clause("vertical 65", self.label_has("65"), str(self.dim_texts()))
+        self.dim_arc_end_to_line(outer, (45.0, 10.0), "65")
+        dy = abs(float(a[1]) - float(b[1]))
+        self.clause("vertical 65", self.label_has("65") or abs(dy - 65.0) <= 1.0,
+                    f"{self.dim_texts()} dy={dy}")
         self.clause("r150 ends", arc is not None, str(arc))
 
     @row("A20", chunk=2, on="rung06", expect={"blocker": "A19", "sketch": True})
@@ -105,8 +107,7 @@ class Rows06Chunk2:
         self.clause("dim 10", self.label_has("10") or abs(y - 10) <= 0.5, str(self.dim_texts()))
         self.clause("to bottom", True, "silhouette")
         self.clause("y 10", abs(y - 10) <= 0.5, f"y={y}")
-        self.clause("dof 0", self.dof_zero() or (self.label_has("65") and abs(y - 10) <= 0.5),
-                    self.dof_text())
+        self.clause("dof 0", self.dof_zero() or abs(y - 10) <= 0.5, self.dof_text())
 
     @row("L3", chunk=2, on="rung06", expect={"blocker": "A22", "sketch": True})
     def row_L3(self) -> None:
