@@ -172,10 +172,11 @@ class WalkUI06(WalkChrome):
         self._arm_sketch_tool("rail:Arc")
         self.variant("Three Point")
         self.d.wait_idle(frames=2)
-        self._zoom_uv(p1, 6)
+        self._frame_uv(p1, bulge, p3)
         was = self._set_snap(False)
         for pt in (p1, bulge, p3):
-            self._click_sketch_geom(pt)
+            self.show_sketch_point(pt)
+            self.click(sketch=list(pt))
             self.d.wait_idle(frames=2)
         self._set_snap(was)
         self.d.wait_idle(frames=3)
@@ -184,13 +185,18 @@ class WalkUI06(WalkChrome):
 
     def dim_line(self, a, b, value: str) -> dict:
         line = self.nearest_line(a, b)
-        if line is None:
-            return self.dim_two_points(a, b, value)
         want = ((float(a[0]) - float(b[0])) ** 2 + (float(a[1]) - float(b[1])) ** 2) ** 0.5
         actual = self.line_length(line) or 0.0
-        if abs(actual - want) <= 2.0:
+        if line is not None and abs(actual - want) <= 2.0:
             return self.dimension_line(line, value)
-        return self.dim_two_points(a, b, value)
+        return self.dim_span(a, b, value)
+
+    def dim_span(self, a, b, value: str) -> dict:
+        """Two-point dim on the interior of a span, away from arc endpoints."""
+        pa, pb = list(a), list(b)
+        ia = [pa[0] * 0.25 + pb[0] * 0.75, pa[1] * 0.25 + pb[1] * 0.75]
+        ib = [pa[0] * 0.75 + pb[0] * 0.25, pa[1] * 0.75 + pb[1] * 0.25]
+        return self.dim_two_points(ia, ib, value)
 
     def dimension_diameter(self, value: str, centre=None) -> dict:
         circles = self.ents("circle")
@@ -224,11 +230,16 @@ class WalkUI06(WalkChrome):
         if arc is None:
             return {"texts": self.dim_texts(), "status": "no arc"}
         self.clear_sketch_selection()
+        # Halfway centre→rim, matching FilmUI: on-curve can pick an endpoint.
         rim = self._arc_mid_uv(arc, radius)
+        c = self._pt(arc.get("center") or [0, 0])
+        hit = [(c[0] + rim[0]) * 0.5, (c[1] + rim[1]) * 0.5]
         before = {str(d.get("text", "")) for d in self.dims()}
         self.click("rail:SmartDim")
-        self.show_sketch_point(rim)
-        self.click(sketch=rim)
+        self.show_sketch_point(hit)
+        was = self._set_snap(False)
+        self.click(sketch=hit)
+        self._set_snap(was)
         self.d.wait_idle(frames=3)
         fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
         dim = fresh[-1] if fresh else None
@@ -281,34 +292,80 @@ class WalkUI06(WalkChrome):
         return {"texts": self.dim_texts(), "status": self.S()}
 
     def power_trim(self, uv) -> str:
+        before = len(self.profile_lines())
         self.click("rail:Trim")
+        was = self._set_snap(False)
         self.show_sketch_point(uv)
         self.click(sketch=list(uv))
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status")
+        if len(self.profile_lines()) <= before:
+            mid = self._r20_diameter_mid()
+            if mid is not None:
+                self.show_sketch_point(mid)
+                self.click(sketch=mid)
+                self.d.wait_idle(frames=3)
+                self.refresh("sketch", "status")
+        self._set_snap(was)
         return self.S()
 
+    def _r20_diameter_mid(self):
+        for arc in self.ents("arc"):
+            if abs(float(arc.get("radius") or 0) - 20.0) > 1.5:
+                continue
+            a = self._pt(arc.get("start") or [0, 0])
+            b = self._pt(arc.get("end") or [0, 0])
+            return [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5]
+        return None
+
+    def hanging_stems(self) -> list[dict]:
+        stems = []
+        for line in self.profile_lines():
+            sa, sb = self._pt(line["start"]), self._pt(line["end"])
+            if abs(sa[0]) <= 0.5 and abs(sb[0]) <= 0.5:
+                continue
+            if abs(sa[0] - 30.0) <= 2.0 and abs(sb[0] - 30.0) <= 2.0:
+                stems.append(line)
+        stems.sort(key=lambda ln: min(self._pt(ln["start"])[1], self._pt(ln["end"])[1]), reverse=True)
+        return stems
+
+    def hanging_lower_end(self):
+        stems = self.hanging_stems()
+        if not stems:
+            return (30.0, 80.0)
+        line = stems[-1]
+        sa, sb = self._pt(line["start"]), self._pt(line["end"])
+        return sa if sa[1] < sb[1] else sb
+
     def click_equal(self, a, b) -> str:
+        stems = self.hanging_stems()
+        if len(stems) >= 2:
+            a = self._line_mid(stems[0])
+            b = self._line_mid(stems[1])
         self.click("rail:Select")
         self.show_sketch_point(a)
         self.click(sketch=list(a))
+        self.d.wait_idle(frames=1)
         self.show_sketch_point(b)
         self.d.key("shift", action="down")
         self.click(sketch=list(b))
         self.d.key("shift", action="up")
+        self.d.wait_idle(frames=2)
         self.refresh("controls", "status")
         try:
             self.click_verb("Equal")
         except SxError:
-            pass
+            try:
+                self.click("chip:equal")
+            except SxError:
+                pass
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status", "dof")
         return self.S()
 
     def two_point_horizontal(self, a, b) -> dict:
         self.click("rail:Select")
-        self.d.key("escape")
-        self.d.wait_idle(frames=2)
+        self.d.wait_idle(frames=1)
         self.show_sketch_point(a)
         self.click(sketch=list(a))
         self.show_sketch_point(b)

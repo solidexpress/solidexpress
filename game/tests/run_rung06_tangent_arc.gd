@@ -82,6 +82,11 @@ func _three_point(ctx: FilmContext) -> void:
 	var c: Vector2 = info["center"]
 	check(absf(c.x - 80.0) <= 0.5, "centre on the vertical (x=%.3f)" % c.x)
 	check(_has_point_on_line(sm, arc), "centre/ends constrained to the line")
+	var sa := float(info["start_angle"])
+	var ea := float(info["end_angle"])
+	var mid_ang := sa + _ccw_sweep(sa, ea) * 0.5
+	var bulge: Vector2 = c + Vector2.from_angle(mid_ang) * float(info["radius"])
+	check(bulge.x > c.x + 5.0, "bulge on the clicked +X side (got %s)" % str(bulge))
 
 
 func _line(ctx: FilmContext, a: Vector2, b: Vector2) -> void:

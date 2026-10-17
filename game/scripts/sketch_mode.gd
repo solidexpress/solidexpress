@@ -5777,17 +5777,12 @@ func _click_arc(pos2: Vector2) -> void:
 				var p1 := _tool_points[0]
 				var p2 := _tool_points[1]
 				var p3 := _tool_points[2]
-				var c_v: Variant = _circumcenter(p1, p2, p3)
-				if c_v != null:
-					var ctr: Vector2 = c_v
-					var r := ctr.distance_to(p1)
-					if r > 1e-6:
-						remember_numeric(r)
-						var aid: String = sketch.add_arc(
-							ctr.x, ctr.y, r, (p1 - ctr).angle(), (p3 - ctr).angle())
-						SketchTangentArc.constrain_three_point_on_line(
-							sketch, aid, p1, p3, _snap_radius())
-						run_solve()
+				var aid := SketchTangentArc.add_three_point(
+						sketch, p1, p2, p3, _snap_radius())
+				if aid != "":
+					var info: Dictionary = sketch.entity_info(aid)
+					remember_numeric(float(info.get("radius", 0.0)))
+					run_solve()
 				_tool_points.clear()
 		"tangent":
 			# First click near existing curve endpoint; second = end.
@@ -6227,6 +6222,8 @@ func _apply_smart_dim_single(ref: Dictionary, intent: Dictionary) -> void:
 			_apply_line_length_dim(ref, intent)
 		"diameter":
 			_apply_diameter_dim(ref, intent)
+		"radius":
+			_apply_radius_dim(ref, intent)
 
 
 func _apply_line_length_dim(ref: Dictionary, intent: Dictionary) -> void:
@@ -6268,8 +6265,17 @@ func _apply_diameter_dim(ref: Dictionary, intent: Dictionary) -> void:
 	_tag_label_anchor(intent, [hit])
 
 
-## A typed radius and a diameter are the same size twice. The diameter is
-## the one Smart Dim keeps.
+func _apply_radius_dim(ref: Dictionary, intent: Dictionary) -> void:
+	var hit := str(ref.get("entity", ""))
+	var info: Dictionary = sketch.entity_info(hit)
+	_drop_size_constraints(hit, "diameter")
+	_set_selected([hit])
+	constrain("radius", float(info.get("radius", 5.0)))
+	_tag_label_anchor(intent, [hit])
+
+
+## A typed radius and a diameter are the same size twice. Smart Dim on a
+## full circle keeps diameter; on an arc it keeps radius.
 func _drop_size_constraints(entity_id: String, type: String) -> void:
 	if sketch == null or entity_id == "":
 		return

@@ -202,6 +202,37 @@ TEST_CASE("trim_entity splits line crossed by two parallels",
     REQUIRE(gap_ok);
 }
 
+TEST_CASE("trim_entity splits line at a 3-point arc diameter",
+          "[sketchtools][trim]") {
+    Sketch sk("TrimArcDiam");
+    auto h = sk.add_line(30, 210, 30, 60);
+    // Eastern semicircle: CCW from (30,130) to (30,170) through (50,150).
+    const double pi = std::acos(-1.0);
+    sk.add_arc(30, 150, 20, -pi / 2.0, pi / 2.0);
+    size_t n_before = sk.entities().size();
+
+    REQUIRE(trim_entity(sk, h.str(), 30.0, 150.0));
+    REQUIRE(sk.entities().size() == n_before + 1);
+    REQUIRE(sk.entity(h) == nullptr);
+
+    std::vector<std::pair<double, double>> segs;
+    for (const auto& e : sk.entities()) {
+        if (e.type != SketchEntityType::Line) continue;
+        double x0 = sk.param(e.params[0]);
+        double y0 = sk.param(e.params[1]);
+        double x1 = sk.param(e.params[2]);
+        double y1 = sk.param(e.params[3]);
+        if (std::abs(x0 - 30.0) > 1e-6 || std::abs(x1 - 30.0) > 1e-6) continue;
+        segs.push_back(std::minmax(y0, y1));
+    }
+    REQUIRE(segs.size() == 2);
+    std::sort(segs.begin(), segs.end());
+    REQUIRE(segs[0].first == Approx(60.0).margin(1e-6));
+    REQUIRE(segs[0].second == Approx(130.0).margin(1e-6));
+    REQUIRE(segs[1].first == Approx(170.0).margin(1e-6));
+    REQUIRE(segs[1].second == Approx(210.0).margin(1e-6));
+}
+
 TEST_CASE("trim_entity returns false with no intersections",
           "[sketchtools][trim]") {
     Sketch sk("TrimNone");

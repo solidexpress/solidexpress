@@ -107,6 +107,53 @@ static func build(sketch, start: Vector2, end: Vector2, tol: float) -> String:
 	return aid
 
 
+## Three clicks: start, bulge, end. Kernel arcs are CCW, so the stored sweep
+## is the half that contains the bulge (not the complementary half).
+static func add_three_point(sketch, p1: Vector2, p2: Vector2, p3: Vector2, tol: float) -> String:
+	if sketch == null:
+		return ""
+	var ctr_v: Variant = circumcenter(p1, p2, p3)
+	if ctr_v == null:
+		return ""
+	var ctr: Vector2 = ctr_v
+	var r := ctr.distance_to(p1)
+	if r <= MIN_RADIUS:
+		return ""
+	var sa := (p1 - ctr).angle()
+	var ea := (p3 - ctr).angle()
+	var ma := (p2 - ctr).angle()
+	if not _ccw_contains(ma, sa, ea):
+		var tmp := sa
+		sa = ea
+		ea = tmp
+	var aid: String = sketch.add_arc(ctr.x, ctr.y, r, sa, ea)
+	if aid == "":
+		return ""
+	constrain_three_point_on_line(sketch, aid, p1, p3, tol)
+	return aid
+
+
+static func circumcenter(a: Vector2, b: Vector2, c: Vector2) -> Variant:
+	var d := 2.0 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y))
+	if absf(d) < 1e-12:
+		return null
+	var ux := ((a.x * a.x + a.y * a.y) * (b.y - c.y)
+			+ (b.x * b.x + b.y * b.y) * (c.y - a.y)
+			+ (c.x * c.x + c.y * c.y) * (a.y - b.y)) / d
+	var uy := ((a.x * a.x + a.y * a.y) * (c.x - b.x)
+			+ (b.x * b.x + b.y * b.y) * (a.x - c.x)
+			+ (c.x * c.x + c.y * c.y) * (b.x - a.x)) / d
+	return Vector2(ux, uy)
+
+
+static func _ccw_contains(ang: float, sa: float, ea: float) -> bool:
+	var from := fposmod(ang - sa, TAU)
+	var span := fposmod(ea - sa, TAU)
+	if span < 1e-9:
+		span = TAU
+	return from <= span + 1e-6
+
+
 ## After a 3-point commit: centre and both ends on the same line pick up
 ## point-on-line (SW "coincident with the line").
 static func constrain_three_point_on_line(sketch, arc_id: String, p1: Vector2, p3: Vector2, tol: float) -> void:

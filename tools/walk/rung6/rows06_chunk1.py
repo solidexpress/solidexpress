@@ -169,7 +169,8 @@ class Rows06Chunk1:
 
     @row("A10", chunk=1, on="rung06", expect={"blocker": "N2", "sketch": True})
     def row_A10(self) -> None:
-        made = self.tangent_arc((30, 80), (90, 20))
+        start = self.hanging_lower_end()
+        made = self.tangent_arc(start, (90, 20))
         self.dim_radius((90, 80), 60, "60")
         arc = self.nearest_arc((90, 80), 60)
         r = float(arc.get("radius", 0)) if arc else 0.0

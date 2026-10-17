@@ -81,6 +81,10 @@ static func end_for(type: String, role: String, external: bool) -> End:
 
 
 static func resolve(channel: Channel, a: End, b: End = null, hint: String = "") -> Dictionary:
+	# Circles stay Ø. An arc is R, matching SolidWorks Smart Dim on a partial curve.
+	if channel == Channel.SINGLE and a != null and a.kind == Kind.ARC \
+			and _class_of(b) == Class.NONE:
+		return {"form": "radius", "label_anchor": "rim"}
 	var ca := _class_of(a)
 	var cb := _class_of(b)
 	for rule in _RULES:

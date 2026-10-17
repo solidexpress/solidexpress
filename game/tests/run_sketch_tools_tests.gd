@@ -765,7 +765,7 @@ const _LEGACY_DIM_ROWS := {
 		"form": "line_length", "label_anchor": "mid", "also": "angle_to_horizontal",
 	},
 	"single|circle|": {"form": "diameter", "label_anchor": "rim"},
-	"single|arc|": {"form": "diameter", "label_anchor": "rim"},
+	"single|arc|": {"form": "radius", "label_anchor": "rim"},
 	"between|circle_center|circle_center": {"form": "centres", "label_anchor": "mid"},
 	"between|circle_center|arc_center": {"form": "centres", "label_anchor": "mid"},
 	"between|arc_center|circle_center": {"form": "centres", "label_anchor": "mid"},

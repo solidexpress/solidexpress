@@ -25,9 +25,10 @@ std::vector<std::string> offset_entities(Sketch& s,
                                          double distance);
 
 // Trim the portion of a line or circle nearest to (px, py), bounded by its
-// intersections with other non-construction lines/circles.
+// intersections with other non-construction lines/circles/arcs.
 //
-// LINE: intersections at parameter t in (0,1). End-segment trim shortens the
+// LINE: intersections at parameter t in (0,1), including arc endpoints that
+// lie on the segment (a 3-point diameter span). End-segment trim shortens the
 // existing line; interior trim removes it and adds two shorter lines.
 // CIRCLE: with >= 2 intersections, replaces the circle with an ARC spanning
 // the remaining (untrimmed) portion via Sketch::add_arc.
