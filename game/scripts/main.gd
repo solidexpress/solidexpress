@@ -1703,6 +1703,15 @@ func _apply_swept_boss(profile: String, path: String) -> void:
 func _sweep_needs_contact(sw_fid: String) -> bool:
 	if sw_fid == "":
 		return true
+	# Fuse onto an existing body is allowed to sit off-centre (candlestick
+	# handle on +X). Contact-retry would offset the ellipse by a radius.
+	for f in view.doc.graph_features():
+		if str(f.get("id", "")) != sw_fid:
+			continue
+		var parsed: Variant = JSON.parse_string(str(f.get("params", "{}")))
+		if typeof(parsed) == TYPE_DICTIONARY and str(parsed.get("op", "new")) == "fuse":
+			return false
+		break
 	var bodies: PackedStringArray = view.doc.body_ids()
 	if bodies.is_empty():
 		return true

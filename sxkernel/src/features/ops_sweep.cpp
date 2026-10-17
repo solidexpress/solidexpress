@@ -140,6 +140,7 @@ bool apply_sweep(ApplyCtx& ctx) {
                 TopoDS_Shape face = skf->sketch->profile_face(&perr);
                 if (face.IsNull()) return fail("profile: " + perr);
                 json path = params.value("path", json::array());
+                TopoDS_Wire spine;
                 if (params.contains("path_feature") && params["path_feature"].is_string()) {
                     const Feature* pf =
                         feature(EntityId::from_string(params["path_feature"].get<std::string>()));
@@ -147,6 +148,18 @@ bool apply_sweep(ApplyCtx& ctx) {
                         return fail("missing path feature");
                     // Prefer live params on the path feature (regenerated earlier).
                     path = pf->params.value("path", json::array());
+                    if (pf->params.contains("sketches") && pf->params["sketches"].is_array()) {
+                        for (const auto& js : pf->params["sketches"]) {
+                            const Feature* psk =
+                                feature(EntityId::from_string(js.get<std::string>()));
+                            if (!psk || !psk->sketch) continue;
+                            TopoDS_Wire w = sketch_spine_wire(*psk->sketch);
+                            if (!w.IsNull()) {
+                                spine = w;
+                                break;
+                            }
+                        }
+                    }
                 }
                 if (!path.is_array() || path.size() < 2)
                     return fail("sweep needs a path with at least two points");
@@ -169,7 +182,15 @@ bool apply_sweep(ApplyCtx& ctx) {
 
                 TopoDS_Shape result;
                 try {
-                    result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
+                    if (!spine.IsNull() && guide_ptr == nullptr) {
+                        try {
+                            result = sweep_along_spine(face, spine, thin, contact);
+                        } catch (...) {
+                            result = TopoDS_Shape();
+                        }
+                    }
+                    if (result.IsNull())
+                        result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
                 } catch (const Standard_Failure& e) {
                     return fail(std::string("sweep failed: ") + e.GetMessageString());
                 } catch (const std::runtime_error& e) {
