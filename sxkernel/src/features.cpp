@@ -1148,25 +1148,13 @@ void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f) {
         side = f.params["support_side"].get<std::string>();
     bool have = false;
     double best = 0.0;
-    if (f.params.contains("host_face") && f.params["host_face"].is_string()) {
-        TopoDS_Shape named = doc.resolve(
-            EntityId::from_string(f.params["host_face"].get<std::string>()));
+    for (TopExp_Explorer ex(body->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Face face = TopoDS::Face(ex.Current());
         double off = 0.0;
-        if (!named.IsNull() && named.ShapeType() == TopAbs_FACE &&
-            face_offset_along(TopoDS::Face(named), want, &off)) {
+        if (!face_offset_along(face, want, &off)) continue;
+        if (!have || (side == "min" ? off < best : off > best)) {
             best = off;
             have = true;
-        }
-    }
-    if (!have) {
-        for (TopExp_Explorer ex(body->shape, TopAbs_FACE); ex.More(); ex.Next()) {
-            const TopoDS_Face face = TopoDS::Face(ex.Current());
-            double off = 0.0;
-            if (!face_offset_along(face, want, &off)) continue;
-            if (!have || (side == "min" ? off < best : off > best)) {
-                best = off;
-                have = true;
-            }
         }
     }
     if (!have) return;
