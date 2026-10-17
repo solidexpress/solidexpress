@@ -51,6 +51,8 @@ var _finish_end: OptionButton
 var _thin_spin: SpinBox
 var _thin_type: OptionButton
 var _flip_side: CheckButton
+var _draft_on: CheckButton
+var _draft_spin: SpinBox
 var _contour_bar: HBoxContainer
 var _selected_contours: Array = []  # int indices; empty = all
 var _dim_spin: SpinBox
@@ -364,6 +366,25 @@ func _build_finish_bar() -> void:
 	_flip_side.tooltip_text = (
 		"Thin wall side, or Extruded Cut Flip Side to Cut on an open profile")
 	_finish_end_row.add_child(_flip_side)
+	_draft_on = CheckButton.new()
+	_draft_on.name = "DraftToggle"
+	_draft_on.text = "Draft"
+	_draft_on.button_pressed = false
+	_draft_on.custom_minimum_size = Vector2(UiScale.px(72), _chip_h())
+	_draft_on.tooltip_text = "Draft On: taper the extrude. Off is a prism."
+	_draft_on.toggled.connect(func(_on: bool) -> void: _apply_draft_visibility())
+	_finish_end_row.add_child(_draft_on)
+	_draft_spin = SpinBox.new()
+	_draft_spin.name = "DraftAngleSpin"
+	_draft_spin.min_value = 0
+	_draft_spin.max_value = 89
+	_draft_spin.step = 0.5
+	_draft_spin.value = 15
+	_draft_spin.suffix = "°"
+	_draft_spin.tooltip_text = "Draft angle (degrees, inward)"
+	_fit_spin(_draft_spin)
+	_finish_end_row.add_child(_draft_spin)
+	_apply_draft_visibility()
 	_apply_thin_visibility()
 	var ex := Button.new()
 	ex.name = "ExtrudeButton"
@@ -705,6 +726,34 @@ func _up_to_target_body(view) -> String:
 		if ids.size() == 1:
 			return str(ids[0])
 	return ""
+
+
+func _apply_draft_visibility() -> void:
+	if _draft_spin != null:
+		_draft_spin.visible = _draft_on != null and _draft_on.button_pressed
+
+
+func draft_deg() -> float:
+	if _draft_on == null or not _draft_on.button_pressed:
+		return 0.0
+	if _draft_spin == null:
+		return 0.0
+	return float(_draft_spin.value)
+
+
+func set_draft_deg(v: float) -> void:
+	if _draft_spin != null:
+		_draft_spin.value = v
+
+
+func draft_on() -> bool:
+	return _draft_on != null and _draft_on.button_pressed
+
+
+func set_draft_on(on: bool) -> void:
+	if _draft_on != null:
+		_draft_on.button_pressed = on
+	_apply_draft_visibility()
 
 
 func _apply_thin_visibility() -> void:
@@ -1727,6 +1776,11 @@ func reset_finish_defaults() -> void:
 		_thin_type.select(0)
 	if _flip_side != null:
 		_flip_side.set_pressed_no_signal(false)
+	if _draft_on != null:
+		_draft_on.set_pressed_no_signal(false)
+	if _draft_spin != null:
+		_draft_spin.value = 15
+	_apply_draft_visibility()
 	_apply_thin_visibility()
 	clear_up_to_face()
 	# Distance and the dim blank are per document. A Cut of 5 mm must not be

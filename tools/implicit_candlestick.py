@@ -68,7 +68,7 @@ class ImplicitCandlestick:
             return bool(self.stage == "final" and self.draft)
         if p == (0.0, 205.0, 0.0):
             return self.stage != "final"
-        if p in {(0.0, 100.0, 0.0), (40.0, 10.0, 0.0), (0.0, 210.0, 0.0)}:
+        if p in {(0.0, 100.0, 0.0), (40.0, 10.0, 0.0), (18.0, 215.0, 0.0)}:
             return True
         if p in {(113.0, 10.0, 0.0), (0.0, 221.0, 0.0), (193.0, 86.0, 0.0)}:
             return False

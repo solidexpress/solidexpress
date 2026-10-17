@@ -15,6 +15,7 @@
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRepTools.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
@@ -253,7 +254,48 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         t.SetTranslation(dir * (-dist / 2.0));
                         profile = BRepBuilderAPI_Transform(profile, t, true).Shape();
                     }
-                    result = BRepPrimAPI_MakePrism(profile, dir * dist).Shape();
+                    const double draft_deg = num_param(params, "draft_deg", 0.0, env);
+                    const bool draft_inward = params.value("draft_inward", true);
+                    if (std::abs(draft_deg) >= 75.0)
+                        return fail("draft angle too large");
+                    if (std::abs(draft_deg) > 1e-9) {
+                        TopoDS_Face pface;
+                        if (profile.ShapeType() == TopAbs_FACE)
+                            pface = TopoDS::Face(profile);
+                        else {
+                            TopExp_Explorer fx(profile, TopAbs_FACE);
+                            if (fx.More()) pface = TopoDS::Face(fx.Current());
+                        }
+                        if (pface.IsNull()) return fail("draft needs a planar profile");
+                        TopoDS_Wire w0 = BRepTools::OuterWire(pface);
+                        if (w0.IsNull()) return fail("draft profile has no outer wire");
+                        GProp_GProps props;
+                        BRepGProp::SurfaceProperties(pface, props);
+                        const gp_Pnt c = props.CentreOfMass();
+                        const double area = std::abs(props.Mass());
+                        const double r = std::sqrt(std::max(area, 0.0) / 3.14159265358979323846);
+                        const gp_Vec travel = dir * dist;
+                        const double len = travel.Magnitude();
+                        const double tan_a = std::tan(std::abs(draft_deg) * 3.14159265358979323846 / 180.0);
+                        const double r2 = draft_inward ? (r - len * tan_a) : (r + len * tan_a);
+                        if (r2 <= 1e-3) return fail("draft angle too large");
+                        gp_Trsf move;
+                        move.SetTranslation(travel);
+                        TopoDS_Shape moved = BRepBuilderAPI_Transform(w0, move, true).Shape();
+                        gp_Trsf scal;
+                        scal.SetScale(c.Translated(travel), r2 / std::max(r, 1e-9));
+                        TopoDS_Shape scaled = BRepBuilderAPI_Transform(moved, scal, true).Shape();
+                        if (scaled.ShapeType() != TopAbs_WIRE)
+                            return fail("draft scale failed");
+                        BRepOffsetAPI_ThruSections loft(Standard_True);
+                        loft.AddWire(w0);
+                        loft.AddWire(TopoDS::Wire(scaled));
+                        loft.Build();
+                        if (!loft.IsDone()) return fail("draft frustum failed");
+                        result = loft.Shape();
+                    } else {
+                        result = BRepPrimAPI_MakePrism(profile, dir * dist).Shape();
+                    }
                 } else {
                     const auto& pl = skf->sketch->plane();
                     auto at = [&](double u, double v) {

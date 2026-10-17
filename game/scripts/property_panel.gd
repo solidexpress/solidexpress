@@ -29,6 +29,7 @@ const SCHEMAS := {
 		{"key": "symmetric", "label": "Symmetric", "kind": "bool"},
 		{"key": "op", "label": "Result", "kind": "enum", "options": ["new", "fuse", "cut"]},
 		{"key": "thin_thickness", "label": "Thin wall", "kind": "float", "min": 0.0, "max": 1000.0, "step": 0.5},
+		{"key": "draft_deg", "label": "Draft (°)", "kind": "float", "min": 0.0, "max": 89.0, "step": 0.5},
 	],
 	"revolve": [
 		{"key": "angle", "label": "Angle (°)", "kind": "float", "min": 0.1, "max": 360.0, "step": 5.0,
