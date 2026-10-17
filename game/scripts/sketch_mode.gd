@@ -2693,6 +2693,7 @@ func _apply_region_pick(idx: int) -> void:
 
 
 ## A click nearer an endpoint than the line midpoint stores that endpoint.
+## Arc / ellipse major-axis ends are the same: the R20 hook and the 35 mm ellipse.
 func _endpoint_pick() -> bool:
 	for i in selected.size():
 		if _role_at(i) != "self":
@@ -2712,17 +2713,42 @@ func _is_point_pair(refs: Array) -> bool:
 	return true
 
 
+func _endpoint_pairs(info: Dictionary) -> Array:
+	var kind := str(info.get("type", ""))
+	var out: Array = []
+	if kind == "line" or kind == "arc":
+		if info.has("start"):
+			out.append(["start", info["start"]])
+		if info.has("end"):
+			out.append(["end", info["end"]])
+	elif kind == "ellipse":
+		if info.has("major_start"):
+			out.append(["start", info["major_start"]])
+		if info.has("major_end"):
+			out.append(["end", info["major_end"]])
+	return out
+
+
 func _endpoint_role_at(id: String, pos2: Vector2) -> String:
 	var info: Dictionary = sketch.entity_info(id)
-	if str(info.get("type", "")) != "line":
+	var ends: Array = _endpoint_pairs(info)
+	if ends.is_empty():
 		return "self"
-	var a: Vector2 = info["start"]
-	var b: Vector2 = info["end"]
-	var mid := (a + b) * 0.5
-	var ds := pos2.distance_to(a)
-	var de := pos2.distance_to(b)
-	if minf(ds, de) < pos2.distance_to(mid):
-		return "start" if ds <= de else "end"
+	var best_role := "self"
+	var best_d := INF
+	for pair in ends:
+		var d: float = pos2.distance_to(pair[1])
+		if d < best_d:
+			best_d = d
+			best_role = str(pair[0])
+	if str(info.get("type", "")) == "line":
+		var a: Vector2 = ends[0][1]
+		var b: Vector2 = ends[1][1] if ends.size() > 1 else a
+		if best_d < pos2.distance_to((a + b) * 0.5):
+			return best_role
+		return "self"
+	if best_d <= _pick_tolerance():
+		return best_role
 	return "self"
 
 
@@ -2807,23 +2833,26 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match info.get("type", ""):
-			"line":
-				for pair in [["start", info["start"]], ["end", info["end"]]]:
+			"line", "arc", "ellipse":
+				for pair in _endpoint_pairs(info):
 					var d: float = pos2.distance_to(pair[1])
 					if d <= best_d:
 						best_d = d
 						best_id = id
 						best_part = pair[0]
-			"circle", "arc":
-				var d2: float = pos2.distance_to(info["center"])
-				var d_curve := absf(d2 - float(info.get("radius", 0.0)))
-				# Centre handle only when nearer the centre than the rim.
-				# pick_tol is often larger than a Ø10, so a rim click must
-				# not become a centre grab (A12 Vertical).
-				if d2 <= best_d and d2 < d_curve:
-					best_d = d2
-					best_id = id
-					best_part = "center"
+			"circle":
+				pass
+		if str(info.get("type", "")) == "circle" or str(info.get("type", "")) == "arc":
+			var d2: float = pos2.distance_to(info["center"])
+			var d_curve := absf(d2 - float(info.get("radius", 0.0)))
+			# Centre handle only when nearer the centre than the rim.
+			# pick_tol is often larger than a Ø10, so a rim click must
+			# not become a centre grab (A12 Vertical).
+			# Arc ends already won in pass 1 when the click is on a vertex.
+			if d2 <= best_d and d2 < d_curve:
+				best_d = d2
+				best_id = id
+				best_part = "center"
 	if best_id != "":
 		return {"id": best_id, "part": best_part}
 	# Pass 2: whole entity / rim
@@ -4850,7 +4879,19 @@ func _endpoint_pos(id: String, role: String) -> Vector2:
 	match info.get("type", ""):
 		"line":
 			return info["start"] if role == "start" else info["end"]
-		"circle", "arc":
+		"arc":
+			if role == "start" and info.has("start"):
+				return info["start"]
+			if role == "end" and info.has("end"):
+				return info["end"]
+			return info["center"]
+		"ellipse":
+			if role == "start" and info.has("major_start"):
+				return info["major_start"]
+			if role == "end" and info.has("major_end"):
+				return info["major_end"]
+			return info.get("center", Vector2.ZERO)
+		"circle":
 			return info["center"]
 	return info.get("position", Vector2.ZERO)
 
