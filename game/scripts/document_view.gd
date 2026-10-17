@@ -26,7 +26,7 @@ const SELECTED_FACE_COLOR := Color(1.0, 0.62, 0.15)
 const HOVER_BODY_COLOR := Color(0.78, 0.84, 0.92)
 const HOVER_FACE_COLOR := Color(0.95, 0.82, 0.45)
 const MATE_ANCHOR_COLOR := Color(0.35, 0.85, 0.45)
-const EDGE_COLOR := Color(0.12, 0.13, 0.16)
+const EDGE_COLOR := Color(0.22, 0.24, 0.28)
 const DATUM_PLANE_COLOR := Color(0.35, 0.55, 0.85, 0.22)
 const DATUM_AXIS_COLOR := Color(0.85, 0.35, 0.2)
 const DATUM_POINT_COLOR := Color(0.2, 0.7, 0.45)
@@ -147,6 +147,7 @@ func _ready() -> void:
 	_edge_material = StandardMaterial3D.new()
 	_edge_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_edge_material.albedo_color = EDGE_COLOR
+	_edge_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_selected_edge_material = StandardMaterial3D.new()
 	_selected_edge_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_selected_edge_material.albedo_color = SELECTED_BODY_COLOR
@@ -2771,20 +2772,43 @@ func _rebuild_edges(edge_node: MeshInstance3D, body_id: String) -> void:
 	var lines: Dictionary = doc.get_edge_lines(body_id)
 	var im := ImmediateMesh.new()
 	var have_any := false
+	var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
 	for edge_id in lines:
 		var pts: PackedVector3Array = lines[edge_id]
 		if pts.size() < 2:
 			continue
 		if not have_any:
-			im.surface_begin(Mesh.PRIMITIVE_LINES)
+			im.surface_begin(Mesh.PRIMITIVE_TRIANGLES if cam != null else Mesh.PRIMITIVE_LINES)
 			have_any = true
 		for i in range(pts.size() - 1):
-			im.surface_add_vertex(pts[i])
-			im.surface_add_vertex(pts[i + 1])
+			if cam != null:
+				_append_world_ribbon(im, cam, pts[i], pts[i + 1], 1.75)
+			else:
+				im.surface_add_vertex(pts[i])
+				im.surface_add_vertex(pts[i + 1])
 	if have_any:
 		im.surface_end()
 	edge_node.mesh = im
 	edge_node.material_override = _edge_material
+
+
+func _append_world_ribbon(im: ImmediateMesh, cam: Camera3D, a: Vector3, b: Vector3, width_px: float) -> void:
+	var sa := cam.unproject_position(a)
+	var sb := cam.unproject_position(b)
+	if sa.distance_to(sb) < 0.8:
+		return
+	var dir := (sb - sa).normalized()
+	var n := Vector2(-dir.y, dir.x) * (width_px * 0.5)
+	var p0 := cam.project_position(sa + n, cam.global_position.distance_to(a))
+	var p1 := cam.project_position(sa - n, cam.global_position.distance_to(a))
+	var p2 := cam.project_position(sb - n, cam.global_position.distance_to(b))
+	var p3 := cam.project_position(sb + n, cam.global_position.distance_to(b))
+	im.surface_add_vertex(p0)
+	im.surface_add_vertex(p1)
+	im.surface_add_vertex(p2)
+	im.surface_add_vertex(p0)
+	im.surface_add_vertex(p2)
+	im.surface_add_vertex(p3)
 
 
 func _highlight_edge() -> void:
