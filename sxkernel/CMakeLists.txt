@@ -7,16 +7,24 @@ file(GLOB SXKERNEL_SOURCES CONFIGURE_DEPENDS src/*.cpp src/features/*.cpp)
 # OCCT data-exchange libs differ by version (7.6: TKSTEP/TKIGES/TKSTL;
 # 7.7+/8.x: TKDESTEP/TKDEIGES/TKDESTL). SolidExpress pins OCCT 8.0.1
 # (packaging/occt.version); the 7.6 names remain only as a local fallback.
+# Re-probe when the OCCT install changes (e.g. system 7.9 -> pinned 8.0.1);
+# otherwise cached paths from the old install get linked next to the new one.
+if(NOT "${_SX_OCCT_DE_FOR}" STREQUAL "${OpenCASCADE_LIBRARY_DIR}")
+    foreach(_v PROBE TKDESTEP TKDEIGES TKDESTL TKSTEP TKIGES TKSTL)
+        unset(_SX_OCCT_DE_${_v} CACHE)
+    endforeach()
+    set(_SX_OCCT_DE_FOR "${OpenCASCADE_LIBRARY_DIR}" CACHE INTERNAL "OCCT lib dir the DE probe ran against")
+endif()
 set(_SX_OCCT_DE_NAMES TKDESTEP TKDEIGES TKDESTL)
 find_library(_SX_OCCT_DE_PROBE NAMES TKDESTEP
-    PATHS ${OpenCASCADE_LIBRARY_DIR} /usr/lib/x86_64-linux-gnu /usr/lib)
+    HINTS ${OpenCASCADE_LIBRARY_DIR} PATHS /usr/lib/x86_64-linux-gnu /usr/lib)
 if(NOT _SX_OCCT_DE_PROBE)
     set(_SX_OCCT_DE_NAMES TKSTEP TKIGES TKSTL)
 endif()
 set(_SX_OCCT_DE_LIBS "")
 foreach(_n IN LISTS _SX_OCCT_DE_NAMES)
     find_library(_SX_OCCT_DE_${_n} NAMES ${_n}
-        PATHS ${OpenCASCADE_LIBRARY_DIR} /usr/lib/x86_64-linux-gnu /usr/lib)
+        HINTS ${OpenCASCADE_LIBRARY_DIR} PATHS /usr/lib/x86_64-linux-gnu /usr/lib)
     if(_SX_OCCT_DE_${_n})
         list(APPEND _SX_OCCT_DE_LIBS ${_SX_OCCT_DE_${_n}})
     else()

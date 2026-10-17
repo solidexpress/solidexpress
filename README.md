@@ -16,11 +16,16 @@ The product is AI-first: every selectable entity has a generated markdown **sema
 sudo apt-get install -y ninja-build zip cmake g++ \
   libeigen3-dev libboost-dev libboost-graph-dev libtbb-dev \
   libfreetype-dev libfontconfig-dev rapidjson-dev
-# Build/install pinned OCCT (see packaging/occt.version):
-OCCT_PREFIX=/opt/occt-8.0.1 ./packaging/ci/install_occt.sh
-export CMAKE_PREFIX_PATH=/opt/occt-8.0.1
-export LD_LIBRARY_PATH=/opt/occt-8.0.1/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+# Build/install the pinned OCCT (see packaging/occt.version):
+make occt
 ```
+
+`make occt` builds the pinned OCCT into `/opt/occt-<version>` when `/opt` is writable,
+otherwise into `~/.local/opt/occt-<version>` (no sudo needed; it also fetches header-only
+RapidJSON into `~/.local/src` if the system package is missing). Re-run it whenever
+`packaging/occt.version` bumps. `make build` finds either location on its own and points
+CMake and the loader at it, so no `CMAKE_PREFIX_PATH`/`LD_LIBRARY_PATH` exports are needed;
+it warns if the pinned version isn't installed.
 
 **Godot 4.7-stable** (Linux x86_64 binary): download from
 [godotengine/godot-builds](https://github.com/godotengine/godot-builds/releases),

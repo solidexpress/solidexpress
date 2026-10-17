@@ -75,6 +75,11 @@ cmake_args=(
   -DUSE_FREEIMAGE=OFF
   -DUSE_VTK=OFF
 )
+# Extra -D flags for local installs (e.g. a user-dir RapidJSON without sudo).
+if [[ -n "${OCCT_EXTRA_CMAKE_ARGS:-}" ]]; then
+  read -r -a extra_args <<<"${OCCT_EXTRA_CMAKE_ARGS}"
+  cmake_args+=("${extra_args[@]}")
+fi
 cmake "${cmake_args[@]}"
 
 cmake --build "${BUILD}" -j "${OCCT_JOBS}"
