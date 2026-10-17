@@ -1,0 +1,249 @@
+WEBVTT
+
+1
+00:00:02.067 --> 00:00:03.400
+Sketch a Ø150 circle on Front and extrude 250
+
+2
+00:00:03.400 --> 00:00:03.933
+[Sketch]  Start sketch on picked face or ground
+
+3
+00:00:03.933 --> 00:00:04.733
+[Click]  Front
+
+4
+00:00:04.733 --> 00:00:05.633
+[Circle]  Circle
+
+5
+00:00:05.633 --> 00:00:06.433
+[D]  Smart dimension — edit value
+
+6
+00:00:06.433 --> 00:00:09.067
+[Click]  Dimension 150
+
+7
+00:00:09.067 --> 00:00:09.700
+[OK]  Extrude
+
+8
+00:00:09.700 --> 00:00:11.200
+Shell 10, both ends
+
+9
+00:00:11.200 --> 00:00:12.200
+[Click]  Select body
+
+10
+00:00:12.200 --> 00:00:13.200
+[Click]  Face
+
+11
+00:00:13.200 --> 00:00:13.967
+[Shift+Click]  Face
+
+12
+00:00:13.967 --> 00:00:14.800
+[Shell]  Hollow the selected face
+
+13
+00:00:14.800 --> 00:00:15.500
+[Apply]  Shell 10 mm
+
+14
+00:00:15.500 --> 00:00:16.900
+Flange Ø225, fuse 10
+
+15
+00:00:16.900 --> 00:00:17.567
+[Click]  Side face
+
+16
+00:00:17.567 --> 00:00:18.433
+[Click]  Side face
+
+17
+00:00:18.433 --> 00:00:19.133
+[Sketch]  Start sketch on picked face or ground
+
+18
+00:00:19.133 --> 00:00:20.033
+[Circle]  Circle
+
+19
+00:00:20.033 --> 00:00:20.833
+[D]  Smart dimension — edit value
+
+20
+00:00:20.833 --> 00:00:23.400
+[Click]  Dimension 225
+
+21
+00:00:23.400 --> 00:00:24.033
+[OK]  Extrude
+
+22
+00:00:24.033 --> 00:00:25.433
+Bore Ø130, eight Ø10 holes on a 94 mm pitch, cut 10
+
+23
+00:00:25.433 --> 00:00:26.300
+[Click]  Side face
+
+24
+00:00:26.300 --> 00:00:27.000
+[Sketch]  Start sketch on picked face or ground
+
+25
+00:00:27.000 --> 00:00:27.900
+[Circle]  Circle
+
+26
+00:00:27.900 --> 00:00:28.800
+[Circle]  Circle
+
+27
+00:00:28.800 --> 00:00:29.567
+[Click]  Sketch click
+
+28
+00:00:29.567 --> 00:00:30.533
+[D]  Smart dimension — edit value
+
+29
+00:00:30.533 --> 00:00:31.667
+[Click]  Dimension 94
+
+30
+00:00:31.667 --> 00:00:32.267
+[Click]  Sketch click
+
+31
+00:00:32.267 --> 00:00:33.000
+[Click]  Clear selection
+
+32
+00:00:33.000 --> 00:00:33.733
+[Click]  First rim
+
+33
+00:00:33.733 --> 00:00:34.633
+[Shift+Click]  Second rim
+
+34
+00:00:34.633 --> 00:00:35.200
+[Vertical]  Vertical
+
+35
+00:00:35.200 --> 00:00:35.800
+[Click]  Sketch click
+
+36
+00:00:35.800 --> 00:00:36.533
+[Click]  Clear selection
+
+37
+00:00:36.533 --> 00:00:37.267
+[Click]  Ø10 seed rim
+
+38
+00:00:37.267 --> 00:00:37.900
+[Pattern]  Pattern
+
+39
+00:00:37.900 --> 00:00:38.867
+[Circular]  circular variant
+
+40
+00:00:38.867 --> 00:00:40.867
+[Apply]  Pattern 8 / 360
+
+41
+00:00:40.867 --> 00:00:41.500
+[OK]  Extrude
+
+42
+00:00:41.500 --> 00:00:42.733
+Mirror the four features about z = 0
+
+43
+00:00:42.733 --> 00:00:43.467
+[View]  Timeline
+
+44
+00:00:43.467 --> 00:00:44.233
+[Click]  timeline row
+
+45
+00:00:44.233 --> 00:00:45.133
+[Features]  Feature Mirror
+
+46
+00:00:45.133 --> 00:00:45.900
+[Click]  Face
+
+47
+00:00:45.900 --> 00:00:46.567
+[Click]  timeline row
+
+48
+00:00:46.567 --> 00:00:47.233
+[Shift+Click]  timeline row
+
+49
+00:00:47.233 --> 00:00:47.900
+[Shift+Click]  timeline row
+
+50
+00:00:47.900 --> 00:00:48.500
+[Shift+Click]  timeline row
+
+51
+00:00:48.500 --> 00:00:49.333
+[OK]  Mirror OK
+
+52
+00:00:49.333 --> 00:00:50.833
+Shell the mirrored half 10
+
+53
+00:00:50.833 --> 00:00:51.500
+[Click]  Face
+
+54
+00:00:51.500 --> 00:00:52.233
+[Click]  Face
+
+55
+00:00:52.233 --> 00:00:53.067
+[Shell]  Hollow the selected face
+
+56
+00:00:53.067 --> 00:00:53.767
+[Apply]  Shell 10 mm
+
+57
+00:00:53.767 --> 00:00:55.100
+Fillet R5 on both flange faces
+
+58
+00:00:55.100 --> 00:00:55.800
+[Click]  timeline row
+
+59
+00:00:55.800 --> 00:00:56.500
+[View]  Timeline
+
+60
+00:00:56.500 --> 00:00:57.633
+[Fillet]  Arm fillet
+
+61
+00:00:57.633 --> 00:00:58.633
+[Click]  Fillet rim
+
+62
+00:00:58.633 --> 00:01:00.800
+[Shift+Click]  Fillet rim
