@@ -1,0 +1,3 @@
+script=tests/run_rung06_tangent_arc.gd
+tier=ci
+timeout=180
