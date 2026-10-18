@@ -4848,13 +4848,16 @@ func _seal_tangent_bosses() -> void:
 			continue
 		var hits: Array = []
 		for ln in lines:
-			if not _line_tangent_to_circle(ln["a"], ln["b"], c, rad):
-				continue
 			for role in ["a", "b"]:
 				var p: Vector2 = ln[role]
 				if absf(p.distance_to(c) - rad) > 0.05:
 					continue
 				var other: Vector2 = ln["b"] if role == "a" else ln["a"]
+				# Stadium bosses (wrench Ø45 chord + Ø20 tangent). A lone
+				# chord (spanner handle on Ø33, far end on the ellipse) stays
+				# a circle so the ring remains a hole.
+				if not _far_end_on_other_circle(other, c, circles, 0.05):
+					continue
 				hits.append({
 					"p": p,
 					"other": other,
@@ -4919,15 +4922,19 @@ func _seal_tangent_bosses() -> void:
 		sketch.remove_entity(str(circ["id"]))
 
 
-## Chord hits (handle on Ø33) are not tangent bosses. Distance from centre
-## to the infinite line must equal the radius.
-func _line_tangent_to_circle(a: Vector2, b: Vector2, centre: Vector2, radius: float) -> bool:
-	var ab: Vector2 = b - a
-	var len := ab.length()
-	if len < 1e-9 or radius <= 0.0:
-		return false
-	var dist := absf((centre - a).cross(ab) / len)
-	return absf(dist - radius) <= 0.05
+## True when `other` lies on a different circle than `self_c` (the far boss
+## of a two-circle stadium). Chord hits whose far end is not on a circle
+## (handle on Ø33) must not seal.
+func _far_end_on_other_circle(other: Vector2, self_c: Vector2, circles: Array, tol: float) -> bool:
+	for circ in circles:
+		if typeof(circ) != TYPE_DICTIONARY:
+			continue
+		var oc: Vector2 = circ["c"]
+		if oc.distance_to(self_c) <= tol:
+			continue
+		if absf(other.distance_to(oc) - float(circ["r"])) <= tol:
+			return true
+	return false
 
 
 func _angle_in_sweep(start: float, end_a: float, target: float) -> bool:

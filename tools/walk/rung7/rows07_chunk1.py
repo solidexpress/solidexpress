@@ -95,8 +95,8 @@ class Rows07Chunk1:
 
     @row("A5", chunk=1, on="rung07", expect={"blocker": "A4", "sketch": True})
     def row_A5(self) -> None:
-        self.draw_line((0.0, 0.0), self.axis_17(), construction=True)
-        self.dim_two((-20.0, 0.0), self.world(-20.0, 0.0), "17")
+        self.draw_line(self.world(-50.0, 0.0), self.world(80.0, 0.0), construction=True)
+        self.dim_two((50.0, 0.0), self.world(50.0, 0.0), "17")
         types = self.constraint_types()
         self.clause("construction", bool(self.ents("line", construction=True)), "construction")
         self.clause("angle 17", self.label_has("17") or "angle" in types, str(self.dim_texts()))
@@ -120,10 +120,12 @@ class Rows07Chunk1:
 
     @row("A7", chunk=1, on="rung07", expect={"blocker": "A6", "sketch": True})
     def row_A7(self) -> None:
-        self.dim_two((0.0, 0.0), self.ellipse_major(), "55")
-        self.dim_two((0.0, 0.0), self.ellipse_minor(), "50")
-        self.dim_two(self.world(0.0, 0.0), self.jaw_outer(True), "12.5")
-        self.dim_two(self.jaw_outer(True), self.jaw_inner(True), "20")
+        self.dim_one(self.ellipse_major(), "55")
+        self.dim_one(self.ellipse_minor(), "50")
+        o_hi, i_hi = self.jaw_outer(True), self.jaw_inner(True)
+        jaw_mid = ((o_hi[0] + i_hi[0]) * 0.5, (o_hi[1] + i_hi[1]) * 0.5)
+        self.dim_two(self.world(15.0, 0.0), jaw_mid, "12.5")
+        self.dim_two(o_hi, i_hi, "20")
         texts = self.dim_texts()
         self.clause("major 55 steep", self.label_has("55"), str(texts))
         self.clause("minor 50 along 17", self.label_has("50"), str(texts))

@@ -176,6 +176,17 @@ class WalkUI07(WalkChrome):
         self.refresh("sketch", "status", "dims")
         return {"status": self.S(), "lines": self.profile_lines()}
 
+    def place_vertex_hex(self, centre, vertex) -> dict:
+        self._arm_sketch_tool("rail:Polygon")
+        self.variant("Vertex")
+        self._frame_uv(centre, vertex)
+        self.click(sketch=list(centre))
+        self.d.wait_idle(frames=2)
+        self.click(sketch=list(vertex))
+        self.d.wait_idle(frames=3)
+        self.refresh("sketch", "status", "dims")
+        return {"status": self.S(), "lines": self.profile_lines()}
+
     def trim_at(self, uv) -> str:
         self._arm_sketch_tool("rail:Trim")
         self.show_sketch_point(uv)
@@ -207,11 +218,14 @@ class WalkUI07(WalkChrome):
         return " | ".join(self.result_texts(mark)) or self.S()
 
     def mirror_entities(self, axis_uv, geom_uv, confirm_uv) -> str:
+        # Select axis + geometry first. `_arm_sketch_tool` clicks Select and
+        # would wipe that set; Mirror's viewport click only confirms.
         self.click("rail:Select")
-        self._frame_uv(axis_uv, geom_uv)
+        self._frame_uv(axis_uv, geom_uv, confirm_uv)
         self.click(sketch=list(axis_uv))
         self._shift_click_uv(geom_uv)
-        self._arm_sketch_tool("rail:Mirror")
+        self.click("rail:Mirror")
+        self.d.wait_idle(frames=2)
         self.show_sketch_point(confirm_uv)
         mark = self.mark()
         self.click(sketch=list(confirm_uv))
@@ -307,7 +321,7 @@ class WalkUI07(WalkChrome):
                 self.click(str(chip.get("id")))
                 self.d.wait_idle(frames=1)
 
-    def try_extrude(self, distance: str, op: str = "New", end: str = "Mid Plane", apply: bool = True) -> dict:
+    def try_extrude(self, distance: str, op: str = "New", end: str = "Midplane", apply: bool = True) -> dict:
         self._ensure_finish_bar()
         self.set_option("finish:Op", op)
         self.set_option("finish:End", end)

@@ -23,9 +23,9 @@ class Rows07Chunk2:
     @row("A12", chunk=2, on="rung07", expect={"blocker": "A11", "sketch": True})
     def row_A12(self) -> None:
         c = self.ring_centre()
-        r_v = self.mm("HEX_AF") / math.sqrt(3.0)
-        self.place_af_hex(c, (c[0], c[1] + r_v))
-        self.dim_two((c[0] - 12.5, c[1]), (c[0] + 12.5, c[1]), "25")
+        af = self.mm("HEX_AF")
+        self.place_af_hex(c, (c[0] + af, c[1]))
+        self.dim_two((c[0], c[1] - af * 0.5), (c[0], c[1] + af * 0.5), "25")
         lines = self.profile_lines()
         self.clause("polygon 6", len(lines) >= 6, f"lines={len(lines)}")
         self.clause("inscribed", True, "Across Flats")
@@ -37,7 +37,8 @@ class Rows07Chunk2:
         c = self.ring_centre()
         r_v = self.mm("HEX_AF") / math.sqrt(3.0)
         before = len(self.profile_lines())
-        self.place_af_hex(c, (c[0] + r_v, c[1]))
+        ang = math.radians(30.0)
+        self.place_vertex_hex(c, (c[0] + r_v * math.cos(ang), c[1] + r_v * math.sin(ang)))
         self.dim_two((c[0], c[1] - 12.5), (c[0], c[1] + 12.5), "25")
         after = len(self.profile_lines())
         self.clause("second hex", after > before, f"{before} -> {after}")
@@ -59,7 +60,9 @@ class Rows07Chunk2:
 
     @row("A15", chunk=2, on="rung07", expect={"blocker": "A14", "sketch": True})
     def row_A15(self) -> None:
-        self.dim_two((0.0, 0.0), self.ring_centre(), "240")
+        c = self.ring_centre()
+        self.draw_line((0.0, 0.0), c, construction=True)
+        self.dim_two((0.0, 0.0), c, "240")
         self.clause("dim 240", self.label_has("240"), str(self.dim_texts()))
         self.clause("centres", True, "origin → Ø33")
 

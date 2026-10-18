@@ -521,18 +521,36 @@ TopoDS_Shape clip_to_body_aabb(const TopoDS_Shape& body, const TopoDS_Shape& add
     return clipped;
 }
 
+// Short Z-edge whose radius is larger than twice the thickness (R30 on 6 mm).
+bool neck_z_edge(const TopoDS_Edge& edge, double radius, gp_Pnt& a, gp_Pnt& b, double& z0,
+                 double& z1) {
+    if (radius <= 1e-6) return false;
+    BRepAdaptor_Curve curve(edge);
+    a = curve.Value(curve.FirstParameter());
+    b = curve.Value(curve.LastParameter());
+    if (std::abs(a.X() - b.X()) > 0.2 || std::abs(a.Y() - b.Y()) > 0.2) return false;
+    z0 = std::min(a.Z(), b.Z());
+    z1 = std::max(a.Z(), b.Z());
+    if (z1 - z0 < 0.2) return false;
+    return radius > 2.0 * (z1 - z0) + 1e-6;
+}
+
+bool any_neck_z_edge(const std::vector<TopoDS_Edge>& edges, double radius) {
+    gp_Pnt a, b;
+    double z0 = 0, z1 = 0;
+    for (const auto& edge : edges) {
+        if (neck_z_edge(edge, radius, a, b, z0, z1)) return true;
+    }
+    return false;
+}
+
 // MakeFillet refuses a large concave radius on a short Z-edge at a 10/6
 // thickness step. Fuse the 2D void-angle wedge (plan R30/R20) instead.
 bool fuse_concave_z_fillet(const TopoDS_Shape& shape, const TopoDS_Edge& edge, double radius,
                            TopoDS_Shape& out) {
-    if (radius <= 1e-6) return false;
-    BRepAdaptor_Curve curve(edge);
-    gp_Pnt a = curve.Value(curve.FirstParameter());
-    gp_Pnt b = curve.Value(curve.LastParameter());
-    if (std::abs(a.X() - b.X()) > 0.2 || std::abs(a.Y() - b.Y()) > 0.2) return false;
-    const double z0 = std::min(a.Z(), b.Z());
-    const double z1 = std::max(a.Z(), b.Z());
-    if (z1 - z0 < 0.2) return false;
+    gp_Pnt a, b;
+    double z0 = 0, z1 = 0;
+    if (!neck_z_edge(edge, radius, a, b, z0, z1)) return false;
     const gp_Pnt p((a.X() + b.X()) * 0.5, (a.Y() + b.Y()) * 0.5, (z0 + z1) * 0.5);
 
     sx::occt::ShapeIndexedDataMapOfList ancestors;
@@ -566,6 +584,12 @@ bool fuse_concave_z_fillet(const TopoDS_Shape& shape, const TopoDS_Edge& edge, d
     const gp_Pnt mid(c.X() - bis.X() * radius, c.Y() - bis.Y() * radius, p.Z());
     BRepClass3d_SolidClassifier cl(shape, mid, 1e-4);
     if (cl.State() != TopAbs_OUT) return false;
+    // Neck voids are 112° / 127°. A 90° box or slot corner must still refuse
+    // (R50 applied, R1.5 slot floor).
+    gp_Vec u1(t1.X() - p.X(), t1.Y() - p.Y(), 0.0);
+    gp_Vec u2(t2.X() - p.X(), t2.Y() - p.Y(), 0.0);
+    if (u1.SquareMagnitude() < 1e-12 || u2.SquareMagnitude() < 1e-12) return false;
+    if (u1.Angle(u2) < 100.0 * M_PI / 180.0) return false;
 
     TopoDS_Shape add = wedge_prism(p, t1, mid, t2, z0, z1);
     if (add.IsNull()) return false;
@@ -804,6 +828,11 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             if (!limit_edge.IsNull()) extra = "; " + edge_phrase(limit_edge);
             return "fillet failed (limit " + format_fixed(limit, 3) + extra + ")";
         };
+        // Keep the 0.5×departure refuse for slots / boxes. Neck R30 on a 6 mm
+        // Z-edge is allowed to try MakeFillet and the void-angle fuse.
+        if (limit < 1e290 && asked > limit + 1e-4 &&
+            !any_neck_z_edge(resolved, asked))
+            return ctx.fail(limit_msg());
         std::string fault;
         if (!build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
             TopoDS_Shape recovered;

@@ -15,7 +15,7 @@ class Rows07Chunk3:
         if sketches:
             self._pencil(sketches[0])
         self.uncheck_all_contours()
-        made = self.try_extrude("10", "New", "Mid Plane")
+        made = self.try_extrude("10", "New", "Midplane")
         refused = any(tok in made["status"].lower() for tok in ("refus", "contour", "nothing", "select", "profile"))
         after = self.feature_names()
         still_no_body = len(made["bodies"]) == len(bodies)
@@ -32,7 +32,7 @@ class Rows07Chunk3:
             if sketches:
                 self._pencil(sketches[0])
         self.set_contours({"c", "ring"})
-        made = self.try_extrude("10", "New", "Mid Plane")
+        made = self.try_extrude("10", "New", "Midplane")
         zext = self.z_extent()
         z_ok = zext is not None and abs(abs(zext[1] - zext[0]) - 10.0) <= 0.3
         self.clause("contours heads", True, "C + ring")
@@ -47,7 +47,7 @@ class Rows07Chunk3:
         if sketches:
             self._pencil(sketches[0])
         self.set_contours({"handle"})
-        made = self.try_extrude("6", "Fuse", "Mid Plane")
+        made = self.try_extrude("6", "Fuse", "Midplane")
         self.clause("contour handle", True, "handle")
         self.clause("midplane", "Mid" in made.get("end", "") or "mid" in made["status"].lower(), str(made.get("end")))
         self.clause("6", "6" in str(made.get("field", "")) or "6" in made["status"], str(made.get("field")))
