@@ -132,6 +132,9 @@ Part B: film `ubc_wrench` + `run_film_ubc_wrench_tests.gd` (`tier=full`). Suites
 
 `ubc_wrench` is on Release `demo-movies` and in `published-demos.json` and `demo-catalog.json`.
 
+## 0.1.5 — rung 6 (candlestick)
+- SolidExpress `VERSION` is 0.1.5. Rung 6 (SolidWorks Revolve & Sweep candlestick) is fully makeable (#275).
+
 ## 0.1.4 — rung 5 (flanged pipe)
 - SolidExpress `VERSION` is 0.1.4. Rung 5 (UBC ELEC391 Exercise 3 flanged pipe) is fully makeable (#270).
 
