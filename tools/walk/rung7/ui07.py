@@ -644,20 +644,30 @@ class WalkUI07(WalkChrome):
         return notes
 
     def draw_recess_racetrack(self) -> None:
-        """Closed inset stadium: y=±5, x=40..215, R5 caps. Named Line + Arc."""
+        """Closed inset rectangle (offset-5 of the 20 mm handle). Four named
+        Lines share endpoints so Extrude sees a region; 3-point Arc clicks
+        were offset off the joints and left an open chain."""
         was = self._set_snap(False)
-        self.draw_line((40.0, 5.0), (215.0, 5.0))
-        self.draw_line((40.0, -5.0), (215.0, -5.0))
-        self.three_point_arc((40.0, 5.0), (35.0, 0.0), (40.0, -5.0))
-        self.three_point_arc((215.0, 5.0), (220.0, 0.0), (215.0, -5.0))
+        x0, x1, y = 40.0, 215.0, 5.5
+        self.draw_line((x0, y), (x1, y))
+        self.draw_line((x1, y), (x1, -y))
+        self.draw_line((x1, -y), (x0, -y))
+        self.draw_line((x0, -y), (x0, y))
         self._set_snap(was)
 
     def clear_profile_ents(self) -> int:
-        removed = 0
         self.click("rail:Select")
-        for entity in list(self.ents()):
-            uv = self._ent_uv(entity)
-            self._click_uv(uv)
+        self.d.wait_idle(frames=1)
+        self.d.key("ctrl+a")
+        self.d.wait_idle(frames=1)
+        self.d.key("delete")
+        self.d.wait_idle(frames=2)
+        removed = 0
+        for _ in range(24):
+            entities = list(self.ents())
+            if not entities:
+                break
+            self._click_uv(self._ent_uv(entities[0]))
             self.d.key("delete")
             self.d.wait_idle(frames=1)
             removed += 1

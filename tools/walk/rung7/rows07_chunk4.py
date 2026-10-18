@@ -70,6 +70,8 @@ class Rows07Chunk4:
         if "breaks the chain" in status_l or "removed nothing" in status_l or made.get("sketch"):
             self.clear_profile_ents()
             self.draw_recess_racetrack()
+            n_draw = [e.get("type") for e in self.ents()]
+            print(f"recess recovery ents={n_draw}", flush=True)
             self.check_all_contours()
             made = self.try_extrude("2", "Cut", "Midplane")
             if "removed nothing" in str(made.get("status") or "").lower() or made.get("sketch"):
