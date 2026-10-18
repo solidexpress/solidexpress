@@ -1,0 +1,3 @@
+script=tests/run_rung07_offset.gd
+tier=full
+timeout=180

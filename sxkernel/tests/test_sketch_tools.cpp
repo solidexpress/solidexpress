@@ -139,6 +139,53 @@ TEST_CASE("offset_entities offsets circles with Concentric and Diameter",
     REQUIRE(sk.entities().size() == n_before);
 }
 
+TEST_CASE("offset_entities offsets arcs with Concentric and Radius",
+          "[sketchtools][rung07]") {
+    Sketch sk("OffArc");
+    const double pi = 3.14159265358979323846;
+    auto a = sk.add_arc(0, 0, 30.0, 0.0, pi / 2.0);
+
+    auto outward = offset_entities(sk, {a.str()}, 5.0);
+    REQUIRE(outward.size() == 1);
+    EntityId nid = EntityId::from_string(outward[0]);
+    const SketchEntity* ne = sk.entity(nid);
+    REQUIRE(ne != nullptr);
+    REQUIRE(ne->type == SketchEntityType::Arc);
+    REQUIRE(sk.param(ne->params[0]) == Approx(0.0));
+    REQUIRE(sk.param(ne->params[1]) == Approx(0.0));
+    REQUIRE(sk.param(ne->params[2]) == Approx(35.0).margin(1e-9));
+    REQUIRE(sk.param(ne->params[3]) == Approx(0.0).margin(1e-9));
+    REQUIRE(sk.param(ne->params[4]) == Approx(pi / 2.0).margin(1e-9));
+    REQUIRE(sk.param(sk.entity(a)->params[2]) == Approx(30.0));
+
+    bool has_concentric = false;
+    bool has_radius = false;
+    for (const auto& con : sk.constraints()) {
+        if (con.type == ConstraintType::Concentric && con.refs.size() >= 2) {
+            if ((con.refs[0].entity == nid && con.refs[1].entity == a) ||
+                (con.refs[1].entity == nid && con.refs[0].entity == a)) {
+                has_concentric = true;
+            }
+        }
+        if (con.type == ConstraintType::Radius && !con.refs.empty() &&
+            con.refs[0].entity == nid && con.driving) {
+            has_radius = std::abs(con.value - 35.0) < 1e-9;
+        }
+    }
+    REQUIRE(has_concentric);
+    REQUIRE(has_radius);
+
+    auto inward = offset_entities(sk, {a.str()}, -5.0);
+    REQUIRE(inward.size() == 1);
+    EntityId iid = EntityId::from_string(inward[0]);
+    REQUIRE(sk.param(sk.entity(iid)->params[2]) == Approx(25.0).margin(1e-9));
+
+    size_t n_before = sk.entities().size();
+    REQUIRE(offset_entities(sk, {a.str()}, -30.0).empty());
+    REQUIRE(offset_entities(sk, {a.str()}, 0.0).empty());
+    REQUIRE(sk.entities().size() == n_before);
+}
+
 TEST_CASE("trim_entity shortens horizontal at cross near right end",
           "[sketchtools][trim]") {
     Sketch sk("TrimCross");

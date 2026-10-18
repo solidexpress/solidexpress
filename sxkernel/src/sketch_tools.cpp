@@ -708,9 +708,28 @@ bool offset_circle(Sketch& s, const SketchEntity& e, EntityId id, double distanc
     return true;
 }
 
+bool offset_arc(Sketch& s, const SketchEntity& e, EntityId id, double distance,
+                std::vector<std::string>& out) {
+    if (e.params.size() < 5) return false;
+    double cx = s.param(e.params[0]);
+    double cy = s.param(e.params[1]);
+    double r = s.param(e.params[2]);
+    double sa = s.param(e.params[3]);
+    double ea = s.param(e.params[4]);
+    double nr = r + distance;
+    if (nr <= k_eps) return false;
+    EntityId nid = s.add_arc(cx, cy, nr, sa, ea);
+    s.add_constraint(ConstraintType::Concentric,
+                     {{nid, PointRole::Center}, {id, PointRole::Center}});
+    s.add_constraint(ConstraintType::Radius, {{nid, PointRole::Self}}, nr, true);
+    out.push_back(nid.str());
+    return true;
+}
+
 const std::unordered_map<SketchEntityType, Offsetter> kOffsetters = {
     {SketchEntityType::Line, offset_line},
     {SketchEntityType::Circle, offset_circle},
+    {SketchEntityType::Arc, offset_arc},
 };
 
 }  // namespace
@@ -727,7 +746,7 @@ std::vector<std::string> offset_entities(Sketch& s,
         const SketchEntity* e = s.entity(id);
         if (!e) continue;
         const auto it = kOffsetters.find(e->type);
-        if (it == kOffsetters.end()) continue;  // Arc and other kinds skipped.
+        if (it == kOffsetters.end()) continue;
         it->second(s, *e, id, distance, out);
     }
     return out;

@@ -176,6 +176,18 @@ static func add_twelve_point(sm: SketchMode, ctr: Vector2, af: float) -> void:
 		sm.sketch.add_line(a.x, a.y, b.x, b.y)
 
 
+static func face_by_normal(view, body: String, want: Vector3, plane: Variant = null) -> String:
+	if view == null or body == "":
+		return ""
+	var faces: Array = []
+	for fid in view.doc.get_face_ids(body):
+		var n: Vector3 = view.face_normal(body, str(fid))
+		var pick: Vector3 = FacePick.point(view.doc, str(fid))
+		faces.append({"id": str(fid), "normal": n, "pick": pick, "centre": pick})
+	var hit: Dictionary = FacePick.match_normal(faces, want, plane)
+	return str(hit.get("id", ""))
+
+
 static func z_edges_near(doc: SxDocument, body: String, xy: Vector2, want_len: float,
 		tol := 2.5) -> PackedStringArray:
 	var out: PackedStringArray = PackedStringArray()

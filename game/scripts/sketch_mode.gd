@@ -6177,6 +6177,7 @@ func _offset_click(uv: Vector2) -> void:
 	ctx.adopt = _adopt_converted_sketch
 	ctx.nearest_entity = _nearest_entity_at
 	ctx.pick_tol = _pick_tolerance()
+	ctx.selected = selected.duplicate()
 	ctx.commit = func(label: String) -> void:
 		_undo_note(label)
 		run_solve()

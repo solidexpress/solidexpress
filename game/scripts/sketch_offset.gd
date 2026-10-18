@@ -12,6 +12,7 @@ extends RefCounted
 const KINDS := {
 	"circle": {"applied": "circle", "inward_limit": true},
 	"line": {"applied": "line", "inward_limit": false},
+	"arc": {"applied": "arc", "inward_limit": true},
 }
 
 const ARM_HINT := "Offset — click an entity or a face edge"
@@ -19,6 +20,7 @@ const ZERO_REFUSED := "Offset: distance must be greater than 0"
 const TOO_FAR := "Offset: inward distance is at least the radius"
 const NOTHING := "Offset: nothing there — click an entity or a face edge"
 const APPLIED_CIRCLE := "Offset: circle r = %.4f"
+const APPLIED_ARC := "Offset: arc r = %.4f"
 const APPLIED_LINE := "Offset: line"
 
 
@@ -36,6 +38,8 @@ class Context:
 	var status: Callable
 	var adopt: Callable
 	var pick_tol := 2.5
+	## Multi-selection: Offset all KINDS in one commit (Select chain).
+	var selected: Array = []
 
 
 var distance := 5.0
@@ -127,44 +131,68 @@ func click(ctx: Context, uv: Vector2) -> void:
 	for id in ctx.sketch.entity_ids():
 		prior[str(id)] = true
 	_convert_note = ""
-	var source := _resolve_source(ctx, uv)
-	if source == "":
+	var sources := _resolve_sources(ctx, uv)
+	if sources.is_empty():
 		ctx.status.call(_convert_note if _convert_note != "" else NOTHING)
 		return
-	var converted := not prior.has(source)
-	var info: Dictionary = ctx.sketch.entity_info(source)
-	var kind := str(info.get("type", ""))
-	var spec: Variant = KINDS.get(kind, null)
-	if spec == null:
-		_rollback_convert(ctx, source, converted)
-		ctx.status.call(NOTHING)
-		return
-	if bool(spec["inward_limit"]) and reverse:
-		var r := float(info.get("radius", 0.0))
-		if distance >= r - 1e-9:
-			_rollback_convert(ctx, source, converted)
-			ctx.status.call(TOO_FAR)
-			return
-	var ids := PackedStringArray([source])
-	var new_ids: PackedStringArray = ctx.sketch.offset_entities(ids, signed_distance())
-	if new_ids.is_empty():
-		_rollback_convert(ctx, source, converted)
-		if bool(spec["inward_limit"]) and reverse:
-			ctx.status.call(TOO_FAR)
-		else:
+	var converted: Array[String] = []
+	for source in sources:
+		if not prior.has(source):
+			converted.append(source)
+		var info: Dictionary = ctx.sketch.entity_info(source)
+		var kind := str(info.get("type", ""))
+		var spec: Variant = KINDS.get(kind, null)
+		if spec == null:
+			_rollback_converts(ctx, converted)
 			ctx.status.call(NOTHING)
+			return
+		if bool(spec["inward_limit"]) and reverse:
+			var r := float(info.get("radius", 0.0))
+			if distance >= r - 1e-9:
+				_rollback_converts(ctx, converted)
+				ctx.status.call(TOO_FAR)
+				return
+	var new_ids: PackedStringArray = ctx.sketch.offset_entities(sources, signed_distance())
+	if new_ids.is_empty():
+		_rollback_converts(ctx, converted)
+		ctx.status.call(TOO_FAR if reverse else NOTHING)
 		return
 	ctx.commit.call("Offset")
-	if str(spec["applied"]) == "circle":
-		var created: Dictionary = ctx.sketch.entity_info(str(new_ids[0]))
+	_applied_status(ctx, str(new_ids[0]))
+
+
+func _applied_status(ctx: Context, new_id: String) -> void:
+	var created: Dictionary = ctx.sketch.entity_info(new_id)
+	var kind := str(created.get("type", ""))
+	var spec: Variant = KINDS.get(kind, null)
+	if spec != null and str(spec["applied"]) == "circle":
 		ctx.status.call(APPLIED_CIRCLE % float(created.get("radius", 0.0)))
+	elif spec != null and str(spec["applied"]) == "arc":
+		ctx.status.call(APPLIED_ARC % float(created.get("radius", 0.0)))
 	else:
 		ctx.status.call(APPLIED_LINE)
 
 
-func _rollback_convert(ctx: Context, source: String, converted: bool) -> void:
-	if converted and source != "" and ctx.sketch != null:
-		ctx.sketch.remove_entity(source)
+func _rollback_converts(ctx: Context, converted: Array) -> void:
+	if ctx.sketch == null:
+		return
+	for source in converted:
+		if str(source) != "":
+			ctx.sketch.remove_entity(str(source))
+
+
+func _resolve_sources(ctx: Context, uv: Vector2) -> PackedStringArray:
+	var out := PackedStringArray()
+	for id in ctx.selected:
+		var info: Dictionary = ctx.sketch.entity_info(str(id))
+		if KINDS.has(str(info.get("type", ""))):
+			out.append(str(id))
+	if out.size() >= 2:
+		return out
+	var one := _resolve_source(ctx, uv)
+	if one != "":
+		return PackedStringArray([one])
+	return PackedStringArray()
 
 
 func _resolve_source(ctx: Context, uv: Vector2) -> String:

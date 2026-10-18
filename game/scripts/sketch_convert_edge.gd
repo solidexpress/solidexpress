@@ -7,9 +7,10 @@ extends RefCounted
 const PROJECTORS := {
 	"line": "Convert: external line",
 	"circle": "Convert: external circle",
+	"arc": "Convert: external arc",
 }
 const NOT_ON_FACE := "Convert: edge is not on this face"
-const NOT_SUPPORTED := "Convert: edge type not supported (line or circle)"
+const NOT_SUPPORTED := "Convert: edge type not supported (line, circle, or arc)"
 const SILHOUETTE := "Convert: silhouette"
 
 ## A click this close to a boundary of the sketch face projects that edge.
@@ -156,6 +157,8 @@ func _edge_kind(lines: Dictionary, edge_id: String) -> String:
 		return "line"
 	if pts.size() >= 8 and pts[0].distance_to(pts[pts.size() - 1]) <= 0.2:
 		return "circle"
+	if pts.size() >= 4:
+		return "arc"
 	return "line"
 
 

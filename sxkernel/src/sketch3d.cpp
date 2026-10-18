@@ -140,16 +140,25 @@ EntityId project_circle(Sketch* sketch, const BRepAdaptor_Curve& curve, const Sk
                         const std::string& edge) {
     if (curve.GetType() != GeomAbs_Circle) return {};
     const double span = std::abs(curve.LastParameter() - curve.FirstParameter());
-    if (span < kTwoPi - 0.05) return {};
+    const bool full = span >= kTwoPi - 0.05;
     const gp_Circ circ = curve.Circle();
     if (circle_lies_in_plane(curve, plane)) {
         const gp_Pnt c = circ.Location();
-        const EntityId added =
-            sketch->project_circle_edge({c.X(), c.Y(), c.Z()}, circ.Radius(), edge);
+        EntityId added;
+        if (full) {
+            added = sketch->project_circle_edge({c.X(), c.Y(), c.Z()}, circ.Radius(), edge);
+        } else {
+            const gp_Pnt a = curve.Value(curve.FirstParameter());
+            const gp_Pnt b = curve.Value(curve.LastParameter());
+            added = sketch->project_arc_edge({c.X(), c.Y(), c.Z()}, circ.Radius(),
+                                            {a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, span,
+                                            edge);
+        }
         if (added.is_null()) return {};
         sketch->set_construction(added, true);
         return added;
     }
+    if (!full) return {};
     // Origin-plane silhouette: circle ∩ sketch plane → a diameter line.
     const auto nrm = plane.normal();
     gp_Pnt o(plane.origin[0], plane.origin[1], plane.origin[2]);

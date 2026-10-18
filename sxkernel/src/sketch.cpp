@@ -1545,6 +1545,28 @@ EntityId Sketch::project_circle_edge(const std::array<double, 3>& center, double
     return id;
 }
 
+EntityId Sketch::project_arc_edge(const std::array<double, 3>& center, double radius,
+                                  const std::array<double, 3>& a, const std::array<double, 3>& b,
+                                  double span, const std::string& edge_id) {
+    auto uc = to_sketch_uv(center);
+    auto ua = to_sketch_uv(a);
+    auto ub = to_sketch_uv(b);
+    double sa = std::atan2(ua[1] - uc[1], ua[0] - uc[0]);
+    double ea = std::atan2(ub[1] - uc[1], ub[0] - uc[0]);
+    if (ea <= sa) ea += 2.0 * kPi;
+    double sweep = ea - sa;
+    const double want = std::abs(span);
+    if (want > 1e-9 && std::abs(sweep - want) > 0.2 &&
+        std::abs((2.0 * kPi - sweep) - want) < 0.2) {
+        std::swap(sa, ea);
+        if (ea <= sa) ea += 2.0 * kPi;
+    }
+    EntityId id = add_arc(uc[0], uc[1], radius, sa, ea);
+    set_external(id, true, edge_id);
+    add_constraint(ConstraintType::Fix, {{id, PointRole::Self}}, 0.0, true);
+    return id;
+}
+
 bool Sketch::update_projected_line(const EntityId& id, const std::array<double, 3>& a,
                                    const std::array<double, 3>& b) {
     SketchEntity* e = entity_mut(id);

@@ -239,6 +239,11 @@ public:
     EntityId project_circle_edge(const std::array<double, 3>& center,
                                  double radius,
                                  const std::string& edge_id);
+    // Partial circle in the sketch plane. `span` is the 3D parameter length so
+    // the UV arc takes the matching bulge (minor vs major).
+    EntityId project_arc_edge(const std::array<double, 3>& center, double radius,
+                              const std::array<double, 3>& a, const std::array<double, 3>& b,
+                              double span, const std::string& edge_id);
 
     // Update external entity geometry from new 3D edge data (associative regen).
     bool update_projected_line(const EntityId& id, const std::array<double, 3>& a,
