@@ -62,10 +62,16 @@ class Rows07Chunk4:
         if self.contour_chips():
             self.set_contours({"recess"})
         made = self.try_extrude("1", "Cut", "Blind")
-        if "breaks the chain" in str(made.get("status") or "").lower() or made.get("sketch"):
+        status_l = str(made.get("status") or "").lower()
+        if "breaks the chain" in status_l or "removed nothing" in status_l or made.get("sketch"):
             self.clear_profile_ents()
             self.draw_recess_racetrack()
+            self.check_all_contours()
             made = self.try_extrude("1", "Cut", "Blind")
+            if "removed nothing" in str(made.get("status") or "").lower():
+                if self.control("finish:Flip"):
+                    self.click("finish:Flip")
+                made = self.try_extrude("1", "Cut", "Blind")
         if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
             self.exit_sketch()
         zext = self.z_extent()
