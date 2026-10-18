@@ -715,27 +715,35 @@ static func draft_cut(ctx: FilmContext, distance: float, angle: float) -> void:
 	await type_distance(ctx, dist)
 	if FilmUI.fail_count > 0:
 		return
-	var draft := _by_auto(ctx.main, "finish:Draft") as BaseButton
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var draft := chrome.find_child("DraftToggle", true, false) as BaseButton if chrome != null else null
 	if draft == null or not draft.is_visible_in_tree():
-		draft = ctx.main.find_child("DraftToggle", true, false) as BaseButton
+		draft = _by_auto(ctx.main, "finish:Draft") as BaseButton
 	if draft == null or not draft.is_visible_in_tree():
 		FilmUI._fail("finish:Draft is hidden")
 		return
-	# WalkUI06.try_extrude_cut: click Draft until it stays on and the angle spin shows.
+	# CheckButton: FilmActor.press toggles twice (button_pressed + pressed.emit).
+	# A real X11 click toggles once, like WalkUI06.try_extrude_cut.
 	for _i in 3:
-		var ang_node := _by_auto(ctx.main, "finish:DraftAngle")
-		if draft.button_pressed and ang_node != null and ang_node.is_visible_in_tree():
+		var spin := chrome.find_child("DraftAngleSpin", true, false) as SpinBox if chrome != null else null
+		if draft.button_pressed and spin != null and spin.is_visible_in_tree():
 			break
-		if not await FilmUI.click_control(ctx, draft, FilmUICues.alert("Draft", "Draft On")):
+		var center := FilmUI.control_screen_center(draft)
+		if not await FilmActor.of(ctx).aim(center, FilmUICues.alert("Draft", "Draft On")):
 			return
+		await SxInput.x11_click(draft)
 		await FilmUI.wait_frames(ctx.tree, 4)
+	var spinbox := chrome.find_child("DraftAngleSpin", true, false) as SpinBox if chrome != null else null
+	var edit: LineEdit = spinbox.get_line_edit() if spinbox != null else null
+	if edit == null or not edit.is_visible_in_tree():
+		FilmUI._fail("finish:DraftAngle is hidden")
+		return
 	var ang := str(int(round(angle))) if is_equal_approx(angle, round(angle)) else str(angle)
-	await _type_auto_spin(ctx, "finish:DraftAngle", ang)
+	await FilmActor.of(ctx).edit_field(edit, ang, "Draft %s°" % ang)
 	if FilmUI.fail_count > 0:
 		return
 	var ex := _by_auto(ctx.main, "finish:Extrude") as Button
 	if ex == null or not ex.is_visible_in_tree():
-		var chrome: SketchContextChrome = ctx.main.sketch_chrome
 		ex = chrome.extrude_button() if chrome != null else null
 	if ex == null or not ex.is_visible_in_tree():
 		FilmUI._fail("finish:Extrude is hidden")
