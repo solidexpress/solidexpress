@@ -44,12 +44,7 @@ bool build_pad_tool(ApplyCtx& ctx, const Feature& src, const nlohmann::json& par
         bool thin_midplane = (thin_type == "midplane");
         face = skf->sketch->thin_profile_face(thin_thickness, thin_midplane, flip_side, &perr);
     } else {
-        std::vector<int> contour_idxs;
-        if (params.contains("selected_contours") && params["selected_contours"].is_array()) {
-            for (const auto& v : params["selected_contours"]) {
-                if (v.is_number_integer()) contour_idxs.push_back(v.get<int>());
-            }
-        }
+        std::vector<int> contour_idxs = selected_contour_indices(params);
         if (!contour_idxs.empty()) {
             face = skf->sketch->profile_face_selected(contour_idxs, &perr);
         } else {

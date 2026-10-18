@@ -129,6 +129,9 @@ void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f);
 bool resolve_topo_shape(Document& doc, const Body& body, EntityKind kind,
                         const nlohmann::json& ref, TopoDS_Shape& out, std::string* why);
 
+// Godot JSON.stringify turns ints into floats (0 → 0.0). Accept both.
+std::vector<int> selected_contour_indices(const nlohmann::json& params);
+
 gp_Pnt pnt_from(const nlohmann::json& a);
 gp_Dir dir_from(const nlohmann::json& a);
 void put_body(Document& doc, const EntityId& id, const TopoDS_Shape& shape,

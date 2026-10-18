@@ -150,13 +150,7 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     if (face.IsNull() && sketch_closed_contour(*skf->sketch))
                         return fail(thin_wall_on_error(thin_thickness));
                 } else {
-                    std::vector<int> contour_idxs;
-                    if (params.contains("selected_contours") &&
-                        params["selected_contours"].is_array()) {
-                        for (const auto& v : params["selected_contours"]) {
-                            if (v.is_number_integer()) contour_idxs.push_back(v.get<int>());
-                        }
-                    }
+                    std::vector<int> contour_idxs = selected_contour_indices(params);
                     TopoDS_Shape host;
                     if (skf->params.contains("host_face") && skf->params["host_face"].is_string()) {
                         host = doc.resolve(EntityId::from_string(

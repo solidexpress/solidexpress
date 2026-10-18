@@ -4848,6 +4848,8 @@ func _seal_tangent_bosses() -> void:
 			continue
 		var hits: Array = []
 		for ln in lines:
+			if not _line_tangent_to_circle(ln["a"], ln["b"], c, rad):
+				continue
 			for role in ["a", "b"]:
 				var p: Vector2 = ln[role]
 				if absf(p.distance_to(c) - rad) > 0.05:
@@ -4915,6 +4917,17 @@ func _seal_tangent_bosses() -> void:
 			{"entity": str(h1["line"]), "role": str(h1["role"])},
 			{"entity": arc_id, "role": "end"}], 0.0)
 		sketch.remove_entity(str(circ["id"]))
+
+
+## Chord hits (handle on Ø33) are not tangent bosses. Distance from centre
+## to the infinite line must equal the radius.
+func _line_tangent_to_circle(a: Vector2, b: Vector2, centre: Vector2, radius: float) -> bool:
+	var ab: Vector2 = b - a
+	var len := ab.length()
+	if len < 1e-9 or radius <= 0.0:
+		return false
+	var dist := absf((centre - a).cross(ab) / len)
+	return absf(dist - radius) <= 0.05
 
 
 func _angle_in_sweep(start: float, end_a: float, target: float) -> bool:
@@ -11119,9 +11132,9 @@ func _sync_pick_marker() -> void:
 
 ## True when the sketch's non-construction geometry forms one or more closed
 ## profiles (circles, closed chains, or open chains whose ends lie on a circle).
-## Default chain tolerance matches contour_faces (1e-6). Callers that pass a
+## Default chain tolerance matches contour_faces (0.05 mm). Callers that pass a
 ## looser tol (auto-close at 0.5 mm) keep that tolerance.
-static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
+static func profile_is_closed(sk: SxSketch, tol: float = 0.05) -> bool:
 	if sk == null:
 		return false
 	var segs: Array = []  # {a: Vector2, b: Vector2}
