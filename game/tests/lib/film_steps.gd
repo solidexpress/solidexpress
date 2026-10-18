@@ -615,3 +615,157 @@ static func _type_offset_distance(ctx: FilmContext, text: String) -> void:
 		FilmUI._fail("offset:Distance is hidden")
 		return
 	await FilmActor.of(ctx).edit_field(edit, text, "Offset %s" % text)
+
+
+## Click the visible VariantBar chip (`Tangent`, `Three Point`, …) or sx_auto
+## `variant:<id>`. Hidden → FilmUI._fail.
+static func pick_variant(ctx: FilmContext, label: String) -> void:
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var bar: Node = chrome.find_child("VariantBar", true, false) if chrome != null else null
+	var chip := FilmUI.find_button(bar, label) if bar != null else null
+	if chip == null or not chip.is_visible_in_tree():
+		chip = _by_auto(ctx.main, "variant:%s" % label) as BaseButton
+	if chip == null or not chip.is_visible_in_tree():
+		FilmUI._fail("%s variant is hidden" % label)
+		return
+	if not await FilmUI.click_control(ctx, chip, FilmUICues.alert(label, "%s variant" % label)):
+		return
+	await FilmUI.wait_frames(ctx.tree, 1)
+
+
+## Rail Arc, variant Tangent, click start (host endpoint), click end.
+## Snap-off for the end click if the Snap rail button is visible.
+static func tangent_arc(ctx: FilmContext, start: Vector2, endp: Vector2, span: float = 280.0) -> void:
+	await press_rail(ctx, "Arc")
+	if FilmUI.fail_count > 0:
+		return
+	await pick_variant(ctx, "Tangent")
+	if FilmUI.fail_count > 0:
+		return
+	await click_uv(ctx, start, "Tangent start", span)
+	await _snap_off_if_visible(ctx)
+	await click_uv(ctx, endp, "Tangent end", span)
+	await FilmUI.wait_frames(ctx.tree, 1)
+
+
+## Rail Arc, variant Three Point, three clicks.
+static func three_point_arc(ctx: FilmContext, p1: Vector2, bulge: Vector2, p3: Vector2,
+		span: float = 280.0) -> void:
+	await press_rail(ctx, "Arc")
+	if FilmUI.fail_count > 0:
+		return
+	await pick_variant(ctx, "Three Point")
+	if FilmUI.fail_count > 0:
+		return
+	await click_uv(ctx, p1, "3-point start", span)
+	await click_uv(ctx, bulge, "3-point bulge", span)
+	await click_uv(ctx, p3, "3-point end", span)
+	await FilmUI.wait_frames(ctx.tree, 1)
+
+
+## Rail Ellipse, three clicks (centre, major, minor). Uses FilmUI.draw_ellipse.
+static func ellipse3(ctx: FilmContext, centre: Vector2, major: Vector2, minor: Vector2) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null:
+		FilmUI._fail("sketch missing for ellipse")
+		return
+	var corner := Vector2(major.x, minor.y)
+	await FilmUI.draw_ellipse(ctx, sm, centre, corner)
+
+
+## Swept Boss: sweep:Boss (or visible control), profile pad, path pad, sweep:Ok.
+static func swept_boss(ctx: FilmContext, profile_fid: String, path_fid: String) -> void:
+	if ctx.view != null:
+		ctx.view.clear_selection()
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+	await ctx.tree.process_frame
+	var boss := ctx.main.find_child("SweepBoss", true, false) as BaseButton
+	if boss == null or not boss.is_visible_in_tree():
+		boss = _by_auto(ctx.main, "sweep:Boss") as BaseButton
+	if boss == null or not boss.is_visible_in_tree():
+		FilmUI._fail("Swept Boss is hidden")
+		return
+	if not await FilmUI.click_control(ctx, boss, FilmUICues.alert("Click", "Swept Boss")):
+		return
+	await ctx.tree.process_frame
+	await _pick_timeline_row(ctx, profile_fid, "profile sketch")
+	if FilmUI.fail_count > 0:
+		return
+	await _pick_timeline_row(ctx, path_fid, "path sketch")
+	if FilmUI.fail_count > 0:
+		return
+	var ok := ctx.main.find_child("SweepOk", true, false) as BaseButton
+	if ok == null or not ok.is_visible_in_tree():
+		ok = _by_auto(ctx.main, "sweep:Ok") as BaseButton
+	if ok == null or not ok.is_visible_in_tree():
+		FilmUI._fail("sweep:Ok is hidden")
+		return
+	await FilmUI.click_control(ctx, ok, FilmUICues.alert("Click", "Sweep OK"))
+	await ctx.tree.process_frame
+	await ctx.tree.process_frame
+
+
+## Finish Op Cut, End Blind, Distance, Draft On, DraftAngle, Extrude.
+static func draft_cut(ctx: FilmContext, distance: float, angle: float) -> void:
+	await pick_finish(ctx, 1, 0)
+	if FilmUI.fail_count > 0:
+		return
+	var dist := str(int(round(distance))) if is_equal_approx(distance, round(distance)) else str(distance)
+	await type_distance(ctx, dist)
+	if FilmUI.fail_count > 0:
+		return
+	var draft := _by_auto(ctx.main, "finish:Draft") as BaseButton
+	if draft == null or not draft.is_visible_in_tree():
+		draft = ctx.main.find_child("DraftToggle", true, false) as BaseButton
+	if draft == null or not draft.is_visible_in_tree():
+		FilmUI._fail("finish:Draft is hidden")
+		return
+	if not draft.button_pressed:
+		if not await FilmUI.click_control(ctx, draft, FilmUICues.alert("Draft", "Draft On")):
+			return
+	await FilmUI.wait_frames(ctx.tree, 1)
+	var ang := str(int(round(angle))) if is_equal_approx(angle, round(angle)) else str(angle)
+	await _type_auto_spin(ctx, "finish:DraftAngle", ang)
+	if FilmUI.fail_count > 0:
+		return
+	var ex := _by_auto(ctx.main, "finish:Extrude") as Button
+	if ex == null or not ex.is_visible_in_tree():
+		var chrome: SketchContextChrome = ctx.main.sketch_chrome
+		ex = chrome.extrude_button() if chrome != null else null
+	if ex == null or not ex.is_visible_in_tree():
+		FilmUI._fail("finish:Extrude is hidden")
+		return
+	if not await FilmUI.click_control(ctx, ex, FilmUICues.alert("OK", "Extrude")):
+		return
+	await ctx.after_regen()
+
+
+static func _snap_off_if_visible(ctx: FilmContext) -> void:
+	var snap := _by_auto(ctx.main, "rail:Snap") as BaseButton
+	if snap == null or not snap.is_visible_in_tree():
+		snap = ctx.main.find_child("SnapToggle", true, false) as BaseButton
+	if snap == null or not snap.is_visible_in_tree():
+		return
+	if snap.button_pressed:
+		await FilmUI.click_control(ctx, snap, FilmUICues.alert("Snap", "Snap off"))
+
+
+static func _pick_timeline_row(ctx: FilmContext, fid: String, desc: String) -> void:
+	ctx.main.show_timeline = true
+	ctx.main._update_panel_visibility()
+	var tl: TimelinePanel = ctx.main.timeline
+	tl.refresh()
+	await ctx.tree.process_frame
+	var row: Control = tl._rows.get(fid)
+	var btn: Button = null
+	if row != null:
+		for child in row.get_children():
+			if child is Button and str(child.text) != "":
+				btn = child as Button
+				break
+	if btn == null or not btn.is_visible_in_tree():
+		FilmUI._fail("timeline row for %s is hidden" % desc)
+		return
+	await FilmUI.click_control(ctx, btn, FilmUICues.alert("Click", desc))
+	await ctx.tree.process_frame

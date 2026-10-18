@@ -29,12 +29,9 @@ func _case(ctx: FilmContext) -> void:
 	check(rail != null, "rail label is Ellipse")
 	if rail != null:
 		check(not str(rail.text).contains("approx"), "rail dropped (approx)")
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.ELLIPSE)
 	var maj := CandlestickFixture.mm("ELLIPSE_MAJ") * 0.5
 	var minr := CandlestickFixture.mm("ELLIPSE_MIN") * 0.5
-	await FilmSteps.click_uv(ctx, Vector2(0, 0), "Centre", SPAN)
-	await FilmSteps.click_uv(ctx, Vector2(maj, 0), "Major", SPAN)
-	await FilmSteps.click_uv(ctx, Vector2(0, minr), "Minor", SPAN)
+	await FilmSteps.ellipse3(ctx, Vector2(0, 0), Vector2(maj, 0), Vector2(0, minr))
 	await process_frame
 	var ellipses := _ellipses(sm)
 	check(ellipses.size() == 1, "one ellipse entity (got %d)" % ellipses.size())

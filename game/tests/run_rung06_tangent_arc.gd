@@ -4,7 +4,6 @@
 extends "res://tests/lib/sx_suite.gd"
 
 const FilmUI = preload("res://tests/lib/film_ui.gd")
-const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const FilmSteps = preload("res://tests/lib/film_steps.gd")
 const SPAN := 280.0
 
@@ -27,7 +26,7 @@ func _profile_r10(ctx: FilmContext) -> void:
 	await CandlestickFixture.draw_line(ctx, Vector2(0, 220), Vector2(20, 220))
 	await CandlestickFixture.draw_line(ctx, Vector2(0, 0), Vector2(90, 0))
 	var before := _arc_count(sm)
-	await _tangent_arc(ctx, Vector2(20, 220), Vector2(30, 210))
+	await FilmSteps.tangent_arc(ctx, Vector2(20, 220), Vector2(30, 210), SPAN)
 	check(_arc_count(sm) == before + 1, "tangent arc added")
 	check(_tangent_count(sm) >= 1, "tangent constraint present (got %d)" % _tangent_count(sm))
 	var arc := CandlestickFixture.last_arc(sm)
@@ -56,11 +55,7 @@ func _three_point(ctx: FilmContext) -> void:
 	await CandlestickFixture.draw_line(ctx, Vector2(80, 40), Vector2(80, 0))
 	check(CandlestickFixture.line_count(sm) == lines_before + 1, "vertical for 3-point remains")
 	var arcs_before := _arc_count(sm)
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.ARC)
-	await _variant(ctx, "Three Point")
-	await FilmSteps.click_uv(ctx, Vector2(80, 40), "3-point start", SPAN)
-	await FilmSteps.click_uv(ctx, Vector2(100, 20), "3-point bulge", SPAN)
-	await FilmSteps.click_uv(ctx, Vector2(80, 0), "3-point end", SPAN)
+	await FilmSteps.three_point_arc(ctx, Vector2(80, 40), Vector2(100, 20), Vector2(80, 0), SPAN)
 	await process_frame
 	check(_arc_count(sm) == arcs_before + 1, "3-point arc added")
 	check(CandlestickFixture.line_count(sm) == lines_before + 1, "diameter span still there")
@@ -78,23 +73,6 @@ func _three_point(ctx: FilmContext) -> void:
 	var mid_ang := sa + _ccw_sweep(sa, ea) * 0.5
 	var bulge: Vector2 = c + Vector2.from_angle(mid_ang) * float(info["radius"])
 	check(bulge.x > c.x + 5.0, "bulge on the clicked +X side (got %s)" % str(bulge))
-
-
-func _tangent_arc(ctx: FilmContext, start: Vector2, endp: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.ARC)
-	await _variant(ctx, "Tangent")
-	await FilmSteps.click_uv(ctx, start, "Tangent start", SPAN)
-	await FilmSteps.click_uv(ctx, endp, "Tangent end", SPAN)
-	await process_frame
-
-
-func _variant(ctx: FilmContext, label: String) -> void:
-	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var chip := FilmUI.find_button(chrome, label)
-	if chip != null and chip.is_visible_in_tree():
-		await FilmUI.click_control(ctx, chip, FilmUICues.alert(label, "%s variant" % label))
-	await process_frame
 
 
 func _radius_dim(ctx: FilmContext, arc_id: String, value: float) -> void:
