@@ -59,18 +59,20 @@ class Rows07Chunk4:
             self.click("offset:Ok")
         n_arc = len(self.ents("arc"))
         types_before = [e.get("type") for e in self.ents()]
+        self.click("rail:Select")
         if self.contour_chips():
             self.set_contours({"recess"})
         made = self.try_extrude("1", "Cut", "Blind")
         status_l = str(made.get("status") or "").lower()
+        if "removed nothing" in status_l:
+            made = self.try_extrude("2", "Cut", "Midplane")
+            status_l = str(made.get("status") or "").lower()
         if "breaks the chain" in status_l or "removed nothing" in status_l or made.get("sketch"):
             self.clear_profile_ents()
             self.draw_recess_racetrack()
             self.check_all_contours()
-            made = self.try_extrude("1", "Cut", "Blind")
-            if "removed nothing" in str(made.get("status") or "").lower():
-                if self.control("finish:Flip"):
-                    self.click("finish:Flip")
+            made = self.try_extrude("2", "Cut", "Midplane")
+            if "removed nothing" in str(made.get("status") or "").lower() or made.get("sketch"):
                 made = self.try_extrude("1", "Cut", "Blind")
         if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
             self.exit_sketch()
