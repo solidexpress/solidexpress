@@ -5089,6 +5089,35 @@ func _delete_other_non_datum_construction_lines() -> void:
 		sketch.remove_entity(id)
 
 
+## When a new centreline is a jaw cutter, drop the previous leftover cutter
+## (along-jaw or an earlier offset). Angle-datum lines and the rung 7 CL / 17°
+## construction are not cutter candidates, so they stay.
+func _drop_replaced_jaw_cutter_construction(keep_id: String) -> void:
+	if sketch == null or keep_id == "":
+		return
+	var sides := _jaw_long_sides()
+	if sides.size() != 2:
+		return
+	var keep_info: Dictionary = sketch.entity_info(keep_id)
+	if str(keep_info.get("type", "")) != "line":
+		return
+	if not _line_is_jaw_cutter_candidate(keep_info["start"], keep_info["end"], sides):
+		return
+	var drop: Array[String] = []
+	for id in sketch.entity_ids():
+		if id == keep_id or _angle_datum_lines.has(id):
+			continue
+		if not sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		if _line_is_jaw_cutter_candidate(info["start"], info["end"], sides):
+			drop.append(id)
+	for id in drop:
+		sketch.remove_entity(id)
+
+
 ## Flip construction flag on all selected entities and redraw (construction
 ## entities use a dimmer gray so the style persists across redraws).
 func toggle_construction_selected() -> void:
@@ -5759,6 +5788,10 @@ func click(pos2: Vector2) -> void:
 				remember_numeric(a.distance_to(b))
 				if as_centreline:
 					sketch.set_construction(lid, true)
+					# One leftover jaw cutter at a time (along-jaw then the
+					# offset retry). Keep the rung 7 CL + 17° — those are not
+					# jaw-cutter candidates.
+					_drop_replaced_jaw_cutter_construction(lid)
 					# Two-point centreline: do not extend the next click.
 					_tool_points.clear()
 				_infer_line(lid, a, b)
@@ -6330,16 +6363,21 @@ func _smart_dim_kind(ref: Dictionary) -> SmartDimTable.End:
 func _click_smart_dim(pos2: Vector2) -> void:
 	# Two already-selected lines: the click confirms angle or flat-to-flat.
 	# Empty space or a re-click on one of them must not start a lone length.
+	# Circle + line after centre-to-flat must not take this path — the next
+	# click on the circle centre starts a new pending (rung 2 face edges 40).
 	if selected.size() == 2 and _smart_dim_pending.is_empty():
-		var hit_sel := _nearest_profile_entity_at(pos2)
-		if hit_sel == "":
-			hit_sel = _nearest_entity_at(pos2)
-		if hit_sel == "" or hit_sel == str(selected[0]) or hit_sel == str(selected[1]):
-			var a_ref := {"entity": selected[0], "role": "self"}
-			var b_ref := {"entity": selected[1], "role": "self"}
-			if _dispatch_smart_dim(SmartDimTable.Channel.SELECTION, a_ref, b_ref):
-				_smart_dim_first = null
-				return
+		var t0 := str(sketch.entity_info(selected[0]).get("type", ""))
+		var t1 := str(sketch.entity_info(selected[1]).get("type", ""))
+		if t0 == "line" and t1 == "line":
+			var hit_sel := _nearest_profile_entity_at(pos2)
+			if hit_sel == "":
+				hit_sel = _nearest_entity_at(pos2)
+			if hit_sel == "" or hit_sel == str(selected[0]) or hit_sel == str(selected[1]):
+				var a_ref := {"entity": selected[0], "role": "self"}
+				var b_ref := {"entity": selected[1], "role": "self"}
+				if _dispatch_smart_dim(SmartDimTable.Channel.SELECTION, a_ref, b_ref):
+					_smart_dim_first = null
+					return
 	var center_ref := _center_ref_near(pos2)
 	if not center_ref.is_empty():
 		if not _smart_dim_pending.is_empty():
