@@ -10,6 +10,7 @@ const PROJECTORS := {
 }
 const NOT_ON_FACE := "Convert: edge is not on this face"
 const NOT_SUPPORTED := "Convert: edge type not supported (line or circle)"
+const SILHOUETTE := "Convert: silhouette"
 
 ## A click this close to a boundary of the sketch face projects that edge.
 const FACE_TOL := 3.5
@@ -40,14 +41,30 @@ func _init(ctx: Context) -> void:
 	_ctx = ctx
 
 
+## Origin-plane sketches (Front / Top / Right through the origin) always
+## project a silhouette, even when a leftover host face is remembered.
+func _origin_plane() -> bool:
+	var plane = _ctx.plane if _ctx != null else null
+	if plane == null:
+		return false
+	if plane.origin.length() > 0.75:
+		return false
+	var n: Vector3 = plane.normal.abs()
+	return n.x > 0.95 or n.y > 0.95 or n.z > 0.95
+
+
 ## Returns the new (or existing) external entity id, or "" on refusal / miss.
 func click(uv: Vector2) -> String:
 	var ctx := _ctx
 	if ctx.doc == null or ctx.view == null:
 		return ""
-	if ctx.host_face_id == "" or ctx.support_host == "":
-		ctx.fallback.call()
-		return ""
+	if ctx.host_face_id == "" or ctx.support_host == "" or _origin_plane():
+		var sid := _origin_silhouette(uv)
+		if sid != "":
+			return sid
+		if ctx.host_face_id == "" or ctx.support_host == "":
+			ctx.fallback.call()
+			return ""
 	var fid := str(ctx.ensure_feature.call())
 	if fid == "":
 		return ""
@@ -75,6 +92,57 @@ func click(uv: Vector2) -> String:
 		return ""
 	ctx.fallback.call()
 	return ""
+
+
+## Origin-plane pick: project the nearest body edge (silhouette / pierce).
+func _origin_silhouette(uv: Vector2) -> String:
+	var ctx := _ctx
+	if ctx.doc == null or ctx.plane == null:
+		return ""
+	var fid := str(ctx.ensure_feature.call())
+	if fid == "":
+		return ""
+	var best_id := ""
+	var best_d := OTHER_TOL
+	var best_lines: Dictionary = {}
+	for body_id in ctx.doc.body_ids():
+		var lines: Dictionary = ctx.doc.get_edge_lines(body_id)
+		for edge_id in lines:
+			var d := _edge_uv_distance(lines[edge_id], ctx.plane, uv)
+			if d < best_d:
+				best_d = d
+				best_id = str(edge_id)
+				best_lines = lines
+	if best_id == "":
+		return ""
+	var id := str(ctx.doc.sketch_add_external_edge(fid, best_id))
+	if id == "":
+		ctx.status.call(NOT_SUPPORTED)
+		return ""
+	if ctx.adopt.is_valid():
+		ctx.adopt.call()
+	ctx.commit.call("Convert")
+	ctx.status.call(SILHOUETTE)
+	return id
+
+
+func _edge_uv_distance(pts: PackedVector3Array, plane: PlaneBasis, uv: Vector2) -> float:
+	if pts.size() < 2:
+		return INF
+	var best := INF
+	for i in range(pts.size() - 1):
+		var a: Vector2 = plane.to_uv(pts[i])
+		var b: Vector2 = plane.to_uv(pts[i + 1])
+		var d := _seg_dist(uv, a, b)
+		if d < best:
+			best = d
+	return best
+
+
+func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var t := 0.0 if ab.length_squared() < 1e-12 else clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	return p.distance_to(a + ab * t)
 
 
 func _added_status(lines: Dictionary, edge_id: String) -> String:

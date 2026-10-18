@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One pass: build, kernel, python checks, headless Godot suites, five walks.
+# One pass: build, kernel, python checks, headless Godot suites, six walks.
 # Each headless command is written once under SX_CONFIRM_DIR. The walks read
 # those logs (A15 / A25 / A26) instead of launching the suite again.
 #
@@ -72,6 +72,7 @@ record unit_rung02 python3 tools/test_check_rung02.py &
 record unit_rung03 python3 tools/test_check_rung03.py &
 record unit_rung04 python3 tools/test_check_rung04.py &
 record unit_rung05 python3 tools/test_check_rung05.py &
+record unit_rung06 python3 tools/test_check_rung06.py &
 record registry python3 tools/test_walk_registry.py &
 record godot env GODOT_BIN="${GODOT}" packaging/ci/run_suites.sh --tier full --keep-going --jobs "${JOBS}" &
 wait
@@ -99,6 +100,7 @@ start_xvfb :22
 start_xvfb :23
 start_xvfb :24
 start_xvfb :25
+start_xvfb :26
 
 SX_AUTOMATION=1 python3 tools/walk_rung01.py --a15 --port 47321 --display :21 \
   --resolution 1280x800 --out "${OUT}/walk1" >"${OUT}/walk1.stdout" 2>&1 &
@@ -115,12 +117,16 @@ p4=$!
 SX_AUTOMATION=1 python3 tools/walk_rung05.py --a15 --port 47325 --display :25 \
   --resolution 1280x800 --out "${OUT}/walk5" >"${OUT}/walk5.stdout" 2>&1 &
 p5=$!
+SX_AUTOMATION=1 python3 tools/walk_rung06.py --a15 --port 47326 --display :26 \
+  --resolution 1280x800 --out "${OUT}/walk6" >"${OUT}/walk6.stdout" 2>&1 &
+p6=$!
 set +e
 wait "${p1}"; echo $? >"${OUT}/walk1.rc"
 wait "${p2}"; echo $? >"${OUT}/walk2.rc"
 wait "${p3}"; echo $? >"${OUT}/walk3.rc"
 wait "${p4}"; echo $? >"${OUT}/walk4.rc"
 wait "${p5}"; echo $? >"${OUT}/walk5.rc"
+wait "${p6}"; echo $? >"${OUT}/walk6.rc"
 set -e
 
 if [[ -f "${OUT}/xvfb-21.pid" ]]; then kill "$(cat "${OUT}/xvfb-21.pid")" 2>/dev/null || true; fi
@@ -128,6 +134,7 @@ if [[ -f "${OUT}/xvfb-22.pid" ]]; then kill "$(cat "${OUT}/xvfb-22.pid")" 2>/dev
 if [[ -f "${OUT}/xvfb-23.pid" ]]; then kill "$(cat "${OUT}/xvfb-23.pid")" 2>/dev/null || true; fi
 if [[ -f "${OUT}/xvfb-24.pid" ]]; then kill "$(cat "${OUT}/xvfb-24.pid")" 2>/dev/null || true; fi
 if [[ -f "${OUT}/xvfb-25.pid" ]]; then kill "$(cat "${OUT}/xvfb-25.pid")" 2>/dev/null || true; fi
+if [[ -f "${OUT}/xvfb-26.pid" ]]; then kill "$(cat "${OUT}/xvfb-26.pid")" 2>/dev/null || true; fi
 
 python3 - "${OUT}" <<'PY'
 import sys
@@ -181,6 +188,7 @@ rows = [
     f"unit_rung03 {rc('unit_rung03')}",
     f"unit_rung04 {rc('unit_rung04')}",
     f"unit_rung05 {rc('unit_rung05')}",
+    f"unit_rung06 {rc('unit_rung06')}",
     f"registry {rc('registry')}",
     f"godot {rc('godot')} {last_match('godot', 'suites:')}",
     f"rung1 {summary('walk1')}",
@@ -205,6 +213,8 @@ rows = [
     check_tail("walk4", "check-final-final.txt"),
     f"rung5 {summary('walk5')}",
     check_tail("walk5", "check-final-final.txt"),
+    f"rung6 {summary('walk6')}",
+    check_tail("walk6", "check-final-final.txt"),
 ]
 print("\n".join(rows))
 PY

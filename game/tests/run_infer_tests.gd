@@ -38,8 +38,12 @@ func test_constraint_glyphs(sk: SketchMode) -> void:
 	var cinfo: Dictionary = sk.sketch.constraint_info(cid)
 	check(str(cinfo.get("type", "")) == "horizontal", "constraint_info reports type")
 	check((cinfo.get("refs", []) as Array).size() == 1, "constraint_info reports refs")
-	check(sk._constraint_glyphs.get_child_count() == 1, "one glyph drawn")
-	var glyph := sk._constraint_glyphs.get_child(0) as Label3D
+	var glyph_labels: Array[Label3D] = []
+	for child in sk._constraint_glyphs.get_children():
+		if child is Label3D:
+			glyph_labels.append(child)
+	check(glyph_labels.size() == 1, "one glyph drawn")
+	var glyph: Label3D = glyph_labels[0] if glyph_labels.size() == 1 else null
 	check(glyph != null and glyph.text == "H", "glyph shows H")
 	# Glyph anchor sits beside the line midpoint — picking there hits it.
 	check(sk._glyph_anchors.size() == 1, "glyph anchor recorded")
@@ -51,7 +55,11 @@ func test_constraint_glyphs(sk: SketchMode) -> void:
 	check(sk.selected_constraint == cid, "glyph click selects constraint")
 	check(sk.delete_selected_constraint(), "delete_selected_constraint")
 	check(sk.sketch.constraint_ids().size() == 0, "constraint removed from kernel")
-	check(sk._constraint_glyphs.get_child_count() == 0, "glyph gone after delete")
+	var leftover := 0
+	for child in sk._constraint_glyphs.get_children():
+		if child is Label3D:
+			leftover += 1
+	check(leftover == 0, "glyph gone after delete")
 	sk.cancel()
 
 
@@ -229,7 +237,7 @@ func test_dof_coloring(sk: SketchMode) -> void:
 	sk.constrain("radius", 10.0)
 	check(sk.last_dofs >= 0, "dofs tracked after solve (got %d)" % sk.last_dofs)
 	if sk.last_dofs == 0:
-		check(sk._entity_draw_color({}) == sk.COLOR_CONSTRAINED, "fully constrained draws green")
+		check(sk._entity_draw_color({}) == sk.COLOR_CONSTRAINED, "fully constrained draws COLOR_CONSTRAINED")
 	else:
 		check(sk._entity_draw_color({}) == sk.COLOR_ENTITY, "partially constrained stays default")
 	sk.cancel()

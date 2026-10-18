@@ -213,6 +213,14 @@ func test_sketch_on_face_extrude(main) -> void:
 	sm.set_tool(SketchMode.Tool.CIRCLE)
 	sm.click(Vector2(0, 0))
 	sm.click(Vector2(8, 0))
+	var sk_fid: String = sm.exit_sketch()
+	check(sk_fid != "", "face sketch saved before pencil")
+	sm.target_fid = ""
+	sm.support_host = ""
+	sm.host_face_id = ""
+	check(sm.begin_edit(sk_fid), "pencil reopens the face sketch")
+	check(sm.target_fid == feat, "pencil restores cut/fuse target")
+	check(sm.host_face_id == top, "pencil restores host face")
 	sm.finish_extrude(15.0, "fuse")
 	check(not sm.active, "sketch finished")
 	var bb1: Dictionary = view.doc.measure_bbox(body)

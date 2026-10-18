@@ -25,6 +25,7 @@ _HEADLESS = {
     3: {"unit": "tools/test_check_rung03.py", "unit_key": "unit_rung03", "log": "a26"},
     4: {"unit": "tools/test_check_rung04.py", "unit_key": "unit_rung04", "log": "a21"},
     5: {"unit": "tools/test_check_rung05.py", "unit_key": "unit_rung05", "log": "a25"},
+    6: {"unit": "tools/test_check_rung06.py", "unit_key": "unit_rung06", "log": "a36"},
 }
 
 
@@ -59,14 +60,28 @@ class WalkChrome:
     def _reads(self, token: str, text: str) -> bool:
         return label_reads(token, text)
 
-    def _uv_inside(self, uv) -> bool:
+    def _screen_of(self, uv):
         try:
-            screen = self.d.project(sketch=list(uv))["screen"]
+            return self.d.project(sketch=list(uv))["screen"]
         except SxError:
+            return None
+
+    def _uv_inside(self, uv) -> bool:
+        screen = self._screen_of(uv)
+        if not screen:
             return False
         size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
         x, y = float(screen[0]), float(screen[1])
         return 8 <= x <= float(size[0]) - 8 and 40 <= y <= float(size[1]) - 8
+
+    def _uv_clickable(self, uv) -> bool:
+        """True when a sketch click will hit the viewport, not rail/finish bar."""
+        screen = self._screen_of(uv)
+        if not screen:
+            return False
+        size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
+        x, y = float(screen[0]), float(screen[1])
+        return 90.0 <= x <= float(size[0]) - 8 and 88.0 <= y <= float(size[1]) - 24
 
     def _view_centre(self) -> list[float]:
         size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
@@ -118,6 +133,18 @@ class WalkChrome:
     def clear_faces(self) -> None:
         self.esc_until("Selection cleared", 4)
         self.refresh("selection")
+
+    def clear_sketch_selection(self) -> None:
+        """Empty click so Smart Dim does not reuse the last sketch pick."""
+        self.click("rail:Select")
+        box = self.sketch_bbox()
+        if box:
+            empty = [float(box["min"][0]) - 25.0, float(box["max"][1]) + 25.0]
+        else:
+            empty = list(getattr(self, "_EMPTY_SKETCH", (-15.0, 40.0)))
+        self.show_sketch_point(empty)
+        self.click(sketch=empty)
+        self.refresh("selection", "status")
 
     def dimension_line(self, line: dict, value: str) -> dict:
         self.clear_sketch_selection()
@@ -270,12 +297,53 @@ class WalkChrome:
         return node
 
     def show_sketch_point(self, uv) -> None:
+        if self._uv_inside(uv):
+            return
         self.fit_sketch()
         centre = self._view_centre()
         for _ in range(8):
             if self._uv_inside(uv):
                 return
             self.d.wheel(notches=-2, screen=centre)
+            self.d.wait_idle(frames=1)
+
+    def frame_clickable(self, *uvs) -> None:
+        """Zoom/pan so every UV is clear of the left rail and finish bar.
+
+        Fit the whole set together. Framing one endpoint at a time can push
+        the other onto the finish bar (walk4 37+94 mm path).
+        """
+        points = [uv for uv in uvs if uv is not None]
+        if not points:
+            return
+        size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
+        w, h = float(size[0]), float(size[1])
+        clickable_w = max(w - 98.0, 1.0)
+        clickable_h = max(h - 112.0, 1.0)
+        for _ in range(40):
+            if all(self._uv_clickable(uv) for uv in points):
+                return
+            screens = [self._screen_of(uv) for uv in points]
+            if any(screen is None for screen in screens):
+                self.d.key("pagedown")
+                self.d.wait_idle(frames=1)
+                continue
+            xs = [float(screen[0]) for screen in screens]
+            ys = [float(screen[1]) for screen in screens]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            if (max_x - min_x) > clickable_w * 0.85 or (max_y - min_y) > clickable_h * 0.85:
+                self.d.key("pagedown")
+            elif min_y < 88:
+                self.d.key("down")
+            elif max_y > h - 24:
+                self.d.key("up")
+            elif min_x < 90:
+                self.d.key("right")
+            elif max_x > w - 8:
+                self.d.key("left")
+            else:
+                self.d.key("pagedown")
             self.d.wait_idle(frames=1)
 
     def sketch_bbox(self) -> dict | None:

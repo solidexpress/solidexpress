@@ -11,6 +11,11 @@
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Builder.hxx>
 #include <ShapeFix_Shape.hxx>
+#include <ShapeFix_Solid.hxx>
+#include <TopAbs_ShapeEnum.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS_Shell.hxx>
+#include <TopoDS_Solid.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <IGESControl_Reader.hxx>
 #include <IGESControl_Writer.hxx>
@@ -283,11 +288,25 @@ TopoDS_Shape heal_shape(const TopoDS_Shape& shape, std::string* report) {
         Handle(ShapeFix_Shape) fix = new ShapeFix_Shape(work);
         fix->Perform();
         if (!fix->Shape().IsNull()) work = fix->Shape();
+        if (shape::count(work).solids < 1) {
+            for (TopExp_Explorer ex(work, TopAbs_SHELL); ex.More(); ex.Next()) {
+                ShapeFix_Solid solid_fix;
+                TopoDS_Solid made = solid_fix.SolidFromShell(TopoDS::Shell(ex.Current()));
+                if (!made.IsNull() && shape::count(made).solids >= 1) {
+                    work = made;
+                    break;
+                }
+            }
+        }
     } catch (const Standard_Failure& e) {
         if (report) *report = std::string("heal: ShapeFix failed (") + e.GetMessageString() + ")";
         return shape;
     }
     const auto after = shape::count(work);
+    if (before.solids >= 1 && after.solids < 1) {
+        if (report) *report = "heal: kept original (sewing dropped solids)";
+        return shape;
+    }
     BRepCheck_Analyzer chk(work);
     const bool valid = chk.IsValid();
     std::ostringstream ss;
@@ -307,7 +326,7 @@ struct TriMesh {
 TriMesh collect_mesh(const Document& doc) {
     TriMesh m;
     for (const auto& id : doc.body_ids()) {
-        BodyMesh bm = tessellate_body(doc, id);
+        BodyMesh bm = tessellate_body(doc, id, 0.05, 0.2, true);
         for (const auto& face : bm.faces) {
             const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
             m.positions.insert(m.positions.end(), face.positions.begin(), face.positions.end());
@@ -319,7 +338,7 @@ TriMesh collect_mesh(const Document& doc) {
 
 TriMesh collect_mesh_for_body(const Document& doc, const EntityId& body) {
     TriMesh m;
-    BodyMesh bm = tessellate_body(doc, body);
+    BodyMesh bm = tessellate_body(doc, body, 0.05, 0.2, true);
     for (const auto& face : bm.faces) {
         const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
         m.positions.insert(m.positions.end(), face.positions.begin(), face.positions.end());

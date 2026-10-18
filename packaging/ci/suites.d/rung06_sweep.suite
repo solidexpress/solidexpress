@@ -1,0 +1,3 @@
+script=tests/run_rung06_sweep.gd
+tier=full
+timeout=420

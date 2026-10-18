@@ -7,6 +7,7 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
@@ -20,11 +21,15 @@
 #include <GProp_GProps.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <ShapeFix_Solid.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
+#include <TopAbs_ShapeEnum.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Shell.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_Wire.hxx>
@@ -53,6 +58,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 using nlohmann::json;
 
@@ -133,20 +139,41 @@ bool apply_sweep(ApplyCtx& ctx) {
                 {
                     std::string xerr;
                     skf->sketch->resolve_expressions(env, &xerr);
-                    auto solver = make_planegcs_backend();
-                    solver->solve(*skf->sketch);
+                    std::string closed_err;
+                    // A fully defined ellipse is already a closed profile.
+                    // Solving leftover dims warps it and the pipe then
+                    // fails to fuse onto the revolve.
+                    if (skf->sketch->profile_face(&closed_err).IsNull()) {
+                        auto solver = make_planegcs_backend();
+                        solver->solve(*skf->sketch);
+                    }
                 }
                 std::string perr;
                 TopoDS_Shape face = skf->sketch->profile_face(&perr);
                 if (face.IsNull()) return fail("profile: " + perr);
                 json path = params.value("path", json::array());
+                TopoDS_Wire spine;
                 if (params.contains("path_feature") && params["path_feature"].is_string()) {
                     const Feature* pf =
                         feature(EntityId::from_string(params["path_feature"].get<std::string>()));
-                    if (!pf || pf->type != FeatureType::Path)
+                    if (pf && pf->type == FeatureType::Path) {
+                        // Prefer live params on the path feature (regenerated earlier).
+                        path = pf->params.value("path", json::array());
+                        // Circular spine is the whole rail of one line+arc sketch
+                        // (candlestick path). Multi-sketch Path features keep the
+                        // merged polyline — taking the first child would drop legs.
+                        const json& rails = pf->params.value("sketches", json::array());
+                        if (rails.is_array() && rails.size() == 1) {
+                            const Feature* psk =
+                                feature(EntityId::from_string(rails[0].get<std::string>()));
+                            if (psk && psk->sketch)
+                                spine = sketch_spine_wire(*psk->sketch);
+                        }
+                    } else if (pf && pf->sketch) {
+                        spine = sketch_spine_wire(*pf->sketch);
+                    } else if (!pf) {
                         return fail("missing path feature");
-                    // Prefer live params on the path feature (regenerated earlier).
-                    path = pf->params.value("path", json::array());
+                    }
                 }
                 if (!path.is_array() || path.size() < 2)
                     return fail("sweep needs a path with at least two points");
@@ -167,30 +194,190 @@ bool apply_sweep(ApplyCtx& ctx) {
                 const double thin = num_param(params, "thin_thickness", 0.0, env);
                 const bool contact = params.value("contact", false);
 
-                TopoDS_Shape result;
-                try {
-                    result = sweep_along_polyline(face, path, guide_ptr, thin, contact);
-                } catch (const Standard_Failure& e) {
-                    return fail(std::string("sweep failed: ") + e.GetMessageString());
-                } catch (const std::runtime_error& e) {
-                    return fail(e.what());
+                auto pipe = [&](bool frenet, bool corr) -> TopoDS_Shape {
+                    if (spine.IsNull() || guide_ptr != nullptr) return {};
+                    try {
+                        return sweep_along_spine(face, spine, thin, contact, frenet, corr);
+                    } catch (...) {
+                        return {};
+                    }
+                };
+                auto polyline = [&]() -> TopoDS_Shape {
+                    try {
+                        return sweep_along_polyline(face, path, guide_ptr, thin, contact);
+                    } catch (...) {
+                        return {};
+                    }
+                };
+                auto usable = [&](const TopoDS_Shape& s) {
+                    return !s.IsNull() && shape::count(s).solids >= 1
+                           && std::abs(shape::volume(s)) > 1.0e-3;
+                };
+                // A fuse that "succeeds" with only the ribbon drops the stem
+                // (handle-only xmax can still be 192). Keep merges that still
+                // contain the target body.
+                auto keeps_target = [&](const TopoDS_Shape& body,
+                                        const TopoDS_Shape& m) {
+                    if (!usable(m)) return false;
+                    const double bv = std::abs(shape::volume(body));
+                    if (bv <= 1.0) return true;
+                    return std::abs(shape::volume(m)) >= bv * 0.90;
+                };
+                auto keep_solid = [&](const TopoDS_Shape& s) -> TopoDS_Shape {
+                    if (!usable(s)) return s;
+                    std::string report;
+                    TopoDS_Shape healed = interop::heal_shape(s, &report);
+                    return usable(healed) ? healed : s;
+                };
+                auto run_fuse = [&](const TopoDS_Shape& a, const TopoDS_Shape& b,
+                                    double fuzzy) -> TopoDS_Shape {
+                    BRepAlgoAPI_Fuse opf;
+                    TopTools_ListOfShape args;
+                    TopTools_ListOfShape tools;
+                    args.Append(a);
+                    tools.Append(b);
+                    opf.SetArguments(args);
+                    opf.SetTools(tools);
+                    opf.SetFuzzyValue(fuzzy);
+                    opf.Build();
+                    if (opf.IsDone() && usable(opf.Shape())) return opf.Shape();
+                    return {};
+                };
+                auto run_cut = [&](const TopoDS_Shape& a, const TopoDS_Shape& b,
+                                   double fuzzy) -> TopoDS_Shape {
+                    BRepAlgoAPI_Cut opc;
+                    TopTools_ListOfShape args;
+                    TopTools_ListOfShape tools;
+                    args.Append(a);
+                    tools.Append(b);
+                    opc.SetArguments(args);
+                    opc.SetTools(tools);
+                    opc.SetFuzzyValue(fuzzy);
+                    opc.Build();
+                    if (opc.IsDone() && usable(opc.Shape())) return opc.Shape();
+                    return {};
+                };
+                // Heal that sews a solid into a shell must not be the fuse input.
+                // The ribbon starts on the axis and runs through the body, so a
+                // full union can fail; attach the outside remainder instead.
+                auto fuse_ribbon = [&](const TopoDS_Shape& body,
+                                       const TopoDS_Shape& ribbon) -> TopoDS_Shape {
+                    const TopoDS_Shape left = keep_solid(body);
+                    const TopoDS_Shape right = keep_solid(ribbon);
+                    const double fuzzies[] = {1.0e-4, 1.0e-3, 0.05};
+                    for (double fuzzy : fuzzies) {
+                        TopoDS_Shape m = run_fuse(body, ribbon, fuzzy);
+                        if (keeps_target(body, m)) return m;
+                        m = run_fuse(left, right, fuzzy);
+                        if (keeps_target(body, m)) return m;
+                    }
+                    for (double fuzzy : fuzzies) {
+                        TopoDS_Shape outside = run_cut(ribbon, body, fuzzy);
+                        if (!usable(outside)) outside = run_cut(right, left, fuzzy);
+                        if (!usable(outside)) continue;
+                        TopoDS_Shape m = run_fuse(body, outside, fuzzy);
+                        if (keeps_target(body, m)) return m;
+                        m = run_fuse(left, outside, fuzzy);
+                        if (keeps_target(body, m)) return m;
+                    }
+                    return {};
+                };
+
+                std::vector<TopoDS_Shape> ribbons;
+                auto add_ribbon = [&](const TopoDS_Shape& s) {
+                    if (usable(s)) ribbons.push_back(s);
+                };
+                add_ribbon(pipe(true, true));
+                add_ribbon(pipe(true, false));
+                add_ribbon(pipe(false, true));
+                add_ribbon(pipe(false, false));
+                add_ribbon(polyline());
+                if (ribbons.empty()) {
+                    try {
+                        add_ribbon(sweep_along_polyline(face, path, guide_ptr, thin, contact));
+                    } catch (const Standard_Failure& e) {
+                        return fail(std::string("sweep failed: ") + e.GetMessageString());
+                    } catch (const std::runtime_error& e) {
+                        return fail(e.what());
+                    }
                 }
-                if (result.IsNull() || !shape::is_valid(result))
-                    return fail("sweep result invalid");
-                if (shape::count(result).solids < 1) return fail("sweep result is not a solid");
+                if (ribbons.empty()) return fail("sweep result is not a solid");
+                auto shape_xmax = [](const TopoDS_Shape& s) -> double {
+                    if (s.IsNull()) return -1.0e99;
+                    Bnd_Box box;
+                    BRepBndLib::Add(s, box);
+                    if (box.IsVoid()) return -1.0e99;
+                    double x0, y0, z0, x1, y1, z1;
+                    box.Get(x0, y0, z0, x1, y1, z1);
+                    return x1;
+                };
+                // Frenet follow-path is first in `ribbons` and reaches ~5 mm
+                // past the hook. A later polyline ribbon can still fuse when
+                // Frenet's boolean is messy — keep the farthest +X solid.
+                // Same xmax: pick the larger volume so a 0-volume Transformed
+                // pipe does not beat a filled cylinder.
+                double best_x = -1.0e99;
+                for (const auto& ribbon : ribbons)
+                    best_x = std::max(best_x, shape_xmax(ribbon));
+                TopoDS_Shape result = ribbons.front();
+                double best_vol = -1.0;
+                for (const auto& ribbon : ribbons) {
+                    if (shape_xmax(ribbon) < best_x - 0.5) continue;
+                    const double v = std::abs(shape::volume(ribbon));
+                    if (v > best_vol) {
+                        best_vol = v;
+                        result = ribbon;
+                    }
+                }
 
                 std::string op = params.value("op", "new");
+                auto close_solid = [&](TopoDS_Shape s) -> TopoDS_Shape {
+                    if (s.IsNull()) return s;
+                    const TopoDS_Shape orig = s;
+                    std::string report;
+                    TopoDS_Shape healed = interop::heal_shape(s, &report);
+                    if (usable(healed)) s = healed;
+                    try {
+                        ShapeUpgrade_UnifySameDomain unify(s, true, true, true);
+                        unify.SetLinearTolerance(1.0e-4);
+                        unify.Build();
+                        if (usable(unify.Shape())) s = unify.Shape();
+                    } catch (...) {
+                    }
+                    if (!s.IsNull() && shape::volume(s) < 0.0) s.Reverse();
+                    return usable(s) ? s : orig;
+                };
                 if (op == "new") {
                     put_body(doc, f.output_body, result, f.name);
                 } else {
                     EntityId target = find_feature_body("target");
                     const Body* tb = doc.body(target);
                     if (!tb) return fail("missing target body");
-                    TopoDS_Shape merged =
-                        (op == "cut")
-                            ? TopoDS_Shape(BRepAlgoAPI_Cut(tb->shape, result).Shape())
-                            : TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, result).Shape());
-                    if (merged.IsNull()) return fail("boolean failed");
+                    TopoDS_Shape merged;
+                    if (op == "cut") {
+                        merged = BRepAlgoAPI_Cut(tb->shape, result).Shape();
+                    } else {
+                        std::vector<TopoDS_Shape> fused;
+                        for (const auto& ribbon : ribbons) {
+                            TopoDS_Shape m = fuse_ribbon(tb->shape, ribbon);
+                            if (keeps_target(tb->shape, m)) fused.push_back(m);
+                        }
+                        double best_x = -1.0e99;
+                        for (const auto& m : fused)
+                            best_x = std::max(best_x, shape_xmax(m));
+                        double best_vol = -1.0;
+                        for (const auto& m : fused) {
+                            if (shape_xmax(m) < best_x - 0.5) continue;
+                            const double v = std::abs(shape::volume(m));
+                            if (v > best_vol) {
+                                best_vol = v;
+                                merged = m;
+                            }
+                        }
+                    }
+                    if (!usable(merged)) return fail("boolean failed");
+                    TopoDS_Shape closed = close_solid(merged);
+                    if (usable(closed)) merged = closed;
                     doc.replace_body_shape(target, merged);
                 }
                 return true;
@@ -224,10 +411,36 @@ bool apply_loft(ApplyCtx& ctx) {
                         solver->solve(*skf->sketch);
                     }
                     std::string perr;
-                    TopoDS_Shape face_shape = skf->sketch->profile_face(&perr);
+                    auto chained = skf->sketch->chained_faces(&perr);
+                    TopoDS_Shape face_shape;
+                    double best_a = -1.0;
+                    for (const auto& c : chained) {
+                        if (c.IsNull() || c.ShapeType() != TopAbs_FACE) continue;
+                        const double a = std::abs(shape::area(c));
+                        if (a > best_a) {
+                            best_a = a;
+                            face_shape = c;
+                        }
+                    }
+                    if (face_shape.IsNull())
+                        face_shape = skf->sketch->profile_face(&perr);
                     if (face_shape.IsNull())
                         return fail("profile " + std::to_string(i) + ": " + perr);
-                    TopoDS_Wire wire = BRepTools::OuterWire(TopoDS::Face(face_shape));
+                    TopoDS_Wire wire;
+                    if (face_shape.ShapeType() == TopAbs_FACE) {
+                        wire = BRepTools::OuterWire(TopoDS::Face(face_shape));
+                    } else {
+                        json pl = sketch_ordered_polyline(*skf->sketch);
+                        if (pl.is_array() && pl.size() >= 3) {
+                            if (pnt_from(pl.front()).Distance(pnt_from(pl.back())) > 1e-6)
+                                pl.push_back(pl.front());
+                            try {
+                                wire = make_polyline_wire(pl);
+                            } catch (...) {
+                                wire = {};
+                            }
+                        }
+                    }
                     if (wire.IsNull())
                         return fail("profile " + std::to_string(i) + ": no outer wire");
                     sections.push_back(wire);

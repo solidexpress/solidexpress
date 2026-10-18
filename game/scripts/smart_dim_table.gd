@@ -4,7 +4,7 @@ extends RefCounted
 ## A line's external flag rides on the pick; it is not its own kind.
 
 
-enum Kind { LINE, CIRCLE, ARC, CIRCLE_CENTER, ARC_CENTER }
+enum Kind { LINE, CIRCLE, ARC, CIRCLE_CENTER, ARC_CENTER, ELLIPSE }
 enum Channel { SINGLE, BETWEEN, SELECTION }
 enum Class { NONE, LINE_LIKE, ROUND, CENTRE }
 ## Which side of a pair must be an external line. NONE means the flag is ignored.
@@ -81,6 +81,10 @@ static func end_for(type: String, role: String, external: bool) -> End:
 
 
 static func resolve(channel: Channel, a: End, b: End = null, hint: String = "") -> Dictionary:
+	# Circles stay Ø. An arc is R, matching SolidWorks Smart Dim on a partial curve.
+	if channel == Channel.SINGLE and a != null and a.kind == Kind.ARC \
+			and _class_of(b) == Class.NONE:
+		return {"form": "radius", "label_anchor": "rim"}
 	var ca := _class_of(a)
 	var cb := _class_of(b)
 	for rule in _RULES:
@@ -110,6 +114,8 @@ static func _kind_of(type: String, role: String) -> int:
 			return Kind.CIRCLE
 		"arc":
 			return Kind.ARC
+		"ellipse":
+			return Kind.ELLIPSE
 		_:
 			return -1
 
@@ -120,7 +126,7 @@ static func _class_of(end: End) -> Class:
 	match end.kind:
 		Kind.LINE:
 			return Class.LINE_LIKE
-		Kind.CIRCLE, Kind.ARC:
+		Kind.CIRCLE, Kind.ARC, Kind.ELLIPSE:
 			return Class.ROUND
 		Kind.CIRCLE_CENTER, Kind.ARC_CENTER:
 			return Class.CENTRE

@@ -1915,6 +1915,18 @@ func cancel_pick_sketch_host() -> void:
 	status.emit("Sketch pick cancelled")
 
 
+## Named origin plane from the walk (`datum=Front`). A 3D pick at the
+## plane's sample point hits the revolved solid / yellow pad first.
+func try_named_sketch_datum(name: String) -> bool:
+	if not _picking_sketch_host:
+		return false
+	if not OriginPlanes.is_origin_name(name):
+		return false
+	_picking_sketch_host = false
+	sketch_host_picked.emit("datum", name, "", "")
+	return true
+
+
 func _chrome_wants_face_pick() -> bool:
 	return sketch_chrome != null \
 			and sketch_chrome.has_method("wants_face_pick") \
@@ -2491,6 +2503,8 @@ func _arm_place(kind: String) -> void:
 	model_space.add_child(_place_ghost)
 	_update_ghost(_screen_center())
 	_refresh_transform_hud()
+	if world_gizmos != null:
+		world_gizmos.set_grid_visible(true)
 	place_changed.emit(true)
 
 
@@ -2763,6 +2777,8 @@ func _disarm_place(emit_cancel: bool) -> void:
 	if emit_cancel:
 		status.emit("Placement cancelled")
 	_refresh_transform_hud()
+	if world_gizmos != null and (sketch_mode == null or not sketch_mode.active):
+		world_gizmos.set_grid_visible(false)
 	place_changed.emit(false)
 
 
@@ -5212,8 +5228,8 @@ func _gui_key(event: InputEventKey) -> bool:
 				return true
 		KEY_G:
 			if not event.ctrl_pressed and world_gizmos != null:
-				world_gizmos.set_gizmos_visible(not world_gizmos.gizmos_visible)
-				status.emit("Gizmos " + ("on" if world_gizmos.gizmos_visible else "off"))
+				world_gizmos.set_grid_visible(not world_gizmos.grid_visible)
+				status.emit("Grid " + ("on" if world_gizmos.grid_visible else "off"))
 				return true
 		KEY_H:
 			if not event.ctrl_pressed:
@@ -7943,7 +7959,7 @@ func _draw_pull_handle() -> void:
 		return
 	var a: Vector2 = _model_to_screen(pull["anchor"])
 	var t: Vector2 = _model_to_screen(pull["point"])
-	var col2 := Color(1.0, 0.62, 0.15, 0.95)
+	var col2 := Color(1.0, 0.76, 0.03, 0.95)
 	_draw_stretch_arrow(a, t, col2)
 	draw_string(ThemeDB.fallback_font, t + Vector2(8, -8), "Pull", HORIZONTAL_ALIGNMENT_LEFT, -1, UiScale.body(), col2)
 

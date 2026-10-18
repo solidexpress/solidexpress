@@ -29,6 +29,7 @@ struct SketchSerde {
             else if (t == "line") e.type = SketchEntityType::Line;
             else if (t == "circle") e.type = SketchEntityType::Circle;
             else if (t == "spline") e.type = SketchEntityType::Spline;
+            else if (t == "ellipse") e.type = SketchEntityType::Ellipse;
             else e.type = SketchEntityType::Arc;
             e.construction = je.value("construction", false);
             e.external = je.value("external", false);
@@ -56,6 +57,8 @@ struct SketchSerde {
                 if (role == "start") r.role = PointRole::Start;
                 else if (role == "end") r.role = PointRole::End;
                 else if (role == "center") r.role = PointRole::Center;
+                else if (role == "minor_start") r.role = PointRole::MinorStart;
+                else if (role == "minor_end") r.role = PointRole::MinorEnd;
                 else r.role = PointRole::Self;
                 c.refs.push_back(r);
             }
@@ -70,6 +73,8 @@ static const char* role_name(PointRole r) {
         case PointRole::Start: return "start";
         case PointRole::End: return "end";
         case PointRole::Center: return "center";
+        case PointRole::MinorStart: return "minor_start";
+        case PointRole::MinorEnd: return "minor_end";
         case PointRole::Self: return "self";
     }
     return "self";
@@ -98,6 +103,7 @@ json sketch_to_json(const Sketch& sk) {
             case SketchEntityType::Circle: je["type"] = "circle"; break;
             case SketchEntityType::Arc: je["type"] = "arc"; break;
             case SketchEntityType::Spline: je["type"] = "spline"; break;
+            case SketchEntityType::Ellipse: je["type"] = "ellipse"; break;
         }
         je["construction"] = e.construction;
         je["external"] = e.external;

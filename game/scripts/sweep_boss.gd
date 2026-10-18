@@ -36,7 +36,7 @@ static func role(sk) -> String:
 		if bool(info.get("construction", false)):
 			continue
 		match str(info.get("type", "")):
-			"circle", "polygon":
+			"circle", "polygon", "ellipse":
 				return "profile"
 			"line", "arc":
 				var a: Vector2 = info.get("start", Vector2.ZERO)

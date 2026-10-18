@@ -21,6 +21,7 @@ var offset_ui: SketchOffset
 ## Circular Sketch Pattern panel (Count / Angle / Ok). Linear still uses click.
 var pattern_ui: SketchCircularPattern
 const _SketchVertical := preload("res://scripts/sketch_vertical.gd")
+const _SketchHorizontal := preload("res://scripts/sketch_horizontal.gd")
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
@@ -189,6 +190,7 @@ var _contour_cache_sig := "\u0001"
 var _contour_fill_alphas: Array = []
 var _contour_outline_count := 0
 var _dimension_labels: Node3D
+var _dimension_geom: MeshInstance3D
 var _constraint_glyphs: Node3D
 ## Anchors of the drawn glyphs: Array of {cid: String, pos: Vector2}.
 var _glyph_anchors: Array = []
@@ -203,6 +205,8 @@ var _infer_label: Label3D
 var _selected_material: StandardMaterial3D
 var _tool_points: Array[Vector2] = []  # committed anchor points of current tool
 var _hover: Vector2 = Vector2.ZERO
+## View → Temporary Axes. Default on; overlay only with a revolve body.
+var temp_axes_visible := true
 ## When ≥ 0, rubber-band length/radius is locked to this value; mouse only
 ## steers direction. Cleared on tool change / Esc / after the next commit click.
 var _length_override: float = -1.0
@@ -240,11 +244,12 @@ const DIM_LABEL_STACK_PX := 28.0  # Label3D offset px between stacked labels (> 
 ## Jaw width / angle callouts stay beside the segment. More than a couple of
 ## screen steps walks the text off the jaw (sx-036 A8: 45° under the menu).
 const JAW_LABEL_MAX_STACK := 2
-const COLOR_ENTITY := Color(0.95, 0.95, 1.0)
+const COLOR_ENTITY := Color(0.25, 0.55, 1.0)
 const COLOR_CONSTRUCTION := Color(0.45, 0.45, 0.48)  # dimmer/desaturated
-const COLOR_CONSTRAINED := Color(0.35, 0.85, 0.45)  # fully constrained sketch
+const COLOR_CONSTRAINED := Color(0.92, 0.94, 0.96)  # fully defined, near-white on charcoal
 const COLOR_CONFLICT := Color(0.95, 0.3, 0.25)  # entities in conflicting constraints
-const COLOR_GLYPH := Color(0.65, 0.8, 1.0)
+const COLOR_GLYPH := Color(0.20, 0.72, 0.38)
+const COLOR_DIM_DRIVEN := Color(0.55, 0.58, 0.62)
 const COLOR_GLYPH_SELECTED := Color(1.0, 0.62, 0.15)
 ## Match 3D stretch-handle blue for endpoint drag affordance.
 const COLOR_HANDLE := Color(0.25, 0.75, 1.0, 0.95)
@@ -356,6 +361,18 @@ func _ready() -> void:
 	_dimension_labels = Node3D.new()
 	_dimension_labels.name = "DimensionLabels"
 	add_child(_dimension_labels)
+	_dimension_geom = MeshInstance3D.new()
+	_dimension_geom.name = "DimensionGeometry"
+	var dim_mat := StandardMaterial3D.new()
+	dim_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dim_mat.vertex_color_use_as_albedo = true
+	dim_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dim_mat.no_depth_test = true
+	dim_mat.render_priority = 2
+	dim_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	dim_mat.albedo_color = Color.WHITE
+	_dimension_geom.material_override = dim_mat
+	add_child(_dimension_geom)
 	_constraint_glyphs = Node3D.new()
 	_constraint_glyphs.name = "ConstraintGlyphs"
 	add_child(_constraint_glyphs)
@@ -572,6 +589,78 @@ func _clear_support() -> void:
 	host_face_id = ""
 
 
+func _feature_params_dict(fid: String) -> Dictionary:
+	if view == null or view.doc == null or fid == "":
+		return {}
+	for f in view.doc.graph_features():
+		if str(f.get("id", "")) != fid:
+			continue
+		var parsed = JSON.parse_string(str(f.get("params", "{}")))
+		if typeof(parsed) == TYPE_DICTIONARY:
+			return parsed
+		return {}
+	return {}
+
+
+## Host/face/normal stored on a committed face sketch (`_write_sketch_support`).
+func _support_from_feature(fid: String) -> Dictionary:
+	var params := _feature_params_dict(fid)
+	var host := str(params.get("support_host", ""))
+	if host == "":
+		return {}
+	var n: Variant = params.get("support_normal", [0, 0, 0])
+	var normal := Vector3.ZERO
+	if n is Array and n.size() >= 3:
+		normal = Vector3(float(n[0]), float(n[1]), float(n[2]))
+	return {
+		"host": host,
+		"normal": normal,
+		"side": str(params.get("support_side", "max")),
+		"face": str(params.get("host_face", "")),
+	}
+
+
+func _adopt_support(support: Dictionary) -> void:
+	_clear_support()
+	if support.is_empty():
+		target_fid = ""
+		return
+	support_host = str(support.get("host", ""))
+	support_normal = support.get("normal", Vector3.ZERO)
+	support_side = str(support.get("side", "max"))
+	host_face_id = str(support.get("face", ""))
+	target_fid = support_host
+
+
+## Cut/fuse target: the live session, then the saved host, then the host face,
+## then the only body in the part (jaw cut after a pencil reopen).
+func _boolean_target_fid() -> String:
+	if target_fid != "":
+		return target_fid
+	if support_host != "":
+		return support_host
+	if host_face_id != "" and view != null:
+		var body := ""
+		if view.has_method("body_of_face"):
+			body = view.body_of_face(host_face_id)
+		if body == "" and view.has_method("body_of_feature"):
+			body = view.body_of_feature(support_host)
+		if body != "" and view.has_method("feature_of_body"):
+			var from_face := str(view.feature_of_body(body))
+			if from_face != "":
+				return from_face
+	return _sole_body_feature()
+
+
+func _sole_body_feature() -> String:
+	if view == null or view.doc == null or not view.has_method("feature_of_body"):
+		return ""
+	var ids: PackedStringArray = view.doc.body_ids()
+	if ids.size() != 1:
+		return ""
+	return str(view.feature_of_body(ids[0]))
+
+
 ## True when `face_id`'s midpoint sits on the active sketch plane.
 func face_lies_on_plane(face_id: String) -> bool:
 	if face_id == "" or view == null or view.doc == null:
@@ -600,7 +689,7 @@ func begin(origin: Vector3, normal: Vector3, support: Dictionary = {}) -> void:
 		host_face_id = str(support.get("face", ""))
 	_setup_plane(origin, normal)
 	sketch = SxSketch.new()
-	sketch.set_plane(origin, plane_x, plane_y)
+	sketch.set_plane(plane.origin, plane_x, plane_y)
 	_activate_session()
 	status.emit("Sketch: Select · Line · Rect · Circle · Exit Sketch · Esc discard")
 
@@ -641,7 +730,9 @@ func begin_edit(fid: String, announce: bool = true) -> bool:
 			(pi["y_dir"] as Vector3).normalized())
 	sketch = loaded
 	_edit_baseline = loaded.snapshot() if loaded.has_method("snapshot") else ""
-	_clear_support()
+	# Pencil/timeline reopen must put Cut back on the body this sketch sat on.
+	# Exit clears host_face_id so the selection card does not cover the rail.
+	_adopt_support(_support_from_feature(fid))
 	_activate_session()
 	if announce:
 		status.emit("Editing sketch — Exit Sketch to save · Esc discard")
@@ -879,12 +970,16 @@ func exit_sketch() -> String:
 ## into the body (negated distance).
 func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		thin_thickness: float = 0.0, thin_type: String = "one_side",
-		flip_side: bool = false, selected_contours: Array = []) -> void:
+		flip_side: bool = false, selected_contours: Array = [],
+		draft_deg: float = 0.0, draft_inward: bool = true) -> void:
 	if not active:
 		return
 	var distance_refusal := _extrude_distance_refusal(distance, end)
 	if distance_refusal != "":
 		_refuse_extrude(distance_refusal)
+		return
+	if absf(draft_deg) >= 75.0:
+		_refuse_extrude("Draft angle too large")
 		return
 	# Auto-commit an in-progress Polygon/Circle/Rect/Slot tip so Extrude
 	# doesn't see only a preview ghost and report "open profile". Pass the
@@ -933,9 +1028,12 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 		else:
 			_refuse_extrude(_open_profile_status())
 		return
-	if op != "new" and target_fid == "":
+	var cut_tgt := _boolean_target_fid()
+	if op != "new" and cut_tgt == "":
 		_refuse_extrude("No target body — sketch on a face to cut/fuse")
 		return
+	if cut_tgt != "":
+		target_fid = cut_tgt
 	if op == "cut":
 		distance = -absf(distance)
 	# Up To Surface with nothing picked must not extrude the host face.
@@ -953,7 +1051,8 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	var to_face_id := _up_to_face_id() if end == "to_face" else ""
 	var ex_fid: String = view.doc.graph_add_extrude(
 		sk_fid, distance, symmetric, op, target_fid if op != "new" else "", end,
-		thin_thickness, thin_type, flip_side, selected_contours, to_face_id)
+		thin_thickness, thin_type, flip_side, selected_contours, to_face_id,
+		draft_deg, draft_inward)
 	if ex_fid == "" and _graph_error_text().contains("Thin wall"):
 		_refuse_extrude(_graph_error_text())
 		return
@@ -1051,9 +1150,16 @@ func _cut_refusal(before: float, after: float) -> String:
 func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 	if not active:
 		return
-	if op != "new" and target_fid == "":
+	var cut_tgt := _boolean_target_fid()
+	if op != "new" and cut_tgt == "":
 		status.emit("No target body — sketch on a face to cut/fuse")
 		return
+	if cut_tgt != "":
+		target_fid = cut_tgt
+	# Close a dangling line chain. Do not weld arc ends onto neighbours —
+	# that pulls them off the circle and GC_MakeArcOfCircle then skips the
+	# rim (candlestick R12.5), which is the open-loop refuse.
+	_try_close_open_chain()
 	var axis_point := Vector2.ZERO
 	var axis_dir := Vector2(0, 1)
 	if selected.size() == 1:
@@ -1061,7 +1167,8 @@ func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 		if info.get("type", "") == "line":
 			axis_point = info["start"]
 			axis_dir = (info["end"] - info["start"]).normalized()
-			sketch.set_construction(selected[0], true)
+			# Keep the line in the profile. Marking it construction drops the
+			# closing side of a revolve-about-itself sketch (candlestick 220).
 	var sk_fid := _ensure_sketch_feature()
 	if sk_fid == "":
 		return
@@ -1073,14 +1180,7 @@ func finish_revolve(angle: float = TAU, op: String = "new") -> void:
 func _write_sketch_support(fid: String) -> void:
 	if support_host == "" or view == null or view.doc == null:
 		return
-	var params := {}
-	for f in view.doc.graph_features():
-		if str(f.get("id", "")) != fid:
-			continue
-		var parsed = JSON.parse_string(str(f.get("params", "{}")))
-		if typeof(parsed) == TYPE_DICTIONARY:
-			params = parsed
-		break
+	var params := _feature_params_dict(fid)
 	params["support_host"] = support_host
 	params["support_normal"] = [support_normal.x, support_normal.y, support_normal.z]
 	params["support_side"] = support_side if support_side != "" else "max"
@@ -1541,6 +1641,13 @@ func set_tool(t: Tool) -> void:
 		_set_selected([])
 		if selected_constraint != "":
 			select_constraint("")
+	# A single leftover entity makes the next Smart Dim a BETWEEN/angle
+	# (rung 3 two 120s). Two-circle selection must stay so the chip row
+	# still shows (replan12 chiprow).
+	if t == Tool.SMART_DIM and selected.size() == 1:
+		_set_selected([])
+		if selected_constraint != "":
+			select_constraint("")
 	# Default variants per tool family (reset on tool switch so prior family
 	# names like circle "center" don't silently become rect "center").
 	var spec := SketchToolSpec.of(int(t))
@@ -1616,8 +1723,10 @@ func has_pending_draw_point() -> bool:
 				return _tool_points.size() >= 1
 			return _tool_points.size() == 1
 		Tool.LINE, Tool.CENTERLINE, Tool.CIRCLE, Tool.POLYGON, \
-				Tool.SLOT, Tool.ELLIPSE, Tool.ARC:
+				Tool.SLOT, Tool.ARC:
 			return _tool_points.size() == 1
+		Tool.ELLIPSE:
+			return _tool_points.size() == 1 or _tool_points.size() == 2
 		_:
 			return false
 
@@ -2051,13 +2160,34 @@ func snap_point(p: Vector2) -> Vector2:
 		centers.append(ip)
 	for mp in centers:
 		var d2 := p.distance_to(mp)
-		if d2 <= best_d:
+		# A Ø150 rim click is 75 mm from the origin; a view-scaled snap
+		# must not pull it onto the centre (Smart Dim would wait for a
+		# second pick instead of emitting diameter).
+		if d2 <= best_d and not _snap_blocked_by_curve(p, mp):
 			best_d = d2
 			best_pt = mp
 			found = true
 	if found:
 		_snap_marker = best_pt
 		return best_pt
+	# Other visible sketches (path start when the ellipse is on Right).
+	best_d = rad
+	found = false
+	if view != null and view.doc != null:
+		for op in SketchTempAxes.other_sketch_points(view.doc, editing_fid, plane):
+			var d3 := p.distance_to(op)
+			if d3 <= best_d:
+				best_d = d3
+				best_pt = op
+				found = true
+	if found:
+		_snap_marker = best_pt
+		return best_pt
+	# Revolve axis: x = 0 at any Y (not only the origin).
+	var axis_pt := SketchTempAxes.snap_y_axis(p, rad)
+	if axis_pt != p:
+		_snap_marker = axis_pt
+		return axis_pt
 	# Tangent contact before H/V. A horizontal chord already on the circle
 	# (the wrench blank) must still take the axis snap — projecting onto the
 	# rim first walks that click off y = constant and the blank stops being
@@ -2248,6 +2378,15 @@ func _snap_endpoints(id: String) -> Array[Vector2]:
 			var r: float = info["radius"]
 			out.append(c + Vector2.from_angle(info["start_angle"]) * r)
 			out.append(c + Vector2.from_angle(info["end_angle"]) * r)
+		"ellipse":
+			if info.has("major_start"):
+				out.append(info["major_start"])
+			if info.has("major_end"):
+				out.append(info["major_end"])
+			if info.has("minor_start"):
+				out.append(info["minor_start"])
+			if info.has("minor_end"):
+				out.append(info["minor_end"])
 		"point":
 			out.append(info["position"])
 	return out
@@ -2259,7 +2398,7 @@ func _snap_mid_centers(id: String) -> Array[Vector2]:
 	match info.get("type", ""):
 		"line":
 			out.append((info["start"] + info["end"]) * 0.5)
-		"circle", "arc":
+		"circle", "arc", "ellipse":
 			out.append(info["center"])
 	return out
 
@@ -2651,6 +2790,7 @@ func _apply_region_pick(idx: int) -> void:
 
 
 ## A click nearer an endpoint than the line midpoint stores that endpoint.
+## Arc / ellipse major-axis ends are the same: the R20 hook and the 35 mm ellipse.
 func _endpoint_pick() -> bool:
 	for i in selected.size():
 		if _role_at(i) != "self":
@@ -2670,18 +2810,81 @@ func _is_point_pair(refs: Array) -> bool:
 	return true
 
 
+func _endpoint_pairs(info: Dictionary) -> Array:
+	var kind := str(info.get("type", ""))
+	var out: Array = []
+	if kind == "line" or kind == "arc":
+		if info.has("start"):
+			out.append(["start", info["start"]])
+		if info.has("end"):
+			out.append(["end", info["end"]])
+	elif kind == "ellipse":
+		if info.has("major_start"):
+			out.append(["start", info["major_start"]])
+		if info.has("major_end"):
+			out.append(["end", info["major_end"]])
+	return out
+
+
 func _endpoint_role_at(id: String, pos2: Vector2) -> String:
 	var info: Dictionary = sketch.entity_info(id)
-	if str(info.get("type", "")) != "line":
+	var ends: Array = _endpoint_pairs(info)
+	if ends.is_empty():
 		return "self"
-	var a: Vector2 = info["start"]
-	var b: Vector2 = info["end"]
-	var mid := (a + b) * 0.5
-	var ds := pos2.distance_to(a)
-	var de := pos2.distance_to(b)
-	if minf(ds, de) < pos2.distance_to(mid):
-		return "start" if ds <= de else "end"
+	var best_role := "self"
+	var best_d := INF
+	for pair in ends:
+		var d: float = pos2.distance_to(pair[1])
+		if d < best_d:
+			best_d = d
+			best_role = str(pair[0])
+	if str(info.get("type", "")) == "line":
+		var a: Vector2 = ends[0][1]
+		var b: Vector2 = ends[1][1] if ends.size() > 1 else a
+		if best_d < pos2.distance_to((a + b) * 0.5):
+			return best_role
+		return "self"
+	if best_d <= _pick_tolerance():
+		return best_role
 	return "self"
+
+
+## Ellipse centre landed on another sketch's endpoint: pin it there.
+func _coincident_ellipse_to_path(eid: String, centre: Vector2) -> void:
+	if sketch == null or view == null or view.doc == null or eid == "":
+		return
+	var rad := _snap_radius()
+	var best := {}
+	var best_d := rad
+	for hit in SketchTempAxes.other_sketch_hits(view.doc, editing_fid, plane):
+		var d: float = centre.distance_to(hit["uv"])
+		if d < best_d:
+			best_d = d
+			best = hit
+	if best.is_empty():
+		return
+	var uv: Vector2 = best["uv"]
+	var pid: String = sketch.add_point(uv.x, uv.y)
+	if pid == "":
+		return
+	sketch.set_construction(pid, true)
+	sketch.add_constraint("fix", [{"entity": pid, "role": "self"}], 0.0)
+	sketch.add_constraint("coincident", [
+		{"entity": eid, "role": "center"},
+		{"entity": pid, "role": "self"}], 0.0)
+
+
+## True when `p` sits on a circle/arc/ellipse curve closer than `centre`.
+func _snap_blocked_by_curve(p: Vector2, centre: Vector2) -> bool:
+	var to_c := p.distance_to(centre)
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind != "circle" and kind != "arc" and kind != "ellipse":
+			continue
+		if _entity_distance(info, p) + 1.0e-6 < to_c:
+			return true
+	return false
 
 
 func _entity_distance(info: Dictionary, p: Vector2) -> float:
@@ -2690,6 +2893,8 @@ func _entity_distance(info: Dictionary, p: Vector2) -> float:
 			return SketchGeom.point_segment_distance(p, info["start"], info["end"])
 		"circle", "arc":
 			return absf(p.distance_to(info["center"]) - info["radius"])
+		"ellipse":
+			return SketchEllipse.distance(info, p)
 		"point":
 			return p.distance_to(info["position"])
 	return INF
@@ -2714,6 +2919,8 @@ func closest_on_entity(eid: String, pos2: Vector2) -> Vector2:
 			if d.length_squared() < 1e-12 or r < 1e-9:
 				return c + Vector2(r, 0.0)
 			return c + d.normalized() * r
+		"ellipse":
+			return SketchEllipse.closest(info, pos2)
 		"point":
 			return info["position"]
 	return pos2
@@ -2736,23 +2943,26 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match info.get("type", ""):
-			"line":
-				for pair in [["start", info["start"]], ["end", info["end"]]]:
+			"line", "arc", "ellipse":
+				for pair in _endpoint_pairs(info):
 					var d: float = pos2.distance_to(pair[1])
 					if d <= best_d:
 						best_d = d
 						best_id = id
 						best_part = pair[0]
-			"circle", "arc":
-				var d2: float = pos2.distance_to(info["center"])
-				var d_curve := absf(d2 - float(info.get("radius", 0.0)))
-				# Centre handle only when nearer the centre than the rim.
-				# pick_tol is often larger than a Ø10, so a rim click must
-				# not become a centre grab (A12 Vertical).
-				if d2 <= best_d and d2 < d_curve:
-					best_d = d2
-					best_id = id
-					best_part = "center"
+			"circle":
+				pass
+		if str(info.get("type", "")) == "circle" or str(info.get("type", "")) == "arc":
+			var d2: float = pos2.distance_to(info["center"])
+			var d_curve := absf(d2 - float(info.get("radius", 0.0)))
+			# Centre handle only when nearer the centre than the rim.
+			# pick_tol is often larger than a Ø10, so a rim click must
+			# not become a centre grab (A12 Vertical).
+			# Arc ends already won in pass 1 when the click is on a vertex.
+			if d2 <= best_d and d2 < d_curve:
+				best_d = d2
+				best_id = id
+				best_part = "center"
 	if best_id != "":
 		return {"id": best_id, "part": best_part}
 	# Pass 2: whole entity / rim
@@ -2880,6 +3090,19 @@ func _append_entity_lines(im: ImmediateMesh, info: Dictionary) -> void:
 				var a1 := TAU * (i + 1) / steps
 				im.surface_add_vertex(_to3(c + Vector2(cos(a0), sin(a0)) * r))
 				im.surface_add_vertex(_to3(c + Vector2(cos(a1), sin(a1)) * r))
+		"ellipse":
+			var ce: Vector2 = info.get("center", Vector2.ZERO)
+			var rx := float(info.get("rx", 0.0))
+			var ry := float(info.get("ry", 0.0))
+			var ang := float(info.get("angle", 0.0))
+			var steps_e := 64
+			for i in range(steps_e):
+				var t0 := TAU * i / steps_e
+				var t1 := TAU * (i + 1) / steps_e
+				var p0 := ce + Vector2(rx * cos(t0), ry * sin(t0)).rotated(ang)
+				var p1 := ce + Vector2(rx * cos(t1), ry * sin(t1)).rotated(ang)
+				im.surface_add_vertex(_to3(p0))
+				im.surface_add_vertex(_to3(p1))
 		"arc":
 			var c2: Vector2 = info["center"]
 			var r2: float = info["radius"]
@@ -2936,10 +3159,12 @@ func constrain(type: String, value: float = 0.0) -> String:
 						status.emit("Vertical needs two endpoints")
 					return ""
 			else:
-				for id in selected:
-					if sketch.entity_info(id).get("type", "") == "line":
-						cid = sketch.add_constraint(type, [{"entity": id, "role": "self"}], 0.0)
-						added = true
+				cid = _SketchHorizontal.apply(sketch, selected, selected_roles)
+				added = cid != ""
+				if not added:
+					if _endpoint_pick() and selected.size() != 2:
+						status.emit("Horizontal needs two endpoints")
+					return ""
 		"parallel", "perpendicular", "equal":
 			if selected.size() == 2:
 				cid = sketch.add_constraint(type, [
@@ -4764,7 +4989,19 @@ func _endpoint_pos(id: String, role: String) -> Vector2:
 	match info.get("type", ""):
 		"line":
 			return info["start"] if role == "start" else info["end"]
-		"circle", "arc":
+		"arc":
+			if role == "start" and info.has("start"):
+				return info["start"]
+			if role == "end" and info.has("end"):
+				return info["end"]
+			return info["center"]
+		"ellipse":
+			if role == "start" and info.has("major_start"):
+				return info["major_start"]
+			if role == "end" and info.has("major_end"):
+				return info["major_end"]
+			return info.get("center", Vector2.ZERO)
+		"circle":
 			return info["center"]
 	return info.get("position", Vector2.ZERO)
 
@@ -4798,18 +5035,16 @@ func _redraw_selected() -> void:
 		return
 	var im := ImmediateMesh.new()
 	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	var any := false
 	for id in selected:
 		var info: Dictionary = sketch.entity_info(id)
-		match info.get("type", ""):
-			"line":
-				im.surface_add_vertex(_to3(info["start"]))
-				im.surface_add_vertex(_to3(info["end"]))
-			"circle", "arc":
-				var c: Vector2 = info["center"]
-				var r: float = info["radius"]
-				for i in range(48):
-					im.surface_add_vertex(_to3(c + Vector2.from_angle(TAU * i / 48.0) * r))
-					im.surface_add_vertex(_to3(c + Vector2.from_angle(TAU * (i + 1) / 48.0) * r))
+		if info.is_empty():
+			continue
+		_append_entity_lines(im, info)
+		any = true
+	if not any:
+		_selected_node.mesh = null
+		return
 	im.surface_end()
 	_selected_node.mesh = im
 
@@ -5404,21 +5639,15 @@ func click(pos2: Vector2) -> void:
 			_update_preview()
 		Tool.ELLIPSE:
 			_tool_points.append(pos2)
-			if _tool_points.size() == 2:
-				# Approximate ellipse as 4 arcs / polygon ring (32-gon).
-				var c := _tool_points[0]
-				var corner := _tool_points[1]
-				var rx := absf(corner.x - c.x)
-				var ry := absf(corner.y - c.y)
-				remember_numeric(maxf(rx, ry))
-				if rx > 1e-6 and ry > 1e-6:
-					var prev: Vector2
-					for i in range(33):
-						var ang := TAU * float(i) / 32.0
-						var p := c + Vector2(cos(ang) * rx, sin(ang) * ry)
-						if i > 0:
-							sketch.add_line(prev.x, prev.y, p.x, p.y)
-						prev = p
+			if _tool_points.size() == 3:
+				var eid := SketchEllipse.build(sketch, _tool_points[0], _tool_points[1], _tool_points[2])
+				if eid != "":
+					_coincident_ellipse_to_path(eid, _tool_points[0])
+					var info: Dictionary = sketch.entity_info(eid)
+					remember_numeric(float(info.get("rx", 0.0)) * 2.0)
+					run_solve()
+				else:
+					status.emit("Ellipse: major and minor must be positive")
 				_tool_points.clear()
 				_redraw()
 		Tool.SLOT:
@@ -5649,26 +5878,35 @@ func _click_arc(pos2: Vector2) -> void:
 				var p1 := _tool_points[0]
 				var p2 := _tool_points[1]
 				var p3 := _tool_points[2]
-				var c_v: Variant = _circumcenter(p1, p2, p3)
-				if c_v != null:
-					var ctr: Vector2 = c_v
-					var r := ctr.distance_to(p1)
-					if r > 1e-6:
-						remember_numeric(r)
-						sketch.add_arc(ctr.x, ctr.y, r, (p1 - ctr).angle(), (p3 - ctr).angle())
+				var aid := SketchTangentArc.add_three_point(
+						sketch, p1, p2, p3, _snap_radius())
+				if aid != "":
+					var info: Dictionary = sketch.entity_info(aid)
+					remember_numeric(float(info.get("radius", 0.0)))
+					run_solve()
 				_tool_points.clear()
 		"tangent":
 			# First click near existing curve endpoint; second = end.
 			if _tool_points.size() == 2:
 				var start_pt := _tool_points[0]
 				var end_pt := _tool_points[1]
-				var mid := (start_pt + end_pt) * 0.5
-				var n := Vector2(-(end_pt - start_pt).y, (end_pt - start_pt).x).normalized()
-				var c := mid + n * start_pt.distance_to(end_pt) * 0.5
-				var r := c.distance_to(start_pt)
-				if r > 1e-6:
-					remember_numeric(r)
-					sketch.add_arc(c.x, c.y, r, (start_pt - c).angle(), (end_pt - c).angle())
+				var aid := SketchTangentArc.build(sketch, start_pt, end_pt, _snap_radius())
+				if aid != "":
+					var info: Dictionary = sketch.entity_info(aid)
+					remember_numeric(float(info.get("radius", 0.0)))
+					run_solve()
+				else:
+					# Empty-space two clicks still make a free arc (no host).
+					var chord := end_pt - start_pt
+					var r_free := chord.length() * 0.5
+					if r_free > 1e-6:
+						var mid := (start_pt + end_pt) * 0.5
+						var n := Vector2(-chord.y, chord.x).normalized()
+						var c := mid + n * r_free
+						remember_numeric(r_free)
+						sketch.add_arc(c.x, c.y, r_free, (start_pt - c).angle(), (end_pt - c).angle())
+					else:
+						status.emit("Tangent Arc: radius must be positive")
 				_tool_points.clear()
 		_:  # center
 			if _tool_points.size() == 3:
@@ -5818,8 +6056,13 @@ func cancel_pending_dim_pick() -> void:
 
 
 func _convert_edge_click(uv: Vector2) -> void:
+	_convert_silhouette_at(uv)
+
+
+## Project a silhouette / pierce edge at `uv`. Returns the new entity id.
+func _convert_silhouette_at(uv: Vector2) -> String:
 	if sketch == null or view == null or view.doc == null:
-		return
+		return ""
 	var ctx := SketchConvertEdge.Context.new()
 	ctx.doc = view.doc
 	ctx.view = view
@@ -5836,8 +6079,9 @@ func _convert_edge_click(uv: Vector2) -> void:
 	ctx.status = func(text: String) -> void:
 		status.emit(text)
 	ctx.fallback = convert_pierce_points
-	SketchConvertEdge.new(ctx).click(uv)
+	var id := SketchConvertEdge.new(ctx).click(uv)
 	host_face_id = ctx.host_face_id
+	return id
 
 
 func _offset_click(uv: Vector2) -> void:
@@ -5878,9 +6122,13 @@ func _smart_dim_kind(ref: Dictionary) -> SmartDimTable.End:
 	var id := str(ref.get("entity", ""))
 	if id == "" or sketch == null:
 		return null
+	var role := str(ref.get("role", "self"))
+	# An arc/line vertex is a point. BETWEEN + a line is then point_line
+	# (candlestick path vertical 65 from the R150 end to the 60 mm line).
+	if role == "start" or role == "end":
+		return SmartDimTable.end_for("circle", "center", false)
 	var info: Dictionary = sketch.entity_info(id)
-	return SmartDimTable.end_for(str(info.get("type", "")), str(ref.get("role", "self")),
-			sketch.is_external(id))
+	return SmartDimTable.end_for(str(info.get("type", "")), role, sketch.is_external(id))
 
 
 func _click_smart_dim(pos2: Vector2) -> void:
@@ -5904,14 +6152,31 @@ func _click_smart_dim(pos2: Vector2) -> void:
 	if hit == "":
 		hit = _nearest_entity_at(pos2)
 	if hit == "":
-		if not _smart_dim_pending.is_empty():
-			status.emit(SMART_DIM_MISS_HINT)
-			return
+		var first := _smart_dim_pending
+		if first.is_empty() and selected.size() == 1:
+			first = {"entity": selected[0], "role": "self"}
+		if not first.is_empty():
+			var sid := _convert_silhouette_at(pos2)
+			if sid != "":
+				var second := {"entity": sid, "role": "self"}
+				if _dispatch_smart_dim(SmartDimTable.Channel.BETWEEN, first, second):
+					_smart_dim_pending.clear()
+					_smart_dim_first = null
+					return
+			if not _smart_dim_pending.is_empty():
+				status.emit(SMART_DIM_MISS_HINT)
+				return
 		_smart_dim_first = null
 		return
-	var hit_ref := {"entity": hit, "role": "self"}
+	var hit_role := "self"
+	if str(sketch.entity_info(hit).get("type", "")) == "arc":
+		var ep := _endpoint_role_at(hit, pos2)
+		if ep == "start" or ep == "end":
+			hit_role = ep
+	var hit_ref := {"entity": hit, "role": hit_role}
 	if not _smart_dim_pending.is_empty():
 		if str(_smart_dim_pending["entity"]) == hit \
+				and str(_smart_dim_pending.get("role", "self")) == hit_role \
 				and str(sketch.entity_info(hit).get("type", "")) in ["circle", "arc"]:
 			status.emit(SMART_DIM_SAME_HINT)
 			return
@@ -5930,6 +6195,14 @@ func _click_smart_dim(pos2: Vector2) -> void:
 		_smart_dim_pending.clear()
 		_smart_dim_first = null
 		return
+	# First pick on an arc vertex waits for the second pick. Curve clicks
+	# still emit radius immediately (SINGLE ROUND).
+	if hit_role == "start" or hit_role == "end":
+		_smart_dim_pending = hit_ref
+		_set_selected([hit])
+		status.emit(SMART_DIM_PICK_HINT)
+		_smart_dim_first = null
+		return
 	if selected.size() == 1 and str(selected[0]) != hit:
 		var sel_ref := {"entity": selected[0], "role": "self"}
 		if _dispatch_smart_dim(SmartDimTable.Channel.SELECTION, sel_ref, hit_ref):
@@ -5941,6 +6214,8 @@ func _click_smart_dim(pos2: Vector2) -> void:
 		_smart_dim_first = pos2
 		_smart_dim_pending.clear()
 		return
+	if str(sketch.entity_info(hit).get("type", "")) == "ellipse":
+		single["ellipse_axis"] = SketchEllipse.axis_at(sketch.entity_info(hit), pos2)
 	_apply_smart_dim_single(hit_ref, single)
 	_smart_dim_first = null
 
@@ -6066,6 +6341,8 @@ func _apply_smart_dim_single(ref: Dictionary, intent: Dictionary) -> void:
 			_apply_line_length_dim(ref, intent)
 		"diameter":
 			_apply_diameter_dim(ref, intent)
+		"radius":
+			_apply_radius_dim(ref, intent)
 
 
 func _apply_line_length_dim(ref: Dictionary, intent: Dictionary) -> void:
@@ -6086,14 +6363,38 @@ func _apply_line_length_dim(ref: Dictionary, intent: Dictionary) -> void:
 func _apply_diameter_dim(ref: Dictionary, intent: Dictionary) -> void:
 	var hit := str(ref.get("entity", ""))
 	var info: Dictionary = sketch.entity_info(hit)
+	if str(info.get("type", "")) == "ellipse":
+		var axis := str(intent.get("ellipse_axis", "major"))
+		var a_role := "start" if axis == "major" else "minor_start"
+		var b_role := "end" if axis == "major" else "minor_end"
+		var a: Vector2 = info.get("major_start" if axis == "major" else "minor_start", Vector2.ZERO)
+		var b: Vector2 = info.get("major_end" if axis == "major" else "minor_end", Vector2.ZERO)
+		var cid := str(sketch.add_constraint("distance", [
+			{"entity": hit, "role": a_role},
+			{"entity": hit, "role": b_role}], a.distance_to(b)))
+		if cid != "":
+			_record_dimension("distance", [hit], a.distance_to(b), cid)
+		run_solve()
+		_redraw()
+		_tag_label_anchor(intent, [hit])
+		return
 	_drop_size_constraints(hit, "radius")
 	_set_selected([hit])
 	constrain("diameter", float(info.get("radius", 5.0)) * 2.0)
 	_tag_label_anchor(intent, [hit])
 
 
-## A typed radius and a diameter are the same size twice. The diameter is
-## the one Smart Dim keeps.
+func _apply_radius_dim(ref: Dictionary, intent: Dictionary) -> void:
+	var hit := str(ref.get("entity", ""))
+	var info: Dictionary = sketch.entity_info(hit)
+	_drop_size_constraints(hit, "diameter")
+	_set_selected([hit])
+	constrain("radius", float(info.get("radius", 5.0)))
+	_tag_label_anchor(intent, [hit])
+
+
+## A typed radius and a diameter are the same size twice. Smart Dim on a
+## full circle keeps diameter; on an arc it keeps radius.
 func _drop_size_constraints(entity_id: String, type: String) -> void:
 	if sketch == null or entity_id == "":
 		return
@@ -7724,6 +8025,9 @@ func _clear_meshes() -> void:
 	_snap_marker = null
 	_sync_pick_marker()
 	_selected_node.mesh = null
+	if _dimension_geom != null:
+		_dimension_geom.mesh = null
+		_dimension_geom.visible = false
 	if _contour_node != null:
 		_contour_node.mesh = null
 	if _contour_tag != null:
@@ -7765,8 +8069,8 @@ func _entity_draw_color(info: Dictionary, id: String = "") -> Color:
 		return COLOR_CONFLICT
 	if info.get("construction", false):
 		return COLOR_CONSTRUCTION
-	# Fully-constrained sketches draw green (per-entity DOF isn't reported by
-	# the solver yet, so the whole sketch flips together).
+	# Fully-constrained sketches draw near-white (per-entity DOF isn't reported
+	# by the solver yet, so the whole sketch flips together).
 	if last_dofs == 0 and last_solve_status != "failed":
 		return COLOR_CONSTRAINED
 	return COLOR_ENTITY
@@ -8067,6 +8371,117 @@ func _rebuild_dimension_labels() -> void:
 		label.text = str(dim.get("label_text", ""))
 		label.position = _to3(pos) + plane_normal() * 0.2
 		_dimension_labels.add_child(label)
+	_rebuild_dimension_geometry()
+
+
+## Witness lines, dimension line, and filled arrows in the sketch plane.
+func _rebuild_dimension_geometry() -> void:
+	if _dimension_geom == null or sketch == null:
+		return
+	if not active:
+		_dimension_geom.mesh = null
+		_dimension_geom.visible = false
+		return
+	var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
+	var im := ImmediateMesh.new()
+	var started := false
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
+		var ids: Array = dim.get("ids", [])
+		if ids.is_empty():
+			continue
+		var col := COLOR_CONSTRAINED if last_dofs == 0 and last_solve_status != "failed" else COLOR_ENTITY
+		if not bool(dim.get("driving", true)):
+			col = COLOR_DIM_DRIVEN
+		var a: Variant = _dim_witness_a(dim)
+		var b: Variant = _dim_witness_b(dim)
+		if a == null or b == null:
+			continue
+		var pa: Vector2 = a
+		var pb: Vector2 = b
+		if not started:
+			im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+			started = true
+		if cam != null:
+			_append_leader_ribbon(im, cam, pa, pb, 2.0, col)
+			_append_dim_arrow(im, cam, pa, pb, col)
+			_append_dim_arrow(im, cam, pb, pa, col)
+		var gap := 1.6
+		var n := (pb - pa).orthogonal().normalized()
+		if n.length_squared() < 1e-12:
+			continue
+		var lp: Variant = dim.get("label_pos", null)
+		if lp is Vector2:
+			var side: Vector2 = lp as Vector2
+			if (side - pa).dot(n) < 0.0:
+				n = -n
+		if cam != null:
+			_append_leader_ribbon(im, cam, pa, pa + n * gap, 1.5, col)
+			_append_leader_ribbon(im, cam, pb, pb + n * gap, 1.5, col)
+	if started:
+		im.surface_end()
+	_dimension_geom.mesh = im if started else null
+	_dimension_geom.visible = dimensions_visible and active
+
+
+func _dim_witness_a(dim: Dictionary) -> Variant:
+	var ids: Array = dim.get("ids", [])
+	if ids.is_empty() or sketch == null:
+		return null
+	var info: Dictionary = sketch.entity_info(str(ids[0]))
+	var kind := str(info.get("type", ""))
+	if kind == "line":
+		return info.get("start")
+	if kind == "circle" or kind == "arc":
+		return info.get("center")
+	if kind == "ellipse":
+		return info.get("major_start") if str(dim.get("type", "")) != "minor" else info.get("minor_start")
+	if info.has("position"):
+		return info.get("position")
+	return info.get("start")
+
+
+func _dim_witness_b(dim: Dictionary) -> Variant:
+	var ids: Array = dim.get("ids", [])
+	if ids.is_empty() or sketch == null:
+		return null
+	if ids.size() >= 2:
+		var info_b: Dictionary = sketch.entity_info(str(ids[1]))
+		if info_b.has("position"):
+			return info_b.get("position")
+		if info_b.has("end"):
+			return info_b.get("end")
+		if info_b.has("center"):
+			return info_b.get("center")
+	var info: Dictionary = sketch.entity_info(str(ids[0]))
+	var kind := str(info.get("type", ""))
+	if kind == "line":
+		return info.get("end")
+	if kind == "circle":
+		var c: Vector2 = info.get("center", Vector2.ZERO)
+		return c + Vector2(float(info.get("radius", 0.0)), 0.0)
+	if kind == "arc":
+		return info.get("end")
+	if kind == "ellipse":
+		return info.get("major_end")
+	return info.get("end")
+
+
+func _append_dim_arrow(im: ImmediateMesh, cam: Camera3D, tip: Vector2, from_pt: Vector2, col: Color) -> void:
+	var dir := (tip - from_pt)
+	if dir.length_squared() < 1e-8:
+		return
+	dir = dir.normalized()
+	var n := Vector2(-dir.y, dir.x)
+	var head := 2.2
+	var left := tip - dir * head + n * (head * 0.45)
+	var right := tip - dir * head - n * (head * 0.45)
+	var lift := plane_normal() * 0.35
+	im.surface_set_color(col)
+	im.surface_add_vertex(_to3(tip) + lift)
+	im.surface_add_vertex(_to3(left) + lift)
+	im.surface_add_vertex(_to3(right) + lift)
 
 
 ## True for a radius/diameter on a full circle (not a jaw arc).
@@ -8472,6 +8887,7 @@ func _park_labels_outside_host_face(cam: Camera3D, k: float) -> void:
 	var face := _host_face_screen_rect(cam)
 	if face.size.x < 4.0 or face.size.y < 4.0:
 		return
+	var placed: Array[Rect2] = []
 	for i in range(dimensions.size()):
 		var dim: Dictionary = dimensions[i]
 		if typeof(dim) != TYPE_DICTIONARY:
@@ -8479,11 +8895,13 @@ func _park_labels_outside_host_face(cam: Camera3D, k: float) -> void:
 		var rect := _projected_label_rect(dim, cam, k)
 		var centre := rect.get_center()
 		if not face.has_point(centre):
+			placed.append(rect)
 			continue
-		var push := _shortest_exit(centre, face)
 		var prev: Vector2 = dim.get("label_clamp", Vector2.ZERO)
+		var push := _exit_clear_of_labels(centre, face, dim, prev, cam, k, placed)
 		dim["label_clamp"] = prev + Vector2(push.x / k, -push.y / k)
 		dimensions[i] = dim
+		placed.append(_projected_label_rect(dim, cam, k))
 
 
 ## Screen box of the body this face sketch sits on, in the same space as labels.
@@ -8507,17 +8925,40 @@ func _host_face_screen_rect(cam: Camera3D) -> Rect2:
 
 ## Screen delta that moves `centre` just past the nearest side of `face`.
 func _shortest_exit(centre: Vector2, face: Rect2) -> Vector2:
+	return _face_exits(centre, face)[0]["push"]
+
+
+func _face_exits(centre: Vector2, face: Rect2) -> Array:
 	var exits := [
 		{"gap": centre.x - face.position.x, "push": Vector2(-(centre.x - face.position.x + 2.0), 0.0)},
 		{"gap": face.end.x - centre.x, "push": Vector2(face.end.x - centre.x + 2.0, 0.0)},
 		{"gap": centre.y - face.position.y, "push": Vector2(0.0, -(centre.y - face.position.y + 2.0))},
 		{"gap": face.end.y - centre.y, "push": Vector2(0.0, face.end.y - centre.y + 2.0)},
 	]
-	var best: Dictionary = exits[0]
-	for exit in exits:
-		if float(exit["gap"]) < float(best["gap"]):
-			best = exit
-	return best["push"]
+	exits.sort_custom(func(a, b): return float(a["gap"]) < float(b["gap"]))
+	return exits
+
+
+## Prefer the shortest face-edge exit whose parked plate misses labels already
+## in the margin (Ø130 / Ø10 / 94 on the flange must not share one edge).
+func _exit_clear_of_labels(centre: Vector2, face: Rect2, dim: Dictionary,
+		prev: Vector2, cam: Camera3D, k: float, placed: Array[Rect2]) -> Vector2:
+	var fallback := Vector2.ZERO
+	for exit in _face_exits(centre, face):
+		var push: Vector2 = exit["push"]
+		if fallback == Vector2.ZERO:
+			fallback = push
+		var trial := dim.duplicate()
+		trial["label_clamp"] = prev + Vector2(push.x / k, -push.y / k)
+		var rect := _projected_label_rect(trial, cam, k)
+		var clash := false
+		for other in placed:
+			if rect.intersects(other):
+				clash = true
+				break
+		if not clash:
+			return push
+	return fallback
 
 
 func _seat_full_circle_labels(cam: Camera3D, k: float) -> void:
@@ -9233,6 +9674,17 @@ func _constraint_refs_a_line(cinfo: Dictionary) -> bool:
 	return false
 
 
+func _constraint_refs_endpoints(cinfo: Dictionary) -> bool:
+	var n := 0
+	for ref in cinfo.get("refs", []):
+		if typeof(ref) != TYPE_DICTIONARY:
+			continue
+		var role := str(ref.get("role", "self"))
+		if role == "start" or role == "end":
+			n += 1
+	return n >= 2
+
+
 func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[Rect2],
 		shaft_y: float, placed: Array[Rect2], taken: Array[Vector2], pending: Array,
 		batch_pending: Array) -> void:
@@ -9241,8 +9693,10 @@ func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[R
 	if not GLYPH_SYMBOLS.has(type):
 		return
 	# A centre-to-centre horizontal has no line to sit beside. Drawing it
-	# would plant a badge between the circles (T14's stray mark).
-	if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo):
+	# would plant a badge between the circles (T14's stray mark). Two-point
+	# Horizontal on arc ends (the R20 hook) still draws.
+	if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo) \
+			and not _constraint_refs_endpoints(cinfo):
 		return
 	var anchor: Variant = _constraint_anchor(cinfo)
 	if anchor == null:
@@ -9396,6 +9850,23 @@ func _rebuild_constraint_glyphs() -> void:
 			label.modulate = COLOR_GLYPH
 		label.position = _to3(gpos) + plane_normal() * 0.25
 		label.set_meta("cid", gcid)
+		if gtype != "coincident":
+			var pad := MeshInstance3D.new()
+			pad.name = "GlyphPad"
+			var quad := QuadMesh.new()
+			# 14×14 px at Label3D.pixel_size 0.004 (survey #4 green squares).
+			quad.size = Vector2(0.056, 0.056)
+			pad.mesh = quad
+			var pad_mat := StandardMaterial3D.new()
+			pad_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			pad_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			pad_mat.no_depth_test = true
+			pad_mat.albedo_color = COLOR_GLYPH if gcid != selected_constraint else COLOR_GLYPH_SELECTED
+			if last_conflicting.has(gcid):
+				pad_mat.albedo_color = COLOR_CONFLICT
+			pad.material_override = pad_mat
+			pad.position = label.position - plane_normal() * 0.02
+			_constraint_glyphs.add_child(pad)
 		_constraint_glyphs.add_child(label)
 		_glyph_anchors.append({
 			"cid": gcid,
@@ -10378,6 +10849,34 @@ func _redraw() -> void:
 					im.surface_set_color(col)
 					im.surface_add_vertex(_to3(c2 + Vector2(cos(a0), sin(a0)) * r2))
 					im.surface_add_vertex(_to3(c2 + Vector2(cos(a1), sin(a1)) * r2))
+			"ellipse":
+				if not has:
+					im.surface_begin(Mesh.PRIMITIVE_LINES)
+					has = true
+				var ce: Vector2 = info.get("center", Vector2.ZERO)
+				var rx := float(info.get("rx", 0.0))
+				var ry := float(info.get("ry", 0.0))
+				var ang := float(info.get("angle", 0.0))
+				var steps_e := 64
+				for i in range(steps_e):
+					var t0 := TAU * i / steps_e
+					var t1 := TAU * (i + 1) / steps_e
+					var p0 := ce + Vector2(rx * cos(t0), ry * sin(t0)).rotated(ang)
+					var p1 := ce + Vector2(rx * cos(t1), ry * sin(t1)).rotated(ang)
+					im.surface_set_color(col)
+					im.surface_add_vertex(_to3(p0))
+					im.surface_add_vertex(_to3(p1))
+	if temp_axes_visible and view != null and view.doc != null \
+			and SketchTempAxes.has_revolve(view.doc):
+		var dashes := SketchTempAxes.dashes(plane, -400.0, 400.0)
+		if dashes.size() >= 2:
+			if not has:
+				im.surface_begin(Mesh.PRIMITIVE_LINES)
+				has = true
+			for i in range(0, dashes.size() - 1, 2):
+				im.surface_set_color(SketchTempAxes.COLOR)
+				im.surface_add_vertex(dashes[i])
+				im.surface_add_vertex(dashes[i + 1])
 	if has:
 		im.surface_end()
 		_draw_node.mesh = im
@@ -10536,6 +11035,19 @@ func _update_preview() -> void:
 					var a1 := TAU * (i + 1) / steps
 					im.surface_add_vertex(_to3(c + Vector2(cos(a0), sin(a0)) * r))
 					im.surface_add_vertex(_to3(c + Vector2(cos(a1), sin(a1)) * r))
+			Tool.ELLIPSE:
+				var c := _tool_points[0]
+				if _tool_points.size() == 1:
+					im.surface_add_vertex(_to3(c))
+					im.surface_add_vertex(_to3(tip))
+				else:
+					var posed := SketchEllipse.pose(c, _tool_points[1], tip)
+					if posed.is_empty():
+						im.surface_add_vertex(_to3(c))
+						im.surface_add_vertex(_to3(tip))
+					else:
+						posed["type"] = "ellipse"
+						_append_entity_lines(im, posed)
 			Tool.ARC:
 				var c := _tool_points[0]
 				if _tool_points.size() == 1:
@@ -10614,6 +11126,7 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 		return false
 	var segs: Array = []  # {a: Vector2, b: Vector2}
 	var circs: Array = []  # {c: Vector2, r: float}
+	var closed_prims := 0
 	for id in sk.entity_ids():
 		if sk.is_construction(id):
 			continue
@@ -10621,6 +11134,9 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 		match str(info.get("type", "")):
 			"circle":
 				circs.append({"c": info["center"], "r": float(info.get("radius", 0.0))})
+				closed_prims += 1
+			"ellipse":
+				closed_prims += 1
 			"line":
 				var a: Vector2 = info["start"]
 				var b: Vector2 = info["end"]
@@ -10642,7 +11158,7 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 			_:
 				pass
 	if segs.is_empty():
-		return not circs.is_empty()
+		return closed_prims > 0
 	# Ends of an open chain may lie on a circle (kernel planar-split, 1e-4).
 	var on_tol := maxf(tol, 1e-4)
 	# Greedy-chain every unused segment. A chain is closed, or both ends sit

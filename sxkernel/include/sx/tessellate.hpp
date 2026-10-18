@@ -30,8 +30,11 @@ struct BodyMesh {
 };
 
 // linear_deflection in model units (mm); angular_deflection in radians.
+// isolate=true meshes a geometric copy so export deflection does not stick
+// on the live body (OCCT IncrementalMesh keeps a finer cache).
 BodyMesh tessellate_body(const Document& doc, const EntityId& body,
                          double linear_deflection = 0.2,
-                         double angular_deflection = 0.35);
+                         double angular_deflection = 0.35,
+                         bool isolate = false);
 
 }  // namespace sx

@@ -15,6 +15,7 @@
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRepTools.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
@@ -53,10 +54,32 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
+#include <vector>
 
 using nlohmann::json;
 
 namespace sx::feature_ops {
+namespace {
+
+std::vector<double> sketch_params(const Sketch& sk) {
+    std::vector<double> out;
+    out.reserve(sk.param_count());
+    for (size_t i = 0; i < sk.param_count(); ++i) out.push_back(sk.param(i));
+    return out;
+}
+
+void restore_sketch_params(Sketch& sk, const std::vector<double>& saved) {
+    const size_t n = std::min(saved.size(), sk.param_count());
+    for (size_t i = 0; i < n; ++i) sk.param_mut(i) = saved[i];
+}
+
+bool sketch_has_closed_region(const Sketch& sk) {
+    std::string ignored;
+    return !sk.profile_face_selected({}, &ignored).IsNull();
+}
+
+}  // namespace
 
 bool apply_primitive(ApplyCtx& ctx) {
     Document& doc = ctx.doc;
@@ -89,11 +112,31 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                 const Feature* skf = feature(sketch_fid);
                 if (!skf || !skf->sketch) return fail("missing sketch feature");
                 // Resolve "=expr" dimensions from VariableTable and solve before use.
+                // A click-built profile can already be closed while leftover
+                // constraints still fight; PlaneGCS then splits coincident
+                // joints. Keep the pre-solve geometry when that happens.
                 {
                     std::string xerr;
                     skf->sketch->resolve_expressions(env, &xerr);
-                    auto solver = make_planegcs_backend();
-                    solver->solve(*skf->sketch);
+                    auto saved = sketch_params(*skf->sketch);
+                    const bool closed_before = sketch_has_closed_region(*skf->sketch);
+                    std::string arr_err;
+                    const bool revolve_region =
+                        f.type == FeatureType::Revolve &&
+                        (closed_before || !skf->sketch->arrangement_faces(&arr_err).empty());
+                    // Click-built revolved rims are already a closed arrangement
+                    // cell even when chained profile_face still reports open.
+                    // PlaneGCS leftover dims then self-intersect the toe
+                    // (candlestick R12.5). Keep the drawn region.
+                    if (!revolve_region) {
+                        auto solver = make_planegcs_backend();
+                        solver->solve(*skf->sketch);
+                        skf->sketch->reconcile_arc_angles();
+                        if (closed_before && !sketch_has_closed_region(*skf->sketch)) {
+                            restore_sketch_params(*skf->sketch, saved);
+                            skf->sketch->reconcile_arc_angles();
+                        }
+                    }
                 }
                 std::string perr;
                 TopoDS_Shape face;
@@ -122,6 +165,29 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     }
                     if (!contour_idxs.empty()) {
                         face = skf->sketch->profile_face_selected(contour_idxs, host, &perr);
+                    } else if (f.type == FeatureType::Revolve) {
+                        // Sketch-only closed regions. A leftover open chain is
+                        // common on a click-built revolve profile and must not
+                        // refuse. Do not split a host datum — that face is the
+                        // whole plane and MakeRevol then throws BRep_API.
+                        // A compound of two regions (lens + candlestick) also
+                        // makes MakeRevol IsDone false; take the largest face.
+                        auto pick_largest = [](const std::vector<TopoDS_Shape>& regions) {
+                            TopoDS_Shape best;
+                            double best_a = 0.0;
+                            for (const auto& c : regions) {
+                                const double a = std::abs(shape::area(c));
+                                if (a > best_a) {
+                                    best_a = a;
+                                    best = c;
+                                }
+                            }
+                            return best;
+                        };
+                        auto regions = skf->sketch->arrangement_faces(&perr);
+                        face = pick_largest(regions);
+                        if (face.IsNull())
+                            face = pick_largest(skf->sketch->contour_faces(&perr));
                     } else {
                         face = skf->sketch->profile_face(&perr);
                     }
@@ -253,8 +319,53 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         t.SetTranslation(dir * (-dist / 2.0));
                         profile = BRepBuilderAPI_Transform(profile, t, true).Shape();
                     }
-                    result = BRepPrimAPI_MakePrism(profile, dir * dist).Shape();
+                    const double draft_deg = num_param(params, "draft_deg", 0.0, env);
+                    const bool draft_inward = params.value("draft_inward", true);
+                    if (std::abs(draft_deg) >= 75.0)
+                        return fail("draft angle too large");
+                    if (std::abs(draft_deg) > 1e-9) {
+                        TopoDS_Face pface;
+                        if (profile.ShapeType() == TopAbs_FACE)
+                            pface = TopoDS::Face(profile);
+                        else {
+                            TopExp_Explorer fx(profile, TopAbs_FACE);
+                            if (fx.More()) pface = TopoDS::Face(fx.Current());
+                        }
+                        if (pface.IsNull()) return fail("draft needs a planar profile");
+                        TopoDS_Wire w0 = BRepTools::OuterWire(pface);
+                        if (w0.IsNull()) return fail("draft profile has no outer wire");
+                        GProp_GProps props;
+                        BRepGProp::SurfaceProperties(pface, props);
+                        const gp_Pnt c = props.CentreOfMass();
+                        const double area = std::abs(props.Mass());
+                        const double r = std::sqrt(std::max(area, 0.0) / 3.14159265358979323846);
+                        const gp_Vec travel = dir * dist;
+                        const double len = travel.Magnitude();
+                        const double tan_a = std::tan(std::abs(draft_deg) * 3.14159265358979323846 / 180.0);
+                        const double r2 = draft_inward ? (r - len * tan_a) : (r + len * tan_a);
+                        if (r2 <= 1e-3) return fail("draft angle too large");
+                        gp_Trsf move;
+                        move.SetTranslation(travel);
+                        TopoDS_Shape moved = BRepBuilderAPI_Transform(w0, move, true).Shape();
+                        gp_Trsf scal;
+                        scal.SetScale(c.Translated(travel), r2 / std::max(r, 1e-9));
+                        TopoDS_Shape scaled = BRepBuilderAPI_Transform(moved, scal, true).Shape();
+                        if (scaled.ShapeType() != TopAbs_WIRE)
+                            return fail("draft scale failed");
+                        BRepOffsetAPI_ThruSections loft(Standard_True);
+                        loft.AddWire(w0);
+                        loft.AddWire(TopoDS::Wire(scaled));
+                        loft.Build();
+                        if (!loft.IsDone()) return fail("draft frustum failed");
+                        result = loft.Shape();
+                    } else {
+                        result = BRepPrimAPI_MakePrism(profile, dir * dist).Shape();
+                    }
                 } else {
+                    if (face.IsNull())
+                        return fail(std::string("revolve profile: ") +
+                                    (perr.empty() ? "empty" : perr));
+                    const double raw_area = shape::area(face);
                     const auto& pl = skf->sketch->plane();
                     auto at = [&](double u, double v) {
                         return gp_Pnt(pl.origin[0] + pl.x_dir[0] * u + pl.y_dir[0] * v,
@@ -266,11 +377,81 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     gp_Pnt p0 = at(ap[0].get<double>(), ap[1].get<double>());
                     gp_Pnt p1 = at(ap[0].get<double>() + ad[0].get<double>(),
                                    ap[1].get<double>() + ad[1].get<double>());
-                    result = BRepPrimAPI_MakeRevol(face, gp_Ax1(p0, gp_Dir(gp_Vec(p0, p1))),
-                                                   num_param(params, "angle", 6.283185307179586, env))
-                                 .Shape();
+                    if (p0.Distance(p1) < 1e-9)
+                        return fail("revolve axis is degenerate");
+                    gp_Ax1 axis(p0, gp_Dir(gp_Vec(p0, p1)));
+                    const double ang = num_param(params, "angle", 6.283185307179586, env);
+                    auto revol = [&](const TopoDS_Shape& src, bool copy = false) -> TopoDS_Shape {
+                        try {
+                            BRepPrimAPI_MakeRevol mk(src, axis, ang, copy);
+                            return mk.IsDone() ? mk.Shape() : TopoDS_Shape();
+                        } catch (const Standard_Failure&) {
+                            return {};
+                        }
+                    };
+                    auto revol_any = [&](const TopoDS_Shape& src) -> TopoDS_Shape {
+                        TopoDS_Shape out = revol(src, false);
+                        if (out.IsNull()) out = revol(src.Reversed(), false);
+                        if (out.IsNull()) out = revol(src, true);
+                        if (out.IsNull()) out = revol(src.Reversed(), true);
+                        if (out.IsNull()) {
+                            // A cell that micrometer-crosses the axis (xmin≈-1e-5)
+                            // makes MakeRevol IsDone false. Nudge to the +side.
+                            const auto& nrm = skf->sketch->plane().normal();
+                            gp_Vec away = gp_Vec(axis.Direction())
+                                              .Crossed(gp_Vec(nrm[0], nrm[1], nrm[2]));
+                            if (away.Magnitude() > 1e-12) {
+                                away.Normalize();
+                                away *= 1.0e-4;
+                                gp_Trsf nudge;
+                                nudge.SetTranslation(away);
+                                TopoDS_Shape moved =
+                                    BRepBuilderAPI_Transform(src, nudge, true).Shape();
+                                out = revol(moved, true);
+                                if (out.IsNull()) out = revol(moved.Reversed(), true);
+                            }
+                        }
+                        return out;
+                    };
+                    result = revol_any(face);
+                    if (result.IsNull()) {
+                        auto regions = skf->sketch->contour_faces(nullptr);
+                        for (const auto& c : regions) {
+                            result = revol_any(c);
+                            if (!result.IsNull()) break;
+                        }
+                    }
+                    if (!result.IsNull() && shape::volume(result) < 0.0)
+                        result.Reverse();
+                    if (!result.IsNull()) {
+                        std::string report;
+                        TopoDS_Shape healed = interop::heal_shape(result, &report);
+                        if (!healed.IsNull() && shape::count(healed).solids >= 1)
+                            result = healed;
+                        if (shape::volume(result) < 0.0) result.Reverse();
+                    }
+                    if (result.IsNull()) {
+                        const double fa = face.IsNull() ? 0.0 : shape::area(face);
+                        Bnd_Box fb;
+                        if (!face.IsNull()) BRepBndLib::Add(face, fb);
+                        std::ostringstream os;
+                        os << "geometry generation failed raw=" << raw_area << " area=" << fa;
+                        if (!fb.IsVoid()) {
+                            double x0, y0, z0, x1, y1, z1;
+                            fb.Get(x0, y0, z0, x1, y1, z1);
+                            os << " bbox=[" << x0 << "," << y0 << "," << z0 << " .. "
+                               << x1 << "," << y1 << "," << z1 << "]";
+                        }
+                        os << " axis=(" << p0.X() << "," << p0.Y() << "," << p0.Z()
+                           << ")+(" << (p1.X() - p0.X()) << "," << (p1.Y() - p0.Y())
+                           << "," << (p1.Z() - p0.Z()) << ")";
+                        if (!perr.empty()) os << " " << perr;
+                        return fail(os.str());
+                    }
                 }
-                if (result.IsNull()) return fail("geometry generation failed");
+                if (result.IsNull())
+                    return fail(std::string("geometry generation failed") +
+                                (perr.empty() ? "" : (": " + perr)));
 
                 std::string op = params.value("op", "new");
                 if (op == "new") {
@@ -295,6 +476,12 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         merged = TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, result).Shape());
                     }
                     if (merged.IsNull()) return fail("boolean failed");
+                    {
+                        std::string report;
+                        TopoDS_Shape healed = interop::heal_shape(merged, &report);
+                        if (!healed.IsNull() && shape::count(healed).solids >= 1)
+                            merged = healed;
+                    }
                     doc.replace_body_shape(target, merged);
                 }
                 return true;

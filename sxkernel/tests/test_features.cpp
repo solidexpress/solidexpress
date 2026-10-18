@@ -544,6 +544,129 @@ TEST_CASE("contour_faces keeps closed regions beside a dangling line", "[sketch]
     CHECK(perr.find("profile has an open loop") != std::string::npos);
 }
 
+TEST_CASE("revolve locked candlestick rim", "[features][revolve][rung06]") {
+    Document doc;
+    FeatureGraph graph;
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("Candle");
+    auto& sk = *skf.sketch;
+    auto weld_arc = [&](const EntityId& id, double sx, double sy, double ex, double ey) {
+        SketchEntity* e = sk.entity_mut(id);
+        REQUIRE(e != nullptr);
+        REQUIRE(e->params.size() >= 9);
+        sk.param_mut(e->params[5]) = sx;
+        sk.param_mut(e->params[6]) = sy;
+        sk.param_mut(e->params[7]) = ex;
+        sk.param_mut(e->params[8]) = ey;
+    };
+    sk.add_line(0, 0, 0, 220);
+    sk.add_line(0, 220, 20, 220);
+    sk.add_line(0, 0, 90, 0);
+    weld_arc(sk.add_arc(20, 210, 10, 0, 1.57079632679), 30, 210, 20, 220);
+    sk.add_line(30, 210, 30, 170);
+    weld_arc(sk.add_arc(30, 150, 20, -1.57079632679, 1.57079632679), 30, 130, 30, 170);
+    sk.add_line(30, 130, 30, 80);
+    const double tanx = 97.861, tany = 20.517;
+    weld_arc(sk.add_arc(90, 80, 60, 3.14159265359, 4.84), 30, 80, tanx, tany);
+    const double c12x = 99.499, c12y = 8.125, clipx = 108.998;
+    double sa = std::atan2(tany - c12y, tanx - c12x);
+    double ea = std::atan2(0.0 - c12y, clipx - c12x);
+    weld_arc(sk.add_arc(c12x, c12y, 12.5, sa, ea), tanx, tany, clipx, 0);
+    sk.add_line(90, 0, clipx, 0);
+    sk.reconcile_arc_angles();
+    auto sk_id = graph.add(std::move(skf));
+    Feature rv;
+    rv.type = FeatureType::Revolve;
+    rv.params = {{"sketch", sk_id.str()},
+                 {"axis_point", {0.0, 0.0}},
+                 {"axis_dir", {0.0, 1.0}},
+                 {"angle", 6.283185307179586},
+                 {"op", "new"}};
+    auto rv_id = graph.add(std::move(rv));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    const Feature* out = graph.feature(rv_id);
+    REQUIRE(out != nullptr);
+    REQUIRE_FALSE(out->output_body.is_null());
+    const Body* body = doc.body(out->output_body);
+    REQUIRE(body != nullptr);
+    CHECK(shape::volume(body->shape) > 1.0e6);
+}
+
+TEST_CASE("revolve walk dump candlestick", "[features][revolve][rung06]") {
+    Document doc;
+    FeatureGraph graph;
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("CandleDump");
+    auto& sk = *skf.sketch;
+    auto weld_arc = [&](const EntityId& id, double sx, double sy, double ex, double ey) {
+        SketchEntity* e = sk.entity_mut(id);
+        REQUIRE(e != nullptr);
+        REQUIRE(e->params.size() >= 9);
+        sk.param_mut(e->params[5]) = sx;
+        sk.param_mut(e->params[6]) = sy;
+        sk.param_mut(e->params[7]) = ex;
+        sk.param_mut(e->params[8]) = ey;
+    };
+    sk.add_line(0, 0, 0, 220);
+    sk.add_line(0, 220, 20, 220);
+    sk.add_line(0, 0, 90, 0);
+    weld_arc(sk.add_arc(20, 210, 10, 0, 1.57079632679), 30, 210, 20, 220);
+    sk.add_line(30, 210, 30, 170);
+    weld_arc(sk.add_arc(30, 150, 19.9999847411438, -1.57079632679, 1.57079632679), 30, 130, 30, 170);
+    sk.add_line(30, 130, 30, 80);
+    weld_arc(sk.add_arc(90, 80, 60, 3.14159266048653, -1.43940104323702), 30, 80, 97.86, 20.52);
+    weld_arc(sk.add_arc(99.5, 8.13, 12.4997312219186, -0.707614892371568, 1.70223686302005),
+             109.0, 0.0, 97.86, 20.52);
+    sk.add_line(90, 0, 109.0, 0);
+    auto sk_id = graph.add(std::move(skf));
+    Feature rv;
+    rv.type = FeatureType::Revolve;
+    rv.params = {{"sketch", sk_id.str()},
+                 {"axis_point", {0.0, 0.0}},
+                 {"axis_dir", {0.0, 1.0}},
+                 {"angle", 6.283185307179586},
+                 {"op", "new"}};
+    auto rv_id = graph.add(std::move(rv));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    const Feature* out = graph.feature(rv_id);
+    REQUIRE(out != nullptr);
+    REQUIRE_FALSE(out->output_body.is_null());
+    const Body* body = doc.body(out->output_body);
+    REQUIRE(body != nullptr);
+    CHECK(shape::volume(body->shape) > 1.0e6);
+}
+
+TEST_CASE("revolve uses closed region beside a dangling line", "[features][revolve]") {
+    Document doc;
+    FeatureGraph graph;
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("RevDangle");
+    skf.sketch->add_line(0, 0, 20, 0);
+    skf.sketch->add_line(20, 0, 20, 10);
+    skf.sketch->add_line(20, 10, 0, 10);
+    skf.sketch->add_line(0, 10, 0, 0);
+    skf.sketch->add_line(40, 0, 50, 5);
+    auto sk_id = graph.add(std::move(skf));
+    Feature rv;
+    rv.type = FeatureType::Revolve;
+    rv.params = {{"sketch", sk_id.str()},
+                 {"axis_point", {0.0, 0.0}},
+                 {"axis_dir", {0.0, 1.0}},
+                 {"angle", 6.283185307179586},
+                 {"op", "new"}};
+    auto rv_id = graph.add(std::move(rv));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    const Feature* out = graph.feature(rv_id);
+    REQUIRE(out != nullptr);
+    REQUIRE_FALSE(out->output_body.is_null());
+}
+
 TEST_CASE("contour_faces keeps nested wire as a hole", "[sketch][contours]") {
     Sketch sk("PlateHole");
     sk.add_line(0, 0, 40, 0);

@@ -314,6 +314,11 @@ func _click_at(vp: Viewport, pos: Vector2, as_double: bool) -> void:
 
 
 func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
+	if kind != "hover" and req.has("datum"):
+		var ix = _main().get("interaction")
+		if ix != null and ix.has_method("try_named_sketch_datum"):
+			if bool(ix.try_named_sketch_datum(str(req["datum"]))):
+				return {"target": "datum:%s" % str(req["datum"])}
 	# A named edge is the pick. The screen point of its midpoint is only
 	# where the pointer goes; ortho side views share that pixel.
 	if kind != "hover" and req.has("edge"):
@@ -335,6 +340,8 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 	else:
 		await _click_at(vp, pos, false)
 		await _retry_face_if_edge(spec)
+		if kind != "hover":
+			_select_named_face(spec)
 	if kind != "hover" and req.has("edge"):
 		var view = _main().get("view")
 		if view != null and view.has_method("take_offered_edge"):
@@ -373,6 +380,27 @@ func _retry_face_if_edge(spec: Dictionary) -> void:
 	if view.selected_edges.size() > 1:
 		return
 	await _click_at(spec["vp"], spec["pos"], false)
+
+
+## Named `face=` clicks that miss (pad steal, edge-on top disc) still select
+## that face so Sketch can take the selected-face fast path. Do not clobber a
+## fillet/chamfer face-loop that already landed on `selected_edges`.
+func _select_named_face(spec: Dictionary) -> void:
+	if not bool(spec.get("retry_face", false)):
+		return
+	var view = _main().get("view")
+	if view == null or not view.has_method("select_entity"):
+		return
+	var fid := str(spec.get("id", ""))
+	if fid == "" or str(view.selected_face) == fid:
+		return
+	if view.selected_edges.size() > 0:
+		return
+	var rec := _find_face(fid)
+	var body := str(rec.get("body", ""))
+	if body == "":
+		return
+	view.select_entity(body, fid)
 
 
 func _cmd_drag(req: Dictionary) -> Dictionary:
@@ -1010,6 +1038,8 @@ func _refresh_ids() -> void:
 		"OppositeFaceButton": "finish:OppositeFace",
 		"ThinFeature": "finish:ThinCheck",
 		"FlipSide": "finish:Flip",
+		"DraftToggle": "finish:Draft",
+		"DraftAngleSpin": "finish:DraftAngle",
 		"Frame": "hud:Frame",
 		"ViewsDrop": "hud:View",
 		"Section": "hud:Section",
@@ -1025,6 +1055,9 @@ func _refresh_ids() -> void:
 	var dim_spin := main.find_child("DimSpin", true, false) as SpinBox
 	if dim_spin != null:
 		_tag(dim_spin.get_line_edit(), "finish:Radius")
+	var draft_spin := main.find_child("DraftAngleSpin", true, false) as SpinBox
+	if draft_spin != null:
+		_tag(draft_spin.get_line_edit(), "finish:DraftAngle")
 	var timeline := main.find_child("Timeline", true, false)
 	_tag(timeline, "timeline:panel")
 	var menu_bar := main.find_child("FileMenu", true, false)
@@ -1035,6 +1068,7 @@ func _refresh_ids() -> void:
 				continue
 			_tag(mb, "menu:%s" % mb.text)
 			_tag(mb.get_popup(), "popup:%s" % mb.text)
+	_tag(main.find_child("TemporaryAxes", true, false), "menu:TemporaryAxes")
 	_tag_every_named(main, "SelectionStrip", "chip:")
 	_tag_every_named(main, "ActionBar", "chip:")
 	_tag_every_named(main, "VariantBar", "variant:")
@@ -1681,12 +1715,22 @@ func _sketch_state(sm) -> Dictionary:
 	if sm == null:
 		return {}
 	var entities: Array = []
+	var constraints: Array = []
 	if sm.sketch != null and bool(sm.active):
 		for id in sm.sketch.entity_ids():
 			var info: Dictionary = sm.sketch.entity_info(id)
 			entities.append(_jsonify(info))
 			if entities.size() >= 80:
 				break
+		if sm.sketch.has_method("constraint_ids"):
+			for cid in sm.sketch.constraint_ids():
+				var cinfo: Dictionary = sm.sketch.constraint_info(str(cid))
+				constraints.append({
+					"id": str(cid),
+					"type": str(cinfo.get("type", "")),
+				})
+				if constraints.size() >= 80:
+					break
 	var plane := {}
 	if bool(sm.active):
 		plane = {
@@ -1700,6 +1744,7 @@ func _sketch_state(sm) -> Dictionary:
 		"editing": str(sm.editing_fid),
 		"entity_count": entities.size() if sm.sketch == null or not bool(sm.active) else sm.sketch.entity_ids().size(),
 		"entities": entities,
+		"constraints": constraints,
 		"plane": plane,
 	}
 

@@ -34,6 +34,10 @@ const BASIS: Array[Dictionary] = [
 ]
 
 
+static func is_origin_name(name: String) -> bool:
+	return name == "Front" or name == "Top" or name == "Right"
+
+
 ## Idempotent. A document that already has Front is left alone, so load
 ## does not grow a second set.
 static func seed(doc) -> void:

@@ -104,6 +104,11 @@ nlohmann::json simplify_path_polyline(const nlohmann::json& path);
 nlohmann::json simplify_path_rdp(const nlohmann::json& path, double eps);
 nlohmann::json simplify_path_for_sweep(const nlohmann::json& path);
 nlohmann::json sketch_ordered_polyline(const Sketch& sk);
+TopoDS_Wire sketch_spine_wire(const Sketch& sk);
+bool spine_has_circle_radius(const TopoDS_Wire& wire, double radius, double tol = 0.2);
+TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spine,
+                               double thin_thickness = 0.0, bool contact = false,
+                               bool frenet = true, bool correction = true);
 nlohmann::json join_polylines(nlohmann::json a, const nlohmann::json& b);
 nlohmann::json chain_points(std::vector<gp_Pnt> pts);
 nlohmann::json densify_catmull(const std::vector<gp_Pnt>& ctrl, int samples_per_seg = 8);

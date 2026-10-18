@@ -964,7 +964,14 @@ static func draw_circle(ctx: FilmContext, sm: SketchMode, center: Vector2, rim: 
 static func draw_ellipse(ctx: FilmContext, sm: SketchMode, center: Vector2, corner: Vector2) -> void:
 	await select_sketch_tool(ctx, sm, SketchMode.Tool.ELLIPSE)
 	await click_sketch(ctx, sm, center, "Ellipse — centre")
-	await click_sketch(ctx, sm, corner, "Ellipse — corner")
+	var major := Vector2(corner.x, center.y)
+	var minor := Vector2(center.x, corner.y)
+	if is_zero_approx(major.x - center.x):
+		major = Vector2(center.x + absf(corner.y - center.y), center.y)
+	if is_zero_approx(minor.y - center.y):
+		minor = Vector2(center.x, center.y + absf(corner.x - center.x))
+	await click_sketch(ctx, sm, major, "Ellipse — major")
+	await click_sketch(ctx, sm, minor, "Ellipse — minor")
 
 
 static func apply_extrude(ctx: FilmContext, depth: float) -> void:
@@ -1231,6 +1238,11 @@ static func pad_world_center(ctx: FilmContext, fid: String) -> Vector3:
 				var r: float = float(info.get("radius", 0.0))
 				mn = mn.min(c - Vector2(r, r))
 				mx = mx.max(c + Vector2(r, r))
+			"ellipse":
+				var bb := SketchEllipse.aabb(info)
+				if bb.size.x > 0.0 and bb.size.y > 0.0:
+					mn = mn.min(bb.position)
+					mx = mx.max(bb.position + bb.size)
 			"point":
 				var p: Vector2 = info["position"]
 				mn = mn.min(p)

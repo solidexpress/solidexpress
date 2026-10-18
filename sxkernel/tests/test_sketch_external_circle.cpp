@@ -194,13 +194,19 @@ TEST_CASE("add_external_edge projects the boss rim as a fixed circle", "[sketch]
     CHECK(add_external_edge(doc, fid, arc_id).is_null());
     CHECK(graph.feature(fid)->sketch->entities().size() == 1);
 
-    // The same rim is not parallel to a sketch whose normal is +X.
+    // Origin-plane silhouette: the rim ∩ YZ is a construction diameter.
     const EntityId side = sketch_on_z(graph, 0.0);
     Feature* side_feature = graph.feature(side);
     SketchPlane side_plane = side_feature->sketch->plane();
     side_plane.x_dir = {0, 1, 0};
     side_plane.y_dir = {0, 0, 1};
     side_feature->sketch->set_plane(side_plane);
-    CHECK(add_external_edge(doc, side, rim).is_null());
+    const EntityId sil = add_external_edge(doc, side, rim);
+    REQUIRE_FALSE(sil.is_null());
+    const SketchEntity* sil_e = side_feature->sketch->entity(sil);
+    REQUIRE(sil_e != nullptr);
+    CHECK(sil_e->type == SketchEntityType::Line);
+    CHECK(sil_e->construction);
+    CHECK(sil_e->external);
 
 }

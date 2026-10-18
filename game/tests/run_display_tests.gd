@@ -171,7 +171,7 @@ func test_selection_corners(view: DocumentView) -> void:
 	check(view._selection_corners != null, "SelectionCorners node exists")
 	check(view._selection_corners.mesh == null, "no corner mesh when unselected")
 	view.select_entity(id, "")
-	check(view._selection_corners.mesh != null, "corner mesh built on select")
+	check(view._selection_corners.mesh == null, "corner mesh dimmed on select")
 	view.clear_selection()
 	check(view._selection_corners.mesh == null, "corner mesh cleared on deselect")
 
@@ -189,7 +189,8 @@ func test_world_gizmos() -> void:
 	check(grid != null, "Grid child exists")
 	check(gizmos.get_child_count() == 1, "WorldGizmos has Grid only")
 	check(gizmos.gizmos_visible, "gizmos visible by default")
-	check(grid != null and grid.visible, "Grid visible by default")
+	check(not gizmos.grid_visible, "grid off by default in idle")
+	check(grid != null and not grid.visible, "Grid hidden by default")
 
 	# Grid lies on the model XY ground plane (thickness along Z ≈ 0).
 	if grid != null and grid.mesh != null:
@@ -206,7 +207,11 @@ func test_world_gizmos() -> void:
 	check(grid != null and not grid.visible, "set_gizmos_visible(false) hides Grid")
 
 	gizmos.set_gizmos_visible(true)
-	check(gizmos.gizmos_visible and grid.visible, "set_gizmos_visible(true) restores")
+	check(gizmos.gizmos_visible, "set_gizmos_visible(true) restores gizmos flag")
+	gizmos.set_grid_visible(true)
+	check(gizmos.grid_visible and grid.visible, "set_grid_visible(true) shows Grid")
+	gizmos.set_grid_visible(false)
+	check(not gizmos.grid_visible and not grid.visible, "set_grid_visible(false) hides Grid")
 
 	# Active plane relocates the grid.
 	gizmos.set_active_plane(Vector3(0, 0, 10), Vector3(0, 0, 1))

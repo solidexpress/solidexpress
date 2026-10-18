@@ -131,6 +131,14 @@ double normalize_angle(double a) {
     return a;
 }
 
+// Inclusive CCW sweep from sa to ea (empty span means a full turn).
+bool angle_on_ccw(double ang, double sa, double ea) {
+    double from = normalize_angle(ang - sa);
+    double span = normalize_angle(ea - sa);
+    if (span < k_eps) span = k_two_pi;
+    return from <= span + k_eps;
+}
+
 // Solid cutters first. Construction fills in only while fewer than two solid
 // hits exist: a real crossing is unchanged, and a construction-only corner
 // can still trim.
@@ -159,6 +167,30 @@ bool collect_line_intersections(const Sketch& s, const SketchEntity& line,
             Vec2 c = {s.param(other.params[0]), s.param(other.params[1])};
             double r = s.param(other.params[2]);
             hits = line_circle_intersect_t(a0, a1, c, r);
+        } else if (other.type == SketchEntityType::Arc && other.params.size() >= 9) {
+            Vec2 c = {s.param(other.params[0]), s.param(other.params[1])};
+            double r = s.param(other.params[2]);
+            Vec2 ps = {s.param(other.params[5]), s.param(other.params[6])};
+            Vec2 pe = {s.param(other.params[7]), s.param(other.params[8])};
+            double sa = std::atan2(ps.y - c.y, ps.x - c.x);
+            double ea = std::atan2(pe.y - c.y, pe.x - c.x);
+            Vec2 d = sub(a1, a0);
+            double len2 = dot(d, d);
+            auto push_if_on_line = [&](Vec2 p) {
+                if (len2 < 1e-30) return;
+                double t = dot(sub(p, a0), d) / len2;
+                if (t <= k_eps || t >= 1.0 - k_eps) return;
+                Vec2 proj = add(a0, mul(d, t));
+                if (hypot2(sub(proj, p)) > 1e-3) return;
+                hits.push_back(t);
+            };
+            for (double t : line_circle_intersect_t(a0, a1, c, r)) {
+                Vec2 p = add(a0, mul(d, t));
+                double ang = std::atan2(p.y - c.y, p.x - c.x);
+                if (angle_on_ccw(ang, sa, ea)) hits.push_back(t);
+            }
+            push_if_on_line(ps);
+            push_if_on_line(pe);
         }
         auto& dest = other.construction ? construction : solid;
         dest.insert(dest.end(), hits.begin(), hits.end());

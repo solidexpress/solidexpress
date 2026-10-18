@@ -22,11 +22,11 @@ const BODY_ROUGHNESS := 0.35
 const BODY_METALLIC_FLAT := 0.0
 const BODY_ROUGHNESS_FLAT := 0.78
 const SELECTED_BODY_COLOR := Color(0.55, 0.68, 0.9)
-const SELECTED_FACE_COLOR := Color(1.0, 0.62, 0.15)
+const SELECTED_FACE_COLOR := Color(1.0, 0.76, 0.03)
 const HOVER_BODY_COLOR := Color(0.78, 0.84, 0.92)
-const HOVER_FACE_COLOR := Color(0.95, 0.82, 0.45)
+const HOVER_FACE_COLOR := Color(0.45, 0.78, 0.95)
 const MATE_ANCHOR_COLOR := Color(0.35, 0.85, 0.45)
-const EDGE_COLOR := Color(0.12, 0.13, 0.16)
+const EDGE_COLOR := Color(0.22, 0.24, 0.28)
 const DATUM_PLANE_COLOR := Color(0.35, 0.55, 0.85, 0.22)
 const DATUM_AXIS_COLOR := Color(0.85, 0.35, 0.2)
 const DATUM_POINT_COLOR := Color(0.2, 0.7, 0.45)
@@ -80,7 +80,7 @@ var _overhang_faces := {}    # face_id -> true
 var hidden_bodies := {}
 ## Origin-plane quads (Front/Top/Right). Films hide these so the camera is
 ## not inside huge translucent sheets.
-var origin_planes_visible := true
+var origin_planes_visible := false
 ## Body ids remembered by Copy/Cut for Paste (cut clones may be hidden).
 var _clipboard_bodies: Array[String] = []
 ## Pastes since last copy — scales the XY offset so each paste lands further away.
@@ -147,6 +147,7 @@ func _ready() -> void:
 	_edge_material = StandardMaterial3D.new()
 	_edge_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_edge_material.albedo_color = EDGE_COLOR
+	_edge_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_selected_edge_material = StandardMaterial3D.new()
 	_selected_edge_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_selected_edge_material.albedo_color = SELECTED_BODY_COLOR
@@ -652,6 +653,17 @@ func feature_of_body(body_id: String) -> String:
 		if str(f.get("output_body", "")) == body_id:
 			return str(f.get("id", ""))
 	return ""
+
+
+## Body that owns `face_id`. Prefers the live kernel list over the mesh cache.
+func body_of_face(face_id: String) -> String:
+	if face_id == "" or doc == null:
+		return ""
+	for body_id in doc.body_ids():
+		if doc.get_face_ids(body_id).has(face_id):
+			return str(body_id)
+	var cached := _owner_body_of(face_id)
+	return cached if cached != selected_body else ""
 
 
 ## Nearest hole/hex feature whose axis is within the tool radius of `point`
@@ -2628,10 +2640,12 @@ func _rebuild_datum(d: Dictionary) -> void:
 	var mi := node as MeshInstance3D
 	match kind:
 		"plane":
-			mi.mesh = _make_datum_plane_mesh(d) if origin_planes_visible else null
+			var origin_quad := OriginPlanes.is_origin_name(str(d.get("name", "")))
+			var show_quad := origin_planes_visible or not origin_quad
+			mi.mesh = _make_datum_plane_mesh(d) if show_quad else null
 			mi.material_override = _datum_plane_material
 			mi.transform = Transform3D.IDENTITY
-			mi.visible = origin_planes_visible
+			mi.visible = show_quad
 		"axis":
 			mi.mesh = _make_datum_axis_mesh(d)
 			mi.material_override = _datum_axis_material
@@ -2771,20 +2785,43 @@ func _rebuild_edges(edge_node: MeshInstance3D, body_id: String) -> void:
 	var lines: Dictionary = doc.get_edge_lines(body_id)
 	var im := ImmediateMesh.new()
 	var have_any := false
+	var cam := get_viewport().get_camera_3d() if get_viewport() != null else null
 	for edge_id in lines:
 		var pts: PackedVector3Array = lines[edge_id]
 		if pts.size() < 2:
 			continue
 		if not have_any:
-			im.surface_begin(Mesh.PRIMITIVE_LINES)
+			im.surface_begin(Mesh.PRIMITIVE_TRIANGLES if cam != null else Mesh.PRIMITIVE_LINES)
 			have_any = true
 		for i in range(pts.size() - 1):
-			im.surface_add_vertex(pts[i])
-			im.surface_add_vertex(pts[i + 1])
+			if cam != null:
+				_append_world_ribbon(im, cam, pts[i], pts[i + 1], 1.75)
+			else:
+				im.surface_add_vertex(pts[i])
+				im.surface_add_vertex(pts[i + 1])
 	if have_any:
 		im.surface_end()
 	edge_node.mesh = im
 	edge_node.material_override = _edge_material
+
+
+func _append_world_ribbon(im: ImmediateMesh, cam: Camera3D, a: Vector3, b: Vector3, width_px: float) -> void:
+	var sa := cam.unproject_position(a)
+	var sb := cam.unproject_position(b)
+	if sa.distance_to(sb) < 0.8:
+		return
+	var dir := (sb - sa).normalized()
+	var n := Vector2(-dir.y, dir.x) * (width_px * 0.5)
+	var p0 := cam.project_position(sa + n, cam.global_position.distance_to(a))
+	var p1 := cam.project_position(sa - n, cam.global_position.distance_to(a))
+	var p2 := cam.project_position(sb - n, cam.global_position.distance_to(b))
+	var p3 := cam.project_position(sb + n, cam.global_position.distance_to(b))
+	im.surface_add_vertex(p0)
+	im.surface_add_vertex(p1)
+	im.surface_add_vertex(p2)
+	im.surface_add_vertex(p0)
+	im.surface_add_vertex(p2)
+	im.surface_add_vertex(p3)
 
 
 func _highlight_edge() -> void:
@@ -2902,64 +2939,8 @@ func _apply_selection_materials() -> void:
 	_rebuild_selection_corners()
 
 
-## Draw an AABB frame + corner brackets around the current selection.
+## AABB corners are dimmed (survey #6): node stays, mesh is empty.
 func _rebuild_selection_corners() -> void:
 	if _selection_corners == null:
 		return
-	var ids: Array[String] = []
-	for b in selected_bodies:
-		ids.append(b)
-	if ids.is_empty() and selected_body != "":
-		ids.append(selected_body)
-	if ids.is_empty():
-		_selection_corners.mesh = null
-		return
-	var mn := Vector3(1e12, 1e12, 1e12)
-	var mx := Vector3(-1e12, -1e12, -1e12)
-	var any := false
-	for id in ids:
-		var bb: Dictionary = doc.measure_bbox(id)
-		if bb.is_empty():
-			continue
-		any = true
-		mn = mn.min(bb["min"])
-		mx = mx.max(bb["max"])
-	if not any:
-		_selection_corners.mesh = null
-		return
-	# Slight pad so brackets sit outside the solid.
-	var pad := (mx - mn).length() * 0.02 + 0.5
-	mn -= Vector3(pad, pad, pad)
-	mx += Vector3(pad, pad, pad)
-	var im := ImmediateMesh.new()
-	im.surface_begin(Mesh.PRIMITIVE_LINES)
-	var corners: Array[Vector3] = [
-		Vector3(mn.x, mn.y, mn.z), Vector3(mx.x, mn.y, mn.z),
-		Vector3(mx.x, mx.y, mn.z), Vector3(mn.x, mx.y, mn.z),
-		Vector3(mn.x, mn.y, mx.z), Vector3(mx.x, mn.y, mx.z),
-		Vector3(mx.x, mx.y, mx.z), Vector3(mn.x, mx.y, mx.z),
-	]
-	# Full wire AABB
-	var edges := [
-		[0, 1], [1, 2], [2, 3], [3, 0],
-		[4, 5], [5, 6], [6, 7], [7, 4],
-		[0, 4], [1, 5], [2, 6], [3, 7],
-	]
-	for e in edges:
-		im.surface_add_vertex(corners[e[0]])
-		im.surface_add_vertex(corners[e[1]])
-	# Corner brackets: short ticks along each axis from every corner.
-	var tick := (mx - mn) * 0.12
-	tick = Vector3(maxf(tick.x, 2.0), maxf(tick.y, 2.0), maxf(tick.z, 2.0))
-	for c in corners:
-		var sx := 1.0 if c.x > (mn.x + mx.x) * 0.5 else -1.0
-		var sy := 1.0 if c.y > (mn.y + mx.y) * 0.5 else -1.0
-		var sz := 1.0 if c.z > (mn.z + mx.z) * 0.5 else -1.0
-		im.surface_add_vertex(c)
-		im.surface_add_vertex(c + Vector3(-sx * tick.x, 0, 0))
-		im.surface_add_vertex(c)
-		im.surface_add_vertex(c + Vector3(0, -sy * tick.y, 0))
-		im.surface_add_vertex(c)
-		im.surface_add_vertex(c + Vector3(0, 0, -sz * tick.z))
-	im.surface_end()
-	_selection_corners.mesh = im
+	_selection_corners.mesh = null

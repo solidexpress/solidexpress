@@ -916,7 +916,8 @@ String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
                                      const String& target_fid, const String& end,
                                      double thin_thickness, const String& thin_type,
                                      bool flip_side, const Array& selected_contours,
-                                     const String& to_face) {
+                                     const String& to_face, double draft_deg,
+                                     bool draft_inward) {
     sx::EntityId fid;
     bool ok = apply_graph_edit("extrude", [&] {
         sx::Feature f;
@@ -944,6 +945,10 @@ String SxDocument::graph_add_extrude(const String& sketch_fid, double distance,
         }
         // Optional Up To Surface target. Empty keeps every existing caller working.
         if (!to_face.is_empty()) f.params["to_face"] = to_std(to_face);
+        if (std::abs(draft_deg) > 1e-12) {
+            f.params["draft_deg"] = draft_deg;
+            f.params["draft_inward"] = draft_inward;
+        }
         fid = doc_->graph().add(std::move(f));
         return true;
     });
@@ -1002,6 +1007,16 @@ String SxDocument::graph_add_sweep_along_path(const String& sketch_fid, const St
             nlohmann::json guides = nlohmann::json::array();
             for (int i = 0; i < guide_fids.size(); ++i) guides.push_back(to_std(guide_fids[i]));
             f.params["guides"] = guides;
+        }
+        // Swept Boss on a part that already has a body fuses onto it. An
+        // empty part (hex key) stays op=new so the first solid is a new body.
+        std::string target;
+        for (const auto& existing : doc_->graph().timeline()) {
+            if (!existing.output_body.is_null()) target = existing.id.str();
+        }
+        if (!target.empty()) {
+            f.params["op"] = "fuse";
+            f.params["target"] = target;
         }
         fid = doc_->graph().add(std::move(f));
         return true;
@@ -2638,10 +2653,10 @@ void SxDocument::_bind_methods() {
                          &SxDocument::sketch_add_external_edge);
     ClassDB::bind_method(D_METHOD("graph_add_extrude", "sketch_fid", "distance", "symmetric", "op",
                                   "target_fid", "end", "thin_thickness", "thin_type", "flip_side",
-                                  "selected_contours", "to_face"),
+                                  "selected_contours", "to_face", "draft_deg", "draft_inward"),
                          &SxDocument::graph_add_extrude, DEFVAL(String("blind")), DEFVAL(0.0),
                          DEFVAL(String("one_side")), DEFVAL(false), DEFVAL(Array()),
-                         DEFVAL(String()));
+                         DEFVAL(String()), DEFVAL(0.0), DEFVAL(true));
     ClassDB::bind_method(D_METHOD("graph_add_revolve", "sketch_fid", "axis_point", "axis_dir", "angle", "op", "target_fid"), &SxDocument::graph_add_revolve);
     ClassDB::bind_method(D_METHOD("graph_add_sweep", "sketch_fid", "path"), &SxDocument::graph_add_sweep);
     ClassDB::bind_method(D_METHOD("graph_add_sweep_along_path", "sketch_fid", "path_fid",

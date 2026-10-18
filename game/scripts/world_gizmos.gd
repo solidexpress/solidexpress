@@ -32,7 +32,7 @@ const COLOR_GRID_CENTER_X := Color(0.72, 0.28, 0.26, 0.40)
 const COLOR_GRID_CENTER_Y := Color(0.28, 0.68, 0.32, 0.40)
 
 var gizmos_visible := true
-var grid_visible := true
+var grid_visible := false
 ## Current LOD (mm). Public so the scale bar can label the major cell.
 var grid_step_mm := GRID_STEP
 var grid_major_mm := GRID_MAJOR
@@ -59,6 +59,12 @@ func _ready() -> void:
 func set_gizmos_visible(on: bool) -> void:
 	gizmos_visible = on
 	_apply_visibility()
+
+
+func set_grid_visible(on: bool) -> void:
+	grid_visible = on
+	_apply_visibility()
+
 
 func refresh_lod(px_per_mm: float) -> void:
 	var step := pick_minor_step_mm(px_per_mm)

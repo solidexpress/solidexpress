@@ -59,6 +59,8 @@ func test_centre_then_centre() -> void:
 	check(sm.selected.size() == 2, "both circles are selected after the dimension (got %d)" % sm.selected.size())
 	check(_distance_near(sm, 200.0, 0.5) >= 0, "a centre distance of 200 was dimensioned")
 	check(not edits.is_empty(), "the dimension editor was requested")
+	var geom := sm.get_node_or_null("DimensionGeometry") as MeshInstance3D
+	check(geom != null and geom.mesh != null, "dimension draws witness geometry")
 	await _shutdown(ctx)
 
 

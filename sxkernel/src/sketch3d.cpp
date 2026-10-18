@@ -4,8 +4,10 @@
 #include <unordered_map>
 
 #include <BRepAdaptor_Curve.hxx>
+#include <GeomAPI_IntCS.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <GeomAbs_CurveType.hxx>
+#include <Geom_Circle.hxx>
 #include <Geom_Plane.hxx>
 #include <TopExp.hxx>
 #include <TopoDS.hxx>
@@ -140,9 +142,27 @@ EntityId project_circle(Sketch* sketch, const BRepAdaptor_Curve& curve, const Sk
     const double span = std::abs(curve.LastParameter() - curve.FirstParameter());
     if (span < kTwoPi - 0.05) return {};
     const gp_Circ circ = curve.Circle();
-    if (!circle_lies_in_plane(curve, plane)) return {};
-    const gp_Pnt c = circ.Location();
-    const EntityId added = sketch->project_circle_edge({c.X(), c.Y(), c.Z()}, circ.Radius(), edge);
+    if (circle_lies_in_plane(curve, plane)) {
+        const gp_Pnt c = circ.Location();
+        const EntityId added =
+            sketch->project_circle_edge({c.X(), c.Y(), c.Z()}, circ.Radius(), edge);
+        if (added.is_null()) return {};
+        sketch->set_construction(added, true);
+        return added;
+    }
+    // Origin-plane silhouette: circle ∩ sketch plane → a diameter line.
+    const auto nrm = plane.normal();
+    gp_Pnt o(plane.origin[0], plane.origin[1], plane.origin[2]);
+    gp_Dir n(nrm[0], nrm[1], nrm[2]);
+    Handle(Geom_Circle) gc = new Geom_Circle(circ);
+    Handle(Geom_Plane) gpl = new Geom_Plane(o, n);
+    GeomAPI_IntCS inter(gc, gpl);
+    if (!inter.IsDone() || inter.NbPoints() < 2) return {};
+    const gp_Pnt a = inter.Point(1);
+    const gp_Pnt b = inter.Point(2);
+    if (a.Distance(b) < 1e-6) return {};
+    const EntityId added =
+        sketch->project_line_edge({a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, edge);
     if (added.is_null()) return {};
     sketch->set_construction(added, true);
     return added;
