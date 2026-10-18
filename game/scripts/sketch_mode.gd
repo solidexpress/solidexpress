@@ -22,6 +22,8 @@ var offset_ui: SketchOffset
 var pattern_ui: SketchCircularPattern
 const _SketchVertical := preload("res://scripts/sketch_vertical.gd")
 const _SketchHorizontal := preload("res://scripts/sketch_horizontal.gd")
+const _BooleanTarget := preload("res://scripts/boolean_target.gd")
+const _FaceLabelPark := preload("res://scripts/face_label_park.gd")
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
@@ -635,30 +637,7 @@ func _adopt_support(support: Dictionary) -> void:
 ## Cut/fuse target: the live session, then the saved host, then the host face,
 ## then the only body in the part (jaw cut after a pencil reopen).
 func _boolean_target_fid() -> String:
-	if target_fid != "":
-		return target_fid
-	if support_host != "":
-		return support_host
-	if host_face_id != "" and view != null:
-		var body := ""
-		if view.has_method("body_of_face"):
-			body = view.body_of_face(host_face_id)
-		if body == "" and view.has_method("body_of_feature"):
-			body = view.body_of_feature(support_host)
-		if body != "" and view.has_method("feature_of_body"):
-			var from_face := str(view.feature_of_body(body))
-			if from_face != "":
-				return from_face
-	return _sole_body_feature()
-
-
-func _sole_body_feature() -> String:
-	if view == null or view.doc == null or not view.has_method("feature_of_body"):
-		return ""
-	var ids: PackedStringArray = view.doc.body_ids()
-	if ids.size() != 1:
-		return ""
-	return str(view.feature_of_body(ids[0]))
+	return _BooleanTarget.resolve(self)
 
 
 ## True when `face_id`'s midpoint sits on the active sketch plane.
@@ -1637,17 +1616,10 @@ func set_tool(t: Tool) -> void:
 	draw_construction = (t == Tool.CENTERLINE)
 	# Convert / Offset Esc drops the tool. A leftover Smart Dim selection
 	# would spend that key on "selection cleared" and leave the tool armed.
-	if t == Tool.CONVERT or t == Tool.OFFSET:
-		_set_selected([])
-		if selected_constraint != "":
-			select_constraint("")
 	# A single leftover entity makes the next Smart Dim a BETWEEN/angle
 	# (rung 3 two 120s). Two-circle selection must stay so the chip row
 	# still shows (replan12 chiprow).
-	if t == Tool.SMART_DIM and selected.size() == 1:
-		_set_selected([])
-		if selected_constraint != "":
-			select_constraint("")
+	_arm_clear_selection(t)
 	# Default variants per tool family (reset on tool switch so prior family
 	# names like circle "center" don't silently become rect "center").
 	var spec := SketchToolSpec.of(int(t))
@@ -1665,6 +1637,22 @@ func set_tool(t: Tool) -> void:
 	var hint := tool_arm_hint(t)
 	if hint != "":
 		status.emit(hint)
+
+
+const ARM_CLEAR := {
+	Tool.CONVERT: "always",
+	Tool.OFFSET: "always",
+	Tool.SMART_DIM: "if_one",
+}
+
+
+func _arm_clear_selection(t: Tool) -> void:
+	var mode := str(ARM_CLEAR.get(t, "keep"))
+	if mode != "always" and not (mode == "if_one" and selected.size() == 1):
+		return
+	_set_selected([])
+	if selected_constraint != "":
+		select_constraint("")
 
 
 ## One-line status when a rail tool (or shortcut) is armed. Empty = keep the
@@ -8882,26 +8870,7 @@ func _curve_center_radius(dim: Dictionary) -> Variant:
 ## Face-sketch callouts sit in the margin. The obstacle is the host face's
 ## screen box; each label takes the shortest step that puts its centre outside.
 func _park_labels_outside_host_face(cam: Camera3D, k: float) -> void:
-	if k < 1e-6 or host_face_id == "" or view == null or view.doc == null:
-		return
-	var face := _host_face_screen_rect(cam)
-	if face.size.x < 4.0 or face.size.y < 4.0:
-		return
-	var placed: Array[Rect2] = []
-	for i in range(dimensions.size()):
-		var dim: Dictionary = dimensions[i]
-		if typeof(dim) != TYPE_DICTIONARY:
-			continue
-		var rect := _projected_label_rect(dim, cam, k)
-		var centre := rect.get_center()
-		if not face.has_point(centre):
-			placed.append(rect)
-			continue
-		var prev: Vector2 = dim.get("label_clamp", Vector2.ZERO)
-		var push := _exit_clear_of_labels(centre, face, dim, prev, cam, k, placed)
-		dim["label_clamp"] = prev + Vector2(push.x / k, -push.y / k)
-		dimensions[i] = dim
-		placed.append(_projected_label_rect(dim, cam, k))
+	_FaceLabelPark.park(self, cam, k)
 
 
 ## Screen box of the body this face sketch sits on, in the same space as labels.
@@ -8921,39 +8890,6 @@ func _host_face_screen_rect(cam: Camera3D) -> Rect2:
 		else:
 			box = box.expand(screen)
 	return box
-
-
-func _face_exits(centre: Vector2, face: Rect2) -> Array:
-	var exits := [
-		{"gap": centre.x - face.position.x, "push": Vector2(-(centre.x - face.position.x + 2.0), 0.0)},
-		{"gap": face.end.x - centre.x, "push": Vector2(face.end.x - centre.x + 2.0, 0.0)},
-		{"gap": centre.y - face.position.y, "push": Vector2(0.0, -(centre.y - face.position.y + 2.0))},
-		{"gap": face.end.y - centre.y, "push": Vector2(0.0, face.end.y - centre.y + 2.0)},
-	]
-	exits.sort_custom(func(a, b): return float(a["gap"]) < float(b["gap"]))
-	return exits
-
-
-## Prefer the shortest face-edge exit whose parked plate misses labels already
-## in the margin (Ø130 / Ø10 / 94 on the flange must not share one edge).
-func _exit_clear_of_labels(centre: Vector2, face: Rect2, dim: Dictionary,
-		prev: Vector2, cam: Camera3D, k: float, placed: Array[Rect2]) -> Vector2:
-	var fallback := Vector2.ZERO
-	for exit in _face_exits(centre, face):
-		var push: Vector2 = exit["push"]
-		if fallback == Vector2.ZERO:
-			fallback = push
-		var trial := dim.duplicate()
-		trial["label_clamp"] = prev + Vector2(push.x / k, -push.y / k)
-		var rect := _projected_label_rect(trial, cam, k)
-		var clash := false
-		for other in placed:
-			if rect.intersects(other):
-				clash = true
-				break
-		if not clash:
-			return push
-	return fallback
 
 
 func _seat_full_circle_labels(cam: Camera3D, k: float) -> void:
