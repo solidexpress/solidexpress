@@ -721,10 +721,14 @@ static func draft_cut(ctx: FilmContext, distance: float, angle: float) -> void:
 	if draft == null or not draft.is_visible_in_tree():
 		FilmUI._fail("finish:Draft is hidden")
 		return
-	if not draft.button_pressed:
+	# WalkUI06.try_extrude_cut: click Draft until it stays on and the angle spin shows.
+	for _i in 3:
+		var ang_node := _by_auto(ctx.main, "finish:DraftAngle")
+		if draft.button_pressed and ang_node != null and ang_node.is_visible_in_tree():
+			break
 		if not await FilmUI.click_control(ctx, draft, FilmUICues.alert("Draft", "Draft On")):
 			return
-	await FilmUI.wait_frames(ctx.tree, 1)
+		await FilmUI.wait_frames(ctx.tree, 4)
 	var ang := str(int(round(angle))) if is_equal_approx(angle, round(angle)) else str(angle)
 	await _type_auto_spin(ctx, "finish:DraftAngle", ang)
 	if FilmUI.fail_count > 0:

@@ -279,6 +279,9 @@ static func draw_profile(ctx: FilmContext) -> void:
 	await draw_line(ctx, Vector2(0, h), Vector2(top_r, h))
 	if FilmUI.fail_count > 0:
 		return
+	await draw_line(ctx, R12_CLIP, Vector2(0, 0))
+	if FilmUI.fail_count > 0:
+		return
 	await FilmSteps.tangent_arc(ctx, Vector2(top_r, h), Vector2(stem_x, r10_y), 0.0)
 	if FilmUI.fail_count > 0:
 		return
@@ -295,10 +298,11 @@ static func draw_profile(ctx: FilmContext) -> void:
 	await FilmSteps.tangent_arc(ctx, Vector2(stem_x, r60_y), R60_TAN, 0.0)
 	if FilmUI.fail_count > 0:
 		return
-	await _connecting_rim(ctx, _arc_end_near(ctx, R60_TAN))
+	await _frame_uv(ctx, R12_BULGE, 80.0)
+	await _connecting_rim(ctx, _arc_end_near(ctx, R60_TAN), true)
 	if FilmUI.fail_count > 0:
 		return
-	await draw_line(ctx, R12_CLIP, Vector2(0, 0))
+	await _trim_below_ground(ctx)
 
 
 static func revolve_360(ctx: FilmContext) -> void:
@@ -402,7 +406,7 @@ static func _arc_end_near(ctx: FilmContext, hint: Vector2) -> Vector2:
 	return b
 
 
-static func _connecting_rim(ctx: FilmContext, start: Vector2) -> void:
+static func _connecting_rim(ctx: FilmContext, start: Vector2, snap_end: bool = true) -> void:
 	await FilmSteps.press_rail(ctx, "Arc")
 	if FilmUI.fail_count > 0:
 		return
@@ -413,8 +417,34 @@ static func _connecting_rim(ctx: FilmContext, start: Vector2) -> void:
 	await FilmSteps.click_uv(ctx, start, "R60 end", 0.0)
 	await _set_snap(ctx, false)
 	await FilmSteps.click_uv(ctx, R12_BULGE, "R12 bulge", 0.0)
+	await _set_snap(ctx, snap_end)
 	await FilmSteps.click_uv(ctx, R12_CLIP, "R12 clip", 0.0)
+	await _set_snap(ctx, false)
 	await FilmUI.wait_frames(ctx.tree, 1)
+
+
+static func _trim_below_ground(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null or sm.sketch == null:
+		return
+	var eid := last_arc(sm)
+	if eid == "":
+		return
+	var info: Dictionary = sm.sketch.entity_info(eid)
+	var c: Vector2 = info.get("center", Vector2.ZERO)
+	var r := float(info.get("radius", 0.0))
+	var sa := float(info.get("start_angle", 0.0))
+	var ea := float(info.get("end_angle", 0.0))
+	var span := ea - sa
+	while span <= 1.0e-9:
+		span += TAU
+	var mid: Vector2 = c + Vector2.from_angle(sa + span * 0.5) * r
+	if mid.y >= -0.2:
+		return
+	await FilmSteps.press_rail(ctx, "Trim")
+	if FilmUI.fail_count > 0:
+		return
+	await FilmSteps.click_uv(ctx, mid, "Trim toe", 0.0)
 
 
 static func _frame_uv(ctx: FilmContext, uv: Vector2, span: float) -> void:
