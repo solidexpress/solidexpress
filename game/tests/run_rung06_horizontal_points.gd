@@ -11,16 +11,7 @@ const SPAN := 80.0
 func _init() -> void:
 	print("rung06 horizontal points")
 	FilmUI.reset_fail_count()
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1280, 800))
+	var ctx := await CandlestickFixture.boot(self, Vector2i(1280, 800))
 	await _hook(ctx)
 	await _line_h(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
@@ -35,7 +26,7 @@ func _hook(ctx: FilmContext) -> void:
 	sm.sketch.add_arc(0.0, 0.0, 20.0, 0.0, PI * 0.75)
 	sm.run_solve()
 	await process_frame
-	var arc := _last_arc(sm)
+	var arc := CandlestickFixture.last_arc(sm)
 	check(arc != "", "hook arc exists")
 	var info0: Dictionary = sm.sketch.entity_info(arc)
 	var y0: float = (info0["end"] as Vector2).y
@@ -97,14 +88,6 @@ func _click_horizontal(ctx: FilmContext) -> void:
 					FilmUICues.alert("Horizontal", "Horizontal relation"))
 	await process_frame
 	await process_frame
-
-
-func _last_arc(sm: SketchMode) -> String:
-	var last := ""
-	for id in sm.sketch.entity_ids():
-		if str(sm.sketch.entity_info(id).get("type", "")) == "arc":
-			last = str(id)
-	return last
 
 
 func _horizontal_line_count(sm: SketchMode) -> int:
