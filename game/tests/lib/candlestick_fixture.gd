@@ -114,8 +114,9 @@ static func line_count(sm: SketchMode) -> int:
 	return n
 
 
-static func draw_line(ctx: FilmContext, a: Vector2, b: Vector2, span: float = 0.0) -> void:
-	await FilmSteps.press_rail(ctx, "Line")
+static func draw_line(ctx: FilmContext, a: Vector2, b: Vector2, span: float = 280.0) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
 	if FilmUI.fail_count > 0:
 		return
 	await FilmSteps.click_uv(ctx, a, "Line start", span)
@@ -294,26 +295,26 @@ static func draw_profile(ctx: FilmContext) -> void:
 	var r20_bot := r20_c - r20
 	var r60_y := r20_bot - lower
 	await _frame_uv(ctx, Vector2(40.0, h * 0.5), 360.0)
-	await draw_line(ctx, Vector2(0, 0), Vector2(0, h))
+	await draw_line(ctx, Vector2(0, 0), Vector2(0, h), 0.0)
 	if FilmUI.fail_count > 0:
 		return
-	await draw_line(ctx, Vector2(0, h), Vector2(top_r, h))
+	await draw_line(ctx, Vector2(0, h), Vector2(top_r, h), 0.0)
 	if FilmUI.fail_count > 0:
 		return
-	await draw_line(ctx, R12_CLIP, Vector2(0, 0))
+	await draw_line(ctx, R12_CLIP, Vector2(0, 0), 0.0)
 	if FilmUI.fail_count > 0:
 		return
 	await FilmSteps.tangent_arc(ctx, Vector2(top_r, h), Vector2(stem_x, r10_y), 0.0)
 	if FilmUI.fail_count > 0:
 		return
-	await draw_line(ctx, Vector2(stem_x, r10_y), Vector2(stem_x, r20_top))
+	await draw_line(ctx, Vector2(stem_x, r10_y), Vector2(stem_x, r20_top), 0.0)
 	if FilmUI.fail_count > 0:
 		return
 	await FilmSteps.three_point_arc(ctx, Vector2(stem_x, r20_top), Vector2(stem_x + r20, r20_c),
 			Vector2(stem_x, r20_bot), 0.0)
 	if FilmUI.fail_count > 0:
 		return
-	await draw_line(ctx, Vector2(stem_x, r20_bot), Vector2(stem_x, r60_y))
+	await draw_line(ctx, Vector2(stem_x, r20_bot), Vector2(stem_x, r60_y), 0.0)
 	if FilmUI.fail_count > 0:
 		return
 	await FilmSteps.tangent_arc(ctx, Vector2(stem_x, r60_y), R60_TAN, 0.0)
@@ -345,7 +346,7 @@ static func draw_path(ctx: FilmContext) -> void:
 	var hook_bulge := Vector2(187.11, 86.33)
 	var hook_end := Vector2(150.63, 75.0)
 	await _frame_uv(ctx, Vector2(90.0, 50.0), 360.0)
-	await draw_line(ctx, Vector2(0, y), Vector2(p60, y))
+	await draw_line(ctx, Vector2(0, y), Vector2(p60, y), 0.0)
 	if FilmUI.fail_count > 0:
 		return
 	await FilmSteps.tangent_arc(ctx, Vector2(p60, y), hook_start, 0.0)
