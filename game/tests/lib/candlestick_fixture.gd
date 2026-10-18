@@ -307,6 +307,7 @@ static func draw_profile(ctx: FilmContext) -> void:
 
 static func revolve_360(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
+	await _frame_uv(ctx, Vector2(0, mm("H") * 0.5), 360.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	await FilmSteps.click_uv(ctx, Vector2(0, mm("H") * 0.5), "Revolve axis", 0.0)
 	await FilmUI.apply_revolve(ctx, TAU, "new")
