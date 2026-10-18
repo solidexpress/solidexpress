@@ -1,5 +1,5 @@
 ## The kernel-built candlestick the rung-6 suites share.
-## Boot, PART millimetres, revolve/path/ellipse builders. Each suite keeps its checks.
+## Boot, PART millimetres, revolve/path/ellipse builders, and WalkUI06 click builders.
 class_name CandlestickFixture
 extends RefCounted
 
@@ -7,6 +7,13 @@ const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const FilmSteps = preload("res://tests/lib/film_steps.gd")
 const SxChecker = preload("res://tests/lib/sx_checker.gd")
+const SxInput = preload("res://tests/lib/sx_input.gd")
+const _FilmActorBoot = preload("res://tests/lib/film_actor.gd")
+
+## Locked rim from WalkUI06 / the rung-6 plan (checker clips y ≥ 0 at x = 108.998).
+const R60_TAN := Vector2(97.861, 20.517)
+const R12_BULGE := Vector2(111.999, 8.125)
+const R12_CLIP := Vector2(108.998, 0.0)
 
 static var _part: Dictionary = {}
 
@@ -107,11 +114,12 @@ static func line_count(sm: SketchMode) -> int:
 	return n
 
 
-static func draw_line(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await FilmSteps.click_uv(ctx, a, "Line start", 280.0)
-	await FilmSteps.click_uv(ctx, b, "Line end", 280.0)
+static func draw_line(ctx: FilmContext, a: Vector2, b: Vector2, span: float = 0.0) -> void:
+	await FilmSteps.press_rail(ctx, "Line")
+	if FilmUI.fail_count > 0:
+		return
+	await FilmSteps.click_uv(ctx, a, "Line start", span)
+	await FilmSteps.click_uv(ctx, b, "Line end", span)
 
 
 ## CCW arc from `start` to `end` that contains `through`. Endpoints are then
@@ -199,3 +207,242 @@ static func add_path(sk) -> void:
 
 static func add_ellipse(sk) -> String:
 	return str(sk.add_ellipse(0.0, mm("PATH_Y"), mm("ELLIPSE_MAJ") * 0.5, mm("ELLIPSE_MIN") * 0.5, 0.0))
+
+
+## WalkUI06.sketch_on_datum: clear faces, then Sketch, then the named origin plane.
+static func click_datum(ctx: FilmContext, plane_name: String, view_id: String) -> void:
+	await _clear_selection(ctx)
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.active:
+		await FilmUI.exit_sketch(ctx)
+		if FilmUI.fail_count > 0:
+			return
+	ctx.main.camera.apply_standard_view_id(view_id)
+	await ctx.tree.process_frame
+	var pads = ctx.view.sketch_pads if ctx.view != null else null
+	var pads_was_visible := false
+	if pads != null:
+		pads_was_visible = pads.visible
+		pads.visible = false
+	var sketch_btn := FilmUI.find_palette_sketch_button(ctx.main)
+	if not await FilmUI.click_control(ctx, sketch_btn, FilmUICues.toolbar_sketch()):
+		if pads != null:
+			pads.visible = pads_was_visible
+		return
+	await ctx.tree.process_frame
+	var pt: Vector3 = OriginPlanes.pick_point(plane_name)
+	var screen := FilmUI.model_to_screen(ctx, pt)
+	if not FilmUI.require_on_screen(ctx, screen, plane_name):
+		if pads != null:
+			pads.visible = pads_was_visible
+		return
+	await FilmUI.viewport_click(ctx, screen, FilmUICues.sketch_click(plane_name))
+	await FilmUI.wait_frames(ctx.tree, 4)
+	if pads != null:
+		pads.visible = pads_was_visible
+
+
+## WalkUI06.temp_axes_on: click Temporary Axes only when status says they are off.
+static func click_temp_axes(ctx: FilmContext) -> void:
+	var status := ""
+	if ctx.main.status_label != null:
+		status = str(ctx.main.status_label.text)
+	if "Temporary Axes off" not in status:
+		return
+	var btn := find_auto(ctx.main, "menu:TemporaryAxes") as BaseButton
+	if btn == null or not btn.is_visible_in_tree():
+		btn = ctx.main.find_child("TemporaryAxes", true, false) as BaseButton
+	if btn == null or not btn.is_visible_in_tree():
+		return
+	await FilmUI.click_control(ctx, btn, FilmUICues.alert("Temporary Axes", "Temporary Axes"))
+	await ctx.tree.process_frame
+
+
+## Walk profile: 20 / 220 / 90, Tangent R10, 3-point R20, R60, R12.50 clip to y = 0.
+static func draw_profile(ctx: FilmContext) -> void:
+	var h := mm("H")
+	var top_r := mm("TOP_R")
+	var r10 := mm("R10")
+	var upper := mm("UPPER")
+	var r20 := mm("R20")
+	var lower := mm("LOWER")
+	var stem_x := top_r + r10
+	var r10_y := h - r10
+	var r20_top := r10_y - upper
+	var r20_c := r20_top - r20
+	var r20_bot := r20_c - r20
+	var r60_y := r20_bot - lower
+	await _frame_uv(ctx, Vector2(40.0, h * 0.5), 360.0)
+	await draw_line(ctx, Vector2(0, 0), Vector2(0, h))
+	if FilmUI.fail_count > 0:
+		return
+	await draw_line(ctx, Vector2(0, h), Vector2(top_r, h))
+	if FilmUI.fail_count > 0:
+		return
+	await FilmSteps.tangent_arc(ctx, Vector2(top_r, h), Vector2(stem_x, r10_y), 0.0)
+	if FilmUI.fail_count > 0:
+		return
+	await draw_line(ctx, Vector2(stem_x, r10_y), Vector2(stem_x, r20_top))
+	if FilmUI.fail_count > 0:
+		return
+	await FilmSteps.three_point_arc(ctx, Vector2(stem_x, r20_top), Vector2(stem_x + r20, r20_c),
+			Vector2(stem_x, r20_bot), 0.0)
+	if FilmUI.fail_count > 0:
+		return
+	await draw_line(ctx, Vector2(stem_x, r20_bot), Vector2(stem_x, r60_y))
+	if FilmUI.fail_count > 0:
+		return
+	await FilmSteps.tangent_arc(ctx, Vector2(stem_x, r60_y), R60_TAN, 0.0)
+	if FilmUI.fail_count > 0:
+		return
+	await _connecting_rim(ctx, _arc_end_near(ctx, R60_TAN))
+	if FilmUI.fail_count > 0:
+		return
+	await draw_line(ctx, R12_CLIP, Vector2(0, 0))
+
+
+static func revolve_360(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
+	await FilmSteps.click_uv(ctx, Vector2(0, mm("H") * 0.5), "Revolve axis", 0.0)
+	await FilmUI.apply_revolve(ctx, TAU, "new")
+	await ctx.after_regen()
+	if sm != null and sm.active:
+		await FilmUI.exit_sketch(ctx)
+
+
+## Walk path: 60 at y=10, Tangent R150 to (183.6, 75), 3-point R20 hook.
+static func draw_path(ctx: FilmContext) -> void:
+	var y := mm("PATH_Y")
+	var p60 := mm("PATH_60")
+	var hook_start := Vector2(183.6, 75.0)
+	var hook_bulge := Vector2(187.11, 86.33)
+	var hook_end := Vector2(150.63, 75.0)
+	await _frame_uv(ctx, Vector2(90.0, 50.0), 360.0)
+	await draw_line(ctx, Vector2(0, y), Vector2(p60, y))
+	if FilmUI.fail_count > 0:
+		return
+	await FilmSteps.tangent_arc(ctx, Vector2(p60, y), hook_start, 0.0)
+	if FilmUI.fail_count > 0:
+		return
+	var outer := _arc_end_near(ctx, hook_start)
+	await FilmSteps.three_point_arc(ctx, outer, hook_bulge, hook_end, 0.0)
+
+
+## Walk A25: ellipse centre (0, 10), major 17.5, minor to (0, 15).
+static func draw_section_ellipse(ctx: FilmContext) -> void:
+	var y := mm("PATH_Y")
+	var maj := mm("ELLIPSE_MAJ") * 0.5
+	var minr := mm("ELLIPSE_MIN") * 0.5
+	await _frame_uv(ctx, Vector2(0, y), 80.0)
+	await FilmSteps.ellipse3(ctx, Vector2(0, y), Vector2(maj, y), Vector2(0, y + minr))
+
+
+## WalkUI06.pick_top_disc: +Y disc at H, area ~π×20², then Sketch on that face.
+static func cut_top_disc(ctx: FilmContext) -> void:
+	await _clear_selection(ctx)
+	var body := FilmSteps.only_body(ctx)
+	if body == "":
+		FilmUI._fail("cut needs one body")
+		return
+	var face := _top_disc_face(ctx, body)
+	if face == "":
+		FilmUI._fail("no Ø30 top disc")
+		return
+	await FilmActor.of(ctx).view_key(KEY_3)
+	await FilmActor.of(ctx).zoom_to(Vector3(10.0, mm("H"), 0.0), 80.0, "Frame top disc")
+	await FilmUI.enter_sketch_on_face(ctx, body, face)
+	if FilmUI.fail_count > 0:
+		return
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null or not sm.active:
+		FilmUI._fail("top-disc sketch did not start")
+		return
+	await FilmSteps.press_rail(ctx, "Circle")
+	if FilmUI.fail_count > 0:
+		return
+	var rad := mm("CUT_D") * 0.5
+	await FilmSteps.click_uv(ctx, Vector2.ZERO, "Ø30 centre", 0.0)
+	await FilmSteps.click_uv(ctx, Vector2(rad, 0), "Ø30 rim", 0.0)
+	await FilmSteps.draft_cut(ctx, mm("CUT_H"), mm("CUT_DRAFT_DEG"))
+
+
+static func _top_disc_face(ctx: FilmContext, body: String) -> String:
+	var h := mm("H")
+	var want_area := PI * mm("TOP_R") * mm("TOP_R")
+	var best := ""
+	var best_err := 1.0e9
+	for face in ctx.view.faces_matching(body, Vector3(0, 1, 0), 0.85):
+		var id := str(face.get("id", ""))
+		var c: Vector3 = face.get("centre", Vector3.ZERO)
+		if absf(c.y - h) > 6.0:
+			continue
+		var area := float(ctx.view.doc.measure_face_area(id))
+		if area < 400.0 or area > 2500.0:
+			continue
+		var err := absf(area - want_area)
+		if err < best_err:
+			best_err = err
+			best = id
+	return best
+
+
+static func _arc_end_near(ctx: FilmContext, hint: Vector2) -> Vector2:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null or sm.sketch == null:
+		return hint
+	var eid := last_arc(sm)
+	if eid == "":
+		return hint
+	var info: Dictionary = sm.sketch.entity_info(eid)
+	var a: Vector2 = info.get("start", hint)
+	var b: Vector2 = info.get("end", hint)
+	if a.distance_to(hint) <= b.distance_to(hint):
+		return a
+	return b
+
+
+static func _connecting_rim(ctx: FilmContext, start: Vector2) -> void:
+	await FilmSteps.press_rail(ctx, "Arc")
+	if FilmUI.fail_count > 0:
+		return
+	await FilmSteps.pick_variant(ctx, "Three Point")
+	if FilmUI.fail_count > 0:
+		return
+	await _set_snap(ctx, true)
+	await FilmSteps.click_uv(ctx, start, "R60 end", 0.0)
+	await _set_snap(ctx, false)
+	await FilmSteps.click_uv(ctx, R12_BULGE, "R12 bulge", 0.0)
+	await FilmSteps.click_uv(ctx, R12_CLIP, "R12 clip", 0.0)
+	await FilmUI.wait_frames(ctx.tree, 1)
+
+
+static func _frame_uv(ctx: FilmContext, uv: Vector2, span: float) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null:
+		return
+	await FilmActor.of(ctx).zoom_to(sm.to_model(uv), span, "Frame sketch")
+
+
+static func _clear_selection(ctx: FilmContext) -> void:
+	var vp := ctx.main.get_viewport()
+	for _i in 3:
+		await SxInput.push_key(vp, KEY_ESCAPE)
+		await ctx.tree.process_frame
+	if ctx.view != null:
+		ctx.view.clear_selection()
+	if ctx.main.has_method("_update_left_rail"):
+		ctx.main._update_left_rail()
+	await ctx.tree.process_frame
+
+
+static func _set_snap(ctx: FilmContext, on: bool) -> void:
+	var snap := find_auto(ctx.main, "rail:Snap") as BaseButton
+	if snap == null or not snap.is_visible_in_tree():
+		snap = ctx.main.find_child("SnapToggle", true, false) as BaseButton
+	if snap == null or not snap.is_visible_in_tree():
+		return
+	if snap.button_pressed == on:
+		return
+	await FilmUI.click_control(ctx, snap, FilmUICues.alert("Snap", "Snap %s" % ("on" if on else "off")))
+	await ctx.tree.process_frame
