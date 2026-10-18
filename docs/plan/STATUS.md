@@ -8,7 +8,7 @@ Part A WP1–WP7: `CandlestickFixture`, `BooleanTarget`, `FaceLabelPark`, `ARM_C
 
 ## Candlestick film (`cursor/candlestick-film-20261018`)
 
-WP8–WP9 added film `candlestick` (WalkUI06 profile/path/cut via `CandlestickFixture`), `docs/howto/candlestick.md`, and `run_film_candlestick_tests.gd` (`tier=full`). Poster `website/assets/screenshots/candlestick.png`. No `website` object. Featured set stays 12. `lint_suites: 241 suites ok (79 ci, 158 full, 4 known-red)` so the tier is **237 run + 4 known-red**. Counts: [`post-rung-06-result.md`](../loop/post-rung-06-result.md).
+WP8–WP9 added film `candlestick` (WalkUI06 profile/path/cut via `CandlestickFixture`), `docs/howto/candlestick.md`, and `run_film_candlestick_tests.gd` (`tier=full`). Poster `website/assets/screenshots/candlestick.png`. No `website` object. Featured set stays 12. Confirm: walk 6 **46/46**; `check_rung06` 7/7; headless **237/0**; `lint_suites: 241 suites ok (79 ci, 158 full, 4 known-red)`; film 12 checks, 0 failures, bbox 304.109×220×223.998. Counts: [`post-rung-06-result.md`](../loop/post-rung-06-result.md).
 
 `precision_plate` calibrated at 115 s wall (685 frames) for a 29.6 s film, so candlestick stayed at 30 fps (352 s wall). The WebM is VP9 1600×900 at 30 fps. Container duration 67.200 s is the unique-frame video track (2016 frames). The writer drops duplicate presents (dup=1514); Godot process-clock was 3537 frames (00:01:57:27) and the last caption ends at 01:57.667. The poster is that video track's last picture (frame 2015). Muxing the `.vtt` was retired in `sx-movies` (captions are burned in; a subtitle stream doubled player length).
 
