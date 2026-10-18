@@ -224,7 +224,7 @@ static func click_datum(ctx: FilmContext, plane_name: String, view_id: String) -
 	if pads != null:
 		pads_was_visible = pads.visible
 		pads.visible = false
-	var sketch_btn := FilmUI.find_palette_sketch_button(ctx.main)
+	var sketch_btn: BaseButton = FilmUI.find_palette_sketch_button(ctx.main) as BaseButton
 	if not await FilmUI.click_control(ctx, sketch_btn, FilmUICues.toolbar_sketch()):
 		if pads != null:
 			pads.visible = pads_was_visible
@@ -425,7 +425,7 @@ static func _frame_uv(ctx: FilmContext, uv: Vector2, span: float) -> void:
 
 
 static func _clear_selection(ctx: FilmContext) -> void:
-	var vp := ctx.main.get_viewport()
+	var vp: Viewport = ctx.main.get_viewport()
 	for _i in 3:
 		await SxInput.push_key(vp, KEY_ESCAPE)
 		await ctx.tree.process_frame
