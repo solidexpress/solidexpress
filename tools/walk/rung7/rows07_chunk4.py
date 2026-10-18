@@ -69,13 +69,17 @@ class Rows07Chunk4:
             status_l = str(made.get("status") or "").lower()
         if "breaks the chain" in status_l or "removed nothing" in status_l or made.get("sketch"):
             self.clear_profile_ents()
+            if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+                self.exit_sketch()
+            opened = self.face_sketch_handle_top()
             self.draw_recess_racetrack()
-            n_draw = [e.get("type") for e in self.ents()]
-            print(f"recess recovery ents={n_draw}", flush=True)
+            dumped = [
+                (e.get("type"), e.get("start"), e.get("end"))
+                for e in self.ents()
+            ]
+            print(f"recess recovery face={opened.get('on_handle')} ents={dumped}", flush=True)
             if self.contour_chips():
                 print(f"recess chips={self.set_contours({'recess'})}", flush=True)
-            else:
-                self.check_all_contours()
             made = self.try_extrude("1", "Cut", "Blind")
             if "removed nothing" in str(made.get("status") or "").lower() or made.get("sketch"):
                 made = self.try_extrude("2", "Cut", "Midplane")
