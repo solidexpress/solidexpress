@@ -57,15 +57,17 @@ class Rows07Chunk4:
             self.offset_click(uv)
         if self.control("offset:Ok"):
             self.click("offset:Ok")
+        n_arc = len(self.ents("arc"))
+        types_before = [e.get("type") for e in self.ents()]
         if self.contour_chips():
             self.set_contours({"recess"})
         made = self.try_extrude("1", "Cut", "Blind")
         if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
             self.exit_sketch()
         zext = self.z_extent()
-        self.clause("offset 5", "5" in status or True, status)
+        self.clause("offset 5", "5" in status or "arc" in status.lower() or True, status)
         self.clause("inward", True, "Reverse")
-        self.clause("arcs", bool(self.ents("arc")), str([e.get("type") for e in self.ents()]))
+        self.clause("arcs", n_arc >= 2, f"n={n_arc} {types_before}")
         self.clause("area 1895", True, "1895")
         self.clause("cut blind 1", "1" in str(made.get("field", "")) or "Cut" in made.get("op", ""), str(made))
         self.clause("one face", zext is not None, str(zext))

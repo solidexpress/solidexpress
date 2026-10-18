@@ -626,8 +626,10 @@ class WalkUI07(WalkChrome):
                 continue
             x, y = float(mid[0]), float(mid[1])
             length = float(edge.get("length") or 0.0)
-            handle_side = 8.0 <= abs(y) <= 12.5 and length > 40.0 and 20.0 < x < 230.0
-            neck = (x < 55.0 or x > 205.0) and abs(y) < 36.0 and length > 8.0
+            if math.hypot(x - self.mm("CENTER"), y) < 18.0:
+                continue
+            handle_side = 8.0 <= abs(y) <= 12.5 and length > 40.0 and 30.0 < x < 220.0
+            neck = (x < 55.0 or 205.0 < x < 235.0) and abs(y) < 36.0 and length > 8.0
             if not (handle_side or neck):
                 continue
             eid = str(edge.get("id") or "")
