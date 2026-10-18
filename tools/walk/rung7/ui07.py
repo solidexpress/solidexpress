@@ -466,6 +466,23 @@ class WalkUI07(WalkChrome):
                 self.click(str(chip.get("id")))
                 self.d.wait_idle(frames=1)
 
+    def kernel_cut(self, distance: float, end: str = "blind") -> dict:
+        """Cut via finish_extrude (empty contours), same path as the offset suite."""
+        mark = self.mark()
+        reply = self.d.call("finish_extrude", distance=float(distance), op="cut", end=end, frames=12)
+        self.d.wait_idle(frames=8)
+        self.refresh("status", "sketch", "finish", "bodies", "features")
+        return {
+            "field": f"{distance:g}",
+            "op": "Cut",
+            "end": end,
+            "reply": reply,
+            "status": " | ".join(self.result_texts(mark)) or str(reply.get("status", self.S())),
+            "sketch": bool((self.st.get("sketch") or {}).get("active")),
+            "bodies": list(self.st.get("bodies") or []),
+            "names": self.feature_names(),
+        }
+
     def try_extrude(self, distance: str, op: str = "New", end: str = "Midplane", apply: bool = True) -> dict:
         self._ensure_finish_bar()
         self.set_option("finish:Op", op)

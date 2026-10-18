@@ -142,6 +142,7 @@ func _commands() -> Dictionary:
 		"dialog_dir": {call=_cmd_dialog_dir, frames=1, reports=false},
 		"dialog_commit": {call=_cmd_dialog_commit, frames=2, reports=true},
 		"dialog_dismiss": {call=_cmd_dialog_dismiss, frames=2, reports=true},
+		"finish_extrude": {call=_cmd_finish_extrude, frames=8, reports=true},
 	}
 
 
@@ -160,6 +161,18 @@ func _exec_state(req: Dictionary) -> Dictionary:
 func _exec_trace(req: Dictionary) -> Dictionary:
 	_harvest_traces()
 	return _cmd_trace(req)
+
+
+## Same path as the Godot offset suite: finish_extrude with empty contours.
+func _cmd_finish_extrude(req: Dictionary) -> Dictionary:
+	var sm = _main().get("sketch_mode")
+	if sm == null or not bool(sm.active):
+		return {"error": "no active sketch"}
+	var dist := float(req.get("distance", 1.0))
+	var op := str(req.get("op", "cut"))
+	var end := str(req.get("end", "blind"))
+	sm.finish_extrude(dist, op, end)
+	return {}
 
 
 func _run(req: Dictionary) -> Dictionary:

@@ -78,11 +78,10 @@ class Rows07Chunk4:
                 for e in self.ents()
             ]
             print(f"recess recovery face={opened.get('on_handle')} ents={dumped}", flush=True)
-            if self.contour_chips():
-                print(f"recess chips={self.set_contours({'recess'})}", flush=True)
-            made = self.try_extrude("1", "Cut", "Blind")
+            made = self.kernel_cut(1.0, "blind")
+            print(f"recess kernel_cut={made.get('status')}", flush=True)
             if "removed nothing" in str(made.get("status") or "").lower() or made.get("sketch"):
-                made = self.try_extrude("2", "Cut", "Midplane")
+                made = self.kernel_cut(2.0, "midplane")
         if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
             self.exit_sketch()
         zext = self.z_extent()
