@@ -2375,6 +2375,11 @@ func _snap_endpoints(id: String) -> Array[Vector2]:
 				out.append(info["minor_start"])
 			if info.has("minor_end"):
 				out.append(info["minor_end"])
+		"elliptical_arc":
+			if info.has("start"):
+				out.append(info["start"])
+			if info.has("end"):
+				out.append(info["end"])
 		"point":
 			out.append(info["position"])
 	return out
@@ -2386,7 +2391,7 @@ func _snap_mid_centers(id: String) -> Array[Vector2]:
 	match info.get("type", ""):
 		"line":
 			out.append((info["start"] + info["end"]) * 0.5)
-		"circle", "arc", "ellipse":
+		"circle", "arc", "ellipse", "elliptical_arc":
 			out.append(info["center"])
 	return out
 
@@ -2811,6 +2816,11 @@ func _endpoint_pairs(info: Dictionary) -> Array:
 			out.append(["start", info["major_start"]])
 		if info.has("major_end"):
 			out.append(["end", info["major_end"]])
+	elif kind == "elliptical_arc":
+		if info.has("start"):
+			out.append(["start", info["start"]])
+		if info.has("end"):
+			out.append(["end", info["end"]])
 	return out
 
 
@@ -2868,7 +2878,7 @@ func _snap_blocked_by_curve(p: Vector2, centre: Vector2) -> bool:
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		var kind := str(info.get("type", ""))
-		if kind != "circle" and kind != "arc" and kind != "ellipse":
+		if kind != "circle" and kind != "arc" and kind != "ellipse" and kind != "elliptical_arc":
 			continue
 		if _entity_distance(info, p) + 1.0e-6 < to_c:
 			return true
@@ -2881,7 +2891,7 @@ func _entity_distance(info: Dictionary, p: Vector2) -> float:
 			return SketchGeom.point_segment_distance(p, info["start"], info["end"])
 		"circle", "arc":
 			return absf(p.distance_to(info["center"]) - info["radius"])
-		"ellipse":
+		"ellipse", "elliptical_arc":
 			return SketchEllipse.distance(info, p)
 		"point":
 			return p.distance_to(info["position"])
@@ -2907,7 +2917,7 @@ func closest_on_entity(eid: String, pos2: Vector2) -> Vector2:
 			if d.length_squared() < 1e-12 or r < 1e-9:
 				return c + Vector2(r, 0.0)
 			return c + d.normalized() * r
-		"ellipse":
+		"ellipse", "elliptical_arc":
 			return SketchEllipse.closest(info, pos2)
 		"point":
 			return info["position"]
@@ -2931,7 +2941,7 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match info.get("type", ""):
-			"line", "arc", "ellipse":
+			"line", "arc", "ellipse", "elliptical_arc":
 				for pair in _endpoint_pairs(info):
 					var d: float = pos2.distance_to(pair[1])
 					if d <= best_d:
@@ -3078,19 +3088,11 @@ func _append_entity_lines(im: ImmediateMesh, info: Dictionary) -> void:
 				var a1 := TAU * (i + 1) / steps
 				im.surface_add_vertex(_to3(c + Vector2(cos(a0), sin(a0)) * r))
 				im.surface_add_vertex(_to3(c + Vector2(cos(a1), sin(a1)) * r))
-		"ellipse":
-			var ce: Vector2 = info.get("center", Vector2.ZERO)
-			var rx := float(info.get("rx", 0.0))
-			var ry := float(info.get("ry", 0.0))
-			var ang := float(info.get("angle", 0.0))
-			var steps_e := 64
-			for i in range(steps_e):
-				var t0 := TAU * i / steps_e
-				var t1 := TAU * (i + 1) / steps_e
-				var p0 := ce + Vector2(rx * cos(t0), ry * sin(t0)).rotated(ang)
-				var p1 := ce + Vector2(rx * cos(t1), ry * sin(t1)).rotated(ang)
-				im.surface_add_vertex(_to3(p0))
-				im.surface_add_vertex(_to3(p1))
+		"ellipse", "elliptical_arc":
+			var pts_e := SketchEllipse.polyline(info, 64)
+			for i in range(pts_e.size() - 1):
+				im.surface_add_vertex(_to3(pts_e[i]))
+				im.surface_add_vertex(_to3(pts_e[i + 1]))
 		"arc":
 			var c2: Vector2 = info["center"]
 			var r2: float = info["radius"]
@@ -4159,12 +4161,26 @@ func _jaw_discard_side_on_cutter(origin_a: Vector2, normal: Vector2) -> float:
 	return best_sign
 
 
+## True when Power Trim is aimed at an ellipse / remaining elliptical arc.
+func _ellipse_under_trim(pos2: Vector2) -> bool:
+	if sketch == null:
+		return false
+	var hit := _nearest_entity_at(pos2)
+	if hit == "":
+		return false
+	var kind := str(sketch.entity_info(hit).get("type", ""))
+	return kind == "ellipse" or kind == "elliptical_arc"
+
+
 ## Click on one side of a construction centreline: drop that half, keep the
 ## other, close it with a floor on the cutter and the keep-side arc of the
 ## circle centred on the cutter. The Ø10 (centre far from the cutter) stays.
 func _trim_open_jaw(pos2: Vector2) -> bool:
 	# Jaw mouth trim is two long parallel walls plus a centreline. A tangent
 	# path circle (hex key) is ordinary trim-to-closest, not this opener.
+	# An ellipse under the pointer is the spanner C, not a wrench-jaw opener.
+	if _ellipse_under_trim(pos2):
+		return false
 	if _jaw_long_sides().size() != 2:
 		return false
 	var cutter := _jaw_cutter_for_click(pos2)
@@ -4988,6 +5004,12 @@ func _endpoint_pos(id: String, role: String) -> Vector2:
 				return info["major_start"]
 			if role == "end" and info.has("major_end"):
 				return info["major_end"]
+			return info.get("center", Vector2.ZERO)
+		"elliptical_arc":
+			if role == "start" and info.has("start"):
+				return info["start"]
+			if role == "end" and info.has("end"):
+				return info["end"]
 			return info.get("center", Vector2.ZERO)
 		"circle":
 			return info["center"]
@@ -10780,23 +10802,15 @@ func _redraw() -> void:
 					im.surface_set_color(col)
 					im.surface_add_vertex(_to3(c2 + Vector2(cos(a0), sin(a0)) * r2))
 					im.surface_add_vertex(_to3(c2 + Vector2(cos(a1), sin(a1)) * r2))
-			"ellipse":
+			"ellipse", "elliptical_arc":
 				if not has:
 					im.surface_begin(Mesh.PRIMITIVE_LINES)
 					has = true
-				var ce: Vector2 = info.get("center", Vector2.ZERO)
-				var rx := float(info.get("rx", 0.0))
-				var ry := float(info.get("ry", 0.0))
-				var ang := float(info.get("angle", 0.0))
-				var steps_e := 64
-				for i in range(steps_e):
-					var t0 := TAU * i / steps_e
-					var t1 := TAU * (i + 1) / steps_e
-					var p0 := ce + Vector2(rx * cos(t0), ry * sin(t0)).rotated(ang)
-					var p1 := ce + Vector2(rx * cos(t1), ry * sin(t1)).rotated(ang)
+				var pts_e := SketchEllipse.polyline(info, 64)
+				for i in range(pts_e.size() - 1):
 					im.surface_set_color(col)
-					im.surface_add_vertex(_to3(p0))
-					im.surface_add_vertex(_to3(p1))
+					im.surface_add_vertex(_to3(pts_e[i]))
+					im.surface_add_vertex(_to3(pts_e[i + 1]))
 	if temp_axes_visible and view != null and view.doc != null \
 			and SketchTempAxes.has_revolve(view.doc):
 		var dashes := SketchTempAxes.dashes(plane, -400.0, 400.0)
@@ -11068,6 +11082,11 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 				closed_prims += 1
 			"ellipse":
 				closed_prims += 1
+			"elliptical_arc":
+				var pea: Vector2 = info["start"] if info.has("start") else info["center"]
+				var peb: Vector2 = info["end"] if info.has("end") else info["center"]
+				if pea.distance_to(peb) > 1e-9:
+					segs.append({"a": pea, "b": peb, "used": false})
 			"line":
 				var a: Vector2 = info["start"]
 				var b: Vector2 = info["end"]

@@ -24,14 +24,16 @@ std::vector<std::string> offset_entities(Sketch& s,
                                          const std::vector<std::string>& entity_ids,
                                          double distance);
 
-// Trim the portion of a line or circle nearest to (px, py), bounded by its
-// intersections with other non-construction lines/circles/arcs.
+// Trim the portion of a line, circle, or ellipse nearest to (px, py), bounded
+// by its intersections with other non-construction lines/circles/arcs/ellipses.
 //
-// LINE: intersections at parameter t in (0,1), including arc endpoints that
-// lie on the segment (a 3-point diameter span). End-segment trim shortens the
-// existing line; interior trim removes it and adds two shorter lines.
+// LINE: intersections at parameter t in (0,1), including arc/ellipse endpoints
+// that lie on the segment. End-segment trim shortens the existing line;
+// interior trim removes it and adds two shorter lines.
 // CIRCLE: with >= 2 intersections, replaces the circle with an ARC spanning
 // the remaining (untrimmed) portion via Sketch::add_arc.
+// ELLIPSE: with >= 2 intersections, replaces the ellipse with an ELLIPTICAL
+// ARC spanning the remaining portion via Sketch::add_elliptical_arc.
 //
 // Constraints that reference a removed/replaced entity are dropped (same as
 // Sketch::remove_entity). End-segment line trim keeps the entity id, so its

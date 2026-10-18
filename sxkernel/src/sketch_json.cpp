@@ -30,6 +30,7 @@ struct SketchSerde {
             else if (t == "circle") e.type = SketchEntityType::Circle;
             else if (t == "spline") e.type = SketchEntityType::Spline;
             else if (t == "ellipse") e.type = SketchEntityType::Ellipse;
+            else if (t == "elliptical_arc") e.type = SketchEntityType::EllipticalArc;
             else e.type = SketchEntityType::Arc;
             e.construction = je.value("construction", false);
             e.external = je.value("external", false);
@@ -104,6 +105,7 @@ json sketch_to_json(const Sketch& sk) {
             case SketchEntityType::Arc: je["type"] = "arc"; break;
             case SketchEntityType::Spline: je["type"] = "spline"; break;
             case SketchEntityType::Ellipse: je["type"] = "ellipse"; break;
+            case SketchEntityType::EllipticalArc: je["type"] = "elliptical_arc"; break;
         }
         je["construction"] = e.construction;
         je["external"] = e.external;

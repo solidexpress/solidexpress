@@ -1,5 +1,6 @@
 #include <catch.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -526,4 +527,80 @@ TEST_CASE("pattern_entities propagates construction flag",
     EntityId nid = EntityId::from_string(ids[0]);
     REQUIRE(sk.is_construction(nid));
     REQUIRE(sk.entity(nid)->type == SketchEntityType::Line);
+}
+
+namespace {
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kSpannerDeg = 17.0 * kPi / 180.0;
+
+std::array<double, 2> spanner_world(double xp, double yp) {
+    return {xp * std::cos(kSpannerDeg) - yp * std::sin(kSpannerDeg),
+            xp * std::sin(kSpannerDeg) + yp * std::cos(kSpannerDeg)};
+}
+
+double spanner_x_jaw() {
+    return -25.0 * std::sqrt(1.0 - (12.5 / 27.5) * (12.5 / 27.5));
+}
+
+const SketchEntity* first_of(const Sketch& sk, SketchEntityType t) {
+    for (const auto& e : sk.entities()) {
+        if (e.type == t) return &e;
+    }
+    return nullptr;
+}
+}  // namespace
+
+TEST_CASE("trim_entity replaces ellipse with remaining elliptical arc",
+          "[sketchtools][trim][rung07]") {
+    Sketch sk("TrimEllipse");
+    auto ell = sk.add_ellipse(0.0, 0.0, 27.5, 25.0, kSpannerDeg + kPi * 0.5);
+    const double xj = spanner_x_jaw();
+    auto o_hi = spanner_world(xj, 12.5);
+    auto o_lo = spanner_world(xj, -12.5);
+    auto i_hi = spanner_world(xj + 20.0, 12.5);
+    auto i_lo = spanner_world(xj + 20.0, -12.5);
+    sk.add_line(o_hi[0], o_hi[1], i_hi[0], i_hi[1]);
+    sk.add_line(o_lo[0], o_lo[1], i_lo[0], i_lo[1]);
+    auto pick = spanner_world(-25.0, 0.0);
+    size_t n_before = sk.entities().size();
+
+    REQUIRE(trim_entity(sk, ell.str(), pick[0], pick[1]));
+    REQUIRE(sk.entity(ell) == nullptr);
+    REQUIRE(sk.entities().size() == n_before);
+    const SketchEntity* arc = first_of(sk, SketchEntityType::EllipticalArc);
+    REQUIRE(arc != nullptr);
+    auto ax = sk.ellipse_axes(arc->id);
+    REQUIRE(ax.has_value());
+    REQUIRE((*ax)[2] == Approx(27.5).margin(1e-6));
+    REQUIRE((*ax)[3] == Approx(25.0).margin(1e-6));
+    double sa = sk.param(arc->params[5]);
+    double ea = sk.param(arc->params[6]);
+    double sweep = ea - sa;
+    while (sweep < 0) sweep += 2.0 * kPi;
+    REQUIRE(sweep > kPi);
+}
+
+TEST_CASE("trim_entity shortens a line that crosses an ellipse",
+          "[sketchtools][trim][rung07]") {
+    Sketch sk("LineVsEllipse");
+    sk.add_ellipse(0.0, 0.0, 10.0, 5.0, 0.0);
+    auto ln = sk.add_line(-20.0, 0.0, 20.0, 0.0);
+    REQUIRE(trim_entity(sk, ln.str(), 0.0, 0.0));
+    REQUIRE(sk.entity(ln) == nullptr);
+    int lines = 0;
+    for (const auto& e : sk.entities()) {
+        if (e.type == SketchEntityType::Line) ++lines;
+    }
+    REQUIRE(lines == 2);
+}
+
+TEST_CASE("trim_entity on an uncut ellipse returns false",
+          "[sketchtools][trim][rung07]") {
+    Sketch sk("NoCut");
+    auto ell = sk.add_ellipse(0.0, 0.0, 10.0, 5.0, 0.0);
+    size_t n_before = sk.entities().size();
+    REQUIRE_FALSE(trim_entity(sk, ell.str(), 10.0, 0.0));
+    REQUIRE(sk.entities().size() == n_before);
+    REQUIRE(sk.entity(ell) != nullptr);
+    REQUIRE(sk.entity(ell)->type == SketchEntityType::Ellipse);
 }

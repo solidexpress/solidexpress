@@ -34,6 +34,8 @@
 #include <Geom_Ellipse.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
+#include <ShapeExtend_WireData.hxx>
+#include <ShapeFix_Wire.hxx>
 #include "sx/occt_types.hpp"
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
@@ -209,6 +211,39 @@ EntityId Sketch::add_ellipse(double cx, double cy, double rx, double ry, double 
     e.type = SketchEntityType::Ellipse;
     size_t base = push_params({cx, cy, f1x, f1y, ry});
     e.params = {base, base + 1, base + 2, base + 3, base + 4};
+    entities_.push_back(e);
+    ++revision_;
+    return e.id;
+}
+
+EntityId Sketch::add_elliptical_arc(double cx, double cy, double rx, double ry, double angle,
+                                    double start_angle, double end_angle) {
+    if (rx < 0.0) rx = -rx;
+    if (ry < 0.0) ry = -ry;
+    if (rx < 1e-9 || ry < 1e-9) return {};
+    if (rx < ry) {
+        std::swap(rx, ry);
+        angle += kPi * 0.5;
+        start_angle -= kPi * 0.5;
+        end_angle -= kPi * 0.5;
+    }
+    const double c = std::sqrt(std::max(0.0, rx * rx - ry * ry));
+    const double ca = std::cos(angle), sa = std::sin(angle);
+    const double f1x = cx + c * ca;
+    const double f1y = cy + c * sa;
+    auto at = [&](double t) {
+        const double u = rx * std::cos(t), v = ry * std::sin(t);
+        return std::array<double, 2>{cx + u * ca - v * sa, cy + u * sa + v * ca};
+    };
+    const auto ps = at(start_angle);
+    const auto pe = at(end_angle);
+    SketchEntity e;
+    e.id = EntityId::generate();
+    e.type = SketchEntityType::EllipticalArc;
+    size_t base = push_params({cx, cy, f1x, f1y, ry, start_angle, end_angle,
+                               ps[0], ps[1], pe[0], pe[1]});
+    e.params.resize(11);
+    for (size_t i = 0; i < 11; ++i) e.params[i] = base + i;
     entities_.push_back(e);
     ++revision_;
     return e.id;
@@ -466,6 +501,14 @@ std::optional<std::array<double, 2>> Sketch::point_pos(const PointRef& ref) cons
                 return std::array<double, 2>{cx + ry * sa, cy - ry * ca};
             return std::nullopt;
         }
+        case SketchEntityType::EllipticalArc: {
+            if (e->params.size() < 11) return std::nullopt;
+            if (ref.role == PointRole::Center || ref.role == PointRole::Self)
+                return std::array<double, 2>{p(0), p(1)};
+            if (ref.role == PointRole::Start) return std::array<double, 2>{p(7), p(8)};
+            if (ref.role == PointRole::End) return std::array<double, 2>{p(9), p(10)};
+            return std::nullopt;
+        }
     }
     return std::nullopt;
 }
@@ -484,7 +527,9 @@ std::vector<std::array<double, 2>> Sketch::spline_fit_points(const EntityId& id)
 
 std::optional<std::array<double, 5>> Sketch::ellipse_axes(const EntityId& id) const {
     const SketchEntity* e = entity(id);
-    if (!e || e->type != SketchEntityType::Ellipse || e->params.size() < 5) return std::nullopt;
+    if (!e || (e->type != SketchEntityType::Ellipse && e->type != SketchEntityType::EllipticalArc) ||
+        e->params.size() < 5)
+        return std::nullopt;
     const double cx = params_[e->params[0]];
     const double cy = params_[e->params[1]];
     const double f1x = params_[e->params[2]];
@@ -838,6 +883,27 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
             gp_Elips el(gp_Ax2(to3d(cx, cy), nd, gp_Dir(xell)), rx, ry);
             TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(el).Edge();
             circle_wires.push_back(BRepBuilderAPI_MakeWire(edge).Wire());
+        } else if (e.type == SketchEntityType::EllipticalArc && e.params.size() >= 11) {
+            auto axes = ellipse_axes(e.id);
+            if (!axes) continue;
+            const double cx = (*axes)[0], cy = (*axes)[1], rx = (*axes)[2], ry = (*axes)[3],
+                         ang = (*axes)[4];
+            gp_XYZ xell = ax.XDirection().XYZ() * std::cos(ang) + ax.YDirection().XYZ() * std::sin(ang);
+            gp_Elips el(gp_Ax2(to3d(cx, cy), nd, gp_Dir(xell)), rx, ry);
+            Handle(Geom_Ellipse) ge = new Geom_Ellipse(el);
+            gp_Pnt a = to3d(p(e, 7), p(e, 8));
+            gp_Pnt b = to3d(p(e, 9), p(e, 10));
+            BRepBuilderAPI_MakeEdge mk(ge, a, b);
+            if (!mk.IsDone()) {
+                double sa = p(e, 5), ea = p(e, 6);
+                if (ea < sa) ea += kTwoPi;
+                Handle(Geom_TrimmedCurve) tr = new Geom_TrimmedCurve(ge, sa, ea);
+                BRepBuilderAPI_MakeEdge mk2(tr);
+                if (!mk2.IsDone()) continue;
+                segs.push_back({a, b, mk2.Edge()});
+            } else {
+                segs.push_back({a, b, mk.Edge()});
+            }
         }
     }
     if (segs.empty() && circle_wires.empty()) {
@@ -893,13 +959,29 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
             opens.push_back({loop_start, cursor});
             continue;
         }
-        BRepBuilderAPI_MakeWire wire;
-        for (auto* s : chain) wire.Add(s->edge);
-        if (!wire.IsDone()) {
-            if (err) *err = "wire construction failed";
-            return {};
+        BRepBuilderAPI_MakeWire mk_wire;
+        for (auto* s : chain) mk_wire.Add(s->edge);
+        TopoDS_Wire w;
+        if (mk_wire.IsDone()) {
+            w = mk_wire.Wire();
+        } else {
+            Handle(ShapeExtend_WireData) wd = new ShapeExtend_WireData();
+            for (auto* s : chain) wd->Add(s->edge);
+            ShapeFix_Wire fix;
+            fix.Load(wd);
+            fix.SetPrecision(tol);
+            fix.ClosedWireMode() = true;
+            fix.FixConnectedMode() = 1;
+            fix.Perform();
+            fix.FixConnected(tol);
+            fix.FixClosed(tol);
+            w = fix.Wire();
+            if (w.IsNull()) {
+                if (err) *err = "wire construction failed";
+                return {};
+            }
         }
-        wires.push_back(wire.Wire());
+        wires.push_back(w);
     }
     for (auto& cw : circle_wires) wires.push_back(cw);
 
@@ -1153,7 +1235,8 @@ TopoDS_Shape Sketch::thin_profile_face(double thickness, bool midplane, bool fli
             if (e.construction) continue;
             if (e.type == SketchEntityType::Line) line = true;
             else if (e.type == SketchEntityType::Circle || e.type == SketchEntityType::Arc
-                     || e.type == SketchEntityType::Ellipse)
+                     || e.type == SketchEntityType::Ellipse
+                     || e.type == SketchEntityType::EllipticalArc)
                 curve = true;
         }
         if (err) {
@@ -1535,6 +1618,9 @@ std::vector<SketchIssue> Sketch::analyze(double gap_tol) const {
         } else if (e.type == SketchEntityType::Arc) {
             add_end(params_[e.params[5]], params_[e.params[6]], e.id);
             add_end(params_[e.params[7]], params_[e.params[8]], e.id);
+        } else if (e.type == SketchEntityType::EllipticalArc && e.params.size() >= 11) {
+            add_end(params_[e.params[7]], params_[e.params[8]], e.id);
+            add_end(params_[e.params[9]], params_[e.params[10]], e.id);
         } else if (e.type == SketchEntityType::Spline) {
             auto fits = spline_fit_points(e.id);
             if (fits.size() >= 2) {

@@ -17,6 +17,7 @@
 #include <GProp_GProps.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_Circle.hxx>
+#include <Geom_Ellipse.hxx>
 #include <Geom_TrimmedCurve.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
 #include <TopExp_Explorer.hxx>
@@ -116,6 +117,27 @@ std::vector<TopoDS_Edge> sketch_edges(const Sketch& sk) {
             gp_XYZ xell = xd.XYZ() * std::cos(ang) + yd.XYZ() * std::sin(ang);
             gp_Elips el(gp_Ax2(at(cx, cy), nd, gp_Dir(xell)), rx, ry);
             edges.push_back(BRepBuilderAPI_MakeEdge(el).Edge());
+        } else if (e.type == SketchEntityType::EllipticalArc && e.params.size() >= 11) {
+            auto axes = sk.ellipse_axes(e.id);
+            if (!axes) continue;
+            const double cx = (*axes)[0], cy = (*axes)[1], rx = (*axes)[2], ry = (*axes)[3],
+                         ang = (*axes)[4];
+            gp_Dir yd(sk.plane().y_dir[0], sk.plane().y_dir[1], sk.plane().y_dir[2]);
+            gp_XYZ xell = xd.XYZ() * std::cos(ang) + yd.XYZ() * std::sin(ang);
+            gp_Elips el(gp_Ax2(at(cx, cy), nd, gp_Dir(xell)), rx, ry);
+            Handle(Geom_Ellipse) ge = new Geom_Ellipse(el);
+            gp_Pnt a = at(param(sk, e, 7), param(sk, e, 8));
+            gp_Pnt b = at(param(sk, e, 9), param(sk, e, 10));
+            BRepBuilderAPI_MakeEdge mk(ge, a, b);
+            if (mk.IsDone()) {
+                edges.push_back(mk.Edge());
+            } else {
+                double sa = param(sk, e, 5), ea = param(sk, e, 6);
+                if (ea < sa) ea += 2.0 * kPi;
+                Handle(Geom_TrimmedCurve) tr = new Geom_TrimmedCurve(ge, sa, ea);
+                BRepBuilderAPI_MakeEdge mk2(tr);
+                if (mk2.IsDone()) edges.push_back(mk2.Edge());
+            }
         }
     }
     return edges;
