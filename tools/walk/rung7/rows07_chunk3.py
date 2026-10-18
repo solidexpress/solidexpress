@@ -31,11 +31,11 @@ class Rows07Chunk3:
             sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
             if sketches:
                 self._pencil(sketches[0])
-        self.set_contours({"c", "ring"})
+        notes = self.set_contours({"c", "ring"})
         made = self.try_extrude("10", "New", "Midplane")
         zext = self.z_extent()
         z_ok = zext is not None and abs(abs(zext[1] - zext[0]) - 10.0) <= 0.3
-        self.clause("contours heads", True, "C + ring")
+        self.clause("contours heads", True, "C + ring | " + " ; ".join(notes[:6]))
         self.clause("midplane", "Mid" in made.get("end", "") or "mid" in made["status"].lower(), str(made.get("end")))
         self.clause("10", "10" in str(made.get("field", "")) or "10" in made["status"], str(made.get("field")))
         self.clause("two pads", len(made["bodies"]) >= 1, str(made["bodies"]))
@@ -43,19 +43,31 @@ class Rows07Chunk3:
 
     @row("A22", chunk=3, on="rung07", expect={"blocker": "A21"})
     def row_A22(self) -> None:
-        sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
-        if sketches:
-            self._pencil(sketches[0])
-        self.set_contours({"handle"})
+        if not bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
+            if sketches:
+                self._pencil(sketches[0])
+        before = self.feature_names()
+        notes = self.set_contours({"handle"})
         made = self.try_extrude("6", "Fuse", "Midplane")
-        self.clause("contour handle", True, "handle")
+        if made.get("sketch") or len(made.get("names") or []) <= len(before):
+            notes = self.set_contours({"handle"})
+            made = self.try_extrude("6", "Fuse", "Midplane")
+        closed = not bool(made.get("sketch"))
+        added = len(made.get("names") or []) > len(before)
+        op = str(made.get("op") or "")
+        fused = "Fuse" in op or "fuse" in str(made.get("status") or "").lower()
+        # Finish bar is gone after a successful extrude, so op is often blank.
+        merged = (closed and added) or fused
+        self.clause("contour handle", True, "handle | " + " ; ".join(notes[:6]))
         self.clause("midplane", "Mid" in made.get("end", "") or "mid" in made["status"].lower(), str(made.get("end")))
         self.clause("6", "6" in str(made.get("field", "")) or "6" in made["status"], str(made.get("field")))
-        self.clause("merge", "Fuse" in made.get("op", "") or "fuse" in made["status"].lower() or len(made["bodies"]) == 1, str(made.get("op")))
-        self.clause("one body", len(made["bodies"]) == 1, str(made["bodies"]))
+        self.clause("merge", merged, f"op={op} closed={closed} names={made.get('names')}")
+        self.clause("one body", len(made["bodies"]) == 1 and closed, str(made["bodies"]))
 
     @row("A23", chunk=3, on="rung07", expect={"blocker": "A22", "part": True, "min_bodies": 1})
     def row_A23(self) -> None:
+        self.ensure_twelve_point_bore()
         report = self.stage_report("boss")
         box_ok, box_line = self.check_probe(report["text"], "bbox")
         handle_ok, handle_line = self.check_probe(report["text"], "handleSide")

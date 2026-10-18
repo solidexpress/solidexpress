@@ -14,9 +14,17 @@ class Rows07Chunk4:
         notes = []
         for model in (
             (120.0, 10.0, z),
-            (22.9, 10.0, z),
-            (226.9, 10.0, z),
             (120.0, -10.0, z),
+            (80.0, 10.0, z),
+            (160.0, 10.0, z),
+            (80.0, -10.0, z),
+            (160.0, -10.0, z),
+            (22.9, 10.0, z),
+            (22.9, -10.0, z),
+            (226.9, 10.0, z),
+            (226.9, -10.0, z),
+            (23.5, 0.0, z),
+            (226.5, 0.0, z),
         ):
             notes.append(self.convert_at(model)["status"])
         converted = self.ents()
@@ -59,7 +67,11 @@ class Rows07Chunk4:
             self.offset_click(uv)
         if self.control("offset:Ok"):
             self.click("offset:Ok")
+        if self.contour_chips():
+            self.set_contours({"recess"})
         made = self.try_extrude("1", "Cut", "Blind")
+        if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.exit_sketch()
         zext = self.z_extent()
         self.clause("offset 5", "5" in status or True, status)
         self.clause("inward", True, "Reverse")

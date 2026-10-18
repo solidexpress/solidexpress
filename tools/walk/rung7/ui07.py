@@ -78,6 +78,15 @@ class WalkUI07(WalkChrome):
     def ellipse_minor(self) -> tuple[float, float]:
         return self.world(self.mm("ELLIPSE_MIN") * 0.5, 0.0)
 
+    def ellipse_axis_uv(self, which: str):
+        ells = self.ents("ellipse") or self.ents("elliptical_arc")
+        if ells:
+            key = "major_start" if which == "major" else "minor_start"
+            pt = ells[0].get(key)
+            if pt:
+                return self._pt(pt)
+        return self.ellipse_major() if which == "major" else self.ellipse_minor()
+
     def axis_17(self) -> tuple[float, float]:
         return self.world(40.0, 0.0)
 
@@ -112,20 +121,36 @@ class WalkUI07(WalkChrome):
         self.click(rail)
         self.d.wait_idle(frames=3)
 
+    def _set_snap(self, on: bool) -> bool:
+        btn = self.control("rail:Snap")
+        if not btn:
+            return False
+        pressed = bool(btn.get("pressed"))
+        if pressed != on:
+            self.click("rail:Snap")
+            self.d.wait_idle(frames=1)
+        return pressed
+
     def _frame_uv(self, *points) -> None:
         self.frame_clickable(*points)
 
     def variant(self, label: str) -> None:
+        self.d.wait_idle(frames=2)
         self.refresh("controls", "status")
+        want = label.lower().replace("_", " ")
         chip = self.control(f"variant:{label}")
         if chip is None:
             for c in (self.st.get("controls") or []):
-                if str(c.get("id", "")).startswith("variant:") and label.lower() in str(c.get("text", "")).lower():
+                if not str(c.get("id", "")).startswith("variant:"):
+                    continue
+                text = str(c.get("text", "")).lower().replace("_", " ")
+                cid = str(c.get("id", "")).lower().replace("_", " ")
+                if want in text or want in cid:
                     chip = c
                     break
         if chip and chip.get("visible") is not False:
             self.click(str(chip.get("id") or f"variant:{label}"))
-            self.d.wait_idle(frames=2)
+            self.d.wait_idle(frames=3)
 
     def draw_line(self, a, b, *, construction: bool = False) -> None:
         self._arm_sketch_tool("rail:Line")
@@ -135,6 +160,49 @@ class WalkUI07(WalkChrome):
         self.click(sketch=list(a))
         self.click(sketch=list(b))
         self.refresh("sketch", "status")
+
+    def _click_uv(self, uv, *, shift: bool = False, frame: bool = True) -> None:
+        if frame:
+            self._frame_uv(uv)
+        self.show_sketch_point(uv)
+        if shift:
+            self._shift_click_uv(uv)
+        else:
+            self._click_sketch_geom(uv)
+        self.d.wait_idle(frames=1)
+
+    def _click_sketch_geom(self, uv) -> dict:
+        """Click sketch UV, skipping dimension labels that sit on endpoints."""
+        last = {}
+        for off in (
+            [0, 0], [3, 0], [-3, 0], [0, 3], [0, -3],
+            [0, 8], [0, -8], [8, 0], [-8, 0],
+        ):
+            last = self.click(sketch=list(uv), offset=list(off))
+            disp = str(last.get("disposition", ""))
+            if "dim-label" not in disp:
+                return last
+        return last
+
+    def nearest_profile_uv(self, want) -> tuple:
+        wx, wy = float(want[0]), float(want[1])
+        best = (wx, wy)
+        best_d = 12.0
+        for line in self.profile_lines():
+            for key in ("start", "end"):
+                pt = self._pt(line.get(key) or [0, 0])
+                d = ((pt[0] - wx) ** 2 + (pt[1] - wy) ** 2) ** 0.5
+                if d < best_d:
+                    best_d = d
+                    best = pt
+        return best
+
+    def select_pair(self, first, second) -> None:
+        """Select two entities with a tight frame on each pick."""
+        self.click("rail:Select")
+        self._click_uv(first)
+        self._click_uv(second, shift=True)
+        self.refresh("controls", "status")
 
     def ellipse3(self, centre, major, minor) -> dict:
         self._arm_sketch_tool("rail:Ellipse")
@@ -147,12 +215,16 @@ class WalkUI07(WalkChrome):
         return {"ellipses": self.ents("ellipse"), "status": self.S()}
 
     def three_point_arc(self, p1, bulge, p3) -> dict:
+        # Frame before arming Arc so pan keys are not strokes of the tool.
+        self._frame_uv(p1, bulge, p3)
         self._arm_sketch_tool("rail:Arc")
         self.variant("Three Point")
-        self._frame_uv(p1, bulge, p3)
+        self.d.wait_idle(frames=2)
+        was = self._set_snap(False)
         for pt in (p1, bulge, p3):
-            self.click(sketch=list(pt))
+            self._click_sketch_geom(pt)
             self.d.wait_idle(frames=2)
+        self._set_snap(was)
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status")
         return {"arcs": self.ents("arc"), "status": self.S()}
@@ -166,12 +238,16 @@ class WalkUI07(WalkChrome):
         return {"circles": self.ents("circle"), "status": self.S()}
 
     def place_af_hex(self, centre, vertex) -> dict:
+        # Across-flats pointer is scaled by √3 onto the vertex ring, so the
+        # click sits on a vertex (AF/√3) and the overlay reads AF.
         self._arm_sketch_tool("rail:Polygon")
         self.variant("Across Flats")
         self._frame_uv(centre, vertex)
+        was = self._set_snap(False)
         self.click(sketch=list(centre))
         self.d.wait_idle(frames=2)
         self.click(sketch=list(vertex))
+        self._set_snap(was)
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status", "dims")
         return {"status": self.S(), "lines": self.profile_lines()}
@@ -180,17 +256,23 @@ class WalkUI07(WalkChrome):
         self._arm_sketch_tool("rail:Polygon")
         self.variant("Vertex")
         self._frame_uv(centre, vertex)
+        was = self._set_snap(False)
         self.click(sketch=list(centre))
         self.d.wait_idle(frames=2)
         self.click(sketch=list(vertex))
+        self._set_snap(was)
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status", "dims")
         return {"status": self.S(), "lines": self.profile_lines()}
 
     def trim_at(self, uv) -> str:
-        self._arm_sketch_tool("rail:Trim")
+        self._frame_uv(uv)
+        self.click("rail:Trim")
+        was = self._set_snap(False)
         self.show_sketch_point(uv)
+        self.d.hover(sketch=list(uv))
         self.click(sketch=list(uv))
+        self._set_snap(was)
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status")
         return self.S()
@@ -203,11 +285,7 @@ class WalkUI07(WalkChrome):
         self.d.wait_idle(frames=1)
 
     def constrain(self, name: str, first, second) -> str:
-        self.click("rail:Select")
-        self._frame_uv(first, second)
-        self.click(sketch=list(first))
-        self._shift_click_uv(second)
-        self.refresh("controls", "status")
+        self.select_pair(first, second)
         mark = self.mark()
         try:
             self.click_verb(name)
@@ -218,52 +296,75 @@ class WalkUI07(WalkChrome):
         return " | ".join(self.result_texts(mark)) or self.S()
 
     def mirror_entities(self, axis_uv, geom_uv, confirm_uv) -> str:
-        # Select axis + geometry first. `_arm_sketch_tool` clicks Select and
-        # would wipe that set; Mirror's viewport click only confirms.
-        self.click("rail:Select")
-        self._frame_uv(axis_uv, geom_uv, confirm_uv)
-        self.click(sketch=list(axis_uv))
-        self._shift_click_uv(geom_uv)
+        # Axis first (construction wins in mirror_selected), then geometry.
+        # Confirm in empty space — a dim callout must not eat the Mirror click.
+        self.select_pair(axis_uv, geom_uv)
         self.click("rail:Mirror")
         self.d.wait_idle(frames=2)
-        self.show_sketch_point(confirm_uv)
         mark = self.mark()
+        self.show_sketch_point(confirm_uv)
         self.click(sketch=list(confirm_uv))
         self.d.wait_idle(frames=3)
         self.refresh("sketch", "status")
         return " | ".join(self.result_texts(mark)) or self.S()
 
-    def dim_two(self, a, b, value: str) -> dict:
-        before = {str(d.get("text", "")) for d in self.dims()}
-        self.click("rail:SmartDim")
-        self._frame_uv(a, b)
-        self.click(sketch=list(a))
-        self.d.wait_idle(frames=2)
-        self.click(sketch=list(b))
+    def _commit_fresh_dim(self, before: set[str], value: str) -> dict:
         self.d.wait_idle(frames=3)
-        fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
-        dim = fresh[-1] if fresh else (self.dims()[-1] if self.dims() else None)
-        if dim is not None:
-            self.open_label(dim)
+        self.refresh("dims", "controls", "focus")
+        if self._dim_editor_open():
+            self.d.key("ctrl+a")
             self._type_dim_editor(value)
             self.enter()
+            self.refresh("dims", "status")
+            return {"texts": self.dim_texts(), "status": self.S()}
+        fresh = [
+            d for d in self.dims()
+            if str(d.get("text", "")) not in before and "°" not in str(d.get("text", ""))
+        ]
+        if not fresh:
+            fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
+        dim = fresh[-1] if fresh else None
+        if dim is not None:
+            self.fit_sketch()
+            opened = self.open_label(dim)
+            if opened:
+                self.d.key("ctrl+a")
+                self._type_dim_editor(value)
+                self.enter()
+            else:
+                self.edit_dim(dim, value)
         self.refresh("dims", "status")
         return {"texts": self.dim_texts(), "status": self.S()}
 
+    def dim_two(self, a, b, value: str) -> dict:
+        before = {str(d.get("text", "")) for d in self.dims()}
+        self.select_pair(a, b)
+        self.click("rail:SmartDim")
+        self.d.wait_idle(frames=2)
+        self._click_uv(a)
+        return self._commit_fresh_dim(before, value)
+
     def dim_one(self, uv, value: str) -> dict:
         before = {str(d.get("text", "")) for d in self.dims()}
+        self.clear_sketch_selection()
+        self._frame_uv(uv)
         self.click("rail:SmartDim")
+        was = self._set_snap(False)
         self.show_sketch_point(uv)
         self.click(sketch=list(uv))
-        self.d.wait_idle(frames=3)
-        fresh = [d for d in self.dims() if str(d.get("text", "")) not in before]
-        dim = fresh[-1] if fresh else (self.dims()[-1] if self.dims() else None)
-        if dim is not None:
-            self.open_label(dim)
-            self._type_dim_editor(value)
-            self.enter()
-        self.refresh("dims", "status")
-        return {"texts": self.dim_texts(), "status": self.S()}
+        self._set_snap(was)
+        return self._commit_fresh_dim(before, value)
+
+    def dim_diameter(self, rim, value: str) -> dict:
+        before = {str(d.get("text", "")) for d in self.dims()}
+        self.clear_sketch_selection()
+        self._frame_uv(rim)
+        self.click("rail:SmartDim")
+        was = self._set_snap(False)
+        self.show_sketch_point(rim)
+        self.click(sketch=list(rim))
+        self._set_snap(was)
+        return self._commit_fresh_dim(before, value)
 
     def sketch_on_datum(self, name: str, view_key: str) -> dict:
         self.clear_faces()
@@ -289,29 +390,73 @@ class WalkUI07(WalkChrome):
         self.d.wait_idle(frames=1)
         return " | ".join(self.result_texts(mark)) or self.S()
 
+    def _parse_contour_note(self, note: str) -> tuple[float, float, float, float]:
+        """Return (cx, cy, width, height) from a contour status sentence."""
+        cx = cy = width = height = 0.0
+        if "at (" in note:
+            try:
+                xy = note.split("at (")[-1].split(")")[0]
+                parts = xy.split(",")
+                cx = float(parts[0])
+                cy = float(parts[1])
+            except (ValueError, IndexError):
+                pass
+        if "—" in note and "×" in note:
+            try:
+                span = note.split("—")[1]
+                wh = span.split("mm")[0]
+                width = float(wh.split("×")[0].strip())
+                height = float(wh.split("×")[1].strip())
+            except (ValueError, IndexError):
+                pass
+        return cx, cy, width, height
+
+    def _contour_wanted(self, keep: set[str], note: str) -> bool:
+        cx, _cy, width, height = self._parse_contour_note(note)
+        long_side = max(width, height)
+        for token in keep:
+            if token == "c" and abs(cx) < 50 and 40.0 < long_side < 80:
+                return True
+            if token == "ring" and abs(cx - self.mm("CENTER")) < 25 and long_side >= 30 and min(width, height) >= 20:
+                return True
+            if token == "handle" and long_side > 80:
+                return True
+            if token == "recess" and 80.0 < long_side < 200.0 and 6.0 <= min(width, height) <= 16.0:
+                return True
+        return False
+
     def set_contours(self, keep: set[str]) -> list[str]:
+        # Probe-toggle leaves chips unknown. Uncheck all, click each once to
+        # read the bbox, keep only the wanted set, then re-assert pressed.
+        self._ensure_finish_bar()
+        self.refresh("controls")
+        self.uncheck_all_contours()
+        self.refresh("controls")
+        mapping = []
         notes = []
         for chip in self.contour_chips():
-            note = self._contour_note(chip)
+            cid = str(chip.get("id", ""))
+            if not cid:
+                continue
+            mark = self.mark()
+            self.click(cid)
+            self.d.wait_idle(frames=1)
+            note = " | ".join(self.result_texts(mark)) or self.S()
+            want = self._contour_wanted(keep, note)
             notes.append(note)
-            pressed = bool((self.control(str(chip.get("id", ""))) or {}).get("pressed")
-                           or (self.control(str(chip.get("id", ""))) or {}).get("button_pressed"))
-            want = False
-            if "at (" in note:
-                try:
-                    xy = note.split("at (")[-1].split(")")[0]
-                    x = float(xy.split(",")[0])
-                    want = any(
-                        (token == "c" and abs(x) < 40)
-                        or (token == "ring" and abs(x - self.mm("CENTER")) < 20)
-                        or (token == "handle" and 80 < x < 200)
-                        for token in keep
-                    )
-                except ValueError:
-                    pass
-            if want != pressed:
-                self.click(str(chip.get("id")))
+            mapping.append((cid, want))
+            if not want:
+                self.click(cid)
                 self.d.wait_idle(frames=1)
+        for _pass in range(2):
+            self.refresh("controls")
+            for cid, want in mapping:
+                node = self.control(cid) or {}
+                pressed = bool(node.get("pressed") or node.get("button_pressed"))
+                if want != pressed:
+                    self.click(cid)
+                    self.d.wait_idle(frames=1)
+        self.refresh("controls")
         return notes
 
     def uncheck_all_contours(self) -> None:
@@ -359,6 +504,8 @@ class WalkUI07(WalkChrome):
 
     def arm_fillet(self, radius: str) -> dict:
         self.select_body()
+        self.d.key("7")
+        self.d.wait_idle(frames=4)
         self.click("chip:Fillet")
         shown = self.type_into("finish:StripR", radius)
         self.d.key("enter")
@@ -366,10 +513,28 @@ class WalkUI07(WalkChrome):
         self.refresh("status", "finish", "controls")
         return {"status": self.S(), "radius": shown or self.field("finish:StripR")}
 
+    def _z_edge_near(self, x: float, y: float, want_len: float, max_d: float = 8.0) -> dict | None:
+        best = None
+        best_d = max_d
+        for edge in self.edges():
+            direction = edge.get("dir") or [0, 0, 0]
+            if abs(float(direction[2])) < 0.9:
+                continue
+            length = float(edge.get("length") or 0.0)
+            if length and abs(length - want_len) > 1.2:
+                continue
+            centre = self._edge_centre(edge)
+            dist = ((centre[0] - x) ** 2 + (centre[1] - y) ** 2) ** 0.5
+            if dist < best_d:
+                best, best_d = edge, dist
+        return best
+
     def pick_z_edges(self, xys, want_len: float) -> list[str]:
         ids = []
         for x, y in xys:
-            edge = self._z_edge_at(float(x), float(y))
+            edge = self._z_edge_near(float(x), float(y), float(want_len))
+            if edge is None:
+                edge = self._z_edge_at(float(x), float(y))
             if edge is None:
                 continue
             length = float(edge.get("length") or 0.0)
@@ -379,7 +544,13 @@ class WalkUI07(WalkChrome):
             if not eid or eid in ids:
                 continue
             mark = self.mark()
-            self.d.click(edge=eid, along=0.5)
+            try:
+                self.d.click(edge=eid, along=0.5)
+            except SxError:
+                try:
+                    self.click(model=[float(x), float(y), 0.0])
+                except SxError:
+                    continue
             self.d.wait_idle(frames=2)
             ids.append(eid)
             _ = self.result_texts(mark)
@@ -415,6 +586,83 @@ class WalkUI07(WalkChrome):
             "ents": self.ents(),
         }
 
+    def _twelve_point_uvs(self) -> list[tuple[float, float]]:
+        c = self.ring_centre()
+        af = self.mm("HEX_AF")
+        outer = af / math.sqrt(3.0)
+        inner = (af * 0.5) / math.cos(math.radians(15.0))
+        pts: list[tuple[float, float]] = []
+        for k in range(24):
+            ang = math.radians(float(k) * 15.0)
+            radius = outer if (k % 2) == 0 else inner
+            pts.append((c[0] + math.cos(ang) * radius, c[1] + math.sin(ang) * radius))
+        return pts
+
+    def draw_twelve_point_star(self) -> int:
+        """Named Line: 24-gon star (union of two AF hexes). Opposite winding
+        from add_twelve_point is a sequential close; a Cut does not care."""
+        pts = self._twelve_point_uvs()
+        c = self.ring_centre()
+        self._frame_uv((c[0] - 22.0, c[1] - 22.0), (c[0] + 22.0, c[1] + 22.0))
+        was = self._set_snap(False)
+        before = len(self.profile_lines())
+        for i in range(24):
+            a, b = pts[i], pts[(i + 1) % 24]
+            self._arm_sketch_tool("rail:Line")
+            self.show_sketch_point(a)
+            self.click(sketch=list(a))
+            self.show_sketch_point(b)
+            self.click(sketch=list(b))
+        self.click("rail:Select")
+        self._set_snap(was)
+        self.refresh("sketch", "status")
+        return len(self.profile_lines()) - before
+
+    def ensure_twelve_point_bore(self) -> dict:
+        """Front sketch + Line star + Cut Midplane 10. Polygon Power Trim of
+        two hexes leaves leftover triangles, so the Ø33 disc stays solid."""
+        bodies = list(self.refresh("bodies").get("bodies") or [])
+        vol = float(bodies[0].get("volume") or 0.0) if bodies else 0.0
+        if vol and vol <= self.mm("V_BOSS") * 1.01:
+            return {"skipped": True, "status": f"volume {vol:.1f} already at boss"}
+        if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.exit_sketch()
+        started = self.sketch_on_datum("Front", "1")
+        added = 0
+        if started.get("active"):
+            added = self.draw_twelve_point_star()
+        made = self.try_extrude(f"{self.mm('HEAD_T'):g}", "Cut", "Midplane")
+        if made.get("sketch"):
+            self.exit_sketch()
+        self.refresh("bodies", "features", "status")
+        return {
+            "started": started,
+            "added": added,
+            "cut": made,
+            "status": made.get("status", self.S()),
+            "volume": (self.refresh("bodies").get("bodies") or [{}])[0].get("volume"),
+        }
+
+    def _handle_top_face(self) -> dict | None:
+        z_top = self.mm("HANDLE_T") * 0.5
+        best = None
+        best_score = -1.0e9
+        for face in list(self.refresh("faces").get("faces") or []):
+            normal = face.get("normal") or [0.0, 0.0, 0.0]
+            if float(normal[2]) < 0.95:
+                continue
+            plane = float(face.get("plane") or 0.0)
+            if abs(plane - z_top) > 0.5:
+                continue
+            area = float(face.get("area") or 0.0)
+            if area < 200.0:
+                continue
+            centre = face.get("centre") or [0.0, 0.0, 0.0]
+            score = area - abs(float(centre[0]) - 120.0) * 2.0 - abs(float(centre[1])) * 4.0
+            if score > best_score:
+                best, best_score = face, score
+        return best
+
     def offset_distance(self, value: str) -> str:
         return self.type_into("offset:Distance", value)
 
@@ -435,18 +683,52 @@ class WalkUI07(WalkChrome):
 
     def face_sketch_handle_top(self) -> dict:
         self.select_body()
+        self.d.key("3")
+        self.d.wait_idle(frames=4)
         z_top = self.mm("HANDLE_T") * 0.5
-        picked = self.select_face([0, 0, 1], plane=z_top)
+        face = self._handle_top_face()
+        picked = {"face": "", "status": self.S(), "record": {}}
+        if face and face.get("id"):
+            self.click(face=str(face["id"]))
+            self.d.wait_idle(frames=2)
+            self.refresh("selection", "status", "faces")
+            sel = self.st.get("selection") or {}
+            face_id = str(sel.get("face") or face.get("id") or "")
+            record = self._face_record(face_id) or face
+            picked = {
+                "face": face_id,
+                "status": self.S(),
+                "normal": record.get("normal"),
+                "plane": record.get("plane"),
+                "record": record,
+            }
+        if float((picked.get("record") or {}).get("area") or 0.0) < 1000.0:
+            self.click(model=[120.0, 0.0, z_top])
+            self.d.wait_idle(frames=2)
+            self.refresh("selection", "faces", "status")
+            sel = self.st.get("selection") or {}
+            face_id = str(sel.get("face") or "")
+            record = self._face_record(face_id) or {}
+            if float(record.get("area") or 0.0) > float((picked.get("record") or {}).get("area") or 0.0):
+                picked = {
+                    "face": face_id,
+                    "status": self.S(),
+                    "normal": record.get("normal"),
+                    "plane": record.get("plane"),
+                    "record": record,
+                }
         self.click("chip:Sketch")
         self.d.wait_idle(frames=4)
         self.refresh("sketch", "status")
         sk = self.st.get("sketch") or {}
         origin = (sk.get("plane") or {}).get("origin") or [0, 0, 0]
         on_top = abs(float(origin[2]) - z_top) <= 0.4 if origin else False
+        area = float((picked.get("record") or {}).get("area") or 0.0)
         return {
             "picked": picked,
             "active": bool(sk.get("active")),
-            "on_handle": on_top,
+            "on_handle": on_top and area >= 1000.0,
+            "area": area,
             "plane": sk.get("plane") or {},
             "status": self.S(),
         }

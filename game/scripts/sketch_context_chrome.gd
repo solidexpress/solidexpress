@@ -812,6 +812,14 @@ func _emit_finish_requested() -> void:
 	var thin := 0.0
 	if _thin_feature != null and _thin_feature.button_pressed and _thin_spin != null:
 		thin = _thin_spin.value
+	var contours := _selected_contours.duplicate()
+	# Empty means "all regions" when the chip row is hidden (one contour, or
+	# a test that did not go through the bar). With chips on screen, every
+	# region unchecked is a refuse — not a silent extrude of the whole sketch.
+	if _contour_bar != null and _contour_bar.visible and contours.is_empty():
+		if sketch_mode != null:
+			sketch_mode.status.emit("Extrude failed — no selected contour")
+		return
 	finish_requested.emit(
 		["new", "cut", "fuse"][_finish_op.selected],
 		dist,
@@ -819,7 +827,7 @@ func _emit_finish_requested() -> void:
 		thin,
 		["one_side", "midplane"][_thin_type.selected],
 		_flip_side.button_pressed,
-		_selected_contours.duplicate())
+		contours)
 
 
 func _distance_raw_text() -> String:
@@ -1999,6 +2007,8 @@ func refresh_contours(sketch: SxSketch) -> void:
 		if sketch_mode != null:
 			sketch_mode.set_contour_highlight([], -1)
 		return
+	if sketch_mode != null and sketch_mode.has_method("_weld_nearby_curve_joints"):
+		sketch_mode._weld_nearby_curve_joints()
 	var n: int = int(sketch.contour_count())
 	if n <= 1:
 		_contour_bar.visible = false

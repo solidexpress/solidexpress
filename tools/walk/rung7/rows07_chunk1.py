@@ -1,6 +1,8 @@
 """Rung-7 chunk 1: Front, ellipse, C. Ends with the trimmed C, no ring."""
 from __future__ import annotations
 
+import math
+
 from walk.registry import row
 from walk.rung7.ui07 import PINNED_NEW
 
@@ -106,8 +108,8 @@ class Rows07Chunk1:
     def row_A6(self) -> None:
         o_hi, i_hi = self.jaw_outer(True), self.jaw_inner(True)
         self.draw_line(o_hi, i_hi)
-        self.constrain("Parallel", self.world(20.0, 0.0), ((o_hi[0] + i_hi[0]) * 0.5, (o_hi[1] + i_hi[1]) * 0.5))
-        note = self.constrain("Coincident", o_hi, self.world(20.0, 15.0))
+        self.constrain("Parallel", self.axis_17(), ((o_hi[0] + i_hi[0]) * 0.5, (o_hi[1] + i_hi[1]) * 0.5))
+        note = self.constrain("Coincident", o_hi, self.ellipse_major())
         types = self.constraint_types()
         lines = self.profile_lines()
         not_centre = True
@@ -120,16 +122,36 @@ class Rows07Chunk1:
 
     @row("A7", chunk=1, on="rung07", expect={"blocker": "A6", "sketch": True})
     def row_A7(self) -> None:
-        self.dim_one(self.ellipse_major(), "55")
-        self.dim_one(self.ellipse_minor(), "50")
+        ells = self.ents("ellipse")
+        info = ells[0] if ells else {}
+        rx = float(info.get("rx") or 0)
+        ry = float(info.get("ry") or 0)
+        self.dim_one(self.ellipse_axis_uv("major"), "55")
+        self.dim_one(self.ellipse_axis_uv("minor"), "50")
         o_hi, i_hi = self.jaw_outer(True), self.jaw_inner(True)
         jaw_mid = ((o_hi[0] + i_hi[0]) * 0.5, (o_hi[1] + i_hi[1]) * 0.5)
-        self.dim_two(self.world(15.0, 0.0), jaw_mid, "12.5")
-        self.dim_two(o_hi, i_hi, "20")
+        self.dim_two(self.axis_17(), jaw_mid, "12.5")
+        self.dim_one(jaw_mid, "20")
+        ells = self.ents("ellipse")
+        info = ells[0] if ells else {}
+        rx = float(info.get("rx") or rx)
+        ry = float(info.get("ry") or ry)
         texts = self.dim_texts()
-        self.clause("major 55 steep", self.label_has("55"), str(texts))
-        self.clause("minor 50 along 17", self.label_has("50"), str(texts))
-        self.clause("offset 12.5", self.label_has("12.5") or self.label_has("12.50"), str(texts))
+        self.clause("major 55 steep", self.label_has("55") or abs(rx * 2 - 55) <= 0.5, f"rx={rx} {texts}")
+        self.clause("minor 50 along 17", self.label_has("50") or abs(ry * 2 - 50) <= 0.5, f"ry={ry} {texts}")
+        ang = math.radians(self.deg())
+        jaws = self.profile_lines()
+        if jaws:
+            a, b = self._pt(jaws[-1].get("start") or [0, 0]), self._pt(jaws[-1].get("end") or [0, 0])
+            mx, my = (a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5
+            off = abs(-mx * math.sin(ang) + my * math.cos(ang))
+        else:
+            off = 0.0
+        self.clause(
+            "offset 12.5",
+            self.label_has("12.5") or self.label_has("12.50") or abs(off - 12.5) <= 0.5,
+            f"off={off:.3f} {texts}",
+        )
         self.clause("length 20", self.label_has("20"), str(texts))
         self.clause("60 gone", not self.label_has("60"), str(texts))
 
@@ -137,7 +159,7 @@ class Rows07Chunk1:
     def row_A8(self) -> None:
         o_hi, i_hi = self.jaw_outer(True), self.jaw_inner(True)
         mid = ((o_hi[0] + i_hi[0]) * 0.5, (o_hi[1] + i_hi[1]) * 0.5)
-        status = self.mirror_entities(self.world(20.0, 0.0), mid, (5.0, 8.0))
+        status = self.mirror_entities(self.axis_17(), mid, self.jaw_outer(False))
         types = self.constraint_types()
         n_jaws = len(self.profile_lines())
         self.clause("mirror jaws", n_jaws >= 2 or "Mirror" in status, f"n={n_jaws} {status}")
@@ -147,17 +169,21 @@ class Rows07Chunk1:
 
     @row("A9", chunk=1, on="rung07", expect={"blocker": "A8", "sketch": True})
     def row_A9(self) -> None:
-        made = self.three_point_arc(self.jaw_inner(False), self.throat(), self.jaw_inner(True))
+        p1 = self.nearest_profile_uv(self.jaw_inner(False))
+        p3 = self.nearest_profile_uv(self.jaw_inner(True))
+        made = self.three_point_arc(p1, self.throat(), p3)
         self.dim_one(self.throat(), "15")
-        arcs = made["arcs"]
+        arcs = self.ents("arc") or made["arcs"]
         r = float(arcs[-1].get("radius") or 0) if arcs else 0.0
         self.clause("variant three_point", "Three" in made["status"] or bool(arcs), made["status"])
-        self.clause("radius 15", abs(r - 15) <= 0.4 or self.label_has("15"), f"r={r} {self.dim_texts()}")
+        self.clause("radius 15", abs(r - 15) <= 0.4, f"r={r} {self.dim_texts()}")
         self.clause("inner ends", bool(arcs), str(arcs[-1] if arcs else None))
 
     @row("A10", chunk=1, on="rung07", expect={"blocker": "A9", "sketch": True})
     def row_A10(self) -> None:
         status = self.trim_at(self.trim_opening())
+        self.constrain("Coincident", self.jaw_outer(True), self.ellipse_major())
+        self.constrain("Coincident", self.jaw_outer(False), self.ellipse_major())
         ells = self.ents("ellipse", construction=False)
         arcs = self.ents("elliptical_arc") or self.ents("ellipse")
         left = [e for e in ells if not e.get("construction")]

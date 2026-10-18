@@ -12,6 +12,9 @@ const POLICY := {
 }
 
 const MIN_RADIUS := 1e-4
+## Centre+ends on a diameter line (SW coincident-with-line). View-span snap
+## is much larger than a wrench throat offset, so do not use it here.
+const ON_LINE_MM := 0.5
 
 
 ## Host endpoint within `tol`, or {} if the click is empty space.
@@ -129,7 +132,7 @@ static func add_three_point(sketch, p1: Vector2, p2: Vector2, p3: Vector2, tol: 
 	var aid: String = sketch.add_arc(ctr.x, ctr.y, r, sa, ea)
 	if aid == "":
 		return ""
-	constrain_three_point_on_line(sketch, aid, p1, p3, tol)
+	constrain_three_point_on_line(sketch, aid, p1, p3, minf(tol, ON_LINE_MM))
 	return aid
 
 

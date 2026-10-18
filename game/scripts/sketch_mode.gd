@@ -995,9 +995,15 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	# Drop the leftover redrawn Ø45 before seal. Trim that missed the 15%
 	# gate left that full circle; seal would turn it into a second cap and
 	# the 1e-6 jaw joints would then fail.
-	_drop_circles_concentric_with_jaw_arcs()
-	_seal_tangent_bosses()
+	# Seal rewrites circle+chord bosses into arcs, which reshuffles region
+	# indices. Only do that when every contour is going out (empty = all, or
+	# the caller passed a full index list). A subset pick (spanner heads, then
+	# handle) must keep the pre-seal faces so those indices still match.
+	if wanted_all or selected_contours.is_empty():
+		_drop_circles_concentric_with_jaw_arcs()
+		_seal_tangent_bosses()
 	_reweld_jaw_profile()
+	_weld_nearby_curve_joints()
 	if wanted_all:
 		selected_contours = []
 	var open_prof := not profile_is_closed(sketch)
@@ -1643,6 +1649,7 @@ const ARM_CLEAR := {
 	Tool.CONVERT: "always",
 	Tool.OFFSET: "always",
 	Tool.SMART_DIM: "if_one",
+	Tool.MIRROR: "keep",
 }
 
 
@@ -1696,6 +1703,8 @@ func _variant_arm_hint(v: String) -> String:
 		return JAW_HINT
 	if tool == Tool.CIRCLE and v == "three_point":
 		return "Circle · Three Point — click 3 points on the rim"
+	if tool == Tool.ARC and v == "three_point":
+		return "Arc · Three Point — click the start, the bulge, then the end"
 	var hint := tool_arm_hint(tool)
 	if hint != "":
 		return hint
@@ -1710,9 +1719,17 @@ func has_pending_draw_point() -> bool:
 					or tool_variant == "parallelogram":
 				return _tool_points.size() >= 1
 			return _tool_points.size() == 1
-		Tool.LINE, Tool.CENTERLINE, Tool.CIRCLE, Tool.POLYGON, \
-				Tool.SLOT, Tool.ARC:
+		Tool.LINE, Tool.CENTERLINE, Tool.POLYGON, Tool.SLOT:
 			return _tool_points.size() == 1
+		Tool.CIRCLE:
+			if tool_variant == "three_point" or tool_variant == "perimeter":
+				return not _tool_points.is_empty()
+			return _tool_points.size() == 1
+		Tool.ARC:
+			# Centre and three-point are three clicks; tangent is two. Any
+			# collected point means the rest of the gesture must place, not
+			# open a dimension editor that sits on the next click.
+			return not _tool_points.is_empty()
 		Tool.ELLIPSE:
 			return _tool_points.size() == 1 or _tool_points.size() == 2
 		_:
@@ -3546,19 +3563,19 @@ func apply_circular_pattern() -> Array:
 
 
 ## Mirror selected entities about a selected line axis (or sketch Y if none).
+## A construction line in the set is the axis — the 17° jaw copy and the
+## handle copy about the CL both pick that way, and an ellipse under the
+## axis click must not steal the axis role.
 func mirror_selected() -> Array:
 	if selected.is_empty():
 		status.emit("Mirror needs a selection")
 		return []
-	var axis_id := ""
+	var axis_id := _axis_line_in_selection()
 	var geo_ids: Array[String] = []
 	for id in selected:
-		if sketch.entity_info(id).get("type", "") == "line" and axis_id == "":
-			axis_id = id
-		else:
+		if id != axis_id:
 			geo_ids.append(id)
 	if axis_id == "" or geo_ids.is_empty():
-		# Use last selected line as axis if two+ lines.
 		status.emit("Mirror: select geometry plus one axis line")
 		return []
 	var ainfo: Dictionary = sketch.entity_info(axis_id)
@@ -3611,8 +3628,23 @@ func mirror_selected() -> Array:
 	if not out.is_empty():
 		_undo_note("Mirror")
 		run_solve()
+	elif geo_ids.size() > 0:
+		status.emit("Mirror: select geometry plus one axis line")
 	_redraw()
 	return out
+
+
+func _axis_line_in_selection() -> String:
+	var construction := ""
+	var first_line := ""
+	for id in selected:
+		if str(sketch.entity_info(id).get("type", "")) != "line":
+			continue
+		if first_line == "":
+			first_line = id
+		if sketch.is_construction(id) and construction == "":
+			construction = id
+	return construction if construction != "" else first_line
 
 
 ## Convert pierce / edge intersection points into sketch points (and optional lines).
@@ -3753,7 +3785,11 @@ func trim_at(pos2: Vector2) -> bool:
 		status.emit("Nothing trimmed — no crossing at that point")
 		return false
 	_undo_note("Trim")
+	var pre_lines := _snapshot_line_geometry()
 	run_solve()
+	# Hex trim around the ring must not DogLeg the C jaws 240 mm away.
+	_restore_distant_line_drift(pre_lines, pos2)
+	_weld_nearby_curve_joints()
 	# Drop selection entries that no longer exist after a replace-style trim.
 	var alive: Array[String] = []
 	for sid in selected:
@@ -4195,13 +4231,41 @@ func _ellipse_under_trim(pos2: Vector2) -> bool:
 ## Click on one side of a construction centreline: drop that half, keep the
 ## other, close it with a floor on the cutter and the keep-side arc of the
 ## circle centred on the cutter. The Ø10 (centre far from the cutter) stays.
+func _profile_has_type(kind: String) -> bool:
+	if sketch == null:
+		return false
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) == kind:
+			return true
+	return false
+
+
 func _trim_open_jaw(pos2: Vector2) -> bool:
 	# Jaw mouth trim is two long parallel walls plus a centreline. A tangent
 	# path circle (hex key) is ordinary trim-to-closest, not this opener.
 	# An ellipse under the pointer is the spanner C, not a wrench-jaw opener.
 	if _ellipse_under_trim(pos2):
 		return false
-	if _jaw_long_sides().size() != 2:
+	# Spanner C is an elliptical arc; the pliers jaw opener has none. With
+	# the C present, Power Trim at Ø33 is hex 12-point, not a mouth cut.
+	if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
+		return false
+	var sides := _jaw_long_sides()
+	if sides.size() != 2:
+		return false
+	# C jaws at the origin plus a CL through Ø33 at x=240 used to steal hex
+	# Power Trim: the opener saw the 17° pair as walls and Ø33 as the head.
+	var near_wall := false
+	for side in sides:
+		var wa: Vector2 = side["a"]
+		var wb: Vector2 = side["b"]
+		if SketchGeom.point_segment_distance(pos2, wa, wb) <= 40.0:
+			near_wall = true
+			break
+	if not near_wall:
 		return false
 	var cutter := _jaw_cutter_for_click(pos2)
 	if cutter.is_empty():
@@ -4636,6 +4700,52 @@ func _drop_circles_concentric_with_jaw_arcs() -> void:
 
 ## Re-weld the last trimmed jaw after an extrude-time solve. Float drift
 ## from DogLeg can open the 1e-6 joints between the floor, walls, and arc.
+## Snap line ends onto nearby arc / elliptical-arc ends so a 0.05 mm gap
+## (the open-profile weld) does not leave the C or handle strip open.
+func _weld_nearby_curve_joints(tol: float = 0.05) -> void:
+	if sketch == null:
+		return
+	var curves: Array = []
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind != "arc" and kind != "elliptical_arc":
+			continue
+		if not info.has("start") or not info.has("end"):
+			continue
+		curves.append({"id": id, "a": info["start"], "b": info["end"]})
+	if curves.is_empty():
+		return
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var s: Vector2 = info["start"]
+		var e: Vector2 = info["end"]
+		var ns := s
+		var ne := e
+		var changed := false
+		for curve in curves:
+			if s.distance_to(curve["a"]) <= tol and s.distance_to(curve["a"]) > 1e-9:
+				ns = curve["a"]
+				changed = true
+			elif s.distance_to(curve["b"]) <= tol and s.distance_to(curve["b"]) > 1e-9:
+				ns = curve["b"]
+				changed = true
+			if e.distance_to(curve["a"]) <= tol and e.distance_to(curve["a"]) > 1e-9:
+				ne = curve["a"]
+				changed = true
+			elif e.distance_to(curve["b"]) <= tol and e.distance_to(curve["b"]) > 1e-9:
+				ne = curve["b"]
+				changed = true
+		if changed:
+			sketch.set_entity_geometry(id, {"start": ns, "end": ne})
+
+
 func _reweld_jaw_profile() -> void:
 	if sketch == null:
 		return
@@ -4961,8 +5071,8 @@ func _drop_stale_dimensions() -> void:
 	dimensions = kept
 
 
-## A new centreline replaces the previous cutter. Datum diagonal and
-## datum +X (`_angle_datum_lines`) stay.
+## Kept for jaw-cutter replacement. Do not call from Line/Centerline commit:
+## rung 7 needs the horizontal CL and the 17° construction together.
 func _delete_other_non_datum_construction_lines() -> void:
 	if sketch == null:
 		return
@@ -5573,6 +5683,8 @@ func click(pos2: Vector2) -> void:
 	# 8 px pad around a shaft "22.5" covers the half-width point, and opening
 	# that editor drops the gesture.
 	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE \
+			or tool == Tool.ARC \
+			or tool == Tool.MIRROR \
 			or has_pending_draw_point()
 	var dhit_raw := -1
 	if not place_point:
@@ -5643,8 +5755,6 @@ func click(pos2: Vector2) -> void:
 				var a := _tool_points[_tool_points.size() - 2]
 				var b := _tool_points[_tool_points.size() - 1]
 				var as_centreline := draw_construction or tool == Tool.CENTERLINE
-				if as_centreline:
-					_delete_other_non_datum_construction_lines()
 				var lid: String = sketch.add_line(a.x, a.y, b.x, b.y)
 				remember_numeric(a.distance_to(b))
 				if as_centreline:
@@ -6218,6 +6328,18 @@ func _smart_dim_kind(ref: Dictionary) -> SmartDimTable.End:
 
 
 func _click_smart_dim(pos2: Vector2) -> void:
+	# Two already-selected lines: the click confirms angle or flat-to-flat.
+	# Empty space or a re-click on one of them must not start a lone length.
+	if selected.size() == 2 and _smart_dim_pending.is_empty():
+		var hit_sel := _nearest_profile_entity_at(pos2)
+		if hit_sel == "":
+			hit_sel = _nearest_entity_at(pos2)
+		if hit_sel == "" or hit_sel == str(selected[0]) or hit_sel == str(selected[1]):
+			var a_ref := {"entity": selected[0], "role": "self"}
+			var b_ref := {"entity": selected[1], "role": "self"}
+			if _dispatch_smart_dim(SmartDimTable.Channel.SELECTION, a_ref, b_ref):
+				_smart_dim_first = null
+				return
 	var center_ref := _center_ref_near(pos2)
 	if not center_ref.is_empty():
 		if not _smart_dim_pending.is_empty():
@@ -6388,6 +6510,8 @@ func _drop_solo_line_length(entity_id: String) -> void:
 
 
 func _lines_parallel(ida: String, idb: String) -> bool:
+	if _constraint_joins("parallel", ida, idb):
+		return true
 	var ia: Dictionary = sketch.entity_info(ida)
 	var ib: Dictionary = sketch.entity_info(idb)
 	if str(ia.get("type", "")) != "line" or str(ib.get("type", "")) != "line":
@@ -6397,6 +6521,26 @@ func _lines_parallel(ida: String, idb: String) -> bool:
 	if da.length_squared() < 1e-12 or db.length_squared() < 1e-12:
 		return false
 	return absf(da.cross(db)) <= 1e-4 * da.length() * db.length()
+
+
+func _constraint_joins(kind: String, ida: String, idb: String) -> bool:
+	if sketch == null or ida == "" or idb == "" or ida == idb:
+		return false
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(str(cid))
+		if str(info.get("type", "")) != kind:
+			continue
+		var hit_a := false
+		var hit_b := false
+		for ref in info.get("refs", []):
+			if typeof(ref) != TYPE_DICTIONARY:
+				continue
+			var eid := str(ref.get("entity", ""))
+			hit_a = hit_a or eid == ida
+			hit_b = hit_b or eid == idb
+		if hit_a and hit_b:
+			return true
+	return false
 
 
 func _apply_parallel_distance_dim(ida: String, idb: String, intent: Dictionary) -> void:
@@ -7129,6 +7273,28 @@ func _snapshot_line_geometry() -> Dictionary:
 ## DogLeg's other horizontal-tangent solution sits on the far side of a
 ## locked circle. Put those lines back so `_seal_tangent_bosses` still sees
 ## one hit on each side of the shaft.
+## Put back profile lines whose midpoint was far from `click` if solve moved
+## them. Trim+solve of the 12-point at x=240 was translating the C jaws.
+func _restore_distant_line_drift(before: Dictionary, click: Vector2, radius: float = 50.0) -> void:
+	if sketch == null or before.is_empty():
+		return
+	for id in before.keys():
+		var prev: Dictionary = before[id]
+		var s0: Vector2 = prev["start"]
+		var e0: Vector2 = prev["end"]
+		var mid0 := (s0 + e0) * 0.5
+		if mid0.distance_to(click) <= radius:
+			continue
+		var info: Dictionary = sketch.entity_info(str(id))
+		if info.is_empty() or str(info.get("type", "")) != "line":
+			continue
+		var s1: Vector2 = info["start"]
+		var e1: Vector2 = info["end"]
+		if s0.distance_to(s1) <= 0.5 and e0.distance_to(e1) <= 0.5:
+			continue
+		sketch.set_entity_geometry(str(id), {"start": s0, "end": e0})
+
+
 func _restore_flipped_shaft_lines(before: Dictionary) -> void:
 	if sketch == null or before.is_empty():
 		return
@@ -7197,7 +7363,7 @@ func _open_profile_point() -> Variant:
 					ends.append(a)
 					ends.append(b)
 					segs.append({"a": a, "b": b})
-			"arc":
+			"arc", "elliptical_arc":
 				var pa: Vector2 = info["start"] if info.has("start") else info["center"]
 				var pb: Vector2 = info["end"] if info.has("end") else info["center"]
 				if pa.distance_to(pb) > 1e-9:
@@ -7206,7 +7372,7 @@ func _open_profile_point() -> Variant:
 					segs.append({"a": pa, "b": pb})
 			_:
 				pass
-	const TOL := 1e-6
+	const TOL := 0.05
 	var used := {}
 	var unmatched: Array[Vector2] = []
 	for i in range(ends.size()):

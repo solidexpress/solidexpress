@@ -3899,13 +3899,18 @@ func _sketch_input(event: InputEvent) -> void:
 					_sketch_box_additive = bool(mods["additive"])
 					_note_click("sketch-box:SELECT", screen, bool(mods["shift"]), bool(mods["additive"]))
 				else:
-					# Line and Centerline place through a label (click skips the
-					# hit). Every other non-Select tool records a text-rect hit
-					# as drop:dim-label; the 22 px halo stays for Select / Smart Dim.
+					# Line, Centerline, and Arc place through a label (click
+					# skips the hit). An in-progress draw (pending points) must
+					# too — three-point Arc's third click sits under the 17°
+					# callout. The 22 px halo stays for Select / Smart Dim.
 					var dim_i := -1
-					if sketch_mode.tool != SketchMode.Tool.SELECT \
-							and sketch_mode.tool != SketchMode.Tool.LINE \
-							and sketch_mode.tool != SketchMode.Tool.CENTERLINE:
+					var places := sketch_mode.tool == SketchMode.Tool.LINE \
+							or sketch_mode.tool == SketchMode.Tool.CENTERLINE \
+							or sketch_mode.tool == SketchMode.Tool.ARC \
+							or sketch_mode.tool == SketchMode.Tool.MIRROR \
+							or sketch_mode.tool == SketchMode.Tool.TRIM \
+							or sketch_mode.has_pending_draw_point()
+					if sketch_mode.tool != SketchMode.Tool.SELECT and not places:
 						dim_i = sketch_mode.dimension_hit(p2, \
 								sketch_mode.tool != SketchMode.Tool.SELECT \
 								and sketch_mode.tool != SketchMode.Tool.SMART_DIM)
