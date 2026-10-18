@@ -3794,8 +3794,12 @@ func trim_at(pos2: Vector2) -> bool:
 		_restore_distant_line_drift(pre_lines, pos2)
 		_weld_nearby_curve_joints()
 	_drop_stale_dimensions()
-	_coincident_keep.clear()
-	_set_selected([])
+	var alive: Array[String] = []
+	for sid in selected:
+		if not sketch.entity_info(sid).is_empty():
+			alive.append(sid)
+	if alive.size() != selected.size():
+		_set_selected(alive)
 	_redraw()
 	_redraw_selected()
 	status.emit("Trimmed")
@@ -4030,6 +4034,10 @@ func _jaw_long_sides() -> Array:
 	for id in sketch.entity_ids():
 		if sketch.is_construction(id):
 			continue
+		# Shaft Lines carry a tangent pin; they are longer than the jaw and
+		# would otherwise win the parallel-pair score.
+		if _entity_has_constraint(id, "tangent"):
+			continue
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "line":
 			continue
@@ -4168,34 +4176,7 @@ func _jaw_cutter_for_click(pos2: Vector2) -> Dictionary:
 				best = {"id": id, "a": a, "b": b}
 	if not best.is_empty() and _jaw_click_reaches_cutter(pos2, best_d, sides):
 		return best
-	var con := _nearest_construction_line(pos2, 40.0)
-	if not con.is_empty():
-		return con
-	return _nearest_profile_cutter_line(pos2, 40.0, sides, jaw_dir)
-
-
-func _nearest_profile_cutter_line(p: Vector2, max_dist: float, sides: Array,
-		jaw_dir: Vector2) -> Dictionary:
-	var best: Dictionary = {}
-	var best_d := max_dist
-	var side_ids := {}
-	for s in sides:
-		side_ids[str(s["id"])] = true
-	for id in sketch.entity_ids():
-		if sketch.is_construction(id) or side_ids.has(str(id)) or _angle_datum_lines.has(id):
-			continue
-		var info: Dictionary = sketch.entity_info(id)
-		if str(info.get("type", "")) != "line":
-			continue
-		var a: Vector2 = info["start"]
-		var b: Vector2 = info["end"]
-		if jaw_dir.length_squared() > 1e-8 and _dirs_within_deg(b - a, jaw_dir, 2.0):
-			continue
-		var d := SketchGeom.point_segment_distance(p, a, b)
-		if d < best_d:
-			best_d = d
-			best = {"id": id, "a": a, "b": b}
-	return best
+	return _nearest_construction_line(pos2, 40.0)
 
 
 func _jaw_click_reaches_cutter(pos2: Vector2, cutter_d: float, sides: Array) -> bool:
@@ -4293,13 +4274,15 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 			break
 	if not near_wall:
 		return false
-	var cutter := _jaw_cutter_for_click(pos2)
-	if cutter.is_empty():
-		return false
+	# After the mouth is open the cutter is gone. A later Trim on the walls
+	# must not fall through to kernel trim (that reports a plain "Trimmed").
 	if _jaw_ids_alive():
 		_hide_infer_hint()
 		status.emit("Jaw is already open — nothing left to trim here")
 		return true
+	var cutter := _jaw_cutter_for_click(pos2)
+	if cutter.is_empty():
+		return false
 	var a: Vector2 = cutter["a"]
 	var b: Vector2 = cutter["b"]
 	var dir := b - a
@@ -5804,7 +5787,8 @@ func click(pos2: Vector2) -> void:
 			# target wins: the endpoint when the click is on it, the badge when
 			# the click is on the badge.
 			var chit := constraint_hit(select_pos)
-			if chit != "" and not _endpoint_nearer_than_glyph(select_pos, chit):
+			var chit_type := str(sketch.constraint_info(chit).get("type", "")) if chit != "" else ""
+			if chit != "" and (chit_type == "coincident" or not _endpoint_nearer_than_glyph(select_pos, chit)):
 				select_constraint(chit)
 				return
 			if selected_constraint != "":
@@ -9977,12 +9961,6 @@ func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[R
 	if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo) \
 			and not _constraint_refs_endpoints(cinfo):
 		return
-	# Jaw angle datum is construction +X; its H badge is not part of the
-	# open-jaw nine (shaft H + tangents + pins + parallels + POL).
-	if type == "horizontal":
-		for ref in cinfo.get("refs", []):
-			if typeof(ref) == TYPE_DICTIONARY and _angle_datum_lines.has(str(ref.get("entity", ""))):
-				return
 	var anchor: Variant = _constraint_anchor(cinfo)
 	if anchor == null:
 		return
@@ -10112,6 +10090,18 @@ func _rebuild_constraint_glyphs() -> void:
 	if cam != null:
 		_restore_pinned_coincident(pending, pinned_coincident, cam)
 		_clamp_coincident_leaders(pending, cam)
+		for i in range(pending.size()):
+			var it: Dictionary = pending[i]
+			if str(it.get("type", "")) != "coincident":
+				continue
+			var clamped: Vector2 = _clamp_glyph_centre(
+					it["centre"], it["natural"], it["size"], shaft_y)
+			if clamped.distance_to(it["centre"]) <= 0.5:
+				continue
+			it["centre"] = clamped
+			it["offset_px"] = (it["natural"] as Vector2).distance_to(clamped)
+			it["pos"] = _sketch_from_screen(cam, clamped, it["anchor"])
+			pending[i] = it
 		# Screen→sketch is a local linearisation. A badge parked on the 40 px
 		# cap can reproject a fraction past it, which is what the walk rejects.
 		_cap_glyph_leader_span(pending, cam)
@@ -10345,7 +10335,10 @@ func _coincident_glyph_visible(cid: String, cinfo: Dictionary) -> bool:
 			return true
 		if cam != null and _pointer_screen != Vector2.INF:
 			var screen := cam.unproject_position(to_global(to_model(p)))
-			if screen.distance_to(_pointer_screen) <= COINCIDENT_HOVER_PX:
+			# The badge may sit up to GLYPH_MAX_OFFSET_PX off the vertex.
+			# Hover uses 14 px to appear; the click that lands on the badge
+			# is farther and must keep the mark visible.
+			if screen.distance_to(_pointer_screen) <= GLYPH_MAX_OFFSET_PX + 0.5:
 				return true
 	return false
 
@@ -10597,7 +10590,7 @@ func _coincident_place_cost(items: Array, index: int, natural: Vector2, centre: 
 		if dist >= GLYPH_LEADER_MIN_PX and _leader_crosses_rect(natural, centre, lr):
 			cost += 4000.0
 	if _glyph_below_part(rect, shaft_y):
-		cost += 8000.0 + (rect.end.y - shaft_y) * 20.0
+		cost += 2000000.0 + (rect.end.y - shaft_y) * 40.0
 	# A 38 px badge centred on the vertex covers the short jaw wall at
 	# 1920×1200, so every wall sample selects the constraint. Sit off the line.
 	cost += _coincident_line_penalty(rect)
