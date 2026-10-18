@@ -6,7 +6,7 @@ from __future__ import annotations
 import math
 
 from sxdrive import SxError
-from walk.rung6.ui06 import BASE_END, R12_CLIP, R60_TAN
+from walk.rung6.ui06 import BASE_END, R12_BULGE, R12_CLIP, R60_TAN
 
 
 class ProfileGestures:

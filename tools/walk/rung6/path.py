@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from sxdrive import SxError
+
 
 class PathGestures:
 
