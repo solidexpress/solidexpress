@@ -3578,19 +3578,39 @@ func mirror_selected() -> Array:
 			"line":
 				var s: Vector2 = refl.call(info["start"])
 				var e: Vector2 = refl.call(info["end"])
-				out.append(sketch.add_line(s.x, s.y, e.x, e.y))
+				var copy: String = sketch.add_line(s.x, s.y, e.x, e.y)
+				out.append(copy)
+				sketch.add_constraint("symmetric", [
+					{"entity": id, "role": "start"},
+					{"entity": copy, "role": "start"},
+					{"entity": axis_id, "role": "self"}], 0.0)
+				sketch.add_constraint("symmetric", [
+					{"entity": id, "role": "end"},
+					{"entity": copy, "role": "end"},
+					{"entity": axis_id, "role": "self"}], 0.0)
 			"circle":
 				var ctr: Vector2 = refl.call(info["center"])
-				out.append(sketch.add_circle(ctr.x, ctr.y, float(info["radius"])))
+				var copy_c: String = sketch.add_circle(ctr.x, ctr.y, float(info["radius"]))
+				out.append(copy_c)
+				sketch.add_constraint("symmetric", [
+					{"entity": id, "role": "center"},
+					{"entity": copy_c, "role": "center"},
+					{"entity": axis_id, "role": "self"}], 0.0)
 			"point":
 				var p: Vector2 = refl.call(info.get("position", Vector2.ZERO))
-				out.append(sketch.add_point(p.x, p.y))
+				var copy_p: String = sketch.add_point(p.x, p.y)
+				out.append(copy_p)
+				sketch.add_constraint("symmetric", [
+					{"entity": id, "role": "self"},
+					{"entity": copy_p, "role": "self"},
+					{"entity": axis_id, "role": "self"}], 0.0)
 			"arc":
 				var ctr2: Vector2 = refl.call(info["center"])
 				out.append(sketch.add_arc(ctr2.x, ctr2.y, float(info["radius"]),
 						-float(info["end_angle"]), -float(info["start_angle"])))
 	if not out.is_empty():
 		_undo_note("Mirror")
+		run_solve()
 	_redraw()
 	return out
 
