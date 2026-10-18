@@ -409,6 +409,21 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         back_tr.SetTranslation(travel.Reversed() * to_face_back);
                         profile = BRepBuilderAPI_Transform(face, back_tr, true).Shape();
                     }
+                    // Face-sketch Blind Cut starts on the host face. A prism
+                    // that shares that face with the target often Cut-succeeds
+                    // with zero volume change. Begin a hair outside the plane
+                    // and keep the interior depth so the tool actually bites.
+                    if (op_early == "cut" && !symmetric && end == "blind"
+                        && std::abs(dist) > 1e-9) {
+                        const double overlap = 0.05;
+                        gp_Vec unit = dir;
+                        if (unit.Magnitude() > 1e-12) unit.Normalize();
+                        const double sign = dist < 0.0 ? -1.0 : 1.0;
+                        gp_Trsf start_out;
+                        start_out.SetTranslation(unit * (-sign * overlap));
+                        profile = BRepBuilderAPI_Transform(profile, start_out, true).Shape();
+                        dist += sign * overlap;
+                    }
                     if (symmetric) {
                         gp_Trsf t;
                         t.SetTranslation(dir * (-dist / 2.0));
@@ -557,16 +572,21 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     if (!tb) return fail("missing target body");
                     TopoDS_Shape merged;
                     if (op == "cut") {
-                        BRepAlgoAPI_Cut cutter_op;
-                        TopTools_ListOfShape args;
-                        TopTools_ListOfShape tools;
-                        args.Append(tb->shape);
-                        tools.Append(result);
-                        cutter_op.SetArguments(args);
-                        cutter_op.SetTools(tools);
-                        cutter_op.SetFuzzyValue(1e-4);
-                        cutter_op.Build();
-                        merged = cutter_op.Shape();
+                        const double v0 = std::abs(shape::volume(tb->shape));
+                        merged = ExtrudeFuse::run_cut(tb->shape, result, 1e-4);
+                        const auto cut_ok = [&](const TopoDS_Shape& s) {
+                            return ExtrudeFuse::usable(s)
+                                   && v0 - std::abs(shape::volume(s)) > 1e-3;
+                        };
+                        if (!cut_ok(merged)) {
+                            for (double fuzzy : ExtrudeFuse::FUZZIES) {
+                                TopoDS_Shape m = ExtrudeFuse::run_cut(tb->shape, result, fuzzy);
+                                if (cut_ok(m)) {
+                                    merged = m;
+                                    break;
+                                }
+                            }
+                        }
                     } else {
                         merged = ExtrudeFuse::merge(tb->shape, result);
                     }

@@ -114,3 +114,39 @@ TEST_CASE("feature graph: region pick cuts only that area", "[features][regions]
     double vol = shape::volume(doc.body(graph.feature(box_id)->output_body)->shape);
     CHECK(vol == Approx(40.0 * 40.0 * 10.0 - 20.0 * 20.0 * 10.0).epsilon(1e-3));
 }
+
+TEST_CASE("feature graph: face-sketch Blind 1 cut subtracts a pocket", "[features][cut]") {
+    Document doc;
+    FeatureGraph graph;
+    Feature box;
+    box.type = FeatureType::Primitive;
+    box.params = {{"kind", "box"}, {"a", 40.0}, {"b", 40.0}, {"c", 10.0}};
+    auto box_id = graph.add(std::move(box));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    const Body* body = doc.body(graph.feature(box_id)->output_body);
+    REQUIRE(body != nullptr);
+    const double v0 = shape::volume(body->shape);
+    EntityId top = top_face_id(doc, *body);
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("Pocket");
+    skf.sketch->set_plane({{0, 0, 10}, {1, 0, 0}, {0, 1, 0}});
+    skf.sketch->add_line(10, 10, 30, 10);
+    skf.sketch->add_line(30, 10, 30, 30);
+    skf.sketch->add_line(30, 30, 10, 30);
+    skf.sketch->add_line(10, 30, 10, 10);
+    skf.params = {{"host_face", top.str()}, {"support_host", box_id.str()}};
+    auto sk_id = graph.add(std::move(skf));
+    Feature cut;
+    cut.type = FeatureType::Extrude;
+    cut.params = {{"sketch", sk_id.str()},
+                  {"distance", -1.0},
+                  {"op", "cut"},
+                  {"end", "blind"},
+                  {"target", box_id.str()}};
+    graph.add(std::move(cut));
+    REQUIRE(graph.regenerate(doc, &err));
+    double vol = shape::volume(doc.body(graph.feature(box_id)->output_body)->shape);
+    CHECK(vol == Approx(v0 - 20.0 * 20.0 * 1.0).epsilon(1e-3));
+}
