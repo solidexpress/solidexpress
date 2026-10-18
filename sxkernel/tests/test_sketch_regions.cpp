@@ -150,3 +150,64 @@ TEST_CASE("feature graph: face-sketch Blind 1 cut subtracts a pocket", "[feature
     double vol = shape::volume(doc.body(graph.feature(box_id)->output_body)->shape);
     CHECK(vol == Approx(v0 - 20.0 * 20.0 * 1.0).epsilon(1e-3));
 }
+
+TEST_CASE("face sketch stays on the thinner pad, not the thicker head", "[features][cut]") {
+    Document doc;
+    FeatureGraph graph;
+    Feature handle_sk;
+    handle_sk.type = FeatureType::Sketch;
+    handle_sk.sketch = std::make_shared<Sketch>("Handle");
+    handle_sk.sketch->add_line(0, 0, 80, 0);
+    handle_sk.sketch->add_line(80, 0, 80, 20);
+    handle_sk.sketch->add_line(80, 20, 0, 20);
+    handle_sk.sketch->add_line(0, 20, 0, 0);
+    auto hs = graph.add(std::move(handle_sk));
+    Feature handle_ex;
+    handle_ex.type = FeatureType::Extrude;
+    handle_ex.params = {{"sketch", hs.str()}, {"distance", 6.0}, {"op", "new"}, {"end", "blind"}};
+    auto he = graph.add(std::move(handle_ex));
+    Feature head_sk;
+    head_sk.type = FeatureType::Sketch;
+    head_sk.sketch = std::make_shared<Sketch>("Head");
+    head_sk.sketch->add_line(80, 0, 100, 0);
+    head_sk.sketch->add_line(100, 0, 100, 20);
+    head_sk.sketch->add_line(100, 20, 80, 20);
+    head_sk.sketch->add_line(80, 20, 80, 0);
+    auto ds = graph.add(std::move(head_sk));
+    Feature head_ex;
+    head_ex.type = FeatureType::Extrude;
+    head_ex.params = {{"sketch", ds.str()},
+                      {"distance", 10.0},
+                      {"op", "fuse"},
+                      {"end", "blind"},
+                      {"target", he.str()}};
+    graph.add(std::move(head_ex));
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    REQUIRE(doc.body(graph.feature(he)->output_body) != nullptr);
+    const double v0 = shape::volume(doc.body(graph.feature(he)->output_body)->shape);
+    REQUIRE(v0 > 100.0);
+    Feature pocket;
+    pocket.type = FeatureType::Sketch;
+    pocket.sketch = std::make_shared<Sketch>("Recess");
+    pocket.sketch->set_plane({{0, 0, 6}, {1, 0, 0}, {0, 1, 0}});
+    pocket.sketch->add_line(10, 5, 70, 5);
+    pocket.sketch->add_line(70, 5, 70, 15);
+    pocket.sketch->add_line(70, 15, 10, 15);
+    pocket.sketch->add_line(10, 15, 10, 5);
+    pocket.params = {{"support_host", he.str()},
+                     {"support_normal", {0.0, 0.0, 1.0}},
+                     {"support_side", "max"}};
+    auto ps = graph.add(std::move(pocket));
+    Feature cut;
+    cut.type = FeatureType::Extrude;
+    cut.params = {{"sketch", ps.str()},
+                  {"distance", -1.0},
+                  {"op", "cut"},
+                  {"end", "blind"},
+                  {"target", he.str()}};
+    graph.add(std::move(cut));
+    REQUIRE(graph.regenerate(doc, &err));
+    const double vol = shape::volume(doc.body(graph.feature(he)->output_body)->shape);
+    CHECK(v0 - vol == Approx(60.0 * 10.0 * 1.0).epsilon(1e-2));
+}

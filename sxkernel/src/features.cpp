@@ -1202,6 +1202,22 @@ void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f) {
     SketchPlane pl = f.sketch->plane();
     const double current =
         gp_Vec(pl.origin[0], pl.origin[1], pl.origin[2]).Dot(want);
+    // Already on a face along this normal: keep it. Hopping to `best`
+    // would move a handle-top sketch (z=3) onto the thicker heads (z=5)
+    // and a Blind Cut then misses the body.
+    if (std::abs(current - best) > 0.75) {
+        bool on_a_face = false;
+        for (TopExp_Explorer ex(body->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            double off = 0.0;
+            if (!face_offset_along(TopoDS::Face(ex.Current()), want, &off))
+                continue;
+            if (std::abs(current - off) <= 0.5) {
+                on_a_face = true;
+                break;
+            }
+        }
+        if (on_a_face) return;
+    }
     // Follow the host face, including a shrink (plate 14→10). Refuse a jump
     // onto the opposite end of the body (candlestick y=220 → a false y=0
     // revolution-cap hit).
