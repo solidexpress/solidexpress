@@ -227,7 +227,7 @@ EntityId project_fitted_arc(Sketch* sketch, const BRepAdaptor_Curve& curve,
     for (int i = 0; i <= kSamples; ++i) {
         const double t = t0 + (t1 - t0) * (static_cast<double>(i) / kSamples);
         pts[i] = curve.Value(t);
-        if (plane_gap(plane, pts[i]) > 0.05) return {};
+        if (plane_gap(plane, pts[i]) > 2.0) return {};
     }
     const auto ua = curve_uv(plane, pts[0]);
     const auto um = curve_uv(plane, pts[kSamples / 2]);
@@ -236,7 +236,7 @@ EntityId project_fitted_arc(Sketch* sketch, const BRepAdaptor_Curve& curve,
     if (!circumcircle_uv(ua[0], ua[1], um[0], um[1], ub[0], ub[1], &cx, &cy, &radius)) return {};
     for (int i = 0; i <= kSamples; ++i) {
         const auto uv = curve_uv(plane, pts[i]);
-        if (std::abs(std::hypot(uv[0] - cx, uv[1] - cy) - radius) > 0.2) return {};
+        if (std::abs(std::hypot(uv[0] - cx, uv[1] - cy) - radius) > 0.5) return {};
     }
     const gp_Pnt a = pts[0];
     const gp_Pnt b = pts[kSamples];
@@ -291,8 +291,11 @@ EntityId add_external_edge(Document& doc, const EntityId& sketch_fid, const Enti
     if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) return {};
     const BRepAdaptor_Curve curve(TopoDS::Edge(sh));
     const auto it = kProjectors.find(curve.GetType());
-    if (it == kProjectors.end()) return {};
-    return it->second(f->sketch.get(), curve, f->sketch->plane(), edge);
+    if (it != kProjectors.end()) {
+        const EntityId added = it->second(f->sketch.get(), curve, f->sketch->plane(), edge);
+        if (!added.is_null()) return added;
+    }
+    return project_fitted_arc(f->sketch.get(), curve, f->sketch->plane(), edge);
 }
 
 int convert_edges_to_sketch(Document& doc, const EntityId& sketch_fid,

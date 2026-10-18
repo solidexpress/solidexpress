@@ -634,6 +634,14 @@ class WalkUI07(WalkChrome):
                 continue
             seen.add(eid)
             notes.append(self.convert_at((float(mid[0]), float(mid[1]), float(mid[2])))["status"])
+        zf = float(z)
+        for extra in (
+            (43.0, 10.0, zf), (30.0, 18.0, zf), (18.0, 24.0, zf),
+            (43.0, -10.0, zf), (30.0, -18.0, zf), (18.0, -24.0, zf),
+            (210.0, 10.0, zf), (220.0, 16.0, zf), (232.0, 0.0, zf),
+            (210.0, -10.0, zf), (220.0, -16.0, zf),
+        ):
+            notes.append(self.convert_at(extra)["status"])
         return notes
 
     def _twelve_point_uvs(self) -> list[tuple[float, float]]:
