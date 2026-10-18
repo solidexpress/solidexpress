@@ -72,10 +72,13 @@ class Rows07Chunk4:
             self.draw_recess_racetrack()
             n_draw = [e.get("type") for e in self.ents()]
             print(f"recess recovery ents={n_draw}", flush=True)
-            self.check_all_contours()
-            made = self.try_extrude("2", "Cut", "Midplane")
+            if self.contour_chips():
+                print(f"recess chips={self.set_contours({'recess'})}", flush=True)
+            else:
+                self.check_all_contours()
+            made = self.try_extrude("1", "Cut", "Blind")
             if "removed nothing" in str(made.get("status") or "").lower() or made.get("sketch"):
-                made = self.try_extrude("1", "Cut", "Blind")
+                made = self.try_extrude("2", "Cut", "Midplane")
         if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
             self.exit_sketch()
         zext = self.z_extent()
