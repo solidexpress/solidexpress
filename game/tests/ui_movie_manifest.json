@@ -578,5 +578,13 @@
       "order": 10,
       "hero": false
     }
+  },
+  {
+    "id": "candlestick",
+    "title": "Candlestick: revolve, sweep, drafted cut",
+    "script": "res://tests/films/film_candlestick.gd",
+    "enabled": true,
+    "quit_after": 4800,
+    "blurb": "Revolve a Front profile, sweep an ellipse along an arc path, cut a 15° drafted hole."
   }
 ]
