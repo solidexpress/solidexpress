@@ -303,6 +303,7 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 | Item | What | Design | Why parked |
 |---|---|---|---|
 | Pixel `render=viewport` | `rung03_section` framebuffer | Start Godot on X11 + Vulkan without dummy | §9: removed-half sample is the cap colour. Do not reopen it in this pass |
+| WP8–WP10 candlestick film (Part B) | `film_candlestick.gd`, dedicated suite, poster, how-to, `cursor/demo-artifacts-candlestick` | Same click-driven film shape as `flanged_pipe` / `hexkey` / `tutor1`. Dedicated suite owns the id. No `website` object (curated 12 stays) | C-one `film_candlestick_tests.suite` stayed red after two attempts. Attempt 1: second Front sketch failed (`Start sketch on picked face or ground`) — revolve body stayed selected; FEATURES `sketch 1, revolve 2`; bbox 224×220×224. Attempt 2: path + ellipse + sweep landed; extra Path feature (`sketch 1, revolve 2, sketch 3, sketch 4, path 5, sweep 6`); bbox 310.8×230.9×230.0 vs 304.1×220×224.0 (ymin −10.9); `FilmUI: side face not selected` on the +Y top-disc pick; checker 4/7. WP8 reverted (`bad9c50`); WP9 never committed; WP10 not started. Do not weaken 7/7 or the bbox. |
 
 ---
 
