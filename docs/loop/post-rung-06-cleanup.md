@@ -1,6 +1,6 @@
 # Post-rung-06 cleanup — layering, one fixture, then the candlestick demo film
 
-Status: planned. Docs only. Baseline: this branch `24a8306` (`Rung 6: Revolve & Sweep candlestick`, PR #275; `git log 761b0a4..24a8306` is that one squash). Rung 6 walk 46/46. `check_rung06` final 7/7. Rung 1 walk 77/77. Rung 2 44/44. Rung 3 46/46. Rung 4 32/32. Rung 5 36/36. `check_rung05` final 10/10. Headless: 236 run, 0 failed. Manifests on this sha: **240** (`79 ci`, `157 full`, `4 known-red`), so the tier runs `79 + 157 = 236`. Checklists: [`rung-06-plan.md`](rung-06-plan.md), [`rung-06-result.md`](rung-06-result.md). Previous cleanup, same shape: [`post-rung-05-cleanup.md`](post-rung-05-cleanup.md) / [`post-rung-05-result.md`](post-rung-05-result.md) (PR #272): WalkChrome lifts, PipeFixture, flanged_pipe film. Website curator then featured tutor1/hexkey/flanged_pipe (PR #273) without growing the 12-card cap.
+Status: planned. Docs only. Baseline: this branch `24a8306` (`Rung 6: Revolve & Sweep candlestick`, PR #275; `git log 761b0a4..24a8306` is that one squash). Rung 6 walk 46/46. `check_rung06` final 7/7. Rung 1 walk 77/77. Rung 2 44/44. Rung 3 46/46. Rung 4 32/32. Rung 5 36/36. `check_rung05` final 10/10. Headless: 236 run, 0 failed. Manifests on this sha: **240** (`79 ci`, `157 full`, `4 known-red`), so the tier runs `79 + 157 = 236`. Checklists: [`rung-06-plan.md`](rung-06-plan.md), [`rung-06-result.md`](rung-06-result.md). Previous cleanup, same shape: [`post-rung-05-result.md`](post-rung-05-result.md) (PR #272; plan in `git log -- docs/loop`): WalkChrome lifts, PipeFixture, flanged_pipe film. Website curator then featured tutor1/hexkey/flanged_pipe (PR #273) without growing the 12-card cap.
 
 **Prompt for ONE BUILD agent.** Execute the work packages below in order, one commit per WP, on the branch you were given. Push that branch. Do not open a PR. This file is the only prompt. Part A (WP1–WP5, and WP6–WP7 only when the ★ rule says so) does not change product behaviour. Part B (WP8–WP10) is the candlestick film, its test, the rendered video, the poster, the how-to, and the website wiring. Part B is not optional and outranks every ★ WP. WP11 is the only full test pass. Do not build, walk, or run the tier before WP11 except for the cheap check named in that WP.
 
@@ -17,7 +17,7 @@ Rung 6 landed green as one squash. The new tools already use tables in the place
 | Dead symbols | `SketchTempAxes.axis_uv` (snap uses `snap_y_axis`). `SketchMode._shortest_exit` (parking now uses `_exit_clear_of_labels`). Count of each name in `game/**/*.gd` is 1 | finder in WP2 |
 | One starter, dummy by default | already true. `run_suites.sh` default `--jobs nproc`, per-job `HOME`, `--rendering-driver dummy` unless `render=viewport`. Smoke skips `film_<id>_tests.suite`. Pixel `render=viewport` stays parked (§9 / §10 / §11) | `packaging/ci/run_suites.sh`, `game/tests/run_film_manifest_smoke.gd` |
 | Same film, two starters | dedicated suites own `ubc_wrench`, `lesson2_box`, `tutor1`, `hexkey`, `flanged_pipe`. A candlestick suite would make a sixth double unless smoke skips it | `packaging/ci/suites.d/film_*_tests.suite` |
-| Spent loop docs | `post-rung-05-cleanup.md` (README already says the next cleanup deletes it). Keep the live contracts (rung plans/results, post-rung-03/04/05 results, this file) | `docs/loop/README.md` |
+| Spent loop docs | the post-rung-5 cleanup plan (deleted; `git log -- docs/loop`). Keep the live contracts (rung plans/results, post-rung-03/04/05 results, this file) | `docs/loop/README.md` |
 | No rung-6 status entry | `docs/plan/STATUS.md` starts at Post-rung-5. The rung PR was told not to edit it | `STATUS.md` |
 
 Not in this pass (already parked, or a second painter that is doing a different job): splitting `SketchMode` / `ViewportInteraction` ([roadmap.md §7](../plan/roadmap.md)), the §8–§11 rows, pixel `render=viewport`, CommandBus, Jaw template. `SketchEllipse.SPEC`, `SketchTangentArc.POLICY`, and WalkChrome lifts already exist — do not re-table them. Do not re-copy `mm` / `part` onto chrome (one-line wrappers that pass the checker script).
@@ -107,7 +107,7 @@ Goal: the loop directory keeps the live contract, STATUS names rung 6, and two u
 
 Files / symbols:
 
-- Delete `docs/loop/post-rung-05-cleanup.md` (this file replaces it; history: `git log -- docs/loop`). Keep `post-rung-05-result.md`.
+- Delete the spent post-rung-5 cleanup plan (this file replaces it; history: `git log -- docs/loop`). Keep `post-rung-05-result.md`.
 - Keep `rung-06-plan.md`, `rung-06-result.md`, `rung-06-checklist.md`, `rung-06-prep.md` (the rung-6 plan cites the prep and frames).
 - `docs/loop/README.md`: list what remains and say this file is deleted by the next cleanup.
 - `docs/plan/STATUS.md`: add **Rung 6 — candlestick (PR #275)** above the Post-rung-5 entry. Shipped: tangent-arc constraints, two-point Horizontal, temp-axis snap + silhouette dim, real ellipse, sweep default fuse, circular spine, extrude-cut draft 15° inward, survey colours/glyphs/edges/hover/planes, 46-row walk, `check_rung06.py`. Bars: the table in `rung-06-result.md`. Suites **236 run + 4 known-red**. spine: arc.
@@ -118,7 +118,7 @@ Change: `git rm` the spent doc. Grep the repo outside `.git` for that basename f
 
 Expected delta: about −360 lines of docs, −15 lines of code.
 
-Check: C-grep finds no remaining path to `post-rung-05-cleanup.md` outside `.git`. C-tools. The GDScript finder prints none of the two names. C-lint still `240 suites ok`.
+Check: C-grep finds no remaining path to the deleted cleanup-plan basename outside `.git`. C-tools. The GDScript finder prints none of the two names. C-lint still `240 suites ok`.
 
 Revert: revert the commit if C-tools is red after two attempts. Doc deletions that already match the grep can stay only if the code deletion is what failed; in that case revert the whole commit anyway (one commit, one revert) and re-land the docs as a fresh commit with the same message plus `code deletions parked`.
 

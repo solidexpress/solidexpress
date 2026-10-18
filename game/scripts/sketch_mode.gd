@@ -8923,11 +8923,6 @@ func _host_face_screen_rect(cam: Camera3D) -> Rect2:
 	return box
 
 
-## Screen delta that moves `centre` just past the nearest side of `face`.
-func _shortest_exit(centre: Vector2, face: Rect2) -> Vector2:
-	return _face_exits(centre, face)[0]["push"]
-
-
 func _face_exits(centre: Vector2, face: Rect2) -> Array:
 	var exits := [
 		{"gap": centre.x - face.position.x, "push": Vector2(-(centre.x - face.position.x + 2.0), 0.0)},

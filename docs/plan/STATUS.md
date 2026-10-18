@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Rung 6 — candlestick (PR #275)
+
+Shipped: tangent-arc constraints, two-point Horizontal, temp-axis snap + silhouette dim, real ellipse, sweep default fuse, circular spine, extrude-cut draft 15° inward, survey colours/glyphs/edges/hover/planes, 46-row walk, `check_rung06.py`. Bars: the table in [`rung-06-result.md`](../loop/rung-06-result.md). Suites **236 run + 4 known-red**. spine: arc.
+
 ## Post-rung-5 cleanup (`cursor/post-rung-05-cleanup-20261016`)
 
 WP8–WP9 added film `flanged_pipe`, `docs/howto/flanged-pipe.md`, and `run_film_flanged_pipe_tests.gd` (`tier=full`). Poster `website/assets/screenshots/flanged_pipe.png`. WP11 confirm: walks 77/77, 44/44, 46/46, 32/32, 36/36; `check_rung05` 10/10; headless **229/0**. Counts: [`post-rung-05-result.md`](../loop/post-rung-05-result.md).
