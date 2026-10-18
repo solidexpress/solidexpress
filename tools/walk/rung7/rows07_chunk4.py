@@ -11,29 +11,15 @@ class Rows07Chunk4:
     def row_A28(self) -> None:
         opened = self.face_sketch_handle_top()
         z = self.mm("HANDLE_T") * 0.5
-        notes = []
-        for model in (
-            (120.0, 10.0, z),
-            (120.0, -10.0, z),
-            (80.0, 10.0, z),
-            (160.0, 10.0, z),
-            (80.0, -10.0, z),
-            (160.0, -10.0, z),
-            (22.9, 10.0, z),
-            (22.9, -10.0, z),
-            (226.9, 10.0, z),
-            (226.9, -10.0, z),
-            (23.5, 0.0, z),
-            (226.5, 0.0, z),
-        ):
-            notes.append(self.convert_at(model)["status"])
+        notes = self.convert_face_outline(z)
         converted = self.ents()
-        n_arc = len([e for e in converted if e.get("type") == "arc" and (e.get("external") or True)])
+        n_arc = len([e for e in converted if e.get("type") == "arc"])
         n_line = len([e for e in converted if e.get("type") == "line"])
+        named_arc = sum(1 for n in notes if "external arc" in n.lower())
         self.clause("face selected", bool(opened["picked"].get("face")), str(opened["picked"]))
         self.clause("is handle top", bool(opened.get("on_handle")), str(opened.get("plane")))
         self.clause("sketch on face", bool(opened.get("active")), opened["status"])
-        self.clause("convert arcs", any("arc" in n.lower() for n in notes) or n_arc >= 2, " | ".join(notes))
+        self.clause("convert arcs", named_arc >= 2 or n_arc >= 2, " | ".join(notes[-6:]))
         self.clause("four entities", n_line + n_arc >= 4, f"lines={n_line} arcs={n_arc}")
 
     @row("N3", chunk=4, on="rung07", expect={"blocker": "A28", "sketch": True})
@@ -58,6 +44,7 @@ class Rows07Chunk4:
             sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
             if sketches:
                 self._pencil(sketches[-1])
+        self.select_converted()
         self.click("rail:Offset")
         self.d.wait_idle(frames=2)
         self.offset_distance("5")

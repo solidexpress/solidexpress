@@ -190,9 +190,92 @@ EntityId dispatch_circle(Sketch* sketch, const BRepAdaptor_Curve& curve, const S
     return project_circle(sketch, curve, plane, edge);
 }
 
+std::array<double, 2> curve_uv(const SketchPlane& plane, const gp_Pnt& p) {
+    const auto nrm = plane.normal();
+    const auto x = plane.x_dir;
+    const std::array<double, 3> y{nrm[1] * x[2] - nrm[2] * x[1], nrm[2] * x[0] - nrm[0] * x[2],
+                                  nrm[0] * x[1] - nrm[1] * x[0]};
+    const double dx = p.X() - plane.origin[0];
+    const double dy = p.Y() - plane.origin[1];
+    const double dz = p.Z() - plane.origin[2];
+    return {dx * x[0] + dy * x[1] + dz * x[2], dx * y[0] + dy * y[1] + dz * y[2]};
+}
+
+bool circumcircle_uv(double x1, double y1, double x2, double y2, double x3, double y3, double* cx,
+                     double* cy, double* radius) {
+    const double d = 2.0 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
+    if (std::abs(d) < 1e-12) return false;
+    *cx = ((x1 * x1 + y1 * y1) * (y2 - y3) + (x2 * x2 + y2 * y2) * (y3 - y1) +
+           (x3 * x3 + y3 * y3) * (y1 - y2)) /
+          d;
+    *cy = ((x1 * x1 + y1 * y1) * (x3 - x2) + (x2 * x2 + y2 * y2) * (x1 - x3) +
+           (x3 * x3 + y3 * y3) * (x2 - x1)) /
+          d;
+    *radius = std::hypot(*cx - x1, *cy - y1);
+    return *radius > 0.5 && *radius < 200.0;
+}
+
+// OCCT fillets of a Z-edge are often BSpline, not GeomAbs_Circle. If the
+// samples lie on a circle in the sketch plane, Convert still emits an Arc.
+EntityId project_fitted_arc(Sketch* sketch, const BRepAdaptor_Curve& curve,
+                            const SketchPlane& plane, const std::string& edge) {
+    const double t0 = curve.FirstParameter();
+    const double t1 = curve.LastParameter();
+    if (std::abs(t1 - t0) < 1e-9) return {};
+    constexpr int kSamples = 8;
+    gp_Pnt pts[kSamples + 1];
+    for (int i = 0; i <= kSamples; ++i) {
+        const double t = t0 + (t1 - t0) * (static_cast<double>(i) / kSamples);
+        pts[i] = curve.Value(t);
+        if (plane_gap(plane, pts[i]) > 0.05) return {};
+    }
+    const auto ua = curve_uv(plane, pts[0]);
+    const auto um = curve_uv(plane, pts[kSamples / 2]);
+    const auto ub = curve_uv(plane, pts[kSamples]);
+    double cx = 0, cy = 0, radius = 0;
+    if (!circumcircle_uv(ua[0], ua[1], um[0], um[1], ub[0], ub[1], &cx, &cy, &radius)) return {};
+    for (int i = 0; i <= kSamples; ++i) {
+        const auto uv = curve_uv(plane, pts[i]);
+        if (std::abs(std::hypot(uv[0] - cx, uv[1] - cy) - radius) > 0.2) return {};
+    }
+    const gp_Pnt a = pts[0];
+    const gp_Pnt b = pts[kSamples];
+    const auto nrm = plane.normal();
+    const auto x = plane.x_dir;
+    const std::array<double, 3> ydir{nrm[1] * x[2] - nrm[2] * x[1], nrm[2] * x[0] - nrm[0] * x[2],
+                                     nrm[0] * x[1] - nrm[1] * x[0]};
+    const gp_Pnt c(plane.origin[0] + cx * x[0] + cy * ydir[0],
+                   plane.origin[1] + cx * x[1] + cy * ydir[1],
+                   plane.origin[2] + cx * x[2] + cy * ydir[2]);
+    auto wrap = [](double ang) {
+        while (ang < 0.0) ang += kTwoPi;
+        while (ang >= kTwoPi) ang -= kTwoPi;
+        return ang;
+    };
+    const double sa = std::atan2(ua[1] - cy, ua[0] - cx);
+    const double ea = std::atan2(ub[1] - cy, ub[0] - cx);
+    const double ma = std::atan2(um[1] - cy, um[0] - cx);
+    const double sweep_ccw = wrap(ea - sa);
+    const double mid_ccw = wrap(ma - sa);
+    const double span = mid_ccw <= sweep_ccw + 0.05 ? sweep_ccw : (kTwoPi - sweep_ccw);
+    EntityId added = sketch->project_arc_edge({c.X(), c.Y(), c.Z()}, radius, {a.X(), a.Y(), a.Z()},
+                                             {b.X(), b.Y(), b.Z()}, span, edge);
+    if (added.is_null()) return {};
+    sketch->set_construction(added, true);
+    return added;
+}
+
+EntityId dispatch_fitted(Sketch* sketch, const BRepAdaptor_Curve& curve, const SketchPlane& plane,
+                         const std::string& edge) {
+    return project_fitted_arc(sketch, curve, plane, edge);
+}
+
 const std::unordered_map<GeomAbs_CurveType, ExternalProjector> kProjectors = {
     {GeomAbs_Line, dispatch_line},
     {GeomAbs_Circle, dispatch_circle},
+    {GeomAbs_BSplineCurve, dispatch_fitted},
+    {GeomAbs_BezierCurve, dispatch_fitted},
+    {GeomAbs_Ellipse, dispatch_fitted},
 };
 
 }  // namespace

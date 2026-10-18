@@ -586,6 +586,56 @@ class WalkUI07(WalkChrome):
             "ents": self.ents(),
         }
 
+    def _ent_uv(self, entity: dict) -> tuple[float, float]:
+        kind = str(entity.get("type") or "")
+        if kind == "line":
+            a, b = self._pt(entity.get("start") or [0, 0]), self._pt(entity.get("end") or [0, 0])
+            return ((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5)
+        if kind == "arc":
+            c = self._pt(entity.get("center") or [0, 0])
+            r = float(entity.get("radius") or 0.0)
+            sa = float(entity.get("start_angle") or 0.0)
+            ea = float(entity.get("end_angle") or 0.0)
+            mid = 0.5 * (sa + ea)
+            return (c[0] + r * math.cos(mid), c[1] + r * math.sin(mid))
+        return (0.0, 0.0)
+
+    def select_converted(self) -> int:
+        converted = [e for e in self.ents() if e.get("external")]
+        if not converted:
+            converted = [e for e in self.ents() if e.get("type") in ("line", "arc")]
+        if not converted:
+            return 0
+        self.click("rail:Select")
+        self._click_uv(self._ent_uv(converted[0]))
+        for entity in converted[1:]:
+            self._click_uv(self._ent_uv(entity), shift=True)
+        self.refresh("selection", "status")
+        return len(converted)
+
+    def convert_face_outline(self, z: float) -> list[str]:
+        """Convert every in-plane edge whose midpoint sits on the handle top."""
+        notes = []
+        self.refresh("edges")
+        seen = set()
+        for edge in self.edges():
+            mid = edge.get("mid") or list(self._edge_centre(edge))
+            if len(mid) < 3:
+                continue
+            if abs(float(mid[2]) - z) > 0.6:
+                continue
+            if not (15.0 < float(mid[0]) < 245.0 and abs(float(mid[1])) < 40.0):
+                continue
+            length = float(edge.get("length") or 0.0)
+            if length < 4.0:
+                continue
+            eid = str(edge.get("id") or "")
+            if eid in seen:
+                continue
+            seen.add(eid)
+            notes.append(self.convert_at((float(mid[0]), float(mid[1]), float(mid[2])))["status"])
+        return notes
+
     def _twelve_point_uvs(self) -> list[tuple[float, float]]:
         c = self.ring_centre()
         af = self.mm("HEX_AF")

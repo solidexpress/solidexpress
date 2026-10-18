@@ -11,6 +11,10 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <GeomAbs_SurfaceType.hxx>
+#include <GeomConvert.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <Geom_Circle.hxx>
+#include <Geom_TrimmedCurve.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
@@ -204,6 +208,23 @@ TEST_CASE("add_external_edge projects the boss rim as a fixed circle", "[sketch]
         graph.feature(fid)->sketch->param(arc_e->params[3]);
     CHECK(std::abs(std::abs(sweep) - kPi / 2.0) < 0.05);
     CHECK(graph.feature(fid)->sketch->entities().size() == 2);
+
+    Handle(Geom_Circle) gc = new Geom_Circle(arc_curve);
+    Handle(Geom_TrimmedCurve) trim = new Geom_TrimmedCurve(gc, 0.0, kPi / 2.0);
+    Handle(Geom_BSplineCurve) bs = GeomConvert::CurveToBSplineCurve(trim);
+    const EntityId bs_body = doc.add_body(BRepBuilderAPI_MakeEdge(bs).Edge(), "bspline-arc");
+    EntityId bs_id;
+    const Body* bs_body_ptr = doc.body(bs_body);
+    REQUIRE(bs_body_ptr != nullptr);
+    for (const auto& eid : bs_body_ptr->subshape_ids.at(EntityKind::Edge)) bs_id = eid;
+    REQUIRE_FALSE(bs_id.is_null());
+    const EntityId projected_bs = add_external_edge(doc, fid, bs_id);
+    REQUIRE_FALSE(projected_bs.is_null());
+    const SketchEntity* bs_e = graph.feature(fid)->sketch->entity(projected_bs);
+    REQUIRE(bs_e != nullptr);
+    CHECK(bs_e->type == SketchEntityType::Arc);
+    CHECK(bs_e->external);
+    CHECK(graph.feature(fid)->sketch->param(bs_e->params[2]) == Approx(35.0).margin(0.2));
 
     // Origin-plane silhouette: the rim ∩ YZ is a construction diameter.
     const EntityId side = sketch_on_z(graph, 0.0);
