@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "features/topo_cue.h"
 #include "sx/shape_utils.hpp"
 #include "sx/variables.hpp"
 
@@ -144,9 +145,9 @@ EntityId resolve_feature_body(ApplyCtx& ctx, const Feature& ref) {
 }
 
 // FeatureMirror.POLICY: (source type, op) → replay. New fuses onto the
-// target body; Shell/Fillet/Chamfer skip; unknown types fail.
+// target body; Fillet replays on mirrored edge cues; Shell/Chamfer skip.
 struct FeatureMirror {
-    enum class Action { Fuse, Cut, Skip, Fail };
+    enum class Action { Fuse, Cut, Replay, Skip, Fail };
     struct Row {
         FeatureType type;
         const char* op;  // nullptr = any op
@@ -159,8 +160,8 @@ struct FeatureMirror {
         {FeatureType::Revolve, "new", Action::Fuse},
         {FeatureType::Revolve, "fuse", Action::Fuse},
         {FeatureType::Revolve, "cut", Action::Cut},
+        {FeatureType::Fillet, nullptr, Action::Replay},
         {FeatureType::Shell, nullptr, Action::Skip},
-        {FeatureType::Fillet, nullptr, Action::Skip},
         {FeatureType::Chamfer, nullptr, Action::Skip},
     };
     static Action lookup(FeatureType type, const std::string& op) {
@@ -172,6 +173,81 @@ struct FeatureMirror {
         return Action::Fail;
     }
 };
+
+void transform_cue_object(nlohmann::json& cue, const gp_Trsf& t) {
+    if (!cue.is_object()) return;
+    TopoCue c = cue_from_json(cue);
+    gp_Pnt p(c.point.X(), c.point.Y(), c.point.Z());
+    p.Transform(t);
+    c.point = p.XYZ();
+    gp_Vec d(c.dir.X(), c.dir.Y(), c.dir.Z());
+    d.Transform(t);
+    c.dir = d.XYZ();
+    // Point+dir only. Kept frac would still name the source edge.
+    c.has_frac = false;
+    c.size = gp_XYZ();
+    nlohmann::json out = cue_to_json(c);
+    if (cue.contains("normal") && cue["normal"].is_array()) out["normal"] = out["dir"];
+    cue = std::move(out);
+}
+
+void transform_cue_map(nlohmann::json& node, const gp_Trsf& t) {
+    if (node.is_object()) {
+        for (auto& item : node.items()) transform_cue_object(item.value(), t);
+        return;
+    }
+    if (node.is_array()) {
+        for (auto& cue : node) transform_cue_object(cue, t);
+    }
+}
+
+nlohmann::json mirrored_fillet_params(const nlohmann::json& src, const gp_Trsf& t) {
+    nlohmann::json p = src;
+    nlohmann::json edges = nlohmann::json::array();
+    nlohmann::json cues = nlohmann::json::object();
+    const nlohmann::json src_cues =
+            src.contains("edge_cues") && src["edge_cues"].is_object() ? src["edge_cues"]
+                                                                     : nlohmann::json::object();
+    if (src.contains("edges") && src["edges"].is_array()) {
+        for (const auto& je : src["edges"]) {
+            if (!je.is_string()) continue;
+            const std::string old = je.get<std::string>();
+            if (!src_cues.contains(old)) continue;
+            nlohmann::json cue = src_cues[old];
+            transform_cue_object(cue, t);
+            const std::string key = EntityId::generate().str();
+            cues[key] = std::move(cue);
+            edges.push_back(key);
+        }
+    }
+    p["edges"] = std::move(edges);
+    p["edge_cues"] = std::move(cues);
+    if (p.contains("face_cues")) transform_cue_map(p["face_cues"], t);
+    return p;
+}
+
+bool has_fillet_cues(const nlohmann::json& p) {
+    if (p.contains("edge_cues") && p["edge_cues"].is_object() && !p["edge_cues"].empty())
+        return true;
+    if (p.contains("face_cues") && p["face_cues"].is_array() && !p["face_cues"].empty())
+        return true;
+    if (p.contains("face_cues") && p["face_cues"].is_object() && !p["face_cues"].empty())
+        return true;
+    return false;
+}
+
+bool replay_mirrored_fillet(ApplyCtx& ctx, const Feature& src, const gp_Trsf& mirror_trsf) {
+    if (src.type != FeatureType::Fillet) return ctx.fail("fillet mirror: not a fillet");
+    if (!has_fillet_cues(src.params))
+        return ctx.fail("fillet mirror: missing edge cues");
+    nlohmann::json mirrored = mirrored_fillet_params(src.params, mirror_trsf);
+    Feature tmp;
+    tmp.type = FeatureType::Fillet;
+    tmp.name = src.name;
+    tmp.params = mirrored;
+    ApplyCtx sub{ctx.graph, ctx.doc, tmp, mirrored, ctx.env, ctx.err};
+    return apply_fillet_chamfer(sub);
+}
 
 bool apply_feature_mirror(ApplyCtx& ctx) {
     const auto& ids = ctx.params.at("source_feature_ids");
@@ -248,6 +324,10 @@ bool apply_feature_mirror(ApplyCtx& ctx) {
                 return ctx.fail("unsupported extrude op: " + op);
             return ctx.fail(std::string("feature mirror unsupported type: ") +
                             to_string(src->type));
+        }
+        if (action == FeatureMirror::Action::Replay) {
+            if (!replay_mirrored_fillet(ctx, *src, mirror_trsf)) return false;
+            continue;
         }
 
         const bool do_cut = (action == FeatureMirror::Action::Cut);
