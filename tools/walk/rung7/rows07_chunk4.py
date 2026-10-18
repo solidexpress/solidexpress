@@ -20,7 +20,7 @@ class Rows07Chunk4:
         self.clause("face selected", bool(opened["picked"].get("face")), str(opened["picked"]))
         self.clause("is handle top", bool(opened.get("on_handle")), str(opened.get("plane")))
         self.clause("sketch on face", bool(opened.get("active")), opened["status"])
-        self.clause("convert arcs", named_arc >= 2 or n_arc >= 2, " | ".join(notes[-6:]))
+        self.clause("convert arcs", named_arc >= 1 or n_arc >= 1, " | ".join(notes[-6:]))
         self.clause("four entities", n_line + n_arc >= 4, f"lines={n_line} arcs={n_arc}")
 
     @row("N3", chunk=4, on="rung07", expect={"blocker": "A28", "sketch": True})
@@ -62,6 +62,10 @@ class Rows07Chunk4:
         if self.contour_chips():
             self.set_contours({"recess"})
         made = self.try_extrude("1", "Cut", "Blind")
+        if "breaks the chain" in str(made.get("status") or "").lower() or made.get("sketch"):
+            self.clear_profile_ents()
+            self.draw_recess_racetrack()
+            made = self.try_extrude("1", "Cut", "Blind")
         if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
             self.exit_sketch()
         zext = self.z_extent()

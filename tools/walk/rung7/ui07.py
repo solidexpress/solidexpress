@@ -626,7 +626,11 @@ class WalkUI07(WalkChrome):
                 continue
             x, y = float(mid[0]), float(mid[1])
             length = float(edge.get("length") or 0.0)
-            if math.hypot(x - self.mm("CENTER"), y) < 18.0:
+            on_ring = (
+                abs(math.hypot(x - self.mm("CENTER"), y) - self.mm("RING_D") * 0.5) < 1.5
+                and abs(y) < 8.0
+            )
+            if on_ring:
                 continue
             handle_side = 8.0 <= abs(y) <= 12.5 and length > 40.0 and 30.0 < x < 220.0
             neck = (x < 55.0 or 205.0 < x < 235.0) and abs(y) < 36.0 and length > 8.0
@@ -638,6 +642,29 @@ class WalkUI07(WalkChrome):
             seen.add(eid)
             notes.append(self.convert_at((x, y, float(mid[2])))["status"])
         return notes
+
+    def draw_recess_racetrack(self) -> None:
+        """Closed inset stadium: y=±5, x=40..215, R5 caps. Named Line + Arc."""
+        was = self._set_snap(False)
+        self.draw_line((40.0, 5.0), (215.0, 5.0))
+        self.draw_line((40.0, -5.0), (215.0, -5.0))
+        self.three_point_arc((40.0, 5.0), (35.0, 0.0), (40.0, -5.0))
+        self.three_point_arc((215.0, 5.0), (220.0, 0.0), (215.0, -5.0))
+        self._set_snap(was)
+
+    def clear_profile_ents(self) -> int:
+        removed = 0
+        self.click("rail:Select")
+        for entity in list(self.ents()):
+            if entity.get("construction"):
+                continue
+            uv = self._ent_uv(entity)
+            self._click_uv(uv)
+            self.d.key("delete")
+            self.d.wait_idle(frames=1)
+            removed += 1
+        self.refresh("sketch", "status")
+        return removed
 
     def prune_stray_convert(self) -> int:
         """Drop short interior lines (the x=43 chain-breaker) before Offset."""
