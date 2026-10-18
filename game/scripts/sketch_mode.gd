@@ -5016,22 +5016,57 @@ func _endpoint_pos(id: String, role: String) -> Vector2:
 	return info.get("position", Vector2.ZERO)
 
 
+func _is_curve_kind(kind: String) -> bool:
+	return kind == "circle" or kind == "arc" or kind == "ellipse" or kind == "elliptical_arc"
+
+
+func _point_roles_for(id: String) -> Array[String]:
+	var k: String = sketch.entity_info(id).get("type", "")
+	var out: Array[String] = []
+	if k == "line":
+		out.assign(["start", "end"])
+	elif k == "point":
+		out.assign(["self"])
+	elif _is_curve_kind(k):
+		out.assign(["center"])
+	else:
+		out.assign(["self"])
+	return out
+
+
 ## Roles of the closest endpoint pair between two entities (["end","start"]...).
+## A curve Self is point-on-curve when that hit is closer than the centre.
 func _closest_endpoints(id_a: String, id_b: String) -> Array[String]:
-	var roles_for := func(id: String) -> Array[String]:
-		var k: String = sketch.entity_info(id).get("type", "")
-		var out: Array[String] = []
-		if k == "line":
-			out.assign(["start", "end"])
-		elif k == "circle" or k == "arc":
-			out.assign(["center"])
+	var ka: String = sketch.entity_info(id_a).get("type", "")
+	var kb: String = sketch.entity_info(id_b).get("type", "")
+	if _is_curve_kind(ka) != _is_curve_kind(kb):
+		var curve_id := id_a if _is_curve_kind(ka) else id_b
+		var other_id := id_b if _is_curve_kind(ka) else id_a
+		var centre := _endpoint_pos(curve_id, "center")
+		var best := INF
+		var best_role := ""
+		var on_curve := false
+		for role: String in _point_roles_for(other_id):
+			var p := _endpoint_pos(other_id, role)
+			var d_curve := closest_on_entity(curve_id, p).distance_to(p)
+			if d_curve < best:
+				best = d_curve
+				best_role = role
+				on_curve = d_curve + 1.0e-6 < p.distance_to(centre)
+		if best_role == "":
+			var none: Array[String] = []
+			return none
+		var curve_role := "self" if on_curve else "center"
+		var roles: Array[String] = []
+		if _is_curve_kind(ka):
+			roles.assign([curve_role, best_role])
 		else:
-			out.assign(["self"])
-		return out
+			roles.assign([best_role, curve_role])
+		return roles
 	var best := INF
 	var pair: Array[String] = []
-	for ra: String in roles_for.call(id_a):
-		for rb: String in roles_for.call(id_b):
+	for ra: String in _point_roles_for(id_a):
+		for rb: String in _point_roles_for(id_b):
 			var d := _endpoint_pos(id_a, ra).distance_to(_endpoint_pos(id_b, rb))
 			if d < best:
 				best = d

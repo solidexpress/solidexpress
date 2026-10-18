@@ -295,6 +295,29 @@ struct Xlate {
         switch (c.type) {
             case ConstraintType::Coincident: {
                 if (c.refs.size() != 2) return false;
+                auto point_on_curve = [&](const PointRef& curve, const PointRef& pt) -> bool {
+                    if (curve.role != PointRole::Self) return false;
+                    GCS::Point p = point_of(pt, ok1);
+                    if (!ok1) return false;
+                    auto eit = ellipses.find(curve.entity);
+                    if (eit != ellipses.end()) {
+                        sys.addConstraintPointOnEllipse(p, eit->second, tag, drv);
+                        return true;
+                    }
+                    auto cit = circles.find(curve.entity);
+                    if (cit != circles.end()) {
+                        sys.addConstraintPointOnCircle(p, cit->second, tag, drv);
+                        return true;
+                    }
+                    auto ait = arcs.find(curve.entity);
+                    if (ait != arcs.end()) {
+                        sys.addConstraintPointOnArc(p, ait->second, tag, drv);
+                        return true;
+                    }
+                    return false;
+                };
+                if (point_on_curve(c.refs[0], c.refs[1])) return true;
+                if (point_on_curve(c.refs[1], c.refs[0])) return true;
                 GCS::Point a = point_of(c.refs[0], ok1), b = point_of(c.refs[1], ok2);
                 if (!ok1 || !ok2) return false;
                 sys.addConstraintP2PCoincident(a, b, tag, drv);
