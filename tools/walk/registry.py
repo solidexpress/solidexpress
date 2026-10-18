@@ -72,6 +72,14 @@ RUNG6_ROWS = [
     "A30", "A31", "N4", "A32", "A33", "A34", "L5", "A35", "N5", "A36",
 ]
 
+# Combination spanner (rung 7). Order is the checklist, not import order.
+RUNG7_ROWS = [
+    "N1", "A1", "A2", "L1", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "L2",
+    "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "L3", "A19", "A20",
+    "N2", "A21", "A22", "A23", "A24", "A25", "A26", "L4", "A27",
+    "A28", "N3", "A29", "A30", "A31", "A32", "A33", "A34", "A35", "L5", "A36", "N4", "A37",
+]
+
 # Lesson 1 parts (rung 3). Order is the checklist, not import order.
 RUNG3_ROWS = [
     "N1", "A1", "A2", "L1", "A3", "N2", "A4", "A5",
@@ -140,6 +148,14 @@ _RUNG_SPEC = {
         "report_title": "rung-06 walk",
         "checkpoint_after": (),
     },
+    "rung07": {
+        "checker": "check_rung07.py",
+        "checkpoints": {3: "sketch.sxp", 4: "neck.sxp"},
+        "canonical": RUNG7_ROWS,
+        "chunk_start": checkpoint_reload,
+        "report_title": "rung-07 walk",
+        "checkpoint_after": (),
+    },
 }
 
 
@@ -195,3 +211,4 @@ RUNG3: Rung | None = None
 RUNG4: Rung | None = None
 RUNG5: Rung | None = None
 RUNG6: Rung | None = None
+RUNG7: Rung | None = None

@@ -138,6 +138,16 @@ python3 tools/walk_rung06.py --rows N1,A1,A2 --dry-run
 python3 tools/walk_rung06.py --from A16 --checkpoint --out /tmp/sx-rung06 --a15
 ```
 
+## Combination spanner runner (rung 7)
+
+`tools/walk_rung07.py` is the same command as `tools/walk_rung06.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 46-row combination-spanner checklist. It runs `tools/check_rung07.py`. `--checkpoint` reloads `sketch.sxp` (chunk 3) or `neck.sxp` (chunk 4). Ellipse is three clicks after `rail:Ellipse`. Trim of an ellipse yields an elliptical arc. Point-on-curve coincident uses the Coincident chip on an ellipse or circle. Mirror Entities emits Symmetric. Convert of a circular arc is `rail:Convert` then an edge click (partial span → Arc). Offset of that Arc is `rail:Offset`, `offset:Distance` / `offset:Reverse` / a chain click. Feature Mirror of Fillet3 + Cut about origin Front is `mirror:Features`, `click(datum=Front)`, Shift+click `timeline:row:…`, `mirror:Ok`. Export rows share one 3MF per stage. A37 needs `--a15` (without it: `BLOCKED-by-flag`).
+
+```bash
+python3 tools/walk_rung07.py --out /tmp/sx-rung07
+python3 tools/walk_rung07.py --rows N1,A1,A2 --dry-run
+python3 tools/walk_rung07.py --from A21 --checkpoint --out /tmp/sx-rung07 --a15
+```
+
 ## sx-042 runner rules (re-PLAN 21)
 
 Statuses that a row judges are the `[status-trace] … kind=result text=…` lines since that row's mark (`Walk.status_since`). The live status label is only for hover hints. Every `click(screen=[x, y])` uses a bridge selector (`target=`, `model=`, `sketch=`, `edge=`, `face=`, `face_normal=`) or a position taken from `bodies[i].screen` / `project`. The only fixed offsets that remain are inside `jaw_px`, which is derived from the measured head.
