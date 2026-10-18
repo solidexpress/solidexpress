@@ -2,6 +2,16 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Post-rung-6 cleanup (`cursor/post-rung-06-cleanup-20261018`)
+
+Part A WP1–WP7: `CandlestickFixture`, `BooleanTarget`, `FaceLabelPark`, `ARM_CLEAR`, FilmSteps (tangent / 3-point / ellipse / sweep / draft), `SweepFuse.POLICY`, WalkUI06 split. WP11: mixin imports (`R12_BULGE`, `SxError`). Confirm: walks 77/77, 44/44, 46/46, 32/32, 36/36, 46/46; `check_rung05` 10/10; `check_rung06` 7/7; headless **236/0**. Counts: [`post-rung-06-result.md`](../loop/post-rung-06-result.md).
+
+Part B (film `candlestick`) parked: C-one `film_candlestick_tests.suite` stayed red after two attempts. WP8 reverted, WP9 never committed, WP10 not started. [`roadmap.md` §12](roadmap.md). Featured set stays 12. No WebM on this branch.
+
+## Rung 6 — candlestick (PR #275)
+
+Shipped: tangent-arc constraints, two-point Horizontal, temp-axis snap + silhouette dim, real ellipse, sweep default fuse, circular spine, extrude-cut draft 15° inward, survey colours/glyphs/edges/hover/planes, 46-row walk, `check_rung06.py`. Bars: the table in [`rung-06-result.md`](../loop/rung-06-result.md). Suites **236 run + 4 known-red**. spine: arc.
+
 ## Post-rung-5 cleanup (`cursor/post-rung-05-cleanup-20261016`)
 
 WP8–WP9 added film `flanged_pipe`, `docs/howto/flanged-pipe.md`, and `run_film_flanged_pipe_tests.gd` (`tier=full`). Poster `website/assets/screenshots/flanged_pipe.png`. WP11 confirm: walks 77/77, 44/44, 46/46, 32/32, 36/36; `check_rung05` 10/10; headless **229/0**. Counts: [`post-rung-05-result.md`](../loop/post-rung-05-result.md).

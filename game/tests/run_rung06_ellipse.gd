@@ -11,16 +11,7 @@ const SPAN := 80.0
 func _init() -> void:
 	print("rung06 ellipse")
 	FilmUI.reset_fail_count()
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1280, 800))
+	var ctx := await CandlestickFixture.boot(self, Vector2i(1280, 800))
 	await _case(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	finish()
@@ -38,25 +29,24 @@ func _case(ctx: FilmContext) -> void:
 	check(rail != null, "rail label is Ellipse")
 	if rail != null:
 		check(not str(rail.text).contains("approx"), "rail dropped (approx)")
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.ELLIPSE)
-	await FilmSteps.click_uv(ctx, Vector2(0, 0), "Centre", SPAN)
-	await FilmSteps.click_uv(ctx, Vector2(17.5, 0), "Major", SPAN)
-	await FilmSteps.click_uv(ctx, Vector2(0, 5), "Minor", SPAN)
+	var maj := CandlestickFixture.mm("ELLIPSE_MAJ") * 0.5
+	var minr := CandlestickFixture.mm("ELLIPSE_MIN") * 0.5
+	await FilmSteps.ellipse3(ctx, Vector2(0, 0), Vector2(maj, 0), Vector2(0, minr))
 	await process_frame
 	var ellipses := _ellipses(sm)
 	check(ellipses.size() == 1, "one ellipse entity (got %d)" % ellipses.size())
-	check(_line_count(sm) == 0, "no 32-gon lines (got %d)" % _line_count(sm))
+	check(CandlestickFixture.line_count(sm) == 0, "no 32-gon lines (got %d)" % CandlestickFixture.line_count(sm))
 	var eid := ellipses[0] if ellipses.size() > 0 else ""
 	if eid == "":
 		return
 	var info: Dictionary = sm.sketch.entity_info(eid)
-	check(absf(float(info.get("rx", 0.0)) * 2.0 - 35.0) <= 0.3, "major 35 (rx=%.3f)" % float(info.get("rx", 0.0)))
-	check(absf(float(info.get("ry", 0.0)) * 2.0 - 10.0) <= 0.3, "minor 10 (ry=%.3f)" % float(info.get("ry", 0.0)))
-	await _dim_axis(ctx, info.get("major_start", Vector2(17.5, 0)), 35.0)
-	await _dim_axis(ctx, info.get("minor_start", Vector2(0, 5)), 10.0)
+	check(absf(float(info.get("rx", 0.0)) * 2.0 - CandlestickFixture.mm("ELLIPSE_MAJ")) <= 0.3, "major 35 (rx=%.3f)" % float(info.get("rx", 0.0)))
+	check(absf(float(info.get("ry", 0.0)) * 2.0 - CandlestickFixture.mm("ELLIPSE_MIN")) <= 0.3, "minor 10 (ry=%.3f)" % float(info.get("ry", 0.0)))
+	await _dim_axis(ctx, info.get("major_start", Vector2(maj, 0)), CandlestickFixture.mm("ELLIPSE_MAJ"))
+	await _dim_axis(ctx, info.get("minor_start", Vector2(0, minr)), CandlestickFixture.mm("ELLIPSE_MIN"))
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await FilmUI.click_sketch(ctx, sm, info.get("major_start", Vector2(17.5, 0)), "Major start")
-	var end_screen := FilmUI.sketch_uv_to_screen(ctx, info.get("major_end", Vector2(-17.5, 0)))
+	await FilmUI.click_sketch(ctx, sm, info.get("major_start", Vector2(maj, 0)), "Major start")
+	var end_screen := FilmUI.sketch_uv_to_screen(ctx, info.get("major_end", Vector2(-maj, 0)))
 	if end_screen != Vector2.ZERO:
 		await FilmUI.viewport_click(ctx, end_screen, FilmUICues.alert("Click", "Major end"), true)
 	await _click_horizontal(ctx)
@@ -88,14 +78,6 @@ func _ellipses(sm: SketchMode) -> Array[String]:
 		if str(sm.sketch.entity_info(id).get("type", "")) == "ellipse":
 			out.append(str(id))
 	return out
-
-
-func _line_count(sm: SketchMode) -> int:
-	var n := 0
-	for id in sm.sketch.entity_ids():
-		if str(sm.sketch.entity_info(id).get("type", "")) == "line":
-			n += 1
-	return n
 
 
 func _dim_axis(ctx: FilmContext, at: Vector2, value: float) -> void:

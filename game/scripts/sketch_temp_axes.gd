@@ -21,13 +21,6 @@ static func has_revolve(doc) -> bool:
 	return false
 
 
-## Sketch-plane Y axis (x = 0). Empty when the plane is not Front-like.
-static func axis_uv(plane) -> PackedVector2Array:
-	if plane == null:
-		return PackedVector2Array()
-	return PackedVector2Array([Vector2(0.0, -400.0), Vector2(0.0, 400.0)])
-
-
 ## Snap `p` onto x = 0 when it is within `rad`. Unchanged otherwise.
 static func snap_y_axis(p: Vector2, rad: float) -> Vector2:
 	if absf(p.x) <= rad:

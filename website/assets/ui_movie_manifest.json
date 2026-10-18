@@ -15,7 +15,7 @@
   },
   {
     "id": "loft_guide_rail",
-    "title": "Ship hull loft — U transom to oval bow",
+    "title": "Ship hull loft \u2014 U transom to oval bow",
     "script": "res://tests/films/film_loft_guide_rail.gd",
     "enabled": true,
     "quit_after": 2400,
@@ -103,14 +103,7 @@
     "title": "Through-all plate cut, thickness unchanged",
     "script": "res://tests/films/film_extrude_through_all.gd",
     "enabled": true,
-    "quit_after": 1500,
-    "website": {
-      "feature": "Extrude & cut",
-      "title": "Extrude & cut",
-      "caption": "Boss and through-all cut from a sketch. Thickness stays put.",
-      "order": 2,
-      "hero": false
-    }
+    "quit_after": 1500
   },
   {
     "id": "direct_edit_import",
@@ -145,14 +138,7 @@
     "title": "Four M6 holes; mass = steel \u00d7 volume",
     "script": "res://tests/films/film_hole_wizard_m6.gd",
     "enabled": true,
-    "quit_after": 900,
-    "website": {
-      "feature": "Hole wizard",
-      "title": "Hole wizard",
-      "caption": "Place standard M6 holes; mass follows steel \u00d7 volume.",
-      "order": 7,
-      "hero": false
-    }
+    "quit_after": 900
   },
   {
     "id": "fillet_chain_pocket",
@@ -208,14 +194,7 @@
     "title": "Drawing dim follows a parameter edit",
     "script": "res://tests/films/film_drawing_follows_model.gd",
     "enabled": true,
-    "quit_after": 900,
-    "website": {
-      "feature": "Drawings",
-      "title": "Drawings",
-      "caption": "A drawing dimension updates when the model parameter changes.",
-      "order": 10,
-      "hero": false
-    }
+    "quit_after": 900
   },
   {
     "id": "drawing_bom",
@@ -537,7 +516,7 @@
     "title": "Parametric wrench: blank to 3MF",
     "script": "res://tests/films/film_ubc_wrench.gd",
     "enabled": true,
-    "quit_after": 3600,
+    "quit_after": 7200,
     "blurb": "Blank part to a printable 3MF: circles, shaft, open jaw, slot, fillets, thickness 14.",
     "website": {
       "feature": "Parametric wrench",
@@ -561,7 +540,14 @@
     "script": "res://tests/films/film_tutor1.gd",
     "enabled": true,
     "quit_after": 4800,
-    "blurb": "Centre rectangle, a boss, an inward offset cut, two fillets, a 1 mm shell, and a Top section."
+    "blurb": "Centre rectangle, a boss, an inward offset cut, two fillets, a 1 mm shell, and a Top section.",
+    "website": {
+      "feature": "Boss, cut & shell",
+      "title": "Tutor 1: boss, cut, fillets, shell",
+      "caption": "A boss, an offset cut, two fillets, a 1 mm shell, then a Top section view.",
+      "order": 2,
+      "hero": false
+    }
   },
   {
     "id": "hexkey",
@@ -569,7 +555,14 @@
     "script": "res://tests/films/film_hexkey.gd",
     "enabled": true,
     "quit_after": 4800,
-    "blurb": "A 7.65 mm across-flats hex swept along a Right-plane path."
+    "blurb": "A 7.65 mm across-flats hex swept along a Right-plane path.",
+    "website": {
+      "feature": "Swept boss",
+      "title": "Hex key",
+      "caption": "Sweep a 7.65 mm hex along a bent path into a hex key.",
+      "order": 7,
+      "hero": false
+    }
   },
   {
     "id": "flanged_pipe",
@@ -577,6 +570,13 @@
     "script": "res://tests/films/film_flanged_pipe.gd",
     "enabled": true,
     "quit_after": 4800,
-    "blurb": "Ø150 tube, two-face shell, flange with an 8-hole circular pattern, feature mirror, re-shell, R5 rims."
+    "blurb": "\u00d8150 tube, two-face shell, flange with an 8-hole circular pattern, feature mirror, re-shell, R5 rims.",
+    "website": {
+      "feature": "Shell, pattern & mirror",
+      "title": "Flanged pipe",
+      "caption": "Shell a tube, pattern 8 flange holes, mirror the flange, round the rims.",
+      "order": 10,
+      "hero": false
+    }
   }
 ]

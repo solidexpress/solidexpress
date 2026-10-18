@@ -11,16 +11,7 @@ const SPAN := 280.0
 func _init() -> void:
 	print("rung06 refs")
 	FilmUI.reset_fail_count()
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1280, 800))
+	var ctx := await CandlestickFixture.boot(self, Vector2i(1280, 800))
 	await _axis_and_silhouette(ctx)
 	await _inter_sketch(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
@@ -31,10 +22,10 @@ func _axis_and_silhouette(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.enter_sketch(ctx)
 	await _zoom(ctx, Vector3(45, 110, 0), SPAN)
-	await _line(ctx, Vector2(0, 0), Vector2(0, 220))
-	await _line(ctx, Vector2(0, 220), Vector2(90, 220))
-	await _line(ctx, Vector2(90, 220), Vector2(90, 0))
-	await _line(ctx, Vector2(90, 0), Vector2(0, 0))
+	await CandlestickFixture.draw_line(ctx, Vector2(0, 0), Vector2(0, 220))
+	await CandlestickFixture.draw_line(ctx, Vector2(0, 220), Vector2(90, 220))
+	await CandlestickFixture.draw_line(ctx, Vector2(90, 220), Vector2(90, 0))
+	await CandlestickFixture.draw_line(ctx, Vector2(90, 0), Vector2(0, 0))
 	sm.finish_revolve(TAU, "new")
 	await process_frame
 	check(ctx.view.doc.body_ids().size() == 1, "revolve body exists")
@@ -48,7 +39,7 @@ func _axis_and_silhouette(ctx: FilmContext) -> void:
 	var snapped: Vector2 = sm.snap_point(Vector2(1.2, 150.0))
 	check(absf(snapped.x) <= 0.2, "axis snap keeps x=0 at y=150 (got %s)" % str(snapped))
 	check(absf(snapped.y - 150.0) <= 0.2, "axis snap does not force the origin")
-	await _line(ctx, Vector2(0, 150), Vector2(60, 150))
+	await CandlestickFixture.draw_line(ctx, Vector2(0, 150), Vector2(60, 150))
 	var path_line := _horiz_near(sm, 150.0)
 	check(path_line != "", "60 mm path line exists")
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
@@ -111,13 +102,6 @@ func _inter_sketch(ctx: FilmContext) -> void:
 	var c: Vector2 = info.get("center", Vector2.ZERO)
 	check(c.distance_to(path_start) <= 0.5, "centre follows the path (got %s)" % str(c))
 	check(_has_coincident(sm, eid), "coincident on the section centre")
-
-
-func _line(ctx: FilmContext, a: Vector2, b: Vector2) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await FilmSteps.click_uv(ctx, a, "Line start", SPAN)
-	await FilmSteps.click_uv(ctx, b, "Line end", SPAN)
 
 
 func _horiz_near(sm: SketchMode, y: float) -> String:
