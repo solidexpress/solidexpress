@@ -230,16 +230,37 @@ static func click_datum(ctx: FilmContext, plane_name: String, view_id: String) -
 			pads.visible = pads_was_visible
 		return
 	await ctx.tree.process_frame
+	# Walk `click(datum=name)` → try_named_sketch_datum. A 3D pick at the
+	# Right sample (0,10,10) hits the revolved solid; Front uses (4,-6,0).
 	var pt: Vector3 = OriginPlanes.pick_point(plane_name)
+	if plane_name == "Right":
+		pt = Vector3(0.0, -6.0, 10.0)
 	var screen := FilmUI.model_to_screen(ctx, pt)
-	if not FilmUI.require_on_screen(ctx, screen, plane_name):
-		if pads != null:
-			pads.visible = pads_was_visible
-		return
-	await FilmUI.viewport_click(ctx, screen, FilmUICues.sketch_click(plane_name))
+	if FilmUI.is_on_screen(ctx, screen):
+		await FilmActor.of(ctx).aim(screen, FilmUICues.sketch_click(plane_name))
+	var ix = ctx.main.interaction
+	var named := false
+	if ix != null and ix.has_method("try_named_sketch_datum"):
+		named = bool(ix.try_named_sketch_datum(plane_name))
+	if not named:
+		if not FilmUI.require_on_screen(ctx, screen, plane_name):
+			if pads != null:
+				pads.visible = pads_was_visible
+			return
+		await FilmUI.viewport_click(ctx, screen, FilmUICues.sketch_click(plane_name))
 	await FilmUI.wait_frames(ctx.tree, 4)
 	if pads != null:
 		pads.visible = pads_was_visible
+	var sm_now: SketchMode = ctx.main.sketch_mode
+	if sm_now == null or not sm_now.active:
+		FilmUI._fail("%s sketch did not start" % plane_name)
+		return
+	var want: Dictionary = OriginPlanes.row(plane_name)
+	if not want.is_empty():
+		var got_n: Vector3 = sm_now.plane_normal()
+		var want_n: Vector3 = want.get("normal", Vector3.ZERO)
+		if absf(got_n.dot(want_n)) < 0.9:
+			FilmUI._fail("%s plane mismatch (n=%s)" % [plane_name, str(got_n)])
 
 
 ## WalkUI06.temp_axes_on: click Temporary Axes only when status says they are off.

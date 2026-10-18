@@ -689,9 +689,17 @@ static func swept_boss(ctx: FilmContext, profile_fid: String, path_fid: String) 
 	if not await FilmUI.click_control(ctx, boss, FilmUICues.alert("Click", "Swept Boss")):
 		return
 	await ctx.tree.process_frame
+	var prof := ctx.main.find_child("SweepProfile", true, false) as BaseButton
+	if prof != null and prof.is_visible_in_tree():
+		await FilmUI.click_control(ctx, prof, FilmUICues.alert("Click", "Sweep profile"))
+		await ctx.tree.process_frame
 	await _pick_timeline_row(ctx, profile_fid, "profile sketch")
 	if FilmUI.fail_count > 0:
 		return
+	var path_btn := ctx.main.find_child("SweepPathPick", true, false) as BaseButton
+	if path_btn != null and path_btn.is_visible_in_tree():
+		await FilmUI.click_control(ctx, path_btn, FilmUICues.alert("Click", "Sweep path"))
+		await ctx.tree.process_frame
 	await _pick_timeline_row(ctx, path_fid, "path sketch")
 	if FilmUI.fail_count > 0:
 		return
@@ -704,6 +712,8 @@ static func swept_boss(ctx: FilmContext, profile_fid: String, path_fid: String) 
 	await FilmUI.click_control(ctx, ok, FilmUICues.alert("Click", "Sweep OK"))
 	await ctx.tree.process_frame
 	await ctx.tree.process_frame
+	if not _feature_types(ctx).has("sweep"):
+		FilmUI._fail("Swept Boss did not add a sweep")
 
 
 ## Finish Op Cut, End Blind, Distance, Draft On, DraftAngle, Extrude.
@@ -751,6 +761,15 @@ static func draft_cut(ctx: FilmContext, distance: float, angle: float) -> void:
 	if not await FilmUI.click_control(ctx, ex, FilmUICues.alert("OK", "Extrude")):
 		return
 	await ctx.after_regen()
+
+
+static func _feature_types(ctx: FilmContext) -> PackedStringArray:
+	var out := PackedStringArray()
+	if ctx.view == null or ctx.view.doc == null:
+		return out
+	for f in ctx.view.doc.graph_features():
+		out.append(str(f.get("type", "")))
+	return out
 
 
 static func _snap_off_if_visible(ctx: FilmContext) -> void:
