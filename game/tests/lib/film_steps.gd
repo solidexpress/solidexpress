@@ -689,9 +689,17 @@ static func swept_boss(ctx: FilmContext, profile_fid: String, path_fid: String) 
 	if not await FilmUI.click_control(ctx, boss, FilmUICues.alert("Click", "Swept Boss")):
 		return
 	await ctx.tree.process_frame
+	var prof := ctx.main.find_child("SweepProfile", true, false) as BaseButton
+	if prof != null and prof.is_visible_in_tree():
+		await FilmUI.click_control(ctx, prof, FilmUICues.alert("Click", "Sweep profile"))
+		await ctx.tree.process_frame
 	await _pick_timeline_row(ctx, profile_fid, "profile sketch")
 	if FilmUI.fail_count > 0:
 		return
+	var path_btn := ctx.main.find_child("SweepPathPick", true, false) as BaseButton
+	if path_btn != null and path_btn.is_visible_in_tree():
+		await FilmUI.click_control(ctx, path_btn, FilmUICues.alert("Click", "Sweep path"))
+		await ctx.tree.process_frame
 	await _pick_timeline_row(ctx, path_fid, "path sketch")
 	if FilmUI.fail_count > 0:
 		return
@@ -704,6 +712,8 @@ static func swept_boss(ctx: FilmContext, profile_fid: String, path_fid: String) 
 	await FilmUI.click_control(ctx, ok, FilmUICues.alert("Click", "Sweep OK"))
 	await ctx.tree.process_frame
 	await ctx.tree.process_frame
+	if not _feature_types(ctx).has("sweep"):
+		FilmUI._fail("Swept Boss did not add a sweep")
 
 
 ## Finish Op Cut, End Blind, Distance, Draft On, DraftAngle, Extrude.
@@ -715,23 +725,35 @@ static func draft_cut(ctx: FilmContext, distance: float, angle: float) -> void:
 	await type_distance(ctx, dist)
 	if FilmUI.fail_count > 0:
 		return
-	var draft := _by_auto(ctx.main, "finish:Draft") as BaseButton
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var draft := chrome.find_child("DraftToggle", true, false) as BaseButton if chrome != null else null
 	if draft == null or not draft.is_visible_in_tree():
-		draft = ctx.main.find_child("DraftToggle", true, false) as BaseButton
+		draft = _by_auto(ctx.main, "finish:Draft") as BaseButton
 	if draft == null or not draft.is_visible_in_tree():
 		FilmUI._fail("finish:Draft is hidden")
 		return
-	if not draft.button_pressed:
-		if not await FilmUI.click_control(ctx, draft, FilmUICues.alert("Draft", "Draft On")):
+	# CheckButton: FilmActor.press toggles twice (button_pressed + pressed.emit).
+	# A real X11 click toggles once, like WalkUI06.try_extrude_cut.
+	for _i in 3:
+		var spin := chrome.find_child("DraftAngleSpin", true, false) as SpinBox if chrome != null else null
+		if draft.button_pressed and spin != null and spin.is_visible_in_tree():
+			break
+		var center := FilmUI.control_screen_center(draft)
+		if not await FilmActor.of(ctx).aim(center, FilmUICues.alert("Draft", "Draft On")):
 			return
-	await FilmUI.wait_frames(ctx.tree, 1)
+		await SxInput.x11_click(draft)
+		await FilmUI.wait_frames(ctx.tree, 4)
+	var spinbox := chrome.find_child("DraftAngleSpin", true, false) as SpinBox if chrome != null else null
+	var edit: LineEdit = spinbox.get_line_edit() if spinbox != null else null
+	if edit == null or not edit.is_visible_in_tree():
+		FilmUI._fail("finish:DraftAngle is hidden")
+		return
 	var ang := str(int(round(angle))) if is_equal_approx(angle, round(angle)) else str(angle)
-	await _type_auto_spin(ctx, "finish:DraftAngle", ang)
+	await FilmActor.of(ctx).edit_field(edit, ang, "Draft %s°" % ang)
 	if FilmUI.fail_count > 0:
 		return
 	var ex := _by_auto(ctx.main, "finish:Extrude") as Button
 	if ex == null or not ex.is_visible_in_tree():
-		var chrome: SketchContextChrome = ctx.main.sketch_chrome
 		ex = chrome.extrude_button() if chrome != null else null
 	if ex == null or not ex.is_visible_in_tree():
 		FilmUI._fail("finish:Extrude is hidden")
@@ -739,6 +761,15 @@ static func draft_cut(ctx: FilmContext, distance: float, angle: float) -> void:
 	if not await FilmUI.click_control(ctx, ex, FilmUICues.alert("OK", "Extrude")):
 		return
 	await ctx.after_regen()
+
+
+static func _feature_types(ctx: FilmContext) -> PackedStringArray:
+	var out := PackedStringArray()
+	if ctx.view == null or ctx.view.doc == null:
+		return out
+	for f in ctx.view.doc.graph_features():
+		out.append(str(f.get("type", "")))
+	return out
 
 
 static func _snap_off_if_visible(ctx: FilmContext) -> void:
