@@ -73,6 +73,7 @@ record unit_rung03 python3 tools/test_check_rung03.py &
 record unit_rung04 python3 tools/test_check_rung04.py &
 record unit_rung05 python3 tools/test_check_rung05.py &
 record unit_rung06 python3 tools/test_check_rung06.py &
+record unit_rung07 python3 tools/test_check_rung07.py &
 record registry python3 tools/test_walk_registry.py &
 record godot env GODOT_BIN="${GODOT}" packaging/ci/run_suites.sh --tier full --keep-going --jobs "${JOBS}" &
 wait
@@ -189,6 +190,7 @@ rows = [
     f"unit_rung04 {rc('unit_rung04')}",
     f"unit_rung05 {rc('unit_rung05')}",
     f"unit_rung06 {rc('unit_rung06')}",
+    f"unit_rung07 {rc('unit_rung07')}",
     f"registry {rc('registry')}",
     f"godot {rc('godot')} {last_match('godot', 'suites:')}",
     f"rung1 {summary('walk1')}",
