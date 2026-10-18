@@ -614,7 +614,7 @@ class WalkUI07(WalkChrome):
         return len(converted)
 
     def convert_face_outline(self, z: float) -> list[str]:
-        """Convert every in-plane edge whose midpoint sits on the handle top."""
+        """Convert handle sides (|y|≈10) and neck-zone curves, not C-head crumbs."""
         notes = []
         self.refresh("edges")
         seen = set()
@@ -624,25 +624,34 @@ class WalkUI07(WalkChrome):
                 continue
             if abs(float(mid[2]) - z) > 0.6:
                 continue
-            if not (15.0 < float(mid[0]) < 245.0 and abs(float(mid[1])) < 40.0):
-                continue
+            x, y = float(mid[0]), float(mid[1])
             length = float(edge.get("length") or 0.0)
-            if length < 4.0:
+            handle_side = 8.0 <= abs(y) <= 12.5 and length > 40.0 and 20.0 < x < 230.0
+            neck = (x < 55.0 or x > 205.0) and abs(y) < 36.0 and length > 8.0
+            if not (handle_side or neck):
                 continue
             eid = str(edge.get("id") or "")
             if eid in seen:
                 continue
             seen.add(eid)
-            notes.append(self.convert_at((float(mid[0]), float(mid[1]), float(mid[2])))["status"])
-        zf = float(z)
-        for extra in (
-            (43.0, 10.0, zf), (30.0, 18.0, zf), (18.0, 24.0, zf),
-            (43.0, -10.0, zf), (30.0, -18.0, zf), (18.0, -24.0, zf),
-            (210.0, 10.0, zf), (220.0, 16.0, zf), (232.0, 0.0, zf),
-            (210.0, -10.0, zf), (220.0, -16.0, zf),
-        ):
-            notes.append(self.convert_at(extra)["status"])
+            notes.append(self.convert_at((x, y, float(mid[2])))["status"])
         return notes
+
+    def prune_stray_convert(self) -> int:
+        """Drop short interior lines (the x=43 chain-breaker) before Offset."""
+        removed = 0
+        self.click("rail:Select")
+        for entity in list(self.ents("line")):
+            a, b = self._pt(entity.get("start") or [0, 0]), self._pt(entity.get("end") or [0, 0])
+            mid = ((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5)
+            length = math.hypot(a[0] - b[0], a[1] - b[1])
+            if length < 50.0 and abs(mid[1]) < 8.5:
+                self._click_uv(mid)
+                self.d.key("delete")
+                self.d.wait_idle(frames=1)
+                removed += 1
+        self.refresh("sketch", "status")
+        return removed
 
     def _twelve_point_uvs(self) -> list[tuple[float, float]]:
         c = self.ring_centre()

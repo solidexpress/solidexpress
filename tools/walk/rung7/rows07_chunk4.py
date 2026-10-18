@@ -12,6 +12,7 @@ class Rows07Chunk4:
         opened = self.face_sketch_handle_top()
         z = self.mm("HANDLE_T") * 0.5
         notes = self.convert_face_outline(z)
+        self.prune_stray_convert()
         converted = self.ents()
         n_arc = len([e for e in converted if e.get("type") == "arc"])
         n_line = len([e for e in converted if e.get("type") == "line"])
@@ -44,13 +45,15 @@ class Rows07Chunk4:
             sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
             if sketches:
                 self._pencil(sketches[-1])
+        self.prune_stray_convert()
         self.select_converted()
         self.click("rail:Offset")
         self.d.wait_idle(frames=2)
         self.offset_distance("5")
         self.offset_reverse(True)
-        status = self.offset_click((120.0, 5.0))
-        for uv in ((120.0, -5.0), (40.0, 0.0), (200.0, 0.0)):
+        arc_uv = self._ent_uv(self.ents("arc")[0]) if self.ents("arc") else (120.0, 10.0)
+        status = self.offset_click(arc_uv)
+        for uv in ((120.0, 10.0), (120.0, -10.0), (40.0, 10.0), (200.0, 10.0)):
             self.offset_click(uv)
         if self.control("offset:Ok"):
             self.click("offset:Ok")
