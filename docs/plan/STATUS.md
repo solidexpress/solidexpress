@@ -6,7 +6,31 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 Part A WP1–WP7: `CandlestickFixture`, `BooleanTarget`, `FaceLabelPark`, `ARM_CLEAR`, FilmSteps (tangent / 3-point / ellipse / sweep / draft), `SweepFuse.POLICY`, WalkUI06 split. WP11: mixin imports (`R12_BULGE`, `SxError`). Confirm: walks 77/77, 44/44, 46/46, 32/32, 36/36, 46/46; `check_rung05` 10/10; `check_rung06` 7/7; headless **236/0**. Counts: [`post-rung-06-result.md`](../loop/post-rung-06-result.md).
 
-Part B (film `candlestick`) parked: C-one `film_candlestick_tests.suite` stayed red after two attempts. WP8 reverted, WP9 never committed, WP10 not started. [`roadmap.md` §12](roadmap.md). Featured set stays 12. No WebM on this branch.
+## Candlestick film (`cursor/candlestick-film-20261018`)
+
+WP8–WP9 added film `candlestick` (WalkUI06 profile/path/cut via `CandlestickFixture`), `docs/howto/candlestick.md`, and `run_film_candlestick_tests.gd` (`tier=full`). Poster `website/assets/screenshots/candlestick.png`. No `website` object. Featured set stays 12. `lint_suites: 241 suites ok (79 ci, 158 full, 4 known-red)` so the tier is **237 run + 4 known-red**. Counts: [`post-rung-06-result.md`](../loop/post-rung-06-result.md).
+
+`precision_plate` calibrated at 115 s wall (685 frames) for a 29.6 s film, so candlestick stayed at 30 fps (352 s wall). The WebM is VP9 1600×900 at 30 fps. Container duration 67.200 s is the unique-frame video track (2016 frames). The writer drops duplicate presents (dup=1514); Godot process-clock was 3537 frames (00:01:57:27) and the last caption ends at 01:57.667. The poster is that video track's last picture (frame 2015). Muxing the `.vtt` was retired in `sx-movies` (captions are burned in; a subtitle stream doubled player length).
+
+`candlestick.webm` is not on Release `demo-movies` (this token cannot upload). It is not in `published-demos.json` or `demo-catalog.json`. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card. WebM, VTT, and poster are on `origin/cursor/demo-artifacts-candlestick` (handoff, not for merge) and `/opt/cursor/artifacts/`. No `.webm` / `.vtt` on this branch.
+
+Pending publish:
+
+```
+gh release upload demo-movies -R solidexpress/solidexpress --clobber candlestick.webm candlestick.vtt
+SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies candlestick
+```
+
+Then a person who can upload decides whether to feature it (swap, not grow past 12). Dry-run (`SX_MOVIES_OUT=/tmp/sx-movies scripts/sx-publish-demo-movies --dry-run candlestick`) wrote nothing:
+
+```
+dry-run poster: candlestick → website/assets/screenshots/candlestick.png
+dry-run upload 4 assets to solidexpress/solidexpress@demo-movies: /tmp/sx-movies/candlestick.webm website/assets/screenshots/candlestick.png /tmp/sx-movies/candlestick.vtt game/tests/ui_movie_manifest.json
+dry-run emit curated published-demos + demo-catalog featured (append candlestick)
+dry-run: no gh call, no file change
+```
+
+The dry-run "append" line is the script's generic message; `emit` still writes the curated 12 because candlestick has no `website` object. Do not grow `EXPECTED_COUNT`.
 
 ## Rung 6 — candlestick (PR #275)
 
