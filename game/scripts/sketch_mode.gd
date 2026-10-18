@@ -3788,15 +3788,14 @@ func trim_at(pos2: Vector2) -> bool:
 	var pre_lines := _snapshot_line_geometry()
 	run_solve()
 	# Hex trim around the ring must not DogLeg the C jaws 240 mm away.
-	_restore_distant_line_drift(pre_lines, pos2)
-	_weld_nearby_curve_joints()
-	# Drop selection entries that no longer exist after a replace-style trim.
-	var alive: Array[String] = []
-	for sid in selected:
-		if not sketch.entity_info(sid).is_empty():
-			alive.append(sid)
-	if alive.size() != selected.size():
-		_set_selected(alive)
+	# Only when the C (ellipse) is present — a wrench jaw has no ellipse,
+	# and restoring distant lines there leaves extra glyphs / 22.5 callouts.
+	if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
+		_restore_distant_line_drift(pre_lines, pos2)
+		_weld_nearby_curve_joints()
+	_drop_stale_dimensions()
+	_coincident_keep.clear()
+	_set_selected([])
 	_redraw()
 	_redraw_selected()
 	status.emit("Trimmed")
@@ -4169,7 +4168,34 @@ func _jaw_cutter_for_click(pos2: Vector2) -> Dictionary:
 				best = {"id": id, "a": a, "b": b}
 	if not best.is_empty() and _jaw_click_reaches_cutter(pos2, best_d, sides):
 		return best
-	return _nearest_construction_line(pos2, 40.0)
+	var con := _nearest_construction_line(pos2, 40.0)
+	if not con.is_empty():
+		return con
+	return _nearest_profile_cutter_line(pos2, 40.0, sides, jaw_dir)
+
+
+func _nearest_profile_cutter_line(p: Vector2, max_dist: float, sides: Array,
+		jaw_dir: Vector2) -> Dictionary:
+	var best: Dictionary = {}
+	var best_d := max_dist
+	var side_ids := {}
+	for s in sides:
+		side_ids[str(s["id"])] = true
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id) or side_ids.has(str(id)) or _angle_datum_lines.has(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var a: Vector2 = info["start"]
+		var b: Vector2 = info["end"]
+		if jaw_dir.length_squared() > 1e-8 and _dirs_within_deg(b - a, jaw_dir, 2.0):
+			continue
+		var d := SketchGeom.point_segment_distance(p, a, b)
+		if d < best_d:
+			best_d = d
+			best = {"id": id, "a": a, "b": b}
+	return best
 
 
 func _jaw_click_reaches_cutter(pos2: Vector2, cutter_d: float, sides: Array) -> bool:
@@ -4330,19 +4356,25 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		var e_disc := es * discard > EPS
 		var s_keep := ss * discard < -EPS
 		var e_keep := es * discard < -EPS
+		# Shaft lines (longer than the cutter) sit entirely on one side of a
+		# head-mouth cutter. They are not the discarded jaw half.
+		var shaft_like := side_dir.length() > a.distance_to(b) * 1.25
 		if is_cap:
 			# Caps stay off the wall list even when a slight skew puts their
 			# endpoints on opposite sides of the cutter.
 			if (s_disc or absf(ss) <= EPS) and (e_disc or absf(es) <= EPS) and (s_disc or e_disc):
-				to_delete.append(id)
-			elif s_keep and e_keep:
+				if not shaft_like:
+					to_delete.append(id)
+			elif s_keep and e_keep and not shaft_like:
 				to_delete.append(id)
 			continue
 		if (s_disc or absf(ss) <= EPS) and (e_disc or absf(es) <= EPS) and (s_disc or e_disc):
-			to_delete.append(id)
+			if not shaft_like:
+				to_delete.append(id)
 			continue
 		if s_keep and e_keep:
-			to_delete.append(id)
+			if not shaft_like:
+				to_delete.append(id)
 			continue
 		if not ((s_disc and e_keep) or (e_disc and s_keep) or (absf(ss) <= EPS and e_keep) \
 				or (absf(es) <= EPS and s_keep)):
@@ -4369,6 +4401,13 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	for dim in dimensions:
 		if typeof(dim) != TYPE_DICTIONARY:
 			continue
+		if str(dim.get("callout", "")) == "jaw_width":
+			jaw_width = float(dim.get("value", 0.0))
+			have_width = true
+			break
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
 		var dtype := str(dim.get("type", ""))
 		var dids: Array = dim.get("ids", [])
 		if dtype == "distance" and not have_width:
@@ -4389,7 +4428,8 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 				jaw_angle = float(dim.get("value", 0.0))
 				have_angle = true
 	if not have_width:
-		jaw_width = snappedf(walls[0]["hit"].distance_to(walls[1]["hit"]), 1e-4)
+		jaw_width = walls[0]["hit"].distance_to(walls[1]["hit"])
+	jaw_width = snappedf(jaw_width, 0.01)
 	if not have_angle:
 		var md: Vector2 = walls[0]["keep"] - walls[0]["hit"]
 		if md.length_squared() < 1e-12:
@@ -4481,12 +4521,10 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	sketch.add_constraint("perpendicular", [
 		{"entity": str(walls[0]["id"]), "role": "self"},
 		{"entity": floor_id, "role": "self"}], 0.0)
-	sketch.add_constraint("parallel", [
-		{"entity": str(walls[0]["id"]), "role": "self"},
-		{"entity": str(walls[1]["id"]), "role": "self"}], 0.0)
-	var hx: String = sketch.add_line(cc.x - 8.0, cc.y, cc.x + 8.0, cc.y)
-	sketch.set_construction(hx, true)
-	sketch.add_constraint("horizontal", [{"entity": hx, "role": "self"}], 0.0)
+	if not _entity_has_constraint(str(walls[0]["id"]), "parallel"):
+		sketch.add_constraint("parallel", [
+			{"entity": str(walls[0]["id"]), "role": "self"},
+			{"entity": str(walls[1]["id"]), "role": "self"}], 0.0)
 	var ang := jaw_angle
 	# The rectangle already drives this wall. A second angle is a second 45°
 	# and a redundant solve. Keep the one the user edited; it is the one
@@ -4503,6 +4541,10 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		if ang_cid != "":
 			break
 	if ang_cid == "":
+		var hx: String = sketch.add_line(cc.x - 8.0, cc.y, cc.x + 8.0, cc.y)
+		sketch.set_construction(hx, true)
+		_angle_datum_lines[hx] = true
+		sketch.add_constraint("horizontal", [{"entity": hx, "role": "self"}], 0.0)
 		ang_cid = sketch.add_constraint("angle", [
 			{"entity": hx, "role": "self"},
 			{"entity": str(walls[0]["id"]), "role": "self"}], ang)
@@ -4514,9 +4556,10 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		if (info["center"] as Vector2).distance_to(Vector2.ZERO) > 1.0:
 			continue
 		var hole_r := float(info.get("radius", 1.0))
-		var hole_cid: String = sketch.add_constraint(
-				"radius", [{"entity": id, "role": "self"}], hole_r)
-		_record_dimension("radius", [id], hole_r, hole_cid)
+		if not _entity_has_constraint(id, "radius"):
+			var hole_cid: String = sketch.add_constraint(
+					"radius", [{"entity": id, "role": "self"}], hole_r)
+			_record_dimension("radius", [id], hole_r, hole_cid)
 		var oanchor := _lock_projected_circle(Vector2.ZERO, maxf(hole_r, 1.0))
 		if oanchor != "":
 			sketch.add_constraint("concentric", [
@@ -4565,6 +4608,9 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 				run_solve()
 	_weld_jaw_profile(floor_id, walls, arc_id)
 	_undo_note("Trim")
+	_drop_stale_dimensions()
+	_coincident_keep.clear()
+	_set_selected([])
 	_redraw()
 	_redraw_selected()
 	_trim_jaw_done_in_drag = true
@@ -9931,6 +9977,12 @@ func _place_one_glyph(cid: String, cam: Camera3D, k: float, label_rects: Array[R
 	if (type == "horizontal" or type == "vertical") and not _constraint_refs_a_line(cinfo) \
 			and not _constraint_refs_endpoints(cinfo):
 		return
+	# Jaw angle datum is construction +X; its H badge is not part of the
+	# open-jaw nine (shaft H + tangents + pins + parallels + POL).
+	if type == "horizontal":
+		for ref in cinfo.get("refs", []):
+			if typeof(ref) == TYPE_DICTIONARY and _angle_datum_lines.has(str(ref.get("entity", ""))):
+				return
 	var anchor: Variant = _constraint_anchor(cinfo)
 	if anchor == null:
 		return
