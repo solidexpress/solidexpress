@@ -14,12 +14,12 @@ const SPEC := {
 
 const REFUSALS := {
 	"empty": "Mirror: pick features to mirror",
-	"plane": "Mirror: pick a planar face",
+	"plane": "Mirror: pick a planar face or origin plane",
 	"body": "Mirror: select a body",
 }
 
 const HINTS := {
-	"arm": "Mirror: click a planar face for the mirror plane",
+	"arm": "Mirror: click a planar face or origin plane",
 	"features": "Mirror: Shift+click features, then OK",
 	"ready": "Mirror — OK to create",
 }
@@ -99,6 +99,15 @@ func set_plane(point: Vector3, normal: Vector3) -> void:
 		_say(HINTS["features"])
 	else:
 		_say(HINTS["ready"])
+
+
+## Origin Front / Top / Right. Point is the part origin; normal from BASIS.
+func set_origin_plane(name: String) -> bool:
+	var found: Dictionary = OriginPlanes.row(name)
+	if found.is_empty():
+		return false
+	set_plane(Vector3.ZERO, (found["normal"] as Vector3).normalized())
+	return has_plane
 
 
 func add(fid: String) -> void:

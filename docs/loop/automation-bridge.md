@@ -33,7 +33,7 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `pattern:Angle` | Circular Sketch Pattern total angle (degrees) |
 | `pattern:Ok` | Circular Sketch Pattern OK |
 | `mirror:Features` | Feature Mirror arm (plane + timeline collector) |
-| `mirror:Plane` | Feature Mirror: next click is the planar face |
+| `mirror:Plane` | Feature Mirror: next click is a planar body face or origin plane |
 | `mirror:Add` | Feature Mirror: add the timeline selection |
 | `mirror:Ok` | Feature Mirror OK. Zero features is a refuse. |
 | `variant:Circular` | Pattern tool circular variant (total instances about the origin) |
@@ -47,7 +47,7 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `popup:Top` | Section plane Top (`y = 0`, normal ±Y) |
 | `popup:Right` | Section plane Right (`x = 0`, normal ±X) |
 | `plane=` | With `face_normal`, the aligned face whose `n·pick` is nearest this millimetre offset |
-| `datum=Front\|Top\|Right` | A point on that origin quad and not the other two (`click` while sketch-host pick is armed) |
+| `datum=Front\|Top\|Right` | Origin plane. Sketch-host pick starts that sketch. Feature Mirror collecting a plane sets `plane_point = origin`, `plane_normal` from `OriginPlanes.BASIS` (Front is +Z). |
 | `popup:Normal To` | View menu item. Ctrl+8 runs the same re-face. Key 8 stays Bottom. |
 | `state.faces[].pick` | World point on the face; `click(face=)` and `click(face_normal=)` aim here |
 | `state.faces[].plane` | `n·pick` in millimetres |
@@ -120,7 +120,7 @@ python3 tools/walk_rung03.py --from A6 --checkpoint --out /tmp/sx-rung03 --a15
 
 ## Pipe section runner (rung 5)
 
-`tools/walk_rung05.py` is the same command as `tools/walk_rung04.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 36-row UBC pipe-section checklist. It runs `tools/check_rung05.py`. `--checkpoint` reloads `shelled.sxp` (chunk 2), `cut.sxp` (chunk 3), or `reshell.sxp` (chunk 4). Face picks use `face_normal` with `plane=` as `n·pick` (the −Z flange at `z = −260` is `face_normal=[0,0,−1]`, `plane=260`). Circular Sketch Pattern is `rail:Pattern` then `variant:Circular`, then `pattern:Count` / `pattern:Angle` / `pattern:Ok`. Feature Mirror is `mirror:Features`, a planar face, Shift+click `timeline:row:…`, `mirror:Ok`. Two-face Shell is Shift+click both planar ends, `strip:shell`, `finish:Thickness`, `finish:Ok`. Export rows share one 3MF per stage. A25 needs `--a15` (without it: `BLOCKED-by-flag`).
+`tools/walk_rung05.py` is the same command as `tools/walk_rung04.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 36-row UBC pipe-section checklist. It runs `tools/check_rung05.py`. `--checkpoint` reloads `shelled.sxp` (chunk 2), `cut.sxp` (chunk 3), or `reshell.sxp` (chunk 4). Face picks use `face_normal` with `plane=` as `n·pick` (the −Z flange at `z = −260` is `face_normal=[0,0,−1]`, `plane=260`). Circular Sketch Pattern is `rail:Pattern` then `variant:Circular`, then `pattern:Count` / `pattern:Angle` / `pattern:Ok`. Feature Mirror is `mirror:Features`, a planar face or `click(datum=Front)` for origin Front, Shift+click `timeline:row:…`, `mirror:Ok`. Two-face Shell is Shift+click both planar ends, `strip:shell`, `finish:Thickness`, `finish:Ok`. Export rows share one 3MF per stage. A25 needs `--a15` (without it: `BLOCKED-by-flag`).
 
 ```bash
 python3 tools/walk_rung05.py --out /tmp/sx-rung05

@@ -1927,6 +1927,18 @@ func try_named_sketch_datum(name: String) -> bool:
 	return true
 
 
+## Feature Mirror plane pick: origin Front/Top/Right when the look is face-on.
+func _try_mirror_origin_plane(ray: Array) -> bool:
+	if ops_panel == null or not ops_panel.has_method("try_mirror_datum"):
+		return false
+	if ray.size() < 2:
+		return false
+	var datum := OriginPlanes.ray_hit(view, ray[0], ray[1])
+	if datum == "":
+		return false
+	return bool(ops_panel.try_mirror_datum(datum))
+
+
 func _chrome_wants_face_pick() -> bool:
 	return sketch_chrome != null \
 			and sketch_chrome.has_method("wants_face_pick") \
@@ -4976,6 +4988,14 @@ func _on_release(pos: Vector2) -> void:
 	# select_ray face-refine — that clears accumulated edges mid-pick. An empty
 	# press while armed keeps the set (silhouette pick or a named miss).
 	if armed_pick:
+		# Front sits inside a mid-plane solid. Face-on origin-plane hits win
+		# over the body so Feature Mirror can take the Front datum.
+		if _try_mirror_origin_plane(ray):
+			_box_drag = false
+			_additive_click = false
+			_press_empty = false
+			_press_travel = 0.0
+			return
 		var hit: Dictionary = view.pick_info(ray[0], ray[1])
 		if not hit.is_empty():
 			ops_panel.handle_viewport_pick(

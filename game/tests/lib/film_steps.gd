@@ -276,6 +276,18 @@ static func circular_pattern(ctx: FilmContext, count: int, angle: float) -> void
 	await FilmUI.wait_frames(ctx.tree, 2)
 
 
+## Feature Mirror: origin Front / Top / Right while the collector is waiting.
+## Named datum matches the walk (`click(datum=Front)`); Front sits inside a
+## mid-plane solid so a body-face ray is the wrong plane.
+static func click_mirror_datum(ctx: FilmContext, name: String) -> void:
+	await _release_line_focus(ctx)
+	var ops = ctx.main.ops_panel if ctx.main != null else null
+	if ops != null and ops.has_method("try_mirror_datum") and bool(ops.try_mirror_datum(name)):
+		await FilmUI.wait_frames(ctx.tree, 2)
+		return
+	FilmUI._fail("origin plane %s was not accepted as the mirror plane" % name)
+
+
 ## Feature Mirror: arm Features, click the plane face, Shift+click timeline rows, Ok.
 static func feature_mirror(ctx: FilmContext, plane_normal: Vector3, plane_offset: float, names: Array) -> void:
 	await _release_line_focus(ctx)
