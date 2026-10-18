@@ -1,0 +1,381 @@
+WEBVTT
+
+1
+00:00:02.067 --> 00:00:03.700
+Sketch the Front profile and revolve 360
+
+2
+00:00:03.700 --> 00:00:04.600
+[Sketch]  Start sketch on picked face or ground
+
+3
+00:00:04.600 --> 00:00:05.700
+[Click]  Front
+
+4
+00:00:05.700 --> 00:00:06.500
+[Wheel]  Frame sketch
+
+5
+00:00:06.500 --> 00:00:07.867
+[Line]  Line
+
+6
+00:00:07.867 --> 00:00:09.300
+[Click]  Line start
+
+7
+00:00:09.300 --> 00:00:10.500
+[Click]  Line end
+
+8
+00:00:10.500 --> 00:00:11.700
+[Line]  Line
+
+9
+00:00:11.700 --> 00:00:12.933
+[Click]  Line start
+
+10
+00:00:12.933 --> 00:00:13.867
+[Click]  Line end
+
+11
+00:00:13.867 --> 00:00:15.100
+[Line]  Line
+
+12
+00:00:15.100 --> 00:00:16.600
+[Click]  Line start
+
+13
+00:00:16.600 --> 00:00:17.567
+[Click]  Line end
+
+14
+00:00:17.567 --> 00:00:18.967
+[Arc]  Arc
+
+15
+00:00:18.967 --> 00:00:19.867
+[Tangent]  Tangent variant
+
+16
+00:00:19.867 --> 00:00:21.033
+[Click]  Tangent start
+
+17
+00:00:21.033 --> 00:00:22.433
+[Snap]  Snap off
+
+18
+00:00:22.433 --> 00:00:23.933
+[Click]  Tangent end
+
+19
+00:00:23.933 --> 00:00:25.200
+[Line]  Line
+
+20
+00:00:25.200 --> 00:00:26.500
+[Click]  Line start
+
+21
+00:00:26.500 --> 00:00:27.433
+[Click]  Line end
+
+22
+00:00:27.433 --> 00:00:28.733
+[Arc]  Arc
+
+23
+00:00:28.733 --> 00:00:29.667
+[Three Point]  Three Point variant
+
+24
+00:00:29.667 --> 00:00:30.767
+[Click]  3-point start
+
+25
+00:00:30.767 --> 00:00:31.667
+[Click]  3-point bulge
+
+26
+00:00:31.667 --> 00:00:32.633
+[Click]  3-point end
+
+27
+00:00:32.633 --> 00:00:33.933
+[Line]  Line
+
+28
+00:00:33.933 --> 00:00:35.267
+[Click]  Line start
+
+29
+00:00:35.267 --> 00:00:36.200
+[Click]  Line end
+
+30
+00:00:36.200 --> 00:00:37.567
+[Arc]  Arc
+
+31
+00:00:37.567 --> 00:00:38.467
+[Tangent]  Tangent variant
+
+32
+00:00:38.467 --> 00:00:39.733
+[Click]  Tangent start
+
+33
+00:00:39.733 --> 00:00:40.667
+[Click]  Tangent end
+
+34
+00:00:40.667 --> 00:00:41.467
+[Wheel]  Frame sketch
+
+35
+00:00:41.467 --> 00:00:42.967
+[Arc]  Arc
+
+36
+00:00:42.967 --> 00:00:43.933
+[Three Point]  Three Point variant
+
+37
+00:00:43.933 --> 00:00:45.167
+[Snap]  Snap on
+
+38
+00:00:45.167 --> 00:00:46.467
+[Click]  R60 end
+
+39
+00:00:46.467 --> 00:00:47.733
+[Snap]  Snap off
+
+40
+00:00:47.733 --> 00:00:49.100
+[Click]  R12 bulge
+
+41
+00:00:49.100 --> 00:00:50.433
+[Snap]  Snap on
+
+42
+00:00:50.433 --> 00:00:51.767
+[Click]  R12 clip
+
+43
+00:00:51.767 --> 00:00:53.100
+[Snap]  Snap off
+
+44
+00:00:53.100 --> 00:00:54.333
+[Wheel]  Frame sketch
+
+45
+00:00:54.333 --> 00:00:55.733
+[Click]  Sketch click
+
+46
+00:00:55.733 --> 00:00:57.133
+[Click]  Revolve axis
+
+47
+00:00:57.133 --> 00:00:58.900
+[Revolve]  Revolve profile 360° (New body)
+
+48
+00:00:58.900 --> 00:01:00.533
+Path on Front: 60, R150, R20 hook, dim 10
+
+49
+00:01:00.533 --> 00:01:01.700
+[Sketch]  Start sketch on picked face or ground
+
+50
+00:01:01.700 --> 00:01:02.700
+[Click]  Front
+
+51
+00:01:02.700 --> 00:01:03.500
+[Wheel]  Frame sketch
+
+52
+00:01:03.500 --> 00:01:04.867
+[Line]  Line
+
+53
+00:01:04.867 --> 00:01:06.133
+[Click]  Line start
+
+54
+00:01:06.133 --> 00:01:07.067
+[Click]  Line end
+
+55
+00:01:07.067 --> 00:01:08.400
+[Arc]  Arc
+
+56
+00:01:08.400 --> 00:01:09.300
+[Tangent]  Tangent variant
+
+57
+00:01:09.300 --> 00:01:10.533
+[Click]  Tangent start
+
+58
+00:01:10.533 --> 00:01:11.600
+[Click]  Tangent end
+
+59
+00:01:11.600 --> 00:01:13.100
+[Arc]  Arc
+
+60
+00:01:13.100 --> 00:01:14.033
+[Three Point]  Three Point variant
+
+61
+00:01:14.033 --> 00:01:15.367
+[Click]  3-point start
+
+62
+00:01:15.367 --> 00:01:16.267
+[Click]  3-point bulge
+
+63
+00:01:16.267 --> 00:01:17.233
+[Click]  3-point end
+
+64
+00:01:17.233 --> 00:01:19.367
+[Exit Sketch]  Commit sketch and show yellow pad
+
+65
+00:01:19.367 --> 00:01:21.000
+Ellipse 35×10 on Right, coincident to the path
+
+66
+00:01:21.000 --> 00:01:21.900
+[Sketch]  Start sketch on picked face or ground
+
+67
+00:01:21.900 --> 00:01:22.767
+[Click]  Right
+
+68
+00:01:22.767 --> 00:01:23.633
+[Wheel]  Frame sketch
+
+69
+00:01:23.633 --> 00:01:25.067
+[Click]  Sketch click
+
+70
+00:01:25.067 --> 00:01:26.400
+[Click]  Ellipse — centre
+
+71
+00:01:26.400 --> 00:01:27.300
+[Click]  Ellipse — major
+
+72
+00:01:27.300 --> 00:01:28.233
+[Click]  Ellipse — minor
+
+73
+00:01:28.233 --> 00:01:30.233
+[Exit Sketch]  Commit sketch and show yellow pad
+
+74
+00:01:30.233 --> 00:01:31.533
+Swept Boss, fuse onto the revolve
+
+75
+00:01:31.533 --> 00:01:32.467
+[Click]  Swept Boss
+
+76
+00:01:32.467 --> 00:01:33.500
+[Click]  Sweep profile
+
+77
+00:01:33.500 --> 00:01:34.433
+[Click]  profile sketch
+
+78
+00:01:34.433 --> 00:01:35.400
+[Click]  Sweep path
+
+79
+00:01:35.400 --> 00:01:36.333
+[Click]  path sketch
+
+80
+00:01:36.333 --> 00:01:37.400
+[Click]  Sweep OK
+
+81
+00:01:37.400 --> 00:01:38.967
+Cut Ø30 Blind 25, draft 15° inward
+
+82
+00:01:38.967 --> 00:01:40.100
+[3]  Top
+
+83
+00:01:40.100 --> 00:01:41.067
+[Wheel]  Frame top disc
+
+84
+00:01:41.067 --> 00:01:42.700
+[Sketch]  Start sketch on picked face or ground
+
+85
+00:01:42.700 --> 00:01:44.067
+[Circle]  Circle
+
+86
+00:01:44.067 --> 00:01:45.567
+[Click]  Ø30 centre
+
+87
+00:01:45.567 --> 00:01:46.500
+[Click]  Ø30 rim
+
+88
+00:01:46.500 --> 00:01:48.000
+[Click]  FinishOp
+
+89
+00:01:48.000 --> 00:01:48.933
+[Click]  FinishOp item
+
+90
+00:01:48.933 --> 00:01:49.933
+[Click]  FinishEnd
+
+91
+00:01:49.933 --> 00:01:50.867
+[Click]  FinishEnd item
+
+92
+00:01:50.867 --> 00:01:52.667
+[Type]  Distance 25
+
+93
+00:01:52.667 --> 00:01:53.233
+[Draft]  Draft On
+
+94
+00:01:53.233 --> 00:01:54.900
+[Type]  Draft 15°
+
+95
+00:01:54.900 --> 00:01:57.667
+[OK]  Extrude
