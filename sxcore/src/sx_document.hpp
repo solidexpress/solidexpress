@@ -150,6 +150,13 @@ public:
                                         const godot::String& face_id) const;
     // Edge wireframe as a Dictionary {edge_uuid: PackedVector3Array}.
     godot::Dictionary get_edge_lines(const godot::String& body_id) const;
+    // Analytic circles on a sketch plane. Each row is
+    // {edge: String, center: Vector3, radius: float}.
+    godot::Array circles_on_plane(const godot::Vector3& origin, const godot::Vector3& x_dir,
+                                  const godot::Vector3& y_dir) const;
+    // Curve ∩ plane pierce points in sketch UV (GeomAPI_IntCS).
+    godot::PackedVector2Array pierce_uvs(const godot::Vector3& origin, const godot::Vector3& x_dir,
+                                         const godot::Vector3& y_dir) const;
 
     // Exact B-rep picking. Returns {} on miss, else
     // {body: String, face: String, point: Vector3, distance: float}.

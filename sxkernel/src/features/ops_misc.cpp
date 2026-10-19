@@ -68,6 +68,7 @@ bool apply_sketch(ApplyCtx& ctx) {
     (void)feature;
 
                 rebind_sketch_support(ctx.graph, doc, f);
+                rebuild_projected_externals(doc, f.id);
                 if (f.params.contains("converted_edges")) rebuild_converted_points(doc, f.id);
                 return true;
 }

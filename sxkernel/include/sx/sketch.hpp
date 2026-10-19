@@ -247,12 +247,27 @@ public:
     // In-plane BSpline/Bezier Convert: interpolating fit points in sketch UV.
     EntityId project_spline_edge(const std::vector<std::array<double, 2>>& fit_points,
                                  const std::string& edge_id);
+    EntityId project_ellipse_edge(double cx, double cy, double rx, double ry, double angle,
+                                  const std::string& edge_id);
+    EntityId project_elliptical_arc_edge(double cx, double cy, double rx, double ry, double angle,
+                                         double start_angle, double end_angle,
+                                         const std::string& edge_id);
 
     // Update external entity geometry from new 3D edge data (associative regen).
     bool update_projected_line(const EntityId& id, const std::array<double, 3>& a,
                                const std::array<double, 3>& b);
     bool update_projected_circle(const EntityId& id, const std::array<double, 3>& center,
                                  double radius);
+    bool update_projected_arc(const EntityId& id, const std::array<double, 3>& center, double radius,
+                              const std::array<double, 3>& a, const std::array<double, 3>& b,
+                              double span);
+    bool update_projected_ellipse(const EntityId& id, double cx, double cy, double rx, double ry,
+                                  double angle);
+    bool update_projected_elliptical_arc(const EntityId& id, double cx, double cy, double rx,
+                                         double ry, double angle, double start_angle,
+                                         double end_angle);
+    bool update_projected_spline(const EntityId& id,
+                                 const std::vector<std::array<double, 2>>& fit_points);
     // Mark projected_from empty entities still external as dangling (construction).
     int mark_dangling_external(const std::vector<std::string>& live_edge_ids);
 

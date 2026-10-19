@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "sx/ids.hpp"
+#include "sx/sketch.hpp"
 
 namespace sx {
 
@@ -41,5 +42,20 @@ EntityId add_external_edge(Document& doc, const EntityId& sketch_fid,
 
 // Rebuild converted pierce points from stored edge UUIDs. Returns points written.
 int rebuild_converted_points(Document& doc, const EntityId& sketch_fid);
+
+// Re-project every external entity from its live edge. Marks dangling when the
+// edge is gone. Returns entities updated.
+int rebuild_projected_externals(Document& doc, const EntityId& sketch_fid);
+
+// Analytic circles whose 3D curve lies on `plane` (BRepAdaptor_Curve::Circle).
+struct PlaneCircle {
+    EntityId edge;
+    std::array<double, 3> center{0, 0, 0};
+    double radius = 0;
+};
+std::vector<PlaneCircle> circles_on_plane(const Document& doc, const SketchPlane& plane);
+
+// True curve ∩ plane (GeomAPI_IntCS), plus open-curve endpoints on the plane.
+std::vector<std::array<double, 2>> pierce_uvs(const Document& doc, const SketchPlane& plane);
 
 }  // namespace sx

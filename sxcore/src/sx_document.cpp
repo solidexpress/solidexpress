@@ -740,6 +740,43 @@ Dictionary SxDocument::get_edge_lines(const String& body_id) const {
     return out;
 }
 
+namespace {
+
+sx::SketchPlane gd_plane(const Vector3& origin, const Vector3& x_dir, const Vector3& y_dir) {
+    sx::SketchPlane pl;
+    pl.origin = {origin.x, origin.y, origin.z};
+    pl.x_dir = {x_dir.x, x_dir.y, x_dir.z};
+    pl.y_dir = {y_dir.x, y_dir.y, y_dir.z};
+    return pl;
+}
+
+}  // namespace
+
+Array SxDocument::circles_on_plane(const Vector3& origin, const Vector3& x_dir,
+                                   const Vector3& y_dir) const {
+    Array out;
+    if (!doc_) return out;
+    for (const auto& c : sx::circles_on_plane(*doc_, gd_plane(origin, x_dir, y_dir))) {
+        Dictionary row;
+        row["edge"] = to_gd(c.edge.str());
+        row["center"] = Vector3(static_cast<float>(c.center[0]), static_cast<float>(c.center[1]),
+                                static_cast<float>(c.center[2]));
+        row["radius"] = c.radius;
+        out.push_back(row);
+    }
+    return out;
+}
+
+PackedVector2Array SxDocument::pierce_uvs(const Vector3& origin, const Vector3& x_dir,
+                                          const Vector3& y_dir) const {
+    PackedVector2Array out;
+    if (!doc_) return out;
+    for (const auto& uv : sx::pierce_uvs(*doc_, gd_plane(origin, x_dir, y_dir))) {
+        out.push_back(Vector2(static_cast<float>(uv[0]), static_cast<float>(uv[1])));
+    }
+    return out;
+}
+
 Dictionary SxDocument::pick(const Vector3& origin, const Vector3& direction) const {
     Dictionary out;
     auto hit = sx::pick_ray(*doc_, {origin.x, origin.y, origin.z},
@@ -2642,6 +2679,10 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("sketch_region_outlines", "sketch", "face_id"),
                          &SxDocument::sketch_region_outlines);
     ClassDB::bind_method(D_METHOD("get_edge_lines", "body_id"), &SxDocument::get_edge_lines);
+    ClassDB::bind_method(D_METHOD("circles_on_plane", "origin", "x_dir", "y_dir"),
+                         &SxDocument::circles_on_plane);
+    ClassDB::bind_method(D_METHOD("pierce_uvs", "origin", "x_dir", "y_dir"),
+                         &SxDocument::pierce_uvs);
     ClassDB::bind_method(D_METHOD("pick", "origin", "direction"), &SxDocument::pick);
     ClassDB::bind_method(D_METHOD("card_markdown", "entity_id"), &SxDocument::card_markdown);
     ClassDB::bind_method(D_METHOD("set_card_alias", "entity_id", "text"), &SxDocument::set_card_alias);

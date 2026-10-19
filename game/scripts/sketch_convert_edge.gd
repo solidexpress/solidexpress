@@ -9,6 +9,8 @@ const PROJECTORS := {
 	"circle": "Convert: external circle",
 	"arc": "Convert: external arc",
 	"spline": "Convert: external spline",
+	"ellipse": "Convert: external ellipse",
+	"elliptical_arc": "Convert: external ellipse",
 }
 const NOT_ON_FACE := "Convert: edge is not on this face"
 const NOT_SUPPORTED := "Convert: edge type not supported (line, circle, arc, or spline)"

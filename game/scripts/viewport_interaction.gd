@@ -3757,6 +3757,12 @@ func refresh_sketch_intersections() -> void:
 	var n := sketch_mode.plane_normal()
 	var px := sketch_mode.plane_x
 	var py := sketch_mode.plane_y
+	if view.doc.has_method("pierce_uvs"):
+		var uv: PackedVector2Array = view.doc.pierce_uvs(origin, px, py)
+		for i in range(uv.size()):
+			pts.append(uv[i])
+		sketch_mode.intersection_points = pts
+		return
 	const TOL := 0.15
 	for body_id in view.doc.body_ids():
 		var edges: Dictionary = view.doc.get_edge_lines(body_id)

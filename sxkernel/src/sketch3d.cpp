@@ -6,17 +6,25 @@
 #include <vector>
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRep_Tool.hxx>
 #include <GeomAPI_IntCS.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <Geom_BezierCurve.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_Circle.hxx>
+#include <Geom_Curve.hxx>
+#include <Geom_Ellipse.hxx>
 #include <Geom_Plane.hxx>
 #include <TopExp.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Elips.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
 
 #include "sx/document.hpp"
 #include "sx/features.hpp"
@@ -61,38 +69,61 @@ std::vector<std::array<double, 3>> sketch3d_path(const Sketch3D& s) {
 
 namespace {
 
+double plane_gap(const SketchPlane& plane, const gp_Pnt& p);
+std::array<double, 2> curve_uv(const SketchPlane& plane, const gp_Pnt& p);
+
+Handle(Geom_Plane) geom_plane(const SketchPlane& plane) {
+    const auto nrm = plane.normal();
+    return new Geom_Plane(gp_Pnt(plane.origin[0], plane.origin[1], plane.origin[2]),
+                          gp_Dir(nrm[0], nrm[1], nrm[2]));
+}
+
+bool point_on_edge(const gp_Pnt& p, const TopoDS_Edge& edge) {
+    BRepExtrema_DistShapeShape dist(BRepBuilderAPI_MakeVertex(p).Vertex(), edge);
+    return dist.IsDone() && dist.NbSolution() >= 1 && dist.Value() <= 1e-6;
+}
+
 bool pierce_edge(const Document& doc, const EntityId& edge_id, const SketchPlane& plane,
                  double* u, double* v) {
     TopoDS_Shape sh = doc.resolve(edge_id);
     if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) return false;
     try {
-        BRepAdaptor_Curve c(TopoDS::Edge(sh));
-        const gp_Pnt a = c.Value(c.FirstParameter());
-        const gp_Pnt b = c.Value(c.LastParameter());
-        const gp_Pnt mid = c.Value(0.5 * (c.FirstParameter() + c.LastParameter()));
-        gp_Pnt pick = mid;
-        const gp_Pnt o(plane.origin[0], plane.origin[1], plane.origin[2]);
-        const gp_Dir n(plane.normal()[0], plane.normal()[1], plane.normal()[2]);
-        Handle(Geom_Plane) pl = new Geom_Plane(o, n);
-        double best = 1e9;
-        for (const gp_Pnt& p : {a, b, mid}) {
-            GeomAPI_ProjectPointOnSurf proj(p, pl);
-            if (!proj.IsDone() || proj.NbPoints() < 1) continue;
-            const double d = proj.LowerDistance();
-            if (d < best) {
-                best = d;
-                pick = proj.NearestPoint();
+        const TopoDS_Edge edge = TopoDS::Edge(sh);
+        BRepAdaptor_Curve c(edge);
+        Handle(Geom_Plane) pl = geom_plane(plane);
+        double f = 0, l = 0;
+        Handle(Geom_Curve) gc = BRep_Tool::Curve(edge, f, l);
+        gp_Pnt pick;
+        bool found = false;
+        if (!gc.IsNull()) {
+            GeomAPI_IntCS inter(gc, pl);
+            if (inter.IsDone()) {
+                for (int i = 1; i <= inter.NbPoints(); ++i) {
+                    const gp_Pnt p = inter.Point(i);
+                    if (!point_on_edge(p, edge)) continue;
+                    pick = p;
+                    found = true;
+                    break;
+                }
             }
         }
-        const auto nrm = plane.normal();
-        const auto x = plane.x_dir;
-        std::array<double, 3> y{nrm[1] * x[2] - nrm[2] * x[1], nrm[2] * x[0] - nrm[0] * x[2],
-                                nrm[0] * x[1] - nrm[1] * x[0]};
-        const double dx = pick.X() - plane.origin[0];
-        const double dy = pick.Y() - plane.origin[1];
-        const double dz = pick.Z() - plane.origin[2];
-        *u = dx * x[0] + dy * x[1] + dz * x[2];
-        *v = dx * y[0] + dy * y[1] + dz * y[2];
+        if (!found) {
+            const gp_Pnt a = c.Value(c.FirstParameter());
+            const gp_Pnt b = c.Value(c.LastParameter());
+            double best = 1e9;
+            for (const gp_Pnt& p : {a, b}) {
+                const double g = plane_gap(plane, p);
+                if (g < best && g <= 1e-6) {
+                    best = g;
+                    pick = p;
+                    found = true;
+                }
+            }
+        }
+        if (!found) return false;
+        const auto uv = curve_uv(plane, pick);
+        *u = uv[0];
+        *v = uv[1];
         return true;
     } catch (...) {
         return false;
@@ -129,6 +160,9 @@ bool circle_lies_in_plane(const BRepAdaptor_Curve& curve, const SketchPlane& pla
     return true;
 }
 
+EntityId project_tilted_circle(Sketch* sketch, const BRepAdaptor_Curve& curve,
+                               const SketchPlane& plane, const std::string& edge);
+
 EntityId project_line(Sketch* sketch, const BRepAdaptor_Curve& curve, const std::string& edge) {
     const gp_Pnt a = curve.Value(curve.FirstParameter());
     const gp_Pnt b = curve.Value(curve.LastParameter());
@@ -162,20 +196,91 @@ EntityId project_circle(Sketch* sketch, const BRepAdaptor_Curve& curve, const Sk
         sketch->set_construction(added, true);
         return added;
     }
-    if (!full) return {};
-    // Origin-plane silhouette: circle ∩ sketch plane → a diameter line.
+    // Orthogonal projection of a tilted circle is an ellipse (or a diameter
+    // line when the circle plane is perpendicular to the sketch).
+    return project_tilted_circle(sketch, curve, plane, edge);
+}
+
+EntityId project_tilted_circle(Sketch* sketch, const BRepAdaptor_Curve& curve,
+                               const SketchPlane& plane, const std::string& edge) {
+    if (curve.GetType() != GeomAbs_Circle) return {};
+    const gp_Circ circ = curve.Circle();
+    const gp_Pnt C = circ.Location();
+    const double R = circ.Radius();
     const auto nrm = plane.normal();
-    gp_Pnt o(plane.origin[0], plane.origin[1], plane.origin[2]);
-    gp_Dir n(nrm[0], nrm[1], nrm[2]);
-    Handle(Geom_Circle) gc = new Geom_Circle(circ);
-    Handle(Geom_Plane) gpl = new Geom_Plane(o, n);
-    GeomAPI_IntCS inter(gc, gpl);
-    if (!inter.IsDone() || inter.NbPoints() < 2) return {};
-    const gp_Pnt a = inter.Point(1);
-    const gp_Pnt b = inter.Point(2);
-    if (a.Distance(b) < 1e-6) return {};
-    const EntityId added =
-        sketch->project_line_edge({a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, edge);
+    gp_Dir np(nrm[0], nrm[1], nrm[2]);
+    gp_Dir nc = circ.Axis().Direction();
+    const double cosang = std::abs(nc.Dot(np));
+    const auto uc = curve_uv(plane, C);
+    gp_Vec major = gp_Vec(nc).Crossed(gp_Vec(np));
+    if (major.Magnitude() < 1e-12) {
+        major = gp_Vec(circ.XAxis().Direction());
+        major -= gp_Vec(np) * major.Dot(np);
+    }
+    if (major.Magnitude() < 1e-12) return {};
+    major.Normalize();
+    if (cosang < 1e-9) {
+        const gp_Pnt a = C.Translated(major * R);
+        const gp_Pnt b = C.Translated(major * (-R));
+        const EntityId added =
+            sketch->project_line_edge({a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, edge);
+        if (added.is_null()) return {};
+        sketch->set_construction(added, true);
+        return added;
+    }
+    const gp_Pnt tip = C.Translated(major * R);
+    const auto ut = curve_uv(plane, tip);
+    const double angle = std::atan2(ut[1] - uc[1], ut[0] - uc[0]);
+    const double ry = R * cosang;
+    if (std::abs(R - ry) < 1e-9) {
+        const EntityId added =
+            sketch->project_circle_edge({C.X(), C.Y(), C.Z()}, R, edge);
+        if (added.is_null()) return {};
+        sketch->set_construction(added, true);
+        return added;
+    }
+    const double span = std::abs(curve.LastParameter() - curve.FirstParameter());
+    const bool full = span >= kTwoPi - 0.05;
+    EntityId added;
+    if (full) {
+        added = sketch->project_ellipse_edge(uc[0], uc[1], R, ry, angle, edge);
+    } else {
+        const auto ua = curve_uv(plane, curve.Value(curve.FirstParameter()));
+        const auto ub = curve_uv(plane, curve.Value(curve.LastParameter()));
+        const double sa = std::atan2(ua[1] - uc[1], ua[0] - uc[0]) - angle;
+        const double ea = std::atan2(ub[1] - uc[1], ub[0] - uc[0]) - angle;
+        added = sketch->project_elliptical_arc_edge(uc[0], uc[1], R, ry, angle, sa, ea, edge);
+    }
+    if (added.is_null()) return {};
+    sketch->set_construction(added, true);
+    return added;
+}
+
+EntityId project_ellipse(Sketch* sketch, const BRepAdaptor_Curve& curve, const SketchPlane& plane,
+                         const std::string& edge) {
+    if (curve.GetType() != GeomAbs_Ellipse) return {};
+    const gp_Elips el = curve.Ellipse();
+    const gp_Pnt c = el.Location();
+    const double rx = el.MajorRadius();
+    const double ry = el.MinorRadius();
+    const double t0 = curve.FirstParameter();
+    const double t1 = curve.LastParameter();
+    for (int i = 0; i < 5; ++i) {
+        const double t = t0 + (t1 - t0) * (static_cast<double>(i) / 4.0);
+        if (plane_gap(plane, curve.Value(t)) > 0.05) return {};
+    }
+    const auto uc = curve_uv(plane, c);
+    const gp_Pnt tip = c.Translated(gp_Vec(el.XAxis().Direction()) * rx);
+    const auto ut = curve_uv(plane, tip);
+    const double angle = std::atan2(ut[1] - uc[1], ut[0] - uc[0]);
+    const double span = std::abs(t1 - t0);
+    const bool full = span >= kTwoPi - 0.05;
+    EntityId added;
+    if (full) {
+        added = sketch->project_ellipse_edge(uc[0], uc[1], rx, ry, angle, edge);
+    } else {
+        added = sketch->project_elliptical_arc_edge(uc[0], uc[1], rx, ry, angle, t0, t1, edge);
+    }
     if (added.is_null()) return {};
     sketch->set_construction(added, true);
     return added;
@@ -216,7 +321,7 @@ bool circumcircle_uv(double x1, double y1, double x2, double y2, double x3, doub
            (x3 * x3 + y3 * y3) * (x2 - x1)) /
           d;
     *radius = std::hypot(*cx - x1, *cy - y1);
-    return *radius > 0.5 && *radius < 200.0;
+    return *radius > 1e-6;
 }
 
 // OCCT fillets of a Z-edge are often BSpline, not GeomAbs_Circle. If the
@@ -231,7 +336,7 @@ EntityId project_fitted_arc(Sketch* sketch, const BRepAdaptor_Curve& curve,
     for (int i = 0; i <= kSamples; ++i) {
         const double t = t0 + (t1 - t0) * (static_cast<double>(i) / kSamples);
         pts[i] = curve.Value(t);
-        if (plane_gap(plane, pts[i]) > 2.0) return {};
+        if (plane_gap(plane, pts[i]) > 0.05) return {};
     }
     const auto ua = curve_uv(plane, pts[0]);
     const auto um = curve_uv(plane, pts[kSamples / 2]);
@@ -240,7 +345,7 @@ EntityId project_fitted_arc(Sketch* sketch, const BRepAdaptor_Curve& curve,
     if (!circumcircle_uv(ua[0], ua[1], um[0], um[1], ub[0], ub[1], &cx, &cy, &radius)) return {};
     for (int i = 0; i <= kSamples; ++i) {
         const auto uv = curve_uv(plane, pts[i]);
-        if (std::abs(std::hypot(uv[0] - cx, uv[1] - cy) - radius) > 0.5) return {};
+        if (std::abs(std::hypot(uv[0] - cx, uv[1] - cy) - radius) > 1e-6) return {};
     }
     const gp_Pnt a = pts[0];
     const gp_Pnt b = pts[kSamples];
@@ -297,7 +402,6 @@ EntityId project_spline(Sketch* sketch, const BRepAdaptor_Curve& curve, const Sk
     for (int i = 0; i < n; ++i) {
         const double t = t0 + (t1 - t0) * (static_cast<double>(i) / (n - 1));
         const gp_Pnt p = curve.Value(t);
-        if (plane_gap(plane, p) > 0.05) return {};
         const auto uv = curve_uv(plane, p);
         if (!fits.empty()) {
             const double du = uv[0] - fits.back()[0];
@@ -318,13 +422,119 @@ EntityId dispatch_spline(Sketch* sketch, const BRepAdaptor_Curve& curve, const S
     return project_spline(sketch, curve, plane, edge);
 }
 
+EntityId dispatch_ellipse(Sketch* sketch, const BRepAdaptor_Curve& curve, const SketchPlane& plane,
+                          const std::string& edge) {
+    return project_ellipse(sketch, curve, plane, edge);
+}
+
 const std::unordered_map<GeomAbs_CurveType, ExternalProjector> kProjectors = {
     {GeomAbs_Line, dispatch_line},
     {GeomAbs_Circle, dispatch_circle},
     {GeomAbs_BSplineCurve, dispatch_spline},
     {GeomAbs_BezierCurve, dispatch_spline},
-    {GeomAbs_Ellipse, dispatch_fitted},
+    {GeomAbs_Ellipse, dispatch_ellipse},
 };
+
+std::vector<std::array<double, 2>> spline_fit_uv(const BRepAdaptor_Curve& curve,
+                                                 const SketchPlane& plane) {
+    const double t0 = curve.FirstParameter();
+    const double t1 = curve.LastParameter();
+    if (std::abs(t1 - t0) < 1e-12) return {};
+    int n = 8;
+    if (curve.GetType() == GeomAbs_BSplineCurve) {
+        Handle(Geom_BSplineCurve) bs = curve.BSpline();
+        if (!bs.IsNull()) n = std::max(8, bs->NbPoles());
+    } else if (curve.GetType() == GeomAbs_BezierCurve) {
+        Handle(Geom_BezierCurve) bz = curve.Bezier();
+        if (!bz.IsNull()) n = std::max(8, bz->NbPoles());
+    } else {
+        return {};
+    }
+    n = std::min(n, 64);
+    std::vector<std::array<double, 2>> fits;
+    for (int i = 0; i < n; ++i) {
+        const double t = t0 + (t1 - t0) * (static_cast<double>(i) / (n - 1));
+        const auto uv = curve_uv(plane, curve.Value(t));
+        if (!fits.empty()) {
+            const double du = uv[0] - fits.back()[0];
+            const double dv = uv[1] - fits.back()[1];
+            if (du * du + dv * dv < 1e-18) continue;
+        }
+        fits.push_back(uv);
+    }
+    return fits;
+}
+
+bool update_from_curve(Sketch& sketch, const EntityId& id, const BRepAdaptor_Curve& curve) {
+    const SketchEntity* e = sketch.entity(id);
+    if (e == nullptr || !e->external) return false;
+    const SketchPlane& plane = sketch.plane();
+    if (e->type == SketchEntityType::Line && curve.GetType() == GeomAbs_Line) {
+        const gp_Pnt a = curve.Value(curve.FirstParameter());
+        const gp_Pnt b = curve.Value(curve.LastParameter());
+        return sketch.update_projected_line(id, {a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()});
+    }
+    if (e->type == SketchEntityType::Circle && curve.GetType() == GeomAbs_Circle &&
+        circle_lies_in_plane(curve, plane)) {
+        const gp_Circ circ = curve.Circle();
+        const gp_Pnt c = circ.Location();
+        return sketch.update_projected_circle(id, {c.X(), c.Y(), c.Z()}, circ.Radius());
+    }
+    if (e->type == SketchEntityType::Arc && curve.GetType() == GeomAbs_Circle &&
+        circle_lies_in_plane(curve, plane)) {
+        const gp_Circ circ = curve.Circle();
+        const gp_Pnt c = circ.Location();
+        const gp_Pnt a = curve.Value(curve.FirstParameter());
+        const gp_Pnt b = curve.Value(curve.LastParameter());
+        const double span = std::abs(curve.LastParameter() - curve.FirstParameter());
+        return sketch.update_projected_arc(id, {c.X(), c.Y(), c.Z()}, circ.Radius(),
+                                           {a.X(), a.Y(), a.Z()}, {b.X(), b.Y(), b.Z()}, span);
+    }
+    if ((e->type == SketchEntityType::Ellipse || e->type == SketchEntityType::EllipticalArc) &&
+        curve.GetType() == GeomAbs_Ellipse) {
+        const gp_Elips el = curve.Ellipse();
+        const gp_Pnt c = el.Location();
+        const double rx = el.MajorRadius();
+        const double ry = el.MinorRadius();
+        const auto uc = curve_uv(plane, c);
+        const gp_Pnt tip = c.Translated(gp_Vec(el.XAxis().Direction()) * rx);
+        const auto ut = curve_uv(plane, tip);
+        const double angle = std::atan2(ut[1] - uc[1], ut[0] - uc[0]);
+        if (e->type == SketchEntityType::Ellipse)
+            return sketch.update_projected_ellipse(id, uc[0], uc[1], rx, ry, angle);
+        return sketch.update_projected_elliptical_arc(id, uc[0], uc[1], rx, ry, angle,
+                                                      curve.FirstParameter(),
+                                                      curve.LastParameter());
+    }
+    if ((e->type == SketchEntityType::Ellipse || e->type == SketchEntityType::EllipticalArc) &&
+        curve.GetType() == GeomAbs_Circle) {
+        // Tilted circle stored as an ellipse.
+        const gp_Circ circ = curve.Circle();
+        const gp_Pnt C = circ.Location();
+        const double R = circ.Radius();
+        const auto nrm = plane.normal();
+        gp_Dir np(nrm[0], nrm[1], nrm[2]);
+        gp_Dir nc = circ.Axis().Direction();
+        const double cosang = std::abs(nc.Dot(np));
+        gp_Vec major = gp_Vec(nc).Crossed(gp_Vec(np));
+        if (major.Magnitude() < 1e-12) {
+            major = gp_Vec(circ.XAxis().Direction());
+            major -= gp_Vec(np) * major.Dot(np);
+        }
+        if (major.Magnitude() < 1e-12) return false;
+        major.Normalize();
+        const auto uc = curve_uv(plane, C);
+        const gp_Pnt tip = C.Translated(major * R);
+        const auto ut = curve_uv(plane, tip);
+        const double angle = std::atan2(ut[1] - uc[1], ut[0] - uc[0]);
+        return sketch.update_projected_ellipse(id, uc[0], uc[1], R, R * cosang, angle);
+    }
+    if (e->type == SketchEntityType::Spline) {
+        auto fits = spline_fit_uv(curve, plane);
+        return sketch.update_projected_spline(id, fits);
+    }
+    return false;
+}
 
 }  // namespace
 
@@ -339,10 +549,8 @@ EntityId add_external_edge(Document& doc, const EntityId& sketch_fid, const Enti
     if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) return {};
     const BRepAdaptor_Curve curve(TopoDS::Edge(sh));
     const auto it = kProjectors.find(curve.GetType());
-    if (it != kProjectors.end()) {
-        const EntityId added = it->second(f->sketch.get(), curve, f->sketch->plane(), edge);
-        if (!added.is_null()) return added;
-    }
+    if (it != kProjectors.end())
+        return it->second(f->sketch.get(), curve, f->sketch->plane(), edge);
     return project_fitted_arc(f->sketch.get(), curve, f->sketch->plane(), edge);
 }
 
@@ -384,6 +592,119 @@ int rebuild_converted_points(Document& doc, const EntityId& sketch_fid) {
         ++n;
     }
     return n;
+}
+
+int rebuild_projected_externals(Document& doc, const EntityId& sketch_fid) {
+    Feature* f = doc.graph().feature(sketch_fid);
+    if (!f || !f->sketch) return 0;
+    Sketch& sketch = *f->sketch;
+    std::vector<std::string> live;
+    for (const auto& bid : doc.body_ids()) {
+        const Body* b = doc.body(bid);
+        if (!b) continue;
+        auto it = b->subshape_ids.find(EntityKind::Edge);
+        if (it == b->subshape_ids.end()) continue;
+        for (const auto& eid : it->second) live.push_back(eid.str());
+    }
+    for (const auto& e : sketch.entities()) {
+        if (!e.external || e.projected_from.empty()) continue;
+        bool uuid = false;
+        try {
+            EntityId::from_string(e.projected_from);
+            uuid = true;
+        } catch (...) {
+            uuid = false;
+        }
+        if (!uuid) live.push_back(e.projected_from);
+    }
+    int n = 0;
+    std::vector<EntityId> ids;
+    for (const auto& e : sketch.entities()) {
+        if (e.external && !e.projected_from.empty()) ids.push_back(e.id);
+    }
+    for (const auto& id : ids) {
+        const SketchEntity* e = sketch.entity(id);
+        if (!e) continue;
+        EntityId edge;
+        try {
+            edge = EntityId::from_string(e->projected_from);
+        } catch (...) {
+            continue;
+        }
+        const TopoDS_Shape sh = doc.resolve(edge);
+        if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) continue;
+        if (update_from_curve(sketch, id, BRepAdaptor_Curve(TopoDS::Edge(sh)))) ++n;
+    }
+    sketch.mark_dangling_external(live);
+    return n;
+}
+
+std::vector<PlaneCircle> circles_on_plane(const Document& doc, const SketchPlane& plane) {
+    std::vector<PlaneCircle> out;
+    for (const auto& bid : doc.body_ids()) {
+        const Body* b = doc.body(bid);
+        if (!b) continue;
+        auto it = b->subshape_ids.find(EntityKind::Edge);
+        if (it == b->subshape_ids.end()) continue;
+        for (const auto& eid : it->second) {
+            const TopoDS_Shape sh = doc.resolve(eid);
+            if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) continue;
+            const BRepAdaptor_Curve curve(TopoDS::Edge(sh));
+            if (curve.GetType() != GeomAbs_Circle) continue;
+            if (!circle_lies_in_plane(curve, plane)) continue;
+            const gp_Circ circ = curve.Circle();
+            const gp_Pnt c = circ.Location();
+            out.push_back(PlaneCircle{eid, {c.X(), c.Y(), c.Z()}, circ.Radius()});
+        }
+    }
+    return out;
+}
+
+std::vector<std::array<double, 2>> pierce_uvs(const Document& doc, const SketchPlane& plane) {
+    std::vector<std::array<double, 2>> out;
+    auto push_unique = [&](double u, double v) {
+        for (const auto& p : out) {
+            const double du = p[0] - u, dv = p[1] - v;
+            if (du * du + dv * dv < 1e-12) return;
+        }
+        out.push_back({u, v});
+    };
+    Handle(Geom_Plane) pl = geom_plane(plane);
+    for (const auto& bid : doc.body_ids()) {
+        const Body* b = doc.body(bid);
+        if (!b) continue;
+        auto it = b->subshape_ids.find(EntityKind::Edge);
+        if (it == b->subshape_ids.end()) continue;
+        for (const auto& eid : it->second) {
+            const TopoDS_Shape sh = doc.resolve(eid);
+            if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) continue;
+            const TopoDS_Edge edge = TopoDS::Edge(sh);
+            double f = 0, l = 0;
+            Handle(Geom_Curve) gc = BRep_Tool::Curve(edge, f, l);
+            if (!gc.IsNull()) {
+                GeomAPI_IntCS inter(gc, pl);
+                if (inter.IsDone()) {
+                    for (int i = 1; i <= inter.NbPoints(); ++i) {
+                        const gp_Pnt p = inter.Point(i);
+                        if (!point_on_edge(p, edge)) continue;
+                        const auto uv = curve_uv(plane, p);
+                        push_unique(uv[0], uv[1]);
+                    }
+                }
+            }
+            BRepAdaptor_Curve c(edge);
+            const gp_Pnt a = c.Value(c.FirstParameter());
+            const gp_Pnt b = c.Value(c.LastParameter());
+            if (a.Distance(b) > 1e-9) {
+                for (const gp_Pnt& p : {a, b}) {
+                    if (plane_gap(plane, p) > 1e-6) continue;
+                    const auto uv = curve_uv(plane, p);
+                    push_unique(uv[0], uv[1]);
+                }
+            }
+        }
+    }
+    return out;
 }
 
 }  // namespace sx

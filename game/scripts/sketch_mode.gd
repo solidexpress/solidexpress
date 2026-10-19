@@ -2305,74 +2305,17 @@ func _circle_tangent_points(anchor: Vector2, c: Vector2, r: float) -> Array[Vect
 ## edge pierces, so snap reads these directly.
 func _model_circle_centers() -> Array[Vector2]:
 	var out: Array[Vector2] = []
-	if view == null or view.doc == null or not view.doc.has_method("get_edge_lines"):
-		return out
-	var n := plane_normal()
-	for body_id in view.doc.body_ids():
-		var edges: Dictionary = view.doc.get_edge_lines(body_id)
-		for edge_id in edges:
-			var poly: PackedVector3Array = edges[edge_id]
-			var c3: Variant = _circle_center_of_poly(poly)
-			if c3 == null:
-				continue
-			var center3: Vector3 = c3
-			if absf((center3 - plane.origin).dot(n)) > 0.75:
-				continue
-			out.append(plane.to_uv(center3))
+	for row in _kernel_plane_circles():
+		out.append(plane.to_uv(row["center"] as Vector3))
 	return out
 
 
-func _circle_center_of_poly(poly: PackedVector3Array) -> Variant:
-	if poly.size() < 12:
-		return null
-	var centroid: Variant = _centroid_if_circle(poly)
-	if centroid != null:
-		return centroid
-	# A rim split by the shaft tangents is an arc. Its vertex average is not
-	# the centre, so fit the circle through the two ends and the midpoint.
-	var n := poly.size()
-	var a: Vector3 = poly[0]
-	var b: Vector3 = poly[n / 2]
-	var c: Vector3 = poly[n - 1]
-	if a.distance_to(c) < 1e-3:
-		c = poly[maxi(n - 2, 1)]
-	if a.distance_to(c) < 1e-3 or a.distance_to(b) < 1e-3:
-		return null
-	var ab := b - a
-	var ac := c - a
-	var abxac := ab.cross(ac)
-	var denom := 2.0 * abxac.length_squared()
-	if denom < 1e-8:
-		return null
-	var center := a + (abxac.cross(ab) * ac.length_squared() + ac.cross(abxac) * ab.length_squared()) / denom
-	var radius := center.distance_to(a)
-	if radius < 0.4:
-		return null
-	var max_err := 0.0
-	for p in poly:
-		max_err = maxf(max_err, absf(p.distance_to(center) - radius))
-	if max_err > maxf(0.35, radius * 0.08):
-		return null
-	return center
-
-
-func _centroid_if_circle(poly: PackedVector3Array) -> Variant:
-	var c := Vector3.ZERO
-	for p in poly:
-		c += p
-	c /= float(poly.size())
-	var r := 0.0
-	for p in poly:
-		r += p.distance_to(c)
-	r /= float(poly.size())
-	if r < 0.4:
-		return null
-	var max_err := 0.0
-	for p in poly:
-		max_err = maxf(max_err, absf(p.distance_to(c) - r))
-	if max_err > maxf(0.35, r * 0.08):
-		return null
-	return c
+func _kernel_plane_circles() -> Array:
+	if view == null or view.doc == null or plane == null:
+		return []
+	if not view.doc.has_method("circles_on_plane"):
+		return []
+	return view.doc.circles_on_plane(plane.origin, plane.x, plane.y)
 
 
 func _snap_endpoints(id: String) -> Array[Vector2]:
@@ -3837,29 +3780,14 @@ func _nearest_construction_line(p: Vector2, max_dist: float) -> Dictionary:
 ## when the Ø45 rim was not redrawn as a sketch circle.
 func _model_circles() -> Array:
 	var out: Array = []
-	if view == null or view.doc == null or not view.doc.has_method("get_edge_lines"):
-		return out
-	var n := plane_normal()
-	for body_id in view.doc.body_ids():
-		var edges: Dictionary = view.doc.get_edge_lines(body_id)
-		for edge_id in edges:
-			var poly: PackedVector3Array = edges[edge_id]
-			var fitted: Variant = _circle_center_of_poly(poly)
-			if fitted == null:
-				continue
-			var c3: Vector3 = fitted
-			var r := 0.0
-			for pt in poly:
-				r += pt.distance_to(c3)
-			r /= float(poly.size())
-			if r < 0.4:
-				continue
-			if absf((c3 - plane.origin).dot(n)) > 0.75:
-				continue
-			out.append({
-				"center": plane.to_uv(c3),
-				"radius": r,
-			})
+	for row in _kernel_plane_circles():
+		var r := float(row.get("radius", 0.0))
+		if r < 0.4:
+			continue
+		out.append({
+			"center": plane.to_uv(row["center"] as Vector3),
+			"radius": r,
+		})
 	return out
 
 

@@ -1580,6 +1580,25 @@ EntityId Sketch::project_spline_edge(const std::vector<std::array<double, 2>>& f
     return id;
 }
 
+EntityId Sketch::project_ellipse_edge(double cx, double cy, double rx, double ry, double angle,
+                                      const std::string& edge_id) {
+    EntityId id = add_ellipse(cx, cy, rx, ry, angle);
+    if (id.is_null()) return {};
+    set_external(id, true, edge_id);
+    add_constraint(ConstraintType::Fix, {{id, PointRole::Self}}, 0.0, true);
+    return id;
+}
+
+EntityId Sketch::project_elliptical_arc_edge(double cx, double cy, double rx, double ry, double angle,
+                                             double start_angle, double end_angle,
+                                             const std::string& edge_id) {
+    EntityId id = add_elliptical_arc(cx, cy, rx, ry, angle, start_angle, end_angle);
+    if (id.is_null()) return {};
+    set_external(id, true, edge_id);
+    add_constraint(ConstraintType::Fix, {{id, PointRole::Self}}, 0.0, true);
+    return id;
+}
+
 bool Sketch::update_projected_line(const EntityId& id, const std::array<double, 3>& a,
                                    const std::array<double, 3>& b) {
     SketchEntity* e = entity_mut(id);
@@ -1609,6 +1628,114 @@ bool Sketch::update_projected_circle(const EntityId& id, const std::array<double
     for (auto& c : constraints_) {
         if (c.type == ConstraintType::Fix && !c.refs.empty() && c.refs[0].entity == id)
             c.locked = {uc[0], uc[1], radius};
+    }
+    ++revision_;
+    return true;
+}
+
+bool Sketch::update_projected_arc(const EntityId& id, const std::array<double, 3>& center,
+                                  double radius, const std::array<double, 3>& a,
+                                  const std::array<double, 3>& b, double span) {
+    SketchEntity* e = entity_mut(id);
+    if (!e || e->type != SketchEntityType::Arc || !e->external || e->params.size() < 9)
+        return false;
+    auto uc = to_sketch_uv(center);
+    auto ua = to_sketch_uv(a);
+    auto ub = to_sketch_uv(b);
+    double sa = std::atan2(ua[1] - uc[1], ua[0] - uc[0]);
+    double ea = std::atan2(ub[1] - uc[1], ub[0] - uc[0]);
+    if (ea <= sa) ea += 2.0 * kPi;
+    double sweep = ea - sa;
+    const double want = std::abs(span);
+    if (want > 1e-9 && std::abs(sweep - want) > 0.2 &&
+        std::abs((2.0 * kPi - sweep) - want) < 0.2) {
+        std::swap(sa, ea);
+        if (ea <= sa) ea += 2.0 * kPi;
+    }
+    params_[e->params[0]] = uc[0];
+    params_[e->params[1]] = uc[1];
+    params_[e->params[2]] = radius;
+    params_[e->params[3]] = sa;
+    params_[e->params[4]] = ea;
+    params_[e->params[5]] = ua[0];
+    params_[e->params[6]] = ua[1];
+    params_[e->params[7]] = ub[0];
+    params_[e->params[8]] = ub[1];
+    ++revision_;
+    return true;
+}
+
+bool Sketch::update_projected_ellipse(const EntityId& id, double cx, double cy, double rx, double ry,
+                                      double angle) {
+    SketchEntity* e = entity_mut(id);
+    if (!e || e->type != SketchEntityType::Ellipse || !e->external || e->params.size() < 5)
+        return false;
+    if (rx < 0.0) rx = -rx;
+    if (ry < 0.0) ry = -ry;
+    if (rx < 1e-9 || ry < 1e-9) return false;
+    if (rx < ry) {
+        std::swap(rx, ry);
+        angle += kPi * 0.5;
+    }
+    const double c = std::sqrt(std::max(0.0, rx * rx - ry * ry));
+    params_[e->params[0]] = cx;
+    params_[e->params[1]] = cy;
+    params_[e->params[2]] = cx + c * std::cos(angle);
+    params_[e->params[3]] = cy + c * std::sin(angle);
+    params_[e->params[4]] = ry;
+    ++revision_;
+    return true;
+}
+
+bool Sketch::update_projected_elliptical_arc(const EntityId& id, double cx, double cy, double rx,
+                                             double ry, double angle, double start_angle,
+                                             double end_angle) {
+    SketchEntity* e = entity_mut(id);
+    if (!e || e->type != SketchEntityType::EllipticalArc || !e->external || e->params.size() < 11)
+        return false;
+    if (rx < 0.0) rx = -rx;
+    if (ry < 0.0) ry = -ry;
+    if (rx < 1e-9 || ry < 1e-9) return false;
+    if (rx < ry) {
+        std::swap(rx, ry);
+        angle += kPi * 0.5;
+        start_angle -= kPi * 0.5;
+        end_angle -= kPi * 0.5;
+    }
+    const double c = std::sqrt(std::max(0.0, rx * rx - ry * ry));
+    const double ca = std::cos(angle), sa = std::sin(angle);
+    auto at = [&](double t) {
+        const double u = rx * std::cos(t), v = ry * std::sin(t);
+        return std::array<double, 2>{cx + u * ca - v * sa, cy + u * sa + v * ca};
+    };
+    const auto ps = at(start_angle);
+    const auto pe = at(end_angle);
+    params_[e->params[0]] = cx;
+    params_[e->params[1]] = cy;
+    params_[e->params[2]] = cx + c * ca;
+    params_[e->params[3]] = cy + c * sa;
+    params_[e->params[4]] = ry;
+    params_[e->params[5]] = start_angle;
+    params_[e->params[6]] = end_angle;
+    params_[e->params[7]] = ps[0];
+    params_[e->params[8]] = ps[1];
+    params_[e->params[9]] = pe[0];
+    params_[e->params[10]] = pe[1];
+    ++revision_;
+    return true;
+}
+
+bool Sketch::update_projected_spline(const EntityId& id,
+                                     const std::vector<std::array<double, 2>>& fit_points) {
+    SketchEntity* e = entity_mut(id);
+    if (!e || e->type != SketchEntityType::Spline || !e->external) return false;
+    if (fit_points.size() < 2) return false;
+    const int n = static_cast<int>(params_[e->params[0]]);
+    if (n < 2 || static_cast<int>(fit_points.size()) != n) return false;
+    if (e->params.size() < static_cast<size_t>(1 + 2 * n)) return false;
+    for (int i = 0; i < n; ++i) {
+        params_[e->params[static_cast<size_t>(1 + 2 * i)]] = fit_points[static_cast<size_t>(i)][0];
+        params_[e->params[static_cast<size_t>(2 + 2 * i)]] = fit_points[static_cast<size_t>(i)][1];
     }
     ++revision_;
     return true;
