@@ -634,10 +634,16 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	await coincident_on_curve(ctx, Vector2(30, 10), ellipse_major_uv())
 	await coincident_on_curve(ctx, Vector2(120, -10), Vector2(c.x, -r))
 	await coincident_on_curve(ctx, Vector2(30, -10), ellipse_major_uv())
-	for uv in [Vector2(18, 10), Vector2(18, -10), Vector2(232, 10), Vector2(232, -10)]:
+	await frame_uv(ctx, Vector2.ZERO, SPAN_HEAD, "Frame C overflow")
+	for uv in [Vector2(18, 10), Vector2(18, -10)]:
 		if _failed():
 			return
-		await trim_at(ctx, uv, "Trim handle overflow")
+		await trim_at(ctx, uv, "Trim handle overflow C")
+	await frame_uv(ctx, c, SPAN_RING, "Frame ring overflow")
+	for uv in [Vector2(232, 10), Vector2(232, -10)]:
+		if _failed():
+			return
+		await trim_at(ctx, uv, "Trim handle overflow ring")
 
 
 static func _handle_line_at_y(sm: SketchMode, y: float) -> String:
@@ -921,6 +927,7 @@ static func draw_twelve_point_star(ctx: FilmContext) -> void:
 	var af := mm("HEX_AF")
 	var outer := af / sqrt(3.0)
 	var inner := (af * 0.5) / cos(deg_to_rad(15.0))
+	await frame_uv(ctx, c, SPAN_RING, "Frame 12-point")
 	await FilmSteps._snap_off_if_visible(ctx)
 	var pts: Array[Vector2] = []
 	for k in 24:
