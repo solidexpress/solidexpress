@@ -1,7 +1,7 @@
 [
   {
     "id": "path_merge_sweep",
-    "title": "Merge sketches \u2192 path \u2192 sweep solid",
+    "title": "Merge sketches → path → sweep solid",
     "script": "res://tests/films/film_path_merge_sweep.gd",
     "enabled": true,
     "quit_after": 900
@@ -15,7 +15,7 @@
   },
   {
     "id": "loft_guide_rail",
-    "title": "Ship hull loft \u2014 U transom to oval bow",
+    "title": "Ship hull loft — U transom to oval bow",
     "script": "res://tests/films/film_loft_guide_rail.gd",
     "enabled": true,
     "quit_after": 2400,
@@ -24,8 +24,9 @@
       "feature": "Sweep & loft",
       "title": "Ship hull loft",
       "caption": "Sketch a U transom and an oval bow, loft, then orbit the hull.",
-      "order": 5,
-      "hero": false
+      "order": 3,
+      "group": "Part modeling",
+      "home": true
     }
   },
   {
@@ -38,13 +39,14 @@
       "feature": "Assembly motion",
       "title": "Assembly motion",
       "caption": "Mate jaws to a pin, then drag the leftover revolute to open them.",
-      "order": 9,
-      "hero": false
+      "order": 1,
+      "group": "Assemblies, drawings & output",
+      "home": true
     }
   },
   {
     "id": "precision_plate",
-    "title": "Precision plate \u2014 corner snaps inset holes",
+    "title": "Precision plate — corner snaps inset holes",
     "script": "res://tests/films/film_precision_plate.gd",
     "enabled": true,
     "quit_after": 1200
@@ -58,23 +60,23 @@
     "website": {
       "feature": "Sketch tools",
       "title": "Sketch tools",
-      "caption": "Line, circle, spline, trim, and extend \u2014 the everyday sketch toolset.",
-      "order": 1,
-      "hero": false
+      "caption": "Line, circle, spline, trim, and extend — the everyday sketch toolset.",
+      "order": 10,
+      "group": "Sketching"
     }
   },
   {
     "id": "revolve_washer",
-    "title": "Revolve washer profile 360\u00b0",
+    "title": "Revolve washer profile 360°",
     "script": "res://tests/films/film_revolve_washer.gd",
     "enabled": true,
     "quit_after": 1000,
     "website": {
       "feature": "Revolve",
       "title": "Revolve",
-      "caption": "Sketch a profile beside an axis and revolve it 360\u00b0 into a washer.",
-      "order": 4,
-      "hero": false
+      "caption": "Sketch a profile beside an axis and revolve it 360° into a washer.",
+      "order": 24,
+      "group": "Part modeling"
     }
   },
   {
@@ -87,8 +89,8 @@
       "feature": "Edit in place",
       "title": "Edit in place",
       "caption": "Leave a sketch, come back, and keep editing the same profile.",
-      "order": 8,
-      "hero": false
+      "order": 11,
+      "group": "Sketching"
     }
   },
   {
@@ -103,7 +105,14 @@
     "title": "Through-all plate cut, thickness unchanged",
     "script": "res://tests/films/film_extrude_through_all.gd",
     "enabled": true,
-    "quit_after": 1500
+    "quit_after": 1500,
+    "website": {
+      "feature": "Through-all cut",
+      "title": "Through-all cut",
+      "caption": "Cut a plate clean through with Through All; the plate thickness stays put.",
+      "group": "Part modeling",
+      "order": 21
+    }
   },
   {
     "id": "direct_edit_import",
@@ -122,8 +131,8 @@
       "feature": "Patterns",
       "title": "Patterns",
       "caption": "Rotate-copy a hole into a bolt circle with TriBall.",
-      "order": 6,
-      "hero": false
+      "order": 26,
+      "group": "Part modeling"
     }
   },
   {
@@ -135,10 +144,17 @@
   },
   {
     "id": "hole_wizard_m6",
-    "title": "Four M6 holes; mass = steel \u00d7 volume",
+    "title": "Four M6 holes; mass = steel × volume",
     "script": "res://tests/films/film_hole_wizard_m6.gd",
     "enabled": true,
-    "quit_after": 900
+    "quit_after": 900,
+    "website": {
+      "feature": "Hole wizard",
+      "title": "Hole wizard: four M6 holes",
+      "caption": "Drop four M6 holes with the hole wizard, then read mass from steel density × volume.",
+      "group": "Part modeling",
+      "order": 22
+    }
   },
   {
     "id": "fillet_chain_pocket",
@@ -150,8 +166,8 @@
       "feature": "Fillets",
       "title": "Fillets",
       "caption": "Round a pocket chain in one fillet feature.",
-      "order": 3,
-      "hero": false
+      "order": 23,
+      "group": "Part modeling"
     }
   },
   {
@@ -163,7 +179,7 @@
   },
   {
     "id": "dxf_trace_extrude",
-    "title": "DXF rectangle \u2192 extrude",
+    "title": "DXF rectangle → extrude",
     "script": "res://tests/films/film_dxf_trace_extrude.gd",
     "enabled": true,
     "quit_after": 900
@@ -194,7 +210,14 @@
     "title": "Drawing dim follows a parameter edit",
     "script": "res://tests/films/film_drawing_follows_model.gd",
     "enabled": true,
-    "quit_after": 900
+    "quit_after": 900,
+    "website": {
+      "feature": "Associative drawings",
+      "title": "Drawings follow the model",
+      "caption": "Edit a parameter and the drawing dimension updates with the model.",
+      "group": "Assemblies, drawings & output",
+      "order": 30
+    }
   },
   {
     "id": "drawing_bom",
@@ -268,7 +291,7 @@
   },
   {
     "id": "fea_bracket",
-    "title": "Cantilever tip deflection scales with L\u00b3",
+    "title": "Cantilever tip deflection scales with L³",
     "script": "res://tests/films/film_fea_bracket.gd",
     "enabled": true,
     "quit_after": 700
@@ -352,7 +375,7 @@
   },
   {
     "id": "intent_flush",
-    "title": "Make these flush \u2192 fastened",
+    "title": "Make these flush → fastened",
     "script": "res://tests/films/film_intent_flush.gd",
     "enabled": true,
     "quit_after": 800
@@ -493,8 +516,8 @@
       "feature": "Export to print",
       "title": "Export to print",
       "caption": "Export bodies to 3MF and hand them to a slicer.",
-      "order": 11,
-      "hero": false
+      "order": 31,
+      "group": "Assemblies, drawings & output"
     }
   },
   {
@@ -523,6 +546,8 @@
       "title": "Parametric wrench, end to end",
       "caption": "Blank part to a printable wrench: sketch, shaft, jaw, slot, fillets.",
       "order": 0,
+      "group": "Projects, end to end",
+      "home": true,
       "hero": true
     }
   },
@@ -532,7 +557,7 @@
     "script": "res://tests/films/film_lesson2_box.gd",
     "enabled": true,
     "quit_after": 3600,
-    "blurb": "Rectangle, extrude, one fillet, shell, a hole from the side, then resize \u2014 the features follow."
+    "blurb": "Rectangle, extrude, one fillet, shell, a hole from the side, then resize — the features follow."
   },
   {
     "id": "tutor1",
@@ -545,8 +570,8 @@
       "feature": "Boss, cut & shell",
       "title": "Tutor 1: boss, cut, fillets, shell",
       "caption": "A boss, an offset cut, two fillets, a 1 mm shell, then a Top section view.",
-      "order": 2,
-      "hero": false
+      "order": 20,
+      "group": "Part modeling"
     }
   },
   {
@@ -560,8 +585,8 @@
       "feature": "Swept boss",
       "title": "Hex key",
       "caption": "Sweep a 7.65 mm hex along a bent path into a hex key.",
-      "order": 7,
-      "hero": false
+      "order": 25,
+      "group": "Part modeling"
     }
   },
   {
@@ -570,13 +595,14 @@
     "script": "res://tests/films/film_flanged_pipe.gd",
     "enabled": true,
     "quit_after": 4800,
-    "blurb": "\u00d8150 tube, two-face shell, flange with an 8-hole circular pattern, feature mirror, re-shell, R5 rims.",
+    "blurb": "Ø150 tube, two-face shell, flange with an 8-hole circular pattern, feature mirror, re-shell, R5 rims.",
     "website": {
       "feature": "Shell, pattern & mirror",
       "title": "Flanged pipe",
       "caption": "Shell a tube, pattern 8 flange holes, mirror the flange, round the rims.",
-      "order": 10,
-      "hero": false
+      "order": 2,
+      "group": "Projects, end to end",
+      "home": true
     }
   },
   {
@@ -585,7 +611,14 @@
     "script": "res://tests/films/film_candlestick.gd",
     "enabled": true,
     "quit_after": 4800,
-    "blurb": "Revolve a Front profile, sweep an ellipse along an arc path, cut a 15\u00b0 drafted hole."
+    "blurb": "Revolve a Front profile, sweep an ellipse along an arc path, cut a 15° drafted hole.",
+    "website": {
+      "feature": "Revolve, sweep & draft",
+      "title": "Candlestick",
+      "caption": "Revolve a profile, sweep an ellipse along an arc, then cut a 15° drafted hole.",
+      "group": "Projects, end to end",
+      "order": 40
+    }
   },
   {
     "id": "spanner",
@@ -593,6 +626,13 @@
     "script": "res://tests/films/film_spanner.gd",
     "enabled": true,
     "quit_after": 36000,
-    "blurb": "Front C and 12-point box end, mid-plane 10/6, neck fillets, offset recess mirrored about Front."
+    "blurb": "Front C and 12-point box end, mid-plane 10/6, neck fillets, offset recess mirrored about Front.",
+    "website": {
+      "feature": "Combination spanner",
+      "title": "Combination spanner",
+      "caption": "Open C and 12-point box ends, a mid-plane boss, neck fillets and a mirrored recess.",
+      "group": "Projects, end to end",
+      "order": 41
+    }
   }
 ]

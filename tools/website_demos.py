@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Curated website demos — single source of truth.
 
-Manifest entries with a `website` object are the curated set. This module
-orders them (hero first, then `order`) and emits:
+Manifest entries with a `website` object are the curated set. Two tiers:
 
-  website/assets/published-demos.json
-  website/assets/demo-catalog.json  (featured = all curated, hero flagged)
+  features page  every curated film, grouped by `website.group` (GROUPS order)
+  homepage       films with `website.home: true` (HOME_MIN..HOME_MAX of them);
+                 exactly one of those is `website.hero: true`
+
+This module orders them (hero first, then `order`) and emits:
+
+  website/assets/published-demos.json  (every curated id)
+  website/assets/demo-catalog.json     (featured = all curated rows, with
+                                        group/home/hero; groups = GROUPS)
 
 Used by scripts/sx-publish-demo-movies, scripts/sx-check-website-demos, and
 `python3 tools/website_demos.py check`.
@@ -25,9 +31,17 @@ PUBLISHED_PATH = ROOT / "website" / "assets" / "published-demos.json"
 CATALOG_PATH = ROOT / "website" / "assets" / "demo-catalog.json"
 DEFAULT_POSTERS = ROOT / "website" / "assets" / "screenshots"
 
-WEBSITE_KEYS = ("feature", "title", "caption", "order", "hero")
+WEBSITE_KEYS = ("feature", "title", "caption", "group", "order", "home", "hero")
 MAX_CAPTION = 110
-EXPECTED_COUNT = 12
+# Features-page sections, in display order. Every curated film names one.
+GROUPS = (
+    "Projects, end to end",
+    "Sketching",
+    "Part modeling",
+    "Assemblies, drawings & output",
+)
+# The homepage shows a few films (hero included) and links to the rest.
+HOME_MIN, HOME_MAX = 3, 6
 
 
 def poster_dir() -> Path:
@@ -62,7 +76,9 @@ def _row(entry: dict) -> dict:
         "feature": feature,
         "title": title,
         "caption": caption,
+        "group": str(site.get("group") or ""),
         "order": int(site.get("order", 0)),
+        "home": bool(site.get("home", False)),
         "hero": bool(site.get("hero", False)),
         "enabled": bool(entry.get("enabled", True)),
     }
@@ -79,20 +95,16 @@ def curated_ids(manifest: list[dict] | None = None) -> list[str]:
     return [r["id"] for r in curated(manifest)]
 
 
+CATALOG_KEYS = ("id", "feature", "title", "caption", "group", "order", "home", "hero")
+
+
 def featured_rows(rows: list[dict] | None = None) -> list[dict]:
-    """All curated films, including the hero, with `hero` flagged."""
-    out = []
-    for r in rows if rows is not None else curated():
-        out.append({
-            "id": r["id"],
-            "feature": r["feature"],
-            "title": r["title"],
-            "blurb": r["caption"],
-            "caption": r["caption"],
-            "order": r["order"],
-            "hero": r["hero"],
-        })
-    return out
+    """All curated films (features page); `home` / `hero` mark the homepage tier."""
+    return [{k: r[k] for k in CATALOG_KEYS} for r in (rows if rows is not None else curated())]
+
+
+def home_rows(rows: list[dict] | None = None) -> list[dict]:
+    return [r for r in (rows if rows is not None else curated()) if r["home"]]
 
 
 def write_published(path: Path, rows: list[dict] | None = None) -> list[str]:
@@ -123,6 +135,7 @@ def write_featured(
     featured = featured_rows(rows)
     if release is not None:
         cat["demo_release"] = release
+    cat["groups"] = list(GROUPS)
     cat["featured"] = featured
     catalog_path.parent.mkdir(parents=True, exist_ok=True)
     catalog_path.write_text(json.dumps(cat, indent=2) + "\n")
@@ -149,8 +162,11 @@ def validate_curated(
     errors: list[str] = []
     rows = curated(manifest)
     ids = [r["id"] for r in rows]
-    if len(rows) != EXPECTED_COUNT:
-        errors.append(f"expected {EXPECTED_COUNT} curated website entries, got {len(rows)}")
+    if not rows:
+        errors.append("no curated website entries")
+    home = home_rows(rows)
+    if not HOME_MIN <= len(home) <= HOME_MAX:
+        errors.append(f"expected {HOME_MIN}..{HOME_MAX} website.home films, got {len(home)}")
     if len(set(ids)) != len(ids):
         errors.append("duplicate curated ids")
     orders = [r["order"] for r in rows]
@@ -161,12 +177,16 @@ def validate_curated(
         errors.append(f"expected exactly one hero, got {len(heroes)}")
     elif rows and not rows[0]["hero"]:
         errors.append(f"hero must sort first, first id is {rows[0]['id']!r}")
+    elif not heroes[0]["home"]:
+        errors.append(f"hero {heroes[0]['id']!r} must also set website.home")
     for r in rows:
         if not r["id"]:
             errors.append("website entry missing id")
         for key in ("feature", "title", "caption"):
             if not str(r.get(key, "")).strip():
                 errors.append(f"{r['id']!r} missing website.{key}")
+        if r["group"] not in GROUPS:
+            errors.append(f"{r['id']!r} website.group {r['group']!r} not in {list(GROUPS)}")
         if len(r["caption"]) > MAX_CAPTION:
             errors.append(
                 f"{r['id']!r} caption is {len(r['caption'])} chars (max {MAX_CAPTION})"
@@ -187,14 +207,20 @@ def validate_curated(
             )
         else:
             for feat, row in zip(featured, rows):
-                if bool(feat.get("hero")) != row["hero"]:
-                    errors.append(f"featured {row['id']!r} hero flag mismatch")
+                for key in ("group", "home", "hero"):
+                    if feat.get(key) != row[key]:
+                        errors.append(f"featured {row['id']!r} {key} mismatch; regenerate")
+        if catalog.get("groups") != list(GROUPS):
+            errors.append("demo-catalog groups != website_demos.GROUPS; regenerate")
 
     if published is None and PUBLISHED_PATH.is_file():
         published = load_json(PUBLISHED_PATH)
     if isinstance(published, list):
         pub_ids = [str(x) for x in published]
         extra = [i for i in pub_ids if i not in set(ids)]
+        missing = [i for i in ids if i not in set(pub_ids)]
+        if missing:
+            errors.append(f"published-demos.json lacks curated ids ({', '.join(missing)})")
         if extra:
             errors.append(
                 "published-demos.json has non-curated ids "
@@ -216,7 +242,8 @@ def check(offline: bool = True) -> int:
     if errors:
         return 1
     rows = curated()
-    print(f"website_demos: ok — {len(rows)} curated, hero={rows[0]['id']}")
+    home = [r["id"] for r in home_rows(rows)]
+    print(f"website_demos: ok — {len(rows)} curated, home={','.join(home)}")
     return 0
 
 
@@ -245,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ids", help="print curated ids, hero first")
+    sub.add_parser("home-ids", help="print homepage ids, hero first")
     p_emit = sub.add_parser("emit", help="write published-demos.json + catalog featured")
     p_emit.add_argument("--published", default="")
     p_emit.add_argument("--catalog", default="")
@@ -255,6 +283,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.cmd == "ids":
         return _cmd_ids(args)
+    if args.cmd == "home-ids":
+        for r in home_rows():
+            print(r["id"])
+        return 0
     if args.cmd == "emit":
         return _cmd_emit(args)
     return _cmd_check(args)

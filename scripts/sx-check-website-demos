@@ -6,7 +6,8 @@ Hard rule: a play button is only allowed for a film that has
   2. an entry in website/assets/published-demos.json
   3. a .webm on the demo-movies Release (HEAD 200), unless --offline
 
-Curated featured rows come from tools/website_demos.py (all 12, hero included).
+Curated rows come from tools/website_demos.py (features page = all curated,
+homepage = the `website.home` tier).
 HTML must not hardcode data-demo= or /demo-movies/<id>.webm for unpublished ids.
 """
 from __future__ import annotations

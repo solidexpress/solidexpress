@@ -16,8 +16,15 @@ on the Pages-repo GitHub Release
 a play button on a film that is not on that Release** — `assets/demo.js` hydrates
 cards from the live asset list (fallback: `assets/published-demos.json`).
 Featured titles live in `assets/demo-catalog.json` and are generated from the
-manifest `website` objects by `tools/website_demos.py` (hero first, all 12
-curated rows, hero flagged).
+manifest `website` objects by `tools/website_demos.py`. Two tiers:
+
+- **Features page** (`features.html`): every film with a `website` object,
+  sectioned by `website.group` (one of `website_demos.GROUPS`).
+- **Homepage** (`index.html`): films with `website.home: true` (3 to 6; one
+  also has `website.hero: true`), then a "See more" card to the features page.
+
+Posters load lazily; a WebM is fetched only on hover preview or click.
+Shared styles live in `assets/site.css`.
 
 ```bash
 make movies && scripts/sx-publish-demo-movies

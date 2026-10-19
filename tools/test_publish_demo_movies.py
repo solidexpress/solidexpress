@@ -23,6 +23,13 @@ def _ffmpeg() -> str | None:
     return shutil.which("ffmpeg")
 
 
+def _curated_ids() -> list[str]:
+    proc = subprocess.run(
+        ["python3", str(HELPER), "ids"], cwd=ROOT, capture_output=True, text=True, check=True
+    )
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+
 class PublishDemoMoviesTests(unittest.TestCase):
     def setUp(self) -> None:
         if _ffmpeg() is None:
@@ -125,27 +132,62 @@ class PublishDemoMoviesTests(unittest.TestCase):
             self.assertEqual(got.count(FILM_ID), 1)
             featured = json.loads(catalog.read_text()).get("featured", [])
             self.assertEqual(sum(1 for row in featured if row.get("id") == FILM_ID), 1)
-            self.assertEqual(len(featured), 12)
+            self.assertEqual(len(featured), len(_curated_ids()))
             self.assertTrue((posters / f"{FILM_ID}.png").is_file())
         self.assertEqual(PUB.read_bytes(), self._pub_before)
         self.assertEqual(CAT.read_bytes(), self._cat_before)
         if self._poster_bytes is not None:
             self.assertEqual(POSTER.read_bytes(), self._poster_bytes)
 
-    def test_website_demos_helper_exists_and_lists_twelve(self) -> None:
+    def test_website_demos_helper_lists_hero_first(self) -> None:
         self.assertTrue(HELPER.is_file())
-        proc = subprocess.run(
-            ["python3", str(HELPER), "ids"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        ids = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
-        self.assertEqual(len(ids), 12)
+        ids = _curated_ids()
         self.assertEqual(ids[0], FILM_ID)
+        self.assertEqual(len(ids), len(set(ids)))
 
+
+class WebsiteTiersTests(unittest.TestCase):
+    """Homepage tier vs features-page set, from tools/website_demos.py."""
+
+    def setUp(self) -> None:
+        import sys
+        sys.path.insert(0, str(ROOT / "tools"))
+        import website_demos
+        self.wd = website_demos
+        self.rows = website_demos.curated()
+
+    def test_live_manifest_validates(self) -> None:
+        self.assertEqual(self.wd.validate_curated(), [])
+
+    def test_home_tier_is_a_few_with_hero_first(self) -> None:
+        home = self.wd.home_rows(self.rows)
+        self.assertTrue(self.wd.HOME_MIN <= len(home) <= self.wd.HOME_MAX)
+        self.assertEqual(home[0]["id"], FILM_ID)
+        self.assertTrue(home[0]["hero"])
+        self.assertLess(len(home), len(self.rows))
+
+    def test_every_film_is_in_a_known_group(self) -> None:
+        for r in self.rows:
+            self.assertIn(r["group"], self.wd.GROUPS, r["id"])
+
+    def test_catalog_lists_every_curated_film(self) -> None:
+        cat = json.loads(CAT.read_text())
+        self.assertEqual([f["id"] for f in cat["featured"]], [r["id"] for r in self.rows])
+        self.assertEqual(cat["groups"], list(self.wd.GROUPS))
+        self.assertEqual(json.loads(PUB.read_text()), [r["id"] for r in self.rows])
+
+    def test_validation_rejects_bad_tiers(self) -> None:
+        manifest = self.wd.load_manifest()
+        for e in manifest:
+            site = e.get("website")
+            if isinstance(site, dict):
+                site.pop("home", None)
+        errs = self.wd.validate_curated(manifest, published=[], catalog={})
+        self.assertTrue(any("website.home" in e for e in errs), errs)
+        manifest = self.wd.load_manifest()
+        next(e for e in manifest if e.get("website"))["website"]["group"] = "Nope"
+        errs = self.wd.validate_curated(manifest, published=[], catalog={})
+        self.assertTrue(any("website.group" in e for e in errs), errs)
 
 if __name__ == "__main__":
     unittest.main()

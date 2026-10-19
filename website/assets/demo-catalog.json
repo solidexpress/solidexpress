@@ -10,109 +10,177 @@
       "id": "ubc_wrench",
       "feature": "Parametric wrench",
       "title": "Parametric wrench, end to end",
-      "blurb": "Blank part to a printable wrench: sketch, shaft, jaw, slot, fillets.",
       "caption": "Blank part to a printable wrench: sketch, shaft, jaw, slot, fillets.",
+      "group": "Projects, end to end",
       "order": 0,
+      "home": true,
       "hero": true
-    },
-    {
-      "id": "sketch_tools",
-      "feature": "Sketch tools",
-      "title": "Sketch tools",
-      "blurb": "Line, circle, spline, trim, and extend \u2014 the everyday sketch toolset.",
-      "caption": "Line, circle, spline, trim, and extend \u2014 the everyday sketch toolset.",
-      "order": 1,
-      "hero": false
-    },
-    {
-      "id": "tutor1",
-      "feature": "Boss, cut & shell",
-      "title": "Tutor 1: boss, cut, fillets, shell",
-      "blurb": "A boss, an offset cut, two fillets, a 1 mm shell, then a Top section view.",
-      "caption": "A boss, an offset cut, two fillets, a 1 mm shell, then a Top section view.",
-      "order": 2,
-      "hero": false
-    },
-    {
-      "id": "fillet_chain_pocket",
-      "feature": "Fillets",
-      "title": "Fillets",
-      "blurb": "Round a pocket chain in one fillet feature.",
-      "caption": "Round a pocket chain in one fillet feature.",
-      "order": 3,
-      "hero": false
-    },
-    {
-      "id": "revolve_washer",
-      "feature": "Revolve",
-      "title": "Revolve",
-      "blurb": "Sketch a profile beside an axis and revolve it 360\u00b0 into a washer.",
-      "caption": "Sketch a profile beside an axis and revolve it 360\u00b0 into a washer.",
-      "order": 4,
-      "hero": false
-    },
-    {
-      "id": "loft_guide_rail",
-      "feature": "Sweep & loft",
-      "title": "Ship hull loft",
-      "blurb": "Sketch a U transom and an oval bow, loft, then orbit the hull.",
-      "caption": "Sketch a U transom and an oval bow, loft, then orbit the hull.",
-      "order": 5,
-      "hero": false
-    },
-    {
-      "id": "triball_hole_circle",
-      "feature": "Patterns",
-      "title": "Patterns",
-      "blurb": "Rotate-copy a hole into a bolt circle with TriBall.",
-      "caption": "Rotate-copy a hole into a bolt circle with TriBall.",
-      "order": 6,
-      "hero": false
-    },
-    {
-      "id": "hexkey",
-      "feature": "Swept boss",
-      "title": "Hex key",
-      "blurb": "Sweep a 7.65 mm hex along a bent path into a hex key.",
-      "caption": "Sweep a 7.65 mm hex along a bent path into a hex key.",
-      "order": 7,
-      "hero": false
-    },
-    {
-      "id": "sketch_edit_in_out",
-      "feature": "Edit in place",
-      "title": "Edit in place",
-      "blurb": "Leave a sketch, come back, and keep editing the same profile.",
-      "caption": "Leave a sketch, come back, and keep editing the same profile.",
-      "order": 8,
-      "hero": false
     },
     {
       "id": "pliers_motion",
       "feature": "Assembly motion",
       "title": "Assembly motion",
-      "blurb": "Mate jaws to a pin, then drag the leftover revolute to open them.",
       "caption": "Mate jaws to a pin, then drag the leftover revolute to open them.",
-      "order": 9,
+      "group": "Assemblies, drawings & output",
+      "order": 1,
+      "home": true,
       "hero": false
     },
     {
       "id": "flanged_pipe",
       "feature": "Shell, pattern & mirror",
       "title": "Flanged pipe",
-      "blurb": "Shell a tube, pattern 8 flange holes, mirror the flange, round the rims.",
       "caption": "Shell a tube, pattern 8 flange holes, mirror the flange, round the rims.",
+      "group": "Projects, end to end",
+      "order": 2,
+      "home": true,
+      "hero": false
+    },
+    {
+      "id": "loft_guide_rail",
+      "feature": "Sweep & loft",
+      "title": "Ship hull loft",
+      "caption": "Sketch a U transom and an oval bow, loft, then orbit the hull.",
+      "group": "Part modeling",
+      "order": 3,
+      "home": true,
+      "hero": false
+    },
+    {
+      "id": "sketch_tools",
+      "feature": "Sketch tools",
+      "title": "Sketch tools",
+      "caption": "Line, circle, spline, trim, and extend \u2014 the everyday sketch toolset.",
+      "group": "Sketching",
       "order": 10,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "sketch_edit_in_out",
+      "feature": "Edit in place",
+      "title": "Edit in place",
+      "caption": "Leave a sketch, come back, and keep editing the same profile.",
+      "group": "Sketching",
+      "order": 11,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "tutor1",
+      "feature": "Boss, cut & shell",
+      "title": "Tutor 1: boss, cut, fillets, shell",
+      "caption": "A boss, an offset cut, two fillets, a 1 mm shell, then a Top section view.",
+      "group": "Part modeling",
+      "order": 20,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "extrude_through_all",
+      "feature": "Through-all cut",
+      "title": "Through-all cut",
+      "caption": "Cut a plate clean through with Through All; the plate thickness stays put.",
+      "group": "Part modeling",
+      "order": 21,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "hole_wizard_m6",
+      "feature": "Hole wizard",
+      "title": "Hole wizard: four M6 holes",
+      "caption": "Drop four M6 holes with the hole wizard, then read mass from steel density \u00d7 volume.",
+      "group": "Part modeling",
+      "order": 22,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "fillet_chain_pocket",
+      "feature": "Fillets",
+      "title": "Fillets",
+      "caption": "Round a pocket chain in one fillet feature.",
+      "group": "Part modeling",
+      "order": 23,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "revolve_washer",
+      "feature": "Revolve",
+      "title": "Revolve",
+      "caption": "Sketch a profile beside an axis and revolve it 360\u00b0 into a washer.",
+      "group": "Part modeling",
+      "order": 24,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "hexkey",
+      "feature": "Swept boss",
+      "title": "Hex key",
+      "caption": "Sweep a 7.65 mm hex along a bent path into a hex key.",
+      "group": "Part modeling",
+      "order": 25,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "triball_hole_circle",
+      "feature": "Patterns",
+      "title": "Patterns",
+      "caption": "Rotate-copy a hole into a bolt circle with TriBall.",
+      "group": "Part modeling",
+      "order": 26,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "drawing_follows_model",
+      "feature": "Associative drawings",
+      "title": "Drawings follow the model",
+      "caption": "Edit a parameter and the drawing dimension updates with the model.",
+      "group": "Assemblies, drawings & output",
+      "order": 30,
+      "home": false,
       "hero": false
     },
     {
       "id": "open_in_slicer",
       "feature": "Export to print",
       "title": "Export to print",
-      "blurb": "Export bodies to 3MF and hand them to a slicer.",
       "caption": "Export bodies to 3MF and hand them to a slicer.",
-      "order": 11,
+      "group": "Assemblies, drawings & output",
+      "order": 31,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "candlestick",
+      "feature": "Revolve, sweep & draft",
+      "title": "Candlestick",
+      "caption": "Revolve a profile, sweep an ellipse along an arc, then cut a 15\u00b0 drafted hole.",
+      "group": "Projects, end to end",
+      "order": 40,
+      "home": false,
+      "hero": false
+    },
+    {
+      "id": "spanner",
+      "feature": "Combination spanner",
+      "title": "Combination spanner",
+      "caption": "Open C and 12-point box ends, a mid-plane boss, neck fillets and a mirrored recess.",
+      "group": "Projects, end to end",
+      "order": 41,
+      "home": false,
       "hero": false
     }
+  ],
+  "groups": [
+    "Projects, end to end",
+    "Sketching",
+    "Part modeling",
+    "Assemblies, drawings & output"
   ]
 }
