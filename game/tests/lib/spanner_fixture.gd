@@ -605,6 +605,12 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	await _trim_hex_inners(ctx)
 	if _failed():
 		return
+	# Walk A14 "ring remains": Power Trim of leftover hex sides must not
+	# eat Ø33. Redraw the circle so Midplane 10 still has a ring pad; the
+	# 12-point hole is then the A23 star Cut (walk leftover-triangles path).
+	await _ensure_ring_circle(ctx)
+	if _failed():
+		return
 	await construction_line(ctx, Vector2.ZERO, c, "centres CL")
 	if _failed():
 		return
@@ -648,6 +654,7 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 		if _failed():
 			return
 		await trim_at(ctx, uv, "Trim handle overflow ring")
+	await _ensure_ring_circle(ctx)
 
 
 static func _handle_line_at_y(sm: SketchMode, y: float) -> String:
@@ -690,6 +697,16 @@ static func _trim_hex_inners(ctx: FilmContext) -> void:
 			await trim_at(ctx, mid, "Trim hex inner")
 
 
+static func _ensure_ring_circle(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if count_type(sm, "circle") >= 1:
+		return
+	var c := ring_centre()
+	var r := mm("RING_D") * 0.5
+	await frame_uv(ctx, c, SPAN_RING, "Frame Ø33 restore")
+	await circle_at(ctx, c, Vector2(c.x + r, c.y))
+
+
 static func weld_open_profile(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	if sm == null or sm.sketch == null:
@@ -715,6 +732,7 @@ static func contour_chips(ctx: FilmContext) -> Array:
 ## Walk set_contours: uncheck all, probe each chip, keep C/ring/handle by bbox.
 static func set_contours(ctx: FilmContext, keep: PackedStringArray) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
+	print("spanner contours keep=", keep, " ", dump_contours(sm))
 	var chips: Array = contour_chips(ctx)
 	if chips.is_empty():
 		return
@@ -734,6 +752,10 @@ static func set_contours(ctx: FilmContext, keep: PackedStringArray) -> void:
 		await FilmUI.wait_frames(ctx.tree, 1)
 		var note := sm.contour_label(i) if sm != null else ""
 		var want := _contour_wanted(keep, note)
+		if not want and sm != null and sm.sketch != null and sm.sketch.has_method("contour_outlines"):
+			var rows: Array = sm.sketch.contour_outlines()
+			if i < rows.size():
+				want = _contour_wanted_outline(keep, rows[i])
 		mapping.append(want)
 		if not want and btn.button_pressed:
 			await FilmUI.click_control(ctx, btn, FilmUICues.alert("Contour", "Skip %d" % (i + 1)))
@@ -775,6 +797,14 @@ static func _contour_wanted(keep: PackedStringArray, note: String) -> bool:
 		if token == "recess" and long_side > 80.0 and long_side < 200.0 and minf(width, height) >= 6.0 and minf(width, height) <= 16.0:
 			return true
 	return false
+
+
+static func _contour_wanted_outline(keep: PackedStringArray, row: Dictionary) -> bool:
+	var sz: Vector2 = row.get("size", Vector2.ZERO)
+	var mn: Vector2 = row.get("min", Vector2.ZERO)
+	var cx := mn.x + sz.x * 0.5
+	var note := "— %.1f × %.1f mm at (%.1f, 0.0)" % [sz.x, sz.y, cx]
+	return _contour_wanted(keep, note)
 
 
 static func pencil_first_sketch(ctx: FilmContext) -> void:
@@ -894,24 +924,43 @@ static func _pick_z_edge(ctx: FilmContext, body: String, xy: Vector2, want_len: 
 	var mid := _edge_mid(ctx.view.doc, body, eid)
 	if mid == Vector3.ZERO:
 		mid = Vector3(xy.x, xy.y, 0.0)
-	# Top: Z-edges are vertical in XZ. Iso looks down onto the C and misses.
-	await FilmActor.of(ctx).view_key(KEY_3, "Top for Z-edge")
-	await FilmActor.of(ctx).dwell()
-	await FilmActor.of(ctx).zoom_to(mid, 22.0, "Frame 6 mm neck edge")
-	var screen := FilmUI.model_to_screen(ctx, mid)
-	if not FilmUI.require_on_screen(ctx, screen, "neck Z-edge"):
-		return false
-	await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Neck Z-edge"))
-	await FilmUI.wait_frames(ctx.tree, 3)
-	if ctx.view.selected_edges.has(eid) or ctx.view.selected_edge == eid:
-		return true
-	await FilmActor.of(ctx).view_key(KEY_8, "Bottom for Z-edge")
-	await FilmActor.of(ctx).zoom_to(mid, 16.0, "Frame neck edge bottom")
-	screen = FilmUI.model_to_screen(ctx, mid)
-	if FilmUI.is_on_screen(ctx, screen):
+	# Walk d.click(edge=eid, along=0.85): named offer, then the pointer at the
+	# +Z end so Top/Left silhouettes show the 6 mm edge, not a degenerate point.
+	var along := _edge_along(ctx.view.doc, body, eid, 0.85)
+	if along == Vector3.ZERO:
+		along = mid
+	# Open neck from −X (Left); box neck from +X (Right). Iso covers the C.
+	var side: Key = KEY_6 if xy.x < 80.0 else KEY_2
+	for key in [side, KEY_3, KEY_8]:
+		if ctx.view.has_method("offer_edge"):
+			ctx.view.offer_edge(eid)
+		await FilmActor.of(ctx).view_key(key, "Neck Z-edge view")
+		await FilmActor.of(ctx).dwell()
+		await FilmActor.of(ctx).zoom_to(along, 16.0, "Frame 6 mm neck edge")
+		var screen := FilmUI.model_to_screen(ctx, along)
+		if not FilmUI.is_on_screen(ctx, screen):
+			continue
 		await FilmUI.viewport_click(ctx, screen, FilmUICues.alert("Click", "Neck Z-edge"))
 		await FilmUI.wait_frames(ctx.tree, 3)
-	return ctx.view.selected_edges.has(eid) or ctx.view.selected_edge == eid
+		if ctx.view.selected_edges.has(eid) or ctx.view.selected_edge == eid:
+			return true
+	return false
+
+
+static func _edge_along(doc: SxDocument, body: String, eid: String, along: float) -> Vector3:
+	if not doc.has_method("get_edge_lines"):
+		return Vector3.ZERO
+	var lines: Dictionary = doc.get_edge_lines(body)
+	if not lines.has(eid):
+		return Vector3.ZERO
+	var pts: PackedVector3Array = lines[eid]
+	if pts.size() < 2:
+		return Vector3.ZERO
+	var a: Vector3 = pts[0]
+	var b: Vector3 = pts[pts.size() - 1]
+	var hi: Vector3 = a if a.z >= b.z else b
+	var lo: Vector3 = b if a.z >= b.z else a
+	return lo.lerp(hi, clampf(along, 0.0, 1.0))
 
 
 static func _edge_mid(doc: SxDocument, body: String, eid: String) -> Vector3:
@@ -958,6 +1007,39 @@ static func ensure_twelve_point_bore(ctx: FilmContext) -> void:
 	if _failed():
 		return
 	await FilmSteps.midplane_extrude(ctx, mm_text("HEAD_T"), 1)
+
+
+## Walk A21 ring pad: if hex trim left no Ø33, xmax stops at the handle chord.
+## Fuse a Front Ø33 Midplane 10 so the box end exists; A23 then cuts the star.
+static func ensure_ring_pad(ctx: FilmContext) -> void:
+	var body := only_body(ctx)
+	if body == "":
+		return
+	var xmax := _xmax(ctx)
+	if xmax >= mm("HANDLE_XMAX_MIN"):
+		return
+	print("spanner ring pad restore xmax=", xmax)
+	await click_datum(ctx, "Front", "front")
+	if _failed():
+		return
+	var c := ring_centre()
+	var r := mm("RING_D") * 0.5
+	await frame_uv(ctx, c, SPAN_RING, "Frame Ø33 pad")
+	await circle_at(ctx, c, Vector2(c.x + r, c.y))
+	if _failed():
+		return
+	await set_contours(ctx, PackedStringArray(["ring"]))
+	await FilmSteps.midplane_extrude(ctx, mm_text("HEAD_T"), 2)
+
+
+static func _xmax(ctx: FilmContext) -> float:
+	var body := only_body(ctx)
+	if body == "":
+		return 0.0
+	var bb: Dictionary = ctx.view.doc.measure_bbox(body)
+	if bb.is_empty():
+		return 0.0
+	return float((bb["max"] as Vector3).x)
 
 
 static func _volume(ctx: FilmContext) -> float:
@@ -1071,4 +1153,7 @@ static func fillet_remaining(ctx: FilmContext, radius: float) -> void:
 
 
 static func open_handle_top_sketch(ctx: FilmContext) -> void:
-	await FilmSteps.open_side_face_sketch(ctx, Vector3(0, 0, 1), KEY_3, mm("HANDLE_T") * 0.5)
+	var z := mm("HANDLE_T") * 0.5
+	await FilmActor.of(ctx).view_key(KEY_3, "Top for handle face")
+	await FilmActor.of(ctx).zoom_to(Vector3(120.0, 0.0, z), SPAN_HANDLE, "Frame handle top")
+	await FilmSteps.open_side_face_sketch(ctx, Vector3(0, 0, 1), KEY_3, z)

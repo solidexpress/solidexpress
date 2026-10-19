@@ -353,6 +353,7 @@ static func open_side_face_sketch(ctx: FilmContext, normal: Vector3, view_key: K
 	if pt == Vector3.INF:
 		FilmUI._fail("no pick point for the side face")
 		return
+	await FilmActor.of(ctx).zoom_to(pt, 140.0, "Frame side face")
 	var screen := FilmUI.model_to_screen(ctx, pt)
 	if not FilmUI.require_on_screen(ctx, screen, "side face"):
 		return
