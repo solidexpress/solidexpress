@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <string>
 
 #include <BRepAdaptor_Surface.hxx>
@@ -383,4 +384,58 @@ TEST_CASE("plane parallel mate aligns normals without closing the gap", "[mates]
     auto pl2 = mate_plane(doc, inst, block_top);
     REQUIRE(pl2);
     CHECK(std::abs(pl2->normal.Dot(gp_Dir(0, 0, 1))) == Approx(1.0).margin(1e-6));
+}
+
+TEST_CASE("concentric offset 0 colinearizes two cylinder instances", "[mates]") {
+    Document doc;
+    auto cyl = doc.add_body(shape::make_cylinder(5, 40), "Cyl");
+    auto inst_a = doc.add_instance(cyl, {0, 0, 0}, {0, 0, 0, 1}, "A");
+    auto inst_b = doc.add_instance(cyl, {80, 20, 5}, {0, 0, 0, 1}, "B");
+    auto face = cylindrical_face(doc, cyl);
+    REQUIRE(!face.is_null());
+
+    auto concentric = [&](double offset) {
+        Mate m;
+        m.type = MateType::Concentric;
+        m.instance_a = inst_a;
+        m.face_a = face;
+        m.instance_b = inst_b;
+        m.face_b = face;
+        m.offset = offset;
+        return doc.add_mate(m);
+    };
+
+    SECTION("NaN offset is refused") {
+        CHECK(concentric(std::numeric_limits<double>::quiet_NaN()).is_null());
+    }
+
+    SECTION("offset 0.2 still accepted") {
+        REQUIRE(!concentric(0.2).is_null());
+    }
+
+    SECTION("offset 0 colinearizes") {
+        REQUIRE(!concentric(0.0).is_null());
+        REQUIRE(solve_mates(doc));
+
+        auto ax_a = mate_axis(doc, inst_a, face);
+        auto ax_b = mate_axis(doc, inst_b, face);
+        REQUIRE(ax_a);
+        REQUIRE(ax_b);
+        CHECK(std::abs(ax_a->dir.Dot(ax_b->dir)) == Approx(1.0).margin(1e-6));
+        gp_Vec d(ax_a->point, ax_b->point);
+        CHECK(d.Crossed(gp_Vec(ax_a->dir)).Magnitude() < 1e-6);
+
+        // Axial slide stays free: a Z nudge survives solve.
+        const auto* before = doc.instance(inst_b);
+        REQUIRE(before != nullptr);
+        auto t = before->translation;
+        t[2] += 12.0;
+        REQUIRE(doc.set_instance_transform(inst_b, t, before->rotation_quat));
+        REQUIRE(solve_mates(doc));
+        CHECK(doc.instance(inst_b)->translation[2] == Approx(t[2]).margin(1e-6));
+        auto ax_b2 = mate_axis(doc, inst_b, face);
+        REQUIRE(ax_b2);
+        gp_Vec d2(ax_a->point, ax_b2->point);
+        CHECK(d2.Crossed(gp_Vec(ax_a->dir)).Magnitude() < 1e-6);
+    }
 }

@@ -23,4 +23,10 @@ std::optional<PickHit> pick_ray(const Document& doc,
                                 const std::array<double, 3>& origin,
                                 const std::array<double, 3>& direction);
 
+// Same as pick_ray, but only the named body (instance face picks: transform
+// the ray into source space so stacked insert-sources at identity are ignored).
+std::optional<PickHit> pick_ray_body(const Document& doc, const EntityId& body,
+                                     const std::array<double, 3>& origin,
+                                     const std::array<double, 3>& direction);
+
 }  // namespace sx

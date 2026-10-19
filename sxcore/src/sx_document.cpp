@@ -13,6 +13,7 @@
 #include "sx/commands_transform.hpp"
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <BRepAdaptor_Surface.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
@@ -787,10 +788,8 @@ PackedVector2Array SxDocument::pierce_uvs(const Vector3& origin, const Vector3& 
     return out;
 }
 
-Dictionary SxDocument::pick(const Vector3& origin, const Vector3& direction) const {
+static Dictionary pick_hit_dict(const std::optional<sx::PickHit>& hit) {
     Dictionary out;
-    auto hit = sx::pick_ray(*doc_, {origin.x, origin.y, origin.z},
-                            {direction.x, direction.y, direction.z});
     if (!hit) return out;
     out["body"] = to_gd(hit->body.str());
     out["face"] = to_gd(hit->face.str());
@@ -799,6 +798,21 @@ Dictionary SxDocument::pick(const Vector3& origin, const Vector3& direction) con
                            static_cast<float>(hit->point[2]));
     out["distance"] = hit->distance;
     return out;
+}
+
+Dictionary SxDocument::pick(const Vector3& origin, const Vector3& direction) const {
+    if (!doc_) return {};
+    return pick_hit_dict(sx::pick_ray(*doc_, {origin.x, origin.y, origin.z},
+                                      {direction.x, direction.y, direction.z}));
+}
+
+Dictionary SxDocument::pick_body(const String& body_id, const Vector3& origin,
+                                 const Vector3& direction) const {
+    if (!doc_) return {};
+    auto eid = parse_id(body_id);
+    if (eid.is_null()) return {};
+    return pick_hit_dict(sx::pick_ray_body(*doc_, eid, {origin.x, origin.y, origin.z},
+                                           {direction.x, direction.y, direction.z}));
 }
 
 String SxDocument::card_markdown(const String& entity_id) const {
@@ -2708,6 +2722,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("pierce_uvs", "origin", "x_dir", "y_dir"),
                          &SxDocument::pierce_uvs);
     ClassDB::bind_method(D_METHOD("pick", "origin", "direction"), &SxDocument::pick);
+    ClassDB::bind_method(D_METHOD("pick_body", "body_id", "origin", "direction"),
+                         &SxDocument::pick_body);
     ClassDB::bind_method(D_METHOD("card_markdown", "entity_id"), &SxDocument::card_markdown);
     ClassDB::bind_method(D_METHOD("set_card_alias", "entity_id", "text"), &SxDocument::set_card_alias);
     ClassDB::bind_method(D_METHOD("set_card_notes", "entity_id", "text"), &SxDocument::set_card_notes);

@@ -18,9 +18,12 @@ var _type_option: OptionButton
 var _offset_spin: SpinBox
 var _refreshing := false
 
-## Armed two-click mate flow: wait for ground face A, then instanced face B.
+## Armed two-click mate flow: each pick is (instance_id, face_id). Ground
+## uses a blank instance id. Two instances of one source are named by the
+## viewport instance pick, not by unique-source lookup.
 var _mate_armed := false
 var _mate_face_a := ""
+var _mate_instance_a := ""
 ## Sticky error from the last mate add / solve ("" when healthy). Shown as a
 ## red badge above the mates list instead of only a transient status line.
 var _mate_error := ""
@@ -79,7 +82,7 @@ func _ready() -> void:
 
 	_offset_spin = _labeled_spin(vbox, "Offset", -1000.0, 1000.0, 0.5, 0.0)
 	_op_button(vbox, "Add mate", _arm_mate, "mate",
-		"Add a mate or joint: click a ground face, then a face on an instance")
+		"Add a mate or joint: click two faces (instance or ground)")
 	_op_button(vbox, "Solve mates", _solve_mates, "solve",
 		"Re-apply every mate and pose every joint, moving instances into position")
 
@@ -332,12 +335,17 @@ func _remove_instance(id: String) -> void:
 		status.emit("Remove instance failed")
 
 
+func mate_armed() -> bool:
+	return _mate_armed
+
+
 func _arm_mate() -> void:
 	_mate_armed = true
 	_mate_face_a = ""
+	_mate_instance_a = ""
 	view.mate_anchor_face = ""
 	refresh_lists()
-	status.emit("Mate: click ground face, then instance face")
+	status.emit("Mate: click two faces")
 
 
 func _on_selection_changed(_body: String, face: String) -> void:
@@ -346,13 +354,29 @@ func _on_selection_changed(_body: String, face: String) -> void:
 		return
 	if face == "":
 		return
-	if _mate_face_a == "":
-		_mate_face_a = face
-		# Keep the anchor face tinted green while waiting for the second pick.
-		view.mate_anchor_face = face
-		status.emit("Mate: click face on an instanced body (anchor shown green)")
+	var inst := _instance_for_source(view.selected_body)
+	if inst == "" and _source_instance_count(view.selected_body) > 1:
+		status.emit("Mate: click the instance face")
 		return
-	_resolve_mate_b(view.selected_body, face)
+	offer_instance_face(inst, face)
+
+
+## Viewport (and tests) deliver an instance face. `instance_id` is "" for ground.
+func offer_instance_face(instance_id: String, face_id: String) -> void:
+	if not _mate_armed:
+		return
+	if face_id == "":
+		status.emit("Mate: click two faces")
+		return
+	if _mate_face_a == "":
+		_mate_instance_a = instance_id
+		_mate_face_a = face_id
+		view.mate_anchor_face = face_id
+		status.emit("Mate: click second face")
+		return
+	if instance_id == _mate_instance_a and face_id == _mate_face_a:
+		return
+	_finish_mate(_mate_instance_a, _mate_face_a, instance_id, face_id)
 
 
 func _resolve_mate_b(body: String, face_b: String) -> void:
@@ -360,16 +384,35 @@ func _resolve_mate_b(body: String, face_b: String) -> void:
 	if inst_b == "":
 		status.emit("Pick a face on an instanced body")
 		return
+	_finish_mate(_mate_instance_a, _mate_face_a, inst_b, face_b)
+
+
+func _finish_mate(instance_a: String, face_a: String, instance_b: String, face_b: String) -> void:
+	if face_a == "" or face_b == "":
+		status.emit("Mate: click two faces")
+		return
+	# Kernel moves instance_b. A ground second pick with an instance first pick
+	# swaps so the instance is the moving side.
+	if instance_b == "" and instance_a != "":
+		instance_b = instance_a
+		var swapped := face_a
+		face_a = face_b
+		face_b = swapped
+		instance_a = ""
+	if instance_b == "":
+		status.emit("Pick a face on an instanced body")
+		return
 	var mtype: String = _type_option.get_item_text(_type_option.selected)
 	var is_joint: bool = mtype in JOINT_TYPES
 	var mid: String
 	if is_joint:
-		mid = view.doc.add_joint(mtype, "", _mate_face_a, inst_b, face_b, "")
+		mid = view.doc.add_joint(mtype, instance_a, face_a, instance_b, face_b, "")
 	else:
 		mid = view.doc.add_mate(
-			mtype, "", _mate_face_a, inst_b, face_b, _offset_spin.value, false, "")
+			mtype, instance_a, face_a, instance_b, face_b, _offset_spin.value, false, "")
 	_mate_armed = false
 	_mate_face_a = ""
+	_mate_instance_a = ""
 	view.mate_anchor_face = ""
 	if mid == "":
 		_mate_error = "%s rejected — %s needs matching face types" % \
@@ -385,6 +428,16 @@ func _resolve_mate_b(body: String, face_b: String) -> void:
 		status.emit("%s joint added — drag the part to drive it" % mtype)
 	else:
 		status.emit("Mate added" if solved else "Mate added — solve FAILED")
+
+
+func _source_instance_count(body: String) -> int:
+	if body == "":
+		return 0
+	var n := 0
+	for inst in view.doc.instance_list():
+		if inst["source_body"] == body:
+			n += 1
+	return n
 
 
 func _instance_for_source(body: String) -> String:

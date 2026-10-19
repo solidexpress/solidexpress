@@ -1925,25 +1925,50 @@ func _apply_instance_highlight() -> void:
 			node.material_override = _instance_materials.get(id)
 
 
-## First component instance whose transformed mesh AABB the ray hits.
-## Returns {} or {id, point, distance}. Instances have no kernel B-rep of
-## their own, so this is a view-side AABB test (good enough for drag).
+## First component instance the ray hits. Transforms the ray into the source
+## body and reuses the kernel face pick so two instances of one source are
+## distinguishable. Returns {} or {id, point, distance, face}. AABB is a
+## fallback for drag when the B-rep miss (no face in that case).
 func pick_instance(origin: Vector3, direction: Vector3) -> Dictionary:
 	var best := {}
 	var best_t := INF
 	var d := direction.normalized() if direction.length_squared() > 1e-12 else direction
+	var sources := {}
+	for inst in doc.instance_list():
+		sources[str(inst.get("id", ""))] = str(inst.get("source_body", ""))
 	for id in _instance_nodes:
 		var node: MeshInstance3D = _instance_nodes[id]
 		if node == null or node.mesh == null or not node.visible:
 			continue
+		var iid := str(id)
 		var inv := node.transform.affine_inverse()
-		var t := _ray_aabb_t(inv * origin, (inv.basis * d).normalized(), node.mesh.get_aabb())
-		if t >= 0.0 and t < best_t:
-			best_t = t
+		var local_o: Vector3 = inv * origin
+		var local_d: Vector3 = inv.basis * d
+		if local_d.length_squared() < 1e-16:
+			continue
+		local_d = local_d.normalized()
+		var src: String = str(sources.get(iid, ""))
+		var hit := {}
+		if src != "" and doc.has_method("pick_body"):
+			hit = doc.pick_body(src, local_o, local_d)
+		if not hit.is_empty():
+			var t: float = float(hit.get("distance", INF))
+			if t >= 0.0 and t < best_t:
+				best_t = t
+				best = {
+					"id": iid,
+					"point": node.transform * hit["point"],
+					"distance": t,
+					"face": str(hit.get("face", "")),
+				}
+			continue
+		var t_aabb := _ray_aabb_t(local_o, local_d, node.mesh.get_aabb())
+		if t_aabb >= 0.0 and t_aabb < best_t:
+			best_t = t_aabb
 			best = {
-				"id": str(id),
-				"point": origin + d * t,
-				"distance": t,
+				"id": iid,
+				"point": origin + d * t_aabb,
+				"distance": t_aabb,
 			}
 	return best
 

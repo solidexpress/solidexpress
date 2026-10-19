@@ -52,3 +52,20 @@ TEST_CASE("ray pick hits cylinder lateral face", "[pick]") {
     REQUIRE(desc.find("cylindrical") != std::string::npos);
     REQUIRE(hit->point[0] == Approx(5.0).margin(1e-6));
 }
+
+TEST_CASE("pick_ray_body ignores a closer other body", "[pick]") {
+    Document doc;
+    shape::Placement far_p;
+    far_p.origin = {0, 0, -50};
+    auto far_id = doc.add_body(shape::make_box(10, 10, 10, far_p), "Far");
+    doc.add_body(shape::make_box(10, 10, 10), "Near");
+
+    auto all = pick_ray(doc, {5, 5, 100}, {0, 0, -1});
+    REQUIRE(all.has_value());
+    REQUIRE(all->body != far_id);
+
+    auto only_far = pick_ray_body(doc, far_id, {5, 5, 100}, {0, 0, -1});
+    REQUIRE(only_far.has_value());
+    REQUIRE(only_far->body == far_id);
+    REQUIRE(only_far->point[2] == Approx(-40.0).margin(1e-6));
+}

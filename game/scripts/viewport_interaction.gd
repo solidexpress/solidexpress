@@ -25,6 +25,7 @@ var hole_preview: HolePreviewOverlay
 var measure_overlay: MeasureOverlay
 var transform_hud: TransformHud
 var ops_panel: OpsPanel
+var assembly_panel: AssemblyPanel
 
 enum DragMode { NONE, MOVE_BODY, ROTATE_BODY, PUSH_PULL, BOX_SELECT, ORBIT_VIEW, RESIZE_BODY, MOVE_INSTANCE }
 var _drag_mode := DragMode.NONE
@@ -4348,6 +4349,11 @@ func _on_press(pos: Vector2) -> void:
 		var iid: String = ihit["id"]
 		if view.selected_instance != iid:
 			view.select_instance(iid)
+		# Mate-armed: the click is a face pick, not a drag (fixed or floating).
+		if assembly_panel != null and assembly_panel.mate_armed():
+			assembly_panel.offer_instance_face(iid, str(ihit.get("face", "")))
+			_press_empty = false
+			return
 		# Fixed restraint (SolidWorks Fix): select but do not arm a drag.
 		var inst_fixed := false
 		for inst in view.doc.instance_list():

@@ -869,6 +869,7 @@ func _build_ui() -> void:
 	assembly_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	assembly_panel.visible = false
 	ui.add_child(assembly_panel)
+	interaction.assembly_panel = assembly_panel
 	assembly_panel.status.connect(_on_status)
 	assembly_panel.instance_selected.connect(func(id: String) -> void:
 		var node := view.instance_node(id)

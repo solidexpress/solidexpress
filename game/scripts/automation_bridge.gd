@@ -180,6 +180,35 @@ func _cmd_save_path(req: Dictionary) -> Dictionary:
 	return {"path": path}
 
 
+## Named mate: instance_a may be "" (ground). Offset defaults to 0.
+func _cmd_mate_add(req: Dictionary) -> Dictionary:
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	var face_a := str(req.get("face_a", "")).strip_edges()
+	var face_b := str(req.get("face_b", "")).strip_edges()
+	var instance_b := str(req.get("instance_b", "")).strip_edges()
+	if face_a == "" or face_b == "" or instance_b == "":
+		return {"error": "mate:Add needs face_a, face_b, instance_b"}
+	var mtype := str(req.get("type", "concentric")).strip_edges()
+	if mtype == "":
+		mtype = "concentric"
+	var mid: String = view.doc.add_mate(
+		mtype,
+		str(req.get("instance_a", "")),
+		face_a,
+		instance_b,
+		face_b,
+		float(req.get("offset", 0.0)),
+		bool(req.get("flip", false)),
+		str(req.get("name", "")))
+	if mid == "":
+		return {"error": "mate:Add rejected"}
+	var solved: bool = view.doc.solve_mates()
+	view.refresh()
+	return {"target": "mate:Add", "id": mid, "solved": solved}
+
+
 ## Same path as the Godot offset suite: finish_extrude with empty contours.
 func _cmd_finish_extrude(req: Dictionary) -> Dictionary:
 	var sm = _main().get("sketch_mode")
@@ -357,6 +386,8 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 			main._on_insert_menu(10)
 			return {"target": named}
 		return {"error": "Insert Components unavailable"}
+	if kind != "hover" and named == "mate:Add":
+		return _cmd_mate_add(req)
 	if kind != "hover" and req.has("datum"):
 		var name := str(req["datum"])
 		var ix = _main().get("interaction")

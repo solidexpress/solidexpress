@@ -165,6 +165,9 @@ public:
     // Exact B-rep picking. Returns {} on miss, else
     // {body: String, face: String, point: Vector3, distance: float}.
     godot::Dictionary pick(const godot::Vector3& origin, const godot::Vector3& direction) const;
+    // Body-scoped pick (instance face: ray already in source space).
+    godot::Dictionary pick_body(const godot::String& body_id, const godot::Vector3& origin,
+                                const godot::Vector3& direction) const;
 
     // --- semantic cards ---
     godot::String card_markdown(const godot::String& entity_id) const;
