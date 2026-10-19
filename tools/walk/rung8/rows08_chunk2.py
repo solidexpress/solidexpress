@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sxdrive import SxError
 from walk.registry import row
 
 
@@ -78,8 +79,11 @@ class Rows08Chunk2:
         bore = self.cyl_face(src, 65.0, (0, 0, 1), (0.0, 0.0), 20.0)
         before_n = len(self.mates())
         poses = {str(i.get("id")): self.translation_of(str(i.get("id"))) for i in kinds["pipe"]}
-        reply = self.click("mate:Add", type="concentric", instance_a=p1, face_a=bore,
-                           instance_b="", face_b="", offset=0.0, name="one-face")
+        try:
+            reply = self.click("mate:Add", type="concentric", instance_a=p1, face_a=bore,
+                               instance_b="", face_b="", offset=0.0, name="one-face")
+        except SxError as exc:
+            reply = {"error": str(exc)}
         after_n = len(self.mates())
         poses2 = {str(i.get("id")): self.translation_of(str(i.get("id"))) for i in self.classify()["pipe"]}
         refused = bool(reply.get("error")) or after_n == before_n

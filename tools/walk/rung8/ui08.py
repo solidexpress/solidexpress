@@ -183,20 +183,66 @@ class WalkUI08(WalkChrome):
         return {"translation": [0, 0, 0], "axis": [0, 0, 1], "angle": 0.0, "fixed": False}
 
     def nudge(self, iid: str, delta) -> dict:
-        reply = self.d.call("instance_nudge", id=iid, delta=list(delta))
+        # Fixed refusals come back as ok:false ("instance stuck while Fixed").
+        # That is N2/A15 evidence, not a runner-gap.
+        try:
+            reply = self.d.call("instance_nudge", id=iid, delta=list(delta))
+        except SxError as exc:
+            reply = {"error": str(exc), "moved": False, "id": iid}
         self.refresh("instances", "status")
         return reply
 
     def set_transform(self, iid: str, translation, axis=(0.0, 0.0, 1.0), angle_deg: float = 0.0) -> dict:
-        reply = self.d.call(
-            "instance_transform",
-            id=iid,
-            translation=list(translation),
-            axis=list(axis),
-            angle=float(angle_deg),
-        )
+        try:
+            reply = self.d.call(
+                "instance_transform",
+                id=iid,
+                translation=list(translation),
+                axis=list(axis),
+                angle=float(angle_deg),
+            )
+        except SxError as exc:
+            reply = {"error": str(exc), "moved": False, "id": iid}
         self.refresh("instances", "status")
         return reply
+
+    def sketch_on_datum(self, name: str, view_key: str) -> dict:
+        # Insert → New Part already armed pick-host (A6). Click the named
+        # origin plane so OriginPlanes.begin starts Front; do not send
+        # camera key 1 (that view is the assembly Front, and Sketch would
+        # also consume a leftover body-face selection).
+        ec = self.refresh("edit_component", "status").get("edit_component") or {}
+        if bool(ec.get("on") or ec.get("pending")):
+            status = self.S().lower()
+            picking = "pick" in status or "principle plane" in status
+            if not picking:
+                self.click("rail:Sketch")
+                self.d.wait_idle(frames=2)
+            try:
+                self.click(datum=name)
+            except SxError:
+                self.click("rail:Sketch")
+                self.d.wait_idle(frames=2)
+                self.click(datum=name)
+            self.d.wait_idle(frames=3)
+            self.refresh("sketch", "status", "camera", "edit_component")
+            sk = self.st.get("sketch") or {}
+            if not bool(sk.get("active")):
+                self.click("rail:Sketch")
+                self.d.wait_idle(frames=2)
+                self.click(datum=name)
+                self.d.wait_idle(frames=3)
+                self.refresh("sketch", "status", "camera", "edit_component")
+                sk = self.st.get("sketch") or {}
+            return {
+                "status": self.S(),
+                "active": bool(sk.get("active")),
+                "plane": sk.get("plane") or {},
+            }
+        self.clear_faces()
+        if bool((self.refresh("sketch").get("sketch") or {}).get("active")):
+            self.exit_sketch()
+        return WalkChrome.sketch_on_datum(self, name, view_key)
 
     def solve_mates(self) -> dict:
         reply = self.click("mate:Solve")
@@ -326,17 +372,20 @@ class WalkUI08(WalkChrome):
         if not fa or not fb:
             return {"id": "", "solved": False, "status": "missing face", "added": False}
         before = len(self.mates())
-        reply = self.click(
-            "mate:Add",
-            type=mtype,
-            instance_a=ia,
-            face_a=fa,
-            instance_b=ib,
-            face_b=fb,
-            offset=0.0,
-            flip=flip,
-            name=name,
-        )
+        try:
+            reply = self.click(
+                "mate:Add",
+                type=mtype,
+                instance_a=ia,
+                face_a=fa,
+                instance_b=ib,
+                face_b=fb,
+                offset=0.0,
+                flip=flip,
+                name=name,
+            )
+        except SxError as exc:
+            reply = {"error": str(exc), "id": ""}
         self.d.wait_idle(frames=2)
         self.refresh("mates", "instances", "status")
         mid = str(reply.get("id") or "")
