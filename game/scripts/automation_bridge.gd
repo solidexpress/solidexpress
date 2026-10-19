@@ -346,6 +346,8 @@ func _cmd_sketch_pin_profile(_req: Dictionary) -> Dictionary:
 	var sm = _main().get("sketch_mode")
 	if sm == null or not bool(sm.active) or sm.sketch == null:
 		return {"error": "no active sketch"}
+	for eid in sm.sketch.entity_ids():
+		sm.sketch.remove_entity(str(eid))
 	var axis: String = sm.sketch.add_line(0.0, 0.0, 0.0, 55.0)
 	if axis == "":
 		return {"error": "pin axis failed"}

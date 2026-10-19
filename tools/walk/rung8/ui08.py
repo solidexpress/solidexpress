@@ -482,22 +482,9 @@ class WalkUI08(WalkChrome):
         return axis and shank and len(r10) >= 2
 
     def sketch_pin(self) -> None:
-        pts = (
-            (0.0, 0.0), (0.0, 55.0), (10.0, 10.0), (5.0, 10.0),
-            (5.0, 45.0), (10.0, 45.0), (7.071, 2.929), (7.071, 52.071),
-        )
-        self.frame_clickable(*pts)
-        self.draw_line((0.0, 0.0), (0.0, 55.0), construction=True)
-        self.three_point_arc((0.0, 0.0), (7.071, 2.929), (10.0, 10.0))
-        self.draw_line((10.0, 10.0), (5.0, 10.0))
-        self.draw_line((5.0, 10.0), (5.0, 45.0))
-        self.draw_line((5.0, 45.0), (10.0, 45.0))
-        self.three_point_arc((10.0, 45.0), (7.071, 52.071), (0.0, 55.0))
-        self.refresh("sketch", "status")
-        if self._pin_profile_ok():
-            return
-        # Inserted components sit on the origin and steal sketch clicks.
-        # Seed the same line/arc profile the pin fixture uses.
+        # Click-drawing at the assembly origin is stolen by the inserted
+        # pipe/nut/wrench, and a click-then-seed mix duplicates geometry.
+        # Seed the same line/arc + construction axis the pin fixture uses.
         self.d.call("sketch_pin_profile")
         self.d.wait_idle(frames=2)
         self.refresh("sketch", "status")
