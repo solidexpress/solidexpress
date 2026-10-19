@@ -267,6 +267,12 @@ static func span_at(uv: Vector2) -> float:
 	return SPAN_HEAD
 
 
+static func frame_uv(ctx: FilmContext, uv: Vector2, span: float, desc: String) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	var world3 := sm.to_model(uv) if sm != null else Vector3(uv.x, uv.y, 0.0)
+	await FilmActor.of(ctx).zoom_to(world3, span, desc)
+
+
 static func find_auto(node: Node, id: String) -> Node:
 	if node == null:
 		return null
@@ -335,9 +341,9 @@ static func ellipse3(ctx: FilmContext, centre: Vector2, major: Vector2, minor: V
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.ELLIPSE)
 	if _failed():
 		return
-	await click(ctx, centre, "Ellipse centre", span_at(centre))
-	await click(ctx, major, "Ellipse major", span_at(major))
-	await click(ctx, minor, "Ellipse minor", span_at(minor))
+	await click(ctx, centre, "Ellipse centre", 0.0)
+	await click(ctx, major, "Ellipse major", 0.0)
+	await click(ctx, minor, "Ellipse minor", 0.0)
 
 
 static func construction_line(ctx: FilmContext, a: Vector2, b: Vector2, desc: String) -> void:
@@ -347,8 +353,8 @@ static func construction_line(ctx: FilmContext, a: Vector2, b: Vector2, desc: St
 	await FilmSteps.pick_variant(ctx, "Centerline")
 	if _failed():
 		return
-	await click(ctx, a, "%s start" % desc, span_at(a))
-	await click(ctx, b, "%s end" % desc, span_at(b))
+	await click(ctx, a, "%s start" % desc, 0.0)
+	await click(ctx, b, "%s end" % desc, 0.0)
 	await FilmUI.end_line_chain(ctx)
 
 
@@ -357,12 +363,8 @@ static func select_pair(ctx: FilmContext, first: Vector2, second: Vector2, desc:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	if _failed():
 		return
-	if sm != null:
-		sm.selected.clear()
-	await click(ctx, first, "%s first" % desc, span_at(first))
+	await click(ctx, first, "%s first" % desc, 0.0)
 	await FilmUI.wait_frames(ctx.tree, 2)
-	await FilmActor.of(ctx).zoom_to(sm.to_model(second) if sm != null else Vector3(second.x, second.y, 0.0),
-			span_at(second), "Frame %s second" % desc)
 	await shift_click_uv(ctx, second, "%s second" % desc)
 	await FilmUI.wait_frames(ctx.tree, 4)
 
@@ -432,7 +434,7 @@ static func trim_at(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	if _failed():
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
-	await click(ctx, uv, desc, span_at(uv))
+	await click(ctx, uv, desc, 0.0)
 
 
 static func circle_at(ctx: FilmContext, centre: Vector2, rim: Vector2) -> void:
@@ -440,8 +442,8 @@ static func circle_at(ctx: FilmContext, centre: Vector2, rim: Vector2) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
 	if _failed():
 		return
-	await click(ctx, centre, "Circle centre", span_at(centre))
-	await click(ctx, rim, "Circle rim", span_at(rim))
+	await click(ctx, centre, "Circle centre", 0.0)
+	await click(ctx, rim, "Circle rim", 0.0)
 
 
 static func place_hex(ctx: FilmContext, centre: Vector2, vertex: Vector2, variant: String) -> void:
@@ -452,8 +454,8 @@ static func place_hex(ctx: FilmContext, centre: Vector2, vertex: Vector2, varian
 	if _failed():
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
-	await click(ctx, centre, "%s centre" % variant, SPAN_RING)
-	await click(ctx, vertex, "%s vertex" % variant, SPAN_RING)
+	await click(ctx, centre, "%s centre" % variant, 0.0)
+	await click(ctx, vertex, "%s vertex" % variant, 0.0)
 
 
 static func dim_one(ctx: FilmContext, uv: Vector2, text: String) -> void:
@@ -462,7 +464,7 @@ static func dim_one(ctx: FilmContext, uv: Vector2, text: String) -> void:
 	if _failed():
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
-	await click(ctx, uv, "Dim %s" % text, span_at(uv))
+	await click(ctx, uv, "Dim %s" % text, 0.0)
 	await _type_last_label(ctx, text)
 
 
@@ -474,7 +476,7 @@ static func dim_two(ctx: FilmContext, a: Vector2, b: Vector2, text: String) -> v
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
 	if _failed():
 		return
-	await click(ctx, a, "Dim %s first" % text, span_at(a))
+	await click(ctx, a, "Dim %s first" % text, 0.0)
 	await _type_last_label(ctx, text)
 
 
@@ -525,6 +527,7 @@ static func coincident_on_curve(ctx: FilmContext, point: Vector2, on_curve: Vect
 
 ## Walk A3–A10: 17° CL, ellipse 55×50, Parallel jaws, Mirror, R15, Power Trim C.
 static func sketch_front_c(ctx: FilmContext) -> void:
+	await frame_uv(ctx, Vector2.ZERO, SPAN_HEAD, "Frame C")
 	await construction_line(ctx, Vector2(-40, 0), Vector2(80, 0), "horizontal CL")
 	if _failed():
 		return
@@ -539,7 +542,7 @@ static func sketch_front_c(ctx: FilmContext) -> void:
 		return
 	var o_hi := jaw_outer(true)
 	var i_hi := jaw_inner(true)
-	await line(ctx, o_hi, i_hi, "upper jaw", SPAN_HEAD)
+	await line(ctx, o_hi, i_hi, "upper jaw", 0.0)
 	if _failed():
 		return
 	var jaw_mid := (o_hi + i_hi) * 0.5
@@ -559,7 +562,7 @@ static func sketch_front_c(ctx: FilmContext) -> void:
 	await mirror_entities(ctx, axis_17(), jaw_mid, jaw_outer(false))
 	if _failed():
 		return
-	await FilmSteps.three_point_arc(ctx, jaw_inner(false), throat(), jaw_inner(true), SPAN_HEAD)
+	await FilmSteps.three_point_arc(ctx, jaw_inner(false), throat(), jaw_inner(true), 0.0)
 	if _failed():
 		return
 	await dim_one(ctx, throat(), mm_text("R15"))
@@ -576,6 +579,7 @@ static func sketch_front_c(ctx: FilmContext) -> void:
 static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	var c := ring_centre()
 	var r := mm("RING_D") * 0.5
+	await frame_uv(ctx, c, SPAN_RING, "Frame ring")
 	await circle_at(ctx, c, Vector2(c.x + r, c.y))
 	if _failed():
 		return
@@ -605,7 +609,8 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
 	var hi := handle_xy(true)
-	await line(ctx, hi[0], hi[1], "upper handle", SPAN_HANDLE)
+	await frame_uv(ctx, (hi[0] + hi[1]) * 0.5, SPAN_HANDLE, "Frame handle")
+	await line(ctx, hi[0], hi[1], "upper handle", 0.0)
 	if _failed():
 		return
 	await constrain_chip(ctx, "Horizontal", hi[0], hi[1])
@@ -621,7 +626,7 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	var lo := handle_xy(false)
 	if _handle_line_at_y(ctx.main.sketch_mode, -mm("HANDLE_HALF")) == "":
 		await FilmSteps._snap_off_if_visible(ctx)
-		await line(ctx, lo[0], lo[1], "lower handle", SPAN_HANDLE)
+		await line(ctx, lo[0], lo[1], "lower handle", 0.0)
 		await constrain_chip(ctx, "Horizontal", lo[0], lo[1])
 	if _failed():
 		return
@@ -925,7 +930,7 @@ static func draw_twelve_point_star(ctx: FilmContext) -> void:
 	for i in 24:
 		if _failed():
 			return
-		await line(ctx, pts[i], pts[(i + 1) % 24], "12-point", SPAN_RING)
+		await line(ctx, pts[i], pts[(i + 1) % 24], "12-point", 0.0)
 
 
 static func ensure_twelve_point_bore(ctx: FilmContext) -> void:
@@ -972,10 +977,11 @@ static func draw_recess_racetrack(ctx: FilmContext) -> void:
 	var x0 := 40.0
 	var x1 := 215.0
 	var y := 5.5
-	await line(ctx, Vector2(x0, y), Vector2(x1, y), "recess top", SPAN_HANDLE)
-	await line(ctx, Vector2(x1, y), Vector2(x1, -y), "recess right", SPAN_HANDLE)
-	await line(ctx, Vector2(x1, -y), Vector2(x0, -y), "recess bot", SPAN_HANDLE)
-	await line(ctx, Vector2(x0, -y), Vector2(x0, y), "recess left", SPAN_HANDLE)
+	await frame_uv(ctx, Vector2(120, 0), SPAN_HANDLE, "Frame recess")
+	await line(ctx, Vector2(x0, y), Vector2(x1, y), "recess top", 0.0)
+	await line(ctx, Vector2(x1, y), Vector2(x1, -y), "recess right", 0.0)
+	await line(ctx, Vector2(x1, -y), Vector2(x0, -y), "recess bot", 0.0)
+	await line(ctx, Vector2(x0, -y), Vector2(x0, y), "recess left", 0.0)
 
 
 static func blind_cut(ctx: FilmContext, distance: String) -> void:
