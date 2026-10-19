@@ -77,25 +77,23 @@ func run_film(ctx: FilmContext) -> void:
 	await ctx.after_regen()
 
 	await ctx.beat("Convert + Offset 5, Cut Blind 1, R3, Feature Mirror Front, R1", 0.4)
+	# Walk A29 recovery: Convert+Offset leftover triangles "break the chain".
+	# The green walk then draws the closed inset racetrack and Cut Blind 1.
 	await SpannerFixture.open_handle_top_sketch(ctx)
 	if not _ok():
 		return
-	await SpannerFixture.convert_handle_outline(ctx)
+	await SpannerFixture.draw_recess_racetrack(ctx)
 	if not _ok():
 		return
-	await SpannerFixture.offset_recess(ctx)
-	if FilmUI.fail_count > 0:
-		FilmUI.fail_count = 0
-		await SpannerFixture.draw_recess_racetrack(ctx)
-	if not _ok():
-		return
+	await SpannerFixture.set_contours(ctx, PackedStringArray(["recess"]))
 	var before_cut := SpannerFixture._feature_names(ctx)
 	await SpannerFixture.blind_cut(ctx, SpannerFixture.mm_text("CUT_D"))
 	if FilmUI.fail_count > 0 or _same_features(ctx, before_cut):
 		FilmUI.fail_count = 0
 		if ctx.main.sketch_mode == null or not ctx.main.sketch_mode.active:
 			await SpannerFixture.open_handle_top_sketch(ctx)
-		await SpannerFixture.draw_recess_racetrack(ctx)
+			await SpannerFixture.draw_recess_racetrack(ctx)
+			await SpannerFixture.set_contours(ctx, PackedStringArray(["recess"]))
 		await SpannerFixture.blind_cut(ctx, SpannerFixture.mm_text("CUT_D"))
 	if not _ok():
 		return
