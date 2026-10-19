@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include <TopoDS_Edge.hxx>
 #include <TopoDS_Shape.hxx>
 
 #include "sx/entity.hpp"
@@ -168,6 +169,21 @@ public:
 
     // Fit points of a spline entity (empty if not a spline).
     std::vector<std::array<double, 2>> spline_fit_points(const EntityId& id) const;
+    // One interpolating BSpline through the fit points (GeomAPI_Interpolate).
+    // Profile, solver, overlay and picking all use this curve.
+    TopoDS_Edge spline_edge(const EntityId& id) const;
+    std::vector<std::array<double, 2>> spline_samples(const EntityId& id, int n = 64) const;
+    struct SplineGeom {
+        std::vector<std::array<double, 2>> poles;
+        std::vector<double> knots;
+        std::vector<int> multiplicities;
+        int degree = 3;
+        bool ok = false;
+    };
+    SplineGeom spline_geom(const EntityId& id) const;
+    // UV interpolant for live preview (same GeomAPI_Interpolate, XY plane).
+    static std::vector<std::array<double, 2>> interpolate_samples(
+        const std::vector<std::array<double, 2>>& fit_points, int n = 64);
     // cx, cy, rx, ry, angle. Empty if `id` is not an ellipse or elliptical arc.
     std::optional<std::array<double, 5>> ellipse_axes(const EntityId& id) const;
 

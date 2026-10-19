@@ -33,7 +33,9 @@
 #include <Geom_TrimmedCurve.hxx>
 #include <Geom_Ellipse.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <GeomAPI_Interpolate.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
 #include <ShapeExtend_WireData.hxx>
 #include <ShapeFix_Wire.hxx>
 #include "sx/occt_types.hpp"
@@ -54,6 +56,26 @@
 namespace sx {
 
 namespace {
+
+gp_Pnt plane_to3d(const SketchPlane& pl, double u, double v) {
+    return gp_Pnt(pl.origin[0] + u * pl.x_dir[0] + v * pl.y_dir[0],
+                  pl.origin[1] + u * pl.x_dir[1] + v * pl.y_dir[1],
+                  pl.origin[2] + u * pl.x_dir[2] + v * pl.y_dir[2]);
+}
+
+Handle(Geom_BSplineCurve) interpolate_fits(const SketchPlane& pl,
+                                          const std::vector<std::array<double, 2>>& fits) {
+    if (fits.size() < 2) return {};
+    Handle(TColgp_HArray1OfPnt) arr =
+        new TColgp_HArray1OfPnt(1, static_cast<int>(fits.size()));
+    for (int i = 0; i < static_cast<int>(fits.size()); ++i)
+        arr->SetValue(i + 1, plane_to3d(pl, fits[static_cast<size_t>(i)][0],
+                                        fits[static_cast<size_t>(i)][1]));
+    GeomAPI_Interpolate interp(arr, Standard_False, 1.0e-7);
+    interp.Perform();
+    if (!interp.IsDone()) return {};
+    return interp.Curve();
+}
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kTwoPi = 2.0 * kPi;
@@ -529,6 +551,61 @@ std::vector<std::array<double, 2>> Sketch::spline_fit_points(const EntityId& id)
     return out;
 }
 
+TopoDS_Edge Sketch::spline_edge(const EntityId& id) const {
+    Handle(Geom_BSplineCurve) c = interpolate_fits(plane_, spline_fit_points(id));
+    if (c.IsNull()) return {};
+    BRepBuilderAPI_MakeEdge mk(c);
+    return mk.IsDone() ? mk.Edge() : TopoDS_Edge{};
+}
+
+std::vector<std::array<double, 2>> Sketch::spline_samples(const EntityId& id, int n) const {
+    std::vector<std::array<double, 2>> out;
+    Handle(Geom_BSplineCurve) c = interpolate_fits(plane_, spline_fit_points(id));
+    if (c.IsNull() || n < 2) return spline_fit_points(id);
+    const double u0 = c->FirstParameter();
+    const double u1 = c->LastParameter();
+    out.reserve(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const double t = u0 + (u1 - u0) * (static_cast<double>(i) / (n - 1));
+        out.push_back(to_sketch_uv({c->Value(t).X(), c->Value(t).Y(), c->Value(t).Z()}));
+    }
+    return out;
+}
+
+Sketch::SplineGeom Sketch::spline_geom(const EntityId& id) const {
+    SplineGeom g;
+    Handle(Geom_BSplineCurve) c = interpolate_fits(plane_, spline_fit_points(id));
+    if (c.IsNull()) return g;
+    g.degree = c->Degree();
+    g.ok = true;
+    for (int i = 1; i <= c->NbPoles(); ++i) {
+        const gp_Pnt p = c->Pole(i);
+        g.poles.push_back(to_sketch_uv({p.X(), p.Y(), p.Z()}));
+    }
+    for (int i = 1; i <= c->NbKnots(); ++i) {
+        g.knots.push_back(c->Knot(i));
+        g.multiplicities.push_back(c->Multiplicity(i));
+    }
+    return g;
+}
+
+std::vector<std::array<double, 2>> Sketch::interpolate_samples(
+    const std::vector<std::array<double, 2>>& fit_points, int n) {
+    SketchPlane pl;
+    Handle(Geom_BSplineCurve) c = interpolate_fits(pl, fit_points);
+    if (c.IsNull() || n < 2) return fit_points;
+    const double u0 = c->FirstParameter();
+    const double u1 = c->LastParameter();
+    std::vector<std::array<double, 2>> out;
+    out.reserve(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const double t = u0 + (u1 - u0) * (static_cast<double>(i) / (n - 1));
+        const gp_Pnt p = c->Value(t);
+        out.push_back({p.X(), p.Y()});
+    }
+    return out;
+}
+
 std::optional<std::array<double, 5>> Sketch::ellipse_axes(const EntityId& id) const {
     const SketchEntity* e = entity(id);
     if (!e || (e->type != SketchEntityType::Ellipse && e->type != SketchEntityType::EllipticalArc) ||
@@ -862,17 +939,11 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
             }
             segs.push_back({a, b, edge});
         } else if (e.type == SketchEntityType::Spline) {
+            TopoDS_Edge edge = spline_edge(e.id);
+            if (edge.IsNull()) continue;
             auto fits = spline_fit_points(e.id);
-            if (fits.size() < 2) continue;
-            sx::occt::Array1OfPnt poles(1, static_cast<int>(fits.size()));
-            for (int i = 0; i < static_cast<int>(fits.size()); ++i)
-                poles.SetValue(i + 1, to3d(fits[static_cast<size_t>(i)][0],
-                                           fits[static_cast<size_t>(i)][1]));
-            GeomAPI_PointsToBSpline mk(poles);
-            if (!mk.IsDone()) continue;
-            TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(mk.Curve()).Edge();
-            gp_Pnt a = poles.Value(1);
-            gp_Pnt b = poles.Value(poles.Upper());
+            gp_Pnt a = to3d(fits.front()[0], fits.front()[1]);
+            gp_Pnt b = to3d(fits.back()[0], fits.back()[1]);
             segs.push_back({a, b, edge});
         } else if (e.type == SketchEntityType::Circle) {
             gp_Circ circ(gp_Ax2(to3d(p(e, 0), p(e, 1)), nd, xd), p(e, 2));

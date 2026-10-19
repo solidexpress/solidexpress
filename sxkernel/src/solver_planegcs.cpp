@@ -138,38 +138,45 @@ struct Xlate {
                     break;
                 }
                 case SketchEntityType::Spline: {
-                    // Fit points as GCS BSpline poles (degree ≤ 3); start/end
-                    // addressable for Coincident / Distance / Fix.
-                    if (e.params.size() < 3) break;
-                    int n = static_cast<int>(*param(e.params[0]));
-                    if (n < 2) break;
+                    // Same Interpolate curve the kernel uses: poles/knots from
+                    // Sketch::spline_geom. Fit-point start/end stay addressable.
+                    auto geom = sketch.spline_geom(e.id);
+                    if (!geom.ok || geom.poles.size() < 2) break;
                     GCS::BSpline bsp;
-                    bsp.degree = std::min(3, n - 1);
+                    bsp.degree = geom.degree;
                     bsp.periodic = false;
-                    bsp.poles.reserve(static_cast<size_t>(n));
-                    bsp.weights.reserve(static_cast<size_t>(n));
-                    for (int i = 0; i < n; ++i) {
+                    bsp.poles.reserve(geom.poles.size());
+                    bsp.weights.reserve(geom.poles.size());
+                    for (const auto& uv : geom.poles) {
                         GCS::Point pt;
-                        pt.x = param(e.params[static_cast<size_t>(1 + 2 * i)]);
-                        pt.y = param(e.params[static_cast<size_t>(2 + 2 * i)]);
+                        double* x = new double(uv[0]);
+                        double* y = new double(uv[1]);
+                        owned.push_back(x);
+                        owned.push_back(y);
+                        pt.x = x;
+                        pt.y = y;
                         bsp.poles.push_back(pt);
                         double* w = new double(1.0);
                         owned.push_back(w);
                         bsp.weights.push_back(w);
                     }
-                    bsp.start = bsp.poles.front();
-                    bsp.end = bsp.poles.back();
-                    // Open clamped uniform knots: flattened length = n + degree + 1.
-                    int n_distinct = n - bsp.degree + 1;
-                    if (n_distinct < 2) n_distinct = 2;
-                    for (int k = 0; k < n_distinct; ++k) {
-                        double* kv = new double(static_cast<double>(k) /
-                                                std::max(1, n_distinct - 1));
+                    if (e.params.size() >= 5) {
+                        bsp.start.x = param(e.params[1]);
+                        bsp.start.y = param(e.params[2]);
+                        const int nfit = static_cast<int>(*param(e.params[0]));
+                        bsp.end.x = param(e.params[static_cast<size_t>(1 + 2 * (nfit - 1))]);
+                        bsp.end.y = param(e.params[static_cast<size_t>(2 + 2 * (nfit - 1))]);
+                    } else {
+                        bsp.start = bsp.poles.front();
+                        bsp.end = bsp.poles.back();
+                    }
+                    for (size_t k = 0; k < geom.knots.size(); ++k) {
+                        double* kv = new double(geom.knots[k]);
                         owned.push_back(kv);
                         bsp.knots.push_back(kv);
-                        int m = 1;
-                        if (k == 0 || k == n_distinct - 1) m = bsp.degree + 1;
-                        bsp.mult.push_back(m);
+                        bsp.mult.push_back(k < geom.multiplicities.size()
+                                               ? geom.multiplicities[k]
+                                               : 1);
                     }
                     bsp.setupFlattenedKnots();
                     splines[e.id] = bsp;

@@ -97,17 +97,8 @@ std::vector<TopoDS_Edge> sketch_edges(const Sketch& sk) {
                 edges.push_back(BRepBuilderAPI_MakeEdge(arc).Edge());
             }
         } else if (e.type == SketchEntityType::Spline) {
-            auto fits = sk.spline_fit_points(e.id);
-            if (fits.size() < 2) continue;
-            sx::occt::Array1OfPnt poles(1, static_cast<int>(fits.size()));
-            for (int i = 0; i < static_cast<int>(fits.size()); ++i)
-                poles.SetValue(i + 1, at(fits[static_cast<size_t>(i)][0],
-                                         fits[static_cast<size_t>(i)][1]));
-            GeomAPI_PointsToBSpline mk(poles);
-            if (mk.IsDone()) {
-                Handle(Geom_BSplineCurve) crv = mk.Curve();
-                edges.push_back(BRepBuilderAPI_MakeEdge(crv).Edge());
-            }
+            TopoDS_Edge edge = sk.spline_edge(e.id);
+            if (!edge.IsNull()) edges.push_back(edge);
         } else if (e.type == SketchEntityType::Ellipse) {
             auto axes = sk.ellipse_axes(e.id);
             if (!axes) continue;

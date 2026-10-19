@@ -4,6 +4,7 @@
 #include <godot_cpp/variant/vector2.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 
@@ -215,6 +216,10 @@ Dictionary SxSketch::entity_info(const String& id) const {
             for (const auto& fp : sketch_->spline_fit_points(e->id))
                 pts.push_back(Vector2(fp[0], fp[1]));
             out["fit_points"] = pts;
+            Array poly;
+            for (const auto& uv : sketch_->spline_samples(e->id, 64))
+                poly.push_back(Vector2(uv[0], uv[1]));
+            out["polyline"] = poly;
             break;
         }
         case sx::SketchEntityType::Ellipse:
@@ -246,6 +251,25 @@ Dictionary SxSketch::entity_info(const String& id) const {
             break;
         }
     }
+    return out;
+}
+
+PackedVector2Array SxSketch::spline_samples(const String& id, int n) const {
+    PackedVector2Array out;
+    if (!sketch_) return out;
+    for (const auto& uv : sketch_->spline_samples(parse_id(id), n))
+        out.push_back(Vector2(uv[0], uv[1]));
+    return out;
+}
+
+PackedVector2Array SxSketch::interpolate_spline(const PackedVector2Array& fit_points, int n) const {
+    std::vector<std::array<double, 2>> fits;
+    fits.reserve(static_cast<size_t>(fit_points.size()));
+    for (int i = 0; i < fit_points.size(); ++i)
+        fits.push_back({fit_points[i].x, fit_points[i].y});
+    PackedVector2Array out;
+    for (const auto& uv : sx::Sketch::interpolate_samples(fits, n))
+        out.push_back(Vector2(uv[0], uv[1]));
     return out;
 }
 
@@ -566,6 +590,10 @@ void SxSketch::_bind_methods() {
                                  "count", "total_angle"),
                          &SxSketch::circular_pattern_entities);
     ClassDB::bind_method(D_METHOD("entity_info", "id"), &SxSketch::entity_info);
+    ClassDB::bind_method(D_METHOD("spline_samples", "id", "n"), &SxSketch::spline_samples,
+                         DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("interpolate_spline", "fit_points", "n"),
+                         &SxSketch::interpolate_spline, DEFVAL(64));
     ClassDB::bind_method(D_METHOD("set_entity_geometry", "id", "geo"),
                          &SxSketch::set_entity_geometry);
     ClassDB::bind_method(D_METHOD("add_constraint", "type", "refs", "value", "driving"),

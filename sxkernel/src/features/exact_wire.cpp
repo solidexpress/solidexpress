@@ -166,16 +166,7 @@ TopoDS_Wire closed_conic_wire(const Sketch& sk) {
 }
 
 TopoDS_Edge spline_edge(const Sketch& sk, const SketchEntity& e) {
-    auto fits = sk.spline_fit_points(e.id);
-    if (fits.size() < 2) return {};
-    const auto& pl = sk.plane();
-    std::vector<gp_Pnt> pts;
-    pts.reserve(fits.size());
-    for (const auto& xy : fits) pts.push_back(sketch_uv_to_3d(pl, xy[0], xy[1]));
-    Handle(Geom_BSplineCurve) c = interpolate_curve(pts);
-    if (c.IsNull()) return {};
-    BRepBuilderAPI_MakeEdge mk(c);
-    return mk.IsDone() ? mk.Edge() : TopoDS_Edge{};
+    return sk.spline_edge(e.id);
 }
 
 TopoDS_Edge ellipse_arc_edge(const Sketch& sk, const SketchEntity& e) {

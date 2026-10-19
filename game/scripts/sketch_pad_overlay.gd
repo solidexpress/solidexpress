@@ -370,12 +370,12 @@ func _make_profile_mesh(sk: SxSketch, origin: Vector3, x_dir: Vector3, y_dir: Ve
 				_add_profile_seg(st, to3.call(pt + Vector2(0, -MARK)),
 						to3.call(pt + Vector2(0, MARK)), normal, col)
 			"spline":
-				var fits: Array = info.get("fit_points", [])
-				if fits.size() >= 2:
+				var poly: Array = info.get("polyline", info.get("fit_points", []))
+				if poly.size() >= 2:
 					has = true
-					for i in range(fits.size() - 1):
-						_add_profile_seg(st, to3.call(fits[i] as Vector2),
-								to3.call(fits[i + 1] as Vector2), normal, col)
+					for i in range(poly.size() - 1):
+						_add_profile_seg(st, to3.call(poly[i] as Vector2),
+								to3.call(poly[i + 1] as Vector2), normal, col)
 			"ellipse", "elliptical_arc":
 				var pts := SketchEllipse.polyline(info, 48)
 				if pts.size() >= 2:

@@ -799,27 +799,9 @@ json sketch_ordered_polyline(const Sketch& sk) {
             }
             if (piece.size() >= 2) segs.push_back(std::move(piece));
         } else if (e.type == SketchEntityType::Spline) {
-            auto fits = sk.spline_fit_points(e.id);
-            if (fits.size() < 2) continue;
-            sx::occt::Array1OfPnt poles(1, static_cast<int>(fits.size()));
-            for (int i = 0; i < static_cast<int>(fits.size()); ++i)
-                poles.SetValue(i + 1, sketch_uv_to_3d(pl, fits[static_cast<size_t>(i)][0],
-                                                      fits[static_cast<size_t>(i)][1]));
-            GeomAPI_PointsToBSpline mk(poles);
-            if (!mk.IsDone()) {
-                for (size_t i = 0; i < fits.size(); ++i)
-                    add(sketch_uv_to_3d(pl, fits[i][0], fits[i][1]));
-                if (piece.size() >= 2) segs.push_back(std::move(piece));
-                continue;
-            }
-            Handle(Geom_BSplineCurve) curve = mk.Curve();
-            const int samples = std::max(8, static_cast<int>(fits.size()) * 8);
-            double u0 = curve->FirstParameter();
-            double u1 = curve->LastParameter();
-            for (int s = 0; s <= samples; ++s) {
-                double u = u0 + (u1 - u0) * (static_cast<double>(s) / samples);
-                add(curve->Value(u));
-            }
+            auto samples = sk.spline_samples(e.id, std::max(8, static_cast<int>(sk.spline_fit_points(e.id).size()) * 8));
+            if (samples.size() < 2) continue;
+            for (const auto& uv : samples) add(sketch_uv_to_3d(pl, uv[0], uv[1]));
             if (piece.size() >= 2) segs.push_back(std::move(piece));
         }
     }

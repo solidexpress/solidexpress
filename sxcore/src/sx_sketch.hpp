@@ -56,6 +56,9 @@ public:
         double total_angle);
 
     godot::Dictionary entity_info(const godot::String& id) const;
+    godot::PackedVector2Array spline_samples(const godot::String& id, int n = 64) const;
+    godot::PackedVector2Array interpolate_spline(const godot::PackedVector2Array& fit_points,
+                                                 int n = 64) const;
     bool set_entity_geometry(const godot::String& id, const godot::Dictionary& geo);
 
     // refs: Array of Dictionaries {entity: String, role: String}.

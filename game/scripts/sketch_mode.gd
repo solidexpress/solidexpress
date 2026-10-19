@@ -3070,6 +3070,11 @@ func _append_entity_lines(im: ImmediateMesh, info: Dictionary) -> void:
 				var a1 := s + (e - s) * (i + 1) / steps2
 				im.surface_add_vertex(_to3(c2 + Vector2(cos(a0), sin(a0)) * r2))
 				im.surface_add_vertex(_to3(c2 + Vector2(cos(a1), sin(a1)) * r2))
+		"spline":
+			var poly: Array = info.get("polyline", info.get("fit_points", []))
+			for i in range(poly.size() - 1):
+				im.surface_add_vertex(_to3(poly[i] as Vector2))
+				im.surface_add_vertex(_to3(poly[i + 1] as Vector2))
 
 
 ## Length of a line / radius of a circle/arc / distance between two entities.
@@ -3668,8 +3673,8 @@ func _commit_spline() -> void:
 	if _spline_pts.size() < 2:
 		_spline_pts.clear()
 		return
-	# Commit as a kernel spline entity (fit points), not an approximated polyline.
-	# Preview continues to use a densified Catmull-Rom for on-canvas feedback.
+	# Commit as a kernel spline entity (fit points). Preview samples the same
+	# GeomAPI_Interpolate curve.
 	var fit: PackedVector2Array = []
 	for p in _spline_pts:
 		fit.push_back(p)
@@ -3679,30 +3684,21 @@ func _commit_spline() -> void:
 	_redraw()
 
 
-## Dense polyline approximation of a fit spline (Catmull-Rom samples).
+## Dense polyline of the kernel interpolating spline (same curve as the solid).
 func _densify_fit_spline(pts: Array[Vector2]) -> Array[Vector2]:
 	var densified: Array[Vector2] = []
 	if pts.size() < 2:
 		return densified
-	if pts.size() == 2:
-		return pts.duplicate()
-	for i in range(pts.size() - 1):
-		var p0: Vector2 = pts[maxi(i - 1, 0)]
-		var p1: Vector2 = pts[i]
-		var p2: Vector2 = pts[i + 1]
-		var p3: Vector2 = pts[mini(i + 2, pts.size() - 1)]
-		for s in range(8):
-			var t := float(s) / 8.0
-			densified.append(_catmull(p0, p1, p2, p3, t))
-	densified.append(pts[pts.size() - 1])
-	return densified
-
-
-func _catmull(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> Vector2:
-	var t2 := t * t
-	var t3 := t2 * t
-	return 0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-			+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+	var fit := PackedVector2Array()
+	for p in pts:
+		fit.append(p)
+	if sketch != null and sketch.has_method("interpolate_spline"):
+		var sampled: PackedVector2Array = sketch.interpolate_spline(fit, maxi(16, pts.size() * 8))
+		for i in range(sampled.size()):
+			densified.append(sampled[i])
+		if densified.size() >= 2:
+			return densified
+	return pts.duplicate()
 
 
 ## Trim the entity nearest to pos2 at its intersections. Returns true on success.
