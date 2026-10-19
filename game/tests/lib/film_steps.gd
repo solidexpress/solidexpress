@@ -775,6 +775,28 @@ static func draft_cut(ctx: FilmContext, distance: float, angle: float) -> void:
 	await ctx.after_regen()
 
 
+## Finish Op at op_index (0 New, 1 Cut, 2 Fuse), End Midplane, Distance, Extrude.
+static func midplane_extrude(ctx: FilmContext, distance: String, op_index: int) -> void:
+	await pick_finish(ctx, op_index, 2)
+	if FilmUI.fail_count > 0:
+		return
+	if distance != "":
+		await type_distance(ctx, distance)
+		await SxInput.push_key(ctx.main.get_viewport(), KEY_ENTER)
+	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	var ex: Button = chrome.extrude_button() if chrome != null else null
+	if ex == null or not ex.is_visible_in_tree():
+		ex = _by_auto(ctx.main, "finish:Extrude") as Button
+	if ex == null or not ex.is_visible_in_tree():
+		FilmUI._fail("finish:Extrude is hidden")
+		return
+	if not await FilmUI.click_control(ctx, ex, FilmUICues.alert("OK", "Extrude")):
+		return
+	await ctx.after_regen()
+	if ctx.main.sketch_mode != null and ctx.main.sketch_mode.active:
+		await FilmUI.exit_sketch(ctx)
+
+
 static func _feature_types(ctx: FilmContext) -> PackedStringArray:
 	var out := PackedStringArray()
 	if ctx.view == null or ctx.view.doc == null:
