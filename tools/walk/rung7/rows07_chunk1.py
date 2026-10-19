@@ -184,10 +184,8 @@ class Rows07Chunk1:
         status = self.trim_at(self.trim_opening())
         # Point-on-curve: each jaw to a steep-axis tip on the remaining C.
         # Both jaws to ellipse_major() (the +Y tip) can steal the lower jaw.
-        self.coincident_on_curve(self.jaw_outer(True), self.ellipse_major())
-        self.coincident_on_curve(
-            self.jaw_outer(False), self.world(0.0, -self.mm("ELLIPSE_MAJ") * 0.5)
-        )
+        self.coincident_on_curve(self.jaw_outer(True), self.jaw_tip_uv(True))
+        self.coincident_on_curve(self.jaw_outer(False), self.jaw_tip_uv(False))
         ells = self.ents("ellipse", construction=False)
         arcs = self.ents("elliptical_arc") or self.ents("ellipse")
         left = [e for e in ells if not e.get("construction")]

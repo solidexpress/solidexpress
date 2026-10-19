@@ -5,41 +5,18 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const FilmSteps = preload("res://tests/lib/film_steps.gd")
+const SpannerFixture = preload("res://tests/lib/spanner_fixture.gd")
 const SPAN := 90.0
-const DEG := 17.0
 
 
 func _init() -> void:
 	print("rung07 coincident")
 	FilmUI.reset_fail_count()
-	var ctx := await _boot()
+	var ctx := await SpannerFixture.boot(self, Vector2i(1280, 800))
 	await _ellipse_case(ctx)
 	await _circle_case(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	finish()
-
-
-func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1280, 800))
-	return ctx
-
-
-func _world(xp: float, yp: float) -> Vector2:
-	var a := deg_to_rad(DEG)
-	return Vector2(xp * cos(a) - yp * sin(a), xp * sin(a) + yp * cos(a))
-
-
-func _x_jaw() -> float:
-	return -25.0 * sqrt(1.0 - (12.5 / 27.5) * (12.5 / 27.5))
 
 
 func _ellipse_case(ctx: FilmContext) -> void:
@@ -52,13 +29,16 @@ func _ellipse_case(ctx: FilmContext) -> void:
 	await _zoom(ctx, Vector3.ZERO, SPAN)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.ELLIPSE)
 	await FilmSteps.click_uv(ctx, Vector2.ZERO, "Ellipse centre", SPAN)
-	await FilmSteps.click_uv(ctx, _world(0.0, 27.5), "Ellipse major", SPAN)
-	await FilmSteps.click_uv(ctx, _world(25.0, 0.0), "Ellipse minor", SPAN)
-	var xj := _x_jaw()
-	var o_hi := _world(xj, 12.5)
-	var i_hi := _world(xj + 20.0, 12.5)
-	await _line(ctx, o_hi, i_hi, "jaw")
-	await _coincident_chip(ctx, sm, o_hi, _world(20.0, 15.0), "jaw on ellipse")
+	await FilmSteps.click_uv(ctx, SpannerFixture.world(0.0, SpannerFixture.mm("ELLIPSE_MAJ") * 0.5),
+			"Ellipse major", SPAN)
+	await FilmSteps.click_uv(ctx, SpannerFixture.world(SpannerFixture.mm("ELLIPSE_MIN") * 0.5, 0.0),
+			"Ellipse minor", SPAN)
+	var xj := SpannerFixture.x_jaw()
+	var off := SpannerFixture.mm("JAW_OFF")
+	var o_hi := SpannerFixture.world(xj, off)
+	var i_hi := SpannerFixture.world(xj + SpannerFixture.mm("JAW_LEN"), off)
+	await SpannerFixture.line(ctx, o_hi, i_hi, "jaw", SPAN)
+	await _coincident_chip(ctx, sm, o_hi, SpannerFixture.world(20.0, 15.0), "jaw on ellipse")
 	var line := _first_of(sm, "line")
 	var ell := _first_of(sm, "ellipse")
 	check(line != "" and ell != "", "jaw line and ellipse exist")
@@ -86,16 +66,19 @@ func _circle_case(ctx: FilmContext) -> void:
 	await process_frame
 	sm = ctx.main.sketch_mode
 	check(sm.active, "Front sketch is active for Ø33")
-	await _zoom(ctx, Vector3(240, 0, 0), 80.0)
+	var center := SpannerFixture.mm("CENTER")
+	var ring_r := SpannerFixture.mm("RING_D") * 0.5
+	var half := SpannerFixture.mm("HANDLE_HALF")
+	await _zoom(ctx, Vector3(center, 0, 0), 80.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
-	await FilmSteps.click_uv(ctx, Vector2(240, 0), "Circle centre", 80.0)
-	await FilmSteps.click_uv(ctx, Vector2(256.5, 0), "Circle rim", 80.0)
+	await FilmSteps.click_uv(ctx, Vector2(center, 0), "Circle centre", 80.0)
+	await FilmSteps.click_uv(ctx, Vector2(center + ring_r, 0), "Circle rim", 80.0)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SMART_DIM)
-	await FilmSteps.click_uv(ctx, Vector2(256.5, 0), "Ø33 dim", 80.0)
-	await FilmSteps.type_dim(ctx, "33")
+	await FilmSteps.click_uv(ctx, Vector2(center + ring_r, 0), "Ø33 dim", 80.0)
+	await FilmSteps.type_dim(ctx, str(int(SpannerFixture.mm("RING_D"))))
 	await process_frame
-	await _line(ctx, Vector2(200, 10), Vector2(230, 10), "handle")
-	await _coincident_chip(ctx, sm, Vector2(230, 10), Vector2(240, 16.5), "handle on Ø33", 80.0)
+	await SpannerFixture.line(ctx, Vector2(200, half), Vector2(230, half), "handle", SPAN)
+	await _coincident_chip(ctx, sm, Vector2(230, half), Vector2(center, ring_r), "handle on Ø33", 80.0)
 	var line := _handle_line(sm)
 	var circ := _first_of(sm, "circle")
 	check(line != "" and circ != "", "handle line and circle exist")
@@ -145,14 +128,6 @@ func _coincident_chip(ctx: FilmContext, sm: SketchMode, a: Vector2, b: Vector2, 
 	await process_frame
 
 
-func _line(ctx: FilmContext, a: Vector2, b: Vector2, desc: String) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
-	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
-	await FilmSteps.click_uv(ctx, a, "%s start" % desc, SPAN)
-	await FilmSteps.click_uv(ctx, b, "%s end" % desc, SPAN)
-	await FilmUI.end_line_chain(ctx)
-
-
 func _first_of(sm: SketchMode, kind: String) -> String:
 	for id in sm.sketch.entity_ids():
 		if sm.sketch.is_construction(id):
@@ -171,6 +146,6 @@ func _handle_line(sm: SketchMode) -> String:
 			continue
 		var a: Vector2 = info.get("start", Vector2.ZERO)
 		var b: Vector2 = info.get("end", Vector2.ZERO)
-		if absf(0.5 * (a.y + b.y) - 10.0) <= 2.0:
+		if absf(0.5 * (a.y + b.y) - SpannerFixture.mm("HANDLE_HALF")) <= 2.0:
 			return str(id)
 	return ""

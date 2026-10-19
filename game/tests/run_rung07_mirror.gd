@@ -5,33 +5,20 @@ extends "res://tests/lib/sx_suite.gd"
 const FilmUI = preload("res://tests/lib/film_ui.gd")
 const FilmUICues = preload("res://tests/lib/film_ui_cues.gd")
 const FilmSteps = preload("res://tests/lib/film_steps.gd")
+const SpannerFixture = preload("res://tests/lib/spanner_fixture.gd")
 const SPAN := 80.0
 
 
 func _init() -> void:
 	print("rung07 mirror")
 	FilmUI.reset_fail_count()
-	var ctx := await _boot()
+	var ctx := await SpannerFixture.boot(self, Vector2i(1280, 800))
+	listen_status(ctx.main)
+	status_echo = true
 	await _case(ctx)
 	await _empty_refuses(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	finish()
-
-
-func _boot() -> FilmContext:
-	var main = load("res://scenes/main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	await process_frame
-	var ctx := FilmContext.new()
-	ctx.main = main
-	ctx.view = main.view
-	ctx.tree = self
-	ctx.clock = FilmClock.new()
-	await FilmUI.ensure_test_viewport(ctx, Vector2i(1280, 800))
-	listen_status(main)
-	status_echo = true
-	return ctx
 
 
 func _case(ctx: FilmContext) -> void:
