@@ -11,6 +11,7 @@ class Rows08Chunk2:
     @row("A12", chunk=3, on="rung08", expect={"blocker": "A11"})
     def row_A12(self) -> None:
         kinds = self.classify()
+        self.need(bool(kinds["pipe"]), "pipe instance", "no pipe instance")
         iid = str(kinds["pipe"][0]["id"])
         self.copy_extra(iid, 1)
         c = self.counts()
@@ -25,6 +26,7 @@ class Rows08Chunk2:
     @row("A13", chunk=3, on="rung08", expect={"blocker": "A12"})
     def row_A13(self) -> None:
         kinds = self.classify()
+        self.need(bool(kinds["nut"]), "nut instance", "no nut instance")
         iid = str(kinds["nut"][0]["id"])
         extra = 16 - len(kinds["nut"])
         if extra > 0:
@@ -36,6 +38,7 @@ class Rows08Chunk2:
     @row("A14", chunk=3, on="rung08", expect={"blocker": "A13"})
     def row_A14(self) -> None:
         kinds = self.classify()
+        self.need(bool(kinds["pin"]), "pin instance", "no pin instance")
         iid = str(kinds["pin"][0]["id"])
         extra = 8 - len(kinds["pin"])
         if extra > 0:

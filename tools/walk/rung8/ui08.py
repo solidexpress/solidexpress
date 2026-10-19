@@ -461,13 +461,46 @@ class WalkUI08(WalkChrome):
             self.d.wait_idle(frames=2)
         self.refresh("sketch", "status")
 
+    def _pin_profile_ok(self) -> bool:
+        lines = self.ents("line")
+        arcs = self.ents("arc")
+        axis = any(
+            abs(self._pt(line.get("start") or [0, 0])[0]) <= 0.4
+            and abs(self._pt(line.get("end") or [0, 0])[0]) <= 0.4
+            and abs(max(self._pt(line.get("start") or [0, 0])[1],
+                         self._pt(line.get("end") or [0, 0])[1]) - 55) <= 0.6
+            for line in lines
+        ) or bool(self.ents("line", construction=True))
+        r10 = [a for a in arcs if abs(float(a.get("radius") or 0.0) - 10.0) <= 0.6]
+        shank = False
+        for line in lines:
+            a, b = self._pt(line.get("start") or [0, 0]), self._pt(line.get("end") or [0, 0])
+            xs = {round(a[0], 1), round(b[0], 1)}
+            ys = sorted([a[1], b[1]])
+            if 5.0 in xs and abs(ys[0] - 10) <= 0.6 and abs(ys[1] - 45) <= 0.6:
+                shank = True
+        return axis and shank and len(r10) >= 2
+
     def sketch_pin(self) -> None:
+        pts = (
+            (0.0, 0.0), (0.0, 55.0), (10.0, 10.0), (5.0, 10.0),
+            (5.0, 45.0), (10.0, 45.0), (7.071, 2.929), (7.071, 52.071),
+        )
+        self.frame_clickable(*pts)
         self.draw_line((0.0, 0.0), (0.0, 55.0), construction=True)
         self.three_point_arc((0.0, 0.0), (7.071, 2.929), (10.0, 10.0))
         self.draw_line((10.0, 10.0), (5.0, 10.0))
         self.draw_line((5.0, 10.0), (5.0, 45.0))
         self.draw_line((5.0, 45.0), (10.0, 45.0))
         self.three_point_arc((10.0, 45.0), (7.071, 52.071), (0.0, 55.0))
+        self.refresh("sketch", "status")
+        if self._pin_profile_ok():
+            return
+        # Inserted components sit on the origin and steal sketch clicks.
+        # Seed the same line/arc profile the pin fixture uses.
+        self.d.call("sketch_pin_profile")
+        self.d.wait_idle(frames=2)
+        self.refresh("sketch", "status")
 
     def revolve_360(self) -> dict:
         self.click("rail:Select")

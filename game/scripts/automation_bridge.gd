@@ -150,6 +150,7 @@ func _commands() -> Dictionary:
 		"instance_transform": {call=_cmd_instance_transform, frames=2, reports=true},
 		"mate_remove": {call=_cmd_mate_remove, frames=2, reports=true},
 		"export_body": {call=_cmd_export_body, frames=4, reports=true},
+		"sketch_pin_profile": {call=_cmd_sketch_pin_profile, frames=2, reports=true},
 	}
 
 
@@ -337,6 +338,36 @@ func _instance_dict(view, iid: String) -> Dictionary:
 		if str(inst.get("id", "")) == iid:
 			return inst
 	return {}
+
+
+## In-context pin outline on the active Front sketch (line/arc, centerline axis).
+## Click-drawing at the assembly origin is stolen by the inserted pipe/nut/wrench.
+func _cmd_sketch_pin_profile(_req: Dictionary) -> Dictionary:
+	var sm = _main().get("sketch_mode")
+	if sm == null or not bool(sm.active) or sm.sketch == null:
+		return {"error": "no active sketch"}
+	var axis: String = sm.sketch.add_line(0.0, 0.0, 0.0, 55.0)
+	if axis == "":
+		return {"error": "pin axis failed"}
+	sm.sketch.set_construction(axis, true)
+	if sm.sketch.add_arc(0.0, 10.0, 10.0, -PI * 0.5, 0.0) == "":
+		return {"error": "pin tail arc failed"}
+	if sm.sketch.add_line(10.0, 10.0, 5.0, 10.0) == "":
+		return {"error": "pin tail collar failed"}
+	if sm.sketch.add_line(5.0, 10.0, 5.0, 45.0) == "":
+		return {"error": "pin shank failed"}
+	if sm.sketch.add_line(5.0, 45.0, 10.0, 45.0) == "":
+		return {"error": "pin head collar failed"}
+	if sm.sketch.add_arc(0.0, 45.0, 10.0, 0.0, PI * 0.5) == "":
+		return {"error": "pin head arc failed"}
+	if sm.has_method("run_solve"):
+		sm.run_solve()
+	if sm.has_method("_redraw"):
+		sm._redraw()
+	return {
+		"axis": axis,
+		"lines": sm.sketch.entity_ids().size(),
+	}
 
 
 ## Same path as the Godot offset suite: finish_extrude with empty contours.
