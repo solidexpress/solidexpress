@@ -85,7 +85,7 @@ class Rows07Chunk3:
 
     @row("A24", chunk=3, on="rung07", expect={"blocker": "A23", "part": True, "min_bodies": 1})
     def row_A24(self) -> None:
-        status, ids = self.fillet_z_edges("30", [(22.944, 10.0), (23.929, -10.0)])
+        status, ids = self.fillet_z_edges(f"{self.mm('R30'):g}", self.neck_open_xys())
         bodies = list(self.refresh("bodies").get("bodies") or [])
         self.clause("fillet 30", "Fillet" in status or "30" in status or bool(ids), f"{status} ids={ids}")
         self.clause("open neck", bool(ids) and self.bbox_y_ok(), f"n={len(ids)} y_ok={self.bbox_y_ok()}")
@@ -93,7 +93,7 @@ class Rows07Chunk3:
 
     @row("A25", chunk=3, on="rung07", expect={"blocker": "A24", "part": True, "min_bodies": 1})
     def row_A25(self) -> None:
-        status, ids = self.fillet_z_edges("20", [(226.876, 10.0), (226.876, -10.0)])
+        status, ids = self.fillet_z_edges(f"{self.mm('R20'):g}", self.neck_box_xys())
         bodies = list(self.refresh("bodies").get("bodies") or [])
         self.clause("fillet 20", "Fillet" in status or "20" in status or bool(ids), f"{status} ids={ids}")
         self.clause("box neck", bool(ids) and self.bbox_y_ok(), f"n={len(ids)} y_ok={self.bbox_y_ok()}")

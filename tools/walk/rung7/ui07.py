@@ -17,6 +17,17 @@ STAGE_FILE = {
 }
 
 
+class WeldPolicy:
+    DUP_MM = 1e-3
+    PAIR_MM = 1.6
+    JAW_NEAR_MM = 2.5
+
+
+class NeckPolicy:
+    Y_SLOP = 0.4
+    ATTEMPTS = 3
+
+
 class WalkUI07(WalkChrome):
     _RUNG = 7
     _EMPTY_SKETCH = (-40.0, 40.0)
@@ -77,6 +88,17 @@ class WalkUI07(WalkChrome):
 
     def ellipse_minor(self) -> tuple[float, float]:
         return self.world(self.mm("ELLIPSE_MIN") * 0.5, 0.0)
+
+    def jaw_tip_uv(self, upper: bool) -> tuple[float, float]:
+        if upper:
+            return self.ellipse_major()
+        return self.world(0.0, -self.mm("ELLIPSE_MAJ") * 0.5)
+
+    def neck_open_xys(self) -> list[tuple[float, float]]:
+        return [self.handle_xy(True)[0], self.handle_xy(False)[0]]
+
+    def neck_box_xys(self) -> list[tuple[float, float]]:
+        return [self.handle_xy(True)[1], self.handle_xy(False)[1]]
 
     def ellipse_axis_uv(self, which: str):
         ells = self.ents("ellipse") or self.ents("elliptical_arc")
@@ -486,7 +508,7 @@ class WalkUI07(WalkChrome):
                 pts.append(self._pt(entity.get("end") or [0, 0]))
         return pts
 
-    def weld_open_profile(self, tol: float = 1.6) -> int:
+    def weld_open_profile(self, tol: float = WeldPolicy.PAIR_MM) -> int:
         """Coincident dangling endpoints that sit on top of each other.
 
         Concurrent walks sometimes leave the jaw/ellipse vertex unwelded
@@ -495,7 +517,7 @@ class WalkUI07(WalkChrome):
         pts = self._profile_endpoints()
         opens: list[tuple[float, float]] = []
         for i, a in enumerate(pts):
-            n = sum(1 for b in pts if math.hypot(a[0] - b[0], a[1] - b[1]) <= 1e-3)
+            n = sum(1 for b in pts if math.hypot(a[0] - b[0], a[1] - b[1]) <= WeldPolicy.DUP_MM)
             if n == 1:
                 opens.append(a)
         welded = 0
@@ -518,21 +540,19 @@ class WalkUI07(WalkChrome):
         for upper in (True, False):
             jaw = self.jaw_outer(upper)
             near = self.nearest_profile_uv(jaw)
-            if math.hypot(jaw[0] - near[0], jaw[1] - near[1]) <= 2.5:
+            if math.hypot(jaw[0] - near[0], jaw[1] - near[1]) <= WeldPolicy.JAW_NEAR_MM:
                 self.constrain("Coincident", jaw, near)
                 welded += 1
-        # A 0.05–4 mm gap at the C opening is too far for point-on-curve to
-        # snap under load; a named Line closes the vertex (N2's message).
         leftover: list[tuple[float, float]] = []
         pts = self._profile_endpoints()
         for a in pts:
-            n = sum(1 for b in pts if math.hypot(a[0] - b[0], a[1] - b[1]) <= 1e-3)
+            n = sum(1 for b in pts if math.hypot(a[0] - b[0], a[1] - b[1]) <= WeldPolicy.DUP_MM)
             if n == 1:
                 leftover.append(a)
         hi = self.nearest_profile_uv(self.jaw_outer(True))
         lo = self.nearest_profile_uv(self.jaw_outer(False))
-        self.coincident_on_curve(hi, self.ellipse_major())
-        self.coincident_on_curve(lo, self.world(0.0, -self.mm("ELLIPSE_MAJ") * 0.5))
+        self.coincident_on_curve(hi, self.jaw_tip_uv(True))
+        self.coincident_on_curve(lo, self.jaw_tip_uv(False))
         if welded:
             self.d.wait_idle(frames=6)
             self.refresh("sketch", "status")
@@ -658,7 +678,7 @@ class WalkUI07(WalkChrome):
         self.refresh("status", "selection")
         return ids
 
-    def bbox_y_ok(self, slop: float = 0.4) -> bool:
+    def bbox_y_ok(self, slop: float = NeckPolicy.Y_SLOP) -> bool:
         bodies = list(self.refresh("bodies").get("bodies") or [])
         if len(bodies) != 1:
             return False
@@ -690,7 +710,7 @@ class WalkUI07(WalkChrome):
         status = ""
         ids: list[str] = []
         names_before = self.feature_names()
-        for attempt in range(3):
+        for attempt in range(NeckPolicy.ATTEMPTS):
             added = [n for n in self.feature_names() if n not in names_before]
             if added:
                 self.undo_last_fillet()
