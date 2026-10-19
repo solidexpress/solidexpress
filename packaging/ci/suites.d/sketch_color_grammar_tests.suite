@@ -1,0 +1,2 @@
+script=tests/run_sketch_color_grammar_tests.gd
+tier=full
