@@ -18,9 +18,9 @@ Part B follow-up (`cursor/spanner-film-20261019`): WalkUI07-shaped `film_spanner
 | `check_rung05` | final 10/10 |
 | Rung 6 walk | 46 pass, 0 fail |
 | `check_rung06` | final 7/7 |
-| Rung 7 walk | 46 pass, 0 fail (Part A confirm; re-run pending WP10) |
+| Rung 7 walk | 46 pass, 0 fail |
 | `check_rung07` | final 8/8 (film export) |
-| Headless | 245 run expected (`82 ci + 163 full`); Part A confirm was 244 |
+| Headless | 245 run, 0 failed |
 | Lint | `249 suites ok (82 ci, 163 full, 4 known-red)` |
 | Film | `spanner` present, `enabled: true`, not featured; checker 8/8 at 281.450×54.591×10.000 |
 
