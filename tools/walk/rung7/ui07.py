@@ -522,15 +522,15 @@ class WalkUI07(WalkChrome):
     def arm_fillet(self, radius: str) -> dict:
         self.select_body()
         self.d.key("7")
-        self.d.wait_idle(frames=4)
+        self.d.wait_idle(frames=8)
         self.click("chip:Fillet")
         shown = self.type_into("finish:StripR", radius)
         self.d.key("enter")
-        self.d.wait_idle(frames=2)
-        self.refresh("status", "finish", "controls")
+        self.d.wait_idle(frames=4)
+        self.refresh("status", "finish", "controls", "edges")
         return {"status": self.S(), "radius": shown or self.field("finish:StripR")}
 
-    def _z_edge_near(self, x: float, y: float, want_len: float, max_d: float = 8.0) -> dict | None:
+    def _z_edge_near(self, x: float, y: float, want_len: float, max_d: float = 4.0) -> dict | None:
         best = None
         best_d = max_d
         for edge in self.edges():
@@ -538,7 +538,7 @@ class WalkUI07(WalkChrome):
             if abs(float(direction[2])) < 0.9:
                 continue
             length = float(edge.get("length") or 0.0)
-            if length and abs(length - want_len) > 1.2:
+            if abs(length - want_len) > 1.2:
                 continue
             centre = self._edge_centre(edge)
             dist = ((centre[0] - x) ** 2 + (centre[1] - y) ** 2) ** 0.5
@@ -546,33 +546,89 @@ class WalkUI07(WalkChrome):
                 best, best_d = edge, dist
         return best
 
+    def _fillet_edge_count(self, text: str) -> int:
+        low = text.lower()
+        for n in (8, 7, 6, 5, 4, 3, 2, 1):
+            if f"{n} edge" in low:
+                return n
+        return 0
+
     def pick_z_edges(self, xys, want_len: float) -> list[str]:
         ids = []
         for x, y in xys:
             edge = self._z_edge_near(float(x), float(y), float(want_len))
             if edge is None:
-                edge = self._z_edge_at(float(x), float(y))
-            if edge is None:
-                continue
-            length = float(edge.get("length") or 0.0)
-            if length and abs(length - want_len) > 1.2:
                 continue
             eid = str(edge.get("id", ""))
             if not eid or eid in ids:
                 continue
-            mark = self.mark()
-            try:
-                self.d.click(edge=eid, along=0.5)
-            except SxError:
+            picked = False
+            for _try in range(3):
+                mark = self.mark()
                 try:
-                    self.click(model=[float(x), float(y), 0.0])
+                    self.d.click(edge=eid, along=0.5)
                 except SxError:
-                    continue
-            self.d.wait_idle(frames=2)
+                    try:
+                        self.click(model=[float(x), float(y), 0.0])
+                    except SxError:
+                        continue
+                self.d.wait_idle(frames=4)
+                note = " | ".join(self.result_texts(mark)) or self.S()
+                nsel = max(self._fillet_edge_count(note), self._fillet_edge_count(self.S()))
+                if nsel >= len(ids) + 1:
+                    picked = True
+                    break
+            if not picked:
+                continue
             ids.append(eid)
-            _ = self.result_texts(mark)
         self.refresh("status", "selection")
         return ids
+
+    def bbox_y_ok(self, slop: float = 0.4) -> bool:
+        bodies = list(self.refresh("bodies").get("bodies") or [])
+        if len(bodies) != 1:
+            return False
+        size = self._bbox_size(bodies[0])
+        want = float(self.part()["PART"]["BBOX_SIZE"][1])
+        return abs(float(size[1]) - want) <= slop
+
+    def undo_last_fillet(self) -> str:
+        name = self.last_of_type("fillet")
+        if name:
+            self._show_timeline()
+            self.click(f"timeline:row:{name}")
+            self.d.wait_idle(frames=2)
+            self.d.key("delete")
+            self.d.wait_idle(frames=8)
+            self.refresh("features", "bodies", "status")
+            if name not in self.feature_names():
+                return self.S()
+        self.esc()
+        self.d.key("ctrl+z")
+        self.d.wait_idle(frames=8)
+        self.refresh("features", "bodies", "status")
+        return self.S()
+
+    def fillet_z_edges(self, radius: str, xys) -> tuple[str, list[str]]:
+        """Fillet the handle-thickness Z-edges. Undo if Y bbox balloons (R30
+        on the C generator instead of the 6 mm crotch)."""
+        want_len = self.mm("HANDLE_T")
+        status = ""
+        ids: list[str] = []
+        names_before = self.feature_names()
+        for attempt in range(3):
+            added = [n for n in self.feature_names() if n not in names_before]
+            if added:
+                self.undo_last_fillet()
+            self.esc()
+            self.arm_fillet(radius)
+            ids = self.pick_z_edges(xys, want_len)
+            status = self.apply_fillet()
+            self.d.wait_idle(frames=8)
+            self.refresh("bodies", "features", "status")
+            if "Fillet" in status and self.bbox_y_ok() and len(ids) >= 1:
+                return status, ids
+        return status, ids
 
     def apply_fillet(self) -> str:
         mark = self.mark()

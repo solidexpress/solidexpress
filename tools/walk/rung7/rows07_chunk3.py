@@ -80,22 +80,18 @@ class Rows07Chunk3:
 
     @row("A24", chunk=3, on="rung07", expect={"blocker": "A23", "part": True, "min_bodies": 1})
     def row_A24(self) -> None:
-        self.arm_fillet("30")
-        ids = self.pick_z_edges([(22.944, 10.0), (23.929, -10.0)], self.mm("HANDLE_T"))
-        status = self.apply_fillet()
+        status, ids = self.fillet_z_edges("30", [(22.944, 10.0), (23.929, -10.0)])
         bodies = list(self.refresh("bodies").get("bodies") or [])
         self.clause("fillet 30", "Fillet" in status or "30" in status or bool(ids), f"{status} ids={ids}")
-        self.clause("open neck", bool(ids), f"n={len(ids)}")
+        self.clause("open neck", bool(ids) and self.bbox_y_ok(), f"n={len(ids)} y_ok={self.bbox_y_ok()}")
         self.clause("one body", len(bodies) == 1, str(bodies))
 
     @row("A25", chunk=3, on="rung07", expect={"blocker": "A24", "part": True, "min_bodies": 1})
     def row_A25(self) -> None:
-        self.arm_fillet("20")
-        ids = self.pick_z_edges([(226.876, 10.0), (226.876, -10.0)], self.mm("HANDLE_T"))
-        status = self.apply_fillet()
+        status, ids = self.fillet_z_edges("20", [(226.876, 10.0), (226.876, -10.0)])
         bodies = list(self.refresh("bodies").get("bodies") or [])
         self.clause("fillet 20", "Fillet" in status or "20" in status or bool(ids), f"{status} ids={ids}")
-        self.clause("box neck", bool(ids), f"n={len(ids)}")
+        self.clause("box neck", bool(ids) and self.bbox_y_ok(), f"n={len(ids)} y_ok={self.bbox_y_ok()}")
         self.clause("one body", len(bodies) == 1, str(bodies))
 
     @row("A26", chunk=3, on="rung07", expect={"blocker": "A25", "part": True, "min_bodies": 1})
