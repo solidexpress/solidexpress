@@ -17,8 +17,8 @@ TopoDS_Wire helix(const gp_Ax2& axis, double radius, double pitch, double turns,
                   bool left_handed = false);
 
 // Planar Archimedean spiral in the plane of `axis` (Location + XDir/YDir),
-// radius lerping start_radius → end_radius over `turns`. Approximated by a
-// BSpline through 32 samples per turn.
+// radius lerping start_radius → end_radius over `turns`. Interpolating
+// BSpline through samples with analytic tangents (chord within 1e-7).
 // Throws std::runtime_error if turns <= 0 or either radius is negative.
 TopoDS_Wire spiral(const gp_Ax2& axis, double start_radius, double end_radius, double turns);
 

@@ -108,7 +108,13 @@ bool apply_path(ApplyCtx& ctx) {
                         if (thin.back().Distance(uniq.back()) > 1e-6) thin.push_back(uniq.back());
                         uniq = std::move(thin);
                     }
-                    path = densify_catmull(uniq);
+                    TopoDS_Wire exact = interpolate_wire(uniq);
+                    if (!exact.IsNull()) {
+                        path = sample_wire_polyline(exact, 8);
+                    } else {
+                        ctx.graph.add_warning(f.id, std::string(kApproxPathWarning));
+                        path = densify_catmull(uniq);
+                    }
                 } else {
                     // join_endpoints / composite: sketch order + endpoint join (not global NN).
                     path = sketch_polys[0];
@@ -263,18 +269,39 @@ bool apply_sweep(ApplyCtx& ctx) {
                     if (pf && pf->type == FeatureType::Path) {
                         // Prefer live params on the path feature (regenerated earlier).
                         path = pf->params.value("path", json::array());
-                        // Circular spine is the whole rail of one line+arc sketch
-                        // (candlestick path). Multi-sketch Path features keep the
-                        // merged polyline — taking the first child would drop legs.
                         const json& rails = pf->params.value("sketches", json::array());
-                        if (rails.is_array() && rails.size() == 1) {
-                            const Feature* psk =
-                                feature(EntityId::from_string(rails[0].get<std::string>()));
-                            if (psk && psk->sketch)
-                                spine = sketch_spine_wire(*psk->sketch);
+                        const std::string mode = pf->params.value("mode", "join_endpoints");
+                        if (mode == "bridge_spline" && rails.is_array()) {
+                            std::vector<gp_Pnt> controls;
+                            for (const auto& js : rails) {
+                                const Feature* psk =
+                                    feature(EntityId::from_string(js.get<std::string>()));
+                                if (!psk || !psk->sketch) continue;
+                                json pl = sketch_ordered_polyline(*psk->sketch);
+                                if (pl.size() < 2) continue;
+                                controls.push_back(pnt_from(pl[0]));
+                                controls.push_back(pnt_from(pl[pl.size() - 1]));
+                            }
+                            std::vector<gp_Pnt> uniq;
+                            for (const auto& p : controls) {
+                                if (uniq.empty() || uniq.back().Distance(p) >= 1e-9)
+                                    uniq.push_back(p);
+                            }
+                            if (uniq.size() >= 2) spine = interpolate_wire(uniq);
+                        } else if (rails.is_array()) {
+                            std::vector<TopoDS_Wire> wires;
+                            for (const auto& js : rails) {
+                                const Feature* psk =
+                                    feature(EntityId::from_string(js.get<std::string>()));
+                                if (psk && psk->sketch) {
+                                    TopoDS_Wire w = sketch_exact_wire(*psk->sketch);
+                                    if (!w.IsNull()) wires.push_back(w);
+                                }
+                            }
+                            spine = join_exact_wires(wires);
                         }
                     } else if (pf && pf->sketch) {
-                        spine = sketch_spine_wire(*pf->sketch);
+                        spine = sketch_exact_wire(*pf->sketch);
                     } else if (!pf) {
                         return fail("missing path feature");
                     }
@@ -285,23 +312,31 @@ bool apply_sweep(ApplyCtx& ctx) {
                 // Optional guide: first guide sketch becomes MakePipeShell auxiliary spine.
                 json guide_path;
                 const json* guide_ptr = nullptr;
+                TopoDS_Wire guide_wire;
                 if (params.contains("guides") && params["guides"].is_array() &&
                     !params["guides"].empty()) {
                     EntityId gid = EntityId::from_string(params["guides"][0].get<std::string>());
                     const Feature* gf = feature(gid);
                     if (!gf || !gf->sketch) return fail("missing guide sketch");
-                    guide_path = sketch_ordered_polyline(*gf->sketch);
-                    if (!guide_path.is_array() || guide_path.size() < 2)
-                        return fail("guide needs >=2 points");
-                    guide_ptr = &guide_path;
+                    guide_wire = sketch_exact_wire(*gf->sketch);
+                    if (guide_wire.IsNull()) {
+                        guide_path = sketch_ordered_polyline(*gf->sketch);
+                        if (!guide_path.is_array() || guide_path.size() < 2)
+                            return fail("guide needs >=2 points");
+                        guide_ptr = &guide_path;
+                    }
                 }
                 const double thin = num_param(params, "thin_thickness", 0.0, env);
                 const bool contact = params.value("contact", false);
+                const TopoDS_Wire* exact_guide =
+                    guide_wire.IsNull() ? nullptr : &guide_wire;
 
                 auto pipe = [&](bool frenet, bool corr) -> TopoDS_Shape {
-                    if (spine.IsNull() || guide_ptr != nullptr) return {};
+                    if (spine.IsNull()) return {};
+                    if (guide_ptr != nullptr && exact_guide == nullptr) return {};
                     try {
-                        return sweep_along_spine(face, spine, thin, contact, frenet, corr);
+                        return sweep_along_spine(face, spine, thin, contact, frenet, corr,
+                                                 exact_guide);
                     } catch (...) {
                         return {};
                     }
@@ -321,14 +356,17 @@ bool apply_sweep(ApplyCtx& ctx) {
                 add_ribbon(pipe(true, false));
                 add_ribbon(pipe(false, true));
                 add_ribbon(pipe(false, false));
-                add_ribbon(polyline());
                 if (ribbons.empty()) {
-                    try {
-                        add_ribbon(sweep_along_polyline(face, path, guide_ptr, thin, contact));
-                    } catch (const Standard_Failure& e) {
-                        return fail(std::string("sweep failed: ") + e.GetMessageString());
-                    } catch (const std::runtime_error& e) {
-                        return fail(e.what());
+                    ctx.graph.add_warning(f.id, std::string(kApproxPathWarning));
+                    add_ribbon(polyline());
+                    if (ribbons.empty()) {
+                        try {
+                            add_ribbon(sweep_along_polyline(face, path, guide_ptr, thin, contact));
+                        } catch (const Standard_Failure& e) {
+                            return fail(std::string("sweep failed: ") + e.GetMessageString());
+                        } catch (const std::runtime_error& e) {
+                            return fail(e.what());
+                        }
                     }
                 }
                 if (ribbons.empty()) return fail("sweep result is not a solid");
@@ -428,14 +466,18 @@ bool apply_loft(ApplyCtx& ctx) {
                     if (face_shape.ShapeType() == TopAbs_FACE) {
                         wire = BRepTools::OuterWire(TopoDS::Face(face_shape));
                     } else {
-                        json pl = sketch_ordered_polyline(*skf->sketch);
-                        if (pl.is_array() && pl.size() >= 3) {
-                            if (pnt_from(pl.front()).Distance(pnt_from(pl.back())) > 1e-6)
-                                pl.push_back(pl.front());
-                            try {
-                                wire = make_polyline_wire(pl);
-                            } catch (...) {
-                                wire = {};
+                        wire = sketch_exact_wire(*skf->sketch, /*closed=*/true);
+                        if (wire.IsNull()) {
+                            json pl = sketch_ordered_polyline(*skf->sketch);
+                            if (pl.is_array() && pl.size() >= 3) {
+                                if (pnt_from(pl.front()).Distance(pnt_from(pl.back())) > 1e-6)
+                                    pl.push_back(pl.front());
+                                try {
+                                    wire = make_polyline_wire(pl);
+                                    ctx.graph.add_warning(f.id, std::string(kApproxPathWarning));
+                                } catch (...) {
+                                    wire = {};
+                                }
                             }
                         }
                     }

@@ -5,11 +5,16 @@
 #include <BRepLib.hxx>
 #include <GCE2d_MakeSegment.hxx>
 #include <Geom2d_TrimmedCurve.hxx>
+#include <GeomAPI_Interpolate.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
+#include <GeomAbs_Shape.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_Curve.hxx>
 #include <Geom_CylindricalSurface.hxx>
 #include "sx/occt_types.hpp"
+#include <TColStd_HArray1OfBoolean.hxx>
+#include <TColgp_Array1OfVec.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt2d.hxx>
@@ -48,26 +53,49 @@ TopoDS_Wire spiral(const gp_Ax2& axis, double start_radius, double end_radius, d
         throw std::runtime_error("curves::spiral: radii must be non-negative");
     if (turns <= 0.0) throw std::runtime_error("curves::spiral: turns must be positive");
 
-    constexpr int k_samples_per_turn = 32;
-    const int n = std::max(2, static_cast<int>(std::ceil(turns * k_samples_per_turn)) + 1);
-    sx::occt::Array1OfPnt poles(1, n);
-
     const gp_Pnt origin = axis.Location();
     const gp_Dir x = axis.XDirection();
     const gp_Dir y = axis.YDirection();
     const double theta_max = 2.0 * M_PI * turns;
+    const double b = (end_radius - start_radius) / theta_max;  // dr/dθ
+    const double r_max = std::max(start_radius, end_radius);
 
+    // Cubic Hermite through samples with analytic tangents: error O(h^4).
+    // Choose n so a circle of radius r_max stays within 1e-7.
+    const double h_target =
+        r_max > 1e-9 ? std::pow(1.0e-7 / std::max(r_max, 1.0), 0.25) : 0.05;
+    const int n_per_turn =
+        std::max(32, static_cast<int>(std::ceil(2.0 * M_PI / std::max(h_target, 1e-4))));
+    const int n = std::max(2, static_cast<int>(std::ceil(turns * n_per_turn)) + 1);
+
+    Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, n);
+    TColgp_Array1OfVec tans(1, n);
+    Handle(TColStd_HArray1OfBoolean) flags = new TColStd_HArray1OfBoolean(1, n);
     for (int i = 0; i < n; ++i) {
         const double t = static_cast<double>(i) / static_cast<double>(n - 1);
         const double theta = t * theta_max;
+        const double cth = std::cos(theta);
+        const double sth = std::sin(theta);
         const double r = start_radius + (end_radius - start_radius) * t;
-        gp_Pnt p = origin.Translated(gp_Vec(x) * (r * std::cos(theta)) +
-                                     gp_Vec(y) * (r * std::sin(theta)));
-        poles.SetValue(i + 1, p);
+        gp_Pnt p = origin.Translated(gp_Vec(x) * (r * cth) + gp_Vec(y) * (r * sth));
+        // d/dθ (r cosθ, r sinθ) = (b cosθ - r sinθ, b sinθ + r cosθ)
+        gp_Vec dtheta = gp_Vec(x) * (b * cth - r * sth) + gp_Vec(y) * (b * sth + r * cth);
+        pts->SetValue(i + 1, p);
+        tans.SetValue(i + 1, dtheta);
+        flags->SetValue(i + 1, Standard_True);
     }
 
-    Handle(Geom_BSplineCurve) bspline = GeomAPI_PointsToBSpline(poles).Curve();
-    if (bspline.IsNull()) throw std::runtime_error("curves::spiral: BSpline fit failed");
+    GeomAPI_Interpolate interp(pts, Standard_False, 1.0e-7);
+    interp.Load(tans, flags, /*Scale=*/true);
+    interp.Perform();
+    Handle(Geom_BSplineCurve) bspline;
+    if (interp.IsDone()) bspline = interp.Curve();
+    if (bspline.IsNull()) {
+        sx::occt::Array1OfPnt poles(1, n);
+        for (int i = 1; i <= n; ++i) poles.SetValue(i, pts->Value(i));
+        bspline = GeomAPI_PointsToBSpline(poles, 3, 8, GeomAbs_C2, 1.0e-7).Curve();
+    }
+    if (bspline.IsNull()) throw std::runtime_error("curves::spiral: interpolate failed");
     Handle(Geom_Curve) curve = bspline;
 
     BRepBuilderAPI_MakeEdge mk_edge(curve);

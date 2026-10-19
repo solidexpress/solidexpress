@@ -104,11 +104,27 @@ nlohmann::json simplify_path_polyline(const nlohmann::json& path);
 nlohmann::json simplify_path_rdp(const nlohmann::json& path, double eps);
 nlohmann::json simplify_path_for_sweep(const nlohmann::json& path);
 nlohmann::json sketch_ordered_polyline(const Sketch& sk);
+// Exact sketch wire: lines, trimmed-circle arcs, interpolating splines, and
+// (when the sole path entity, or closed=true) full circle/ellipse. Empty when
+// the sketch has no usable path geometry. Polyline is the documented fallback.
+TopoDS_Wire sketch_exact_wire(const Sketch& sk, bool closed = false);
 TopoDS_Wire sketch_spine_wire(const Sketch& sk);
+TopoDS_Wire join_exact_wires(const std::vector<TopoDS_Wire>& wires);
+TopoDS_Wire interpolate_wire(const std::vector<gp_Pnt>& pts);
+nlohmann::json sample_wire_polyline(const TopoDS_Wire& wire, int samples_per_edge = 16);
 bool spine_has_circle_radius(const TopoDS_Wire& wire, double radius, double tol = 0.2);
 TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spine,
                                double thin_thickness = 0.0, bool contact = false,
-                               bool frenet = true, bool correction = true);
+                               bool frenet = true, bool correction = true,
+                               const TopoDS_Wire* guide = nullptr);
+TopoDS_Shape rib_along_wire(const TopoDS_Wire& spine, double thickness, double height,
+                            const gp_Dir& dir, std::string* err = nullptr);
+inline constexpr const char* kApproxPathWarning = "approximated path";
+inline gp_Pnt sketch_uv_to_3d(const SketchPlane& pl, double u, double v) {
+    return gp_Pnt(pl.origin[0] + pl.x_dir[0] * u + pl.y_dir[0] * v,
+                  pl.origin[1] + pl.x_dir[1] * u + pl.y_dir[1] * v,
+                  pl.origin[2] + pl.x_dir[2] * u + pl.y_dir[2] * v);
+}
 nlohmann::json join_polylines(nlohmann::json a, const nlohmann::json& b);
 nlohmann::json chain_points(std::vector<gp_Pnt> pts);
 nlohmann::json densify_catmull(const std::vector<gp_Pnt>& ctrl, int samples_per_seg = 8);

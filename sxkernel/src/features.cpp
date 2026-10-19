@@ -574,6 +574,8 @@ TopoDS_Shape helix_sweep_solid(const gp_Ax2& axis, double helix_r, double pitch,
 
 // Triangular thread cutter: isosceles profile in the radial–axial plane
 // (apex inward), swept along a helix at major_radius + 0.1·depth clearance.
+// One turn at a time — a single multi-turn PipeShell self-intersects and
+// BRepGProp/boolean then ignore the extra length.
 TopoDS_Shape thread_cutter_solid(const gp_Ax2& axis, double major_radius, double pitch,
                                  double turns, double depth, double profile_angle_deg) {
     if (major_radius <= 0.0) throw std::runtime_error("major_radius must be positive");
@@ -590,17 +592,17 @@ TopoDS_Shape thread_cutter_solid(const gp_Ax2& axis, double major_radius, double
     const double half_apex = profile_angle_deg * M_PI / 360.0;  // α/2 in radians
     const double half_base = height * std::tan(half_apex);
 
-    const gp_Pnt origin = axis.Location();
     const gp_Vec radial(axis.XDirection());
     const gp_Vec axial(axis.Direction());
 
-    const gp_Pnt apex = origin.Translated(radial * (major_radius - depth));
-    const gp_Pnt base_center = origin.Translated(radial * helix_r);
-    const gp_Pnt base1 = base_center.Translated(axial * half_base);
-    const gp_Pnt base2 = base_center.Translated(axial * (-half_base));
-
-    BRepBuilderAPI_MakeWire profile_mk;
-    {
+    auto segment = [&](double z0, double nturns) -> TopoDS_Shape {
+        const gp_Pnt o = axis.Location().Translated(axial * z0);
+        gp_Ax2 ax(o, axis.Direction(), axis.XDirection());
+        const gp_Pnt apex = o.Translated(radial * (major_radius - depth));
+        const gp_Pnt base_center = o.Translated(radial * helix_r);
+        const gp_Pnt base1 = base_center.Translated(axial * half_base);
+        const gp_Pnt base2 = base_center.Translated(axial * (-half_base));
+        BRepBuilderAPI_MakeWire profile_mk;
         BRepBuilderAPI_MakeEdge e1(apex, base1);
         BRepBuilderAPI_MakeEdge e2(base1, base2);
         BRepBuilderAPI_MakeEdge e3(base2, apex);
@@ -609,26 +611,34 @@ TopoDS_Shape thread_cutter_solid(const gp_Ax2& axis, double major_radius, double
         profile_mk.Add(e1.Edge());
         profile_mk.Add(e2.Edge());
         profile_mk.Add(e3.Edge());
-    }
-    if (!profile_mk.IsDone()) throw std::runtime_error("thread profile wire failed");
-    TopoDS_Wire profile = profile_mk.Wire();
+        if (!profile_mk.IsDone()) throw std::runtime_error("thread profile wire failed");
+        TopoDS_Wire spine = curves::helix(ax, helix_r, pitch, nturns, /*left_handed=*/false);
+        BRepOffsetAPI_MakePipeShell shell(spine);
+        shell.SetMode(ax.Direction());  // axial plane: ISO 60° basic profile
+        shell.Add(profile_mk.Wire(), /*withContact=*/false, /*withCorrection=*/true);
+        shell.Build();
+        if (!shell.IsDone()) throw std::runtime_error("thread MakePipeShell failed");
+        if (!shell.MakeSolid()) throw std::runtime_error("thread MakePipeShell could not make solid");
+        return shell.Shape();
+    };
 
-    TopoDS_Wire spine = curves::helix(axis, helix_r, pitch, turns, /*left_handed=*/false);
-
-    BRepOffsetAPI_MakePipeShell shell(spine);
-    shell.SetMode();  // Frenet
-    shell.Add(profile, /*withContact=*/false,
-              /*withCorrection=*/true);
-    shell.Build();
-    if (!shell.IsDone()) throw std::runtime_error("thread MakePipeShell failed");
-    if (!shell.MakeSolid()) throw std::runtime_error("thread MakePipeShell could not make solid");
-    return shell.Shape();
-}
-
-gp_Pnt sketch_uv_to_3d(const SketchPlane& pl, double u, double v) {
-    return gp_Pnt(pl.origin[0] + pl.x_dir[0] * u + pl.y_dir[0] * v,
-                  pl.origin[1] + pl.x_dir[1] * u + pl.y_dir[1] * v,
-                  pl.origin[2] + pl.x_dir[2] * u + pl.y_dir[2] * v);
+    const int nfull = static_cast<int>(std::floor(turns + 1e-12));
+    const double frac = turns - static_cast<double>(nfull);
+    TopoDS_Shape acc;
+    auto join = [&](const TopoDS_Shape& s) {
+        if (s.IsNull()) return;
+        if (acc.IsNull()) {
+            acc = s;
+            return;
+        }
+        BRepAlgoAPI_Fuse fuse(acc, s);
+        if (!fuse.IsDone()) throw std::runtime_error("thread segment fuse failed");
+        acc = fuse.Shape();
+    };
+    for (int i = 0; i < nfull; ++i) join(segment(pitch * static_cast<double>(i), 1.0));
+    if (frac > 1e-9) join(segment(pitch * static_cast<double>(nfull), frac));
+    if (acc.IsNull()) throw std::runtime_error("thread cutter empty");
+    return acc;
 }
 
 json pnt_to_json(const gp_Pnt& p) { return json::array({p.X(), p.Y(), p.Z()}); }
@@ -816,149 +826,6 @@ json sketch_ordered_polyline(const Sketch& sk) {
     return chain_polylines(std::move(segs));
 }
 
-namespace {
-
-struct SpineSeg {
-    gp_Pnt a, b;
-    gp_Pnt mid;
-    bool circular = false;
-    TopoDS_Edge edge;
-    bool used = false;
-};
-
-TopoDS_Edge make_spine_edge(const SpineSeg& s, const gp_Pnt& from, const gp_Pnt& to) {
-    if (s.circular) {
-        GC_MakeArcOfCircle mk(from, s.mid, to);
-        if (!mk.IsDone()) return {};
-        return BRepBuilderAPI_MakeEdge(mk.Value()).Edge();
-    }
-    if (from.Distance(to) < 1e-12) return {};
-    return BRepBuilderAPI_MakeEdge(from, to).Edge();
-}
-
-bool spine_g1(const TopoDS_Wire& wire) {
-    std::vector<TopoDS_Edge> edges;
-    for (TopExp_Explorer ex(wire, TopAbs_EDGE); ex.More(); ex.Next())
-        edges.push_back(TopoDS::Edge(ex.Current()));
-    if (edges.size() < 2) return true;
-    const double ang_tol = 5.0 * M_PI / 180.0;
-    for (size_t i = 1; i < edges.size(); ++i) {
-        BRepAdaptor_Curve c0(edges[i - 1]);
-        BRepAdaptor_Curve c1(edges[i]);
-        gp_Pnt p0, p1;
-        gp_Vec t0, t1;
-        c0.D1(c0.LastParameter(), p0, t0);
-        c1.D1(c1.FirstParameter(), p1, t1);
-        if (t0.Magnitude() < 1e-12 || t1.Magnitude() < 1e-12) return false;
-        const double a = t0.Angle(t1);
-        const double ar = t0.Angle(t1.Reversed());
-        if (std::min(a, ar) > ang_tol) return false;
-    }
-    return true;
-}
-
-}  // namespace
-
-// Line edges plus Geom_TrimmedCurve arcs, chained by endpoints. Construction
-// and closed profiles (circle/ellipse) stay out — those are sections, not rails.
-TopoDS_Wire sketch_spine_wire(const Sketch& sk) {
-    const double eps = 1e-9;
-    // Walk clicks land ~0.02 mm off (R150 centre 60.02, 160.02). 1e-3 left
-    // the arcs off the chain, MakePipeShell never ran, xmax stuck at 187.7.
-    const double join = 0.5;
-    const auto& pl = sk.plane();
-    std::vector<SpineSeg> segs;
-    auto add_line = [&](gp_Pnt a, gp_Pnt b) {
-        if (a.Distance(b) < eps) return;
-        SpineSeg s;
-        s.a = a;
-        s.b = b;
-        s.mid = gp_Pnt(0.5 * (a.X() + b.X()), 0.5 * (a.Y() + b.Y()), 0.5 * (a.Z() + b.Z()));
-        s.edge = BRepBuilderAPI_MakeEdge(a, b).Edge();
-        segs.push_back(std::move(s));
-    };
-    for (const auto& e : sk.entities()) {
-        if (e.construction || e.external) continue;
-        if (e.type == SketchEntityType::Point) continue;
-        if (e.type == SketchEntityType::Line && e.params.size() >= 4) {
-            add_line(sketch_uv_to_3d(pl, sk.param(e.params[0]), sk.param(e.params[1])),
-                     sketch_uv_to_3d(pl, sk.param(e.params[2]), sk.param(e.params[3])));
-        } else if (e.type == SketchEntityType::Arc && e.params.size() >= 9) {
-            gp_Pnt a = sketch_uv_to_3d(pl, sk.param(e.params[5]), sk.param(e.params[6]));
-            gp_Pnt b = sketch_uv_to_3d(pl, sk.param(e.params[7]), sk.param(e.params[8]));
-            double sa = sk.param(e.params[3]), ea = sk.param(e.params[4]);
-            if (ea < sa) ea += 2.0 * M_PI;
-            const double mid_a = 0.5 * (sa + ea);
-            gp_Pnt m = sketch_uv_to_3d(pl,
-                                       sk.param(e.params[0]) + sk.param(e.params[2]) * std::cos(mid_a),
-                                       sk.param(e.params[1]) + sk.param(e.params[2]) * std::sin(mid_a));
-            GC_MakeArcOfCircle mk(a, m, b);
-            if (!mk.IsDone()) continue;
-            SpineSeg s;
-            s.a = a;
-            s.b = b;
-            s.mid = m;
-            s.circular = true;
-            s.edge = BRepBuilderAPI_MakeEdge(mk.Value()).Edge();
-            segs.push_back(std::move(s));
-        }
-        // Spline / circle / ellipse stay out; sampled polyline is the fallback.
-    }
-    if (segs.empty()) return {};
-    std::vector<SpineSeg*> chain;
-    SpineSeg* seed = &segs[0];
-    seed->used = true;
-    chain.push_back(seed);
-    gp_Pnt head = seed->a;
-    gp_Pnt tail = seed->b;
-    auto grow = [&]() -> bool {
-        double best = join;
-        SpineSeg* pick = nullptr;
-        int how = -1;
-        for (auto& s : segs) {
-            if (s.used) continue;
-            const double d[4] = {tail.Distance(s.a), tail.Distance(s.b), head.Distance(s.a),
-                                 head.Distance(s.b)};
-            for (int h = 0; h < 4; ++h) {
-                if (d[h] < best) {
-                    best = d[h];
-                    pick = &s;
-                    how = h;
-                }
-            }
-        }
-        if (pick == nullptr) return false;
-        pick->used = true;
-        if (how == 0) {
-            pick->edge = make_spine_edge(*pick, tail, pick->b);
-            tail = pick->b;
-            chain.push_back(pick);
-        } else if (how == 1) {
-            pick->edge = make_spine_edge(*pick, tail, pick->a);
-            tail = pick->a;
-            chain.push_back(pick);
-        } else if (how == 2) {
-            pick->edge = make_spine_edge(*pick, pick->b, head);
-            head = pick->b;
-            chain.insert(chain.begin(), pick);
-        } else {
-            pick->edge = make_spine_edge(*pick, pick->a, head);
-            head = pick->a;
-            chain.insert(chain.begin(), pick);
-        }
-        return true;
-    };
-    while (grow()) {
-    }
-    BRepBuilderAPI_MakeWire mk;
-    for (auto* s : chain) {
-        if (s->edge.IsNull()) return {};
-        mk.Add(s->edge);
-    }
-    if (!mk.IsDone()) return {};
-    return mk.Wire();
-}
-
 bool spine_has_circle_radius(const TopoDS_Wire& wire, double radius, double tol) {
     if (wire.IsNull()) return false;
     for (TopExp_Explorer ex(wire, TopAbs_EDGE); ex.More(); ex.Next()) {
@@ -975,7 +842,7 @@ bool pipe_solid_ok(const TopoDS_Shape& s) {
 
 TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spine,
                                double thin_thickness, bool contact, bool frenet,
-                               bool correction) {
+                               bool correction, const TopoDS_Wire* guide) {
     if (spine.IsNull()) throw std::runtime_error("empty spine wire");
     TopoDS_Wire profile_wire;
     if (face.ShapeType() == TopAbs_FACE) {
@@ -990,7 +857,10 @@ TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spin
     auto try_mode = [&](BRepBuilderAPI_TransitionMode mode) -> TopoDS_Shape {
         try {
             BRepOffsetAPI_MakePipeShell shell(spine);
-            shell.SetMode(frenet);  // true = Frenet follow-path
+            if (guide && !guide->IsNull())
+                shell.SetMode(*guide, /*CurvilinearEquivalence=*/false);
+            else
+                shell.SetMode(frenet);  // true = Frenet follow-path
             shell.SetTransitionMode(mode);
             shell.Add(profile_wire, contact, correction);
             shell.Build();

@@ -102,9 +102,15 @@ bool apply_rib(ApplyCtx& ctx) {
                 gp_Dir up(n[0], n[1], n[2]);
                 double h = num_param(params, "height", 10.0, env);
                 if (params.value("flip", false)) h = -h;
+                const double thickness = num_param(params, "thickness", 2.0, env);
                 std::string rerr;
-                TopoDS_Shape rib = surf::rib_solid(profile, num_param(params, "thickness", 2.0, env),
-                                                   h, up, &rerr);
+                TopoDS_Shape rib;
+                TopoDS_Wire spine = sketch_exact_wire(*skf->sketch);
+                if (!spine.IsNull()) rib = rib_along_wire(spine, thickness, h, up, &rerr);
+                if (rib.IsNull()) {
+                    ctx.graph.add_warning(f.id, std::string(kApproxPathWarning));
+                    rib = surf::rib_solid(profile, thickness, h, up, &rerr);
+                }
                 if (rib.IsNull()) return fail(rerr);
                 BRepAlgoAPI_Fuse fuse(tb->shape, rib);
                 if (!fuse.IsDone()) return fail("rib fuse failed");
