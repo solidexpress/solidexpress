@@ -31,8 +31,13 @@ class Rows07Chunk3:
             sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
             if sketches:
                 self._pencil(sketches[0])
+        self.weld_open_profile()
         notes = self.set_contours({"c", "ring"})
         made = self.try_extrude("10", "New", "Midplane")
+        if not made.get("bodies"):
+            self.weld_open_profile()
+            notes = self.set_contours({"c", "ring"})
+            made = self.try_extrude("10", "New", "Midplane")
         zext = self.z_extent()
         z_ok = zext is not None and abs(abs(zext[1] - zext[0]) - 10.0) <= 0.3
         self.clause("contours heads", True, "C + ring | " + " ; ".join(notes[:6]))

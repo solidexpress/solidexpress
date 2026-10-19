@@ -483,6 +483,91 @@ class WalkUI07(WalkChrome):
             "names": self.feature_names(),
         }
 
+    def _profile_endpoints(self) -> list[tuple[float, float]]:
+        pts: list[tuple[float, float]] = []
+        for entity in self.ents():
+            if entity.get("construction"):
+                continue
+            kind = str(entity.get("type") or "")
+            if kind == "line":
+                pts.append(self._pt(entity.get("start") or [0, 0]))
+                pts.append(self._pt(entity.get("end") or [0, 0]))
+            elif kind in ("arc", "elliptical_arc"):
+                pts.append(self._pt(entity.get("start") or [0, 0]))
+                pts.append(self._pt(entity.get("end") or [0, 0]))
+        return pts
+
+    def weld_open_profile(self, tol: float = 1.6) -> int:
+        """Coincident dangling endpoints that sit on top of each other.
+
+        Concurrent walks sometimes leave the jaw/ellipse vertex unwelded
+        (N2: open profile at (−24.9, 5.4)) so Midplane extrude makes no body.
+        """
+        pts = self._profile_endpoints()
+        opens: list[tuple[float, float]] = []
+        for i, a in enumerate(pts):
+            n = sum(1 for b in pts if math.hypot(a[0] - b[0], a[1] - b[1]) <= 1e-3)
+            if n == 1:
+                opens.append(a)
+        welded = 0
+        used = [False] * len(opens)
+        for i, a in enumerate(opens):
+            if used[i]:
+                continue
+            best_j, best_d = -1, tol
+            for j, b in enumerate(opens):
+                if i == j or used[j]:
+                    continue
+                dist = math.hypot(a[0] - b[0], a[1] - b[1])
+                if 1e-4 < dist <= best_d:
+                    best_j, best_d = j, dist
+            if best_j < 0:
+                continue
+            self.constrain("Coincident", a, opens[best_j])
+            used[i] = used[best_j] = True
+            welded += 1
+        for upper in (True, False):
+            jaw = self.jaw_outer(upper)
+            near = self.nearest_profile_uv(jaw)
+            if math.hypot(jaw[0] - near[0], jaw[1] - near[1]) <= 2.5:
+                self.constrain("Coincident", jaw, near)
+                welded += 1
+        # A 0.05–4 mm gap at the C opening is too far for point-on-curve to
+        # snap under load; a named Line closes the vertex (N2's message).
+        leftover: list[tuple[float, float]] = []
+        pts = self._profile_endpoints()
+        for a in pts:
+            n = sum(1 for b in pts if math.hypot(a[0] - b[0], a[1] - b[1]) <= 1e-3)
+            if n == 1:
+                leftover.append(a)
+        hi = self.nearest_profile_uv(self.jaw_outer(True))
+        lo = self.nearest_profile_uv(self.jaw_outer(False))
+        self.coincident_on_curve(hi, self.ellipse_major())
+        self.coincident_on_curve(lo, self.world(0.0, -self.mm("ELLIPSE_MAJ") * 0.5))
+        if welded:
+            self.d.wait_idle(frames=6)
+            self.refresh("sketch", "status")
+        return welded
+
+    def coincident_on_curve(self, point, on_curve) -> str:
+        self.click("rail:Select")
+        was = self._set_snap(True)
+        self._frame_uv(point, on_curve)
+        self.click(sketch=list(point))
+        self.d.key("shift", action="down")
+        self.click(sketch=list(on_curve))
+        self.d.key("shift", action="up")
+        self._set_snap(was)
+        self.d.wait_idle(frames=2)
+        mark = self.mark()
+        try:
+            self.click_verb("Coincident")
+        except SxError:
+            pass
+        self.d.wait_idle(frames=3)
+        self.refresh("sketch", "status")
+        return " | ".join(self.result_texts(mark)) or self.S()
+
     def try_extrude(self, distance: str, op: str = "New", end: str = "Midplane", apply: bool = True) -> dict:
         self._ensure_finish_bar()
         self.set_option("finish:Op", op)
