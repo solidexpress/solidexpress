@@ -69,6 +69,7 @@ test-tools:
 	python3 tools/test_check_rung05.py
 	python3 tools/test_check_rung06.py
 	python3 tools/test_check_rung07.py
+	python3 tools/test_check_rung08.py
 	python3 tools/test_sx_exact.py
 	python3 tools/lint_suites.py
 	python3 tools/test_lint_suites.py
