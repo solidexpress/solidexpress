@@ -18,6 +18,7 @@ What remains here is the live contract, not the per-round plans:
 - `walk_rung06.py` listed with the other walks
 - `rung-07-plan.md` — rung 7 (Mahtabalam combination spanner): measured gaps, 10 work packages, 46-row checklist, `check_rung07.py` spec
 - `rung-07-checklist.md` — 46 walk rows
+- `rung-07-result.md` — confirm pass (`tools/confirm_all.sh` counts)
 - `walk_rung07.py` listed with the other walks
 - `post-rung-03-result.md` — confirm pass after the rung-3 layering pass (headless 214)
 - `post-rung-04-result.md` — confirm pass after region pick, click budget, hexkey film
