@@ -275,6 +275,10 @@ const GLYPH_MAX_OFFSET_PX := 40.0
 ## Coincident badges appear only for a selected vertex, a selected coincident
 ## constraint, or the vertex under the pointer.
 const COINCIDENT_HOVER_PX := 14.0
+## Keep the mark inside the 14 px vertex hover so its leader cannot cross a
+## neighbouring ⊥ / ∥ badge (N26). SELECT still prefers the nearer of the
+## endpoint and the badge, so a vertex press picks the entity.
+const COINCIDENT_LEADER_CAP := 13.5
 const GLYPH_LEADER_MIN_PX := 12.0
 const GLYPH_LABEL_GAP_PX := 12.0
 ## Full-circle radius text stays this many pixels outside the rim, and never
@@ -5785,10 +5789,11 @@ func click(pos2: Vector2) -> void:
 		Tool.SELECT:
 			# A badge parked beside a short edge can cover the vertex. The nearer
 			# target wins: the endpoint when the click is on it, the badge when
-			# the click is on the badge.
+			# the click is on the badge. Coincident uses the same rule so a hex
+			# vertex press still picks the point (Vertical), while n21 clicks
+			# the published glyph centre.
 			var chit := constraint_hit(select_pos)
-			var chit_type := str(sketch.constraint_info(chit).get("type", "")) if chit != "" else ""
-			if chit != "" and (chit_type == "coincident" or not _endpoint_nearer_than_glyph(select_pos, chit)):
+			if chit != "" and not _endpoint_nearer_than_glyph(select_pos, chit):
 				select_constraint(chit)
 				return
 			if selected_constraint != "":
@@ -10249,10 +10254,6 @@ func _clamp_coincident_leaders(items: Array, cam: Camera3D) -> void:
 		var centre: Vector2 = it["centre"]
 		var anchor: Vector2 = it["anchor"]
 		var span := natural.distance_to(centre)
-		# Keep the mark inside the 14 px vertex hover so its leader cannot
-		# cross a neighbouring ⊥ / ∥ badge (N26). A press on the badge still
-		# selects coincident because SELECT prefers that type over the endpoint.
-		const COINCIDENT_LEADER_CAP := 13.5
 		if span > COINCIDENT_LEADER_CAP and span > 0.5:
 			centre = natural + (centre - natural) * (COINCIDENT_LEADER_CAP / span)
 		var pos: Vector2 = _sketch_from_screen(cam, centre, anchor)
@@ -10519,7 +10520,7 @@ func _repair_coincident_glyphs(items: Array, labels: Array[Rect2], cam: Camera3D
 				continue
 			var best := centre
 			var best_cost := cost
-			var radii: Array[float] = [0.0, 6.0, 12.0, 18.0, 24.0, 30.0, 36.0, 40.0]
+			var radii: Array[float] = [0.0, 6.0, 12.0, COINCIDENT_LEADER_CAP]
 			for radius in radii:
 				var count := 1 if radius < 1.0 else 48
 				for k in count:
@@ -10547,8 +10548,12 @@ func _coincident_place_cost(items: Array, index: int, natural: Vector2, centre: 
 	var rect := Rect2(centre - size * 0.5, size)
 	var dist := natural.distance_to(centre)
 	var cost := 0.0
-	if dist > GLYPH_MAX_OFFSET_PX + 0.5:
-		cost += 2000000.0 + (dist - GLYPH_MAX_OFFSET_PX) * 40.0
+	if dist > COINCIDENT_LEADER_CAP + 0.5:
+		cost += 2000000.0 + (dist - COINCIDENT_LEADER_CAP) * 40.0
+	# A badge on the vertex covers the pick (Vertical / hex AF). Sit just
+	# outside GLYPH_LEADER_MIN_PX so n21 still has a leader to click.
+	if dist < GLYPH_LEADER_MIN_PX:
+		cost += 50000.0 + (GLYPH_LEADER_MIN_PX - dist) * 200.0
 	for j in range(items.size()):
 		if j == index:
 			continue
