@@ -136,49 +136,75 @@
 
 <section>
 <h2>Roadmap</h2>
-<p class="lead">What is coming next, and what it unlocks for you — not a laundry list of internals.</p>
+<p class="lead">What is coming next, and what it unlocks for you — not a laundry list of internals. Ordered by the next tutorial we rebuild step by step.</p>
 <div class="roadmap">
 <article>
-<h3>Ready-to-run builds</h3>
-<p>DMG, Setup.exe, and a Linux tarball so you can open SolidExpress without compiling from source.</p>
-<p class="enables">Available now in the download row above. Share a known-good desktop release with a shop or classroom.</p>
+<h3>Assembly documents</h3>
+<p>File → New Assembly, insert several parts in one go, then Float or Fix each component.</p>
+<p class="enables">Enables: start a product the way a SolidWorks tutorial does — an assembly first, with your saved parts dropped in together.</p>
 </article>
 <article>
-<h3>Assemblies &amp; mates</h3>
-<p>Multi-body products with mate connectors, joints, explode views, and interference checks.</p>
-<p class="enables">Enables: mechanisms and product structures — not just single parts — with motion you can drag and clearances you can verify before you cut metal.</p>
+<h3>Mate any two components</h3>
+<p>Click a face on one component and a face on another — even two copies of the same part — and every mate on a part holds at once. Ctrl+C / Ctrl+V copies components.</p>
+<p class="enables">Enables: bolted joints with 16 nuts and 8 pins, two pipes flange to flange, without typing transforms.</p>
 </article>
 <article>
-<h3>Production drawings</h3>
-<p>Associative drawing sheets with dimensions, GD&amp;T, BOM balloons, and PDF / DXF export.</p>
-<p class="enables">Enables: shop-floor prints and supplier packages that update when the model changes, without redrawing every revision by hand.</p>
+<h3>Design a part in place</h3>
+<p>Insert → New Part inside an assembly: sketch on its planes, revolve, then leave Edit Component.</p>
+<p class="enables">Enables: a pin or spacer sized to the parts around it, created as a real component instead of a separate file.</p>
+</article>
+<article>
+<h3>Tangent mates</h3>
+<p>Seat a curved face against a flat one — a wrench head against a nut side.</p>
+<p class="enables">Enables: proving a printed wrench actually fits its nut, in the assembly, before you print either.</p>
+</article>
+<article>
+<h3>Print the whole assembly</h3>
+<p>3MF export of every placed component where it sits, and assemblies that save and reopen intact.</p>
+<p class="enables">Enables: check the assembled size and send a fitted set to the slicer in one file.</p>
+</article>
+<article>
+<h3>Spline editing</h3>
+<p>Fit-point and control-point handles, end tangents, tangent relations to lines and arcs, a curvature comb — and Convert Entities that keeps model splines as splines.</p>
+<p class="enables">Enables: smooth handles and organic profiles you can shape like in SolidWorks or Fusion, not approximate with arcs.</p>
+</article>
+<article>
+<h3>What you type is what you print</h3>
+<p>Typed values kept exact, true drafts, sweeps and guided lofts that follow the real curve, and a finer, user-set 3MF / STL export tolerance.</p>
+<p class="enables">Enables: a 1.2 mm wall that stays 1.2 and a Ø3 hole that prints round — no silent rounding between the dimension and the part.</p>
 </article>
 <article>
 <h3>Richer interchange</h3>
-<p>Fuller STEP AP242 exchange (colors, names, assembly structure), plus 3MF / glTF meshes and DXF into sketches.</p>
-<p class="enables">Enables: cleaner handoffs to CAM, visualization, and other CAD — and sketching from existing 2D data instead of retracing it.</p>
-</article>
-<article>
-<h3>Sheet metal, frames &amp; surfacing</h3>
-<p>Flanges and flat patterns, structural frames with cut lists, cosmetic welds, and surface modeling tools.</p>
-<p class="enables">Enables: enclosures, weldments, and freeform shapes that leave the desk ready for laser, brake, and fabrication — not only prismatic solids.</p>
+<p>Fuller STEP AP242 exchange: colors, names, and assembly structure.</p>
+<p class="enables">Enables: cleaner handoffs to CAM, visualization, and other CAD without re-coloring and re-naming on the other side.</p>
 </article>
 <article>
 <h3>Model-based definition (MBD)</h3>
-<p>3D product manufacturing information on the model itself, exportable with semantic STEP PMI.</p>
+<p>Semantic STEP PMI export of the 3D dimensions already on the model.</p>
 <p class="enables">Enables: inspection and manufacturing to read tolerances from the solid — fewer ambiguous 2D callouts, one source of truth on the part.</p>
 </article>
 <article>
-<h3>Presentation &amp; motion</h3>
-<p>Still renders, turntable / explode video, and kinematic motion studies.</p>
-<p class="enables">Enables: reviews, marketing stills, and mechanism proof-outs you can share without opening the CAD session.</p>
+<h3>Presentation</h3>
+<p>Still renders and turntable / explode video.</p>
+<p class="enables">Enables: reviews and marketing stills you can share without opening the CAD session.</p>
 </article>
 <article>
-<h3>Automation &amp; extensions</h3>
-<p>Scripted document control, batch CLI export, and a plugin surface for custom commands.</p>
-<p class="enables">Enables: regenerate families of parts overnight, wire SolidExpress into your pipeline, and grow the tool without waiting on the core team.</p>
+<h3>Extensions</h3>
+<p>A plugin surface for custom commands, beyond today's command-line export.</p>
+<p class="enables">Enables: grow the tool without waiting on the core team.</p>
 </article>
 </div>
+<h3>Already shipped</h3>
+<ul>
+<li><strong>Ready-to-run builds</strong> — DMG, Setup.exe, and a Linux tarball in the download row above</li>
+<li><strong>Assemblies &amp; mates</strong> — mate connectors, fastened / revolute / slider joints, explode views, interference volume</li>
+<li><strong>Production drawings</strong> — associative sheets and dimensions, section views, BOM balloons, PDF / DXF export</li>
+<li><strong>Interchange</strong> — 3MF and glTF out, DXF into sketches, import healing</li>
+<li><strong>Sheet metal, frames &amp; surfacing</strong> — flanges and flat patterns, frame cut lists, cosmetic welds, knit, replace face, zebra</li>
+<li><strong>3D dimensions on the model</strong> — PMI that survives regeneration</li>
+<li><strong>Motion</strong> — drag mechanisms through their joints, gear ratios</li>
+<li><strong>Automation</strong> — <code>sxcli</code> batch export, rules, and user features</li>
+</ul>
 </section>
 
 <section>
