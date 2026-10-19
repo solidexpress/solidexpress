@@ -132,6 +132,9 @@ public:
     // Empty body_id reports every body plus the feature timeline.
     godot::String exactness_report(const godot::String& body_id = {}) const;
     uint64_t revision() const;
+    // "part" or "assembly". Missing/legacy .sxp files load as part.
+    godot::String kind() const;
+    void set_kind(const godot::String& kind);
 
     // Tessellation: ArrayMesh with one surface per face; surface index order
     // matches get_face_ids(body_id).

@@ -705,6 +705,7 @@ func _build_ui() -> void:
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	file_dialog.min_size = Vector2i(700, 460)
 	file_dialog.file_selected.connect(_on_file_selected)
+	file_dialog.files_selected.connect(_on_files_selected)
 	file_dialog.close_requested.connect(_on_file_dialog_dismissed)
 	file_dialog.canceled.connect(_on_file_dialog_dismissed)
 	file_dialog.window_input.connect(_on_file_dialog_window_input)
@@ -3514,6 +3515,7 @@ func edit_delete() -> void:
 func _file_menu_rows() -> Array:
 	return [
 		{label="New", menu_id=0, kind="new"},
+		{label="New Assembly", menu_id=16, kind="new_assembly"},
 		{label="Open...", menu_id=1, kind="open"},
 		{label="Save", menu_id=2, kind="save"},
 		{label="Save As...", menu_id=3, kind="dialog", action=FileAction.SAVE_AS, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.sxp ; SolidExpress"},
@@ -3558,6 +3560,8 @@ func _on_file_menu(id: int) -> void:
 		match str(row.get("kind", "")):
 			"new":
 				_confirm_discard(_do_new)
+			"new_assembly":
+				_confirm_discard(_do_new_assembly)
 			"open":
 				_confirm_discard(_do_open_dialog)
 			"save":
@@ -3573,6 +3577,14 @@ func _on_file_menu(id: int) -> void:
 
 
 func _do_new() -> void:
+	_reset_to_empty_document("part")
+
+
+func _do_new_assembly() -> void:
+	_reset_to_empty_document("assembly")
+
+
+func _reset_to_empty_document(kind: String) -> void:
 	if sketch_mode != null and sketch_mode.active:
 		sketch_mode.exit_sketch()
 	if sketch_mode != null and sketch_mode.active:
@@ -3582,14 +3594,17 @@ func _do_new() -> void:
 			interaction._disarm_place(false)
 		if interaction.triball != null:
 			interaction.triball.cancel()
-	view.new_document()
+	if kind == "assembly":
+		view.new_assembly()
+	else:
+		view.new_document()
 	if view.has_method("set_origin_planes_visible"):
 		view.set_origin_planes_visible(false)
 	if interaction != null and interaction.world_gizmos != null:
 		interaction.world_gizmos.set_grid_visible(false)
 	current_path = ""
 	_reset_document_tool_state()
-	# Empty part on the Top plane (XY through the origin). The Box primitive
+	# Empty shop on the Top plane (XY through the origin). The Box primitive
 	# stays on the palette; New must not insert or select a body (that armed
 	# the selection strip and ate the next click).
 	if interaction != null:
@@ -3608,7 +3623,10 @@ func _do_new() -> void:
 	if view != null and view.has_method("set_scenic_reflections"):
 		view.set_scenic_reflections(false)
 	_update_panel_visibility()
-	_on_status("New — empty part, Top plane (XY). View ▸ Timeline to edit features")
+	if kind == "assembly":
+		_on_status("New — empty assembly, origin planes, mmgs")
+	else:
+		_on_status("New — empty part, Top plane (XY). View ▸ Timeline to edit features")
 
 
 func _do_open_dialog() -> void:
@@ -3781,7 +3799,7 @@ func _reset_document_tool_state() -> void:
 
 func _on_insert_menu(id: int) -> void:
 	if id == 10:
-		_show_file_dialog(FileAction.INSERT_SXP, FileDialog.FILE_MODE_OPEN_FILE,
+		_show_file_dialog(FileAction.INSERT_SXP, FileDialog.FILE_MODE_OPEN_FILES,
 			"*.sxp ; SolidExpress")
 		return
 	if id == 20:
@@ -3849,6 +3867,9 @@ func _on_insert_menu(id: int) -> void:
 ## embedded source bodies so only the placed components show (SolidWorks-like).
 func insert_components_from(path: String, translation := Vector3.ZERO,
 		body_filter: PackedStringArray = PackedStringArray()) -> bool:
+	if path.strip_edges() == "":
+		_on_status("Insert failed: no file")
+		return false
 	var result: Dictionary = view.doc.insert_sxp(path, translation)
 	if not bool(result.get("ok", false)):
 		_on_status("Insert failed: " + str(result.get("error", path)))
@@ -3866,6 +3887,39 @@ func insert_components_from(path: String, translation := Vector3.ZERO,
 	var n: int = result.get("instance_ids", PackedStringArray()).size()
 	_on_status("Inserted %d component(s) from %s" % [n, path.get_file()])
 	return true
+
+
+func insert_components_from_paths(paths: PackedStringArray,
+		translation := Vector3.ZERO) -> int:
+	var n := 0
+	for p in paths:
+		if insert_components_from(str(p), translation):
+			n += 1
+	if paths.is_empty():
+		_on_status("Insert failed: no file")
+	return n
+
+
+func _insert_sxp_selection(paths: PackedStringArray) -> void:
+	var cleaned := PackedStringArray()
+	for p in paths:
+		if str(p).strip_edges() != "":
+			cleaned.append(str(p))
+	if cleaned.is_empty():
+		_on_status("Insert failed: no file")
+		return
+	if cleaned.size() == 1:
+		_show_insert_components_chooser(cleaned[0])
+		return
+	insert_components_from_paths(cleaned)
+
+
+func _on_files_selected(paths: PackedStringArray) -> void:
+	var action := _file_action
+	_file_action = FileAction.NONE
+	if action != FileAction.INSERT_SXP:
+		return
+	_insert_sxp_selection(paths)
 
 
 func _build_insert_components_dialog(parent: Node) -> void:
@@ -4500,7 +4554,7 @@ func _on_file_selected(path: String) -> void:
 			else:
 				_on_status("Drawing export failed (empty document?)")
 		FileAction.INSERT_SXP:
-			_show_insert_components_chooser(path)
+			_insert_sxp_selection(PackedStringArray([path]))
 		FileAction.IMPORT_DXF:
 			var fid: String = view.doc.import_dxf(path)
 			if fid == "":

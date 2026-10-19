@@ -570,6 +570,15 @@ String SxDocument::exactness_report(const String& body_id) const {
 
 uint64_t SxDocument::revision() const { return doc_->revision(); }
 
+String SxDocument::kind() const {
+    return doc_->kind() == sx::Document::Kind::Assembly ? "assembly" : "part";
+}
+
+void SxDocument::set_kind(const String& kind) {
+    doc_->set_kind(to_std(kind) == "assembly" ? sx::Document::Kind::Assembly
+                                             : sx::Document::Kind::Part);
+}
+
 Ref<ArrayMesh> SxDocument::get_mesh(const String& body_id) const {
     Ref<ArrayMesh> mesh;
     mesh.instantiate();
@@ -2682,6 +2691,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("exactness_report", "body_id"), &SxDocument::exactness_report,
                          DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("revision"), &SxDocument::revision);
+    ClassDB::bind_method(D_METHOD("kind"), &SxDocument::kind);
+    ClassDB::bind_method(D_METHOD("set_kind", "kind"), &SxDocument::set_kind);
     ClassDB::bind_method(D_METHOD("get_mesh", "body_id"), &SxDocument::get_mesh);
     ClassDB::bind_method(D_METHOD("section_cap_mesh", "body_id", "point", "normal"),
                          &SxDocument::section_cap_mesh);

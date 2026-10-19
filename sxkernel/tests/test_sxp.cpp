@@ -63,6 +63,34 @@ TEST_CASE("load_sxp fails cleanly on nonsense", "[sxp]") {
     REQUIRE(!load_sxp(doc, f.path, &err));
 }
 
+TEST_CASE("sxp round-trips Document::Kind", "[sxp]") {
+    TmpFile assembly_file("kind-assembly.sxp");
+    Document assembly;
+    assembly.set_kind(Document::Kind::Assembly);
+    std::string err;
+    REQUIRE(save_sxp(assembly, assembly_file.path, &err));
+
+    Document loaded_assembly;
+    REQUIRE(load_sxp(loaded_assembly, assembly_file.path, &err));
+    REQUIRE(loaded_assembly.kind() == Document::Kind::Assembly);
+
+    TmpFile part_file("kind-part.sxp");
+    Document part;
+    REQUIRE(part.kind() == Document::Kind::Part);
+    REQUIRE(save_sxp(part, part_file.path, &err));
+    Document loaded_part;
+    REQUIRE(load_sxp(loaded_part, part_file.path, &err));
+    REQUIRE(loaded_part.kind() == Document::Kind::Part);
+
+    TmpFile legacy("kind-legacy.sxp");
+    Document box;
+    box.add_body(shape::make_box(1, 1, 1), "Box");
+    REQUIRE(save_sxp(box, legacy.path, &err));
+    Document loaded_legacy;
+    REQUIRE(load_sxp(loaded_legacy, legacy.path, &err));
+    REQUIRE(loaded_legacy.kind() == Document::Kind::Part);
+}
+
 TEST_CASE("save then load twice is stable", "[sxp]") {
     TmpFile f1("stable1.sxp");
     TmpFile f2("stable2.sxp");

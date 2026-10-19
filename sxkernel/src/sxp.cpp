@@ -40,6 +40,7 @@ bool save_sxp(const Document& doc, const std::string& path, std::string* err) {
     json manifest;
     manifest["format"] = "sxp";
     manifest["version"] = kFormatVersion;
+    manifest["kind"] = doc.kind() == Document::Kind::Assembly ? "assembly" : "part";
     manifest["bodies"] = json::array();
 
     bool ok = true;
@@ -171,6 +172,8 @@ bool load_sxp(Document& doc, const std::string& path, std::string* err) {
         if (err) *err = "not an sxp file";
         return false;
     }
+    const std::string kind_s = manifest.value("kind", "part");
+    doc.set_kind(kind_s == "assembly" ? Document::Kind::Assembly : Document::Kind::Part);
 
     // Clear existing bodies before loading (also cascades instance removal).
     for (const auto& id : doc.body_ids()) doc.remove_body(id);

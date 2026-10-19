@@ -1,0 +1,3 @@
+script=tests/run_rung08_insert.gd
+tier=ci
+timeout=180

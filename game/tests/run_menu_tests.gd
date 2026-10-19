@@ -78,6 +78,7 @@ func test_file_menu_ids(main) -> void:
 	var labels: Dictionary = main.file_menu_id_labels()
 	var want := {
 		0: "New",
+		16: "New Assembly",
 		1: "Open...",
 		2: "Save",
 		3: "Save As...",

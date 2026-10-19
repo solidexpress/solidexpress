@@ -2472,9 +2472,11 @@ func load_from(path: String) -> bool:
 	return ok
 
 
-func new_document() -> void:
+func new_document(kind := "part") -> void:
 	doc = SxDocument.new()
 	units = "mmgs"
+	if doc.has_method("set_kind"):
+		doc.set_kind("assembly" if kind == "assembly" else "part")
 	OriginPlanes.seed(doc)
 	clear_selection()
 	hidden_bodies.clear()
@@ -2482,6 +2484,10 @@ func new_document() -> void:
 	_clipboard_paste_count = 0
 	_clipboard_cut = false
 	_after_mutation()
+
+
+func new_assembly() -> void:
+	new_document("assembly")
 
 
 # --- rendering ---

@@ -344,6 +344,19 @@ func _click_at(vp: Viewport, pos: Vector2, as_double: bool) -> void:
 
 
 func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
+	var named := str(req.get("target", "")).strip_edges()
+	if kind != "hover" and named == "file:NewAssembly":
+		var main := _main()
+		if main != null and main.has_method("_do_new_assembly"):
+			main._do_new_assembly()
+			return {"target": named}
+		return {"error": "New Assembly unavailable"}
+	if kind != "hover" and named == "insert:Components":
+		var main := _main()
+		if main != null and main.has_method("_on_insert_menu"):
+			main._on_insert_menu(10)
+			return {"target": named}
+		return {"error": "Insert Components unavailable"}
 	if kind != "hover" and req.has("datum"):
 		var name := str(req["datum"])
 		var ix = _main().get("interaction")
@@ -1358,6 +1371,16 @@ func _cmd_dialog_commit(req: Dictionary) -> Dictionary:
 	var dlg: FileDialog = _main().get("file_dialog")
 	if dlg == null or not dlg.visible:
 		return {"error": "file dialog is not open"}
+	var multi: Variant = req.get("files", [])
+	if typeof(multi) == TYPE_ARRAY and (multi as Array).size() > 0:
+		var paths := PackedStringArray()
+		for item in multi:
+			paths.append(str(item))
+		dlg.hide()
+		var main := _main()
+		if main != null and main.has_method("insert_components_from_paths"):
+			main.insert_components_from_paths(paths)
+		return {"files": paths.size()}
 	var path := str(req.get("path", ""))
 	var filename := str(req.get("file", ""))
 	if path != "":
@@ -1547,6 +1570,7 @@ func _state_full() -> Dictionary:
 		"trace_cursor": _trace.size(),
 		"dialogs": _dialog_state(),
 		"units": _document_units(view),
+		"kind": _document_kind(view),
 		"datums": _datums_state(view),
 	}
 
@@ -1555,6 +1579,12 @@ func _document_units(view) -> String:
 	if view == null:
 		return ""
 	return str(view.get("units"))
+
+
+func _document_kind(view) -> String:
+	if view == null or view.doc == null or not view.doc.has_method("kind"):
+		return "part"
+	return str(view.doc.kind())
 
 
 func _datums_state(view) -> Array:

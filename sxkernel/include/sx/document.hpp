@@ -53,8 +53,13 @@ struct Body {
 
 class Document {
 public:
+    enum class Kind { Part, Assembly };
+
     Document();
     ~Document();
+
+    Kind kind() const { return kind_; }
+    void set_kind(Kind k);
 
     // --- bodies ---
     // Registers a body: assigns EntityIds to the body and all faces/edges/vertices,
@@ -262,6 +267,7 @@ private:
     std::unique_ptr<CardRegistry> cards_;
     std::unique_ptr<FeatureGraph> graph_;
     uint64_t revision_ = 0;
+    Kind kind_ = Kind::Part;
 };
 
 }  // namespace sx

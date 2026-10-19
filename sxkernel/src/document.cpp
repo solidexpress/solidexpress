@@ -73,6 +73,12 @@ Document::Document()
 }
 Document::~Document() = default;
 
+void Document::set_kind(Kind k) {
+    if (kind_ == k) return;
+    kind_ = k;
+    bump_revision();
+}
+
 void Document::set_graph(FeatureGraph g) {
     graph_ = std::make_unique<FeatureGraph>(std::move(g));
     bump_revision();
