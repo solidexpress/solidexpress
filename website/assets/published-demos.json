@@ -1,14 +1,19 @@
 [
   "ubc_wrench",
-  "sketch_tools",
-  "tutor1",
-  "fillet_chain_pocket",
-  "revolve_washer",
-  "loft_guide_rail",
-  "triball_hole_circle",
-  "hexkey",
-  "sketch_edit_in_out",
   "pliers_motion",
   "flanged_pipe",
-  "open_in_slicer"
+  "loft_guide_rail",
+  "sketch_tools",
+  "sketch_edit_in_out",
+  "tutor1",
+  "extrude_through_all",
+  "hole_wizard_m6",
+  "fillet_chain_pocket",
+  "revolve_washer",
+  "hexkey",
+  "triball_hole_circle",
+  "drawing_follows_model",
+  "open_in_slicer",
+  "candlestick",
+  "spanner"
 ]
