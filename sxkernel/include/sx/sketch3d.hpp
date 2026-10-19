@@ -33,8 +33,9 @@ std::vector<std::array<double, 3>> sketch3d_path(const Sketch3D& s);
 int convert_edges_to_sketch(Document& doc, const EntityId& sketch_fid,
                             const std::vector<EntityId>& edge_ids, std::string* err = nullptr);
 
-// One external construction line for a model edge. Null when the edge is not
-// a planar line. A second call for the same edge returns the existing entity.
+// One external construction entity for a model edge (line, circle/arc, or
+// in-plane BSpline/Bezier spline). Null when the type is unsupported. A
+// second call for the same edge returns the existing entity.
 EntityId add_external_edge(Document& doc, const EntityId& sketch_fid,
                            const EntityId& edge_id);
 

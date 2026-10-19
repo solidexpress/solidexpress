@@ -373,6 +373,10 @@ EntityId Sketch::add_constraint(ConstraintType type, std::vector<PointRef> refs,
                     c.locked = {params_[e->params[0]], params_[e->params[1]]};
                 else
                     c.locked = {params_[e->params[0]], params_[e->params[1]], params_[e->params[2]]};
+            } else if (e->type == SketchEntityType::Spline) {
+                c.locked.clear();
+                for (size_t i = 1; i < e->params.size(); ++i)
+                    c.locked.push_back(params_[e->params[i]]);
             }
         }
     }
@@ -1562,6 +1566,15 @@ EntityId Sketch::project_arc_edge(const std::array<double, 3>& center, double ra
         if (ea <= sa) ea += 2.0 * kPi;
     }
     EntityId id = add_arc(uc[0], uc[1], radius, sa, ea);
+    set_external(id, true, edge_id);
+    add_constraint(ConstraintType::Fix, {{id, PointRole::Self}}, 0.0, true);
+    return id;
+}
+
+EntityId Sketch::project_spline_edge(const std::vector<std::array<double, 2>>& fit_points,
+                                     const std::string& edge_id) {
+    EntityId id = add_spline(fit_points);
+    if (id.is_null()) return {};
     set_external(id, true, edge_id);
     add_constraint(ConstraintType::Fix, {{id, PointRole::Self}}, 0.0, true);
     return id;

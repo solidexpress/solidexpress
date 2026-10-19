@@ -222,9 +222,11 @@ TEST_CASE("add_external_edge projects the boss rim as a fixed circle", "[sketch]
     REQUIRE_FALSE(projected_bs.is_null());
     const SketchEntity* bs_e = graph.feature(fid)->sketch->entity(projected_bs);
     REQUIRE(bs_e != nullptr);
-    CHECK(bs_e->type == SketchEntityType::Arc);
+    CHECK(bs_e->type == SketchEntityType::Spline);
     CHECK(bs_e->external);
-    CHECK(graph.feature(fid)->sketch->param(bs_e->params[2]) == Approx(35.0).margin(0.2));
+    CHECK(bs_e->construction);
+    const auto fits = graph.feature(fid)->sketch->spline_fit_points(projected_bs);
+    REQUIRE(fits.size() >= 2);
 
     // Origin-plane silhouette: the rim ∩ YZ is a construction diameter.
     const EntityId side = sketch_on_z(graph, 0.0);

@@ -244,6 +244,9 @@ public:
     EntityId project_arc_edge(const std::array<double, 3>& center, double radius,
                               const std::array<double, 3>& a, const std::array<double, 3>& b,
                               double span, const std::string& edge_id);
+    // In-plane BSpline/Bezier Convert: interpolating fit points in sketch UV.
+    EntityId project_spline_edge(const std::vector<std::array<double, 2>>& fit_points,
+                                 const std::string& edge_id);
 
     // Update external entity geometry from new 3D edge data (associative regen).
     bool update_projected_line(const EntityId& id, const std::array<double, 3>& a,

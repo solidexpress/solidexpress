@@ -210,6 +210,7 @@ func _convert_edge(ctx: Context, uv: Vector2) -> String:
 	convert_ctx.doc = ctx.doc
 	convert_ctx.view = ctx.view
 	convert_ctx.plane = ctx.plane
+	convert_ctx.sketch = ctx.sketch
 	convert_ctx.host_face_id = ctx.host_face_id
 	convert_ctx.support_host = ctx.support_host
 	convert_ctx.support_normal = ctx.support_normal

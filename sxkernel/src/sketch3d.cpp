@@ -1,12 +1,16 @@
 #include "sx/sketch3d.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <unordered_map>
+#include <vector>
 
 #include <BRepAdaptor_Curve.hxx>
 #include <GeomAPI_IntCS.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <GeomAbs_CurveType.hxx>
+#include <Geom_BezierCurve.hxx>
+#include <Geom_BSplineCurve.hxx>
 #include <Geom_Circle.hxx>
 #include <Geom_Plane.hxx>
 #include <TopExp.hxx>
@@ -270,11 +274,55 @@ EntityId dispatch_fitted(Sketch* sketch, const BRepAdaptor_Curve& curve, const S
     return project_fitted_arc(sketch, curve, plane, edge);
 }
 
+// Copy the kernel curve type: in-plane BSpline/Bezier → sketch Spline through
+// samples on the edge (interpolating fit, 1e-6). Do not fit a circular arc.
+EntityId project_spline(Sketch* sketch, const BRepAdaptor_Curve& curve, const SketchPlane& plane,
+                        const std::string& edge) {
+    const double t0 = curve.FirstParameter();
+    const double t1 = curve.LastParameter();
+    if (std::abs(t1 - t0) < 1e-12) return {};
+    int n = 8;
+    if (curve.GetType() == GeomAbs_BSplineCurve) {
+        Handle(Geom_BSplineCurve) bs = curve.BSpline();
+        if (!bs.IsNull()) n = std::max(8, bs->NbPoles());
+    } else if (curve.GetType() == GeomAbs_BezierCurve) {
+        Handle(Geom_BezierCurve) bz = curve.Bezier();
+        if (!bz.IsNull()) n = std::max(8, bz->NbPoles());
+    } else {
+        return {};
+    }
+    n = std::min(n, 64);
+    std::vector<std::array<double, 2>> fits;
+    fits.reserve(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const double t = t0 + (t1 - t0) * (static_cast<double>(i) / (n - 1));
+        const gp_Pnt p = curve.Value(t);
+        if (plane_gap(plane, p) > 0.05) return {};
+        const auto uv = curve_uv(plane, p);
+        if (!fits.empty()) {
+            const double du = uv[0] - fits.back()[0];
+            const double dv = uv[1] - fits.back()[1];
+            if (du * du + dv * dv < 1e-18) continue;
+        }
+        fits.push_back(uv);
+    }
+    if (fits.size() < 2) return {};
+    const EntityId added = sketch->project_spline_edge(fits, edge);
+    if (added.is_null()) return {};
+    sketch->set_construction(added, true);
+    return added;
+}
+
+EntityId dispatch_spline(Sketch* sketch, const BRepAdaptor_Curve& curve, const SketchPlane& plane,
+                         const std::string& edge) {
+    return project_spline(sketch, curve, plane, edge);
+}
+
 const std::unordered_map<GeomAbs_CurveType, ExternalProjector> kProjectors = {
     {GeomAbs_Line, dispatch_line},
     {GeomAbs_Circle, dispatch_circle},
-    {GeomAbs_BSplineCurve, dispatch_fitted},
-    {GeomAbs_BezierCurve, dispatch_fitted},
+    {GeomAbs_BSplineCurve, dispatch_spline},
+    {GeomAbs_BezierCurve, dispatch_spline},
     {GeomAbs_Ellipse, dispatch_fitted},
 };
 

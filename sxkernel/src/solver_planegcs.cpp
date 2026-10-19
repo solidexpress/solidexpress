@@ -570,6 +570,18 @@ struct Xlate {
                     }
                     return true;
                 }
+                auto sit = splines.find(c.refs[0].entity);
+                if (sit != splines.end() && c.locked.size() >= 2 * sit->second.poles.size()) {
+                    for (size_t i = 0; i < sit->second.poles.size(); ++i) {
+                        dim_values.push_back(c.locked[2 * i]);
+                        sys.addConstraintCoordinateX(sit->second.poles[i], &dim_values.back(), tag,
+                                                    drv);
+                        dim_values.push_back(c.locked[2 * i + 1]);
+                        sys.addConstraintCoordinateY(sit->second.poles[i], &dim_values.back(), tag,
+                                                    drv);
+                    }
+                    return true;
+                }
                 return false;
             }
             case ConstraintType::Concentric: {

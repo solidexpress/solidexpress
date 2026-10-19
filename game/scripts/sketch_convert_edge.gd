@@ -8,9 +8,10 @@ const PROJECTORS := {
 	"line": "Convert: external line",
 	"circle": "Convert: external circle",
 	"arc": "Convert: external arc",
+	"spline": "Convert: external spline",
 }
 const NOT_ON_FACE := "Convert: edge is not on this face"
-const NOT_SUPPORTED := "Convert: edge type not supported (line, circle, or arc)"
+const NOT_SUPPORTED := "Convert: edge type not supported (line, circle, arc, or spline)"
 const SILHOUETTE := "Convert: silhouette"
 
 ## A click this close to a boundary of the sketch face projects that edge.
@@ -33,6 +34,8 @@ class Context:
 	## Session pulls the graph sketch (where the external entity landed) back
 	## into the editor sketch. Offset and Convert share this one hook.
 	var adopt: Callable
+	## Optional: used to name the Convert status from the entity type.
+	var sketch: SxSketch
 
 
 var _ctx: Context
@@ -85,7 +88,7 @@ func click(uv: Vector2) -> String:
 		if ctx.adopt.is_valid():
 			ctx.adopt.call()
 		ctx.commit.call("Convert")
-		ctx.status.call(_added_status(lines, on_face))
+		ctx.status.call(_added_status(id, lines, on_face))
 		return id
 	var other := _nearest(lines, face_edges, ctx.plane, uv, OTHER_TOL, false)
 	if other != "":
@@ -123,7 +126,10 @@ func _origin_silhouette(uv: Vector2) -> String:
 	if ctx.adopt.is_valid():
 		ctx.adopt.call()
 	ctx.commit.call("Convert")
-	ctx.status.call(SILHOUETTE)
+	if str(_entity_kind(id)) == "spline":
+		ctx.status.call(PROJECTORS.spline)
+	else:
+		ctx.status.call(SILHOUETTE)
 	return id
 
 
@@ -146,9 +152,17 @@ func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
 	return p.distance_to(a + ab * t)
 
 
-func _added_status(lines: Dictionary, edge_id: String) -> String:
-	var kind := _edge_kind(lines, edge_id)
-	return str(PROJECTORS.get(kind, PROJECTORS.line))
+func _entity_kind(id: String) -> String:
+	if _ctx == null or _ctx.sketch == null or id == "":
+		return ""
+	return str(_ctx.sketch.entity_info(id).get("type", ""))
+
+
+func _added_status(id: String, lines: Dictionary, edge_id: String) -> String:
+	var kind := _entity_kind(id)
+	if PROJECTORS.has(kind):
+		return str(PROJECTORS[kind])
+	return str(PROJECTORS.get(_edge_kind(lines, edge_id), PROJECTORS.line))
 
 
 func _edge_kind(lines: Dictionary, edge_id: String) -> String:

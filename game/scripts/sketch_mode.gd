@@ -6330,6 +6330,7 @@ func _convert_silhouette_at(uv: Vector2) -> String:
 	ctx.doc = view.doc
 	ctx.view = view
 	ctx.plane = plane
+	ctx.sketch = sketch
 	ctx.host_face_id = host_face_id
 	ctx.support_host = support_host
 	ctx.support_normal = support_normal
