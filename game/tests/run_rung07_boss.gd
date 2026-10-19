@@ -168,8 +168,8 @@ func _sketch_c(ctx: FilmContext) -> void:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	await SpannerFixture.click(ctx, pick, "Trim opening")
 	await process_frame
-	check(_count_type(sm, "ellipse") == 0, "no full ellipse left")
-	check(_count_type(sm, "elliptical_arc") == 1, "C is an elliptical arc")
+	check(SpannerFixture.count_type(sm, "ellipse") == 0, "no full ellipse left")
+	check(SpannerFixture.count_type(sm, "elliptical_arc") == 1, "C is an elliptical arc")
 
 
 func _sketch_ring(ctx: FilmContext) -> void:
@@ -214,13 +214,3 @@ func _collect_edges(doc: SxDocument, body: String, xys: Array, want_len: float) 
 			seen[eid] = true
 			out.append(eid)
 	return out
-
-
-func _count_type(sm: SketchMode, kind: String) -> int:
-	var n := 0
-	for id in sm.sketch.entity_ids():
-		if sm.sketch.is_construction(id):
-			continue
-		if str(sm.sketch.entity_info(id).get("type", "")) == kind:
-			n += 1
-	return n

@@ -9,7 +9,6 @@ const FilmSteps = preload("res://tests/lib/film_steps.gd")
 const PipeFixture = preload("res://tests/lib/pipe_fixture.gd")
 const SpannerFixture = preload("res://tests/lib/spanner_fixture.gd")
 
-const PLATE_X := 240.0
 const PLATE_HALF_Y := 20.0
 const POCKET := Rect2(100.0, -8.0, 40.0, 16.0)
 const PROBE := Vector3(120.0, 0.0, 2.5)
@@ -59,7 +58,7 @@ func _stub(ctx: FilmContext) -> void:
 	await process_frame
 	var sm: SketchMode = ctx.main.sketch_mode
 	check(sm.active, "Front sketch is active")
-	_rect(sm, Rect2(0.0, -PLATE_HALF_Y, PLATE_X, PLATE_HALF_Y * 2.0))
+	_rect(sm, Rect2(0.0, -PLATE_HALF_Y, SpannerFixture.mm("CENTER"), PLATE_HALF_Y * 2.0))
 	var thick := SpannerFixture.mm("HANDLE_T")
 	sm.finish_extrude(thick, "new", "midplane")
 	for _i in 12:
