@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6 — 2026-10-19
+
+- Combination spanner from "How to Sketch Combination Spanner in Solidworks" (ladder rung 7: angled construction axis, ellipse, 12-point box end from two trimmed hexes, mid-plane extrudes, neck fillets, offset recess mirrored to both faces) is now fully makeable end to end, with all rung 1 through 6 walks still passing.
+
 ## 0.1.5 — 2026-10-17
 
 - SolidWorks Revolve & Sweep candlestick (ladder rung 6: revolve, swept boss along an arc path with an ellipse section, drafted cut) is now fully makeable end to end, with all rung 1 through 5 walks still passing.
