@@ -799,6 +799,18 @@ class WalkUI07(WalkChrome):
                 continue
             seen.add(eid)
             notes.append(self.convert_at((x, y, float(mid[2])))["status"])
+        if not any("external arc" in n.lower() for n in notes):
+            for x, y in (
+                (28.0, 18.0),
+                (28.0, -18.0),
+                (215.0, 16.0),
+                (215.0, -16.0),
+                (23.0, 14.0),
+                (23.0, -14.0),
+                (226.9, 14.0),
+                (226.9, -14.0),
+            ):
+                notes.append(self.convert_at((x, y, z))["status"])
         return notes
 
     def draw_recess_racetrack(self) -> None:

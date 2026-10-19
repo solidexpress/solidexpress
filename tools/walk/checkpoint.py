@@ -4,10 +4,22 @@ checkpoint_reload is rung 2's chunk start.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from sxdrive import SxError
 from walk.harness import RowAbort
 from walk.rung import Rung
+
+
+def resolve_open_parts(out, name: str) -> tuple[str, str]:
+    """Directory + basename for File→Open.
+
+    Nested `ckpts/<row>.sxp` cannot be a FileDialog *file* name: the list
+    only shows entries in `current_dir`. Open the parent folder instead.
+    """
+    raw = Path(name)
+    path = raw if raw.is_absolute() else Path(out) / name
+    return str(path.parent), path.name
 
 
 @dataclass(frozen=True)

@@ -340,6 +340,23 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertIsNone(no_ckpt.restore_chunk)
         self.assertEqual(no_ckpt.replay, ("N1", "A1", "A10", "L2", "A11"))
 
+    def test_resume_open_uses_ckpt_parent_dir(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from walk.checkpoint import resolve_open_parts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ck = Path(tmp) / "ckpts"
+            ck.mkdir()
+            (ck / "A23.sxp").write_text("sxp", encoding="utf-8")
+            directory, filename = resolve_open_parts(tmp, "ckpts/A23.sxp")
+            self.assertEqual(filename, "A23.sxp")
+            self.assertEqual(Path(directory), ck)
+            abs_dir, abs_name = resolve_open_parts(tmp, str(ck / "A23.sxp"))
+            self.assertEqual(abs_name, "A23.sxp")
+            self.assertEqual(Path(abs_dir), ck)
+
     def test_click_budget_counts_press_and_key(self) -> None:
         from walk.click_budget import check_log, count_trace
 

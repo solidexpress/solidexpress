@@ -90,10 +90,13 @@ class WalkGestures(Walk):
         self.click(f"popup:{item}")
         self.refresh("finish", "status", "popups")
 
-    def commit_dialog(self, name: str | None = None, set_dir: bool = True) -> dict:
+    def commit_dialog(self, name: str | None = None, set_dir: bool = True,
+                      directory: str | None = None) -> dict:
         """Set the file dialog path and press its real OK, then the overwrite OK."""
         fields: dict = {}
-        if set_dir:
+        if directory:
+            fields["path"] = directory
+        elif set_dir:
             fields["path"] = str(self.out)
         if name:
             fields["file"] = name
@@ -159,16 +162,33 @@ class WalkGestures(Walk):
         raise SxError(f"export_3mf {name} failed after retries: {last_err}")
 
     def open_file(self, name: str) -> None:
-        self.menu("File", "Open...")
-        self.refresh("popups", "status")
-        snap = self.d.state(filter="dialogs")
-        dialogs = snap.get("dialogs") or {}
-        if dialogs.get("discard_visible") or self.has_popup("Discard"):
-            self.click("dialog:DiscardOk")
-            self.d.wait_idle(frames=2)
-        reply = self.commit_dialog(name)
-        if reply.get("visible"):
-            raise SxError(f"Open dialog stayed open status={self.S()!r}")
+        from walk.checkpoint import resolve_open_parts
+
+        directory, filename = resolve_open_parts(self.out, name)
+        last_err = ""
+        for attempt in range(3):
+            try:
+                self.dismiss_modals()
+                self.menu("File", "Open...")
+                self.refresh("popups", "status")
+                snap = self.d.state(filter="dialogs")
+                dialogs = snap.get("dialogs") or {}
+                if dialogs.get("discard_visible") or self.has_popup("Discard"):
+                    self.click("dialog:DiscardOk")
+                    self.d.wait_idle(frames=2)
+                reply = self.commit_dialog(filename, directory=directory)
+                if not reply.get("visible"):
+                    return
+                last_err = f"Open dialog stayed open status={self.S()!r}"
+                self.dismiss_modals()
+            except SxError as exc:
+                last_err = str(exc)
+                try:
+                    self.dismiss_modals()
+                except SxError:
+                    pass
+            time.sleep(0.4 * (attempt + 1))
+        raise SxError(f"open_file {name} failed after retries: {last_err}")
 
     def file_new(self, discard: str | None = None) -> None:
         self.menu("File", "New")

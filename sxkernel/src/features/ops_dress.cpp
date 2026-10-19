@@ -626,6 +626,16 @@ bool fuse_concave_z_fillet(const TopoDS_Shape& shape, const TopoDS_Edge& edge, d
         else
             return false;
     }
+    // Merge the wedge cap with the handle top so Convert sees R30/R20 arcs
+    // as edges of that face (A28), not as a foreign coplanar cap.
+    try {
+        ShapeUpgrade_UnifySameDomain unif(fused, true, true, true);
+        unif.SetLinearTolerance(1e-6);
+        unif.SetAngularTolerance(1e-4);
+        unif.Build();
+        if (!unif.Shape().IsNull()) fused = unif.Shape();
+    } catch (...) {
+    }
     out = fused;
     return true;
 }
@@ -814,8 +824,17 @@ TopoDS_Shape clip_result_to_start_aabb(const TopoDS_Shape& start, const TopoDS_S
     if (!shape::is_valid(clipped)) {
         std::string report;
         TopoDS_Shape healed = interop::heal_shape(clipped, &report);
-        if (!healed.IsNull() && shape::volume(healed) > 1.0) return healed;
-        return result;
+        if (!healed.IsNull() && shape::volume(healed) > 1.0) clipped = healed;
+        else
+            return result;
+    }
+    try {
+        ShapeUpgrade_UnifySameDomain unif(clipped, true, true, true);
+        unif.SetLinearTolerance(1e-6);
+        unif.SetAngularTolerance(1e-4);
+        unif.Build();
+        if (!unif.Shape().IsNull()) clipped = unif.Shape();
+    } catch (...) {
     }
     return clipped;
 }
@@ -861,15 +880,17 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             !any_neck_z_edge(resolved, asked))
             return ctx.fail(limit_msg());
         std::string fault;
-        // MakeFillet can succeed on the 6 mm crotch and still grow Y past the
-        // ellipse (T-points sit outside the convex neighbour). Prefer the
-        // void-angle wedge, which clip_to_body_aabb keeps inside the boss box.
-        if (!(any_neck_z_edge(resolved, asked) &&
-              fuse_concave_z_fillets(tb->shape, resolved, asked, result)) &&
-            !build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
+        const bool neck = any_neck_z_edge(resolved, asked);
+        // MakeFillet leaves circular arcs on the handle-top face, which A28
+        // Convert needs (two lines + R30 + R20). The void-angle fuse is the
+        // fallback when OCCT refuses R30 on 6 mm. Either path is clipped to
+        // the start AABB so a T-point spike cannot grow Y past the ellipse.
+        if (!build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
             TopoDS_Shape recovered;
             std::string fault2;
-            if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
+            if (neck && fuse_concave_z_fillets(tb->shape, resolved, asked, recovered))
+                result = recovered;
+            else if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
                 result = recovered;
             else if (fuse_concave_z_fillets(tb->shape, resolved, asked, recovered))
                 result = recovered;
@@ -885,7 +906,7 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             }
         }
         remember_face_cues(ctx, *tb, resolved);
-        if (any_neck_z_edge(resolved, asked))
+        if (neck)
             result = clip_result_to_start_aabb(tb->shape, result);
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
