@@ -357,8 +357,14 @@ static func select_pair(ctx: FilmContext, first: Vector2, second: Vector2, desc:
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	if _failed():
 		return
+	if sm != null:
+		sm.selected.clear()
 	await click(ctx, first, "%s first" % desc, span_at(first))
+	await FilmUI.wait_frames(ctx.tree, 2)
+	await FilmActor.of(ctx).zoom_to(sm.to_model(second) if sm != null else Vector3(second.x, second.y, 0.0),
+			span_at(second), "Frame %s second" % desc)
 	await shift_click_uv(ctx, second, "%s second" % desc)
+	await FilmUI.wait_frames(ctx.tree, 4)
 
 
 ## Chip on the action bar (walk click_verb). Never the S marking menu.
@@ -366,32 +372,47 @@ static func constrain_chip(ctx: FilmContext, name: String, first: Vector2, secon
 	await select_pair(ctx, first, second, name)
 	if _failed():
 		return
-	await _click_action_chip(ctx, name)
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm != null and sm.selected.size() < 2:
+		await click(ctx, first + Vector2(3, 0), "%s first nudge" % name, span_at(first))
+		await shift_click_uv(ctx, second + Vector2(-3, 0), "%s second nudge" % name)
+		await FilmUI.wait_frames(ctx.tree, 4)
+	await _click_action_chip(ctx, name, name != "Coincident")
 
 
-static func _click_action_chip(ctx: FilmContext, name: String) -> void:
+static func _click_action_chip(ctx: FilmContext, name: String, required: bool = true) -> void:
+	await FilmUI.wait_frames(ctx.tree, 6)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var chip := FilmUI.find_button(chrome, name) if chrome != null else null
+	var bar: Node = chrome.find_child("ActionBar", true, false) if chrome != null else null
+	var chip := FilmUI.find_button(bar, name) if bar != null else null
+	if chip == null or not chip.is_visible_in_tree():
+		chip = FilmUI.find_button(chrome, name) if chrome != null else null
 	if chip == null or not chip.is_visible_in_tree():
 		chip = FilmUI.find_button(ctx.main, name)
 	if chip != null and chip.is_visible_in_tree():
 		await FilmUI.click_control(ctx, chip, FilmUICues.alert(name, name))
 		await FilmUI.wait_frames(ctx.tree, 2)
 		return
-	var more := FilmUI.find_button(chrome, "… More") if chrome != null else null
+	var more := FilmUI.find_button(bar, "… More") if bar != null else null
+	if more == null:
+		more = FilmUI.find_button(chrome, "… More") if chrome != null else null
 	if more is MenuButton:
 		var popup := (more as MenuButton).get_popup()
 		var more_id := -1
 		if popup != null:
+			if not popup.visible:
+				(more as MenuButton).show_popup()
+				await FilmUI.wait_frames(ctx.tree, 2)
 			for i in popup.item_count:
-				if str(popup.get_item_text(i)) == name:
+				if str(popup.get_item_text(i)).nocasecmp_to(name) == 0:
 					more_id = i
 					break
 		if more_id >= 0:
 			await FilmUI.activate_menu_id(ctx, more as MenuButton, more_id, FilmUICues.alert(name, name))
 			await FilmUI.wait_frames(ctx.tree, 2)
 			return
-	FilmUI._fail("%s chip is hidden" % name)
+	if required:
+		FilmUI._fail("%s chip is hidden" % name)
 
 
 static func mirror_entities(ctx: FilmContext, axis_uv: Vector2, geom_uv: Vector2, confirm_uv: Vector2) -> void:
@@ -525,7 +546,8 @@ static func sketch_front_c(ctx: FilmContext) -> void:
 	await constrain_chip(ctx, "Parallel", axis_17(), jaw_mid)
 	if _failed():
 		return
-	await coincident_on_curve(ctx, o_hi, ellipse_major_uv())
+	# Point on the curve, not the major tip (that pick is the same vertex as the jaw).
+	await coincident_on_curve(ctx, o_hi, world(mm("ELLIPSE_MIN") * 0.4, mm("ELLIPSE_MAJ") * 0.27))
 	if _failed():
 		return
 	await dim_one(ctx, ellipse_major_uv(), mm_text("ELLIPSE_MAJ"))
