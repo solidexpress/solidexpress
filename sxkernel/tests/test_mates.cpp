@@ -439,3 +439,56 @@ TEST_CASE("concentric offset 0 colinearizes two cylinder instances", "[mates]") 
         CHECK(d2.Crossed(gp_Vec(ax_a->dir)).Magnitude() < 1e-6);
     }
 }
+
+TEST_CASE("solver holds concentric and coincident in either order", "[mates][solver]") {
+    auto build = [](bool concentric_first) {
+        Document doc;
+        CommandStack stack;
+        auto plate = doc.add_body(shape::make_box(80, 80, 10), "Plate");
+        auto drill = doc.add_body(shape::make_cylinder(6, 10, {{40, 40, 0}}), "Drill");
+        stack.push(doc, std::make_unique<BooleanCommand>(plate, drill, BooleanOp::Cut));
+        auto disc = doc.add_body(shape::make_cylinder(12, 5), "Washer");
+        auto bore = doc.add_body(shape::make_cylinder(6, 5), "Wbore");
+        stack.push(doc, std::make_unique<BooleanCommand>(disc, bore, BooleanOp::Cut));
+        auto inst = doc.add_instance(disc, {200, 40, 50}, {0, 0, 0, 1}, "Washer-1");
+        auto hole = cylindrical_face(doc, plate);
+        auto inner = cylindrical_face(doc, disc);
+        auto plate_top = planar_face_with_normal(doc, plate, gp_Dir(0, 0, 1));
+        auto wash_bot = planar_face_with_normal(doc, disc, gp_Dir(0, 0, -1));
+        REQUIRE(!hole.is_null());
+        REQUIRE(!inner.is_null());
+        REQUIRE(!plate_top.is_null());
+        REQUIRE(!wash_bot.is_null());
+
+        Mate conc;
+        conc.type = MateType::Concentric;
+        conc.face_a = hole;
+        conc.instance_b = inst;
+        conc.face_b = inner;
+        conc.offset = 0.0;
+        Mate coinc;
+        coinc.type = MateType::PlaneCoincident;
+        coinc.face_a = plate_top;
+        coinc.instance_b = inst;
+        coinc.face_b = wash_bot;
+        if (concentric_first) {
+            REQUIRE(!doc.add_mate(conc).is_null());
+            REQUIRE(!doc.add_mate(coinc).is_null());
+        } else {
+            REQUIRE(!doc.add_mate(coinc).is_null());
+            REQUIRE(!doc.add_mate(conc).is_null());
+        }
+        REQUIRE(solve_mates(doc));
+
+        auto ax = mate_axis(doc, inst, inner);
+        REQUIRE(ax);
+        gp_Vec to_hole(gp_Pnt(40, 40, ax->point.Z()), ax->point);
+        CHECK(to_hole.Crossed(gp_Vec(0, 0, 1)).Magnitude() < 1e-4);
+        double bb[6];
+        world_bbox(doc, *doc.instance(inst), bb);
+        CHECK(bb[2] == Approx(10.0).margin(1e-3));
+    };
+
+    SECTION("concentric then coincident") { build(true); }
+    SECTION("coincident then concentric") { build(false); }
+}

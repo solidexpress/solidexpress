@@ -54,6 +54,8 @@ var selected_edges: Array[String] = []
 var _offered_edge := ""
 ## Selected component instance (viewport click on an instance mesh).
 var selected_instance := ""
+## Box-select can name several instances; selected_instance is the primary.
+var selected_instances: Array[String] = []
 # World-space point of the most recent viewport pick (armed hole/ops flows).
 var last_pick_point := Vector3.ZERO
 ## Pre-selection hover (distinct from selected materials).
@@ -87,6 +89,9 @@ var _clipboard_bodies: Array[String] = []
 var _clipboard_paste_count := 0
 ## True when clipboard holds cut materializations (hidden until first paste).
 var _clipboard_cut := false
+## Copied component instances (ids + pose snapshot). Mates are not copied.
+var _clipboard_instances: Array[Dictionary] = []
+var _clipboard_instance_paste_count := 0
 
 const EDGE_PICK_TOLERANCE := 2.5  # model units (mm)
 ## Same band as EdgeScreenPick.TIE_PX. A model-point pick has no stacked twin.
@@ -1693,6 +1698,35 @@ func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D,
 		var ok := band.encloses(scr) if not crossing else band.intersects(scr)
 		if ok:
 			hits.append(id)
+	var ihits: Array[String] = []
+	for id in _instance_nodes:
+		var inode: MeshInstance3D = _instance_nodes[id]
+		if inode == null or inode.mesh == null or not inode.visible:
+			continue
+		var scr_i: Rect2 = _node_screen_aabb(inode, camera)
+		if scr_i.size == Vector2.ZERO:
+			continue
+		var ok_i := band.encloses(scr_i) if not crossing else band.intersects(scr_i)
+		if ok_i:
+			ihits.append(str(id))
+	if not ihits.is_empty():
+		if additive:
+			for id in ihits:
+				if not selected_instances.has(id):
+					selected_instances.append(id)
+		else:
+			selected_instances.assign(ihits)
+			selected_bodies.clear()
+			selected_faces.clear()
+			selected_edges.clear()
+			selected_body = ""
+			selected_face = ""
+			selected_edge = ""
+		selected_instance = selected_instances[selected_instances.size() - 1]
+		_apply_instance_highlight()
+		_apply_selection_materials()
+		selection_changed.emit("", "")
+		return
 	if not additive:
 		selected_bodies.assign(hits)
 		selected_faces.clear()
@@ -1710,7 +1744,10 @@ func select_in_rect(rect: Rect2, camera: Camera3D, model_space: Node3D,
 ## Axis-aligned screen rect covering the body's mesh AABB, or zero-size if behind.
 ## `model_space` is unused (kept for call-site symmetry with pad picks).
 func body_screen_aabb(body_id: String, camera: Camera3D, _model_space: Node3D = null) -> Rect2:
-	var node: MeshInstance3D = _body_nodes.get(body_id)
+	return _node_screen_aabb(_body_nodes.get(body_id), camera)
+
+
+static func _node_screen_aabb(node: MeshInstance3D, camera: Camera3D) -> Rect2:
 	if node == null or node.mesh == null or camera == null:
 		return Rect2()
 	var aabb := node.get_aabb()
@@ -1836,8 +1873,9 @@ func select_entity(body_id: String, face_id: String) -> void:
 	selected_bodies.assign([body_id] if body_id != "" and face_id == "" else [])
 	selected_faces.assign([face_id] if face_id != "" else [])
 	selected_edges.clear()
-	if selected_instance != "":
+	if selected_instance != "" or not selected_instances.is_empty():
 		selected_instance = ""
+		selected_instances.clear()
 		_apply_instance_highlight()
 	_apply_selection_materials()
 	_highlight_edge()
@@ -1910,6 +1948,7 @@ func set_import_scale(body_id: String, scale: float) -> bool:
 func select_instance(instance_id: String) -> void:
 	select_entity("", "")
 	selected_instance = instance_id
+	selected_instances.assign([instance_id] if instance_id != "" else [])
 	_apply_instance_highlight()
 	selection_changed.emit("", "")
 
@@ -1919,7 +1958,8 @@ func _apply_instance_highlight() -> void:
 		var node: MeshInstance3D = _instance_nodes[id]
 		if node == null:
 			continue
-		if str(id) == selected_instance:
+		var sid := str(id)
+		if sid == selected_instance or selected_instances.has(sid):
 			node.material_override = _make_material(SELECTED_BODY_COLOR)
 		else:
 			node.material_override = _instance_materials.get(id)
@@ -2256,7 +2296,7 @@ func _delete_body_ids(ids: Array[String]) -> bool:
 ## True when Paste / Paste Special have something to place.
 func has_clipboard() -> bool:
 	_prune_clipboard()
-	return not _clipboard_bodies.is_empty()
+	return not _clipboard_bodies.is_empty() or not _clipboard_instances.is_empty()
 
 
 func _prune_clipboard() -> void:
@@ -2270,6 +2310,14 @@ func _prune_clipboard() -> void:
 	_clipboard_bodies = keep
 	if _clipboard_bodies.is_empty():
 		_clipboard_cut = false
+	var live_i := {}
+	for inst in doc.instance_list():
+		live_i[str(inst.get("id", ""))] = true
+	var keep_i: Array[Dictionary] = []
+	for snap in _clipboard_instances:
+		if live_i.has(str(snap.get("id", ""))):
+			keep_i.append(snap)
+	_clipboard_instances = keep_i
 
 
 ## Drop hidden cut orphans when starting a fresh copy/cut.
@@ -2288,9 +2336,34 @@ func _discard_cut_orphans() -> void:
 	_clipboard_paste_count = 0
 
 
-## Remember currently selected bodies for paste. Returns how many were copied.
+## Remember currently selected bodies or instances for paste.
+## Returns how many were copied.
 func copy_selection() -> int:
 	_discard_cut_orphans()
+	var inst_ids: Array[String] = []
+	for iid in selected_instances:
+		if iid != "" and not inst_ids.has(iid):
+			inst_ids.append(iid)
+	if inst_ids.is_empty() and selected_instance != "":
+		inst_ids.append(selected_instance)
+	if not inst_ids.is_empty():
+		_clipboard_bodies.clear()
+		_clipboard_paste_count = 0
+		_clipboard_cut = false
+		_clipboard_instances.clear()
+		_clipboard_instance_paste_count = 0
+		for inst in doc.instance_list():
+			var iid := str(inst.get("id", ""))
+			if inst_ids.has(iid):
+				_clipboard_instances.append({
+					"id": iid,
+					"source_body": str(inst.get("source_body", "")),
+					"translation": inst.get("translation", Vector3.ZERO),
+					"rotation_axis": inst.get("rotation_axis", Vector3(0, 0, 1)),
+					"rotation_angle_deg": float(inst.get("rotation_angle_deg", 0.0)),
+					"name": str(inst.get("name", "inst")),
+				})
+		return _clipboard_instances.size()
 	var ids: Array[String] = []
 	for b in selected_bodies:
 		ids.append(b)
@@ -2299,6 +2372,8 @@ func copy_selection() -> int:
 	_clipboard_bodies.clear()
 	_clipboard_paste_count = 0
 	_clipboard_cut = false
+	_clipboard_instances.clear()
+	_clipboard_instance_paste_count = 0
 	var live := {}
 	for id in doc.body_ids():
 		live[id] = true
@@ -2370,11 +2445,52 @@ func clipboard_paste_step() -> Vector3:
 	return step
 
 
+## Paste copied instances: new instance of each source, offset ~30 mm, not
+## Fixed, mates not copied.
+func _paste_instances(offset := Vector3(NAN, NAN, NAN)) -> Array[String]:
+	if _clipboard_instances.is_empty():
+		return []
+	_clipboard_instance_paste_count += 1
+	var step := Vector3(30, 0, 0) * float(_clipboard_instance_paste_count)
+	if not is_nan(offset.x):
+		step = offset * float(_clipboard_instance_paste_count)
+	var created: Array[String] = []
+	for snap in _clipboard_instances:
+		var src := str(snap.get("source_body", ""))
+		if src == "":
+			continue
+		var t: Vector3 = snap.get("translation", Vector3.ZERO) + step
+		var axis: Vector3 = snap.get("rotation_axis", Vector3(0, 0, 1))
+		var ang: float = float(snap.get("rotation_angle_deg", 0.0))
+		var iname: String = str(snap.get("name", "inst")) + " copy"
+		var iid: String = doc.add_instance(src, t, axis, ang, iname)
+		if iid == "":
+			continue
+		doc.set_instance_fixed(iid, false)
+		created.append(iid)
+	if created.is_empty():
+		return []
+	selected_instance = created[created.size() - 1]
+	selected_instances.assign(created)
+	selected_body = ""
+	selected_face = ""
+	selected_edge = ""
+	selected_bodies.clear()
+	selected_faces.clear()
+	selected_edges.clear()
+	_after_mutation()
+	_apply_instance_highlight()
+	selection_changed.emit("", "")
+	return created
+
+
 ## Paste clipboard bodies. When `offset` is omitted (NaN sentinel), uses the
 ## stepped 20% ground-plane delta. Cut bodies are revealed on first paste.
 ## Returns the new (or revealed) body ids; selection is set to them.
 func paste_clipboard(offset := Vector3(NAN, NAN, NAN)) -> Array[String]:
 	_prune_clipboard()
+	if not _clipboard_instances.is_empty():
+		return _paste_instances(offset)
 	if _clipboard_bodies.is_empty():
 		return []
 
@@ -2493,6 +2609,8 @@ func load_from(path: String) -> bool:
 	_clipboard_bodies.clear()
 	_clipboard_paste_count = 0
 	_clipboard_cut = false
+	_clipboard_instances.clear()
+	_clipboard_instance_paste_count = 0
 	_after_mutation()
 	return ok
 
@@ -2508,6 +2626,8 @@ func new_document(kind := "part") -> void:
 	_clipboard_bodies.clear()
 	_clipboard_paste_count = 0
 	_clipboard_cut = false
+	_clipboard_instances.clear()
+	_clipboard_instance_paste_count = 0
 	_after_mutation()
 
 

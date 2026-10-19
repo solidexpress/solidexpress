@@ -3437,7 +3437,7 @@ func edit_copy() -> void:
 	if view == null:
 		return
 	var n2 := view.copy_selection()
-	_on_status("Copied %d" % n2 if n2 > 1 else ("Copied" if n2 == 1 else "Nothing to copy"))
+	_on_status("Copied %d" % n2 if n2 > 1 else ("Copied" if n2 == 1 else "Copy needs a selection"))
 
 
 func edit_paste() -> void:

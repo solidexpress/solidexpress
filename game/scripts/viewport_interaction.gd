@@ -5193,7 +5193,7 @@ func _gui_key(event: InputEventKey) -> bool:
 				if n > 0:
 					status.emit("Copied %d" % n if n > 1 else "Copied")
 				else:
-					status.emit("Nothing to copy")
+					status.emit("Copy needs a selection")
 				return true
 		KEY_X:
 			if event.ctrl_pressed:
@@ -7001,7 +7001,7 @@ func _on_context_id(id: int) -> void:
 			_refresh_selection_strip()
 		21:
 			var nc := view.copy_selection()
-			status.emit("Copied %d" % nc if nc > 1 else ("Copied" if nc == 1 else "Nothing to copy"))
+			status.emit("Copied %d" % nc if nc > 1 else ("Copied" if nc == 1 else "Copy needs a selection"))
 		22:
 			var made: Array = view.paste_clipboard()
 			status.emit("Pasted %d" % made.size() if made.size() > 1 else ("Pasted" if not made.is_empty() else "Clipboard empty"))

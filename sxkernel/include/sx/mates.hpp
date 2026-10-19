@@ -96,7 +96,8 @@ std::optional<MateAxis> mate_axis(const Document& doc, const EntityId& instance,
 // references are invalid or geometry is of the wrong type.
 bool apply_mate(Document& doc, const Mate& m);
 
-// Applies every mate stored on the document in insertion order.
+// Gauss-Seidel: apply every mate until instance motion per pass is < 1e-9
+// or 16 passes. False if a mate fails to apply or the last pass still moves.
 bool solve_mates(Document& doc);
 
 }  // namespace sx

@@ -8,8 +8,11 @@
 #include <gp_Quaternion.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
+#include <vector>
 
 #include "sx/document.hpp"
 #include "sx/instances.hpp"
@@ -297,9 +300,43 @@ bool apply_mate(Document& doc, const Mate& m) {
 }
 
 bool solve_mates(Document& doc) {
-    bool ok = true;
-    for (const auto& m : doc.mates()) ok = apply_mate(doc, m) && ok;
-    return ok;
+    constexpr int kMaxPasses = 16;
+    constexpr double kTol = 1e-9;
+
+    for (int pass = 0; pass < kMaxPasses; ++pass) {
+        std::vector<std::array<double, 3>> t0;
+        std::vector<std::array<double, 4>> q0;
+        t0.reserve(doc.instances().size());
+        q0.reserve(doc.instances().size());
+        for (const auto& inst : doc.instances()) {
+            t0.push_back(inst.translation);
+            q0.push_back(inst.rotation_quat);
+        }
+
+        bool ok = true;
+        for (const auto& m : doc.mates()) ok = apply_mate(doc, m) && ok;
+        if (!ok) return false;
+
+        double moved = 0.0;
+        const auto& now = doc.instances();
+        for (size_t i = 0; i < now.size(); ++i) {
+            double dt = 0.0;
+            for (int k = 0; k < 3; ++k) {
+                double d = now[i].translation[k] - t0[i][k];
+                dt += d * d;
+            }
+            dt = std::sqrt(dt);
+            double dq = 0.0;
+            for (int k = 0; k < 4; ++k) {
+                double d = now[i].rotation_quat[k] - q0[i][k];
+                dq += d * d;
+            }
+            dq = std::sqrt(dq);
+            moved = std::max(moved, std::max(dt, dq));
+        }
+        if (moved < kTol) return true;
+    }
+    return false;
 }
 
 }  // namespace sx
