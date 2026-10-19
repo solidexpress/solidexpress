@@ -56,6 +56,9 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `state.kind` | `"part"` or `"assembly"`. File → New is part; `file:NewAssembly` / File → New Assembly is assembly. |
 | `file:NewAssembly` | File → New Assembly. Empty shop, origin planes, `units = mmgs`, no seed box. Status `New — empty assembly…`. |
 | `insert:Components` | Insert → Components… (multi-file Open). `dialog_commit` `files=[…]` inserts every listed `.sxp`. An empty path refuses. |
+| `insert:NewPart` | Insert → New Part. Starts an in-context component (Edit Component on). Next origin-plane pick (Front) sketches on that part. Not the 20×20 in-context pad. |
+| `edit:Component` | Toggle Edit Component off (finalize) or refuse if nothing is being edited. Banner CheckButton `edit:Component`. |
+| `state.edit_component` | `{on, pending, instance, source}` — in-context New Part session. |
 | `mate:Add` | Add a mate by ids: `type`, `instance_a` ("" = ground), `face_a`, `instance_b`, `face_b`, optional `offset` (default 0), `flip`, `name`. Concentric offset 0 is valid. Empty `face_b` / `instance_b` refuses. Solves after add. |
 | `state.datums` | Origin plane names (`Front`, `Top`, `Right`). |
 | `state.features[].role` | Sketch pad role: `profile`, `rail`, or `unknown`. |

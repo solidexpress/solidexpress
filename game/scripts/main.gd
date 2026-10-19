@@ -7,6 +7,7 @@ const _CamRail := preload("res://scripts/cam_rail.gd")
 const _SimRail := preload("res://scripts/sim_rail.gd")
 const _PrintStrip := preload("res://scripts/print_strip.gd")
 const ChromeDock := preload("res://scripts/chrome_dock.gd")
+const _EditComponent := preload("res://scripts/edit_component.gd")
 
 var model_space: Node3D
 var view: DocumentView
@@ -56,6 +57,7 @@ var _rail_revolve: Button
 var _rail_sweep: Button
 var _rail_loft: Button
 var sweep_boss: SweepBoss
+var edit_component
 var dim_value: SpinBox
 var _datum_offset: SpinBox
 var _datum_dialog: ConfirmationDialog
@@ -544,6 +546,7 @@ func _build_ui() -> void:
 	var insert_popup := insert_btn.get_popup()
 	_style_menu_button(insert_btn)
 	insert_popup.add_item("Components…", 10)
+	insert_popup.add_item("New Part", 11)
 	insert_popup.add_separator()
 	insert_popup.add_item("Datum Plane XY", 0)
 	insert_popup.add_item("Datum Plane XZ", 1)
@@ -1106,6 +1109,11 @@ func _build_ui() -> void:
 	sweep_boss.build(ui)
 	sweep_boss.status = _on_status
 	sweep_boss.apply = _apply_swept_boss
+	edit_component = _EditComponent.new()
+	edit_component.view = view
+	edit_component.status = _on_status
+	edit_component.build(ui)
+	edit_component.changed.connect(_update_panel_visibility)
 	sketch_mode.offset_ui = sketch_chrome.offset_tool
 	sketch_mode.pattern_ui = sketch_chrome.pattern_tool
 	if sketch_mode.pattern_ui != null:
@@ -1145,6 +1153,7 @@ func _build_ui() -> void:
 	_install_esc_menu_watch()
 	sketch_mode.status.connect(_on_status)
 	sketch_mode.finished.connect(func(_id: String) -> void: _on_sketch_session_ended())
+	sketch_mode.finished.connect(_on_component_solid)
 	sketch_mode.cancelled.connect(func() -> void:
 		_on_sketch_session_ended()
 		_on_status("Sketch cancelled")
@@ -2332,7 +2341,8 @@ func _apply_chrome_docks() -> void:
 		var sketching_now := sketch_mode != null and sketch_mode.active
 		# Own visibility here so assembly_panel.refresh cannot park a wide panel
 		# on the plate (connectors alone must not open it).
-		var want_asm := has_inst and not sketching_now
+		var editing_part: bool = edit_component != null and bool(edit_component.active)
+		var want_asm: bool = (has_inst or editing_part) and not sketching_now
 		assembly_panel.visible = want_asm
 		if want_asm:
 			_dock_assembly_right(vp)
@@ -3599,6 +3609,9 @@ func _reset_to_empty_document(kind: String) -> void:
 		view.new_assembly()
 	else:
 		view.new_document()
+	if edit_component != null:
+		edit_component.view = view
+		edit_component.reset()
 	if view.has_method("set_origin_planes_visible"):
 		view.set_origin_planes_visible(false)
 	if interaction != null and interaction.world_gizmos != null:
@@ -3803,6 +3816,9 @@ func _on_insert_menu(id: int) -> void:
 		_show_file_dialog(FileAction.INSERT_SXP, FileDialog.FILE_MODE_OPEN_FILES,
 			"*.sxp ; SolidExpress")
 		return
+	if id == 11:
+		_insert_new_part()
+		return
 	if id == 20:
 		if ops_panel != null:
 			var tid: String = ""
@@ -3862,6 +3878,54 @@ func _on_insert_menu(id: int) -> void:
 		_on_status("Datum added")
 	else:
 		_on_status("Datum creation failed")
+
+
+## Insert → New Part: empty in-context component, Edit Component on, pick Front.
+func _insert_new_part() -> void:
+	if view == null or view.doc == null:
+		return
+	if edit_component != null and edit_component.active:
+		_on_status(_EditComponent.PICK_PLANE)
+		return
+	if view.doc.has_method("set_kind") and str(view.doc.kind()) != "assembly":
+		view.doc.set_kind("assembly")
+	if edit_component != null:
+		edit_component.view = view
+		edit_component.begin_new_part()
+	if view.has_method("set_origin_planes_visible"):
+		view.set_origin_planes_visible(true)
+	if interaction != null:
+		interaction.arm_pick_sketch_host()
+	_on_status(_EditComponent.PICK_PLANE)
+	_update_panel_visibility()
+
+
+func _on_component_solid(body_id: String) -> void:
+	if edit_component == null or not edit_component.pending:
+		return
+	if body_id == "":
+		return
+	call_deferred("_adopt_new_part_body", body_id)
+
+
+func _adopt_new_part_body(body_id: String) -> void:
+	if edit_component == null or not edit_component.pending:
+		return
+	if body_id == "" or view == null:
+		return
+	var iid: String = edit_component.adopt_body(body_id, "Part")
+	if iid == "":
+		_on_status("New Part failed — revolve did not produce a body")
+		return
+	_update_panel_visibility()
+	_on_status("Edit Component — part is a component")
+
+
+func _toggle_edit_component() -> void:
+	if edit_component == null:
+		return
+	edit_component.toggle()
+	_update_panel_visibility()
 
 
 ## Insert Components (multi-doc .sxp): copy bodies + place instances; hide the

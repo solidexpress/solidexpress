@@ -2635,6 +2635,20 @@ func new_assembly() -> void:
 	new_document("assembly")
 
 
+## Hide a modelling body and place an instance of it at identity. Insert →
+## New Part uses this so the revolved pin is a component, not a ground solid.
+func adopt_as_component(body_id: String, name: String = "Part") -> String:
+	if body_id == "" or doc == null:
+		return ""
+	set_body_hidden(body_id, true)
+	var iid: String = doc.add_instance(body_id, Vector3.ZERO, Vector3(0, 0, 1), 0.0, name)
+	if iid == "":
+		set_body_hidden(body_id, false)
+		return ""
+	refresh()
+	return iid
+
+
 # --- rendering ---
 
 func refresh() -> void:

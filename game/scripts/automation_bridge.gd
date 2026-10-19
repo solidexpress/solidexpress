@@ -386,6 +386,18 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 			main._on_insert_menu(10)
 			return {"target": named}
 		return {"error": "Insert Components unavailable"}
+	if kind != "hover" and named == "insert:NewPart":
+		var main := _main()
+		if main != null and main.has_method("_on_insert_menu"):
+			main._on_insert_menu(11)
+			return {"target": named}
+		return {"error": "Insert New Part unavailable"}
+	if kind != "hover" and named == "edit:Component":
+		var main := _main()
+		if main != null and main.has_method("_toggle_edit_component"):
+			main._toggle_edit_component()
+			return {"target": named}
+		return {"error": "Edit Component unavailable"}
 	if kind != "hover" and named == "mate:Add":
 		return _cmd_mate_add(req)
 	if kind != "hover" and req.has("datum"):
@@ -1603,6 +1615,7 @@ func _state_full() -> Dictionary:
 		"units": _document_units(view),
 		"kind": _document_kind(view),
 		"datums": _datums_state(view),
+		"edit_component": _edit_component_state(main),
 	}
 
 
@@ -1616,6 +1629,13 @@ func _document_kind(view) -> String:
 	if view == null or view.doc == null or not view.doc.has_method("kind"):
 		return "part"
 	return str(view.doc.kind())
+
+
+func _edit_component_state(main) -> Dictionary:
+	var ec = main.get("edit_component") if main != null else null
+	if ec == null or not ec.has_method("snapshot"):
+		return {"on": false, "pending": false, "instance": "", "source": ""}
+	return ec.snapshot()
 
 
 func _datums_state(view) -> Array:
