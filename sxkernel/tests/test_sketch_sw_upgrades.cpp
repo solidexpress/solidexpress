@@ -277,8 +277,8 @@ TEST_CASE("sketch: loft with optional guides path", "[sketch][sw]") {
                     {"ruled", false},
                     {"guides", {gg3.str()}}};
     g3.add(std::move(loft3));
-    REQUIRE(g3.regenerate(doc3));
-    double vol_ui = shape::volume(doc3.body(doc3.body_ids()[0])->shape);
-    REQUIRE(std::abs(vol_ui) > 10.0);
-    REQUIRE(std::abs(vol_ui) < 1e7);
+    std::string g3err;
+    // Coplanar ground rail does not span the loft; refuse rather than fake waists.
+    REQUIRE_FALSE(g3.regenerate(doc3, &g3err));
+    REQUIRE(g3err.find("guide") != std::string::npos);
 }

@@ -11,9 +11,11 @@
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
+#include <BRepFill_TypeOfContact.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRep_Tool.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepTools.hxx>
@@ -33,6 +35,7 @@
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_Wire.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <gp_Ax1.hxx>
@@ -486,112 +489,125 @@ bool apply_loft(ApplyCtx& ctx) {
                     sections.push_back(wire);
                     ++i;
                 }
-                // Optional guide curves (OCCT ThruSections has no AddGuide): sample each
-                // guide and insert intermediate circular sections so the loft waist
-                // follows the guide — volume differs from an unguided loft.
+
+                auto wire_center = [](const TopoDS_Wire& w) -> gp_Pnt {
+                    BRepBuilderAPI_MakeFace mkf(w, /*OnlyPlane=*/true);
+                    if (mkf.IsDone()) {
+                        GProp_GProps props;
+                        BRepGProp::SurfaceProperties(mkf.Face(), props);
+                        return props.CentreOfMass();
+                    }
+                    TopoDS_Iterator it(w);
+                    if (it.More()) {
+                        TopoDS_Vertex v = TopExp::FirstVertex(TopoDS::Edge(it.Value()));
+                        return BRep_Tool::Pnt(v);
+                    }
+                    return gp_Pnt(0, 0, 0);
+                };
+                auto pipe_ok = [](const TopoDS_Shape& s) {
+                    return !s.IsNull() && shape::count(s).solids >= 1 &&
+                           std::abs(shape::volume(s)) > 1.0e-3;
+                };
+                auto guide_on_solid = [](const TopoDS_Wire& guide, const TopoDS_Shape& solid) {
+                    if (guide.IsNull() || solid.IsNull()) return false;
+                    for (TopExp_Explorer ex(guide, TopAbs_EDGE); ex.More(); ex.Next()) {
+                        BRepAdaptor_Curve c(TopoDS::Edge(ex.Current()));
+                        for (int s = 0; s <= 8; ++s) {
+                            const double t = static_cast<double>(s) / 8.0;
+                            const double u =
+                                c.FirstParameter() + t * (c.LastParameter() - c.FirstParameter());
+                            TopoDS_Vertex v = BRepBuilderAPI_MakeVertex(c.Value(u)).Vertex();
+                            BRepExtrema_DistShapeShape dist(v, solid);
+                            if (!dist.IsDone() || dist.NbSolution() < 1) return false;
+                            if (dist.Value() > 1e-4) return false;
+                        }
+                    }
+                    return true;
+                };
+                auto try_pipe = [&](const TopoDS_Wire& spine, const TopoDS_Wire& aux,
+                                    BRepFill_TypeOfContact contact, bool with_contact,
+                                    bool with_corr) -> TopoDS_Shape {
+                    if (spine.IsNull()) return {};
+                    try {
+                        BRepOffsetAPI_MakePipeShell shell(spine);
+                        if (!aux.IsNull())
+                            shell.SetMode(aux, /*CurvilinearEquivalence=*/false, contact);
+                        else
+                            shell.SetMode(false);
+                        shell.SetTransitionMode(BRepBuilderAPI_Transformed);
+                        for (const auto& sec : sections) shell.Add(sec, with_contact, with_corr);
+                        shell.Build();
+                        if (!shell.IsDone() || !shell.MakeSolid()) return {};
+                        TopoDS_Shape s = shell.Shape();
+                        return pipe_ok(s) ? s : TopoDS_Shape{};
+                    } catch (const Standard_Failure&) {
+                        return {};
+                    }
+                };
+
+                TopoDS_Shape result;
                 if (params.contains("guides") && params["guides"].is_array() &&
                     !params["guides"].empty() && sections.size() >= 2) {
-                    auto wire_center = [](const TopoDS_Wire& w) -> gp_Pnt {
-                        BRepBuilderAPI_MakeFace mkf(w, /*OnlyPlane=*/true);
-                        if (mkf.IsDone()) {
-                            GProp_GProps props;
-                            BRepGProp::SurfaceProperties(mkf.Face(), props);
-                            return props.CentreOfMass();
-                        }
-                        TopoDS_Iterator it(w);
-                        if (it.More()) {
-                            TopoDS_Vertex v = TopExp::FirstVertex(TopoDS::Edge(it.Value()));
-                            return BRep_Tool::Pnt(v);
-                        }
-                        return gp_Pnt(0, 0, 0);
-                    };
-                    auto sample_poly = [](const std::vector<gp_Pnt>& pts, double t) -> gp_Pnt {
-                        if (pts.empty()) return gp_Pnt();
-                        if (pts.size() == 1) return pts[0];
-                        double total = 0;
-                        for (size_t k = 1; k < pts.size(); ++k)
-                            total += pts[k - 1].Distance(pts[k]);
-                        if (total < 1e-12) return pts[0];
-                        double target = std::clamp(t, 0.0, 1.0) * total;
-                        double acc = 0;
-                        for (size_t k = 1; k < pts.size(); ++k) {
-                            double seg = pts[k - 1].Distance(pts[k]);
-                            if (acc + seg >= target - 1e-12) {
-                                double u = seg > 1e-12 ? (target - acc) / seg : 0;
-                                return pts[k - 1].Translated(gp_Vec(pts[k - 1], pts[k]) * u);
-                            }
-                            acc += seg;
-                        }
-                        return pts.back();
-                    };
-                    gp_Pnt c0 = wire_center(sections.front());
-                    gp_Pnt c1 = wire_center(sections.back());
-                    gp_Vec axis_vec(c0, c1);
-                    if (axis_vec.Magnitude() < 1e-9) return fail("loft sections coincide");
-                    gp_Dir axis_dir(axis_vec);
-                    auto wire_radius = [](const TopoDS_Wire& w, const gp_Pnt& c) -> double {
-                        double rmax = 0;
-                        for (TopExp_Explorer ex(w, TopAbs_VERTEX); ex.More(); ex.Next()) {
-                            gp_Pnt p = BRep_Tool::Pnt(TopoDS::Vertex(ex.Current()));
-                            rmax = std::max(rmax, c.Distance(p));
-                        }
-                        return std::max(rmax, 1e-3);
-                    };
-                    const double r0 = wire_radius(sections.front(), c0);
-                    const double r1 = wire_radius(sections.back(), c1);
-                    const double r_lo = std::min(r0, r1) * 0.35;
-                    const double r_hi = std::max(r0, r1) * 2.5;
-                    std::vector<TopoDS_Wire> mids;
+                    std::vector<TopoDS_Wire> guides;
                     for (const auto& jg : params["guides"]) {
                         EntityId gid = EntityId::from_string(jg.get<std::string>());
                         const Feature* gf = feature(gid);
                         if (!gf || !gf->sketch) return fail("missing guide sketch");
-                        json pl = sketch_ordered_polyline(*gf->sketch);
-                        if (!pl.is_array() || pl.size() < 2) return fail("guide needs >=2 points");
-                        std::vector<gp_Pnt> gpts;
-                        for (const auto& jp : pl) gpts.push_back(pnt_from(jp));
-                        for (double t : {0.35, 0.65}) {
-                            gp_Pnt gp = sample_poly(gpts, t);
-                            gp_Lin axis_line(c0, axis_dir);
-                            double along = gp_Vec(axis_line.Location(), gp).Dot(axis_dir);
-                            along = std::clamp(along, 0.0, axis_vec.Magnitude());
-                            gp_Pnt foot = axis_line.Location().Translated(gp_Vec(axis_dir) * along);
-                            double r_blend =
-                                r0 + (r1 - r0) * (along / std::max(axis_vec.Magnitude(), 1e-9));
-                            double r_off = foot.Distance(gp);
-                            double r = std::clamp(0.5 * (r_blend + r_off), r_lo, r_hi);
-                            if (r < 1e-6) r = 1e-3;
-                            gp_Vec lateral(foot, gp);
-                            lateral -= gp_Vec(axis_dir) * lateral.Dot(axis_dir);
-                            gp_Pnt center = foot;
-                            if (lateral.Magnitude() > 1e-9) {
-                                double nudge = std::min(lateral.Magnitude(), r * 0.35);
-                                center = foot.Translated(lateral.Normalized() * nudge);
+                        TopoDS_Wire gw = sketch_exact_wire(*gf->sketch);
+                        if (gw.IsNull()) {
+                            json pl = sketch_ordered_polyline(*gf->sketch);
+                            if (pl.is_array() && pl.size() >= 2) {
+                                try {
+                                    gw = make_polyline_wire(pl);
+                                } catch (...) {
+                                    gw = {};
+                                }
                             }
-                            gp_Circ circ(gp_Ax2(center, axis_dir), r);
-                            TopoDS_Wire mw =
-                                BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(circ).Edge()).Wire();
-                            mids.push_back(mw);
                         }
+                        if (gw.IsNull()) return fail("guide needs a usable wire");
+                        guides.push_back(gw);
                     }
-                    std::vector<TopoDS_Wire> ordered;
-                    ordered.push_back(sections.front());
-                    for (auto& m : mids) ordered.push_back(m);
-                    ordered.push_back(sections.back());
-                    for (size_t si = 1; si + 1 < sections.size(); ++si)
-                        ordered.insert(ordered.end() - 1, sections[si]);
-                    sections = std::move(ordered);
-                    ruled = false;  // smoothed loft through guide sections
-                }
-                BRepOffsetAPI_ThruSections loft(/*isSolid=*/true, ruled);
-                for (const auto& w : sections) loft.AddWire(w);
-                TopoDS_Shape result;
-                try {
-                    loft.Build();
-                    if (!loft.IsDone()) return fail("ThruSections failed");
-                    result = loft.Shape();
-                } catch (const Standard_Failure& e) {
-                    return fail(std::string("ThruSections failed: ") + e.GetMessageString());
+                    gp_Pnt c0 = wire_center(sections.front());
+                    gp_Pnt c1 = wire_center(sections.back());
+                    if (c0.Distance(c1) < 1e-9) return fail("loft sections coincide");
+                    TopoDS_Wire centre_spine =
+                        BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(c0, c1).Edge()).Wire();
+                    const BRepFill_TypeOfContact contacts[] = {BRepFill_ContactOnBorder,
+                                                               BRepFill_Contact};
+                    const bool flags[] = {false, true};
+                    bool followed = false;
+                    for (const auto& g : guides) {
+                        for (auto c : contacts) {
+                            for (bool wc : flags) {
+                                for (bool wr : flags) {
+                                    result = try_pipe(centre_spine, g, c, wc, wr);
+                                    if (pipe_ok(result) && guide_on_solid(g, result)) {
+                                        followed = true;
+                                        break;
+                                    }
+                                    result = try_pipe(g, centre_spine, c, wc, wr);
+                                    if (pipe_ok(result) && guide_on_solid(g, result)) {
+                                        followed = true;
+                                        break;
+                                    }
+                                }
+                                if (followed) break;
+                            }
+                            if (followed) break;
+                        }
+                        if (followed) break;
+                    }
+                    if (!followed) return fail("guided loft: OCCT could not follow the guide");
+                } else {
+                    BRepOffsetAPI_ThruSections loft(/*isSolid=*/true, ruled);
+                    for (const auto& w : sections) loft.AddWire(w);
+                    try {
+                        loft.Build();
+                        if (!loft.IsDone()) return fail("ThruSections failed");
+                        result = loft.Shape();
+                    } catch (const Standard_Failure& e) {
+                        return fail(std::string("ThruSections failed: ") + e.GetMessageString());
+                    }
                 }
                 if (result.IsNull() || !shape::is_valid(result))
                     return fail("loft result invalid");
