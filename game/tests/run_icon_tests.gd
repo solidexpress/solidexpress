@@ -12,6 +12,7 @@ extends "res://tests/lib/sx_suite.gd"
 func _init() -> void:
 	print("icon / visual-language tests")
 	test_all_glyphs_render()
+	test_primary_verb_accents()
 
 	var main_scene: PackedScene = load("res://scenes/main.tscn")
 	var main = main_scene.instantiate()
@@ -47,6 +48,42 @@ func test_all_glyphs_render() -> void:
 			printerr("    glyph failed: " + str(icon_name))
 	check(UIIcons.GLYPHS.size() >= 40, "library has %d glyphs" % UIIcons.GLYPHS.size())
 	check(bad == 0, "all glyphs rasterize (%d failed)" % bad)
+
+
+func test_primary_verb_accents() -> void:
+	print("- one accent per primary rail verb")
+	var want := {
+		"sketch": "#6ab0f3",
+		"dimension": "#f0c040",
+		"trim": "#e07050",
+		"extrude": "#7ec27a",
+		"fillet": "#c090e0",
+	}
+	for name in want.keys():
+		check(UIIcons.stroke_for(name) == want[name],
+				"%s stroke is %s" % [name, want[name]])
+		var tex := UIIcons.get_icon(name, 24)
+		check(tex != null, "%s rasterizes with accent" % name)
+		var img := tex.get_image()
+		check(_image_has_accent(img, Color.html(want[name])),
+				"%s pixels include accent %s" % [name, want[name]])
+	check(UIIcons.stroke_for("line") == UIIcons.STROKE, "other glyphs stay STROKE")
+	check(UIIcons.stroke_for("box") == UIIcons.STROKE, "box stays monochrome")
+
+
+func _image_has_accent(img: Image, want: Color) -> bool:
+	if img == null:
+		return false
+	var hits := 0
+	for y in img.get_height():
+		for x in img.get_width():
+			var p := img.get_pixel(x, y)
+			if p.a < 0.4:
+				continue
+			if absf(p.r - want.r) < 0.18 and absf(p.g - want.g) < 0.18 \
+					and absf(p.b - want.b) < 0.18:
+				hits += 1
+	return hits >= 4
 
 
 func test_button_language(main) -> void:

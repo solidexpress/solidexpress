@@ -6,6 +6,14 @@ class_name UIIcons
 
 const STROKE := "#dde2ea"
 const ACCENT := "#6ab0f3"
+## One accent per primary rail verb (VS #13).
+const ACCENTS := {
+	"sketch": "#6ab0f3",
+	"dimension": "#f0c040",
+	"trim": "#e07050",
+	"extrude": "#7ec27a",
+	"fillet": "#c090e0",
+}
 
 ## name -> inner SVG (24x24 viewBox). Default stroke/fill applied by _wrap;
 ## elements may override (e.g. fill='...' for solid dots).
@@ -78,6 +86,10 @@ const GLYPHS := {
 	"nozzle": "<path d='M6 9h12l-3 8H9z'/><path d='M9 9l1.5-3h3L15 9'/>"
 }
 
+static func stroke_for(icon_name: String) -> String:
+	return str(ACCENTS.get(icon_name, STROKE))
+
+
 static var _cache := {}
 
 
@@ -89,9 +101,10 @@ static func get_icon(icon_name: String, size := 18) -> Texture2D:
 		push_warning("UIIcons: unknown icon '%s'" % icon_name)
 		return null
 	var body: String = GLYPHS[icon_name]
-	body = body.replace("%STROKE%", STROKE)
+	var stroke := stroke_for(icon_name)
+	body = body.replace("%STROKE%", stroke)
 	var svg := ("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' "
-		+ "viewBox='0 0 24 24'><g fill='none' stroke='%s' stroke-width='1.7' " % STROKE
+		+ "viewBox='0 0 24 24'><g fill='none' stroke='%s' stroke-width='1.7' " % stroke
 		+ "stroke-linecap='round' stroke-linejoin='round'>%s</g></svg>" % body)
 	var img := Image.new()
 	# Rasterize at 2x for crisp downscaled rendering.
