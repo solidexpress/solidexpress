@@ -213,7 +213,9 @@ func _cmd_mate_add(req: Dictionary) -> Dictionary:
 		return {"error": "mate:Add rejected"}
 	var solved: bool = view.doc.solve_mates()
 	view.refresh()
-	return {"target": "mate:Add", "id": mid, "solved": solved}
+	# `_dispatch` overwrites `id` with the JSON-RPC request id, so callers
+	# must read `mate_id` (or `state.mates`) for the uuid.
+	return {"target": "mate:Add", "id": mid, "mate_id": mid, "solved": solved}
 
 
 func _cmd_instance_select(iid: String) -> Dictionary:

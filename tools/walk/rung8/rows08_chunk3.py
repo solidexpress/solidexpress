@@ -10,7 +10,7 @@ class Rows08Chunk3:
     @row("A20", chunk=5, on="rung08", expect={"blocker": "A19"})
     def row_A20(self) -> None:
         bore = self.mate_bore(0, ("pin_c",))
-        mate = next((m for m in self.mates() if str(m.get("id")) == str(bore.get("pin_c", {}).get("id"))), {})
+        mate = self.find_mate(str(bore.get("pin_c", {}).get("id") or ""), "pin-c-0")
         self.clause("pin concentric", bool(bore.get("pin_c", {}).get("id")) and bool(bore["hole"]), str(bore.get("pin_c")))
         self.clause("plus y", abs(bore["xy"][0]) <= 1.0 and abs(bore["xy"][1] - 94.0) <= 1.0, str(bore["xy"]))
         self.clause("offset 0", abs(float(mate.get("offset") or 0.0)) < 1e-9, str(mate))

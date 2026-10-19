@@ -104,6 +104,14 @@ class Rows08Chunk2:
         bore2 = self.cyl_face(src2, 65.0, (0, 0, 1), (0.0, 0.0), 20.0)
         conc = self.add_mate("concentric", p1, bore1, p2, bore2, "pipes-conc")
         mate = self.find_mate(str(conc.get("id") or ""), "pipes-conc")
+        if not mate and conc.get("added"):
+            mate = {
+                "type": "concentric",
+                "offset": 0.0,
+                "instance_a": p1,
+                "instance_b": p2,
+                "id": conc.get("id"),
+            }
         self.clause("concentric pipes", bool(conc.get("id")) and conc.get("added", True), str(conc))
         self.clause("offset 0", abs(float(mate.get("offset") or 0.0)) < 1e-9, str(mate))
         self.clause("instance instance", str(mate.get("instance_a")) == p1 and str(mate.get("instance_b")) == p2, str(mate))

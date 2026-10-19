@@ -31,7 +31,7 @@ class Rows08Chunk4:
         w = {**(self.ctx.get("wrench") or {}), **added}
         self.ctx["wrench"] = w
         tan = w.get("tan") or {}
-        mate = next((m for m in self.mates() if str(m.get("id")) == str(tan.get("id"))), {})
+        mate = self.find_mate(str(tan.get("id") or ""), "wrench-tan")
         t = self.translation_of(str(w.get("wrench") or ""))
         self.clause("tangent curve", str(mate.get("type") or tan.get("reply", {}).get("type") or "") == "tangent" or bool(tan.get("id")), str(mate or tan))
         self.clause("handle plus x", float(t[0]) > 150.0, f"t={t}")

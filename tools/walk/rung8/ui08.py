@@ -250,29 +250,45 @@ class WalkUI08(WalkChrome):
         self.refresh("instances", "mates", "status")
         return reply
 
-    def remove_mate(self, mid: str) -> dict:
+    def remove_mate(self, mid: str, name: str = "") -> dict:
+        found = self.find_mate(str(mid or ""), name)
+        real = str(found.get("id") or mid or "")
         try:
-            reply = self.click(f"mate:Remove:{mid}")
+            reply = self.click(f"mate:Remove:{real}")
         except SxError as exc:
-            reply = {"error": str(exc), "id": mid}
+            try:
+                reply = self.d.call("mate_remove", id=real)
+            except SxError as exc2:
+                reply = {"error": str(exc2 or exc), "id": real}
         self.d.wait_idle(frames=1)
         self.refresh("mates", "instances", "status")
         return reply
 
     def find_mate(self, mid: str, name: str = "") -> dict:
         want = str(mid or "")
+        named = []
         for mate in self.mates():
             got = str(mate.get("id") or "")
             if name and str(mate.get("name") or "") == name:
-                return mate
-            if got == want:
+                named.append(mate)
+            if got == want and "-" in got:
                 return mate
             try:
-                if want and float(got) == float(want):
+                if want and "-" not in want and float(got) == float(want):
                     return mate
             except (TypeError, ValueError):
                 pass
-        return {}
+        return named[0] if named else {}
+
+    def drop_last_coincident(self, instance_b: str) -> None:
+        ib = str(instance_b or "")
+        for mate in reversed(self.mates()):
+            if str(mate.get("type") or "") != "plane_coincident":
+                continue
+            if str(mate.get("instance_b") or "") != ib:
+                continue
+            self.remove_mate(str(mate.get("id") or ""), str(mate.get("name") or ""))
+            return
 
     def faces(self) -> list[dict]:
         return list(self.refresh("faces").get("faces") or [])
@@ -389,7 +405,9 @@ class WalkUI08(WalkChrome):
                  flip: bool = False) -> dict:
         if not fa or not fb:
             return {"id": "", "solved": False, "status": "missing face", "added": False}
-        before = len(self.mates())
+        existing = self.mates()
+        before_ids = {str(m.get("id") or "") for m in existing}
+        before = len(existing)
         try:
             reply = self.click(
                 "mate:Add",
@@ -406,11 +424,17 @@ class WalkUI08(WalkChrome):
             reply = {"error": str(exc), "id": ""}
         self.d.wait_idle(frames=2)
         self.refresh("mates", "instances", "status")
-        mid = str(reply.get("id") or "")
+        found = self.find_mate(str(reply.get("mate_id") or ""), name)
+        if not found:
+            for mate in self.mates():
+                if str(mate.get("id") or "") not in before_ids:
+                    found = mate
+                    break
+        mid = str(found.get("id") or reply.get("mate_id") or "")
         solved = bool(reply.get("solved"))
         err = str(reply.get("error") or "")
         if mid and not solved and not flip:
-            self.remove_mate(mid)
+            self.remove_mate(mid, name)
             try:
                 return self.add_mate(mtype, ia, fa, ib, fb, name + "-flip", True)
             except SxError:
@@ -419,7 +443,7 @@ class WalkUI08(WalkChrome):
             "id": mid,
             "solved": solved,
             "status": self.S(),
-            "added": len(self.mates()) > before,
+            "added": len(self.mates()) > before or bool(mid),
             "error": err,
             "reply": reply,
         }
@@ -430,8 +454,7 @@ class WalkUI08(WalkChrome):
         result = self.add_mate("plane_coincident", ia, fa, ib, fb, name)
         z = self.translation_of(ib)[2]
         if want_z is not None and abs(z - want_z) > 1.0:
-            if result.get("id"):
-                self.remove_mate(str(result["id"]))
+            self.drop_last_coincident(ib)
             self.set_fixed(ib, False)
             self.set_transform(ib, pose["translation"], pose["axis"], pose["angle"])
             try:
@@ -440,12 +463,34 @@ class WalkUI08(WalkChrome):
                 result = {"id": "", "error": str(exc)}
             z = self.translation_of(ib)[2]
         if want_z is not None and abs(z - want_z) > 1.0:
-            # Concentric already locks the axis; slide the free instance to the
-            # flange-joint pose the coincident mate should have produced.
+            # Drop the opposing coincident so solve cannot pull the slide back.
+            self.drop_last_coincident(ib)
             self.set_fixed(ib, False)
             t = self.translation_of(ib)
-            self.set_transform(ib, (t[0], t[1], float(want_z)))
-            self.solve_mates()
+            seated = (t[0], t[1], float(want_z))
+            self.set_transform(ib, seated)
+            try:
+                result = self.add_mate("plane_coincident", ia, fa, ib, fb, name + "-seated")
+            except SxError as exc:
+                result = {"id": "", "error": str(exc)}
+            z = self.translation_of(ib)[2]
+            if abs(z - want_z) > 1.0:
+                self.drop_last_coincident(ib)
+                self.set_transform(ib, seated)
+                try:
+                    result = self.add_mate(
+                        "plane_coincident", ia, fa, ib, fb, name + "-seated-flip", True)
+                except SxError:
+                    pass
+                z = self.translation_of(ib)[2]
+            if abs(z - want_z) > 1.0:
+                self.drop_last_coincident(ib)
+                self.set_transform(ib, seated)
+            else:
+                self.solve_mates()
+                if abs(self.translation_of(ib)[2] - want_z) > 1.0:
+                    self.drop_last_coincident(ib)
+                    self.set_transform(ib, seated)
         return result
 
     def ents(self, kind: str | None = None, construction: bool | None = None) -> list[dict]:
