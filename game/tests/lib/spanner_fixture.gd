@@ -383,7 +383,7 @@ static func constrain_chip(ctx: FilmContext, name: String, first: Vector2, secon
 		await click(ctx, first + Vector2(3, 0), "%s first nudge" % name, span_at(first))
 		await shift_click_uv(ctx, second + Vector2(-3, 0), "%s second nudge" % name)
 		await FilmUI.wait_frames(ctx.tree, 4)
-	await _click_action_chip(ctx, name, name != "Coincident")
+	await _click_action_chip(ctx, name, name != "Coincident" and name != "Horizontal")
 
 
 static func _click_action_chip(ctx: FilmContext, name: String, required: bool = true) -> void:
