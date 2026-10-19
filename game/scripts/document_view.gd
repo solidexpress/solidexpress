@@ -14,7 +14,7 @@ signal picked(body_id: String, face_id: String, point: Vector3)
 ## Emitted when a pick lands on a hole/hex feature pocket.
 signal hole_feature_picked(fid: String)
 
-const BODY_COLOR := Color(0.72, 0.74, 0.78)
+const BODY_COLOR := Color(0.66, 0.67, 0.70)
 ## Cold brushed-metal defaults so canyon HDRI reflections read on bodies.
 ## When Scenic is off, drop metallic so flat ambient does not look cloudy.
 const BODY_METALLIC := 0.92
@@ -212,7 +212,7 @@ func _make_body_shader() -> Shader:
 shader_type spatial;
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
-uniform vec4 albedo_color : source_color = vec4(0.72, 0.74, 0.78, 1.0);
+uniform vec4 albedo_color : source_color = vec4(0.66, 0.67, 0.70, 1.0);
 uniform float metallic : hint_range(0.0, 1.0) = 0.92;
 uniform float roughness : hint_range(0.0, 1.0) = 0.35;
 uniform float emission_energy : hint_range(0.0, 2.0) = 0.0;
@@ -298,7 +298,7 @@ func _make_section_shader() -> Shader:
 shader_type spatial;
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
-uniform vec4 albedo_color : source_color = vec4(0.72, 0.74, 0.78, 1.0);
+uniform vec4 albedo_color : source_color = vec4(0.66, 0.67, 0.70, 1.0);
 uniform vec3 section_point = vec3(0.0);
 uniform vec3 section_normal = vec3(1.0, 0.0, 0.0);
 uniform float metallic : hint_range(0.0, 1.0) = 0.92;

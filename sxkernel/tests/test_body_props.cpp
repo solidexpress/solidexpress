@@ -60,7 +60,7 @@ TEST_CASE("fresh body has default display color", "[bodyprops]") {
     auto id = doc.add_body(shape::make_cylinder(5, 10), "Cyl");
     const Body* b = doc.body(id);
     REQUIRE(b != nullptr);
-    REQUIRE(b->color[0] == Approx(0.7f));
-    REQUIRE(b->color[1] == Approx(0.7f));
-    REQUIRE(b->color[2] == Approx(0.75f));
+    REQUIRE(b->color[0] == Approx(0.66f));
+    REQUIRE(b->color[1] == Approx(0.67f));
+    REQUIRE(b->color[2] == Approx(0.70f));
 }

@@ -46,7 +46,7 @@ struct Body {
     TopoDS_Shape shape;
     // Stable ids for subshapes, keyed by kind then map index (1-based, OCCT convention).
     std::map<EntityKind, std::vector<EntityId>> subshape_ids;
-    std::array<float, 3> color{0.7f, 0.7f, 0.75f};
+    std::array<float, 3> color{0.66f, 0.67f, 0.70f};
     // Name from materials::standard(); drives density for mass readouts.
     std::string material{"Unspecified"};
 };

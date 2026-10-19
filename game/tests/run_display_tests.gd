@@ -11,6 +11,7 @@ func _init() -> void:
 	await process_frame
 
 	test_default_mode(view)
+	test_body_albedo(view)
 	test_mode_visibilities(view)
 	test_cycle_wraps(view)
 	test_wireframe_selection(view)
@@ -18,6 +19,7 @@ func _init() -> void:
 	test_backface_shader(view)
 	test_selection_corners(view)
 	await test_world_gizmos()
+	await test_shop_ssao()
 
 	finish()
 
@@ -35,6 +37,29 @@ func _surface_mat(view: DocumentView, body_id: String) -> Material:
 func test_default_mode(view: DocumentView) -> void:
 	print("- default display mode")
 	check(view.display_mode == DocumentView.DisplayMode.SHADED_EDGES, "default is SHADED_EDGES")
+
+
+func test_body_albedo(view: DocumentView) -> void:
+	print("- body albedo 0.66 (VS #9)")
+	var want := Color(0.66, 0.67, 0.70)
+	check(DocumentView.BODY_COLOR.is_equal_approx(want),
+			"BODY_COLOR is (0.66, 0.67, 0.70)")
+	check(view._body_shader != null and view._body_shader.code.contains("0.66, 0.67, 0.70"),
+			"body shader default albedo is 0.66")
+	check(view._section_shader != null and view._section_shader.code.contains("0.66, 0.67, 0.70"),
+			"section shader default albedo is 0.66")
+	var id: String = view.insert_primitive("box", Vector3(-200, 0, 0))
+	view.clear_selection()
+	var mat: ShaderMaterial = view._body_materials.get(id, view._base_material)
+	check(mat != null, "body material exists for albedo pin")
+	if mat != null:
+		var c: Color = mat.get_shader_parameter("albedo_color")
+		check(c.is_equal_approx(want),
+				"live body albedo_color is 0.66 clay (got %s)" % str(c))
+	var stored: Color = view.doc.get_body_color(id)
+	check(stored.is_equal_approx(want),
+			"kernel default body color is 0.66 (got %s)" % str(stored))
+	view.new_document()
 
 
 func test_mode_visibilities(view: DocumentView) -> void:
@@ -246,3 +271,26 @@ func test_world_gizmos() -> void:
 		var aabb2: AABB = grid.get_aabb()
 		check(aabb2.size.x > gizmos.grid_half_mm * 1.9,
 			"rebuilt mesh spans the coarser half-extent")
+
+
+func test_shop_ssao() -> void:
+	print("- shop SSAO (VS #7); film albedo unchanged")
+	check(FilmPresentation.PART_ALBEDO.is_equal_approx(Color(0.78, 0.84, 0.92)),
+			"film look albedo stays (0.78, 0.84, 0.92)")
+	var main_scene: PackedScene = load("res://scenes/main.tscn")
+	var main = main_scene.instantiate()
+	root.add_child(main)
+	await process_frame
+	await process_frame
+	var e: Environment = main._world_env.environment
+	check(e.ssao_enabled, "shop SSAO enabled")
+	check(e.ssao_radius >= 0.02 and e.ssao_radius <= 0.05,
+			"SSAO radius 0.02–0.05 (got %.3f)" % e.ssao_radius)
+	check(is_equal_approx(e.ssao_intensity, 0.6), "SSAO intensity 0.6")
+	check(not e.ssr_enabled, "SSR off in shop")
+	main.set_view_backdrop("scenic")
+	check(main._world_env.environment.ssr_enabled, "SSR on for Scenic")
+	main.set_view_backdrop("shop")
+	check(not main._world_env.environment.ssr_enabled, "SSR off when Shop restored")
+	main.queue_free()
+

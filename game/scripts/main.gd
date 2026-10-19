@@ -361,6 +361,7 @@ func _sync_world_background() -> void:
 	if flatten and mode == ViewBackdrop.SCENIC:
 		mode = ViewBackdrop.SHOP
 	show_scenic_bg = (mode == ViewBackdrop.SCENIC) and not flatten
+	e.ssr_enabled = show_scenic_bg
 	match mode:
 		ViewBackdrop.SCENIC:
 			if e.sky != null:
@@ -472,6 +473,7 @@ func _make_canyon_environment() -> Environment:
 		fallback.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 		fallback.ambient_light_color = Color(0.55, 0.57, 0.62)
 		fallback.ambient_light_energy = 0.7
+		_apply_shop_ao(fallback)
 		return fallback
 
 	var mat := ShaderMaterial.new()
@@ -499,8 +501,15 @@ func _make_canyon_environment() -> Environment:
 	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	e.tonemap_mode = Environment.TONE_MAPPER_ACES
 	e.tonemap_exposure = 1.0
-	e.ssr_enabled = true
+	_apply_shop_ao(e)
+	e.ssr_enabled = false
 	return e
+
+
+func _apply_shop_ao(e: Environment) -> void:
+	e.ssao_enabled = true
+	e.ssao_radius = 0.04
+	e.ssao_intensity = 0.6
 
 
 func _build_ui() -> void:

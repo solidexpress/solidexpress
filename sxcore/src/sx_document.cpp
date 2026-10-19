@@ -504,7 +504,7 @@ bool SxDocument::set_body_color(const String& body_id, const Color& color) {
 
 Color SxDocument::get_body_color(const String& body_id) const {
     const sx::Body* b = doc_->body(parse_id(body_id));
-    if (!b) return Color(0.7f, 0.7f, 0.75f);
+    if (!b) return Color(0.66f, 0.67f, 0.70f);
     return Color(b->color[0], b->color[1], b->color[2]);
 }
 
