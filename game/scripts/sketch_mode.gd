@@ -10090,23 +10090,6 @@ func _rebuild_constraint_glyphs() -> void:
 	if cam != null:
 		_restore_pinned_coincident(pending, pinned_coincident, cam)
 		_clamp_coincident_leaders(pending, cam)
-		for i in range(pending.size()):
-			var it: Dictionary = pending[i]
-			if str(it.get("type", "")) != "coincident":
-				continue
-			var clamped: Vector2 = _clamp_glyph_centre(
-					it["centre"], it["natural"], it["size"], shaft_y)
-			if clamped.distance_to(it["centre"]) <= 0.5:
-				continue
-			it["centre"] = clamped
-			it["offset_px"] = (it["natural"] as Vector2).distance_to(clamped)
-			it["pos"] = _sketch_from_screen(cam, clamped, it["anchor"])
-			pending[i] = it
-		# Clamp can stack two mouth vertices on the same cap point. Spread
-		# them again while the below-shaft cost keeps them on the part.
-		if pending.size() > 1:
-			_repair_coincident_glyphs(pending, label_rects, cam, shaft_y)
-		_clamp_coincident_leaders(pending, cam)
 		# Screen→sketch is a local linearisation. A badge parked on the 40 px
 		# cap can reproject a fraction past it, which is what the walk rejects.
 		_cap_glyph_leader_span(pending, cam)
@@ -10256,7 +10239,7 @@ func _restore_pinned_coincident(items: Array, pinned: Dictionary, cam: Camera3D)
 		items[i] = it
 
 
-## Keep a coincident leader inside the 40 px screen cap after projection.
+## Keep a coincident leader inside the 14 px vertex hover after projection.
 func _clamp_coincident_leaders(items: Array, cam: Camera3D) -> void:
 	for i in range(items.size()):
 		var it: Dictionary = items[i]
@@ -10266,13 +10249,17 @@ func _clamp_coincident_leaders(items: Array, cam: Camera3D) -> void:
 		var centre: Vector2 = it["centre"]
 		var anchor: Vector2 = it["anchor"]
 		var span := natural.distance_to(centre)
-		if span > 38.5 and span > 0.5:
-			centre = natural + (centre - natural) * (38.5 / span)
+		# Keep the mark inside the 14 px vertex hover so its leader cannot
+		# cross a neighbouring ⊥ / ∥ badge (N26). A press on the badge still
+		# selects coincident because SELECT prefers that type over the endpoint.
+		const COINCIDENT_LEADER_CAP := 13.5
+		if span > COINCIDENT_LEADER_CAP and span > 0.5:
+			centre = natural + (centre - natural) * (COINCIDENT_LEADER_CAP / span)
 		var pos: Vector2 = _sketch_from_screen(cam, centre, anchor)
 		var landed := cam.unproject_position(to_global(to_model(pos)))
 		var got := natural.distance_to(landed)
-		if got > 39.0 and got > 0.5:
-			centre = natural + (centre - natural) * (38.0 / got)
+		if got > COINCIDENT_LEADER_CAP and got > 0.5:
+			centre = natural + (centre - natural) * (13.0 / got)
 			pos = _sketch_from_screen(cam, centre, anchor)
 		it["centre"] = centre
 		it["offset_px"] = natural.distance_to(centre)
@@ -10592,7 +10579,7 @@ func _coincident_place_cost(items: Array, index: int, natural: Vector2, centre: 
 		if dist >= GLYPH_LEADER_MIN_PX and _leader_crosses_rect(natural, centre, lr):
 			cost += 4000.0
 	if _glyph_below_part(rect, shaft_y):
-		cost += 2000000.0 + (rect.end.y - shaft_y) * 40.0
+		cost += 8000.0 + (rect.end.y - shaft_y) * 20.0
 	# A 38 px badge centred on the vertex covers the short jaw wall at
 	# 1920×1200, so every wall sample selects the constraint. Sit off the line.
 	cost += _coincident_line_penalty(rect)
