@@ -3,6 +3,8 @@ extends Node
 ## Every pointer and key is a real InputEvent pushed through the viewport, so
 ## focus, shields, popups, hover and drop dispositions match a person at the UI.
 
+const ViewportExport := preload("res://scripts/viewport_export.gd")
+
 const DEFAULT_PORT := 47321
 
 var _server: TCPServer
@@ -2616,10 +2618,26 @@ func _cmd_screenshot(req: Dictionary) -> Dictionary:
 		return {"error": "screenshot needs path"}
 	if not path.is_absolute_path():
 		path = ProjectSettings.globalize_path(path)
+	var main := _main()
+	if bool(req.get("transparent", false)) and main != null and main.has_method("set_view_backdrop"):
+		main.set_view_backdrop("transparent")
+	if main != null and main.has_method("export_image"):
+		var ok: bool = await main.export_image(path)
+		if not ok:
+			return {"error": "screenshot save failed"}
+		var loaded := Image.new()
+		loaded.load(path)
+		return {
+			"path": path,
+			"size": [loaded.get_width(), loaded.get_height()],
+			"alpha": ViewportExport.has_real_alpha_channel(path),
+		}
 	await _present_frame()
 	var img := _viewport_image()
 	if img == null:
 		return {"error": "viewport has no image"}
+	if main != null and main.view_backdrop == main.ViewBackdrop.TRANSPARENT:
+		img = ViewportExport.ensure_rgba(img)
 	var err := img.save_png(path)
 	if err != OK:
 		return {"error": "screenshot save failed (%s)" % error_string(err)}

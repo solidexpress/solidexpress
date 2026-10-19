@@ -19,6 +19,7 @@ func _init() -> void:
 	test_shop_default(main)
 	test_transparent_keeps_lights(main)
 	await test_export_spanner_png(main)
+	await test_screenshot_alpha(main)
 
 	finish()
 
@@ -129,3 +130,27 @@ func test_export_spanner_png(main) -> void:
 	check(status == null or status.visible, "status bar restored after export")
 	main.set_view_backdrop("shop")
 	DirAccess.remove_absolute(path)
+
+
+func test_screenshot_alpha(main) -> void:
+	print("- automation screenshot shares Export Image alpha path")
+	if main.view.doc.body_ids().is_empty():
+		main.view.insert_primitive("box", Vector3.ZERO)
+	main.set_view_backdrop("transparent")
+	var bridge = load("res://scripts/automation_bridge.gd").new()
+	bridge.name = "SxAutomation"
+	main.add_child(bridge)
+	await process_frame
+	var path := OS.get_user_data_dir() + "/sx_v2_screenshot.png"
+	var reply: Dictionary = await bridge._cmd_screenshot({"path": path})
+	check(not reply.has("error"), "screenshot command ok (%s)" % str(reply.get("error", "")))
+	check(FileAccess.file_exists(path), "screenshot PNG exists")
+	check(ViewportExport.has_real_alpha_channel(path),
+			"screenshot PNG has a real alpha channel (colour type 6)")
+	var img := Image.new()
+	check(img.load(path) == OK, "screenshot PNG loads")
+	check(ViewportExport.composites_without_charcoal(img),
+			"screenshot composites on white with no charcoal plate")
+	main.set_view_backdrop("shop")
+	DirAccess.remove_absolute(path)
+	bridge.queue_free()
