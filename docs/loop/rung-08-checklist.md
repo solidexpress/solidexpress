@@ -12,6 +12,8 @@ Reused parts (`nut.sxp`, `pipe.sxp`, `wrench.sxp`) are kernel fixtures from WP2,
 
 Exactness / spline WPs (WP-L1…L12, WP-S1, WP-S2) are **not walk rows**. Their acceptance is the table at the end of this file. They are not gated on this walk. Rung 7 A28 must still pass after WP-S1 and WP-L6.
 
+Visual-survey second batch (WP-V1…V8) is **not walk rows**. Table after Exactness. Lands before the WP11 full pass. Do not restyle films except V1/V2 alpha.
+
 ## Chunk 1 — New Assembly, insert, float (9)
 
 | Row | Does | Expected on-screen | Frame | Clauses |
@@ -141,3 +143,18 @@ WP-S1 and WP-L6 are complementary: S1 is BSpline/Bezier Convert (rung-07 finding
 | **L12** | M | 9, 19 | Print tol default 0.01 mm / 0.1 rad (isolated mesh); Ø3 hole vertices within tol of the cylinder, sagitta ≤ tol; STL vs 3MF vertices ± 1e-9; 1234.5678 reads back; DXF Ø20 disc = one CIRCLE r=10; bulged LWPOLYLINE → lines+arcs ± 1e-9. Fine view 0.02 mm / 0.1 rad | Catch2; C-one rung-5/7 export |
 
 Display-only (with L12): view tessellation today 0.2 mm / 0.35 rad (`tessellate.hpp`); a Ø3 hole draws as an 18-gon. Measure/picking already use the kernel.
+
+## Visual-survey second batch (not walk rows)
+
+Andy, 2026-10-19 3:23 PM CT. Source: [`docs/design/visual-survey.md`](../design/visual-survey.md). **Not gated** on `walk_rung08.py`. Headless / pixel. After blocking assembly WPs if they compete; **before WP11**. Rungs 1–7 stay 77/44/46/32/36/46/46. Update tests that pin old colour constants in the **same commit**. Do not restyle films except V1/V2 alpha. Leave the featured film set alone. Not this round: per-body transparency, HLR/tangent-edge, foreshortened radius leaders (VS #12, #15).
+
+| WP | Size | VS | Acceptance (headless / pixel) | Cheap check |
+|---|---|---|---|---|
+| **V1** | M | #11; §8 1–3 | View: Shop / Scenic / Solid… / Transparent. File → Export Image (PNG). Transparent = alpha 0, grid/planes/HUD/corners/captions hidden, KeyLight + IBL kept. Exported spanner PNG has a real alpha channel (PNG colour type 6) and composites on white with **no charcoal plate** | C-one `export_image_tests.suite` |
+| **V2** | S | §8 `_cmd_screenshot` RGB | Automation `screenshot` uses the V1 path. Transparent PNG is colour type 6 and composites on white with no charcoal plate. Site posters / tests share it | C-one `export_image_tests.suite` |
+| **V3** | M | #10 | Real ViewCube 70–90 px, labelled faces, iso corners. `run_viewcube_tests.gd` clicks **each face and each corner** to the correct view | C-one `viewcube_tests.suite` |
+| **V4** | S | #14 | Inactive closed sketches grey `Color(0.55, 0.58, 0.62)`, not gold pads. Open paths stay cyan. Spanner can keep one sketch alive across two extrudes | C-one pad / sketch-to-3D suite pinning the grey |
+| **V5** | S | #13 | One accent per primary rail verb: Sketch `#6ab0f3`, Smart Dim `#f0c040`, Trim `#e07050`, Extrude `#7ec27a`, Fillet `#c090e0` | C-one `icon_tests.suite` |
+| **V6** | S | #7, #9 | SSAO on shop Environment; `BODY_COLOR` `Color(0.66, 0.67, 0.70)`; `run_display_tests.gd` pixel / constant pins so the 1 mm recess reads. Film albedo unchanged | C-one `display_tests.suite` |
+| **V7** | S | #2 hold; P6 d.13 | Light sketch sheet **only if** rung-6 blue is hard to read on charcoal. Films stay charcoal (`FLAT_BG`). Skip = test records Shop charcoal during sketch | C-one V7 suite |
+| **V8** | S | #1 (P6 WP9) | Ellipse/arc use the rung-6 colour grammar. 12-point box-end star reads blue → black (`COLOR_ENTITY` → `COLOR_CONSTRAINED`) when fully defined | C-one colour-grammar suite |

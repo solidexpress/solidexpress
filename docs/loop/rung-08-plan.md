@@ -2,9 +2,7 @@
 
 **PLAN only, no product code.** One BUILD agent implements this in order, one commit per work package, on the branch it is given. Push that branch. Do not open a PR. Source: *SolidWorks & Tinkerine 3D Printing Tutorial — ELEC391*, UBC ECE Engineering Services, [same PDF as rungs 1 and 5](https://people.ece.ubc.ca/~eng-services/files/tutorials/SolidWorks%20&%203D%20Printing%20Tutorial-R1.pdf), pages 20–25. Everything from the PDF is in [`rung-08-prep.md`](rung-08-prep.md), the stills in [`rung-08-frames/`](rung-08-frames/), and below. Do not re-open the PDF. The row text is [`rung-08-checklist.md`](rung-08-checklist.md); do not restate it.
 
-Two tracks: **A** is the pipeline assembly (WP1–WP11). **L/S** is Andy’s 2026-10-19 exactness + spline set (WP-L1…L12, WP-S1, WP-S2). L/S is **not gated** on the rung-8 walk. **WP-L1 lands first** on this branch: every other L/S acceptance uses its probes. WP-L7 ships with or before WP-S2. WP-S1 and WP-L6 are complementary (splines vs the rest of Convert).
-
-No visual-survey batch this rung.
+Three tracks: **A** is the pipeline assembly (WP1–WP11). **L/S** is Andy’s 2026-10-19 exactness + spline set (WP-L1…L12, WP-S1, WP-S2). **V** is the visual-survey **second batch** (WP-V1…V8) from [`docs/design/visual-survey.md`](../design/visual-survey.md) (VS#). L/S is **not gated** on the rung-8 walk. **WP-L1 lands first** on this branch: every other L/S acceptance uses its probes. WP-L7 ships with or before WP-S2. WP-S1 and WP-L6 are complementary (splines vs the rest of Convert). V lands **after blocking assembly WPs** if they compete, and **before WP11**. Do not restyle films except where V1/V2 add alpha. Leave the featured film set alone.
 
 Model: `rung-07-plan.md` package shape (goal, files, change, line delta, one cheap check, revert). Part / frame / walk like `rung-03-plan.md` and `rung-07-plan.md`. Same machinery (`tools/walk/` `Rung`, `automation-bridge.md`).
 
@@ -28,7 +26,7 @@ Pass bar (all of):
 - On the same build: rung 1 walk 77/77, rung 2 44/44, rung 3 46/46, rung 4 32/32, rung 5 36/36, rung 6 46/46, rung 7 46/46, `check_rung01/02/03/04/05/06/07/08.py` at their bars, headless `0 failed`.
 - Every WP-L* / WP-S* headless acceptance in [`rung-08-checklist.md`](rung-08-checklist.md) § Exactness (kernel curve type / `BRepGProp` / round-trip). Mesh-only `check_rung*.py` (0.2 mm / 0.5 %) does **not** count as exact.
 
-Whole-plan acceptance is **WP11**. It requires both tracks green. L/S packages run their own cheap checks as they land and **do not wait** for WP10. Earlier packages run the one cheap check they name. They do not run `make test`, `make test-godot`, `confirm_all.sh`, or a walk without `--dry-run`.
+Whole-plan acceptance is **WP11**. It requires tracks A, L/S, and V green. L/S packages run their own cheap checks as they land and **do not wait** for WP10. V packages run the cheap check they name and **do not wait** for the walk; they **must** land before WP11. Earlier packages run the one cheap check they name. They do not run `make test`, `make test-godot`, `confirm_all.sh`, or a walk without `--dry-run`.
 
 ## Frame (decision, not a question)
 
@@ -216,7 +214,7 @@ Do not edit `docs/plan/STATUS.md`. Do not commit `.webm`, `.mp4`, `.avi`, `.mov`
 
 `export LD_LIBRARY_PATH=/opt/occt-8.0.1/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}` before any `tools/godot/godot` call.
 
-Every WP **keeps rungs 1–7 green**: walks 77/77, 44/44, 46/46, 32/32, 36/36, 46/46, 46/46 and `check_rung05/06/07` at their bars. Cheap checks include one C-one of a rung-1 assembly or rung-5 suite when the WP touches a shared file (`mates.cpp`, `assembly_panel.gd`, `interop.cpp`, `sxp.cpp`). They do not add walk rows until WP10. L/S WPs add **no** walk rows. No visual-survey restyle.
+Every WP **keeps rungs 1–7 green**: walks 77/77, 44/44, 46/46, 32/32, 36/36, 46/46, 46/46 and `check_rung05/06/07` at their bars. Cheap checks include one C-one of a rung-1 assembly or rung-5 suite when the WP touches a shared file (`mates.cpp`, `assembly_panel.gd`, `interop.cpp`, `sxp.cpp`). They do not add walk rows until WP10. L/S and V WPs add **no** walk rows. Visual WPs update tests that pin old colour constants in the **same commit**. They do not restyle `FilmPresentation.FLAT_BG` or `apply_film_look` except where V1/V2 add alpha on the export/screenshot path. Featured films stay.
 
 ## Decisions (the BUILD agent does not choose)
 
@@ -234,7 +232,7 @@ Every WP **keeps rungs 1–7 green**: walks 77/77, 44/44, 46/46, 32/32, 36/36, 4
 12. **Wrench mate 3 is Tangent (cylinder to plane).** Fastened over-locks. A second coincident of the opposite jaw flat is a mutant, not the named tool ([fig-025-016.png](rung-08-frames/img/fig-025-016.png) is the curve).
 13. **Lock / lock-rotation is out of scope.** PDF: “possible but not required”.
 14. **3MF of visible instances at their transforms.** Hidden insert-source bodies are not exported. `check_rung08` consumes that 3MF (and/or the host `.sxp` via a kernel probe). A merged-at-origin 3MF is a fail.
-15. **No visual-survey batch.** Colours, glyphs, edges, hover, grid from rungs 6–7 stay.
+15. **Visual-survey second batch (WP-V1…V8).** Shop / Scenic / Solid… / Transparent + File → Export Image PNG (V1); automation screenshot shares that path (V2); real ViewCube (V3); grey inactive sketches (V4); one accent per primary rail verb (V5); SSAO + body albedo 0.66 (V6); light sketch sheet only if blue is unreadable on charcoal, films stay charcoal (V7); ellipse/arc rung-6 colour grammar tested on the 12-point sketch (V8). Not this round: per-body transparency, HLR/tangent-edge modes, foreshortened radius leaders (VS #12, #15; P6 out of scope).
 16. **Auto-close default on** stays for rungs 1–7. The pin profile is a closed revolve contour; auto-close is harmless.
 17. **Checkpoints.** Walk may write a chunk-1 snapshot after N2. Named files: `pin.sxp` after A11, `pipes.sxp` after A19, `bolted.sxp` after A25, `assembly.sxp` after A32, `final.sxp` after A34.
 18. **Critique.** Checker + walk are necessary, not sufficient. Done = one build follows every PDF step with the named tool, score ≥ 9, checker passes. Caps at 8: File → New (part) as the assembly; ground-body revolve + Place instance as the pin; Pattern around joint as the only ×8 path; Fastened as the wrench curve; overall-50 pin; outer-flange joint; one-file 3MF of hidden sources at the origin; skip bolt-hole Concentric.
@@ -244,7 +242,7 @@ Every WP **keeps rungs 1–7 green**: walks 77/77, 44/44, 46/46, 32/32, 36/36, 4
 
 ## BUILD agent rules
 
-- One commit per WP: `Rung 8 WP<n>: <title>` or `Rung 8 WP-L<n>: <title>` / `Rung 8 WP-S<n>: <title>`. **Commit and push after every WP and after every fixed walk row, and at least every 30 minutes.** Do not open a PR.
+- One commit per WP: `Rung 8 WP<n>: <title>` or `Rung 8 WP-L<n>: <title>` / `Rung 8 WP-S<n>: <title>` / `Rung 8 WP-V<n>: <title>`. **Commit and push after every WP and after every fixed walk row, and at least every 30 minutes.** Do not open a PR.
 - Walks are **resumable from any row** while fixing (`--from` / checkpoints). A **final FULL clean pass of every walk for all rungs from row 1** is required before calling the rung a pass. Do not declare pass on a restored mid-walk.
 - After **3 failed fix attempts** a row is logged as a finding in `docs/loop/rung-08-failing.md` and the agent moves on. A **final sweep** retries every finding once.
 - **Test-and-fix** (after the walk exists and is red) runs as a **fresh agent given only** `docs/loop/rung-08-failing.md` (plus the plan/checklist it names). The BUILD agent writes that file when handing off; it starts empty of findings.
@@ -263,7 +261,7 @@ Cheap checks (not the full pass):
 
 ## Work packages
 
-**25 WPs.** Track L/S (14) is not gated on the assembly walk. Track A (WP1–WP11) is the pipeline. **WP-L1 is first** on this branch. No visual batch.
+**33 WPs.** Track L/S (14) is not gated on the assembly walk. Track A (WP1–WP11) is the pipeline. Track V (8) is the visual-survey second batch. **WP-L1 is first** on this branch. V lands after blocking assembly WPs if they compete, and before WP11.
 
 Source for L/S: Andy, 2026-10-19; audit of `origin/main` `9a493ca` (read-only). Line numbers in the case table are at that commit. WP-S1 is rung-07-result.md finding 1.
 
@@ -657,6 +655,120 @@ Check: C-dry. Registry test green for eight rungs. `walk_rung08.py --rows N1,A1,
 
 Revert: revert if the registry test is red after two attempts.
 
+### Track V — visual-survey second batch
+
+Andy, 2026-10-19 3:23 PM CT. Source: [`docs/design/visual-survey.md`](../design/visual-survey.md) (VS#). **Not walk rows.** Headless / pixel acceptance on each WP. Order after blocking assembly if they compete; **must be done before WP11**. Do not restyle films except V1/V2 alpha. Leave the featured film set alone. Update tests pinning old colour constants in the same commit.
+
+#### WP-V1 — Background removal + File → Export Image (PNG) (M)
+
+Goal: View menu **Shop / Scenic / Solid… / Transparent**. Transparent = alpha 0, grid / origin planes / HUD / corners / captions hidden, KeyLight + IBL kept. File → **Export Image…** (`*.png`). VS §8 “How SX should do it” 1–3; VS #11.
+
+Files: `game/scripts/main.gd` (`show_scenic_bg`, View menu, File menu, `_sync_world_background`); capture helper used by Export Image; `game/tests/run_export_image_tests.gd` + `packaging/ci/suites.d/export_image_tests.suite`; `game/tests/run_menu_tests.gd` File-menu ids.
+
+Change: Shop is today’s flat `#292B33`. Scenic is today’s canyon. Solid is a user colour, lighting unchanged. Transparent sets `Environment.BG_COLOR` alpha 0 and `Viewport.transparent_bg` for the grab (Window.transparent_bg stays false). Exported PNG is RGBA. `Window.transparent_bg` tests in `run_rung01_replan13_chrome.gd` stay.
+
+Expected delta: about +250 lines.
+
+Check: C-one `export_image_tests.suite`. The exported spanner (or open-end blank) PNG has a real alpha channel (PNG colour type 6 / `FORMAT_RGBA8`) and composites on white with no charcoal plate (`FilmPresentation.FLAT_BG` / Shop `(0.16, 0.17, 0.20)`). Menu tests still list File ids.
+
+Revert: revert.
+
+#### WP-V2 — Automation screenshot gains alpha (S)
+
+Goal: `_cmd_screenshot` uses the V1 capture path so site posters and tests share it. VS §8 “SolidExpress today” (`_cmd_screenshot` is RGB).
+
+Files: `game/scripts/automation_bridge.gd` `_cmd_screenshot` / `_viewport_image`; V1 capture helper.
+
+Change: screenshot writes the same PNG Export Image would. Transparent backdrop → alpha. Shop/Scenic/Solid stay opaque RGB(A) with a = 1 on the plate. Films are not re-shot.
+
+Expected delta: about +40 lines.
+
+Check: C-one `export_image_tests.suite` (screenshot command path). PNG from `screenshot` in Transparent is colour type 6 and composites on white with no charcoal plate.
+
+Revert: revert.
+
+#### WP-V3 — Real ViewCube (M)
+
+Goal: replace the 3×3 `ViewWidget` with a **70–90 px** perspective cube: labelled faces, iso corners. Hover `Color(0.35, 0.55, 0.75)`. Matters for Front-plane mirror and two-face recess. VS #10.
+
+Files: `game/scripts/view_widget.gd` (rewrite `_draw` / `zone_at` / `click_zone`); `game/scripts/view_hud.gd` (mount the cube; keep `OriginTriadHud`); `game/scripts/orbit_camera.gd` iso-corner poses if `apply_standard_view_id` needs them (no extra View-menu keys); `game/tests/run_viewcube_tests.gd`.
+
+Change: six faces Front/Back/Left/Right/Top/Bottom; eight corners are isometric octants. Click each face/corner to the matching view. Size 70–90 px. Named-view tests stay.
+
+Expected delta: about +220 lines.
+
+Check: C-one `viewcube_tests.suite`. `run_viewcube_tests.gd` clicks each face and each corner to the correct view (yaw/pitch of that standard / iso pose).
+
+Revert: revert.
+
+#### WP-V4 — Grey inactive sketches, not gold pads (S)
+
+Goal: committed sketches are SW-grey, not gold. The spanner keeps one sketch alive across two extrudes. VS #14 (`t0460` / `t0750`).
+
+Files: `game/scripts/sketch_pad_overlay.gd` `PROFILE_COLOR_CLOSED` → `Color(0.55, 0.58, 0.62)`; pad fill alpha stays ~0.03; `PAD_COLOR_CLOSED` / `EDGE_COLOR_CLOSED` drop the gold; open paths stay cyan (`PATH_COLOR`). Tests that pin the old gold, in the same commit.
+
+Change: inactive closed pads read as thin grey, not yellow slabs. Films are not re-shot.
+
+Expected delta: about +40 lines.
+
+Check: C-one a sketch-to-3D / pad suite that reads `PROFILE_COLOR_CLOSED`. Constant is grey `(0.55, 0.58, 0.62)`, not `(0.98, 0.78, 0.08)`.
+
+Revert: revert.
+
+#### WP-V5 — One accent per primary rail verb (S)
+
+Goal: tint Sketch `#6ab0f3`, Smart Dim `#f0c040`, Trim `#e07050`, Extrude `#7ec27a`, Fillet `#c090e0`. Keep stroke icons. VS #13.
+
+Files: `game/scripts/ui_icons.gd` `get_icon` / `_wrap`; `game/tests/run_icon_tests.gd`.
+
+Change: those five glyphs rasterize with the named stroke; every other glyph stays `STROKE` `#dde2ea`.
+
+Expected delta: about +50 lines.
+
+Check: C-one `icon_tests.suite`. Pixel (or SVG stroke) pins for the five accents; other glyphs still `#dde2ea`.
+
+Revert: revert.
+
+#### WP-V6 — SSAO + body albedo 0.66 (S)
+
+Goal: display-only. Shop `Environment.ssao_enabled = true` (radius ~0.02–0.05, intensity 0.6). `BODY_COLOR` → `Color(0.66, 0.67, 0.70)`. Shader default `vec4` matches. SSR stays Scenic-only. No glow. VS #7, #9; VS “Recommended first batch” hold note. So the 1 mm recess reads.
+
+Files: `game/scripts/main.gd` `_make_canyon_environment`; `game/scripts/document_view.gd` `BODY_COLOR` + shader default; `game/tests/run_display_tests.gd` pixel / constant pins. Film look stays.
+
+Expected delta: about +60 lines.
+
+Check: C-one `display_tests.suite`. Pins `BODY_COLOR` `(0.66, 0.67, 0.70)` and `ssao_enabled`. Film `apply_film_look` albedo unchanged.
+
+Revert: revert.
+
+#### WP-V7 — Light sketch sheet only if blue is unreadable (S)
+
+Goal: VS #2 light sheet **only if** rung 6’s blue entities are hard to read on charcoal. Films stay charcoal. VS “Recommended first batch” (#2 hold); P6 decision 13.
+
+Files: `game/scripts/main.gd` `_sync_world_background` only if the readability probe fails; otherwise **skip the sheet** and pin charcoal. `game/tests/lib/film_presentation.gd` `FLAT_BG`; a small suite that records the decision.
+
+Change: if `COLOR_ENTITY` `(0.25, 0.55, 1.0)` stays readable on Shop charcoal, do **not** switch the sketch sheet to `#F4F5F9`. Films stay `FLAT_BG` charcoal either way.
+
+Expected delta: about +40 lines.
+
+Check: C-one the V7 suite. `FLAT_BG` is charcoal. `COLOR_ENTITY` is the rung-6 blue. If the WP skips the sheet, the test says so and Shop during sketch is still charcoal.
+
+Revert: revert (or empty skip-commit if the probe says skip — still a commit that lands the test).
+
+#### WP-V8 — Ellipse/arc colour grammar on the 12-point sketch (S)
+
+Goal: ellipse/arc entities use the rung-6 colour grammar, and the box-end star reads as blue → black (near-white on charcoal) when fully defined. VS #1 (shipped in P6 WP9); **test it** on the 12-point sketch.
+
+Files: `game/scripts/sketch_mode.gd` `COLOR_ENTITY` / `COLOR_CONSTRAINED` (no restyle unless a type bypasses `_entity_draw_color`); `game/tests/run_sketch_color_grammar_tests.gd` (or extend an existing sketch suite) + suite manifest.
+
+Change: none expected to the constants. Draw a 12-point / ellipse+arc sketch; unconstrained entities are `COLOR_ENTITY`; when `last_dofs == 0` they are `COLOR_CONSTRAINED`.
+
+Expected delta: about +80 lines.
+
+Check: C-one that suite. Ellipse, arc, and star edges share the grammar.
+
+Revert: revert.
+
 ### WP11 — The single full pass
 
 Goal: one pass on this VM. Counts only. No product edits unless a count is red, and then only the smallest fix, re-run once.
@@ -697,7 +809,7 @@ Revert: not this WP. A bad fix-up commit reverts on its own.
 - FeatureManager tree as a full SW clone; AssemblyPanel with `(f)` is the Fix/Float UI.
 - Multi-body part files, subassemblies, Copy with Mates, Advanced/Mechanical mates.
 - Threads on the pin or nut. The Ex 1 nut is a hex with a Ø10 bore. (WP-L2 thread-cutter exactness is the kernel path, not an assembly thread feature.)
-- A demo film. `docs/plan/STATUS.md`. Visual-survey restyle.
+- A demo film. `docs/plan/STATUS.md`. Per-body transparency, HLR/tangent-edge modes, foreshortened radius leaders (VS #12, #15). Re-shooting the featured film set.
 - Changing rungs 1–7 walk row lists.
 - Committing `.sxp` goldens.
 - Replacing mesh `check_rung*.py` bars (0.2 mm / 0.5 %) with exact probes — L/S tests sit **beside** those checkers, they do not loosen or replace them.
