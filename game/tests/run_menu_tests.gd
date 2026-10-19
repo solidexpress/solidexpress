@@ -91,6 +91,7 @@ func test_file_menu_ids(main) -> void:
 		10: "Import DXF...",
 		11: "Export 3MF...",
 		12: "Export glTF...",
+		17: "Export Image...",
 		13: "Export Drawing (DXF)...",
 		14: "Export Drawing (PDF)...",
 		15: "Open in Slicer...",

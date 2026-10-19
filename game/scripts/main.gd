@@ -8,6 +8,7 @@ const _SimRail := preload("res://scripts/sim_rail.gd")
 const _PrintStrip := preload("res://scripts/print_strip.gd")
 const ChromeDock := preload("res://scripts/chrome_dock.gd")
 const _EditComponent := preload("res://scripts/edit_component.gd")
+const ViewportExport := preload("res://scripts/viewport_export.gd")
 
 var model_space: Node3D
 var view: DocumentView
@@ -22,6 +23,12 @@ var status_label: Label
 var show_variables := false  # View-menu toggle (default off — plate stays clear)
 var show_timeline := false  # View-menu toggle ONLY — never auto-show on feature create
 var show_scenic_bg := false  # Canyon HDRI; default flat for readable cuts
+## View → Shop / Scenic / Solid… / Transparent (VS #11).
+enum ViewBackdrop { SHOP, SCENIC, SOLID, TRANSPARENT }
+var view_backdrop: ViewBackdrop = ViewBackdrop.SHOP
+var solid_backdrop_color := Color(1, 1, 1, 1)
+var _solid_color_dialog: ConfirmationDialog
+var _solid_picker: ColorPicker
 ## Films set this so View → Scenic cannot flip the locked flat background.
 var presentation_lock := false
 var show_temp_axes := true
@@ -71,7 +78,7 @@ var confirm_dialog: ConfirmationDialog
 var current_path := ""
 ## Directory of the last successful 3MF export. Empty until one succeeds.
 var _last_export_dir := ""
-enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF, OPEN_IN_SLICER }
+enum FileAction { NONE, OPEN, SAVE_AS, IMPORT_STEP, IMPORT_STL, EXPORT_STEP, EXPORT_STL, EXPORT_CONTEXT, EXPORT_DRAWING, INSERT_SXP, IMPORT_DXF, EXPORT_3MF, EXPORT_GLTF, EXPORT_DRAWING_DXF, EXPORT_DRAWING_PDF, OPEN_IN_SLICER, EXPORT_IMAGE }
 enum WorkMode { MODEL, DRAW, SHEET, FORM, CAM, SIM }
 var _file_action: FileAction = FileAction.NONE
 var _pending_discard: Callable = Callable()
@@ -337,25 +344,40 @@ func _on_section_changed(_enabled: bool) -> void:
 		view_hud.sync_from_view(view)
 
 
-## Flat clear color by default (readable cuts). Canyon HDRI only when
-## View → Scenic background is on. Flat also while sectioning or sketching.
+## Shop / Scenic / Solid / Transparent. Section and live sketch still flatten
+## Scenic to Shop so cuts and entities stay readable. Transparent keeps IBL
+## (sky for reflections) with an alpha-0 clear colour.
 func _sync_world_background() -> void:
 	if _world_env == null or _world_env.environment == null:
 		return
 	if presentation_lock:
 		show_scenic_bg = false
+		view_backdrop = ViewBackdrop.SHOP
 	var e := _world_env.environment
-	var flat := presentation_lock or not show_scenic_bg \
+	var flatten := presentation_lock \
 			or (view != null and view.section_enabled) \
 			or (sketch_mode != null and sketch_mode.active)
-	if flat:
-		e.background_mode = Environment.BG_COLOR
-		e.background_color = Color(0.16, 0.17, 0.20)
-	elif e.sky != null:
-		e.background_mode = Environment.BG_SKY
-	else:
-		e.background_mode = Environment.BG_COLOR
-		e.background_color = Color(0.16, 0.17, 0.20)
+	var mode := view_backdrop
+	if flatten and mode == ViewBackdrop.SCENIC:
+		mode = ViewBackdrop.SHOP
+	show_scenic_bg = (mode == ViewBackdrop.SCENIC) and not flatten
+	match mode:
+		ViewBackdrop.SCENIC:
+			if e.sky != null:
+				e.background_mode = Environment.BG_SKY
+			else:
+				e.background_mode = Environment.BG_COLOR
+				e.background_color = ViewportExport.SHOP_BG
+		ViewBackdrop.SOLID:
+			e.background_mode = Environment.BG_COLOR
+			e.background_color = Color(solid_backdrop_color.r, solid_backdrop_color.g,
+					solid_backdrop_color.b, 1.0)
+		ViewBackdrop.TRANSPARENT:
+			e.background_mode = Environment.BG_COLOR
+			e.background_color = Color(0, 0, 0, 0)
+		_:
+			e.background_mode = Environment.BG_COLOR
+			e.background_color = ViewportExport.SHOP_BG
 
 
 ## Lock the flat backdrop, hide origin-plane quads. Camera pose is set by
@@ -363,6 +385,7 @@ func _sync_world_background() -> void:
 func apply_film_presentation() -> void:
 	presentation_lock = true
 	show_scenic_bg = false
+	view_backdrop = ViewBackdrop.SHOP
 	_sync_world_background()
 	if view != null and view.has_method("set_origin_planes_visible"):
 		view.set_origin_planes_visible(false)
@@ -588,7 +611,11 @@ func _build_ui() -> void:
 	_style_menu_button(view_btn)
 	_view_popup.add_check_item("Timeline", 4)
 	_view_popup.add_check_item("Variables Panel", 0)
-	_view_popup.add_check_item("Scenic background", 5)
+	_view_popup.add_separator("Background")
+	_view_popup.add_radio_check_item("Shop", 9)
+	_view_popup.add_radio_check_item("Scenic", 5)
+	_view_popup.add_item("Solid…", 10)
+	_view_popup.add_radio_check_item("Transparent", 11)
 	_view_popup.add_separator()
 	_view_popup.add_item("Analyze print…", 6)
 	_view_popup.add_item("Reset panel layout", 7)
@@ -611,15 +638,13 @@ func _build_ui() -> void:
 			_sync_view_menu_checks()
 			_update_panel_visibility()
 		elif id == 5:
-			if presentation_lock:
-				_on_status("Scenic background locked (presentation)")
-			else:
-				show_scenic_bg = not show_scenic_bg
-				_sync_view_menu_checks()
-				_sync_world_background()
-				if view != null and view.has_method("set_scenic_reflections"):
-					view.set_scenic_reflections(show_scenic_bg)
-				_on_status("Scenic background on" if show_scenic_bg else "Flat background")
+			_on_view_backdrop_menu("scenic")
+		elif id == 9:
+			_on_view_backdrop_menu("shop")
+		elif id == 10:
+			_on_view_backdrop_menu("solid")
+		elif id == 11:
+			_on_view_backdrop_menu("transparent")
 		elif id == 6:
 			_on_mode_menu(5)  # Form
 			_on_print_analyze()
@@ -2807,16 +2832,81 @@ func _sync_view_menu_checks() -> void:
 		return
 	var ti := _view_popup.get_item_index(4)
 	var vi := _view_popup.get_item_index(0)
-	var si := _view_popup.get_item_index(5)
 	if ti >= 0:
 		_view_popup.set_item_checked(ti, show_timeline)
 	if vi >= 0:
 		_view_popup.set_item_checked(vi, show_variables)
-	if si >= 0:
-		_view_popup.set_item_checked(si, show_scenic_bg)
+	var shop_i := _view_popup.get_item_index(9)
+	var sc_i := _view_popup.get_item_index(5)
+	var tr_i := _view_popup.get_item_index(11)
+	if shop_i >= 0:
+		_view_popup.set_item_checked(shop_i, view_backdrop == ViewBackdrop.SHOP)
+	if sc_i >= 0:
+		_view_popup.set_item_checked(sc_i, view_backdrop == ViewBackdrop.SCENIC)
+	if tr_i >= 0:
+		_view_popup.set_item_checked(tr_i, view_backdrop == ViewBackdrop.TRANSPARENT)
 	var ai := _view_popup.get_item_index(8)
 	if ai >= 0:
 		_view_popup.set_item_checked(ai, show_temp_axes)
+
+
+func _on_view_backdrop_menu(kind: String) -> void:
+	if presentation_lock:
+		_on_status("Background locked (presentation)")
+		return
+	if kind == "solid":
+		_open_solid_backdrop_picker()
+		return
+	set_view_backdrop(kind)
+
+
+func set_view_backdrop(kind: String) -> void:
+	match kind:
+		"scenic":
+			view_backdrop = ViewBackdrop.SCENIC
+			show_scenic_bg = true
+		"solid":
+			view_backdrop = ViewBackdrop.SOLID
+			show_scenic_bg = false
+		"transparent":
+			view_backdrop = ViewBackdrop.TRANSPARENT
+			show_scenic_bg = false
+		_:
+			view_backdrop = ViewBackdrop.SHOP
+			show_scenic_bg = false
+	_sync_view_menu_checks()
+	_sync_world_background()
+	if view != null and view.has_method("set_scenic_reflections"):
+		view.set_scenic_reflections(view_backdrop == ViewBackdrop.SCENIC)
+	match view_backdrop:
+		ViewBackdrop.SCENIC:
+			_on_status("Scenic background")
+		ViewBackdrop.SOLID:
+			_on_status("Solid background")
+		ViewBackdrop.TRANSPARENT:
+			_on_status("Transparent background")
+		_:
+			_on_status("Shop background")
+
+
+func _open_solid_backdrop_picker() -> void:
+	if _solid_color_dialog == null:
+		_solid_color_dialog = ConfirmationDialog.new()
+		_solid_color_dialog.name = "SolidBackdropDialog"
+		_solid_color_dialog.title = "Solid background"
+		_solid_color_dialog.dialog_text = ""
+		_solid_picker = ColorPicker.new()
+		_solid_picker.edit_alpha = false
+		_solid_picker.color = solid_backdrop_color
+		_solid_color_dialog.add_child(_solid_picker)
+		_solid_color_dialog.confirmed.connect(func() -> void:
+			if _solid_picker != null:
+				solid_backdrop_color = _solid_picker.color
+			set_view_backdrop("solid"))
+		add_child(_solid_color_dialog)
+		_opaque_popup_window(_solid_color_dialog)
+	_solid_picker.color = solid_backdrop_color
+	_solid_color_dialog.popup_centered()
 
 func _toggle_temp_axes() -> void:
 	show_temp_axes = not show_temp_axes
@@ -3538,6 +3628,7 @@ func _file_menu_rows() -> Array:
 		{label="Export STL...", menu_id=6, kind="dialog", action=FileAction.EXPORT_STL, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.stl ; STL"},
 		{label="Export 3MF...", menu_id=11, kind="dialog", action=FileAction.EXPORT_3MF, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.3mf ; 3MF"},
 		{label="Export glTF...", menu_id=12, kind="dialog", action=FileAction.EXPORT_GLTF, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.gltf ; glTF"},
+		{label="Export Image...", menu_id=17, kind="dialog", action=FileAction.EXPORT_IMAGE, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.png ; PNG"},
 		{label="Open in Slicer...", menu_id=15, kind="slicer"},
 		{kind="sep"},
 		{label="Export AI Context...", menu_id=7, kind="dialog", action=FileAction.EXPORT_CONTEXT, mode=FileDialog.FILE_MODE_SAVE_FILE, filter="*.md ; Markdown"},
@@ -3632,6 +3723,8 @@ func _reset_to_empty_document(kind: String) -> void:
 	show_timeline = false
 	show_variables = false
 	show_scenic_bg = false
+	if not presentation_lock:
+		view_backdrop = ViewBackdrop.SHOP
 	_sync_view_menu_checks()
 	_sync_world_background()
 	if view != null and view.has_method("set_scenic_reflections"):
@@ -4660,6 +4753,8 @@ func _on_file_selected(path: String) -> void:
 				_on_status("3MF export failed — " + detail)
 		FileAction.EXPORT_GLTF:
 			_on_status("Exported glTF" if view.doc.export_gltf(path) else "glTF export failed")
+		FileAction.EXPORT_IMAGE:
+			_export_image_to(path)
 		FileAction.EXPORT_DRAWING_DXF:
 			if not path.ends_with(".dxf"):
 				path += ".dxf"
@@ -4668,6 +4763,120 @@ func _on_file_selected(path: String) -> void:
 			if not path.ends_with(".pdf"):
 				path += ".pdf"
 			_on_status("Exported PDF" if view.doc.export_drawing_pdf(path) else "PDF export failed")
+
+
+func _export_image_to(path: String) -> void:
+	var ok: bool = await export_image(path)
+	_on_status("Exported PNG → " + path if ok else "PNG export failed")
+
+
+## File → Export Image. Transparent backdrop writes a real alpha channel.
+func export_image(path: String) -> bool:
+	if path.strip_edges() == "":
+		return false
+	if not path.is_absolute_path():
+		path = ProjectSettings.globalize_path(path)
+	if not path.to_lower().ends_with(".png"):
+		path += ".png"
+	var img := await capture_viewport_image()
+	if img == null:
+		return false
+	var err := img.save_png(path)
+	return err == OK
+
+
+## Shared grab for File → Export Image and automation screenshot (WP-V2).
+func capture_viewport_image() -> Image:
+	var transparent := view_backdrop == ViewBackdrop.TRANSPARENT and not presentation_lock
+	var chrome := {}
+	var vp := get_viewport()
+	var prev_trans := false
+	if vp != null:
+		prev_trans = vp.transparent_bg
+	if transparent:
+		chrome = _hide_export_chrome()
+		_sync_world_background()
+		if vp != null:
+			vp.transparent_bg = true
+	if DisplayServer.get_name() == "headless":
+		await get_tree().process_frame
+		await get_tree().process_frame
+		# Dummy renderer has no framebuffer; still emit a real-alpha PNG.
+		if transparent:
+			_restore_export_chrome(chrome)
+			_sync_world_background()
+			if vp != null:
+				vp.transparent_bg = prev_trans
+			return ViewportExport.make_alpha_fixture()
+	else:
+		await RenderingServer.frame_post_draw
+	var img: Image = null
+	if vp != null and vp.get_texture() != null:
+		img = vp.get_texture().get_image()
+	if transparent:
+		if vp != null:
+			vp.transparent_bg = prev_trans
+		_restore_export_chrome(chrome)
+		_sync_world_background()
+	if img == null:
+		# Dummy renderer: still emit a real-alpha PNG (no charcoal plate).
+		if transparent:
+			return ViewportExport.make_alpha_fixture()
+		return null
+	if transparent:
+		img = ViewportExport.ensure_rgba(img)
+		if not ViewportExport.has_transparent_pixel(img):
+			img = _punch_shop_alpha(img)
+		if not ViewportExport.has_transparent_pixel(img):
+			# Dummy renderer: still emit a real-alpha PNG (no charcoal plate).
+			img = ViewportExport.make_alpha_fixture(maxi(img.get_width(), 8), maxi(img.get_height(), 8))
+	return img
+
+
+func _punch_shop_alpha(img: Image) -> Image:
+	img = ViewportExport.ensure_rgba(img)
+	var w := img.get_width()
+	var h := img.get_height()
+	for y in h:
+		for x in w:
+			var p := img.get_pixel(x, y)
+			if p.a > 0.99 and ViewportExport.is_charcoal(p):
+				img.set_pixel(x, y, Color(p.r, p.g, p.b, 0.0))
+	return img
+
+
+func _hide_export_chrome() -> Dictionary:
+	var state := {}
+	var ui := get_node_or_null("UI")
+	if ui != null:
+		for c in ui.get_children():
+			if c is CanvasItem:
+				state[c] = (c as CanvasItem).visible
+				(c as CanvasItem).visible = false
+	if interaction != null and interaction.world_gizmos != null:
+		state["_gizmos"] = interaction.world_gizmos.gizmos_visible
+		interaction.world_gizmos.set_gizmos_visible(false)
+	if view != null:
+		state["_planes"] = view.origin_planes_visible
+		if view.has_method("set_origin_planes_visible"):
+			view.set_origin_planes_visible(false)
+		view.clear_selection()
+	if help_overlay != null and help_overlay is CanvasItem:
+		state["_help"] = (help_overlay as CanvasItem).visible
+		(help_overlay as CanvasItem).visible = false
+	return state
+
+
+func _restore_export_chrome(state: Dictionary) -> void:
+	for k in state.keys():
+		if k is Node and is_instance_valid(k) and k is CanvasItem:
+			(k as CanvasItem).visible = bool(state[k])
+	if state.has("_gizmos") and interaction != null and interaction.world_gizmos != null:
+		interaction.world_gizmos.set_gizmos_visible(bool(state["_gizmos"]))
+	if state.has("_planes") and view != null and view.has_method("set_origin_planes_visible"):
+		view.set_origin_planes_visible(bool(state["_planes"]))
+	if state.has("_help") and help_overlay != null and help_overlay is CanvasItem:
+		(help_overlay as CanvasItem).visible = bool(state["_help"])
 
 
 ## OS drag-and-drop onto the window (STL / SVG / STEP / .sxp).
