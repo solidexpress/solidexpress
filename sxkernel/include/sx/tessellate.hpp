@@ -13,9 +13,15 @@ class Document;
 
 struct FaceMesh {
     EntityId face;                    // stable face id
-    std::vector<float> positions;     // xyz triplets
+    std::vector<float> positions;     // xyz triplets (display; GPU is float)
     std::vector<float> normals;       // xyz triplets, same count
     std::vector<uint32_t> indices;    // triangle list into this face's vertices
+};
+
+// Print/export mesh: double vertices from an isolated IncrementalMesh copy.
+struct PrintTriMesh {
+    std::vector<double> positions;  // xyz triplets
+    std::vector<uint32_t> indices;
 };
 
 struct BodyMesh {
@@ -33,8 +39,12 @@ struct BodyMesh {
 // isolate=true meshes a geometric copy so export deflection does not stick
 // on the live body (OCCT IncrementalMesh keeps a finer cache).
 BodyMesh tessellate_body(const Document& doc, const EntityId& body,
-                         double linear_deflection = 0.2,
-                         double angular_deflection = 0.35,
+                         double linear_deflection = 0.02,
+                         double angular_deflection = 0.1,
                          bool isolate = false);
+
+// Always isolates so print deflection does not stick on the live body.
+PrintTriMesh tessellate_print(const Document& doc, const EntityId& body,
+                              double linear_deflection, double angular_deflection);
 
 }  // namespace sx

@@ -17,6 +17,7 @@ var _nozzle: SpinBox
 var _overhang_deg: SpinBox
 var _bed_x: SpinBox
 var _bed_y: SpinBox
+var _mesh: SpinBox
 var _syncing := false
 
 # Wired in by main.gd
@@ -81,6 +82,8 @@ func _ready() -> void:
 	_bed_x.value_changed.connect(func(_v: float) -> void: _push_setup())
 	_bed_y = _mini_spin(params, "Bed Y", 50.0, 1000.0, 10.0, 220.0, "mm")
 	_bed_y.value_changed.connect(func(_v: float) -> void: _push_setup())
+	_mesh = _mini_spin(params, "Mesh", 0.001, 1.0, 0.01, 0.01, "mm")
+	_mesh.value_changed.connect(func(_v: float) -> void: _push_setup())
 
 
 func _mini_spin(parent: Container, label: String, lo: float, hi: float, step: float,
@@ -117,6 +120,8 @@ func sync_from_doc() -> void:
 		_bed_x.value = float(s.get("bed_x", 220.0))
 	if _bed_y:
 		_bed_y.value = float(s.get("bed_y", 220.0))
+	if _mesh:
+		_mesh.value = float(s.get("mesh_linear", 0.01))
 	_syncing = false
 	_apply_bed_size()
 
@@ -131,6 +136,7 @@ func _push_setup() -> void:
 		"overhang_deg": _overhang_deg.value,
 		"bed_x": _bed_x.value,
 		"bed_y": _bed_y.value,
+		"mesh_linear": _mesh.value,
 	}
 	view.doc.set_print_setup(d)
 	_apply_bed_size()

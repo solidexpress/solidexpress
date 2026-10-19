@@ -2150,6 +2150,8 @@ void SxDocument::set_print_setup(const Dictionary& setup) {
         if (!setup.has("min_wall") && s.nozzle_mm > 0.0) s.min_wall = 3.0 * s.nozzle_mm;
     }
     if (setup.has("material")) s.material = to_std(String(setup["material"]));
+    if (setup.has("mesh_linear")) s.mesh_linear = double(setup["mesh_linear"]);
+    if (setup.has("mesh_angular")) s.mesh_angular = double(setup["mesh_angular"]);
     doc_->set_print_setup(s);
 }
 
@@ -2164,6 +2166,8 @@ Dictionary SxDocument::print_setup() const {
     d["overhang_deg"] = s.overhang_deg;
     d["nozzle_mm"] = s.nozzle_mm;
     d["material"] = to_gd(s.material);
+    d["mesh_linear"] = s.mesh_linear;
+    d["mesh_angular"] = s.mesh_angular;
     PackedFloat64Array rot;
     rot.resize(9);
     for (int i = 0; i < 9; ++i) rot[i] = s.rot[static_cast<size_t>(i)];

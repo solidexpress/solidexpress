@@ -1,6 +1,7 @@
 #include "sx/interop.hpp"
 
 #include "sx/document.hpp"
+#include "sx/print.hpp"
 #include "sx/shape_utils.hpp"
 #include "sx/tessellate.hpp"
 
@@ -39,6 +40,7 @@
 #include <cstring>
 #include <exception>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <sstream>
 #include <utility>
@@ -212,6 +214,124 @@ std::vector<EntityId> import_iges(Document& doc, const std::string& path, std::s
     }
 }
 
+namespace {
+
+PrintTriMesh collect_print_mesh(const Document& doc) {
+    PrintTriMesh m;
+    const PrintSetup& ps = doc.print_setup();
+    const double lin = ps.mesh_linear > 0.0 ? ps.mesh_linear : 0.01;
+    const double ang = ps.mesh_angular > 0.0 ? ps.mesh_angular : 0.1;
+    for (const auto& id : doc.body_ids()) {
+        PrintTriMesh bm = tessellate_print(doc, id, lin, ang);
+        const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
+        m.positions.insert(m.positions.end(), bm.positions.begin(), bm.positions.end());
+        for (uint32_t idx : bm.indices) m.indices.push_back(base + idx);
+    }
+    return m;
+}
+
+PrintTriMesh collect_print_mesh_for_body(const Document& doc, const EntityId& body) {
+    const PrintSetup& ps = doc.print_setup();
+    const double lin = ps.mesh_linear > 0.0 ? ps.mesh_linear : 0.01;
+    const double ang = ps.mesh_angular > 0.0 ? ps.mesh_angular : 0.1;
+    return tessellate_print(doc, body, lin, ang);
+}
+
+void append_ascii_num(std::ostream& out, double v) {
+    out << std::setprecision(17) << v;
+}
+
+bool write_stl_from_mesh(const PrintTriMesh& mesh, const std::string& path, bool binary,
+                         std::string* err) {
+    if (mesh.indices.size() < 3) {
+        set_err(err, "no tessellated triangles to export");
+        return false;
+    }
+    auto tri_normal = [&](size_t t, double& nx, double& ny, double& nz) {
+        const uint32_t i0 = mesh.indices[t], i1 = mesh.indices[t + 1], i2 = mesh.indices[t + 2];
+        const double ax = mesh.positions[i1 * 3] - mesh.positions[i0 * 3];
+        const double ay = mesh.positions[i1 * 3 + 1] - mesh.positions[i0 * 3 + 1];
+        const double az = mesh.positions[i1 * 3 + 2] - mesh.positions[i0 * 3 + 2];
+        const double bx = mesh.positions[i2 * 3] - mesh.positions[i0 * 3];
+        const double by = mesh.positions[i2 * 3 + 1] - mesh.positions[i0 * 3 + 1];
+        const double bz = mesh.positions[i2 * 3 + 2] - mesh.positions[i0 * 3 + 2];
+        nx = ay * bz - az * by;
+        ny = az * bx - ax * bz;
+        nz = ax * by - ay * bx;
+        const double len = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (len > 1e-30) {
+            nx /= len;
+            ny /= len;
+            nz /= len;
+        } else {
+            nx = 0;
+            ny = 0;
+            nz = 1;
+        }
+    };
+    if (binary) {
+        std::ofstream out(path, std::ios::binary);
+        if (!out) {
+            set_err(err, "cannot write STL file " + path);
+            return false;
+        }
+        char header[80]{};
+        std::memcpy(header, "SolidExpress", 12);
+        out.write(header, 80);
+        const uint32_t ntri = static_cast<uint32_t>(mesh.indices.size() / 3);
+        out.write(reinterpret_cast<const char*>(&ntri), 4);
+        for (size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+            double nx, ny, nz;
+            tri_normal(t, nx, ny, nz);
+            float rec[12] = {static_cast<float>(nx), static_cast<float>(ny), static_cast<float>(nz),
+                             0, 0, 0, 0, 0, 0, 0, 0, 0};
+            for (int k = 0; k < 3; ++k) {
+                const uint32_t idx = mesh.indices[t + static_cast<size_t>(k)];
+                rec[3 + k * 3] = static_cast<float>(mesh.positions[idx * 3]);
+                rec[4 + k * 3] = static_cast<float>(mesh.positions[idx * 3 + 1]);
+                rec[5 + k * 3] = static_cast<float>(mesh.positions[idx * 3 + 2]);
+            }
+            out.write(reinterpret_cast<const char*>(rec), 48);
+            uint16_t attr = 0;
+            out.write(reinterpret_cast<const char*>(&attr), 2);
+        }
+        return static_cast<bool>(out);
+    }
+    std::ofstream out(path);
+    if (!out) {
+        set_err(err, "cannot write STL file " + path);
+        return false;
+    }
+    out << std::setprecision(17);
+    out << "solid SolidExpress\n";
+    for (size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+        double nx, ny, nz;
+        tri_normal(t, nx, ny, nz);
+        out << "  facet normal ";
+        append_ascii_num(out, nx);
+        out << ' ';
+        append_ascii_num(out, ny);
+        out << ' ';
+        append_ascii_num(out, nz);
+        out << "\n    outer loop\n";
+        for (int k = 0; k < 3; ++k) {
+            const uint32_t idx = mesh.indices[t + static_cast<size_t>(k)];
+            out << "      vertex ";
+            append_ascii_num(out, mesh.positions[idx * 3]);
+            out << ' ';
+            append_ascii_num(out, mesh.positions[idx * 3 + 1]);
+            out << ' ';
+            append_ascii_num(out, mesh.positions[idx * 3 + 2]);
+            out << '\n';
+        }
+        out << "    endloop\n  endfacet\n";
+    }
+    out << "endsolid SolidExpress\n";
+    return static_cast<bool>(out);
+}
+
+}  // namespace
+
 bool export_stl(const Document& doc, const std::string& path, bool binary, std::string* err) {
     try {
         auto ids = doc.body_ids();
@@ -219,32 +339,9 @@ bool export_stl(const Document& doc, const std::string& path, bool binary, std::
             set_err(err, "document has no bodies");
             return false;
         }
-
-        TopoDS_Shape shape;
-        if (ids.size() == 1) {
-            const Body* b = doc.body(ids[0]);
-            if (!b || b->shape.IsNull()) {
-                set_err(err, "body has null shape");
-                return false;
-            }
-            shape = b->shape;
-        } else {
-            shape = make_compound(doc);
-            if (shape.IsNull()) {
-                set_err(err, "failed to build compound for STL export");
-                return false;
-            }
-        }
-
-        BRepMesh_IncrementalMesh mesher(shape, 0.1);
-        (void)mesher;
-
-        StlAPI_Writer writer;
-        writer.ASCIIMode() = binary ? false : true;
-        if (!writer.Write(shape, path.c_str())) {
-            set_err(err, "cannot write STL file " + path);
-            return false;
-        }
+        PrintTriMesh mesh = collect_print_mesh(doc);
+        if (!write_stl_from_mesh(mesh, path, binary, err)) return false;
+        if (err) err->clear();
         return true;
     } catch (const Standard_Failure& e) {
         set_err(err, std::string("STL export: ") + e.GetMessageString());
@@ -318,33 +415,27 @@ TopoDS_Shape heal_shape(const TopoDS_Shape& shape, std::string* report) {
 
 namespace {
 
-struct TriMesh {
-    std::vector<float> positions;
-    std::vector<uint32_t> indices;
-};
+using TriMesh = PrintTriMesh;
 
 TriMesh collect_mesh(const Document& doc) {
+    const PrintSetup& ps = doc.print_setup();
+    const double lin = ps.mesh_linear > 0.0 ? ps.mesh_linear : 0.01;
+    const double ang = ps.mesh_angular > 0.0 ? ps.mesh_angular : 0.1;
     TriMesh m;
     for (const auto& id : doc.body_ids()) {
-        BodyMesh bm = tessellate_body(doc, id, 0.05, 0.2, true);
-        for (const auto& face : bm.faces) {
-            const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
-            m.positions.insert(m.positions.end(), face.positions.begin(), face.positions.end());
-            for (uint32_t idx : face.indices) m.indices.push_back(base + idx);
-        }
+        PrintTriMesh bm = tessellate_print(doc, id, lin, ang);
+        const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
+        m.positions.insert(m.positions.end(), bm.positions.begin(), bm.positions.end());
+        for (uint32_t idx : bm.indices) m.indices.push_back(base + idx);
     }
     return m;
 }
 
 TriMesh collect_mesh_for_body(const Document& doc, const EntityId& body) {
-    TriMesh m;
-    BodyMesh bm = tessellate_body(doc, body, 0.05, 0.2, true);
-    for (const auto& face : bm.faces) {
-        const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
-        m.positions.insert(m.positions.end(), face.positions.begin(), face.positions.end());
-        for (uint32_t idx : face.indices) m.indices.push_back(base + idx);
-    }
-    return m;
+    const PrintSetup& ps = doc.print_setup();
+    const double lin = ps.mesh_linear > 0.0 ? ps.mesh_linear : 0.01;
+    const double ang = ps.mesh_angular > 0.0 ? ps.mesh_angular : 0.1;
+    return tessellate_print(doc, body, lin, ang);
 }
 
 std::string b64(const std::string& raw) {
@@ -439,7 +530,7 @@ bool export_3mf(const Document& doc, const std::string& path, std::string* err) 
             return false;
         }
         const PrintSetup& ps = doc.print_setup();
-        auto xform = [&](float x, float y, float z) {
+        auto xform = [&](double x, double y, double z) {
             return std::array<double, 3>{
                 ps.rot[0] * x + ps.rot[1] * y + ps.rot[2] * z,
                 ps.rot[3] * x + ps.rot[4] * y + ps.rot[5] * z,
@@ -450,6 +541,7 @@ bool export_3mf(const Document& doc, const std::string& path, std::string* err) 
             return false;
         }
         std::ostringstream model;
+        model << std::setprecision(17);
         model << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
               << "<model unit=\"millimeter\" "
               << "xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n"
@@ -520,7 +612,7 @@ bool export_3mf_for_body(const Document& doc, const EntityId& body, const std::s
             return false;
         }
         const PrintSetup& ps = doc.print_setup();
-        auto xform = [&](float x, float y, float z) {
+        auto xform = [&](double x, double y, double z) {
             return std::array<double, 3>{
                 ps.rot[0] * x + ps.rot[1] * y + ps.rot[2] * z,
                 ps.rot[3] * x + ps.rot[4] * y + ps.rot[5] * z,
@@ -531,6 +623,7 @@ bool export_3mf_for_body(const Document& doc, const EntityId& body, const std::s
             return false;
         }
         std::ostringstream model;
+        model << std::setprecision(17);
         model << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
               << "<model unit=\"millimeter\" "
               << "xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n"
@@ -600,22 +693,25 @@ bool export_gltf(const Document& doc, const std::string& path, std::string* err)
             set_err(err, "no tessellated triangles to export");
             return false;
         }
+        std::vector<float> fpos(mesh.positions.size());
+        for (size_t i = 0; i < mesh.positions.size(); ++i)
+            fpos[i] = static_cast<float>(mesh.positions[i]);
         std::string bin;
-        bin.resize(mesh.positions.size() * sizeof(float) + mesh.indices.size() * sizeof(uint32_t));
-        std::memcpy(bin.data(), mesh.positions.data(), mesh.positions.size() * sizeof(float));
-        std::memcpy(bin.data() + mesh.positions.size() * sizeof(float), mesh.indices.data(),
+        bin.resize(fpos.size() * sizeof(float) + mesh.indices.size() * sizeof(uint32_t));
+        std::memcpy(bin.data(), fpos.data(), fpos.size() * sizeof(float));
+        std::memcpy(bin.data() + fpos.size() * sizeof(float), mesh.indices.data(),
                     mesh.indices.size() * sizeof(uint32_t));
-        const size_t pos_bytes = mesh.positions.size() * sizeof(float);
+        const size_t pos_bytes = fpos.size() * sizeof(float);
         const size_t idx_bytes = mesh.indices.size() * sizeof(uint32_t);
-        float minx = mesh.positions[0], miny = mesh.positions[1], minz = mesh.positions[2];
+        float minx = fpos[0], miny = fpos[1], minz = fpos[2];
         float maxx = minx, maxy = miny, maxz = minz;
-        for (size_t i = 0; i + 2 < mesh.positions.size(); i += 3) {
-            minx = std::min(minx, mesh.positions[i]);
-            miny = std::min(miny, mesh.positions[i + 1]);
-            minz = std::min(minz, mesh.positions[i + 2]);
-            maxx = std::max(maxx, mesh.positions[i]);
-            maxy = std::max(maxy, mesh.positions[i + 1]);
-            maxz = std::max(maxz, mesh.positions[i + 2]);
+        for (size_t i = 0; i + 2 < fpos.size(); i += 3) {
+            minx = std::min(minx, fpos[i]);
+            miny = std::min(miny, fpos[i + 1]);
+            minz = std::min(minz, fpos[i + 2]);
+            maxx = std::max(maxx, fpos[i]);
+            maxy = std::max(maxy, fpos[i + 1]);
+            maxz = std::max(maxz, fpos[i + 2]);
         }
         const int nvert = static_cast<int>(mesh.positions.size() / 3);
         const int nidx = static_cast<int>(mesh.indices.size());

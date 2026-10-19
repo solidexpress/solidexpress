@@ -125,9 +125,51 @@ BodyMesh tessellate_body(const Document& doc, const EntityId& body_id,
                 }
             }
         }
-        if (!el.points.empty()) out.edges.push_back(std::move(el));
+        if (!el.points.empty())         out.edges.push_back(std::move(el));
     }
 
+    return out;
+}
+
+PrintTriMesh tessellate_print(const Document& doc, const EntityId& body_id,
+                              double linear_deflection, double angular_deflection) {
+    const Body* b = doc.body(body_id);
+    if (!b) throw std::invalid_argument("tessellate_print: no such body");
+
+    BRepBuilderAPI_Copy copier(b->shape);
+    TopoDS_Shape work = copier.Shape();
+    BRepMesh_IncrementalMesh mesher(work, linear_deflection, /*isRelative=*/false,
+                                    angular_deflection, /*parallel=*/true);
+    (void)mesher;
+
+    PrintTriMesh out;
+    sx::occt::ShapeIndexedMap face_map;
+    TopExp::MapShapes(work, TopAbs_FACE, face_map);
+    for (int fi = 1; fi <= face_map.Extent(); ++fi) {
+        const TopoDS_Face face = TopoDS::Face(face_map(fi));
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(face, loc);
+        if (tri.IsNull()) continue;
+        const gp_Trsf& trsf = loc.Transformation();
+        const bool reversed = (face.Orientation() == TopAbs_REVERSED);
+        const uint32_t base = static_cast<uint32_t>(out.positions.size() / 3);
+        const int nb_nodes = tri->NbNodes();
+        for (int i = 1; i <= nb_nodes; ++i) {
+            gp_Pnt p = tri->Node(i).Transformed(trsf);
+            out.positions.push_back(p.X());
+            out.positions.push_back(p.Y());
+            out.positions.push_back(p.Z());
+        }
+        const int nb_tris = tri->NbTriangles();
+        for (int i = 1; i <= nb_tris; ++i) {
+            int n1, n2, n3;
+            tri->Triangle(i).Get(n1, n2, n3);
+            if (reversed) std::swap(n2, n3);
+            out.indices.push_back(base + static_cast<uint32_t>(n1 - 1));
+            out.indices.push_back(base + static_cast<uint32_t>(n2 - 1));
+            out.indices.push_back(base + static_cast<uint32_t>(n3 - 1));
+        }
+    }
     return out;
 }
 

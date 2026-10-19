@@ -26,6 +26,9 @@ struct PrintSetup {
     std::string material = "PLA";
     // Body → print-space rotation, row-major 3×3. Identity = design +Z is up.
     std::array<double, 9> rot{1, 0, 0, 0, 1, 0, 0, 0, 1};
+    // Isolated-copy mesh for STL/3MF. Display tessellation is separate.
+    double mesh_linear = 0.01;   // mm chord
+    double mesh_angular = 0.1;   // rad
 };
 
 struct PrintReport {

@@ -246,7 +246,9 @@ void to_json(nlohmann::json& j, const PrintSetup& s) {
                        {"overhang_deg", s.overhang_deg},
                        {"nozzle_mm", s.nozzle_mm},
                        {"material", s.material},
-                       {"rot", s.rot}};
+                       {"rot", s.rot},
+                       {"mesh_linear", s.mesh_linear},
+                       {"mesh_angular", s.mesh_angular}};
 }
 
 void from_json(const nlohmann::json& j, PrintSetup& s) {
@@ -261,6 +263,8 @@ void from_json(const nlohmann::json& j, PrintSetup& s) {
         s.material = j["material"].get<std::string>();
     if (j.contains("rot") && j["rot"].is_array() && j["rot"].size() == 9)
         s.rot = j["rot"].get<std::array<double, 9>>();
+    if (j.contains("mesh_linear")) s.mesh_linear = j["mesh_linear"].get<double>();
+    if (j.contains("mesh_angular")) s.mesh_angular = j["mesh_angular"].get<double>();
 }
 
 }  // namespace sx
