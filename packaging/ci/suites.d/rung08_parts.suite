@@ -1,0 +1,3 @@
+script=tests/run_rung08_parts.gd
+tier=full
+timeout=300

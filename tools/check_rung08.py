@@ -66,7 +66,7 @@ PART = {
     "V_NUT": 2009.028,
     "V_PIPE": 2704332.648,
     "V_BOLTED": 5496311.0,
-    "V_WRENCH": None,
+    "V_WRENCH": 43882.755,
     "VOL_50": 5105.0,
     "TOL": TOL,
     "TOL_WRENCH": TOL_WRENCH,
@@ -98,7 +98,7 @@ VOLUMES = {
     "pin": PART["V_PIN"],
     "pipes": 2.0 * PART["V_PIPE"],
     "bolted": PART["V_BOLTED"],
-    "final": None,  # V_BOLTED + V_WRENCH once WP2 fills V_WRENCH
+    "final": float(PART["V_BOLTED"]) + float(PART["V_WRENCH"]),
 }
 
 STAGES_ORDER = ("pin", "pipes", "bolted", "final")

@@ -342,6 +342,51 @@ static func select_from_timeline(ctx: FilmContext, name: String) -> void:
 		await SxInput.push_key(ctx.main.get_viewport(), KEY_TAB)
 
 
+static func flange_rim_edges(doc: SxDocument, body: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var lines: Dictionary = doc.get_edge_lines(body)
+	for eid in lines.keys():
+		var pts: PackedVector3Array = lines[eid]
+		if pts.size() < 8:
+			continue
+		var cx := 0.0
+		var cy := 0.0
+		var z := 0.0
+		for p in pts:
+			cx += p.x
+			cy += p.y
+			z += p.z
+		var n := float(pts.size())
+		cx /= n
+		cy /= n
+		z /= n
+		if absf(absf(z) - mm("L0") - mm("FLANGE_T")) > 0.5:
+			continue
+		var r := 0.0
+		for p in pts:
+			r += Vector2(p.x - cx, p.y - cy).length()
+		r /= n
+		var od_r := mm("FLANGE_D") * 0.5
+		var id_r := mm("ID") * 0.5
+		if absf(r - od_r) < 0.4 or absf(r - id_r) < 0.4:
+			out.append(str(eid))
+	return out
+
+
+static func build_final(doc: SxDocument) -> String:
+	var ext := build_reshelled(doc)
+	if ext == "":
+		return ""
+	var body := output_body(doc, ext)
+	var rims := flange_rim_edges(doc, body)
+	if rims.size() < 4:
+		return ""
+	var fil := doc.graph_add_fillet(ext, rims, mm("FILLET") if mm("FILLET") > 0.0 else 5.0)
+	if fil == "":
+		return ""
+	return ext
+
+
 static func source_names(doc: SxDocument) -> Array:
 	var extrudes: Array = []
 	var shells: Array = []

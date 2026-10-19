@@ -66,12 +66,14 @@ class ParamsTests(unittest.TestCase):
         self.assertEqual(part["PIPE_DZ"], 520)
         self.assertEqual(part["JOINT_Z"], 260)
         self.assertEqual(part["V_PIN"], 6938)
+        self.assertAlmostEqual(part["V_WRENCH"], 43882.755, places=3)
         self.assertEqual(part["VOL_50"], 5105)
         self.assertEqual(part["FINAL_BBOX_SIZE"], [322.5, 229.0, 1040.0])
         self.assertEqual(part["PIPES_BBOX_SIZE"], [225.0, 225.0, 1040.0])
         vols = data["VOLUMES"]
         self.assertAlmostEqual(vols["pin"], 6938, delta=0.01)
         self.assertAlmostEqual(vols["bolted"], 5496311, delta=0.01)
+        self.assertAlmostEqual(vols["final"], 5496311 + 43882.755, delta=0.01)
 
     def test_params_cli(self):
         proc = subprocess.run(
