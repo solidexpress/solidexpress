@@ -182,8 +182,12 @@ class Rows07Chunk1:
     @row("A10", chunk=1, on="rung07", expect={"blocker": "A9", "sketch": True})
     def row_A10(self) -> None:
         status = self.trim_at(self.trim_opening())
-        self.constrain("Coincident", self.jaw_outer(True), self.ellipse_major())
-        self.constrain("Coincident", self.jaw_outer(False), self.ellipse_major())
+        # Point-on-curve: each jaw to a steep-axis tip on the remaining C.
+        # Both jaws to ellipse_major() (the +Y tip) can steal the lower jaw.
+        self.coincident_on_curve(self.jaw_outer(True), self.ellipse_major())
+        self.coincident_on_curve(
+            self.jaw_outer(False), self.world(0.0, -self.mm("ELLIPSE_MAJ") * 0.5)
+        )
         ells = self.ents("ellipse", construction=False)
         arcs = self.ents("elliptical_arc") or self.ents("ellipse")
         left = [e for e in ells if not e.get("construction")]
