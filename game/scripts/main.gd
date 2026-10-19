@@ -1802,6 +1802,12 @@ func _on_sketch_action(action: String) -> void:
 				sketch_mode.end_chain()
 		"revolve":
 			sketch_mode.finish_revolve(TAU, _finish_op_name())
+		"spline_fit":
+			sketch_mode.set_spline_handle_mode("fit")
+		"spline_poles":
+			sketch_mode.set_spline_handle_mode("pole")
+		"spline_comb":
+			sketch_mode.toggle_spline_comb()
 		"horizontal", "vertical", "parallel", "perpendicular", "equal", "coincident", \
 		"tangent", "midpoint", "symmetric", "concentric", "collinear":
 			_apply_constraint(action, 0.0)

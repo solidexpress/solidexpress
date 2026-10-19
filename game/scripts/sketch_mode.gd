@@ -24,6 +24,7 @@ const _SketchVertical := preload("res://scripts/sketch_vertical.gd")
 const _SketchHorizontal := preload("res://scripts/sketch_horizontal.gd")
 const _BooleanTarget := preload("res://scripts/boolean_target.gd")
 const _FaceLabelPark := preload("res://scripts/face_label_park.gd")
+const _SketchSplineEdit := preload("res://scripts/sketch_spline_edit.gd")
 
 const PICK_TOLERANCE := 2.5  # model units (mm) — selection hit radius
 ## Thin lines are a pixel wide. At the jaw-head zoom (~3 px/mm) 2.5 mm is
@@ -108,6 +109,8 @@ var sketch_picture_size := Vector2(100, 100)
 var _picture_node: MeshInstance3D
 ## Fit-spline control points while drawing.
 var _spline_pts: Array[Vector2] = []
+## Fit vs control-polygon handles, comb, tangent pins (WP-S2).
+var spline_edit := _SketchSplineEdit.new()
 ## Straight-slot cap radius (mm). The dim blank sets this before the first
 ## centre click; the rubber-band after that click is the centre distance.
 const DEFAULT_SLOT_RADIUS := 5.0
@@ -2011,6 +2014,10 @@ func selection_actions() -> Array:
 	acts.append("delete")
 	if selected.size() == 1 and _SketchVertical.offers(sketch, selected, selected_roles):
 		acts.append("vertical")
+	if selected.size() == 1 and sketch.entity_info(selected[0]).get("type", "") == "spline":
+		acts.append("spline_fit")
+		acts.append("spline_poles")
+		acts.append("spline_comb")
 	if selected.size() == 2:
 		# Endpoint pair first so Vertical/Horizontal stay on the chip row
 		# instead of … More (a More click would drop the selection).
@@ -2770,7 +2777,7 @@ func _is_point_pair(refs: Array) -> bool:
 func _endpoint_pairs(info: Dictionary) -> Array:
 	var kind := str(info.get("type", ""))
 	var out: Array = []
-	if kind == "line" or kind == "arc":
+	if kind == "line" or kind == "arc" or kind == "spline":
 		if info.has("start"):
 			out.append(["start", info["start"]])
 		if info.has("end"):
@@ -2912,6 +2919,12 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 						best_d = d
 						best_id = id
 						best_part = pair[0]
+			"spline":
+				var sh: Dictionary = spline_edit.hit(info, pos2, best_d)
+				if not sh.is_empty():
+					best_d = pos2.distance_to(_spline_handle_pos(info, str(sh["part"])))
+					best_id = id
+					best_part = str(sh["part"])
 			"circle":
 				pass
 		if str(info.get("type", "")) == "circle" or str(info.get("type", "")) == "arc":
@@ -3035,6 +3048,9 @@ func _drag_preview_at(pos2: Vector2) -> Dictionary:
 		"radius":
 			var c: Vector2 = orig["center"]
 			out["radius"] = maxf(c.distance_to(pos2), 1e-6)
+		_:
+			if orig.get("type", "") == "spline":
+				return _SketchSplineEdit.apply_drag(orig, part, pos2)
 	return out
 
 
@@ -3075,6 +3091,44 @@ func _append_entity_lines(im: ImmediateMesh, info: Dictionary) -> void:
 			for i in range(poly.size() - 1):
 				im.surface_add_vertex(_to3(poly[i] as Vector2))
 				im.surface_add_vertex(_to3(poly[i + 1] as Vector2))
+
+
+func _append_spline_edit_lines(im: ImmediateMesh, info: Dictionary) -> void:
+	var mark := 1.2
+	if spline_edit.mode == _SketchSplineEdit.MODE_FIT:
+		for fp in info.get("fit_points", []):
+			var p: Vector2 = fp as Vector2
+			im.surface_add_vertex(_to3(p + Vector2(-mark, 0)))
+			im.surface_add_vertex(_to3(p + Vector2(mark, 0)))
+			im.surface_add_vertex(_to3(p + Vector2(0, -mark)))
+			im.surface_add_vertex(_to3(p + Vector2(0, mark)))
+	else:
+		var poles: Array = info.get("poles", [])
+		for i in range(poles.size() - 1):
+			im.surface_add_vertex(_to3(poles[i] as Vector2))
+			im.surface_add_vertex(_to3(poles[i + 1] as Vector2))
+		for pv in poles:
+			var q: Vector2 = pv as Vector2
+			im.surface_add_vertex(_to3(q + Vector2(-mark, -mark)))
+			im.surface_add_vertex(_to3(q + Vector2(mark, mark)))
+			im.surface_add_vertex(_to3(q + Vector2(-mark, mark)))
+			im.surface_add_vertex(_to3(q + Vector2(mark, -mark)))
+	var st: Vector2 = info.get("start", Vector2.ZERO) as Vector2
+	var et: Vector2 = info.get("end", Vector2.ZERO) as Vector2
+	var ts: Vector2 = info.get("start_tangent", Vector2.ZERO) as Vector2
+	var te: Vector2 = info.get("end_tangent", Vector2.ZERO) as Vector2
+	im.surface_add_vertex(_to3(st))
+	im.surface_add_vertex(_to3(st + ts))
+	im.surface_add_vertex(_to3(et))
+	im.surface_add_vertex(_to3(et + te))
+	if spline_edit.comb_on and sketch != null:
+		var sid := str(info.get("id", selected[0] if not selected.is_empty() else ""))
+		if sid == "" and not selected.is_empty():
+			sid = selected[0]
+		if sketch.has_method("spline_comb"):
+			for tooth in sketch.spline_comb(sid, 32, 8.0):
+				im.surface_add_vertex(_to3(tooth["at"]))
+				im.surface_add_vertex(_to3(tooth["tip"]))
 
 
 ## Length of a line / radius of a circle/arc / distance between two entities.
@@ -3165,9 +3219,16 @@ func constrain(type: String, value: float = 0.0) -> String:
 					added = true
 		"tangent", "angle", "point_on_line":
 			if selected.size() == 2:
+				var r0 := "self"
+				var r1 := "self"
+				if type == "tangent":
+					var pair_t := _closest_endpoints(selected[0], selected[1])
+					if pair_t.size() == 2:
+						r0 = pair_t[0]
+						r1 = pair_t[1]
 				cid = sketch.add_constraint(type, [
-					{"entity": selected[0], "role": "self"},
-					{"entity": selected[1], "role": "self"}], value)
+					{"entity": selected[0], "role": r0},
+					{"entity": selected[1], "role": r1}], value)
 				added = true
 		"concentric":
 			if selected.size() == 2:
@@ -3682,6 +3743,55 @@ func _commit_spline() -> void:
 		sketch.add_spline(fit)
 	_spline_pts.clear()
 	_redraw()
+
+
+func spline_handle_mode() -> String:
+	return spline_edit.mode
+
+
+func set_spline_handle_mode(mode: String) -> void:
+	spline_edit.set_mode(mode)
+	_redraw()
+	_update_preview()
+	if selected.size() == 1:
+		var info: Dictionary = sketch.entity_info(selected[0])
+		if info.get("type", "") == "spline":
+			status.emit(_SketchSplineEdit.property_label(info) + " — " + spline_edit.mode)
+
+
+func toggle_spline_comb() -> bool:
+	var on := spline_edit.toggle_comb()
+	_redraw()
+	_update_preview()
+	status.emit("Curvature comb " + ("on" if on else "off"))
+	return on
+
+
+func spline_property_label() -> String:
+	if sketch == null or selected.size() != 1:
+		return ""
+	var info: Dictionary = sketch.entity_info(selected[0])
+	if info.get("type", "") != "spline":
+		return ""
+	return _SketchSplineEdit.property_label(info)
+
+
+func _spline_handle_pos(info: Dictionary, part: String) -> Vector2:
+	if part.begins_with("fit:"):
+		var fits: Array = info.get("fit_points", [])
+		var i := int(part.substr(4))
+		if i >= 0 and i < fits.size():
+			return fits[i]
+	elif part.begins_with("pole:"):
+		var poles: Array = info.get("poles", [])
+		var j := int(part.substr(5))
+		if j >= 0 and j < poles.size():
+			return poles[j]
+	elif part == "tan_start":
+		return (info.get("start", Vector2.ZERO) as Vector2) + (info.get("start_tangent", Vector2.ZERO) as Vector2)
+	elif part == "tan_end":
+		return (info.get("end", Vector2.ZERO) as Vector2) + (info.get("end_tangent", Vector2.ZERO) as Vector2)
+	return Vector2.ZERO
 
 
 ## Dense polyline of the kernel interpolating spline (same curve as the solid).
@@ -5149,6 +5259,13 @@ func _endpoint_pos(id: String, role: String) -> Vector2:
 			return info.get("center", Vector2.ZERO)
 		"circle":
 			return info["center"]
+		"spline":
+			var fits: Array = info.get("fit_points", [])
+			if role == "start" and not fits.is_empty():
+				return fits[0]
+			if role == "end" and not fits.is_empty():
+				return fits[fits.size() - 1]
+			return info.get("start", Vector2.ZERO)
 	return info.get("position", Vector2.ZERO)
 
 
@@ -5163,6 +5280,8 @@ func _point_roles_for(id: String) -> Array[String]:
 		out.assign(["start", "end"])
 	elif k == "point":
 		out.assign(["self"])
+	elif k == "spline":
+		out.assign(["start", "end"])
 	elif _is_curve_kind(k):
 		out.assign(["center"])
 	else:
@@ -5222,6 +5341,8 @@ func _redraw_selected() -> void:
 		if info.is_empty():
 			continue
 		_append_entity_lines(im, info)
+		if info.get("type", "") == "spline":
+			_append_spline_edit_lines(im, info)
 		any = true
 	if not any:
 		_selected_node.mesh = null

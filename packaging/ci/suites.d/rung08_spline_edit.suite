@@ -1,0 +1,3 @@
+script=tests/run_rung08_spline_edit.gd
+tier=full
+timeout=180

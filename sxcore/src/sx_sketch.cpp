@@ -216,10 +216,27 @@ Dictionary SxSketch::entity_info(const String& id) const {
             for (const auto& fp : sketch_->spline_fit_points(e->id))
                 pts.push_back(Vector2(fp[0], fp[1]));
             out["fit_points"] = pts;
+            out["point_count"] = static_cast<int>(pts.size());
+            if (!pts.is_empty()) {
+                out["start"] = pts[0];
+                out["end"] = pts[pts.size() - 1];
+            }
             Array poly;
             for (const auto& uv : sketch_->spline_samples(e->id, 64))
                 poly.push_back(Vector2(uv[0], uv[1]));
             out["polyline"] = poly;
+            Array poles;
+            auto geom = sketch_->spline_geom(e->id);
+            for (const auto& uv : geom.poles) poles.push_back(Vector2(uv[0], uv[1]));
+            out["poles"] = poles;
+            auto st = sketch_->spline_end_tangent(e->id, true);
+            auto et = sketch_->spline_end_tangent(e->id, false);
+            const auto ds = sketch_->spline_end_derivative(e->id, true);
+            const auto de = sketch_->spline_end_derivative(e->id, false);
+            out["tangent_start_on"] = st.has_value();
+            out["tangent_end_on"] = et.has_value();
+            out["start_tangent"] = Vector2(st ? (*st)[0] : ds[0], st ? (*st)[1] : ds[1]);
+            out["end_tangent"] = Vector2(et ? (*et)[0] : de[0], et ? (*et)[1] : de[1]);
             break;
         }
         case sx::SketchEntityType::Ellipse:
@@ -270,6 +287,37 @@ PackedVector2Array SxSketch::interpolate_spline(const PackedVector2Array& fit_po
     PackedVector2Array out;
     for (const auto& uv : sx::Sketch::interpolate_samples(fits, n))
         out.push_back(Vector2(uv[0], uv[1]));
+    return out;
+}
+
+bool SxSketch::set_spline_fit_point(const String& id, int index, double x, double y) {
+    return sketch_ && sketch_->set_spline_fit_point(parse_id(id), index, x, y);
+}
+
+bool SxSketch::set_spline_pole(const String& id, int index, double x, double y) {
+    return sketch_ && sketch_->set_spline_pole(parse_id(id), index, x, y);
+}
+
+bool SxSketch::set_spline_end_tangent(const String& id, bool at_start, double tx, double ty,
+                                      bool enabled) {
+    return sketch_ && sketch_->set_spline_end_tangent(parse_id(id), at_start, tx, ty, enabled);
+}
+
+Vector2 SxSketch::spline_end_derivative(const String& id, bool at_start) const {
+    if (!sketch_) return {};
+    const auto d = sketch_->spline_end_derivative(parse_id(id), at_start);
+    return Vector2(d[0], d[1]);
+}
+
+Array SxSketch::spline_comb(const String& id, int n, double scale) const {
+    Array out;
+    if (!sketch_) return out;
+    for (const auto& t : sketch_->spline_comb(parse_id(id), n, scale)) {
+        Dictionary d;
+        d["at"] = Vector2(t.at[0], t.at[1]);
+        d["tip"] = Vector2(t.tip[0], t.tip[1]);
+        out.push_back(d);
+    }
     return out;
 }
 
@@ -326,6 +374,24 @@ bool SxSketch::set_entity_geometry(const String& id, const Dictionary& geo) {
                     set(static_cast<size_t>(1 + 2 * i), v.x);
                     set(static_cast<size_t>(2 + 2 * i), v.y);
                 }
+            }
+            if (geo.has("fit_index") && geo.has("fit_pos")) {
+                Vector2 v = geo["fit_pos"];
+                sketch_->set_spline_fit_point(e->id, static_cast<int>(geo["fit_index"]), v.x, v.y);
+            }
+            if (geo.has("pole_index") && geo.has("pole_pos")) {
+                Vector2 v = geo["pole_pos"];
+                sketch_->set_spline_pole(e->id, static_cast<int>(geo["pole_index"]), v.x, v.y);
+            }
+            if (geo.has("start_tangent")) {
+                Vector2 v = geo["start_tangent"];
+                const bool on = geo.get("tangent_start_on", true);
+                sketch_->set_spline_end_tangent(e->id, true, v.x, v.y, on);
+            }
+            if (geo.has("end_tangent")) {
+                Vector2 v = geo["end_tangent"];
+                const bool on = geo.get("tangent_end_on", true);
+                sketch_->set_spline_end_tangent(e->id, false, v.x, v.y, on);
             }
             break;
     }
@@ -594,6 +660,17 @@ void SxSketch::_bind_methods() {
                          DEFVAL(64));
     ClassDB::bind_method(D_METHOD("interpolate_spline", "fit_points", "n"),
                          &SxSketch::interpolate_spline, DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("set_spline_fit_point", "id", "index", "x", "y"),
+                         &SxSketch::set_spline_fit_point);
+    ClassDB::bind_method(D_METHOD("set_spline_pole", "id", "index", "x", "y"),
+                         &SxSketch::set_spline_pole);
+    ClassDB::bind_method(D_METHOD("set_spline_end_tangent", "id", "at_start", "tx", "ty",
+                                 "enabled"),
+                         &SxSketch::set_spline_end_tangent);
+    ClassDB::bind_method(D_METHOD("spline_end_derivative", "id", "at_start"),
+                         &SxSketch::spline_end_derivative);
+    ClassDB::bind_method(D_METHOD("spline_comb", "id", "n", "scale"), &SxSketch::spline_comb,
+                         DEFVAL(32), DEFVAL(8.0));
     ClassDB::bind_method(D_METHOD("set_entity_geometry", "id", "geo"),
                          &SxSketch::set_entity_geometry);
     ClassDB::bind_method(D_METHOD("add_constraint", "type", "refs", "value", "driving"),

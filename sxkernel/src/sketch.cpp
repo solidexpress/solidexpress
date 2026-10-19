@@ -35,6 +35,9 @@
 #include <Geom_BSplineCurve.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
+#include <GeomAPI_ProjectPointOnCurve.hxx>
+#include <NCollection_Array1.hxx>
+#include <NCollection_HArray1.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
 #include <ShapeExtend_WireData.hxx>
 #include <ShapeFix_Wire.hxx>
@@ -49,6 +52,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <vector>
@@ -63,15 +67,39 @@ gp_Pnt plane_to3d(const SketchPlane& pl, double u, double v) {
                   pl.origin[2] + u * pl.x_dir[2] + v * pl.y_dir[2]);
 }
 
-Handle(Geom_BSplineCurve) interpolate_fits(const SketchPlane& pl,
-                                          const std::vector<std::array<double, 2>>& fits) {
+Handle(Geom_BSplineCurve) interpolate_fits(
+    const SketchPlane& pl, const std::vector<std::array<double, 2>>& fits,
+    const std::optional<std::array<double, 2>>& start_t = std::nullopt,
+    const std::optional<std::array<double, 2>>& end_t = std::nullopt) {
     if (fits.size() < 2) return {};
-    Handle(TColgp_HArray1OfPnt) arr =
-        new TColgp_HArray1OfPnt(1, static_cast<int>(fits.size()));
-    for (int i = 0; i < static_cast<int>(fits.size()); ++i)
+    const int n = static_cast<int>(fits.size());
+    Handle(TColgp_HArray1OfPnt) arr = new TColgp_HArray1OfPnt(1, n);
+    for (int i = 0; i < n; ++i)
         arr->SetValue(i + 1, plane_to3d(pl, fits[static_cast<size_t>(i)][0],
                                         fits[static_cast<size_t>(i)][1]));
-    GeomAPI_Interpolate interp(arr, Standard_False, 1.0e-7);
+    GeomAPI_Interpolate interp(arr, false, 1.0e-7);
+    if (start_t || end_t) {
+        NCollection_Array1<gp_Vec> tans(1, n);
+        Handle(NCollection_HArray1<bool>) flags = new NCollection_HArray1<bool>(1, n);
+        for (int i = 1; i <= n; ++i) {
+            tans.SetValue(i, gp_Vec(0, 0, 0));
+            flags->SetValue(i, false);
+        }
+        auto to_vec = [&](const std::array<double, 2>& uv) {
+            const gp_Pnt a = plane_to3d(pl, 0, 0);
+            const gp_Pnt b = plane_to3d(pl, uv[0], uv[1]);
+            return gp_Vec(a, b);
+        };
+        if (start_t && std::hypot((*start_t)[0], (*start_t)[1]) > 1e-6) {
+            tans.SetValue(1, to_vec(*start_t));
+            flags->SetValue(1, true);
+        }
+        if (end_t && std::hypot((*end_t)[0], (*end_t)[1]) > 1e-6) {
+            tans.SetValue(n, to_vec(*end_t));
+            flags->SetValue(n, true);
+        }
+        interp.Load(tans, flags, false);
+    }
     interp.Perform();
     if (!interp.IsDone()) return {};
     return interp.Curve();
@@ -551,8 +579,14 @@ std::vector<std::array<double, 2>> Sketch::spline_fit_points(const EntityId& id)
     return out;
 }
 
+static Handle(Geom_BSplineCurve) interpolating_curve(const Sketch& sk, const EntityId& id) {
+    return interpolate_fits(sk.plane(), sk.spline_fit_points(id),
+                            sk.spline_end_tangent(id, true),
+                            sk.spline_end_tangent(id, false));
+}
+
 TopoDS_Edge Sketch::spline_edge(const EntityId& id) const {
-    Handle(Geom_BSplineCurve) c = interpolate_fits(plane_, spline_fit_points(id));
+    Handle(Geom_BSplineCurve) c = interpolating_curve(*this, id);
     if (c.IsNull()) return {};
     BRepBuilderAPI_MakeEdge mk(c);
     return mk.IsDone() ? mk.Edge() : TopoDS_Edge{};
@@ -560,7 +594,7 @@ TopoDS_Edge Sketch::spline_edge(const EntityId& id) const {
 
 std::vector<std::array<double, 2>> Sketch::spline_samples(const EntityId& id, int n) const {
     std::vector<std::array<double, 2>> out;
-    Handle(Geom_BSplineCurve) c = interpolate_fits(plane_, spline_fit_points(id));
+    Handle(Geom_BSplineCurve) c = interpolating_curve(*this, id);
     if (c.IsNull() || n < 2) return spline_fit_points(id);
     const double u0 = c->FirstParameter();
     const double u1 = c->LastParameter();
@@ -574,7 +608,7 @@ std::vector<std::array<double, 2>> Sketch::spline_samples(const EntityId& id, in
 
 Sketch::SplineGeom Sketch::spline_geom(const EntityId& id) const {
     SplineGeom g;
-    Handle(Geom_BSplineCurve) c = interpolate_fits(plane_, spline_fit_points(id));
+    Handle(Geom_BSplineCurve) c = interpolating_curve(*this, id);
     if (c.IsNull()) return g;
     g.degree = c->Degree();
     g.ok = true;
@@ -604,6 +638,199 @@ std::vector<std::array<double, 2>> Sketch::interpolate_samples(
         out.push_back({p.X(), p.Y()});
     }
     return out;
+}
+
+namespace {
+
+constexpr int kTanStart = 1;
+constexpr int kTanEnd = 2;
+// Extra block after [n, x0, y0, ...]: flags, stx, sty, etx, ety
+constexpr int kTanBlock = 5;
+
+int spline_n(const Sketch& sk, const SketchEntity& e) {
+    if (e.params.empty()) return 0;
+    return static_cast<int>(sk.param(e.params[0]));
+}
+
+int tan_index(const SketchEntity& e, int n) { return 1 + 2 * n; }
+
+bool has_tan_block(const SketchEntity& e, int n) {
+    return static_cast<int>(e.params.size()) >= 1 + 2 * n + kTanBlock;
+}
+
+}  // namespace
+
+bool Sketch::set_spline_fit_point(const EntityId& id, int index, double x, double y) {
+    SketchEntity* e = entity_mut(id);
+    if (!e || e->type != SketchEntityType::Spline) return false;
+    const int n = spline_n(*this, *e);
+    if (index < 0 || index >= n) return false;
+    param_mut(e->params[static_cast<size_t>(1 + 2 * index)]) = x;
+    param_mut(e->params[static_cast<size_t>(2 + 2 * index)]) = y;
+    ++revision_;
+    return true;
+}
+
+bool Sketch::set_spline_pole(const EntityId& id, int index, double x, double y) {
+    Handle(Geom_BSplineCurve) oldc = interpolating_curve(*this, id);
+    if (oldc.IsNull()) return false;
+    if (index < 0 || index >= oldc->NbPoles()) return false;
+    Handle(Geom_BSplineCurve) neu = new Geom_BSplineCurve(*oldc);
+    neu->SetPole(index + 1, plane_to3d(plane_, x, y));
+    auto fits = spline_fit_points(id);
+    for (auto& fp : fits) {
+        GeomAPI_ProjectPointOnCurve proj(plane_to3d(plane_, fp[0], fp[1]), oldc);
+        if (proj.NbPoints() < 1) continue;
+        const gp_Pnt q = neu->Value(proj.LowerDistanceParameter());
+        fp = to_sketch_uv({q.X(), q.Y(), q.Z()});
+    }
+    SketchEntity* e = entity_mut(id);
+    if (!e) return false;
+    const int n = spline_n(*this, *e);
+    const int m = std::min(n, static_cast<int>(fits.size()));
+    for (int i = 0; i < m; ++i) {
+        param_mut(e->params[static_cast<size_t>(1 + 2 * i)]) = fits[static_cast<size_t>(i)][0];
+        param_mut(e->params[static_cast<size_t>(2 + 2 * i)]) = fits[static_cast<size_t>(i)][1];
+    }
+    ++revision_;
+    return true;
+}
+
+bool Sketch::set_spline_end_tangent(const EntityId& id, bool at_start, double tx, double ty,
+                                    bool enabled) {
+    SketchEntity* e = entity_mut(id);
+    if (!e || e->type != SketchEntityType::Spline) return false;
+    const int n = spline_n(*this, *e);
+    if (n < 2) return false;
+    if (!has_tan_block(*e, n)) {
+        const size_t base = push_params({0.0, 0.0, 0.0, 0.0, 0.0});
+        for (int i = 0; i < kTanBlock; ++i) e->params.push_back(base + static_cast<size_t>(i));
+    }
+    const int t0 = tan_index(*e, n);
+    int flags = static_cast<int>(param(e->params[static_cast<size_t>(t0)]));
+    const int bit = at_start ? kTanStart : kTanEnd;
+    if (enabled)
+        flags |= bit;
+    else
+        flags &= ~bit;
+    param_mut(e->params[static_cast<size_t>(t0)]) = static_cast<double>(flags);
+    const int ox = t0 + (at_start ? 1 : 3);
+    const int oy = t0 + (at_start ? 2 : 4);
+    param_mut(e->params[static_cast<size_t>(ox)]) = tx;
+    param_mut(e->params[static_cast<size_t>(oy)]) = ty;
+    ++revision_;
+    return true;
+}
+
+std::optional<std::array<double, 2>> Sketch::spline_end_tangent(const EntityId& id,
+                                                               bool at_start) const {
+    const SketchEntity* e = entity(id);
+    if (!e || e->type != SketchEntityType::Spline) return std::nullopt;
+    const int n = spline_n(*this, *e);
+    if (!has_tan_block(*e, n)) return std::nullopt;
+    const int t0 = tan_index(*e, n);
+    const int flags = static_cast<int>(param(e->params[static_cast<size_t>(t0)]));
+    const int bit = at_start ? kTanStart : kTanEnd;
+    if ((flags & bit) == 0) return std::nullopt;
+    const int ox = t0 + (at_start ? 1 : 3);
+    const int oy = t0 + (at_start ? 2 : 4);
+    return std::array<double, 2>{param(e->params[static_cast<size_t>(ox)]),
+                                 param(e->params[static_cast<size_t>(oy)])};
+}
+
+std::array<double, 2> Sketch::spline_end_derivative(const EntityId& id, bool at_start) const {
+    Handle(Geom_BSplineCurve) c = interpolating_curve(*this, id);
+    if (c.IsNull()) return {0, 0};
+    const double u = at_start ? c->FirstParameter() : c->LastParameter();
+    gp_Pnt p;
+    gp_Vec v;
+    c->D1(u, p, v);
+    const auto a = to_sketch_uv({p.X(), p.Y(), p.Z()});
+    const auto b = to_sketch_uv({p.X() + v.X(), p.Y() + v.Y(), p.Z() + v.Z()});
+    return {b[0] - a[0], b[1] - a[1]};
+}
+
+std::vector<Sketch::CombTooth> Sketch::spline_comb(const EntityId& id, int n, double scale) const {
+    std::vector<CombTooth> out;
+    Handle(Geom_BSplineCurve) c = interpolating_curve(*this, id);
+    if (c.IsNull() || n < 2) return out;
+    const auto nn = plane_.normal();
+    gp_Dir nd(nn[0], nn[1], nn[2]);
+    const double u0 = c->FirstParameter();
+    const double u1 = c->LastParameter();
+    out.reserve(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const double t = u0 + (u1 - u0) * (static_cast<double>(i) / (n - 1));
+        gp_Pnt p;
+        gp_Vec d1, d2;
+        c->D2(t, p, d1, d2);
+        CombTooth tooth;
+        tooth.at = to_sketch_uv({p.X(), p.Y(), p.Z()});
+        const double mag = d1.Magnitude();
+        if (mag < 1e-12) {
+            tooth.tip = tooth.at;
+            out.push_back(tooth);
+            continue;
+        }
+        const double k = d1.Crossed(d2).Magnitude() / (mag * mag * mag);
+        gp_Vec side = nd.Crossed(d1);
+        if (side.Magnitude() < 1e-12) {
+            tooth.tip = tooth.at;
+            out.push_back(tooth);
+            continue;
+        }
+        side.Normalize();
+        const gp_Pnt tip = p.Translated(side * (k * scale));
+        tooth.tip = to_sketch_uv({tip.X(), tip.Y(), tip.Z()});
+        out.push_back(tooth);
+    }
+    return out;
+}
+
+void Sketch::sync_spline_line_tangents() {
+    for (const auto& c : constraints_) {
+        if (c.type != ConstraintType::Tangent || c.refs.size() < 2) continue;
+        const SketchEntity* a = entity(c.refs[0].entity);
+        const SketchEntity* b = entity(c.refs[1].entity);
+        if (!a || !b) continue;
+        const SketchEntity* sp = nullptr;
+        const SketchEntity* ln = nullptr;
+        bool at_start = false;
+        if (a->type == SketchEntityType::Spline && b->type == SketchEntityType::Line) {
+            sp = a;
+            ln = b;
+            at_start = c.refs[0].role == PointRole::Start;
+        } else if (a->type == SketchEntityType::Line && b->type == SketchEntityType::Spline) {
+            sp = b;
+            ln = a;
+            at_start = c.refs[1].role == PointRole::Start;
+        } else {
+            continue;
+        }
+        if (ln->params.size() < 4) continue;
+        const double x1 = param(ln->params[0]), y1 = param(ln->params[1]);
+        const double x2 = param(ln->params[2]), y2 = param(ln->params[3]);
+        auto fits = spline_fit_points(sp->id);
+        if (fits.size() < 2) continue;
+        const auto& ep = at_start ? fits.front() : fits.back();
+        double dx = x2 - x1, dy = y2 - y1;
+        const double d1 = std::hypot(x1 - ep[0], y1 - ep[1]);
+        const double d2 = std::hypot(x2 - ep[0], y2 - ep[1]);
+        if (d2 + 1e-9 < d1) {
+            dx = x1 - x2;
+            dy = y1 - y2;
+        }
+        const double len = std::hypot(dx, dy);
+        if (len < 1e-9) continue;
+        auto cur = spline_end_tangent(sp->id, at_start);
+        double mag = cur ? std::hypot((*cur)[0], (*cur)[1]) : 0.0;
+        if (mag < 1e-6) {
+            const auto der = spline_end_derivative(sp->id, at_start);
+            mag = std::hypot(der[0], der[1]);
+        }
+        if (mag < 1e-6) mag = len;
+        set_spline_end_tangent(sp->id, at_start, dx / len * mag, dy / len * mag, true);
+    }
 }
 
 std::optional<std::array<double, 5>> Sketch::ellipse_axes(const EntityId& id) const {

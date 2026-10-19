@@ -423,6 +423,19 @@ struct Xlate {
                     sys.addConstraintTangent(oriented, a0->second, /*ccw=*/true, tag, drv);
                     return true;
                 }
+                // Spline end to a line: Load() on the interpolant (see
+                // Sketch::sync_spline_line_tangents). Clamped end knots are
+                // multiplicity degree+1, so PlaneGCS SlopeAtBSplineKnot asserts.
+                const SketchEntity* ea = sketch.entity(c.refs.at(0).entity);
+                const SketchEntity* eb = sketch.entity(c.refs.at(1).entity);
+                if (ea && eb) {
+                    const bool spline_line =
+                        (ea->type == SketchEntityType::Spline && eb->type == SketchEntityType::Line) ||
+                        (ea->type == SketchEntityType::Line && eb->type == SketchEntityType::Spline) ||
+                        (ea->type == SketchEntityType::Spline && eb->type == SketchEntityType::Arc) ||
+                        (ea->type == SketchEntityType::Arc && eb->type == SketchEntityType::Spline);
+                    if (spline_line) return true;
+                }
                 return false;
             }
             case ConstraintType::Equal: {
@@ -628,6 +641,7 @@ struct Xlate {
 SolveResult PlaneGCSBackendImpl::solve(Sketch& sketch) {
     SolveResult result;
     sketch.reconcile_arc_angles();
+    sketch.sync_spline_line_tangents();
     Xlate x(sketch);
     x.build_geometry();
 
@@ -654,6 +668,7 @@ SolveResult PlaneGCSBackendImpl::solve(Sketch& sketch) {
     if (status == GCS::Success || status == GCS::Converged) {
         x.sys.applySolution();
         for (auto& [idx, p] : x.by_index) sketch.param_mut(idx) = *p;
+        sketch.sync_spline_line_tangents();
         result.status = (status == GCS::Success) ? SolveStatus::Success : SolveStatus::Converged;
     } else {
         result.status = SolveStatus::Failed;

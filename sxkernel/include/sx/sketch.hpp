@@ -184,6 +184,21 @@ public:
     // UV interpolant for live preview (same GeomAPI_Interpolate, XY plane).
     static std::vector<std::array<double, 2>> interpolate_samples(
         const std::vector<std::array<double, 2>>& fit_points, int n = 64);
+    bool set_spline_fit_point(const EntityId& id, int index, double x, double y);
+    bool set_spline_pole(const EntityId& id, int index, double x, double y);
+    // End tangent in sketch UV. `enabled` false drops the Load() pin (C2 end).
+    bool set_spline_end_tangent(const EntityId& id, bool at_start, double tx, double ty,
+                                bool enabled);
+    std::optional<std::array<double, 2>> spline_end_tangent(const EntityId& id,
+                                                            bool at_start) const;
+    std::array<double, 2> spline_end_derivative(const EntityId& id, bool at_start) const;
+    struct CombTooth {
+        std::array<double, 2> at{0, 0};
+        std::array<double, 2> tip{0, 0};
+    };
+    std::vector<CombTooth> spline_comb(const EntityId& id, int n = 32, double scale = 8.0) const;
+    // Driving Tangent(spline, line): Load() end tangent from the line direction.
+    void sync_spline_line_tangents();
     // cx, cy, rx, ry, angle. Empty if `id` is not an ellipse or elliptical arc.
     std::optional<std::array<double, 5>> ellipse_axes(const EntityId& id) const;
 

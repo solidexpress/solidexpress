@@ -59,6 +59,12 @@ public:
     godot::PackedVector2Array spline_samples(const godot::String& id, int n = 64) const;
     godot::PackedVector2Array interpolate_spline(const godot::PackedVector2Array& fit_points,
                                                  int n = 64) const;
+    bool set_spline_fit_point(const godot::String& id, int index, double x, double y);
+    bool set_spline_pole(const godot::String& id, int index, double x, double y);
+    bool set_spline_end_tangent(const godot::String& id, bool at_start, double tx, double ty,
+                                bool enabled);
+    godot::Vector2 spline_end_derivative(const godot::String& id, bool at_start) const;
+    godot::Array spline_comb(const godot::String& id, int n = 32, double scale = 8.0) const;
     bool set_entity_geometry(const godot::String& id, const godot::Dictionary& geo);
 
     // refs: Array of Dictionaries {entity: String, role: String}.
