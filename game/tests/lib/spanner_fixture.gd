@@ -1084,6 +1084,17 @@ static func blind_cut(ctx: FilmContext, distance: String) -> void:
 	await FilmSteps.type_distance(ctx, distance)
 	await SxInput.push_key(ctx.main.get_viewport(), KEY_ENTER)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
+	# Face normal on the handle top is +Z (out of the solid). Flip so Cut
+	# Blind 1 goes into the 6 mm handle; otherwise the pad is in air and
+	# Feature Mirror reports "mirror of tool failed".
+	var flip: CheckButton = chrome.flip_side_button() if chrome != null else null
+	if flip == null or not flip.is_visible_in_tree():
+		flip = find_auto(ctx.main, "finish:Flip") as CheckButton
+	if flip != null and flip.is_visible_in_tree() and not flip.button_pressed:
+		await FilmActor.of(ctx).aim(FilmUI.control_screen_center(flip),
+				FilmUICues.alert("Flip", "Flip Side to Cut"))
+		await SxInput.x11_click(flip)
+		await FilmUI.wait_frames(ctx.tree, 2)
 	var ex: Button = chrome.extrude_button() if chrome != null else null
 	if ex == null or not ex.is_visible_in_tree():
 		ex = find_auto(ctx.main, "finish:Extrude") as Button
