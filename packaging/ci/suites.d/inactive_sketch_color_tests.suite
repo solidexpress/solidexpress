@@ -1,0 +1,2 @@
+script=tests/run_inactive_sketch_color_tests.gd
+tier=full

@@ -1,16 +1,16 @@
 class_name SketchPadOverlay
 extends Node3D
 ## Translucent pads for committed Sketch features (extents + 20%).
-## Closed profiles: gold fill / rim / strokes (loft / extrude / sweep section).
+## Closed profiles: SW-grey fill / rim / strokes (inactive sketches, VS #14).
 ## Open rails: cyan fill / rim / strokes (path merge). Clickable when not editing.
 
 ## Fill is deliberately thin (1/10 of the previous 0.28 alpha).
-const PAD_COLOR_CLOSED := Color(1.0, 0.9, 0.2, 0.028)
+const PAD_COLOR_CLOSED := Color(0.55, 0.58, 0.62, 0.03)
 const PAD_COLOR_OPEN := Color(0.25, 0.85, 0.95, 0.035)
-const EDGE_COLOR_CLOSED := Color(1.0, 0.95, 0.55, 1.0)
+const EDGE_COLOR_CLOSED := Color(0.62, 0.65, 0.68, 1.0)
 const EDGE_COLOR_OPEN := Color(0.45, 0.92, 1.0, 1.0)
 ## Opaque profile so the 2D shape reads clearly on the pad in 3D.
-const PROFILE_COLOR_CLOSED := Color(0.98, 0.78, 0.08, 1.0)
+const PROFILE_COLOR_CLOSED := Color(0.55, 0.58, 0.62, 1.0)
 const PROFILE_COLOR_OPEN := Color(0.35, 0.88, 1.0, 1.0)
 const CONSTRUCTION_COLOR := Color(0.85, 0.7, 0.25, 0.45)
 const PAD_FRAC := 0.2
