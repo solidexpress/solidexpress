@@ -592,7 +592,7 @@
     "title": "Combination spanner: ellipse, 12-point, mid-plane, mirrored recess",
     "script": "res://tests/films/film_spanner.gd",
     "enabled": true,
-    "quit_after": 12000,
+    "quit_after": 36000,
     "blurb": "Front C and 12-point box end, mid-plane 10/6, neck fillets, offset recess mirrored about Front."
   }
 ]
