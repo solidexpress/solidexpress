@@ -1,6 +1,7 @@
 #include "sx/interop.hpp"
 
 #include "sx/document.hpp"
+#include "sx/instances.hpp"
 #include "sx/print.hpp"
 #include "sx/shape_utils.hpp"
 #include "sx/tessellate.hpp"
@@ -32,6 +33,8 @@
 #include <TopoDS_Shape.hxx>
 
 #include <Standard_Failure.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Trsf.hxx>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -43,6 +46,7 @@
 #include <iomanip>
 #include <map>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 
 namespace sx::interop {
@@ -417,16 +421,50 @@ namespace {
 
 using TriMesh = PrintTriMesh;
 
+void append_transformed(TriMesh& dest, const PrintTriMesh& src, const gp_Trsf& trsf) {
+    const uint32_t base = static_cast<uint32_t>(dest.positions.size() / 3);
+    for (size_t i = 0; i + 2 < src.positions.size(); i += 3) {
+        gp_Pnt p(src.positions[i], src.positions[i + 1], src.positions[i + 2]);
+        p.Transform(trsf);
+        dest.positions.push_back(p.X());
+        dest.positions.push_back(p.Y());
+        dest.positions.push_back(p.Z());
+    }
+    for (uint32_t idx : src.indices) dest.indices.push_back(base + idx);
+}
+
+// Visible geometry for File → Export 3MF. Documents with instances tessellate
+// each instance's source under its gp_Trsf and skip those source bodies
+// (the UI already hides insert sources). Parts with zero instances keep
+// body-at-identity, which is rungs 1–7.
 TriMesh collect_mesh(const Document& doc) {
     const PrintSetup& ps = doc.print_setup();
     const double lin = ps.mesh_linear > 0.0 ? ps.mesh_linear : 0.01;
     const double ang = ps.mesh_angular > 0.0 ? ps.mesh_angular : 0.1;
     TriMesh m;
+    if (doc.instances().empty()) {
+        for (const auto& id : doc.body_ids()) {
+            append_transformed(m, tessellate_print(doc, id, lin, ang), gp_Trsf());
+        }
+        return m;
+    }
+    std::unordered_set<EntityId> sources;
+    sources.reserve(doc.instances().size());
+    for (const auto& inst : doc.instances()) sources.insert(inst.source_body);
+    std::map<EntityId, PrintTriMesh> cache;
+    for (const auto& inst : doc.instances()) {
+        auto it = cache.find(inst.source_body);
+        if (it == cache.end()) {
+            it = cache
+                     .emplace(inst.source_body,
+                              tessellate_print(doc, inst.source_body, lin, ang))
+                     .first;
+        }
+        append_transformed(m, it->second, transform_of(inst));
+    }
     for (const auto& id : doc.body_ids()) {
-        PrintTriMesh bm = tessellate_print(doc, id, lin, ang);
-        const uint32_t base = static_cast<uint32_t>(m.positions.size() / 3);
-        m.positions.insert(m.positions.end(), bm.positions.begin(), bm.positions.end());
-        for (uint32_t idx : bm.indices) m.indices.push_back(base + idx);
+        if (sources.count(id)) continue;
+        append_transformed(m, tessellate_print(doc, id, lin, ang), gp_Trsf());
     }
     return m;
 }
@@ -536,7 +574,10 @@ bool export_3mf(const Document& doc, const std::string& path, std::string* err) 
                 ps.rot[3] * x + ps.rot[4] * y + ps.rot[5] * z,
                 ps.rot[6] * x + ps.rot[7] * y + ps.rot[8] * z};
         };
-        if (!mesh_edges_closed(mesh, xform, err)) {
+        // Mating faces occupy the same plane (flange-to-flange). Welding the
+        // combined soup at 1e-6 would mark those edges non-manifold. Each
+        // instance is a closed solid; skip the fused check when placing them.
+        if (doc.instances().empty() && !mesh_edges_closed(mesh, xform, err)) {
             std::remove(path.c_str());
             return false;
         }

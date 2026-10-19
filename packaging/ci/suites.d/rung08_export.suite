@@ -1,0 +1,3 @@
+script=tests/run_rung08_export.gd
+tier=full
+timeout=420
