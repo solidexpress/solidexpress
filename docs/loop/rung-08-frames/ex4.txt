@@ -1,0 +1,93 @@
+Exercise 4: Pipeline Assembly
+Features Learned: Assemblies, Mating, Drafting Parts within Assemblies
+
+
+In this exercise we will be utilizing all the parts used in the previous exercises to assemble together a
+small length of pipe. The hex nut, wrench, pipe section will all be used. We will also design a very simple
+pin, which will be created directly within the assembly. This exercise will give a basic overview of
+assemblies and mates in SolidWorks.
+
+
+
+
+    1. First, start a new assembly in SolidWorks. Up until this point we have been starting by making a
+       new part. This time, start a new assembly. Be aware that the units in the assembly may be in IPS
+       (inches, pounds, seconds). Make sure to change the units to MMGS in the bottom right hand
+       corner before you begin.
+2. On the right hand side in the Part/Assembly to Insert panel, click the browse button and select the
+   3 components we have designed so far, the hex nut, the wrench and the pipe section.
+
+
+
+
+3. Once the parts are opened, drop them anywhere on the screen by left clicking. When the parts
+   have been placed in the assembly, check to see that all parts are free to move by clicking and
+   dragging them. If one of the parts does not move (it is fixed) then find the part in the left hand
+   panel, right click, and click float. The (f) in brackets next to the part name signifies that it is fixed
+   and cannot move.
+4. After all parts have been placed in the assembly it is time to design the final part, the pin. We will
+   be drafting this part directly within the assembly. First click the drop down menu under Insert
+   Components and select New Part. Select any of the principle planes to sketch on. At this point we
+   can sketch and draft a part in the same manner we have done previously. Sketch the following
+   outline and use the Revolved Boss/Base tool to rotate the sketch 360° to obtain a solid part. Be
+   sure to unselect Edit Component to finalize the part.
+
+
+
+
+5. Once the pin is designed within the assembly we have all parts necessary to construct our
+   pipeline! One of each part should already be in the assembly from step 2. To copy parts, simply
+   click and drag a box around the part you wish to copy until the entire part turns blue, and CTRL +
+   C and CTRL + V as many copies as needed. For this assembly we will need 2 of the pipe section,
+   16 hex nuts, 1 wrench and 8 pins.
+6. Once we have the correct number of parts we are ready to assemble our pipeline. It is helpful to
+   fix one of the pipe sections so it doesn’t move, and attach all the other parts to the one fixed pipe
+   section. Right click one of the pipe sections in the panel on the left and click fix.
+
+
+
+
+7. Once one of the pipe sections is fixed we are ready to mate the other components to it. Mating is
+   a tool used in assemblies to attach components together.
+
+    We will start with the Concentric Mate. Start by selecting the Mate tool in the Assembly tab at
+    the top. Then select both inside surfaces of the two pipe sections.
+    Note how SolidWorks recognizes the surfaces to be mated and automatically selects the
+    Concentric Mate. There are many different mates as seen in the Standard Mates panel. In addition
+    to the standard ones, there are Advanced Mates and Mechanical Mates, which are more complex
+    and have more parameters.
+
+    Now that the two pipe sections have been concentrically mated, notice how if you try to move the
+    unfixed section, it only moves along one axis and rotates about that axis. To completely fix the
+    two sections together, we need to add two more mates, one to fix the components axially, and
+    another to fix the components rotationally.
+
+8. Mate the two base surfaces of the pipe sections. SolidWorks should automatically set a
+   Coincident mate. Next we have to fix the sections together rotationally. To do this, mate two of
+   the bolt holes on each pipe section with a concentric mate. Now the two pipe sections should be
+   completely fixed with no degrees of motion.
+
+
+
+
+9. Mate the nut/pin assembly as shown. For each bore, mate two nuts and one pin using a series of
+   standard mates (coincident, concentric). These mates are fairly uncomplicated and should be done
+   with relative ease.
+10. Repeat this process for all 8 bores, using all 16 nuts and 8 pins in the process. The assembly
+    should appear as follows. Take note: the nuts and pins are still able to rotate freely. It is possible
+    but not required to apply a lock mate (under standard mates) to the nuts and any surface of the
+    pipe section to ensure that they are not free to rotate.
+
+
+
+
+11. The final step is to mate the wrench to one of the nuts. First, mate the bottom surface of the
+    wrench to the surface of the pipe section base. Next, mate the top inside surface of the wrench to
+    one of the sides on the nut.
+
+
+
+
+    Finally, mate the bottom curve of the wrench head to the corresponding side of the nut. The
+    wrench should now be fully mated to the nut. The assembly at this point is finished.
+
