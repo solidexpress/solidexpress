@@ -118,7 +118,9 @@ class WalkGestures(Walk):
         return path
 
     def export_3mf(self, name: str) -> str:
-        path = Path(self.out / name)
+        # Bare names (N11 wrench-noext) get `.3mf` appended by the product.
+        requested = Path(self.out / name)
+        written = requested if name.lower().endswith(".3mf") else Path(str(requested) + ".3mf")
         last_err = ""
         for attempt in range(3):
             try:
@@ -126,7 +128,7 @@ class WalkGestures(Walk):
                 self.menu("File", "Export 3MF...")
                 # Absolute path on retry: the name field can keep a stale folder
                 # when seven walks tessellate at once.
-                filed = str(path) if attempt else name
+                filed = str(requested) if attempt else name
                 reply = self.commit_dialog(filed)
                 if reply.get("visible"):
                     last_err = f"Export dialog stayed open status={self.S()!r}"
@@ -137,13 +139,16 @@ class WalkGestures(Walk):
                 while time.monotonic() < deadline:
                     self.d.wait_idle(frames=4)
                     self.refresh("status")
-                    if path.is_file() and path.stat().st_size > 64:
-                        return str(path)
-                    if "3MF export failed" in self.S():
-                        last_err = self.S()
+                    status = self.S()
+                    have = written.is_file() and written.stat().st_size > 64
+                    if have or "Exported 3MF" in status:
+                        return str(requested)
+                    if "3MF export failed" in status:
+                        last_err = status
                         break
                 if not last_err:
-                    last_err = f"missing {path} status={self.S()!r} size={path.stat().st_size if path.is_file() else 0}"
+                    size = written.stat().st_size if written.is_file() else 0
+                    last_err = f"missing {written} status={self.S()!r} size={size}"
             except SxError as exc:
                 last_err = str(exc)
                 try:
