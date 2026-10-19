@@ -257,7 +257,7 @@ class Walk:
             self.rows.append(rec)
         prefix = "resume-replay " if not record else ""
         print(f"{prefix}{rid:5} {verdict:8} {rec['seconds']:6.1f}s  {evidence[:220]}", flush=True)
-        if str(verdict).startswith("PASS"):
+        if str(verdict).startswith("PASS") and not os.environ.get("SX_CONFIRM_DIR", "").strip():
             self._snapshot_row(rid)
         return verdict
 

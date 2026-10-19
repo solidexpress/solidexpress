@@ -3,6 +3,9 @@ WalkGestures is the base each walk app extends; Walk stays rung-agnostic.
 """
 from __future__ import annotations
 
+import time
+from pathlib import Path
+
 from sxdrive import SxError
 from walk.harness import Walk
 
@@ -115,12 +118,40 @@ class WalkGestures(Walk):
         return path
 
     def export_3mf(self, name: str) -> str:
-        path = str(self.out / name)
-        self.menu("File", "Export 3MF...")
-        reply = self.commit_dialog(name)
-        if reply.get("visible"):
-            raise SxError(f"Export dialog stayed open status={self.S()!r}")
-        return path
+        path = Path(self.out / name)
+        last_err = ""
+        for attempt in range(3):
+            try:
+                self.dismiss_modals()
+                self.menu("File", "Export 3MF...")
+                # Absolute path on retry: the name field can keep a stale folder
+                # when seven walks tessellate at once.
+                filed = str(path) if attempt else name
+                reply = self.commit_dialog(filed)
+                if reply.get("visible"):
+                    last_err = f"Export dialog stayed open status={self.S()!r}"
+                    self.dismiss_modals()
+                    time.sleep(0.4)
+                    continue
+                deadline = time.monotonic() + 20.0
+                while time.monotonic() < deadline:
+                    self.d.wait_idle(frames=4)
+                    self.refresh("status")
+                    if path.is_file() and path.stat().st_size > 64:
+                        return str(path)
+                    if "3MF export failed" in self.S():
+                        last_err = self.S()
+                        break
+                if not last_err:
+                    last_err = f"missing {path} status={self.S()!r} size={path.stat().st_size if path.is_file() else 0}"
+            except SxError as exc:
+                last_err = str(exc)
+                try:
+                    self.dismiss_modals()
+                except SxError:
+                    pass
+            time.sleep(0.5 * (attempt + 1))
+        raise SxError(f"export_3mf {name} failed after retries: {last_err}")
 
     def open_file(self, name: str) -> None:
         self.menu("File", "Open...")
