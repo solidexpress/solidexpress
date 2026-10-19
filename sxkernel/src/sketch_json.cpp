@@ -1,5 +1,7 @@
 #include "sx/sketch_json.hpp"
 
+#include <stdexcept>
+
 using nlohmann::json;
 
 namespace sx {
@@ -28,10 +30,12 @@ struct SketchSerde {
             if (t == "point") e.type = SketchEntityType::Point;
             else if (t == "line") e.type = SketchEntityType::Line;
             else if (t == "circle") e.type = SketchEntityType::Circle;
+            else if (t == "arc") e.type = SketchEntityType::Arc;
             else if (t == "spline") e.type = SketchEntityType::Spline;
             else if (t == "ellipse") e.type = SketchEntityType::Ellipse;
             else if (t == "elliptical_arc") e.type = SketchEntityType::EllipticalArc;
-            else e.type = SketchEntityType::Arc;
+            else
+                throw std::runtime_error("unknown sketch entity type: " + t);
             e.construction = je.value("construction", false);
             e.external = je.value("external", false);
             e.projected_from = je.value("projected_from", "");
@@ -45,8 +49,10 @@ struct SketchSerde {
             c.id = EntityId::from_string(jc.at("id").get<std::string>());
             std::string t = jc.at("type").get<std::string>();
             if (auto ct = constraint_type_from_string(t)) c.type = *ct;
+            else throw std::runtime_error("unknown sketch constraint type: " + t);
             c.value = jc.value("value", 0.0);
             c.driving = jc.value("driving", true);
+            c.weak = jc.value("weak", false);
             c.expr = jc.value("expr", "");
             if (jc.contains("locked") && jc["locked"].is_array()) {
                 for (const auto& v : jc["locked"]) c.locked.push_back(v.get<double>());
@@ -122,6 +128,7 @@ json sketch_to_json(const Sketch& sk) {
         jc["type"] = to_string(c.type);
         jc["value"] = c.value;
         jc["driving"] = c.driving;
+        jc["weak"] = c.weak;
         if (!c.expr.empty()) jc["expr"] = c.expr;
         if (!c.locked.empty()) jc["locked"] = c.locked;
         json refs = json::array();
