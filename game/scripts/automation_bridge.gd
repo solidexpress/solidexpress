@@ -143,6 +143,7 @@ func _commands() -> Dictionary:
 		"dialog_commit": {call=_cmd_dialog_commit, frames=2, reports=true},
 		"dialog_dismiss": {call=_cmd_dialog_dismiss, frames=2, reports=true},
 		"finish_extrude": {call=_cmd_finish_extrude, frames=8, reports=true},
+		"save_path": {call=_cmd_save_path, frames=2, reports=true},
 	}
 
 
@@ -161,6 +162,22 @@ func _exec_state(req: Dictionary) -> Dictionary:
 func _exec_trace(req: Dictionary) -> Dictionary:
 	_harvest_traces()
 	return _cmd_trace(req)
+
+
+## Walk snapshots: write the live document to an OS path without the Save As dialog
+## or changing the window title. Paths must already be globalized.
+func _cmd_save_path(req: Dictionary) -> Dictionary:
+	var path := str(req.get("path", "")).strip_edges()
+	if path == "":
+		return {"error": "path is required"}
+	if path.begins_with("user://") or path.begins_with("res://"):
+		return {"error": "save_path needs a globalized OS path"}
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	if not view.doc.save(path):
+		return {"error": "save failed", "path": path}
+	return {"path": path}
 
 
 ## Same path as the Godot offset suite: finish_extrude with empty contours.

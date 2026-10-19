@@ -295,6 +295,51 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertEqual(got.returncode, 0)
         self.assertEqual(got.stdout, "cached-tier\n")
 
+    def test_resume_mid_chunk_replays_prefix_or_restores_snapshot(self) -> None:
+        from walk.checkpoint import plan_resume
+        from walk.rung import Rung
+
+        chunks = {
+            1: ["N1", "A1", "A10", "L2"],
+            2: ["A11", "A16", "A20"],
+            3: ["N2", "A21", "A24", "A27"],
+            4: ["A28", "A36"],
+        }
+        rows = tuple(rid for group in chunks.values() for rid in group)
+        rung = Rung(
+            name="rung07",
+            checker="check_rung07.py",
+            chunks=chunks,
+            checkpoints={3: "sketch.sxp", 4: "neck.sxp"},
+            expectations={},
+            rows=rows,
+            handlers={rid: (lambda self: None) for rid in rows},
+        )
+        first = plan_resume(rung, "N1", set())
+        self.assertIsNone(first.restore_chunk)
+        self.assertIsNone(first.restore_file)
+        self.assertEqual(first.replay, ())
+
+        mid1 = plan_resume(rung, "A10", set())
+        self.assertIsNone(mid1.restore_chunk)
+        self.assertEqual(mid1.replay, ("N1", "A1"))
+
+        chunk3 = plan_resume(rung, "N2", {"sketch.sxp"})
+        self.assertEqual(chunk3.restore_chunk, 3)
+        self.assertEqual(chunk3.replay, ())
+
+        mid3 = plan_resume(rung, "A24", {"sketch.sxp"})
+        self.assertEqual(mid3.restore_chunk, 3)
+        self.assertEqual(mid3.replay, ("N2", "A21"))
+
+        snap = plan_resume(rung, "A24", {"sketch.sxp", "ckpts/A21.sxp"})
+        self.assertEqual(snap.restore_file, "ckpts/A21.sxp")
+        self.assertEqual(snap.replay, ())
+
+        no_ckpt = plan_resume(rung, "A16", set())
+        self.assertIsNone(no_ckpt.restore_chunk)
+        self.assertEqual(no_ckpt.replay, ("N1", "A1", "A10", "L2", "A11"))
+
     def test_click_budget_counts_press_and_key(self) -> None:
         from walk.click_budget import check_log, count_trace
 
