@@ -33,6 +33,7 @@
 #include "sx/drawing_doc.hpp"
 #include "sx/drawings.hpp"
 #include "sx/dxf.hpp"
+#include "sx/exactness.hpp"
 #include "sx/fea.hpp"
 #include "sx/joints.hpp"
 #include "sx/pdf.hpp"
@@ -559,6 +560,11 @@ String SxDocument::active_configuration() const {
 double SxDocument::body_volume(const String& body_id) const {
     const sx::Body* b = doc_->body(parse_id(body_id));
     return b ? sx::shape::volume(b->shape) : 0.0;
+}
+
+String SxDocument::exactness_report(const String& body_id) const {
+    if (body_id.is_empty()) return to_gd(sx::exactness::report(*doc_).dump());
+    return to_gd(sx::exactness::report_body(*doc_, parse_id(body_id)).dump());
 }
 
 uint64_t SxDocument::revision() const { return doc_->revision(); }
@@ -2623,6 +2629,8 @@ void SxDocument::_bind_methods() {
     ClassDB::bind_method(D_METHOD("configuration_list"), &SxDocument::configuration_list);
     ClassDB::bind_method(D_METHOD("active_configuration"), &SxDocument::active_configuration);
     ClassDB::bind_method(D_METHOD("body_volume", "body_id"), &SxDocument::body_volume);
+    ClassDB::bind_method(D_METHOD("exactness_report", "body_id"), &SxDocument::exactness_report,
+                         DEFVAL(String()));
     ClassDB::bind_method(D_METHOD("revision"), &SxDocument::revision);
     ClassDB::bind_method(D_METHOD("get_mesh", "body_id"), &SxDocument::get_mesh);
     ClassDB::bind_method(D_METHOD("section_cap_mesh", "body_id", "point", "normal"),

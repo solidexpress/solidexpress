@@ -1,0 +1,2 @@
+script=tests/run_exactness_probes.gd
+tier=ci

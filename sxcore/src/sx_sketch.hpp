@@ -82,6 +82,9 @@ public:
     godot::Array contour_outlines() const;
     int region_at(double u, double v) const;
 
+    // Kernel exactness JSON for this sketch (entity types + geometry).
+    godot::String exactness_report() const;
+
     // JSON snapshot for in-sketch undo. Entity and constraint ids are preserved.
     godot::String snapshot() const;
     bool restore(const godot::String& json);

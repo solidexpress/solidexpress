@@ -127,6 +127,9 @@ public:
     godot::Array configuration_list() const;
     godot::String active_configuration() const;
     double body_volume(const godot::String& body_id) const;
+    // Kernel exactness JSON (curve/surface types, BRepGProp, feature params).
+    // Empty body_id reports every body plus the feature timeline.
+    godot::String exactness_report(const godot::String& body_id = {}) const;
     uint64_t revision() const;
 
     // Tessellation: ArrayMesh with one surface per face; surface index order

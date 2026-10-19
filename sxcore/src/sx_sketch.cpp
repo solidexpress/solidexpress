@@ -7,6 +7,7 @@
 #include <cmath>
 #include <map>
 
+#include "sx/exactness.hpp"
 #include "sx/sketch_json.hpp"
 #include "sx/sketch_regions.hpp"
 #include "sx/sketch_tools.hpp"
@@ -479,6 +480,11 @@ int SxSketch::region_at(double u, double v) const {
     return arranged.containing_uv(*sketch_, u, v);
 }
 
+String SxSketch::exactness_report() const {
+    if (!sketch_) return {};
+    return to_gd(sx::exactness::report_sketch(*sketch_).dump());
+}
+
 String SxSketch::snapshot() const {
     if (!sketch_) return {};
     return to_gd(sx::sketch_to_json(*sketch_).dump());
@@ -583,6 +589,7 @@ void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("contour_count"), &SxSketch::contour_count);
     ClassDB::bind_method(D_METHOD("contour_outlines"), &SxSketch::contour_outlines);
     ClassDB::bind_method(D_METHOD("region_at", "u", "v"), &SxSketch::region_at);
+    ClassDB::bind_method(D_METHOD("exactness_report"), &SxSketch::exactness_report);
     ClassDB::bind_method(D_METHOD("snapshot"), &SxSketch::snapshot);
     ClassDB::bind_method(D_METHOD("restore", "json"), &SxSketch::restore);
     ClassDB::bind_method(D_METHOD("project_line_edge", "a", "b", "edge_id"),

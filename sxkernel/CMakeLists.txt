@@ -47,6 +47,9 @@ target_link_libraries(sxkernel
         planegcs
 )
 
+add_executable(sx_exact cli/sx_exact.cpp)
+target_link_libraries(sx_exact PRIVATE sxkernel)
+
 if(SX_BUILD_TESTS)
     file(GLOB SXKERNEL_TEST_SOURCES tests/*.cpp)
     add_executable(sxkernel_tests ${SXKERNEL_TEST_SOURCES})
