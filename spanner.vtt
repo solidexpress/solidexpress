@@ -1,0 +1,1805 @@
+WEBVTT
+
+1
+00:00:02.067 --> 00:00:03.567
+Sketch the Front C: 17°, ellipse 55×50, Parallel jaws, Mirror, R15, Power Trim
+
+2
+00:00:03.567 --> 00:00:04.467
+[Sketch]  Start sketch on picked face or ground
+
+3
+00:00:04.467 --> 00:00:05.567
+[Click]  Front
+
+4
+00:00:05.567 --> 00:00:06.367
+[Wheel]  Frame C
+
+5
+00:00:06.367 --> 00:00:07.867
+[Line]  Line
+
+6
+00:00:07.867 --> 00:00:08.767
+[Centerline]  Centerline variant
+
+7
+00:00:08.767 --> 00:00:09.933
+[Wheel]  Frame horizontal CL
+
+8
+00:00:09.933 --> 00:00:11.000
+[Click]  horizontal CL start
+
+9
+00:00:11.000 --> 00:00:12.300
+[Click]  horizontal CL end
+
+10
+00:00:12.300 --> 00:00:13.467
+[Done]  End line chain
+
+11
+00:00:13.467 --> 00:00:14.733
+[Click]  Sketch click
+
+12
+00:00:14.733 --> 00:00:15.967
+[Click]  Ellipse centre
+
+13
+00:00:15.967 --> 00:00:16.867
+[Click]  Ellipse major
+
+14
+00:00:16.867 --> 00:00:17.800
+[Click]  Ellipse minor
+
+15
+00:00:17.800 --> 00:00:19.167
+[Line]  Line
+
+16
+00:00:19.167 --> 00:00:20.067
+[Centerline]  Centerline variant
+
+17
+00:00:20.067 --> 00:00:21.133
+[Wheel]  Frame 17° CL
+
+18
+00:00:21.133 --> 00:00:22.100
+[Click]  17° CL start
+
+19
+00:00:22.100 --> 00:00:23.400
+[Click]  17° CL end
+
+20
+00:00:23.400 --> 00:00:24.533
+[Done]  End line chain
+
+21
+00:00:24.533 --> 00:00:25.767
+[Click]  Sketch click
+
+22
+00:00:25.767 --> 00:00:27.333
+[Click]  Dim 17 first
+
+23
+00:00:27.333 --> 00:00:28.433
+[Click]  Dim 17 second
+
+24
+00:00:28.433 --> 00:00:29.900
+[D]  Smart dimension — edit value
+
+25
+00:00:29.900 --> 00:00:31.500
+[Click]  Dim 17 first
+
+26
+00:00:31.500 --> 00:00:33.833
+[Type]  Dimension 17
+
+27
+00:00:33.833 --> 00:00:34.733
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+28
+00:00:34.733 --> 00:00:35.933
+[Click]  upper jaw start
+
+29
+00:00:35.933 --> 00:00:36.867
+[Click]  upper jaw end
+
+30
+00:00:36.867 --> 00:00:37.833
+[Done]  End line chain
+
+31
+00:00:37.833 --> 00:00:39.067
+[Click]  Sketch click
+
+32
+00:00:39.067 --> 00:00:40.600
+[Click]  Parallel first
+
+33
+00:00:40.600 --> 00:00:42.000
+[Click]  Parallel second
+
+34
+00:00:42.000 --> 00:00:43.367
+[Parallel]  Parallel
+
+35
+00:00:43.367 --> 00:00:44.333
+[Parallel]  Parallel item
+
+36
+00:00:44.333 --> 00:00:45.833
+[Click]  Sketch click
+
+37
+00:00:45.833 --> 00:00:47.133
+[Click]  Coincident first
+
+38
+00:00:47.133 --> 00:00:48.500
+[Click]  Coincident second
+
+39
+00:00:48.500 --> 00:00:49.767
+[Coincident]  Coincident
+
+40
+00:00:49.767 --> 00:00:50.733
+[Coincident]  Coincident item
+
+41
+00:00:50.733 --> 00:00:52.267
+[D]  Smart dimension — edit value
+
+42
+00:00:52.267 --> 00:00:53.133
+[Snap]  Snap off
+
+43
+00:00:53.133 --> 00:00:54.567
+[Click]  Dim 55
+
+44
+00:00:54.567 --> 00:00:56.600
+[Type]  Dimension 55
+
+45
+00:00:56.600 --> 00:00:57.700
+[D]  Smart dimension — edit value
+
+46
+00:00:57.700 --> 00:00:59.200
+[Click]  Dim 50
+
+47
+00:00:59.200 --> 00:01:01.400
+[Type]  Dimension 50
+
+48
+00:01:01.400 --> 00:01:02.300
+[Click]  Sketch click
+
+49
+00:01:02.300 --> 00:01:03.833
+[Click]  Dim 12.5 first
+
+50
+00:01:03.833 --> 00:01:04.967
+[Click]  Dim 12.5 second
+
+51
+00:01:04.967 --> 00:01:06.133
+[D]  Smart dimension — edit value
+
+52
+00:01:06.133 --> 00:01:07.700
+[Click]  Dim 12.5 first
+
+53
+00:01:07.700 --> 00:01:10.433
+[Type]  Dimension 12.5
+
+54
+00:01:10.433 --> 00:01:11.533
+[D]  Smart dimension — edit value
+
+55
+00:01:11.533 --> 00:01:12.833
+[Click]  Dim 20
+
+56
+00:01:12.833 --> 00:01:14.900
+[Type]  Dimension 20
+
+57
+00:01:14.900 --> 00:01:15.800
+[Click]  Sketch click
+
+58
+00:01:15.800 --> 00:01:17.333
+[Click]  Mirror pair first
+
+59
+00:01:17.333 --> 00:01:18.467
+[Click]  Mirror pair second
+
+60
+00:01:18.467 --> 00:01:19.667
+[Click]  Sketch click
+
+61
+00:01:19.667 --> 00:01:20.700
+[Wheel]  Zoom confirm mirror
+
+62
+00:01:20.700 --> 00:01:21.633
+[Click]  confirm mirror
+
+63
+00:01:21.633 --> 00:01:23.000
+[Arc]  Arc
+
+64
+00:01:23.000 --> 00:01:23.933
+[Three Point]  Three Point variant
+
+65
+00:01:23.933 --> 00:01:25.167
+[Click]  3-point start
+
+66
+00:01:25.167 --> 00:01:26.067
+[Click]  3-point bulge
+
+67
+00:01:26.067 --> 00:01:27.033
+[Click]  3-point end
+
+68
+00:01:27.033 --> 00:01:28.400
+[D]  Smart dimension — edit value
+
+69
+00:01:28.400 --> 00:01:29.933
+[Click]  Dim 15
+
+70
+00:01:29.933 --> 00:01:32.133
+[Type]  Dimension 15
+
+71
+00:01:32.133 --> 00:01:33.167
+[Click]  Sketch click
+
+72
+00:01:33.167 --> 00:01:34.500
+[Click]  Trim C opening
+
+73
+00:01:34.500 --> 00:01:35.833
+[Click]  Sketch click
+
+74
+00:01:35.833 --> 00:01:37.233
+[Click]  Coincident first
+
+75
+00:01:37.233 --> 00:01:38.600
+[Click]  Coincident second
+
+76
+00:01:38.600 --> 00:01:39.967
+[Click]  Sketch click
+
+77
+00:01:39.967 --> 00:01:41.400
+[Click]  Coincident first
+
+78
+00:01:41.400 --> 00:01:42.733
+[Click]  Coincident second
+
+79
+00:01:42.733 --> 00:01:43.967
+Ø33, two AF-25 hexes, Power Trim 12-point, handle 10
+
+80
+00:01:43.967 --> 00:01:44.767
+[Wheel]  Frame ring
+
+81
+00:01:44.767 --> 00:01:46.133
+[C]  Circle tool — click center, then radius
+
+82
+00:01:46.133 --> 00:01:47.500
+[Click]  Circle centre
+
+83
+00:01:47.500 --> 00:01:48.433
+[Click]  Circle rim
+
+84
+00:01:48.433 --> 00:01:49.900
+[D]  Smart dimension — edit value
+
+85
+00:01:49.900 --> 00:01:51.500
+[Click]  Dim 33
+
+86
+00:01:51.500 --> 00:01:53.800
+[Type]  Dimension 33
+
+87
+00:01:53.800 --> 00:01:54.733
+[Polygon]  Polygon
+
+88
+00:01:54.733 --> 00:01:55.633
+[Across Flats]  Across Flats variant
+
+89
+00:01:55.633 --> 00:01:56.867
+[Click]  Across Flats centre
+
+90
+00:01:56.867 --> 00:01:57.800
+[Click]  Across Flats vertex
+
+91
+00:01:57.800 --> 00:01:59.133
+[Click]  Sketch click
+
+92
+00:01:59.133 --> 00:02:00.467
+[Click]  Dim 25 first
+
+93
+00:02:00.467 --> 00:02:01.600
+[Click]  Dim 25 second
+
+94
+00:02:01.600 --> 00:02:03.033
+[D]  Smart dimension — edit value
+
+95
+00:02:03.033 --> 00:02:04.367
+[Click]  Dim 25 first
+
+96
+00:02:04.367 --> 00:02:06.467
+[Type]  Dimension 25
+
+97
+00:02:06.467 --> 00:02:07.400
+[Polygon]  Polygon
+
+98
+00:02:07.400 --> 00:02:08.300
+[Vertex]  Vertex variant
+
+99
+00:02:08.300 --> 00:02:09.567
+[Click]  Vertex centre
+
+100
+00:02:09.567 --> 00:02:10.500
+[Click]  Vertex vertex
+
+101
+00:02:10.500 --> 00:02:11.933
+[Click]  Sketch click
+
+102
+00:02:11.933 --> 00:02:13.367
+[Click]  Trim hex inner
+
+103
+00:02:13.367 --> 00:02:14.767
+[Click]  Sketch click
+
+104
+00:02:14.767 --> 00:02:16.133
+[Click]  Trim hex inner
+
+105
+00:02:16.133 --> 00:02:17.467
+[Click]  Sketch click
+
+106
+00:02:17.467 --> 00:02:18.700
+[Click]  Trim hex inner
+
+107
+00:02:18.700 --> 00:02:19.900
+[Click]  Sketch click
+
+108
+00:02:19.900 --> 00:02:21.133
+[Click]  Trim hex inner
+
+109
+00:02:21.133 --> 00:02:22.333
+[Click]  Sketch click
+
+110
+00:02:22.333 --> 00:02:23.700
+[Click]  Trim hex inner
+
+111
+00:02:23.700 --> 00:02:25.033
+[Click]  Sketch click
+
+112
+00:02:25.033 --> 00:02:26.467
+[Click]  Trim hex inner
+
+113
+00:02:26.467 --> 00:02:27.867
+[Click]  Sketch click
+
+114
+00:02:27.867 --> 00:02:29.267
+[Click]  Trim hex inner
+
+115
+00:02:29.267 --> 00:02:30.633
+[Click]  Sketch click
+
+116
+00:02:30.633 --> 00:02:31.933
+[Click]  Trim hex inner
+
+117
+00:02:31.933 --> 00:02:33.200
+[Click]  Sketch click
+
+118
+00:02:33.200 --> 00:02:34.433
+[Click]  Trim hex inner
+
+119
+00:02:34.433 --> 00:02:35.633
+[Click]  Sketch click
+
+120
+00:02:35.633 --> 00:02:36.933
+[Click]  Trim hex inner
+
+121
+00:02:36.933 --> 00:02:38.200
+[Click]  Sketch click
+
+122
+00:02:38.200 --> 00:02:39.600
+[Click]  Trim hex inner
+
+123
+00:02:39.600 --> 00:02:40.967
+[Click]  Sketch click
+
+124
+00:02:40.967 --> 00:02:42.433
+[Click]  Trim hex inner
+
+125
+00:02:42.433 --> 00:02:43.900
+[Line]  Line
+
+126
+00:02:43.900 --> 00:02:44.800
+[Centerline]  Centerline variant
+
+127
+00:02:44.800 --> 00:02:45.900
+[Wheel]  Frame centres CL
+
+128
+00:02:45.900 --> 00:02:46.933
+[Click]  centres CL start
+
+129
+00:02:46.933 --> 00:02:48.300
+[Click]  centres CL end
+
+130
+00:02:48.300 --> 00:02:49.500
+[Done]  End line chain
+
+131
+00:02:49.500 --> 00:02:50.833
+[D]  Smart dimension — edit value
+
+132
+00:02:50.833 --> 00:02:52.267
+[Click]  Dim 240
+
+133
+00:02:52.267 --> 00:02:54.633
+[Type]  Dimension 240
+
+134
+00:02:54.633 --> 00:02:55.800
+[Wheel]  Frame handle
+
+135
+00:02:55.800 --> 00:02:57.200
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+136
+00:02:57.200 --> 00:02:58.433
+[Wheel]  Frame upper handle
+
+137
+00:02:58.433 --> 00:02:59.433
+[Click]  upper handle start
+
+138
+00:02:59.433 --> 00:03:00.800
+[Click]  upper handle end
+
+139
+00:03:00.800 --> 00:03:02.000
+[Done]  End line chain
+
+140
+00:03:02.000 --> 00:03:03.233
+[Click]  Sketch click
+
+141
+00:03:03.233 --> 00:03:04.433
+[Click]  Horizontal first
+
+142
+00:03:04.433 --> 00:03:06.167
+[Click]  Horizontal second
+
+143
+00:03:06.167 --> 00:03:07.267
+[Horizontal]  Horizontal
+
+144
+00:03:07.267 --> 00:03:08.767
+[Click]  Sketch click
+
+145
+00:03:08.767 --> 00:03:09.967
+[Click]  Dim 10 first
+
+146
+00:03:09.967 --> 00:03:11.067
+[Click]  Dim 10 second
+
+147
+00:03:11.067 --> 00:03:12.067
+[D]  Smart dimension — edit value
+
+148
+00:03:12.067 --> 00:03:13.200
+[Click]  Dim 10 first
+
+149
+00:03:13.200 --> 00:03:15.200
+[Type]  Dimension 10
+
+150
+00:03:15.200 --> 00:03:16.100
+[Click]  Sketch click
+
+151
+00:03:16.100 --> 00:03:17.367
+[Click]  Mirror pair first
+
+152
+00:03:17.367 --> 00:03:18.500
+[Click]  Mirror pair second
+
+153
+00:03:18.500 --> 00:03:19.833
+[Click]  Sketch click
+
+154
+00:03:19.833 --> 00:03:20.933
+[Wheel]  Zoom confirm mirror
+
+155
+00:03:20.933 --> 00:03:21.867
+[Click]  confirm mirror
+
+156
+00:03:21.867 --> 00:03:23.233
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+157
+00:03:23.233 --> 00:03:24.533
+[Wheel]  Frame lower handle
+
+158
+00:03:24.533 --> 00:03:25.633
+[Click]  lower handle start
+
+159
+00:03:25.633 --> 00:03:27.000
+[Click]  lower handle end
+
+160
+00:03:27.000 --> 00:03:28.200
+[Done]  End line chain
+
+161
+00:03:28.200 --> 00:03:29.433
+[Click]  Sketch click
+
+162
+00:03:29.433 --> 00:03:30.633
+[Click]  Horizontal first
+
+163
+00:03:30.633 --> 00:03:32.433
+[Click]  Horizontal second
+
+164
+00:03:32.433 --> 00:03:33.933
+[Click]  Sketch click
+
+165
+00:03:33.933 --> 00:03:35.333
+[Click]  Coincident first
+
+166
+00:03:35.333 --> 00:03:36.867
+[Click]  Coincident second
+
+167
+00:03:36.867 --> 00:03:38.367
+[Click]  Sketch click
+
+168
+00:03:38.367 --> 00:03:39.533
+[Click]  Coincident first
+
+169
+00:03:39.533 --> 00:03:40.900
+[Click]  Coincident second
+
+170
+00:03:40.900 --> 00:03:41.867
+[Click]  Sketch click
+
+171
+00:03:41.867 --> 00:03:43.300
+[Click]  Coincident first
+
+172
+00:03:43.300 --> 00:03:44.833
+[Click]  Coincident second
+
+173
+00:03:44.833 --> 00:03:46.333
+[Click]  Sketch click
+
+174
+00:03:46.333 --> 00:03:47.533
+[Click]  Coincident first
+
+175
+00:03:47.533 --> 00:03:48.900
+[Click]  Coincident second
+
+176
+00:03:48.900 --> 00:03:50.500
+[Coincident]  Coincident
+
+177
+00:03:50.500 --> 00:03:51.433
+[Coincident]  Coincident item
+
+178
+00:03:51.433 --> 00:03:52.833
+[Wheel]  Frame C overflow
+
+179
+00:03:52.833 --> 00:03:53.767
+[Click]  Sketch click
+
+180
+00:03:53.767 --> 00:03:55.167
+[Click]  Trim handle overflow C
+
+181
+00:03:55.167 --> 00:03:56.533
+[Click]  Sketch click
+
+182
+00:03:56.533 --> 00:03:57.900
+[Click]  Trim handle overflow C
+
+183
+00:03:57.900 --> 00:03:58.700
+[Wheel]  Frame ring overflow
+
+184
+00:03:58.700 --> 00:04:00.000
+[Click]  Sketch click
+
+185
+00:04:00.000 --> 00:04:01.267
+[Click]  Trim handle overflow ring
+
+186
+00:04:01.267 --> 00:04:02.500
+[Click]  Sketch click
+
+187
+00:04:02.500 --> 00:04:03.767
+[Click]  Trim handle overflow ring
+
+188
+00:04:03.767 --> 00:04:05.800
+[Exit Sketch]  Commit sketch and show yellow pad
+
+189
+00:04:05.800 --> 00:04:07.133
+Mid Plane 10 heads, Mid Plane 6 handle
+
+190
+00:04:07.133 --> 00:04:08.733
+[Edit]  pencil sketch 1
+
+191
+00:04:08.733 --> 00:04:09.633
+[Click]  Sketch click
+
+192
+00:04:09.633 --> 00:04:10.933
+[Click]  Coincident first
+
+193
+00:04:10.933 --> 00:04:12.300
+[Click]  Coincident second
+
+194
+00:04:12.300 --> 00:04:13.667
+[Coincident]  Coincident
+
+195
+00:04:13.667 --> 00:04:14.633
+[Coincident]  Coincident item
+
+196
+00:04:14.633 --> 00:04:16.133
+[Click]  Sketch click
+
+197
+00:04:16.133 --> 00:04:17.500
+[Click]  Coincident first
+
+198
+00:04:17.500 --> 00:04:18.833
+[Click]  Coincident second
+
+199
+00:04:18.833 --> 00:04:19.600
+[Contour]  Uncheck
+
+200
+00:04:19.600 --> 00:04:20.033
+[Contour]  Uncheck
+
+201
+00:04:20.033 --> 00:04:20.467
+[Contour]  Uncheck
+
+202
+00:04:20.467 --> 00:04:20.900
+[Contour]  Uncheck
+
+203
+00:04:20.900 --> 00:04:21.333
+[Contour]  Uncheck
+
+204
+00:04:21.333 --> 00:04:21.767
+[Contour]  Uncheck
+
+205
+00:04:21.767 --> 00:04:22.200
+[Contour]  Uncheck
+
+206
+00:04:22.200 --> 00:04:22.633
+[Contour]  Uncheck
+
+207
+00:04:22.633 --> 00:04:23.067
+[Contour]  Uncheck
+
+208
+00:04:23.067 --> 00:04:23.500
+[Contour]  Uncheck
+
+209
+00:04:23.500 --> 00:04:24.200
+[Contour]  Probe 1
+
+210
+00:04:24.200 --> 00:04:24.533
+[Contour]  Skip 1
+
+211
+00:04:24.533 --> 00:04:24.967
+[Contour]  Probe 2
+
+212
+00:04:24.967 --> 00:04:25.400
+[Contour]  Probe 3
+
+213
+00:04:25.400 --> 00:04:25.733
+[Contour]  Skip 3
+
+214
+00:04:25.733 --> 00:04:26.167
+[Contour]  Probe 4
+
+215
+00:04:26.167 --> 00:04:26.500
+[Contour]  Skip 4
+
+216
+00:04:26.500 --> 00:04:26.933
+[Contour]  Probe 5
+
+217
+00:04:26.933 --> 00:04:27.267
+[Contour]  Skip 5
+
+218
+00:04:27.267 --> 00:04:27.700
+[Contour]  Probe 6
+
+219
+00:04:27.700 --> 00:04:28.033
+[Contour]  Skip 6
+
+220
+00:04:28.033 --> 00:04:28.467
+[Contour]  Probe 7
+
+221
+00:04:28.467 --> 00:04:28.800
+[Contour]  Skip 7
+
+222
+00:04:28.800 --> 00:04:29.233
+[Contour]  Probe 8
+
+223
+00:04:29.233 --> 00:04:29.567
+[Contour]  Skip 8
+
+224
+00:04:29.567 --> 00:04:30.000
+[Contour]  Probe 9
+
+225
+00:04:30.000 --> 00:04:30.333
+[Contour]  Skip 9
+
+226
+00:04:30.333 --> 00:04:30.800
+[Contour]  Probe 10
+
+227
+00:04:30.800 --> 00:04:32.000
+[Click]  FinishOp
+
+228
+00:04:32.000 --> 00:04:32.933
+[Click]  FinishOp item
+
+229
+00:04:32.933 --> 00:04:33.933
+[Click]  FinishEnd
+
+230
+00:04:33.933 --> 00:04:34.867
+[Click]  FinishEnd item
+
+231
+00:04:34.867 --> 00:04:36.700
+[Type]  Distance 10
+
+232
+00:04:36.700 --> 00:04:38.400
+[OK]  Extrude
+
+233
+00:04:38.400 --> 00:04:40.033
+[Edit]  pencil sketch 1
+
+234
+00:04:40.033 --> 00:04:40.533
+[Contour]  Uncheck
+
+235
+00:04:40.533 --> 00:04:40.967
+[Contour]  Uncheck
+
+236
+00:04:40.967 --> 00:04:41.400
+[Contour]  Uncheck
+
+237
+00:04:41.400 --> 00:04:41.833
+[Contour]  Uncheck
+
+238
+00:04:41.833 --> 00:04:42.267
+[Contour]  Uncheck
+
+239
+00:04:42.267 --> 00:04:42.700
+[Contour]  Uncheck
+
+240
+00:04:42.700 --> 00:04:43.133
+[Contour]  Uncheck
+
+241
+00:04:43.133 --> 00:04:43.567
+[Contour]  Uncheck
+
+242
+00:04:43.567 --> 00:04:44.000
+[Contour]  Uncheck
+
+243
+00:04:44.000 --> 00:04:44.433
+[Contour]  Uncheck
+
+244
+00:04:44.433 --> 00:04:45.133
+[Contour]  Probe 1
+
+245
+00:04:45.133 --> 00:04:45.567
+[Contour]  Probe 2
+
+246
+00:04:45.567 --> 00:04:45.900
+[Contour]  Skip 2
+
+247
+00:04:45.900 --> 00:04:46.333
+[Contour]  Probe 3
+
+248
+00:04:46.333 --> 00:04:46.667
+[Contour]  Skip 3
+
+249
+00:04:46.667 --> 00:04:47.100
+[Contour]  Probe 4
+
+250
+00:04:47.100 --> 00:04:47.433
+[Contour]  Skip 4
+
+251
+00:04:47.433 --> 00:04:47.867
+[Contour]  Probe 5
+
+252
+00:04:47.867 --> 00:04:48.200
+[Contour]  Skip 5
+
+253
+00:04:48.200 --> 00:04:48.633
+[Contour]  Probe 6
+
+254
+00:04:48.633 --> 00:04:48.967
+[Contour]  Skip 6
+
+255
+00:04:48.967 --> 00:04:49.400
+[Contour]  Probe 7
+
+256
+00:04:49.400 --> 00:04:49.733
+[Contour]  Skip 7
+
+257
+00:04:49.733 --> 00:04:50.167
+[Contour]  Probe 8
+
+258
+00:04:50.167 --> 00:04:50.500
+[Contour]  Skip 8
+
+259
+00:04:50.500 --> 00:04:50.933
+[Contour]  Probe 9
+
+260
+00:04:50.933 --> 00:04:51.267
+[Contour]  Skip 9
+
+261
+00:04:51.267 --> 00:04:51.700
+[Contour]  Probe 10
+
+262
+00:04:51.700 --> 00:04:52.067
+[Contour]  Skip 10
+
+263
+00:04:52.067 --> 00:04:53.267
+[Click]  FinishOp
+
+264
+00:04:53.267 --> 00:04:54.200
+[Click]  FinishOp item
+
+265
+00:04:54.200 --> 00:04:55.200
+[Click]  FinishEnd
+
+266
+00:04:55.200 --> 00:04:56.133
+[Click]  FinishEnd item
+
+267
+00:04:56.133 --> 00:04:57.733
+[Type]  Distance 6
+
+268
+00:04:57.733 --> 00:04:59.600
+[OK]  Extrude
+
+269
+00:04:59.600 --> 00:05:00.967
+[Sketch]  Start sketch on picked face or ground
+
+270
+00:05:00.967 --> 00:05:01.733
+[Click]  Front
+
+271
+00:05:01.733 --> 00:05:02.600
+[Wheel]  Frame Ø33 pad
+
+272
+00:05:02.600 --> 00:05:03.967
+[C]  Circle tool — click center, then radius
+
+273
+00:05:03.967 --> 00:05:05.333
+[Click]  Circle centre
+
+274
+00:05:05.333 --> 00:05:06.267
+[Click]  Circle rim
+
+275
+00:05:06.267 --> 00:05:07.700
+[Click]  FinishOp
+
+276
+00:05:07.700 --> 00:05:08.633
+[Click]  FinishOp item
+
+277
+00:05:08.633 --> 00:05:09.633
+[Click]  FinishEnd
+
+278
+00:05:09.633 --> 00:05:10.567
+[Click]  FinishEnd item
+
+279
+00:05:10.567 --> 00:05:12.467
+[Type]  Distance 10
+
+280
+00:05:12.467 --> 00:05:14.333
+[OK]  Extrude
+
+281
+00:05:14.333 --> 00:05:15.767
+[Sketch]  Start sketch on picked face or ground
+
+282
+00:05:15.767 --> 00:05:16.533
+[Click]  Front
+
+283
+00:05:16.533 --> 00:05:17.433
+[Wheel]  Frame 12-point
+
+284
+00:05:17.433 --> 00:05:18.833
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+285
+00:05:18.833 --> 00:05:20.333
+[Click]  12-point start
+
+286
+00:05:20.333 --> 00:05:21.267
+[Click]  12-point end
+
+287
+00:05:21.267 --> 00:05:22.300
+[Done]  End line chain
+
+288
+00:05:22.300 --> 00:05:23.533
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+289
+00:05:23.533 --> 00:05:25.000
+[Click]  12-point start
+
+290
+00:05:25.000 --> 00:05:25.933
+[Click]  12-point end
+
+291
+00:05:25.933 --> 00:05:26.933
+[Done]  End line chain
+
+292
+00:05:26.933 --> 00:05:28.167
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+293
+00:05:28.167 --> 00:05:29.633
+[Click]  12-point start
+
+294
+00:05:29.633 --> 00:05:30.567
+[Click]  12-point end
+
+295
+00:05:30.567 --> 00:05:31.533
+[Done]  End line chain
+
+296
+00:05:31.533 --> 00:05:32.767
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+297
+00:05:32.767 --> 00:05:34.200
+[Click]  12-point start
+
+298
+00:05:34.200 --> 00:05:35.133
+[Click]  12-point end
+
+299
+00:05:35.133 --> 00:05:36.067
+[Done]  End line chain
+
+300
+00:05:36.067 --> 00:05:37.300
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+301
+00:05:37.300 --> 00:05:38.700
+[Click]  12-point start
+
+302
+00:05:38.700 --> 00:05:39.633
+[Click]  12-point end
+
+303
+00:05:39.633 --> 00:05:40.533
+[Done]  End line chain
+
+304
+00:05:40.533 --> 00:05:41.767
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+305
+00:05:41.767 --> 00:05:43.133
+[Click]  12-point start
+
+306
+00:05:43.133 --> 00:05:44.067
+[Click]  12-point end
+
+307
+00:05:44.067 --> 00:05:44.967
+[Done]  End line chain
+
+308
+00:05:44.967 --> 00:05:46.200
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+309
+00:05:46.200 --> 00:05:47.533
+[Click]  12-point start
+
+310
+00:05:47.533 --> 00:05:48.467
+[Click]  12-point end
+
+311
+00:05:48.467 --> 00:05:49.367
+[Done]  End line chain
+
+312
+00:05:49.367 --> 00:05:50.600
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+313
+00:05:50.600 --> 00:05:51.900
+[Click]  12-point start
+
+314
+00:05:51.900 --> 00:05:52.833
+[Click]  12-point end
+
+315
+00:05:52.833 --> 00:05:53.733
+[Done]  End line chain
+
+316
+00:05:53.733 --> 00:05:54.967
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+317
+00:05:54.967 --> 00:05:56.233
+[Click]  12-point start
+
+318
+00:05:56.233 --> 00:05:57.167
+[Click]  12-point end
+
+319
+00:05:57.167 --> 00:05:58.067
+[Done]  End line chain
+
+320
+00:05:58.067 --> 00:05:59.300
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+321
+00:05:59.300 --> 00:06:00.567
+[Click]  12-point start
+
+322
+00:06:00.567 --> 00:06:01.500
+[Click]  12-point end
+
+323
+00:06:01.500 --> 00:06:02.433
+[Done]  End line chain
+
+324
+00:06:02.433 --> 00:06:03.667
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+325
+00:06:03.667 --> 00:06:04.900
+[Click]  12-point start
+
+326
+00:06:04.900 --> 00:06:05.833
+[Click]  12-point end
+
+327
+00:06:05.833 --> 00:06:06.800
+[Done]  End line chain
+
+328
+00:06:06.800 --> 00:06:08.033
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+329
+00:06:08.033 --> 00:06:09.300
+[Click]  12-point start
+
+330
+00:06:09.300 --> 00:06:10.233
+[Click]  12-point end
+
+331
+00:06:10.233 --> 00:06:11.233
+[Done]  End line chain
+
+332
+00:06:11.233 --> 00:06:12.467
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+333
+00:06:12.467 --> 00:06:13.700
+[Click]  12-point start
+
+334
+00:06:13.700 --> 00:06:14.633
+[Click]  12-point end
+
+335
+00:06:14.633 --> 00:06:15.667
+[Done]  End line chain
+
+336
+00:06:15.667 --> 00:06:16.900
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+337
+00:06:16.900 --> 00:06:18.167
+[Click]  12-point start
+
+338
+00:06:18.167 --> 00:06:19.100
+[Click]  12-point end
+
+339
+00:06:19.100 --> 00:06:20.167
+[Done]  End line chain
+
+340
+00:06:20.167 --> 00:06:21.400
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+341
+00:06:21.400 --> 00:06:22.700
+[Click]  12-point start
+
+342
+00:06:22.700 --> 00:06:23.633
+[Click]  12-point end
+
+343
+00:06:23.633 --> 00:06:24.733
+[Done]  End line chain
+
+344
+00:06:24.733 --> 00:06:25.967
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+345
+00:06:25.967 --> 00:06:27.300
+[Click]  12-point start
+
+346
+00:06:27.300 --> 00:06:28.233
+[Click]  12-point end
+
+347
+00:06:28.233 --> 00:06:29.333
+[Done]  End line chain
+
+348
+00:06:29.333 --> 00:06:30.567
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+349
+00:06:30.567 --> 00:06:31.933
+[Click]  12-point start
+
+350
+00:06:31.933 --> 00:06:32.867
+[Click]  12-point end
+
+351
+00:06:32.867 --> 00:06:34.000
+[Done]  End line chain
+
+352
+00:06:34.000 --> 00:06:35.233
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+353
+00:06:35.233 --> 00:06:36.633
+[Click]  12-point start
+
+354
+00:06:36.633 --> 00:06:37.567
+[Click]  12-point end
+
+355
+00:06:37.567 --> 00:06:38.700
+[Done]  End line chain
+
+356
+00:06:38.700 --> 00:06:39.933
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+357
+00:06:39.933 --> 00:06:41.367
+[Click]  12-point start
+
+358
+00:06:41.367 --> 00:06:42.300
+[Click]  12-point end
+
+359
+00:06:42.300 --> 00:06:43.433
+[Done]  End line chain
+
+360
+00:06:43.433 --> 00:06:44.667
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+361
+00:06:44.667 --> 00:06:46.133
+[Click]  12-point start
+
+362
+00:06:46.133 --> 00:06:47.067
+[Click]  12-point end
+
+363
+00:06:47.067 --> 00:06:48.200
+[Done]  End line chain
+
+364
+00:06:48.200 --> 00:06:49.433
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+365
+00:06:49.433 --> 00:06:50.933
+[Click]  12-point start
+
+366
+00:06:50.933 --> 00:06:51.867
+[Click]  12-point end
+
+367
+00:06:51.867 --> 00:06:53.000
+[Done]  End line chain
+
+368
+00:06:53.000 --> 00:06:54.233
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+369
+00:06:54.233 --> 00:06:55.733
+[Click]  12-point start
+
+370
+00:06:55.733 --> 00:06:56.667
+[Click]  12-point end
+
+371
+00:06:56.667 --> 00:06:57.800
+[Done]  End line chain
+
+372
+00:06:57.800 --> 00:06:59.033
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+373
+00:06:59.033 --> 00:07:00.533
+[Click]  12-point start
+
+374
+00:07:00.533 --> 00:07:01.467
+[Click]  12-point end
+
+375
+00:07:01.467 --> 00:07:02.567
+[Done]  End line chain
+
+376
+00:07:02.567 --> 00:07:03.800
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+377
+00:07:03.800 --> 00:07:05.300
+[Click]  12-point start
+
+378
+00:07:05.300 --> 00:07:06.233
+[Click]  12-point end
+
+379
+00:07:06.233 --> 00:07:07.300
+[Done]  End line chain
+
+380
+00:07:07.300 --> 00:07:08.433
+[Click]  FinishOp
+
+381
+00:07:08.433 --> 00:07:09.367
+[Click]  FinishOp item
+
+382
+00:07:09.367 --> 00:07:10.367
+[Click]  FinishEnd
+
+383
+00:07:10.367 --> 00:07:11.300
+[Click]  FinishEnd item
+
+384
+00:07:11.300 --> 00:07:13.133
+[Type]  Distance 10
+
+385
+00:07:13.133 --> 00:07:14.733
+[OK]  Extrude
+
+386
+00:07:14.733 --> 00:07:15.967
+R30 / R20 neck fillets
+
+387
+00:07:15.967 --> 00:07:17.533
+[4]  Back view
+
+388
+00:07:17.533 --> 00:07:18.533
+[Click]  Select wrench
+
+389
+00:07:18.533 --> 00:07:19.567
+[Click]  Select wrench centre
+
+390
+00:07:19.567 --> 00:07:20.633
+[Fillet]  Arm fillet
+
+391
+00:07:20.633 --> 00:07:22.700
+[Type]  Fillet r=30
+
+392
+00:07:22.700 --> 00:07:24.267
+[6]  Neck Z-edge view
+
+393
+00:07:24.267 --> 00:07:25.133
+[Wheel]  Frame 6 mm neck edge
+
+394
+00:07:25.133 --> 00:07:26.133
+[Click]  Neck Z-edge
+
+395
+00:07:26.133 --> 00:07:27.700
+[6]  Neck Z-edge view
+
+396
+00:07:27.700 --> 00:07:28.467
+[Wheel]  Frame 6 mm neck edge
+
+397
+00:07:28.467 --> 00:07:29.800
+[Click]  Neck Z-edge
+
+398
+00:07:29.800 --> 00:07:31.367
+[4]  Back view
+
+399
+00:07:31.367 --> 00:07:32.267
+[Click]  Select wrench
+
+400
+00:07:32.267 --> 00:07:33.300
+[Click]  Select wrench centre
+
+401
+00:07:33.300 --> 00:07:34.367
+[Fillet]  Arm fillet
+
+402
+00:07:34.367 --> 00:07:36.433
+[Type]  Fillet r=20
+
+403
+00:07:36.433 --> 00:07:38.000
+[2]  Neck Z-edge view
+
+404
+00:07:38.000 --> 00:07:38.867
+[Wheel]  Frame 6 mm neck edge
+
+405
+00:07:38.867 --> 00:07:39.867
+[Click]  Neck Z-edge
+
+406
+00:07:39.867 --> 00:07:41.433
+[2]  Neck Z-edge view
+
+407
+00:07:41.433 --> 00:07:42.200
+[Wheel]  Frame 6 mm neck edge
+
+408
+00:07:42.200 --> 00:07:43.533
+[Click]  Neck Z-edge
+
+409
+00:07:43.533 --> 00:07:44.767
+Convert + Offset 5, Cut Blind 1, R3, Feature Mirror Front, R1
+
+410
+00:07:44.767 --> 00:07:45.900
+[3]  Top for handle face
+
+411
+00:07:45.900 --> 00:07:46.667
+[Wheel]  Frame handle top
+
+412
+00:07:46.667 --> 00:07:47.800
+[3]  Top
+
+413
+00:07:47.800 --> 00:07:48.567
+[Wheel]  Frame side face
+
+414
+00:07:48.567 --> 00:07:49.533
+[Click]  Side face
+
+415
+00:07:49.533 --> 00:07:50.400
+[Click]  Side face
+
+416
+00:07:50.400 --> 00:07:51.567
+[3]  Top
+
+417
+00:07:51.567 --> 00:07:53.233
+[Sketch]  Start sketch on picked face or ground
+
+418
+00:07:53.233 --> 00:07:54.133
+[Wheel]  Frame recess
+
+419
+00:07:54.133 --> 00:07:55.633
+[L]  Line tool — click points to chain; Done / Esc to finish
+
+420
+00:07:55.633 --> 00:07:56.767
+[Click]  Line — start
+
+421
+00:07:56.767 --> 00:07:58.067
+[Click]  Line — next point
+
+422
+00:07:58.067 --> 00:07:58.967
+[Click]  Line — next point
+
+423
+00:07:58.967 --> 00:08:00.267
+[Click]  Line — next point
+
+424
+00:08:00.267 --> 00:08:01.200
+[Click]  Line — next point
+
+425
+00:08:01.200 --> 00:08:02.233
+[Done]  End line chain
+
+426
+00:08:02.233 --> 00:08:03.367
+[Click]  FinishOp
+
+427
+00:08:03.367 --> 00:08:04.300
+[Click]  FinishOp item
+
+428
+00:08:04.300 --> 00:08:05.300
+[Click]  FinishEnd
+
+429
+00:08:05.300 --> 00:08:06.233
+[Click]  FinishEnd item
+
+430
+00:08:06.233 --> 00:08:07.833
+[Type]  Distance 1
+
+431
+00:08:07.833 --> 00:08:09.467
+[OK]  Extrude
+
+432
+00:08:09.467 --> 00:08:10.433
+[Fillet]  Arm fillet
+
+433
+00:08:10.433 --> 00:08:12.267
+[Type]  Fillet r=3
+
+434
+00:08:12.267 --> 00:08:13.833
+[6]  Neck Z-edge view
+
+435
+00:08:13.833 --> 00:08:14.700
+[Wheel]  Frame 6 mm neck edge
+
+436
+00:08:14.700 --> 00:08:15.700
+[Click]  Neck Z-edge
+
+437
+00:08:15.700 --> 00:08:17.267
+[6]  Neck Z-edge view
+
+438
+00:08:17.267 --> 00:08:18.033
+[Wheel]  Frame 6 mm neck edge
+
+439
+00:08:18.033 --> 00:08:19.367
+[Click]  Neck Z-edge
+
+440
+00:08:19.367 --> 00:08:20.933
+[4]  Back view
+
+441
+00:08:20.933 --> 00:08:21.833
+[Click]  Select wrench
+
+442
+00:08:21.833 --> 00:08:22.867
+[Click]  Select wrench centre
+
+443
+00:08:22.867 --> 00:08:24.267
+[Features]  Feature Mirror
+
+444
+00:08:24.267 --> 00:08:25.267
+[Click]  mirror feature
+
+445
+00:08:25.267 --> 00:08:26.200
+[Shift+Click]  timeline row
+
+446
+00:08:26.200 --> 00:08:27.400
+[OK]  Mirror OK
+
+447
+00:08:27.400 --> 00:08:28.967
+[4]  Back view
+
+448
+00:08:28.967 --> 00:08:30.100
+[Click]  Select wrench
+
+449
+00:08:30.100 --> 00:08:31.133
+[Click]  Select wrench centre
+
+450
+00:08:31.133 --> 00:08:32.200
+[Fillet]  Arm fillet
+
+451
+00:08:32.200 --> 00:08:35.567
+[Type]  Fillet r=1
