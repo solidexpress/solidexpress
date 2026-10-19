@@ -568,6 +568,39 @@ struct NeckFillet {
         return false;
     }
 
+    // Wedge fallback is only for planar walls that contain the edge (vertical
+    // when the edge is Z-aligned). Cylindrical / drafted walls refuse.
+    static bool walls_planar_vertical(const TopoDS_Shape& shape, const TopoDS_Edge& edge) {
+        BRepAdaptor_Curve curve(edge);
+        gp_Pnt a = curve.Value(curve.FirstParameter());
+        gp_Pnt b = curve.Value(curve.LastParameter());
+        gp_Vec along(a, b);
+        if (along.SquareMagnitude() < 1e-12) return false;
+        along.Normalize();
+        sx::occt::ShapeIndexedDataMapOfList ancestors;
+        TopExp::MapShapesAndAncestors(shape, TopAbs_EDGE, TopAbs_FACE, ancestors);
+        const int idx = ancestors.FindIndex(edge);
+        if (idx < 1) return false;
+        int planar = 0;
+        for (const TopoDS_Shape& fs : ancestors.FindFromIndex(idx)) {
+            if (fs.ShapeType() != TopAbs_FACE) continue;
+            BRepAdaptor_Surface surf(TopoDS::Face(fs));
+            if (surf.GetType() != GeomAbs_Plane) return false;
+            gp_Dir n = surf.Plane().Axis().Direction();
+            if (std::abs(n.Dot(gp_Dir(along))) > 0.05) return false;
+            ++planar;
+        }
+        return planar >= 2;
+    }
+
+    static bool any_planar_vertical(const TopoDS_Shape& shape,
+                                    const std::vector<TopoDS_Edge>& edges) {
+        for (const auto& e : edges) {
+            if (walls_planar_vertical(shape, e)) return true;
+        }
+        return false;
+    }
+
     static bool fuse_wedge(const TopoDS_Shape& shape, const TopoDS_Edge& edge, double radius,
                            TopoDS_Shape& out) {
         gp_Pnt a, b;
@@ -896,16 +929,17 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         if (!build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
             TopoDS_Shape recovered;
             std::string fault2;
-            if (neck && NeckFillet::fuse_wedges(tb->shape, resolved, asked, recovered))
+            const bool planar_vert = NeckFillet::any_planar_vertical(tb->shape, resolved);
+            if (planar_vert && NeckFillet::fuse_wedges(tb->shape, resolved, asked, recovered)) {
                 result = recovered;
-            else if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
-                result = recovered;
-            else if (NeckFillet::fuse_wedges(tb->shape, resolved, asked, recovered))
+                ctx.graph.add_warning(ctx.feature.id, ctx.feature.name + ": fillet wedge");
+            } else if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
                 result = recovered;
             else {
-                // Concave neck fillets (R30 on a 6 mm handle) can exceed the
-                // 0.5×departure pre-check and still build. Name the limit only
-                // when OCCT also refuses.
+                if (!planar_vert)
+                    ctx.graph.add_warning(ctx.feature.id,
+                                          ctx.feature.name +
+                                              ": fillet wedge refused: walls not planar and vertical");
                 if (limit < 1e290 && asked > limit + 1e-4)
                     return ctx.fail(limit_msg());
                 if (fault.empty()) fault = fault2;

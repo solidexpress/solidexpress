@@ -120,6 +120,22 @@ TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spin
 TopoDS_Shape rib_along_wire(const TopoDS_Wire& spine, double thickness, double height,
                             const gp_Dir& dir, std::string* err = nullptr);
 inline constexpr const char* kApproxPathWarning = "approximated path";
+inline constexpr const char* kBooleanFuzzWarning = "boolean fuzz ";
+inline constexpr double kHonestKeepRatio = 0.999999;  // 99.9999 % of expected
+
+// Fuse/cut with silent fuzz ≤ 1e-6×bbox; larger fuzz/heal is reported.
+struct HonestBoolean {
+    double fuzz_used = 0.0;
+    bool healed = false;
+    std::string warning;
+    TopoDS_Shape shape;
+
+    static double bbox_diag(const TopoDS_Shape& s);
+    static double silent_limit(const TopoDS_Shape& a, const TopoDS_Shape& b);
+
+    static HonestBoolean fuse(const TopoDS_Shape& a, const TopoDS_Shape& b);
+    static HonestBoolean cut(const TopoDS_Shape& a, const TopoDS_Shape& b);
+};
 inline gp_Pnt sketch_uv_to_3d(const SketchPlane& pl, double u, double v) {
     return gp_Pnt(pl.origin[0] + pl.x_dir[0] * u + pl.y_dir[0] * v,
                   pl.origin[1] + pl.x_dir[1] * u + pl.y_dir[1] * v,

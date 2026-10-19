@@ -161,8 +161,8 @@ struct FeatureMirror {
         {FeatureType::Revolve, "fuse", Action::Fuse},
         {FeatureType::Revolve, "cut", Action::Cut},
         {FeatureType::Fillet, nullptr, Action::Replay},
-        {FeatureType::Shell, nullptr, Action::Skip},
-        {FeatureType::Chamfer, nullptr, Action::Skip},
+        {FeatureType::Shell, nullptr, Action::Replay},
+        {FeatureType::Chamfer, nullptr, Action::Replay},
     };
     static Action lookup(FeatureType type, const std::string& op) {
         for (const auto& row : POLICY) {
@@ -237,16 +237,45 @@ bool has_fillet_cues(const nlohmann::json& p) {
 }
 
 bool replay_mirrored_fillet(ApplyCtx& ctx, const Feature& src, const gp_Trsf& mirror_trsf) {
-    if (src.type != FeatureType::Fillet) return ctx.fail("fillet mirror: not a fillet");
+    if (src.type != FeatureType::Fillet && src.type != FeatureType::Chamfer)
+        return ctx.fail(std::string(to_string(src.type)) + " mirror: not fillet/chamfer");
     if (!has_fillet_cues(src.params))
-        return ctx.fail("fillet mirror: missing edge cues");
+        return ctx.fail(std::string(to_string(src.type)) + " mirror: missing edge cues");
     nlohmann::json mirrored = mirrored_fillet_params(src.params, mirror_trsf);
     Feature tmp;
-    tmp.type = FeatureType::Fillet;
+    tmp.type = src.type;
     tmp.name = src.name;
     tmp.params = mirrored;
     ApplyCtx sub{ctx.graph, ctx.doc, tmp, mirrored, ctx.env, ctx.err};
     return apply_fillet_chamfer(sub);
+}
+
+nlohmann::json mirrored_shell_params(const nlohmann::json& src, const gp_Trsf& t) {
+    nlohmann::json p = src;
+    if (p.contains("face_cues")) transform_cue_map(p["face_cues"], t);
+    return p;
+}
+
+bool replay_mirrored_shell(ApplyCtx& ctx, const Feature& src, const gp_Trsf& mirror_trsf) {
+    if (src.type != FeatureType::Shell) return ctx.fail("shell mirror: not a shell");
+    // Re-shelling the same target the source already modified would hollow
+    // the fused original+mirror. Warn with the feature name and continue;
+    // other sources in this mirror still replay.
+    if (src.params.contains("target") && src.params["target"].is_string() &&
+        ctx.params.contains("target") && ctx.params["target"].is_string() &&
+        src.params["target"].get<std::string>() == ctx.params["target"].get<std::string>()) {
+        ctx.graph.add_warning(ctx.feature.id,
+                              std::string(src.name.empty() ? "shell" : src.name) +
+                                  " mirror: cannot replay onto the same target");
+        return true;
+    }
+    nlohmann::json mirrored = mirrored_shell_params(src.params, mirror_trsf);
+    Feature tmp;
+    tmp.type = FeatureType::Shell;
+    tmp.name = src.name;
+    tmp.params = mirrored;
+    ApplyCtx sub{ctx.graph, ctx.doc, tmp, mirrored, ctx.env, ctx.err};
+    return apply_shell(sub);
 }
 
 bool apply_feature_mirror(ApplyCtx& ctx) {
@@ -326,7 +355,11 @@ bool apply_feature_mirror(ApplyCtx& ctx) {
                             to_string(src->type));
         }
         if (action == FeatureMirror::Action::Replay) {
-            if (!replay_mirrored_fillet(ctx, *src, mirror_trsf)) return false;
+            if (src->type == FeatureType::Shell) {
+                if (!replay_mirrored_shell(ctx, *src, mirror_trsf)) return false;
+            } else if (!replay_mirrored_fillet(ctx, *src, mirror_trsf)) {
+                return false;
+            }
             continue;
         }
 

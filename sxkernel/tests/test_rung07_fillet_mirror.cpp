@@ -245,3 +245,68 @@ TEST_CASE("rung07 feature-mirror Cut+Fillet about Z=0 rounds both pockets",
                             .margin(20.0));
     CHECK_FALSE(warning_mentions(graph, "skipped fillet"));
 }
+
+TEST_CASE("rung07 feature-mirror replays a box chamfer", "[rung07][mirror][chamfer]") {
+    Document doc;
+    FeatureGraph graph;
+
+    Feature skf;
+    skf.type = FeatureType::Sketch;
+    skf.sketch = std::make_shared<Sketch>("box");
+    skf.sketch->add_line(0, 0, 40, 0);
+    skf.sketch->add_line(40, 0, 40, 40);
+    skf.sketch->add_line(40, 40, 0, 40);
+    skf.sketch->add_line(0, 40, 0, 0);
+    const auto sk_id = graph.add(std::move(skf));
+
+    Feature ext;
+    ext.type = FeatureType::Extrude;
+    ext.params = {{"sketch", sk_id.str()}, {"distance", 10.0}, {"op", "new"}, {"end", "blind"}};
+    const auto ext_id = graph.add(std::move(ext));
+
+    std::string err;
+    REQUIRE(graph.regenerate(doc, &err));
+    const Body* box = doc.body(graph.feature(ext_id)->output_body);
+    REQUIRE(box != nullptr);
+    const double vol0 = shape::volume(box->shape);
+
+    json one = json::array();
+    for (const auto& eid : box->subshape_ids.at(EntityKind::Edge)) {
+        TopoDS_Shape s = doc.resolve(eid);
+        if (s.IsNull() || s.ShapeType() != TopAbs_EDGE) continue;
+        const gp_Pnt m = edge_midpoint(TopoDS::Edge(s));
+        if (std::abs(m.X()) < 0.6 && std::abs(m.Z() - 10.0) < 0.6 &&
+            std::abs(m.Y() - 20.0) < 1.0) {
+            one.push_back(eid.str());
+        }
+    }
+    REQUIRE(one.size() == 1);
+
+    Feature ch;
+    ch.type = FeatureType::Chamfer;
+    ch.name = "chamfer 1";
+    ch.params = {{"target", ext_id.str()}, {"distance", 2.0}, {"edges", one}};
+    const auto ch_id = graph.add(std::move(ch));
+    REQUIRE(graph.regenerate(doc, &err));
+    INFO(err);
+    REQUIRE((graph.feature(ch_id)->params.contains("edge_cues") ||
+             graph.feature(ch_id)->params.contains("face_cues")));
+    const double vol1 = shape::volume(doc.body(graph.feature(ext_id)->output_body)->shape);
+    REQUIRE(vol1 < vol0 - 0.5);
+
+    Feature mir;
+    mir.type = FeatureType::Mirror;
+    mir.name = "mirror";
+    mir.params = {{"source_feature_ids", json::array({ch_id.str()})},
+                  {"plane_point", json::array({20.0, 0.0, 0.0})},
+                  {"plane_normal", json::array({1.0, 0.0, 0.0})},
+                  {"target", ext_id.str()}};
+    graph.add(std::move(mir));
+    REQUIRE(graph.regenerate(doc, &err));
+    INFO(err);
+    const Body* after = doc.body(graph.feature(ext_id)->output_body);
+    REQUIRE(after != nullptr);
+    const double drop = vol0 - vol1;
+    REQUIRE(shape::volume(after->shape) == Approx(vol0 - 2.0 * drop).margin(2.0));
+    CHECK_FALSE(warning_mentions(graph, "skipped chamfer"));
+}

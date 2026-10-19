@@ -160,9 +160,9 @@ TopoDS_Shape draft_prism_profile(const TopoDS_Shape& profile, const gp_Vec& trav
 // SweepFuse uses: fuzzy retries, then cut the overlap out of the tool
 // and fuse the remainder.
 struct ExtrudeFuse {
-    static constexpr double FUZZIES[] = {1.0e-7, 1.0e-4, 1.0e-3, 0.05, 0.1};
+    static constexpr double FUZZIES[] = {0.0, 1.0e-7, 1.0e-4, 1.0e-3, 0.05, 0.1};
     static constexpr double MIN_VOLUME = 1.0e-3;
-    static constexpr double KEEP_RATIO = 0.90;
+    static constexpr double KEEP_RATIO = kHonestKeepRatio;
 
     static bool usable(const TopoDS_Shape& s) {
         return !s.IsNull() && shape::count(s).solids >= 1
@@ -229,27 +229,54 @@ struct ExtrudeFuse {
         return {};
     }
 
-    static TopoDS_Shape merge(const TopoDS_Shape& body, const TopoDS_Shape& tool) {
+    static TopoDS_Shape merge(const TopoDS_Shape& body, const TopoDS_Shape& tool,
+                              std::string* warning = nullptr) {
+        HonestBoolean hb = HonestBoolean::fuse(body, tool);
+        if (usable(hb.shape) && keeps_target(body, hb.shape)) {
+            if (warning && !hb.warning.empty()) *warning = hb.warning;
+            return hb.shape;
+        }
         const TopoDS_Shape left = keep_solid(body);
         const TopoDS_Shape right = keep_solid(tool);
         TopoDS_Shape fallback;
         auto take = [&](const TopoDS_Shape& a, const TopoDS_Shape& b, double fuzzy) {
             return consider(body, run_fuse(a, b, fuzzy), fallback);
         };
+        const double silent = HonestBoolean::silent_limit(body, tool);
         for (double fuzzy : FUZZIES) {
             TopoDS_Shape m = take(body, tool, fuzzy);
-            if (!m.IsNull()) return m;
+            if (!m.IsNull()) {
+                if (warning && fuzzy > silent) {
+                    std::ostringstream os;
+                    os << kBooleanFuzzWarning << fuzzy;
+                    *warning = os.str();
+                }
+                return m;
+            }
             m = take(left, right, fuzzy);
-            if (!m.IsNull()) return m;
+            if (!m.IsNull()) {
+                if (warning && fuzzy > silent) {
+                    std::ostringstream os;
+                    os << kBooleanFuzzWarning << fuzzy;
+                    *warning = os.str();
+                }
+                return m;
+            }
         }
         for (double fuzzy : FUZZIES) {
             TopoDS_Shape outside = run_cut(tool, body, fuzzy);
             if (!usable(outside)) outside = run_cut(right, left, fuzzy);
             if (!usable(outside)) continue;
             TopoDS_Shape m = take(body, outside, fuzzy);
-            if (!m.IsNull()) return m;
+            if (!m.IsNull()) {
+                if (warning) *warning = "boolean fallback cut-then-fuse";
+                return m;
+            }
             m = take(left, outside, fuzzy);
-            if (!m.IsNull()) return m;
+            if (!m.IsNull()) {
+                if (warning) *warning = "boolean fallback cut-then-fuse";
+                return m;
+            }
         }
         return fallback;
     }
@@ -606,25 +633,35 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     const Body* tb = doc.body(target);
                     if (!tb) return fail("missing target body");
                     TopoDS_Shape merged;
+                    std::string bool_warn;
                     if (op == "cut") {
+                        HonestBoolean hb = HonestBoolean::cut(tb->shape, result);
                         const double v0 = std::abs(shape::volume(tb->shape));
-                        merged = ExtrudeFuse::run_cut(tb->shape, result, 1e-4);
                         const auto cut_ok = [&](const TopoDS_Shape& s) {
                             return ExtrudeFuse::usable(s)
                                    && v0 - std::abs(shape::volume(s)) > 1e-3;
                         };
-                        if (!cut_ok(merged)) {
+                        if (cut_ok(hb.shape)) {
+                            merged = hb.shape;
+                            bool_warn = hb.warning;
+                        } else {
                             for (double fuzzy : ExtrudeFuse::FUZZIES) {
                                 TopoDS_Shape m = ExtrudeFuse::run_cut(tb->shape, result, fuzzy);
                                 if (cut_ok(m)) {
                                     merged = m;
+                                    if (fuzzy > HonestBoolean::silent_limit(tb->shape, result)) {
+                                        std::ostringstream os;
+                                        os << kBooleanFuzzWarning << fuzzy;
+                                        bool_warn = os.str();
+                                    }
                                     break;
                                 }
                             }
                         }
                     } else {
-                        merged = ExtrudeFuse::merge(tb->shape, result);
+                        merged = ExtrudeFuse::merge(tb->shape, result, &bool_warn);
                     }
+                    if (!bool_warn.empty()) ctx.graph.add_warning(f.id, bool_warn);
                     if (merged.IsNull()) return fail("boolean failed");
                     {
                         std::string report;

@@ -232,8 +232,7 @@ EntityId add_mirrored_pipe(FeatureGraph& graph, Document& doc) {
     Feature mir;
     mir.type = FeatureType::Mirror;
     mir.name = "mirror";
-    mir.params = {{"source_feature_ids", json::array({ids.ext.str(), ids.shell.str(), ids.flange.str(),
-                                                      ids.cut.str()})},
+    mir.params = {{"source_feature_ids", json::array({ids.ext.str(), ids.flange.str(), ids.cut.str()})},
                   {"plane_point", json::array({0.0, 0.0, 0.0})},
                   {"plane_normal", json::array({0.0, 0.0, 1.0})},
                   {"target", ids.ext.str()}};
@@ -254,8 +253,7 @@ TEST_CASE("rung05 feature-mirror of four PDF features is one solid half", "[rung
     Feature mir;
     mir.type = FeatureType::Mirror;
     mir.name = "mirror";
-    mir.params = {{"source_feature_ids", json::array({ids.ext.str(), ids.shell.str(), ids.flange.str(),
-                                                      ids.cut.str()})},
+    mir.params = {{"source_feature_ids", json::array({ids.ext.str(), ids.flange.str(), ids.cut.str()})},
                   {"plane_point", json::array({0.0, 0.0, 0.0})},
                   {"plane_normal", json::array({0.0, 0.0, 1.0})},
                   {"target", ids.ext.str()}};
@@ -291,7 +289,7 @@ TEST_CASE("rung05 feature-mirror of four PDF features is one solid half", "[rung
     CHECK(bolt_ring_empty(body->shape, -255.0));
 }
 
-TEST_CASE("rung05 feature-mirror skips Shell-only as a no-op", "[rung05][mirror]") {
+TEST_CASE("rung05 feature-mirror replays or fails Shell (no skip)", "[rung05][mirror]") {
     Document doc;
     FeatureGraph graph;
 
@@ -335,14 +333,16 @@ TEST_CASE("rung05 feature-mirror skips Shell-only as a no-op", "[rung05][mirror]
     const bool ok = graph.regenerate(doc, &err);
     INFO(err);
     REQUIRE(ok);
-
     REQUIRE(doc.body_ids().size() == 1);
     const Body* after = doc.body(graph.feature(ext_id)->output_body);
     REQUIRE(after != nullptr);
     REQUIRE(shape::volume(after->shape) == Approx(vol0).epsilon(1e-6));
-    CHECK_FALSE(point_inside(after->shape, gp_Pnt(0, 0, 125)));
-    REQUIRE_FALSE(graph.warnings().empty());
-    CHECK(graph.warnings().front().second.find("skipped shell") != std::string::npos);
+    bool named = false;
+    for (const auto& w : graph.warnings())
+        if (w.second.find("shell") != std::string::npos &&
+            w.second.find("cannot replay") != std::string::npos)
+            named = true;
+    REQUIRE(named);
 }
 
 TEST_CASE("rung05 re-shell of mirrored half keeps +Z walls 10", "[rung05][reshell]") {

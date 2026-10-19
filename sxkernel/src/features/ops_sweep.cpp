@@ -61,6 +61,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <vector>
 
 using nlohmann::json;
@@ -133,10 +134,10 @@ bool apply_path(ApplyCtx& ctx) {
 }
 
 struct SweepFuse {
-    static constexpr double KEEP_RATIO = 0.90;
+    static constexpr double KEEP_RATIO = kHonestKeepRatio;
     static constexpr double XMAX_TIE_MM = 0.5;
     static constexpr double MIN_VOLUME = 1.0e-3;
-    static constexpr double FUZZIES[] = {1.0e-4, 1.0e-3, 0.05};
+    static constexpr double FUZZIES[] = {0.0, 1.0e-4, 1.0e-3, 0.05};
 
     static bool usable(const TopoDS_Shape& s) {
         return !s.IsNull() && shape::count(s).solids >= 1
@@ -213,23 +214,50 @@ struct SweepFuse {
         return {};
     }
 
-    static TopoDS_Shape fuse_ribbon(const TopoDS_Shape& body, const TopoDS_Shape& ribbon) {
+    static TopoDS_Shape fuse_ribbon(const TopoDS_Shape& body, const TopoDS_Shape& ribbon,
+                                    std::string* warning = nullptr) {
+        HonestBoolean hb = HonestBoolean::fuse(body, ribbon);
+        if (keeps_target(body, hb.shape)) {
+            if (warning && !hb.warning.empty()) *warning = hb.warning;
+            return hb.shape;
+        }
         const TopoDS_Shape left = keep_solid(body);
         const TopoDS_Shape right = keep_solid(ribbon);
+        const double silent = HonestBoolean::silent_limit(body, ribbon);
+        auto note = [&](double fuzzy) {
+            if (!warning) return;
+            if (fuzzy > silent) {
+                std::ostringstream os;
+                os << kBooleanFuzzWarning << fuzzy;
+                *warning = os.str();
+            }
+        };
         for (double fuzzy : FUZZIES) {
             TopoDS_Shape m = run_fuse(body, ribbon, fuzzy);
-            if (keeps_target(body, m)) return m;
+            if (keeps_target(body, m)) {
+                note(fuzzy);
+                return m;
+            }
             m = run_fuse(left, right, fuzzy);
-            if (keeps_target(body, m)) return m;
+            if (keeps_target(body, m)) {
+                note(fuzzy);
+                return m;
+            }
         }
         for (double fuzzy : FUZZIES) {
             TopoDS_Shape outside = run_cut(ribbon, body, fuzzy);
             if (!usable(outside)) outside = run_cut(right, left, fuzzy);
             if (!usable(outside)) continue;
             TopoDS_Shape m = run_fuse(body, outside, fuzzy);
-            if (keeps_target(body, m)) return m;
+            if (keeps_target(body, m)) {
+                if (warning) *warning = "boolean fallback cut-then-fuse";
+                return m;
+            }
             m = run_fuse(left, outside, fuzzy);
-            if (keeps_target(body, m)) return m;
+            if (keeps_target(body, m)) {
+                if (warning) *warning = "boolean fallback cut-then-fuse";
+                return m;
+            }
         }
         return {};
     }
@@ -408,11 +436,17 @@ bool apply_sweep(ApplyCtx& ctx) {
                         merged = BRepAlgoAPI_Cut(tb->shape, result).Shape();
                     } else {
                         std::vector<TopoDS_Shape> fused;
+                        std::string bool_warn;
                         for (const auto& ribbon : ribbons) {
-                            TopoDS_Shape m = SweepFuse::fuse_ribbon(tb->shape, ribbon);
-                            if (SweepFuse::keeps_target(tb->shape, m)) fused.push_back(m);
+                            std::string w;
+                            TopoDS_Shape m = SweepFuse::fuse_ribbon(tb->shape, ribbon, &w);
+                            if (SweepFuse::keeps_target(tb->shape, m)) {
+                                fused.push_back(m);
+                                if (bool_warn.empty()) bool_warn = w;
+                            }
                         }
                         merged = SweepFuse::pick_xmax_then_volume(fused);
+                        if (!bool_warn.empty()) ctx.graph.add_warning(f.id, bool_warn);
                     }
                     if (!SweepFuse::usable(merged)) return fail("boolean failed");
                     TopoDS_Shape closed = close_solid(merged);
