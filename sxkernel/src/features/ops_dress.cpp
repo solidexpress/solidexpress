@@ -502,23 +502,38 @@ TopoDS_Shape wedge_prism(const gp_Pnt& p, const gp_Pnt& t1, const gp_Pnt& mid, c
 // Planar T-points of a large R can sit outside a convex neighbour (ellipse).
 // Keep the void-angle volume, but clip the prism to the body's AABB so the
 // neck cannot grow the pass-bar box.
-TopoDS_Shape clip_to_body_aabb(const TopoDS_Shape& body, const TopoDS_Shape& add) {
+TopoDS_Shape aabb_of(const TopoDS_Shape& body, bool slack_y) {
     Bnd_Box box;
     BRepBndLib::Add(body, box);
+    box.SetGap(0.0);
     double xmin = 0, ymin = 0, zmin = 0, xmax = 0, ymax = 0, zmax = 0;
     box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
-    if (xmax - xmin < 1e-6 || ymax - ymin < 1e-6 || zmax - zmin < 1e-6) return add;
+    if (xmax - xmin < 1e-6 || ymax - ymin < 1e-6 || zmax - zmin < 1e-6) return {};
     xmin -= 1.0;
     xmax += 1.0;
     zmin -= 1.0;
     zmax += 1.0;
-    BRepAlgoAPI_Common common(add, BRepPrimAPI_MakeBox(gp_Pnt(xmin, ymin, zmin),
-                                                       gp_Pnt(xmax, ymax, zmax)).Shape());
+    if (slack_y) {
+        ymin -= 1.0;
+        ymax += 1.0;
+    }
+    return BRepPrimAPI_MakeBox(gp_Pnt(xmin, ymin, zmin), gp_Pnt(xmax, ymax, zmax)).Shape();
+}
+
+TopoDS_Shape common_with(const TopoDS_Shape& shape, const TopoDS_Shape& box) {
+    if (shape.IsNull() || box.IsNull()) return {};
+    BRepAlgoAPI_Common common(shape, box);
     common.Build();
-    if (!common.IsDone()) return add;
+    if (!common.IsDone()) return {};
     TopoDS_Shape clipped = common.Shape();
-    if (clipped.IsNull() || shape::volume(clipped) < 0.5) return add;
+    if (clipped.IsNull() || shape::volume(clipped) < 0.5) return {};
     return clipped;
+}
+
+TopoDS_Shape clip_to_body_aabb(const TopoDS_Shape& body, const TopoDS_Shape& add) {
+    // Empty (not the unclipped add) if Common fails — fusing the raw wedge
+    // grows Y past the ellipse and blows the pass-bar box.
+    return common_with(add, aabb_of(body, false));
 }
 
 // Short Z-edge whose radius is larger than twice the thickness (R30 on 6 mm).
@@ -595,7 +610,7 @@ bool fuse_concave_z_fillet(const TopoDS_Shape& shape, const TopoDS_Edge& edge, d
     if (add.IsNull()) return false;
     if (shape::volume(add) < 0.0) add.Reverse();
     add = clip_to_body_aabb(shape, add);
-    if (shape::volume(add) < 0.5) return false;
+    if (add.IsNull() || shape::volume(add) < 0.5) return false;
     BRepAlgoAPI_Fuse fuse(shape, add);
     fuse.Build();
     if (!fuse.IsDone()) return false;
@@ -793,6 +808,18 @@ void remember_face_cues(ApplyCtx& ctx, const Body& body, const std::vector<TopoD
         ctx.feature.params["face_cues"] = std::move(cues);
 }
 
+TopoDS_Shape clip_result_to_start_aabb(const TopoDS_Shape& start, const TopoDS_Shape& result) {
+    TopoDS_Shape clipped = common_with(result, aabb_of(start, false));
+    if (clipped.IsNull()) return result;
+    if (!shape::is_valid(clipped)) {
+        std::string report;
+        TopoDS_Shape healed = interop::heal_shape(clipped, &report);
+        if (!healed.IsNull() && shape::volume(healed) > 1.0) return healed;
+        return result;
+    }
+    return clipped;
+}
+
 }  // namespace
 
 bool apply_fillet_chamfer(ApplyCtx& ctx) {
@@ -834,7 +861,12 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             !any_neck_z_edge(resolved, asked))
             return ctx.fail(limit_msg());
         std::string fault;
-        if (!build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
+        // MakeFillet can succeed on the 6 mm crotch and still grow Y past the
+        // ellipse (T-points sit outside the convex neighbour). Prefer the
+        // void-angle wedge, which clip_to_body_aabb keeps inside the boss box.
+        if (!(any_neck_z_edge(resolved, asked) &&
+              fuse_concave_z_fillets(tb->shape, resolved, asked, result)) &&
+            !build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
             TopoDS_Shape recovered;
             std::string fault2;
             if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
@@ -853,6 +885,8 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             }
         }
         remember_face_cues(ctx, *tb, resolved);
+        if (any_neck_z_edge(resolved, asked))
+            result = clip_result_to_start_aabb(tb->shape, result);
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
         const DressupEdges found = resolve_dressup_edges(ctx, *tb, "chamfer soft-skip: ");
