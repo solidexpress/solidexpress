@@ -10,6 +10,8 @@ Mutants (overall-50 pin, outer-flange joint, Pattern around joint as the ×8 pat
 
 Reused parts (`nut.sxp`, `pipe.sxp`, `wrench.sxp`) are kernel fixtures from WP2, written into the walk out-dir before A2. Insert of those files is the named click. Do not re-walk rungs 1 or 5 here.
 
+Exactness / spline WPs (WP-L1…L12, WP-S1, WP-S2) are **not walk rows**. Their acceptance is the table at the end of this file. They are not gated on this walk. Rung 7 A28 must still pass after WP-S1 and WP-L6.
+
 ## Chunk 1 — New Assembly, insert, float (9)
 
 | Row | Does | Expected on-screen | Frame | Clauses |
@@ -114,3 +116,28 @@ Probes: `bbox` (edges ± 0.2 mm; wrench XY ± 0.5), `volume` (1 % until WP1 OCCT
 `PART` millimetres (locked from frames): pin R10 / Ø10×35 / R10, overall **55**; nut AF 20 / T 7.5 / bore Ø10; pipe as `check_rung05.py`; wrench 232.5 × 45 × 10, jaw 20; PCD 94, 8 holes; `PIPE_DZ` 520; joint Z 260.
 
 Mutations that must fail: pin Y 50 as `pin` (`bbox`); outer-flange joint as `pipes` (`bbox` Z 520); counts 1/8/4/1 as `bolted` (`counts`); wrench jaw 25 as `final` (`wrenchMates`); origin-stacked sources as `final` (`bbox`); two bodies as `pin` (`watertight`).
+
+## Exactness / spline WPs (not walk rows)
+
+Andy, 2026-10-19. **Not gated** on `walk_rung08.py`. Headless only. **WP-L1 first.** “Exact” = `BRepAdaptor_Curve::GetType`, radii/centres 1e-6 mm, `BRepGProp` 1e-6 rel, round-trip bit-equal or 1e-12. Mesh `check_rung*.py` (0.2 mm / 0.5 %) does not count. Rungs 1–7 walks stay 77/44/46/32/36/46/46. Unconfirmed cases: the WP’s **first** Catch2/GUT is a probe that confirms the cited bug (records the error size); green probe → drop that claim in the commit.
+
+WP-S1 and WP-L6 are complementary: S1 is BSpline/Bezier Convert (rung-07 finding 1); L6 is ellipse / tilted / associativity / pierce. WP-L7 before WP-S2.
+
+| WP | Size | Cases | Acceptance (headless) | Cheap check |
+|---|---|---|---|---|
+| **L1** | S | 23 | Box + Ø10 hole: one `GeomAbs_Circle` r = 5 ± 1e-6; volume analytic ± 1e-9 rel; CLI/GUT reads the same | Catch2 + C-py CLI |
+| **L2** | L | 1, 11, 20, 24 | (a) line+R150+R20 spine Line/Circle, R150/R20 ± 1e-6, swept torus major 150 ± 1e-6; (b) spline spine `GeomAbs_BSplineCurve`, fit pts ± 1e-6; (c) ellipse spine `GeomAbs_Ellipse`; (d) rib on R20: cylinder R20±t/2, no bend lumps; (e) thread axial flank 60° ± 0.01°; (f) rung 6 walk + `check_rung06` still pass. **Probe first:** SweepFuse chorded-ribbon pick; thread error size | Catch2 WP-L1 probes; C-one rung-6 sweep |
+| **L3** | L | 3 | Square–square loft, guide offset 5: guide on surface ± 1e-6 (`BRepExtrema_DistShapeShape`); no circular edges unless profiles are circles; guided volume ≠ unguided | Catch2 |
+| **L4** | M | 2 | 40×10 rect, depth 10, 5°: every side 5° ± 1e-6 to extrude dir; Ø6 hole kept as drafted cone; rung 6 Ø30 15° cut volume ± 1e-6 rel, host-face diameter 30 ± 1e-6 | Catch2; C-one `rung06_draft` |
+| **L5** | M | 6, 16, 17 | Touching boxes fuse, fuzz 0, volume = sum ± 1e-9 rel; 0.05 fuzz → warning text on the feature; chamfer-mirror: chamfer faces both sides, area ± 1e-6; no test accepts < 99.9999 % of expected volume | Catch2; C-one `rung05_mirror` |
+| **S1** | M | r7 finding 1 | Convert in-plane BSpline → sketch Spline matching the edge ± 1e-6; Line/Arc stay Line/Arc; **rung 7 A28 still PASS** | Catch2; C-one `rung07_offset` |
+| **L6** | M | 7, 10 | Convert filleted ellipse boss → sketch `ellipse`, radii ± 1e-6; regen after boss edit follows ± 1e-6; Ø45 pierce at 30° on true circle ± 1e-6; A28 still PASS. **Probe first:** `get_edge_lines` seam repeat / centroid bias | Catch2; C-one `rung07_offset` |
+| **L7** | M | 8 | 5 zig-zag fit pts: kernel through each ± 1e-9; solver curve vs kernel ± 1e-6 at 100 params; overlay samples on kernel ± 1e-6; save/load fit pts bit-identical. **Before S2** | Catch2 |
+| **S2** | L | — | Fit-point and pole handles; end tangent/magnitude; Tangent (and curvature if feasible) to lines/arcs on the L7 curve; optional comb; undo; property point count; save/load | Catch2 + C-one `rung08_spline_edit` |
+| **L8** | M | 5, 12, 13, 21, 22 | Mirror arc about vertical and 30°: analytic ± 1e-9 + Symmetric; drag source, copy follows; offset circle Δr relation; 6-copy circular 60° ± 1e-9; thin line-arc-line has a cylinder; voice fix → Fix. **Probe first:** mirror-arc `(−end,−start)` | Catch2; C-one `rung07_mirror` |
+| **L9** | S | 4 | Typed 9.525, 12.34, 1.2, 1.25°, 2.54, 51.428571° each `== float(text)` in the kernel. **Probe first:** hidden `dim_value` 0.5-grid on Enter with a selection | C-one `rung08_typed_values` |
+| **L10** | M | 14, 15 | `add_line(0.1, 1/3, 123.456789012, 7)` bit-identical `entity_info`; hole Ø6.6 stored 6.6; drag-cancel bit-identical; mirror normal (0, 0.7071067811865476, 0.7071067811865476) unchanged | Catch2 / GUT |
+| **L11** | S | 18 | Weak/driving/driven/expression/Fix + every entity type: save→load and snapshot→restore JSON equality; unknown type is a named load error. **Probe:** `BRepTools::Write` digit count | Catch2 |
+| **L12** | M | 9, 19 | Print tol default 0.01 mm / 0.1 rad (isolated mesh); Ø3 hole vertices within tol of the cylinder, sagitta ≤ tol; STL vs 3MF vertices ± 1e-9; 1234.5678 reads back; DXF Ø20 disc = one CIRCLE r=10; bulged LWPOLYLINE → lines+arcs ± 1e-9. Fine view 0.02 mm / 0.1 rad | Catch2; C-one rung-5/7 export |
+
+Display-only (with L12): view tessellation today 0.2 mm / 0.35 rad (`tessellate.hpp`); a Ø3 hole draws as an 18-gon. Measure/picking already use the kernel.

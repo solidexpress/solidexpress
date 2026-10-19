@@ -2,6 +2,8 @@
 
 **PLAN only, no product code.** One BUILD agent implements this in order, one commit per work package, on the branch it is given. Push that branch. Do not open a PR. Source: *SolidWorks & Tinkerine 3D Printing Tutorial — ELEC391*, UBC ECE Engineering Services, [same PDF as rungs 1 and 5](https://people.ece.ubc.ca/~eng-services/files/tutorials/SolidWorks%20&%203D%20Printing%20Tutorial-R1.pdf), pages 20–25. Everything from the PDF is in [`rung-08-prep.md`](rung-08-prep.md), the stills in [`rung-08-frames/`](rung-08-frames/), and below. Do not re-open the PDF. The row text is [`rung-08-checklist.md`](rung-08-checklist.md); do not restate it.
 
+Two tracks: **A** is the pipeline assembly (WP1–WP11). **L/S** is Andy’s 2026-10-19 exactness + spline set (WP-L1…L12, WP-S1, WP-S2). L/S is **not gated** on the rung-8 walk. **WP-L1 lands first** on this branch: every other L/S acceptance uses its probes. WP-L7 ships with or before WP-S2. WP-S1 and WP-L6 are complementary (splines vs the rest of Convert).
+
 No visual-survey batch this rung.
 
 Model: `rung-07-plan.md` package shape (goal, files, change, line delta, one cheap check, revert). Part / frame / walk like `rung-03-plan.md` and `rung-07-plan.md`. Same machinery (`tools/walk/` `Rung`, `automation-bridge.md`).
@@ -24,8 +26,9 @@ Pass bar (all of):
 - With the wrench on the +Y nut, handle toward **+X**: assembly bbox **322.5 × 229.0 × 1040**, min `(−112.5, −112.5, −260)`, max `(210.0, 116.5, 780)`. The 225 Y of the pipes-only box is **not** the final Y (wrench head Ø45 on the r=94 nut overshoots the flange by 4 mm).
 - Every checklist row PASS (no `FAIL`, `PARTIAL`, `BLOCKED`, `runner-gap`). Critique ≥ 9 (rule at the end).
 - On the same build: rung 1 walk 77/77, rung 2 44/44, rung 3 46/46, rung 4 32/32, rung 5 36/36, rung 6 46/46, rung 7 46/46, `check_rung01/02/03/04/05/06/07/08.py` at their bars, headless `0 failed`.
+- Every WP-L* / WP-S* headless acceptance in [`rung-08-checklist.md`](rung-08-checklist.md) § Exactness (kernel curve type / `BRepGProp` / round-trip). Mesh-only `check_rung*.py` (0.2 mm / 0.5 %) does **not** count as exact.
 
-Whole-plan acceptance is **WP11 only**. Earlier packages run the one cheap check they name. They do not run `make test`, `make test-godot`, `confirm_all.sh`, or a walk without `--dry-run`.
+Whole-plan acceptance is **WP11**. It requires both tracks green. L/S packages run their own cheap checks as they land and **do not wait** for WP10. Earlier packages run the one cheap check they name. They do not run `make test`, `make test-godot`, `confirm_all.sh`, or a walk without `--dry-run`.
 
 ## Frame (decision, not a question)
 
@@ -213,7 +216,7 @@ Do not edit `docs/plan/STATUS.md`. Do not commit `.webm`, `.mp4`, `.avi`, `.mov`
 
 `export LD_LIBRARY_PATH=/opt/occt-8.0.1/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}` before any `tools/godot/godot` call.
 
-Every WP **keeps rungs 1–7 green**: walks 77/77, 44/44, 46/46, 32/32, 36/36, 46/46, 46/46 and `check_rung05/06/07` at their bars. Cheap checks include one C-one of a rung-1 assembly or rung-5 suite when the WP touches a shared file (`mates.cpp`, `assembly_panel.gd`, `interop.cpp`, `sxp.cpp`). They do not add walk rows until WP10. No visual-survey restyle.
+Every WP **keeps rungs 1–7 green**: walks 77/77, 44/44, 46/46, 32/32, 36/36, 46/46, 46/46 and `check_rung05/06/07` at their bars. Cheap checks include one C-one of a rung-1 assembly or rung-5 suite when the WP touches a shared file (`mates.cpp`, `assembly_panel.gd`, `interop.cpp`, `sxp.cpp`). They do not add walk rows until WP10. L/S WPs add **no** walk rows. No visual-survey restyle.
 
 ## Decisions (the BUILD agent does not choose)
 
@@ -235,11 +238,13 @@ Every WP **keeps rungs 1–7 green**: walks 77/77, 44/44, 46/46, 32/32, 36/36, 4
 16. **Auto-close default on** stays for rungs 1–7. The pin profile is a closed revolve contour; auto-close is harmless.
 17. **Checkpoints.** Walk may write a chunk-1 snapshot after N2. Named files: `pin.sxp` after A11, `pipes.sxp` after A19, `bolted.sxp` after A25, `assembly.sxp` after A32, `final.sxp` after A34.
 18. **Critique.** Checker + walk are necessary, not sufficient. Done = one build follows every PDF step with the named tool, score ≥ 9, checker passes. Caps at 8: File → New (part) as the assembly; ground-body revolve + Place instance as the pin; Pattern around joint as the only ×8 path; Fastened as the wrench curve; overall-50 pin; outer-flange joint; one-file 3MF of hidden sources at the origin; skip bolt-hole Concentric.
-19. **Implementation split.** Assembly chrome + insert (WP3) then clickable two-instance mates (WP4) then solver + copy (WP5) then in-context pin (WP6) then ×8 (WP7) then wrench (WP8) then export (WP9). Each WP’s cheap check is green on its own. Do not wait for the walk to prove two pipes concentric.
+19. **Implementation split.** Two tracks. **L/S:** WP-L1 first, then L2–L5, S1, L6, L7, S2, L8–L12 (L7 before or with S2; S1 and L6 are not the same Convert WP). **A:** chrome + insert (WP3) then clickable two-instance mates (WP4) then solver + copy (WP5) then in-context pin (WP6) then ×8 (WP7) then wrench (WP8) then export (WP9). Each WP’s cheap check is green on its own. Do not wait for the walk to prove two pipes concentric. Do not wait for the walk to land L/S.
+20. **Exact means kernel, not mesh.** Acceptance for L/S: `BRepAdaptor_Curve::GetType` (and face `GetType`), radii/centres within **1e-6 mm**, volume via `BRepGProp` within **1e-6 relative**, save→load or bridge round-trip equal to the bit (or within 1e-12). WP-L1 is the harness. Unconfirmed audit cases start with a **probe that confirms the cited bug** (records the actual error size); if that probe is green, drop the case from the WP and say so in the commit.
+21. **Rungs 1–7 walks stay 77/44/46/32/36/46/46** on every L/S WP. Rung 7 A28 still passes after WP-S1 and WP-L6. Rung 6 walk and `check_rung06` still pass after WP-L2 and WP-L4.
 
 ## BUILD agent rules
 
-- One commit per WP: `Rung 8 WP<n>: <title>`. **Commit and push after every WP and after every fixed walk row, and at least every 30 minutes.** Do not open a PR.
+- One commit per WP: `Rung 8 WP<n>: <title>` or `Rung 8 WP-L<n>: <title>` / `Rung 8 WP-S<n>: <title>`. **Commit and push after every WP and after every fixed walk row, and at least every 30 minutes.** Do not open a PR.
 - Walks are **resumable from any row** while fixing (`--from` / checkpoints). A **final FULL clean pass of every walk for all rungs from row 1** is required before calling the rung a pass. Do not declare pass on a restored mid-walk.
 - After **3 failed fix attempts** a row is logged as a finding in `docs/loop/rung-08-failing.md` and the agent moves on. A **final sweep** retries every finding once.
 - **Test-and-fix** (after the walk exists and is red) runs as a **fresh agent given only** `docs/loop/rung-08-failing.md` (plus the plan/checklist it names). The BUILD agent writes that file when handing off; it starts empty of findings.
@@ -254,10 +259,257 @@ Cheap checks (not the full pass):
 | C-one | `GODOT_BIN=tools/godot/godot packaging/ci/run_suites.sh --jobs 1 --only '<suite>'` |
 | C-dry | `python3 tools/walk_rung08.py --dry-run` plus `python3 tools/test_walk_registry.py` |
 | C-r17 | C-one a rung-1 assembly suite or a rung-5/7 suite the WP names when it touches a shared file |
+| C-exact | Catch2 / CLI that calls WP-L1 probes (curve type, `BRepGProp`). Required on every L/S WP after L1 |
 
 ## Work packages
 
-Blocking assembly first (WP3 chrome, WP4 two-instance mates, WP5 solver+copy, WP6 pin, WP7×8, WP8 wrench, WP9 export), walk, then whole-plan acceptance. No visual batch.
+**25 WPs.** Track L/S (14) is not gated on the assembly walk. Track A (WP1–WP11) is the pipeline. **WP-L1 is first** on this branch. No visual batch.
+
+Source for L/S: Andy, 2026-10-19; audit of `origin/main` `9a493ca` (read-only). Line numbers in the case table are at that commit. WP-S1 is rung-07-result.md finding 1.
+
+### Track L/S — exactness and splines
+
+Unconfirmed (probe before relying on the cited error): hidden `dim_value` 0.5-grid (case 4 / WP-L9); `get_edge_lines` seam-point centroid bias (case 10 / WP-L6); mirror-arc angles from `add_arc` (case 5 / WP-L8); SweepFuse picking the chorded ribbon (case 1 / WP-L2); thread error size (case 20 / WP-L2); `BRepTools::Write` 15 vs 17 digits (WP-L11).
+
+Ranked cases (audit `9a493ca`; line numbers there). Fix mapping:
+
+| # | Converted from → to | WP |
+|---|---|---|
+| 1 | Path/guide arcs→15° chords, circles→32-gon, ellipses→15° chords, splines→8 samples/fit; exact spine only single line+arc | L2 |
+| 2 | Drafted extrude/cut → centroid-scale loft; holes dropped; cut starts 0.05 mm outside | L4 |
+| 3 | Loft guides → synthetic circles at t=0.35/0.65 | L3 |
+| 4 | Typed values → Godot `Range` `min+k·step` | L9 |
+| 5 | Sketch Mirror of an arc → `(−end,−start)`; no Symmetric; ellipse/spline skipped | L8 |
+| 6 | Boolean fuzzy retries to 0.1 mm; accept ≥90 % volume or invalid fallback | L5 |
+| 7 | Convert ellipse → fitted arc or nothing; tilted circle → diameter line; no re-project | L6 |
+| 8 | Four spline curves (solver poles ≠ `PointsToBSpline` ≠ Catmull-Rom ≠ overlay segments) | L7 |
+| 9 | STL 0.1 mm / 0.5 rad, 3MF 0.05/0.2, float32, 6 digits | L12 |
+| 10 | Display tessellation → pierce/circle-fit/`wp2-anchor` | L6 |
+| 11 | Rib → sampled boxes fused | L2 |
+| 12 | Offset/pattern: fixed nums, skipped types | L8 |
+| 13 | Thin/open cut → first line chain only | L8 |
+| 14 | Sketch coords double→float32→double | L10 |
+| 15 | Feature params as C++ `float` | L10 (sweep path doubles also L2) |
+| 16 | Failed fillet → wedge prism | L5 |
+| 17 | Feature mirror skips Shell/Chamfer | L5 |
+| 18 | Constraint `weak` not written; unknown types load as Arc | L11 |
+| 19 | DXF 0.05 mm chords; import drops LWPOLYLINE/ELLIPSE/SPLINE | L12 |
+| 20 | Thread cutter Frenet, not axial plane | L2 |
+| 21 | Measured jaw snapped 0.01 mm | L8 |
+| 22 | Voice fix/lock → Horizontal | L8 |
+| 23 | Checkers judge 3MF mesh 0.2 mm / 0.5 % | L1 |
+| 24 | Archimedean spiral → 32 samples/turn (no callers) | L2 |
+| r7 f1 | Convert in-plane BSpline → fitted arc | **S1** (not L6) |
+
+#### WP-L1 — Exactness probes for the harness (S)
+
+Goal: cases **23**. A headless kernel/CLI query that lists for a body or sketch: each edge’s curve type, radius/centre/axis, ellipse radii, BSpline degree/poles; each face’s surface type; exact volume/area (`BRepGProp`); feature param values as written. Expose to `tools/` (`sxdrive`) and GUT. Every later L/S acceptance uses this. Mesh-only `check_rung*.py` does not count.
+
+Files: new `sxkernel` query (e.g. `sx::exactness::report(doc, body)` / sketch); Catch2 `test_exactness_probes.cpp`; `sxcore` bind; `tools/` CLI (`python3 tools/sx_exact.py` or an `sxdrive` verb); `tools/test_sx_exact.py`; optional GUT `run_exactness_probes.gd` + `packaging/ci/suites.d/exactness_probes.suite` (`tier=ci`).
+
+Change: a box with a Ø10 hole reports one `GeomAbs_Circle` edge of radius 5, volume equal to the analytic value. Feature params round-trip as written.
+
+Expected delta: about +250 lines.
+
+Check: red first. Catch2: box + Ø10 hole → one `GeomAbs_Circle` radius 5 ± 1e-6, volume within 1e-9 rel of analytic. C-py reads the same through the CLI. Then C-one a rung-5 export suite if the bind touches `SxDocument` (rungs 1–7 walks not launched here).
+
+Revert: revert. Do not let later L/S WPs assert on 3MF mesh instead.
+
+#### WP-L2 — Exact sweep, loft-section, rib and thread paths (L)
+
+Goal: cases **1, 11, 20, 24** (and the sweep side of 15: `graph_add_sweep` path as doubles). One `sketch_exact_wire(sketch, open|closed)` used by Path, Sweep (path and guides), Loft open sections, Rib and Thin. Polyline only if the exact wire fails, and then the feature carries a visible `"approximated path"` warning. `bridge_spline` becomes `GeomAPI_Interpolate` through the control points (exact curve, not Catmull-Rom samples).
+
+**First step (unconfirmed):** Catch2 probe that (a) records whether SweepFuse ever picks the chorded ribbon over an exact spine (case 1), and (b) measures the thread axial-flank / pitch-diameter error size (case 20). If SweepFuse never picks the chorded ribbon, drop that sub-claim and still build the exact wire. If thread error is below 1e-6, still switch to axial-plane sweep so the ISO basic profile is the named path.
+
+Files: `sxkernel/src/features.cpp` `sketch_ordered_polyline` / `sweep_along_polyline` / `sketch_spine_wire`; `features/ops_sweep.cpp`; `features/ops_misc.cpp` rib; thread cutter `features.cpp` ~575–618; `curves.cpp` spiral (no callers — exact law or interpolate to 1e-7). Catch2 `test_exact_spine.cpp`. `rung08_exact_sweep.suite` optional (`tier=full`). WP-L1 probes in every acceptance.
+
+Change: spine/guide is an exact wire (lines, `Geom_TrimmedCurve` arcs, `Geom_Ellipse`, the spline’s BSpline) for all sketches and all path modes.
+
+Expected delta: about +400 lines.
+
+Check: red first, then Catch2 using WP-L1: (a) single-sketch and two-sketch paths (line + R150 arc + R20 arc) → spine edges Line/Circle with R150 and R20 within 1e-6; swept solid contains a toroidal face of major radius 150 ± 1e-6; (b) spline path: spine `GeomAbs_BSplineCurve`, every fit point within 1e-6; (c) ellipse path: `GeomAbs_Ellipse`; (d) rib on an R20 arc profile has a cylindrical face R20 ± t/2 within 1e-6 and no extra faces at the bends; (e) thread: axial section flank angle 60° ± 0.01°; (f) C-one a rung-6 sweep suite — walk 46/46 and `check_rung06` still pass (cheap: C-one `rung06_sweep.suite` / spine suite, not the walk).
+
+Revert: revert. Do not leave polyline as the silent default.
+
+#### WP-L3 — Guided loft that follows the guide (L)
+
+Goal: case **3**. Loft with guides through `BRepOffsetAPI_MakePipeShell` (sections + auxiliary guide) or `GeomFill` surfaces; refuse with a message when OCCT cannot, instead of inventing circular sections at t=0.35/0.65 (`ops_sweep.cpp` 455–523).
+
+Files: `features/ops_sweep.cpp` guided loft. Catch2 `test_guided_loft.cpp`. WP-L1 probes.
+
+Change: square-to-square loft with a straight guide is a guided solid, not circular waists.
+
+Expected delta: about +250 lines.
+
+Check: red first. Catch2: square-to-square loft, straight guide offset 5 mm: every point of the guide lies on the loft surface within 1e-6 (`BRepExtrema_DistShapeShape`); no circular edges unless the profiles are circles; guided-loft volume ≠ unguided volume. Then C-one a rung-6 loft/sweep suite if one exists (unguided loft unchanged).
+
+Revert: revert. Do not keep the synthetic circular sections as a fallback without a refuse.
+
+#### WP-L4 — True draft extrude/cut (M)
+
+Goal: case **2** (and the 0.05 mm cut-start shift at `ops_solid.cpp` 412–425). `BRepFeat_MakeDPrism` / `LocOpe_DPrism` per profile face, inner wires kept. Start the cut on the face.
+
+Files: `features/ops_solid.cpp` drafted extrude/cut. Catch2 `test_draft_dprism.cpp`. WP-L1 probes.
+
+Change: 40×10 rect, depth 10, 5° inward: every side face’s angle to the extrude direction is 5° ± 1e-6. Holes kept as drafted cones. No 0.05 mm cut-start.
+
+Expected delta: about +200 lines.
+
+Check: red first. Catch2: 40×10 × 10 deep, 5° inward, every side 5° ± 1e-6 from face normals; profile with a Ø6 hole keeps a drafted conical hole face; the rung 6 Ø30 15° cut volume unchanged within 1e-6 rel and cut diameter at the host face is 30 ± 1e-6. Then C-one `rung06_draft.suite`.
+
+Revert: revert. Do not keep centroid-scale loft as the draft.
+
+#### WP-L5 — Honest booleans and dress-ups (M)
+
+Goal: cases **6, 16, 17**. Silent fuzz ≤ 1e-6×bbox; any larger fuzz, heal, unify or fallback is written to the feature as a warning with the value used; volume acceptance compares to the expected change, not 90 %; feature mirror replays chamfer/shell or fails with the feature name; fillet wedge fallback only for verified planar vertical walls and labelled.
+
+Files: `features/ops_solid.cpp` 87–180; `ops_sweep.cpp` 126–215; `interop.cpp` 276–300; `ops_dress.cpp` fillet wedge 893–916, 495–660; `ops_transform.cpp` FeatureMirror POLICY Shell/Chamfer. Catch2 `test_honest_boolean.cpp`, `test_fillet_fallback.cpp`, extend `test_rung07_fillet_mirror.cpp` / rung-5 mirror. WP-L1 volume probes.
+
+Change: two boxes touching fuse with zero fuzz, volume = sum. A fuse that needs 0.05 fuzz shows the warning. Mirror of a chamfered body has a chamfer face on both sides. No test anywhere passes with < 99.9999 % of the expected volume.
+
+Expected delta: about +200 lines.
+
+Check: red first. Catch2: fuse volume 1e-9 rel of the sum, zero fuzz; fuzz 0.05 writes warning text on the feature; mirror+chamfer count and area equal within 1e-6 both sides; fillet wedge only when walls are planar and vertical (else refuse + warning). Then C-one `rung05_mirror.suite` (Shell skip becomes replay-or-fail; if replay, `check_rung05` `mirror` volume still at bar).
+
+Revert: revert. Do not keep the 90 % volume accept.
+
+#### WP-S1 — Convert Entities keeps splines (M)
+
+Goal: rung-07-result.md **finding 1**. OCCT stores some model edges as in-plane BSplines; Convert fits circular arcs instead of copying the curve type. Convert must emit a true sketch spline (matching the kernel’s curve, within 1e-6) for BSpline/Bezier edges, and keep arcs and lines as they are. **Not WP-L6** (ellipses, tilted circles, associativity, pierce/anchors).
+
+Files: `sxkernel/src/sketch3d.cpp` projectors; `sketch_convert_edge.gd`. Catch2 `test_convert_spline.cpp`. WP-L1 curve-type probes.
+
+Change: Convert of an in-plane BSpline edge → sketch Spline whose geometry matches the edge (degree/poles or interpolating fit, 1e-6). Line stays Line; Circle/Arc stay Circle/Arc. Rung 7 walk row A28 still PASS (`Convert: external arc` for the R30/R20 handle).
+
+Expected delta: about +150 lines.
+
+Check: red first. Catch2: BSpline edge → sketch entity type Spline, WP-L1 report `GeomAbs_BSplineCurve` (or the sketch spline’s poles) matching the edge within 1e-6. Line/arc Convert unchanged. Then C-one `rung07_offset.suite` (A28 path: Convert of fillet arcs still arcs). Do not launch `walk_rung07` here; WP11 does.
+
+Revert: revert. Do not fit a circular arc to a BSpline as the Convert result.
+
+#### WP-L6 — Convert: exact projection beyond splines, and associativity (M)
+
+Goal: cases **7, 10**. Complementary to WP-S1 (BSpline/Bezier copy stays there). Ellipse edge → sketch ellipse/elliptical arc; tilted circle → projected ellipse; out-of-plane edge → exact projection or refuse (no 2 mm / 0.5 mm tolerance); re-project every external entity on regen (wire `update_projected_*` / `mark_dangling_external` into the regen path, add arc/ellipse updates); jaw/hole anchors and pierce points come from the kernel (`GeomAPI_IntCS`, `BRepAdaptor_Curve::Circle()`), never from `get_edge_lines`.
+
+**First step (unconfirmed):** Catch2 probe that `get_edge_lines` on a circle repeats the seam point and that the vertex-centroid centre is off by ~r/N. If the seam is not repeated, drop the “~0.9 mm on Ø45” claim and still stop using polylines for pierce/anchors.
+
+Files: `sketch3d.cpp` 115–171, 216–279; `sxcore/src/sx_sketch.cpp` 517–529 (`update_projected_*`, no callers today); `sketch_mode.gd` 2305–2376, 3838–3872, 4476, 4550, 3654–3667; `viewport_interaction.gd` 3755–3790. Catch2 `test_convert_ellipse.cpp`, `test_pierce_kernel.cpp`. WP-L1 probes.
+
+Change: filleted ellipse boss Convert → sketch `ellipse` with radii equal to the edge within 1e-6; change the boss and regen: converted entity follows within 1e-6; pierce of a Ø45 cylinder on a plane at 30° lands on the true circle within 1e-6.
+
+Expected delta: about +250 lines.
+
+Check: red first (including the seam-point probe). Then Catch2 acceptance above. C-one `rung07_offset.suite` — A28 still passes. Then C-one a rung-3 convert suite (full-circle Convert unchanged).
+
+Revert: revert. Do not keep 0.5 mm radius-tol arc fitting for ellipses.
+
+#### WP-L7 — One spline definition (M)
+
+Goal: case **8**. Prerequisite for WP-S2 — land **before** S2 (same agent may commit L7 then S2). Kernel builds the spline with `GeomAPI_Interpolate` through the fit points; the solver gets the same curve (poles/knots from the kernel, fit-point constraints); preview, pad overlay and picking sample the kernel curve.
+
+Files: `solver_planegcs.cpp` 140–176; `sketch.cpp` 860–871; `features.cpp` 796–813; `sketch_regions.cpp` 100–110; `sketch_mode.gd` 3739–3760; `sketch_pad_overlay.gd` 372–378. Catch2 `test_spline_interpolate.cpp`. WP-L1 BSpline poles.
+
+Change: one curve. Solver is not a uniform cubic on fit points as poles. Overlay is not Catmull-Rom / straight segments.
+
+Expected delta: about +200 lines.
+
+Check: red first. Catch2: 5 zig-zag fit points → kernel edge passes each fit point within 1e-9; solver-side curve and kernel curve agree within 1e-6 at 100 parameters; displayed polyline vertices lie on the kernel curve within 1e-6; save/load keeps fit points bit-identical. Then C-one a spline sketch suite if one exists (rungs 1–7 have no spline walk rows; still C-one `sketch_parity` if it touches add_spline).
+
+Revert: revert. Do not start WP-S2 on the old four-curve split.
+
+#### WP-S2 — Spline editing on par with SolidWorks/Fusion (L)
+
+Goal: today’s Spline tool (`sketch_mode.gd` `Tool.SPLINE` → `SxSketch::add_spline`) stores fit points only. After WP-L7’s one curve, add: draggable fit-point and control-polygon handles (fit-point vs control-point mode toggle); end tangent direction and magnitude handles, plus curvature continuity at ends; Tangent (and where feasible, curvature / equal-curvature) relations between a spline end and lines and arcs, solved by the sketch solver; optional curvature comb; save/load round-trip; undo; property panel showing the point count.
+
+Files: `sketch_mode.gd` spline tool; overlay; `solver_planegcs.cpp` tangent/curvature constraints (PlaneGCS already in-tree); property panel; `automation_bridge.md` if a new click form appears. Catch2 + `rung08_spline_edit.suite` (`tier=full`). WP-L1 / L7 curve.
+
+Change: a sketched spline can be edited by fit points or poles; end tangent to a line solves on the **same** curve the solid uses; comb is a display option default off; undo restores fit points bit-identically (WP-L10 if the bind is still float32 — land L10 first if this check is red on float noise).
+
+Expected delta: about +400 lines.
+
+Check: red first. Catch2: fit-point drag moves the interpolating curve through the new point within 1e-6; Tangent spline-end to a line, solve, end derivative parallel within 1e-6. Then C-one `rung08_spline_edit.suite`: toggle fit/pole, tangent handle, comb on, property point count, undo, save/load. Then C-one WP-L7’s spline test (still interpolating). Rungs 1–7 unchanged.
+
+Revert: revert. Do not ship handles on the Catmull-Rom preview.
+
+#### WP-L8 — Sketch copies keep type and intent (M)
+
+Goal: cases **5, 12, 13, 21, 22**. Kernel `mirror_entities` (all types, Symmetric relations, correct arc angles), offset with a distance relation (lines Parallel + distance, arcs/circles Concentric + linked radius), linear/circular patterns with spacing/angle relations and all entity types, paste of ellipses/splines, thin/open-cut chain from all entity types, no snapped measured values, voice `"fix"` → Fix (not Horizontal).
+
+**First step (unconfirmed):** Catch2 probe of Mirror of an arc about a vertical axis vs a 30° axis; record whether angles are `(−end, −start)` (wrong except horizontal). If already correct, skip the angle rewrite and still add Symmetric + ellipse/spline/elliptical-arc.
+
+Files: `sketch_mode.gd` 3573–3640 mirror; `sketch_tools.cpp` 677–735 offset, 864–918 linear pattern, 961–1008 circular; `sketch.cpp` 1209–1300 thin / open cut; `sketch_mode.gd` 4419–4424 measured jaw; `voice_executor.gd` 195–198. Catch2 `test_mirror_entities.cpp`, `test_offset_relation.cpp`. Rung 7 Mirror Entities (WP4 of that rung) stays.
+
+Change: copies follow the source. Offset Δr is a relation. Voice fix is Fix.
+
+Expected delta: about +300 lines.
+
+Check: red first (including the mirror-arc probe). Catch2: mirror an arc about a vertical and a 30° axis: centre, radius and endpoints equal the analytic reflection within 1e-9 and a Symmetric relation exists; drag the source and the copy follows; offset a circle by 2, change the source radius by 1: the offset radius changes by 1; 6-copy circular pattern: angles 60° ± 1e-9 after a solve with the seed moved; thin feature on line-arc-line has a cylindrical face. Then C-one `rung07_mirror.suite` (Symmetric still present) and `sketch_parity_tests.suite`.
+
+Revert: revert. Do not walk a second dim as the only offset.
+
+#### WP-L9 — Typed values stay exact (S)
+
+Goal: case **4**. Every value-carrying SpinBox commits the parsed text (step 0 or `custom_arrow_step` only); remove the hidden 0.5-step `dim_value` from the dimension path (`sketch_context_chrome.gd` / `main.gd` as cited).
+
+**First step (unconfirmed):** GUT probe that typing 12.34 with a line selected and pressing Enter actually writes 12.51 (or 40 → 40.01) via the hidden 0.5-step `dim_value`. The audit says this only bites when Enter is pressed with entities selected and no single-DOF preview. If the probe is green, still commit parsed text and set step 0 so it cannot regress; record “case 4 path not hit on this tree”.
+
+Files: `sketch_context_chrome.gd` 188–193, 1184–1189, 346–349, 379–382, 741, 814; `main.gd` 1075–1080, 1444–1450, 2082–2096, 3304; `sketch_offset.gd` 72, 237; `sketch_circular_pattern.gd` 65. GUT `run_rung08_typed_values.gd` + `rung08_typed_values.suite` (`tier=ci`).
+
+Change: typing 9.525 / 12.34 / 1.2 / 1.25° / 2.54 / 51.428571° lands in the kernel as that double.
+
+Expected delta: about +120 lines.
+
+Check: red first (the 12.34 probe). Then C-one `rung08_typed_values.suite`: each typed value `== float(text)` in the kernel constraint/feature param. Then C-one a rung-1 Smart Dim suite (dims still apply).
+
+Revert: revert. Do not leave `dim_value` step 0.5 on the apply path.
+
+#### WP-L10 — Doubles across the Godot boundary (M)
+
+Goal: cases **14, 15**. godot-cpp is single precision (`extension_api.json` `"precision": "single"`); sketch and feature bindings take/return doubles (scalar args or `PackedFloat64Array`), no `float` C++ params; drag cancel restores from a kernel snapshot.
+
+Files: `sxcore/src/sx_sketch.cpp` 183–307; ~32 `set_entity_geometry` calls in `sketch_mode.gd` (incl. drag cancel/fail restore 3048, 3061); paste 8310–8335; `sx_document.cpp` 977–994, 1113–1114, 1140, 1155, 1395–1450, 1833–1890, 1894–1895, 1974, 1999–2000. Catch2 via GDExtension round-trip or GUT. WP-L1 feature-param dump.
+
+Change: `add_line(0.1, 1/3, 123.456789012, 7)` → `entity_info` same doubles bit-for-bit; hole Ø6.6 written as 6.6; drag-then-cancel bit-identical; mirror plane normal `(0, 0.7071067811865476, 0.7071067811865476)` stored unchanged.
+
+Expected delta: about +250 lines.
+
+Check: red first. Catch2/GUT: the four acceptance bullets. Then C-one a sketch drag suite and a hole-wizard suite (Ø still applies). Rungs 1–7 walks not launched here.
+
+Revert: revert. Do not keep `float` feature params.
+
+#### WP-L11 — Save/undo round-trip fidelity (S)
+
+Goal: case **18**. Write/read constraint `weak`; unknown entity or constraint type is a load error naming it.
+
+**First step (unconfirmed):** probe `BRepTools::Write` digit count on a saved `.brep` (15 vs 17). Record it. Not a blocker for `weak`; if 15, note it for WP-L12 / a later file-format WP.
+
+Files: `sketch_json.cpp` 118–131 writer, 27–33, 46–47 reader; `sx_sketch.cpp` 482–503. Catch2 `test_sketch_json_weak.cpp`.
+
+Change: a sketch with weak, driving/driven, expression and Fix-locked constraints and every entity type survives save→load and snapshot→restore with JSON equality; unknown type → load error.
+
+Expected delta: about +80 lines.
+
+Check: red first. Catch2 JSON equality + unknown-type error. Then C-py if a sketch-json fixture exists. Rungs 1–7 save/open still work (C-one a reopen suite).
+
+Revert: revert.
+
+#### WP-L12 — Export/import fidelity (M)
+
+Goal: cases **9, 19**. One print tolerance (default **0.01 mm / 0.1 rad**, user-settable, saved in `print.json`) for STL and 3MF, meshing an **isolated copy**; numbers with 17 significant digits; drawing DXF with ARC/CIRCLE/ELLIPSE/SPLINE; DXF import of LWPOLYLINE/POLYLINE with bulges, ELLIPSE and SPLINE (or a refuse list in the status). Also a **fine** view tessellation setting (0.02 mm / 0.1 rad) — display only; measure and picking already use the kernel (`tessellate.hpp` 36–37 is 0.2 mm / 0.35 rad today).
+
+Files: `interop.cpp` 239–240, 329, 341, 462–465, 609–611; `tessellate.cpp` 68–70; `dxf.cpp` 140–196, 82–86; `drawings.cpp` 29–50. Catch2 `test_export_tolerance.cpp`, `test_dxf_curves.cpp`. WP-L1 cylinder vs mesh vertices.
+
+Change: STL/3MF of a Ø3×10 hole plate: every hole vertex within the set tolerance of the true cylinder, max chord sagitta ≤ tolerance; STL and 3MF vertex sets match within 1e-9; 3MF vertex 1234.5678 reads back as 1234.5678; drawing DXF of a Ø20 disc has one CIRCLE of radius 10 exactly; DXF with a bulged LWPOLYLINE imports as lines+arcs with radii within 1e-9.
+
+Expected delta: about +250 lines.
+
+Check: red first. Catch2 acceptance above. Then C-one a rung-5 / rung-7 export suite (`check_rung05/07` still 0 on their 3MFs at the **mesh** bar — tighter tessellation must not fail the 0.2 mm checkers). Assembly WP9 instance 3MF still applies transforms.
+
+Revert: revert. Do not leave STL at 0.1 mm / 0.5 rad as the only path.
+
+### Track A — pipeline assembly
+
+Blocking assembly: WP3 chrome, WP4 two-instance mates, WP5 solver+copy, WP6 pin, WP7×8, WP8 wrench, WP9 export, walk, then whole-plan acceptance.
 
 ### WP1 — Checker `check_rung08.py`
 
@@ -413,9 +665,9 @@ Change: none expected. Run:
 
 `tools/confirm_all.sh`
 
-That script builds, imports, runs the kernel, the lints, `test_check_rung02/03/04/05/06/07/08.py`, the registry test, the headless suites, and the eight walks. Do not also run `make test` or a second suite pass.
+That script builds, imports, runs the kernel (including WP-L1…L12 / S1 / S2 Catch2), the lints, `test_check_rung02/03/04/05/06/07/08.py`, the registry test, the headless suites (including every `rung08_*.suite` and exactness/spline suites), and the eight walks. Do not also run `make test` or a second suite pass.
 
-Report, and nothing else: the confirm summary lines (build, kernel, lint, godot suite count, rung1 77, rung2 44, rung3 46, rung4 32, rung5 36, rung6 46, rung7 46, rung8 48, each checker tail including `check_rung05` 10/10, `check_rung06` 7/7, `check_rung07` final N/N, `check_rung08` final N/N).
+Report, and nothing else: the confirm summary lines (build, kernel, lint, godot suite count, rung1 77, rung2 44, rung3 46, rung4 32, rung5 36, rung6 46, rung7 46, rung8 48, each checker tail including `check_rung05` 10/10, `check_rung06` 7/7, `check_rung07` final N/N, `check_rung08` final N/N) plus L/S: WP-L1 CLI, exact spine/loft/draft/boolean/convert/spline/typed/doubles/json/export tests `0 failed`.
 
 A **FULL clean pass of every walk from row 1** (no `--from` leftovers) is the pass. If `rung-08-failing.md` still lists findings after the sweep, the rung is not a pass.
 
@@ -444,7 +696,8 @@ Revert: not this WP. A bad fix-up commit reverts on its own.
 - Lock mate / Concentric “Lock rotation”. PDF optional.
 - FeatureManager tree as a full SW clone; AssemblyPanel with `(f)` is the Fix/Float UI.
 - Multi-body part files, subassemblies, Copy with Mates, Advanced/Mechanical mates.
-- Threads on the pin or nut. The Ex 1 nut is a hex with a Ø10 bore.
+- Threads on the pin or nut. The Ex 1 nut is a hex with a Ø10 bore. (WP-L2 thread-cutter exactness is the kernel path, not an assembly thread feature.)
 - A demo film. `docs/plan/STATUS.md`. Visual-survey restyle.
 - Changing rungs 1–7 walk row lists.
 - Committing `.sxp` goldens.
+- Replacing mesh `check_rung*.py` bars (0.2 mm / 0.5 %) with exact probes — L/S tests sit **beside** those checkers, they do not loosen or replace them.
