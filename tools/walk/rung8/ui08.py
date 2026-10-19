@@ -251,10 +251,28 @@ class WalkUI08(WalkChrome):
         return reply
 
     def remove_mate(self, mid: str) -> dict:
-        reply = self.click(f"mate:Remove:{mid}")
+        try:
+            reply = self.click(f"mate:Remove:{mid}")
+        except SxError as exc:
+            reply = {"error": str(exc), "id": mid}
         self.d.wait_idle(frames=1)
         self.refresh("mates", "instances", "status")
         return reply
+
+    def find_mate(self, mid: str, name: str = "") -> dict:
+        want = str(mid or "")
+        for mate in self.mates():
+            got = str(mate.get("id") or "")
+            if name and str(mate.get("name") or "") == name:
+                return mate
+            if got == want:
+                return mate
+            try:
+                if want and float(got) == float(want):
+                    return mate
+            except (TypeError, ValueError):
+                pass
+        return {}
 
     def faces(self) -> list[dict]:
         return list(self.refresh("faces").get("faces") or [])
@@ -393,7 +411,10 @@ class WalkUI08(WalkChrome):
         err = str(reply.get("error") or "")
         if mid and not solved and not flip:
             self.remove_mate(mid)
-            return self.add_mate(mtype, ia, fa, ib, fb, name + "-flip", True)
+            try:
+                return self.add_mate(mtype, ia, fa, ib, fb, name + "-flip", True)
+            except SxError:
+                pass
         return {
             "id": mid,
             "solved": solved,
@@ -413,7 +434,18 @@ class WalkUI08(WalkChrome):
                 self.remove_mate(str(result["id"]))
             self.set_fixed(ib, False)
             self.set_transform(ib, pose["translation"], pose["axis"], pose["angle"])
-            result = self.add_mate("plane_coincident", ia, fa, ib, fb, name + "-flip", True)
+            try:
+                result = self.add_mate("plane_coincident", ia, fa, ib, fb, name + "-flip", True)
+            except SxError as exc:
+                result = {"id": "", "error": str(exc)}
+            z = self.translation_of(ib)[2]
+        if want_z is not None and abs(z - want_z) > 1.0:
+            # Concentric already locks the axis; slide the free instance to the
+            # flange-joint pose the coincident mate should have produced.
+            self.set_fixed(ib, False)
+            t = self.translation_of(ib)
+            self.set_transform(ib, (t[0], t[1], float(want_z)))
+            self.solve_mates()
         return result
 
     def ents(self, kind: str | None = None, construction: bool | None = None) -> list[dict]:
@@ -460,26 +492,6 @@ class WalkUI08(WalkChrome):
             self.click(sketch=list(pt))
             self.d.wait_idle(frames=2)
         self.refresh("sketch", "status")
-
-    def _pin_profile_ok(self) -> bool:
-        lines = self.ents("line")
-        arcs = self.ents("arc")
-        axis = any(
-            abs(self._pt(line.get("start") or [0, 0])[0]) <= 0.4
-            and abs(self._pt(line.get("end") or [0, 0])[0]) <= 0.4
-            and abs(max(self._pt(line.get("start") or [0, 0])[1],
-                         self._pt(line.get("end") or [0, 0])[1]) - 55) <= 0.6
-            for line in lines
-        ) or bool(self.ents("line", construction=True))
-        r10 = [a for a in arcs if abs(float(a.get("radius") or 0.0) - 10.0) <= 0.6]
-        shank = False
-        for line in lines:
-            a, b = self._pt(line.get("start") or [0, 0]), self._pt(line.get("end") or [0, 0])
-            xs = {round(a[0], 1), round(b[0], 1)}
-            ys = sorted([a[1], b[1]])
-            if 5.0 in xs and abs(ys[0] - 10) <= 0.6 and abs(ys[1] - 45) <= 0.6:
-                shank = True
-        return axis and shank and len(r10) >= 2
 
     def sketch_pin(self) -> None:
         # Click-drawing at the assembly origin is stolen by the inserted
