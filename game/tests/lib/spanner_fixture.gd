@@ -739,17 +739,17 @@ static func set_contours(ctx: FilmContext, keep: PackedStringArray) -> void:
 	for chip in chips:
 		var btn := chip as CheckButton
 		if btn.button_pressed:
-			if not await FilmUI.click_control(ctx, btn, FilmUICues.alert("Contour", "Uncheck")):
+			await _click_check(ctx, btn, "Uncheck")
+			if _failed():
 				return
-			await FilmUI.wait_frames(ctx.tree, 1)
 	var mapping: Array = []
 	for i in chips.size():
 		if _failed():
 			return
 		var btn := chips[i] as CheckButton
-		if not await FilmUI.click_control(ctx, btn, FilmUICues.alert("Contour", "Probe %d" % (i + 1))):
+		await _click_check(ctx, btn, "Probe %d" % (i + 1))
+		if _failed():
 			return
-		await FilmUI.wait_frames(ctx.tree, 1)
 		var note := sm.contour_label(i) if sm != null else ""
 		var want := _contour_wanted(keep, note)
 		if not want and sm != null and sm.sketch != null and sm.sketch.has_method("contour_outlines"):
@@ -758,16 +758,25 @@ static func set_contours(ctx: FilmContext, keep: PackedStringArray) -> void:
 				want = _contour_wanted_outline(keep, rows[i])
 		mapping.append(want)
 		if not want and btn.button_pressed:
-			await FilmUI.click_control(ctx, btn, FilmUICues.alert("Contour", "Skip %d" % (i + 1)))
-			await FilmUI.wait_frames(ctx.tree, 1)
+			await _click_check(ctx, btn, "Skip %d" % (i + 1))
 	for _pass in 2:
 		chips = contour_chips(ctx)
 		for i in mini(chips.size(), mapping.size()):
 			var btn := chips[i] as CheckButton
 			var want: bool = mapping[i]
 			if btn.button_pressed != want:
-				await FilmUI.click_control(ctx, btn, FilmUICues.alert("Contour", "Set %d" % (i + 1)))
-				await FilmUI.wait_frames(ctx.tree, 1)
+				await _click_check(ctx, btn, "Set %d" % (i + 1))
+
+
+## CheckButton: FilmActor.press toggles twice; X11 clicks once (walk).
+static func _click_check(ctx: FilmContext, btn: CheckButton, desc: String) -> void:
+	if btn == null or not btn.is_visible_in_tree():
+		FilmUI._fail("contour chip %s is hidden" % desc)
+		return
+	await FilmActor.of(ctx).aim(FilmUI.control_screen_center(btn),
+			FilmUICues.alert("Contour", desc))
+	await SxInput.x11_click(btn)
+	await FilmUI.wait_frames(ctx.tree, 1)
 
 
 static func _contour_wanted(keep: PackedStringArray, note: String) -> bool:
@@ -1066,7 +1075,9 @@ static func convert_handle_outline(ctx: FilmContext) -> void:
 
 
 static func draw_recess_racetrack(ctx: FilmContext) -> void:
-	await FilmSteps._snap_off_if_visible(ctx)
+	# Walk: four Lines share endpoints so Extrude sees one region. Snap on;
+	# snap-off left degenerate 0-area chips that Feature Mirror cannot tool.
+	await _snap_on_if_visible(ctx)
 	var x0 := 40.0
 	var x1 := 215.0
 	var y := 5.5
@@ -1075,6 +1086,18 @@ static func draw_recess_racetrack(ctx: FilmContext) -> void:
 	await line(ctx, Vector2(x1, y), Vector2(x1, -y), "recess right", 0.0)
 	await line(ctx, Vector2(x1, -y), Vector2(x0, -y), "recess bot", 0.0)
 	await line(ctx, Vector2(x0, -y), Vector2(x0, y), "recess left", 0.0)
+	for corner in [Vector2(x0, y), Vector2(x1, y), Vector2(x1, -y), Vector2(x0, -y)]:
+		await coincident_on_curve(ctx, corner, corner + Vector2(0.2, 0.0))
+
+
+static func _snap_on_if_visible(ctx: FilmContext) -> void:
+	var snap := find_auto(ctx.main, "rail:Snap") as BaseButton
+	if snap == null or not snap.is_visible_in_tree():
+		snap = ctx.main.find_child("SnapToggle", true, false) as BaseButton
+	if snap == null or not snap.is_visible_in_tree():
+		return
+	if not snap.button_pressed:
+		await FilmUI.click_control(ctx, snap, FilmUICues.alert("Snap", "Snap on"))
 
 
 static func blind_cut(ctx: FilmContext, distance: String) -> void:
