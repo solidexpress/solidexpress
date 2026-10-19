@@ -142,6 +142,8 @@ func _commands() -> Dictionary:
 		"dialog_dir": {call=_cmd_dialog_dir, frames=1, reports=false},
 		"dialog_commit": {call=_cmd_dialog_commit, frames=2, reports=true},
 		"dialog_dismiss": {call=_cmd_dialog_dismiss, frames=2, reports=true},
+		"finish_extrude": {call=_cmd_finish_extrude, frames=8, reports=true},
+		"save_path": {call=_cmd_save_path, frames=2, reports=true},
 	}
 
 
@@ -160,6 +162,34 @@ func _exec_state(req: Dictionary) -> Dictionary:
 func _exec_trace(req: Dictionary) -> Dictionary:
 	_harvest_traces()
 	return _cmd_trace(req)
+
+
+## Walk snapshots: write the live document to an OS path without the Save As dialog
+## or changing the window title. Paths must already be globalized.
+func _cmd_save_path(req: Dictionary) -> Dictionary:
+	var path := str(req.get("path", "")).strip_edges()
+	if path == "":
+		return {"error": "path is required"}
+	if path.begins_with("user://") or path.begins_with("res://"):
+		return {"error": "save_path needs a globalized OS path"}
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	if not view.doc.save(path):
+		return {"error": "save failed", "path": path}
+	return {"path": path}
+
+
+## Same path as the Godot offset suite: finish_extrude with empty contours.
+func _cmd_finish_extrude(req: Dictionary) -> Dictionary:
+	var sm = _main().get("sketch_mode")
+	if sm == null or not bool(sm.active):
+		return {"error": "no active sketch"}
+	var dist := float(req.get("distance", 1.0))
+	var op := str(req.get("op", "cut"))
+	var end := str(req.get("end", "blind"))
+	sm.finish_extrude(dist, op, end)
+	return {}
 
 
 func _run(req: Dictionary) -> Dictionary:
@@ -315,10 +345,15 @@ func _click_at(vp: Viewport, pos: Vector2, as_double: bool) -> void:
 
 func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 	if kind != "hover" and req.has("datum"):
+		var name := str(req["datum"])
 		var ix = _main().get("interaction")
 		if ix != null and ix.has_method("try_named_sketch_datum"):
-			if bool(ix.try_named_sketch_datum(str(req["datum"]))):
-				return {"target": "datum:%s" % str(req["datum"])}
+			if bool(ix.try_named_sketch_datum(name)):
+				return {"target": "datum:%s" % name}
+		var ops = _main().get("ops_panel")
+		if ops != null and ops.has_method("try_mirror_datum"):
+			if bool(ops.try_mirror_datum(name)):
+				return {"target": "datum:%s" % name}
 	# A named edge is the pick. The screen point of its midpoint is only
 	# where the pointer goes; ortho side views share that pixel.
 	if kind != "hover" and req.has("edge"):

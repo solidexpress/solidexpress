@@ -139,6 +139,120 @@ bool angle_on_ccw(double ang, double sa, double ea) {
     return from <= span + k_eps;
 }
 
+struct EllipseAxes {
+    double cx = 0, cy = 0, rx = 0, ry = 0, ang = 0;
+};
+
+std::optional<EllipseAxes> axes_of(const Sketch& s, const SketchEntity& e) {
+    auto ax = s.ellipse_axes(e.id);
+    if (!ax) return std::nullopt;
+    return EllipseAxes{(*ax)[0], (*ax)[1], (*ax)[2], (*ax)[3], (*ax)[4]};
+}
+
+Vec2 ellipse_xy(const EllipseAxes& a, double t) {
+    const double ca = std::cos(a.ang), sa = std::sin(a.ang);
+    const double u = a.rx * std::cos(t), v = a.ry * std::sin(t);
+    return {a.cx + u * ca - v * sa, a.cy + u * sa + v * ca};
+}
+
+double ellipse_param(const EllipseAxes& a, Vec2 p) {
+    const double ca = std::cos(a.ang), sa = std::sin(a.ang);
+    const double dx = p.x - a.cx, dy = p.y - a.cy;
+    const double xl = dx * ca + dy * sa;
+    const double yl = -dx * sa + dy * ca;
+    return std::atan2(yl / a.ry, xl / a.rx);
+}
+
+bool point_on_ellipse(const EllipseAxes& a, Vec2 p) {
+    if (a.rx < k_eps || a.ry < k_eps) return false;
+    Vec2 q = ellipse_xy(a, ellipse_param(a, p));
+    return hypot2(sub(p, q)) < 0.05;
+}
+
+// Line vs ellipse: parameters t on segment A. inclusive includes the ends.
+std::vector<double> line_ellipse_intersect_t(Vec2 a0, Vec2 a1, const EllipseAxes& el,
+                                             bool inclusive) {
+    std::vector<double> out;
+    if (el.rx < k_eps || el.ry < k_eps) return out;
+    const double ca = std::cos(el.ang), sa = std::sin(el.ang);
+    auto to_local = [&](Vec2 p) {
+        double dx = p.x - el.cx, dy = p.y - el.cy;
+        return Vec2{dx * ca + dy * sa, -dx * sa + dy * ca};
+    };
+    Vec2 p0 = to_local(a0);
+    Vec2 d = sub(to_local(a1), p0);
+    const double rx2 = el.rx * el.rx, ry2 = el.ry * el.ry;
+    const double A = (d.x * d.x) / rx2 + (d.y * d.y) / ry2;
+    const double B = 2.0 * (p0.x * d.x / rx2 + p0.y * d.y / ry2);
+    const double C = (p0.x * p0.x) / rx2 + (p0.y * p0.y) / ry2 - 1.0;
+    if (A < 1e-30) return out;
+    double disc = B * B - 4.0 * A * C;
+    if (disc < -k_eps) return out;
+    if (disc < 0) disc = 0;
+    const double sqrt_d = std::sqrt(disc);
+    const double lo = inclusive ? -k_eps : k_eps;
+    const double hi = inclusive ? 1.0 + k_eps : 1.0 - k_eps;
+    for (double sign : {-1.0, 1.0}) {
+        double t = (-B + sign * sqrt_d) / (2.0 * A);
+        if (t > lo && t < hi) out.push_back(std::clamp(t, 0.0, 1.0));
+    }
+    if (out.size() == 2 && std::abs(out[0] - out[1]) < k_eps) out.pop_back();
+    return out;
+}
+
+Vec2 ellipse_tangent(const EllipseAxes& a, double t) {
+    const double ca = std::cos(a.ang), sa = std::sin(a.ang);
+    const double du = -a.rx * std::sin(t), dv = a.ry * std::cos(t);
+    return {du * ca - dv * sa, du * sa + dv * ca};
+}
+
+// Ellipse vs circle: ellipse parameters t at the hits. Newton on sign changes
+// of |p(t) − c|² − r², sampled around the turn.
+std::vector<double> ellipse_circle_intersect_params(const EllipseAxes& el, Vec2 c,
+                                                    double r) {
+    std::vector<double> out;
+    if (r <= k_eps || el.rx < k_eps || el.ry < k_eps) return out;
+    auto f = [&](double t) {
+        Vec2 p = ellipse_xy(el, t);
+        double dx = p.x - c.x, dy = p.y - c.y;
+        return dx * dx + dy * dy - r * r;
+    };
+    auto df = [&](double t) {
+        Vec2 p = ellipse_xy(el, t);
+        Vec2 d = ellipse_tangent(el, t);
+        return 2.0 * ((p.x - c.x) * d.x + (p.y - c.y) * d.y);
+    };
+    const int n = 72;
+    double prev_t = 0.0;
+    double prev_f = f(0.0);
+    auto push_root = [&](double t) {
+        t = normalize_angle(t);
+        for (double a : out) {
+            double d = std::abs(t - a);
+            if (d < 1e-3 || std::abs(d - k_two_pi) < 1e-3) return;
+        }
+        if (std::abs(f(t)) > 1e-3 * std::max(1.0, r * r)) return;
+        out.push_back(t);
+    };
+    if (std::abs(prev_f) < 1e-9) push_root(0.0);
+    for (int i = 1; i <= n; ++i) {
+        double t = k_two_pi * static_cast<double>(i) / n;
+        double fv = f(t);
+        if (fv * prev_f < 0.0 || std::abs(fv) < 1e-9) {
+            double x = 0.5 * (prev_t + t);
+            for (int k = 0; k < 16; ++k) {
+                double d = df(x);
+                if (std::abs(d) < 1e-18) break;
+                x -= f(x) / d;
+            }
+            push_root(x);
+        }
+        prev_t = t;
+        prev_f = fv;
+    }
+    return out;
+}
+
 // Solid cutters first. Construction fills in only while fewer than two solid
 // hits exist: a real crossing is unchanged, and a construction-only corner
 // can still trim.
@@ -191,6 +305,33 @@ bool collect_line_intersections(const Sketch& s, const SketchEntity& line,
             }
             push_if_on_line(ps);
             push_if_on_line(pe);
+        } else if (other.type == SketchEntityType::Ellipse ||
+                   other.type == SketchEntityType::EllipticalArc) {
+            auto ax = axes_of(s, other);
+            if (!ax) continue;
+            Vec2 d = sub(a1, a0);
+            double len2 = dot(d, d);
+            auto push_if_on_line = [&](Vec2 p) {
+                if (len2 < 1e-30) return;
+                double t = dot(sub(p, a0), d) / len2;
+                if (t <= k_eps || t >= 1.0 - k_eps) return;
+                Vec2 proj = add(a0, mul(d, t));
+                if (hypot2(sub(proj, p)) > 1e-3) return;
+                hits.push_back(t);
+            };
+            auto on_span = [&](double t_ell) {
+                if (other.type != SketchEntityType::EllipticalArc || other.params.size() < 7)
+                    return true;
+                return angle_on_ccw(t_ell, s.param(other.params[5]), s.param(other.params[6]));
+            };
+            for (double t : line_ellipse_intersect_t(a0, a1, *ax, false)) {
+                Vec2 p = add(a0, mul(d, t));
+                if (on_span(ellipse_param(*ax, p))) hits.push_back(t);
+            }
+            if (other.type == SketchEntityType::EllipticalArc && other.params.size() >= 11) {
+                push_if_on_line({s.param(other.params[7]), s.param(other.params[8])});
+                push_if_on_line({s.param(other.params[9]), s.param(other.params[10])});
+            }
         }
         auto& dest = other.construction ? construction : solid;
         dest.insert(dest.end(), hits.begin(), hits.end());
@@ -220,6 +361,23 @@ bool collect_circle_intersections(const Sketch& s, const SketchEntity& circ,
             Vec2 oc = {s.param(other.params[0]), s.param(other.params[1])};
             double or_ = s.param(other.params[2]);
             hits = circle_circle_intersect_angles(c, r, oc, or_);
+        } else if (other.type == SketchEntityType::Ellipse ||
+                   other.type == SketchEntityType::EllipticalArc) {
+            auto ax = axes_of(s, other);
+            if (ax) {
+                auto on_span = [&](double t_ell) {
+                    if (other.type != SketchEntityType::EllipticalArc ||
+                        other.params.size() < 7)
+                        return true;
+                    return angle_on_ccw(t_ell, s.param(other.params[5]),
+                                        s.param(other.params[6]));
+                };
+                for (double t : ellipse_circle_intersect_params(*ax, c, r)) {
+                    if (!on_span(t)) continue;
+                    Vec2 p = ellipse_xy(*ax, t);
+                    hits.push_back(std::atan2(p.y - c.y, p.x - c.x));
+                }
+            }
         }
         auto& dest = other.construction ? construction : solid;
         dest.insert(dest.end(), hits.begin(), hits.end());
@@ -320,6 +478,94 @@ bool trim_circle(Sketch& s, EntityId id, double px, double py) {
 
     s.remove_entity(id);
     s.add_arc(c.x, c.y, r, rem_start, rem_end);
+    return true;
+}
+
+bool collect_ellipse_intersections(const Sketch& s, const SketchEntity& ell,
+                                   EntityId self_id, std::vector<double>& angs) {
+    auto ax = axes_of(s, ell);
+    if (!ax) return false;
+    std::vector<double> solid;
+    std::vector<double> construction;
+    auto push_hit = [&](Vec2 p, bool constr) {
+        if (!point_on_ellipse(*ax, p)) return;
+        (constr ? construction : solid).push_back(normalize_angle(ellipse_param(*ax, p)));
+    };
+    for (const SketchEntity& other : s.entities()) {
+        if (other.id == self_id) continue;
+        const bool constr = other.construction;
+        if (other.type == SketchEntityType::Line) {
+            Vec2 a0 = line_end(s, other, PointRole::Start);
+            Vec2 a1 = line_end(s, other, PointRole::End);
+            Vec2 d = sub(a1, a0);
+            for (double t : line_ellipse_intersect_t(a0, a1, *ax, true)) {
+                push_hit(add(a0, mul(d, t)), constr);
+            }
+            push_hit(a0, constr);
+            push_hit(a1, constr);
+        } else if (other.type == SketchEntityType::Circle) {
+            Vec2 c = {s.param(other.params[0]), s.param(other.params[1])};
+            double r = s.param(other.params[2]);
+            for (double t : ellipse_circle_intersect_params(*ax, c, r)) {
+                push_hit(ellipse_xy(*ax, t), constr);
+            }
+        } else if (other.type == SketchEntityType::Arc && other.params.size() >= 9) {
+            Vec2 c = {s.param(other.params[0]), s.param(other.params[1])};
+            double r = s.param(other.params[2]);
+            Vec2 ps = {s.param(other.params[5]), s.param(other.params[6])};
+            Vec2 pe = {s.param(other.params[7]), s.param(other.params[8])};
+            double sa = std::atan2(ps.y - c.y, ps.x - c.x);
+            double ea = std::atan2(pe.y - c.y, pe.x - c.x);
+            for (double t : ellipse_circle_intersect_params(*ax, c, r)) {
+                Vec2 p = ellipse_xy(*ax, t);
+                double ang = std::atan2(p.y - c.y, p.x - c.x);
+                if (angle_on_ccw(ang, sa, ea)) push_hit(p, constr);
+            }
+            push_hit(ps, constr);
+            push_hit(pe, constr);
+        }
+    }
+    for (double& a : solid) a = normalize_angle(a);
+    for (double& a : construction) a = normalize_angle(a);
+    merge_construction_hits(solid, construction);
+    angs = std::move(solid);
+    unique_sorted(angs);
+    return angs.size() >= 2;
+}
+
+bool trim_ellipse(Sketch& s, EntityId id, double px, double py) {
+    const SketchEntity* e = s.entity(id);
+    if (!e || e->type != SketchEntityType::Ellipse) return false;
+    auto ax = axes_of(s, *e);
+    if (!ax) return false;
+
+    std::vector<double> angs;
+    if (!collect_ellipse_intersections(s, *e, id, angs)) return false;
+
+    double pick_ang = normalize_angle(ellipse_param(*ax, {px, py}));
+
+    size_t n = angs.size();
+    size_t i_start = 0;
+    bool found = false;
+    for (size_t i = 0; i < n; ++i) {
+        double a0 = angs[i];
+        double a1 = angs[(i + 1) % n];
+        double span = (i + 1 < n) ? (a1 - a0) : (a1 + k_two_pi - a0);
+        double from_a0 = (pick_ang >= a0) ? (pick_ang - a0) : (pick_ang + k_two_pi - a0);
+        if (from_a0 <= span + k_eps) {
+            i_start = i;
+            found = true;
+            break;
+        }
+    }
+    if (!found) return false;
+
+    double rem_start = angs[(i_start + 1) % n];
+    double rem_end = angs[i_start];
+    if (rem_end <= rem_start + k_eps) rem_end += k_two_pi;
+
+    s.remove_entity(id);
+    s.add_elliptical_arc(ax->cx, ax->cy, ax->rx, ax->ry, ax->ang, rem_start, rem_end);
     return true;
 }
 
@@ -462,9 +708,28 @@ bool offset_circle(Sketch& s, const SketchEntity& e, EntityId id, double distanc
     return true;
 }
 
+bool offset_arc(Sketch& s, const SketchEntity& e, EntityId id, double distance,
+                std::vector<std::string>& out) {
+    if (e.params.size() < 5) return false;
+    double cx = s.param(e.params[0]);
+    double cy = s.param(e.params[1]);
+    double r = s.param(e.params[2]);
+    double sa = s.param(e.params[3]);
+    double ea = s.param(e.params[4]);
+    double nr = r + distance;
+    if (nr <= k_eps) return false;
+    EntityId nid = s.add_arc(cx, cy, nr, sa, ea);
+    s.add_constraint(ConstraintType::Concentric,
+                     {{nid, PointRole::Center}, {id, PointRole::Center}});
+    s.add_constraint(ConstraintType::Radius, {{nid, PointRole::Self}}, nr, true);
+    out.push_back(nid.str());
+    return true;
+}
+
 const std::unordered_map<SketchEntityType, Offsetter> kOffsetters = {
     {SketchEntityType::Line, offset_line},
     {SketchEntityType::Circle, offset_circle},
+    {SketchEntityType::Arc, offset_arc},
 };
 
 }  // namespace
@@ -481,7 +746,7 @@ std::vector<std::string> offset_entities(Sketch& s,
         const SketchEntity* e = s.entity(id);
         if (!e) continue;
         const auto it = kOffsetters.find(e->type);
-        if (it == kOffsetters.end()) continue;  // Arc and other kinds skipped.
+        if (it == kOffsetters.end()) continue;
         it->second(s, *e, id, distance, out);
     }
     return out;
@@ -493,6 +758,7 @@ bool trim_entity(Sketch& s, const std::string& entity_id, double px, double py) 
     if (!e) return false;
     if (e->type == SketchEntityType::Line) return trim_line(s, id, px, py);
     if (e->type == SketchEntityType::Circle) return trim_circle(s, id, px, py);
+    if (e->type == SketchEntityType::Ellipse) return trim_ellipse(s, id, px, py);
     return false;
 }
 

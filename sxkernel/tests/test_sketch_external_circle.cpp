@@ -11,6 +11,10 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <GeomAbs_SurfaceType.hxx>
+#include <GeomConvert.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <Geom_Circle.hxx>
+#include <Geom_TrimmedCurve.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
@@ -182,17 +186,45 @@ TEST_CASE("add_external_edge projects the boss rim as a fixed circle", "[sketch]
     CHECK(add_external_edge(doc, fid, rim) == added);
     CHECK(graph.feature(fid)->sketch->entities().size() == 1);
 
-    // An arc in the same plane is not a full circle.
+    // A 90° arc in the same plane projects as a trimmed Arc, not a full circle.
     gp_Circ arc_curve(gp_Ax2(gp_Pnt(0, 0, 55), gp_Dir(0, 0, 1)), 35.0);
     const EntityId arc_body =
-        doc.add_body(BRepBuilderAPI_MakeEdge(arc_curve, 0.0, kPi).Edge(), "arc");
+        doc.add_body(BRepBuilderAPI_MakeEdge(arc_curve, 0.0, kPi / 2.0).Edge(), "arc");
     EntityId arc_id;
     const Body* arc = doc.body(arc_body);
     REQUIRE(arc != nullptr);
     for (const auto& eid : arc->subshape_ids.at(EntityKind::Edge)) arc_id = eid;
     REQUIRE_FALSE(arc_id.is_null());
-    CHECK(add_external_edge(doc, fid, arc_id).is_null());
-    CHECK(graph.feature(fid)->sketch->entities().size() == 1);
+    const EntityId projected_arc = add_external_edge(doc, fid, arc_id);
+    REQUIRE_FALSE(projected_arc.is_null());
+    const SketchEntity* arc_e = graph.feature(fid)->sketch->entity(projected_arc);
+    REQUIRE(arc_e != nullptr);
+    CHECK(arc_e->type == SketchEntityType::Arc);
+    CHECK(arc_e->external);
+    CHECK(arc_e->construction);
+    CHECK(graph.feature(fid)->sketch->param(arc_e->params[2]) == Approx(35.0).margin(1e-6));
+    const double sweep =
+        graph.feature(fid)->sketch->param(arc_e->params[4]) -
+        graph.feature(fid)->sketch->param(arc_e->params[3]);
+    CHECK(std::abs(std::abs(sweep) - kPi / 2.0) < 0.05);
+    CHECK(graph.feature(fid)->sketch->entities().size() == 2);
+
+    Handle(Geom_Circle) gc = new Geom_Circle(arc_curve);
+    Handle(Geom_TrimmedCurve) trim = new Geom_TrimmedCurve(gc, 0.0, kPi / 2.0);
+    Handle(Geom_BSplineCurve) bs = GeomConvert::CurveToBSplineCurve(trim);
+    const EntityId bs_body = doc.add_body(BRepBuilderAPI_MakeEdge(bs).Edge(), "bspline-arc");
+    EntityId bs_id;
+    const Body* bs_body_ptr = doc.body(bs_body);
+    REQUIRE(bs_body_ptr != nullptr);
+    for (const auto& eid : bs_body_ptr->subshape_ids.at(EntityKind::Edge)) bs_id = eid;
+    REQUIRE_FALSE(bs_id.is_null());
+    const EntityId projected_bs = add_external_edge(doc, fid, bs_id);
+    REQUIRE_FALSE(projected_bs.is_null());
+    const SketchEntity* bs_e = graph.feature(fid)->sketch->entity(projected_bs);
+    REQUIRE(bs_e != nullptr);
+    CHECK(bs_e->type == SketchEntityType::Arc);
+    CHECK(bs_e->external);
+    CHECK(graph.feature(fid)->sketch->param(bs_e->params[2]) == Approx(35.0).margin(0.2));
 
     // Origin-plane silhouette: the rim ∩ YZ is a construction diameter.
     const EntityId side = sketch_on_z(graph, 0.0);

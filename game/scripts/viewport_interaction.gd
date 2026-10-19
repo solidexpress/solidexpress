@@ -1927,6 +1927,18 @@ func try_named_sketch_datum(name: String) -> bool:
 	return true
 
 
+## Feature Mirror plane pick: origin Front/Top/Right when the look is face-on.
+func _try_mirror_origin_plane(ray: Array) -> bool:
+	if ops_panel == null or not ops_panel.has_method("try_mirror_datum"):
+		return false
+	if ray.size() < 2:
+		return false
+	var datum := OriginPlanes.ray_hit(view, ray[0], ray[1])
+	if datum == "":
+		return false
+	return bool(ops_panel.try_mirror_datum(datum))
+
+
 func _chrome_wants_face_pick() -> bool:
 	return sketch_chrome != null \
 			and sketch_chrome.has_method("wants_face_pick") \
@@ -3887,13 +3899,18 @@ func _sketch_input(event: InputEvent) -> void:
 					_sketch_box_additive = bool(mods["additive"])
 					_note_click("sketch-box:SELECT", screen, bool(mods["shift"]), bool(mods["additive"]))
 				else:
-					# Line and Centerline place through a label (click skips the
-					# hit). Every other non-Select tool records a text-rect hit
-					# as drop:dim-label; the 22 px halo stays for Select / Smart Dim.
+					# Line, Centerline, and Arc place through a label (click
+					# skips the hit). An in-progress draw (pending points) must
+					# too — three-point Arc's third click sits under the 17°
+					# callout. The 22 px halo stays for Select / Smart Dim.
 					var dim_i := -1
-					if sketch_mode.tool != SketchMode.Tool.SELECT \
-							and sketch_mode.tool != SketchMode.Tool.LINE \
-							and sketch_mode.tool != SketchMode.Tool.CENTERLINE:
+					var places := sketch_mode.tool == SketchMode.Tool.LINE \
+							or sketch_mode.tool == SketchMode.Tool.CENTERLINE \
+							or sketch_mode.tool == SketchMode.Tool.ARC \
+							or sketch_mode.tool == SketchMode.Tool.MIRROR \
+							or sketch_mode.tool == SketchMode.Tool.TRIM \
+							or sketch_mode.has_pending_draw_point()
+					if sketch_mode.tool != SketchMode.Tool.SELECT and not places:
 						dim_i = sketch_mode.dimension_hit(p2, \
 								sketch_mode.tool != SketchMode.Tool.SELECT \
 								and sketch_mode.tool != SketchMode.Tool.SMART_DIM)
@@ -4976,6 +4993,14 @@ func _on_release(pos: Vector2) -> void:
 	# select_ray face-refine — that clears accumulated edges mid-pick. An empty
 	# press while armed keeps the set (silhouette pick or a named miss).
 	if armed_pick:
+		# Front sits inside a mid-plane solid. Face-on origin-plane hits win
+		# over the body so Feature Mirror can take the Front datum.
+		if _try_mirror_origin_plane(ray):
+			_box_drag = false
+			_additive_click = false
+			_press_empty = false
+			_press_travel = 0.0
+			return
 		var hit: Dictionary = view.pick_info(ray[0], ray[1])
 		if not hit.is_empty():
 			ops_panel.handle_viewport_pick(

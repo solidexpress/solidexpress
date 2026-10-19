@@ -1,5 +1,5 @@
 // CueMemory keeps the edge_memory JSON; add_external_edge projects lines and
-// full circles on a parallel sketch plane (arcs and skew circles are refused).
+// circles (full or arc) on a parallel sketch plane.
 
 #include <catch.hpp>
 
@@ -49,7 +49,7 @@ TEST_CASE("CueMemory loads an edge_memory array and writes it back", "[cue_memor
     CHECK(graph.cues().to_json() == literal["edge_memory"]);
 }
 
-TEST_CASE("add_external_edge projects a box line and rejects partial circles", "[cue_memory]") {
+TEST_CASE("add_external_edge projects a box line and a partial circle as Arc", "[cue_memory]") {
     sx::Document doc;
     const sx::EntityId box = doc.add_body(sx::shape::make_box(20, 30, 10), "Box");
     sx::Feature sketch_feature;
@@ -89,5 +89,12 @@ TEST_CASE("add_external_edge projects a box line and rejects partial circles", "
     REQUIRE(arc != nullptr);
     for (const auto& eid : arc->subshape_ids.at(sx::EntityKind::Edge)) arc_id = eid;
     REQUIRE(!arc_id.is_null());
-    CHECK(sx::add_external_edge(doc, fid, arc_id).is_null());
+    const sx::EntityId projected = sx::add_external_edge(doc, fid, arc_id);
+    CHECK(!projected.is_null());
+    const sx::Sketch& after = *doc.graph().feature(fid)->sketch;
+    bool saw_arc = false;
+    for (const auto& entity : after.entities()) {
+        if (entity.id == projected && entity.type == sx::SketchEntityType::Arc) saw_arc = true;
+    }
+    CHECK(saw_arc);
 }

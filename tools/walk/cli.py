@@ -6,6 +6,8 @@ import os
 import sys
 from pathlib import Path
 
+from walk.harness import RowAbort
+
 
 def main(app_cls: type, rung, description: str, default_out: str) -> int:
     parser = argparse.ArgumentParser(description=description)
@@ -42,6 +44,15 @@ def main(app_cls: type, rung, description: str, default_out: str) -> int:
     else:
         selected = rows
     if args.dry_run:
+        from walk.checkpoint import list_out_files, plan_resume
+
+        if selected and selected[0] != rows[0]:
+            plan = plan_resume(rung, selected[0], list_out_files(args.out))
+            print(
+                f"dry-run resume {selected[0]} chunk={plan.restore_chunk} "
+                f"file={plan.restore_file} replay={','.join(plan.replay) or '-'}",
+                flush=True,
+            )
         for rid in selected:
             handler = rung.handlers.get(rid)
             print(f"dry-run {rid} {handler.__name__ if handler else 'missing'}", flush=True)
@@ -62,6 +73,7 @@ def main(app_cls: type, rung, description: str, default_out: str) -> int:
         args.resolution,
         rung,
     )
+    resume_failed = False
     try:
         if args.no_launch:
             walk.d.connect()
@@ -69,23 +81,25 @@ def main(app_cls: type, rung, description: str, default_out: str) -> int:
             walk.launch()
         full = not args.rows and not args.from_row
         auto_ckpt = full or args.checkpoint
-        prev_chunk = 0
-        if auto_ckpt and selected and selected[0] != rows[0]:
-            first_chunk = rung.chunk_of(selected[0])
-            walk.ensure_chunk_start(first_chunk, force=True)
-            prev_chunk = first_chunk
-        for i, rid in enumerate(selected):
-            chunk = rung.chunk_of(rid)
-            nxt = selected[i + 1] if i + 1 < len(selected) else None
-            if auto_ckpt and prev_chunk and chunk != prev_chunk:
-                walk.ensure_chunk_start(chunk)
-            prev_chunk = chunk
-            walk.run_row(rid, nxt)
-        if full and rung.variants:
-            walk.run_variants()
+        try:
+            if selected and selected[0] != rows[0]:
+                walk.resume_from(selected[0])
+            prev_chunk = rung.chunk_of(selected[0]) if selected else 0
+            for i, rid in enumerate(selected):
+                chunk = rung.chunk_of(rid)
+                nxt = selected[i + 1] if i + 1 < len(selected) else None
+                if auto_ckpt and prev_chunk and chunk != prev_chunk:
+                    walk.ensure_chunk_start(chunk)
+                prev_chunk = chunk
+                walk.run_row(rid, nxt)
+            if full and rung.variants:
+                walk.run_variants()
+        except RowAbort as exc:
+            resume_failed = True
+            print(f"resume failed: {exc}", flush=True)
     finally:
         walk.write_report()
         if not args.no_launch:
             walk.shutdown()
     failed = [r for r in walk.rows if str(r["verdict"]).startswith("FAIL")]
-    return 1 if failed else 0
+    return 1 if failed or resume_failed else 0

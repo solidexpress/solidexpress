@@ -4,10 +4,21 @@
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
+#include <GC_MakeArcOfCircle.hxx>
+#include <Geom_Surface.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <GeomLProp_SLProps.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
@@ -20,15 +31,19 @@
 #include <BRepOffsetAPI_DraftAngle.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <Bnd_Box.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
+#include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Lin.hxx>
 #include <gp_Pln.hxx>
+#include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
 #include <algorithm>
@@ -36,6 +51,7 @@
 #include <limits>
 
 #include "sx/shape_utils.hpp"
+#include "sx/interop.hpp"
 #include "sx/variables.hpp"
 #include "sx/measure.hpp"
 #include "sx/log.hpp"
@@ -438,6 +454,207 @@ bool build_fillet(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& pic
 // A circle seam splits one smooth boundary into two edges. MakeFillet then
 // rejects the whole face even though each piece is under the radius limit.
 // Merge those same-domain edges and fillet one Add per unique curve.
+gp_Vec face_xy_normal(const TopoDS_Face& face, const gp_Pnt& at) {
+    Handle(Geom_Surface) surf = BRep_Tool::Surface(face);
+    if (surf.IsNull()) return {};
+    GeomAPI_ProjectPointOnSurf proj(at, surf);
+    if (!proj.IsDone() || proj.NbPoints() < 1) return {};
+    double u = 0.0, vv = 0.0;
+    proj.LowerDistanceParameters(u, vv);
+    GeomLProp_SLProps props(surf, u, vv, 1, 1e-6);
+    if (!props.IsNormalDefined()) return {};
+    gp_Dir n = props.Normal();
+    if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+    gp_Vec xy(n.X(), n.Y(), 0.0);
+    if (xy.SquareMagnitude() < 1e-12) return {};
+    xy.Normalize();
+    return xy;
+}
+
+// Intersection of two XY offset lines (X − q_i) · n_i = r.
+bool offset_meet(const gp_Pnt& q1, const gp_Vec& n1, const gp_Pnt& q2, const gp_Vec& n2, double r,
+                 double z, gp_Pnt& c) {
+    const double det = n1.X() * n2.Y() - n1.Y() * n2.X();
+    if (std::abs(det) < 1e-10) return false;
+    const double b1 = r + q1.X() * n1.X() + q1.Y() * n1.Y();
+    const double b2 = r + q2.X() * n2.X() + q2.Y() * n2.Y();
+    c = gp_Pnt((b1 * n2.Y() - b2 * n1.Y()) / det, (n1.X() * b2 - n2.X() * b1) / det, z);
+    return true;
+}
+
+TopoDS_Shape wedge_prism(const gp_Pnt& p, const gp_Pnt& t1, const gp_Pnt& mid, const gp_Pnt& t2,
+                         double z0, double z1) {
+    GC_MakeArcOfCircle mkarc(t1, mid, t2);
+    if (!mkarc.IsDone()) return {};
+    BRepBuilderAPI_MakeWire wire;
+    wire.Add(BRepBuilderAPI_MakeEdge(p, t1).Edge());
+    wire.Add(BRepBuilderAPI_MakeEdge(mkarc.Value()).Edge());
+    wire.Add(BRepBuilderAPI_MakeEdge(t2, p).Edge());
+    if (!wire.IsDone()) return {};
+    BRepBuilderAPI_MakeFace face(wire.Wire(), true);
+    if (!face.IsDone()) return {};
+    gp_Trsf down;
+    down.SetTranslation(gp_Vec(0, 0, z0 - p.Z()));
+    TopoDS_Shape profile = BRepBuilderAPI_Transform(face.Face(), down, true).Shape();
+    return BRepPrimAPI_MakePrism(profile, gp_Vec(0, 0, z1 - z0)).Shape();
+}
+
+// Planar T-points of a large R can sit outside a convex neighbour (ellipse).
+// Keep the void-angle volume, but clip the prism to the body's AABB so the
+// neck cannot grow the pass-bar box.
+TopoDS_Shape aabb_of(const TopoDS_Shape& body, bool slack_y) {
+    Bnd_Box box;
+    BRepBndLib::Add(body, box);
+    box.SetGap(0.0);
+    double xmin = 0, ymin = 0, zmin = 0, xmax = 0, ymax = 0, zmax = 0;
+    box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+    if (xmax - xmin < 1e-6 || ymax - ymin < 1e-6 || zmax - zmin < 1e-6) return {};
+    xmin -= 1.0;
+    xmax += 1.0;
+    zmin -= 1.0;
+    zmax += 1.0;
+    if (slack_y) {
+        ymin -= 1.0;
+        ymax += 1.0;
+    }
+    return BRepPrimAPI_MakeBox(gp_Pnt(xmin, ymin, zmin), gp_Pnt(xmax, ymax, zmax)).Shape();
+}
+
+TopoDS_Shape common_with(const TopoDS_Shape& shape, const TopoDS_Shape& box) {
+    if (shape.IsNull() || box.IsNull()) return {};
+    BRepAlgoAPI_Common common(shape, box);
+    common.Build();
+    if (!common.IsDone()) return {};
+    TopoDS_Shape clipped = common.Shape();
+    if (clipped.IsNull() || shape::volume(clipped) < 0.5) return {};
+    return clipped;
+}
+
+TopoDS_Shape clip_to_body_aabb(const TopoDS_Shape& body, const TopoDS_Shape& add) {
+    // Empty (not the unclipped add) if Common fails — fusing the raw wedge
+    // grows Y past the ellipse and blows the pass-bar box.
+    return common_with(add, aabb_of(body, false));
+}
+
+// Short Z-edge whose radius is larger than twice the thickness (R30 on 6 mm).
+bool neck_z_edge(const TopoDS_Edge& edge, double radius, gp_Pnt& a, gp_Pnt& b, double& z0,
+                 double& z1) {
+    if (radius <= 1e-6) return false;
+    BRepAdaptor_Curve curve(edge);
+    a = curve.Value(curve.FirstParameter());
+    b = curve.Value(curve.LastParameter());
+    if (std::abs(a.X() - b.X()) > 0.2 || std::abs(a.Y() - b.Y()) > 0.2) return false;
+    z0 = std::min(a.Z(), b.Z());
+    z1 = std::max(a.Z(), b.Z());
+    if (z1 - z0 < 0.2) return false;
+    return radius > 2.0 * (z1 - z0) + 1e-6;
+}
+
+bool any_neck_z_edge(const std::vector<TopoDS_Edge>& edges, double radius) {
+    gp_Pnt a, b;
+    double z0 = 0, z1 = 0;
+    for (const auto& edge : edges) {
+        if (neck_z_edge(edge, radius, a, b, z0, z1)) return true;
+    }
+    return false;
+}
+
+// MakeFillet refuses a large concave radius on a short Z-edge at a 10/6
+// thickness step. Fuse the 2D void-angle wedge (plan R30/R20) instead.
+bool fuse_concave_z_fillet(const TopoDS_Shape& shape, const TopoDS_Edge& edge, double radius,
+                           TopoDS_Shape& out) {
+    gp_Pnt a, b;
+    double z0 = 0, z1 = 0;
+    if (!neck_z_edge(edge, radius, a, b, z0, z1)) return false;
+    const gp_Pnt p((a.X() + b.X()) * 0.5, (a.Y() + b.Y()) * 0.5, (z0 + z1) * 0.5);
+
+    sx::occt::ShapeIndexedDataMapOfList ancestors;
+    TopExp::MapShapesAndAncestors(shape, TopAbs_EDGE, TopAbs_FACE, ancestors);
+    const int idx = ancestors.FindIndex(edge);
+    if (idx < 1) return false;
+    const sx::occt::ShapeList& faces = ancestors.FindFromIndex(idx);
+    std::vector<gp_Vec> normals;
+    for (const TopoDS_Shape& fs : faces) {
+        if (fs.ShapeType() != TopAbs_FACE) continue;
+        gp_Vec n = face_xy_normal(TopoDS::Face(fs), p);
+        if (n.SquareMagnitude() <= 0.5) continue;
+        gp_Pnt probe(p.X() + n.X() * 0.3, p.Y() + n.Y() * 0.3, p.Z());
+        BRepClass3d_SolidClassifier cl(shape, probe, 1e-4);
+        if (cl.State() != TopAbs_OUT) n.Reverse();
+        normals.push_back(n);
+    }
+    if (normals.size() < 2) return false;
+    gp_Vec n1 = normals[0];
+    gp_Vec n2 = normals[1];
+    if (n1.Crossed(n2).SquareMagnitude() < 1e-8) return false;
+    if (n1.X() * n2.Y() - n1.Y() * n2.X() < 0.0) std::swap(n1, n2);
+
+    gp_Pnt c;
+    if (!offset_meet(p, n1, p, n2, radius, p.Z(), c)) return false;
+    gp_Vec bis = n1 + n2;
+    if (bis.SquareMagnitude() < 1e-12) return false;
+    bis.Normalize();
+    const gp_Pnt t1(c.X() - n1.X() * radius, c.Y() - n1.Y() * radius, p.Z());
+    const gp_Pnt t2(c.X() - n2.X() * radius, c.Y() - n2.Y() * radius, p.Z());
+    const gp_Pnt mid(c.X() - bis.X() * radius, c.Y() - bis.Y() * radius, p.Z());
+    BRepClass3d_SolidClassifier cl(shape, mid, 1e-4);
+    if (cl.State() != TopAbs_OUT) return false;
+    // Neck voids are 112° / 127°. A 90° box or slot corner must still refuse
+    // (R50 applied, R1.5 slot floor).
+    gp_Vec u1(t1.X() - p.X(), t1.Y() - p.Y(), 0.0);
+    gp_Vec u2(t2.X() - p.X(), t2.Y() - p.Y(), 0.0);
+    if (u1.SquareMagnitude() < 1e-12 || u2.SquareMagnitude() < 1e-12) return false;
+    if (u1.Angle(u2) < 100.0 * M_PI / 180.0) return false;
+
+    TopoDS_Shape add = wedge_prism(p, t1, mid, t2, z0, z1);
+    if (add.IsNull()) return false;
+    if (shape::volume(add) < 0.0) add.Reverse();
+    add = clip_to_body_aabb(shape, add);
+    if (add.IsNull() || shape::volume(add) < 0.5) return false;
+    BRepAlgoAPI_Fuse fuse(shape, add);
+    fuse.Build();
+    if (!fuse.IsDone()) return false;
+    TopoDS_Shape fused = fuse.Shape();
+    if (fused.IsNull()) return false;
+    if (!shape::is_valid(fused)) {
+        std::string report;
+        TopoDS_Shape healed = interop::heal_shape(fused, &report);
+        if (!healed.IsNull() && (shape::is_valid(healed) ||
+                                (shape::count(healed).solids >= 1 &&
+                                 shape::volume(healed) > shape::volume(shape) + 0.5)))
+            fused = healed;
+        else
+            return false;
+    }
+    // Merge the wedge cap with the handle top so Convert sees R30/R20 arcs
+    // as edges of that face (A28), not as a foreign coplanar cap.
+    try {
+        ShapeUpgrade_UnifySameDomain unif(fused, true, true, true);
+        unif.SetLinearTolerance(1e-6);
+        unif.SetAngularTolerance(1e-4);
+        unif.Build();
+        if (!unif.Shape().IsNull()) fused = unif.Shape();
+    } catch (...) {
+    }
+    out = fused;
+    return true;
+}
+
+bool fuse_concave_z_fillets(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& edges,
+                            double radius, TopoDS_Shape& out) {
+    TopoDS_Shape acc = shape;
+    bool any = false;
+    for (const auto& edge : drop_seam_duplicates(edges)) {
+        TopoDS_Shape next;
+        if (!fuse_concave_z_fillet(acc, edge, radius, next)) continue;
+        acc = next;
+        any = true;
+    }
+    if (!any) return false;
+    out = acc;
+    return true;
+}
+
 bool fillet_unified(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& picked, double v,
                     double r2, TopoDS_Shape& out, std::string* fault) {
     ShapeUpgrade_UnifySameDomain unif(shape, true, true, true);
@@ -601,6 +818,27 @@ void remember_face_cues(ApplyCtx& ctx, const Body& body, const std::vector<TopoD
         ctx.feature.params["face_cues"] = std::move(cues);
 }
 
+TopoDS_Shape clip_result_to_start_aabb(const TopoDS_Shape& start, const TopoDS_Shape& result) {
+    TopoDS_Shape clipped = common_with(result, aabb_of(start, false));
+    if (clipped.IsNull()) return result;
+    if (!shape::is_valid(clipped)) {
+        std::string report;
+        TopoDS_Shape healed = interop::heal_shape(clipped, &report);
+        if (!healed.IsNull() && shape::volume(healed) > 1.0) clipped = healed;
+        else
+            return result;
+    }
+    try {
+        ShapeUpgrade_UnifySameDomain unif(clipped, true, true, true);
+        unif.SetLinearTolerance(1e-6);
+        unif.SetAngularTolerance(1e-4);
+        unif.Build();
+        if (!unif.Shape().IsNull()) clipped = unif.Shape();
+    } catch (...) {
+    }
+    return clipped;
+}
+
 }  // namespace
 
 bool apply_fillet_chamfer(ApplyCtx& ctx) {
@@ -631,25 +869,45 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         }
         if (resolved.empty()) return true;
         const double asked = std::max(v, r2);
-        // "fillet failed (limit …)" is only for a radius that does not fit.
-        if (limit < 1e290 && asked > limit + 1e-4) {
+        auto limit_msg = [&]() {
             std::string extra;
             if (!limit_edge.IsNull()) extra = "; " + edge_phrase(limit_edge);
-            return ctx.fail("fillet failed (limit " + format_fixed(limit, 3) + extra + ")");
-        }
+            return "fillet failed (limit " + format_fixed(limit, 3) + extra + ")";
+        };
+        // Keep the 0.5×departure refuse for slots / boxes. Neck R30 on a 6 mm
+        // Z-edge is allowed to try MakeFillet and the void-angle fuse.
+        if (limit < 1e290 && asked > limit + 1e-4 &&
+            !any_neck_z_edge(resolved, asked))
+            return ctx.fail(limit_msg());
         std::string fault;
+        const bool neck = any_neck_z_edge(resolved, asked);
+        // MakeFillet leaves circular arcs on the handle-top face, which A28
+        // Convert needs (two lines + R30 + R20). The void-angle fuse is the
+        // fallback when OCCT refuses R30 on 6 mm. Either path is clipped to
+        // the start AABB so a T-point spike cannot grow Y past the ellipse.
         if (!build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
             TopoDS_Shape recovered;
             std::string fault2;
-            if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
+            if (neck && fuse_concave_z_fillets(tb->shape, resolved, asked, recovered))
+                result = recovered;
+            else if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
+                result = recovered;
+            else if (fuse_concave_z_fillets(tb->shape, resolved, asked, recovered))
                 result = recovered;
             else {
+                // Concave neck fillets (R30 on a 6 mm handle) can exceed the
+                // 0.5×departure pre-check and still build. Name the limit only
+                // when OCCT also refuses.
+                if (limit < 1e290 && asked > limit + 1e-4)
+                    return ctx.fail(limit_msg());
                 if (fault.empty()) fault = fault2;
                 if (!fault.empty()) return ctx.fail("fillet failed (" + fault + ")");
                 return ctx.fail("fillet failed");
             }
         }
         remember_face_cues(ctx, *tb, resolved);
+        if (neck)
+            result = clip_result_to_start_aabb(tb->shape, result);
     } else {
         BRepFilletAPI_MakeChamfer mk(tb->shape);
         const DressupEdges found = resolve_dressup_edges(ctx, *tb, "chamfer soft-skip: ");

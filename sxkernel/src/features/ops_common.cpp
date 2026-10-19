@@ -13,6 +13,22 @@
 
 namespace sx::feature_ops {
 
+std::vector<int> selected_contour_indices(const nlohmann::json& params) {
+    std::vector<int> out;
+    if (!params.contains("selected_contours") || !params["selected_contours"].is_array())
+        return out;
+    for (const auto& v : params["selected_contours"]) {
+        if (v.is_number_integer()) {
+            out.push_back(v.get<int>());
+        } else if (v.is_number_float()) {
+            const double d = v.get<double>();
+            const int idx = static_cast<int>(std::lround(d));
+            if (std::abs(d - static_cast<double>(idx)) <= 1e-9) out.push_back(idx);
+        }
+    }
+    return out;
+}
+
 gp_Pnt pnt_from(const nlohmann::json& a) {
     return gp_Pnt(a[0].get<double>(), a[1].get<double>(), a[2].get<double>());
 }

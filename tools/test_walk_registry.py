@@ -15,6 +15,7 @@ import walk.app03  # noqa: E402, F401
 import walk.app04  # noqa: E402, F401
 import walk.app05  # noqa: E402, F401
 import walk.app06  # noqa: E402, F401
+import walk.app07  # noqa: E402, F401
 from walk import registry  # noqa: E402
 from walk.expect import CHECKS, State, gate  # noqa: E402
 from walk.rung import Expect  # noqa: E402
@@ -123,6 +124,21 @@ FROZEN_CHUNKS_06 = {
 }
 
 
+# 46 checklist ids. Chunks are the slices in docs/loop/rung-07-plan.md.
+FROZEN_ROWS_07 = [
+    "N1", "A1", "A2", "L1", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "L2",
+    "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "L3", "A19", "A20",
+    "N2", "A21", "A22", "A23", "A24", "A25", "A26", "L4", "A27",
+    "A28", "N3", "A29", "A30", "A31", "A32", "A33", "A34", "A35", "L5", "A36", "N4", "A37",
+]
+FROZEN_CHUNKS_07 = {
+    1: FROZEN_ROWS_07[0:13],
+    2: FROZEN_ROWS_07[13:24],
+    3: FROZEN_ROWS_07[24:33],
+    4: FROZEN_ROWS_07[33:46],
+}
+
+
 class WalkRegistryTests(unittest.TestCase):
     def test_frozen_id_list_is_registry_order(self) -> None:
         self.assertEqual(list(registry.RUNG1.rows), FROZEN_ROWS)
@@ -217,6 +233,20 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertEqual(rung.checkpoints[3], "path.sxp")
         self.assertEqual(rung.checkpoints[4], "sweep.sxp")
 
+    def test_rung7_rows_and_chunks(self) -> None:
+        rung = getattr(registry, "RUNG7", None)
+        self.assertIsNotNone(rung, "rung 7 has no rows")
+        self.assertEqual(list(rung.rows), FROZEN_ROWS_07)
+        self.assertEqual({n: list(rows) for n, rows in rung.chunks.items()}, FROZEN_CHUNKS_07)
+        self.assertEqual(len(FROZEN_ROWS_07), 46)
+        for rid in FROZEN_ROWS_07:
+            self.assertIn(rid, rung.handlers)
+            self.assertTrue(callable(rung.handlers[rid]))
+            self.assertEqual(rung.handlers[rid].__name__, "row_" + rid)
+        self.assertEqual(rung.checker, "check_rung07.py")
+        self.assertEqual(rung.checkpoints[3], "sketch.sxp")
+        self.assertEqual(rung.checkpoints[4], "neck.sxp")
+
     def test_gate_walks_the_check_table(self) -> None:
         self.assertEqual(list(CHECKS), ["mode", "sketch", "bodies", "bbox", "timeline", "finish_bar"])
         state = State(
@@ -264,6 +294,68 @@ class WalkRegistryTests(unittest.TestCase):
         run.assert_not_called()
         self.assertEqual(got.returncode, 0)
         self.assertEqual(got.stdout, "cached-tier\n")
+
+    def test_resume_mid_chunk_replays_prefix_or_restores_snapshot(self) -> None:
+        from walk.checkpoint import plan_resume
+        from walk.rung import Rung
+
+        chunks = {
+            1: ["N1", "A1", "A10", "L2"],
+            2: ["A11", "A16", "A20"],
+            3: ["N2", "A21", "A24", "A27"],
+            4: ["A28", "A36"],
+        }
+        rows = tuple(rid for group in chunks.values() for rid in group)
+        rung = Rung(
+            name="rung07",
+            checker="check_rung07.py",
+            chunks=chunks,
+            checkpoints={3: "sketch.sxp", 4: "neck.sxp"},
+            expectations={},
+            rows=rows,
+            handlers={rid: (lambda self: None) for rid in rows},
+        )
+        first = plan_resume(rung, "N1", set())
+        self.assertIsNone(first.restore_chunk)
+        self.assertIsNone(first.restore_file)
+        self.assertEqual(first.replay, ())
+
+        mid1 = plan_resume(rung, "A10", set())
+        self.assertIsNone(mid1.restore_chunk)
+        self.assertEqual(mid1.replay, ("N1", "A1"))
+
+        chunk3 = plan_resume(rung, "N2", {"sketch.sxp"})
+        self.assertEqual(chunk3.restore_chunk, 3)
+        self.assertEqual(chunk3.replay, ())
+
+        mid3 = plan_resume(rung, "A24", {"sketch.sxp"})
+        self.assertEqual(mid3.restore_chunk, 3)
+        self.assertEqual(mid3.replay, ("N2", "A21"))
+
+        snap = plan_resume(rung, "A24", {"sketch.sxp", "ckpts/A21.sxp"})
+        self.assertEqual(snap.restore_file, "ckpts/A21.sxp")
+        self.assertEqual(snap.replay, ())
+
+        no_ckpt = plan_resume(rung, "A16", set())
+        self.assertIsNone(no_ckpt.restore_chunk)
+        self.assertEqual(no_ckpt.replay, ("N1", "A1", "A10", "L2", "A11"))
+
+    def test_resume_open_uses_ckpt_parent_dir(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from walk.checkpoint import resolve_open_parts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ck = Path(tmp) / "ckpts"
+            ck.mkdir()
+            (ck / "A23.sxp").write_text("sxp", encoding="utf-8")
+            directory, filename = resolve_open_parts(tmp, "ckpts/A23.sxp")
+            self.assertEqual(filename, "A23.sxp")
+            self.assertEqual(Path(directory), ck)
+            abs_dir, abs_name = resolve_open_parts(tmp, str(ck / "A23.sxp"))
+            self.assertEqual(abs_name, "A23.sxp")
+            self.assertEqual(Path(abs_dir), ck)
 
     def test_click_budget_counts_press_and_key(self) -> None:
         from walk.click_budget import check_log, count_trace

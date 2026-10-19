@@ -275,6 +275,10 @@ const GLYPH_MAX_OFFSET_PX := 40.0
 ## Coincident badges appear only for a selected vertex, a selected coincident
 ## constraint, or the vertex under the pointer.
 const COINCIDENT_HOVER_PX := 14.0
+## Keep the mark inside the 14 px vertex hover so its leader cannot cross a
+## neighbouring ⊥ / ∥ badge (N26). SELECT still prefers the nearer of the
+## endpoint and the badge, so a vertex press picks the entity.
+const COINCIDENT_LEADER_CAP := 13.5
 const GLYPH_LEADER_MIN_PX := 12.0
 const GLYPH_LABEL_GAP_PX := 12.0
 ## Full-circle radius text stays this many pixels outside the rim, and never
@@ -995,9 +999,15 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	# Drop the leftover redrawn Ø45 before seal. Trim that missed the 15%
 	# gate left that full circle; seal would turn it into a second cap and
 	# the 1e-6 jaw joints would then fail.
-	_drop_circles_concentric_with_jaw_arcs()
-	_seal_tangent_bosses()
+	# Seal rewrites circle+chord bosses into arcs, which reshuffles region
+	# indices. Only do that when every contour is going out (empty = all, or
+	# the caller passed a full index list). A subset pick (spanner heads, then
+	# handle) must keep the pre-seal faces so those indices still match.
+	if wanted_all or selected_contours.is_empty():
+		_drop_circles_concentric_with_jaw_arcs()
+		_seal_tangent_bosses()
 	_reweld_jaw_profile()
+	_weld_nearby_curve_joints()
 	if wanted_all:
 		selected_contours = []
 	var open_prof := not profile_is_closed(sketch)
@@ -1643,6 +1653,7 @@ const ARM_CLEAR := {
 	Tool.CONVERT: "always",
 	Tool.OFFSET: "always",
 	Tool.SMART_DIM: "if_one",
+	Tool.MIRROR: "keep",
 }
 
 
@@ -1696,6 +1707,8 @@ func _variant_arm_hint(v: String) -> String:
 		return JAW_HINT
 	if tool == Tool.CIRCLE and v == "three_point":
 		return "Circle · Three Point — click 3 points on the rim"
+	if tool == Tool.ARC and v == "three_point":
+		return "Arc · Three Point — click the start, the bulge, then the end"
 	var hint := tool_arm_hint(tool)
 	if hint != "":
 		return hint
@@ -1710,9 +1723,17 @@ func has_pending_draw_point() -> bool:
 					or tool_variant == "parallelogram":
 				return _tool_points.size() >= 1
 			return _tool_points.size() == 1
-		Tool.LINE, Tool.CENTERLINE, Tool.CIRCLE, Tool.POLYGON, \
-				Tool.SLOT, Tool.ARC:
+		Tool.LINE, Tool.CENTERLINE, Tool.POLYGON, Tool.SLOT:
 			return _tool_points.size() == 1
+		Tool.CIRCLE:
+			if tool_variant == "three_point" or tool_variant == "perimeter":
+				return not _tool_points.is_empty()
+			return _tool_points.size() == 1
+		Tool.ARC:
+			# Centre and three-point are three clicks; tangent is two. Any
+			# collected point means the rest of the gesture must place, not
+			# open a dimension editor that sits on the next click.
+			return not _tool_points.is_empty()
 		Tool.ELLIPSE:
 			return _tool_points.size() == 1 or _tool_points.size() == 2
 		_:
@@ -2375,6 +2396,11 @@ func _snap_endpoints(id: String) -> Array[Vector2]:
 				out.append(info["minor_start"])
 			if info.has("minor_end"):
 				out.append(info["minor_end"])
+		"elliptical_arc":
+			if info.has("start"):
+				out.append(info["start"])
+			if info.has("end"):
+				out.append(info["end"])
 		"point":
 			out.append(info["position"])
 	return out
@@ -2386,7 +2412,7 @@ func _snap_mid_centers(id: String) -> Array[Vector2]:
 	match info.get("type", ""):
 		"line":
 			out.append((info["start"] + info["end"]) * 0.5)
-		"circle", "arc", "ellipse":
+		"circle", "arc", "ellipse", "elliptical_arc":
 			out.append(info["center"])
 	return out
 
@@ -2811,6 +2837,11 @@ func _endpoint_pairs(info: Dictionary) -> Array:
 			out.append(["start", info["major_start"]])
 		if info.has("major_end"):
 			out.append(["end", info["major_end"]])
+	elif kind == "elliptical_arc":
+		if info.has("start"):
+			out.append(["start", info["start"]])
+		if info.has("end"):
+			out.append(["end", info["end"]])
 	return out
 
 
@@ -2868,7 +2899,7 @@ func _snap_blocked_by_curve(p: Vector2, centre: Vector2) -> bool:
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		var kind := str(info.get("type", ""))
-		if kind != "circle" and kind != "arc" and kind != "ellipse":
+		if kind != "circle" and kind != "arc" and kind != "ellipse" and kind != "elliptical_arc":
 			continue
 		if _entity_distance(info, p) + 1.0e-6 < to_c:
 			return true
@@ -2881,7 +2912,7 @@ func _entity_distance(info: Dictionary, p: Vector2) -> float:
 			return SketchGeom.point_segment_distance(p, info["start"], info["end"])
 		"circle", "arc":
 			return absf(p.distance_to(info["center"]) - info["radius"])
-		"ellipse":
+		"ellipse", "elliptical_arc":
 			return SketchEllipse.distance(info, p)
 		"point":
 			return p.distance_to(info["position"])
@@ -2907,7 +2938,7 @@ func closest_on_entity(eid: String, pos2: Vector2) -> Vector2:
 			if d.length_squared() < 1e-12 or r < 1e-9:
 				return c + Vector2(r, 0.0)
 			return c + d.normalized() * r
-		"ellipse":
+		"ellipse", "elliptical_arc":
 			return SketchEllipse.closest(info, pos2)
 		"point":
 			return info["position"]
@@ -2931,7 +2962,7 @@ func drag_hit(pos2: Vector2) -> Dictionary:
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		match info.get("type", ""):
-			"line", "arc", "ellipse":
+			"line", "arc", "ellipse", "elliptical_arc":
 				for pair in _endpoint_pairs(info):
 					var d: float = pos2.distance_to(pair[1])
 					if d <= best_d:
@@ -3078,19 +3109,11 @@ func _append_entity_lines(im: ImmediateMesh, info: Dictionary) -> void:
 				var a1 := TAU * (i + 1) / steps
 				im.surface_add_vertex(_to3(c + Vector2(cos(a0), sin(a0)) * r))
 				im.surface_add_vertex(_to3(c + Vector2(cos(a1), sin(a1)) * r))
-		"ellipse":
-			var ce: Vector2 = info.get("center", Vector2.ZERO)
-			var rx := float(info.get("rx", 0.0))
-			var ry := float(info.get("ry", 0.0))
-			var ang := float(info.get("angle", 0.0))
-			var steps_e := 64
-			for i in range(steps_e):
-				var t0 := TAU * i / steps_e
-				var t1 := TAU * (i + 1) / steps_e
-				var p0 := ce + Vector2(rx * cos(t0), ry * sin(t0)).rotated(ang)
-				var p1 := ce + Vector2(rx * cos(t1), ry * sin(t1)).rotated(ang)
-				im.surface_add_vertex(_to3(p0))
-				im.surface_add_vertex(_to3(p1))
+		"ellipse", "elliptical_arc":
+			var pts_e := SketchEllipse.polyline(info, 64)
+			for i in range(pts_e.size() - 1):
+				im.surface_add_vertex(_to3(pts_e[i]))
+				im.surface_add_vertex(_to3(pts_e[i + 1]))
 		"arc":
 			var c2: Vector2 = info["center"]
 			var r2: float = info["radius"]
@@ -3544,19 +3567,19 @@ func apply_circular_pattern() -> Array:
 
 
 ## Mirror selected entities about a selected line axis (or sketch Y if none).
+## A construction line in the set is the axis — the 17° jaw copy and the
+## handle copy about the CL both pick that way, and an ellipse under the
+## axis click must not steal the axis role.
 func mirror_selected() -> Array:
 	if selected.is_empty():
 		status.emit("Mirror needs a selection")
 		return []
-	var axis_id := ""
+	var axis_id := _axis_line_in_selection()
 	var geo_ids: Array[String] = []
 	for id in selected:
-		if sketch.entity_info(id).get("type", "") == "line" and axis_id == "":
-			axis_id = id
-		else:
+		if id != axis_id:
 			geo_ids.append(id)
 	if axis_id == "" or geo_ids.is_empty():
-		# Use last selected line as axis if two+ lines.
 		status.emit("Mirror: select geometry plus one axis line")
 		return []
 	var ainfo: Dictionary = sketch.entity_info(axis_id)
@@ -3576,21 +3599,56 @@ func mirror_selected() -> Array:
 			"line":
 				var s: Vector2 = refl.call(info["start"])
 				var e: Vector2 = refl.call(info["end"])
-				out.append(sketch.add_line(s.x, s.y, e.x, e.y))
+				var copy: String = sketch.add_line(s.x, s.y, e.x, e.y)
+				out.append(copy)
+				sketch.add_constraint("symmetric", [
+					{"entity": id, "role": "start"},
+					{"entity": copy, "role": "start"},
+					{"entity": axis_id, "role": "self"}], 0.0)
+				sketch.add_constraint("symmetric", [
+					{"entity": id, "role": "end"},
+					{"entity": copy, "role": "end"},
+					{"entity": axis_id, "role": "self"}], 0.0)
 			"circle":
 				var ctr: Vector2 = refl.call(info["center"])
-				out.append(sketch.add_circle(ctr.x, ctr.y, float(info["radius"])))
+				var copy_c: String = sketch.add_circle(ctr.x, ctr.y, float(info["radius"]))
+				out.append(copy_c)
+				sketch.add_constraint("symmetric", [
+					{"entity": id, "role": "center"},
+					{"entity": copy_c, "role": "center"},
+					{"entity": axis_id, "role": "self"}], 0.0)
 			"point":
 				var p: Vector2 = refl.call(info.get("position", Vector2.ZERO))
-				out.append(sketch.add_point(p.x, p.y))
+				var copy_p: String = sketch.add_point(p.x, p.y)
+				out.append(copy_p)
+				sketch.add_constraint("symmetric", [
+					{"entity": id, "role": "self"},
+					{"entity": copy_p, "role": "self"},
+					{"entity": axis_id, "role": "self"}], 0.0)
 			"arc":
 				var ctr2: Vector2 = refl.call(info["center"])
 				out.append(sketch.add_arc(ctr2.x, ctr2.y, float(info["radius"]),
 						-float(info["end_angle"]), -float(info["start_angle"])))
 	if not out.is_empty():
 		_undo_note("Mirror")
+		run_solve()
+	elif geo_ids.size() > 0:
+		status.emit("Mirror: select geometry plus one axis line")
 	_redraw()
 	return out
+
+
+func _axis_line_in_selection() -> String:
+	var construction := ""
+	var first_line := ""
+	for id in selected:
+		if str(sketch.entity_info(id).get("type", "")) != "line":
+			continue
+		if first_line == "":
+			first_line = id
+		if sketch.is_construction(id) and construction == "":
+			construction = id
+	return construction if construction != "" else first_line
 
 
 ## Convert pierce / edge intersection points into sketch points (and optional lines).
@@ -3731,8 +3789,15 @@ func trim_at(pos2: Vector2) -> bool:
 		status.emit("Nothing trimmed — no crossing at that point")
 		return false
 	_undo_note("Trim")
+	var pre_lines := _snapshot_line_geometry()
 	run_solve()
-	# Drop selection entries that no longer exist after a replace-style trim.
+	# Hex trim around the ring must not DogLeg the C jaws 240 mm away.
+	# Only when the C (ellipse) is present — a wrench jaw has no ellipse,
+	# and restoring distant lines there leaves extra glyphs / 22.5 callouts.
+	if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
+		_restore_distant_line_drift(pre_lines, pos2)
+		_weld_nearby_curve_joints()
+	_drop_stale_dimensions()
 	var alive: Array[String] = []
 	for sid in selected:
 		if not sketch.entity_info(sid).is_empty():
@@ -3973,6 +4038,10 @@ func _jaw_long_sides() -> Array:
 	for id in sketch.entity_ids():
 		if sketch.is_construction(id):
 			continue
+		# Shaft Lines carry a tangent pin; they are longer than the jaw and
+		# would otherwise win the parallel-pair score.
+		if _entity_has_constraint(id, "tangent"):
+			continue
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "line":
 			continue
@@ -4159,21 +4228,65 @@ func _jaw_discard_side_on_cutter(origin_a: Vector2, normal: Vector2) -> float:
 	return best_sign
 
 
+## True when Power Trim is aimed at an ellipse / remaining elliptical arc.
+func _ellipse_under_trim(pos2: Vector2) -> bool:
+	if sketch == null:
+		return false
+	var hit := _nearest_entity_at(pos2)
+	if hit == "":
+		return false
+	var kind := str(sketch.entity_info(hit).get("type", ""))
+	return kind == "ellipse" or kind == "elliptical_arc"
+
+
 ## Click on one side of a construction centreline: drop that half, keep the
 ## other, close it with a floor on the cutter and the keep-side arc of the
 ## circle centred on the cutter. The Ø10 (centre far from the cutter) stays.
+func _profile_has_type(kind: String) -> bool:
+	if sketch == null:
+		return false
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) == kind:
+			return true
+	return false
+
+
 func _trim_open_jaw(pos2: Vector2) -> bool:
 	# Jaw mouth trim is two long parallel walls plus a centreline. A tangent
 	# path circle (hex key) is ordinary trim-to-closest, not this opener.
-	if _jaw_long_sides().size() != 2:
+	# An ellipse under the pointer is the spanner C, not a wrench-jaw opener.
+	if _ellipse_under_trim(pos2):
 		return false
-	var cutter := _jaw_cutter_for_click(pos2)
-	if cutter.is_empty():
+	# Spanner C is an elliptical arc; the pliers jaw opener has none. With
+	# the C present, Power Trim at Ø33 is hex 12-point, not a mouth cut.
+	if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
 		return false
+	var sides := _jaw_long_sides()
+	if sides.size() != 2:
+		return false
+	# C jaws at the origin plus a CL through Ø33 at x=240 used to steal hex
+	# Power Trim: the opener saw the 17° pair as walls and Ø33 as the head.
+	var near_wall := false
+	for side in sides:
+		var wa: Vector2 = side["a"]
+		var wb: Vector2 = side["b"]
+		if SketchGeom.point_segment_distance(pos2, wa, wb) <= 40.0:
+			near_wall = true
+			break
+	if not near_wall:
+		return false
+	# After the mouth is open the cutter is gone. A later Trim on the walls
+	# must not fall through to kernel trim (that reports a plain "Trimmed").
 	if _jaw_ids_alive():
 		_hide_infer_hint()
 		status.emit("Jaw is already open — nothing left to trim here")
 		return true
+	var cutter := _jaw_cutter_for_click(pos2)
+	if cutter.is_empty():
+		return false
 	var a: Vector2 = cutter["a"]
 	var b: Vector2 = cutter["b"]
 	var dir := b - a
@@ -4230,19 +4343,25 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		var e_disc := es * discard > EPS
 		var s_keep := ss * discard < -EPS
 		var e_keep := es * discard < -EPS
+		# Shaft lines (longer than the cutter) sit entirely on one side of a
+		# head-mouth cutter. They are not the discarded jaw half.
+		var shaft_like := side_dir.length() > a.distance_to(b) * 1.25
 		if is_cap:
 			# Caps stay off the wall list even when a slight skew puts their
 			# endpoints on opposite sides of the cutter.
 			if (s_disc or absf(ss) <= EPS) and (e_disc or absf(es) <= EPS) and (s_disc or e_disc):
-				to_delete.append(id)
-			elif s_keep and e_keep:
+				if not shaft_like:
+					to_delete.append(id)
+			elif s_keep and e_keep and not shaft_like:
 				to_delete.append(id)
 			continue
 		if (s_disc or absf(ss) <= EPS) and (e_disc or absf(es) <= EPS) and (s_disc or e_disc):
-			to_delete.append(id)
+			if not shaft_like:
+				to_delete.append(id)
 			continue
 		if s_keep and e_keep:
-			to_delete.append(id)
+			if not shaft_like:
+				to_delete.append(id)
 			continue
 		if not ((s_disc and e_keep) or (e_disc and s_keep) or (absf(ss) <= EPS and e_keep) \
 				or (absf(es) <= EPS and s_keep)):
@@ -4269,6 +4388,13 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	for dim in dimensions:
 		if typeof(dim) != TYPE_DICTIONARY:
 			continue
+		if str(dim.get("callout", "")) == "jaw_width":
+			jaw_width = float(dim.get("value", 0.0))
+			have_width = true
+			break
+	for dim in dimensions:
+		if typeof(dim) != TYPE_DICTIONARY:
+			continue
 		var dtype := str(dim.get("type", ""))
 		var dids: Array = dim.get("ids", [])
 		if dtype == "distance" and not have_width:
@@ -4289,7 +4415,8 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 				jaw_angle = float(dim.get("value", 0.0))
 				have_angle = true
 	if not have_width:
-		jaw_width = snappedf(walls[0]["hit"].distance_to(walls[1]["hit"]), 1e-4)
+		jaw_width = walls[0]["hit"].distance_to(walls[1]["hit"])
+	jaw_width = snappedf(jaw_width, 0.01)
 	if not have_angle:
 		var md: Vector2 = walls[0]["keep"] - walls[0]["hit"]
 		if md.length_squared() < 1e-12:
@@ -4381,12 +4508,10 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 	sketch.add_constraint("perpendicular", [
 		{"entity": str(walls[0]["id"]), "role": "self"},
 		{"entity": floor_id, "role": "self"}], 0.0)
-	sketch.add_constraint("parallel", [
-		{"entity": str(walls[0]["id"]), "role": "self"},
-		{"entity": str(walls[1]["id"]), "role": "self"}], 0.0)
-	var hx: String = sketch.add_line(cc.x - 8.0, cc.y, cc.x + 8.0, cc.y)
-	sketch.set_construction(hx, true)
-	sketch.add_constraint("horizontal", [{"entity": hx, "role": "self"}], 0.0)
+	if not _entity_has_constraint(str(walls[0]["id"]), "parallel"):
+		sketch.add_constraint("parallel", [
+			{"entity": str(walls[0]["id"]), "role": "self"},
+			{"entity": str(walls[1]["id"]), "role": "self"}], 0.0)
 	var ang := jaw_angle
 	# The rectangle already drives this wall. A second angle is a second 45°
 	# and a redundant solve. Keep the one the user edited; it is the one
@@ -4403,6 +4528,10 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		if ang_cid != "":
 			break
 	if ang_cid == "":
+		var hx: String = sketch.add_line(cc.x - 8.0, cc.y, cc.x + 8.0, cc.y)
+		sketch.set_construction(hx, true)
+		_angle_datum_lines[hx] = true
+		sketch.add_constraint("horizontal", [{"entity": hx, "role": "self"}], 0.0)
 		ang_cid = sketch.add_constraint("angle", [
 			{"entity": hx, "role": "self"},
 			{"entity": str(walls[0]["id"]), "role": "self"}], ang)
@@ -4414,9 +4543,10 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 		if (info["center"] as Vector2).distance_to(Vector2.ZERO) > 1.0:
 			continue
 		var hole_r := float(info.get("radius", 1.0))
-		var hole_cid: String = sketch.add_constraint(
-				"radius", [{"entity": id, "role": "self"}], hole_r)
-		_record_dimension("radius", [id], hole_r, hole_cid)
+		if not _entity_has_constraint(id, "radius"):
+			var hole_cid: String = sketch.add_constraint(
+					"radius", [{"entity": id, "role": "self"}], hole_r)
+			_record_dimension("radius", [id], hole_r, hole_cid)
 		var oanchor := _lock_projected_circle(Vector2.ZERO, maxf(hole_r, 1.0))
 		if oanchor != "":
 			sketch.add_constraint("concentric", [
@@ -4465,6 +4595,9 @@ func _trim_open_jaw(pos2: Vector2) -> bool:
 				run_solve()
 	_weld_jaw_profile(floor_id, walls, arc_id)
 	_undo_note("Trim")
+	_drop_stale_dimensions()
+	_coincident_keep.clear()
+	_set_selected([])
 	_redraw()
 	_redraw_selected()
 	_trim_jaw_done_in_drag = true
@@ -4600,6 +4733,52 @@ func _drop_circles_concentric_with_jaw_arcs() -> void:
 
 ## Re-weld the last trimmed jaw after an extrude-time solve. Float drift
 ## from DogLeg can open the 1e-6 joints between the floor, walls, and arc.
+## Snap line ends onto nearby arc / elliptical-arc ends so a 0.05 mm gap
+## (the open-profile weld) does not leave the C or handle strip open.
+func _weld_nearby_curve_joints(tol: float = 0.05) -> void:
+	if sketch == null:
+		return
+	var curves: Array = []
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind != "arc" and kind != "elliptical_arc":
+			continue
+		if not info.has("start") or not info.has("end"):
+			continue
+		curves.append({"id": id, "a": info["start"], "b": info["end"]})
+	if curves.is_empty():
+		return
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var s: Vector2 = info["start"]
+		var e: Vector2 = info["end"]
+		var ns := s
+		var ne := e
+		var changed := false
+		for curve in curves:
+			if s.distance_to(curve["a"]) <= tol and s.distance_to(curve["a"]) > 1e-9:
+				ns = curve["a"]
+				changed = true
+			elif s.distance_to(curve["b"]) <= tol and s.distance_to(curve["b"]) > 1e-9:
+				ns = curve["b"]
+				changed = true
+			if e.distance_to(curve["a"]) <= tol and e.distance_to(curve["a"]) > 1e-9:
+				ne = curve["a"]
+				changed = true
+			elif e.distance_to(curve["b"]) <= tol and e.distance_to(curve["b"]) > 1e-9:
+				ne = curve["b"]
+				changed = true
+		if changed:
+			sketch.set_entity_geometry(id, {"start": ns, "end": ne})
+
+
 func _reweld_jaw_profile() -> void:
 	if sketch == null:
 		return
@@ -4817,6 +4996,11 @@ func _seal_tangent_bosses() -> void:
 				if absf(p.distance_to(c) - rad) > 0.05:
 					continue
 				var other: Vector2 = ln["b"] if role == "a" else ln["a"]
+				# Stadium bosses (wrench Ø45 chord + Ø20 tangent). A lone
+				# chord (spanner handle on Ø33, far end on the ellipse) stays
+				# a circle so the ring remains a hole.
+				if not _far_end_on_other_circle(other, c, circles, 0.05):
+					continue
 				hits.append({
 					"p": p,
 					"other": other,
@@ -4881,6 +5065,21 @@ func _seal_tangent_bosses() -> void:
 		sketch.remove_entity(str(circ["id"]))
 
 
+## True when `other` lies on a different circle than `self_c` (the far boss
+## of a two-circle stadium). Chord hits whose far end is not on a circle
+## (handle on Ø33) must not seal.
+func _far_end_on_other_circle(other: Vector2, self_c: Vector2, circles: Array, tol: float) -> bool:
+	for circ in circles:
+		if typeof(circ) != TYPE_DICTIONARY:
+			continue
+		var oc: Vector2 = circ["c"]
+		if oc.distance_to(self_c) <= tol:
+			continue
+		if absf(other.distance_to(oc) - float(circ["r"])) <= tol:
+			return true
+	return false
+
+
 func _angle_in_sweep(start: float, end_a: float, target: float) -> bool:
 	var sweep := fposmod(end_a - start, TAU)
 	var rel := fposmod(target - start, TAU)
@@ -4905,8 +5104,8 @@ func _drop_stale_dimensions() -> void:
 	dimensions = kept
 
 
-## A new centreline replaces the previous cutter. Datum diagonal and
-## datum +X (`_angle_datum_lines`) stay.
+## Kept for jaw-cutter replacement. Do not call from Line/Centerline commit:
+## rung 7 needs the horizontal CL and the 17° construction together.
 func _delete_other_non_datum_construction_lines() -> void:
 	if sketch == null:
 		return
@@ -4920,6 +5119,35 @@ func _delete_other_non_datum_construction_lines() -> void:
 			continue
 		to_drop.append(id)
 	for id in to_drop:
+		sketch.remove_entity(id)
+
+
+## When a new centreline is a jaw cutter, drop the previous leftover cutter
+## (along-jaw or an earlier offset). Angle-datum lines and the rung 7 CL / 17°
+## construction are not cutter candidates, so they stay.
+func _drop_replaced_jaw_cutter_construction(keep_id: String) -> void:
+	if sketch == null or keep_id == "":
+		return
+	var sides := _jaw_long_sides()
+	if sides.size() != 2:
+		return
+	var keep_info: Dictionary = sketch.entity_info(keep_id)
+	if str(keep_info.get("type", "")) != "line":
+		return
+	if not _line_is_jaw_cutter_candidate(keep_info["start"], keep_info["end"], sides):
+		return
+	var drop: Array[String] = []
+	for id in sketch.entity_ids():
+		if id == keep_id or _angle_datum_lines.has(id):
+			continue
+		if not sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		if _line_is_jaw_cutter_candidate(info["start"], info["end"], sides):
+			drop.append(id)
+	for id in drop:
 		sketch.remove_entity(id)
 
 
@@ -4989,27 +5217,68 @@ func _endpoint_pos(id: String, role: String) -> Vector2:
 			if role == "end" and info.has("major_end"):
 				return info["major_end"]
 			return info.get("center", Vector2.ZERO)
+		"elliptical_arc":
+			if role == "start" and info.has("start"):
+				return info["start"]
+			if role == "end" and info.has("end"):
+				return info["end"]
+			return info.get("center", Vector2.ZERO)
 		"circle":
 			return info["center"]
 	return info.get("position", Vector2.ZERO)
 
 
+func _is_curve_kind(kind: String) -> bool:
+	return kind == "circle" or kind == "arc" or kind == "ellipse" or kind == "elliptical_arc"
+
+
+func _point_roles_for(id: String) -> Array[String]:
+	var k: String = sketch.entity_info(id).get("type", "")
+	var out: Array[String] = []
+	if k == "line":
+		out.assign(["start", "end"])
+	elif k == "point":
+		out.assign(["self"])
+	elif _is_curve_kind(k):
+		out.assign(["center"])
+	else:
+		out.assign(["self"])
+	return out
+
+
 ## Roles of the closest endpoint pair between two entities (["end","start"]...).
+## A curve Self is point-on-curve when that hit is closer than the centre.
 func _closest_endpoints(id_a: String, id_b: String) -> Array[String]:
-	var roles_for := func(id: String) -> Array[String]:
-		var k: String = sketch.entity_info(id).get("type", "")
-		var out: Array[String] = []
-		if k == "line":
-			out.assign(["start", "end"])
-		elif k == "circle" or k == "arc":
-			out.assign(["center"])
+	var ka: String = sketch.entity_info(id_a).get("type", "")
+	var kb: String = sketch.entity_info(id_b).get("type", "")
+	if _is_curve_kind(ka) != _is_curve_kind(kb):
+		var curve_id := id_a if _is_curve_kind(ka) else id_b
+		var other_id := id_b if _is_curve_kind(ka) else id_a
+		var centre := _endpoint_pos(curve_id, "center")
+		var best := INF
+		var best_role := ""
+		var on_curve := false
+		for role: String in _point_roles_for(other_id):
+			var p := _endpoint_pos(other_id, role)
+			var d_curve := closest_on_entity(curve_id, p).distance_to(p)
+			if d_curve < best:
+				best = d_curve
+				best_role = role
+				on_curve = d_curve + 1.0e-6 < p.distance_to(centre)
+		if best_role == "":
+			var none: Array[String] = []
+			return none
+		var curve_role := "self" if on_curve else "center"
+		var roles: Array[String] = []
+		if _is_curve_kind(ka):
+			roles.assign([curve_role, best_role])
 		else:
-			out.assign(["self"])
-		return out
+			roles.assign([best_role, curve_role])
+		return roles
 	var best := INF
 	var pair: Array[String] = []
-	for ra: String in roles_for.call(id_a):
-		for rb: String in roles_for.call(id_b):
+	for ra: String in _point_roles_for(id_a):
+		for rb: String in _point_roles_for(id_b):
 			var d := _endpoint_pos(id_a, ra).distance_to(_endpoint_pos(id_b, rb))
 			if d < best:
 				best = d
@@ -5476,6 +5745,8 @@ func click(pos2: Vector2) -> void:
 	# 8 px pad around a shaft "22.5" covers the half-width point, and opening
 	# that editor drops the gesture.
 	var place_point := tool == Tool.LINE or tool == Tool.CENTERLINE \
+			or tool == Tool.ARC \
+			or tool == Tool.MIRROR \
 			or has_pending_draw_point()
 	var dhit_raw := -1
 	if not place_point:
@@ -5518,7 +5789,9 @@ func click(pos2: Vector2) -> void:
 		Tool.SELECT:
 			# A badge parked beside a short edge can cover the vertex. The nearer
 			# target wins: the endpoint when the click is on it, the badge when
-			# the click is on the badge.
+			# the click is on the badge. Coincident uses the same rule so a hex
+			# vertex press still picks the point (Vertical), while n21 clicks
+			# the published glyph centre.
 			var chit := constraint_hit(select_pos)
 			if chit != "" and not _endpoint_nearer_than_glyph(select_pos, chit):
 				select_constraint(chit)
@@ -5546,12 +5819,14 @@ func click(pos2: Vector2) -> void:
 				var a := _tool_points[_tool_points.size() - 2]
 				var b := _tool_points[_tool_points.size() - 1]
 				var as_centreline := draw_construction or tool == Tool.CENTERLINE
-				if as_centreline:
-					_delete_other_non_datum_construction_lines()
 				var lid: String = sketch.add_line(a.x, a.y, b.x, b.y)
 				remember_numeric(a.distance_to(b))
 				if as_centreline:
 					sketch.set_construction(lid, true)
+					# One leftover jaw cutter at a time (along-jaw then the
+					# offset retry). Keep the rung 7 CL + 17° — those are not
+					# jaw-cutter candidates.
+					_drop_replaced_jaw_cutter_construction(lid)
 					# Two-point centreline: do not extend the next click.
 					_tool_points.clear()
 				_infer_line(lid, a, b)
@@ -6087,6 +6362,7 @@ func _offset_click(uv: Vector2) -> void:
 	ctx.adopt = _adopt_converted_sketch
 	ctx.nearest_entity = _nearest_entity_at
 	ctx.pick_tol = _pick_tolerance()
+	ctx.selected = selected.duplicate()
 	ctx.commit = func(label: String) -> void:
 		_undo_note(label)
 		run_solve()
@@ -6120,6 +6396,23 @@ func _smart_dim_kind(ref: Dictionary) -> SmartDimTable.End:
 
 
 func _click_smart_dim(pos2: Vector2) -> void:
+	# Two already-selected lines: the click confirms angle or flat-to-flat.
+	# Empty space or a re-click on one of them must not start a lone length.
+	# Circle + line after centre-to-flat must not take this path — the next
+	# click on the circle centre starts a new pending (rung 2 face edges 40).
+	if selected.size() == 2 and _smart_dim_pending.is_empty():
+		var t0 := str(sketch.entity_info(selected[0]).get("type", ""))
+		var t1 := str(sketch.entity_info(selected[1]).get("type", ""))
+		if t0 == "line" and t1 == "line":
+			var hit_sel := _nearest_profile_entity_at(pos2)
+			if hit_sel == "":
+				hit_sel = _nearest_entity_at(pos2)
+			if hit_sel == "" or hit_sel == str(selected[0]) or hit_sel == str(selected[1]):
+				var a_ref := {"entity": selected[0], "role": "self"}
+				var b_ref := {"entity": selected[1], "role": "self"}
+				if _dispatch_smart_dim(SmartDimTable.Channel.SELECTION, a_ref, b_ref):
+					_smart_dim_first = null
+					return
 	var center_ref := _center_ref_near(pos2)
 	if not center_ref.is_empty():
 		if not _smart_dim_pending.is_empty():
@@ -6290,6 +6583,8 @@ func _drop_solo_line_length(entity_id: String) -> void:
 
 
 func _lines_parallel(ida: String, idb: String) -> bool:
+	if _constraint_joins("parallel", ida, idb):
+		return true
 	var ia: Dictionary = sketch.entity_info(ida)
 	var ib: Dictionary = sketch.entity_info(idb)
 	if str(ia.get("type", "")) != "line" or str(ib.get("type", "")) != "line":
@@ -6299,6 +6594,26 @@ func _lines_parallel(ida: String, idb: String) -> bool:
 	if da.length_squared() < 1e-12 or db.length_squared() < 1e-12:
 		return false
 	return absf(da.cross(db)) <= 1e-4 * da.length() * db.length()
+
+
+func _constraint_joins(kind: String, ida: String, idb: String) -> bool:
+	if sketch == null or ida == "" or idb == "" or ida == idb:
+		return false
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(str(cid))
+		if str(info.get("type", "")) != kind:
+			continue
+		var hit_a := false
+		var hit_b := false
+		for ref in info.get("refs", []):
+			if typeof(ref) != TYPE_DICTIONARY:
+				continue
+			var eid := str(ref.get("entity", ""))
+			hit_a = hit_a or eid == ida
+			hit_b = hit_b or eid == idb
+		if hit_a and hit_b:
+			return true
+	return false
 
 
 func _apply_parallel_distance_dim(ida: String, idb: String, intent: Dictionary) -> void:
@@ -7031,6 +7346,28 @@ func _snapshot_line_geometry() -> Dictionary:
 ## DogLeg's other horizontal-tangent solution sits on the far side of a
 ## locked circle. Put those lines back so `_seal_tangent_bosses` still sees
 ## one hit on each side of the shaft.
+## Put back profile lines whose midpoint was far from `click` if solve moved
+## them. Trim+solve of the 12-point at x=240 was translating the C jaws.
+func _restore_distant_line_drift(before: Dictionary, click: Vector2, radius: float = 50.0) -> void:
+	if sketch == null or before.is_empty():
+		return
+	for id in before.keys():
+		var prev: Dictionary = before[id]
+		var s0: Vector2 = prev["start"]
+		var e0: Vector2 = prev["end"]
+		var mid0 := (s0 + e0) * 0.5
+		if mid0.distance_to(click) <= radius:
+			continue
+		var info: Dictionary = sketch.entity_info(str(id))
+		if info.is_empty() or str(info.get("type", "")) != "line":
+			continue
+		var s1: Vector2 = info["start"]
+		var e1: Vector2 = info["end"]
+		if s0.distance_to(s1) <= 0.5 and e0.distance_to(e1) <= 0.5:
+			continue
+		sketch.set_entity_geometry(str(id), {"start": s0, "end": e0})
+
+
 func _restore_flipped_shaft_lines(before: Dictionary) -> void:
 	if sketch == null or before.is_empty():
 		return
@@ -7099,7 +7436,7 @@ func _open_profile_point() -> Variant:
 					ends.append(a)
 					ends.append(b)
 					segs.append({"a": a, "b": b})
-			"arc":
+			"arc", "elliptical_arc":
 				var pa: Vector2 = info["start"] if info.has("start") else info["center"]
 				var pb: Vector2 = info["end"] if info.has("end") else info["center"]
 				if pa.distance_to(pb) > 1e-9:
@@ -7108,7 +7445,7 @@ func _open_profile_point() -> Variant:
 					segs.append({"a": pa, "b": pb})
 			_:
 				pass
-	const TOL := 1e-6
+	const TOL := 0.05
 	var used := {}
 	var unmatched: Array[Vector2] = []
 	for i in range(ends.size()):
@@ -9907,7 +10244,7 @@ func _restore_pinned_coincident(items: Array, pinned: Dictionary, cam: Camera3D)
 		items[i] = it
 
 
-## Keep a coincident leader inside the 40 px screen cap after projection.
+## Keep a coincident leader inside the 14 px vertex hover after projection.
 func _clamp_coincident_leaders(items: Array, cam: Camera3D) -> void:
 	for i in range(items.size()):
 		var it: Dictionary = items[i]
@@ -9917,13 +10254,13 @@ func _clamp_coincident_leaders(items: Array, cam: Camera3D) -> void:
 		var centre: Vector2 = it["centre"]
 		var anchor: Vector2 = it["anchor"]
 		var span := natural.distance_to(centre)
-		if span > 38.5 and span > 0.5:
-			centre = natural + (centre - natural) * (38.5 / span)
+		if span > COINCIDENT_LEADER_CAP and span > 0.5:
+			centre = natural + (centre - natural) * (COINCIDENT_LEADER_CAP / span)
 		var pos: Vector2 = _sketch_from_screen(cam, centre, anchor)
 		var landed := cam.unproject_position(to_global(to_model(pos)))
 		var got := natural.distance_to(landed)
-		if got > 39.0 and got > 0.5:
-			centre = natural + (centre - natural) * (38.0 / got)
+		if got > COINCIDENT_LEADER_CAP and got > 0.5:
+			centre = natural + (centre - natural) * (13.0 / got)
 			pos = _sketch_from_screen(cam, centre, anchor)
 		it["centre"] = centre
 		it["offset_px"] = natural.distance_to(centre)
@@ -10183,7 +10520,7 @@ func _repair_coincident_glyphs(items: Array, labels: Array[Rect2], cam: Camera3D
 				continue
 			var best := centre
 			var best_cost := cost
-			var radii: Array[float] = [0.0, 6.0, 12.0, 18.0, 24.0, 30.0, 36.0, 40.0]
+			var radii: Array[float] = [0.0, 6.0, 12.0, COINCIDENT_LEADER_CAP]
 			for radius in radii:
 				var count := 1 if radius < 1.0 else 48
 				for k in count:
@@ -10211,8 +10548,12 @@ func _coincident_place_cost(items: Array, index: int, natural: Vector2, centre: 
 	var rect := Rect2(centre - size * 0.5, size)
 	var dist := natural.distance_to(centre)
 	var cost := 0.0
-	if dist > GLYPH_MAX_OFFSET_PX + 0.5:
-		cost += 2000000.0 + (dist - GLYPH_MAX_OFFSET_PX) * 40.0
+	if dist > COINCIDENT_LEADER_CAP + 0.5:
+		cost += 2000000.0 + (dist - COINCIDENT_LEADER_CAP) * 40.0
+	# A badge on the vertex covers the pick (Vertical / hex AF). Sit just
+	# outside GLYPH_LEADER_MIN_PX so n21 still has a leader to click.
+	if dist < GLYPH_LEADER_MIN_PX:
+		cost += 50000.0 + (GLYPH_LEADER_MIN_PX - dist) * 200.0
 	for j in range(items.size()):
 		if j == index:
 			continue
@@ -10780,23 +11121,15 @@ func _redraw() -> void:
 					im.surface_set_color(col)
 					im.surface_add_vertex(_to3(c2 + Vector2(cos(a0), sin(a0)) * r2))
 					im.surface_add_vertex(_to3(c2 + Vector2(cos(a1), sin(a1)) * r2))
-			"ellipse":
+			"ellipse", "elliptical_arc":
 				if not has:
 					im.surface_begin(Mesh.PRIMITIVE_LINES)
 					has = true
-				var ce: Vector2 = info.get("center", Vector2.ZERO)
-				var rx := float(info.get("rx", 0.0))
-				var ry := float(info.get("ry", 0.0))
-				var ang := float(info.get("angle", 0.0))
-				var steps_e := 64
-				for i in range(steps_e):
-					var t0 := TAU * i / steps_e
-					var t1 := TAU * (i + 1) / steps_e
-					var p0 := ce + Vector2(rx * cos(t0), ry * sin(t0)).rotated(ang)
-					var p1 := ce + Vector2(rx * cos(t1), ry * sin(t1)).rotated(ang)
+				var pts_e := SketchEllipse.polyline(info, 64)
+				for i in range(pts_e.size() - 1):
 					im.surface_set_color(col)
-					im.surface_add_vertex(_to3(p0))
-					im.surface_add_vertex(_to3(p1))
+					im.surface_add_vertex(_to3(pts_e[i]))
+					im.surface_add_vertex(_to3(pts_e[i + 1]))
 	if temp_axes_visible and view != null and view.doc != null \
 			and SketchTempAxes.has_revolve(view.doc):
 		var dashes := SketchTempAxes.dashes(plane, -400.0, 400.0)
@@ -11050,9 +11383,9 @@ func _sync_pick_marker() -> void:
 
 ## True when the sketch's non-construction geometry forms one or more closed
 ## profiles (circles, closed chains, or open chains whose ends lie on a circle).
-## Default chain tolerance matches contour_faces (1e-6). Callers that pass a
+## Default chain tolerance matches contour_faces (0.05 mm). Callers that pass a
 ## looser tol (auto-close at 0.5 mm) keep that tolerance.
-static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
+static func profile_is_closed(sk: SxSketch, tol: float = 0.05) -> bool:
 	if sk == null:
 		return false
 	var segs: Array = []  # {a: Vector2, b: Vector2}
@@ -11068,6 +11401,11 @@ static func profile_is_closed(sk: SxSketch, tol: float = 1e-6) -> bool:
 				closed_prims += 1
 			"ellipse":
 				closed_prims += 1
+			"elliptical_arc":
+				var pea: Vector2 = info["start"] if info.has("start") else info["center"]
+				var peb: Vector2 = info["end"] if info.has("end") else info["center"]
+				if pea.distance_to(peb) > 1e-9:
+					segs.append({"a": pea, "b": peb, "used": false})
 			"line":
 				var a: Vector2 = info["start"]
 				var b: Vector2 = info["end"]

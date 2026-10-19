@@ -157,7 +157,7 @@ func _add_pad(fid: String, sk: SxSketch, draw_lines: bool = true) -> void:
 				var r: float = float(info.get("radius", 0.0))
 				mn = mn.min(c - Vector2(r, r))
 				mx = mx.max(c + Vector2(r, r))
-			"ellipse":
+			"ellipse", "elliptical_arc":
 				var bb := SketchEllipse.aabb(info)
 				if bb.size.x > 0.0 and bb.size.y > 0.0:
 					mn = mn.min(bb.position)
@@ -248,7 +248,7 @@ func _collect_ink(sk: SxSketch) -> Array:
 				ink.append({"k": "circle", "c": info["center"], "r": float(info["radius"])})
 			"arc":
 				ink.append({"k": "circle", "c": info["center"], "r": float(info["radius"])})
-			"ellipse":
+			"ellipse", "elliptical_arc":
 				ink.append({"k": "ellipse", "info": info})
 			_:
 				pass
@@ -376,7 +376,7 @@ func _make_profile_mesh(sk: SxSketch, origin: Vector3, x_dir: Vector3, y_dir: Ve
 					for i in range(fits.size() - 1):
 						_add_profile_seg(st, to3.call(fits[i] as Vector2),
 								to3.call(fits[i + 1] as Vector2), normal, col)
-			"ellipse":
+			"ellipse", "elliptical_arc":
 				var pts := SketchEllipse.polyline(info, 48)
 				if pts.size() >= 2:
 					has = true

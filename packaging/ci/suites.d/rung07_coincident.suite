@@ -1,0 +1,3 @@
+script=tests/run_rung07_coincident.gd
+tier=ci
+timeout=180

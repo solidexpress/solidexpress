@@ -26,6 +26,7 @@ _HEADLESS = {
     4: {"unit": "tools/test_check_rung04.py", "unit_key": "unit_rung04", "log": "a21"},
     5: {"unit": "tools/test_check_rung05.py", "unit_key": "unit_rung05", "log": "a25"},
     6: {"unit": "tools/test_check_rung06.py", "unit_key": "unit_rung06", "log": "a36"},
+    7: {"unit": "tools/test_check_rung07.py", "unit_key": "unit_rung07", "log": "a37"},
 }
 
 
@@ -86,6 +87,15 @@ class WalkChrome:
     def _view_centre(self) -> list[float]:
         size = (self.refresh("window").get("window") or {}).get("size") or [1280, 800]
         return [float(size[0]) * 0.5, float(size[1]) * 0.5]
+
+    def _edge_centre(self, edge: dict) -> tuple[float, float, float]:
+        a = edge.get("a") or edge.get("mid") or [0, 0, 0]
+        b = edge.get("b") or a
+        return (
+            (float(a[0]) + float(b[0])) * 0.5,
+            (float(a[1]) + float(b[1])) * 0.5,
+            (float(a[2]) + float(b[2])) * 0.5,
+        )
 
     def _z_edge_at(self, x: float, y: float) -> dict | None:
         best = None
@@ -421,9 +431,10 @@ class WalkChrome:
         ids = {str(c.get("id", "")) for c in (snap.get("controls") or [])}
         if active and "finish:Op" in ids:
             return
-        sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
-        if sketches:
-            self._pencil(sketches[-1])
+        if not active:
+            sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
+            if sketches:
+                self._pencil(sketches[-1])
         for _ in range(6):
             shown = {str(c.get("id", "")) for c in (self.refresh("controls").get("controls") or [])}
             if "finish:Op" in shown:

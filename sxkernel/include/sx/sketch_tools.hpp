@@ -16,22 +16,25 @@ std::string fillet_corner(Sketch& s, const std::string& line_a_id,
 
 // Offset each entity by signed distance (OFFSETTERS table by entity type).
 // Lines: a parallel copy (positive = left of direction). Circles: a new
-// profile circle with Concentric to the source and a driving Radius =
-// r + signed distance. Distance ≈ 0, or a circle with r + d ≤ 0, is refused
-// (empty result, sketch unchanged for that entity). Arcs are skipped.
+// profile circle with Concentric to the source and a driving Diameter =
+// 2(r + signed distance). Arcs: concentric, same span, driving Radius =
+// r + signed distance. Distance ≈ 0, or a circle/arc with r + d ≤ 0, is
+// refused (empty result, sketch unchanged for that entity).
 // Returns new entity ids in input order (omitting skips / refusals).
 std::vector<std::string> offset_entities(Sketch& s,
                                          const std::vector<std::string>& entity_ids,
                                          double distance);
 
-// Trim the portion of a line or circle nearest to (px, py), bounded by its
-// intersections with other non-construction lines/circles/arcs.
+// Trim the portion of a line, circle, or ellipse nearest to (px, py), bounded
+// by its intersections with other non-construction lines/circles/arcs/ellipses.
 //
-// LINE: intersections at parameter t in (0,1), including arc endpoints that
-// lie on the segment (a 3-point diameter span). End-segment trim shortens the
-// existing line; interior trim removes it and adds two shorter lines.
+// LINE: intersections at parameter t in (0,1), including arc/ellipse endpoints
+// that lie on the segment. End-segment trim shortens the existing line;
+// interior trim removes it and adds two shorter lines.
 // CIRCLE: with >= 2 intersections, replaces the circle with an ARC spanning
 // the remaining (untrimmed) portion via Sketch::add_arc.
+// ELLIPSE: with >= 2 intersections, replaces the ellipse with an ELLIPTICAL
+// ARC spanning the remaining portion via Sketch::add_elliptical_arc.
 //
 // Constraints that reference a removed/replaced entity are dropped (same as
 // Sketch::remove_entity). End-segment line trim keeps the entity id, so its

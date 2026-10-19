@@ -33,7 +33,7 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `pattern:Angle` | Circular Sketch Pattern total angle (degrees) |
 | `pattern:Ok` | Circular Sketch Pattern OK |
 | `mirror:Features` | Feature Mirror arm (plane + timeline collector) |
-| `mirror:Plane` | Feature Mirror: next click is the planar face |
+| `mirror:Plane` | Feature Mirror: next click is a planar body face or origin plane |
 | `mirror:Add` | Feature Mirror: add the timeline selection |
 | `mirror:Ok` | Feature Mirror OK. Zero features is a refuse. |
 | `variant:Circular` | Pattern tool circular variant (total instances about the origin) |
@@ -47,7 +47,7 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `popup:Top` | Section plane Top (`y = 0`, normal ±Y) |
 | `popup:Right` | Section plane Right (`x = 0`, normal ±X) |
 | `plane=` | With `face_normal`, the aligned face whose `n·pick` is nearest this millimetre offset |
-| `datum=Front\|Top\|Right` | A point on that origin quad and not the other two (`click` while sketch-host pick is armed) |
+| `datum=Front\|Top\|Right` | Origin plane. Sketch-host pick starts that sketch. Feature Mirror collecting a plane sets `plane_point = origin`, `plane_normal` from `OriginPlanes.BASIS` (Front is +Z). |
 | `popup:Normal To` | View menu item. Ctrl+8 runs the same re-face. Key 8 stays Bottom. |
 | `state.faces[].pick` | World point on the face; `click(face=)` and `click(face_normal=)` aim here |
 | `state.faces[].plane` | `n·pick` in millimetres |
@@ -93,7 +93,7 @@ python3 tools/walk_rung01.py --from N21b --out /tmp/sx-041
 python3 tools/walk_rung01.py --from A16 --checkpoint --out /tmp/sx-041
 ```
 
-`--rows` and `--from` rerun a subset. A full walk reloads the checklist file when the previous chunk did not end in the expected state, and prints `checkpoint-reload <file>`. The files are `blank.sxp` (chunk 2, and the live jaw rebuilt from it for chunk 3), `cut.sxp` (chunk 4), and `wrench-wip.sxp` (chunks 5 and 6). A missing `cut.sxp` or `wrench-wip.sxp` is built through the bridge from the last file that does exist, so a failed save does not skip the slot, fillet, and export rows. `--checkpoint` forces that reload on a `--from` run. `dialog_commit` sets the file dialog's directory and name, presses its OK button, then presses the overwrite confirm's OK button, and waits until the dialog is gone. A row that leaves a file dialog or confirm up fails and the runner cancels it before the next row. Each row checks mode, sketch, body bbox and the finish bar first; a miss is `BLOCKED-by-<row>` instead of a cascade of failures. The runner reports product failures; it does not change them. After the 75 rows, a full walk replays the screenshot-walk sequences as `A8b-variant-walk` and `A9-variant-walk` and records whether part Ctrl+Z leaves `sketch 3` and whether that trim draws `-135°`.
+`--rows` and `--from` rerun a subset. A full walk reloads the checklist file when the previous chunk did not end in the expected state, and prints `checkpoint-reload <file>`. The files are `blank.sxp` (chunk 2, and the live jaw rebuilt from it for chunk 3), `cut.sxp` (chunk 4), and `wrench-wip.sxp` (chunks 5 and 6). A missing `cut.sxp` or `wrench-wip.sxp` is built through the bridge from the last file that does exist, so a failed save does not skip the slot, fillet, and export rows. `--from` / `--rows` that skip the first row restore `ckpts/<prev>.sxp` or the latest chunk-start file and replay the preceding rows of that chunk; a full walk still starts empty. `--checkpoint` still reloads at later chunk boundaries. `dialog_commit` sets the file dialog's directory and name, presses its OK button, then presses the overwrite confirm's OK button, and waits until the dialog is gone. `save_path` writes the live document to a globalized OS path without the Save As dialog (walk snapshots). A row that leaves a file dialog or confirm up fails and the runner cancels it before the next row. Each row checks mode, sketch, body bbox and the finish bar first; a miss is `BLOCKED-by-<row>` instead of a cascade of failures. The runner reports product failures; it does not change them. After the 75 rows, a full walk replays the screenshot-walk sequences as `A8b-variant-walk` and `A9-variant-walk` and records whether part Ctrl+Z leaves `sketch 3` and whether that trim draws `-135°`.
 
 The headless proof that the bridge is real input, not a private API, is `game/tests/run_automation_bridge_tests.gd` (`automation_bridge_tests` in the CI tier): a second Extrude click is `drop:shield`, Enter leaves the Distance field, and the jaw angle label is clicked on its drawn rect and edited to 45.
 
@@ -120,7 +120,7 @@ python3 tools/walk_rung03.py --from A6 --checkpoint --out /tmp/sx-rung03 --a15
 
 ## Pipe section runner (rung 5)
 
-`tools/walk_rung05.py` is the same command as `tools/walk_rung04.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 36-row UBC pipe-section checklist. It runs `tools/check_rung05.py`. `--checkpoint` reloads `shelled.sxp` (chunk 2), `cut.sxp` (chunk 3), or `reshell.sxp` (chunk 4). Face picks use `face_normal` with `plane=` as `n·pick` (the −Z flange at `z = −260` is `face_normal=[0,0,−1]`, `plane=260`). Circular Sketch Pattern is `rail:Pattern` then `variant:Circular`, then `pattern:Count` / `pattern:Angle` / `pattern:Ok`. Feature Mirror is `mirror:Features`, a planar face, Shift+click `timeline:row:…`, `mirror:Ok`. Two-face Shell is Shift+click both planar ends, `strip:shell`, `finish:Thickness`, `finish:Ok`. Export rows share one 3MF per stage. A25 needs `--a15` (without it: `BLOCKED-by-flag`).
+`tools/walk_rung05.py` is the same command as `tools/walk_rung04.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 36-row UBC pipe-section checklist. It runs `tools/check_rung05.py`. `--checkpoint` reloads `shelled.sxp` (chunk 2), `cut.sxp` (chunk 3), or `reshell.sxp` (chunk 4). Face picks use `face_normal` with `plane=` as `n·pick` (the −Z flange at `z = −260` is `face_normal=[0,0,−1]`, `plane=260`). Circular Sketch Pattern is `rail:Pattern` then `variant:Circular`, then `pattern:Count` / `pattern:Angle` / `pattern:Ok`. Feature Mirror is `mirror:Features`, a planar face or `click(datum=Front)` for origin Front, Shift+click `timeline:row:…`, `mirror:Ok`. Two-face Shell is Shift+click both planar ends, `strip:shell`, `finish:Thickness`, `finish:Ok`. Export rows share one 3MF per stage. A25 needs `--a15` (without it: `BLOCKED-by-flag`).
 
 ```bash
 python3 tools/walk_rung05.py --out /tmp/sx-rung05
@@ -136,6 +136,16 @@ python3 tools/walk_rung05.py --from A8 --checkpoint --out /tmp/sx-rung05 --a15
 python3 tools/walk_rung06.py --out /tmp/sx-rung06
 python3 tools/walk_rung06.py --rows N1,A1,A2 --dry-run
 python3 tools/walk_rung06.py --from A16 --checkpoint --out /tmp/sx-rung06 --a15
+```
+
+## Combination spanner runner (rung 7)
+
+`tools/walk_rung07.py` is the same command as `tools/walk_rung06.py` (`--rows`, `--from`, `--checkpoint`, `--a15`, `--dry-run`, `--app`, `--out`, `--resolution`, `--display`, `--no-launch`, `--godot`, `--port`) aimed at the 46-row combination-spanner checklist. It runs `tools/check_rung07.py`. `--checkpoint` reloads `sketch.sxp` (chunk 3) or `neck.sxp` (chunk 4). `--from` / `--rows` that do not start at the first row restore the previous row's `ckpts/<row>.sxp` when that snapshot exists, otherwise the latest chunk-start file and a replay of the preceding rows of that chunk (from row 1 if no file is in `--out`). A full walk still runs every row from the start with no restores; it writes those snapshots after each PASS. Ellipse is three clicks after `rail:Ellipse`. Trim of an ellipse yields an elliptical arc. Point-on-curve coincident uses the Coincident chip on an ellipse or circle. Mirror Entities emits Symmetric. Convert of a circular arc is `rail:Convert` then an edge click (partial span → Arc). Offset of that Arc is `rail:Offset`, `offset:Distance` / `offset:Reverse` / a chain click. Feature Mirror of Fillet3 + Cut about origin Front is `mirror:Features`, `click(datum=Front)`, Shift+click `timeline:row:…`, `mirror:Ok`. Export rows share one 3MF per stage. A37 needs `--a15` (without it: `BLOCKED-by-flag`).
+
+```bash
+python3 tools/walk_rung07.py --out /tmp/sx-rung07
+python3 tools/walk_rung07.py --rows N1,A1,A2 --dry-run
+python3 tools/walk_rung07.py --from A21 --checkpoint --out /tmp/sx-rung07 --a15
 ```
 
 ## sx-042 runner rules (re-PLAN 21)

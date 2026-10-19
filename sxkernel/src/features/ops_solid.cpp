@@ -3,6 +3,7 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Defeaturing.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -79,6 +80,106 @@ bool sketch_has_closed_region(const Sketch& sk) {
     return !sk.profile_face_selected({}, &ignored).IsNull();
 }
 
+// Adjacent pads that only share a side face (spanner handle 6 mm onto
+// heads 10 mm) fail a default Fuse and leave an open shell. Same ladder
+// SweepFuse uses: fuzzy retries, then cut the overlap out of the tool
+// and fuse the remainder.
+struct ExtrudeFuse {
+    static constexpr double FUZZIES[] = {1.0e-7, 1.0e-4, 1.0e-3, 0.05, 0.1};
+    static constexpr double MIN_VOLUME = 1.0e-3;
+    static constexpr double KEEP_RATIO = 0.90;
+
+    static bool usable(const TopoDS_Shape& s) {
+        return !s.IsNull() && shape::count(s).solids >= 1
+               && std::abs(shape::volume(s)) > MIN_VOLUME;
+    }
+
+    static bool keeps_target(const TopoDS_Shape& body, const TopoDS_Shape& merged) {
+        if (!usable(merged)) return false;
+        const double bv = std::abs(shape::volume(body));
+        if (bv <= 1.0) return true;
+        return std::abs(shape::volume(merged)) >= bv * KEEP_RATIO;
+    }
+
+    static TopoDS_Shape keep_solid(const TopoDS_Shape& s) {
+        if (!usable(s)) return s;
+        std::string report;
+        TopoDS_Shape work = interop::heal_shape(s, &report);
+        if (!usable(work)) work = s;
+        try {
+            ShapeUpgrade_UnifySameDomain unify(work, true, true, true);
+            unify.SetLinearTolerance(1.0e-3);
+            unify.Build();
+            if (usable(unify.Shape())) work = unify.Shape();
+        } catch (...) {
+        }
+        return usable(work) ? work : s;
+    }
+
+    static TopoDS_Shape run_fuse(const TopoDS_Shape& a, const TopoDS_Shape& b,
+                                 double fuzzy) {
+        BRepAlgoAPI_Fuse opf;
+        TopTools_ListOfShape args;
+        TopTools_ListOfShape tools;
+        args.Append(a);
+        tools.Append(b);
+        opf.SetArguments(args);
+        opf.SetTools(tools);
+        if (fuzzy > 0.0) opf.SetFuzzyValue(fuzzy);
+        opf.Build();
+        if (opf.IsDone() && usable(opf.Shape())) return keep_solid(opf.Shape());
+        return {};
+    }
+
+    static TopoDS_Shape run_cut(const TopoDS_Shape& a, const TopoDS_Shape& b,
+                                double fuzzy) {
+        BRepAlgoAPI_Cut opc;
+        TopTools_ListOfShape args;
+        TopTools_ListOfShape tools;
+        args.Append(a);
+        tools.Append(b);
+        opc.SetArguments(args);
+        opc.SetTools(tools);
+        if (fuzzy > 0.0) opc.SetFuzzyValue(fuzzy);
+        opc.Build();
+        if (opc.IsDone() && usable(opc.Shape())) return keep_solid(opc.Shape());
+        return {};
+    }
+
+    static TopoDS_Shape consider(const TopoDS_Shape& body, const TopoDS_Shape& candidate,
+                                 TopoDS_Shape& fallback) {
+        if (!keeps_target(body, candidate)) return {};
+        if (shape::is_valid(candidate)) return candidate;
+        if (fallback.IsNull()) fallback = candidate;
+        return {};
+    }
+
+    static TopoDS_Shape merge(const TopoDS_Shape& body, const TopoDS_Shape& tool) {
+        const TopoDS_Shape left = keep_solid(body);
+        const TopoDS_Shape right = keep_solid(tool);
+        TopoDS_Shape fallback;
+        auto take = [&](const TopoDS_Shape& a, const TopoDS_Shape& b, double fuzzy) {
+            return consider(body, run_fuse(a, b, fuzzy), fallback);
+        };
+        for (double fuzzy : FUZZIES) {
+            TopoDS_Shape m = take(body, tool, fuzzy);
+            if (!m.IsNull()) return m;
+            m = take(left, right, fuzzy);
+            if (!m.IsNull()) return m;
+        }
+        for (double fuzzy : FUZZIES) {
+            TopoDS_Shape outside = run_cut(tool, body, fuzzy);
+            if (!usable(outside)) outside = run_cut(right, left, fuzzy);
+            if (!usable(outside)) continue;
+            TopoDS_Shape m = take(body, outside, fuzzy);
+            if (!m.IsNull()) return m;
+            m = take(left, outside, fuzzy);
+            if (!m.IsNull()) return m;
+        }
+        return fallback;
+    }
+};
+
 }  // namespace
 
 bool apply_primitive(ApplyCtx& ctx) {
@@ -150,13 +251,7 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     if (face.IsNull() && sketch_closed_contour(*skf->sketch))
                         return fail(thin_wall_on_error(thin_thickness));
                 } else {
-                    std::vector<int> contour_idxs;
-                    if (params.contains("selected_contours") &&
-                        params["selected_contours"].is_array()) {
-                        for (const auto& v : params["selected_contours"]) {
-                            if (v.is_number_integer()) contour_idxs.push_back(v.get<int>());
-                        }
-                    }
+                    std::vector<int> contour_idxs = selected_contour_indices(params);
                     TopoDS_Shape host;
                     if (skf->params.contains("host_face") && skf->params["host_face"].is_string()) {
                         host = doc.resolve(EntityId::from_string(
@@ -314,6 +409,21 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         back_tr.SetTranslation(travel.Reversed() * to_face_back);
                         profile = BRepBuilderAPI_Transform(face, back_tr, true).Shape();
                     }
+                    // Face-sketch Blind Cut starts on the host face. A prism
+                    // that shares that face with the target often Cut-succeeds
+                    // with zero volume change. Begin a hair outside the plane
+                    // and keep the interior depth so the tool actually bites.
+                    if (op_early == "cut" && !symmetric && end == "blind"
+                        && std::abs(dist) > 1e-9) {
+                        const double overlap = 0.05;
+                        gp_Vec unit = dir;
+                        if (unit.Magnitude() > 1e-12) unit.Normalize();
+                        const double sign = dist < 0.0 ? -1.0 : 1.0;
+                        gp_Trsf start_out;
+                        start_out.SetTranslation(unit * (-sign * overlap));
+                        profile = BRepBuilderAPI_Transform(profile, start_out, true).Shape();
+                        dist += sign * overlap;
+                    }
                     if (symmetric) {
                         gp_Trsf t;
                         t.SetTranslation(dir * (-dist / 2.0));
@@ -462,18 +572,23 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     if (!tb) return fail("missing target body");
                     TopoDS_Shape merged;
                     if (op == "cut") {
-                        BRepAlgoAPI_Cut cutter_op;
-                        TopTools_ListOfShape args;
-                        TopTools_ListOfShape tools;
-                        args.Append(tb->shape);
-                        tools.Append(result);
-                        cutter_op.SetArguments(args);
-                        cutter_op.SetTools(tools);
-                        cutter_op.SetFuzzyValue(1e-4);
-                        cutter_op.Build();
-                        merged = cutter_op.Shape();
+                        const double v0 = std::abs(shape::volume(tb->shape));
+                        merged = ExtrudeFuse::run_cut(tb->shape, result, 1e-4);
+                        const auto cut_ok = [&](const TopoDS_Shape& s) {
+                            return ExtrudeFuse::usable(s)
+                                   && v0 - std::abs(shape::volume(s)) > 1e-3;
+                        };
+                        if (!cut_ok(merged)) {
+                            for (double fuzzy : ExtrudeFuse::FUZZIES) {
+                                TopoDS_Shape m = ExtrudeFuse::run_cut(tb->shape, result, fuzzy);
+                                if (cut_ok(m)) {
+                                    merged = m;
+                                    break;
+                                }
+                            }
+                        }
                     } else {
-                        merged = TopoDS_Shape(BRepAlgoAPI_Fuse(tb->shape, result).Shape());
+                        merged = ExtrudeFuse::merge(tb->shape, result);
                     }
                     if (merged.IsNull()) return fail("boolean failed");
                     {

@@ -170,7 +170,21 @@ class Walk:
             self.esc()
             self.refresh("popups", "status")
 
-    def run_row(self, rid: str, nxt: str | None = None) -> None:
+    def resume_from(self, start_rid: str) -> None:
+        from walk.checkpoint import resume_walk
+
+        resume_walk(self, start_rid)
+
+    def _snapshot_row(self, rid: str) -> None:
+        """Save the document after a PASS row so `--from` the next row can restore it."""
+        dest = self.out / "ckpts" / f"{rid}.sxp"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.d.call("save_path", path=str(dest))
+        except SxError as exc:
+            print(f"snapshot: {rid} {exc}", flush=True)
+
+    def run_row(self, rid: str, nxt: str | None = None, *, record: bool = True) -> str:
         self.clauses = []
         started = time.monotonic()
         wants_dialog = bool(self._expect(rid) and self._expect(rid).popup)
@@ -192,9 +206,11 @@ class Walk:
                 "evidence": f"BLOCKED-by-{blocker}: {why}",
                 "status": self.st.get("status", ""),
             }
-            self.rows.append(rec)
-            print(f"{rid:5} {rec['verdict']:16} {rec['seconds']:6.1f}s  {rec['evidence'][:220]}", flush=True)
-            return
+            if record:
+                self.rows.append(rec)
+            prefix = "resume-replay " if not record else ""
+            print(f"{prefix}{rid:5} {rec['verdict']:16} {rec['seconds']:6.1f}s  {rec['evidence'][:220]}", flush=True)
+            return rec["verdict"]
         bodies_before = [str(b.get("name", "")) for b in (self.refresh("bodies").get("bodies") or [])]
         try:
             self._row_fn(rid)(self)
@@ -237,8 +253,13 @@ class Walk:
             "evidence": evidence,
             "status": self.st.get("status", ""),
         }
-        self.rows.append(rec)
-        print(f"{rid:5} {verdict:8} {rec['seconds']:6.1f}s  {evidence[:220]}", flush=True)
+        if record:
+            self.rows.append(rec)
+        prefix = "resume-replay " if not record else ""
+        print(f"{prefix}{rid:5} {verdict:8} {rec['seconds']:6.1f}s  {evidence[:220]}", flush=True)
+        if str(verdict).startswith("PASS") and not os.environ.get("SX_CONFIRM_DIR", "").strip():
+            self._snapshot_row(rid)
+        return verdict
 
     # --- bridge sugar -----------------------------------------------------
 

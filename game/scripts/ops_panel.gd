@@ -1816,7 +1816,8 @@ func consumes_viewport_pick() -> bool:
 			or _pending == Pending.HEX_PLACE or _pending == Pending.HOLE_MOVE \
 			or _pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES \
 			or _pending == Pending.LINEAR or _pending == Pending.CIRCULAR \
-			or _pending == Pending.MIRROR
+			or _pending == Pending.MIRROR \
+			or _mirror_waiting_plane()
 
 
 ## Handle a consumed viewport pick. Returns true if the click was used.
@@ -2358,6 +2359,12 @@ func _dressup_has_edges() -> bool:
 ## an edge seen edge-on within DRESSUP_SILHOUETTE_PX of the press is toggled,
 ## anything else is a named miss.
 func handle_viewport_miss(screen: Vector2, camera: Camera3D) -> void:
+	if _mirror_waiting_plane() and camera != null and view != null:
+		var origin: Vector3 = camera.project_ray_origin(screen)
+		var dir: Vector3 = camera.project_ray_normal(screen)
+		var datum := OriginPlanes.ray_hit(view, origin, dir)
+		if datum != "" and try_mirror_datum(datum):
+			return
 	var body := _pending_body if _pending_body != "" else view.selected_body
 	if (_pending == Pending.FILLET_EDGES or _pending == Pending.CHAMFER_EDGES) \
 			and _consume_offered_edge(body):
@@ -3083,15 +3090,33 @@ func _resolve_circular_pick(body: String, face: String) -> void:
 	view.select_entity(src, "")
 
 
+func _mirror_waiting_plane() -> bool:
+	return _mirror_features != null and _mirror_features.collecting() and not _mirror_features.has_plane
+
+
+## Origin Front / Top / Right while Feature Mirror is collecting a plane.
+func try_mirror_datum(name: String) -> bool:
+	if not _mirror_waiting_plane():
+		return false
+	if not _mirror_features.set_origin_plane(name):
+		return false
+	_pending = Pending.NONE
+	return true
+
+
 func _resolve_mirror_pick(body: String, face: String) -> void:
 	var src := _pending_body
 	if face == "":
-		status.emit("Mirror cancelled (pick a planar face)")
+		status.emit(str(_MirrorFeatures.REFUSALS["plane"]))
+		if _mirror_features != null and _mirror_features.collecting():
+			_pending = Pending.MIRROR
 		return
 	var face_body := body if body != "" else src
 	var n := view.face_normal(face_body, face)
 	if n.length_squared() < 1e-12:
-		status.emit("Mirror cancelled (need a planar face)")
+		status.emit(str(_MirrorFeatures.REFUSALS["plane"]))
+		if _mirror_features != null and _mirror_features.collecting():
+			_pending = Pending.MIRROR
 		return
 	var pt := view.doc.face_midpoint(face)
 	if _mirror_features != null and _mirror_features.collecting():

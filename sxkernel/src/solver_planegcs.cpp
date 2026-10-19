@@ -67,6 +67,7 @@ struct Xlate {
     std::unordered_map<EntityId, GCS::Arc> arcs;
     std::unordered_map<EntityId, GCS::BSpline> splines;
     std::unordered_map<EntityId, GCS::Ellipse> ellipses;
+    std::unordered_map<EntityId, GCS::ArcOfEllipse> ellipse_arcs;
     struct EllipseVerts {
         GCS::Point major_p;
         GCS::Point major_m;
@@ -215,6 +216,25 @@ struct Xlate {
                     ellipse_verts[e.id] = v;
                     break;
                 }
+                case SketchEntityType::EllipticalArc: {
+                    if (e.params.size() < 11) break;
+                    GCS::ArcOfEllipse a;
+                    a.center.x = param(e.params[0]);
+                    a.center.y = param(e.params[1]);
+                    a.focus1.x = param(e.params[2]);
+                    a.focus1.y = param(e.params[3]);
+                    a.radmin = param(e.params[4]);
+                    a.startAngle = param(e.params[5]);
+                    a.endAngle = param(e.params[6]);
+                    a.start.x = param(e.params[7]);
+                    a.start.y = param(e.params[8]);
+                    a.end.x = param(e.params[9]);
+                    a.end.y = param(e.params[10]);
+                    ellipse_arcs[e.id] = a;
+                    ellipses[e.id] = a;
+                    sys.addConstraintArcOfEllipseRules(ellipse_arcs[e.id]);
+                    break;
+                }
             }
         }
     }
@@ -246,6 +266,13 @@ struct Xlate {
             if (ref.role == PointRole::End) return sit->second.end;
             return sit->second.start;
         }
+        auto eait = ellipse_arcs.find(ref.entity);
+        if (eait != ellipse_arcs.end()) {
+            if (ref.role == PointRole::Start) return eait->second.start;
+            if (ref.role == PointRole::End) return eait->second.end;
+            if (ref.role == PointRole::Center || ref.role == PointRole::Self)
+                return eait->second.center;
+        }
         auto eit = ellipses.find(ref.entity);
         if (eit != ellipses.end()) {
             auto vit = ellipse_verts.find(ref.entity);
@@ -268,6 +295,29 @@ struct Xlate {
         switch (c.type) {
             case ConstraintType::Coincident: {
                 if (c.refs.size() != 2) return false;
+                auto point_on_curve = [&](const PointRef& curve, const PointRef& pt) -> bool {
+                    if (curve.role != PointRole::Self) return false;
+                    GCS::Point p = point_of(pt, ok1);
+                    if (!ok1) return false;
+                    auto eit = ellipses.find(curve.entity);
+                    if (eit != ellipses.end()) {
+                        sys.addConstraintPointOnEllipse(p, eit->second, tag, drv);
+                        return true;
+                    }
+                    auto cit = circles.find(curve.entity);
+                    if (cit != circles.end()) {
+                        sys.addConstraintPointOnCircle(p, cit->second, tag, drv);
+                        return true;
+                    }
+                    auto ait = arcs.find(curve.entity);
+                    if (ait != arcs.end()) {
+                        sys.addConstraintPointOnArc(p, ait->second, tag, drv);
+                        return true;
+                    }
+                    return false;
+                };
+                if (point_on_curve(c.refs[0], c.refs[1])) return true;
+                if (point_on_curve(c.refs[1], c.refs[0])) return true;
                 GCS::Point a = point_of(c.refs[0], ok1), b = point_of(c.refs[1], ok2);
                 if (!ok1 || !ok2) return false;
                 sys.addConstraintP2PCoincident(a, b, tag, drv);

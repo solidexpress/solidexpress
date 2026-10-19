@@ -67,6 +67,15 @@ static func pick_point(name: String) -> Variant:
 	return found["pick"]
 
 
+## Point on this quad outside AXIS_BAND of the other two. Front's BASIS pick
+## sits 4 mm from Right, so ray_hit treats it as an axis miss.
+static func unique_pick(name: String) -> Variant:
+	var found := row(name)
+	if found.is_empty():
+		return null
+	return ((found["x"] as Vector3) + (found["y"] as Vector3)) * 10.0
+
+
 ## Front uses the ground sketch. Right and Top use their BASIS row.
 static func begin(main, name: String) -> void:
 	var found := row(name)

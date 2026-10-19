@@ -766,15 +766,23 @@ json sketch_ordered_polyline(const Sketch& sk) {
                 add(sketch_uv_to_3d(pl, cx + r * std::cos(t), cy + r * std::sin(t)));
             }
             if (piece.size() >= 2) segs.push_back(std::move(piece));
-        } else if (e.type == SketchEntityType::Ellipse) {
+        } else if (e.type == SketchEntityType::Ellipse ||
+                   e.type == SketchEntityType::EllipticalArc) {
             auto axes = sk.ellipse_axes(e.id);
             if (!axes) continue;
             const double cx = (*axes)[0], cy = (*axes)[1], rx = (*axes)[2], ry = (*axes)[3],
                          ang = (*axes)[4];
             if (rx < eps || ry < eps) continue;
-            const int samples = 48;
+            double a0 = 0.0, a1 = 2.0 * M_PI;
+            if (e.type == SketchEntityType::EllipticalArc && e.params.size() >= 7) {
+                a0 = sk.param(e.params[5]);
+                a1 = sk.param(e.params[6]);
+                while (a1 <= a0) a1 += 2.0 * M_PI;
+            }
+            const double span = a1 - a0;
+            const int samples = std::max(8, static_cast<int>(std::ceil(span / (M_PI / 12.0))));
             for (int s = 0; s <= samples; ++s) {
-                double t = 2.0 * M_PI * (static_cast<double>(s) / samples);
+                double t = a0 + span * (static_cast<double>(s) / samples);
                 double u = cx + rx * std::cos(t) * std::cos(ang) - ry * std::sin(t) * std::sin(ang);
                 double v = cy + rx * std::cos(t) * std::sin(ang) + ry * std::sin(t) * std::cos(ang);
                 add(sketch_uv_to_3d(pl, u, v));
@@ -1194,6 +1202,22 @@ void rebind_sketch_support(FeatureGraph& graph, Document& doc, Feature& f) {
     SketchPlane pl = f.sketch->plane();
     const double current =
         gp_Vec(pl.origin[0], pl.origin[1], pl.origin[2]).Dot(want);
+    // Already on a face along this normal: keep it. Hopping to `best`
+    // would move a handle-top sketch (z=3) onto the thicker heads (z=5)
+    // and a Blind Cut then misses the body.
+    if (std::abs(current - best) > 0.75) {
+        bool on_a_face = false;
+        for (TopExp_Explorer ex(body->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            double off = 0.0;
+            if (!face_offset_along(TopoDS::Face(ex.Current()), want, &off))
+                continue;
+            if (std::abs(current - off) <= 0.5) {
+                on_a_face = true;
+                break;
+            }
+        }
+        if (on_a_face) return;
+    }
     // Follow the host face, including a shrink (plate 14→10). Refuse a jump
     // onto the opposite end of the body (candlestick y=220 → a false y=0
     // revolution-cap hit).

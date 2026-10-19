@@ -85,41 +85,77 @@ static func polyline(info: Dictionary, steps := 48) -> PackedVector2Array:
 		return out
 	var ang := float(info.get("angle", 0.0))
 	var n := maxi(8, steps)
+	var t0 := float(info.get("start_angle", 0.0))
+	var t1 := float(info.get("end_angle", TAU))
+	if str(info.get("type", "")) == "elliptical_arc":
+		if t1 <= t0:
+			t1 += TAU
+		n = maxi(8, int(ceil(absf(t1 - t0) / (TAU / float(n)))))
+	else:
+		t0 = 0.0
+		t1 = TAU
 	for i in range(n + 1):
-		var t := TAU * float(i) / float(n)
+		var t := t0 + (t1 - t0) * float(i) / float(n)
 		out.append(c + Vector2(rx * cos(t), ry * sin(t)).rotated(ang))
 	return out
 
 
-## Distance from `p` to the ellipse curve (approx).
-static func distance(info: Dictionary, p: Vector2) -> float:
+## Ellipse parameter of `p` from the major axis.
+static func param_at(info: Dictionary, p: Vector2) -> float:
 	var c: Vector2 = info.get("center", Vector2.ZERO)
 	var rx := float(info.get("rx", 0.0))
 	var ry := float(info.get("ry", 0.0))
-	if rx <= 1e-9 or ry <= 1e-9:
-		return INF
 	var ang := float(info.get("angle", 0.0))
+	if rx <= 1e-9 or ry <= 1e-9:
+		return 0.0
 	var local := (p - c).rotated(-ang)
-	var n := Vector2(local.x / rx, local.y / ry)
-	if n.length_squared() < 1e-12:
-		return minf(rx, ry)
-	n = n.normalized()
-	var on := Vector2(rx * n.x, ry * n.y)
-	return local.distance_to(on)
+	return atan2(local.y / ry, local.x / rx)
 
 
-## Closest point on the ellipse to `p`.
+static func param_on_span(info: Dictionary, t: float) -> bool:
+	if str(info.get("type", "")) != "elliptical_arc":
+		return true
+	var sa := float(info.get("start_angle", 0.0))
+	var ea := float(info.get("end_angle", TAU))
+	var span := ea - sa
+	while span < 0.0:
+		span += TAU
+	if span < 1e-9:
+		span = TAU
+	var from := t - sa
+	while from < 0.0:
+		from += TAU
+	while from >= TAU:
+		from -= TAU
+	return from <= span + 1e-6
+
+
+## Distance from `p` to the ellipse (or remaining elliptical-arc) curve.
+static func distance(info: Dictionary, p: Vector2) -> float:
+	var on := closest(info, p)
+	return p.distance_to(on)
+
+
+## Closest point on the ellipse (or remaining arc) to `p`.
 static func closest(info: Dictionary, p: Vector2) -> Vector2:
 	var c: Vector2 = info.get("center", Vector2.ZERO)
 	var rx := float(info.get("rx", 0.0))
 	var ry := float(info.get("ry", 0.0))
 	var ang := float(info.get("angle", 0.0))
+	if rx <= 1e-9 or ry <= 1e-9:
+		return c
 	var local := (p - c).rotated(-ang)
 	var n := Vector2(local.x / rx, local.y / ry)
 	if n.length_squared() < 1e-12:
-		return c + Vector2(rx, 0.0).rotated(ang)
-	n = n.normalized()
-	return c + Vector2(rx * n.x, ry * n.y).rotated(ang)
+		n = Vector2(1.0, 0.0)
+	else:
+		n = n.normalized()
+	var on := c + Vector2(rx * n.x, ry * n.y).rotated(ang)
+	if param_on_span(info, param_at(info, on)):
+		return on
+	var a: Vector2 = info.get("start", on)
+	var b: Vector2 = info.get("end", on)
+	return a if p.distance_to(a) <= p.distance_to(b) else b
 
 
 ## "major" or "minor" according to which axis `p` is closer to.

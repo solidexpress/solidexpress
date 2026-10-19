@@ -216,8 +216,10 @@ Dictionary SxSketch::entity_info(const String& id) const {
             out["fit_points"] = pts;
             break;
         }
-        case sx::SketchEntityType::Ellipse: {
-            out["type"] = "ellipse";
+        case sx::SketchEntityType::Ellipse:
+        case sx::SketchEntityType::EllipticalArc: {
+            const bool arc = e->type == sx::SketchEntityType::EllipticalArc;
+            out["type"] = arc ? "elliptical_arc" : "ellipse";
             auto ax = sketch_->ellipse_axes(e->id);
             if (ax) {
                 const double cx = (*ax)[0], cy = (*ax)[1], rx = (*ax)[2], ry = (*ax)[3],
@@ -233,6 +235,12 @@ Dictionary SxSketch::entity_info(const String& id) const {
                 out["minor_end"] = Vector2(cx + ry * sa, cy - ry * ca);
                 out["start"] = out["major_start"];
                 out["end"] = out["major_end"];
+                if (arc && e->params.size() >= 11) {
+                    out["start_angle"] = p(5);
+                    out["end_angle"] = p(6);
+                    out["start"] = Vector2(p(7), p(8));
+                    out["end"] = Vector2(p(9), p(10));
+                }
             }
             break;
         }
@@ -275,6 +283,13 @@ bool SxSketch::set_entity_geometry(const String& id, const Dictionary& geo) {
             break;
         case sx::SketchEntityType::Ellipse:
             set_vec("center", 0, 1);
+            break;
+        case sx::SketchEntityType::EllipticalArc:
+            set_vec("center", 0, 1);
+            set_num("start_angle", 5);
+            set_num("end_angle", 6);
+            set_vec("start", 7, 8);
+            set_vec("end", 9, 10);
             break;
         case sx::SketchEntityType::Spline:
             if (geo.has("fit_points")) {
