@@ -74,7 +74,7 @@ func _ready() -> void:
 	_type_option.name = "MateType"
 	_type_option.tooltip_text = "How the two faces relate: a mate locks degrees of freedom, a joint leaves one free to drag"
 	_type_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for t in ["fastened", "plane_coincident", "plane_parallel", "concentric", "fixed"]:
+	for t in ["fastened", "plane_coincident", "plane_parallel", "concentric", "tangent", "fixed"]:
 		_type_option.add_item(t)
 	for t in JOINT_TYPES:
 		_type_option.add_item(t)

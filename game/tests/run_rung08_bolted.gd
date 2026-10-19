@@ -211,7 +211,7 @@ func _mate_bolts(ctx: FilmContext, kinds: Dictionary) -> void:
 		_add(panel, doc, "plane_coincident", pipe, flange_back, n1, nut_lo, "nut1-z-%d" % i)
 		_add(panel, doc, "concentric", pipe, hole, n2, nut_bore, "nut2-c-%d" % i)
 		_add(panel, doc, "plane_coincident", pipe2, flange_back2, n2, nut_lo, "nut2-z-%d" % i)
-		_add(panel, doc, "plane_coincident", n1, nut_hi, pin, collar, "pin-seat-%d" % i)
+		_add(panel, doc, "plane_coincident", n2, nut_hi, pin, collar, "pin-seat-%d" % i)
 	check(doc.solve_mates(), "solve bolted mates")
 	ctx.view.refresh()
 	await process_frame

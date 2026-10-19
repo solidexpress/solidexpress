@@ -440,6 +440,48 @@ TEST_CASE("concentric offset 0 colinearizes two cylinder instances", "[mates]") 
     }
 }
 
+TEST_CASE("tangent cylinder-to-plane gap is the radius", "[mates][tangent]") {
+    Document doc;
+    auto box = doc.add_body(shape::make_box(10, 80, 80), "Plate");
+    auto cyl = doc.add_body(shape::make_cylinder(22.5, 40), "Head");
+    auto inst = doc.add_instance(cyl, {100, 40, 0}, {0, 0, 0, 1}, "Head-1");
+    auto plane = planar_face_with_normal(doc, box, gp_Dir(1, 0, 0));
+    auto wall = cylindrical_face(doc, cyl);
+    REQUIRE(!plane.is_null());
+    REQUIRE(!wall.is_null());
+
+    Mate m;
+    m.type = MateType::Tangent;
+    m.face_a = plane;
+    m.instance_b = inst;
+    m.face_b = wall;
+    m.flip = false;
+    REQUIRE(!doc.add_mate(m).is_null());
+    REQUIRE(solve_mates(doc));
+
+    auto ax = mate_axis(doc, inst, wall);
+    auto pl = mate_plane(doc, {}, plane);
+    REQUIRE(ax);
+    REQUIRE(pl);
+    CHECK(std::abs(ax->dir.Dot(pl->normal)) < 1e-6);
+    double d = gp_Vec(pl->point, ax->point).Dot(gp_Vec(pl->normal));
+    CHECK(std::abs(std::abs(d) - 22.5) < 1e-6);
+
+    SECTION("flip chooses the other side") {
+        Mate flipped = doc.mates().front();
+        doc.remove_mate(flipped.id);
+        REQUIRE(doc.set_instance_transform(inst, {100, 40, 0}, {0, 0, 0, 1}));
+        flipped.flip = true;
+        REQUIRE(!doc.add_mate(flipped).is_null());
+        REQUIRE(solve_mates(doc));
+        auto ax2 = mate_axis(doc, inst, wall);
+        REQUIRE(ax2);
+        double d2 = gp_Vec(pl->point, ax2->point).Dot(gp_Vec(pl->normal));
+        CHECK(std::abs(std::abs(d2) - 22.5) < 1e-6);
+        CHECK(d2 * d < 0.0);
+    }
+}
+
 TEST_CASE("solver holds concentric and coincident in either order", "[mates][solver]") {
     auto build = [](bool concentric_first) {
         Document doc;

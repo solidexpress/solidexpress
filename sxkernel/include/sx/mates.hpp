@@ -34,6 +34,7 @@ enum class MateType {
     PlaneCoincident,  // face planes opposed, signed gap = offset
     PlaneParallel,    // face normals parallel; translation left free
     Concentric,       // cylindrical face axes colinear (axial slide free)
+    Tangent,          // cylinder axis ∥ plane, axis-to-plane distance = radius
     Fastened,         // Onshape-style: implicit connectors, all 6 DOF
 };
 
@@ -69,6 +70,7 @@ struct Mate {
     EntityId face_b;
     double offset = 0.0;  // PlaneCoincident: signed gap along A's normal
     bool flip = false;    // PlaneCoincident: align normals instead of opposing
+                          // Tangent: opposite side of the plane
     std::string name;
 };
 

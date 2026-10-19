@@ -2,6 +2,7 @@
 
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepTools.hxx>
+#include <GeomAbs_SurfaceType.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Ax2.hxx>
@@ -26,6 +27,7 @@ const char* to_string(MateType t) {
         case MateType::PlaneCoincident: return "plane_coincident";
         case MateType::PlaneParallel: return "plane_parallel";
         case MateType::Concentric: return "concentric";
+        case MateType::Tangent: return "tangent";
         case MateType::Fastened: return "fastened";
     }
     return "unknown";
@@ -36,6 +38,7 @@ MateType mate_type_from_string(const std::string& s) {
     if (s == "plane_coincident") return MateType::PlaneCoincident;
     if (s == "plane_parallel") return MateType::PlaneParallel;
     if (s == "concentric") return MateType::Concentric;
+    if (s == "tangent") return MateType::Tangent;
     if (s == "fastened") return MateType::Fastened;
     throw std::invalid_argument("unknown mate type: " + s);
 }
@@ -246,6 +249,61 @@ bool apply_mate(Document& doc, const Mate& m) {
             gp_Trsf corr = rotation_about(b->point, b->normal, target);
             return move_instance(doc, m.instance_b, corr);
         }
+        case MateType::Tangent: {
+            auto pl_a = mate_plane(doc, m.instance_a, m.face_a);
+            auto ax_b = mate_axis(doc, m.instance_b, m.face_b);
+            auto pl_b = mate_plane(doc, m.instance_b, m.face_b);
+            auto ax_a = mate_axis(doc, m.instance_a, m.face_a);
+            const bool cyl_on_b = bool(ax_b) && bool(pl_a);
+            const bool cyl_on_a = bool(ax_a) && bool(pl_b);
+            if (!cyl_on_b && !cyl_on_a) {
+                log::error("mate " + m.name + ": tangent needs a cylinder and a plane");
+                return false;
+            }
+            auto radius_of = [&](const EntityId& inst, const EntityId& face) -> std::optional<double> {
+                TopoDS_Shape f = reference_face(doc, inst, face);
+                if (f.IsNull()) return std::nullopt;
+                BRepAdaptor_Surface surf(TopoDS::Face(f));
+                if (surf.GetType() != GeomAbs_Cylinder) return std::nullopt;
+                return surf.Cylinder().Radius();
+            };
+            MatePlane pl = cyl_on_b ? *pl_a : *pl_b;
+            MateAxis ax = cyl_on_b ? *ax_b : *ax_a;
+            auto Ropt = radius_of(cyl_on_b ? m.instance_b : m.instance_a,
+                                  cyl_on_b ? m.face_b : m.face_a);
+            if (!Ropt) return false;
+            const double R = *Ropt;
+            gp_Vec n(pl.normal);
+            gp_Vec axis(ax.dir);
+            gp_Pnt rot_about = cyl_on_b ? ax.point : pl.point;
+            gp_Dir rot_from = cyl_on_b ? ax.dir : pl.normal;
+            gp_Dir rot_to = rot_from;
+            if (cyl_on_b) {
+                gp_Vec axis_in_plane = axis - n * axis.Dot(n);
+                if (axis_in_plane.Magnitude() < 1e-9) {
+                    axis_in_plane = gp_Vec(pl.normal).Crossed(gp_Vec(1, 0, 0));
+                    if (axis_in_plane.Magnitude() < 1e-9)
+                        axis_in_plane = gp_Vec(pl.normal).Crossed(gp_Vec(0, 1, 0));
+                }
+                rot_to = gp_Dir(axis_in_plane);
+                if (axis.Dot(gp_Vec(rot_to)) < 0.0) rot_to.Reverse();
+            } else {
+                gp_Vec n_perp = n - gp_Vec(ax.dir) * n.Dot(gp_Vec(ax.dir));
+                if (n_perp.Magnitude() < 1e-9) n_perp = gp_Vec(ax.dir).Crossed(gp_Vec(1, 0, 0));
+                if (n_perp.Magnitude() < 1e-9) n_perp = gp_Vec(ax.dir).Crossed(gp_Vec(0, 1, 0));
+                rot_to = gp_Dir(n_perp);
+                if (n.Dot(gp_Vec(rot_to)) < 0.0) rot_to.Reverse();
+            }
+            gp_Trsf corr = rotation_about(rot_about, rot_from, rot_to);
+            gp_Pnt axis_pt = ax.point.Transformed(corr);
+            gp_Pnt plane_pt = pl.point.Transformed(cyl_on_b ? gp_Trsf() : corr);
+            gp_Vec n_now = cyl_on_b ? n : gp_Vec(rot_to);
+            double d = gp_Vec(plane_pt, axis_pt).Dot(n_now);
+            double want = (m.flip ? -R : R) + m.offset;
+            gp_Trsf shift;
+            shift.SetTranslation(n_now * (want - d));
+            return move_instance(doc, m.instance_b, shift * corr);
+        }
         case MateType::Concentric: {
             auto a = mate_axis(doc, m.instance_a, m.face_a);
             auto b = mate_axis(doc, m.instance_b, m.face_b);
@@ -254,7 +312,11 @@ bool apply_mate(Document& doc, const Mate& m) {
                 return false;
             }
             gp_Dir target = a->dir;
-            if (gp_Vec(b->dir).Dot(gp_Vec(target)) < 0.0) target.Reverse();
+            if (m.flip) {
+                if (gp_Vec(b->dir).Dot(gp_Vec(target)) > 0.0) target.Reverse();
+            } else if (gp_Vec(b->dir).Dot(gp_Vec(target)) < 0.0) {
+                target.Reverse();
+            }
             gp_Trsf corr = rotation_about(b->point, b->dir, target);
             // After rotation b->point is unchanged; translate its radial
             // offset from axis A to zero (axial slide stays free).
