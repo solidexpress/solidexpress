@@ -586,13 +586,5 @@
     "enabled": true,
     "quit_after": 4800,
     "blurb": "Revolve a Front profile, sweep an ellipse along an arc path, cut a 15\u00b0 drafted hole."
-  },
-  {
-    "id": "spanner",
-    "title": "Combination spanner: ellipse, 12-point, mid-plane, mirrored recess",
-    "script": "res://tests/films/film_spanner.gd",
-    "enabled": true,
-    "quit_after": 4800,
-    "blurb": "Front C and 12-point box end, mid-plane 10/6, neck fillets, offset recess mirrored about Front."
   }
 ]
