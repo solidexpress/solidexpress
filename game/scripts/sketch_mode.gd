@@ -2976,6 +2976,7 @@ func begin_drag(pos2: Vector2) -> void:
 		"grab_pos": pos2,
 		"orig_info": info.duplicate(true),
 		"preview_info": info.duplicate(true),
+		"orig_snap": sketch.snapshot(),
 	}
 	_update_preview()
 
@@ -3001,7 +3002,7 @@ func cancel_drag() -> void:
 	if _drag.is_empty():
 		return
 	if sketch != null:
-		sketch.set_entity_geometry(_drag["id"], _drag["orig_info"])
+		_restore_drag_snapshot()
 		run_solve()
 	_drag.clear()
 	_redraw()
@@ -3014,13 +3015,26 @@ func end_drag() -> void:
 	if _drag.is_empty():
 		return
 	if last_solve_status == "failed":
-		sketch.set_entity_geometry(_drag["id"], _drag["orig_info"])
+		_restore_drag_snapshot()
 		run_solve()
 		status.emit("Drag reverted: constraints could not be satisfied")
 	_drag.clear()
 	_redraw()
 	_rebuild_dimension_labels()
 	_update_preview()
+
+
+func _restore_drag_snapshot() -> void:
+	if sketch == null:
+		return
+	var snap: String = str(_drag.get("orig_snap", ""))
+	if snap != "" and sketch.restore(snap):
+		return
+	var orig: Dictionary = _drag.get("orig_info", {})
+	if orig.has("params"):
+		sketch.set_entity_geometry(_drag["id"], {"params": orig["params"]})
+	else:
+		sketch.set_entity_geometry(_drag["id"], orig)
 
 
 func _drag_preview_at(pos2: Vector2) -> Dictionary:
@@ -8318,29 +8332,51 @@ func paste_entities(offset := Vector2(10, 10)) -> Array:
 		return []
 	var out: Array = []
 	for info in _entity_clipboard:
+		var p: PackedFloat64Array = info.get("params", PackedFloat64Array())
 		match str(info.get("type", "")):
 			"line":
-				var a: Vector2 = info["start"] + offset
-				var b: Vector2 = info["end"] + offset
-				out.append(sketch.add_line(a.x, a.y, b.x, b.y))
+				if p.size() >= 4:
+					out.append(sketch.add_line(p[0] + offset.x, p[1] + offset.y,
+							p[2] + offset.x, p[3] + offset.y))
+				else:
+					var a: Vector2 = info["start"] + offset
+					var b: Vector2 = info["end"] + offset
+					out.append(sketch.add_line(a.x, a.y, b.x, b.y))
 			"circle":
-				var c: Vector2 = info["center"] + offset
-				out.append(sketch.add_circle(c.x, c.y, float(info["radius"])))
+				if p.size() >= 3:
+					out.append(sketch.add_circle(p[0] + offset.x, p[1] + offset.y, p[2]))
+				else:
+					var c: Vector2 = info["center"] + offset
+					out.append(sketch.add_circle(c.x, c.y, float(info["radius"])))
 			"arc":
-				var ac: Vector2 = info["center"] + offset
-				out.append(sketch.add_arc(ac.x, ac.y, float(info.get("radius", 1)),
-						float(info.get("start_angle", 0)), float(info.get("end_angle", PI))))
+				if p.size() >= 5:
+					out.append(sketch.add_arc(p[0] + offset.x, p[1] + offset.y, p[2], p[3], p[4]))
+				else:
+					var ac: Vector2 = info["center"] + offset
+					out.append(sketch.add_arc(ac.x, ac.y, float(info.get("radius", 1)),
+							float(info.get("start_angle", 0)), float(info.get("end_angle", PI))))
 			"point":
-				var p: Vector2 = info.get("position", info.get("point", Vector2.ZERO)) + offset
-				out.append(sketch.add_point(p.x, p.y))
+				if p.size() >= 2:
+					out.append(sketch.add_point(p[0] + offset.x, p[1] + offset.y))
+				else:
+					var pt: Vector2 = info.get("position", info.get("point", Vector2.ZERO)) + offset
+					out.append(sketch.add_point(pt.x, pt.y))
 			"ellipse":
-				var ec: Vector2 = info.get("center", Vector2.ZERO) + offset
-				out.append(sketch.add_ellipse(ec.x, ec.y, float(info.get("rx", 1)),
-						float(info.get("ry", 1)), float(info.get("angle", 0))))
+				if p.size() >= 5:
+					out.append(sketch.add_ellipse(p[0] + offset.x, p[1] + offset.y, p[2], p[3], p[4]))
+				else:
+					var ec: Vector2 = info.get("center", Vector2.ZERO) + offset
+					out.append(sketch.add_ellipse(ec.x, ec.y, float(info.get("rx", 1)),
+							float(info.get("ry", 1)), float(info.get("angle", 0))))
 			"spline":
 				var fits := PackedVector2Array()
-				for fp in info.get("fit_points", []):
-					fits.append((fp as Vector2) + offset)
+				if p.size() >= 5:
+					var n := int(p[0])
+					for i in range(n):
+						fits.append(Vector2(p[1 + 2 * i] + offset.x, p[2 + 2 * i] + offset.y))
+				else:
+					for fp in info.get("fit_points", []):
+						fits.append((fp as Vector2) + offset)
 				if fits.size() >= 2:
 					out.append(sketch.add_spline(fits))
 	_entity_clipboard_cut = false

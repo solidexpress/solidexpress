@@ -6,6 +6,7 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_float64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 
@@ -229,12 +230,12 @@ public:
     // "simple" | "counterbore" | "countersink". depth <= 0 = through-all.
     godot::String graph_add_hole(const godot::String& target_fid, const godot::String& type,
                                  const godot::Vector3& position, const godot::Vector3& direction,
-                                 float diameter, float depth, float cb_diameter, float cb_depth,
-                                 float cs_diameter, float cs_angle_deg);
+                                 double diameter, double depth, double cb_diameter, double cb_depth,
+                                 double cs_diameter, double cs_angle_deg);
     // Import a STEP solid as a timeline BASE feature (index 0, uniform scale).
-    godot::String graph_add_import_step(const godot::String& path, float scale);
+    godot::String graph_add_import_step(const godot::String& path, double scale);
     // Import an STL mesh as a timeline BASE feature (uniform scale).
-    godot::String graph_add_import_stl(const godot::String& path, float scale);
+    godot::String graph_add_import_stl(const godot::String& path, double scale);
     // Body-level boolean on the timeline. op: "fuse" | "cut" | "common".
     // Target keeps the result; tool feature's body is consumed on regenerate.
     godot::String graph_add_boolean(const godot::String& op, const godot::String& target_fid,
@@ -354,9 +355,9 @@ public:
                                         const godot::Vector3& direction);
     godot::String graph_add_holes(const godot::String& target_fid, const godot::String& type,
                                   const godot::PackedVector3Array& positions,
-                                  const godot::Vector3& direction, float diameter, float depth,
-                                  float cb_diameter, float cb_depth, float cs_diameter,
-                                  float cs_angle_deg);
+                                  const godot::Vector3& direction, double diameter, double depth,
+                                  double cb_diameter, double cb_depth, double cs_diameter,
+                                  double cs_angle_deg);
     godot::String graph_add_shell(const godot::String& target_fid,
                                   const godot::PackedStringArray& face_ids, double thickness);
     godot::String graph_add_draft(const godot::String& target_fid,
@@ -370,7 +371,8 @@ public:
     godot::String graph_add_mirror(const godot::String& target_fid,
                                    const godot::Vector3& plane_point,
                                    const godot::Vector3& plane_normal,
-                                   const godot::PackedStringArray& source_feature_ids = {});
+                                   const godot::PackedStringArray& source_feature_ids = {},
+                                   const godot::PackedFloat64Array& exact_plane = {});
     godot::String graph_add_linear_pattern(const godot::String& target_fid,
                                            const godot::Vector3& direction, double spacing,
                                            int count);
@@ -378,12 +380,12 @@ public:
                                               const godot::Vector3& axis_point,
                                               const godot::Vector3& axis_dir, int count,
                                               double total_angle);
-    godot::String graph_add_thread(const godot::String& target_fid, float major_radius,
-                                   float pitch, float turns, float depth, float profile_angle_deg,
+    godot::String graph_add_thread(const godot::String& target_fid, double major_radius,
+                                   double pitch, double turns, double depth, double profile_angle_deg,
                                    const godot::Vector3& axis_point,
                                    const godot::Vector3& axis_dir);
-    godot::String graph_add_helix(float profile_radius, float helix_radius, float pitch,
-                                  float turns, bool left_handed, const godot::Vector3& axis_point,
+    godot::String graph_add_helix(double profile_radius, double helix_radius, double pitch,
+                                  double turns, bool left_handed, const godot::Vector3& axis_point,
                                   const godot::Vector3& axis_dir);
     double interference_volume(const godot::String& body_a, const godot::String& body_b) const;
     godot::String import_dxf(const godot::String& path);

@@ -1,6 +1,7 @@
 #include "sx_sketch.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/packed_float64_array.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 
 #include <algorithm>
@@ -193,6 +194,10 @@ Dictionary SxSketch::entity_info(const String& id) const {
     const sx::SketchEntity* e = sketch_->entity(parse_id(id));
     if (!e) return out;
     auto p = [&](size_t i) { return sketch_->param(e->params[i]); };
+    PackedFloat64Array params;
+    params.resize(static_cast<int>(e->params.size()));
+    for (int i = 0; i < params.size(); ++i) params[i] = p(static_cast<size_t>(i));
+    out["params"] = params;
     out["construction"] = e->construction;
     out["external"] = e->external;
     out["projected_from"] = to_gd(e->projected_from);
@@ -335,6 +340,17 @@ bool SxSketch::set_entity_geometry(const String& id, const Dictionary& geo) {
     const sx::SketchEntity* e = sketch_->entity(parse_id(id));
     if (!e) return false;
     auto set = [&](size_t i, double v) { sketch_->param_mut(e->params[i]) = v; };
+    const bool typed = geo.has("start") || geo.has("end") || geo.has("center")
+            || geo.has("position") || geo.has("radius") || geo.has("fit_index")
+            || geo.has("pole_index") || geo.has("fit_points") || geo.has("start_tangent")
+            || geo.has("end_tangent");
+    if (!typed && geo.has("params")
+        && geo["params"].get_type() == Variant::PACKED_FLOAT64_ARRAY) {
+        PackedFloat64Array a = geo["params"];
+        const int n = static_cast<int>(std::min(static_cast<size_t>(a.size()), e->params.size()));
+        for (int i = 0; i < n; ++i) set(static_cast<size_t>(i), a[i]);
+        return true;
+    }
     auto set_vec = [&](const char* key, size_t ix, size_t iy) {
         if (!geo.has(key)) return;
         Vector2 v = geo[key];
