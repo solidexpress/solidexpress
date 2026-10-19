@@ -7,7 +7,7 @@ const FilmHarness = preload("res://tests/lib/film_harness.gd")
 const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const SpannerFixture = preload("res://tests/lib/spanner_fixture.gd")
 
-const FEATURES := ""
+const FEATURES := "sketch 1, extrude 2, extrude 3, sketch 4, extrude 5, sketch 6, extrude 7, fillet 8, fillet 9, sketch 10, extrude 11, fillet 12, mirror 13"
 const BBOX_TOL := 0.2
 
 
