@@ -1,3 +1,0 @@
-script=tests/run_film_spanner_tests.gd
-tier=full
-timeout=480
