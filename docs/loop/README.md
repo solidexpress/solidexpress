@@ -21,6 +21,10 @@ What remains here is the live contract, not the per-round plans:
 - `rung-07-result.md` — confirm pass (`tools/confirm_all.sh` counts)
 - `rung-07-failing.md` — handoff: checklist rows still red (none at `45e96e3`)
 - `walk_rung07.py` listed with the other walks
+- `rung-08-plan.md` — rung 8 (UBC ELEC391 Ex 4 pipeline assembly): 25 work packages, 48-row checklist, exactness/spline track
+- `rung-08-checklist.md` — 48 walk rows
+- `rung-08-prep.md` — pre-plan notes (frames win over prep)
+- `walk_rung08.py` listed with the other walks
 - `post-rung-03-result.md` — confirm pass after the rung-3 layering pass (headless 214)
 - `post-rung-04-result.md` — confirm pass after region pick, click budget, hexkey film
 - `post-rung-05-result.md` — confirm pass after the flanged-pipe film (headless 229)
@@ -28,4 +32,4 @@ What remains here is the live contract, not the per-round plans:
 - `post-rung-07-cleanup.md` — layering pass after rung 7 (Part B combination-spanner film parked; the next cleanup deletes this file)
 - `post-rung-07-result.md` — confirm pass after Part A (Part B parked; headless 244)
 
-The walks are `tools/walk_rung01.py` (77 rows), `tools/walk_rung02.py` (44 rows, the Lesson 2 box), `tools/walk_rung03.py` (46 rows, Lesson 1 parts), `tools/walk_rung04.py` (32 rows, hex key), `tools/walk_rung05.py` (36 rows, pipe section), `tools/walk_rung06.py` (46 rows, candlestick), and `tools/walk_rung07.py` (46 rows, combination spanner). A walk is a `Rung` in `tools/walk/rung.py`: rows, chunks, checkpoints, checker, expectations. History of deleted per-round plans: `git log --diff-filter=D --name-only -- docs/loop`. `tools/gui_click_probe.sh` stays: it sends real X11 clicks, which the in-engine bridge does not; it is the dead-first-click probe from re-PLAN 17.
+The walks are `tools/walk_rung01.py` (77 rows), `tools/walk_rung02.py` (44 rows, the Lesson 2 box), `tools/walk_rung03.py` (46 rows, Lesson 1 parts), `tools/walk_rung04.py` (32 rows, hex key), `tools/walk_rung05.py` (36 rows, pipe section), `tools/walk_rung06.py` (46 rows, candlestick), `tools/walk_rung07.py` (46 rows, combination spanner), and `tools/walk_rung08.py` (48 rows, pipeline assembly). A walk is a `Rung` in `tools/walk/rung.py`: rows, chunks, checkpoints, checker, expectations. History of deleted per-round plans: `git log --diff-filter=D --name-only -- docs/loop`. `tools/gui_click_probe.sh` stays: it sends real X11 clicks, which the in-engine bridge does not; it is the dead-first-click probe from re-PLAN 17.

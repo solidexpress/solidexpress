@@ -144,6 +144,10 @@ func _commands() -> Dictionary:
 		"dialog_dismiss": {call=_cmd_dialog_dismiss, frames=2, reports=true},
 		"finish_extrude": {call=_cmd_finish_extrude, frames=8, reports=true},
 		"save_path": {call=_cmd_save_path, frames=2, reports=true},
+		"instance_nudge": {call=_cmd_instance_nudge, frames=2, reports=true},
+		"instance_transform": {call=_cmd_instance_transform, frames=2, reports=true},
+		"mate_remove": {call=_cmd_mate_remove, frames=2, reports=true},
+		"export_body": {call=_cmd_export_body, frames=4, reports=true},
 	}
 
 
@@ -207,6 +211,130 @@ func _cmd_mate_add(req: Dictionary) -> Dictionary:
 	var solved: bool = view.doc.solve_mates()
 	view.refresh()
 	return {"target": "mate:Add", "id": mid, "solved": solved}
+
+
+func _cmd_instance_select(iid: String) -> Dictionary:
+	var view = _main().get("view")
+	if view == null or not view.has_method("select_instance"):
+		return {"error": "select instance unavailable"}
+	view.select_instance(iid)
+	return {"target": "instance:select", "id": iid}
+
+
+func _cmd_instance_fixed(iid: String, make_fixed: bool) -> Dictionary:
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	if not view.doc.set_instance_fixed(iid, make_fixed):
+		return {"error": "Fix/Float refused", "id": iid, "fixed": make_fixed}
+	view.refresh()
+	var panel = _main().get("assembly_panel")
+	if panel != null and panel.has_method("refresh_lists"):
+		panel.refresh_lists()
+	return {"target": "instance:fixed", "id": iid, "fixed": make_fixed}
+
+
+func _cmd_instance_nudge(req: Dictionary) -> Dictionary:
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	var iid := str(req.get("id", "")).strip_edges()
+	var inst := _instance_dict(view, iid)
+	if inst.is_empty():
+		return {"error": "instance not found"}
+	var t: Vector3 = inst.get("translation", Vector3.ZERO)
+	var delta := _vec3(req.get("delta", [0, 0, 0]))
+	var axis: Vector3 = inst.get("rotation_axis", Vector3(0, 0, 1))
+	var ang := float(inst.get("rotation_angle_deg", 0.0))
+	var ok: bool = view.doc.set_instance_transform(iid, t + delta, axis, ang)
+	view.refresh()
+	var now := _instance_dict(view, iid)
+	if not ok:
+		return {
+			"error": "instance stuck while Fixed",
+			"moved": false,
+			"translation": _v3(now.get("translation", t)),
+			"id": iid,
+		}
+	return {
+		"moved": ok,
+		"translation": _v3(now.get("translation", t)),
+		"id": iid,
+	}
+
+
+func _cmd_instance_transform(req: Dictionary) -> Dictionary:
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	var iid := str(req.get("id", "")).strip_edges()
+	var inst := _instance_dict(view, iid)
+	if inst.is_empty():
+		return {"error": "instance not found"}
+	var translation := _vec3(req.get("translation", [0, 0, 0]))
+	var axis := _vec3(req.get("axis", [0, 0, 1]))
+	if axis.length_squared() < 1e-12:
+		axis = Vector3(0, 0, 1)
+	var ang := float(req.get("angle", req.get("rotation_angle_deg", 0.0)))
+	var ok: bool = view.doc.set_instance_transform(iid, translation, axis, ang)
+	view.refresh()
+	var now := _instance_dict(view, iid)
+	if not ok:
+		return {
+			"error": "instance stuck while Fixed",
+			"moved": false,
+			"translation": _v3(now.get("translation", translation)),
+			"id": iid,
+		}
+	return {
+		"moved": ok,
+		"translation": _v3(now.get("translation", translation)),
+		"rotation_axis": _v3(now.get("rotation_axis", axis)),
+		"rotation_angle_deg": float(now.get("rotation_angle_deg", ang)),
+		"id": iid,
+	}
+
+
+func _cmd_mate_remove(req: Dictionary) -> Dictionary:
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	var mid := str(req.get("id", "")).strip_edges()
+	if mid == "":
+		return {"error": "mate_remove needs id"}
+	if not view.doc.remove_mate(mid):
+		return {"error": "mate:Remove rejected", "id": mid}
+	view.refresh()
+	var panel = _main().get("assembly_panel")
+	if panel != null and panel.has_method("refresh_lists"):
+		panel.refresh_lists()
+	return {"target": "mate:Remove", "id": mid}
+
+
+func _cmd_export_body(req: Dictionary) -> Dictionary:
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	var body := str(req.get("body", req.get("id", ""))).strip_edges()
+	var path := str(req.get("path", "")).strip_edges()
+	if body == "" or path == "":
+		return {"error": "export_body needs body and path"}
+	if path.begins_with("user://") or path.begins_with("res://"):
+		return {"error": "export_body needs a globalized OS path"}
+	if not view.doc.has_method("export_3mf_for_body"):
+		return {"error": "export_3mf_for_body unavailable"}
+	if not view.doc.export_3mf_for_body(body, path):
+		return {"error": "export_3mf_for_body failed", "body": body, "path": path}
+	return {"path": path, "body": body}
+
+
+func _instance_dict(view, iid: String) -> Dictionary:
+	if view == null or view.doc == null:
+		return {}
+	for inst in view.doc.instance_list():
+		if str(inst.get("id", "")) == iid:
+			return inst
+	return {}
 
 
 ## Same path as the Godot offset suite: finish_extrude with empty contours.
@@ -400,6 +528,21 @@ func _cmd_pointer(req: Dictionary, kind: String) -> Dictionary:
 		return {"error": "Edit Component unavailable"}
 	if kind != "hover" and named == "mate:Add":
 		return _cmd_mate_add(req)
+	if kind != "hover" and named == "mate:Solve":
+		var view = _main().get("view")
+		if view == null or view.doc == null:
+			return {"error": "no document"}
+		var solved: bool = view.doc.solve_mates()
+		view.refresh()
+		return {"target": "mate:Solve", "solved": solved}
+	if kind != "hover" and named.begins_with("mate:Remove:"):
+		return _cmd_mate_remove({"id": named.substr("mate:Remove:".length())})
+	if kind != "hover" and named.begins_with("instance:select:"):
+		return _cmd_instance_select(named.substr("instance:select:".length()))
+	if kind != "hover" and named.begins_with("instance:fix:"):
+		return _cmd_instance_fixed(named.substr("instance:fix:".length()), true)
+	if kind != "hover" and named.begins_with("instance:float:"):
+		return _cmd_instance_fixed(named.substr("instance:float:".length()), false)
 	if kind != "hover" and req.has("datum"):
 		var name := str(req["datum"])
 		var ix = _main().get("interaction")
@@ -1616,6 +1759,9 @@ func _state_full() -> Dictionary:
 		"kind": _document_kind(view),
 		"datums": _datums_state(view),
 		"edit_component": _edit_component_state(main),
+		"instances": _instances_state(view),
+		"mates": _mates_state(view),
+		"hidden_bodies": _hidden_bodies(view),
 	}
 
 
@@ -1636,6 +1782,58 @@ func _edit_component_state(main) -> Dictionary:
 	if ec == null or not ec.has_method("snapshot"):
 		return {"on": false, "pending": false, "instance": "", "source": ""}
 	return ec.snapshot()
+
+
+func _instances_state(view) -> Array:
+	var out: Array = []
+	if view == null or view.doc == null or not view.doc.has_method("instance_list"):
+		return out
+	for inst in view.doc.instance_list():
+		if not (inst is Dictionary):
+			continue
+		var t: Vector3 = inst.get("translation", Vector3.ZERO)
+		out.append({
+			"id": str(inst.get("id", "")),
+			"name": str(inst.get("name", "")),
+			"source_body": str(inst.get("source_body", "")),
+			"source_path": str(inst.get("source_path", "")),
+			"translation": _v3(t),
+			"rotation_axis": _v3(inst.get("rotation_axis", Vector3(0, 0, 1))),
+			"rotation_angle_deg": float(inst.get("rotation_angle_deg", 0.0)),
+			"fixed": bool(inst.get("fixed", false)),
+			"screen": _v2(_model_to_screen(t)),
+		})
+	return out
+
+
+func _mates_state(view) -> Array:
+	var out: Array = []
+	if view == null or view.doc == null or not view.doc.has_method("mate_list"):
+		return out
+	for mate in view.doc.mate_list():
+		if not (mate is Dictionary):
+			continue
+		out.append({
+			"id": str(mate.get("id", "")),
+			"type": str(mate.get("type", "")),
+			"instance_a": str(mate.get("instance_a", "")),
+			"face_a": str(mate.get("face_a", "")),
+			"instance_b": str(mate.get("instance_b", "")),
+			"face_b": str(mate.get("face_b", "")),
+			"offset": float(mate.get("offset", 0.0)),
+			"flip": bool(mate.get("flip", false)),
+			"name": str(mate.get("name", "")),
+		})
+	return out
+
+
+func _hidden_bodies(view) -> Array:
+	var out: Array = []
+	if view == null or not (view is DocumentView):
+		return out
+	for bid in (view as DocumentView).hidden_bodies.keys():
+		out.append(str(bid))
+	return out
 
 
 func _datums_state(view) -> Array:
@@ -2191,6 +2389,7 @@ func _bodies_state(view) -> Array:
 		var bb: Dictionary = view.doc.measure_bbox(bid)
 		var rec := {"id": str(bid), "name": str(view.doc.body_name(bid))}
 		rec["volume"] = float(view.doc.body_volume(bid))
+		rec["hidden"] = view is DocumentView and (view as DocumentView).hidden_bodies.has(str(bid))
 		if bb.has("min") and bb.has("max"):
 			rec["min"] = _v3(bb["min"])
 			rec["max"] = _v3(bb["max"])
@@ -2244,7 +2443,7 @@ func _face_record(view: DocumentView, body: String, fid: String) -> Dictionary:
 	var pick := FacePick.point(view.doc, fid)
 	if pick == Vector3.ZERO:
 		pick = centre
-	return {
+	var rec := {
 		"id": fid,
 		"body": body,
 		"centre": _v3(centre),
@@ -2254,6 +2453,16 @@ func _face_record(view: DocumentView, body: String, fid: String) -> Dictionary:
 		"pick": _v3(pick),
 		"plane": snappedf(FacePick.plane_offset(normal, pick), 0.001),
 	}
+	var conn: Dictionary = view.doc.implicit_connector("", fid) if view.doc.has_method("implicit_connector") else {}
+	if not conn.is_empty():
+		rec["geom"] = str(conn.get("name", ""))
+		rec["origin"] = _v3(conn.get("origin", Vector3.ZERO))
+		rec["z_dir"] = _v3(conn.get("z_dir", Vector3.ZERO))
+	var bb: Dictionary = view.doc.measure_bbox(fid)
+	if not bb.is_empty():
+		var ext: Vector3 = (bb["max"] as Vector3) - (bb["min"] as Vector3)
+		rec["ext"] = _v3(ext)
+	return rec
 
 
 ## Click a point on the face through the camera at click time, not a stored pixel.

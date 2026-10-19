@@ -16,6 +16,7 @@ import walk.app04  # noqa: E402, F401
 import walk.app05  # noqa: E402, F401
 import walk.app06  # noqa: E402, F401
 import walk.app07  # noqa: E402, F401
+import walk.app08  # noqa: E402, F401
 from walk import registry  # noqa: E402
 from walk.expect import CHECKS, State, gate  # noqa: E402
 from walk.rung import Expect  # noqa: E402
@@ -138,6 +139,24 @@ FROZEN_CHUNKS_07 = {
     4: FROZEN_ROWS_07[33:46],
 }
 
+# 48 checklist ids. Chunks are the slices in docs/loop/rung-08-plan.md.
+FROZEN_ROWS_08 = [
+    "N1", "A1", "L1", "A2", "A3", "A4", "L2", "A5", "N2",
+    "A6", "A7", "A8", "A9", "A10", "A11", "L3",
+    "A12", "A13", "A14", "L4", "A15",
+    "N3", "A16", "L5", "A17", "A18", "A19",
+    "A20", "A21", "A22", "A23", "L6", "A24", "A25",
+    "A26", "A27", "A28", "A29", "A30", "A31", "L7", "A32", "A33", "A34", "N4", "A35", "A36", "A37",
+]
+FROZEN_CHUNKS_08 = {
+    1: FROZEN_ROWS_08[0:9],
+    2: FROZEN_ROWS_08[9:16],
+    3: FROZEN_ROWS_08[16:21],
+    4: FROZEN_ROWS_08[21:27],
+    5: FROZEN_ROWS_08[27:34],
+    6: FROZEN_ROWS_08[34:48],
+}
+
 
 class WalkRegistryTests(unittest.TestCase):
     def test_frozen_id_list_is_registry_order(self) -> None:
@@ -246,6 +265,22 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertEqual(rung.checker, "check_rung07.py")
         self.assertEqual(rung.checkpoints[3], "sketch.sxp")
         self.assertEqual(rung.checkpoints[4], "neck.sxp")
+
+    def test_rung8_rows_and_chunks(self) -> None:
+        rung = getattr(registry, "RUNG8", None)
+        self.assertIsNotNone(rung, "rung 8 has no rows")
+        self.assertEqual(list(rung.rows), FROZEN_ROWS_08)
+        self.assertEqual({n: list(rows) for n, rows in rung.chunks.items()}, FROZEN_CHUNKS_08)
+        self.assertEqual(len(FROZEN_ROWS_08), 48)
+        for rid in FROZEN_ROWS_08:
+            self.assertIn(rid, rung.handlers)
+            self.assertTrue(callable(rung.handlers[rid]))
+            self.assertEqual(rung.handlers[rid].__name__, "row_" + rid)
+        self.assertEqual(rung.checker, "check_rung08.py")
+        self.assertEqual(rung.checkpoints[2], "inserted.sxp")
+        self.assertEqual(rung.checkpoints[3], "pin.sxp")
+        self.assertEqual(rung.checkpoints[5], "pipes.sxp")
+        self.assertEqual(rung.checkpoints[6], "bolted.sxp")
 
     def test_gate_walks_the_check_table(self) -> None:
         self.assertEqual(list(CHECKS), ["mode", "sketch", "bodies", "bbox", "timeline", "finish_bar"])

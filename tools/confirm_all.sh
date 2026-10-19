@@ -105,6 +105,7 @@ start_xvfb :24
 start_xvfb :25
 start_xvfb :26
 start_xvfb :27
+start_xvfb :28
 
 SX_AUTOMATION=1 python3 tools/walk_rung01.py --a15 --port 47321 --display :21 \
   --resolution 1280x800 --out "${OUT}/walk1" >"${OUT}/walk1.stdout" 2>&1 &
@@ -127,6 +128,9 @@ p6=$!
 SX_AUTOMATION=1 python3 tools/walk_rung07.py --a15 --port 47327 --display :27 \
   --resolution 1280x800 --out "${OUT}/walk7" >"${OUT}/walk7.stdout" 2>&1 &
 p7=$!
+SX_AUTOMATION=1 python3 tools/walk_rung08.py --a15 --port 47328 --display :28 \
+  --resolution 1280x800 --out "${OUT}/walk8" >"${OUT}/walk8.stdout" 2>&1 &
+p8=$!
 set +e
 wait "${p1}"; echo $? >"${OUT}/walk1.rc"
 wait "${p2}"; echo $? >"${OUT}/walk2.rc"
@@ -135,6 +139,7 @@ wait "${p4}"; echo $? >"${OUT}/walk4.rc"
 wait "${p5}"; echo $? >"${OUT}/walk5.rc"
 wait "${p6}"; echo $? >"${OUT}/walk6.rc"
 wait "${p7}"; echo $? >"${OUT}/walk7.rc"
+wait "${p8}"; echo $? >"${OUT}/walk8.rc"
 set -e
 
 if [[ -f "${OUT}/xvfb-21.pid" ]]; then kill "$(cat "${OUT}/xvfb-21.pid")" 2>/dev/null || true; fi
@@ -144,6 +149,7 @@ if [[ -f "${OUT}/xvfb-24.pid" ]]; then kill "$(cat "${OUT}/xvfb-24.pid")" 2>/dev
 if [[ -f "${OUT}/xvfb-25.pid" ]]; then kill "$(cat "${OUT}/xvfb-25.pid")" 2>/dev/null || true; fi
 if [[ -f "${OUT}/xvfb-26.pid" ]]; then kill "$(cat "${OUT}/xvfb-26.pid")" 2>/dev/null || true; fi
 if [[ -f "${OUT}/xvfb-27.pid" ]]; then kill "$(cat "${OUT}/xvfb-27.pid")" 2>/dev/null || true; fi
+if [[ -f "${OUT}/xvfb-28.pid" ]]; then kill "$(cat "${OUT}/xvfb-28.pid")" 2>/dev/null || true; fi
 
 python3 - "${OUT}" <<'PY'
 import sys
@@ -229,6 +235,8 @@ rows = [
     check_tail("walk6", "check-final-final.txt"),
     f"rung7 {summary('walk7')}",
     check_tail("walk7", "check-final-final.txt"),
+    f"rung8 {summary('walk8')}",
+    check_tail("walk8", "check-final-final.txt"),
 ]
 print("\n".join(rows))
 PY

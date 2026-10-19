@@ -60,6 +60,14 @@ Stable ids (node meta `sx_auto`) cover the sketch rail (`rail:Circle`, `rail:Jaw
 | `edit:Component` | Toggle Edit Component off (finalize) or refuse if nothing is being edited. Banner CheckButton `edit:Component`. |
 | `state.edit_component` | `{on, pending, instance, source}` — in-context New Part session. |
 | `mate:Add` | Add a mate by ids: `type`, `instance_a` ("" = ground), `face_a`, `instance_b`, `face_b`, optional `offset` (default 0), `flip`, `name`. Concentric offset 0 is valid. `type=tangent` is cylinder-to-plane (axis ∥ plane, distance = radius). Empty `face_b` / `instance_b` refuses. Solves after add. |
+| `mate:Solve` | Re-apply every mate (`solve_mates`). |
+| `mate:Remove:<id>` | Delete one mate by id. |
+| `state.instances` | Component instances: `id`, `name`, `source_body`, `source_path`, `translation`, `rotation_axis`, `rotation_angle_deg`, `fixed`. |
+| `state.mates` | Mate list: `id`, `type`, `instance_a`, `face_a`, `instance_b`, `face_b`, `offset`, `flip`, `name`. |
+| `instance:select:<id>` / `instance:fix:<id>` / `instance:float:<id>` | Select, Fix, or Float one instance. |
+| `instance_nudge` | Translate an instance by `delta=[dx,dy,dz]`. Refuses when Fixed. |
+| `instance_transform` | Set instance translation + axis/angle. Refuses when Fixed. |
+| `export_body` | `export_3mf_for_body` of one source (`body`, `path`). Pin-only 3MF. |
 | `state.datums` | Origin plane names (`Front`, `Top`, `Right`). |
 | `state.features[].role` | Sketch pad role: `profile`, `rail`, or `unknown`. |
 | `sweep:Boss` | Swept Boss. Arms profile then path picks. Ctrl+click pads still sweep. |

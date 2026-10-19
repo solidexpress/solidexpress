@@ -27,6 +27,7 @@ _HEADLESS = {
     5: {"unit": "tools/test_check_rung05.py", "unit_key": "unit_rung05", "log": "a25"},
     6: {"unit": "tools/test_check_rung06.py", "unit_key": "unit_rung06", "log": "a36"},
     7: {"unit": "tools/test_check_rung07.py", "unit_key": "unit_rung07", "log": "a37"},
+    8: {"unit": "tools/test_check_rung08.py", "unit_key": "unit_rung08", "log": "a37"},
 }
 
 

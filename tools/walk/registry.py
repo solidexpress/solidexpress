@@ -80,6 +80,16 @@ RUNG7_ROWS = [
     "A28", "N3", "A29", "A30", "A31", "A32", "A33", "A34", "A35", "L5", "A36", "N4", "A37",
 ]
 
+# Pipeline assembly (rung 8). Order is the checklist, not import order.
+RUNG8_ROWS = [
+    "N1", "A1", "L1", "A2", "A3", "A4", "L2", "A5", "N2",
+    "A6", "A7", "A8", "A9", "A10", "A11", "L3",
+    "A12", "A13", "A14", "L4", "A15",
+    "N3", "A16", "L5", "A17", "A18", "A19",
+    "A20", "A21", "A22", "A23", "L6", "A24", "A25",
+    "A26", "A27", "A28", "A29", "A30", "A31", "L7", "A32", "A33", "A34", "N4", "A35", "A36", "A37",
+]
+
 # Lesson 1 parts (rung 3). Order is the checklist, not import order.
 RUNG3_ROWS = [
     "N1", "A1", "A2", "L1", "A3", "N2", "A4", "A5",
@@ -156,6 +166,20 @@ _RUNG_SPEC = {
         "report_title": "rung-07 walk",
         "checkpoint_after": (),
     },
+    "rung08": {
+        "checker": "check_rung08.py",
+        "checkpoints": {
+            2: "inserted.sxp",
+            3: "pin.sxp",
+            4: "counts.sxp",
+            5: "pipes.sxp",
+            6: "bolted.sxp",
+        },
+        "canonical": RUNG8_ROWS,
+        "chunk_start": checkpoint_reload,
+        "report_title": "rung-08 walk",
+        "checkpoint_after": (),
+    },
 }
 
 
@@ -212,3 +236,4 @@ RUNG4: Rung | None = None
 RUNG5: Rung | None = None
 RUNG6: Rung | None = None
 RUNG7: Rung | None = None
+RUNG8: Rung | None = None

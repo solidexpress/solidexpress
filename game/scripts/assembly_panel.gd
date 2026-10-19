@@ -83,8 +83,9 @@ func _ready() -> void:
 	_offset_spin = _labeled_spin(vbox, "Offset", -1000.0, 1000.0, 0.5, 0.0)
 	_op_button(vbox, "Add mate", _arm_mate, "mate",
 		"Add a mate or joint: click two faces (instance or ground)")
-	_op_button(vbox, "Solve mates", _solve_mates, "solve",
+	var solve_btn := _op_button(vbox, "Solve mates", _solve_mates, "solve",
 		"Re-apply every mate and pose every joint, moving instances into position")
+	solve_btn.set_meta("sx_auto", "mate:Solve")
 
 	view.selection_changed.connect(_on_selection_changed)
 	view.document_changed.connect(refresh_lists)
@@ -216,6 +217,7 @@ func _make_instance_row(inst: Dictionary) -> Control:
 	var fix_tip := "Float this component (allow drag)" if is_fixed else "Fix this component (lock in place)"
 	var fix_btn := UIIcons.button(fix_icon, "", fix_tip)
 	fix_btn.name = "FixFloat"
+	fix_btn.set_meta("sx_auto", ("instance:float:" if is_fixed else "instance:fix:") + id)
 	fix_btn.pressed.connect(_toggle_fixed.bind(id, not is_fixed))
 	row.add_child(fix_btn)
 	var rm := UIIcons.button("delete", "", "Remove this instance (and its mates)")
@@ -234,6 +236,7 @@ func _make_mate_row(mate: Dictionary) -> Control:
 	name_lbl.add_theme_font_size_override("font_size", UiScale.body())
 	row.add_child(name_lbl)
 	var rm := UIIcons.button("delete", "", "Delete this mate")
+	rm.set_meta("sx_auto", "mate:Remove:" + id)
 	rm.pressed.connect(_remove_mate.bind(id))
 	row.add_child(rm)
 	return row
