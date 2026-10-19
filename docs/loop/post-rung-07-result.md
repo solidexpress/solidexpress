@@ -1,8 +1,8 @@
 # Post-rung-7 cleanup — confirm pass
 
-Part A: `tools/confirm_all.sh` on this VM (OCCT 8.0.1, Godot 4.7-stable). Dummy renderer for headless. Walks on Xvfb. Confirm wall 3073 s (12:31:42–13:22:55 UTC) on `cursor/post-rung-07-cleanup-20261019`.
+Part A: `tools/confirm_all.sh` on this VM (OCCT 8.0.1, Godot 4.7-stable). Dummy renderer for headless. Walks on Xvfb. Confirm wall 3073 s (12:31:42–13:22:55 UTC) on `cursor/post-rung-07-cleanup-20261019` (`d817019`).
 
-Part B: parked. C-one `film_spanner_tests.suite` stayed red after three honest attempts (S marking menu, off-screen handle clicks, R30 viewport pick hit the C ellipse / long handle edge). WP8 and WP9 reverted; WP10 not started. No `spanner` film, poster, or artifacts branch. See [`roadmap.md`](../plan/roadmap.md) §13.
+Part B follow-up (`cursor/spanner-film-20261019`): WalkUI07-shaped `film_spanner` (closed Line-chain racetrack Cut Blind 1, no Flip Side). C-one `film_spanner_tests` **12 checks, 0 failures**. `check_rung07` final **8/8** at bbox **281.450×54.591×10.000** (xmax 256.5, xmin −24.95, volume 38907.505 within 0.5%). Manifest `enabled: true`, no `website` object, featured set stays 12. Smoke skips `spanner`. Poster `website/assets/screenshots/spanner.png`. WebM/VTT on `cursor/demo-artifacts-spanner` only.
 
 | Bar | Count |
 |---|---|
@@ -18,19 +18,19 @@ Part B: parked. C-one `film_spanner_tests.suite` stayed red after three honest a
 | `check_rung05` | final 10/10 |
 | Rung 6 walk | 46 pass, 0 fail |
 | `check_rung06` | final 7/7 |
-| Rung 7 walk | 46 pass, 0 fail |
-| `check_rung07` | final 8/8 |
-| Headless | 244 run, 0 failed |
-| Lint | `248 suites ok (82 ci, 162 full, 4 known-red)` |
-| Film | none (Part B parked) |
+| Rung 7 walk | 46 pass, 0 fail (Part A confirm; re-run pending WP10) |
+| `check_rung07` | final 8/8 (film export) |
+| Headless | 245 run expected (`82 ci + 163 full`); Part A confirm was 244 |
+| Lint | `249 suites ok (82 ci, 163 full, 4 known-red)` |
+| Film | `spanner` present, `enabled: true`, not featured; checker 8/8 at 281.450×54.591×10.000 |
 
-DIAG 18/22 is the four T=14 rows, by design. The four known-red suites are not in the 244. `run_film_caption_tests.gd` and `run_ui_scroll_tests.gd` stay unregistered. Featured website set stays 12. No `.webm` / `.vtt` on this branch.
+DIAG 18/22 is the four T=14 rows, by design. The four known-red suites are not in the 245. `run_film_caption_tests.gd` and `run_ui_scroll_tests.gd` stay unregistered. Featured website set stays 12. No `.webm` / `.vtt` on this branch.
 
 Units, registry, kernel, `lint_rung01_e2e` all 0.
 
 ## WPs
 
-Shipped WP1–WP7 and WP11. ★ WP6 and WP7 started (WP1–WP5 green inside 4 hours). Parked WP8–WP10 (Part B). Final sweep of parked items: still red for the same viewport-fillet pick; left parked.
+Shipped WP1–WP7 and WP11 on the cleanup branch. Follow-up film branch: WP8–WP10.
 
 | WP | Title | Net |
 |---|---|---|
@@ -41,9 +41,14 @@ Shipped WP1–WP7 and WP11. ★ WP6 and WP7 started (WP1–WP5 green inside 4 ho
 | 5 | neck fillet, jaw tip, weld as tables | +34 / −16 |
 | 6 | FilmSteps midplane_extrude | +22 |
 | 7 | WalkUI07 split into profile / boss / dress | +1015 / −980 |
-| 8 | film spanner, manifest, how-to | reverted |
-| 9 | film_spanner tests | reverted |
-| 10 | poster and artifacts | not started |
-| 11 | confirm_all + this file | this file |
+| 8 | film spanner, manifest, how-to | shipped (`enabled: true`, no `website`) |
+| 9 | film_spanner tests | shipped (12 checks, 8/8) |
+| 10 | poster and artifacts | poster on this branch; webm/vtt on `cursor/demo-artifacts-spanner` |
+| 11 | confirm_all + this file | Part A on cleanup `d817019` |
 
-No pending `gh release upload` for spanner: no WebM was rendered.
+Pending publish (token cannot upload to Release `demo-movies`):
+
+```
+gh release upload demo-movies -R solidexpress/solidexpress --clobber spanner.webm spanner.vtt
+SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies spanner
+```

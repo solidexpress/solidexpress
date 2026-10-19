@@ -6,6 +6,32 @@ Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROA
 
 Shipped: 17° construction, 3-click ellipse 55 steep × 50 along 17°, Parallel jaw offsets, Mirror Entities + Symmetric, Power Trim ellipse → C and two AF-25 hexes → 12-point, Mid Plane 10 / 6, R30/R20 neck fillets (MakeFillet-first + AABB clip), Convert + Offset 5 Cut Blind 1, R3, Feature Mirror about Front, R1, 46-row walk, `check_rung07.py`. Bars: the table in [`rung-07-result.md`](../loop/rung-07-result.md). Suites **244 run + 4 known-red**.
 
+## Spanner film (`cursor/spanner-film-20261019`)
+
+WP8–WP9 added film `spanner` (WalkUI07 profile/boss/dress via `SpannerFixture`), `docs/howto/spanner.md`, and `run_film_spanner_tests.gd` (`tier=full`). Recess is the walk A29 Line-chain racetrack Cut Blind 1 (closed corners; no Flip Side). Poster `website/assets/screenshots/spanner.png`. No `website` object. Featured set stays 12. Film: 12 checks, 0 failures; `check_rung07` final **8/8** at bbox **281.450×54.591×10.000**. `lint_suites: 249 suites ok (82 ci, 163 full, 4 known-red)` so the tier is **245 run + 4 known-red**. Counts: [`post-rung-07-result.md`](../loop/post-rung-07-result.md).
+
+`precision_plate` calibrated at 95 s wall (685 frames, container 22.833 s), so spanner stayed at 30 fps (1385 s wall). The WebM is VP9 1600×900 at 30 fps. Container duration 273.233 s is the unique-frame video track (8197 frames). The writer drops duplicate presents (dup=7270); Godot process-clock was 15474 frames (00:08:35:24) and the last caption ends at 08:35.567. The poster is that video track's last picture (frame 8196). Muxing the `.vtt` was retired in `sx-movies` (captions are burned in; a subtitle stream doubled player length). `quit_after` is 36000 (4800 and 12000 cut the film mid-sequence).
+
+`spanner.webm` is not on Release `demo-movies` (this token cannot upload). It is not in `published-demos.json` or `demo-catalog.json`. `website/features.html` renders the catalog ∩ the live Release list; do not hand-write a card. WebM, VTT, and poster are on `origin/cursor/demo-artifacts-spanner` (handoff, not for merge) and `/opt/cursor/artifacts/`. No `.webm` / `.vtt` on this branch.
+
+Pending publish:
+
+```
+gh release upload demo-movies -R solidexpress/solidexpress --clobber spanner.webm spanner.vtt
+SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies spanner
+```
+
+Then a person who can upload decides whether to feature it (swap, not grow past 12). Dry-run (`SX_MOVIES_OUT=/tmp/sx-movies scripts/sx-publish-demo-movies --dry-run spanner`) wrote nothing:
+
+```
+dry-run poster: spanner → website/assets/screenshots/spanner.png
+dry-run upload 4 assets to solidexpress/solidexpress@demo-movies: /tmp/sx-movies/spanner.webm website/assets/screenshots/spanner.png /tmp/sx-movies/spanner.vtt game/tests/ui_movie_manifest.json
+dry-run emit curated published-demos + demo-catalog featured (append spanner)
+dry-run: no gh call, no file change
+```
+
+The dry-run "append" line is the script's generic message; `emit` still writes the curated 12 because spanner has no `website` object. Do not grow `EXPECTED_COUNT`.
+
 ## Post-rung-6 cleanup (`cursor/post-rung-06-cleanup-20261018`)
 
 Part A WP1–WP7: `CandlestickFixture`, `BooleanTarget`, `FaceLabelPark`, `ARM_CLEAR`, FilmSteps (tangent / 3-point / ellipse / sweep / draft), `SweepFuse.POLICY`, WalkUI06 split. WP11: mixin imports (`R12_BULGE`, `SxError`). Confirm: walks 77/77, 44/44, 46/46, 32/32, 36/36, 46/46; `check_rung05` 10/10; `check_rung06` 7/7; headless **236/0**. Counts: [`post-rung-06-result.md`](../loop/post-rung-06-result.md).
