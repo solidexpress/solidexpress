@@ -311,7 +311,6 @@ Part A of the post-rung-2 cleanup (WP1–WP12) parked no ★ work package and re
 | Item | What | Design | Why parked |
 |---|---|---|---|
 | Pixel `render=viewport` | `rung03_section` framebuffer | Start Godot on X11 + Vulkan without dummy | §9: removed-half sample is the cap colour. Do not reopen it in this pass |
-| Part B combination-spanner film (WP8–WP10) | `film_spanner` + `film_spanner_tests` | Same click shape as candlestick #279 | C-one `film_spanner_tests.suite` stayed red after three honest attempts (marking-menu S, off-screen handle trim, R30 viewport pick hit the C ellipse / long handle edge and left `fillet failed`). WP8 and WP9 reverted. Do not weaken 8/8. |
 
 ---
 
