@@ -8,9 +8,9 @@ const FilmSteps = preload("res://tests/lib/film_steps.gd")
 const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const SxInput = preload("res://tests/lib/sx_input.gd")
 
-const SPAN_HEAD := 90.0
+const SPAN_HEAD := 220.0
 const SPAN_RING := 80.0
-const SPAN_HANDLE := 160.0
+const SPAN_HANDLE := 220.0
 
 static var _part: Dictionary = {}
 
@@ -69,6 +69,8 @@ static func click(ctx: FilmContext, uv: Vector2, desc: String, span: float = 0.0
 static func line(ctx: FilmContext, a: Vector2, b: Vector2, desc: String, span: float = 0.0) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.LINE)
+	if span <= 0.0 and a.distance_to(b) > 60.0:
+		await frame_uv(ctx, (a + b) * 0.5, maxf(a.distance_to(b) + 40.0, 80.0), "Frame %s" % desc)
 	await click(ctx, a, "%s start" % desc, span)
 	await click(ctx, b, "%s end" % desc, span)
 	await FilmUI.end_line_chain(ctx)
@@ -353,6 +355,8 @@ static func construction_line(ctx: FilmContext, a: Vector2, b: Vector2, desc: St
 	await FilmSteps.pick_variant(ctx, "Centerline")
 	if _failed():
 		return
+	var mid := (a + b) * 0.5
+	await frame_uv(ctx, mid, maxf(a.distance_to(b) + 40.0, 80.0), "Frame %s" % desc)
 	await click(ctx, a, "%s start" % desc, 0.0)
 	await click(ctx, b, "%s end" % desc, 0.0)
 	await FilmUI.end_line_chain(ctx)
