@@ -62,7 +62,8 @@ func build(parent: Control) -> void:
 	_angle_spin.name = "PatternAngle"
 	_angle_spin.min_value = 0
 	_angle_spin.max_value = 360
-	_angle_spin.step = 1
+	_angle_spin.step = 0.0
+	_angle_spin.custom_arrow_step = 1.0
 	_angle_spin.suffix = "°"
 	_angle_spin.value = angle_deg
 	_angle_spin.custom_minimum_size = Vector2(UiScale.px(100), 0)
@@ -113,12 +114,12 @@ func pull_fields() -> void:
 				_count_spin.set_value_no_signal(float(typed))
 		count = int(_count_spin.value)
 	if _angle_spin != null:
-		var aedit := _angle_spin.get_line_edit()
-		if aedit != null:
-			var atyped := str(aedit.text).strip_edges()
-			if atyped.is_valid_float():
-				_angle_spin.set_value_no_signal(float(atyped))
-		angle_deg = float(_angle_spin.value)
+		var parsed: Variant = SxUi.parsed_spin_value(_angle_spin)
+		if parsed != null:
+			_angle_spin.set_value_no_signal(float(parsed))
+			angle_deg = float(parsed)
+		else:
+			angle_deg = float(_angle_spin.value)
 
 
 func restore_count_default() -> void:

@@ -189,7 +189,8 @@ func _build_finish_bar() -> void:
 	_dim_spin.name = "DimSpin"
 	_dim_spin.min_value = 0.01
 	_dim_spin.max_value = 10000
-	_dim_spin.step = 0.01
+	_dim_spin.step = 0.0
+	_dim_spin.custom_arrow_step = 0.01
 	_dim_spin.value = 10
 	_dim_spin.suffix = "mm"
 	# Select comes from arm_replace_on_focus. The built-in mouse-up select
@@ -255,7 +256,8 @@ func _build_finish_bar() -> void:
 	_extrude_spin.name = "DistanceSpin"
 	_extrude_spin.min_value = -1000
 	_extrude_spin.max_value = 1000
-	_extrude_spin.step = 0.5
+	_extrude_spin.step = 0.0
+	_extrude_spin.custom_arrow_step = 0.5
 	_extrude_spin.value = 20
 	_extrude_spin.suffix = "mm"
 	# A click that focuses D selects the digits, same as the dim blank, so
@@ -345,7 +347,8 @@ func _build_finish_bar() -> void:
 	_thin_spin.name = "ThinSpin"
 	_thin_spin.min_value = 0
 	_thin_spin.max_value = 1000
-	_thin_spin.step = 0.5
+	_thin_spin.step = 0.0
+	_thin_spin.custom_arrow_step = 0.5
 	_thin_spin.value = 0
 	_thin_spin.suffix = "mm"
 	_thin_spin.tooltip_text = "Thin wall (0 = solid closed profile)"
@@ -378,7 +381,8 @@ func _build_finish_bar() -> void:
 	_draft_spin.name = "DraftAngleSpin"
 	_draft_spin.min_value = 0
 	_draft_spin.max_value = 89
-	_draft_spin.step = 0.5
+	_draft_spin.step = 0.0
+	_draft_spin.custom_arrow_step = 0.5
 	_draft_spin.value = 15
 	_draft_spin.suffix = "°"
 	_draft_spin.tooltip_text = "Draft angle (degrees, inward)"
@@ -426,7 +430,7 @@ func _wire_finish_popup_traces() -> void:
 
 
 func dim_value() -> float:
-	return _dim_spin.value if _dim_spin else 10.0
+	return SxUi.spin_number(_dim_spin) if _dim_spin else 10.0
 
 
 ## Parse the Distance LineEdit first. On success store it on the spin and
@@ -738,7 +742,7 @@ func draft_deg() -> float:
 		return 0.0
 	if _draft_spin == null:
 		return 0.0
-	return float(_draft_spin.value)
+	return SxUi.spin_number(_draft_spin)
 
 
 func set_draft_deg(v: float) -> void:
@@ -811,7 +815,7 @@ func _emit_finish_requested() -> void:
 	var dist := float(parsed)
 	var thin := 0.0
 	if _thin_feature != null and _thin_feature.button_pressed and _thin_spin != null:
-		thin = _thin_spin.value
+		thin = SxUi.spin_number(_thin_spin)
 	var contours := _selected_contours.duplicate()
 	# Empty means "all regions" when the chip row is hidden (one contour, or
 	# a test that did not go through the bar). With chips on screen, every
@@ -1186,7 +1190,7 @@ func _on_dim_text_submitted(raw: String) -> void:
 	# value_changed is skipped while syncing, and the slot radius is the blank
 	# before the first centre (no single-DOF preview yet).
 	_apply_slot_radius(float(parsed))
-	dim_submitted.emit(_dim_spin.value)
+	dim_submitted.emit(float(parsed))
 	release_dim_focus()
 	_hand_keys_to_viewport()
 
@@ -1207,30 +1211,7 @@ func _parse_dim_text(raw: String) -> Variant:
 
 
 func _parse_spin_text(spin: SpinBox, raw: String) -> Variant:
-	var text := raw.strip_edges()
-	if text.is_empty() or spin == null:
-		return null
-	var prefix := str(spin.prefix)
-	var suffix := str(spin.suffix)
-	if prefix != "":
-		var spaced := prefix + " "
-		if text.begins_with(spaced):
-			text = text.substr(spaced.length())
-		elif text.begins_with(prefix):
-			text = text.substr(prefix.length())
-	if suffix != "":
-		var spaced := " " + suffix
-		if text.ends_with(spaced):
-			text = text.substr(0, text.length() - spaced.length())
-		elif text.ends_with(suffix):
-			text = text.substr(0, text.length() - suffix.length())
-	text = text.strip_edges().replace(",", ".")
-	if not text.is_valid_float():
-		return null
-	var v := float(text)
-	if is_nan(v) or is_inf(v):
-		return null
-	return v
+	return SxUi.parsed_spin_value(spin, raw)
 
 
 ## Across-flats reads the typed length as AF. Circle keeps a radius number; the

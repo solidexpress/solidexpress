@@ -181,7 +181,7 @@ static func configure_spin(spin: SpinBox, min_v: float, max_v: float, arrow_step
 		value: float, as_int := false) -> SpinBox:
 	spin.min_value = min_v
 	spin.max_value = max_v
-	spin.step = 1.0 if as_int else 0.001
+	spin.step = 1.0 if as_int else 0.0
 	spin.custom_arrow_step = arrow_step
 	spin.rounded = as_int
 	spin.value = value
@@ -209,6 +209,48 @@ static func labeled_spin(parent: Container, text: String, min_v: float, max_v: f
 
 ## Compact number for a SpinBox LineEdit: "10" / "1.5" / "0.05", never
 ## "10.000" which clips to look like "0.0 mm" in a narrow field.
+## Number after prefix/suffix strip. `raw` defaults to the LineEdit. Null when
+## the text is not one float.
+static func parsed_spin_value(spin: SpinBox, raw: String = "") -> Variant:
+	if spin == null:
+		return null
+	if raw == "":
+		var edit := spin.get_line_edit()
+		raw = str(edit.text) if edit != null else ""
+	var text := raw.strip_edges()
+	if text.is_empty():
+		return null
+	var prefix := str(spin.prefix)
+	var suffix := str(spin.suffix)
+	if prefix != "":
+		var spaced := prefix + " "
+		if text.begins_with(spaced):
+			text = text.substr(spaced.length())
+		elif text.begins_with(prefix):
+			text = text.substr(prefix.length())
+	if suffix != "":
+		var spaced := " " + suffix
+		if text.ends_with(spaced):
+			text = text.substr(0, text.length() - spaced.length())
+		elif text.ends_with(suffix):
+			text = text.substr(0, text.length() - suffix.length())
+	text = text.strip_edges().replace(",", ".")
+	if not text.is_valid_float():
+		return null
+	var v := float(text)
+	if is_nan(v) or is_inf(v):
+		return null
+	return v
+
+
+## Parsed LineEdit when it is a float, else the stored spin value.
+static func spin_number(spin: SpinBox) -> float:
+	var parsed: Variant = parsed_spin_value(spin)
+	if parsed != null:
+		return float(parsed)
+	return spin.value if spin != null else 0.0
+
+
 static func compact_number(v: float) -> String:
 	if is_equal_approx(v, roundf(v)):
 		return str(int(roundf(v)))

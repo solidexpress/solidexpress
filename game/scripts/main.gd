@@ -1076,14 +1076,16 @@ func _build_ui() -> void:
 	dim_value.visible = false
 	dim_value.min_value = 0.01
 	dim_value.max_value = 10000
-	dim_value.step = 0.5
+	dim_value.step = 0.0
+	dim_value.custom_arrow_step = 0.5
 	dim_value.value = 10
 	rows.add_child(dim_value)
 	extrude_distance = SpinBox.new()
 	extrude_distance.visible = false
 	extrude_distance.min_value = -1000
 	extrude_distance.max_value = 1000
-	extrude_distance.step = 1
+	extrude_distance.step = 0.0
+	extrude_distance.custom_arrow_step = 1.0
 	extrude_distance.value = 20
 	rows.add_child(extrude_distance)
 	finish_op = OptionButton.new()
@@ -1441,13 +1443,17 @@ func _apply_constraint(type: String, value: float) -> void:
 		_on_status("%s: %s" % [shown, result])
 
 
-func _apply_dimension() -> void:
+func _apply_dimension(value: float = NAN) -> void:
 	var kind := "distance"
 	if sketch_mode.selected.size() == 1:
 		var t: String = sketch_mode.sketch.entity_info(sketch_mode.selected[0]).get("type", "")
 		if t == "circle" or t == "arc":
 			kind = "radius"
-	_apply_constraint(kind, dim_value.value)
+	var v := value
+	if is_nan(v):
+		v = sketch_chrome.dim_value() if sketch_chrome else dim_value.value
+	dim_value.value = v
+	_apply_constraint(kind, v)
 
 
 func _on_sketch_selection(ids: Array) -> void:
@@ -2087,8 +2093,7 @@ func _on_sketch_variant(kind: String, variant: String) -> void:
 
 func _apply_dimension_from_chrome() -> void:
 	var v: float = sketch_chrome.dim_value() if sketch_chrome else dim_value.value
-	dim_value.value = v
-	_apply_dimension()
+	_apply_dimension(v)
 
 
 func _on_sketch_preview_distance(distance: float) -> void:
@@ -2125,7 +2130,7 @@ func _on_sketch_dim_submitted(value: float) -> void:
 		if sketch_chrome != null:
 			sketch_chrome.release_dim_focus()
 		return
-	_apply_dimension()
+	_apply_dimension(value)
 
 
 ## Unparseable dim blank (WP1 emits dim_rejected). Success stays on
@@ -3307,7 +3312,8 @@ func _paste_spin(parent: Container, label: String, value: float) -> SpinBox:
 	var spin := SpinBox.new()
 	spin.min_value = -1e6
 	spin.max_value = 1e6
-	spin.step = 0.1
+	spin.step = 0.0
+	spin.custom_arrow_step = 0.1
 	spin.value = value
 	spin.suffix = "mm"
 	spin.custom_minimum_size = Vector2(96, 0)

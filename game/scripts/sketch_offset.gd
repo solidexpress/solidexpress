@@ -69,7 +69,8 @@ func build(parent: Control) -> void:
 	_distance_spin.name = "OffsetDistance"
 	_distance_spin.min_value = 0.0
 	_distance_spin.max_value = 10000.0
-	_distance_spin.step = 0.1
+	_distance_spin.step = 0.0
+	_distance_spin.custom_arrow_step = 0.1
 	_distance_spin.value = distance
 	_distance_spin.suffix = "mm"
 	_distance_spin.custom_minimum_size = Vector2(UiScale.px(120), 0)
@@ -229,12 +230,12 @@ func _convert_edge(ctx: Context, uv: Vector2) -> String:
 func _pull_typed_distance() -> void:
 	if _distance_spin == null:
 		return
-	var edit := _distance_spin.get_line_edit()
-	if edit != null:
-		var typed := str(edit.text).strip_edges()
-		if typed.is_valid_float():
-			_distance_spin.set_value_no_signal(float(typed))
-	distance = _distance_spin.value
+	var parsed: Variant = SxUi.parsed_spin_value(_distance_spin)
+	if parsed != null:
+		_distance_spin.set_value_no_signal(float(parsed))
+		distance = float(parsed)
+	else:
+		distance = _distance_spin.value
 
 
 func _on_distance(v: float) -> void:
