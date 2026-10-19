@@ -44,6 +44,7 @@ var _rename_popup: PopupPanel
 var _rename_edit: LineEdit
 var _user_view_names: PackedStringArray = PackedStringArray()
 var origin_triad: OriginTriadHud
+var view_cube: ViewWidget
 
 
 func _ready() -> void:
@@ -53,6 +54,10 @@ func _ready() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
 	add_child(col)
+	view_cube = ViewWidget.new()
+	view_cube.name = "ViewCube"
+	view_cube.snap = true
+	col.add_child(view_cube)
 	# Tiny RGB sticks above Shade/Section/Frame — width tracks this menu.
 	origin_triad = OriginTriadHud.new()
 	origin_triad.name = "OriginTriad"
@@ -186,6 +191,8 @@ func _ready() -> void:
 
 
 func set_camera(cam: OrbitCamera) -> void:
+	if view_cube != null:
+		view_cube.set_camera(cam)
 	if origin_triad != null:
 		origin_triad.set_camera(cam)
 

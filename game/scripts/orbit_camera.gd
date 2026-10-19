@@ -666,8 +666,25 @@ static func standard_view_table() -> Array:
 	]
 
 
+## ViewCube corner octants (no number key, not in the View menu).
+static func iso_corner_table() -> Array:
+	return [
+		{"id": "iso_ftl", "label": "Iso FTL", "key": KEY_NONE, "yaw": -35.0, "pitch": 40.0, "ortho": false},
+		{"id": "iso_ftr", "label": "Iso FTR", "key": KEY_NONE, "yaw": 35.0, "pitch": 40.0, "ortho": false},
+		{"id": "iso_fbl", "label": "Iso FBL", "key": KEY_NONE, "yaw": -35.0, "pitch": -40.0, "ortho": false},
+		{"id": "iso_fbr", "label": "Iso FBR", "key": KEY_NONE, "yaw": 35.0, "pitch": -40.0, "ortho": false},
+		{"id": "iso_btl", "label": "Iso BTL", "key": KEY_NONE, "yaw": -145.0, "pitch": 40.0, "ortho": false},
+		{"id": "iso_btr", "label": "Iso BTR", "key": KEY_NONE, "yaw": 145.0, "pitch": 40.0, "ortho": false},
+		{"id": "iso_bbl", "label": "Iso BBL", "key": KEY_NONE, "yaw": -145.0, "pitch": -40.0, "ortho": false},
+		{"id": "iso_bbr", "label": "Iso BBR", "key": KEY_NONE, "yaw": 145.0, "pitch": -40.0, "ortho": false},
+	]
+
+
 static func standard_view_by_id(id: String) -> Dictionary:
 	for entry in standard_view_table():
+		if str(entry["id"]) == id:
+			return entry
+	for entry in iso_corner_table():
 		if str(entry["id"]) == id:
 			return entry
 	return {}
