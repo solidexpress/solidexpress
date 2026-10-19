@@ -26,4 +26,4 @@ gh release upload demo-movies -R solidexpress/solidexpress --clobber flanged_pip
 SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies --feature flanged_pipe
 ```
 
-Then one follow-up commit of the two JSON files (and the `website` object + `EXPECTED_COUNT`) by a person who can upload. `website/features.html` renders `demo-catalog.json` ∩ the live Release list; it needs no markup change.
+Then one follow-up commit of the two JSON files (and the `website` object) by a person who can upload. `website/features.html` renders `demo-catalog.json` ∩ the live Release list; it needs no markup change.

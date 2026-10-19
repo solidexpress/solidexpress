@@ -26,4 +26,4 @@ gh release upload demo-movies -R solidexpress/solidexpress --clobber candlestick
 SX_MOVIES_OUT=/tmp/sx-movies SX_SKIP_UPLOAD=1 scripts/sx-publish-demo-movies candlestick
 ```
 
-Then a person who can upload decides whether to feature it (swap, not grow past 12). `website/features.html` renders `demo-catalog.json` ∩ the live Release list; it needs no markup change.
+Then a person who can upload decides whether to put it on the homepage (`website.home`); every `website` film is on the features page. `website/features.html` renders `demo-catalog.json` ∩ the live Release list; it needs no markup change.

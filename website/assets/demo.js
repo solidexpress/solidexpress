@@ -1,15 +1,23 @@
-/* Shared demo lightbox + catalog hydrate for solid.express.
- * HARD RULE: never render a playable card unless that id is in the live
- * demo-movies Release (or the committed published-demos.json fallback).
- * A missing WebM must not appear as a play button.
+/* Demo films for solid.express (homepage few + features page full set).
+ *
+ * Data: assets/demo-catalog.json, emitted by tools/website_demos.py.
+ *   featured[] = every curated film {id, feature, title, caption, group, order, home, hero}
+ *   groups[]   = features-page sections, in order
+ *
+ * HARD RULE: a card is only playable when its id is on the live demo-movies
+ * Release (or the committed published-demos.json fallback). A missing WebM
+ * never becomes a play button.
+ *
+ * Loading: posters only (<img loading=lazy>). A WebM is fetched on hover
+ * (muted preview) or click (lightbox), never up front.
  */
 (function (global) {
   var CATALOG_URL = "assets/demo-catalog.json";
   var PUBLISHED_URL = "assets/published-demos.json";
-  var MANIFEST_URL = "assets/ui_movie_manifest.json";
   var POSTER_BASE = "assets/screenshots/";
   var DEFAULT_BASE = "https://github.com/solidexpress/solidexpress/releases/download/demo-movies/";
   var DEFAULT_API = "https://api.github.com/repos/solidexpress/solidexpress/releases/tags/demo-movies";
+  var CAN_HOVER = global.matchMedia && global.matchMedia("(hover: hover)").matches;
 
   function fetchJson(url) {
     return fetch(url, { cache: "no-cache" }).then(function (r) {
@@ -18,255 +26,213 @@
     });
   }
 
-  function idsFromRelease(release) {
+  function idSet(ids) {
     var out = {};
-    var assets = (release && release.assets) || [];
-    for (var i = 0; i < assets.length; i++) {
-      var name = assets[i].name || "";
-      if (/\.webm$/i.test(name) && !/\.sha256$/i.test(name)) {
-        out[name.replace(/\.webm$/i, "")] = true;
-      }
-    }
+    ids.forEach(function (id) { out[id] = true; });
     return out;
   }
 
-  function idsFromList(list) {
-    var out = {};
-    (list || []).forEach(function (id) { out[id] = true; });
-    return out;
+  function releaseIds(release) {
+    return ((release && release.assets) || [])
+      .map(function (a) { return a.name || ""; })
+      .filter(function (n) { return /\.webm$/i.test(n); })
+      .map(function (n) { return n.replace(/\.webm$/i, ""); });
   }
 
+  /* Ids with a WebM: live Release listing, else the committed fallback. */
   function loadAvailable(catalog) {
-    var demo = (catalog && catalog.demo_release) || {};
-    var api = demo.api || DEFAULT_API;
-    return fetchJson(PUBLISHED_URL)
-      .catch(function () { return []; })
-      .then(function (published) {
-        var fallback = idsFromList(published);
-        return fetchJson(api)
-          .then(function (release) {
-            var live = idsFromRelease(release);
-            return Object.keys(live).length ? live : fallback;
-          })
-          .catch(function () { return fallback; });
-      });
+    var api = (catalog.demo_release || {}).api || DEFAULT_API;
+    return fetchJson(PUBLISHED_URL).catch(function () { return []; }).then(function (published) {
+      return fetchJson(api)
+        .then(function (release) {
+          var live = releaseIds(release);
+          return idSet(live.length ? live : published);
+        })
+        .catch(function () { return idSet(published); });
+    });
   }
 
   function movieUrl(catalog, id) {
-    var demo = (catalog && catalog.demo_release) || {};
-    return (demo.base || DEFAULT_BASE) + id + ".webm";
+    return ((catalog.demo_release || {}).base || DEFAULT_BASE) + id + ".webm";
   }
 
-  function releaseManifestUrl(catalog) {
-    var demo = (catalog && catalog.demo_release) || {};
-    return (demo.base || DEFAULT_BASE) + "ui_movie_manifest.json";
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text) node.textContent = text;
+    return node;
   }
 
-  function fetchManifest(catalog) {
-    // Prefer manifest from release assets; fallback to baked file if blocked.
-    return fetchJson(releaseManifestUrl(catalog))
-      .catch(function () { return fetchJson(MANIFEST_URL); })
-      .catch(function () { return []; });
-  }
-
-  function bindLightbox(catalog) {
-    var lightbox = document.getElementById("demo-lightbox");
+  function bindLightbox() {
+    var box = document.getElementById("demo-lightbox");
     var video = document.getElementById("demo-lightbox-video");
-    var titleEl = document.getElementById("demo-lightbox-title");
+    var title = document.getElementById("demo-lightbox-title");
     var closeBtn = document.getElementById("demo-lightbox-close");
     var openLink = document.getElementById("demo-lightbox-open");
     var lastFocus = null;
-    if (!lightbox || !video) return { open: function () {} };
+    if (!box || !video) return { open: function () {} };
 
-    function closeDemo() {
+    function close() {
       video.pause();
       video.removeAttribute("src");
       video.load();
-      lightbox.classList.remove("open");
-      lightbox.hidden = true;
+      box.classList.remove("open");
+      box.hidden = true;
       document.body.style.overflow = "";
-      if (lastFocus && lastFocus.focus) lastFocus.focus();
+      if (lastFocus) lastFocus.focus();
     }
-
-    function openDemo(btn) {
-      var id = btn.getAttribute("data-demo");
-      if (!id) return;
-      var src = movieUrl(catalog, id);
-      lastFocus = btn;
-      titleEl.textContent = (btn.getAttribute("aria-label") || "Demo").replace(/^Play demo:\s*/i, "");
+    function open(trigger, film, src) {
+      lastFocus = trigger;
+      title.textContent = film.title;
       if (openLink) openLink.href = src;
       video.src = src;
-      lightbox.hidden = false;
-      lightbox.classList.add("open");
+      box.hidden = false;
+      box.classList.add("open");
       document.body.style.overflow = "hidden";
       video.play().catch(function () {});
       if (closeBtn) closeBtn.focus();
     }
-
-    if (closeBtn) closeBtn.addEventListener("click", closeDemo);
-    lightbox.addEventListener("click", function (e) {
-      if (e.target === lightbox) closeDemo();
-    });
+    if (closeBtn) closeBtn.addEventListener("click", close);
+    box.addEventListener("click", function (e) { if (e.target === box) close(); });
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape" && lightbox.classList.contains("open")) closeDemo();
+      if (e.key === "Escape" && box.classList.contains("open")) close();
     });
-    return { open: openDemo };
+    return { open: open };
   }
 
-  function displayTitle(entry) {
-    return (entry && (entry.feature || entry.title)) || (entry && entry.id) || "Demo";
+  /* Muted hover preview: the <video> is created on first hover, removed on leave. */
+  function attachPreview(media, src) {
+    if (!CAN_HOVER) return;
+    var video = null;
+    media.addEventListener("mouseenter", function () {
+      video = document.createElement("video");
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      video.src = src;
+      video.addEventListener("playing", function () { media.classList.add("previewing"); });
+      media.appendChild(video);
+      video.play().catch(function () {});
+    });
+    media.addEventListener("mouseleave", function () {
+      media.classList.remove("previewing");
+      if (!video) return;
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      video.remove();
+      video = null;
+    });
   }
 
-  function displayCaption(entry) {
-    return (entry && (entry.caption || entry.blurb)) || "";
-  }
+  function filmCard(film, ctx, opts) {
+    var playable = !!ctx.available[film.id];
+    var card = el("article", "film" + (opts.hero ? " hero" : ""));
+    var media = el("button", "media");
+    media.type = "button";
+    media.setAttribute("aria-label", (playable ? "Play demo: " : "") + film.title);
 
-  function posterButton(entry, lightbox, playable) {
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "demo-open";
-    btn.setAttribute("aria-label", (playable ? "Play demo: " : "") + displayTitle(entry));
-    if (playable) {
-      btn.setAttribute("data-demo", entry.id);
-      btn.addEventListener("click", function () { lightbox.open(btn); });
-    }
-    var img = document.createElement("img");
-    img.loading = "lazy";
+    var img = el("img");
+    img.loading = opts.hero ? "eager" : "lazy";
+    img.decoding = "async";
     img.alt = "";
     img.width = 1600;
     img.height = 900;
-    img.src = POSTER_BASE + entry.id + ".png";
-    img.onerror = function () { img.style.display = "none"; };
-    btn.appendChild(img);
+    img.src = POSTER_BASE + film.id + ".png";
+    media.appendChild(img);
+
     if (playable) {
-      var play = document.createElement("span");
-      play.className = "play";
-      play.setAttribute("aria-hidden", "true");
-      btn.appendChild(play);
+      var src = movieUrl(ctx.catalog, film.id);
+      media.setAttribute("data-demo", film.id);
+      media.appendChild(el("span", "play"));
+      media.addEventListener("click", function () { ctx.lightbox.open(media, film, src); });
+      attachPreview(media, src);
     }
-    return btn;
+    card.appendChild(media);
+
+    var body = el("div", "body");
+    if (opts.tag) body.appendChild(el("span", "tag", film.feature));
+    body.appendChild(el("h3", "", film.title));
+    body.appendChild(el("p", "", film.caption));
+    card.appendChild(body);
+    return card;
   }
 
-  function card(entry, lightbox, playable) {
-    var article = document.createElement("article");
-    article.className = "feature-card";
-    article.appendChild(posterButton(entry, lightbox, playable));
-    var h3 = document.createElement("h3");
-    h3.textContent = displayTitle(entry);
-    var p = document.createElement("p");
-    p.textContent = displayCaption(entry);
-    article.appendChild(h3);
-    article.appendChild(p);
-    return article;
+  function seeMoreCard(total, href) {
+    var a = el("a", "film see-more");
+    a.href = href;
+    a.appendChild(el("strong", "", "See more"));
+    a.appendChild(el("span", "", "All " + total + " feature films, from sketching to assemblies."));
+    a.appendChild(el("span", "arrow", "Browse the features \u2192"));
+    return a;
   }
 
-  function fillHero(heroEl, entry, lightbox, playable) {
-    heroEl.innerHTML = "";
-    heroEl.appendChild(posterButton(entry, lightbox, playable));
-    var h3 = document.createElement("h3");
-    h3.textContent = displayTitle(entry);
-    var p = document.createElement("p");
-    p.textContent = displayCaption(entry);
-    heroEl.appendChild(h3);
-    heroEl.appendChild(p);
+  function byOrder(a, b) {
+    return (b.hero ? 1 : 0) - (a.hero ? 1 : 0) || a.order - b.order;
   }
 
-  function orderedFeatured(catalog) {
-    return (catalog.featured || []).slice().sort(function (a, b) {
-      var ha = a && a.hero ? 0 : 1;
-      var hb = b && b.hero ? 0 : 1;
-      if (ha !== hb) return ha - hb;
-      return (a.order || 0) - (b.order || 0);
+  /* Load catalog + availability once, then hand a context to the renderer. */
+  function withFilms(target, render) {
+    if (!target) return;
+    fetchJson(CATALOG_URL)
+      .then(function (catalog) {
+        return loadAvailable(catalog).then(function (available) {
+          render({
+            catalog: catalog,
+            available: available,
+            lightbox: bindLightbox(),
+            films: (catalog.featured || []).slice().sort(byOrder)
+          });
+        });
+      })
+      .catch(function () {
+        target.innerHTML = "<p class='lead'>Could not load the demo films.</p>";
+      });
+  }
+
+  /* Homepage: the `home` tier (hero first), then a See more card. */
+  function hydrateHome(gridId, moreHref) {
+    var grid = document.getElementById(gridId);
+    withFilms(grid, function (ctx) {
+      grid.innerHTML = "";
+      ctx.films.filter(function (f) { return f.home; }).forEach(function (film) {
+        grid.appendChild(filmCard(film, ctx, { hero: film.hero, tag: true }));
+      });
+      grid.appendChild(seeMoreCard(ctx.films.length, moreHref || "features.html"));
     });
   }
 
-  function hydrateFeatured(gridId, heroId, searchId) {
-    var grid = document.getElementById(gridId);
-    if (!grid) return;
-    var heroEl = heroId ? document.getElementById(heroId) : null;
-    fetchJson(CATALOG_URL)
-      .then(function (catalog) {
-        var lightbox = bindLightbox(catalog);
-        return loadAvailable(catalog).then(function (available) {
-          var featured = orderedFeatured(catalog);
-          var hero = featured.filter(function (e) { return e && e.hero; })[0] || featured[0];
-          if (heroEl && hero) {
-            fillHero(heroEl, hero, lightbox, !!(hero.id && available[hero.id]));
-          }
-          function render(list) {
-            grid.innerHTML = "";
-            list.forEach(function (entry) {
-              if (!entry || !entry.id) return;
-              grid.appendChild(card(entry, lightbox, !!available[entry.id]));
-            });
-            if (!grid.children.length) {
-              grid.innerHTML = "<p class='lead'>Demo movies are being refreshed. See the Features page shortly.</p>";
-            }
-          }
-          render(featured);
-          var q = searchId ? document.getElementById(searchId) : null;
-          if (q) {
-            q.addEventListener("input", function () {
-              var term = q.value.trim().toLowerCase();
-              render(!term ? featured : featured.filter(function (m) {
-                return (displayTitle(m) + " " + displayCaption(m) + " " + (m.id || "")).toLowerCase().indexOf(term) !== -1;
-              }));
-            });
-          }
-        });
-      })
-      .catch(function () {
-        grid.innerHTML = "<p class='lead'>Could not load the demo catalog.</p>";
-      });
-  }
-
-  function hydrateLibrary(gridId, searchId) {
-    var grid = document.getElementById(gridId);
-    if (!grid) return;
-    Promise.all([fetchJson(CATALOG_URL)])
-      .then(function (pair) {
-        var catalog = pair[0];
-        var lightbox = bindLightbox(catalog);
-        return Promise.all([loadAvailable(catalog), fetchManifest(catalog)]).then(function (got) {
-          var available = got[0];
-          var manifest = Array.isArray(got[1]) ? got[1] : [];
-          var films = manifest.filter(function (e) {
-            return e && e.enabled !== false && e.id && available[e.id];
-          }).map(function (e) {
-            var site = e.website || {};
-            return {
-              id: e.id,
-              feature: site.feature || e.title || e.id,
-              title: site.title || e.title || e.id,
-              blurb: site.caption || e.blurb || "",
-              caption: site.caption || e.blurb || "",
-              hero: !!site.hero,
-              order: site.order || 0
-            };
+  /* Features page: every film, one section per catalog group, filterable. */
+  function hydrateFeatures(rootId, searchId, countId) {
+    var root = document.getElementById(rootId);
+    withFilms(root, function (ctx) {
+      var count = countId && document.getElementById(countId);
+      if (count) count.textContent = String(ctx.films.length);
+      function render(term) {
+        root.innerHTML = "";
+        (ctx.catalog.groups || []).forEach(function (group) {
+          var films = ctx.films.filter(function (f) {
+            var hay = (f.title + " " + f.feature + " " + f.caption + " " + f.id).toLowerCase();
+            return f.group === group && (!term || hay.indexOf(term) !== -1);
           });
-          function render(list) {
-            grid.innerHTML = "";
-            list.forEach(function (entry) { grid.appendChild(card(entry, lightbox, true)); });
-            if (!grid.children.length) {
-              grid.innerHTML = "<p class='lead'>No published demo movies match that filter.</p>";
-            }
-          }
-          render(films);
-          var q = document.getElementById(searchId);
-          if (q) {
-            q.addEventListener("input", function () {
-              var term = q.value.trim().toLowerCase();
-              render(!term ? films : films.filter(function (m) {
-                return ((m.title || "") + " " + (m.id || "")).toLowerCase().indexOf(term) !== -1;
-              }));
-            });
-          }
+          if (!films.length) return;
+          var section = el("section", "film-group");
+          var h2 = el("h2", "", group);
+          h2.appendChild(el("small", "", films.length + (films.length === 1 ? " film" : " films")));
+          section.appendChild(h2);
+          var grid = el("div", "film-grid");
+          films.forEach(function (film) { grid.appendChild(filmCard(film, ctx, { tag: true })); });
+          section.appendChild(grid);
+          root.appendChild(section);
         });
-      })
-      .catch(function () {
-        grid.innerHTML = "<p class='lead'>Could not load the film library.</p>";
-      });
+        if (!root.children.length) root.innerHTML = "<p class='lead'>No films match that filter.</p>";
+      }
+      render("");
+      var q = searchId && document.getElementById(searchId);
+      if (q) q.addEventListener("input", function () { render(q.value.trim().toLowerCase()); });
+    });
   }
 
-  global.SxDemos = { hydrateFeatured: hydrateFeatured, hydrateLibrary: hydrateLibrary };
+  global.SxDemos = { hydrateHome: hydrateHome, hydrateFeatures: hydrateFeatures };
 })(window);
