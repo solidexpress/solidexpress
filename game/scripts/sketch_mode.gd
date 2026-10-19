@@ -10102,6 +10102,11 @@ func _rebuild_constraint_glyphs() -> void:
 			it["offset_px"] = (it["natural"] as Vector2).distance_to(clamped)
 			it["pos"] = _sketch_from_screen(cam, clamped, it["anchor"])
 			pending[i] = it
+		# Clamp can stack two mouth vertices on the same cap point. Spread
+		# them again while the below-shaft cost keeps them on the part.
+		if pending.size() > 1:
+			_repair_coincident_glyphs(pending, label_rects, cam, shaft_y)
+		_clamp_coincident_leaders(pending, cam)
 		# Screen→sketch is a local linearisation. A badge parked on the 40 px
 		# cap can reproject a fraction past it, which is what the walk rejects.
 		_cap_glyph_leader_span(pending, cam)
@@ -10335,10 +10340,7 @@ func _coincident_glyph_visible(cid: String, cinfo: Dictionary) -> bool:
 			return true
 		if cam != null and _pointer_screen != Vector2.INF:
 			var screen := cam.unproject_position(to_global(to_model(p)))
-			# The badge may sit up to GLYPH_MAX_OFFSET_PX off the vertex.
-			# Hover uses 14 px to appear; the click that lands on the badge
-			# is farther and must keep the mark visible.
-			if screen.distance_to(_pointer_screen) <= GLYPH_MAX_OFFSET_PX + 0.5:
+			if screen.distance_to(_pointer_screen) <= COINCIDENT_HOVER_PX:
 				return true
 	return false
 
