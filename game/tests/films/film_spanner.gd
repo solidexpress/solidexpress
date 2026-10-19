@@ -24,7 +24,7 @@ func run_film(ctx: FilmContext) -> void:
 		return
 
 	await ctx.beat("Ø33, two AF-25 hexes, Power Trim 12-point, handle 10", 0.4)
-	await SpannerFixture.sketch_ring_and_hexes(ctx)
+	await SpannerFixture.sketch_ring(ctx)
 	if not _ok():
 		return
 	await SpannerFixture.sketch_handle(ctx)
@@ -49,17 +49,29 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok():
 		return
 	await ctx.after_regen()
-	await _twelve_point_cut_if_needed(ctx)
+	await SpannerFixture.click_datum(ctx, "Front", "front")
 	if not _ok():
 		return
+	await SpannerFixture.sketch_twelve_point_hexes(ctx)
+	if not _ok():
+		return
+	await FilmSteps.midplane_extrude(ctx, SpannerFixture.digits("HEAD_T"), 1)
+	if not _ok():
+		return
+	await ctx.after_regen()
 
 	await ctx.beat("R30 / R20 neck fillets", 0.4)
 	var open_xy := SpannerFixture.handle_xy(true)
 	var open_lo := SpannerFixture.handle_xy(false)
-	await SpannerFixture.fillet_z_at(ctx, "R30", [open_xy[0], open_lo[0]])
+	# Inset along the handle so the pick is the 6 mm crotch, not the C ellipse.
+	var r30_hi := Vector2(open_xy[0].x + 8.0, open_xy[0].y)
+	var r30_lo := Vector2(open_lo[0].x + 8.0, open_lo[0].y)
+	var r20_hi := Vector2(open_xy[1].x - 6.0, open_xy[1].y)
+	var r20_lo := Vector2(open_lo[1].x - 6.0, open_lo[1].y)
+	await SpannerFixture.fillet_z_at(ctx, "R30", [r30_hi, r30_lo])
 	if not _ok():
 		return
-	await SpannerFixture.fillet_z_at(ctx, "R20", [open_xy[1], open_lo[1]])
+	await SpannerFixture.fillet_z_at(ctx, "R20", [r20_hi, r20_lo])
 	if not _ok():
 		return
 
@@ -118,28 +130,3 @@ func _ok() -> bool:
 	return FilmUI.fail_count == 0
 
 
-func _twelve_point_cut_if_needed(ctx: FilmContext) -> void:
-	var body := SpannerFixture.only_body(ctx)
-	if body == "":
-		return
-	var vol := float(ctx.view.doc.measure_mass(body).get("volume", 0.0))
-	if vol > 0.0 and vol <= SpannerFixture.mm("V_BOSS") * 1.01:
-		return
-	await SpannerFixture.click_datum(ctx, "Front", "front")
-	if FilmUI.fail_count > 0:
-		return
-	var c := SpannerFixture.ring_centre()
-	var af := SpannerFixture.mm("HEX_AF")
-	var outer := af / sqrt(3.0)
-	var inner := (af * 0.5) / cos(deg_to_rad(15.0))
-	var pts: Array[Vector2] = []
-	for k in 24:
-		var ang := deg_to_rad(float(k) * 15.0)
-		var radius := outer if (k % 2) == 0 else inner
-		pts.append(c + Vector2(cos(ang), sin(ang)) * radius)
-	for i in 24:
-		if FilmUI.fail_count > 0:
-			return
-		await SpannerFixture.line(ctx, pts[i], pts[(i + 1) % 24], "12-point", SpannerFixture.SPAN_RING)
-	await FilmSteps.midplane_extrude(ctx, SpannerFixture.digits("HEAD_T"), 1)
-	await ctx.after_regen()

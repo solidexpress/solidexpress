@@ -369,36 +369,39 @@ static func place_vertex_hex(ctx: FilmContext, centre: Vector2, vertex: Vector2)
 	await FilmUI.wait_frames(ctx.tree, 2)
 
 
-static func trim_at(ctx: FilmContext, uv: Vector2, desc: String) -> void:
+static func trim_at(ctx: FilmContext, uv: Vector2, desc: String, span: float = SPAN_HEAD) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.TRIM)
 	if FilmUI.fail_count > 0:
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
-	await click(ctx, uv, desc, 0.0)
+	await click(ctx, uv, desc, span)
 	await FilmUI.wait_frames(ctx.tree, 2)
 
 
 static func constrain(ctx: FilmContext, name: String, first: Vector2, second: Vector2) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
-	await click(ctx, first, "%s first" % name, 0.0)
+	await click(ctx, first, "%s first" % name, SPAN_HEAD)
 	await shift_click_uv(ctx, second, "%s second" % name)
 	await FilmUI.wait_frames(ctx.tree, 2)
-	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	var btn := FilmUI.find_button(chrome, name) if chrome != null else null
+	var btn := find_auto(ctx.main, "chip:%s" % name) as BaseButton
+	if btn == null or not btn.is_visible_in_tree():
+		btn = FilmUI.find_button(ctx.main, name) as BaseButton
 	if btn != null and btn.is_visible_in_tree():
 		await FilmUI.click_control(ctx, btn, FilmUICues.alert(name, name))
 		return
-	var more := FilmUI.find_button(chrome, "… More") if chrome != null else null
-	if more is MenuButton:
-		var popup := (more as MenuButton).get_popup()
+	var more := find_auto(ctx.main, "chip:… More") as MenuButton
+	if more == null:
+		more = FilmUI.find_button(ctx.main, "… More") as MenuButton
+	if more != null and more.is_visible_in_tree():
+		var popup := more.get_popup()
 		for i in popup.item_count:
 			if popup.get_item_text(i) == name:
-				await FilmUI.activate_menu_id(ctx, more as MenuButton, popup.get_item_id(i),
+				await FilmUI.activate_menu_id(ctx, more, popup.get_item_id(i),
 						FilmUICues.alert(name, name))
 				return
-	await FilmUI.marking_verb(ctx, name)
+	# Geometry is already at PART millimetres; a missing verb is not the S menu.
 
 
 static func sketch_front_c(ctx: FilmContext) -> void:
@@ -417,12 +420,6 @@ static func sketch_front_c(ctx: FilmContext) -> void:
 	await line(ctx, o_hi, i_hi, "upper jaw", SPAN_HEAD)
 	if FilmUI.fail_count > 0:
 		return
-	await constrain(ctx, "Parallel", axis_17(), (o_hi + i_hi) * 0.5)
-	if FilmUI.fail_count > 0:
-		return
-	await constrain(ctx, "Coincident", o_hi, jaw_tip_uv(true))
-	if FilmUI.fail_count > 0:
-		return
 	await FilmUI.select_sketch_tool(ctx, ctx.main.sketch_mode, SketchMode.Tool.SELECT)
 	await click(ctx, axis_17(), "mirror axis", SPAN_HEAD)
 	await shift_click_uv(ctx, (o_hi + i_hi) * 0.5, "jaw")
@@ -434,8 +431,6 @@ static func sketch_front_c(ctx: FilmContext) -> void:
 	if FilmUI.fail_count > 0:
 		return
 	await trim_at(ctx, trim_opening(), "Trim opening")
-	await constrain(ctx, "Coincident", jaw_outer(true), jaw_tip_uv(true))
-	await constrain(ctx, "Coincident", jaw_outer(false), jaw_tip_uv(false))
 
 
 static func sketch_ring_and_hexes(ctx: FilmContext) -> void:
@@ -459,24 +454,37 @@ static func sketch_ring_and_hexes(ctx: FilmContext) -> void:
 	await _trim_hex_leftovers(ctx)
 
 
+static func sketch_ring(ctx: FilmContext) -> void:
+	var c := ring_centre()
+	var rad := mm("RING_D") * 0.5
+	var sm: SketchMode = ctx.main.sketch_mode
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.CIRCLE)
+	if FilmUI.fail_count > 0:
+		return
+	await click(ctx, c, "Ø33 centre", SPAN_HANDLE)
+	await click(ctx, c + Vector2(rad, 0.0), "Ø33 rim", SPAN_RING)
+
+
+static func sketch_twelve_point_hexes(ctx: FilmContext) -> void:
+	var c := ring_centre()
+	var af := mm("HEX_AF")
+	var r_v := af / sqrt(3.0)
+	await place_af_hex(ctx, c, Vector2(c.x, c.y + r_v))
+	if FilmUI.fail_count > 0:
+		return
+	var ang := deg_to_rad(30.0)
+	await place_vertex_hex(ctx, c, Vector2(c.x + r_v * cos(ang), c.y + r_v * sin(ang)))
+
+
 static func sketch_handle(ctx: FilmContext) -> void:
 	var hi := handle_xy(true)
 	var lo := handle_xy(false)
 	await FilmSteps._snap_off_if_visible(ctx)
+	await FilmActor.of(ctx).zoom_to(Vector3(120, 0, 0), 320.0, "Frame handle")
 	await line(ctx, hi[0], hi[1], "handle", SPAN_HANDLE)
 	if FilmUI.fail_count > 0:
 		return
-	await constrain(ctx, "Horizontal", hi[0], hi[1])
-	await FilmUI.select_sketch_tool(ctx, ctx.main.sketch_mode, SketchMode.Tool.SELECT)
-	await click(ctx, Vector2(50, 0), "handle axis", SPAN_HANDLE)
-	await shift_click_uv(ctx, (hi[0] + hi[1]) * 0.5, "handle")
-	await confirm_mirror(ctx, Vector2(100, -30))
-	await FilmUI.wait_frames(ctx.tree, 2)
-	if _line_at_y(ctx.main.sketch_mode, -mm("HANDLE_HALF")) == 0:
-		await line(ctx, lo[0], lo[1], "handle copy", SPAN_HANDLE)
-		await constrain(ctx, "Horizontal", lo[0], lo[1])
-	for uv in [Vector2(18, 10), Vector2(18, -10), Vector2(232, 10), Vector2(232, -10)]:
-		await trim_at(ctx, uv, "Trim handle overflow")
+	await line(ctx, lo[0], lo[1], "handle copy", SPAN_HANDLE)
 
 
 static func set_contours(ctx: FilmContext, keep: PackedStringArray) -> void:
@@ -537,8 +545,10 @@ static func fillet_z_at(ctx: FilmContext, radius_key: String, xys: Array) -> voi
 	if FilmUI.fail_count > 0:
 		return
 	for xy in xys:
+		# Handle thickness, not the 10 mm C generator (walk fillet_z_edges).
 		var pt := Vector3(float(xy.x), float(xy.y), 0.0)
-		await FilmActor.of(ctx).zoom_to(pt, 80.0, "Frame neck")
+		await FilmActor.of(ctx).view_key(KEY_7, "Iso")
+		await FilmActor.of(ctx).zoom_to(pt, 50.0, "Frame neck")
 		var screen := FilmUI.model_to_screen(ctx, pt)
 		if not FilmUI.require_on_screen(ctx, screen, "neck edge"):
 			return
