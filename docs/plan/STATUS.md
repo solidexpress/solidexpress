@@ -156,6 +156,9 @@ Part B: film `ubc_wrench` + `run_film_ubc_wrench_tests.gd` (`tier=full`). Suites
 
 `ubc_wrench` is on Release `demo-movies` and in `published-demos.json` and `demo-catalog.json`.
 
+## 0.1.6 — rung 7 (combination spanner)
+- SolidExpress `VERSION` is 0.1.6. Rung 7 (combination spanner, video RZB8m9li098) is fully makeable (#280).
+
 ## 0.1.5 — rung 6 (candlestick)
 - SolidExpress `VERSION` is 0.1.5. Rung 6 (SolidWorks Revolve & Sweep candlestick) is fully makeable (#275).
 
