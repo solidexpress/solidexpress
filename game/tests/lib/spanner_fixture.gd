@@ -1075,27 +1075,36 @@ static func convert_handle_outline(ctx: FilmContext) -> void:
 
 
 static func draw_recess_racetrack(ctx: FilmContext) -> void:
-	# Walk: four Lines share endpoints so Extrude sees one region. Snap on;
-	# snap-off left degenerate 0-area chips that Feature Mirror cannot tool.
-	await _snap_on_if_visible(ctx)
+	# Walk draw_recess_racetrack: four Lines that share vertices. Separate
+	# line() calls reframe and end_chain each side; pixel rounding then left
+	# a 962 mm² triangle plus 0-area chips, and Feature Mirror could not tool.
+	# One Line chain (same tool as the walk) keeps shared corners.
+	await FilmSteps._snap_off_if_visible(ctx)
 	var x0 := 40.0
 	var x1 := 215.0
 	var y := 5.5
 	await frame_uv(ctx, Vector2(120, 0), SPAN_HANDLE, "Frame recess")
-	await line(ctx, Vector2(x0, y), Vector2(x1, y), "recess top", 0.0)
-	await line(ctx, Vector2(x1, y), Vector2(x1, -y), "recess right", 0.0)
-	await line(ctx, Vector2(x1, -y), Vector2(x0, -y), "recess bot", 0.0)
-	await line(ctx, Vector2(x0, -y), Vector2(x0, y), "recess left", 0.0)
+	var sm: SketchMode = ctx.main.sketch_mode
+	var pts := PackedVector2Array([
+		Vector2(x0, y), Vector2(x1, y), Vector2(x1, -y), Vector2(x0, -y), Vector2(x0, y),
+	])
+	await FilmUI.draw_polyline(ctx, sm, pts)
+	print("spanner racetrack ", dump_contours(sm), " ents=", _dump_ents(sm))
+	if contour_by_area(sm, (x1 - x0) * (y * 2.0), 250.0) < 0:
+		await FilmSteps.centre_rect(ctx, Vector2((x0 + x1) * 0.5, 0.0), Vector2(x1, y))
+		print("spanner racetrack rect fallback ", dump_contours(ctx.main.sketch_mode))
 
 
-static func _snap_on_if_visible(ctx: FilmContext) -> void:
-	var snap := find_auto(ctx.main, "rail:Snap") as BaseButton
-	if snap == null or not snap.is_visible_in_tree():
-		snap = ctx.main.find_child("SnapToggle", true, false) as BaseButton
-	if snap == null or not snap.is_visible_in_tree():
-		return
-	if not snap.button_pressed:
-		await FilmUI.click_control(ctx, snap, FilmUICues.alert("Snap", "Snap on"))
+static func _dump_ents(sm: SketchMode) -> String:
+	if sm == null or sm.sketch == null:
+		return "no sketch"
+	var bits: PackedStringArray = PackedStringArray()
+	for id in sm.sketch.entity_ids():
+		var info: Dictionary = sm.sketch.entity_info(id)
+		bits.append("%s %s->%s" % [str(info.get("type", "")),
+				str(info.get("start", info.get("p1", "?"))),
+				str(info.get("end", info.get("p2", "?")))])
+	return "[%s]" % ", ".join(bits)
 
 
 static func blind_cut(ctx: FilmContext, distance: String) -> void:
@@ -1105,17 +1114,9 @@ static func blind_cut(ctx: FilmContext, distance: String) -> void:
 	await FilmSteps.type_distance(ctx, distance)
 	await SxInput.push_key(ctx.main.get_viewport(), KEY_ENTER)
 	var chrome: SketchContextChrome = ctx.main.sketch_chrome
-	# Face normal on the handle top is +Z (out of the solid). Flip so Cut
-	# Blind 1 goes into the 6 mm handle; otherwise the pad is in air and
-	# Feature Mirror reports "mirror of tool failed".
-	var flip: CheckButton = chrome.flip_side_button() if chrome != null else null
-	if flip == null or not flip.is_visible_in_tree():
-		flip = find_auto(ctx.main, "finish:Flip") as CheckButton
-	if flip != null and flip.is_visible_in_tree() and not flip.button_pressed:
-		await FilmActor.of(ctx).aim(FilmUI.control_screen_center(flip),
-				FilmUICues.alert("Flip", "Flip Side to Cut"))
-		await SxInput.x11_click(flip)
-		await FilmUI.wait_frames(ctx.tree, 2)
+	# Closed Cut Blind already points into the solid (walk try_extrude /
+	# kernel_cut). Flip Side is the open-profile control; leaving it on
+	# sent the pad into air and Feature Mirror reported "mirror of tool failed".
 	var ex: Button = chrome.extrude_button() if chrome != null else null
 	if ex == null or not ex.is_visible_in_tree():
 		ex = find_auto(ctx.main, "finish:Extrude") as Button

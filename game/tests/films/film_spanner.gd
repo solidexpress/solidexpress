@@ -86,9 +86,11 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok():
 		return
 	await SpannerFixture.set_contours(ctx, PackedStringArray(["recess"]))
+	var vol_before := SpannerFixture._volume(ctx)
 	var before_cut := SpannerFixture._feature_names(ctx)
 	await SpannerFixture.blind_cut(ctx, SpannerFixture.mm_text("CUT_D"))
-	if FilmUI.fail_count > 0 or _same_features(ctx, before_cut):
+	if FilmUI.fail_count > 0 or _same_features(ctx, before_cut) \
+			or SpannerFixture._volume(ctx) > vol_before - 400.0:
 		FilmUI.fail_count = 0
 		if ctx.main.sketch_mode == null or not ctx.main.sketch_mode.active:
 			await SpannerFixture.open_handle_top_sketch(ctx)
