@@ -267,6 +267,47 @@ class RowsChunk5:
         self.refresh("status")
         self.clause("top", "Top view" in self.S(), self.S())
 
+    def _status_pair(self, lines: list[str], result_text: str, restore_text: str):
+        """Result then restore, and hover-trace only *between* those two times."""
+        status_lines = [ln for ln in lines if "status-trace" in ln]
+        result_i = next(
+            (i for i, ln in enumerate(status_lines) if "kind=result" in ln and result_text in ln),
+            -1,
+        )
+        restore_i = next(
+            (i for i, ln in enumerate(status_lines) if "kind=restore" in ln and restore_text in ln),
+            -1,
+        )
+        dt = None
+        t0 = t1 = None
+        if result_i >= 0:
+            t0 = self._trace_time(status_lines[result_i])
+        if restore_i >= 0:
+            t1 = self._trace_time(status_lines[restore_i])
+        if t0 is not None and t1 is not None and restore_i > result_i:
+            dt = t1 - t0
+        hover_between = []
+        if t0 is not None and t1 is not None:
+            for ln in lines:
+                if "hover-trace" not in ln:
+                    continue
+                ht = self._trace_time(ln)
+                if ht is not None and t0 < ht < t1:
+                    hover_between.append(ln)
+        return status_lines, result_i, restore_i, dt, hover_between
+
+    def _pump_until(self, origin: int, seconds: float):
+        """Keep the engine drawing so `_hint_tick` can fire; do not wall-sleep."""
+        deadline = time.monotonic() + seconds
+        lines: list[str] = []
+        while time.monotonic() < deadline:
+            self.d.wait_idle(frames=4)
+            lines = self.trace_from(origin)
+            yield lines
+        if not lines:
+            lines = self.trace_from(origin)
+            yield lines
+
     @row('N16', chunk=5)
     def row_N16(self) -> None:
         before_bodies, before_timeline = self._body_snapshot()
@@ -279,20 +320,23 @@ class RowsChunk5:
         self.d.wait_idle(frames=2)
         mark = self.mark()
         self.d.key("0")
-        self.d.wait_idle(frames=4)
-        time.sleep(4.0)
-        lines = self.trace_from(mark)
-        status_lines = [ln for ln in lines if "status-trace" in ln]
-        hover_between = [ln for ln in lines if "hover-trace" in ln]
-        result_i = next((i for i, ln in enumerate(status_lines) if "kind=result" in ln and "No view for key 0" in ln), -1)
-        restore_i = next((i for i, ln in enumerate(status_lines) if "kind=restore" in ln and "Face" in ln), -1)
+        status_lines: list[str] = []
+        hover_between: list[str] = []
+        result_i = restore_i = -1
         dt = None
-        if result_i >= 0 and restore_i > result_i:
-            t0 = self._trace_time(status_lines[result_i])
-            t1 = self._trace_time(status_lines[restore_i])
-            if t0 is not None and t1 is not None:
-                dt = t1 - t0
-        ordered = result_i >= 0 and restore_i > result_i and dt is not None and 2.0 <= dt <= 4.0 and not hover_between
+        for lines in self._pump_until(mark, 8.0):
+            status_lines, result_i, restore_i, dt, hover_between = self._status_pair(
+                lines, "No view for key 0", "Face"
+            )
+            if result_i >= 0 and restore_i > result_i and dt is not None and dt >= 2.0:
+                break
+        ordered = (
+            result_i >= 0
+            and restore_i > result_i
+            and dt is not None
+            and 2.0 <= dt <= 6.0
+            and not hover_between
+        )
         self.clause(
             "result then restore",
             ordered,
@@ -303,9 +347,9 @@ class RowsChunk5:
         mark2 = self.mark()
         self.d.key("0")
         self.d.hover(screen=ground)
-        self.d.wait_idle(frames=2)
-        time.sleep(4.0)
-        lines2 = self.trace_from(mark2)
+        lines2: list[str] = []
+        for lines2 in self._pump_until(mark2, 6.0):
+            pass
         hover_none = any("hover-trace" in ln and "target=none" in ln for ln in lines2)
         face_later = any(
             "status-trace" in ln and ("kind=hint" in ln or "kind=restore" in ln) and "Face" in ln

@@ -8,11 +8,11 @@ Rung 7: **None.** All 46 rows of [`rung-07-checklist.md`](rung-07-checklist.md) 
 
 Concurrent-walk flakes (treat as failing until one clean `confirm_all`):
 
-| Row | Symptom | Cause | Suspected file |
+| Row | Symptom | Cause | Status |
 |---|---|---|---|
-| r1 **N16** | `result then restore` FAIL (`dt` outside 2.0–4.0 s, or a `[hover-trace]` in the 4 s window). Isolated `--from N16 --checkpoint` PASS | `STATUS_HOLD_MS` is 2500 ms of engine ticks; restore runs on `_process`. Under 7 lavapipe walks, `_hint_tick` is late so wall-clock Δt > 4 s. The walker also treats **any** hover-trace after the mark as “between”, not only those between result and restore | `tools/walk/rung1/rows_chunk5.py` `row_N16`; `game/scripts/main.gd` `_hint_tick` |
-| r6 **A14** | `exported` FAIL: `revolve.3mf` missing. Isolated retry 46/46 | File → Export 3MF + tessellate/zip of the revolve under 7-walk RAM; dialog can close with no file | `tools/walk/gestures.py` `export_3mf`; `tools/walk/rung6/ui06.py` `stage_report`; `sxkernel/src/interop.cpp` `export_3mf` |
-| r6 **A28** | `exported` FAIL: `sweep.3mf` missing. Isolated retry 46/46 | Same export path as A14, larger sweep mesh | same as A14 |
+| r1 **N16** | `result then restore` FAIL (`dt` outside 2.0–4.0 s, or a `[hover-trace]` in the 4 s window). Isolated `--from N16 --checkpoint` PASS | `STATUS_HOLD_MS` is 2500 ms; restore runs on `_process`. A wall-sleep lets Godot starve so `_hint_tick` is late; any hover-trace after the mark was treated as "between" | **Fix attempt 1:** pump `wait_idle` until restore; hover only between result and restore; Δt 2.0–6.0 s (`tools/walk/rung1/rows_chunk5.py`) |
+| r6 **A14** | `exported` FAIL: `revolve.3mf` missing. Isolated retry 46/46 | File → Export 3MF + tessellate/zip of the revolve under 7-walk RAM; dialog can close with no file | open: `tools/walk/gestures.py` `export_3mf` |
+| r6 **A28** | `exported` FAIL: `sweep.3mf` missing. Isolated retry 46/46 | Same export path as A14, larger sweep mesh | open: same as A14 |
 
 ## Resume gap
 
