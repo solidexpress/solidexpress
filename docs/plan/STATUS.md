@@ -2,6 +2,10 @@
 
 Updated by agents on every merge. **Priority / what’s next:** [ROADMAP.md](ROADMAP.md). Task definitions: [implementation-plan.md](implementation-plan.md).
 
+## Rung 7 — combination spanner (PR #280)
+
+Shipped: 17° construction, 3-click ellipse 55 steep × 50 along 17°, Parallel jaw offsets, Mirror Entities + Symmetric, Power Trim ellipse → C and two AF-25 hexes → 12-point, Mid Plane 10 / 6, R30/R20 neck fillets (MakeFillet-first + AABB clip), Convert + Offset 5 Cut Blind 1, R3, Feature Mirror about Front, R1, 46-row walk, `check_rung07.py`. Bars: the table in [`rung-07-result.md`](../loop/rung-07-result.md). Suites **244 run + 4 known-red**.
+
 ## Post-rung-6 cleanup (`cursor/post-rung-06-cleanup-20261018`)
 
 Part A WP1–WP7: `CandlestickFixture`, `BooleanTarget`, `FaceLabelPark`, `ARM_CLEAR`, FilmSteps (tangent / 3-point / ellipse / sweep / draft), `SweepFuse.POLICY`, WalkUI06 split. WP11: mixin imports (`R12_BULGE`, `SxError`). Confirm: walks 77/77, 44/44, 46/46, 32/32, 36/36, 46/46; `check_rung05` 10/10; `check_rung06` 7/7; headless **236/0**. Counts: [`post-rung-06-result.md`](../loop/post-rung-06-result.md).

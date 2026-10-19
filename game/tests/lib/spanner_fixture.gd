@@ -90,22 +90,6 @@ static func confirm_mirror(ctx: FilmContext, uv: Vector2) -> void:
 	await click(ctx, uv, "confirm mirror")
 
 
-static func set_handle_construction(sm: SketchMode, on: bool) -> void:
-	if sm == null or sm.sketch == null:
-		return
-	var half := mm("HANDLE_HALF")
-	for id in sm.sketch.entity_ids():
-		var info: Dictionary = sm.sketch.entity_info(id)
-		if str(info.get("type", "")) != "line":
-			continue
-		var a: Vector2 = info["start"]
-		var b: Vector2 = info["end"]
-		if absf(a.y - half) <= 0.3 and absf(b.y - half) <= 0.3:
-			sm.sketch.set_construction(id, on)
-		elif absf(a.y + half) <= 0.3 and absf(b.y + half) <= 0.3:
-			sm.sketch.set_construction(id, on)
-
-
 static func contour_by_area(sm: SketchMode, want: float, tol: float) -> int:
 	if sm == null or sm.sketch == null or not sm.sketch.has_method("contour_outlines"):
 		return -1
@@ -135,12 +119,6 @@ static func only_body(ctx: FilmContext) -> String:
 	if ids.size() != 1:
 		return ""
 	return str(ids[0])
-
-
-static func contour_at(sm: SketchMode, uv: Vector2) -> int:
-	if sm == null or sm.sketch == null or not sm.sketch.has_method("region_at"):
-		return -1
-	return int(sm.sketch.region_at(uv.x, uv.y))
 
 
 static func dump_contours(sm: SketchMode) -> String:

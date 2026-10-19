@@ -379,17 +379,6 @@ class WalkUI07(WalkChrome):
             if str(c.get("id", "")).startswith("contour:")
         ]
 
-    def _contour_note(self, chip: dict) -> str:
-        mark = self.mark()
-        cid = str(chip.get("id", ""))
-        if not cid:
-            return ""
-        self.click(cid)
-        self.d.wait_idle(frames=1)
-        self.click(cid)
-        self.d.wait_idle(frames=1)
-        return " | ".join(self.result_texts(mark)) or self.S()
-
     def _parse_contour_note(self, note: str) -> tuple[float, float, float, float]:
         """Return (cx, cy, width, height) from a contour status sentence."""
         cx = cy = width = height = 0.0
@@ -843,14 +832,6 @@ class WalkUI07(WalkChrome):
             removed += 1
         self.refresh("sketch", "status")
         return removed
-
-    def check_all_contours(self) -> None:
-        self._ensure_finish_bar()
-        for chip in self.contour_chips():
-            node = self.control(str(chip.get("id", ""))) or chip
-            if not bool(node.get("pressed") or node.get("button_pressed")):
-                self.click(str(chip.get("id")))
-                self.d.wait_idle(frames=1)
 
     def prune_stray_convert(self) -> int:
         """Drop short interior lines (the x=43 chain-breaker) before Offset."""
