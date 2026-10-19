@@ -54,6 +54,8 @@ public:
     godot::PackedStringArray circular_pattern_entities(
         const godot::PackedStringArray& ids, double cx, double cy, int count,
         double total_angle);
+    godot::PackedStringArray mirror_entities(const godot::PackedStringArray& ids,
+                                             const godot::String& axis_id);
 
     godot::Dictionary entity_info(const godot::String& id) const;
     godot::PackedVector2Array spline_samples(const godot::String& id, int n = 64) const;

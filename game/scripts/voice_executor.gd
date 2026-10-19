@@ -193,9 +193,7 @@ func _do_constraint(intent: Dictionary) -> void:
 						{"entity": ids[1], "role": "self"}]
 			sk.add_constraint(verb, refs, v)
 		"fix":
-			# Approximate "lock" as a pair of fixed dimensions isn't available —
-			# horizontal+vertical on a line is the closest lightweight fix.
-			sk.add_constraint("horizontal", [{"entity": ids[0], "role": "self"}], 0.0)
+			sk.add_constraint("fix", [{"entity": ids[0], "role": "self"}], 0.0)
 		_:
 			status.emit("Constraint “%s” not wired yet" % verb)
 			return

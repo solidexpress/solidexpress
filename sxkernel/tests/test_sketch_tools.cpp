@@ -119,9 +119,11 @@ TEST_CASE("offset_entities offsets circles with Concentric and Diameter",
                 has_concentric = true;
             }
         }
-        if (con.type == ConstraintType::Diameter && !con.refs.empty() &&
-            con.refs[0].entity == nid && con.driving) {
-            has_diameter = std::abs(con.value - 60.0) < 1e-9;
+        if (con.type == ConstraintType::Distance && con.refs.size() >= 2 &&
+            ((con.refs[0].entity == nid && con.refs[1].entity == c) ||
+             (con.refs[1].entity == nid && con.refs[0].entity == c)) &&
+            con.driving) {
+            has_diameter = std::abs(con.value + 5.0) < 1e-9 || std::abs(con.value - 5.0) < 1e-9;
         }
     }
     REQUIRE(has_concentric);
@@ -167,9 +169,11 @@ TEST_CASE("offset_entities offsets arcs with Concentric and Radius",
                 has_concentric = true;
             }
         }
-        if (con.type == ConstraintType::Radius && !con.refs.empty() &&
-            con.refs[0].entity == nid && con.driving) {
-            has_radius = std::abs(con.value - 35.0) < 1e-9;
+        if (con.type == ConstraintType::Distance && con.refs.size() >= 2 &&
+            ((con.refs[0].entity == nid && con.refs[1].entity == a) ||
+             (con.refs[1].entity == nid && con.refs[0].entity == a)) &&
+            con.driving) {
+            has_radius = std::abs(con.value - 5.0) < 1e-9;
         }
     }
     REQUIRE(has_concentric);

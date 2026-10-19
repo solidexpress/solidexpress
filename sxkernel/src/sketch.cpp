@@ -1519,14 +1519,21 @@ TopoDS_Shape Sketch::thin_profile_face(double thickness, bool midplane, bool fli
 
     struct UVSeg {
         double x1, y1, x2, y2;
+        bool arc = false;
+        double cx = 0, cy = 0, r = 0, sa = 0, ea = 0;
         bool used = false;
     };
     std::vector<UVSeg> segs;
     for (const auto& e : entities_) {
-        if (e.construction || e.type != SketchEntityType::Line) continue;
-        double x1 = p(e, 0), y1 = p(e, 1), x2 = p(e, 2), y2 = p(e, 3);
-        if (std::hypot(x2 - x1, y2 - y1) < 1e-9) continue;
-        segs.push_back({x1, y1, x2, y2, false});
+        if (e.construction) continue;
+        if (e.type == SketchEntityType::Line) {
+            double x1 = p(e, 0), y1 = p(e, 1), x2 = p(e, 2), y2 = p(e, 3);
+            if (std::hypot(x2 - x1, y2 - y1) < 1e-9) continue;
+            segs.push_back({x1, y1, x2, y2, false, 0, 0, 0, 0, 0, false});
+        } else if (e.type == SketchEntityType::Arc && e.params.size() >= 9) {
+            segs.push_back({p(e, 5), p(e, 6), p(e, 7), p(e, 8), true, p(e, 0), p(e, 1),
+                            p(e, 2), p(e, 3), p(e, 4), false});
+        }
     }
     if (segs.empty()) {
         // Circles and arcs are closed (or curved) profiles, not a missing line
@@ -1558,33 +1565,36 @@ TopoDS_Shape Sketch::thin_profile_face(double thickness, bool midplane, bool fli
         return std::hypot(ax - bx, ay - by) < tol;
     };
 
-    // Greedy-chain line segments into one UV polyline (open allowed).
+    // Greedy-chain line/arc segments into one open path.
+    struct Link {
+        UVSeg* s = nullptr;
+        bool rev = false;
+    };
     UVSeg* seed = &segs[0];
     seed->used = true;
-    std::vector<std::array<double, 2>> pts;
-    pts.push_back({seed->x1, seed->y1});
-    pts.push_back({seed->x2, seed->y2});
+    std::vector<Link> chain{{seed, false}};
     auto extend = [&](bool forward) {
         bool progressing = true;
         while (progressing) {
             progressing = false;
-            double cx = forward ? pts.back()[0] : pts.front()[0];
-            double cy = forward ? pts.back()[1] : pts.front()[1];
+            const Link& tip = forward ? chain.back() : chain.front();
+            const double cx = (!tip.rev) == forward ? tip.s->x2 : tip.s->x1;
+            const double cy = (!tip.rev) == forward ? tip.s->y2 : tip.s->y1;
             for (auto& s : segs) {
                 if (s.used) continue;
-                std::array<double, 2> nxt{};
+                bool rev = false;
                 bool hit = false;
                 if (near(s.x1, s.y1, cx, cy)) {
-                    nxt = {s.x2, s.y2};
                     hit = true;
+                    rev = !forward;
                 } else if (near(s.x2, s.y2, cx, cy)) {
-                    nxt = {s.x1, s.y1};
                     hit = true;
+                    rev = forward;
                 }
                 if (!hit) continue;
                 s.used = true;
-                if (forward) pts.push_back(nxt);
-                else pts.insert(pts.begin(), nxt);
+                if (forward) chain.push_back({&s, rev});
+                else chain.insert(chain.begin(), {&s, rev});
                 progressing = true;
                 break;
             }
@@ -1592,59 +1602,24 @@ TopoDS_Shape Sketch::thin_profile_face(double thickness, bool midplane, bool fli
     };
     extend(true);
     extend(false);
-
-    for (const auto& s : segs) {
-        if (!s.used) {
-            break;
-        }
-    }
-    if (pts.size() < 2) {
+    if (chain.size() < 1) {
         if (err) *err = "no usable open line chain for thin profile";
         return {};
     }
 
-    auto left_normal = [](double x1, double y1, double x2, double y2) {
-        double dx = x2 - x1, dy = y2 - y1;
-        double len = std::hypot(dx, dy);
+    const double dist = midplane ? (flip_side ? -thickness * 0.5 : thickness * 0.5)
+                                 : (flip_side ? -thickness : thickness);
+    const double dist_b = midplane ? -dist : 0.0;
+
+    auto left_n = [](double x1, double y1, double x2, double y2) {
+        double dx = x2 - x1, dy = y2 - y1, len = std::hypot(dx, dy);
         if (len < 1e-12) return std::array<double, 2>{0.0, 0.0};
         return std::array<double, 2>{-dy / len, dx / len};
     };
-
-    auto offset_poly = [&](const std::vector<std::array<double, 2>>& src, double dist) {
-        std::vector<std::array<double, 2>> out(src.size());
-        for (size_t i = 0; i < src.size(); ++i) {
-            double nx = 0.0, ny = 0.0;
-            if (i + 1 < src.size()) {
-                auto nrm = left_normal(src[i][0], src[i][1], src[i + 1][0], src[i + 1][1]);
-                nx += nrm[0];
-                ny += nrm[1];
-            }
-            if (i > 0) {
-                auto nrm = left_normal(src[i - 1][0], src[i - 1][1], src[i][0], src[i][1]);
-                nx += nrm[0];
-                ny += nrm[1];
-            }
-            double len = std::hypot(nx, ny);
-            if (len < 1e-12) {
-                out[i] = src[i];
-            } else {
-                out[i] = {src[i][0] + dist * nx / len, src[i][1] + dist * ny / len};
-            }
-        }
-        return out;
+    auto shift = [&](double x, double y, double x2, double y2, double d) {
+        auto nrm = left_n(x, y, x2, y2);
+        return std::array<double, 2>{x + d * nrm[0], y + d * nrm[1]};
     };
-
-    std::vector<std::array<double, 2>> path_a, path_b;
-    if (midplane) {
-        double d = thickness * 0.5;
-        if (flip_side) d = -d;
-        path_a = offset_poly(pts, d);
-        path_b = offset_poly(pts, -d);
-    } else {
-        double d = flip_side ? -thickness : thickness;
-        path_a = pts;
-        path_b = offset_poly(pts, d);
-    }
 
     const auto n = plane_.normal();
     gp_Pln pln(gp_Pnt(plane_.origin[0], plane_.origin[1], plane_.origin[2]),
@@ -1658,21 +1633,68 @@ TopoDS_Shape Sketch::thin_profile_face(double thickness, bool midplane, bool fli
         return gp_Pnt(o.XYZ() + x * u + y * v);
     };
 
-    if (path_a.size() < 2 || path_b.size() < 2) {
-        if (err) *err = "thin profile path degenerate";
-        return {};
-    }
-    BRepBuilderAPI_MakeWire wire;
-    auto add_edge = [&](const std::array<double, 2>& u, const std::array<double, 2>& v) {
-        gp_Pnt a = to3d(u[0], u[1]);
-        gp_Pnt b = to3d(v[0], v[1]);
-        if (a.Distance(b) < 1e-9) return;
-        wire.Add(BRepBuilderAPI_MakeEdge(a, b).Edge());
+    auto add_seg = [&](BRepBuilderAPI_MakeWire& wire, const Link& ln, double d, bool reverse_dir) {
+        UVSeg& s = *ln.s;
+        bool rev = ln.rev != reverse_dir;
+        if (s.arc) {
+            // Left of a CCW traveler points toward the centre, so +d shrinks r.
+            const double nr = std::abs(s.r - (rev ? -d : d));
+            if (nr < 1e-9) return;
+            double sa = rev ? s.ea : s.sa;
+            double ea = rev ? s.sa : s.ea;
+            gp_Circ circ(gp_Ax2(to3d(s.cx, s.cy), nd, xd), nr);
+            Handle(Geom_Circle) gc = new Geom_Circle(circ);
+            if (ea < sa) ea += kTwoPi;
+            Handle(Geom_TrimmedCurve) tr = new Geom_TrimmedCurve(gc, sa, ea);
+            BRepBuilderAPI_MakeEdge mk(tr);
+            if (mk.IsDone()) wire.Add(mk.Edge());
+        } else {
+            double x1 = s.x1, y1 = s.y1, x2 = s.x2, y2 = s.y2;
+            if (rev) {
+                std::swap(x1, x2);
+                std::swap(y1, y2);
+            }
+            auto a = shift(x1, y1, x2, y2, d);
+            auto b = shift(x2, y2, x1, y1, -d);
+            // Endpoints share the same left normal along the line.
+            b = shift(x2, y2, x2 + (x2 - x1), y2 + (y2 - y1), d);
+            gp_Pnt pa = to3d(a[0], a[1]), pb = to3d(b[0], b[1]);
+            if (pa.Distance(pb) > 1e-9) wire.Add(BRepBuilderAPI_MakeEdge(pa, pb).Edge());
+        }
     };
-    for (size_t i = 0; i + 1 < path_a.size(); ++i) add_edge(path_a[i], path_a[i + 1]);
-    add_edge(path_a.back(), path_b.back());
-    for (size_t i = path_b.size(); i-- > 1;) add_edge(path_b[i], path_b[i - 1]);
-    add_edge(path_b.front(), path_a.front());
+
+    BRepBuilderAPI_MakeWire wire;
+    for (const auto& ln : chain) add_seg(wire, ln, dist, false);
+    // Caps and return path at dist_b (0 = original).
+    auto end_uv = [&](const Link& ln, bool at_end, double d) {
+        UVSeg& s = *ln.s;
+        bool rev = ln.rev;
+        double x1 = s.x1, y1 = s.y1, x2 = s.x2, y2 = s.y2;
+        if (rev) {
+            std::swap(x1, x2);
+            std::swap(y1, y2);
+        }
+        if (s.arc) {
+            const double nr = std::abs(s.r - (rev ? -d : d));
+            double ang = at_end ? (rev ? s.sa : s.ea) : (rev ? s.ea : s.sa);
+            return std::array<double, 2>{s.cx + nr * std::cos(ang), s.cy + nr * std::sin(ang)};
+        }
+        return at_end ? shift(x2, y2, x2 + (x2 - x1), y2 + (y2 - y1), d)
+                      : shift(x1, y1, x2, y2, d);
+    };
+    auto a_end = end_uv(chain.back(), true, dist);
+    auto b_end = end_uv(chain.back(), true, dist_b);
+    auto a_st = end_uv(chain.front(), false, dist);
+    auto b_st = end_uv(chain.front(), false, dist_b);
+    {
+        gp_Pnt pa = to3d(a_end[0], a_end[1]), pb = to3d(b_end[0], b_end[1]);
+        if (pa.Distance(pb) > 1e-9) wire.Add(BRepBuilderAPI_MakeEdge(pa, pb).Edge());
+    }
+    for (size_t i = chain.size(); i-- > 0;) add_seg(wire, chain[i], dist_b, true);
+    {
+        gp_Pnt pa = to3d(b_st[0], b_st[1]), pb = to3d(a_st[0], a_st[1]);
+        if (pa.Distance(pb) > 1e-9) wire.Add(BRepBuilderAPI_MakeEdge(pa, pb).Edge());
+    }
     if (!wire.IsDone()) {
         if (err) *err = "thin wire construction failed";
         return {};

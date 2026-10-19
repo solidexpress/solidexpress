@@ -178,6 +178,16 @@ PackedStringArray SxSketch::circular_pattern_entities(const PackedStringArray& i
     return out;
 }
 
+PackedStringArray SxSketch::mirror_entities(const PackedStringArray& ids, const String& axis_id) {
+    std::vector<std::string> entity_ids;
+    entity_ids.reserve(ids.size());
+    for (int i = 0; i < ids.size(); ++i) entity_ids.push_back(to_std(ids[i]));
+    auto result = sx::sketch_tools::mirror_entities(*sketch_, entity_ids, to_std(axis_id));
+    PackedStringArray packed;
+    for (const auto& rid : result) packed.push_back(to_gd(rid));
+    return packed;
+}
+
 Dictionary SxSketch::entity_info(const String& id) const {
     Dictionary out;
     const sx::SketchEntity* e = sketch_->entity(parse_id(id));
@@ -655,6 +665,8 @@ void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("circular_pattern_entities", "ids", "cx", "cy",
                                  "count", "total_angle"),
                          &SxSketch::circular_pattern_entities);
+    ClassDB::bind_method(D_METHOD("mirror_entities", "ids", "axis_id"),
+                         &SxSketch::mirror_entities);
     ClassDB::bind_method(D_METHOD("entity_info", "id"), &SxSketch::entity_info);
     ClassDB::bind_method(D_METHOD("spline_samples", "id", "n"), &SxSketch::spline_samples,
                          DEFVAL(64));

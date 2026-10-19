@@ -3591,53 +3591,13 @@ func mirror_selected() -> Array:
 	if axis_id == "" or geo_ids.is_empty():
 		status.emit("Mirror: select geometry plus one axis line")
 		return []
-	var ainfo: Dictionary = sketch.entity_info(axis_id)
-	var a0: Vector2 = ainfo["start"]
-	var a1: Vector2 = ainfo["end"]
-	var ad := (a1 - a0).normalized()
-	var an := Vector2(-ad.y, ad.x)
-	var out: Array = []
+	var packed := PackedStringArray()
 	for id in geo_ids:
-		var info: Dictionary = sketch.entity_info(id)
-		var refl := func(p: Vector2) -> Vector2:
-			var d := p - a0
-			var along := ad * d.dot(ad)
-			var across := an * d.dot(an)
-			return a0 + along - across
-		match str(info.get("type", "")):
-			"line":
-				var s: Vector2 = refl.call(info["start"])
-				var e: Vector2 = refl.call(info["end"])
-				var copy: String = sketch.add_line(s.x, s.y, e.x, e.y)
-				out.append(copy)
-				sketch.add_constraint("symmetric", [
-					{"entity": id, "role": "start"},
-					{"entity": copy, "role": "start"},
-					{"entity": axis_id, "role": "self"}], 0.0)
-				sketch.add_constraint("symmetric", [
-					{"entity": id, "role": "end"},
-					{"entity": copy, "role": "end"},
-					{"entity": axis_id, "role": "self"}], 0.0)
-			"circle":
-				var ctr: Vector2 = refl.call(info["center"])
-				var copy_c: String = sketch.add_circle(ctr.x, ctr.y, float(info["radius"]))
-				out.append(copy_c)
-				sketch.add_constraint("symmetric", [
-					{"entity": id, "role": "center"},
-					{"entity": copy_c, "role": "center"},
-					{"entity": axis_id, "role": "self"}], 0.0)
-			"point":
-				var p: Vector2 = refl.call(info.get("position", Vector2.ZERO))
-				var copy_p: String = sketch.add_point(p.x, p.y)
-				out.append(copy_p)
-				sketch.add_constraint("symmetric", [
-					{"entity": id, "role": "self"},
-					{"entity": copy_p, "role": "self"},
-					{"entity": axis_id, "role": "self"}], 0.0)
-			"arc":
-				var ctr2: Vector2 = refl.call(info["center"])
-				out.append(sketch.add_arc(ctr2.x, ctr2.y, float(info["radius"]),
-						-float(info["end_angle"]), -float(info["start_angle"])))
+		packed.append(id)
+	var copied: PackedStringArray = sketch.mirror_entities(packed, axis_id)
+	var out: Array = []
+	for i in range(copied.size()):
+		out.append(copied[i])
 	if not out.is_empty():
 		_undo_note("Mirror")
 		run_solve()
@@ -8373,6 +8333,16 @@ func paste_entities(offset := Vector2(10, 10)) -> Array:
 			"point":
 				var p: Vector2 = info.get("position", info.get("point", Vector2.ZERO)) + offset
 				out.append(sketch.add_point(p.x, p.y))
+			"ellipse":
+				var ec: Vector2 = info.get("center", Vector2.ZERO) + offset
+				out.append(sketch.add_ellipse(ec.x, ec.y, float(info.get("rx", 1)),
+						float(info.get("ry", 1)), float(info.get("angle", 0))))
+			"spline":
+				var fits := PackedVector2Array()
+				for fp in info.get("fit_points", []):
+					fits.append((fp as Vector2) + offset)
+				if fits.size() >= 2:
+					out.append(sketch.add_spline(fits))
 	_entity_clipboard_cut = false
 	var ids: Array[String] = []
 	for x in out:

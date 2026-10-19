@@ -462,6 +462,27 @@ struct Xlate {
                 return false;
             }
             case ConstraintType::Distance: {
+                // Circle/arc radial offset: copy.r − source.r = value, only
+                // when both refs are Self (center-to-center Distance stays
+                // point-to-point). PlaneGCS Difference is param2 − param1.
+                if (c.refs.size() >= 2 && c.refs[0].role == PointRole::Self
+                    && c.refs[1].role == PointRole::Self) {
+                    auto cr0 = circles.find(c.refs[0].entity);
+                    auto cr1 = circles.find(c.refs[1].entity);
+                    auto ar0 = arcs.find(c.refs[0].entity);
+                    auto ar1 = arcs.find(c.refs[1].entity);
+                    double* r0 = nullptr;
+                    double* r1 = nullptr;
+                    if (cr0 != circles.end()) r0 = cr0->second.rad;
+                    else if (ar0 != arcs.end()) r0 = ar0->second.rad;
+                    if (cr1 != circles.end()) r1 = cr1->second.rad;
+                    else if (ar1 != arcs.end()) r1 = ar1->second.rad;
+                    if (r0 && r1) {
+                        dim_values.push_back(c.value);
+                        sys.addConstraintDifference(r1, r0, &dim_values.back(), tag, drv);
+                        return true;
+                    }
+                }
                 // Point-to-line when exactly one ref is a line used as itself
                 // (centre → hex flat). Two points stay point-to-point.
                 if (c.refs.size() >= 2) {

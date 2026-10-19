@@ -674,7 +674,7 @@ namespace {
 using Offsetter = bool (*)(Sketch&, const SketchEntity&, EntityId, double,
                            std::vector<std::string>&);
 
-bool offset_line(Sketch& s, const SketchEntity& e, EntityId /*id*/, double distance,
+bool offset_line(Sketch& s, const SketchEntity& e, EntityId id, double distance,
                  std::vector<std::string>& out) {
     double x1 = s.param(e.params[0]);
     double y1 = s.param(e.params[1]);
@@ -687,6 +687,10 @@ bool offset_line(Sketch& s, const SketchEntity& e, EntityId /*id*/, double dista
     Vec2 n = {-dir.y / len, dir.x / len};
     Vec2 o = mul(n, distance);
     EntityId nid = s.add_line(x1 + o.x, y1 + o.y, x2 + o.x, y2 + o.y);
+    s.add_constraint(ConstraintType::Parallel,
+                     {{nid, PointRole::Self}, {id, PointRole::Self}});
+    s.add_constraint(ConstraintType::Distance,
+                     {{nid, PointRole::Start}, {id, PointRole::Self}}, std::abs(distance), true);
     out.push_back(nid.str());
     return true;
 }
@@ -701,9 +705,10 @@ bool offset_circle(Sketch& s, const SketchEntity& e, EntityId id, double distanc
     EntityId nid = s.add_circle(cx, cy, nr);
     s.add_constraint(ConstraintType::Concentric,
                      {{nid, PointRole::Center}, {id, PointRole::Center}});
-    // The driving size of a full-circle offset is the diameter the callout
-    // shows. The radius stays the circle parameter.
-    s.add_constraint(ConstraintType::Diameter, {{nid, PointRole::Self}}, nr * 2.0, true);
+    // Radial Δ relation: copy.r − source.r = distance (associative).
+    s.add_constraint(ConstraintType::Distance,
+                     {{nid, PointRole::Self}, {id, PointRole::Self}}, distance, true);
+    s.add_constraint(ConstraintType::Diameter, {{nid, PointRole::Self}}, nr * 2.0, false);
     out.push_back(nid.str());
     return true;
 }
@@ -721,7 +726,9 @@ bool offset_arc(Sketch& s, const SketchEntity& e, EntityId id, double distance,
     EntityId nid = s.add_arc(cx, cy, nr, sa, ea);
     s.add_constraint(ConstraintType::Concentric,
                      {{nid, PointRole::Center}, {id, PointRole::Center}});
-    s.add_constraint(ConstraintType::Radius, {{nid, PointRole::Self}}, nr, true);
+    s.add_constraint(ConstraintType::Distance,
+                     {{nid, PointRole::Self}, {id, PointRole::Self}}, distance, true);
+    s.add_constraint(ConstraintType::Radius, {{nid, PointRole::Self}}, nr, false);
     out.push_back(nid.str());
     return true;
 }
@@ -895,23 +902,56 @@ std::vector<std::string> pattern_entities(Sketch& s,
             p2 = s.param(e->params[2]);
             p3 = s.param(e->params[3]);
             p4 = s.param(e->params[4]);
+        } else if (typ == SketchEntityType::Ellipse) {
+            auto ax = s.ellipse_axes(id);
+            if (!ax) continue;
+            p0 = (*ax)[0];
+            p1 = (*ax)[1];
+            p2 = (*ax)[2];
+            p3 = (*ax)[3];
+            p4 = (*ax)[4];
+        } else if (typ == SketchEntityType::Spline) {
+            // Copies below from fit points.
         } else {
-            continue;  // points unsupported
+            continue;
         }
 
+        EntityId prev = id;
         for (int i = 1; i < count; ++i) {
             double ox = dx * i;
             double oy = dy * i;
             EntityId nid;
             if (typ == SketchEntityType::Line) {
                 nid = s.add_line(p0 + ox, p1 + oy, p2 + ox, p3 + oy);
+                s.add_constraint(ConstraintType::Parallel,
+                                 {{nid, PointRole::Self}, {id, PointRole::Self}});
+                s.add_constraint(ConstraintType::Distance,
+                                 {{nid, PointRole::Start}, {prev, PointRole::Start}},
+                                 std::hypot(dx, dy), true);
             } else if (typ == SketchEntityType::Circle) {
                 nid = s.add_circle(p0 + ox, p1 + oy, p2);
+                s.add_constraint(ConstraintType::Equal,
+                                 {{nid, PointRole::Self}, {id, PointRole::Self}});
+                s.add_constraint(ConstraintType::Distance,
+                                 {{nid, PointRole::Center}, {prev, PointRole::Center}},
+                                 std::hypot(dx, dy), true);
+            } else if (typ == SketchEntityType::Ellipse) {
+                nid = s.add_ellipse(p0 + ox, p1 + oy, p2, p3, p4);
+            } else if (typ == SketchEntityType::Spline) {
+                auto fits = s.spline_fit_points(id);
+                for (auto& fp : fits) {
+                    fp[0] += ox;
+                    fp[1] += oy;
+                }
+                nid = s.add_spline(fits);
             } else {
                 nid = s.add_arc(p0 + ox, p1 + oy, p2, p3, p4);
+                s.add_constraint(ConstraintType::Equal,
+                                 {{nid, PointRole::Self}, {id, PointRole::Self}});
             }
             if (constr) s.set_construction(nid, true);
             out.push_back(nid.str());
+            prev = nid;
         }
     }
     return out;
@@ -948,6 +988,9 @@ bool copy_circle(Sketch& s, const CircleSeed& seed, Vec2 origin, double ca,
                      {{ray, PointRole::End}, {copy, PointRole::Center}});
     s.add_constraint(ConstraintType::Equal,
                      {{ray, PointRole::Self}, {seed_ray, PointRole::Self}});
+    const double ang = std::atan2(sa, ca);
+    s.add_constraint(ConstraintType::Angle,
+                     {{seed_ray, PointRole::Self}, {ray, PointRole::Self}}, ang, true);
     out.push_back(copy.str());
     return true;
 }
@@ -1004,6 +1047,148 @@ std::vector<std::string> circular_pattern_entities(
             it->second(s, seed, origin, std::cos(ang), std::sin(ang), layout,
                        this_ray, out);
         }
+    }
+    return out;
+}
+
+namespace {
+
+Vec2 reflect_pt(Vec2 p, Vec2 a0, Vec2 ad, Vec2 an) {
+    Vec2 d = sub(p, a0);
+    Vec2 along = mul(ad, dot(d, ad));
+    Vec2 across = mul(an, dot(d, an));
+    return add(a0, sub(along, across));
+}
+
+}  // namespace
+
+std::vector<std::string> mirror_entities(Sketch& s,
+                                         const std::vector<std::string>& entity_ids,
+                                         const std::string& axis_id) {
+    std::vector<std::string> out;
+    EntityId axis = EntityId::from_string(axis_id);
+    const SketchEntity* ax = s.entity(axis);
+    if (!ax || ax->type != SketchEntityType::Line) return out;
+    auto a0p = s.point_pos({axis, PointRole::Start});
+    auto a1p = s.point_pos({axis, PointRole::End});
+    if (!a0p || !a1p) return out;
+    Vec2 a0{(*a0p)[0], (*a0p)[1]};
+    Vec2 a1{(*a1p)[0], (*a1p)[1]};
+    Vec2 ad = unit(sub(a1, a0));
+    if (hypot2(ad) < 1e-15) return out;
+    Vec2 an{-ad.y, ad.x};
+    auto refl = [&](double x, double y) { return reflect_pt({x, y}, a0, ad, an); };
+
+    for (const std::string& sid : entity_ids) {
+        if (sid == axis_id) continue;
+        EntityId id = EntityId::from_string(sid);
+        const SketchEntity* e = s.entity(id);
+        if (!e) continue;
+        EntityId copy;
+        switch (e->type) {
+            case SketchEntityType::Line: {
+                Vec2 st = refl(s.param(e->params[0]), s.param(e->params[1]));
+                Vec2 en = refl(s.param(e->params[2]), s.param(e->params[3]));
+                copy = s.add_line(st.x, st.y, en.x, en.y);
+                s.add_constraint(ConstraintType::Symmetric,
+                                 {{id, PointRole::Start}, {copy, PointRole::Start},
+                                  {axis, PointRole::Self}});
+                s.add_constraint(ConstraintType::Symmetric,
+                                 {{id, PointRole::End}, {copy, PointRole::End},
+                                  {axis, PointRole::Self}});
+                break;
+            }
+            case SketchEntityType::Circle: {
+                Vec2 c = refl(s.param(e->params[0]), s.param(e->params[1]));
+                copy = s.add_circle(c.x, c.y, s.param(e->params[2]));
+                s.add_constraint(ConstraintType::Symmetric,
+                                 {{id, PointRole::Center}, {copy, PointRole::Center},
+                                  {axis, PointRole::Self}});
+                s.add_constraint(ConstraintType::Equal,
+                                 {{copy, PointRole::Self}, {id, PointRole::Self}});
+                break;
+            }
+            case SketchEntityType::Point: {
+                Vec2 p = refl(s.param(e->params[0]), s.param(e->params[1]));
+                copy = s.add_point(p.x, p.y);
+                s.add_constraint(ConstraintType::Symmetric,
+                                 {{id, PointRole::Self}, {copy, PointRole::Self},
+                                  {axis, PointRole::Self}});
+                break;
+            }
+            case SketchEntityType::Arc: {
+                Vec2 c = refl(s.param(e->params[0]), s.param(e->params[1]));
+                const double r = s.param(e->params[2]);
+                Vec2 st = refl(s.param(e->params[5]), s.param(e->params[6]));
+                Vec2 en = refl(s.param(e->params[7]), s.param(e->params[8]));
+                // Mirror reverses orientation: CCW from reflected end to start.
+                const double sa = std::atan2(en.y - c.y, en.x - c.x);
+                const double ea = std::atan2(st.y - c.y, st.x - c.x);
+                copy = s.add_arc(c.x, c.y, r, sa, ea);
+                s.add_constraint(ConstraintType::Symmetric,
+                                 {{id, PointRole::Center}, {copy, PointRole::Center},
+                                  {axis, PointRole::Self}});
+                s.add_constraint(ConstraintType::Symmetric,
+                                 {{id, PointRole::Start}, {copy, PointRole::End},
+                                  {axis, PointRole::Self}});
+                s.add_constraint(ConstraintType::Symmetric,
+                                 {{id, PointRole::End}, {copy, PointRole::Start},
+                                  {axis, PointRole::Self}});
+                break;
+            }
+            case SketchEntityType::Ellipse: {
+                auto axv = s.ellipse_axes(id);
+                if (!axv) continue;
+                Vec2 c = refl((*axv)[0], (*axv)[1]);
+                Vec2 maj{(*axv)[0] + (*axv)[2] * std::cos((*axv)[4]),
+                         (*axv)[1] + (*axv)[2] * std::sin((*axv)[4])};
+                Vec2 majr = refl(maj.x, maj.y);
+                const double ang = std::atan2(majr.y - c.y, majr.x - c.x);
+                copy = s.add_ellipse(c.x, c.y, (*axv)[2], (*axv)[3], ang);
+                s.add_constraint(ConstraintType::Symmetric,
+                                 {{id, PointRole::Center}, {copy, PointRole::Center},
+                                  {axis, PointRole::Self}});
+                break;
+            }
+            case SketchEntityType::EllipticalArc: {
+                auto axv = s.ellipse_axes(id);
+                if (!axv || e->params.size() < 11) continue;
+                Vec2 c = refl((*axv)[0], (*axv)[1]);
+                Vec2 st = refl(s.param(e->params[7]), s.param(e->params[8]));
+                Vec2 en = refl(s.param(e->params[9]), s.param(e->params[10]));
+                Vec2 maj{(*axv)[0] + (*axv)[2] * std::cos((*axv)[4]),
+                         (*axv)[1] + (*axv)[2] * std::sin((*axv)[4])};
+                Vec2 majr = refl(maj.x, maj.y);
+                const double ang = std::atan2(majr.y - c.y, majr.x - c.x);
+                const double sa = std::atan2(en.y - c.y, en.x - c.x) - ang;
+                const double ea = std::atan2(st.y - c.y, st.x - c.x) - ang;
+                copy = s.add_elliptical_arc(c.x, c.y, (*axv)[2], (*axv)[3], ang, sa, ea);
+                break;
+            }
+            case SketchEntityType::Spline: {
+                auto fits = s.spline_fit_points(id);
+                for (auto& fp : fits) {
+                    Vec2 r = refl(fp[0], fp[1]);
+                    fp[0] = r.x;
+                    fp[1] = r.y;
+                }
+                std::reverse(fits.begin(), fits.end());
+                copy = s.add_spline(fits);
+                if (fits.size() >= 2) {
+                    s.add_constraint(ConstraintType::Symmetric,
+                                     {{id, PointRole::Start}, {copy, PointRole::End},
+                                      {axis, PointRole::Self}});
+                    s.add_constraint(ConstraintType::Symmetric,
+                                     {{id, PointRole::End}, {copy, PointRole::Start},
+                                      {axis, PointRole::Self}});
+                }
+                break;
+            }
+            default:
+                continue;
+        }
+        if (e->construction) s.set_construction(copy, true);
+        out.push_back(copy.str());
     }
     return out;
 }

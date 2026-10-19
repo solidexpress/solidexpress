@@ -15,11 +15,11 @@ std::string fillet_corner(Sketch& s, const std::string& line_a_id,
                           const std::string& line_b_id, double radius);
 
 // Offset each entity by signed distance (OFFSETTERS table by entity type).
-// Lines: a parallel copy (positive = left of direction). Circles: a new
-// profile circle with Concentric to the source and a driving Diameter =
-// 2(r + signed distance). Arcs: concentric, same span, driving Radius =
-// r + signed distance. Distance ≈ 0, or a circle/arc with r + d ≤ 0, is
-// refused (empty result, sketch unchanged for that entity).
+// Lines: a parallel copy (positive = left of direction) with driving Distance.
+// Circles: Concentric plus a driving Distance Δr (copy.r − source.r); Diameter
+// on the copy is non-driving. Arcs: same with non-driving Radius. Distance ≈ 0,
+// or a circle/arc with r + d ≤ 0, is refused (empty result, sketch unchanged
+// for that entity).
 // Returns new entity ids in input order (omitting skips / refusals).
 std::vector<std::string> offset_entities(Sketch& s,
                                          const std::vector<std::string>& entity_ids,
@@ -69,5 +69,11 @@ std::vector<std::string> pattern_entities(Sketch& s,
 std::vector<std::string> circular_pattern_entities(
     Sketch& s, const std::vector<std::string>& entity_ids, double cx, double cy,
     int count, double total_angle);
+
+// Mirror geometry about an axis line. Copies keep type; Symmetric relations
+// pin reflected points. Arc angles come from reflected endpoints (not −end,−start).
+std::vector<std::string> mirror_entities(Sketch& s,
+                                         const std::vector<std::string>& entity_ids,
+                                         const std::string& axis_id);
 
 }  // namespace sx::sketch_tools
