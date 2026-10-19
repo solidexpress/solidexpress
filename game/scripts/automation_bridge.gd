@@ -348,10 +348,12 @@ func _cmd_sketch_pin_profile(_req: Dictionary) -> Dictionary:
 		return {"error": "no active sketch"}
 	for eid in sm.sketch.entity_ids():
 		sm.sketch.remove_entity(str(eid))
+	# Same closed outline as PinFixture: solid axis line (closes the loop
+	# for Revolve) plus R10/R5/R10. A construction-only axis leaves an
+	# open profile and OCCT refuses the revolve.
 	var axis: String = sm.sketch.add_line(0.0, 0.0, 0.0, 55.0)
 	if axis == "":
 		return {"error": "pin axis failed"}
-	sm.sketch.set_construction(axis, true)
 	if sm.sketch.add_arc(0.0, 10.0, 10.0, -PI * 0.5, 0.0) == "":
 		return {"error": "pin tail arc failed"}
 	if sm.sketch.add_line(10.0, 10.0, 5.0, 10.0) == "":
