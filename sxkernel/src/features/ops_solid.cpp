@@ -11,6 +11,7 @@
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
+#include <LocOpe_DPrism.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
@@ -78,6 +79,80 @@ void restore_sketch_params(Sketch& sk, const std::vector<double>& saved) {
 bool sketch_has_closed_region(const Sketch& sk) {
     std::string ignored;
     return !sk.profile_face_selected({}, &ignored).IsNull();
+}
+
+// LocOpe_DPrism of one planar face. Height is the slant (axial / cos);
+// its sign follows the geometric plane normal (face Reverse is ignored).
+// Positive angle shrinks the far section when Height is positive; negative
+// Height flips the angle so inward still tapers. poke_back fuses a prism
+// cap opposite travel so a cut that shares the host face still bites.
+TopoDS_Shape draft_prism_face(TopoDS_Face pface, const gp_Vec& travel, double angle_rad,
+                              double poke_back) {
+    if (pface.IsNull()) return {};
+    const double len = travel.Magnitude();
+    if (len < 1e-12) return {};
+    BRepAdaptor_Surface surf(pface);
+    if (surf.GetType() != GeomAbs_Plane) return {};
+    // LocOpe_DPrism follows the geometric plane normal; Height sign chooses
+    // the side. Face Reverse() does not flip that.
+    gp_Dir plane_n = surf.Plane().Axis().Direction();
+    if (!surf.Plane().Direct()) plane_n.Reverse();
+    const double signed_axial = travel.Dot(gp_Vec(plane_n));
+    const double cang = std::cos(std::abs(angle_rad));
+    if (cang < 1e-6) return {};
+    const double height = signed_axial / cang;
+    if (std::abs(height) < 1e-12) return {};
+    // Negative Height mirrors the profile Y offset; flip the angle so
+    // inward still shrinks the far section.
+    if (height < 0.0) angle_rad = -angle_rad;
+    try {
+        // Height1/Height2 SIGSEGVs on circular spines (OCCT 8.0.1). Height
+        // plus a fused back-cap keeps the spine on the host face.
+        LocOpe_DPrism mk(pface, height, angle_rad);
+        if (!mk.IsDone()) return {};
+        TopoDS_Shape body = mk.Shape();
+        if (poke_back > 1e-12) {
+            gp_Vec back = travel.Normalized();
+            back.Reverse();
+            back *= poke_back;
+            TopoDS_Shape cap = BRepPrimAPI_MakePrism(pface, back).Shape();
+            if (!cap.IsNull()) {
+                BRepAlgoAPI_Fuse fuse(body, cap);
+                if (fuse.IsDone() && shape::count(fuse.Shape()).solids >= 1)
+                    body = fuse.Shape();
+            }
+        }
+        return body;
+    } catch (const Standard_Failure&) {
+        return {};
+    } catch (...) {
+        return {};
+    }
+}
+
+TopoDS_Shape draft_prism_profile(const TopoDS_Shape& profile, const gp_Vec& travel,
+                                 double draft_deg, bool inward, double poke_back) {
+    const double ang = (inward ? 1.0 : -1.0) * std::abs(draft_deg) * M_PI / 180.0;
+    std::vector<TopoDS_Face> faces;
+    if (profile.ShapeType() == TopAbs_FACE)
+        faces.push_back(TopoDS::Face(profile));
+    else {
+        for (TopExp_Explorer fx(profile, TopAbs_FACE); fx.More(); fx.Next())
+            faces.push_back(TopoDS::Face(fx.Current()));
+    }
+    TopoDS_Shape result;
+    for (const auto& pf : faces) {
+        TopoDS_Shape piece = draft_prism_face(pf, travel, ang, poke_back);
+        if (piece.IsNull() || shape::count(piece).solids < 1) return {};
+        if (result.IsNull())
+            result = piece;
+        else {
+            BRepAlgoAPI_Fuse fuse(result, piece);
+            if (!fuse.IsDone()) return {};
+            result = fuse.Shape();
+        }
+    }
+    return result;
 }
 
 // Adjacent pads that only share a side face (spanner handle 6 mm onto
@@ -409,21 +484,6 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         back_tr.SetTranslation(travel.Reversed() * to_face_back);
                         profile = BRepBuilderAPI_Transform(face, back_tr, true).Shape();
                     }
-                    // Face-sketch Blind Cut starts on the host face. A prism
-                    // that shares that face with the target often Cut-succeeds
-                    // with zero volume change. Begin a hair outside the plane
-                    // and keep the interior depth so the tool actually bites.
-                    if (op_early == "cut" && !symmetric && end == "blind"
-                        && std::abs(dist) > 1e-9) {
-                        const double overlap = 0.05;
-                        gp_Vec unit = dir;
-                        if (unit.Magnitude() > 1e-12) unit.Normalize();
-                        const double sign = dist < 0.0 ? -1.0 : 1.0;
-                        gp_Trsf start_out;
-                        start_out.SetTranslation(unit * (-sign * overlap));
-                        profile = BRepBuilderAPI_Transform(profile, start_out, true).Shape();
-                        dist += sign * overlap;
-                    }
                     if (symmetric) {
                         gp_Trsf t;
                         t.SetTranslation(dir * (-dist / 2.0));
@@ -434,40 +494,15 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     if (std::abs(draft_deg) >= 75.0)
                         return fail("draft angle too large");
                     if (std::abs(draft_deg) > 1e-9) {
-                        TopoDS_Face pface;
-                        if (profile.ShapeType() == TopAbs_FACE)
-                            pface = TopoDS::Face(profile);
-                        else {
-                            TopExp_Explorer fx(profile, TopAbs_FACE);
-                            if (fx.More()) pface = TopoDS::Face(fx.Current());
-                        }
-                        if (pface.IsNull()) return fail("draft needs a planar profile");
-                        TopoDS_Wire w0 = BRepTools::OuterWire(pface);
-                        if (w0.IsNull()) return fail("draft profile has no outer wire");
-                        GProp_GProps props;
-                        BRepGProp::SurfaceProperties(pface, props);
-                        const gp_Pnt c = props.CentreOfMass();
-                        const double area = std::abs(props.Mass());
-                        const double r = std::sqrt(std::max(area, 0.0) / 3.14159265358979323846);
                         const gp_Vec travel = dir * dist;
-                        const double len = travel.Magnitude();
-                        const double tan_a = std::tan(std::abs(draft_deg) * 3.14159265358979323846 / 180.0);
-                        const double r2 = draft_inward ? (r - len * tan_a) : (r + len * tan_a);
-                        if (r2 <= 1e-3) return fail("draft angle too large");
-                        gp_Trsf move;
-                        move.SetTranslation(travel);
-                        TopoDS_Shape moved = BRepBuilderAPI_Transform(w0, move, true).Shape();
-                        gp_Trsf scal;
-                        scal.SetScale(c.Translated(travel), r2 / std::max(r, 1e-9));
-                        TopoDS_Shape scaled = BRepBuilderAPI_Transform(moved, scal, true).Shape();
-                        if (scaled.ShapeType() != TopAbs_WIRE)
-                            return fail("draft scale failed");
-                        BRepOffsetAPI_ThruSections loft(Standard_True);
-                        loft.AddWire(w0);
-                        loft.AddWire(TopoDS::Wire(scaled));
-                        loft.Build();
-                        if (!loft.IsDone()) return fail("draft frustum failed");
-                        result = loft.Shape();
+                        // Blind cuts that share the host face need a hair of
+                        // Height1 through the spine so Cut actually bites.
+                        const double poke =
+                            (op_early == "cut" && !symmetric && end == "blind") ? 1.0 : 0.0;
+                        result = draft_prism_profile(profile, travel, draft_deg, draft_inward,
+                                                     poke);
+                        if (result.IsNull() || shape::count(result).solids < 1)
+                            return fail("draft prism failed");
                     } else {
                         result = BRepPrimAPI_MakePrism(profile, dir * dist).Shape();
                     }
