@@ -17,4 +17,4 @@ Tree: `cursor/rung-07-20261018` @ `c180027`. Isolated `--from A24` after MakeFil
 
 ## Pass bar
 
-Awaiting one `confirm_all.sh` from row 1 (no restores).
+`confirm_all.sh` (`build/confirm4`, started 09:08 UTC) headless **244/0**. Walks in flight.
