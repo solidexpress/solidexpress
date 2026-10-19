@@ -1086,8 +1086,6 @@ static func draw_recess_racetrack(ctx: FilmContext) -> void:
 	await line(ctx, Vector2(x1, y), Vector2(x1, -y), "recess right", 0.0)
 	await line(ctx, Vector2(x1, -y), Vector2(x0, -y), "recess bot", 0.0)
 	await line(ctx, Vector2(x0, -y), Vector2(x0, y), "recess left", 0.0)
-	for corner in [Vector2(x0, y), Vector2(x1, y), Vector2(x1, -y), Vector2(x0, -y)]:
-		await coincident_on_curve(ctx, corner, corner + Vector2(0.2, 0.0))
 
 
 static func _snap_on_if_visible(ctx: FilmContext) -> void:
