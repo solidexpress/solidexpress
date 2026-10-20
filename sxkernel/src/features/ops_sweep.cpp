@@ -643,14 +643,8 @@ bool apply_loft(ApplyCtx& ctx) {
                         }
                         if (followed) break;
                     }
-                    if (!followed) {
-                        // A 2D rail coplanar with one section cannot span the
-                        // loft (UI open-line "guide"). Empty guides already
-                        // refused above. Fall back so the profiles still loft.
-                        ctx.graph.add_warning(
-                                f.id, "guided loft: OCCT could not follow the guide");
-                        result = {};
-                    }
+                    if (!followed)
+                        return fail("guided loft: OCCT could not follow the guide");
                 }
                 if (result.IsNull()) {
                     BRepOffsetAPI_ThruSections loft(/*isSolid=*/true, ruled);

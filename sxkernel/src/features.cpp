@@ -17,6 +17,7 @@
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <Bnd_Box.hxx>
+#include <BRepBuilderAPI_FindPlane.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
@@ -502,41 +503,32 @@ json simplify_path_for_sweep(const json& path) {
     return p;
 }
 
+TopoDS_Wire profile_outer_wire(const TopoDS_Shape& face);
+TopoDS_Shape pipe_largest_transition(const TopoDS_Wire& spine, const TopoDS_Wire& profile_wire,
+                                     double thin_thickness, bool contact, bool correction,
+                                     const TopoDS_Wire* guide, const bool* frenet);
+
 TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
                                   const json* guide_path,
                                   double thin_thickness, bool contact) {
     json simplified = simplify_path_for_sweep(path);
     TopoDS_Wire spine = make_polyline_wire(simplified);
-    TopoDS_Wire profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
+    TopoDS_Wire profile_wire = profile_outer_wire(face);
     if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
 
-    // Prefer MakePipeShell for all cases: MakePipe often yields an empty/invalid
-    // solid when the profile plane contains the spine tangent (common for ground
-    // sketches swept along an in-plane rail).
-    BRepOffsetAPI_MakePipeShell shell(spine);
+    // Discrete trihedron: MakePipe often yields an empty/invalid solid when the
+    // profile plane contains the spine tangent (ground sketch along an in-plane
+    // rail). Transition pick is shared with sweep_along_spine so a densified
+    // 3D corner does not RightCorner-SIGSEGV.
+    TopoDS_Wire aux;
+    const TopoDS_Wire* guide = nullptr;
     if (guide_path && guide_path->is_array() && guide_path->size() >= 2) {
         json gsimp = simplify_path_for_sweep(*guide_path);
-        TopoDS_Wire aux = make_polyline_wire(gsimp);
-        // Auxiliary spine steers profile orientation / scale along the path.
-        shell.SetMode(aux, /*CurvilinearEquivalence=*/false);
-    } else {
-        shell.SetMode();  // CorrectedFrenet — polyline fallback must fuse
+        aux = make_polyline_wire(gsimp);
+        guide = &aux;
     }
-    shell.SetTransitionMode(BRepBuilderAPI_RightCorner);
-    shell.Add(profile_wire, contact, /*withCorrection=*/true);
-    shell.Build();
-    if (!shell.IsDone()) throw std::runtime_error("MakePipeShell failed");
-    if (!shell.MakeSolid()) throw std::runtime_error("MakePipeShell could not make solid");
-    TopoDS_Shape result = shell.Shape();
-    if (thin_thickness > 0.0) {
-        // Closed hollow: offset the swept solid inward (no open faces removed).
-        BRepOffsetAPI_MakeThickSolid mk;
-        sx::occt::ShapeList closing;
-        mk.MakeThickSolidByJoin(result, closing, -thin_thickness, 1e-3);
-        if (!mk.IsDone()) throw std::runtime_error("thin wall shell failed");
-        result = mk.Shape();
-    }
-    return result;
+    return pipe_largest_transition(spine, profile_wire, thin_thickness, contact,
+                                   /*correction=*/true, guide, /*frenet=*/nullptr);
 }
 
 // Pipe a circular profile along a helix spine (spring / thread groundwork).
@@ -822,27 +814,35 @@ bool pipe_solid_ok(const TopoDS_Shape& s) {
     return !s.IsNull() && shape::count(s).solids >= 1 && std::abs(shape::volume(s)) > 1.0e-3;
 }
 
-TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spine,
-                               double thin_thickness, bool contact, bool frenet,
-                               bool correction, const TopoDS_Wire* guide) {
-    if (spine.IsNull()) throw std::runtime_error("empty spine wire");
-    TopoDS_Wire profile_wire;
-    if (face.ShapeType() == TopAbs_FACE) {
-        profile_wire = BRepTools::OuterWire(TopoDS::Face(face));
-    } else {
-        for (TopExp_Explorer ex(face, TopAbs_FACE); ex.More(); ex.Next()) {
-            profile_wire = BRepTools::OuterWire(TopoDS::Face(ex.Current()));
-            if (!profile_wire.IsNull()) break;
-        }
+// RightCorner/RoundCorner mitre a handful of analytic pieces (circle+line
+// cylinder, spline into a 90° leg). On a non-planar line-chain — densified
+// fit-spline plus a 3D corner — OCCT 8.0.1 PipeShell SIGSEGVs inside the
+// mitre. Transformed still walks every edge.
+bool spine_allows_miter(const TopoDS_Wire& spine) {
+    int n = 0;
+    for (TopExp_Explorer ex(spine, TopAbs_EDGE); ex.More(); ex.Next()) {
+        ++n;
+        BRepAdaptor_Curve c(TopoDS::Edge(ex.Current()));
+        if (c.GetType() != GeomAbs_Line) return true;
     }
-    if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
+    if (n <= 2) return true;
+    BRepBuilderAPI_FindPlane finder(spine, 1.0e-6);
+    return finder.Found();
+}
+
+// frenet == nullptr → Discrete trihedron (polyline fallback). Guide wins.
+TopoDS_Shape pipe_largest_transition(const TopoDS_Wire& spine, const TopoDS_Wire& profile_wire,
+                                     double thin_thickness, bool contact, bool correction,
+                                     const TopoDS_Wire* guide, const bool* frenet) {
     auto try_mode = [&](BRepBuilderAPI_TransitionMode mode) -> TopoDS_Shape {
         try {
             BRepOffsetAPI_MakePipeShell shell(spine);
             if (guide && !guide->IsNull())
                 shell.SetMode(*guide, /*CurvilinearEquivalence=*/false);
+            else if (frenet == nullptr)
+                shell.SetMode();
             else
-                shell.SetMode(frenet);  // true = Frenet follow-path
+                shell.SetMode(*frenet);
             shell.SetTransitionMode(mode);
             shell.Add(profile_wire, contact, correction);
             shell.Build();
@@ -864,22 +864,43 @@ TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spin
     // coplanar circle+line (featsweep path) yields a 0-volume solid; RightCorner
     // fills that cylinder. A spline rail into a 90° leg can "succeed" as
     // Transformed while only sweeping the last edge — pick the largest solid.
-    const BRepBuilderAPI_TransitionMode modes[] = {BRepBuilderAPI_Transformed,
-                                                   BRepBuilderAPI_RightCorner,
-                                                   BRepBuilderAPI_RoundCorner};
     TopoDS_Shape result;
     double best_vol = -1.0;
-    for (auto mode : modes) {
+    auto consider = [&](BRepBuilderAPI_TransitionMode mode) {
         TopoDS_Shape s = try_mode(mode);
-        if (!pipe_solid_ok(s)) continue;
+        if (!pipe_solid_ok(s)) return;
         const double v = std::abs(shape::volume(s));
         if (v > best_vol) {
             best_vol = v;
-            result = s;
+            result = std::move(s);
         }
+    };
+    consider(BRepBuilderAPI_Transformed);
+    if (spine_allows_miter(spine)) {
+        consider(BRepBuilderAPI_RightCorner);
+        consider(BRepBuilderAPI_RoundCorner);
     }
     if (result.IsNull()) throw std::runtime_error("MakePipeShell failed");
     return result;
+}
+
+TopoDS_Wire profile_outer_wire(const TopoDS_Shape& face) {
+    if (face.ShapeType() == TopAbs_FACE) return BRepTools::OuterWire(TopoDS::Face(face));
+    for (TopExp_Explorer ex(face, TopAbs_FACE); ex.More(); ex.Next()) {
+        TopoDS_Wire w = BRepTools::OuterWire(TopoDS::Face(ex.Current()));
+        if (!w.IsNull()) return w;
+    }
+    return {};
+}
+
+TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spine,
+                               double thin_thickness, bool contact, bool frenet,
+                               bool correction, const TopoDS_Wire* guide) {
+    if (spine.IsNull()) throw std::runtime_error("empty spine wire");
+    TopoDS_Wire profile_wire = profile_outer_wire(face);
+    if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
+    return pipe_largest_transition(spine, profile_wire, thin_thickness, contact, correction,
+                                   guide, &frenet);
 }
 
 // Append polyline b onto a, connecting at the nearest pair of endpoints.
