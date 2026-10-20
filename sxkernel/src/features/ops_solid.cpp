@@ -701,8 +701,14 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         };
                         // 1e-4 first (rung-7 closed-3MF recipe). Fuzzy 0 often
                         // "succeeds" as an open shell the UI then refuses.
+                        // That 1e-4 is the preferred cut, not a large-fuzz
+                        // fallback, so it sits in the silent band even on
+                        // small boxes (silent_limit ~5e-5 on a 40 mm plate).
                         const double cut_fuzzies[] = {1.0e-4, 1.0e-7, 1.0e-3, 0.05, 0.1, 0.0};
-                        const double silent = HonestBoolean::silent_limit(tb->shape, result);
+                        const double preferred = 1.0e-4;
+                        const double silent =
+                                std::max(HonestBoolean::silent_limit(tb->shape, result),
+                                         preferred);
                         for (double fuzzy : cut_fuzzies) {
                             TopoDS_Shape m = ExtrudeFuse::run_cut(tb->shape, result, fuzzy);
                             if (!cut_ok(m)) continue;

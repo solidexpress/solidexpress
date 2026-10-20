@@ -1,5 +1,6 @@
 # Rung 8 progress
 
-- `c1a98ce` / `f2f6254` — J6 / glyphs green. ViewHud IGNORE shell; draw tools place through ViewWidget. Cheap 144/0 and 219/0.
-- Full headless `--jobs 1 --tier full --keep-going` in progress (~30 min in, currently `run_rung01_replan17_dof.gd`, 262 suites).
-- Next: `SX_JOBS=1 SX_WALK_JOBS=1 tools/confirm_all.sh` from row 1, nothing overlapping.
+- `c1a98ce` — J6 / glyphs green. ViewHud IGNORE shell; draw tools place through ViewWidget.
+- Cheap: `run_rung08_typed_values.gd` 13/0, `run_rung01_replan12_fillet.gd` 19/0, `run_rung07_offset.gd` 17/0.
+- Product: offset pull prefers LineEdit; `_on_distance` syncs leftover text. Pocket cut 1e-4 is silent (not a large-fuzz graph warning).
+- Next: full headless `--jobs 1 --tier full --keep-going`, then `SX_JOBS=1 SX_WALK_JOBS=1 tools/confirm_all.sh` from row 1.
