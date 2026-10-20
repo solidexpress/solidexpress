@@ -1,5 +1,5 @@
 # Rung 8 progress
 
-- `ba5bb3e` — typed offset 13/0, fillet 19/0. J6/glyphs green (`c1a98ce`).
-- Full headless 262 run, **1 failed**: `run_film_spanner_tests.gd` C unopened (bbox 233.6×33). ViewCube STOP still snapped camera via `_gui_input` on place clicks.
-- Fix in tree: cube IGNORE while draw tools place. Rechecking film + glyphs/jaw, then confirm_all from row 1.
+- `c1a98ce` J6/glyphs; `ba5bb3e` typed offset + silent 1e-4 cut.
+- Film 12/0 after ViewCube IGNORE while draw tools place (Godot `_gui_input` no longer snaps camera on a place click). Glyphs 144/0, J6 219/0 bbox 232.5×45×10.
+- Next: `SX_JOBS=1 SX_WALK_JOBS=1 SX_CONFIRM_DIR=build/confirm-r2 tools/confirm_all.sh` from row 1.

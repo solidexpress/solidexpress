@@ -3184,6 +3184,7 @@ func _control_block_name(node: Node) -> String:
 ## First chrome control whose rect contains `pos`, or "" if the canvas owns it.
 ## `_over_chrome` is this test, so the two cannot disagree.
 func _over_chrome_who(global_mouse: Vector2) -> String:
+	_sync_view_cube_place_through()
 	if _dim_edit_owns_keys():
 		if _dim_edit_line != null:
 			var lr: Rect2 = _dim_edit_line.get_global_rect()
@@ -3312,6 +3313,19 @@ func _sketch_places_point() -> bool:
 			or t == SketchMode.Tool.EXTEND:
 		return true
 	return sketch_mode.has_pending_draw_point()
+
+
+## The cube's STOP filter still fires `_gui_input` (camera snap) even when
+## `_over_chrome_who` lets the place through. IGNORE while a draw tool is
+## armed so Godot delivers the click to the model, not the cube.
+func _sync_view_cube_place_through() -> void:
+	var hud := _named_chrome_control("ViewHud") as ViewHud
+	if hud == null or hud.view_cube == null:
+		return
+	var want := Control.MOUSE_FILTER_IGNORE if _sketch_places_point() \
+			else Control.MOUSE_FILTER_STOP
+	if hud.view_cube.mouse_filter != want:
+		hud.view_cube.mouse_filter = want
 
 func _tree_blocking_name(node: Node, pos: Vector2, max_area: float) -> String:
 	if node == null or not is_instance_valid(node):
