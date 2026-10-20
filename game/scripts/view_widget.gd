@@ -136,7 +136,14 @@ func angles_for(zone: String) -> Vector2:
 	return Vector2(deg_to_rad(float(spec["yaw"])), deg_to_rad(float(spec["pitch"])))
 
 
+## Set by ViewportInteraction while a sketch draw tool is armed. IGNORE
+## mouse_filter still lets `_gui_input` run on some layouts; skip the snap.
+var place_through := false
+
+
 func _gui_input(event: InputEvent) -> void:
+	if place_through or mouse_filter == Control.MOUSE_FILTER_IGNORE:
+		return
 	if event is InputEventMouseMotion:
 		var z := zone_at((event as InputEventMouseMotion).position)
 		if z != _hover:

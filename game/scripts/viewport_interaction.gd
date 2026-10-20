@@ -1808,6 +1808,7 @@ func _mount_measure_overlay() -> void:
 
 
 func _on_sketch_measure_tool_changed(tool: int) -> void:
+	_sync_view_cube_place_through()
 	if measure_overlay == null:
 		return
 	var open := tool == SketchMode.Tool.SELECT
@@ -1817,12 +1818,14 @@ func _on_sketch_measure_tool_changed(tool: int) -> void:
 
 
 func _on_sketch_measure_cancelled() -> void:
+	_sync_view_cube_place_through()
 	if measure_overlay != null:
 		measure_overlay.clear_all()
 		measure_overlay.set_sketch_tool_gate(true)
 
 
 func _on_sketch_measure_finished(_id: String) -> void:
+	_sync_view_cube_place_through()
 	if measure_overlay != null:
 		measure_overlay.clear_all()
 		measure_overlay.set_sketch_tool_gate(true)
@@ -3322,7 +3325,9 @@ func _sync_view_cube_place_through() -> void:
 	var hud := _named_chrome_control("ViewHud") as ViewHud
 	if hud == null or hud.view_cube == null:
 		return
-	var want := Control.MOUSE_FILTER_IGNORE if _sketch_places_point() \
+	var through := _sketch_places_point()
+	hud.view_cube.place_through = through
+	var want := Control.MOUSE_FILTER_IGNORE if through \
 			else Control.MOUSE_FILTER_STOP
 	if hud.view_cube.mouse_filter != want:
 		hud.view_cube.mouse_filter = want

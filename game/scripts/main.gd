@@ -1908,6 +1908,8 @@ func _start_sketch_on_ground() -> void:
 
 
 func _on_sketch_session_started(msg: String) -> void:
+	if interaction != null and interaction.has_method("_sync_view_cube_place_through"):
+		interaction._sync_view_cube_place_through()
 	if interaction != null and interaction.world_gizmos != null:
 		interaction.world_gizmos.set_grid_visible(true)
 	if sketch_mode != null:
@@ -2074,6 +2076,8 @@ func _reset_sketch_rail_scroll() -> void:
 
 
 func _on_sketch_tool_changed(tool: int) -> void:
+	if interaction != null and interaction.has_method("_sync_view_cube_place_through"):
+		interaction._sync_view_cube_place_through()
 	_sync_sketch_rail_highlight(tool)
 	if sketch_chrome == null:
 		return
