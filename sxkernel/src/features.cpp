@@ -508,11 +508,31 @@ TopoDS_Shape pipe_largest_transition(const TopoDS_Wire& spine, const TopoDS_Wire
                                      double thin_thickness, bool contact, bool correction,
                                      const TopoDS_Wire* guide, const bool* frenet);
 
+bool polyline_turns_are_smooth(const std::vector<gp_Pnt>& pts) {
+    if (pts.size() < 3) return false;
+    const double sharp = 25.0 * M_PI / 180.0;
+    for (size_t i = 1; i + 1 < pts.size(); ++i) {
+        gp_Vec a(pts[i - 1], pts[i]);
+        gp_Vec b(pts[i], pts[i + 1]);
+        if (a.SquareMagnitude() < 1e-24 || b.SquareMagnitude() < 1e-24) continue;
+        if (a.Angle(b) > sharp) return false;
+    }
+    return true;
+}
+
 TopoDS_Shape sweep_along_polyline(const TopoDS_Shape& face, const json& path,
                                   const json* guide_path,
                                   double thin_thickness, bool contact) {
     json simplified = simplify_path_for_sweep(path);
-    TopoDS_Wire spine = make_polyline_wire(simplified);
+    std::vector<gp_Pnt> pts;
+    pts.reserve(simplified.size());
+    for (const auto& j : simplified) pts.push_back(pnt_from(j));
+    // A densified Catmull/fit-spline is one curve. Mitring its chords on a
+    // 3D polyline SIGSEGVs; Transformed on those chords only paints a ribbon.
+    // Sharp corners stay a polyline (miter skipped by spine_allows_miter).
+    TopoDS_Wire spine;
+    if (polyline_turns_are_smooth(pts)) spine = interpolate_wire(pts);
+    if (spine.IsNull()) spine = make_polyline_wire(simplified);
     TopoDS_Wire profile_wire = profile_outer_wire(face);
     if (profile_wire.IsNull()) throw std::runtime_error("profile has no outer wire");
 
