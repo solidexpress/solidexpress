@@ -736,8 +736,13 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     {
                         std::string report;
                         TopoDS_Shape healed = interop::heal_shape(merged, &report);
-                        if (!healed.IsNull() && shape::count(healed).solids >= 1)
-                            merged = healed;
+                        // Heal after a keeps-fuse union can drop the C/ring
+                        // (walk 7 A22 handle pad). Keep the pre-heal solid.
+                        if (!healed.IsNull() && shape::count(healed).solids >= 1) {
+                            if (op == "cut" ||
+                                ExtrudeFuse::keeps_fuse(tb->shape, result, healed))
+                                merged = healed;
+                        }
                     }
                     doc.replace_body_shape(target, merged);
                 }

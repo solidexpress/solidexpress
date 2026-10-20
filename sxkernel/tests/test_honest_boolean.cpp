@@ -4,6 +4,9 @@
 #include <cmath>
 #include <string>
 
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
+
 #include "sx/document.hpp"
 #include "sx/exactness.hpp"
 #include "sx/features.hpp"
@@ -54,6 +57,57 @@ TEST_CASE("honest fuse: touching boxes, zero fuzz, volume = sum", "[exactness][b
     const double sum = 2000.0;
     REQUIRE(std::abs(vol - sum) / sum < 1e-9);
     CHECK_FALSE(warning_has(g, "boolean fuzz"));
+}
+
+TEST_CASE("extrude fuse: 6 mm handle onto 10 mm heads keeps both extents",
+          "[exactness][boolean][extrude]") {
+    Document doc;
+    FeatureGraph& g = doc.graph();
+    Feature heads_sk;
+    heads_sk.type = FeatureType::Sketch;
+    heads_sk.sketch = std::make_shared<Sketch>("Heads");
+    heads_sk.sketch->add_line(-25, -27, 25, -27);
+    heads_sk.sketch->add_line(25, -27, 25, 27);
+    heads_sk.sketch->add_line(25, 27, -25, 27);
+    heads_sk.sketch->add_line(-25, 27, -25, -27);
+    auto hid = g.add(std::move(heads_sk));
+    Feature heads;
+    heads.type = FeatureType::Extrude;
+    heads.params = {{"sketch", hid.str()},
+                    {"distance", 10.0},
+                    {"op", "new"},
+                    {"end", "symmetric"}};
+    auto heads_id = g.add(std::move(heads));
+    Feature handle_sk;
+    handle_sk.type = FeatureType::Sketch;
+    handle_sk.sketch = std::make_shared<Sketch>("Handle");
+    handle_sk.sketch->add_line(20, -10, 220, -10);
+    handle_sk.sketch->add_line(220, -10, 220, 10);
+    handle_sk.sketch->add_line(220, 10, 20, 10);
+    handle_sk.sketch->add_line(20, 10, 20, -10);
+    auto sid = g.add(std::move(handle_sk));
+    Feature handle;
+    handle.type = FeatureType::Extrude;
+    handle.params = {{"sketch", sid.str()},
+                     {"distance", 6.0},
+                     {"op", "fuse"},
+                     {"end", "symmetric"},
+                     {"target", heads_id.str()}};
+    g.add(std::move(handle));
+    std::string err;
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* body = doc.body(g.feature(heads_id)->output_body);
+    REQUIRE(body != nullptr);
+    Bnd_Box box;
+    BRepBndLib::Add(body->shape, box);
+    REQUIRE_FALSE(box.IsVoid());
+    double x0, y0, z0, x1, y1, z1;
+    box.Get(x0, y0, z0, x1, y1, z1);
+    REQUIRE(x0 == Approx(-25.0).margin(0.2));
+    REQUIRE(x1 == Approx(220.0).margin(0.2));
+    REQUIRE(y0 == Approx(-27.0).margin(0.2));
+    REQUIRE(y1 == Approx(27.0).margin(0.2));
 }
 
 TEST_CASE("honest fuse: adjacent 10 mm and 6 mm pads become one solid",
