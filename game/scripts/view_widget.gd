@@ -42,7 +42,11 @@ var _hover := ""
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDGET_SIZE, WIDGET_SIZE)
 	size = Vector2(WIDGET_SIZE, WIDGET_SIZE)
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	# IGNORE always: Godot delivers STOP `_gui_input` before Interaction
+	# `_input`, so a Line/Trim click on the model under this 84 px cube
+	# used to snap the camera and never place. ViewportInteraction owns
+	# the snap when a draw tool is not armed.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_camera(camera)
 	queue_redraw()
 
@@ -136,26 +140,25 @@ func angles_for(zone: String) -> Vector2:
 	return Vector2(deg_to_rad(float(spec["yaw"])), deg_to_rad(float(spec["pitch"])))
 
 
-## Set by ViewportInteraction while a sketch draw tool is armed. IGNORE
-## mouse_filter still lets `_gui_input` run on some layouts; skip the snap.
-var place_through := false
+## Kept so callers can mark "place through this overlay". The cube itself
+## stays IGNORE; ViewportInteraction decides whether a click snaps.
+var place_through := true
 
 
-func _gui_input(event: InputEvent) -> void:
-	if place_through or mouse_filter == Control.MOUSE_FILTER_IGNORE:
+func _process(_dt: float) -> void:
+	if not is_visible_in_tree():
 		return
-	if event is InputEventMouseMotion:
-		var z := zone_at((event as InputEventMouseMotion).position)
-		if z != _hover:
-			_hover = z
-			queue_redraw()
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
-			var zone := zone_at(mb.position)
-			if zone != "":
-				click_zone(zone)
-				accept_event()
+	var local := get_global_transform_with_canvas().affine_inverse() * get_global_mouse_position()
+	var z := zone_at(local)
+	if z != _hover:
+		_hover = z
+		queue_redraw()
+
+
+func _gui_input(_event: InputEvent) -> void:
+	# Never snap here. IGNORE still fires `_gui_input` on some layouts;
+	# accepting that click ate Line/Trim on the jaw head (film C, glyphs).
+	return
 
 
 func _draw() -> void:

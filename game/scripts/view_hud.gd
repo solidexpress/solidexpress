@@ -50,7 +50,7 @@ var view_cube: ViewWidget
 func _ready() -> void:
 	# IGNORE shell: padding around the cube / buttons must not steal a Line
 	# click that lands on the model under this overlay (jaw diagonal, Ø45).
-	# ViewCube and the Shade/Section/Frame buttons keep STOP and still fire.
+	# ViewCube stays IGNORE too; Shade/Section/Frame keep STOP.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Transparent shell so the RGB sticks float without a panel backdrop.
 	add_theme_stylebox_override("panel", StyleBoxEmpty.new())

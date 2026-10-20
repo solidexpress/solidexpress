@@ -3305,32 +3305,37 @@ func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
 
 ## Draw tools place a sketch point; overlays on the model must not drop them.
 func _sketch_places_point() -> bool:
-	if sketch_mode == null or not sketch_mode.active:
-		return false
-	var t := sketch_mode.tool
-	if t == SketchMode.Tool.LINE or t == SketchMode.Tool.CENTERLINE \
-			or t == SketchMode.Tool.ARC or t == SketchMode.Tool.CIRCLE \
-			or t == SketchMode.Tool.RECT or t == SketchMode.Tool.POLYGON \
-			or t == SketchMode.Tool.SLOT or t == SketchMode.Tool.ELLIPSE \
-			or t == SketchMode.Tool.MIRROR or t == SketchMode.Tool.TRIM \
-			or t == SketchMode.Tool.EXTEND:
-		return true
-	return sketch_mode.has_pending_draw_point()
+	return sketch_mode != null and sketch_mode.places_on_model()
 
 
-## The cube's STOP filter still fires `_gui_input` (camera snap) even when
-## `_over_chrome_who` lets the place through. IGNORE while a draw tool is
-## armed so Godot delivers the click to the model, not the cube.
+## Cube is IGNORE so `_gui_input` cannot snap before this `_input` places.
 func _sync_view_cube_place_through() -> void:
 	var hud := _named_chrome_control("ViewHud") as ViewHud
 	if hud == null or hud.view_cube == null:
 		return
-	var through := _sketch_places_point()
-	hud.view_cube.place_through = through
-	var want := Control.MOUSE_FILTER_IGNORE if through \
-			else Control.MOUSE_FILTER_STOP
-	if hud.view_cube.mouse_filter != want:
-		hud.view_cube.mouse_filter = want
+	hud.view_cube.place_through = true
+	if hud.view_cube.mouse_filter != Control.MOUSE_FILTER_IGNORE:
+		hud.view_cube.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+## Camera snap when the pointer is on the cube. An open sketch locks
+## orientation, so the click belongs to the model (Line/Trim on the jaw).
+func _try_view_cube_click(pos: Vector2) -> bool:
+	if sketch_mode != null and sketch_mode.active:
+		return false
+	var hud := _named_chrome_control("ViewHud") as ViewHud
+	if hud == null or hud.view_cube == null or not hud.view_cube.visible:
+		return false
+	var cube: ViewWidget = hud.view_cube
+	if not cube.get_global_rect().has_point(pos):
+		return false
+	var xf := cube.get_global_transform_with_canvas()
+	var local: Vector2 = xf.affine_inverse() * pos
+	var zone := cube.zone_at(local)
+	if zone == "":
+		return false
+	cube.click_zone(zone)
+	return true
 
 func _tree_blocking_name(node: Node, pos: Vector2, max_area: float) -> String:
 	if node == null or not is_instance_valid(node):
@@ -6347,6 +6352,10 @@ func _input(event: InputEvent) -> void:
 					_activate_sketch_rail_button(rail_btn)
 					_note_press_drop(str(rail_btn.name), mouse_pos)
 					return
+				var cube_at := rail_at
+				if _try_view_cube_click(cube_at):
+					get_viewport().set_input_as_handled()
+					return
 			var who := _over_chrome_who(mouse_pos)
 			if who == "" and left_press:
 				who = _press_blocker_name(mouse_pos)
@@ -6398,6 +6407,9 @@ func _input(event: InputEvent) -> void:
 			_suppress_dock_release = false
 			return
 	if _is_left_press(event) and not _pressed:
+		if _try_view_cube_click(event_pos):
+			get_viewport().set_input_as_handled()
+			return
 		var who2 := _over_chrome_who(event_pos)
 		if who2 == "":
 			who2 = _press_blocker_name(event_pos)

@@ -1749,6 +1749,20 @@ func has_pending_draw_point() -> bool:
 			return false
 
 
+## Draw / trim tools place on the model. Overlays (ViewCube) must not snap
+## the camera or swallow that click. Select / Smart Dim still use the cube.
+func places_on_model() -> bool:
+	if not active:
+		return false
+	match tool:
+		Tool.LINE, Tool.CENTERLINE, Tool.ARC, Tool.CIRCLE, Tool.RECT, \
+		Tool.POLYGON, Tool.SLOT, Tool.ELLIPSE, Tool.MIRROR, Tool.TRIM, \
+		Tool.EXTEND, Tool.SPLINE, Tool.POINT:
+			return true
+		_:
+			return has_pending_draw_point()
+
+
 ## Esc with a first anchor placed: drop the anchor and keep the sketch session.
 func cancel_pending_draw() -> void:
 	_hide_infer_hint()
