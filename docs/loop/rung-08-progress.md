@@ -1,5 +1,5 @@
 # Rung 8 progress
 
-- Product `b7cc0ba`. `confirm_all` `build/confirm-r2` since 11:07 UTC.
-- Godot ~suite 185/262 (`run_rung01_sx038_polypress.gd`) at 12:50. Kernel SIGSEGV featsweep (1/160). Lints/units 0.
-- Walks 1–8 still queued.
+- Product `b7cc0ba`. `confirm_all` `build/confirm-r2`.
+- Godot **262 run, 0 failed** (godot.rc 0). Kernel SIGSEGV featsweep 1/160. Lints/units 0.
+- Walks started 13:36 UTC, currently rung 1 (`SX_WALK_JOBS=1` from row 1).
