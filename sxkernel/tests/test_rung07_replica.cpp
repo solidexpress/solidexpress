@@ -1,6 +1,7 @@
 // One-shot OCCT replica of the locked spanner profiles. Pins check_rung07 volumes.
 #include <catch.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <string>
@@ -214,4 +215,49 @@ TEST_CASE("rung07 OCCT replica pins boss volume", "[rung07][replica]") {
     WARN("OCCT replica A_C=" << a_c << " A_ring=" << a_ring << " A_h=" << a_h
                              << " V_boss=" << v_boss);
     CHECK(v_boss == Approx(41705.0).epsilon(0.002));
+}
+
+TEST_CASE("rung07 one-sketch C+handle+ring contours meet for fuse", "[rung07][replica][contours]") {
+    Sketch sk("Spanner");
+    const double xj = -25.0 * std::sqrt(1.0 - (12.5 / 27.5) * (12.5 / 27.5));
+    auto ell = sk.add_ellipse(0.0, 0.0, 27.5, 25.0, kDeg + kPi * 0.5);
+    auto o_hi = world(xj, 12.5);
+    auto o_lo = world(xj, -12.5);
+    auto i_hi = world(xj + 20.0, 12.5);
+    auto i_lo = world(xj + 20.0, -12.5);
+    sk.add_line(o_hi[0], o_hi[1], i_hi[0], i_hi[1]);
+    sk.add_line(o_lo[0], o_lo[1], i_lo[0], i_lo[1]);
+    const double cx_local = (xj + 20.0) - std::sqrt(15.0 * 15.0 - 12.5 * 12.5);
+    auto c15 = world(cx_local, 0.0);
+    auto throat = world(cx_local + 15.0, 0.0);
+    double sa = std::atan2(i_lo[1] - c15[1], i_lo[0] - c15[0]);
+    double ea = std::atan2(i_hi[1] - c15[1], i_hi[0] - c15[0]);
+    if (ea < sa) ea += 2.0 * kPi;
+    double mid = std::atan2(throat[1] - c15[1], throat[0] - c15[0]);
+    double from = mid - sa;
+    while (from < 0) from += 2.0 * kPi;
+    if (from > ea - sa + 1e-9) {
+        std::swap(sa, ea);
+        if (ea < sa) ea += 2.0 * kPi;
+    }
+    sk.add_arc(c15[0], c15[1], 15.0, sa, ea);
+    auto pick = world(-25.0, 0.0);
+    REQUIRE(sketch_tools::trim_entity(sk, ell.str(), pick[0], pick[1]));
+
+    sk.add_circle(240.0, 0.0, 16.5);
+    sk.add_line(22.944, 10.0, 226.876, 10.0);
+    sk.add_line(23.929, -10.0, 226.876, -10.0);
+
+    std::string err;
+    auto faces = sk.contour_faces(&err);
+    INFO(err);
+    REQUIRE(faces.size() >= 3);
+    std::vector<double> areas;
+    for (const auto& f : faces) areas.push_back(area_of(f));
+    std::sort(areas.begin(), areas.end(), std::greater<double>());
+    INFO("n=" << faces.size() << " a0=" << areas[0] << " a1=" << areas[1] << " a2=" << areas[2]);
+    REQUIRE(areas[0] == Approx(3999.25).margin(20.0));
+    REQUIRE(areas[1] == Approx(1495.80).margin(20.0));
+    REQUIRE(areas[2] == Approx(855.3).margin(20.0));
+    REQUIRE(faces.size() == 3);
 }

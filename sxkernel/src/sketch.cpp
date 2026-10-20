@@ -1488,11 +1488,43 @@ TopoDS_Shape Sketch::profile_face_selected(const std::vector<int>& indices,
         if (err) *err = arranged.error.empty() ? "no contours" : arranged.error;
         return {};
     }
+    std::vector<int> grown = indices;
+    if (!grown.empty()) {
+        constexpr double kSliver = 20.0;
+        std::set<int> want(grown.begin(), grown.end());
+        auto aabb_touch = [](const TopoDS_Shape& a, const TopoDS_Shape& b) {
+            Bnd_Box ba, bb;
+            BRepBndLib::Add(a, ba);
+            BRepBndLib::Add(b, bb);
+            if (ba.IsVoid() || bb.IsVoid()) return false;
+            ba.Enlarge(0.2);
+            return !ba.IsOut(bb);
+        };
+        bool progressed = true;
+        while (progressed) {
+            progressed = false;
+            for (int i = 0; i < static_cast<int>(contours.size()); ++i) {
+                if (want.count(i)) continue;
+                const double a = shape::area(contours[static_cast<size_t>(i)]);
+                if (a <= 0.0 || a >= kSliver) continue;
+                for (int j : want) {
+                    if (j < 0 || j >= static_cast<int>(contours.size())) continue;
+                    if (!aabb_touch(contours[static_cast<size_t>(i)],
+                                    contours[static_cast<size_t>(j)]))
+                        continue;
+                    want.insert(i);
+                    progressed = true;
+                    break;
+                }
+            }
+        }
+        grown.assign(want.begin(), want.end());
+    }
     std::vector<TopoDS_Shape> picked;
-    if (indices.empty()) {
+    if (grown.empty()) {
         picked = contours;
     } else {
-        for (int idx : indices) {
+        for (int idx : grown) {
             if (idx < 0 || idx >= static_cast<int>(contours.size())) {
                 if (err) *err = "selected contour index out of range";
                 return {};
