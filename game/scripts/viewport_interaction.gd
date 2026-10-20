@@ -3241,6 +3241,8 @@ func _over_chrome_who(global_mouse: Vector2) -> String:
 func _pointer_hits_control(ctrl: Control, pos: Vector2) -> bool:
 	if ctrl == null or not is_instance_valid(ctrl):
 		return false
+	if ctrl is ViewWidget and _sketch_places_point():
+		return false
 	# IGNORE shells (variant row, action stack) must not own a canvas press.
 	# Their buttons still hit via the global rect below and via chrome walk.
 	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE and not (ctrl is BaseButton):
@@ -3282,6 +3284,11 @@ func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
 	# the canvas. Buttons and STOP rows still do.
 	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE and not (ctrl is BaseButton):
 		return false
+	# Line places through the ViewCube the same way it places through a
+	# dimension label. WP-V3's 84 px cube sits on the jaw head at the
+	# default face-sketch frame; eating that click left no cutter.
+	if ctrl is ViewWidget and _sketch_places_point():
+		return false
 	# Global rect only. The canvas-transform rect used for a hovered chip
 	# (`_pointer_hits_control`) is a different space; applying it to every
 	# control marks canvas points as chrome.
@@ -3290,6 +3297,21 @@ func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
 	if area < 4.0 or area > max_area:
 		return false
 	return r.has_point(pos)
+
+
+## Draw tools place a sketch point; overlays on the model must not drop them.
+func _sketch_places_point() -> bool:
+	if sketch_mode == null or not sketch_mode.active:
+		return false
+	var t := sketch_mode.tool
+	if t == SketchMode.Tool.LINE or t == SketchMode.Tool.CENTERLINE \
+			or t == SketchMode.Tool.ARC or t == SketchMode.Tool.CIRCLE \
+			or t == SketchMode.Tool.RECT or t == SketchMode.Tool.POLYGON \
+			or t == SketchMode.Tool.SLOT or t == SketchMode.Tool.ELLIPSE \
+			or t == SketchMode.Tool.MIRROR or t == SketchMode.Tool.TRIM \
+			or t == SketchMode.Tool.EXTEND:
+		return true
+	return sketch_mode.has_pending_draw_point()
 
 func _tree_blocking_name(node: Node, pos: Vector2, max_area: float) -> String:
 	if node == null or not is_instance_valid(node):

@@ -48,10 +48,14 @@ var view_cube: ViewWidget
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	# IGNORE shell: padding around the cube / buttons must not steal a Line
+	# click that lands on the model under this overlay (jaw diagonal, Ø45).
+	# ViewCube and the Shade/Section/Frame buttons keep STOP and still fire.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Transparent shell so the RGB sticks float without a panel backdrop.
 	add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var col := VBoxContainer.new()
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_theme_constant_override("separation", 4)
 	add_child(col)
 	view_cube = ViewWidget.new()
