@@ -1048,6 +1048,12 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	if ex_fid == "" and _graph_error_text().contains("Thin wall"):
 		_refuse_extrude(_graph_error_text())
 		return
+	# Kernel now refuses an open-shell or zero-volume Cut as "boolean failed"
+	# instead of committing it. Name that the same as the rollback path so
+	# an off-body contour is inspectable.
+	if ex_fid == "" and op == "cut" and _graph_error_text().contains("boolean failed"):
+		_refuse_extrude(_cut_refusal(vol_before, vol_before))
+		return
 	if ex_fid != "" and op == "cut" and vol_before > 0.0:
 		var vol_after := _body_volume(view.body_of_feature(target_fid))
 		var refuse := _cut_refusal(vol_before, vol_after)
