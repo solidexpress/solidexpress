@@ -98,49 +98,73 @@ start_xvfb() {
 }
 
 echo "confirm: walks" >&2
-start_xvfb :21
-start_xvfb :22
-start_xvfb :23
-start_xvfb :24
-start_xvfb :25
-start_xvfb :26
-start_xvfb :27
-start_xvfb :28
+# 8 concurrent Godot walks starve product rows on a 4-core / 15GiB image.
+# SX_WALK_JOBS=1 (this confirm) runs them one at a time; default stays 8-wide.
+WALK_JOBS="${SX_WALK_JOBS:-8}"
 
-SX_AUTOMATION=1 python3 tools/walk_rung01.py --a15 --port 47321 --display :21 \
-  --resolution 1280x800 --out "${OUT}/walk1" >"${OUT}/walk1.stdout" 2>&1 &
-p1=$!
-SX_AUTOMATION=1 python3 tools/walk_rung02.py --a15 --port 47322 --display :22 \
-  --resolution 1280x800 --out "${OUT}/walk2" >"${OUT}/walk2.stdout" 2>&1 &
-p2=$!
-SX_AUTOMATION=1 python3 tools/walk_rung03.py --a15 --port 47323 --display :23 \
-  --resolution 1280x800 --out "${OUT}/walk3" >"${OUT}/walk3.stdout" 2>&1 &
-p3=$!
-SX_AUTOMATION=1 python3 tools/walk_rung04.py --a15 --port 47324 --display :24 \
-  --resolution 1280x800 --out "${OUT}/walk4" >"${OUT}/walk4.stdout" 2>&1 &
-p4=$!
-SX_AUTOMATION=1 python3 tools/walk_rung05.py --a15 --port 47325 --display :25 \
-  --resolution 1280x800 --out "${OUT}/walk5" >"${OUT}/walk5.stdout" 2>&1 &
-p5=$!
-SX_AUTOMATION=1 python3 tools/walk_rung06.py --a15 --port 47326 --display :26 \
-  --resolution 1280x800 --out "${OUT}/walk6" >"${OUT}/walk6.stdout" 2>&1 &
-p6=$!
-SX_AUTOMATION=1 python3 tools/walk_rung07.py --a15 --port 47327 --display :27 \
-  --resolution 1280x800 --out "${OUT}/walk7" >"${OUT}/walk7.stdout" 2>&1 &
-p7=$!
-SX_AUTOMATION=1 python3 tools/walk_rung08.py --a15 --port 47328 --display :28 \
-  --resolution 1280x800 --out "${OUT}/walk8" >"${OUT}/walk8.stdout" 2>&1 &
-p8=$!
-set +e
-wait "${p1}"; echo $? >"${OUT}/walk1.rc"
-wait "${p2}"; echo $? >"${OUT}/walk2.rc"
-wait "${p3}"; echo $? >"${OUT}/walk3.rc"
-wait "${p4}"; echo $? >"${OUT}/walk4.rc"
-wait "${p5}"; echo $? >"${OUT}/walk5.rc"
-wait "${p6}"; echo $? >"${OUT}/walk6.rc"
-wait "${p7}"; echo $? >"${OUT}/walk7.rc"
-wait "${p8}"; echo $? >"${OUT}/walk8.rc"
-set -e
+run_one_walk() {
+  local n="$1" display="$2" port="$3" script="$4"
+  start_xvfb "${display}"
+  set +e
+  SX_AUTOMATION=1 python3 "tools/${script}" --a15 --port "${port}" --display "${display}" \
+    --resolution 1280x800 --out "${OUT}/walk${n}" >"${OUT}/walk${n}.stdout" 2>&1
+  echo $? >"${OUT}/walk${n}.rc"
+  set -e
+}
+
+if [[ "${WALK_JOBS}" == "1" ]]; then
+  run_one_walk 1 :21 47321 walk_rung01.py
+  run_one_walk 2 :22 47322 walk_rung02.py
+  run_one_walk 3 :23 47323 walk_rung03.py
+  run_one_walk 4 :24 47324 walk_rung04.py
+  run_one_walk 5 :25 47325 walk_rung05.py
+  run_one_walk 6 :26 47326 walk_rung06.py
+  run_one_walk 7 :27 47327 walk_rung07.py
+  run_one_walk 8 :28 47328 walk_rung08.py
+else
+  start_xvfb :21
+  start_xvfb :22
+  start_xvfb :23
+  start_xvfb :24
+  start_xvfb :25
+  start_xvfb :26
+  start_xvfb :27
+  start_xvfb :28
+  SX_AUTOMATION=1 python3 tools/walk_rung01.py --a15 --port 47321 --display :21 \
+    --resolution 1280x800 --out "${OUT}/walk1" >"${OUT}/walk1.stdout" 2>&1 &
+  p1=$!
+  SX_AUTOMATION=1 python3 tools/walk_rung02.py --a15 --port 47322 --display :22 \
+    --resolution 1280x800 --out "${OUT}/walk2" >"${OUT}/walk2.stdout" 2>&1 &
+  p2=$!
+  SX_AUTOMATION=1 python3 tools/walk_rung03.py --a15 --port 47323 --display :23 \
+    --resolution 1280x800 --out "${OUT}/walk3" >"${OUT}/walk3.stdout" 2>&1 &
+  p3=$!
+  SX_AUTOMATION=1 python3 tools/walk_rung04.py --a15 --port 47324 --display :24 \
+    --resolution 1280x800 --out "${OUT}/walk4" >"${OUT}/walk4.stdout" 2>&1 &
+  p4=$!
+  SX_AUTOMATION=1 python3 tools/walk_rung05.py --a15 --port 47325 --display :25 \
+    --resolution 1280x800 --out "${OUT}/walk5" >"${OUT}/walk5.stdout" 2>&1 &
+  p5=$!
+  SX_AUTOMATION=1 python3 tools/walk_rung06.py --a15 --port 47326 --display :26 \
+    --resolution 1280x800 --out "${OUT}/walk6" >"${OUT}/walk6.stdout" 2>&1 &
+  p6=$!
+  SX_AUTOMATION=1 python3 tools/walk_rung07.py --a15 --port 47327 --display :27 \
+    --resolution 1280x800 --out "${OUT}/walk7" >"${OUT}/walk7.stdout" 2>&1 &
+  p7=$!
+  SX_AUTOMATION=1 python3 tools/walk_rung08.py --a15 --port 47328 --display :28 \
+    --resolution 1280x800 --out "${OUT}/walk8" >"${OUT}/walk8.stdout" 2>&1 &
+  p8=$!
+  set +e
+  wait "${p1}"; echo $? >"${OUT}/walk1.rc"
+  wait "${p2}"; echo $? >"${OUT}/walk2.rc"
+  wait "${p3}"; echo $? >"${OUT}/walk3.rc"
+  wait "${p4}"; echo $? >"${OUT}/walk4.rc"
+  wait "${p5}"; echo $? >"${OUT}/walk5.rc"
+  wait "${p6}"; echo $? >"${OUT}/walk6.rc"
+  wait "${p7}"; echo $? >"${OUT}/walk7.rc"
+  wait "${p8}"; echo $? >"${OUT}/walk8.rc"
+  set -e
+fi
 
 if [[ -f "${OUT}/xvfb-21.pid" ]]; then kill "$(cat "${OUT}/xvfb-21.pid")" 2>/dev/null || true; fi
 if [[ -f "${OUT}/xvfb-22.pid" ]]; then kill "$(cat "${OUT}/xvfb-22.pid")" 2>/dev/null || true; fi
