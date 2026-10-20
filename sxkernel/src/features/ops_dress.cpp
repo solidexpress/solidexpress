@@ -568,8 +568,8 @@ struct NeckFillet {
         return false;
     }
 
-    // Wedge fallback is only for planar walls that contain the edge (vertical
-    // when the edge is Z-aligned). Cylindrical / drafted walls refuse.
+    // Planar-vertical walls are one wedge path. Neck edges (R30 on 6 mm)
+    // may have an elliptical extrusion as the other wall and still fuse.
     static bool walls_planar_vertical(const TopoDS_Shape& shape, const TopoDS_Edge& edge) {
         BRepAdaptor_Curve curve(edge);
         gp_Pnt a = curve.Value(curve.FirstParameter());
@@ -930,13 +930,18 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             TopoDS_Shape recovered;
             std::string fault2;
             const bool planar_vert = NeckFillet::any_planar_vertical(tb->shape, resolved);
-            if (planar_vert && NeckFillet::fuse_wedges(tb->shape, resolved, asked, recovered)) {
+            // Neck R30/R20 sits on a 6 mm Z-edge whose other wall is the C
+            // ellipse extrusion — not a plane. Void-angle fuse already
+            // refuses 90° boxes and cylindrical hole rims (those edges are
+            // not necks). Planar-vertical is sufficient, not required.
+            if ((neck || planar_vert) &&
+                NeckFillet::fuse_wedges(tb->shape, resolved, asked, recovered)) {
                 result = recovered;
                 ctx.graph.add_warning(ctx.feature.id, ctx.feature.name + ": fillet wedge");
             } else if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
                 result = recovered;
             else {
-                if (!planar_vert)
+                if (!planar_vert && !neck)
                     ctx.graph.add_warning(ctx.feature.id,
                                           ctx.feature.name +
                                               ": fillet wedge refused: walls not planar and vertical");
