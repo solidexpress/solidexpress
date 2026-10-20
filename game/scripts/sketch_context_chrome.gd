@@ -276,6 +276,7 @@ func _build_finish_bar() -> void:
 	dist_edit.text_submitted.connect(_on_distance_text_submitted)
 	dist_edit.focus_entered.connect(_on_distance_focus_entered)
 	dist_edit.focus_exited.connect(_on_distance_focus_exited)
+	_extrude_spin.value_changed.connect(_on_distance_value_changed)
 	_finish_dim_row.add_child(_extrude_spin)
 	_extrude_readout = Label.new()
 	_extrude_readout.name = "ExtrudeReadout"
@@ -1040,6 +1041,15 @@ func _refresh_extrude_readout(v: float) -> void:
 	_extrude_readout.text = "Extrude %s mm" % _plain_num(v)
 
 
+func _on_distance_value_changed(_v: float) -> void:
+	# step=0 SpinBox to_float-s a prefix ("20.07.5" → 20.07). The published
+	# value stays the last committed number while the line is unparseable.
+	if _distance_syncing or not _distance_line_invalid:
+		return
+	_extrude_spin.set_value_no_signal(_distance_origin)
+	_refresh_extrude_readout(_distance_origin)
+
+
 func _on_distance_text_changed(new_text: String) -> void:
 	if _distance_syncing:
 		return
@@ -1571,6 +1581,8 @@ func apply_distance_typed_char(ch: String) -> void:
 	else:
 		_distance_line_invalid = true
 		_distance_invalid_raw = next
+		_extrude_spin.set_value_no_signal(_distance_origin)
+		_refresh_extrude_readout(_distance_origin)
 
 
 func _on_distance_edit_gui_input(event: InputEvent) -> void:
