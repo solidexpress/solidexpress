@@ -4,6 +4,7 @@
 #include <cmath>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace sx::sketch_tools {
@@ -689,8 +690,12 @@ bool offset_line(Sketch& s, const SketchEntity& e, EntityId id, double distance,
     EntityId nid = s.add_line(x1 + o.x, y1 + o.y, x2 + o.x, y2 + o.y);
     s.add_constraint(ConstraintType::Parallel,
                      {{nid, PointRole::Self}, {id, PointRole::Self}});
+    // Both ends, otherwise Parallel + one P2LDistance lets the copy slide
+    // along the source and open the offset chain at the corners.
     s.add_constraint(ConstraintType::Distance,
                      {{nid, PointRole::Start}, {id, PointRole::Self}}, std::abs(distance), true);
+    s.add_constraint(ConstraintType::Distance,
+                     {{nid, PointRole::End}, {id, PointRole::Self}}, std::abs(distance), true);
     out.push_back(nid.str());
     return true;
 }
@@ -739,6 +744,52 @@ const std::unordered_map<SketchEntityType, Offsetter> kOffsetters = {
     {SketchEntityType::Arc, offset_arc},
 };
 
+bool near_uv(Vec2 a, Vec2 b) { return hypot2(sub(a, b)) <= 0.05; }
+
+struct ChainEnd {
+    EntityId id;
+    PointRole role;
+    Vec2 p;
+};
+
+std::vector<ChainEnd> chain_ends(const Sketch& s, EntityId id) {
+    const SketchEntity* e = s.entity(id);
+    if (!e) return {};
+    if (e->type != SketchEntityType::Line && e->type != SketchEntityType::Arc) return {};
+    auto a = s.point_pos({id, PointRole::Start});
+    auto b = s.point_pos({id, PointRole::End});
+    if (!a || !b) return {};
+    return {{id, PointRole::Start, {(*a)[0], (*a)[1]}},
+            {id, PointRole::End, {(*b)[0], (*b)[1]}}};
+}
+
+// Copies of a connected source chain inherit Coincident at the corners so
+// PlaneGCS cannot slide the parallels apart after Offset.
+void weld_offset_copies(Sketch& s, const std::vector<std::pair<EntityId, EntityId>>& pairs) {
+    for (size_t i = 0; i < pairs.size(); ++i) {
+        auto src_i = chain_ends(s, pairs[i].first);
+        auto copy_i = chain_ends(s, pairs[i].second);
+        if (src_i.size() != 2 || copy_i.size() != 2) continue;
+        for (size_t j = i + 1; j < pairs.size(); ++j) {
+            auto src_j = chain_ends(s, pairs[j].first);
+            auto copy_j = chain_ends(s, pairs[j].second);
+            if (src_j.size() != 2 || copy_j.size() != 2) continue;
+            for (int a = 0; a < 2; ++a) {
+                for (int b = 0; b < 2; ++b) {
+                    if (!near_uv(src_i[static_cast<size_t>(a)].p,
+                                 src_j[static_cast<size_t>(b)].p))
+                        continue;
+                    s.add_constraint(ConstraintType::Coincident,
+                                     {{copy_i[static_cast<size_t>(a)].id,
+                                       copy_i[static_cast<size_t>(a)].role},
+                                      {copy_j[static_cast<size_t>(b)].id,
+                                       copy_j[static_cast<size_t>(b)].role}});
+                }
+            }
+        }
+    }
+}
+
 }  // namespace
 
 std::vector<std::string> offset_entities(Sketch& s,
@@ -747,6 +798,7 @@ std::vector<std::string> offset_entities(Sketch& s,
     std::vector<std::string> out;
     if (std::abs(distance) <= k_eps) return out;
     out.reserve(entity_ids.size());
+    std::vector<std::pair<EntityId, EntityId>> copies;
 
     for (const std::string& sid : entity_ids) {
         EntityId id = EntityId::from_string(sid);
@@ -754,8 +806,12 @@ std::vector<std::string> offset_entities(Sketch& s,
         if (!e) continue;
         const auto it = kOffsetters.find(e->type);
         if (it == kOffsetters.end()) continue;
+        const size_t before = out.size();
         it->second(s, *e, id, distance, out);
+        if (out.size() > before)
+            copies.push_back({id, EntityId::from_string(out.back())});
     }
+    weld_offset_copies(s, copies);
     return out;
 }
 

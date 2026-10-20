@@ -2561,6 +2561,33 @@ func _nearest_profile_entity_at(pos2: Vector2) -> String:
 	return best_id
 
 
+## Power Trim: a line under the pointer wins a close race against an
+## ellipse/arc. Overflow clicks sit a few millimetres inside the C; picking
+## the remaining elliptical arc would eat the pad instead of the handle.
+func _nearest_trim_entity_at(pos2: Vector2) -> String:
+	var best_id := ""
+	var best_d := _pick_tolerance()
+	var best_line := ""
+	var best_line_d := _pick_tolerance()
+	for id in sketch.entity_ids():
+		var info: Dictionary = sketch.entity_info(id)
+		if bool(info.get("construction", false)):
+			continue
+		var d := _entity_distance(info, pos2)
+		var kind := str(info.get("type", ""))
+		if kind == "line" and d < best_line_d:
+			best_line_d = d
+			best_line = str(id)
+		if d < best_d:
+			best_d = d
+			best_id = str(id)
+	if best_line != "" and best_line != best_id and best_line_d <= best_d + 2.0:
+		var k := str(sketch.entity_info(best_id).get("type", ""))
+		if k == "ellipse" or k == "elliptical_arc" or k == "circle" or k == "arc":
+			return best_line
+	return best_id
+
+
 ## Nearest entity id within the pick radius of pos2, or "" if none.
 func _nearest_entity_at(pos2: Vector2) -> String:
 	var best_id := ""
@@ -3794,7 +3821,7 @@ func trim_at(pos2: Vector2) -> bool:
 		return false
 	if _trim_open_jaw(pos2):
 		return true
-	var id := _nearest_entity_at(pos2)
+	var id := _nearest_trim_entity_at(pos2)
 	if id == "":
 		status.emit("Trim failed — nothing under the pointer: click on a line or arc")
 		return false
@@ -8084,7 +8111,7 @@ func hover(pos2: Vector2) -> void:
 	if camera != null and is_inside_tree():
 		_pointer_screen = camera.unproject_position(to_global(to_model(pos2)))
 	if tool == Tool.TRIM:
-		_trim_hover_id = _nearest_entity_at(pos2)
+		_trim_hover_id = _nearest_trim_entity_at(pos2)
 		_hover = pos2
 		_hide_infer_hint()
 		_update_preview()
@@ -8120,7 +8147,7 @@ func begin_trim_drag(pos2: Vector2) -> void:
 	_trim_trail_pts.append(pos2)
 	_rebuild_trim_trail()
 	trim_at(pos2)
-	var id := _nearest_entity_at(pos2)
+	var id := _nearest_trim_entity_at(pos2)
 	if id != "":
 		_trim_drag_ids.append(id)
 
@@ -8131,7 +8158,7 @@ func update_trim_drag(pos2: Vector2) -> void:
 		_rebuild_trim_trail()
 	if not _trim_dragging or _trim_jaw_done_in_drag:
 		return
-	var id := _nearest_entity_at(pos2)
+	var id := _nearest_trim_entity_at(pos2)
 	if id != "" and id not in _trim_drag_ids:
 		if trim_at(pos2):
 			_trim_drag_ids.append(id)

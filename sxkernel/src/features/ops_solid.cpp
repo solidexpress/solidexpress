@@ -19,6 +19,7 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepTools.hxx>
+#include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
@@ -30,6 +31,7 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Iterator.hxx>
+#include <TopoDS_Shell.hxx>
 #include <TopoDS_Wire.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <GeomAbs_SurfaceType.hxx>
@@ -165,6 +167,23 @@ struct ExtrudeFuse {
 
     static bool usable(const TopoDS_Shape& s) { return HonestBoolean::usable(s); }
 
+    // Cut closedness is the 3MF mesh, not BRepCheck. UnifySameDomain often
+    // closes the mesh on a solid that Analyzer still flags.
+    static bool volume_solid(const TopoDS_Shape& s) {
+        return !s.IsNull() && shape::count(s).solids >= 1
+               && std::abs(shape::volume(s)) > 1.0e-3;
+    }
+
+    static bool shells_closed(const TopoDS_Shape& s) {
+        if (s.IsNull()) return false;
+        int n = 0;
+        for (TopExp_Explorer ex(s, TopAbs_SHELL); ex.More(); ex.Next()) {
+            ++n;
+            if (!BRep_Tool::IsClosed(TopoDS::Shell(ex.Current()))) return false;
+        }
+        return n >= 1;
+    }
+
     static bool keeps_fuse(const TopoDS_Shape& body, const TopoDS_Shape& tool,
                            const TopoDS_Shape& merged) {
         return HonestBoolean::fuse_keeps(body, tool, merged);
@@ -183,6 +202,22 @@ struct ExtrudeFuse {
         } catch (...) {
         }
         return HonestBoolean::usable(work) ? work : s;
+    }
+
+    static TopoDS_Shape keep_cut(const TopoDS_Shape& s) {
+        if (!volume_solid(s)) return s;
+        std::string report;
+        TopoDS_Shape work = interop::heal_shape(s, &report);
+        if (!volume_solid(work)) work = s;
+        try {
+            ShapeUpgrade_UnifySameDomain unify(work, true, true, true);
+            unify.SetLinearTolerance(1.0e-3);
+            unify.Build();
+            const TopoDS_Shape u = unify.Shape();
+            if (volume_solid(u)) work = u;
+        } catch (...) {
+        }
+        return volume_solid(work) ? work : s;
     }
 
     static TopoDS_Shape run_fuse(const TopoDS_Shape& a, const TopoDS_Shape& b,
@@ -218,9 +253,9 @@ struct ExtrudeFuse {
         opc.SetTools(tools);
         if (fuzzy > 0.0) opc.SetFuzzyValue(fuzzy);
         opc.Build();
-        if (opc.IsDone()) {
-            TopoDS_Shape s = keep_solid(opc.Shape());
-            if (HonestBoolean::usable(s)) return s;
+        if (opc.IsDone() && volume_solid(opc.Shape())) {
+            TopoDS_Shape s = keep_cut(opc.Shape());
+            if (volume_solid(s) && shells_closed(s)) return s;
         }
         return {};
     }
@@ -658,27 +693,33 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                     TopoDS_Shape merged;
                     std::string bool_warn;
                     if (op == "cut") {
-                        HonestBoolean hb = HonestBoolean::cut(tb->shape, result);
                         const double v0 = std::abs(shape::volume(tb->shape));
                         const auto cut_ok = [&](const TopoDS_Shape& s) {
-                            return HonestBoolean::usable(s)
+                            return ExtrudeFuse::volume_solid(s)
+                                   && ExtrudeFuse::shells_closed(s)
                                    && v0 - std::abs(shape::volume(s)) > 1e-3;
                         };
-                        if (cut_ok(hb.shape)) {
-                            merged = hb.shape;
-                            bool_warn = hb.warning;
-                        } else {
-                            for (double fuzzy : ExtrudeFuse::FUZZIES) {
-                                TopoDS_Shape m = ExtrudeFuse::run_cut(tb->shape, result, fuzzy);
-                                if (cut_ok(m)) {
-                                    merged = m;
-                                    if (fuzzy > HonestBoolean::silent_limit(tb->shape, result)) {
-                                        std::ostringstream os;
-                                        os << kBooleanFuzzWarning << fuzzy;
-                                        bool_warn = os.str();
-                                    }
-                                    break;
-                                }
+                        // 1e-4 first (rung-7 closed-3MF recipe). Fuzzy 0 often
+                        // "succeeds" as an open shell the UI then refuses.
+                        const double cut_fuzzies[] = {1.0e-4, 1.0e-7, 1.0e-3, 0.05, 0.1, 0.0};
+                        const double silent = HonestBoolean::silent_limit(tb->shape, result);
+                        for (double fuzzy : cut_fuzzies) {
+                            TopoDS_Shape m = ExtrudeFuse::run_cut(tb->shape, result, fuzzy);
+                            if (!cut_ok(m)) continue;
+                            merged = m;
+                            if (fuzzy > silent) {
+                                std::ostringstream os;
+                                os << kBooleanFuzzWarning << fuzzy;
+                                bool_warn = os.str();
+                            }
+                            break;
+                        }
+                        if (merged.IsNull()) {
+                            HonestBoolean hb = HonestBoolean::cut(tb->shape, result);
+                            TopoDS_Shape m = ExtrudeFuse::keep_cut(hb.shape);
+                            if (cut_ok(m)) {
+                                merged = m;
+                                bool_warn = hb.warning;
                             }
                         }
                     } else {

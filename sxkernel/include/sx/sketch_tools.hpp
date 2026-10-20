@@ -15,10 +15,12 @@ std::string fillet_corner(Sketch& s, const std::string& line_a_id,
                           const std::string& line_b_id, double radius);
 
 // Offset each entity by signed distance (OFFSETTERS table by entity type).
-// Lines: a parallel copy (positive = left of direction) with driving Distance.
-// Circles: Concentric plus a driving Distance Δr (copy.r − source.r); Diameter
-// on the copy is non-driving. Arcs: same with non-driving Radius. Distance ≈ 0,
-// or a circle/arc with r + d ≤ 0, is refused (empty result, sketch unchanged
+// Lines: a parallel copy (positive = left of direction) with driving Distance
+// on both ends. Circles: Concentric plus a driving Distance Δr (copy.r −
+// source.r); Diameter on the copy is non-driving. Arcs: same with non-driving
+// Radius. Copies of a connected source chain get Coincident at shared corners
+// so a later solve cannot slide the parallels apart. Distance ≈ 0, or a
+// circle/arc with r + d ≤ 0, is refused (empty result, sketch unchanged
 // for that entity).
 // Returns new entity ids in input order (omitting skips / refusals).
 std::vector<std::string> offset_entities(Sketch& s,

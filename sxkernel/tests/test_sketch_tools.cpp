@@ -5,8 +5,10 @@
 #include <utility>
 #include <vector>
 
+#include "sx/shape_utils.hpp"
 #include "sx/sketch.hpp"
 #include "sx/sketch_tools.hpp"
+#include "sx/solver.hpp"
 
 using namespace sx;
 using namespace sx::sketch_tools;
@@ -654,4 +656,22 @@ TEST_CASE("trim_entity on an uncut ellipse returns false",
     REQUIRE(sk.entities().size() == n_before);
     REQUIRE(sk.entity(ell) != nullptr);
     REQUIRE(sk.entity(ell)->type == SketchEntityType::Ellipse);
+}
+
+TEST_CASE("offset racetrack stays closed after solve", "[sketchtools][offset][l8]") {
+    Sketch sk("Racetrack");
+    const double pi = 3.14159265358979323846;
+    auto top = sk.add_line(0, 30, 180, 30);
+    auto bot = sk.add_line(180, -30, 0, -30);
+    auto left = sk.add_arc(0, 0, 30, pi * 0.5, pi * 1.5);
+    auto right = sk.add_arc(180, 0, 30, -pi * 0.5, pi * 0.5);
+    auto ids = offset_entities(sk, {top.str(), bot.str(), left.str(), right.str()}, 5.0);
+    REQUIRE(ids.size() == 4);
+    auto solver = make_planegcs_backend();
+    REQUIRE(solver->solve(sk).ok());
+    std::string err;
+    TopoDS_Shape face = sk.profile_face(&err);
+    INFO(err);
+    REQUIRE_FALSE(face.IsNull());
+    REQUIRE(std::abs(sx::shape::area(face)) > 100.0);
 }

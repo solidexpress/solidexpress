@@ -19,7 +19,12 @@ namespace sx::feature_ops {
 namespace {
 
 constexpr double kLargeFuzz[] = {1.0e-4, 1.0e-3, 0.05, 0.1};
-constexpr BOPAlgo_GlueEnum kGlue[] = {BOPAlgo_GlueOff, BOPAlgo_GlueShift, BOPAlgo_GlueFull};
+// GlueShift/Full is the named fuse path for pads that only share a face
+// (6 mm handle onto 10 mm heads). Glue on Cut can pass BRepCheck and still
+// mesh-open (jaw Up-To-Surface). Cuts stay GlueOff.
+constexpr BOPAlgo_GlueEnum kFuseGlue[] = {BOPAlgo_GlueOff, BOPAlgo_GlueShift,
+                                          BOPAlgo_GlueFull};
+constexpr BOPAlgo_GlueEnum kCutGlue[] = {BOPAlgo_GlueOff};
 
 double bbox_diag_of(const TopoDS_Shape& s) {
     if (s.IsNull()) return 0.0;
@@ -115,21 +120,22 @@ HonestBoolean run_ladder(bool cutting, const TopoDS_Shape& a, const TopoDS_Shape
     HonestBoolean out;
     const double silent = HonestBoolean::silent_limit(a, b);
     const double first[] = {0.0, silent};
-    // GlueShift/Full is the named path for pads that only share a face
-    // (spanner handle 6 mm onto heads 10 mm). Try it before large fuzz so
-    // an open-shell default Fuse does not get committed.
-    for (double fuzzy : first) {
-        for (auto glue : kGlue) {
-            if (take(out, cutting, a, b, fuzzy, glue)) return out;
+    const BOPAlgo_GlueEnum* glues = cutting ? kCutGlue : kFuseGlue;
+    const int nglue = cutting ? 1 : 3;
+    auto try_glues = [&](double fuzzy, const char* extra) {
+        for (int i = 0; i < nglue; ++i) {
+            if (take(out, cutting, a, b, fuzzy, glues[i], extra)) return true;
         }
+        return false;
+    };
+    for (double fuzzy : first) {
+        if (try_glues(fuzzy, nullptr)) return out;
     }
     for (double fuzzy : kLargeFuzz) {
         if (fuzzy <= silent) continue;
-        for (auto glue : kGlue) {
-            std::ostringstream os;
-            os << kBooleanFuzzWarning << fuzzy;
-            if (take(out, cutting, a, b, fuzzy, glue, os.str().c_str())) return out;
-        }
+        std::ostringstream os;
+        os << kBooleanFuzzWarning << fuzzy;
+        if (try_glues(fuzzy, os.str().c_str())) return out;
     }
     return out;
 }
