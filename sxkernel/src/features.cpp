@@ -862,9 +862,22 @@ TopoDS_Shape sweep_along_spine(const TopoDS_Shape& face, const TopoDS_Wire& spin
     };
     // Follow-path must rotate the ellipse at the hook. Transformed on a
     // coplanar circle+line (featsweep path) yields a 0-volume solid; RightCorner
-    // fills that cylinder. Walk spines still prefer Transformed for xmax.
-    TopoDS_Shape result = try_mode(BRepBuilderAPI_Transformed);
-    if (result.IsNull()) result = try_mode(BRepBuilderAPI_RightCorner);
+    // fills that cylinder. A spline rail into a 90° leg can "succeed" as
+    // Transformed while only sweeping the last edge — pick the largest solid.
+    const BRepBuilderAPI_TransitionMode modes[] = {BRepBuilderAPI_Transformed,
+                                                   BRepBuilderAPI_RightCorner,
+                                                   BRepBuilderAPI_RoundCorner};
+    TopoDS_Shape result;
+    double best_vol = -1.0;
+    for (auto mode : modes) {
+        TopoDS_Shape s = try_mode(mode);
+        if (!pipe_solid_ok(s)) continue;
+        const double v = std::abs(shape::volume(s));
+        if (v > best_vol) {
+            best_vol = v;
+            result = s;
+        }
+    }
     if (result.IsNull()) throw std::runtime_error("MakePipeShell failed");
     return result;
 }

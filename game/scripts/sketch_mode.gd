@@ -4081,10 +4081,6 @@ func _jaw_long_sides() -> Array:
 	for id in sketch.entity_ids():
 		if sketch.is_construction(id):
 			continue
-		# Shaft Lines carry a tangent pin; they are longer than the jaw and
-		# would otherwise win the parallel-pair score.
-		if _entity_has_constraint(id, "tangent"):
-			continue
 		var info: Dictionary = sketch.entity_info(id)
 		if str(info.get("type", "")) != "line":
 			continue
@@ -4093,6 +4089,10 @@ func _jaw_long_sides() -> Array:
 		var d := b - a
 		var L := d.length()
 		if L < 1.0:
+			continue
+		# Shaft Lines carry a tangent pin and are ~200 mm. A 20 mm jaw wall
+		# may also pick up Tangent to the head circle; those stay walls.
+		if _entity_has_constraint(id, "tangent") and L > 80.0:
 			continue
 		lines.append({"id": id, "a": a, "b": b, "len": L, "dir": d})
 	var best: Array = []

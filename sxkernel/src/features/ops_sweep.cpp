@@ -323,7 +323,11 @@ bool apply_sweep(ApplyCtx& ctx) {
                                     if (!w.IsNull()) wires.push_back(w);
                                 }
                             }
-                            spine = join_exact_wires(wires);
+                            // A missing rail (open spline whose exact edge
+                            // failed) must not leave a one-leg spine; the
+                            // polyline path below still has every sketch.
+                            if (wires.size() == rails.size())
+                                spine = join_exact_wires(wires);
                         }
                     } else if (pf && pf->sketch) {
                         spine = sketch_exact_wire(*pf->sketch);
@@ -333,6 +337,18 @@ bool apply_sweep(ApplyCtx& ctx) {
                 }
                 if (!path.is_array() || path.size() < 2)
                     return fail("sweep needs a path with at least two points");
+                if (!spine.IsNull() && path.size() >= 2) {
+                    auto path_len = [](const json& pts) {
+                        double L = 0.0;
+                        for (size_t i = 1; i < pts.size(); ++i)
+                            L += pnt_from(pts[i - 1]).Distance(pnt_from(pts[i]));
+                        return L;
+                    };
+                    GProp_GProps lin;
+                    BRepGProp::LinearProperties(spine, lin);
+                    const double want = path_len(path);
+                    if (want > 1.0 && lin.Mass() + 1.0 < 0.75 * want) spine = {};
+                }
 
                 // Optional guide: first guide sketch becomes MakePipeShell auxiliary spine.
                 json guide_path;
@@ -419,6 +435,8 @@ bool apply_sweep(ApplyCtx& ctx) {
                     if (!s.IsNull() && shape::volume(s) < 0.0) s.Reverse();
                     return SweepFuse::usable(s) ? s : orig;
                 };
+                result = close_solid(result);
+                if (!result.IsNull() && shape::volume(result) < 0.0) result.Reverse();
                 if (op == "new") {
                     put_body(doc, f.output_body, result, f.name);
                 } else {
@@ -625,8 +643,16 @@ bool apply_loft(ApplyCtx& ctx) {
                         }
                         if (followed) break;
                     }
-                    if (!followed) return fail("guided loft: OCCT could not follow the guide");
-                } else {
+                    if (!followed) {
+                        // A 2D rail coplanar with one section cannot span the
+                        // loft (UI open-line "guide"). Empty guides already
+                        // refused above. Fall back so the profiles still loft.
+                        ctx.graph.add_warning(
+                                f.id, "guided loft: OCCT could not follow the guide");
+                        result = {};
+                    }
+                }
+                if (result.IsNull()) {
                     BRepOffsetAPI_ThruSections loft(/*isSolid=*/true, ruled);
                     for (const auto& w : sections) loft.AddWire(w);
                     try {
@@ -640,6 +666,7 @@ bool apply_loft(ApplyCtx& ctx) {
                 if (result.IsNull() || !shape::is_valid(result))
                     return fail("loft result invalid");
                 if (shape::count(result).solids < 1) return fail("loft result is not a solid");
+                if (shape::volume(result) < 0.0) result.Reverse();
                 put_body(doc, f.output_body, result, f.name);
                 return true;
             

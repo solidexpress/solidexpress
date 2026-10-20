@@ -352,3 +352,35 @@ TEST_CASE("exact thread feature: graph cut keeps ISO flank", "[exactness][thread
     REQUIRE(body != nullptr);
     REQUIRE(shape::volume(body->shape) < M_PI * 10.0 * 10.0 * 20.0);
 }
+
+TEST_CASE("exact spine: spline rail plus vertical leg sweeps a solid", "[exactness][spine][join3d]") {
+    Document doc;
+    auto sk_a = std::make_shared<Sketch>("SplineRail");
+    sk_a->add_spline({{0, 0}, {8, 4}, {20, 0}});
+    auto fid_a = add_sketch(doc.graph(), sk_a);
+    SketchPlane yz;
+    yz.origin = {20, 0, 0};
+    yz.x_dir = {0, 1, 0};
+    yz.y_dir = {0, 0, 1};
+    auto sk_b = std::make_shared<Sketch>("Vertical", yz);
+    sk_b->add_line(0, 0, 0, 30);
+    auto fid_b = add_sketch(doc.graph(), sk_b);
+    Feature path;
+    path.type = FeatureType::Path;
+    path.params = {{"sketches", json::array({fid_a.str(), fid_b.str()})},
+                   {"mode", "join_endpoints"}};
+    auto path_fid = doc.graph().add(std::move(path));
+    auto profile = std::make_shared<Sketch>("Disc");
+    profile->add_circle(0, 0, 2.0);
+    auto prof_fid = add_sketch(doc.graph(), profile);
+    Feature sw;
+    sw.type = FeatureType::Sweep;
+    sw.params = {{"sketch", prof_fid.str()}, {"path_feature", path_fid.str()}};
+    auto sw_fid = doc.graph().add(std::move(sw));
+    std::string err;
+    REQUIRE(doc.graph().regenerate(doc, &err));
+    const Body* body = doc.body(doc.graph().feature(sw_fid)->output_body);
+    REQUIRE(body != nullptr);
+    INFO("vol=" << shape::volume(body->shape));
+    REQUIRE(shape::volume(body->shape) > 400.0);
+}

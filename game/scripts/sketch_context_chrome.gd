@@ -920,6 +920,10 @@ func _reassert_distance_line(gen: int, text: String, caret: int, had_sel: bool,
 	_apply_distance_line(edit, text, caret, had_sel, sel_from, sel_to)
 	if keep_replace and edit != null:
 		edit.select_all()
+	# Restoring junk ("20.07.5") makes SpinBox to_float a prefix 20.07.
+	# Keep the last committed number while the line stays unparseable.
+	if _distance_line_invalid:
+		_extrude_spin.set_value_no_signal(_distance_origin)
 	_distance_syncing = false
 
 
@@ -1062,14 +1066,19 @@ func _on_distance_text_changed(new_text: String) -> void:
 	var from_user := _distance_user_key
 	_distance_user_key = false
 	if parsed == null:
-		# Leave .value at the last good parse. "7." is a prefix of 7.5; do not
-		# snap the spin back to the focus-in 20 while the user is still typing.
+		# "7." is a valid float prefix of 7.5. "20.07.5" is not: step 0 used
+		# to leave .value at the prefix 20.07. Pin after SpinBox's deferred
+		# apply, or the prefix 20.07 wins the same frame.
 		_distance_line_invalid = true
 		_distance_invalid_raw = new_text
+		if _extrude_spin != null:
+			_extrude_spin.set_value_no_signal(_distance_origin)
+		_restore_rejected_distance(_distance_origin, new_text)
 		return
 	if _distance_line_invalid and not from_user:
-		# SpinBox apply turned "20.07.5" into a truncated 20. Keep the reject
-		# so Extrude cannot succeed at the snapped step value.
+		# SpinBox apply turned "20.07.5" into a truncated prefix. Keep the
+		# reject so Extrude cannot succeed at that number.
+		_restore_rejected_distance(_distance_origin, _distance_invalid_raw)
 		return
 	_distance_line_invalid = false
 	_distance_invalid_raw = ""

@@ -1500,6 +1500,21 @@ TopoDS_Shape Sketch::profile_face_selected(const std::vector<int>& indices,
             ba.Enlarge(0.2);
             return !ba.IsOut(bb);
         };
+        // Hex leftovers sit inside the ring AABB. Absorbing them fills the
+        // 12-point. Chord crumbs that bridge handle-to-head stick out.
+        auto aabb_inside = [](const TopoDS_Shape& inner, const TopoDS_Shape& outer) {
+            Bnd_Box bi, bo;
+            BRepBndLib::Add(inner, bi);
+            BRepBndLib::Add(outer, bo);
+            if (bi.IsVoid() || bo.IsVoid()) return false;
+            double ix0, iy0, iz0, ix1, iy1, iz1;
+            double ox0, oy0, oz0, ox1, oy1, oz1;
+            bi.Get(ix0, iy0, iz0, ix1, iy1, iz1);
+            bo.Get(ox0, oy0, oz0, ox1, oy1, oz1);
+            constexpr double eps = 0.05;
+            return ix0 >= ox0 - eps && iy0 >= oy0 - eps && iz0 >= oz0 - eps &&
+                   ix1 <= ox1 + eps && iy1 <= oy1 + eps && iz1 <= oz1 + eps;
+        };
         bool progressed = true;
         while (progressed) {
             progressed = false;
@@ -1509,9 +1524,10 @@ TopoDS_Shape Sketch::profile_face_selected(const std::vector<int>& indices,
                 if (a <= 0.0 || a >= kSliver) continue;
                 for (int j : want) {
                     if (j < 0 || j >= static_cast<int>(contours.size())) continue;
-                    if (!aabb_touch(contours[static_cast<size_t>(i)],
-                                    contours[static_cast<size_t>(j)]))
-                        continue;
+                    const TopoDS_Shape& sliver = contours[static_cast<size_t>(i)];
+                    const TopoDS_Shape& pad = contours[static_cast<size_t>(j)];
+                    if (aabb_inside(sliver, pad)) continue;
+                    if (!aabb_touch(sliver, pad)) continue;
                     want.insert(i);
                     progressed = true;
                     break;
