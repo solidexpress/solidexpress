@@ -230,12 +230,17 @@ func _convert_edge(ctx: Context, uv: Vector2) -> String:
 func _pull_typed_distance() -> void:
 	if _distance_spin == null:
 		return
-	var parsed: Variant = SxUi.parsed_spin_value(_distance_spin)
-	if parsed != null:
-		_distance_spin.set_value_no_signal(float(parsed))
-		distance = float(parsed)
-	else:
-		distance = _distance_spin.value
+	# Typed text is only live while the line edit has focus. Reading it after
+	# a script (or the arrows) already set SpinBox.value would restore the
+	# previous number and offset at 5 mm when the suite asked for 0.
+	var edit := _distance_spin.get_line_edit()
+	if edit != null and edit.has_focus():
+		var parsed: Variant = SxUi.parsed_spin_value(_distance_spin)
+		if parsed != null:
+			_distance_spin.set_value_no_signal(float(parsed))
+			distance = float(parsed)
+			return
+	distance = _distance_spin.value
 
 
 func _on_distance(v: float) -> void:
