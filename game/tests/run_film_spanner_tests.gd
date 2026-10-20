@@ -7,7 +7,9 @@ const FilmHarness = preload("res://tests/lib/film_harness.gd")
 const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const SpannerFixture = preload("res://tests/lib/spanner_fixture.gd")
 
-const FEATURES := "sketch 1, extrude 2, extrude 3, sketch 4, extrude 5, sketch 6, extrude 7, fillet 8, fillet 9, sketch 10, extrude 11, fillet 12, mirror 13"
+# One Front sketch already has C + ring + handle; ring-pad / 12-point
+# recovery is skipped. Recess Convert+Offset is sketch 4 / extrude 5.
+const FEATURES := "sketch 1, extrude 2, extrude 3, sketch 4, extrude 5, fillet 6, fillet 7, sketch 8, extrude 9, fillet 10, mirror 11"
 const BBOX_TOL := 0.2
 
 
