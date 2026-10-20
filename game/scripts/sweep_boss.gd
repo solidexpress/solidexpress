@@ -24,11 +24,11 @@ var _ok: Button
 
 
 ## Ignore construction. A closed loop is a profile; an open chain is a rail.
+## Entity topology wins over contour_faces: an open XZ rail can still
+## tessellate a stray region when a solid sits on the origin plane.
 static func role(sk) -> String:
 	if sk == null:
 		return "unknown"
-	if sk.has_method("contour_count") and int(sk.contour_count()) >= 1:
-		return "profile"
 	var segs: Array = []
 	var open := false
 	for id in sk.entity_ids():
@@ -49,6 +49,8 @@ static func role(sk) -> String:
 		return "profile"
 	if open or segs.size() >= 1:
 		return "rail"
+	if sk.has_method("contour_count") and int(sk.contour_count()) >= 1:
+		return "profile"
 	return "unknown"
 
 

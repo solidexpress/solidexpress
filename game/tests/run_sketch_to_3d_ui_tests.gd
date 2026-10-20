@@ -293,28 +293,31 @@ func test_loft_smooth_ui(ctx: FilmContext, main) -> void:
 
 
 ## Two closed profiles + one open rail → Loft Smooth uses the rail as a guide.
+## Geometry matches Catch2 `sketch: loft with optional guides path`: Ø20 at z=0,
+## Ø10 at z=40, XZ bulge (10,0)-(14,20)-(5,40). A ground-plane line cannot
+## span Z — OCCT refuses that guide rather than faking ThruSections waists.
+## Exact UV via SxSketch.add_*: screen Line clicks miss the 1e-4 follow band,
+## and Line+Done force-closes a 2-segment chain into a triangle profile.
 func test_loft_with_guide_rail_ui(ctx: FilmContext, main) -> void:
 	print("-- loft with guide rail (UI)")
 	var doc := _fresh_doc(main)
 	var sm: SketchMode = main.sketch_mode
 
-	# Profiles first (same path as ruled/smooth). Guide last — sketching the
-	# rail before the face host leaves the camera unable to pick the box face
-	# in the headless 64² viewport.
 	await FilmUI.enter_sketch(ctx)
-	await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(10, 0))
+	sm = main.sketch_mode
+	check(sm != null and sm.active, "bottom-station sketch started")
+	_add_circle_uv(sm, Vector2.ZERO, 10.0)
 	var fid_bot := await FilmUI.exit_sketch(ctx)
 	await ctx.after_regen()
 	check(not fid_bot.is_empty(), "guided loft bottom pad")
 
-	await FilmUI.place_primitive(ctx, "box")
-	await ctx.after_regen()
-	var bodies: Array = doc.body_ids()
-	var host: String = "" if bodies.is_empty() else str(bodies[bodies.size() - 1])
-	var top_face := FilmUI.find_face_by_normal(main.view, host, Vector3(0, 0, 1))
-	await FilmUI.enter_sketch_on_face(ctx, host, top_face)
+	# Parallel station at z=40 (same plane as the kernel fixture). Face-host
+	# boxes shift that station and make PipeShell spin on a mismatched guide.
+	main._start_sketch_on_plane(Vector3(0, 0, 40), Vector3(1, 0, 0), Vector3(0, 1, 0))
+	await FilmUI.wait_frames(ctx.tree, 6)
 	sm = main.sketch_mode
-	await FilmUI.draw_circle(ctx, sm, Vector2(0, 0), Vector2(4, 0))
+	check(sm != null and sm.active, "top-station sketch started")
+	_add_circle_uv(sm, Vector2.ZERO, 5.0)
 	var fid_top := await FilmUI.exit_sketch(ctx)
 	await ctx.after_regen()
 	check(not fid_top.is_empty(), "guided loft top pad")
@@ -322,11 +325,17 @@ func test_loft_with_guide_rail_ui(ctx: FilmContext, main) -> void:
 	check(main._sketch_pad_role(fid_top) == "profile",
 			"top pad classified as profile (got %s)" % main._sketch_pad_role(fid_top))
 
-	# Single-segment open rail outside the bottom circle (keep near origin so the
-	# headless 64² viewport can still project the pad for Ctrl+click).
-	await FilmUI.enter_sketch(ctx)
+	OriginPlanes.begin(main, "Top")
+	await FilmUI.wait_frames(ctx.tree, 6)
 	sm = main.sketch_mode
-	await FilmUI.draw_line(ctx, sm, Vector2(18, 16), Vector2(26, 28))
+	check(sm != null and sm.active, "Top-plane guide sketch started")
+	var want_n: Vector3 = OriginPlanes.row("Top").get("normal", Vector3.ZERO)
+	check(absf(sm.plane_normal().dot(want_n)) > 0.9,
+			"guide on Top (n=%s)" % str(sm.plane_normal()))
+	# Exact kernel bulge. Screen-round-trip Line clicks miss the 1e-4 follow
+	# band; Line+Done would also force-close a 2-segment chain into a profile.
+	_add_line_uv(sm, Vector2(10, 0), Vector2(14, 20))
+	_add_line_uv(sm, Vector2(14, 20), Vector2(5, 40))
 	var fid_guide := await FilmUI.exit_sketch(ctx)
 	await ctx.after_regen()
 	check(not fid_guide.is_empty(), "guide rail pad")
@@ -336,11 +345,12 @@ func test_loft_with_guide_rail_ui(ctx: FilmContext, main) -> void:
 			"guide pad classified as rail (got %s)" % main._sketch_pad_role(fid_guide))
 
 	await FilmUI.clear_pad_selection(ctx)
-	await _hide_body_if_present(ctx, main, host)
 	main.selected_sketch_pads.clear()
+	# Section order is the selection order of profiles. Kernel loft is
+	# bottom → top along the bulge; reversing that makes PipeShell refuse.
+	await FilmUI.select_sketch_pad_ctrl(ctx, fid_bot)
 	await FilmUI.select_sketch_pad_ctrl(ctx, fid_top)
 	await FilmUI.select_sketch_pad_ctrl(ctx, fid_guide)
-	await FilmUI.select_sketch_pad_ctrl(ctx, fid_bot)
 	check(fid_top in main.selected_sketch_pads, "top profile selected")
 	check(fid_guide in main.selected_sketch_pads, "guide rail selected")
 	check(fid_bot in main.selected_sketch_pads, "bottom profile selected")
@@ -373,7 +383,17 @@ func test_loft_with_guide_rail_ui(ctx: FilmContext, main) -> void:
 				for g in guides:
 					if str(g) == fid_guide:
 						has_guides = true
-			if not has_guides and str(parsed).find(fid_guide) >= 0:
-				has_guides = true
 		break
 	check(has_guides, "loft params include guide sketch ref")
+
+
+func _add_circle_uv(sm: SketchMode, center: Vector2, radius: float) -> void:
+	if sm == null or sm.sketch == null:
+		return
+	sm.sketch.add_circle(center.x, center.y, radius)
+
+
+func _add_line_uv(sm: SketchMode, a: Vector2, b: Vector2) -> void:
+	if sm == null or sm.sketch == null:
+		return
+	sm.sketch.add_line(a.x, a.y, b.x, b.y)
