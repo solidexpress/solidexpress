@@ -1,61 +1,45 @@
-# Rung 8 failing — handoff after 3+ fix attempts
+# Rung 8 failing — remaining after product sweep
 
-Test-and-fix agent: this file plus [`rung-08-plan.md`](rung-08-plan.md) and [`rung-08-checklist.md`](rung-08-checklist.md). Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`. Tree that wrote this: `b787e32`. Confirm dir: `build/confirm-wp11`.
+Test-and-fix on `cursor/rung-08-20261019` `ff7a23a`. No `confirm_all` (cheap reds remain). Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
 
-Walk **8 product is green** (47/47 from row 1, `check_rung08.py` pin 3/3, pipes 5/5, bolted 7/7, final 10/10). The bar is red because **headless is 17 failed** (A37 and every other A15-class row) and **rung 7 walk is product-red**.
+Original 17 from `b787e32` cheap-rechecked after the handle/cut/fuse/loft/sweep/sliver/distance fixes: **15 pass, 2 remain**. Walks not re-run.
 
-## Finding 1 — A37 / A15-class: `suites: 262 run, 17 failed`
+## Finding — replan20 glyphs / J6: `_trim_open_jaw` does not fire
 
-Rows: walk1 A15, walk2 A25, walk3 A26, walk4 A21, walk5 A25, walk6 A36, walk7 A37, walk8 A37. Same shared `godot.rc`. `--a15` required.
+Rows: `run_rung01_replan20_glyphs.gd` (144 checks, 2 failed), `run_rung01_replan20_jaw.gd` J6 (219 checks, 6 failed). Isolated, `--jobs 1`.
 
-Confirm list (`build/confirm-wp11/godot.log` ~27000):
-
-| Suite | Symptom on this tree |
+| Suite | Symptom |
 |---|---|
-| `run_film_spanner_tests.gd` | `extrude 3: boolean failed`; features stop at sketch 1 + extrude 2; fillet 4 limit 5.066 on 6 mm vertical at (23.929, 10, 0); bbox 232.571×33.000×10 vs 281.4×54.6; `check_rung07.py final` 2/8 then 3/8 |
-| `run_rung01_preview_rebuild.gd` | T=10 pivot/jaw not open before edit; T=14 preview and committed mesh pivot/jaw not through |
-| `run_rung01_replan10_cut.gd` | handout jaw attempt 4: `Cut left an open shell (4398/8796 edges not shared twice)` — contour on the body’s own edge; volume 53128→53128 |
-| `run_rung01_replan15_jawstub.gd` | same jaw/cut family |
-| `run_rung01_replan17_walk.gd` | flake in isolation (`/tmp/sx-godot-clean` still red this pass) |
-| `run_rung01_replan20_glyphs.gd` | red in isolation |
-| `run_rung01_replan20_jaw.gd` | jaw family |
-| `run_rung01_replan3_distance.gd` | red in isolation |
-| `run_rung01_replan8_cut.gd` | cut family |
-| `run_rung01_sx038_regress.gd` | **flake** — failed in the 262-run, PASS when isolated |
-| `run_rung03_offset.gd` | red in isolation |
-| `run_rung07_boss.gd` | neck/boss bbox 232.6×33 vs 281.4×54.6 (handle missing) |
-| `run_rung07_offset.gd` | offset after missing handle |
-| `run_sketch_to_3d_ui_tests.gd` | red in isolation |
-| `run_sweep_loft_solid_tests.gd` | guided loft UI: `loft 5: guided loft: OCCT could not follow the guide` (kernel L3 replica is green) |
-| `run_ui_tests.gd` | red in isolation |
-| `run_workflow_tests.gd` | 275 checks, 1 failure (instance path) |
+| `run_rung01_replan20_glyphs.gd` | `_press_stub` at UV (185, 12) → kernel `"Trimmed"` not `"Trimmed open jaw"`; second Trim → `"Trimmed"` not `"Jaw is already open — nothing left to trim here"` |
+| `run_rung01_replan20_jaw.gd` J6 | Trim stroke at (185, 0) on the regular-line diagonal through Ø45 → `"Trimmed"` (or `"Nothing trimmed"` if tangent walls are skipped). Extrude Up-To-Surface still commits. Final bbox **189.844 × 20.000 × 10.000** vs 232.5 × 45 × 10; checker jaw AF none |
 
-Tried (did not clear the 17):
+Same family: `_trim_open_jaw` returns false, so `trim_at` falls through to kernel `trim_entity` on the nearest circle/line. Cutter rules (`_cutter_crosses_both_side_interiors` for regular lines) match `13a7386`. Face-sketch J6 has no ellipse; `_profile_has_type("ellipse")` is not the gate.
 
-1. Serial Godot `--jobs 1` (earlier session reported those 18 PASS; not reproduced). Full-tier marathon still 17.
-2. Isolated rerun of the 17 in `/tmp/sx-godot-clean/`: 16 still fail; `sx038_regress` flipped to PASS.
-3. `SX_WALK_JOBS=1` so walks do not starve the suite pass. Walks 1–6/8 product went green; the 17 stayed.
+Tried (3, none cleared J6 / glyphs):
 
-Do **not** mark these `tier=known-red` to get A37 green. Hypothesis worth one more product pass: handle-contour / jaw-cut boolean (open shell, extrude-3) is the common geometry cause; ViewCube click-steal is secondary (walk1 product 76/76 still built the wrench). Dummy renderer cannot pin 3D pixels; geometry failures are OCCT/UI, not lavapipe.
+1. Power Trim line preference ellipse-only (`bbe3f83`) — overflow clicks on the C still take the line; jaw circle/arc still wins over walls. Glyphs/J6 unchanged (`"Trimmed"`).
+2. `_jaw_long_sides` skip Tangent only when `L > 80` (`4d93646`) so 20 mm walls that picked up Tangent to Ø45 stay walls. Glyphs still `"Trimmed"`; J6 still 189.8 × 20 × 10.
+3. Restore `13a7386` skip-all-Tangent. Glyphs still `"Trimmed"`; J6 became `"Nothing trimmed — no crossing at that point"` (worse). Reverted; keep (2).
 
-Cheap recheck after a fix: `GODOT_BIN=tools/godot/godot packaging/ci/run_suites.sh --jobs 1 --only film_spanner_tests` then `replan10_cut` then the rest of the 17, **not** overlapping a walk. Then walk8 `--from A37 --a15` with `SX_CONFIRM_DIR` and `ckpts` from `build/confirm-wp11/walk8/` (`assembly.sxp` / `final.sxp`).
+Do **not** mark these `tier=known-red`. Do **not** loosen the status string or bbox. Next pass: why `_jaw_cutter_for_click` / `near_wall` miss the J6 diagonal at (185, 0) while `replan10_cut` / `replan15_jawstub` / `replan17_walk` open-jaw paths stay green.
 
-## Finding 2 — Walk 7 A22 handle contour (rung 7 product)
+Cheap recheck: `GODOT_BIN=tools/godot/godot packaging/ci/run_suites.sh --jobs 1 --only '*replan20_glyphs*'` then `*replan20_jaw*`. Do not overlap a walk.
 
-Confirm walk7: 35 PASS / 11 FAIL / wall 697.1s (overlapped the 17-suite rerun). Clean solo `/tmp/sx-rung07-solo`: 28 PASS / 13 FAIL / 5 BLOCKED, wall 972.4s.
+## Cleared from the previous 17 (do not re-open)
 
-- A22: handle contour reported included, but second extrude did not commit (`still in a sketch`).
-- Cascade: A23–A26 BLOCKED; L4 order `['sketch','extrude']`; A28 Convert inserted Torus; A29 offset arcs n=1; A30–A32 one-body fail (handle xmax 256.5, Y 27.295 — extrude 2 only); A33–A35 / L5 / N4 checker red.
-- Confirm (not solo) got a second extrude + fillet 4 but **no −X open end**: bbox 232.571×33.000×10.000 min (23.929, −16.500, −5.000); volume 28418.816 vs 38782; `check_rung07.py final` **3/8** (watertight, handleSide, recessBoth only).
-- Same bbox as `run_film_spanner_tests.gd` / `run_rung07_boss.gd`.
+Handle / cut / fuse / loft / sweep / film / distance — cheap green on this tree:
 
-Tried: confirm walk7 (overlapped load), then a clean solo on :38. No third product edit — the jaw-cut / handle-boolean is the same as Finding 1. Rung 1 walk product stayed 76/76 on this tree (A15 only), so the GUI walk path for the **open-end wrench** still lands; the **combination spanner** handle/jaw path does not.
+- `run_film_spanner_tests.gd` 12/0, `check_rung07.py final` **8/8**, bbox 281.450×54.591×10, volume 38604.071
+- `run_rung01_preview_rebuild.gd`, `replan10_cut`, `replan15_jawstub`, `replan17_walk`, `replan8_cut`, `sx038_regress`
+- `run_rung01_replan3_distance.gd` 48/0 (`20.07.5` live spin stays 20)
+- `run_rung03_offset.gd`, `run_rung07_boss.gd` (bbox 281.450×54.590×10), `run_rung07_offset.gd`
+- `run_sketch_to_3d_ui_tests.gd`, `run_sweep_loft_solid_tests.gd`, `run_ui_tests.gd`, `run_workflow_tests.gd`
 
-Fix the boolean / contour (Finding 1) and re-walk rung 7 from row 1 with `SX_WALK_JOBS=1` and no overlapping suite run.
+Walk 8 product was already 47/47 on `b787e32`. Walk 7 handle-missing bbox 232.6×33 was the same film/boss geometry; those suites are now 8/8 / boss-green. Confirm those walks from row 1 only after glyphs/J6 are green.
 
 ## Not findings
 
-- Walk 8 N2 / A7 / A8 / A16 / A17 / A23 / A35: walker bugs, fixed on this branch (Fixed-nudge catch, Front via OriginPlanes, `sketch_pin_profile` closed PinFixture, mate uuid vs JSON-RPC id, pin quaternion dumps, head −Z 287.5, `reopen_code` 0-or-1). Do not re-open.
-- WP-V1…V8 cheap suites: not in the 17. V7 skipped the light sheet (blue readable). Dummy-renderer V1 uses a colour-type-6 fixture PNG.
-- 4 `tier=known-red` suites (`replan12_pick`, `replan3_timeline`, `replan_input`, `rung01_sketch_tests`) — listed, not run, not this handoff.
+- Walk 8 N2 / A7 / A8 / A16 / A17 / A23 / A35 walker bugs (already fixed).
+- WP-V1…V8 cheap suites: not in the remaining 2.
+- 4 `tier=known-red` suites — listed, not run.
 - `run_film_caption_tests.gd` / `run_ui_scroll_tests.gd` stay unregistered.
