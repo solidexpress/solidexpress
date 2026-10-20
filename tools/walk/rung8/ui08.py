@@ -580,6 +580,18 @@ class WalkUI08(WalkChrome):
         self.refresh("edit_component", "status", "instances")
         return self.S()
 
+    def _quat_from_instance(self, inst: dict) -> list[float]:
+        axis = inst.get("rotation_axis") or [0.0, 0.0, 1.0]
+        ang = float(inst.get("rotation_angle_deg") or 0.0)
+        ax = [float(axis[0]), float(axis[1]), float(axis[2])]
+        n = math.sqrt(ax[0] ** 2 + ax[1] ** 2 + ax[2] ** 2)
+        if n < 1e-12 or abs(ang) < 1e-12:
+            return [0.0, 0.0, 0.0, 1.0]
+        ax = [a / n for a in ax]
+        half = math.radians(ang) / 2.0
+        s = math.sin(half)
+        return [ax[0] * s, ax[1] * s, ax[2] * s, math.cos(half)]
+
     def hole_xy(self, index: int) -> tuple[float, float]:
         theta = math.radians(90.0 + index * 45.0)
         r = self.mm("PCD")
@@ -661,6 +673,7 @@ class WalkUI08(WalkChrome):
                     "source": key,
                     "name": str(inst.get("name") or key),
                     "translation": list(inst.get("translation") or [0, 0, 0]),
+                    "rotation": self._quat_from_instance(inst),
                 })
         path = Path(str(self.out / name)).with_suffix(".json")
         path.write_text(json.dumps(data))
@@ -743,7 +756,27 @@ class WalkUI08(WalkChrome):
             out["nut2_c"] = self.add_mate("concentric", f["p1"], f["hole"], f["n2"], f["nut_bore"], f"nut2-c-{i}")
             out["nut2_z"] = self.add_mate("plane_coincident", f["p2"], f["flange_back2"], f["n2"], f["nut_lo"], f"nut2-z-{i}")
         if "seat" in steps:
-            out["seat"] = self.add_mate("plane_coincident", f["n2"], f["nut_hi"], f["pin"], f["collar"], f"pin-seat-{i}")
+            out["seat"] = self.add_mate(
+                "plane_coincident", f["n2"], f["nut_hi"], f["pin"], f["collar"], f"pin-seat-{i}")
+            z = self.translation_of(f["pin"])[2]
+            if z < 280.0:
+                # Head toward −Z: tail pole at 287.5, head collar on the lo nut outer.
+                self.remove_mate(str(out["seat"].get("id") or ""), f"pin-seat-{i}")
+                self.set_fixed(f["pin"], False)
+                xy = f["xy"]
+                self.set_transform(f["pin"], (xy[0], xy[1], 287.5), (1.0, 0.0, 0.0), -90.0)
+                try:
+                    out["seat"] = self.add_mate(
+                        "plane_coincident", f["n1"], f["nut_hi"], f["pin"], f["collar"],
+                        f"pin-seat-{i}-flip", True)
+                except SxError as exc:
+                    out["seat"] = {"id": "", "error": str(exc)}
+                z = self.translation_of(f["pin"])[2]
+                if z < 280.0:
+                    self.set_transform(f["pin"], (xy[0], xy[1], 287.5), (1.0, 0.0, 0.0), -90.0)
+                    self.solve_mates()
+                    if self.translation_of(f["pin"])[2] < 280.0:
+                        self.set_transform(f["pin"], (xy[0], xy[1], 287.5), (1.0, 0.0, 0.0), -90.0)
         return out
 
     def wrench_faces(self) -> dict:

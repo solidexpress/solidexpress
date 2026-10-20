@@ -131,9 +131,10 @@ class Rows08Chunk4:
 
     @row("A35", chunk=6, on="rung08", expect={"blocker": "N4"})
     def row_A35(self) -> None:
-        text = str(self.ctx.get("reopen_text") or "")
-        code = int(self.ctx.get("reopen_code") or 1)
-        if not text:
+        if "reopen_code" in self.ctx:
+            code = int(self.ctx["reopen_code"])
+            text = str(self.ctx.get("reopen_text") or "")
+        else:
             code, text = self.checker("final", "final.3mf")
         box_ok, box_line = self.check_probe(text, "bbox")
         vol_ok, vol_line = self.check_probe(text, "volume")
