@@ -134,21 +134,15 @@ bool apply_path(ApplyCtx& ctx) {
 }
 
 struct SweepFuse {
-    static constexpr double KEEP_RATIO = kHonestKeepRatio;
     static constexpr double XMAX_TIE_MM = 0.5;
     static constexpr double MIN_VOLUME = 1.0e-3;
     static constexpr double FUZZIES[] = {0.0, 1.0e-4, 1.0e-3, 0.05};
 
-    static bool usable(const TopoDS_Shape& s) {
-        return !s.IsNull() && shape::count(s).solids >= 1
-               && std::abs(shape::volume(s)) > MIN_VOLUME;
-    }
+    static bool usable(const TopoDS_Shape& s) { return HonestBoolean::usable(s); }
 
-    static bool keeps_target(const TopoDS_Shape& body, const TopoDS_Shape& merged) {
-        if (!usable(merged)) return false;
-        const double bv = std::abs(shape::volume(body));
-        if (bv <= 1.0) return true;
-        return std::abs(shape::volume(merged)) >= bv * KEEP_RATIO;
+    static bool keeps_target(const TopoDS_Shape& body, const TopoDS_Shape& tool,
+                             const TopoDS_Shape& merged) {
+        return HonestBoolean::fuse_keeps(body, tool, merged);
     }
 
     static double xmax(const TopoDS_Shape& s) {
@@ -180,7 +174,7 @@ struct SweepFuse {
     }
 
     static TopoDS_Shape keep_solid(const TopoDS_Shape& s) {
-        if (!usable(s)) return s;
+        if (s.IsNull()) return s;
         std::string report;
         TopoDS_Shape healed = interop::heal_shape(s, &report);
         return usable(healed) ? healed : s;
@@ -217,7 +211,7 @@ struct SweepFuse {
     static TopoDS_Shape fuse_ribbon(const TopoDS_Shape& body, const TopoDS_Shape& ribbon,
                                     std::string* warning = nullptr) {
         HonestBoolean hb = HonestBoolean::fuse(body, ribbon);
-        if (keeps_target(body, hb.shape)) {
+        if (keeps_target(body, ribbon, hb.shape)) {
             if (warning && !hb.warning.empty()) *warning = hb.warning;
             return hb.shape;
         }
@@ -234,12 +228,12 @@ struct SweepFuse {
         };
         for (double fuzzy : FUZZIES) {
             TopoDS_Shape m = run_fuse(body, ribbon, fuzzy);
-            if (keeps_target(body, m)) {
+            if (keeps_target(body, ribbon, m)) {
                 note(fuzzy);
                 return m;
             }
             m = run_fuse(left, right, fuzzy);
-            if (keeps_target(body, m)) {
+            if (keeps_target(left, right, m)) {
                 note(fuzzy);
                 return m;
             }
@@ -249,12 +243,12 @@ struct SweepFuse {
             if (!usable(outside)) outside = run_cut(right, left, fuzzy);
             if (!usable(outside)) continue;
             TopoDS_Shape m = run_fuse(body, outside, fuzzy);
-            if (keeps_target(body, m)) {
+            if (keeps_target(body, outside, m)) {
                 if (warning) *warning = "boolean fallback cut-then-fuse";
                 return m;
             }
             m = run_fuse(left, outside, fuzzy);
-            if (keeps_target(body, m)) {
+            if (keeps_target(left, outside, m)) {
                 if (warning) *warning = "boolean fallback cut-then-fuse";
                 return m;
             }
@@ -440,7 +434,7 @@ bool apply_sweep(ApplyCtx& ctx) {
                         for (const auto& ribbon : ribbons) {
                             std::string w;
                             TopoDS_Shape m = SweepFuse::fuse_ribbon(tb->shape, ribbon, &w);
-                            if (SweepFuse::keeps_target(tb->shape, m)) {
+                            if (SweepFuse::keeps_target(tb->shape, ribbon, m)) {
                                 fused.push_back(m);
                                 if (bool_warn.empty()) bool_warn = w;
                             }

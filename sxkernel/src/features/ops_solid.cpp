@@ -1,5 +1,6 @@
 #include "ops.hpp"
 
+#include <BOPAlgo_GlueEnum.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Defeaturing.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -116,7 +117,7 @@ TopoDS_Shape draft_prism_face(TopoDS_Face pface, const gp_Vec& travel, double an
             back.Reverse();
             back *= poke_back;
             TopoDS_Shape cap = BRepPrimAPI_MakePrism(pface, back).Shape();
-            if (!cap.IsNull()) {
+            if (!cap.IsNull() && shape::count(cap).solids >= 1) {
                 BRepAlgoAPI_Fuse fuse(body, cap);
                 if (fuse.IsDone() && shape::count(fuse.Shape()).solids >= 1)
                     body = fuse.Shape();
@@ -161,48 +162,48 @@ TopoDS_Shape draft_prism_profile(const TopoDS_Shape& profile, const gp_Vec& trav
 // and fuse the remainder.
 struct ExtrudeFuse {
     static constexpr double FUZZIES[] = {0.0, 1.0e-7, 1.0e-4, 1.0e-3, 0.05, 0.1};
-    static constexpr double MIN_VOLUME = 1.0e-3;
-    static constexpr double KEEP_RATIO = kHonestKeepRatio;
 
-    static bool usable(const TopoDS_Shape& s) {
-        return !s.IsNull() && shape::count(s).solids >= 1
-               && std::abs(shape::volume(s)) > MIN_VOLUME;
-    }
+    static bool usable(const TopoDS_Shape& s) { return HonestBoolean::usable(s); }
 
-    static bool keeps_target(const TopoDS_Shape& body, const TopoDS_Shape& merged) {
-        if (!usable(merged)) return false;
-        const double bv = std::abs(shape::volume(body));
-        if (bv <= 1.0) return true;
-        return std::abs(shape::volume(merged)) >= bv * KEEP_RATIO;
+    static bool keeps_fuse(const TopoDS_Shape& body, const TopoDS_Shape& tool,
+                           const TopoDS_Shape& merged) {
+        return HonestBoolean::fuse_keeps(body, tool, merged);
     }
 
     static TopoDS_Shape keep_solid(const TopoDS_Shape& s) {
-        if (!usable(s)) return s;
+        if (s.IsNull()) return s;
         std::string report;
         TopoDS_Shape work = interop::heal_shape(s, &report);
-        if (!usable(work)) work = s;
+        if (work.IsNull() || shape::count(work).solids < 1) work = s;
         try {
             ShapeUpgrade_UnifySameDomain unify(work, true, true, true);
             unify.SetLinearTolerance(1.0e-3);
             unify.Build();
-            if (usable(unify.Shape())) work = unify.Shape();
+            if (HonestBoolean::usable(unify.Shape())) work = unify.Shape();
         } catch (...) {
         }
-        return usable(work) ? work : s;
+        return HonestBoolean::usable(work) ? work : s;
     }
 
     static TopoDS_Shape run_fuse(const TopoDS_Shape& a, const TopoDS_Shape& b,
                                  double fuzzy) {
-        BRepAlgoAPI_Fuse opf;
-        TopTools_ListOfShape args;
-        TopTools_ListOfShape tools;
-        args.Append(a);
-        tools.Append(b);
-        opf.SetArguments(args);
-        opf.SetTools(tools);
-        if (fuzzy > 0.0) opf.SetFuzzyValue(fuzzy);
-        opf.Build();
-        if (opf.IsDone() && usable(opf.Shape())) return keep_solid(opf.Shape());
+        const BOPAlgo_GlueEnum glues[] = {BOPAlgo_GlueOff, BOPAlgo_GlueShift,
+                                          BOPAlgo_GlueFull};
+        for (auto glue : glues) {
+            BRepAlgoAPI_Fuse opf;
+            TopTools_ListOfShape args;
+            TopTools_ListOfShape tools;
+            args.Append(a);
+            tools.Append(b);
+            opf.SetArguments(args);
+            opf.SetTools(tools);
+            if (fuzzy > 0.0) opf.SetFuzzyValue(fuzzy);
+            if (glue != BOPAlgo_GlueOff) opf.SetGlue(glue);
+            opf.Build();
+            if (!opf.IsDone()) continue;
+            TopoDS_Shape s = keep_solid(opf.Shape());
+            if (HonestBoolean::usable(s) && shape::count(s).solids == 1) return s;
+        }
         return {};
     }
 
@@ -217,32 +218,32 @@ struct ExtrudeFuse {
         opc.SetTools(tools);
         if (fuzzy > 0.0) opc.SetFuzzyValue(fuzzy);
         opc.Build();
-        if (opc.IsDone() && usable(opc.Shape())) return keep_solid(opc.Shape());
+        if (opc.IsDone()) {
+            TopoDS_Shape s = keep_solid(opc.Shape());
+            if (HonestBoolean::usable(s)) return s;
+        }
         return {};
     }
 
-    static TopoDS_Shape consider(const TopoDS_Shape& body, const TopoDS_Shape& candidate,
-                                 TopoDS_Shape& fallback) {
-        if (!keeps_target(body, candidate)) return {};
-        if (shape::is_valid(candidate)) return candidate;
-        if (fallback.IsNull()) fallback = candidate;
-        return {};
+    static TopoDS_Shape consider(const TopoDS_Shape& body, const TopoDS_Shape& tool,
+                                 const TopoDS_Shape& candidate) {
+        if (!keeps_fuse(body, tool, candidate)) return {};
+        return candidate;
     }
 
     static TopoDS_Shape merge(const TopoDS_Shape& body, const TopoDS_Shape& tool,
                               std::string* warning = nullptr) {
         HonestBoolean hb = HonestBoolean::fuse(body, tool);
-        if (usable(hb.shape) && keeps_target(body, hb.shape)) {
+        if (keeps_fuse(body, tool, hb.shape)) {
             if (warning && !hb.warning.empty()) *warning = hb.warning;
             return hb.shape;
         }
         const TopoDS_Shape left = keep_solid(body);
         const TopoDS_Shape right = keep_solid(tool);
-        TopoDS_Shape fallback;
-        auto take = [&](const TopoDS_Shape& a, const TopoDS_Shape& b, double fuzzy) {
-            return consider(body, run_fuse(a, b, fuzzy), fallback);
-        };
         const double silent = HonestBoolean::silent_limit(body, tool);
+        auto take = [&](const TopoDS_Shape& a, const TopoDS_Shape& b, double fuzzy) {
+            return consider(body, b, run_fuse(a, b, fuzzy));
+        };
         for (double fuzzy : FUZZIES) {
             TopoDS_Shape m = take(body, tool, fuzzy);
             if (!m.IsNull()) {
@@ -267,18 +268,18 @@ struct ExtrudeFuse {
             TopoDS_Shape outside = run_cut(tool, body, fuzzy);
             if (!usable(outside)) outside = run_cut(right, left, fuzzy);
             if (!usable(outside)) continue;
-            TopoDS_Shape m = take(body, outside, fuzzy);
+            TopoDS_Shape m = consider(body, outside, run_fuse(body, outside, fuzzy));
             if (!m.IsNull()) {
                 if (warning) *warning = "boolean fallback cut-then-fuse";
                 return m;
             }
-            m = take(left, outside, fuzzy);
+            m = consider(left, outside, run_fuse(left, outside, fuzzy));
             if (!m.IsNull()) {
                 if (warning) *warning = "boolean fallback cut-then-fuse";
                 return m;
             }
         }
-        return fallback;
+        return {};
     }
 };
 
@@ -532,6 +533,28 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                             return fail("draft prism failed");
                     } else {
                         result = BRepPrimAPI_MakePrism(profile, dir * dist).Shape();
+                        // Same poke as the draft path: a prism that shares the
+                        // host face often Cut-succeeds with zero volume change
+                        // or an open shell. Extra tool behind the face keeps
+                        // the profile on the face (host-face diameter stays
+                        // exact) while the boolean actually bites.
+                        if (op_early == "cut" && !symmetric && end == "blind" &&
+                            !result.IsNull() && std::abs(dist) > 1e-9) {
+                            gp_Vec travel = dir * dist;
+                            if (travel.Magnitude() > 1e-12) {
+                                gp_Vec back = travel.Normalized();
+                                back.Reverse();
+                                back *= 1.0;
+                                TopoDS_Shape cap =
+                                    BRepPrimAPI_MakePrism(profile, back).Shape();
+                                if (!cap.IsNull() && shape::count(cap).solids >= 1) {
+                                    BRepAlgoAPI_Fuse fuse(result, cap);
+                                    if (fuse.IsDone() &&
+                                        shape::count(fuse.Shape()).solids >= 1)
+                                        result = fuse.Shape();
+                                }
+                            }
+                        }
                     }
                 } else {
                     if (face.IsNull())
@@ -638,7 +661,7 @@ bool apply_extrude_revolve(ApplyCtx& ctx) {
                         HonestBoolean hb = HonestBoolean::cut(tb->shape, result);
                         const double v0 = std::abs(shape::volume(tb->shape));
                         const auto cut_ok = [&](const TopoDS_Shape& s) {
-                            return ExtrudeFuse::usable(s)
+                            return HonestBoolean::usable(s)
                                    && v0 - std::abs(shape::volume(s)) > 1e-3;
                         };
                         if (cut_ok(hb.shape)) {

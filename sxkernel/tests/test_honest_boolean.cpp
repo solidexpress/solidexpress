@@ -8,6 +8,7 @@
 #include "sx/exactness.hpp"
 #include "sx/features.hpp"
 #include "sx/shape_utils.hpp"
+#include "sx/sketch.hpp"
 
 using namespace sx;
 using nlohmann::json;
@@ -53,6 +54,78 @@ TEST_CASE("honest fuse: touching boxes, zero fuzz, volume = sum", "[exactness][b
     const double sum = 2000.0;
     REQUIRE(std::abs(vol - sum) / sum < 1e-9);
     CHECK_FALSE(warning_has(g, "boolean fuzz"));
+}
+
+TEST_CASE("honest fuse: adjacent 10 mm and 6 mm pads become one solid",
+          "[exactness][boolean][extrude]") {
+    Document doc;
+    FeatureGraph& g = doc.graph();
+    auto heads = add_box(g, 40, 20, 10);             // 10 mm thick
+    auto handle = add_box(g, 80, 20, 6, {40, 0, 2});  // 6 mm, shares the x=40 face
+    Feature fuse;
+    fuse.type = FeatureType::Boolean;
+    fuse.params = {{"op", "fuse"}, {"target", heads.str()}, {"tool", handle.str()}};
+    g.add(std::move(fuse));
+    std::string err;
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* body = doc.body(g.feature(heads)->output_body);
+    REQUIRE(body != nullptr);
+    REQUIRE(shape::is_valid(body->shape));
+    REQUIRE(shape::count(body->shape).solids == 1);
+    const double vol = shape::volume(body->shape);
+    const double sum = 40.0 * 20.0 * 10.0 + 80.0 * 20.0 * 6.0;
+    REQUIRE(std::abs(vol - sum) / sum < 1e-6);
+}
+
+TEST_CASE("blind cut on the host face removes volume and stays closed",
+          "[exactness][boolean][extrude]") {
+    Document doc;
+    FeatureGraph& g = doc.graph();
+    Feature sk;
+    sk.type = FeatureType::Sketch;
+    sk.sketch = std::make_shared<Sketch>("Plate");
+    sk.sketch->add_line(0, 0, 40, 0);
+    sk.sketch->add_line(40, 0, 40, 10);
+    sk.sketch->add_line(40, 10, 0, 10);
+    sk.sketch->add_line(0, 10, 0, 0);
+    auto sk_id = g.add(std::move(sk));
+    Feature ext;
+    ext.type = FeatureType::Extrude;
+    ext.params = {{"sketch", sk_id.str()}, {"distance", 10.0}, {"op", "new"}, {"end", "blind"}};
+    auto ext_id = g.add(std::move(ext));
+    std::string err;
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* plate = doc.body(g.feature(ext_id)->output_body);
+    REQUIRE(plate != nullptr);
+    const double v0 = shape::volume(plate->shape);
+
+    Feature cut_sk;
+    cut_sk.type = FeatureType::Sketch;
+    SketchPlane pl;
+    pl.origin = {0, 0, 10};
+    pl.x_dir = {1, 0, 0};
+    pl.y_dir = {0, 1, 0};
+    cut_sk.sketch = std::make_shared<Sketch>("Hole", pl);
+    cut_sk.sketch->add_circle(20, 5, 3.0);
+    auto cut_sk_id = g.add(std::move(cut_sk));
+    Feature cut;
+    cut.type = FeatureType::Extrude;
+    cut.params = {{"sketch", cut_sk_id.str()},
+                  {"distance", -5.0},
+                  {"end", "blind"},
+                  {"op", "cut"},
+                  {"target", ext_id.str()}};
+    g.add(std::move(cut));
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* after = doc.body(g.feature(ext_id)->output_body);
+    REQUIRE(after != nullptr);
+    REQUIRE(shape::is_valid(after->shape));
+    const double v1 = shape::volume(after->shape);
+    REQUIRE(v0 - v1 > 100.0);
+    REQUIRE(v0 - v1 < 200.0);
 }
 
 TEST_CASE("honest fuse: 0.05 gap writes fuzz warning", "[exactness][boolean]") {
