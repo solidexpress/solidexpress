@@ -2589,7 +2589,9 @@ func _nearest_trim_entity_at(pos2: Vector2) -> String:
 			best_id = str(id)
 	if best_line != "" and best_line != best_id and best_line_d <= best_d + 2.0:
 		var k := str(sketch.entity_info(best_id).get("type", ""))
-		if k == "ellipse" or k == "elliptical_arc" or k == "circle" or k == "arc":
+		# Only the C elliptical pad: overflow clicks sit on the remaining
+		# ellipse. Jaw trim is a circle/arc and must keep winning over walls.
+		if k == "ellipse" or k == "elliptical_arc":
 			return best_line
 	return best_id
 
