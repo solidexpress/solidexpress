@@ -1,4 +1,5 @@
 # Rung 8 progress
 
-- HEAD `d8c0d98`. Headless rerun `--jobs 1 --keep-going`: 113/262, 1 failed so far (`run_film_spanner_tests.gd` C unopened bbox 233.556×33, same as pre-ViewCube-IGNORE). Currently `replan17_walk`.
-- Next: finish this pass, cheap-recheck film_spanner, then clean `confirm_all` `build/confirm-r3` from row 1 if headless is 0.
+- HEAD `c49c820` ViewCube place_through on tool arm (film C 281.450×54.591×10).
+- Cheap: glyphs 144/0, jaw J6 219/0, film 12/0, sketch_to_3d 51/0, sweep_loft 30/0.
+- Next: full headless `--jobs 1 --keep-going`, then `confirm_all` `build/confirm-r3` from row 1.
