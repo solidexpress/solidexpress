@@ -136,8 +136,9 @@ struct HonestBoolean {
     static HonestBoolean fuse(const TopoDS_Shape& a, const TopoDS_Shape& b);
     static HonestBoolean cut(const TopoDS_Shape& a, const TopoDS_Shape& b);
 
-    // One closed solid, and for fuse the result still holds the target
-    // (99.9999 %) and actually took the tool (volume grew).
+    // A closed solid (or disjoint multibody), and for fuse the result
+    // still holds the target (99.9999 %) and actually took the tool
+    // (volume grew). Adjacent overlapping operands must be one solid.
     static bool usable(const TopoDS_Shape& s);
     static bool fuse_keeps(const TopoDS_Shape& body, const TopoDS_Shape& tool,
                            const TopoDS_Shape& fused);

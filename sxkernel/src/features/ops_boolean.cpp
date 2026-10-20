@@ -54,6 +54,17 @@ bool bbox_covers(const TopoDS_Shape& outer, const TopoDS_Shape& inner, double sl
            ax1 + slop >= bx1 && ay1 + slop >= by1 && az1 + slop >= bz1;
 }
 
+bool bboxes_overlap(const TopoDS_Shape& a, const TopoDS_Shape& b, double slop) {
+    if (a.IsNull() || b.IsNull()) return false;
+    Bnd_Box aa, bb;
+    BRepBndLib::Add(a, aa);
+    BRepBndLib::Add(b, bb);
+    if (aa.IsVoid() || bb.IsVoid()) return false;
+    aa.Enlarge(slop);
+    bb.Enlarge(slop);
+    return !aa.IsOut(bb);
+}
+
 TopoDS_Shape run_op(bool cutting, const TopoDS_Shape& a, const TopoDS_Shape& b, double fuzzy,
                     BOPAlgo_GlueEnum glue) {
     if (cutting) {
@@ -79,9 +90,11 @@ TopoDS_Shape run_op(bool cutting, const TopoDS_Shape& a, const TopoDS_Shape& b, 
     if (glue != BOPAlgo_GlueOff) op.SetGlue(glue);
     op.Build();
     if (!op.IsDone() || !has_solid(op.Shape())) return {};
-    // Two input solids should become one. A compound of both is not a fuse.
+    // Adjacent pads that share a face must become one solid (handle onto
+    // heads). Disjoint operands may stay a multibody — UI Join of two
+    // separate boxes is that path, not a failed glue.
     if (shape::count(a).solids >= 1 && shape::count(b).solids >= 1 &&
-        shape::count(op.Shape()).solids > 1)
+        shape::count(op.Shape()).solids > 1 && bboxes_overlap(a, b, 0.2))
         return {};
     return op.Shape();
 }

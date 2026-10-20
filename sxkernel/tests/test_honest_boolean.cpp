@@ -128,6 +128,28 @@ TEST_CASE("blind cut on the host face removes volume and stays closed",
     REQUIRE(v0 - v1 < 200.0);
 }
 
+TEST_CASE("honest fuse: disjoint boxes keep both solids in one body",
+          "[exactness][boolean]") {
+    Document doc;
+    FeatureGraph& g = doc.graph();
+    auto a = add_box(g, 10, 10, 10);
+    auto b = add_box(g, 10, 10, 10, {50, 0, 0});  // 40 mm gap
+    Feature fuse;
+    fuse.type = FeatureType::Boolean;
+    fuse.params = {{"op", "fuse"}, {"target", a.str()}, {"tool", b.str()}};
+    g.add(std::move(fuse));
+    std::string err;
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    REQUIRE(doc.body_ids().size() == 1);
+    const Body* body = doc.body(g.feature(a)->output_body);
+    REQUIRE(body != nullptr);
+    REQUIRE(shape::count(body->shape).solids == 2);
+    const double vol = std::abs(shape::volume(body->shape));
+    const double sum = 2000.0;
+    REQUIRE(std::abs(vol - sum) / sum < 1e-9);
+}
+
 TEST_CASE("honest fuse: 0.05 gap writes fuzz warning", "[exactness][boolean]") {
     Document doc;
     FeatureGraph& g = doc.graph();
