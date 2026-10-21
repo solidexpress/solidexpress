@@ -3322,8 +3322,6 @@ func _hud_places_through(ctrl: Control) -> bool:
 		return false
 	if ctrl is ViewWidget:
 		return true
-	if ctrl is PopupMenu or ctrl is PopupPanel:
-		return false
 	var n: Node = ctrl
 	while n != null:
 		if n is PopupMenu or n is PopupPanel:
