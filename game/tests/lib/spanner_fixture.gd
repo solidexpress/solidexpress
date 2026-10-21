@@ -444,12 +444,19 @@ static func trim_at(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	if _failed():
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
-	await click(ctx, uv, desc, 0.0)
-	# Kernel fallback: a zoomed-out click can miss the overflow after solve
-	# drifts the end, and Power Trim on the C pad would punch the ellipse.
 	sm = ctx.main.sketch_mode
-	if sm != null:
-		sm.trim_at(uv)
+	var before := ""
+	if sm != null and sm.sketch != null and sm.sketch.has_method("snapshot"):
+		before = sm.sketch.snapshot()
+	await click(ctx, uv, desc, 0.0)
+	# Kernel fallback only when the click missed. A second trim_at at the
+	# overflow click sits inside the C pad and punches the elliptical arc.
+	sm = ctx.main.sketch_mode
+	if sm == null or sm.sketch == null:
+		return
+	if before != "" and sm.sketch.has_method("snapshot") and sm.sketch.snapshot() != before:
+		return
+	sm.trim_at(uv)
 
 
 ## Ellipse → elliptical_arc is the C mouth. A closed A_C contour needs coincidents.
