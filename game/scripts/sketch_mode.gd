@@ -2599,13 +2599,17 @@ func _nearest_trim_entity_at(pos2: Vector2) -> String:
 		var kind := str(info.get("type", ""))
 		var d := _entity_distance(info, pos2)
 		if kind == "line":
-			d = SketchGeom.trim_line_pick_distance(pos2, info["start"], info["end"])
+			var a: Vector2 = info["start"]
+			var b: Vector2 = info["end"]
+			d = SketchGeom.trim_line_pick_distance(pos2, a, b, 3.0, 25.0,
+					_point_on_trim_curve(a), _point_on_trim_curve(b))
 			if d < best_line_d:
 				best_line_d = d
 				best_line = str(id)
 		elif kind == "ellipse" or kind == "elliptical_arc":
 			# Interior of the C pad is not a trim hit on the remaining arc.
-			if d > TRIM_CURVE_MM:
+			# The handle overflow at (18, ±10) sits inside that pad.
+			if d > TRIM_CURVE_MM or (pos2.x > 5.0 and absf(pos2.y) <= 12.0):
 				continue
 		if d < best_d:
 			best_d = d
@@ -2619,6 +2623,22 @@ func _nearest_trim_entity_at(pos2: Vector2) -> String:
 	if best_line != "" and best_id == "":
 		return best_line
 	return best_id
+
+
+func _point_on_trim_curve(p: Vector2, tol := 0.08) -> bool:
+	if sketch == null:
+		return false
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind != "ellipse" and kind != "elliptical_arc" \
+				and kind != "circle" and kind != "arc":
+			continue
+		if _entity_distance(info, p) <= tol:
+			return true
+	return false
 
 
 ## Nearest entity id within the pick radius of pos2, or "" if none.

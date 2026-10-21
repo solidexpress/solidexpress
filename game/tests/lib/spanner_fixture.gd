@@ -721,6 +721,9 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 			return
 		await trim_at(ctx, uv, "Trim handle overflow ring")
 	await _ensure_ring_circle(ctx)
+	print("after handle trim ", dump_contours(ctx.main.sketch_mode),
+			" ellipse=", count_type(ctx.main.sketch_mode, "ellipse"),
+			" arc=", count_type(ctx.main.sketch_mode, "elliptical_arc"))
 
 
 static func _handle_line_at_y(sm: SketchMode, y: float) -> String:
