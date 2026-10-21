@@ -4,7 +4,7 @@
 
 | Bar | Count |
 |---|---|
-| Head sha | *(see git HEAD after this commit)* |
+| Head sha | `bb5f336` |
 | Walks r1–r6, r8 | last green at `4d112db`: 77/77, 44/44, 46/46, 32/32, 36/36, 46/46, 48/48 — **not re-run** |
 | Walk 7 | bbox **PASS** 281.450×54.590; volume **FAIL** 41996 vs 41705 (A23/A26 4/5). A21 C 1395.6 + two 2.3×10 islands at (24.1, ±5) |
 | `check_rung05` | last **10/10** (`4d112db`) |
