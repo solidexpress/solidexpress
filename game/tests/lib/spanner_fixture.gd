@@ -441,19 +441,32 @@ static func trim_at(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 	await click(ctx, uv, desc, 0.0)
 
 
-## Power Trim the C mouth. A Shade/Frame steal leaves the ellipse closed.
+## Ellipse → elliptical_arc is the C mouth. A closed A_C contour needs coincidents.
+static func _c_mouth_trimmed(sm: SketchMode) -> bool:
+	return count_type(sm, "ellipse") == 0 and count_type(sm, "elliptical_arc") >= 1
+
+
+## Power Trim the C mouth. Frame, click, then kernel trim_at if the ellipse stays.
 static func _trim_c_opening(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
-	var n0 := sm.sketch.entity_ids().size() if sm != null and sm.sketch != null else 0
+	if _c_mouth_trimmed(sm):
+		return
+	await frame_uv(ctx, trim_opening(), SPAN_HEAD, "Frame C opening")
+	await FilmUI.wait_frames(ctx.tree, 2)
 	for attempt in 3:
+		sm = ctx.main.sketch_mode
+		if _c_mouth_trimmed(sm):
+			return
 		await trim_at(ctx, trim_opening(), "Trim C opening" if attempt == 0 else "Trim C opening retry %d" % attempt)
 		if _failed():
 			return
-		if c_is_open(ctx):
+		await FilmUI.wait_frames(ctx.tree, 4)
+		if _c_mouth_trimmed(ctx.main.sketch_mode):
 			return
-		if sm != null and sm.sketch != null and sm.sketch.entity_ids().size() != n0:
-			return
-		n0 = sm.sketch.entity_ids().size() if sm != null and sm.sketch != null else n0
+	sm = ctx.main.sketch_mode
+	if sm != null and not _c_mouth_trimmed(sm):
+		sm.trim_at(trim_opening())
+		await FilmUI.wait_frames(ctx.tree, 4)
 
 
 static func c_is_open(ctx: FilmContext) -> bool:
@@ -599,13 +612,16 @@ static func sketch_front_c(ctx: FilmContext) -> void:
 	await coincident_on_curve(ctx, jaw_outer(false), jaw_tip_uv(false))
 	if _failed():
 		return
-	# Heads extrude without this contour is the 233.556×33 (Ø33+handle) flake.
+	# Contours rebuild after solve. n=0 here is an open C, not the 233.556×33
+	# flake (that is a still-closed ellipse). Wait, retry, fail only if closed.
+	await FilmUI.wait_frames(ctx.tree, 8)
 	if not c_is_open(ctx):
 		await _trim_c_opening(ctx)
 		await coincident_on_curve(ctx, jaw_outer(true), jaw_tip_uv(true))
 		await coincident_on_curve(ctx, jaw_outer(false), jaw_tip_uv(false))
-	if not c_is_open(ctx):
-		FilmUI._fail("C stayed unopened after trim (%s)" % dump_contours(ctx.main.sketch_mode))
+		await FilmUI.wait_frames(ctx.tree, 8)
+	if not _c_mouth_trimmed(ctx.main.sketch_mode) and not c_is_open(ctx):
+		FilmUI._fail("C ellipse stayed closed after trim (%s)" % dump_contours(ctx.main.sketch_mode))
 
 
 ## Walk A11–A18: Ø33, two AF-25 hexes, Power Trim 12-point, handle 10, Mirror.

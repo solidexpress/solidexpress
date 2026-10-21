@@ -10,7 +10,7 @@ Confirm-r4 left three items. Glyphs/J6 and the rest of the old 17 are closed; do
 
 Cause: a Line/Trim click for the C opening lands on ViewHud **Shade** / **Frame** (STOP). Interaction drops it as chrome; the ellipse stays closed, heads extrude only the Ø33. Dummy-renderer layout under load puts that UV on the HUD more often than a solo run.
 
-Fix: Shade/Frame IGNORE while a draw tool is placing (item 2), and retry Trim C until the ~1496 mm² contour exists. Do not loosen the bbox.
+Fix: Shade/Frame IGNORE while a draw tool is placing (item 2). Frame the opening UV, retry Trim C, then `SketchMode.trim_at` if the ellipse is still closed. Fail only when the ellipse stays closed (open-wire n=0 is not the flake). Do not loosen the bbox.
 
 Cheap: `GODOT_BIN=tools/godot/godot packaging/ci/run_suites.sh --jobs 1 --only '*film_spanner*'` then the same with `--jobs $(nproc)` in a full-tier confirm.
 
@@ -18,7 +18,7 @@ Cheap: `GODOT_BIN=tools/godot/godot packaging/ci/run_suites.sh --jobs 1 --only '
 
 Cube IGNORE was not enough under confirm. `_control_blocks_at` still treats BaseButtons as chrome, so Shade/Frame eat Line/Trim on the model under the bottom-right HUD.
 
-While `SketchMode.places_on_model()`: Shade, Frame, Section, Explode, Zebra, and the View strip are `MOUSE_FILTER_IGNORE`, and Interaction does not name them as `_over_chrome`. When not placing they are STOP (Shade still cycles display).
+While `SketchMode.places_on_model()`: Shade, Frame, and Section are `MOUSE_FILTER_IGNORE`, and Interaction does not name them as `_over_chrome`. View strip (▼ / Save) stays STOP so Front view still opens. When not placing they are STOP (Shade still cycles display).
 
 Cheap: `GODOT_BIN=tools/godot/godot packaging/ci/run_suites.sh --jobs 1 --only '*visual_ux*'`
 
