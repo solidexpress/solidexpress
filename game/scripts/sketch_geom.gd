@@ -17,6 +17,25 @@ static func point_line_distance(p: Vector2, a: Vector2, b: Vector2) -> float:
 	return absf((p - a).cross(ab)) / len
 
 
+## Power Trim pick: on the segment, or a short overflow past an end.
+static func trim_line_pick_distance(p: Vector2, a: Vector2, b: Vector2,
+		on_mm: float = 3.0, overflow_mm: float = 25.0) -> float:
+	var perp := point_line_distance(p, a, b)
+	if perp > on_mm:
+		return point_segment_distance(p, a, b)
+	var ab := b - a
+	var len2 := ab.length_squared()
+	if len2 < 1e-12:
+		return p.distance_to(a)
+	var t := (p - a).dot(ab) / len2
+	if t >= 0.0 and t <= 1.0:
+		return perp
+	var past := p.distance_to(a) if t < 0.0 else p.distance_to(b)
+	if past <= overflow_mm:
+		return perp
+	return point_segment_distance(p, a, b)
+
+
 static func point_rect_distance(p: Vector2, rect: Rect2) -> float:
 	var c := Vector2(
 		clampf(p.x, rect.position.x, rect.end.x),

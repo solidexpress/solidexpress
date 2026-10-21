@@ -2591,15 +2591,22 @@ func _nearest_trim_entity_at(pos2: Vector2) -> String:
 	var best_d := _pick_tolerance()
 	var best_line := ""
 	var best_line_d := _pick_tolerance()
+	const TRIM_CURVE_MM := 3.0
 	for id in sketch.entity_ids():
 		var info: Dictionary = sketch.entity_info(id)
 		if bool(info.get("construction", false)):
 			continue
-		var d := _entity_distance(info, pos2)
 		var kind := str(info.get("type", ""))
-		if kind == "line" and d < best_line_d:
-			best_line_d = d
-			best_line = str(id)
+		var d := _entity_distance(info, pos2)
+		if kind == "line":
+			d = SketchGeom.trim_line_pick_distance(pos2, info["start"], info["end"])
+			if d < best_line_d:
+				best_line_d = d
+				best_line = str(id)
+		elif kind == "ellipse" or kind == "elliptical_arc":
+			# Interior of the C pad is not a trim hit on the remaining arc.
+			if d > TRIM_CURVE_MM:
+				continue
 		if d < best_d:
 			best_d = d
 			best_id = str(id)
@@ -2609,6 +2616,8 @@ func _nearest_trim_entity_at(pos2: Vector2) -> String:
 		# ellipse. Jaw trim is a circle/arc and must keep winning over walls.
 		if k == "ellipse" or k == "elliptical_arc":
 			return best_line
+	if best_line != "" and best_id == "":
+		return best_line
 	return best_id
 
 

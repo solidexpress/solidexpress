@@ -13,10 +13,12 @@ namespace {
 constexpr double k_eps = 1e-6;
 constexpr double k_pi = 3.14159265358979323846;
 constexpr double k_two_pi = 2.0 * k_pi;
-// Power Trim click must sit on the segment. Clamping a miss onto an end
-// treated (18, ±10) inside the C as the handle start and collapsed a strip
-// that already met the ellipse onto the Ø33 hit.
+// Perpendicular distance to the line. Overflow past an end is allowed so a
+// drifted strip can still be Power Trimmed at the original (18, ±10) click;
+// not if that end already sits on a curve (that would collapse it to the
+// next hit, the Ø33).
 constexpr double k_trim_on_line_mm = 3.0;
+constexpr double k_trim_overflow_mm = 25.0;
 
 struct Vec2 {
     double x = 0, y = 0;
@@ -280,6 +282,38 @@ bool is_trim_curve(SketchEntityType t) {
         || t == SketchEntityType::Ellipse || t == SketchEntityType::EllipticalArc;
 }
 
+bool point_on_trim_curve(const Sketch& s, Vec2 p, double tol = 0.5) {
+    for (const SketchEntity& e : s.entities()) {
+        if (e.construction || !is_trim_curve(e.type)) continue;
+        if (e.type == SketchEntityType::Circle || e.type == SketchEntityType::Arc) {
+            Vec2 c = {s.param(e.params[0]), s.param(e.params[1])};
+            double r = s.param(e.params[2]);
+            if (std::abs(hypot2(sub(p, c)) - r) <= tol) return true;
+        } else {
+            auto ax = axes_of(s, e);
+            if (ax && hypot2(sub(p, ellipse_xy(*ax, ellipse_param(*ax, p)))) <= tol)
+                return true;
+        }
+    }
+    return false;
+}
+
+bool click_hits_trim_line(const Sketch& s, Vec2 a0, Vec2 a1, double px, double py) {
+    Vec2 d = sub(a1, a0);
+    double len2 = dot(d, d);
+    if (len2 < 1e-30) return false;
+    double t_raw = dot(sub({px, py}, a0), d) / len2;
+    Vec2 on_inf = add(a0, mul(d, t_raw));
+    if (hypot2(sub({px, py}, on_inf)) > k_trim_on_line_mm) return false;
+    double t_pick = std::clamp(t_raw, 0.0, 1.0);
+    Vec2 on_seg = add(a0, mul(d, t_pick));
+    double along = hypot2(sub({px, py}, on_seg));
+    if (along <= k_trim_on_line_mm) return true;
+    if (along > k_trim_overflow_mm) return false;
+    Vec2 endp = t_raw < 0.5 ? a0 : a1;
+    return !point_on_trim_curve(s, endp);
+}
+
 void unique_sorted_hits(std::vector<LineHit>& v) {
     std::sort(v.begin(), v.end(),
               [](const LineHit& a, const LineHit& b) { return a.t < b.t; });
@@ -499,8 +533,7 @@ bool trim_line(Sketch& s, EntityId id, double px, double py) {
     if (!collect_line_intersections(s, *e, id, hits)) return false;
 
     double t_raw = dot(sub({px, py}, a0), d) / len2;
-    Vec2 on_seg = add(a0, mul(d, std::clamp(t_raw, 0.0, 1.0)));
-    if (hypot2(sub({px, py}, on_seg)) > k_trim_on_line_mm) return false;
+    if (!click_hits_trim_line(s, a0, a1, px, py)) return false;
     double t_pick = std::clamp(t_raw, 0.0, 1.0);
 
     // Sub-segments: [0, t0], [t0, t1], ..., [tn-1, 1]. Find one containing pick.

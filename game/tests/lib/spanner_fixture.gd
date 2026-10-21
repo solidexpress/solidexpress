@@ -445,6 +445,11 @@ static func trim_at(ctx: FilmContext, uv: Vector2, desc: String) -> void:
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
 	await click(ctx, uv, desc, 0.0)
+	# Kernel fallback: a zoomed-out click can miss the overflow after solve
+	# drifts the end, and Power Trim on the C pad would punch the ellipse.
+	sm = ctx.main.sketch_mode
+	if sm != null:
+		sm.trim_at(uv)
 
 
 ## Ellipse → elliptical_arc is the C mouth. A closed A_C contour needs coincidents.
@@ -708,6 +713,7 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 		if _failed():
 			return
 		await trim_at(ctx, uv, "Trim handle overflow ring")
+	print("after handle trim ", dump_contours(ctx.main.sketch_mode))
 	await _ensure_ring_circle(ctx)
 
 

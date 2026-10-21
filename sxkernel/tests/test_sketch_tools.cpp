@@ -671,6 +671,21 @@ TEST_CASE("trim_entity does not collapse a handle that already meets the ellipse
     CHECK(sk.param(sk.entity(ln)->params[2]) == Approx(226.876).margin(1e-6));
 }
 
+TEST_CASE("trim_entity still cuts a strip whose overflow end drifted",
+          "[sketchtools][trim][rung07][overflow]") {
+    Sketch sk("HandleDriftTrim");
+    const double deg = 17.0 * 3.14159265358979323846 / 180.0;
+    sk.add_ellipse(0.0, 0.0, 27.5, 25.0, deg + 3.14159265358979323846 * 0.5);
+    sk.add_circle(240.0, 0.0, 16.5);
+    auto ln = sk.add_line(20.0, 10.0, 226.876, 10.0);
+    REQUIRE(trim_entity(sk, ln.str(), 18.0, 10.0));
+    REQUIRE(sk.entity(ln) != nullptr);
+    auto x0 = sk.param(sk.entity(ln)->params[0]);
+    auto x1 = sk.param(sk.entity(ln)->params[2]);
+    double left = std::min(x0, x1);
+    CHECK(left == Approx(22.944).margin(0.4));
+}
+
 TEST_CASE("trim mirrored strip to a 17-degree ellipse pins both hits",
           "[sketchtools][trim][rung07]") {
     Sketch sk("MirrorTrimEllipse");
