@@ -125,12 +125,6 @@ class WalkUI07(ProfileGestures, BossGestures, DressGestures, WalkChrome):
             return (22.944, half), (ring, half)
         return (23.929, -half), (ring, -half)
 
-    def handle_overflow_xy(self, upper: bool) -> tuple[tuple[float, float], tuple[float, float]]:
-        """t0264: line across the C to past Ø33. A18 trims the leftovers."""
-        y = self.handle_xy(upper)[0][1]
-        right = self.mm("CENTER") + self.mm("RING_D") * 0.5 + 4.0
-        return (8.0, y), (right, y)
-
     def sketch_on_datum(self, name: str, view_key: str) -> dict:
         self.clear_faces()
         if bool((self.refresh("sketch").get("sketch") or {}).get("active")):

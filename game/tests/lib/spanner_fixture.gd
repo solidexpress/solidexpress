@@ -261,13 +261,6 @@ static func handle_xy(upper: bool) -> PackedVector2Array:
 	return PackedVector2Array([Vector2(23.929, -half), Vector2(ring, -half)])
 
 
-## t0264: line across the C to past Ø33. Overflow clicks then trim leftovers.
-static func handle_overflow_xy(upper: bool) -> PackedVector2Array:
-	var y := handle_xy(upper)[0].y
-	var right := mm("CENTER") + mm("RING_D") * 0.5 + 4.0
-	return PackedVector2Array([Vector2(8.0, y), Vector2(right, y)])
-
-
 static func span_at(uv: Vector2) -> float:
 	if absf(uv.x - mm("CENTER")) < 40.0:
 		return SPAN_RING
@@ -670,7 +663,7 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	if _failed():
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
-	var hi := handle_overflow_xy(true)
+	var hi := handle_xy(true)
 	await frame_uv(ctx, (hi[0] + hi[1]) * 0.5, SPAN_HANDLE, "Frame handle")
 	await line(ctx, hi[0], hi[1], "upper handle", 0.0)
 	if _failed():
@@ -678,15 +671,14 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	await constrain_chip(ctx, "Horizontal", hi[0], hi[1])
 	if _failed():
 		return
-	var hit := handle_xy(true)[0]
-	await dim_two(ctx, Vector2(hit.x, 0.0), hit, mm_text("HANDLE_HALF"))
+	await dim_two(ctx, Vector2(hi[0].x, 0.0), hi[0], mm_text("HANDLE_HALF"))
 	if _failed():
 		return
 	var mid := (hi[0] + hi[1]) * 0.5
 	await mirror_entities(ctx, Vector2(50, 0), mid, Vector2(100, -30))
 	if _failed():
 		return
-	var lo := handle_overflow_xy(false)
+	var lo := handle_xy(false)
 	if _handle_line_at_y(ctx.main.sketch_mode, -mm("HANDLE_HALF")) == "":
 		await FilmSteps._snap_off_if_visible(ctx)
 		await line(ctx, lo[0], lo[1], "lower handle", 0.0)

@@ -409,3 +409,58 @@ TEST_CASE("rung07 leftover hex stubs plus C and handle are three regions",
     CHECK(areas[1] == Approx(1495.80).margin(40.0));
     CHECK(areas[2] == Approx(275.172).margin(20.0));
 }
+
+TEST_CASE("rung07 Power Trim at (18,±10) does not punch the C pad",
+          "[rung07][replica][trim]") {
+    Sketch sk("A18Trim");
+    add_spanner_c(sk);
+    sk.add_circle(240.0, 0.0, 16.5);
+    auto hi = sk.add_line(22.944, 10.0, 226.876, 10.0);
+    auto lo = sk.add_line(23.929, -10.0, 226.876, -10.0);
+    auto c_area = [&]() {
+        std::string err;
+        auto outlines = sk.contour_outlines(0.05, &err);
+        double best = 0.0;
+        for (const auto& o : outlines) {
+            const double a = std::abs(o.area);
+            if (a > 1000.0 && a < 2000.0) best = a;
+        }
+        return best;
+    };
+    CHECK(c_area() == Approx(1495.80).margin(40.0));
+    sketch_tools::trim_entity(sk, hi.str(), 18.0, 10.0);
+    sketch_tools::trim_entity(sk, lo.str(), 18.0, -10.0);
+    std::vector<std::string> arcs;
+    for (const auto& e : sk.entities()) {
+        if (e.type == SketchEntityType::EllipticalArc || e.type == SketchEntityType::Ellipse)
+            arcs.push_back(e.id.str());
+    }
+    for (const auto& id : arcs) {
+        sketch_tools::trim_entity(sk, id, 18.0, 10.0);
+        sketch_tools::trim_entity(sk, id, 18.0, -10.0);
+    }
+    CHECK(c_area() == Approx(1495.80).margin(40.0));
+}
+
+TEST_CASE("rung07 tiny handle-C junction holes do not shrink the C",
+          "[rung07][replica][contours]") {
+    Sketch sk("JunctionHoles");
+    add_spanner_c(sk);
+    sk.add_circle(240.0, 0.0, 16.5);
+    sk.add_line(22.944, 10.0, 226.876, 10.0);
+    sk.add_line(23.929, -10.0, 226.876, -10.0);
+    sk.add_line(23.4, 4.2, 24.8, 4.2);
+    sk.add_line(24.8, 4.2, 24.1, 5.6);
+    sk.add_line(24.1, 5.6, 23.4, 4.2);
+    sk.add_line(23.4, -4.2, 24.8, -4.2);
+    sk.add_line(24.8, -4.2, 24.1, -5.6);
+    sk.add_line(24.1, -5.6, 23.4, -4.2);
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    std::vector<double> areas;
+    for (const auto& o : outlines) areas.push_back(std::abs(o.area));
+    std::sort(areas.begin(), areas.end(), std::greater<double>());
+    INFO(err << " n=" << outlines.size());
+    REQUIRE(outlines.size() >= 3);
+    CHECK(areas[1] == Approx(1495.80).margin(40.0));
+}

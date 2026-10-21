@@ -98,17 +98,16 @@ class Rows07Chunk2:
 
     @row("A16", chunk=2, on="rung07", expect={"blocker": "A15", "sketch": True})
     def row_A16(self) -> None:
-        a, b = self.handle_overflow_xy(True)
+        a, b = self.handle_xy(True)
         was = self._set_snap(False)
         self.draw_line(a, b)
         self._set_snap(was)
         mid = ((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5)
         note = self.constrain("Horizontal", a, b)
-        hit, _circ = self.handle_xy(True)
-        self.dim_two((hit[0], 0.0), hit, "10")
+        self.dim_two((a[0], 0.0), a, "10")
         types = self.constraint_types()
         self.clause("horizontal", "horizontal" in types or "Horizontal" in note, str(types))
-        self.clause("dim 10", self.label_has("10") or abs(hit[1] - 10.0) <= 0.6, str(self.dim_texts()))
+        self.clause("dim 10", self.label_has("10") or abs(a[1] - 10.0) <= 0.6, str(self.dim_texts()))
         self.clause("y 10", abs(mid[1] - 10.0) <= 0.6, str(mid))
         self.clause("not vertical", "horizontal" in types or abs(a[1] - b[1]) <= 0.6, str((a, b)))
 
@@ -126,7 +125,7 @@ class Rows07Chunk2:
               if abs(self._pt(ln.get("start") or [0, 0])[1] + 10) <= 0.6
               and abs(self._pt(ln.get("end") or [0, 0])[1] + 10) <= 0.6]
         if not lo:
-            a2, b2 = self.handle_overflow_xy(False)
+            a2, b2 = self.handle_xy(False)
             was = self._set_snap(False)
             self.draw_line(a2, b2)
             self._set_snap(was)

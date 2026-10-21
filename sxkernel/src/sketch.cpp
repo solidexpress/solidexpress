@@ -1365,6 +1365,47 @@ std::vector<TopoDS_Shape> drop_contained_duplicates(std::vector<TopoDS_Shape> fa
     return out;
 }
 
+// Walk handle-C junction leftovers nest as ~50 mm² holes in the C (area 1395
+// vs A_C 1496). The 12-point bore is ~580 mm² and lives in a circle pad.
+std::vector<TopoDS_Shape> fill_tiny_non_circle_holes(
+    const gp_Pln& pln, std::vector<TopoDS_Shape> faces,
+    const std::vector<CircPad>& circs) {
+    constexpr double kTinyHole = 120.0;
+    std::vector<TopoDS_Shape> out;
+    out.reserve(faces.size());
+    for (const auto& s : faces) {
+        if (s.IsNull() || s.ShapeType() != TopAbs_FACE) {
+            out.push_back(s);
+            continue;
+        }
+        if (com_inside_circle(face_com(s), circs)) {
+            out.push_back(s);
+            continue;
+        }
+        const TopoDS_Face face = TopoDS::Face(s);
+        const TopoDS_Wire outer = BRepTools::OuterWire(face);
+        double hole_a = 0.0;
+        int nwires = 0;
+        for (TopExp_Explorer wx(face, TopAbs_WIRE); wx.More(); wx.Next()) {
+            ++nwires;
+            const TopoDS_Wire w = TopoDS::Wire(wx.Current());
+            if (w.IsSame(outer) || w.IsEqual(outer)) continue;
+            TopoDS_Face hf = wire_face(pln, w);
+            if (!hf.IsNull()) hole_a += std::abs(shape::area(hf));
+        }
+        if (nwires > 1 && hole_a > 1e-6 && hole_a < kTinyHole) {
+            TopoDS_Face filled = wire_face(pln, outer);
+            if (!filled.IsNull()) {
+                out.push_back(filled);
+                continue;
+            }
+        }
+        out.push_back(s);
+    }
+    sort_faces_by_area(out);
+    return out;
+}
+
 // Nested holes punch the 12-point (area 275). Handle lines only appear in
 // the planar split. Add those exterior pads; skip leftover hex cells, the
 // hole's own cell (COM inside the un-punched outer), and C-fragments.
@@ -1652,6 +1693,7 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
     auto finish_contours = [&](std::vector<TopoDS_Shape> fs) {
         fs = punch_recovered_into_circles(std::move(fs), pln, circs, recovered);
         fs = drop_contained_duplicates(std::move(fs));
+        fs = fill_tiny_non_circle_holes(pln, std::move(fs), circs);
         return drop_circle_slivers(std::move(fs), circs);
     };
 
