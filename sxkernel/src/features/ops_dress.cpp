@@ -499,6 +499,17 @@ TopoDS_Shape wedge_prism(const gp_Pnt& p, const gp_Pnt& t1, const gp_Pnt& mid, c
     return BRepPrimAPI_MakePrism(profile, gp_Vec(0, 0, z1 - z0)).Shape();
 }
 
+// UnifySameDomain / Common can hand back a self-intersecting shell. Keep the
+// last valid body so a neck R20 is not reported as a bare "result invalid".
+TopoDS_Shape keep_valid(const TopoDS_Shape& candidate, const TopoDS_Shape& fallback) {
+    if (candidate.IsNull()) return fallback;
+    if (shape::is_valid(candidate)) return candidate;
+    std::string report;
+    TopoDS_Shape healed = interop::heal_shape(candidate, &report);
+    if (!healed.IsNull() && shape::is_valid(healed)) return healed;
+    return fallback;
+}
+
 // Neck R30/R20 on a 6 mm handle: MakeFillet first (Convert needs circular
 // arcs), then void-wedge fuse, always clipped to the start AABB.
 struct NeckFillet {
@@ -673,9 +684,10 @@ struct NeckFillet {
             unif.SetLinearTolerance(UNIFY_LIN);
             unif.SetAngularTolerance(UNIFY_ANG);
             unif.Build();
-            if (!unif.Shape().IsNull()) fused = unif.Shape();
+            if (!unif.Shape().IsNull()) fused = keep_valid(unif.Shape(), fused);
         } catch (...) {
         }
+        if (!shape::is_valid(fused)) return false;
         out = fused;
         return true;
     }
@@ -710,10 +722,10 @@ struct NeckFillet {
             unif.SetLinearTolerance(UNIFY_LIN);
             unif.SetAngularTolerance(UNIFY_ANG);
             unif.Build();
-            if (!unif.Shape().IsNull()) clipped = unif.Shape();
+            if (!unif.Shape().IsNull()) clipped = keep_valid(unif.Shape(), clipped);
         } catch (...) {
         }
-        return clipped;
+        return keep_valid(clipped, result);
     }
 };
 
@@ -972,7 +984,14 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
         result = mk.Shape();
         remember_face_cues(ctx, *tb, found.edges);
     }
-    if (!shape::is_valid(result)) return ctx.fail("result invalid");
+    if (!shape::is_valid(result)) {
+        std::string report;
+        TopoDS_Shape healed = interop::heal_shape(result, &report);
+        if (!healed.IsNull() && shape::is_valid(healed))
+            result = healed;
+        else
+            return ctx.fail("result invalid");
+    }
     ctx.doc.replace_body_shape(target, result);
     return true;
 }

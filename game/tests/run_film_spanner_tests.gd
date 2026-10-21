@@ -8,8 +8,8 @@ const SxChecker = preload("res://tests/lib/sx_checker.gd")
 const SpannerFixture = preload("res://tests/lib/spanner_fixture.gd")
 
 # One Front sketch already has C + ring + handle; ring-pad / 12-point
-# recovery is skipped. Recess Convert+Offset is sketch 4 / extrude 5.
-const FEATURES := "sketch 1, extrude 2, extrude 3, sketch 4, extrude 5, fillet 6, fillet 7, sketch 8, extrude 9, fillet 10, mirror 11"
+# recovery is skipped. Recess is sketch 6 / extrude 7 after R30/R20.
+const FEATURES := "sketch 1, extrude 2, extrude 3, fillet 4, fillet 5, sketch 6, extrude 7, fillet 8, mirror 9"
 const BBOX_TOL := 0.2
 
 

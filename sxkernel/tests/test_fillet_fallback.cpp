@@ -8,6 +8,7 @@
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
 #include <gp_Pnt.hxx>
 
 #include "sx/document.hpp"
@@ -170,4 +171,88 @@ TEST_CASE("fillet wedge recovers R30 on elliptical C neck", "[exactness][fillet]
     REQUIRE(shape::is_valid(after->shape));
     REQUIRE(shape::count(after->shape).solids == 1);
     CHECK(std::abs(shape::volume(after->shape) - v0) > 1.0);
+}
+
+void add_twelve_point(Sketch& sk, double cx, double cy, double af) {
+    const double outer = af / std::sqrt(3.0);
+    const double inner = (af * 0.5) / std::cos(15.0 * kPi / 180.0);
+    std::array<std::array<double, 2>, 24> pts{};
+    for (int k = 0; k < 24; ++k) {
+        const double ang = static_cast<double>(k) * 15.0 * kPi / 180.0;
+        const double radius = (k % 2) == 0 ? outer : inner;
+        pts[static_cast<size_t>(k)] = {cx + std::cos(ang) * radius, cy + std::sin(ang) * radius};
+    }
+    for (int i = 0; i < 24; ++i) {
+        const auto& a = pts[static_cast<size_t>(i)];
+        const auto& b = pts[static_cast<size_t>((i + 23) % 24)];
+        sk.add_line(a[0], a[1], b[0], b[1]);
+    }
+}
+
+TEST_CASE("fillet R20 on 12-point ring neck stays valid", "[exactness][fillet][rung07]") {
+    Document doc;
+    FeatureGraph& g = doc.graph();
+
+    Feature rsk;
+    rsk.type = FeatureType::Sketch;
+    rsk.sketch = std::make_shared<Sketch>("Ring");
+    rsk.sketch->add_circle(240.0, 0.0, 16.5);
+    add_twelve_point(*rsk.sketch, 240.0, 0.0, 25.0);
+    auto rsk_id = g.add(std::move(rsk));
+    Feature rext;
+    rext.type = FeatureType::Extrude;
+    rext.params = {{"sketch", rsk_id.str()},
+                   {"distance", 10.0},
+                   {"op", "new"},
+                   {"end", "midplane"}};
+    auto rext_id = g.add(std::move(rext));
+
+    Feature hsk;
+    hsk.type = FeatureType::Sketch;
+    hsk.sketch = std::make_shared<Sketch>("Handle");
+    hsk.sketch->add_line(80.0, 10.0, 226.876, 10.0);
+    hsk.sketch->add_line(226.876, 10.0, 226.876, -10.0);
+    hsk.sketch->add_line(226.876, -10.0, 80.0, -10.0);
+    hsk.sketch->add_line(80.0, -10.0, 80.0, 10.0);
+    auto hsk_id = g.add(std::move(hsk));
+    Feature hext;
+    hext.type = FeatureType::Extrude;
+    hext.params = {{"sketch", hsk_id.str()},
+                   {"distance", 6.0},
+                   {"op", "fuse"},
+                   {"end", "midplane"},
+                   {"target", rext_id.str()}};
+    g.add(std::move(hext));
+
+    std::string err;
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* body = doc.body(g.feature(rext_id)->output_body);
+    REQUIRE(body != nullptr);
+    REQUIRE(shape::is_valid(body->shape));
+
+    json necks = json::array();
+    for (const auto& eid : body->subshape_ids.at(EntityKind::Edge)) {
+        TopoDS_Shape s = doc.resolve(eid);
+        if (s.IsNull() || s.ShapeType() != TopAbs_EDGE) continue;
+        const TopoDS_Edge e = TopoDS::Edge(s);
+        if (std::abs(edge_len(e) - 6.0) > 0.6) continue;
+        const gp_Pnt m = edge_mid(e);
+        if (std::abs(std::abs(m.Y()) - 10.0) > 0.6) continue;
+        if (m.X() > 220.0 && m.X() < 232.0) necks.push_back(eid.str());
+    }
+    REQUIRE(necks.size() >= 2);
+
+    Feature fil;
+    fil.type = FeatureType::Fillet;
+    fil.name = "fillet R20";
+    fil.params = {{"target", rext_id.str()}, {"radius", 20.0}, {"edges", necks}};
+    g.add(std::move(fil));
+    err.clear();
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* after = doc.body(g.feature(rext_id)->output_body);
+    REQUIRE(after != nullptr);
+    REQUIRE(shape::is_valid(after->shape));
+    REQUIRE(shape::count(after->shape).solids == 1);
 }

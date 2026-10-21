@@ -713,7 +713,6 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 		if _failed():
 			return
 		await trim_at(ctx, uv, "Trim handle overflow ring")
-	print("after handle trim ", dump_contours(ctx.main.sketch_mode))
 	await _ensure_ring_circle(ctx)
 
 
@@ -973,9 +972,34 @@ static func fillet_z_edges(ctx: FilmContext, radius: float, xys: Array) -> void:
 		await FilmSteps.commit_fillet(ctx)
 		await ctx.after_regen()
 		body = only_body(ctx)
-		if picked >= 1 and bbox_y_ok(ctx):
+		var err := _graph_error(ctx)
+		if err.contains("fillet") or err.contains("invalid"):
+			var added_now := false
+			for n in _feature_names(ctx):
+				if not names_before.has(n) and str(n).begins_with("fillet"):
+					added_now = true
+			if added_now:
+				await undo_last_fillet(ctx)
+			body = only_body(ctx)
+			var host := ctx.view.feature_of_body(body) if body != "" else ""
+			var ids := PackedStringArray()
+			for xy in xys:
+				for eid in z_edges_near(ctx.view.doc, body, xy as Vector2, want_len, 4.0):
+					if not ids.has(str(eid)):
+						ids.append(str(eid))
+			if host != "" and ids.size() >= 1:
+				ctx.view.doc.graph_add_fillet(host, ids, radius)
+				await ctx.after_regen()
+				err = _graph_error(ctx)
+		if picked >= 1 and bbox_y_ok(ctx) and err == "":
 			return
 	FilmUI._fail("neck fillet R%s did not keep bbox Y" % str(int(round(radius))))
+
+
+static func _graph_error(ctx: FilmContext) -> String:
+	if ctx.view == null or ctx.view.doc == null or not ctx.view.doc.has_method("last_graph_error"):
+		return ""
+	return str(ctx.view.doc.last_graph_error()).strip_edges()
 
 
 static func _feature_names(ctx: FilmContext) -> PackedStringArray:
