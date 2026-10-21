@@ -98,16 +98,17 @@ class Rows07Chunk2:
 
     @row("A16", chunk=2, on="rung07", expect={"blocker": "A15", "sketch": True})
     def row_A16(self) -> None:
-        a, b = self.handle_xy(True)
+        a, b = self.handle_overflow_xy(True)
         was = self._set_snap(False)
         self.draw_line(a, b)
         self._set_snap(was)
         mid = ((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5)
         note = self.constrain("Horizontal", a, b)
-        self.dim_two((a[0], 0.0), a, "10")
+        hit, _circ = self.handle_xy(True)
+        self.dim_two((hit[0], 0.0), hit, "10")
         types = self.constraint_types()
         self.clause("horizontal", "horizontal" in types or "Horizontal" in note, str(types))
-        self.clause("dim 10", self.label_has("10") or abs(a[1] - 10.0) <= 0.6, str(self.dim_texts()))
+        self.clause("dim 10", self.label_has("10") or abs(hit[1] - 10.0) <= 0.6, str(self.dim_texts()))
         self.clause("y 10", abs(mid[1] - 10.0) <= 0.6, str(mid))
         self.clause("not vertical", "horizontal" in types or abs(a[1] - b[1]) <= 0.6, str((a, b)))
 
@@ -125,7 +126,7 @@ class Rows07Chunk2:
               if abs(self._pt(ln.get("start") or [0, 0])[1] + 10) <= 0.6
               and abs(self._pt(ln.get("end") or [0, 0])[1] + 10) <= 0.6]
         if not lo:
-            a2, b2 = self.handle_xy(False)
+            a2, b2 = self.handle_overflow_xy(False)
             was = self._set_snap(False)
             self.draw_line(a2, b2)
             self._set_snap(was)
@@ -148,7 +149,11 @@ class Rows07Chunk2:
         self.constrain("Coincident", (120.0, -10.0), (self.mm("CENTER"), -self.mm("RING_D") * 0.5))
         self.constrain("Coincident", (30.0, -10.0), self.ellipse_major())
         for uv in ((18.0, 10.0), (18.0, -10.0), (232.0, 10.0), (232.0, -10.0)):
-            self.trim_at(uv)
+            # handle_xy already sits on the C/ring hits. Clicking (18, ±10)
+            # with no overflow line under the pick trims the elliptical_arc
+            # instead and punches ~101 mm² out of the C (A23 volume 41996).
+            if self.profile_line_near(uv):
+                self.trim_at(uv)
         self.clause("coincident ring", "Coincident" in n1 or "coincident" in self.constraint_types(), n1)
         self.clause("coincident ellipse", "Coincident" in n2 or True, n2)
         self.clause("x 226.9", abs(circ[0] - 226.876) <= 0.4, str(circ))
