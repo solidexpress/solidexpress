@@ -891,20 +891,6 @@ bool point_inside_face(const TopoDS_Face& face, const gp_Pnt& p) {
     return cls.State() == TopAbs_IN || cls.State() == TopAbs_ON;
 }
 
-bool face_has_inner_wire(const TopoDS_Shape& s) {
-    if (s.IsNull() || s.ShapeType() != TopAbs_FACE) return false;
-    int nw = 0;
-    for (TopExp_Explorer wx(TopoDS::Face(s), TopAbs_WIRE); wx.More(); wx.Next()) ++nw;
-    return nw > 1;
-}
-
-bool any_face_has_inner_wire(const std::vector<TopoDS_Shape>& faces) {
-    for (const auto& f : faces) {
-        if (face_has_inner_wire(f)) return true;
-    }
-    return false;
-}
-
 TopoDS_Face wire_face(const gp_Pln& pln, const TopoDS_Wire& wire) {
     BRepBuilderAPI_MakeFace mk(pln, wire);
     if (mk.IsDone()) return mk.Face();
@@ -1141,13 +1127,67 @@ std::vector<TopoDS_Shape> contours_by_planar_split(const gp_Pln& pln, const gp_A
     return nest_solid_contours(pln, simple_faces, wires, err);
 }
 
-// Nested holes punch Ø33 (12-point) or a rectangular frame. Handle lines
-// stay open, so they only appear in the planar split. Keep nest, then add
-// split faces whose COM is not inside those nest pads or the un-punched
-// outers (leftover hex triangles / the hole's own cell).
+struct CircPad {
+    gp_Pnt c;
+    double r = 0.0;
+};
+
+bool face_has_inner_wire(const TopoDS_Shape& s) {
+    if (s.IsNull() || s.ShapeType() != TopAbs_FACE) return false;
+    int nw = 0;
+    for (TopExp_Explorer wx(TopoDS::Face(s), TopAbs_WIRE); wx.More(); wx.Next()) ++nw;
+    return nw > 1;
+}
+
+bool any_face_has_inner_wire(const std::vector<TopoDS_Shape>& faces) {
+    for (const auto& f : faces) {
+        if (face_has_inner_wire(f)) return true;
+    }
+    return false;
+}
+
+constexpr double kPadArea = 50.0;
+
+bool com_inside_circle(const gp_Pnt& p, const std::vector<CircPad>& circs) {
+    for (const auto& c : circs) {
+        if (c.r > 0.5 && p.Distance(c.c) < c.r - 0.2) return true;
+    }
+    return false;
+}
+
+void sort_faces_by_area(std::vector<TopoDS_Shape>& faces) {
+    std::sort(faces.begin(), faces.end(), [](const TopoDS_Shape& a, const TopoDS_Shape& b) {
+        const double aa = std::abs(shape::area(a)), ba = std::abs(shape::area(b));
+        if (std::abs(aa - ba) > 1e-9) return aa > ba;
+        const gp_Pnt ca = face_com(a), cb = face_com(b);
+        if (std::abs(ca.X() - cb.X()) > 1e-9) return ca.X() < cb.X();
+        return ca.Y() < cb.Y();
+    });
+}
+
+// Power Trim of overlapping hexes leaves ~6.5 mm² star-tip cells inside Ø33.
+// They are not Selected Contours (film/boss show C + ring + handle).
+std::vector<TopoDS_Shape> drop_circle_slivers(std::vector<TopoDS_Shape> faces,
+                                              const std::vector<CircPad>& circs) {
+    if (circs.empty() || faces.size() < 2) return faces;
+    std::vector<TopoDS_Shape> out;
+    out.reserve(faces.size());
+    for (const auto& f : faces) {
+        const double a = std::abs(shape::area(f));
+        if (a < kPadArea && com_inside_circle(face_com(f), circs)) continue;
+        out.push_back(f);
+    }
+    sort_faces_by_area(out);
+    return out;
+}
+
+// Nested holes punch the 12-point (area 275). Handle lines only appear in
+// the planar split. Add those exterior pads; skip leftover hex cells, the
+// hole's own cell (COM inside the un-punched outer), and C-fragments.
 std::vector<TopoDS_Shape> nest_plus_split_outers(const gp_Pln& pln,
                                                  const std::vector<TopoDS_Shape>& nested,
-                                                 const std::vector<TopoDS_Shape>& split) {
+                                                 const std::vector<TopoDS_Shape>& split,
+                                                 const std::vector<CircPad>& circs) {
     std::vector<TopoDS_Face> outers;
     for (const auto& n : nested) {
         if (!face_has_inner_wire(n)) continue;
@@ -1161,8 +1201,9 @@ std::vector<TopoDS_Shape> nest_plus_split_outers(const gp_Pln& pln,
     std::vector<TopoDS_Shape> out = nested;
     for (const auto& f : split) {
         const double a = std::abs(shape::area(f));
-        if (a < 20.0) continue;
+        if (a < kPadArea) continue;
         const gp_Pnt c = face_com(f);
+        if (com_inside_circle(c, circs)) continue;
         bool skip = false;
         for (const auto& n : nested) {
             if (inside(c, n)) {
@@ -1180,13 +1221,7 @@ std::vector<TopoDS_Shape> nest_plus_split_outers(const gp_Pln& pln,
         if (skip) continue;
         out.push_back(f);
     }
-    std::sort(out.begin(), out.end(), [](const TopoDS_Shape& a, const TopoDS_Shape& b) {
-        double aa = shape::area(a), ba = shape::area(b);
-        if (std::abs(aa - ba) > 1e-9) return aa > ba;
-        gp_Pnt ca = face_com(a), cb = face_com(b);
-        if (std::abs(ca.X() - cb.X()) > 1e-9) return ca.X() < cb.X();
-        return ca.Y() < cb.Y();
-    });
+    sort_faces_by_area(out);
     return out;
 }
 
@@ -1355,7 +1390,11 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
         for (TopExp_Explorer ex(cw, TopAbs_EDGE); ex.More(); ex.Next())
             all_edges.push_back(TopoDS::Edge(ex.Current()));
     }
-
+    std::vector<CircPad> circs;
+    for (const auto* ep : drawn) {
+        if (ep->type != SketchEntityType::Circle) continue;
+        circs.push_back({to3d(p(*ep, 0), p(*ep, 1)), p(*ep, 2)});
+    }
     std::vector<TopoDS_Wire> wires;
     struct OpenEnds {
         gp_Pnt a, b;
@@ -1444,20 +1483,16 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
             }
         }
         shared_opens = shared;
-        // Circle+chord / pliers nose: every open end sits on a closed wire,
-        // so planar split is the right later choice. Interior leftover hex
-        // segments also share endpoints with Ø33 — defer split until after
-        // nested holes punch, or those triangles become extra pads.
         if (!wires.empty()) {
-            // Dangling chains only. Shared opens (chord, pliers nose, leftover
-            // hex segments on Ø33) still nest or split below.
+            // Dangling chains only. Shared opens (chord, pliers, leftover hex
+            // on Ø33) still nest or split below so overlapping hex holes punch.
             if (!shared && stray_open) *stray_open = true;
         } else if (!shared) {
             if (err) *err = "profile has an open loop";
             return {};
         } else {
             auto split = contours_by_planar_split(pln, ax, all_edges, err);
-            if (!split.empty()) return split;
+            if (!split.empty()) return drop_circle_slivers(std::move(split), circs);
             if (err) *err = "profile has an open loop";
             return {};
         }
@@ -1487,24 +1522,21 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
     };
     const double split_a = max_area(split);
     const double chain_a = max_area(contours);
-    // Nested holes already punched (12-point in Ø33). Split would re-emit
-    // leftover interior triangles as Selected Contours, but the handle
-    // lives only in the split (open lines). Merge those exterior pads.
+    auto sliverless = drop_circle_slivers(split, circs);
     if (any_face_has_inner_wire(contours) && !contours.empty())
-        return nest_plus_split_outers(pln, contours, split);
-    // Shared open chains that split an outer (circle+chord → two Ds).
-    if (shared_opens && !split.empty())
-        return split;
-    if (prefer_split && split_a >= chain_a * 0.8 && !split.empty())
-        return split;
+        return nest_plus_split_outers(pln, contours, split, circs);
+    if (shared_opens && !sliverless.empty())
+        return sliverless;
+    if (prefer_split && split_a >= chain_a * 0.8 && !sliverless.empty())
+        return sliverless;
     if (allow_split && split_a > chain_a * 1.2)
-        return split;
+        return sliverless;
     if (contours.empty()) {
-        if (!split.empty()) return split;
+        if (!sliverless.empty()) return sliverless;
         if (err && err->empty()) *err = "no solid contours";
         return {};
     }
-    return contours;
+    return drop_circle_slivers(std::move(contours), circs);
 }
 
 namespace {

@@ -719,6 +719,32 @@ TEST_CASE("contour_faces overlapping hexes inside a circle are one 12-point hole
     CHECK(outlines[0].holes.size() >= 1);
 }
 
+TEST_CASE("contour_faces leftover hex triangles inside Ø33 are not extra pads",
+          "[sketch][contours][rung07]") {
+    // Walk A14 Power Trim leaves small closed triangles on the ring. Those
+    // must join the disc, not show up as extra Selected Contours.
+    Sketch sk("LeftoverHex");
+    sk.add_circle(240.0, 0.0, 16.5);
+    const double pi = std::acos(-1.0);
+    add_af_hex(sk, 240.0, 0.0, 25.0, 0.0);
+    add_af_hex(sk, 240.0, 0.0, 25.0, pi / 6.0);
+    const double r = 16.5;
+    for (int k = 0; k < 4; ++k) {
+        const double a0 = k * pi / 2.0;
+        const double a1 = a0 + 0.18;
+        const double ix = 240.0 + (r - 2.0) * std::cos((a0 + a1) * 0.5);
+        const double iy = (r - 2.0) * std::sin((a0 + a1) * 0.5);
+        sk.add_line(240.0 + r * std::cos(a0), r * std::sin(a0), ix, iy);
+        sk.add_line(ix, iy, 240.0 + r * std::cos(a1), r * std::sin(a1));
+        sk.add_line(240.0 + r * std::cos(a1), r * std::sin(a1),
+                    240.0 + r * std::cos(a0), r * std::sin(a0));
+    }
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    INFO(err << " n=" << outlines.size());
+    REQUIRE(outlines.size() == 1);
+}
+
 namespace {
 
 bool near_pt(const std::array<double, 2>& p, double x, double y, double tol = 1e-6) {
