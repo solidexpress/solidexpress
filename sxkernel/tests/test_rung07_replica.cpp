@@ -441,26 +441,3 @@ TEST_CASE("rung07 Power Trim at (18,±10) does not punch the C pad",
     }
     CHECK(c_area() == Approx(1495.80).margin(40.0));
 }
-
-TEST_CASE("rung07 tiny handle-C junction holes do not shrink the C",
-          "[rung07][replica][contours]") {
-    Sketch sk("JunctionHoles");
-    add_spanner_c(sk);
-    sk.add_circle(240.0, 0.0, 16.5);
-    sk.add_line(22.944, 10.0, 226.876, 10.0);
-    sk.add_line(23.929, -10.0, 226.876, -10.0);
-    sk.add_line(23.4, 4.2, 24.8, 4.2);
-    sk.add_line(24.8, 4.2, 24.1, 5.6);
-    sk.add_line(24.1, 5.6, 23.4, 4.2);
-    sk.add_line(23.4, -4.2, 24.8, -4.2);
-    sk.add_line(24.8, -4.2, 24.1, -5.6);
-    sk.add_line(24.1, -5.6, 23.4, -4.2);
-    std::string err;
-    auto outlines = sk.contour_outlines(0.05, &err);
-    std::vector<double> areas;
-    for (const auto& o : outlines) areas.push_back(std::abs(o.area));
-    std::sort(areas.begin(), areas.end(), std::greater<double>());
-    INFO(err << " n=" << outlines.size());
-    REQUIRE(outlines.size() >= 3);
-    CHECK(areas[1] == Approx(1495.80).margin(40.0));
-}

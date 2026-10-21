@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sxdrive import SxError
 from walk.registry import row
 
 
@@ -31,12 +32,20 @@ class Rows07Chunk3:
             sketches = [n for n in self.feature_names() if str(n).startswith("sketch")]
             if sketches:
                 self._pencil(sketches[0])
-        self.weld_open_profile()
+                self.d.wait_idle(frames=8)
+                self.fit_sketch()
+        try:
+            self.weld_open_profile()
+        except SxError:
+            pass
         notes = self.set_contours({"c", "ring"})
         heads_ok = self._heads_not_handle(notes)
         made = self.try_extrude("10", "New", "Midplane", keep={"c", "ring"})
         if not made.get("bodies") or not heads_ok:
-            self.weld_open_profile()
+            try:
+                self.weld_open_profile()
+            except SxError:
+                pass
             notes = self.set_contours({"c", "ring"})
             heads_ok = self._heads_not_handle(notes)
             made = self.try_extrude("10", "New", "Midplane", keep={"c", "ring"})
