@@ -4951,7 +4951,9 @@ func _crossing_on_curve(curve_id: String, inner: Vector2, outer: Vector2) -> Vec
 			a = m
 		else:
 			b = m
-	return closest_on_entity(curve_id, b)
+	# Stay on the strip. closest_on_entity of an elliptical_arc can jump to a
+	# jaw vertex (the remaining-span ends) and pull the handle through the C.
+	return b
 
 
 func _reweld_jaw_profile() -> void:
