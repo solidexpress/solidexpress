@@ -1,23 +1,27 @@
-# Rung 8 failing — round 4 leftover
+# Rung 8 failing — round 5 leftover
 
 Test-and-fix on `cursor/rung-08-20261019`. Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
 
 Round-3 items stay closed. Glyphs/J6 stay closed. wrench-t14 **18/22** is by-design DIAG (T=14), not a regression.
 
-The original A23 handle-only bbox (`226.876×37.295`) is closed: A14 Power Trim opens the hexes so nest never sees hole wires (Ø33 reads ~823). Product recovers the two AF hexes from vertices on the common circumradius and punches only the circle pad (A_RING 275). r4b bbox **281.450×54.590** PASS.
+A23 bbox **281.450×54.590** stays PASS (hex recovery punches A_RING 275). Round-5 seating that destroyed the C pad was reverted.
 
 ## Walk 7 A23 / A26 volume (finding, 3 attempts)
 
-Boss/neck still **4/5**: volume `41996` vs `41705` (0.71% over the 0.5% band). C contour is **1395** vs A_C **1496** (Δ101 mm², two holes at the handle-C junction, crumbs at (24.1, ±5)). `run_rung07_boss.gd` never draws hexes or A18 overflow trims; it stays `contour_count()==3` (handle 3999, C 1496, disc 855) and volume **41693** PASS.
+Boss/neck **4/5**: volume `41996` vs `41705` (0.71% over the 0.5% band). C contour **1395.6** vs A_C **1496** (Δ101 mm²). A21 lists five regions: handle 3994, C 1395.6, ring 275.2, plus two 2.3×10 mm islands at (24.1, ±5). Those islands are the missing C area; they are not selected as heads (`A_C` band 80). `run_rung07_boss.gd` never draws hexes or A18 overflow trims; `contour_count()==3` (3999/1496/855) volume **41693** PASS.
 
-Kernel replica with leftover hex stubs + `handle_xy` is three regions 3999/1496/275. Walk A18 coincident to `ellipse_major()` (the +Y tip, not the handle hit) plus trim at (18, ±10) on a strip that already sits on the curve is what the walk adds.
+Kernel replica with leftover hex stubs + `handle_xy` is three regions 3999/1496/275. Walk A18 is what adds the split.
 
-Three volume attempts, all reverted:
+Root cause: the handle strips at y=±10 slightly enter the remaining elliptical arc, so OCCT splits two islands off the C. Frames t0264/t0297/t0315 weld the strip to the C at the y=±10 hit then Power Trim overflow. Isolated PlaneGCS point-on-ellipse at that hit stays at y=10 (kernel + `rung07_coincident` 23/0). On the live spanner sketch the same coincident is **rejected** (`Relation did not stick` / `coincident: failed`) — Horizontal + dim 10 + ring coincident + jaw/ellipse dims already busy the system.
 
-1. Draw overflowing handle like t0264, then trim — coincident ellipse failed; trim at (232, ±10) split the strip through Ø33 (bbox 251.8).
-2. Fill nested holes &lt;120 mm² on non-circle pads via `OuterWire` — replaced the C with a 31 mm² fragment.
-3. Skip A18 trim unless a profile line is within 1.5 mm — without the trim the 0.34 mm handle overshoot shatters the C (no 1496/1395 pad; A21 heads miss).
+Three volume attempts this round (seating reverted):
 
-Do not loosen the volume band. Next lever (not this round): coincident the handle *end* to the elliptical_arc at the hit (~23, ±10), not to the major-axis tip.
+1. Walk/fixture coincident at `handle_xy` (~23, ±10) instead of `ellipse_major()`. Both Shift-picks landed on the strip (`Selected 1 sketch entity`); coincident was a no-op. Volume still 41996.
+2. Product: Shift-select skips construction and prefers the curve; coincident with only a strip selected welds ends that sit on a curve. Walk second pick is the C body (24.7, 4). Two entities selected; solver dropped the relation. C stayed 1395.6.
+3. Geometric seat of an interior line end onto the ellipse before extrude. `closest()` on the remaining arc jumped to a jaw vertex and pulled the handle through the C (A21 lost the 1496 pad, then 2 contours / ring 398). Length-filtered seat still dropped the C. Reverted.
 
-Cascade while volume is red: A23/A26 4/5, `check_rung07` boss/neck. Final was 38641 vs 38782 PASS on r4b.
+Do not loosen the volume band. Do not repeat overflow-then-trim, OuterWire fill, skip-A18-trim, or unconstrained seating onto elliptical-arc ends.
+
+Next lever (not this round): keep a **driving** point-on-curve that the busy sketch will accept (weaker sibling constraints on the strip, or a non-DogLeg solve of that coincident alone), so the handle end stays at the y=±10 hit without moving jaw vertices.
+
+Cascade while volume is red: A23/A26 4/5, `check_rung07` boss/neck. Hex-recovery bbox PASS. wrench-t14 18/22 DIAG.

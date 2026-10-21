@@ -130,18 +130,6 @@ static func param_on_span(info: Dictionary, t: float) -> bool:
 	return from <= span + 1e-6
 
 
-## Ellipse implicit at `p`: 1 on the curve, <1 inside, >1 outside.
-static func implicit(info: Dictionary, p: Vector2) -> float:
-	var c: Vector2 = info.get("center", Vector2.ZERO)
-	var rx := float(info.get("rx", 0.0))
-	var ry := float(info.get("ry", 0.0))
-	var ang := float(info.get("angle", 0.0))
-	if rx <= 1e-9 or ry <= 1e-9:
-		return INF
-	var local := (p - c).rotated(-ang)
-	return (local.x / rx) * (local.x / rx) + (local.y / ry) * (local.y / ry)
-
-
 ## Distance from `p` to the ellipse (or remaining elliptical-arc) curve.
 static func distance(info: Dictionary, p: Vector2) -> float:
 	var on := closest(info, p)
