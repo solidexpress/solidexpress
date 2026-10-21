@@ -7528,64 +7528,40 @@ func _lock_sized_circles() -> void:
 		_lock_sized_circle(id)
 
 
-## Snap inference-marked on-circle endpoints onto the circle so the 1e-6
-## chain and `_seal_tangent_bosses` both see a closed wire.
+## Snap Distance-pinned on-circle endpoints onto the circle so the 1e-6
+## chain and `_seal_tangent_bosses` both see a closed wire. Tangent is a
+## mid-edge contact (AF hex, nut hole); do not drag those vertices onto
+## the circle.
 func _weld_on_circle_endpoints(line_id: String = "") -> void:
 	if sketch == null:
 		return
 	for cid in sketch.constraint_ids():
 		var info: Dictionary = sketch.constraint_info(cid)
-		var kind := str(info.get("type", ""))
+		if str(info.get("type", "")) != "distance":
+			continue
 		var refs: Array = info.get("refs", [])
 		if refs.size() < 2:
 			continue
-		if kind == "distance":
-			var lid := ""
-			var role := ""
-			var circ := ""
-			for ref in refs:
-				if typeof(ref) != TYPE_DICTIONARY:
-					continue
-				var eid := str(ref.get("entity", ""))
-				var rle := str(ref.get("role", ""))
-				var einfo: Dictionary = sketch.entity_info(eid)
-				var et := str(einfo.get("type", ""))
-				if et == "line" and (rle == "start" or rle == "end"):
-					lid = eid
-					role = rle
-				elif (et == "circle" or et == "arc") and (rle == "center" or rle == "self"):
-					circ = eid
-			if lid == "" or circ == "":
+		var lid := ""
+		var role := ""
+		var circ := ""
+		for ref in refs:
+			if typeof(ref) != TYPE_DICTIONARY:
 				continue
-			if line_id != "" and lid != line_id:
-				continue
-			_weld_line_role_to_circle(lid, role, circ)
-		elif kind == "tangent":
-			var lid := ""
-			var circ := ""
-			for ref in refs:
-				if typeof(ref) != TYPE_DICTIONARY:
-					continue
-				var eid := str(ref.get("entity", ""))
-				var et := str(sketch.entity_info(eid).get("type", ""))
-				if et == "line":
-					lid = eid
-				elif et == "circle" or et == "arc":
-					circ = eid
-			if lid == "" or circ == "":
-				continue
-			if line_id != "" and lid != line_id:
-				continue
-			var linfo: Dictionary = sketch.entity_info(lid)
-			if linfo.is_empty():
-				continue
-			var cinfo: Dictionary = sketch.entity_info(circ)
-			var c: Vector2 = cinfo["center"]
-			var rad := float(cinfo.get("radius", 0.0))
-			var a: Vector2 = linfo["start"]
-			var b: Vector2 = linfo["end"]
-			var role := "start" if absf(a.distance_to(c) - rad) <= absf(b.distance_to(c) - rad) else "end"
-			_weld_line_role_to_circle(lid, role, circ)
+			var eid := str(ref.get("entity", ""))
+			var rle := str(ref.get("role", ""))
+			var einfo: Dictionary = sketch.entity_info(eid)
+			var et := str(einfo.get("type", ""))
+			if et == "line" and (rle == "start" or rle == "end"):
+				lid = eid
+				role = rle
+			elif (et == "circle" or et == "arc") and (rle == "center" or rle == "self"):
+				circ = eid
+		if lid == "" or circ == "":
+			continue
+		if line_id != "" and lid != line_id:
+			continue
+		_weld_line_role_to_circle(lid, role, circ)
 
 
 func _weld_coincident_line_ends() -> void:

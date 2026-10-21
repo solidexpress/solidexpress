@@ -2026,14 +2026,20 @@ func refresh_contours(sketch: SxSketch) -> void:
 	lbl.add_theme_font_size_override("font_size", UiScale.body())
 	_contour_bar.add_child(lbl)
 	var reuse := false
+	var prev_max := -1
 	if not keep.is_empty():
 		reuse = true
 		for idx in keep:
-			if int(idx) < 0 or int(idx) >= n:
+			var k := int(idx)
+			if k < 0 or k >= n:
 				reuse = false
 				break
+			prev_max = maxi(prev_max, k)
 	for i in n:
-		var on := true if not reuse else keep.has(i)
+		# Preserve a heads/handle pick on the regions that already existed.
+		# A newly split island (second tangent on the wrench blank) stays on.
+		var existed := reuse and i <= prev_max
+		var on := true if not existed else keep.has(i)
 		if on:
 			_selected_contours.append(i)
 		var b := CheckButton.new()
