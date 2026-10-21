@@ -269,12 +269,101 @@ void merge_construction_hits(std::vector<double>& solid, std::vector<double>& co
     unique_sorted(solid);
 }
 
+struct LineHit {
+    double t = 0;
+    EntityId cutter;
+    bool curve = false;
+};
+
+bool is_trim_curve(SketchEntityType t) {
+    return t == SketchEntityType::Circle || t == SketchEntityType::Arc
+        || t == SketchEntityType::Ellipse || t == SketchEntityType::EllipticalArc;
+}
+
+void unique_sorted_hits(std::vector<LineHit>& v) {
+    std::sort(v.begin(), v.end(),
+              [](const LineHit& a, const LineHit& b) { return a.t < b.t; });
+    std::vector<LineHit> out;
+    out.reserve(v.size());
+    for (const auto& h : v) {
+        if (out.empty() || std::abs(h.t - out.back().t) > k_eps) {
+            out.push_back(h);
+        } else if (h.curve && !out.back().curve) {
+            out.back() = h;
+        }
+    }
+    v = std::move(out);
+}
+
+void merge_hit_lists(std::vector<LineHit>& solid, std::vector<LineHit>& construction) {
+    unique_sorted_hits(solid);
+    if (solid.size() >= 2) return;
+    unique_sorted_hits(construction);
+    solid.insert(solid.end(), construction.begin(), construction.end());
+    unique_sorted_hits(solid);
+}
+
+void append_line_hits(std::vector<LineHit>& dest, const std::vector<double>& ts,
+                      EntityId cutter, bool curve) {
+    for (double t : ts) dest.push_back(LineHit{t, cutter, curve});
+}
+
+bool constraint_refs_endpoint(const SketchConstraint& c, EntityId line, PointRole role) {
+    for (const auto& r : c.refs) {
+        if (r.entity == line && r.role == role) return true;
+    }
+    return false;
+}
+
+bool line_has_constraint(const Sketch& s, EntityId id, ConstraintType type) {
+    for (const auto& c : s.constraints()) {
+        if (c.type != type) continue;
+        for (const auto& r : c.refs) {
+            if (r.entity == id && r.role == PointRole::Self) return true;
+        }
+    }
+    return false;
+}
+
+// SolidWorks / FreeCAD trim: the moved vertex drops relations that bound the
+// old location, then sits on the cutter. A mirrored copy keeps Horizontal /
+// Vertical so dropping one Symmetric does not free its y (or x).
+void rebind_trimmed_end(Sketch& s, EntityId line, PointRole role, const LineHit& hit) {
+    if (!hit.curve) return;
+    std::vector<EntityId> drop;
+    std::vector<EntityId> siblings;
+    const bool line_h = line_has_constraint(s, line, ConstraintType::Horizontal);
+    const bool line_v = line_has_constraint(s, line, ConstraintType::Vertical);
+    for (const auto& c : s.constraints()) {
+        if (!constraint_refs_endpoint(c, line, role)) continue;
+        if (c.type != ConstraintType::Symmetric && c.type != ConstraintType::Coincident
+            && c.type != ConstraintType::PointOnLine)
+            continue;
+        drop.push_back(c.id);
+        if (c.type != ConstraintType::Symmetric) continue;
+        for (const auto& r : c.refs) {
+            if (r.entity != line && (r.role == PointRole::Start || r.role == PointRole::End))
+                siblings.push_back(r.entity);
+        }
+    }
+    for (const auto& cid : drop) s.remove_constraint(cid);
+    s.add_constraint(ConstraintType::Coincident,
+                     {{line, role}, {hit.cutter, PointRole::Self}});
+    for (const auto& sib : siblings) {
+        if (!s.entity(sib)) continue;
+        if (line_h && !line_has_constraint(s, sib, ConstraintType::Horizontal))
+            s.add_constraint(ConstraintType::Horizontal, {{sib, PointRole::Self}});
+        if (line_v && !line_has_constraint(s, sib, ConstraintType::Vertical))
+            s.add_constraint(ConstraintType::Vertical, {{sib, PointRole::Self}});
+    }
+}
+
 bool collect_line_intersections(const Sketch& s, const SketchEntity& line,
-                                EntityId self_id, std::vector<double>& ts) {
+                                EntityId self_id, std::vector<LineHit>& ts) {
     Vec2 a0 = line_end(s, line, PointRole::Start);
     Vec2 a1 = line_end(s, line, PointRole::End);
-    std::vector<double> solid;
-    std::vector<double> construction;
+    std::vector<LineHit> solid;
+    std::vector<LineHit> construction;
     for (const SketchEntity& other : s.entities()) {
         if (other.id == self_id) continue;
         std::vector<double> hits;
@@ -337,11 +426,13 @@ bool collect_line_intersections(const Sketch& s, const SketchEntity& line,
                 push_if_on_line({s.param(other.params[7]), s.param(other.params[8])});
                 push_if_on_line({s.param(other.params[9]), s.param(other.params[10])});
             }
+        } else {
+            continue;
         }
         auto& dest = other.construction ? construction : solid;
-        dest.insert(dest.end(), hits.begin(), hits.end());
+        append_line_hits(dest, hits, other.id, is_trim_curve(other.type));
     }
-    merge_construction_hits(solid, construction);
+    merge_hit_lists(solid, construction);
     ts = std::move(solid);
     return !ts.empty();
 }
@@ -404,8 +495,8 @@ bool trim_line(Sketch& s, EntityId id, double px, double py) {
     double len2 = dot(d, d);
     if (len2 < 1e-30) return false;
 
-    std::vector<double> ts;
-    if (!collect_line_intersections(s, *e, id, ts)) return false;
+    std::vector<LineHit> hits;
+    if (!collect_line_intersections(s, *e, id, hits)) return false;
 
     double t_raw = dot(sub({px, py}, a0), d) / len2;
     Vec2 on_seg = add(a0, mul(d, std::clamp(t_raw, 0.0, 1.0)));
@@ -414,11 +505,11 @@ bool trim_line(Sketch& s, EntityId id, double px, double py) {
 
     // Sub-segments: [0, t0], [t0, t1], ..., [tn-1, 1]. Find one containing pick.
     double lo = 0.0;
-    double hi = ts[0];
-    size_t seg = 0;  // 0 = first end, ts.size() = last end, else interior
-    for (size_t i = 0; i <= ts.size(); ++i) {
-        lo = (i == 0) ? 0.0 : ts[i - 1];
-        hi = (i == ts.size()) ? 1.0 : ts[i];
+    double hi = hits[0].t;
+    size_t seg = 0;  // 0 = first end, hits.size() = last end, else interior
+    for (size_t i = 0; i <= hits.size(); ++i) {
+        lo = (i == 0) ? 0.0 : hits[i - 1].t;
+        hi = (i == hits.size()) ? 1.0 : hits[i].t;
         if (t_pick >= lo - k_eps && t_pick <= hi + k_eps) {
             seg = i;
             break;
@@ -428,22 +519,30 @@ bool trim_line(Sketch& s, EntityId id, double px, double py) {
     auto at_t = [&](double t) { return add(a0, mul(d, t)); };
 
     if (seg == 0) {
-        // Trim start end-segment: move start to first intersection.
-        set_line_end(s, *e, PointRole::Start, at_t(ts[0]));
+        set_line_end(s, *e, PointRole::Start, at_t(hits[0].t));
+        rebind_trimmed_end(s, id, PointRole::Start, hits[0]);
         return true;
     }
-    if (seg == ts.size()) {
-        // Trim end end-segment: move end to last intersection.
-        set_line_end(s, *e, PointRole::End, at_t(ts.back()));
+    if (seg == hits.size()) {
+        set_line_end(s, *e, PointRole::End, at_t(hits.back().t));
+        rebind_trimmed_end(s, id, PointRole::End, hits.back());
         return true;
     }
 
     // Interior: replace with two lines [0, lo] and [hi, 1].
     Vec2 p_lo = at_t(lo);
     Vec2 p_hi = at_t(hi);
+    const LineHit lo_hit = hits[seg - 1];
+    const LineHit hi_hit = hits[seg];
     s.remove_entity(id);
-    s.add_line(a0.x, a0.y, p_lo.x, p_lo.y);
-    s.add_line(p_hi.x, p_hi.y, a1.x, a1.y);
+    EntityId left = s.add_line(a0.x, a0.y, p_lo.x, p_lo.y);
+    EntityId right = s.add_line(p_hi.x, p_hi.y, a1.x, a1.y);
+    if (lo_hit.curve)
+        s.add_constraint(ConstraintType::Coincident,
+                         {{left, PointRole::End}, {lo_hit.cutter, PointRole::Self}});
+    if (hi_hit.curve)
+        s.add_constraint(ConstraintType::Coincident,
+                         {{right, PointRole::Start}, {hi_hit.cutter, PointRole::Self}});
     return true;
 }
 
@@ -1158,6 +1257,12 @@ std::vector<std::string> mirror_entities(Sketch& s,
                 s.add_constraint(ConstraintType::Symmetric,
                                  {{id, PointRole::End}, {copy, PointRole::End},
                                   {axis, PointRole::Self}});
+                // Copy orientation so a later trim can drop one Symmetric
+                // without freeing the copy's y (or x). Redundant until then.
+                if (line_has_constraint(s, id, ConstraintType::Horizontal))
+                    s.add_constraint(ConstraintType::Horizontal, {{copy, PointRole::Self}});
+                if (line_has_constraint(s, id, ConstraintType::Vertical))
+                    s.add_constraint(ConstraintType::Vertical, {{copy, PointRole::Self}});
                 break;
             }
             case SketchEntityType::Circle: {

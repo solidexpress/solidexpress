@@ -671,6 +671,69 @@ TEST_CASE("trim_entity does not collapse a handle that already meets the ellipse
     CHECK(sk.param(sk.entity(ln)->params[2]) == Approx(226.876).margin(1e-6));
 }
 
+TEST_CASE("trim mirrored strip to a 17-degree ellipse pins both hits",
+          "[sketchtools][trim][rung07]") {
+    Sketch sk("MirrorTrimEllipse");
+    auto ell = sk.add_ellipse(0.0, 0.0, 27.5, 25.0, kSpannerDeg + kPi * 0.5);
+    auto cl = sk.add_line(-40.0, 0.0, 80.0, 0.0);
+    sk.set_construction(cl, true);
+    auto pin = sk.add_point(0.0, 0.0);
+    sk.add_constraint(ConstraintType::Fix, {{pin, PointRole::Self}});
+    sk.add_constraint(ConstraintType::Coincident,
+                      {{ell, PointRole::Center}, {pin, PointRole::Self}});
+    sk.add_constraint(ConstraintType::Fix, {{cl, PointRole::Self}});
+    auto hi = sk.add_line(18.0, 10.0, 100.0, 10.0);
+    sk.add_constraint(ConstraintType::Horizontal, {{hi, PointRole::Self}});
+    sk.add_constraint(ConstraintType::Distance,
+                      {{hi, PointRole::Start}, {cl, PointRole::Self}}, 10.0);
+    auto copies = mirror_entities(sk, {hi.str()}, cl.str());
+    REQUIRE(copies.size() == 1);
+    EntityId lo = EntityId::from_string(copies[0]);
+    REQUIRE(trim_entity(sk, hi.str(), 18.0, 10.0));
+    REQUIRE(trim_entity(sk, lo.str(), 18.0, -10.0));
+    auto solver = make_planegcs_backend();
+    auto result = solver->solve(sk);
+    REQUIRE(result.ok());
+    REQUIRE(result.conflicting.empty());
+    REQUIRE(result.dofs >= 0);
+    const SketchEntity* eh = sk.entity(hi);
+    const SketchEntity* el = sk.entity(lo);
+    REQUIRE(eh != nullptr);
+    REQUIRE(el != nullptr);
+    auto left_of = [&](const SketchEntity* e) {
+        double x0 = sk.param(e->params[0]), y0 = sk.param(e->params[1]);
+        double x1 = sk.param(e->params[2]), y1 = sk.param(e->params[3]);
+        return x0 <= x1 ? std::array<double, 2>{x0, y0} : std::array<double, 2>{x1, y1};
+    };
+    auto up = left_of(eh);
+    auto dn = left_of(el);
+    CHECK(up[1] == Approx(10.0).margin(0.05));
+    CHECK(dn[1] == Approx(-10.0).margin(0.05));
+    CHECK(up[0] == Approx(22.944).margin(0.4));
+    CHECK(dn[0] == Approx(23.929).margin(0.4));
+    bool hi_on_ell = false;
+    bool lo_on_ell = false;
+    bool start_symmetric = false;
+    for (const auto& c : sk.constraints()) {
+        if (c.type == ConstraintType::Symmetric && c.refs.size() >= 2) {
+            bool hi_start = false, lo_start = false;
+            for (const auto& r : c.refs) {
+                if (r.entity == hi && r.role == PointRole::Start) hi_start = true;
+                if (r.entity == lo && r.role == PointRole::Start) lo_start = true;
+            }
+            if (hi_start && lo_start) start_symmetric = true;
+        }
+        if (c.type != ConstraintType::Coincident || c.refs.size() < 2) continue;
+        bool on_ell = (c.refs[0].entity == ell || c.refs[1].entity == ell);
+        if (!on_ell) continue;
+        if (c.refs[0].entity == hi || c.refs[1].entity == hi) hi_on_ell = true;
+        if (c.refs[0].entity == lo || c.refs[1].entity == lo) lo_on_ell = true;
+    }
+    CHECK(hi_on_ell);
+    CHECK(lo_on_ell);
+    CHECK_FALSE(start_symmetric);
+}
+
 TEST_CASE("offset racetrack stays closed after solve", "[sketchtools][offset][l8]") {
     Sketch sk("Racetrack");
     const double pi = 3.14159265358979323846;

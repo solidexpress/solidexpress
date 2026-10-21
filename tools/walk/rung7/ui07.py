@@ -128,6 +128,11 @@ class WalkUI07(ProfileGestures, BossGestures, DressGestures, WalkChrome):
             return (22.944, half), (ring, half)
         return (23.929, -half), (ring, -half)
 
+    def handle_overflow_xy(self, upper: bool) -> tuple[float, float]:
+        # Frames t0270–t0300: draw the strip long, from inside the C, then Trim.
+        half = self.mm("HANDLE_HALF")
+        return (18.0, half) if upper else (18.0, -half)
+
     def c_body_uv(self) -> tuple[float, float]:
         # +X elliptical-arc pick, off the handle (y=±10) and off the CL (y=0).
         return (24.7, 4.0)

@@ -299,6 +299,8 @@ var last_solve_status := ""
 ## Constraint ids the solver reported as conflicting / redundant.
 var last_conflicting: Array = []
 var last_redundant: Array = []
+## Set when constrain() already named a conflict or redundant relation.
+var last_relation_note := ""
 ## Entity ids involved in conflicting constraints (drawn red).
 var _conflict_entities := {}
 
@@ -3252,12 +3254,63 @@ func measured_value(ids: Array = []) -> float:
 	return 0.0
 
 
+func _constraint_relation_name(type_str: String) -> String:
+	if type_str == "symmetric":
+		return "Symmetric (mirror)"
+	if type_str == "":
+		return ""
+	return type_str.replace("_", " ").capitalize()
+
+
+func _join_relation_names(names: PackedStringArray) -> String:
+	if names.is_empty():
+		return ""
+	if names.size() == 1:
+		return names[0]
+	if names.size() == 2:
+		return "%s and %s" % [names[0], names[1]]
+	var s := names[0]
+	for i in range(1, names.size()):
+		if i == names.size() - 1:
+			s += ", and " + names[i]
+		else:
+			s += ", " + names[i]
+	return s
+
+
+func _named_relations(ids: Array) -> PackedStringArray:
+	var names: PackedStringArray = PackedStringArray()
+	if sketch == null:
+		return names
+	for cid in ids:
+		var t := str(sketch.constraint_info(str(cid)).get("type", ""))
+		var n := _constraint_relation_name(t)
+		if n != "" and not names.has(n):
+			names.append(n)
+	return names
+
+
+func _relation_conflict_message() -> String:
+	var names := _named_relations(last_conflicting)
+	if names.is_empty():
+		return "Relation did not stick"
+	return "Conflicts with " + _join_relation_names(names)
+
+
+func _relation_redundant_message() -> String:
+	var names := _named_relations(last_redundant)
+	if names.is_empty():
+		return "Redundant relation"
+	return "Redundant: " + _join_relation_names(names)
+
+
 ## Applies a constraint to the current selection. Supported types:
 ## horizontal/vertical (each selected line), parallel/perpendicular/equal
 ## (two entities), coincident (nearest endpoints of two lines), distance
 ## (line length, or nearest endpoints of two entities), radius (circle/arc).
 ## Solves afterwards; returns the solve status string ("" when nothing done).
 func constrain(type: String, value: float = 0.0) -> String:
+	last_relation_note = ""
 	if not active or selected.is_empty():
 		return ""
 	var added := false
@@ -3380,14 +3433,22 @@ func constrain(type: String, value: float = 0.0) -> String:
 	var res: Dictionary = run_solve()
 	if str(res.get("status", "")) == "failed" and cid != "":
 		# Same as a failed drag: drop the relation that did not stick and
-		# leave last_solve_status on the previous good solve.
+		# leave last_solve_status on the previous good solve. Name the
+		# diagnose() conflict set before the rollback clears it.
+		last_relation_note = _relation_conflict_message()
 		if sketch.has_method("remove_constraint"):
 			sketch.remove_constraint(cid)
 		for i in range(dimensions.size() - 1, -1, -1):
 			if str(dimensions[i].get("cid", "")) == cid:
 				dimensions.remove_at(i)
 		res = run_solve()
-		status.emit("Relation did not stick")
+		status.emit(last_relation_note)
+		_redraw()
+		_redraw_selected()
+		return "failed"
+	if not last_redundant.is_empty():
+		last_relation_note = _relation_redundant_message()
+		status.emit(last_relation_note)
 	_redraw()
 	_redraw_selected()
 	return res["status"]
@@ -7014,7 +7075,7 @@ func run_solve() -> Dictionary:
 		last_redundant.clear()
 		_conflict_entities.clear()
 		solve_updated.emit(-1, "", 0)
-		return {"dofs": -1, "status": "", "conflicting": PackedStringArray(), "redundant": PackedStringArray()}
+		return {"dofs": -1, "status": "", "residual": 0.0, "conflicting": PackedStringArray(), "redundant": PackedStringArray()}
 	var res: Dictionary = sketch.solve()
 	last_dofs = res["dofs"]
 	last_solve_status = res["status"]
@@ -7501,7 +7562,9 @@ func _restore_distant_line_drift(before: Dictionary, click: Vector2, radius: flo
 		var s0: Vector2 = prev["start"]
 		var e0: Vector2 = prev["end"]
 		var mid0 := (s0 + e0) * 0.5
-		if mid0.distance_to(click) <= radius:
+		# The trimmed line is the one with an end at the click. A long strip's
+		# midpoint can sit 100 mm away even when Power Trim just moved that end.
+		if s0.distance_to(click) <= radius or e0.distance_to(click) <= radius:
 			continue
 		var info: Dictionary = sketch.entity_info(str(id))
 		if info.is_empty() or str(info.get("type", "")) != "line":

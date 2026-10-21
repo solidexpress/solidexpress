@@ -261,6 +261,12 @@ static func handle_xy(upper: bool) -> PackedVector2Array:
 	return PackedVector2Array([Vector2(23.929, -half), Vector2(ring, -half)])
 
 
+## Frames t0270–t0300: draw the strip long, from inside the C, then Trim.
+static func handle_overflow_xy(upper: bool) -> Vector2:
+	var half := mm("HANDLE_HALF")
+	return Vector2(18.0, half if upper else -half)
+
+
 static func span_at(uv: Vector2) -> float:
 	if absf(uv.x - mm("CENTER")) < 40.0:
 		return SPAN_RING
@@ -665,36 +671,35 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 		return
 	await FilmSteps._snap_off_if_visible(ctx)
 	var hi := handle_xy(true)
-	await frame_uv(ctx, (hi[0] + hi[1]) * 0.5, SPAN_HANDLE, "Frame handle")
-	await line(ctx, hi[0], hi[1], "upper handle", 0.0)
+	var overflow := handle_overflow_xy(true)
+	await frame_uv(ctx, (overflow + hi[1]) * 0.5, SPAN_HANDLE, "Frame handle")
+	await line(ctx, overflow, hi[1], "upper handle", 0.0)
 	if _failed():
 		return
-	await constrain_chip(ctx, "Horizontal", hi[0], hi[1])
+	await constrain_chip(ctx, "Horizontal", overflow, hi[1])
 	if _failed():
 		return
-	await dim_two(ctx, Vector2(hi[0].x, 0.0), hi[0], mm_text("HANDLE_HALF"))
+	await dim_two(ctx, Vector2(overflow.x, 0.0), overflow, mm_text("HANDLE_HALF"))
 	if _failed():
 		return
-	var mid := (hi[0] + hi[1]) * 0.5
+	var mid := (overflow + hi[1]) * 0.5
 	await mirror_entities(ctx, Vector2(50, 0), mid, Vector2(100, -30))
 	if _failed():
 		return
 	var lo := handle_xy(false)
 	if _handle_line_at_y(ctx.main.sketch_mode, -mm("HANDLE_HALF")) == "":
 		await FilmSteps._snap_off_if_visible(ctx)
-		await line(ctx, lo[0], lo[1], "lower handle", 0.0)
-		await constrain_chip(ctx, "Horizontal", lo[0], lo[1])
+		var lo_over := handle_overflow_xy(false)
+		await line(ctx, lo_over, lo[1], "lower handle", 0.0)
+		await constrain_chip(ctx, "Horizontal", lo_over, lo[1])
 	if _failed():
 		return
 	await coincident_on_curve(ctx, Vector2(120, 10), Vector2(c.x, r))
-	# Handle end on the C at the y=±10 hit. Second pick is the arc body so
-	# Shift-select adds the ellipse instead of toggling the strip off.
-	var c_body := Vector2(24.7, 4.0)
-	await coincident_on_curve(ctx, Vector2(30, 10), c_body)
 	await coincident_on_curve(ctx, Vector2(120, -10), Vector2(c.x, -r))
-	await coincident_on_curve(ctx, Vector2(30, -10), c_body)
+	# Frames t0297/t0300: Trim the overflow inside the C. Do not coincident
+	# both ends onto the rotated ellipse while Symmetric still binds them.
 	await frame_uv(ctx, Vector2.ZERO, SPAN_HEAD, "Frame C overflow")
-	for uv in [Vector2(18, 10), Vector2(18, -10)]:
+	for uv in [handle_overflow_xy(true), handle_overflow_xy(false)]:
 		if _failed():
 			return
 		await trim_at(ctx, uv, "Trim handle overflow C")

@@ -19,6 +19,8 @@ func _init() -> void:
 	test_editable_dimension(main.sketch_mode)
 	test_constraint_glyphs(main.sketch_mode)
 	test_conflict_coloring(main.sketch_mode)
+	test_conflict_names_relations(main.sketch_mode)
+	test_redundant_is_not_failure(main.sketch_mode)
 	test_dim_click_edit(main)
 	test_dof_chip_and_hint(main)
 
@@ -91,6 +93,62 @@ func test_conflict_coloring(sk: SketchMode) -> void:
 	else:
 		check(true, "conflict list empty (solver failed outright) — entity tint skipped")
 		check(true, "entity tint skipped")
+	sk.infer_enabled = true
+	sk.cancel()
+
+
+func test_conflict_names_relations(sk: SketchMode) -> void:
+	print("- failed add names the conflicting relations")
+	sk.begin(Vector3.ZERO, Vector3(0, 0, 1))
+	sk.set_snap(false)
+	sk.infer_enabled = false
+	sk.set_tool(SketchMode.Tool.LINE)
+	sk.click(Vector2(0, 0))
+	sk.click(Vector2(40, 0))
+	sk.end_chain()
+	var eid: String = sk.sketch.entity_ids()[0]
+	sk.set_tool(SketchMode.Tool.SELECT)
+	sk._set_selected([eid])
+	check(sk.constrain("distance", 40.0) != "failed", "first length sticks")
+	var notes: PackedStringArray = PackedStringArray()
+	var on_status := func(text: String) -> void:
+		notes.append(text)
+	sk.status.connect(on_status)
+	var st := sk.constrain("distance", 60.0)
+	sk.status.disconnect(on_status)
+	var blob := " | ".join(notes)
+	check(st == "failed", "second length is rejected (got %s)" % st)
+	check(blob.contains("Conflicts with") and blob.contains("Distance"),
+			"conflict names the relations (got '%s')" % blob)
+	sk.infer_enabled = true
+	sk.cancel()
+
+
+func test_redundant_is_not_failure(sk: SketchMode) -> void:
+	print("- redundant relations are reported, not failed")
+	sk.begin(Vector3.ZERO, Vector3(0, 0, 1))
+	sk.set_snap(false)
+	sk.infer_enabled = false
+	sk.set_tool(SketchMode.Tool.LINE)
+	sk.click(Vector2(0, 0))
+	sk.click(Vector2(40, 0))
+	sk.end_chain()
+	var eid: String = sk.sketch.entity_ids()[0]
+	sk.set_tool(SketchMode.Tool.SELECT)
+	sk._set_selected([eid])
+	check(sk.constrain("horizontal") != "failed", "first horizontal sticks")
+	var notes: PackedStringArray = PackedStringArray()
+	var on_status := func(text: String) -> void:
+		notes.append(text)
+	sk.status.connect(on_status)
+	var st := sk.constrain("horizontal")
+	sk.status.disconnect(on_status)
+	var blob := " | ".join(notes)
+	check(st != "failed", "duplicate horizontal is not a failure (got %s)" % st)
+	check(blob.contains("Redundant") and blob.contains("Horizontal"),
+			"redundant names the relation (got '%s')" % blob)
+	check(sk.last_solve_status != "failed",
+			"solve status stays non-failed (got %s)" % sk.last_solve_status)
 	sk.infer_enabled = true
 	sk.cancel()
 

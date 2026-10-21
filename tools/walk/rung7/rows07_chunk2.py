@@ -98,7 +98,8 @@ class Rows07Chunk2:
 
     @row("A16", chunk=2, on="rung07", expect={"blocker": "A15", "sketch": True})
     def row_A16(self) -> None:
-        a, b = self.handle_xy(True)
+        a = self.handle_overflow_xy(True)
+        _hit, b = self.handle_xy(True)
         was = self._set_snap(False)
         self.draw_line(a, b)
         self._set_snap(was)
@@ -125,7 +126,8 @@ class Rows07Chunk2:
               if abs(self._pt(ln.get("start") or [0, 0])[1] + 10) <= 0.6
               and abs(self._pt(ln.get("end") or [0, 0])[1] + 10) <= 0.6]
         if not lo:
-            a2, b2 = self.handle_xy(False)
+            a2 = self.handle_overflow_xy(False)
+            _hit, b2 = self.handle_xy(False)
             was = self._set_snap(False)
             self.draw_line(a2, b2)
             self._set_snap(was)
@@ -141,24 +143,30 @@ class Rows07Chunk2:
 
     @row("A18", chunk=2, on="rung07", expect={"blocker": "A17", "sketch": True})
     def row_A18(self) -> None:
-        _hi, circ = self.handle_xy(True)
+        hi_hit, circ = self.handle_xy(True)
+        lo_hit, _circ_lo = self.handle_xy(False)
         n1 = self.constrain("Coincident", (120.0, 10.0), (self.mm("CENTER"), self.mm("RING_D") * 0.5))
-        # Frames t0297/t0315: weld the strip to the C at y=±10. Second pick is
-        # the elliptical-arc body (not the handle end — that toggles the line
-        # off — and not the major-axis / jaw tip).
-        was = self._set_snap(False)
-        c_body = self.c_body_uv()
-        n2 = self.constrain("Coincident", (30.0, 10.0), c_body)
         self.constrain("Coincident", (120.0, -10.0), (self.mm("CENTER"), -self.mm("RING_D") * 0.5))
-        self.constrain("Coincident", (30.0, -10.0), c_body)
-        self._set_snap(was)
-        for uv in ((18.0, 10.0), (18.0, -10.0), (232.0, 10.0), (232.0, -10.0)):
+        # Frames t0297/t0300: Trim the overflow inside the C. Do not coincident
+        # both ends onto the rotated ellipse — Symmetric still binds them.
+        was = self._set_snap(False)
+        for uv in (self.handle_overflow_xy(True), self.handle_overflow_xy(False),
+                   (232.0, 10.0), (232.0, -10.0)):
             self.trim_at(uv)
+        self._set_snap(was)
         types = self.constraint_types()
+        lefts = []
+        for ln in self.profile_lines():
+            sa, sb = self._pt(ln.get("start") or [0, 0]), self._pt(ln.get("end") or [0, 0])
+            left = sa if sa[0] <= sb[0] else sb
+            if abs(abs(left[1]) - 10.0) <= 0.8 and left[0] < 80.0:
+                lefts.append(left)
+        on_c = any(math.hypot(p[0] - hi_hit[0], p[1] - hi_hit[1]) <= 0.8 for p in lefts) and any(
+            math.hypot(p[0] - lo_hit[0], p[1] - lo_hit[1]) <= 0.8 for p in lefts)
         self.clause("coincident ring", "Coincident" in n1 or "coincident" in types, n1)
-        self.clause("coincident ellipse", "Coincident" in n2 or types.count("coincident") >= 2, n2)
+        self.clause("trimmed at c", on_c, str(lefts))
         self.clause("x 226.9", abs(circ[0] - 226.876) <= 0.4, str(circ))
-        self.clause("trimmed", True, "strip")
+        self.clause("trimmed", on_c, "strip")
 
     @row("L3", chunk=2, on="rung07", expect={"blocker": "A18", "sketch": True})
     def row_L3(self) -> None:

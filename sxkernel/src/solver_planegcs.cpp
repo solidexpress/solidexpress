@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <unordered_map>
 
 #include "sx/log.hpp"
@@ -686,7 +687,18 @@ SolveResult PlaneGCSBackendImpl::solve(Sketch& sketch) {
     x.sys.declareUnknowns(unknowns);
     x.sys.initSolution();
     int status = x.sys.solve(true, GCS::DogLeg);
-    if (status == GCS::Success || status == GCS::Converged) {
+    double residual = 0.0;
+    for (int t = 1; t <= tag; ++t) {
+        double err = x.sys.calculateConstraintErrorByTag(t);
+        if (std::isfinite(err)) residual = std::max(residual, std::abs(err));
+    }
+    result.residual = residual;
+    // Converged means the error was minimized, not zeroed. A leftover
+    // residual above 1e-6 is a failed sketch, not a solution. Do not apply
+    // it (and do not add a BFGS fallback that returns Converged).
+    const bool accept = status == GCS::Success
+        || (status == GCS::Converged && residual <= 1e-6);
+    if (accept) {
         x.sys.applySolution();
         for (auto& [idx, p] : x.by_index) sketch.param_mut(idx) = *p;
         sketch.sync_spline_line_tangents();

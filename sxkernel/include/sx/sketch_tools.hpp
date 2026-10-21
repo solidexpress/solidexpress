@@ -32,7 +32,9 @@ std::vector<std::string> offset_entities(Sketch& s,
 //
 // LINE: intersections at parameter t in (0,1), including arc/ellipse endpoints
 // that lie on the segment. End-segment trim shortens the existing line;
-// interior trim removes it and adds two shorter lines.
+// interior trim removes it and adds two shorter lines. When a moved end
+// meets a curve (circle/arc/ellipse), that endpoint drops Symmetric /
+// Coincident / PointOnLine and gains Coincident(point, cutter).
 // CIRCLE: with >= 2 intersections, replaces the circle with an ARC spanning
 // the remaining (untrimmed) portion via Sketch::add_arc.
 // ELLIPSE: with >= 2 intersections, replaces the ellipse with an ELLIPTICAL

@@ -1479,6 +1479,8 @@ func _apply_constraint(type: String, value: float) -> void:
 	var result := sketch_mode.constrain(type, value)
 	if result == "":
 		_on_status("Select entities with the Sel tool first (%s)" % type)
+	elif sketch_mode.last_relation_note != "":
+		pass  # constrain() already named the conflict or redundant set
 	else:
 		var shown := type
 		if type == "vertical":

@@ -524,6 +524,7 @@ Dictionary SxSketch::solve() {
         case sx::SolveStatus::Failed: out["status"] = "failed"; break;
     }
     out["dofs"] = res.dofs;
+    out["residual"] = res.residual;
     PackedStringArray conflicting, redundant;
     for (const auto& id : res.conflicting) conflicting.push_back(to_gd(id.str()));
     for (const auto& id : res.redundant) redundant.push_back(to_gd(id.str()));

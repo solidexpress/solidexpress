@@ -21,6 +21,7 @@ struct SolveResult {
     int dofs = -1;  // remaining degrees of freedom (-1 = unknown)
     std::vector<EntityId> conflicting;  // constraints that conflict
     std::vector<EntityId> redundant;    // constraints that are redundant
+    double residual = 0.0;              // max |constraint error| after solve
     bool ok() const { return status != SolveStatus::Failed; }
 };
 
