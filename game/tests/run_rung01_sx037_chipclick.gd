@@ -150,7 +150,8 @@ func _safe_chrome_click(btn: Button) -> bool:
 	# Commit buttons run a feature (empty Revolve prints a kernel error).
 	# Menus and Save change focus. The rest of the chrome is the click-through set.
 	for skip in ["cancel", "finish", "extrude", "revolve", "ok", "done", "close",
-			"view", "▼", "save", "new", "cut", "intersect", "thin feature", "boss"]:
+			"view", "▼", "save", "new", "cut", "intersect", "thin feature", "boss",
+			"shade", "edges", "wire", "section", "frame"]:
 		if label == skip or label.begins_with(skip + " "):
 			return false
 	if label.begins_with("@") or label == "":

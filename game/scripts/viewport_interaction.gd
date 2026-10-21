@@ -3316,20 +3316,16 @@ func _sync_view_cube_place_through() -> void:
 	hud.set_place_through(_sketch_places_point())
 
 
-## ViewHud buttons and the cube must not eat Line/Trim on the model.
+## Cube + Shade/Section/Frame must not eat Line/Trim on the model.
 func _hud_places_through(ctrl: Control) -> bool:
 	if ctrl == null or not _sketch_places_point():
 		return false
 	if ctrl is ViewWidget:
 		return true
-	var n: Node = ctrl
-	while n != null:
-		if n is PopupMenu or n is PopupPanel:
-			return false
-		if n is ViewHud:
-			return true
-		n = n.get_parent()
-	return false
+	var hud := _named_chrome_control("ViewHud") as ViewHud
+	if hud == null:
+		return false
+	return ctrl == hud._display_btn or ctrl == hud._section_btn or ctrl == hud._fit_btn
 
 
 ## Camera snap when the pointer is on the cube. An open sketch locks

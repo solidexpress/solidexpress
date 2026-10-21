@@ -203,25 +203,20 @@ func set_camera(cam: OrbitCamera) -> void:
 		origin_triad.set_camera(cam)
 
 
-## Draw/trim tools place through this overlay. Cube stays IGNORE either way.
+## Draw/trim tools place through Shade/Section/Frame. Cube stays IGNORE.
+## View strip (▼ / Save) stays STOP so Front-view still opens.
 func set_place_through(on: bool) -> void:
 	if view_cube != null:
 		view_cube.place_through = true
 		if view_cube.mouse_filter != Control.MOUSE_FILTER_IGNORE:
 			view_cube.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var filt := Control.MOUSE_FILTER_IGNORE if on else Control.MOUSE_FILTER_STOP
-	_set_buttons_filter(self, filt)
-
-
-func _set_buttons_filter(node: Node, filt: int) -> void:
-	if node is ViewWidget or node is PopupMenu or node is PopupPanel:
-		return
-	if node is BaseButton:
-		(node as BaseButton).mouse_filter = filt
-	for child in node.get_children():
-		if child is PopupMenu or child is PopupPanel:
-			continue
-		_set_buttons_filter(child, filt)
+	if _display_btn != null:
+		_display_btn.mouse_filter = filt
+	if _section_btn != null:
+		_section_btn.mouse_filter = filt
+	if _fit_btn != null:
+		_fit_btn.mouse_filter = filt
 
 
 func sync_from_view(view: DocumentView) -> void:
