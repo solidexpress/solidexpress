@@ -50,6 +50,25 @@ class BossGestures:
         )
         return has_c and has_ring and not handle_as_head
 
+    def _contour_wanted_row(self, keep: set[str], row: dict) -> bool:
+        area = abs(float(row.get("area") or 0.0))
+        sz = row.get("size") or [0, 0]
+        mn = row.get("min") or [0, 0]
+        w, h = float(sz[0]), float(sz[1])
+        cx = float(mn[0]) + w * 0.5
+        long_side = max(w, h)
+        note = "— %.1f × %.1f mm at (%.1f, 0)" % (w, h, cx)
+        for token in keep:
+            if token == "c" and abs(area - self.mm("A_C")) < 80:
+                return True
+            if token == "ring" and abs(area - self.mm("A_RING")) < 50:
+                return True
+            if token == "handle" and abs(area - self.mm("A_H")) < 250:
+                return True
+            if token == "recess" and 80.0 < long_side < 200.0 and 6.0 <= min(w, h) <= 16.0:
+                return True
+        return self._contour_wanted(keep, note)
+
     def _contour_wanted(self, keep: set[str], note: str) -> bool:
         cx, _cy, width, height = self._parse_contour_note(note)
         long_side = max(width, height)
@@ -65,62 +84,27 @@ class BossGestures:
         return False
 
     def set_contours(self, keep: set[str]) -> list[str]:
-        # Kernel outlines, not accumulated status: a leftover C sentence used
-        # to mark the handle chip as a head (A23 226.876×37.295).
+        # Area from kernel outlines (A_C / A_RING / A_H). Chip clicks plus
+        # mixed status notes picked the handle pad (A23 226.876×37.295).
         self._ensure_finish_bar()
+        snap = self.refresh("controls", "contour_regions")
+        regions = list(snap.get("contour_regions") or [])
         notes: list[str] = []
-        for _attempt in range(3):
-            snap = self.refresh("controls", "contour_regions")
-            regions = list(snap.get("contour_regions") or [])
-            mapping: list[tuple[str, bool]] = []
-            notes = []
-            if regions:
-                for i, row in enumerate(regions):
-                    sz = row.get("size") or [0, 0]
-                    mn = row.get("min") or [0, 0]
-                    w, h = float(sz[0]), float(sz[1])
-                    cx = float(mn[0]) + w * 0.5
-                    cy = float(mn[1]) + h * 0.5
-                    note = "Contour %d of %d — %.1f × %.1f mm at (%.1f, %.1f)" % (
-                        i + 1, len(regions), w, h, cx, cy)
-                    want = self._contour_wanted(keep, note)
-                    notes.append(note)
-                    mapping.append((f"contour:{i + 1}", want))
-            else:
-                self.uncheck_all_contours()
-                self.refresh("controls")
-                for chip in self.contour_chips():
-                    cid = str(chip.get("id", ""))
-                    if not cid:
-                        continue
-                    mark = self.mark()
-                    self.click(cid)
-                    self.d.wait_idle(frames=1)
-                    note = " | ".join(self.result_texts(mark)) or self.S()
-                    want = self._contour_wanted(keep, note)
-                    notes.append(note)
-                    mapping.append((cid, want))
-            want_idx = [i for i, (_cid, want) in enumerate(mapping) if want]
-            self.d.call("select_contours", indices=want_idx)
-            self.refresh("controls")
-            self.uncheck_all_contours()
-            ok = True
-            for _pass in range(2):
-                self.refresh("controls")
-                for cid, want in mapping:
-                    node = self.control(cid) or {}
-                    pressed = bool(node.get("pressed") or node.get("button_pressed"))
-                    if want != pressed:
-                        self.click(cid)
-                        self.d.wait_idle(frames=1)
-                        node = self.control(cid) or {}
-                        pressed = bool(node.get("pressed") or node.get("button_pressed"))
-                    if want != pressed:
-                        ok = False
-            self.d.call("select_contours", indices=want_idx)
-            if ok or want_idx:
-                break
-        self.refresh("controls")
+        want_idx: list[int] = []
+        for i, row in enumerate(regions):
+            sz = row.get("size") or [0, 0]
+            mn = row.get("min") or [0, 0]
+            w, h = float(sz[0]), float(sz[1])
+            cx = float(mn[0]) + w * 0.5
+            cy = float(mn[1]) + h * 0.5
+            area = abs(float(row.get("area") or 0.0))
+            note = "Contour %d of %d — %.1f × %.1f mm at (%.1f, %.1f) area=%.1f" % (
+                i + 1, len(regions), w, h, cx, cy, area)
+            notes.append(note)
+            if self._contour_wanted_row(keep, row):
+                want_idx.append(i)
+        self.d.call("select_contours", indices=want_idx)
+        self.d.wait_idle(frames=2)
         return notes
 
     def uncheck_all_contours(self) -> None:
