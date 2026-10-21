@@ -4004,7 +4004,7 @@ func trim_at(pos2: Vector2) -> bool:
 	# jaws when Power Trim ran on the handle overflow next to them.
 	if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
 		_restore_untrimmed_line_drift(pre_lines, id)
-		_weld_nearby_curve_joints()
+		_weld_nearby_curve_joints(0.8)
 	_drop_stale_dimensions()
 	var alive: Array[String] = []
 	for sid in selected:
@@ -7576,9 +7576,15 @@ func _snapshot_line_geometry() -> Dictionary:
 		if sketch.is_construction(id):
 			continue
 		var info: Dictionary = sketch.entity_info(id)
-		if str(info.get("type", "")) != "line":
+		var kind := str(info.get("type", ""))
+		if kind != "line" and kind != "arc" and kind != "elliptical_arc":
 			continue
-		out[id] = {"start": info["start"], "end": info["end"]}
+		var row := {"start": info["start"], "end": info["end"]}
+		if info.has("start_angle"):
+			row["start_angle"] = info["start_angle"]
+		if info.has("end_angle"):
+			row["end_angle"] = info["end_angle"]
+		out[id] = row
 	return out
 
 
@@ -7597,13 +7603,14 @@ func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String) -> vo
 		var s0: Vector2 = prev["start"]
 		var e0: Vector2 = prev["end"]
 		var info: Dictionary = sketch.entity_info(str(id))
-		if info.is_empty() or str(info.get("type", "")) != "line":
+		var kind := str(info.get("type", ""))
+		if info.is_empty() or (kind != "line" and kind != "arc" and kind != "elliptical_arc"):
 			continue
 		var s1: Vector2 = info["start"]
 		var e1: Vector2 = info["end"]
 		if s0.distance_to(s1) <= 0.5 and e0.distance_to(e1) <= 0.5:
 			continue
-		sketch.set_entity_geometry(str(id), {"start": s0, "end": e0})
+		sketch.set_entity_geometry(str(id), prev)
 
 
 func _restore_flipped_shaft_lines(before: Dictionary) -> void:
