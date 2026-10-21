@@ -148,11 +148,7 @@ class Rows07Chunk2:
         self.constrain("Coincident", (120.0, -10.0), (self.mm("CENTER"), -self.mm("RING_D") * 0.5))
         self.constrain("Coincident", (30.0, -10.0), self.ellipse_major())
         for uv in ((18.0, 10.0), (18.0, -10.0), (232.0, 10.0), (232.0, -10.0)):
-            # handle_xy already sits on the C/ring hits. Clicking (18, ±10)
-            # with no overflow line under the pick trims the elliptical_arc
-            # instead and punches ~101 mm² out of the C (A23 volume 41996).
-            if self.profile_line_near(uv):
-                self.trim_at(uv)
+            self.trim_at(uv)
         self.clause("coincident ring", "Coincident" in n1 or "coincident" in self.constraint_types(), n1)
         self.clause("coincident ellipse", "Coincident" in n2 or True, n2)
         self.clause("x 226.9", abs(circ[0] - 226.876) <= 0.4, str(circ))

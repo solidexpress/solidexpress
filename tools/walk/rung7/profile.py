@@ -176,24 +176,6 @@ class ProfileGestures:
         self.refresh("sketch", "status", "dims")
         return {"status": self.S(), "lines": self.profile_lines()}
 
-    def profile_line_near(self, uv, tol: float = 1.5) -> bool:
-        px, py = float(uv[0]), float(uv[1])
-        for ln in self.profile_lines():
-            sa = self._pt(ln.get("start") or [0, 0])
-            sb = self._pt(ln.get("end") or [0, 0])
-            ax, ay = float(sa[0]), float(sa[1])
-            bx, by = float(sb[0]), float(sb[1])
-            dx, dy = bx - ax, by - ay
-            length2 = dx * dx + dy * dy
-            if length2 < 1e-12:
-                dist = math.hypot(px - ax, py - ay)
-            else:
-                t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length2))
-                dist = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
-            if dist <= tol:
-                return True
-        return False
-
     def trim_at(self, uv) -> str:
         self._frame_uv(uv)
         self.click("rail:Trim")

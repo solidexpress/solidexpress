@@ -693,33 +693,13 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	for uv in [Vector2(18, 10), Vector2(18, -10)]:
 		if _failed():
 			return
-		# No overflow line (handle already on the C) → skip; otherwise the
-		# pick lands on the elliptical_arc and punches the pad.
-		if _profile_line_near(ctx.main.sketch_mode, uv):
-			await trim_at(ctx, uv, "Trim handle overflow C")
+		await trim_at(ctx, uv, "Trim handle overflow C")
 	await frame_uv(ctx, c, SPAN_RING, "Frame ring overflow")
 	for uv in [Vector2(232, 10), Vector2(232, -10)]:
 		if _failed():
 			return
-		if _profile_line_near(ctx.main.sketch_mode, uv):
-			await trim_at(ctx, uv, "Trim handle overflow ring")
+		await trim_at(ctx, uv, "Trim handle overflow ring")
 	await _ensure_ring_circle(ctx)
-
-
-static func _profile_line_near(sm: SketchMode, uv: Vector2, tol: float = 1.5) -> bool:
-	if sm == null or sm.sketch == null:
-		return false
-	for id in sm.sketch.entity_ids():
-		if sm.sketch.is_construction(id):
-			continue
-		var info: Dictionary = sm.sketch.entity_info(id)
-		if str(info.get("type", "")) != "line":
-			continue
-		var a: Vector2 = info.get("start", Vector2.ZERO)
-		var b: Vector2 = info.get("end", Vector2.ZERO)
-		if SketchGeom.point_segment_distance(uv, a, b) <= tol:
-			return true
-	return false
 
 
 static func _handle_line_at_y(sm: SketchMode, y: float) -> String:
