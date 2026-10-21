@@ -152,6 +152,7 @@ func _commands() -> Dictionary:
 		"mate_remove": {call=_cmd_mate_remove, frames=2, reports=true},
 		"export_body": {call=_cmd_export_body, frames=4, reports=true},
 		"sketch_pin_profile": {call=_cmd_sketch_pin_profile, frames=2, reports=true},
+		"sketch_add_twelve_point": {call=_cmd_sketch_add_twelve_point, frames=2, reports=true},
 	}
 
 
@@ -375,6 +376,29 @@ func _cmd_sketch_pin_profile(_req: Dictionary) -> Dictionary:
 		"axis": axis,
 		"lines": sm.sketch.entity_ids().size(),
 	}
+
+
+## Union of two AF hexes as a 24-gon star. Click-drawn 12-point cuts leave
+## ~0.3 cm³ in the bore (walk A23 41997 vs 41705). Kernel lines match film.
+func _cmd_sketch_add_twelve_point(req: Dictionary) -> Dictionary:
+	var sm = _main().get("sketch_mode")
+	if sm == null or not bool(sm.active) or sm.sketch == null:
+		return {"error": "no active sketch"}
+	var c := Vector2(float(req.get("cx", 240.0)), float(req.get("cy", 0.0)))
+	var af := float(req.get("af", 25.0))
+	var outer := af / sqrt(3.0)
+	var inner := (af * 0.5) / cos(deg_to_rad(15.0))
+	var n := 0
+	for i in 24:
+		var ra := outer if (i % 2) == 0 else inner
+		var rb := outer if ((i + 23) % 2) == 0 else inner
+		var a := c + Vector2.from_angle(deg_to_rad(float(i) * 15.0)) * ra
+		var b := c + Vector2.from_angle(deg_to_rad(float((i + 23) % 24) * 15.0)) * rb
+		if sm.sketch.add_line(a.x, a.y, b.x, b.y) != "":
+			n += 1
+	if sm.has_method("_redraw"):
+		sm._redraw()
+	return {"lines": n}
 
 
 ## Same path as the Godot offset suite: finish_extrude with empty contours.

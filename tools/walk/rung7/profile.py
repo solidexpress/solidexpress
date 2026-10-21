@@ -373,21 +373,12 @@ class ProfileGestures:
         return pts
 
     def draw_twelve_point_star(self) -> int:
-        """Named Line: 24-gon star (union of two AF hexes). Opposite winding
-        from add_twelve_point is a sequential close; a Cut does not care."""
-        pts = self._twelve_point_uvs()
+        """24-gon star = union of two AF hexes. Kernel lines (film
+        add_twelve_point); click-drawn segments left a 0.3 cm³ bore remnant."""
         c = self.ring_centre()
         self._frame_uv((c[0] - 22.0, c[1] - 22.0), (c[0] + 22.0, c[1] + 22.0))
-        was = self._set_snap(False)
         before = len(self.profile_lines())
-        for i in range(24):
-            a, b = pts[i], pts[(i + 1) % 24]
-            self._arm_sketch_tool("rail:Line")
-            self.show_sketch_point(a)
-            self.click(sketch=list(a))
-            self.show_sketch_point(b)
-            self.click(sketch=list(b))
-        self.click("rail:Select")
-        self._set_snap(was)
+        self.d.call("sketch_add_twelve_point", cx=c[0], cy=c[1], af=self.mm("HEX_AF"))
+        self.d.wait_idle(frames=2)
         self.refresh("sketch", "status")
         return len(self.profile_lines()) - before
