@@ -311,6 +311,34 @@ class WalkRegistryTests(unittest.TestCase):
         self.assertEqual(suite_check_counts(log, "rung01 wrench walk"), (711, 0))
         self.assertIsNone(suite_check_counts(log, "rung01 replan19 shield"))
 
+    def test_suite_check_counts_survives_engine_reprint(self) -> None:
+        from walk.gates import suite_check_counts
+
+        log = (
+            "rung01 replan19 keys\n"
+            "Godot Engine v4.7.stable reprint mid-suite\n"
+            "151 checks, 0 failures\n"
+            "Godot Engine v4.7.stable\n"
+            "rung01 wrench walk (replan-6 WP4 sx-026 sequence)\n"
+            "711 checks, 0 failures\n"
+        )
+        self.assertEqual(suite_check_counts(log, "rung01 replan19 keys"), (151, 0))
+        self.assertEqual(suite_check_counts(log, "rung01 wrench walk"), (711, 0))
+        self.assertIsNone(suite_check_counts(log, "prefix rung01 replan19 keys"))
+
+    def test_parse_tier_prefers_full_summary(self) -> None:
+        from walk.gates import parse_tier
+
+        log = (
+            "note suites: 1 run, 1 failed in a sentence\n"
+            "suites: 262 run, 0 failed\n"
+            "ALSA stderr\n"
+            "suites: 1 run, 1 failed\n"
+        )
+        self.assertEqual(parse_tier(log), (262, 0))
+        self.assertEqual(parse_tier("suites: 262 run, 1 failed\n"), (262, 1))
+        self.assertIsNone(parse_tier("still red: tests/foo.gd\n"))
+
     def test_run_tier_uses_confirm_cache(self) -> None:
         import os
         import tempfile

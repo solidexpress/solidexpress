@@ -14,8 +14,11 @@ from walk import proc
 _SUITES = re.compile(
     r"lint_suites:\s*(\d+)\s+suites ok\s+\((\d+)\s+ci,\s+(\d+)\s+full,\s+(\d+)\s+known-red\)"
 )
-_TIER = re.compile(r"suites:\s*(\d+)\s+run,\s*(\d+)\s+failed")
+_TIER = re.compile(r"(?m)^suites:\s*(\d+)\s+run,\s*(\d+)\s+failed\s*$")
 _CHECKS_LINE = re.compile(r"(?m)^(\d+) checks, (\d+) failures$")
+# A15 / automation-bridge: full tier is n ≥ 204. Prefer that over a stray
+# inner `suites: 1 run` that confirm_all may append from stderr.
+_TIER_FULL_MIN = 204
 
 
 def parse_suites(text: str) -> tuple[int, int, int] | None:
@@ -27,26 +30,28 @@ def parse_suites(text: str) -> tuple[int, int, int] | None:
 
 
 def parse_tier(text: str) -> tuple[int, int] | None:
-    found = _TIER.findall(text)
+    found = [(int(run), int(failed)) for run, failed in _TIER.findall(text)]
     if not found:
         return None
-    run, failed = found[-1]
-    return int(run), int(failed)
+    full = [pair for pair in found if pair[0] >= _TIER_FULL_MIN]
+    return full[-1] if full else found[-1]
 
 
 def suite_check_counts(log: str, banner: str) -> tuple[int, int] | None:
     """Counts line for one concatenated suite, even when its body is >80k.
 
-    run_suites.sh cats each suite log in full, so the Catch2 summary sits
-    after that suite's banner and before the next Godot Engine header.
+    run_suites.sh cats each suite log in full. The Catch2 summary sits after
+    that suite's banner. A mid-log 'Godot Engine' reprint must not hide it.
     """
-    idx = log.find(banner)
-    if idx < 0:
+    found_banner = re.search(rf"(?m)^{re.escape(banner)}", log)
+    if not found_banner:
         return None
-    rest = log[idx:]
-    end = rest.find("\nGodot Engine", 1)
-    block = rest if end < 0 else rest[:end]
-    found = list(_CHECKS_LINE.finditer(block))
+    rest = log[found_banner.start():]
+    parts = rest.split("\nGodot Engine")
+    chunk = parts[0]
+    if not _CHECKS_LINE.search(chunk) and len(parts) > 1:
+        chunk = parts[0] + "\nGodot Engine" + parts[1]
+    found = list(_CHECKS_LINE.finditer(chunk))
     if not found:
         return None
     n, failed = found[-1].groups()
