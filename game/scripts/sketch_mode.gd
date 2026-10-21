@@ -3446,7 +3446,9 @@ func constrain(type: String, value: float = 0.0) -> String:
 		_redraw()
 		_redraw_selected()
 		return "failed"
-	if not last_redundant.is_empty():
+	# Only name a leftover as redundant when the constraint just added is in
+	# that set. A prior Tangent leftover must not overwrite "Vertical".
+	if cid != "" and last_redundant.has(cid):
 		last_relation_note = _relation_redundant_message()
 		status.emit(last_relation_note)
 	_redraw()
@@ -3969,8 +3971,10 @@ func trim_at(pos2: Vector2) -> bool:
 	# Hex trim around the ring must not DogLeg the C jaws 240 mm away.
 	# Only when the C (ellipse) is present — a wrench jaw has no ellipse,
 	# and restoring distant lines there leaves extra glyphs / 22.5 callouts.
+	# Skip only the trimmed entity: a click-radius skip also ignored the C
+	# jaws when Power Trim ran on the handle overflow next to them.
 	if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
-		_restore_distant_line_drift(pre_lines, pos2)
+		_restore_untrimmed_line_drift(pre_lines, id)
 		_weld_nearby_curve_joints()
 	_drop_stale_dimensions()
 	var alive: Array[String] = []
@@ -7554,18 +7558,15 @@ func _snapshot_line_geometry() -> Dictionary:
 ## one hit on each side of the shaft.
 ## Put back profile lines whose midpoint was far from `click` if solve moved
 ## them. Trim+solve of the 12-point at x=240 was translating the C jaws.
-func _restore_distant_line_drift(before: Dictionary, click: Vector2, radius: float = 50.0) -> void:
+func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String) -> void:
 	if sketch == null or before.is_empty():
 		return
 	for id in before.keys():
+		if str(id) == trimmed_id:
+			continue
 		var prev: Dictionary = before[id]
 		var s0: Vector2 = prev["start"]
 		var e0: Vector2 = prev["end"]
-		var mid0 := (s0 + e0) * 0.5
-		# The trimmed line is the one with an end at the click. A long strip's
-		# midpoint can sit 100 mm away even when Power Trim just moved that end.
-		if s0.distance_to(click) <= radius or e0.distance_to(click) <= radius:
-			continue
 		var info: Dictionary = sketch.entity_info(str(id))
 		if info.is_empty() or str(info.get("type", "")) != "line":
 			continue

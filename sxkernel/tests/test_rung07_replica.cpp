@@ -445,3 +445,63 @@ TEST_CASE("rung07 Power Trim at (18,±10) does not punch the C pad",
     }
     CHECK(c_area() == Approx(1495.80).margin(40.0));
 }
+
+TEST_CASE("rung07 overflow strip trimmed at C keeps the pad",
+          "[rung07][replica][trim][overflow]") {
+    Sketch sk("OverflowTrimC");
+    add_spanner_c(sk);
+    sk.add_circle(240.0, 0.0, 16.5);
+    auto hi = sk.add_line(18.0, 10.0, 226.876, 10.0);
+    auto lo = sk.add_line(18.0, -10.0, 226.876, -10.0);
+    REQUIRE(sketch_tools::trim_entity(sk, hi.str(), 18.0, 10.0));
+    REQUIRE(sketch_tools::trim_entity(sk, lo.str(), 18.0, -10.0));
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    std::vector<double> areas;
+    std::ostringstream dump;
+    dump << err << " n=" << outlines.size();
+    int n_lines = 0;
+    for (const auto& e : sk.entities()) {
+        if (e.type == SketchEntityType::Line && !e.construction) ++n_lines;
+    }
+    dump << " lines=" << n_lines;
+    for (const auto& o : outlines) {
+        areas.push_back(std::abs(o.area));
+        dump << " " << std::abs(o.area);
+    }
+    std::sort(areas.begin(), areas.end(), std::greater<double>());
+    INFO(dump.str());
+    REQUIRE(outlines.size() >= 3);
+    CHECK(areas[1] == Approx(1495.80).margin(40.0));
+}
+
+TEST_CASE("rung07 hexes plus overflow trim still keep the C pad",
+          "[rung07][replica][trim][overflow]") {
+    Sketch sk("OverflowHexTrimC");
+    add_spanner_c(sk);
+    sk.add_circle(240.0, 0.0, 16.5);
+    add_af_hex(sk, 240.0, 0.0, 25.0, 0.0);
+    add_af_hex(sk, 240.0, 0.0, 25.0, kPi / 6.0);
+    trim_hex_inners(sk, 240.0, 0.0);
+    auto hi = sk.add_line(18.0, 10.0, 226.876, 10.0);
+    auto lo = sk.add_line(18.0, -10.0, 226.876, -10.0);
+    REQUIRE(sketch_tools::trim_entity(sk, hi.str(), 18.0, 10.0));
+    REQUIRE(sketch_tools::trim_entity(sk, lo.str(), 18.0, -10.0));
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    std::vector<double> areas;
+    std::ostringstream dump;
+    dump << err << " n=" << outlines.size();
+    for (const auto& o : outlines) {
+        areas.push_back(std::abs(o.area));
+        dump << " " << std::abs(o.area);
+    }
+    std::sort(areas.begin(), areas.end(), std::greater<double>());
+    INFO(dump.str());
+    REQUIRE(outlines.size() >= 3);
+    bool has_c = false;
+    for (double a : areas) {
+        if (std::abs(a - 1495.80) <= 40.0) has_c = true;
+    }
+    CHECK(has_c);
+}
