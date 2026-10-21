@@ -3245,7 +3245,7 @@ func _over_chrome_who(global_mouse: Vector2) -> String:
 func _pointer_hits_control(ctrl: Control, pos: Vector2) -> bool:
 	if ctrl == null or not is_instance_valid(ctrl):
 		return false
-	if ctrl is ViewWidget and _sketch_places_point():
+	if _hud_places_through(ctrl):
 		return false
 	# IGNORE shells (variant row, action stack) must not own a canvas press.
 	# Their buttons still hit via the global rect below and via chrome walk.
@@ -3288,10 +3288,10 @@ func _control_blocks_at(ctrl: Control, pos: Vector2, max_area: float) -> bool:
 	# the canvas. Buttons and STOP rows still do.
 	if ctrl.mouse_filter == Control.MOUSE_FILTER_IGNORE and not (ctrl is BaseButton):
 		return false
-	# Line places through the ViewCube the same way it places through a
-	# dimension label. WP-V3's 84 px cube sits on the jaw head at the
-	# default face-sketch frame; eating that click left no cutter.
-	if ctrl is ViewWidget and _sketch_places_point():
+	# Line places through the ViewCube / Shade / Frame the same way it
+	# places through a dimension label. WP-V3's 84 px cube and the HUD
+	# buttons sit on the C / jaw at the default face-sketch frame.
+	if _hud_places_through(ctrl):
 		return false
 	# Global rect only. The canvas-transform rect used for a hovered chip
 	# (`_pointer_hits_control`) is a different space; applying it to every
@@ -3308,14 +3308,30 @@ func _sketch_places_point() -> bool:
 	return sketch_mode != null and sketch_mode.places_on_model()
 
 
-## Cube is IGNORE so `_gui_input` cannot snap before this `_input` places.
+## Cube stays IGNORE. Shade/Frame IGNORE only while a draw tool is placing.
 func _sync_view_cube_place_through() -> void:
 	var hud := _named_chrome_control("ViewHud") as ViewHud
-	if hud == null or hud.view_cube == null:
+	if hud == null:
 		return
-	hud.view_cube.place_through = true
-	if hud.view_cube.mouse_filter != Control.MOUSE_FILTER_IGNORE:
-		hud.view_cube.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.set_place_through(_sketch_places_point())
+
+
+## ViewHud buttons and the cube must not eat Line/Trim on the model.
+func _hud_places_through(ctrl: Control) -> bool:
+	if ctrl == null or not _sketch_places_point():
+		return false
+	if ctrl is ViewWidget:
+		return true
+	if ctrl is PopupMenu or ctrl is PopupPanel:
+		return false
+	var n: Node = ctrl
+	while n != null:
+		if n is PopupMenu or n is PopupPanel:
+			return false
+		if n is ViewHud:
+			return true
+		n = n.get_parent()
+	return false
 
 
 ## Camera snap when the pointer is on the cube. An open sketch locks

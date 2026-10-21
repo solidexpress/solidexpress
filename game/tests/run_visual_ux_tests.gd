@@ -506,6 +506,40 @@ func test_view_hud(main) -> void:
 	check(cam.named_view_list().is_empty(), "Views empty after deleting all")
 	hud._views_popup.hide()
 
+	# Shade/Frame IGNORE while Line/Trim is placing so the C/jaw click lands.
+	print("- Shade/Frame IGNORE while placing")
+	view.new_document()
+	var sm: SketchMode = main.sketch_mode
+	sm.begin(Vector3.ZERO, Vector3(0, 0, 1))
+	await process_frame
+	sm.set_tool(SketchMode.Tool.LINE)
+	await process_frame
+	ix._sync_view_cube_place_through()
+	check(hud._display_btn.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+		"Shade IGNORE while Line is placing")
+	check(hud._fit_btn.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+		"Frame IGNORE while Line is placing")
+	var shade_at: Vector2 = hud._display_btn.get_global_rect().get_center()
+	var who := ix._over_chrome_who(shade_at)
+	check(who == "", "Line place is not chrome on Shade (got %s)" % who)
+	var frame_at: Vector2 = hud._fit_btn.get_global_rect().get_center()
+	who = ix._over_chrome_who(frame_at)
+	check(who == "", "Line place is not chrome on Frame (got %s)" % who)
+	sm.set_tool(SketchMode.Tool.SELECT)
+	await process_frame
+	ix._sync_view_cube_place_through()
+	check(hud._display_btn.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"Shade STOP when Select is armed")
+	check(hud._fit_btn.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"Frame STOP when Select is armed")
+	sm.cancel()
+	await process_frame
+	ix._sync_view_cube_place_through()
+	check(hud._display_btn.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"Shade STOP after sketch cancel")
+	check(hud._fit_btn.mouse_filter == Control.MOUSE_FILTER_STOP,
+		"Frame STOP after sketch cancel")
+
 
 func test_push_pull_preview_state(main) -> void:
 	print("- push/pull preview distance state")

@@ -50,7 +50,8 @@ var view_cube: ViewWidget
 func _ready() -> void:
 	# IGNORE shell: padding around the cube / buttons must not steal a Line
 	# click that lands on the model under this overlay (jaw diagonal, Ø45).
-	# ViewCube stays IGNORE too; Shade/Section/Frame keep STOP.
+	# ViewCube stays IGNORE. Shade/Section/Frame are STOP except while a
+	# draw tool is placing — ViewportInteraction.set_place_through.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Transparent shell so the RGB sticks float without a panel backdrop.
 	add_theme_stylebox_override("panel", StyleBoxEmpty.new())
@@ -73,6 +74,7 @@ func _ready() -> void:
 	btn_col.add_theme_constant_override("separation", 4)
 	controls.add_child(btn_col)
 	_display_btn = Button.new()
+	_display_btn.name = "Shade"
 	_display_btn.text = "Shade"
 	_display_btn.tooltip_text = "Cycle display mode (Shift+W)"
 	_display_btn.pressed.connect(func() -> void: display_cycle_requested.emit())
@@ -199,6 +201,27 @@ func set_camera(cam: OrbitCamera) -> void:
 		view_cube.set_camera(cam)
 	if origin_triad != null:
 		origin_triad.set_camera(cam)
+
+
+## Draw/trim tools place through this overlay. Cube stays IGNORE either way.
+func set_place_through(on: bool) -> void:
+	if view_cube != null:
+		view_cube.place_through = true
+		if view_cube.mouse_filter != Control.MOUSE_FILTER_IGNORE:
+			view_cube.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var filt := Control.MOUSE_FILTER_IGNORE if on else Control.MOUSE_FILTER_STOP
+	_set_buttons_filter(self, filt)
+
+
+func _set_buttons_filter(node: Node, filt: int) -> void:
+	if node is ViewWidget or node is PopupMenu or node is PopupPanel:
+		return
+	if node is BaseButton:
+		(node as BaseButton).mouse_filter = filt
+	for child in node.get_children():
+		if child is PopupMenu or child is PopupPanel:
+			continue
+		_set_buttons_filter(child, filt)
 
 
 func sync_from_view(view: DocumentView) -> void:
