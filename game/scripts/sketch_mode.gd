@@ -3388,8 +3388,6 @@ func constrain(type: String, value: float = 0.0) -> String:
 				dimensions.remove_at(i)
 		res = run_solve()
 		status.emit("Relation did not stick")
-	if type == "coincident":
-		_seat_crossing_line_ends()
 	_redraw()
 	_redraw_selected()
 	return res["status"]
@@ -4898,11 +4896,16 @@ func _seat_crossing_line_ends() -> void:
 			continue
 		var s: Vector2 = info["start"]
 		var e: Vector2 = info["end"]
+		# Handle strips ~200 mm. Jaw walls (20) and hex sides (~14) also have
+		# one end inside the C / Ø33; seating those collapses the pads.
+		if s.distance_to(e) < 80.0:
+			continue
 		for oid in sketch.entity_ids():
 			if oid == id or sketch.is_construction(oid):
 				continue
 			var cinfo: Dictionary = sketch.entity_info(oid)
-			if not _is_curve_kind(str(cinfo.get("type", ""))):
+			var ck := str(cinfo.get("type", ""))
+			if ck != "ellipse" and ck != "elliptical_arc":
 				continue
 			var s_in := _point_inside_curve(cinfo, s)
 			var e_in := _point_inside_curve(cinfo, e)
