@@ -121,7 +121,7 @@ func _circle_case(ctx: FilmContext) -> void:
 	await FilmSteps.type_dim(ctx, str(int(SpannerFixture.mm("RING_D"))))
 	await process_frame
 	await SpannerFixture.line(ctx, Vector2(200, half), Vector2(230, half), "handle", SPAN)
-	await _coincident_chip(ctx, sm, Vector2(230, half), Vector2(center, ring_r), "handle on Ø33", 80.0)
+	await _coincident_chip(ctx, sm, Vector2(210, half), Vector2(center, ring_r), "handle on Ø33", 80.0)
 	var line := _handle_line(sm)
 	var circ := _first_of(sm, "circle")
 	check(line != "" and circ != "", "handle line and circle exist")
@@ -140,7 +140,6 @@ func _circle_case(ctx: FilmContext) -> void:
 
 
 func _coincident_chip(ctx: FilmContext, sm: SketchMode, a: Vector2, b: Vector2, desc: String, span: float = SPAN) -> void:
-	await FilmSteps._snap_off_if_visible(ctx)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	await FilmSteps.click_uv(ctx, a, "%s first" % desc, span)
 	await _zoom(ctx, Vector3(b.x, b.y, 0.0), span)
