@@ -520,7 +520,7 @@ func test_view_hud(main) -> void:
 	check(hud._fit_btn.mouse_filter == Control.MOUSE_FILTER_IGNORE,
 		"Frame IGNORE while Line is placing")
 	var shade_at: Vector2 = hud._display_btn.get_global_rect().get_center()
-	var who := ix._over_chrome_who(shade_at)
+	var who: String = ix._over_chrome_who(shade_at)
 	check(who == "", "Line place is not chrome on Shade (got %s)" % who)
 	var frame_at: Vector2 = hud._fit_btn.get_global_rect().get_center()
 	who = ix._over_chrome_who(frame_at)
