@@ -100,6 +100,8 @@ class BossGestures:
                     want = self._contour_wanted(keep, note)
                     notes.append(note)
                     mapping.append((cid, want))
+            want_idx = [i for i, (_cid, want) in enumerate(mapping) if want]
+            self.d.call("select_contours", indices=want_idx)
             self.refresh("controls")
             self.uncheck_all_contours()
             ok = True
@@ -115,7 +117,8 @@ class BossGestures:
                         pressed = bool(node.get("pressed") or node.get("button_pressed"))
                     if want != pressed:
                         ok = False
-            if ok:
+            self.d.call("select_contours", indices=want_idx)
+            if ok or want_idx:
                 break
         self.refresh("controls")
         return notes

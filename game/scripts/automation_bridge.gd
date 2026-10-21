@@ -145,6 +145,7 @@ func _commands() -> Dictionary:
 		"dialog_commit": {call=_cmd_dialog_commit, frames=2, reports=true},
 		"dialog_dismiss": {call=_cmd_dialog_dismiss, frames=2, reports=true},
 		"finish_extrude": {call=_cmd_finish_extrude, frames=8, reports=true},
+		"select_contours": {call=_cmd_select_contours, frames=2, reports=true},
 		"save_path": {call=_cmd_save_path, frames=2, reports=true},
 		"instance_nudge": {call=_cmd_instance_nudge, frames=2, reports=true},
 		"instance_transform": {call=_cmd_instance_transform, frames=2, reports=true},
@@ -386,6 +387,18 @@ func _cmd_finish_extrude(req: Dictionary) -> Dictionary:
 	var end := str(req.get("end", "blind"))
 	sm.finish_extrude(dist, op, end)
 	return {}
+
+
+func _cmd_select_contours(req: Dictionary) -> Dictionary:
+	var main := _main()
+	var chrome = main.get("sketch_chrome") if main != null else null
+	if chrome == null or not chrome.has_method("_restore_contour_selection"):
+		return {"error": "no contour chrome"}
+	var ids: Array = []
+	for v in req.get("indices", []):
+		ids.append(int(v))
+	chrome._restore_contour_selection(ids)
+	return {"indices": ids}
 
 
 func _run(req: Dictionary) -> Dictionary:
@@ -2062,7 +2075,12 @@ func _finish_state(main: Node) -> Dictionary:
 		var node := _find_auto(id)
 		if node is Control and (node as Control).is_visible_in_tree():
 			fields.append({"id": id, "text": _control_text(node as Control), "rect": _rect((node as Control).get_global_rect())})
-	return {"fields": fields}
+	var chrome = main.get("sketch_chrome") if main != null else null
+	var selected: Array = []
+	if chrome != null:
+		for v in chrome.get("_selected_contours"):
+			selected.append(int(v))
+	return {"fields": fields, "contours": selected}
 
 
 func _sketch_state(sm) -> Dictionary:
