@@ -1,10 +1,10 @@
 # Rung 8 result — round 4
 
-**Does not pass the bar.** Walk 7 A23/A26 volume still red after 3 attempts. No `tools/confirm_all.sh` from row 1. Head `e47a2e4` + this commit. Findings: [`rung-08-failing.md`](rung-08-failing.md).
+**Does not pass the bar.** Walk 7 A23/A26 volume still red after 3 attempts. No `tools/confirm_all.sh` from row 1. Head `c5cbed7`. Findings: [`rung-08-failing.md`](rung-08-failing.md).
 
 | Bar | Count |
 |---|---|
-| Head sha | *(this commit)* |
+| Head sha | `c5cbed7` |
 | Walks r1–r6, r8 | last green at `4d112db`: 77/77, 44/44, 46/46, 32/32, 36/36, 46/46, 48/48 — **not re-run** |
 | Walk 7 | bbox **PASS** 281.450×54.590 after hex-recovery punch; volume **FAIL** 41996 vs 41705 (A23/A26 4/5) |
 | `check_rung05` | last **10/10** (`4d112db`) |
