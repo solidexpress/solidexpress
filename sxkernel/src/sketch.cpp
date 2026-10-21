@@ -4,6 +4,8 @@
 #include "sx/variables.hpp"
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepTools_WireExplorer.hxx>
@@ -889,6 +891,73 @@ bool point_inside_face(const TopoDS_Face& face, const gp_Pnt& p) {
     return cls.State() == TopAbs_IN || cls.State() == TopAbs_ON;
 }
 
+bool face_has_inner_wire(const TopoDS_Shape& s) {
+    if (s.IsNull() || s.ShapeType() != TopAbs_FACE) return false;
+    int nw = 0;
+    for (TopExp_Explorer wx(TopoDS::Face(s), TopAbs_WIRE); wx.More(); wx.Next()) ++nw;
+    return nw > 1;
+}
+
+bool any_face_has_inner_wire(const std::vector<TopoDS_Shape>& faces) {
+    for (const auto& f : faces) {
+        if (face_has_inner_wire(f)) return true;
+    }
+    return false;
+}
+
+TopoDS_Face wire_face(const gp_Pln& pln, const TopoDS_Wire& wire) {
+    BRepBuilderAPI_MakeFace mk(pln, wire);
+    if (mk.IsDone()) return mk.Face();
+    BRepBuilderAPI_MakeFace rev(pln, TopoDS::Wire(wire.Reversed()));
+    if (rev.IsDone()) return rev.Face();
+    return {};
+}
+
+TopoDS_Shape largest_face_below(const TopoDS_Shape& shape, double below) {
+    TopoDS_Shape best;
+    double best_a = -1.0;
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Shape f = ex.Current();
+        const double a = std::abs(shape::area(f));
+        if (a < below - 1e-6 && a > best_a) {
+            best_a = a;
+            best = f;
+        }
+    }
+    return best;
+}
+
+// Nested interior wires that overlap (two AF hexes, leftover 12-point
+// triangles) do not punch through MakeFace. Fuse the hole faces first so
+// a sequential cut cannot nibble the ring wall, then cut once.
+TopoDS_Shape cut_holes_from_outer(const gp_Pln& pln, const TopoDS_Wire& outer,
+                                  const std::vector<TopoDS_Wire>& holes) {
+    TopoDS_Face outer_face = wire_face(pln, outer);
+    if (outer_face.IsNull()) return {};
+    const double outer_area = std::abs(shape::area(outer_face));
+    TopoDS_Shape cutter;
+    for (const auto& h : holes) {
+        TopoDS_Face hf = wire_face(pln, h);
+        if (hf.IsNull()) continue;
+        if (cutter.IsNull()) {
+            cutter = hf;
+            continue;
+        }
+        BRepAlgoAPI_Fuse fuse(cutter, hf);
+        fuse.SetFuzzyValue(0.05);
+        fuse.Build();
+        if (fuse.IsDone() && !fuse.Shape().IsNull()) cutter = fuse.Shape();
+    }
+    if (cutter.IsNull()) return {};
+    BRepAlgoAPI_Cut cut(outer_face, cutter);
+    cut.SetFuzzyValue(0.05);
+    cut.Build();
+    if (!cut.IsDone() || cut.Shape().IsNull()) return {};
+    TopoDS_Shape ring = largest_face_below(cut.Shape(), outer_area);
+    if (ring.IsNull() || std::abs(shape::area(ring)) >= outer_area - 1e-4) return {};
+    return ring;
+}
+
 TopoDS_Shape face_with_holes(const gp_Pln& pln, const TopoDS_Wire& outer,
                              const std::vector<TopoDS_Wire>& holes) {
     auto try_build = [&](bool reverse_holes) -> TopoDS_Shape {
@@ -903,11 +972,26 @@ TopoDS_Shape face_with_holes(const gp_Pln& pln, const TopoDS_Wire& outer,
     };
     TopoDS_Shape face = try_build(true);
     if (face.IsNull()) face = try_build(false);
-    if (face.IsNull()) return {};
-    double outer_area = shape::area(BRepBuilderAPI_MakeFace(pln, outer).Face());
-    if (shape::area(face) >= outer_area - 1e-6 && !holes.empty()) {
+    double outer_area = 0.0;
+    {
+        TopoDS_Face of = wire_face(pln, outer);
+        if (!of.IsNull()) outer_area = std::abs(shape::area(of));
+    }
+    // Overlapping interior wires (two AF hexes) make MakeFace over-punch.
+    // Two or more holes: boolean-fuse then cut so the union is one hole.
+    if (holes.size() >= 2) {
+        TopoDS_Shape cut = cut_holes_from_outer(pln, outer, holes);
+        if (!cut.IsNull()) return cut;
+    }
+    if (!face.IsNull() && (holes.empty() || std::abs(shape::area(face)) < outer_area - 1e-4))
+        return face;
+    if (!face.IsNull() && std::abs(shape::area(face)) >= outer_area - 1e-6) {
         TopoDS_Shape alt = try_build(false);
-        if (!alt.IsNull() && shape::area(alt) < outer_area - 1e-6) face = alt;
+        if (!alt.IsNull() && std::abs(shape::area(alt)) < outer_area - 1e-6) face = alt;
+    }
+    if (!holes.empty()) {
+        TopoDS_Shape cut = cut_holes_from_outer(pln, outer, holes);
+        if (!cut.IsNull()) return cut;
     }
     return face;
 }
@@ -1055,6 +1139,55 @@ std::vector<TopoDS_Shape> contours_by_planar_split(const gp_Pln& pln, const gp_A
         return {};
     }
     return nest_solid_contours(pln, simple_faces, wires, err);
+}
+
+// Nested holes punch Ø33 (12-point) or a rectangular frame. Handle lines
+// stay open, so they only appear in the planar split. Keep nest, then add
+// split faces whose COM is not inside those nest pads or the un-punched
+// outers (leftover hex triangles / the hole's own cell).
+std::vector<TopoDS_Shape> nest_plus_split_outers(const gp_Pln& pln,
+                                                 const std::vector<TopoDS_Shape>& nested,
+                                                 const std::vector<TopoDS_Shape>& split) {
+    std::vector<TopoDS_Face> outers;
+    for (const auto& n : nested) {
+        if (!face_has_inner_wire(n)) continue;
+        TopoDS_Face of = wire_face(pln, BRepTools::OuterWire(TopoDS::Face(n)));
+        if (!of.IsNull()) outers.push_back(of);
+    }
+    auto inside = [&](const gp_Pnt& p, const TopoDS_Shape& s) {
+        if (s.IsNull() || s.ShapeType() != TopAbs_FACE) return false;
+        return point_inside_face(TopoDS::Face(s), p);
+    };
+    std::vector<TopoDS_Shape> out = nested;
+    for (const auto& f : split) {
+        const double a = std::abs(shape::area(f));
+        if (a < 20.0) continue;
+        const gp_Pnt c = face_com(f);
+        bool skip = false;
+        for (const auto& n : nested) {
+            if (inside(c, n)) {
+                skip = true;
+                break;
+            }
+        }
+        if (skip) continue;
+        for (const auto& d : outers) {
+            if (inside(c, d)) {
+                skip = true;
+                break;
+            }
+        }
+        if (skip) continue;
+        out.push_back(f);
+    }
+    std::sort(out.begin(), out.end(), [](const TopoDS_Shape& a, const TopoDS_Shape& b) {
+        double aa = shape::area(a), ba = shape::area(b);
+        if (std::abs(aa - ba) > 1e-9) return aa > ba;
+        gp_Pnt ca = face_com(a), cb = face_com(b);
+        if (std::abs(ca.X() - cb.X()) > 1e-9) return ca.X() < cb.X();
+        return ca.Y() < cb.Y();
+    });
+    return out;
 }
 
 // Collect closed wires the same way profile_face does (shared by contour APIs).
@@ -1287,6 +1420,7 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
     }
     for (auto& cw : circle_wires) wires.push_back(cw);
 
+    bool shared_opens = false;
     if (!opens.empty()) {
         TopoDS_Compound closed_comp;
         BRep_Builder bb;
@@ -1309,17 +1443,21 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
                 break;
             }
         }
-        if (shared) {
+        shared_opens = shared;
+        // Circle+chord / pliers nose: every open end sits on a closed wire,
+        // so planar split is the right later choice. Interior leftover hex
+        // segments also share endpoints with Ø33 — defer split until after
+        // nested holes punch, or those triangles become extra pads.
+        if (!wires.empty()) {
+            // Dangling chains only. Shared opens (chord, pliers nose, leftover
+            // hex segments on Ø33) still nest or split below.
+            if (!shared && stray_open) *stray_open = true;
+        } else if (!shared) {
+            if (err) *err = "profile has an open loop";
+            return {};
+        } else {
             auto split = contours_by_planar_split(pln, ax, all_edges, err);
             if (!split.empty()) return split;
-        }
-        // A chain that does not meet a closed wire is dangling. It must not
-        // wipe out the closed regions (contour selection). Chains that do
-        // meet a wire already took the planar split above. An open-only
-        // sketch still refuses.
-        if (!wires.empty() && !shared) {
-            if (stray_open) *stray_open = true;
-        } else {
             if (err) *err = "profile has an open loop";
             return {};
         }
@@ -1349,6 +1487,14 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
     };
     const double split_a = max_area(split);
     const double chain_a = max_area(contours);
+    // Nested holes already punched (12-point in Ø33). Split would re-emit
+    // leftover interior triangles as Selected Contours, but the handle
+    // lives only in the split (open lines). Merge those exterior pads.
+    if (any_face_has_inner_wire(contours) && !contours.empty())
+        return nest_plus_split_outers(pln, contours, split);
+    // Shared open chains that split an outer (circle+chord → two Ds).
+    if (shared_opens && !split.empty())
+        return split;
     if (prefer_split && split_a >= chain_a * 0.8 && !split.empty())
         return split;
     if (allow_split && split_a > chain_a * 1.2)

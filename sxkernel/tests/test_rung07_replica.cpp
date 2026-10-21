@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -260,4 +261,100 @@ TEST_CASE("rung07 one-sketch C+handle+ring contours meet for fuse", "[rung07][re
     REQUIRE(areas[1] == Approx(1495.80).margin(20.0));
     REQUIRE(areas[2] == Approx(855.3).margin(20.0));
     REQUIRE(faces.size() == 3);
+}
+
+namespace {
+
+void add_af_hex(Sketch& sk, double cx, double cy, double af, double rot) {
+    const double R = af / std::sqrt(3.0);
+    std::array<std::array<double, 2>, 6> p{};
+    for (int i = 0; i < 6; ++i) {
+        const double a = rot + static_cast<double>(i) * kPi / 3.0;
+        p[static_cast<size_t>(i)] = {cx + R * std::cos(a), cy + R * std::sin(a)};
+    }
+    for (int i = 0; i < 6; ++i) {
+        const auto& a = p[static_cast<size_t>(i)];
+        const auto& b = p[static_cast<size_t>((i + 1) % 6)];
+        sk.add_line(a[0], a[1], b[0], b[1]);
+    }
+}
+
+void add_spanner_c(Sketch& sk) {
+    const double xj = -25.0 * std::sqrt(1.0 - (12.5 / 27.5) * (12.5 / 27.5));
+    auto ell = sk.add_ellipse(0.0, 0.0, 27.5, 25.0, kDeg + kPi * 0.5);
+    auto o_hi = world(xj, 12.5);
+    auto o_lo = world(xj, -12.5);
+    auto i_hi = world(xj + 20.0, 12.5);
+    auto i_lo = world(xj + 20.0, -12.5);
+    sk.add_line(o_hi[0], o_hi[1], i_hi[0], i_hi[1]);
+    sk.add_line(o_lo[0], o_lo[1], i_lo[0], i_lo[1]);
+    const double cx_local = (xj + 20.0) - std::sqrt(15.0 * 15.0 - 12.5 * 12.5);
+    auto c15 = world(cx_local, 0.0);
+    auto throat = world(cx_local + 15.0, 0.0);
+    double sa = std::atan2(i_lo[1] - c15[1], i_lo[0] - c15[0]);
+    double ea = std::atan2(i_hi[1] - c15[1], i_hi[0] - c15[0]);
+    if (ea < sa) ea += 2.0 * kPi;
+    double mid = std::atan2(throat[1] - c15[1], throat[0] - c15[0]);
+    double from = mid - sa;
+    while (from < 0) from += 2.0 * kPi;
+    if (from > ea - sa + 1e-9) {
+        std::swap(sa, ea);
+        if (ea < sa) ea += 2.0 * kPi;
+    }
+    sk.add_arc(c15[0], c15[1], 15.0, sa, ea);
+    auto pick = world(-25.0, 0.0);
+    REQUIRE(sketch_tools::trim_entity(sk, ell.str(), pick[0], pick[1]));
+}
+
+void trim_hex_inners(Sketch& sk, double cx, double cy) {
+    std::vector<std::string> ids;
+    for (const auto& e : sk.entities()) {
+        if (e.construction || e.type != SketchEntityType::Line) continue;
+        ids.push_back(e.id.str());
+    }
+    for (const auto& id : ids) {
+        const SketchEntity* e = sk.entity(EntityId::from_string(id));
+        if (!e || e->type != SketchEntityType::Line) continue;
+        auto a = sk.point_pos({e->id, PointRole::Start});
+        auto b = sk.point_pos({e->id, PointRole::End});
+        if (!a || !b) continue;
+        const double mx = 0.5 * ((*a)[0] + (*b)[0]);
+        const double my = 0.5 * ((*a)[1] + (*b)[1]);
+        if (std::abs(mx - cx) > 18.0 || std::abs(my - cy) > 18.0) continue;
+        const double dist = std::hypot(mx - cx, my - cy);
+        const double length = std::hypot((*a)[0] - (*b)[0], (*a)[1] - (*b)[1]);
+        if (dist > 4.0 && dist <= 12.6 && length > 2.0)
+            sketch_tools::trim_entity(sk, id, mx, my);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("rung07 walk hexes punch a 12-point hole, three regions",
+          "[rung07][replica][contours]") {
+    Sketch sk("WalkSpanner");
+    add_spanner_c(sk);
+    sk.add_circle(240.0, 0.0, 16.5);
+    add_af_hex(sk, 240.0, 0.0, 25.0, 0.0);
+    add_af_hex(sk, 240.0, 0.0, 25.0, kPi / 6.0);
+    sk.add_line(22.944, 10.0, 226.876, 10.0);
+    sk.add_line(23.929, -10.0, 226.876, -10.0);
+
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    std::vector<double> areas;
+    for (const auto& o : outlines) areas.push_back(std::abs(o.area));
+    std::sort(areas.begin(), areas.end(), std::greater<double>());
+    std::ostringstream dump;
+    dump << err << " n=" << outlines.size();
+    for (double a : areas) dump << " " << a;
+    INFO(dump.str());
+    REQUIRE(outlines.size() == 3);
+    CHECK(areas[0] == Approx(3999.25).margin(40.0));
+    CHECK(areas[1] == Approx(1495.80).margin(40.0));
+    CHECK(areas[2] == Approx(275.172).margin(20.0));
+
+    trim_hex_inners(sk, 240.0, 0.0);
+    outlines = sk.contour_outlines(0.05, &err);
+    REQUIRE(outlines.size() == 3);
 }

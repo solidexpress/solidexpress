@@ -5,3 +5,4 @@
 - confirm-r6 godot **262/1**: `film_spanner` `C stayed unopened after trim (n=0)` — premature closed-contour check. Isolation 12/0. Trim now frames + kernel `trim_at` fallback; fail only if the ellipse stays closed.
 - confirm-r7 from row 1: godot **262/0**. Walks 1–6 + 8 green (77/44/46/32/36/46 + 48). A15/A25 PASS. Walk 7 **A23** 226.876×37.295 (handle pad). Attempts 1–3 still red (chip re-assert; select_contours+uncheck+chips; area pick). Logged as finding; no fourth attempt.
 - Glyphs/J6 stay closed. No PR. No `docs/plan/STATUS.md`. No `.uid`.
+- Round 4: walk 7 A23 root cause — overlapping AF hexes inside Ø33 do not punch (MakeFace overlapping holes leaves a full disc; leftover opens force planar split into extra pads). Product: boolean-cut nested holes; keep nest when a contour has inner wires. Kernel tests added; OCCT install then `sxkernel_tests`.

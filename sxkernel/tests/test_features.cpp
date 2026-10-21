@@ -683,6 +683,44 @@ TEST_CASE("contour_faces keeps nested wire as a hole", "[sketch][contours]") {
 
 namespace {
 
+void add_af_hex(Sketch& sk, double cx, double cy, double af, double rot) {
+    const double R = af / std::sqrt(3.0);
+    const double pi = std::acos(-1.0);
+    std::array<std::array<double, 2>, 6> p{};
+    for (int i = 0; i < 6; ++i) {
+        const double a = rot + static_cast<double>(i) * pi / 3.0;
+        p[static_cast<size_t>(i)] = {cx + R * std::cos(a), cy + R * std::sin(a)};
+    }
+    for (int i = 0; i < 6; ++i) {
+        const auto& a = p[static_cast<size_t>(i)];
+        const auto& b = p[static_cast<size_t>((i + 1) % 6)];
+        sk.add_line(a[0], a[1], b[0], b[1]);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("contour_faces overlapping hexes inside a circle are one 12-point hole",
+          "[sketch][contours][rung07]") {
+    // Walk A12–A14: Across-flats hex + 30° hex inside Ø33. Overlapping hole
+    // wires must punch the 12-point, not leave a full disc plus leftover pads.
+    Sketch sk("BoxEnd");
+    sk.add_circle(240.0, 0.0, 16.5);
+    const double pi = std::acos(-1.0);
+    add_af_hex(sk, 240.0, 0.0, 25.0, 0.0);
+    add_af_hex(sk, 240.0, 0.0, 25.0, pi / 6.0);
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    INFO(err << " n=" << outlines.size() << " area="
+             << (outlines.empty() ? 0.0 : std::abs(outlines[0].area))
+             << " holes=" << (outlines.empty() ? 0 : outlines[0].holes.size()));
+    REQUIRE(outlines.size() == 1);
+    CHECK(std::abs(outlines[0].area) == Approx(275.172).margin(8.0));
+    CHECK(outlines[0].holes.size() >= 1);
+}
+
+namespace {
+
 bool near_pt(const std::array<double, 2>& p, double x, double y, double tol = 1e-6) {
     return std::hypot(p[0] - x, p[1] - y) <= tol;
 }
