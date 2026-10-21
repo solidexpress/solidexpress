@@ -1,34 +1,17 @@
-# Rung 8 failing — round 3
+# Rung 8 failing — round 3 leftover
 
 Test-and-fix on `cursor/rung-08-20261019`. Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
 
-Confirm-r4 left three items. Glyphs/J6 and the rest of the old 17 are closed; do not re-open them.
+Round-3 items 1–3 are closed (confirm-r7 headless **262/0**; Shade/Frame IGNORE while placing; walk 1 A15 and walk 2 A25 PASS). Glyphs/J6 stay closed. Do not re-open them.
 
-## 1. Film C-unopened bbox flake (233.556 × 33)
+## Walk 7 A23 — heads extrude the handle pad (finding, 3 attempts)
 
-`run_film_spanner_tests.gd` in the full headless tier (`--jobs nproc`) ends **233.556 × 33** (ring Ø33 + handle, C not in the body). Isolated `--jobs 1 --only '*film_spanner*'` is **12/0**, bbox 281.450 × 54.591 × 10.
+A21/A22 report C + ring + handle among 8 contours (A14 leftover hex triangles, lines=20). `finish:Extrude` Midplane 10 still builds only the handle strip:
 
-Cause: a Line/Trim click for the C opening lands on ViewHud **Shade** / **Frame** (STOP). Interaction drops it as chrome; the ellipse stays closed, heads extrude only the Ø33. Dummy-renderer layout under load puts that UV on the HUD more often than a solo run.
+`got 226.876×37.295×10.000 min (−0.000,−10.000,−5.000)` want `281.4×54.6×10.0 min (−24.95,−27.30,−5.00)`.
 
-Fix: Shade/Frame IGNORE while a draw tool is placing (item 2). Frame the opening UV, retry Trim C, then `SketchMode.trim_at` if the ellipse is still closed. Fail only when the ellipse stays closed (open-wire n=0 is not the flake). Do not loosen the bbox.
+Attempt-3 areas: Contour1 3994.3 (handle ≈ A_H 3999), Contour2 1385.7 (C vs A_C 1495.8, Δ110), Contour3 822.9 (full Ø33 disc, not A_RING 275). `select_contours` by area still yields the handle-only body. Cascade A24–A26 / L4 / A28 / A33–A35. `check_rung07` boss 1/5, neck 1/5, final 1/8.
 
-Cheap: `GODOT_BIN=tools/godot/godot packaging/ci/run_suites.sh --jobs 1 --only '*film_spanner*'` then the same with `--jobs $(nproc)` in a full-tier confirm.
+Three attempts (chip re-assert; select_contours + uncheck + chips; area pick, no chip-toggle). Do not loosen the bbox. `run_rung07_boss.gd` and film_spanner stay **12/0** with bbox 281.450×54.591×10 (`contour_count()==3`).
 
-## 2. ViewHud Shade/Frame must IGNORE while placing
-
-Cube IGNORE was not enough under confirm. `_control_blocks_at` still treats BaseButtons as chrome, so Shade/Frame eat Line/Trim on the model under the bottom-right HUD.
-
-While `SketchMode.places_on_model()`: Shade, Frame, and Section are `MOUSE_FILTER_IGNORE`, and Interaction does not name them as `_over_chrome`. View strip (▼ / Save) stays STOP so Front view still opens. When not placing they are STOP (Shade still cycles display).
-
-Cheap: `GODOT_BIN=tools/godot/godot packaging/ci/run_suites.sh --jobs 1 --only '*visual_ux*'`
-
-## 3. A15-class godot-log gates (walks r1 / r2)
-
-Rung 1 **A15** and rung 2 **A25** read `SX_CONFIRM_DIR/godot.log`. Two parser bugs fire even when product rows are green:
-
-1. `parse_tier` takes the last `suites: N run, M failed` substring. confirm_all appends stderr after the real summary; a stray inner match (N < 204) becomes the gate.
-2. `suite_check_counts` truncates at the first `\nGodot Engine` after the banner. A mid-suite reprint hides the Catch2 line (`no checks line`).
-
-`parse_tier` keeps the last line-anchored summary with N ≥ 204. `suite_check_counts` matches the banner at line start and does not drop the checks line across one Engine reprint.
-
-Give a walk row three fix attempts, then log it as a finding and move on. Final `confirm_all` is one clean pass from row 1 (375 rows), checkers, headless **262/0**.
+Walk 8 assembly is green (48/48, `check_rung08` 10/10).
