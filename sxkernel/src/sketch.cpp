@@ -1155,6 +1155,19 @@ bool com_inside_circle(const gp_Pnt& p, const std::vector<CircPad>& circs) {
     return false;
 }
 
+// Hex leftover cells (~6.5 mm²) sit inside Ø33. A disjoint r=3 disk
+// (area ~28) is itself a CircPad, not a sliver of a larger one.
+bool sliver_inside_larger_pad(const gp_Pnt& com, double area,
+                              const std::vector<CircPad>& circs) {
+    if (area >= kPadArea) return false;
+    for (const auto& c : circs) {
+        if (!(c.r > 0.5) || com.Distance(c.c) >= c.r - 0.2) continue;
+        const double pad = kPi * c.r * c.r;
+        if (area < 0.25 * pad) return true;
+    }
+    return false;
+}
+
 void sort_faces_by_area(std::vector<TopoDS_Shape>& faces) {
     std::sort(faces.begin(), faces.end(), [](const TopoDS_Shape& a, const TopoDS_Shape& b) {
         const double aa = std::abs(shape::area(a)), ba = std::abs(shape::area(b));
@@ -1174,7 +1187,7 @@ std::vector<TopoDS_Shape> drop_circle_slivers(std::vector<TopoDS_Shape> faces,
     out.reserve(faces.size());
     for (const auto& f : faces) {
         const double a = std::abs(shape::area(f));
-        if (a < kPadArea && com_inside_circle(face_com(f), circs)) continue;
+        if (sliver_inside_larger_pad(face_com(f), a, circs)) continue;
         out.push_back(f);
     }
     sort_faces_by_area(out);

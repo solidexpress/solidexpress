@@ -804,6 +804,26 @@ void add_rect(Sketch& sk, double x0, double y0, double x1, double y1) {
 
 }  // namespace
 
+TEST_CASE("contour_outlines: small disjoint circle is not a hex sliver",
+          "[sketch][contours]") {
+    Sketch sk("ThinRectR3");
+    add_rect(sk, 0, 0, 40, 2);
+    sk.add_circle(20, 16, 3);
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    INFO(err << " n=" << outlines.size());
+    REQUIRE(outlines.size() == 2);
+    CHECK(outlines[0].area == Approx(80.0).epsilon(1e-4));
+    CHECK(outlines[1].area == Approx(3.141592653589793 * 9.0).epsilon(1e-3));
+
+    Sketch tiny("TinyAndNeighbor");
+    tiny.add_circle(0, 0, 1);
+    tiny.add_circle(40, 0, 12);
+    auto tiny_out = tiny.contour_outlines(0.05, &err);
+    INFO(err << " tiny n=" << tiny_out.size());
+    REQUIRE(tiny_out.size() == 2);
+}
+
 TEST_CASE("contour_outlines: disjoint rect and circle", "[sketch][contours]") {
     Sketch sk("RectCircle");
     add_rect(sk, 0, 0, 40, 20);

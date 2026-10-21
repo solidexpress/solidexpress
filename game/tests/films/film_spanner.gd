@@ -100,6 +100,7 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok():
 		return
 	await ctx.after_regen()
+	await FilmSteps.select_body(ctx, SpannerFixture.only_body(ctx))
 	await FilmSteps.arm_fillet(ctx, SpannerFixture.mm("R3"))
 	if not _ok():
 		return

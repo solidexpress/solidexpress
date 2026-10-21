@@ -1008,9 +1008,17 @@ func finish_extrude(distance: float, op: String = "new", end: String = "blind",
 	# indices. Only do that when every contour is going out (empty = all, or
 	# the caller passed a full index list). A subset pick (spanner heads, then
 	# handle) must keep the pre-seal faces so those indices still match.
-	if wanted_all or selected_contours.is_empty():
+	# Ground sketches (wrench blank): always seal the two-circle stadium.
+	# A first Extrude with one tangent builds contour chips for n=2; the
+	# second tangent splits a third island, so the stale [0,1] pick would
+	# skip seal and extrude the short chord (min X = −0.625 instead of −10).
+	if wanted_all or selected_contours.is_empty() or host_face_id == "":
 		_drop_circles_concentric_with_jaw_arcs()
 		_seal_tangent_bosses()
+		if host_face_id == "" and sketch != null and sketch.has_method("contour_count"):
+			if int(sketch.contour_count()) <= selected_contours.size():
+				wanted_all = true
+				selected_contours = []
 	_reweld_jaw_profile()
 	_weld_nearby_curve_joints()
 	if wanted_all:
@@ -5186,13 +5194,13 @@ func _seal_tangent_bosses() -> void:
 		for ln in lines:
 			for role in ["a", "b"]:
 				var p: Vector2 = ln[role]
-				if absf(p.distance_to(c) - rad) > 0.05:
+				if absf(p.distance_to(c) - rad) > INFER_TOL:
 					continue
 				var other: Vector2 = ln["b"] if role == "a" else ln["a"]
 				# Stadium bosses (wrench Ø45 chord + Ø20 tangent). A lone
 				# chord (spanner handle on Ø33, far end on the ellipse) stays
 				# a circle so the ring remains a hole.
-				if not _far_end_on_other_circle(other, c, circles, 0.05):
+				if not _far_end_on_other_circle(other, c, circles, INFER_TOL):
 					continue
 				hits.append({
 					"p": p,
@@ -7120,6 +7128,10 @@ func run_solve() -> Dictionary:
 		for ref in cinfo.get("refs", []):
 			_conflict_entities[str(ref["entity"])] = true
 	solve_updated.emit(last_dofs, last_solve_status, last_conflicting.size())
+	# A Converged leftover above 1e-6 is not applied. Snap coincident line
+	# ends so a 2×40 mm rectangle still closes for contour chips.
+	if last_solve_status == "failed":
+		_weld_coincident_line_ends()
 	return res
 
 
@@ -7517,54 +7529,122 @@ func _lock_sized_circles() -> void:
 
 
 ## Snap inference-marked on-circle endpoints onto the circle so the 1e-6
-## chain and `_seal_tangent_bosses` (0.05 mm) both see a closed wire.
+## chain and `_seal_tangent_bosses` both see a closed wire.
 func _weld_on_circle_endpoints(line_id: String = "") -> void:
 	if sketch == null:
 		return
 	for cid in sketch.constraint_ids():
 		var info: Dictionary = sketch.constraint_info(cid)
-		if str(info.get("type", "")) != "distance":
+		var kind := str(info.get("type", ""))
+		var refs: Array = info.get("refs", [])
+		if refs.size() < 2:
+			continue
+		if kind == "distance":
+			var lid := ""
+			var role := ""
+			var circ := ""
+			for ref in refs:
+				if typeof(ref) != TYPE_DICTIONARY:
+					continue
+				var eid := str(ref.get("entity", ""))
+				var rle := str(ref.get("role", ""))
+				var einfo: Dictionary = sketch.entity_info(eid)
+				var et := str(einfo.get("type", ""))
+				if et == "line" and (rle == "start" or rle == "end"):
+					lid = eid
+					role = rle
+				elif (et == "circle" or et == "arc") and (rle == "center" or rle == "self"):
+					circ = eid
+			if lid == "" or circ == "":
+				continue
+			if line_id != "" and lid != line_id:
+				continue
+			_weld_line_role_to_circle(lid, role, circ)
+		elif kind == "tangent":
+			var lid := ""
+			var circ := ""
+			for ref in refs:
+				if typeof(ref) != TYPE_DICTIONARY:
+					continue
+				var eid := str(ref.get("entity", ""))
+				var et := str(sketch.entity_info(eid).get("type", ""))
+				if et == "line":
+					lid = eid
+				elif et == "circle" or et == "arc":
+					circ = eid
+			if lid == "" or circ == "":
+				continue
+			if line_id != "" and lid != line_id:
+				continue
+			var linfo: Dictionary = sketch.entity_info(lid)
+			if linfo.is_empty():
+				continue
+			var cinfo: Dictionary = sketch.entity_info(circ)
+			var c: Vector2 = cinfo["center"]
+			var rad := float(cinfo.get("radius", 0.0))
+			var a: Vector2 = linfo["start"]
+			var b: Vector2 = linfo["end"]
+			var role := "start" if absf(a.distance_to(c) - rad) <= absf(b.distance_to(c) - rad) else "end"
+			_weld_line_role_to_circle(lid, role, circ)
+
+
+func _weld_coincident_line_ends() -> void:
+	if sketch == null:
+		return
+	for cid in sketch.constraint_ids():
+		var info: Dictionary = sketch.constraint_info(cid)
+		if str(info.get("type", "")) != "coincident":
 			continue
 		var refs: Array = info.get("refs", [])
 		if refs.size() < 2:
 			continue
-		var lid := ""
-		var role := ""
-		var circ := ""
+		var ends: Array = []
 		for ref in refs:
 			if typeof(ref) != TYPE_DICTIONARY:
 				continue
+			var role := str(ref.get("role", ""))
+			if role != "start" and role != "end":
+				continue
 			var eid := str(ref.get("entity", ""))
-			var rle := str(ref.get("role", ""))
 			var einfo: Dictionary = sketch.entity_info(eid)
-			var kind := str(einfo.get("type", ""))
-			if kind == "line" and (rle == "start" or rle == "end"):
-				lid = eid
-				role = rle
-			elif (kind == "circle" or kind == "arc") and (rle == "center" or rle == "self"):
-				circ = eid
-		if lid == "" or circ == "":
+			if str(einfo.get("type", "")) != "line":
+				continue
+			ends.append({"id": eid, "role": role, "pos": einfo[role]})
+		if ends.size() != 2:
 			continue
-		if line_id != "" and lid != line_id:
+		var a: Vector2 = ends[0]["pos"]
+		var b: Vector2 = ends[1]["pos"]
+		var gap := a.distance_to(b)
+		if gap < 1e-12 or gap > INFER_TOL:
 			continue
-		var linfo: Dictionary = sketch.entity_info(lid)
-		var cinfo: Dictionary = sketch.entity_info(circ)
-		if linfo.is_empty() or cinfo.is_empty():
-			continue
-		var c: Vector2 = cinfo["center"]
-		var rad := float(cinfo.get("radius", 0.0))
-		if rad < 1e-6:
-			continue
-		var p: Vector2 = linfo["start"] if role == "start" else linfo["end"]
-		var d := p - c
-		var welded: Vector2 = c + Vector2(rad, 0.0) if d.length_squared() < 1e-16 \
-				else c + d.normalized() * rad
-		if p.distance_to(welded) < 1e-12:
-			continue
-		if role == "start":
-			sketch.set_entity_geometry(lid, {"start": welded, "end": linfo["end"]})
-		else:
-			sketch.set_entity_geometry(lid, {"start": linfo["start"], "end": welded})
+		var mid: Vector2 = (a + b) * 0.5
+		for end in ends:
+			var linfo: Dictionary = sketch.entity_info(str(end["id"]))
+			if str(end["role"]) == "start":
+				sketch.set_entity_geometry(str(end["id"]), {"start": mid, "end": linfo["end"]})
+			else:
+				sketch.set_entity_geometry(str(end["id"]), {"start": linfo["start"], "end": mid})
+
+
+func _weld_line_role_to_circle(lid: String, role: String, circ: String) -> void:
+	var linfo: Dictionary = sketch.entity_info(lid)
+	var cinfo: Dictionary = sketch.entity_info(circ)
+	if linfo.is_empty() or cinfo.is_empty():
+		return
+	var c: Vector2 = cinfo["center"]
+	var rad := float(cinfo.get("radius", 0.0))
+	if rad < 1e-6:
+		return
+	var p: Vector2 = linfo["start"] if role == "start" else linfo["end"]
+	var d := p - c
+	var welded: Vector2 = c + Vector2(rad, 0.0) if d.length_squared() < 1e-16 \
+			else c + d.normalized() * rad
+	if p.distance_to(welded) < 1e-12:
+		return
+	if role == "start":
+		sketch.set_entity_geometry(lid, {"start": welded, "end": linfo["end"]})
+	else:
+		sketch.set_entity_geometry(lid, {"start": linfo["start"], "end": welded})
 
 
 ## Line id → {start, end} for the current sketch.

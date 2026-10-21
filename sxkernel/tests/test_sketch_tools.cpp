@@ -767,6 +767,53 @@ TEST_CASE("offset racetrack stays closed after solve", "[sketchtools][offset][l8
     REQUIRE(std::abs(sx::shape::area(face)) > 100.0);
 }
 
+TEST_CASE("wrench blank UI-offset seeds still pin both contacts",
+          "[sketchtools][blank][ui]") {
+    Sketch sk("WrenchBlankUI");
+    auto c1 = sk.add_circle(0.0, 0.0, 10.0);
+    auto c2 = sk.add_circle(200.0, 0.0, 22.5);
+    const double dist = 200.0;
+    const double along = (22.5 - 10.0) / dist;
+    const double perp = std::sqrt(std::max(0.0, 1.0 - along * along));
+    sk.add_constraint(ConstraintType::Fix, {{c1, PointRole::Center}});
+    sk.add_constraint(ConstraintType::Fix, {{c2, PointRole::Center}});
+    sk.add_constraint(ConstraintType::Radius, {{c1, PointRole::Self}}, 10.0);
+    sk.add_constraint(ConstraintType::Radius, {{c2, PointRole::Self}}, 22.5);
+    auto add_tan = [&](double sign) {
+        double nx = along;
+        double ny = perp * sign;
+        double ax = 0.0 - nx * 10.0, ay = 0.0 - ny * 10.0;
+        double bx = 200.0 - nx * 22.5, by = 0.0 - ny * 22.5;
+        // UI clicks 0.3 mm outside the rim, then infers tangent + distance.
+        auto ln = sk.add_line(ax - nx * 0.3, ay - ny * 0.3, bx - nx * 0.3, by - ny * 0.3);
+        sk.add_constraint(ConstraintType::Tangent, {{ln, PointRole::Self}, {c1, PointRole::Self}});
+        sk.add_constraint(ConstraintType::Tangent, {{ln, PointRole::Self}, {c2, PointRole::Self}});
+        sk.add_constraint(ConstraintType::Distance, {{ln, PointRole::Start}, {c1, PointRole::Center}}, 10.0);
+        sk.add_constraint(ConstraintType::Distance, {{ln, PointRole::End}, {c2, PointRole::Center}}, 22.5);
+        return ln;
+    };
+    add_tan(1.0);
+    add_tan(-1.0);
+    auto solver = make_planegcs_backend();
+    auto result = solver->solve(sk);
+    INFO("status=" << static_cast<int>(result.status) << " residual=" << result.residual
+                   << " dofs=" << result.dofs << " conflicting=" << result.conflicting.size());
+    CHECK(result.ok());
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    INFO(err << " n=" << outlines.size());
+    REQUIRE_FALSE(outlines.empty());
+    double min_x = 1e9;
+    double max_x = -1e9;
+    for (const auto& o : outlines) {
+        min_x = std::min(min_x, o.min[0]);
+        max_x = std::max(max_x, o.min[0] + o.size[0]);
+    }
+    INFO("bbox x " << min_x << " .. " << max_x);
+    CHECK(min_x == Approx(-10.0).margin(0.2));
+    CHECK(max_x == Approx(222.5).margin(0.2));
+}
+
 TEST_CASE("wrench blank two circles and external tangents keep min x -10",
           "[sketchtools][blank]") {
     Sketch sk("WrenchBlank");
