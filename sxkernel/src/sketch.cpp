@@ -1181,6 +1181,190 @@ std::vector<TopoDS_Shape> drop_circle_slivers(std::vector<TopoDS_Shape> faces,
     return out;
 }
 
+struct PntSeg {
+    gp_Pnt a, b;
+};
+
+// Walk A14 Power Trim opens hex sides, so nest never sees hole wires and the
+// Ø33 reads as a full disc (~823). Vertices of the two AF hexes still sit on
+// a common circumradius; rebuild those polygons so overlapping holes punch.
+std::vector<TopoDS_Wire> recover_concentric_polygon_holes(
+    const gp_Ax2& ax, const std::vector<CircPad>& circs,
+    const std::vector<PntSeg>& segs) {
+    std::vector<TopoDS_Wire> extra;
+    const gp_Vec xd(ax.XDirection()), yd(ax.YDirection());
+    auto ang = [&](const gp_Pnt& p, const gp_Pnt& c) {
+        gp_Vec v(c, p);
+        return std::atan2(v.Dot(yd), v.Dot(xd));
+    };
+    auto make_closed = [&](const std::vector<gp_Pnt>& pts) -> TopoDS_Wire {
+        if (pts.size() < 3) return {};
+        BRepBuilderAPI_MakePolygon poly;
+        for (const auto& p : pts) poly.Add(p);
+        poly.Close();
+        if (!poly.IsDone()) return {};
+        return poly.Wire();
+    };
+    for (const auto& circ : circs) {
+        if (!(circ.r > 1.0)) continue;
+        std::vector<gp_Pnt> interior;
+        auto consider = [&](const gp_Pnt& p) {
+            const double d = p.Distance(circ.c);
+            if (d < 0.5 || d > circ.r - 0.25) return;
+            for (const auto& q : interior)
+                if (p.Distance(q) < 0.12) return;
+            interior.push_back(p);
+        };
+        for (const auto& s : segs) {
+            consider(s.a);
+            consider(s.b);
+        }
+        if (interior.size() < 6) continue;
+        std::vector<char> claimed(interior.size(), 0);
+        std::vector<int> best_idx;
+        double best_r = -1.0;
+        for (int i = 0; i < static_cast<int>(interior.size()); ++i) {
+            if (claimed[static_cast<size_t>(i)]) continue;
+            const double ri = interior[static_cast<size_t>(i)].Distance(circ.c);
+            std::vector<int> idx;
+            for (int j = 0; j < static_cast<int>(interior.size()); ++j) {
+                const double rj = interior[static_cast<size_t>(j)].Distance(circ.c);
+                if (std::abs(rj - ri) < 0.3) {
+                    idx.push_back(j);
+                    claimed[static_cast<size_t>(j)] = 1;
+                }
+            }
+            if (static_cast<int>(idx.size()) >= 6 && ri > best_r) {
+                best_r = ri;
+                best_idx = std::move(idx);
+            }
+        }
+        if (best_idx.size() < 6) continue;
+        std::vector<gp_Pnt> ring;
+        ring.reserve(best_idx.size());
+        for (int i : best_idx) ring.push_back(interior[static_cast<size_t>(i)]);
+        std::sort(ring.begin(), ring.end(), [&](const gp_Pnt& a, const gp_Pnt& b) {
+            return ang(a, circ.c) < ang(b, circ.c);
+        });
+        const int n = static_cast<int>(ring.size());
+        if (n != 6 && n != 12) continue;
+        const double step = 2.0 * 3.14159265358979323846 / static_cast<double>(n);
+        bool regular = true;
+        for (int i = 0; i < n; ++i) {
+            double a0 = ang(ring[static_cast<size_t>(i)], circ.c);
+            double a1 = ang(ring[static_cast<size_t>((i + 1) % n)], circ.c);
+            double d = a1 - a0;
+            if (d < 0.0) d += 2.0 * 3.14159265358979323846;
+            if (std::abs(d - step) > 0.14) {
+                regular = false;
+                break;
+            }
+        }
+        if (!regular) continue;
+        int hex_sides = 0;
+        for (const auto& s : segs) {
+            if (std::abs(s.a.Distance(s.b) - best_r) > 0.6) continue;
+            bool a_on = false, b_on = false;
+            for (const auto& p : ring) {
+                if (s.a.Distance(p) < 0.2) a_on = true;
+                if (s.b.Distance(p) < 0.2) b_on = true;
+            }
+            if (a_on && b_on) ++hex_sides;
+        }
+        if (hex_sides < 3) continue;
+        const int nhex = n / 6;
+        for (int h = 0; h < nhex; ++h) {
+            std::vector<gp_Pnt> hex;
+            hex.reserve(6);
+            for (int k = 0; k < 6; ++k)
+                hex.push_back(ring[static_cast<size_t>(h + k * nhex)]);
+            TopoDS_Wire w = make_closed(hex);
+            if (!w.IsNull()) extra.push_back(w);
+        }
+    }
+    return extra;
+}
+
+// Punch recovered hexes into the concentric circle pad only — they must not
+// enter nest as first-class faces (a leftover C copy can steal them as holes
+// and the Ø33 then loses one hex, area 314 instead of 275).
+std::vector<TopoDS_Shape> punch_recovered_into_circles(
+    std::vector<TopoDS_Shape> faces, const gp_Pln& pln,
+    const std::vector<CircPad>& circs, const std::vector<TopoDS_Wire>& holes) {
+    if (faces.empty() || holes.empty() || circs.empty()) return faces;
+    TopoDS_Shape cutter;
+    for (const auto& h : holes) {
+        TopoDS_Face hf = wire_face(pln, h);
+        if (hf.IsNull()) continue;
+        if (cutter.IsNull()) {
+            cutter = hf;
+            continue;
+        }
+        BRepAlgoAPI_Fuse fuse(cutter, hf);
+        fuse.SetFuzzyValue(0.05);
+        fuse.Build();
+        if (fuse.IsDone() && !fuse.Shape().IsNull()) cutter = fuse.Shape();
+    }
+    if (cutter.IsNull()) return faces;
+    for (auto& f : faces) {
+        const gp_Pnt c = face_com(f);
+        bool on_circ = false;
+        for (const auto& circ : circs) {
+            if (c.Distance(circ.c) < 1.0) {
+                on_circ = true;
+                break;
+            }
+        }
+        if (!on_circ) continue;
+        const double before = std::abs(shape::area(f));
+        BRepAlgoAPI_Cut cut(f, cutter);
+        cut.SetFuzzyValue(0.05);
+        cut.Build();
+        if (!cut.IsDone() || cut.Shape().IsNull()) continue;
+        TopoDS_Shape ring = largest_face_below(cut.Shape(), before);
+        if (!ring.IsNull() && std::abs(shape::area(ring)) < before - 1e-4) f = ring;
+    }
+    sort_faces_by_area(faces);
+    return faces;
+}
+
+// A leftover elliptical-arc fragment can chain a second C that sits inside
+// the real C. One Selected Contour per pad.
+std::vector<TopoDS_Shape> drop_contained_duplicates(std::vector<TopoDS_Shape> faces) {
+    if (faces.size() < 2) return faces;
+    auto aabb_inside = [](const TopoDS_Shape& inner, const TopoDS_Shape& outer) {
+        Bnd_Box bi, bo;
+        BRepBndLib::Add(inner, bi);
+        BRepBndLib::Add(outer, bo);
+        if (bi.IsVoid() || bo.IsVoid()) return false;
+        double ix0, iy0, iz0, ix1, iy1, iz1;
+        double ox0, oy0, oz0, ox1, oy1, oz1;
+        bi.Get(ix0, iy0, iz0, ix1, iy1, iz1);
+        bo.Get(ox0, oy0, oz0, ox1, oy1, oz1);
+        constexpr double eps = 0.4;
+        return ix0 >= ox0 - eps && iy0 >= oy0 - eps && iz0 >= oz0 - eps &&
+               ix1 <= ox1 + eps && iy1 <= oy1 + eps && iz1 <= oz1 + eps;
+    };
+    std::vector<char> drop(faces.size(), 0);
+    for (size_t i = 0; i < faces.size(); ++i) {
+        if (drop[i] || faces[i].ShapeType() != TopAbs_FACE) continue;
+        for (size_t j = 0; j < faces.size(); ++j) {
+            if (i == j || drop[j]) continue;
+            if (std::abs(shape::area(faces[j])) >= std::abs(shape::area(faces[i])) - 1e-6)
+                continue;
+            if (!aabb_inside(faces[j], faces[i])) continue;
+            if (!point_inside_face(TopoDS::Face(faces[i]), face_com(faces[j]))) continue;
+            drop[j] = 1;
+        }
+    }
+    std::vector<TopoDS_Shape> out;
+    out.reserve(faces.size());
+    for (size_t i = 0; i < faces.size(); ++i)
+        if (!drop[i]) out.push_back(faces[i]);
+    sort_faces_by_area(out);
+    return out;
+}
+
 // Nested holes punch the 12-point (area 275). Handle lines only appear in
 // the planar split. Add those exterior pads; skip leftover hex cells, the
 // hole's own cell (COM inside the un-punched outer), and C-fragments.
@@ -1458,6 +1642,18 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
         wires.push_back(w);
     }
     for (auto& cw : circle_wires) wires.push_back(cw);
+    std::vector<TopoDS_Wire> recovered;
+    {
+        std::vector<PntSeg> psegs;
+        psegs.reserve(segs.size());
+        for (const auto& s : segs) psegs.push_back({s.start, s.end});
+        recovered = recover_concentric_polygon_holes(ax, circs, psegs);
+    }
+    auto finish_contours = [&](std::vector<TopoDS_Shape> fs) {
+        fs = punch_recovered_into_circles(std::move(fs), pln, circs, recovered);
+        fs = drop_contained_duplicates(std::move(fs));
+        return drop_circle_slivers(std::move(fs), circs);
+    };
 
     bool shared_opens = false;
     if (!opens.empty()) {
@@ -1492,7 +1688,7 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
             return {};
         } else {
             auto split = contours_by_planar_split(pln, ax, all_edges, err);
-            if (!split.empty()) return drop_circle_slivers(std::move(split), circs);
+            if (!split.empty()) return finish_contours(std::move(split));
             if (err) *err = "profile has an open loop";
             return {};
         }
@@ -1524,19 +1720,19 @@ std::vector<TopoDS_Shape> Sketch::contour_faces_impl(std::string* err, bool* str
     const double chain_a = max_area(contours);
     auto sliverless = drop_circle_slivers(split, circs);
     if (any_face_has_inner_wire(contours) && !contours.empty())
-        return nest_plus_split_outers(pln, contours, split, circs);
+        return finish_contours(nest_plus_split_outers(pln, contours, split, circs));
     if (shared_opens && !sliverless.empty())
-        return sliverless;
+        return finish_contours(std::move(sliverless));
     if (prefer_split && split_a >= chain_a * 0.8 && !sliverless.empty())
-        return sliverless;
+        return finish_contours(std::move(sliverless));
     if (allow_split && split_a > chain_a * 1.2)
-        return sliverless;
+        return finish_contours(std::move(sliverless));
     if (contours.empty()) {
-        if (!sliverless.empty()) return sliverless;
+        if (!sliverless.empty()) return finish_contours(std::move(sliverless));
         if (err && err->empty()) *err = "no solid contours";
         return {};
     }
-    return drop_circle_slivers(std::move(contours), circs);
+    return finish_contours(std::move(contours));
 }
 
 namespace {

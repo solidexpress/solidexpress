@@ -719,6 +719,44 @@ TEST_CASE("contour_faces overlapping hexes inside a circle are one 12-point hole
     CHECK(outlines[0].holes.size() >= 1);
 }
 
+TEST_CASE("contour_faces Power Trim leftover hex stubs still punch a 12-point",
+          "[sketch][contours][rung07]") {
+    // Walk A14 click-trim opened the 30° hex into 12 outer stubs and left
+    // the across-flats hex almost whole. Nest then saw only Ø33 (area ~823).
+    // Recovered concentric hexes must still punch A_RING 275.
+    Sketch sk("WalkLeftoverStubs");
+    sk.add_circle(240.0, 0.0, 16.5);
+    const double lines[][4] = {
+        {252.500, 7.217, 240.000, 14.434},
+        {240.000, 14.434, 227.500, 7.217},
+        {227.500, 7.217, 227.500, 6.250},
+        {227.500, -7.217, 240.000, -14.434},
+        {240.000, -14.434, 252.500, -7.217},
+        {252.500, -7.217, 252.500, 7.217},
+        {254.434, 0.000, 252.500, 3.349},
+        {249.151, 9.151, 247.217, 12.500},
+        {247.217, 12.500, 243.349, 12.500},
+        {236.651, 12.500, 232.783, 12.500},
+        {232.783, 12.500, 230.849, 9.151},
+        {227.500, 3.349, 225.566, 0.000},
+        {225.566, 0.000, 227.500, -3.349},
+        {230.849, -9.151, 232.783, -12.500},
+        {232.783, -12.500, 236.651, -12.500},
+        {243.349, -12.500, 247.217, -12.500},
+        {247.217, -12.500, 249.151, -9.151},
+        {252.500, -3.349, 254.434, 0.000},
+    };
+    for (const auto& ln : lines)
+        sk.add_line(ln[0], ln[1], ln[2], ln[3]);
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    INFO(err << " n=" << outlines.size() << " area="
+             << (outlines.empty() ? 0.0 : std::abs(outlines[0].area)));
+    REQUIRE(outlines.size() == 1);
+    CHECK(std::abs(outlines[0].area) == Approx(275.172).margin(8.0));
+    CHECK(outlines[0].holes.size() >= 1);
+}
+
 TEST_CASE("contour_faces leftover hex triangles inside Ø33 are not extra pads",
           "[sketch][contours][rung07]") {
     // Walk A14 Power Trim leaves small closed triangles on the ring. Those

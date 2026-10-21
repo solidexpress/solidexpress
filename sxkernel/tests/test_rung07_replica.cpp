@@ -356,5 +356,56 @@ TEST_CASE("rung07 walk hexes punch a 12-point hole, three regions",
 
     trim_hex_inners(sk, 240.0, 0.0);
     outlines = sk.contour_outlines(0.05, &err);
+    areas.clear();
+    dump.str("");
+    dump.clear();
+    dump << err << " after-trim n=" << outlines.size();
+    for (const auto& o : outlines) {
+        areas.push_back(std::abs(o.area));
+        dump << " " << std::abs(o.area);
+    }
+    std::sort(areas.begin(), areas.end(), std::greater<double>());
+    INFO(dump.str());
     REQUIRE(outlines.size() == 3);
+    CHECK(areas[2] == Approx(275.172).margin(20.0));
+}
+
+TEST_CASE("rung07 leftover hex stubs plus C and handle are three regions",
+          "[rung07][replica][contours]") {
+    Sketch sk("WalkFullLeftover");
+    add_spanner_c(sk);
+    sk.add_circle(240.0, 0.0, 16.5);
+    const double lines[][4] = {
+        {252.500, 7.217, 240.000, 14.434},
+        {240.000, 14.434, 227.500, 7.217},
+        {227.500, 7.217, 227.500, 6.250},
+        {227.500, -7.217, 240.000, -14.434},
+        {240.000, -14.434, 252.500, -7.217},
+        {252.500, -7.217, 252.500, 7.217},
+        {254.434, 0.000, 252.500, 3.349},
+        {249.151, 9.151, 247.217, 12.500},
+        {247.217, 12.500, 243.349, 12.500},
+        {236.651, 12.500, 232.783, 12.500},
+        {232.783, 12.500, 230.849, 9.151},
+        {227.500, 3.349, 225.566, 0.000},
+        {225.566, 0.000, 227.500, -3.349},
+        {230.849, -9.151, 232.783, -12.500},
+        {232.783, -12.500, 236.651, -12.500},
+        {243.349, -12.500, 247.217, -12.500},
+        {247.217, -12.500, 249.151, -9.151},
+        {252.500, -3.349, 254.434, 0.000},
+    };
+    for (const auto& ln : lines) sk.add_line(ln[0], ln[1], ln[2], ln[3]);
+    sk.add_line(22.944, 10.0, 226.876, 10.0);
+    sk.add_line(22.944, -10.0, 226.876, -10.0);
+    std::string err;
+    auto outlines = sk.contour_outlines(0.05, &err);
+    std::vector<double> areas;
+    for (const auto& o : outlines) areas.push_back(std::abs(o.area));
+    std::sort(areas.begin(), areas.end(), std::greater<double>());
+    INFO(err << " n=" << outlines.size());
+    REQUIRE(outlines.size() == 3);
+    CHECK(areas[0] == Approx(3999.25).margin(40.0));
+    CHECK(areas[1] == Approx(1495.80).margin(40.0));
+    CHECK(areas[2] == Approx(275.172).margin(20.0));
 }
