@@ -33,14 +33,16 @@ class Rows07Chunk3:
                 self._pencil(sketches[0])
         self.weld_open_profile()
         notes = self.set_contours({"c", "ring"})
-        made = self.try_extrude("10", "New", "Midplane")
-        if not made.get("bodies"):
+        heads_ok = self._heads_not_handle(notes)
+        made = self.try_extrude("10", "New", "Midplane", keep={"c", "ring"})
+        if not made.get("bodies") or not heads_ok:
             self.weld_open_profile()
             notes = self.set_contours({"c", "ring"})
-            made = self.try_extrude("10", "New", "Midplane")
+            heads_ok = self._heads_not_handle(notes)
+            made = self.try_extrude("10", "New", "Midplane", keep={"c", "ring"})
         zext = self.z_extent()
         z_ok = zext is not None and abs(abs(zext[1] - zext[0]) - 10.0) <= 0.3
-        self.clause("contours heads", True, "C + ring | " + " ; ".join(notes[:6]))
+        self.clause("contours heads", heads_ok, "C + ring | " + " ; ".join(notes[:6]))
         self.clause("midplane", "Mid" in made.get("end", "") or "mid" in made["status"].lower(), str(made.get("end")))
         self.clause("10", "10" in str(made.get("field", "")) or "10" in made["status"], str(made.get("field")))
         self.clause("two pads", len(made["bodies"]) >= 1, str(made["bodies"]))
@@ -54,10 +56,10 @@ class Rows07Chunk3:
                 self._pencil(sketches[0])
         before = self.feature_names()
         notes = self.set_contours({"handle"})
-        made = self.try_extrude("6", "Fuse", "Midplane")
+        made = self.try_extrude("6", "Fuse", "Midplane", keep={"handle"})
         if made.get("sketch") or len(made.get("names") or []) <= len(before):
             notes = self.set_contours({"handle"})
-            made = self.try_extrude("6", "Fuse", "Midplane")
+            made = self.try_extrude("6", "Fuse", "Midplane", keep={"handle"})
         closed = not bool(made.get("sketch"))
         added = len(made.get("names") or []) > len(before)
         op = str(made.get("op") or "")

@@ -1781,6 +1781,7 @@ func _state_full() -> Dictionary:
 		"glyphs": _collect_glyphs(sm),
 		"glyph_leaders": _glyph_leaders(sm),
 		"contours": _collect_contours(sm),
+		"contour_regions": _collect_contour_regions(sm),
 		"infer": _infer_state(sm),
 		"measure": _measure_state(ix),
 		"camera": _camera_state(cam),
@@ -2324,6 +2325,24 @@ func _glyph_leaders(sm) -> Dictionary:
 			if verts is PackedVector3Array:
 				tris += (verts as PackedVector3Array).size() / 3
 	return {"present": true, "tris": tris}
+
+
+func _collect_contour_regions(sm) -> Array:
+	var out: Array = []
+	if sm == null or sm.sketch == null or not sm.sketch.has_method("contour_outlines"):
+		return out
+	for row in sm.sketch.contour_outlines():
+		if typeof(row) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = row
+		var sz: Vector2 = d.get("size", Vector2.ZERO)
+		var mn: Vector2 = d.get("min", Vector2.ZERO)
+		out.append({
+			"min": [mn.x, mn.y],
+			"size": [sz.x, sz.y],
+			"area": float(d.get("area", 0.0)),
+		})
+	return out
 
 
 func _collect_contours(sm) -> Array:

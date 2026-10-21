@@ -14,25 +14,41 @@ class BossGestures:
         ]
 
     def _parse_contour_note(self, note: str) -> tuple[float, float, float, float]:
-        """Return (cx, cy, width, height) from a contour status sentence."""
+        """Return (cx, cy, width, height) from a contour status sentence.
+
+        Probe clicks accumulate status. Use only the last `Contour N of M —`
+        sentence so a leftover C bbox cannot mark the handle chip as a head.
+        """
+        chunk = note
+        if "Contour " in note:
+            chunk = "Contour " + note.rsplit("Contour ", 1)[-1]
         cx = cy = width = height = 0.0
-        if "at (" in note:
+        if "at (" in chunk:
             try:
-                xy = note.split("at (")[-1].split(")")[0]
+                xy = chunk.split("at (")[-1].split(")")[0]
                 parts = xy.split(",")
                 cx = float(parts[0])
                 cy = float(parts[1])
             except (ValueError, IndexError):
                 pass
-        if "—" in note and "×" in note:
+        if "—" in chunk and "×" in chunk:
             try:
-                span = note.split("—")[1]
+                span = chunk.split("—")[1]
                 wh = span.split("mm")[0]
                 width = float(wh.split("×")[0].strip())
                 height = float(wh.split("×")[1].strip())
             except (ValueError, IndexError):
                 pass
         return cx, cy, width, height
+
+    def _heads_not_handle(self, notes: list[str]) -> bool:
+        has_c = any(self._contour_wanted({"c"}, n) for n in notes)
+        has_ring = any(self._contour_wanted({"ring"}, n) for n in notes)
+        handle_as_head = any(
+            self._contour_wanted({"handle"}, n) and self._contour_wanted({"c", "ring"}, n)
+            for n in notes
+        )
+        return has_c and has_ring and not handle_as_head
 
     def _contour_wanted(self, keep: set[str], note: str) -> bool:
         cx, _cy, width, height = self._parse_contour_note(note)
@@ -49,36 +65,58 @@ class BossGestures:
         return False
 
     def set_contours(self, keep: set[str]) -> list[str]:
-        # Probe-toggle leaves chips unknown. Uncheck all, click each once to
-        # read the bbox, keep only the wanted set, then re-assert pressed.
+        # Kernel outlines, not accumulated status: a leftover C sentence used
+        # to mark the handle chip as a head (A23 226.876×37.295).
         self._ensure_finish_bar()
-        self.refresh("controls")
-        self.uncheck_all_contours()
-        self.refresh("controls")
-        mapping = []
-        notes = []
-        for chip in self.contour_chips():
-            cid = str(chip.get("id", ""))
-            if not cid:
-                continue
-            mark = self.mark()
-            self.click(cid)
-            self.d.wait_idle(frames=1)
-            note = " | ".join(self.result_texts(mark)) or self.S()
-            want = self._contour_wanted(keep, note)
-            notes.append(note)
-            mapping.append((cid, want))
-            if not want:
-                self.click(cid)
-                self.d.wait_idle(frames=1)
-        for _pass in range(2):
-            self.refresh("controls")
-            for cid, want in mapping:
-                node = self.control(cid) or {}
-                pressed = bool(node.get("pressed") or node.get("button_pressed"))
-                if want != pressed:
+        notes: list[str] = []
+        for _attempt in range(3):
+            snap = self.refresh("controls", "contour_regions")
+            regions = list(snap.get("contour_regions") or [])
+            mapping: list[tuple[str, bool]] = []
+            notes = []
+            if regions:
+                for i, row in enumerate(regions):
+                    sz = row.get("size") or [0, 0]
+                    mn = row.get("min") or [0, 0]
+                    w, h = float(sz[0]), float(sz[1])
+                    cx = float(mn[0]) + w * 0.5
+                    cy = float(mn[1]) + h * 0.5
+                    note = "Contour %d of %d — %.1f × %.1f mm at (%.1f, %.1f)" % (
+                        i + 1, len(regions), w, h, cx, cy)
+                    want = self._contour_wanted(keep, note)
+                    notes.append(note)
+                    mapping.append((f"contour:{i + 1}", want))
+            else:
+                self.uncheck_all_contours()
+                self.refresh("controls")
+                for chip in self.contour_chips():
+                    cid = str(chip.get("id", ""))
+                    if not cid:
+                        continue
+                    mark = self.mark()
                     self.click(cid)
                     self.d.wait_idle(frames=1)
+                    note = " | ".join(self.result_texts(mark)) or self.S()
+                    want = self._contour_wanted(keep, note)
+                    notes.append(note)
+                    mapping.append((cid, want))
+            self.refresh("controls")
+            self.uncheck_all_contours()
+            ok = True
+            for _pass in range(2):
+                self.refresh("controls")
+                for cid, want in mapping:
+                    node = self.control(cid) or {}
+                    pressed = bool(node.get("pressed") or node.get("button_pressed"))
+                    if want != pressed:
+                        self.click(cid)
+                        self.d.wait_idle(frames=1)
+                        node = self.control(cid) or {}
+                        pressed = bool(node.get("pressed") or node.get("button_pressed"))
+                    if want != pressed:
+                        ok = False
+            if ok:
+                break
         self.refresh("controls")
         return notes
 
@@ -106,11 +144,14 @@ class BossGestures:
             "names": self.feature_names(),
         }
 
-    def try_extrude(self, distance: str, op: str = "New", end: str = "Midplane", apply: bool = True) -> dict:
+    def try_extrude(self, distance: str, op: str = "New", end: str = "Midplane",
+                    apply: bool = True, keep: set[str] | None = None) -> dict:
         self._ensure_finish_bar()
         self.set_option("finish:Op", op)
         self.set_option("finish:End", end)
         shown = self.type_into("finish:Distance", distance)
+        if keep:
+            self.set_contours(keep)
         mark = self.mark()
         reply = self.click("finish:Extrude", frames=8) if apply else {}
         if apply:

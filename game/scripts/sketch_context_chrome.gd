@@ -1996,6 +1996,10 @@ func pick_region(index: int) -> void:
 ## Refresh Selected Contours chips from the live sketch (SW multi-region pick).
 ## A host-face sketch uses region click instead of the checkbox row.
 func refresh_contours(sketch: SxSketch) -> void:
+	# Rebuild chips without dumping a heads/handle pick. A full re-select
+	# of leftover hex triangles made Midplane 10 extrude the handle strip
+	# (walk A23 226.876×37.295) instead of C + ring.
+	var keep: Array = _selected_contours.duplicate()
 	_clear_bar(_contour_bar)
 	_selected_contours.clear()
 	if sketch_mode != null and sketch_mode.host_face_id != "":
@@ -2021,11 +2025,20 @@ func refresh_contours(sketch: SxSketch) -> void:
 	lbl.text = "Contours"
 	lbl.add_theme_font_size_override("font_size", UiScale.body())
 	_contour_bar.add_child(lbl)
+	var reuse := false
+	if not keep.is_empty():
+		reuse = true
+		for idx in keep:
+			if int(idx) < 0 or int(idx) >= n:
+				reuse = false
+				break
 	for i in n:
-		_selected_contours.append(i)
+		var on := true if not reuse else keep.has(i)
+		if on:
+			_selected_contours.append(i)
 		var b := CheckButton.new()
 		b.text = str(i + 1)
-		b.button_pressed = true
+		b.button_pressed = on
 		b.custom_minimum_size = Vector2(40, _chip_h())
 		b.tooltip_text = "Selected Contours — include region %d" % (i + 1)
 		var idx := i
