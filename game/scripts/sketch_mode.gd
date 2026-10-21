@@ -3388,6 +3388,8 @@ func constrain(type: String, value: float = 0.0) -> String:
 				dimensions.remove_at(i)
 		res = run_solve()
 		status.emit("Relation did not stick")
+	if type == "coincident":
+		_seat_crossing_line_ends()
 	_redraw()
 	_redraw_selected()
 	return res["status"]
@@ -4837,6 +4839,7 @@ func _drop_circles_concentric_with_jaw_arcs() -> void:
 func _weld_nearby_curve_joints(tol: float = 0.05) -> void:
 	if sketch == null:
 		return
+	_seat_crossing_line_ends()
 	var curves: Array = []
 	for id in sketch.entity_ids():
 		if sketch.is_construction(id):
@@ -4876,6 +4879,79 @@ func _weld_nearby_curve_joints(tol: float = 0.05) -> void:
 				changed = true
 		if changed:
 			sketch.set_entity_geometry(id, {"start": ns, "end": ne})
+
+
+## Handle-C: a strip that slightly overshoots into the ellipse splits two
+## ~50 mm² holes from the C (A23 1395 vs 1496). Point-on-curve coincident
+## is rejected as redundant in the busy spanner sketch; seat the interior
+## end at the crossing instead. Jaw walls and hex chords stay put — both
+## ends inside, or the interior end is more than a snap from the curve.
+func _seat_crossing_line_ends() -> void:
+	if sketch == null:
+		return
+	const SEAT_MM := 2.5
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var s: Vector2 = info["start"]
+		var e: Vector2 = info["end"]
+		for oid in sketch.entity_ids():
+			if oid == id or sketch.is_construction(oid):
+				continue
+			var cinfo: Dictionary = sketch.entity_info(oid)
+			if not _is_curve_kind(str(cinfo.get("type", ""))):
+				continue
+			var s_in := _point_inside_curve(cinfo, s)
+			var e_in := _point_inside_curve(cinfo, e)
+			if s_in == e_in:
+				continue
+			var inner: Vector2 = s if s_in else e
+			if _curve_body_distance(cinfo, inner) > SEAT_MM:
+				continue
+			var outer: Vector2 = e if s_in else s
+			var hit := _crossing_on_curve(oid, inner, outer)
+			if s_in:
+				s = hit
+			else:
+				e = hit
+			sketch.set_entity_geometry(id, {"start": s, "end": e})
+			break
+
+
+func _curve_body_distance(info: Dictionary, p: Vector2) -> float:
+	match str(info.get("type", "")):
+		"circle", "arc":
+			return absf(p.distance_to(info["center"]) - float(info.get("radius", 0.0)))
+		"ellipse", "elliptical_arc":
+			var full: Dictionary = info.duplicate()
+			full["type"] = "ellipse"
+			return SketchEllipse.distance(full, p)
+	return INF
+
+
+func _point_inside_curve(info: Dictionary, p: Vector2) -> bool:
+	match str(info.get("type", "")):
+		"circle", "arc":
+			return p.distance_to(info["center"]) + 1.0e-6 < float(info.get("radius", 0.0))
+		"ellipse", "elliptical_arc":
+			return SketchEllipse.implicit(info, p) < 1.0 - 1.0e-6
+	return false
+
+
+func _crossing_on_curve(curve_id: String, inner: Vector2, outer: Vector2) -> Vector2:
+	var a := inner
+	var b := outer
+	var info: Dictionary = sketch.entity_info(curve_id)
+	for _i in 24:
+		var m: Vector2 = (a + b) * 0.5
+		if _point_inside_curve(info, m):
+			a = m
+		else:
+			b = m
+	return closest_on_entity(curve_id, b)
 
 
 func _reweld_jaw_profile() -> void:
