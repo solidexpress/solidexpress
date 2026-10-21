@@ -76,7 +76,7 @@ func _handle_ellipse_case(ctx: FilmContext) -> void:
 			"Handle-C minor", SPAN)
 	var hit := SpannerFixture.handle_xy(true)[0]
 	await SpannerFixture.line(ctx, Vector2(30, 10), Vector2(120, 10), "handle on C", SPAN)
-	await _coincident_chip(ctx, sm, Vector2(30, 10), hit, "handle on C")
+	await _coincident_chip(ctx, sm, Vector2(30, 10), Vector2(24.7, 4.0), "handle on C")
 	var line := _handle_line(sm)
 	var ell := _first_of(sm, "ellipse")
 	if ell == "":
@@ -140,6 +140,7 @@ func _circle_case(ctx: FilmContext) -> void:
 
 
 func _coincident_chip(ctx: FilmContext, sm: SketchMode, a: Vector2, b: Vector2, desc: String, span: float = SPAN) -> void:
+	await FilmSteps._snap_off_if_visible(ctx)
 	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.SELECT)
 	await FilmSteps.click_uv(ctx, a, "%s first" % desc, span)
 	await _zoom(ctx, Vector3(b.x, b.y, 0.0), span)

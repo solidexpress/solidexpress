@@ -559,6 +559,7 @@ static func _type_last_label(ctx: FilmContext, text: String) -> void:
 
 
 static func coincident_on_curve(ctx: FilmContext, point: Vector2, on_curve: Vector2) -> void:
+	await FilmSteps._snap_off_if_visible(ctx)
 	await constrain_chip(ctx, "Coincident", point, on_curve)
 
 
@@ -686,10 +687,12 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	if _failed():
 		return
 	await coincident_on_curve(ctx, Vector2(120, 10), Vector2(c.x, r))
-	# Handle end on the C at the y=±10 hit, not the major-axis / jaw tip.
-	await coincident_on_curve(ctx, Vector2(30, 10), handle_xy(true)[0])
+	# Handle end on the C at the y=±10 hit. Second pick is the arc body so
+	# Shift-select adds the ellipse instead of toggling the strip off.
+	var c_body := Vector2(24.7, 4.0)
+	await coincident_on_curve(ctx, Vector2(30, 10), c_body)
 	await coincident_on_curve(ctx, Vector2(120, -10), Vector2(c.x, -r))
-	await coincident_on_curve(ctx, Vector2(30, -10), handle_xy(false)[0])
+	await coincident_on_curve(ctx, Vector2(30, -10), c_body)
 	await frame_uv(ctx, Vector2.ZERO, SPAN_HEAD, "Frame C overflow")
 	for uv in [Vector2(18, 10), Vector2(18, -10)]:
 		if _failed():

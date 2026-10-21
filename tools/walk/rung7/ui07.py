@@ -128,6 +128,10 @@ class WalkUI07(ProfileGestures, BossGestures, DressGestures, WalkChrome):
             return (22.944, half), (ring, half)
         return (23.929, -half), (ring, -half)
 
+    def c_body_uv(self) -> tuple[float, float]:
+        # +X elliptical-arc pick, off the handle (y=±10) and off the CL (y=0).
+        return (24.7, 4.0)
+
     def sketch_on_datum(self, name: str, view_key: str) -> dict:
         self.clear_faces()
         if bool((self.refresh("sketch").get("sketch") or {}).get("active")):

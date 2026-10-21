@@ -2622,22 +2622,25 @@ func _nearest_entity_at(pos2: Vector2) -> String:
 	return best_id
 
 
-## Shift-select at a line-curve vertex is the curve. The handle end sits on
-## the C; picking the line again would toggle it off, and the major-axis tip
-## is the same vertex as a jaw (P2P coincident pulls the strip through the C).
+## Shift-select at a line-curve vertex is the curve. Construction CL through
+## the C must not win: the handle end sits on the elliptical arc, and picking
+## the line again would toggle it off.
 func _additive_entity_at(pos2: Vector2) -> Dictionary:
-	var best_id := _nearest_entity_at(pos2)
-	if best_id == "" or sketch == null:
+	if sketch == null:
+		return {}
+	var best_id := _nearest_profile_entity_at(pos2)
+	if best_id == "":
 		return {}
 	var role := _endpoint_role_at(best_id, pos2)
 	var has_line := false
 	for id in selected:
+		if sketch.is_construction(id):
+			continue
 		if str(sketch.entity_info(id).get("type", "")) == "line":
 			has_line = true
 			break
 	if not has_line:
 		return {"id": best_id, "role": role}
-	var line_d := _entity_distance(sketch.entity_info(best_id), pos2)
 	var curve_id := ""
 	var curve_d := _pick_tolerance()
 	for id in sketch.entity_ids():
@@ -2650,7 +2653,7 @@ func _additive_entity_at(pos2: Vector2) -> Dictionary:
 		if d < curve_d:
 			curve_d = d
 			curve_id = str(id)
-	if curve_id != "" and curve_d <= line_d + 0.25:
+	if curve_id != "":
 		return {"id": curve_id, "role": "self"}
 	return {"id": best_id, "role": role}
 
@@ -3289,6 +3292,11 @@ func constrain(type: String, value: float = 0.0) -> String:
 						{"entity": selected[0], "role": pair[0]},
 						{"entity": selected[1], "role": pair[1]}], 0.0)
 					added = true
+			if not added:
+				# Handle end on the C: both picks land on the strip, so the
+				# ellipse never joins the selection. Weld the end to the curve.
+				cid = _coincident_line_to_curve()
+				added = cid != ""
 		"distance":
 			if selected.size() == 1 and sketch.entity_info(selected[0]).get("type", "") == "line":
 				cid = sketch.add_constraint("distance", [
@@ -5384,6 +5392,40 @@ func _closest_endpoints(id_a: String, id_b: String) -> Array[String]:
 				best = d
 				pair = [ra, rb]
 	return pair
+
+
+## Coincident with only a strip selected: weld each end that already sits on
+## a circle / arc / ellipse (handle-C at y=±10, handle-Ø33 at the chord).
+func _coincident_line_to_curve() -> String:
+	if sketch == null:
+		return ""
+	const ON_CURVE_MM := 1.25
+	var cid := ""
+	for id in selected:
+		if sketch.is_construction(id):
+			continue
+		if str(sketch.entity_info(id).get("type", "")) != "line":
+			continue
+		for role: String in ["start", "end"]:
+			var p := _endpoint_pos(id, role)
+			var curve_id := ""
+			var best_d := ON_CURVE_MM
+			for oid in sketch.entity_ids():
+				if oid == id or sketch.is_construction(oid):
+					continue
+				var info: Dictionary = sketch.entity_info(oid)
+				if not _is_curve_kind(str(info.get("type", ""))):
+					continue
+				var d := _entity_distance(info, p)
+				if d < best_d:
+					best_d = d
+					curve_id = str(oid)
+			if curve_id == "":
+				continue
+			cid = sketch.add_constraint("coincident", [
+				{"entity": id, "role": role},
+				{"entity": curve_id, "role": "self"}], 0.0)
+	return cid
 
 
 func _redraw_selected() -> void:

@@ -141,18 +141,22 @@ class Rows07Chunk2:
 
     @row("A18", chunk=2, on="rung07", expect={"blocker": "A17", "sketch": True})
     def row_A18(self) -> None:
-        hi, circ = self.handle_xy(True)
-        lo, circ_lo = self.handle_xy(False)
+        _hi, circ = self.handle_xy(True)
         n1 = self.constrain("Coincident", (120.0, 10.0), (self.mm("CENTER"), self.mm("RING_D") * 0.5))
-        # Frames t0297/t0315: the strip meets the C at y=±10, not the
-        # major-axis tip (that pick is the jaw vertex and P2P-pulls the handle).
-        n2 = self.constrain("Coincident", (30.0, 10.0), hi)
+        # Frames t0297/t0315: weld the strip to the C at y=±10. Second pick is
+        # the elliptical-arc body (not the handle end — that toggles the line
+        # off — and not the major-axis / jaw tip).
+        was = self._set_snap(False)
+        c_body = self.c_body_uv()
+        n2 = self.constrain("Coincident", (30.0, 10.0), c_body)
         self.constrain("Coincident", (120.0, -10.0), (self.mm("CENTER"), -self.mm("RING_D") * 0.5))
-        self.constrain("Coincident", (30.0, -10.0), lo)
+        self.constrain("Coincident", (30.0, -10.0), c_body)
+        self._set_snap(was)
         for uv in ((18.0, 10.0), (18.0, -10.0), (232.0, 10.0), (232.0, -10.0)):
             self.trim_at(uv)
-        self.clause("coincident ring", "Coincident" in n1 or "coincident" in self.constraint_types(), n1)
-        self.clause("coincident ellipse", "Coincident" in n2 or True, n2)
+        types = self.constraint_types()
+        self.clause("coincident ring", "Coincident" in n1 or "coincident" in types, n1)
+        self.clause("coincident ellipse", "Coincident" in n2 or types.count("coincident") >= 2, n2)
         self.clause("x 226.9", abs(circ[0] - 226.876) <= 0.4, str(circ))
         self.clause("trimmed", True, "strip")
 
