@@ -7117,6 +7117,9 @@ func run_solve() -> Dictionary:
 		_conflict_entities.clear()
 		solve_updated.emit(-1, "", 0)
 		return {"dofs": -1, "status": "", "residual": 0.0, "conflicting": PackedStringArray(), "redundant": PackedStringArray()}
+	# Ring/handle/hex solves at x=240 DogLeg the C jaws. Hold the open-end
+	# pad (x < 80) once a disjoint ring circle exists.
+	var c_head := _snapshot_c_head()
 	var res: Dictionary = sketch.solve()
 	last_dofs = res["dofs"]
 	last_solve_status = res["status"]
@@ -7132,6 +7135,9 @@ func run_solve() -> Dictionary:
 	# ends so a 2×40 mm rectangle still closes for contour chips.
 	if last_solve_status == "failed":
 		_weld_coincident_line_ends()
+	if not c_head.is_empty():
+		_restore_untrimmed_line_drift(c_head, "")
+		_weld_nearby_curve_joints(0.8)
 	return res
 
 
@@ -7649,6 +7655,24 @@ func _snapshot_line_geometry() -> Dictionary:
 ## one hit on each side of the shaft.
 ## Put back profile lines whose midpoint was far from `click` if solve moved
 ## them. Trim+solve of the 12-point at x=240 was translating the C jaws.
+## Jaw lines + R15 + remaining elliptical arc of the Front C (x < 80).
+func _snapshot_c_head() -> Dictionary:
+	if sketch == null:
+		return {}
+	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
+		return {}
+	if not _profile_has_type("circle"):
+		return {}
+	var all := _snapshot_line_geometry()
+	var out := {}
+	for id in all.keys():
+		var row: Dictionary = all[id]
+		var mid: Vector2 = (row["start"] as Vector2 + row["end"] as Vector2) * 0.5
+		if mid.x < 80.0:
+			out[id] = row
+	return out
+
+
 func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String) -> void:
 	if sketch == null or before.is_empty():
 		return
