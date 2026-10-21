@@ -658,6 +658,19 @@ TEST_CASE("trim_entity on an uncut ellipse returns false",
     REQUIRE(sk.entity(ell)->type == SketchEntityType::Ellipse);
 }
 
+TEST_CASE("trim_entity does not collapse a handle that already meets the ellipse",
+          "[sketchtools][trim][rung07]") {
+    Sketch sk("HandleNoCollapse");
+    const double deg = 17.0 * 3.14159265358979323846 / 180.0;
+    sk.add_ellipse(0.0, 0.0, 27.5, 25.0, deg + 3.14159265358979323846 * 0.5);
+    sk.add_circle(240.0, 0.0, 16.5);
+    auto ln = sk.add_line(22.944, 10.0, 226.876, 10.0);
+    REQUIRE_FALSE(trim_entity(sk, ln.str(), 18.0, 10.0));
+    REQUIRE(sk.entity(ln) != nullptr);
+    CHECK(sk.param(sk.entity(ln)->params[0]) == Approx(22.944).margin(1e-6));
+    CHECK(sk.param(sk.entity(ln)->params[2]) == Approx(226.876).margin(1e-6));
+}
+
 TEST_CASE("offset racetrack stays closed after solve", "[sketchtools][offset][l8]") {
     Sketch sk("Racetrack");
     const double pi = 3.14159265358979323846;

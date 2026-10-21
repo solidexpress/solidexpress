@@ -119,6 +119,9 @@ class WalkUI07(ProfileGestures, BossGestures, DressGestures, WalkChrome):
         return (self.mm("CENTER"), 0.0)
 
     def handle_xy(self, upper: bool) -> tuple[tuple[float, float], tuple[float, float]]:
+        # C hit at y=±10 on the ellipse (+X), Ø33 at the left chord. Not the
+        # major-axis tip — that vertex is the jaw, and coincident there pulls
+        # the strip through the C (A23 volume 41996 vs 41705).
         half = self.mm("HANDLE_HALF")
         ring = self.mm("CENTER") - math.sqrt(max(0.0, (self.mm("RING_D") * 0.5) ** 2 - half ** 2))
         if upper:

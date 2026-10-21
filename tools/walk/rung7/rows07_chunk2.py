@@ -144,9 +144,11 @@ class Rows07Chunk2:
         hi, circ = self.handle_xy(True)
         lo, circ_lo = self.handle_xy(False)
         n1 = self.constrain("Coincident", (120.0, 10.0), (self.mm("CENTER"), self.mm("RING_D") * 0.5))
-        n2 = self.constrain("Coincident", (30.0, 10.0), self.ellipse_major())
+        # Frames t0297/t0315: the strip meets the C at y=±10, not the
+        # major-axis tip (that pick is the jaw vertex and P2P-pulls the handle).
+        n2 = self.constrain("Coincident", (30.0, 10.0), hi)
         self.constrain("Coincident", (120.0, -10.0), (self.mm("CENTER"), -self.mm("RING_D") * 0.5))
-        self.constrain("Coincident", (30.0, -10.0), self.ellipse_major())
+        self.constrain("Coincident", (30.0, -10.0), lo)
         for uv in ((18.0, 10.0), (18.0, -10.0), (232.0, 10.0), (232.0, -10.0)):
             self.trim_at(uv)
         self.clause("coincident ring", "Coincident" in n1 or "coincident" in self.constraint_types(), n1)

@@ -686,9 +686,10 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	if _failed():
 		return
 	await coincident_on_curve(ctx, Vector2(120, 10), Vector2(c.x, r))
-	await coincident_on_curve(ctx, Vector2(30, 10), ellipse_major_uv())
+	# Handle end on the C at the y=±10 hit, not the major-axis / jaw tip.
+	await coincident_on_curve(ctx, Vector2(30, 10), handle_xy(true)[0])
 	await coincident_on_curve(ctx, Vector2(120, -10), Vector2(c.x, -r))
-	await coincident_on_curve(ctx, Vector2(30, -10), ellipse_major_uv())
+	await coincident_on_curve(ctx, Vector2(30, -10), handle_xy(false)[0])
 	await frame_uv(ctx, Vector2.ZERO, SPAN_HEAD, "Frame C overflow")
 	for uv in [Vector2(18, 10), Vector2(18, -10)]:
 		if _failed():

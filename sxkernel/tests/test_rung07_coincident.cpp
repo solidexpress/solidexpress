@@ -56,6 +56,38 @@ TEST_CASE("coincident line end to ellipse stays on the curve", "[sketch][rung07]
     REQUIRE(ellipse_implicit(*ax, x, y) == Approx(1.0).margin(0.02));
 }
 
+TEST_CASE("coincident handle end to ellipse stays at the y=10 hit",
+          "[sketch][rung07]") {
+    Sketch sk("HandleOnC");
+    auto ell = sk.add_ellipse(0.0, 0.0, 27.5, 25.0, kDeg + kPi * 0.5);
+    auto pin = sk.add_point(0.0, 0.0);
+    sk.add_constraint(ConstraintType::Fix, {{pin, PointRole::Self}});
+    sk.add_constraint(ConstraintType::Coincident,
+                      {{ell, PointRole::Center}, {pin, PointRole::Self}});
+    auto ln = sk.add_line(22.944, 10.0, 120.0, 10.0);
+    auto far = sk.add_point(120.0, 10.0);
+    sk.add_constraint(ConstraintType::Fix, {{far, PointRole::Self}});
+    sk.add_constraint(ConstraintType::Coincident,
+                      {{ln, PointRole::End}, {far, PointRole::Self}});
+    sk.add_constraint(ConstraintType::Horizontal, {{ln, PointRole::Self}});
+    sk.add_constraint(ConstraintType::Coincident,
+                      {{ln, PointRole::Start}, {ell, PointRole::Self}});
+    auto solver = make_planegcs_backend();
+    auto result = solver->solve(sk);
+    REQUIRE(result.ok());
+    const SketchEntity* e = sk.entity(ln);
+    REQUIRE(e != nullptr);
+    const double x = sk.param(e->params[0]);
+    const double y = sk.param(e->params[1]);
+    REQUIRE(y == Approx(10.0).margin(0.05));
+    REQUIRE(x == Approx(22.944).margin(0.4));
+    auto major = world(0.0, 27.5);
+    REQUIRE(std::hypot(x - major[0], y - major[1]) > 15.0);
+    auto ax = sk.ellipse_axes(ell);
+    REQUIRE(ax.has_value());
+    REQUIRE(ellipse_implicit(*ax, x, y) == Approx(1.0).margin(0.02));
+}
+
 TEST_CASE("coincident line end to circle sits on the radius", "[sketch][rung07]") {
     Sketch sk("HandleOnRing");
     auto circ = sk.add_circle(240.0, 0.0, 16.5);

@@ -14,6 +14,7 @@ func _init() -> void:
 	FilmUI.reset_fail_count()
 	var ctx := await SpannerFixture.boot(self, Vector2i(1280, 800))
 	await _ellipse_case(ctx)
+	await _handle_ellipse_case(ctx)
 	await _circle_case(ctx)
 	check(FilmUI.fail_count == 0, "FilmUI click path stayed on screen (%d)" % FilmUI.fail_count)
 	finish()
@@ -50,6 +51,48 @@ func _ellipse_case(ctx: FilmContext) -> void:
 	check(centre.distance_to(Vector2.ZERO) <= 0.3, "ellipse centre unmoved (got %s)" % str(centre))
 	var on := sm.closest_on_entity(ell, start).distance_to(start)
 	check(on <= 0.2, "jaw end sits on the ellipse (dist %.3f)" % on)
+
+
+func _handle_ellipse_case(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm.active:
+		await FilmUI.exit_sketch(ctx)
+	await process_frame
+	ctx.view.new_document()
+	await process_frame
+	await process_frame
+	ctx.main.camera.apply_standard_view_id("front")
+	await process_frame
+	OriginPlanes.begin(ctx.main, "Front")
+	await process_frame
+	sm = ctx.main.sketch_mode
+	check(sm.active, "Front sketch is active for handle-on-C")
+	await _zoom(ctx, Vector3.ZERO, SPAN)
+	await FilmUI.select_sketch_tool(ctx, sm, SketchMode.Tool.ELLIPSE)
+	await FilmSteps.click_uv(ctx, Vector2.ZERO, "Handle-C centre", SPAN)
+	await FilmSteps.click_uv(ctx, SpannerFixture.world(0.0, SpannerFixture.mm("ELLIPSE_MAJ") * 0.5),
+			"Handle-C major", SPAN)
+	await FilmSteps.click_uv(ctx, SpannerFixture.world(SpannerFixture.mm("ELLIPSE_MIN") * 0.5, 0.0),
+			"Handle-C minor", SPAN)
+	var hit := SpannerFixture.handle_xy(true)[0]
+	await SpannerFixture.line(ctx, Vector2(30, 10), Vector2(120, 10), "handle on C", SPAN)
+	await _coincident_chip(ctx, sm, Vector2(30, 10), hit, "handle on C")
+	var line := _handle_line(sm)
+	var ell := _first_of(sm, "ellipse")
+	if ell == "":
+		ell = _first_of(sm, "elliptical_arc")
+	check(line != "" and ell != "", "handle line and ellipse exist")
+	if line == "" or ell == "":
+		return
+	var start: Vector2 = sm.sketch.entity_info(line).get("start", Vector2.ZERO)
+	var endp: Vector2 = sm.sketch.entity_info(line).get("end", Vector2.ZERO)
+	var left: Vector2 = start if start.x < endp.x else endp
+	check(absf(left.y - 10.0) <= 0.4, "handle stays at y=10 (got %s)" % str(left))
+	check(absf(left.x - hit.x) <= 0.8, "handle end at C hit (got %.3f want %.3f)" % [left.x, hit.x])
+	var major := SpannerFixture.ellipse_major_uv()
+	check(left.distance_to(major) > 15.0, "handle end is not the major-axis tip (got %s)" % str(left))
+	var on := sm.closest_on_entity(ell, left).distance_to(left)
+	check(on <= 0.3, "handle end sits on the ellipse (dist %.3f)" % on)
 
 
 func _circle_case(ctx: FilmContext) -> void:

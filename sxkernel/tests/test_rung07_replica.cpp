@@ -430,6 +430,10 @@ TEST_CASE("rung07 Power Trim at (18,±10) does not punch the C pad",
     CHECK(c_area() == Approx(1495.80).margin(40.0));
     sketch_tools::trim_entity(sk, hi.str(), 18.0, 10.0);
     sketch_tools::trim_entity(sk, lo.str(), 18.0, -10.0);
+    const SketchEntity* he = sk.entity(hi);
+    REQUIRE(he != nullptr);
+    CHECK(sk.param(he->params[0]) == Approx(22.944).margin(0.4));
+    CHECK(sk.param(he->params[2]) == Approx(226.876).margin(0.4));
     std::vector<std::string> arcs;
     for (const auto& e : sk.entities()) {
         if (e.type == SketchEntityType::EllipticalArc || e.type == SketchEntityType::Ellipse)

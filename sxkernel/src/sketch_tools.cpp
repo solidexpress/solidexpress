@@ -13,6 +13,10 @@ namespace {
 constexpr double k_eps = 1e-6;
 constexpr double k_pi = 3.14159265358979323846;
 constexpr double k_two_pi = 2.0 * k_pi;
+// Power Trim click must sit on the segment. Clamping a miss onto an end
+// treated (18, ±10) inside the C as the handle start and collapsed a strip
+// that already met the ellipse onto the Ø33 hit.
+constexpr double k_trim_on_line_mm = 3.0;
 
 struct Vec2 {
     double x = 0, y = 0;
@@ -403,8 +407,10 @@ bool trim_line(Sketch& s, EntityId id, double px, double py) {
     std::vector<double> ts;
     if (!collect_line_intersections(s, *e, id, ts)) return false;
 
-    double t_pick = dot(sub({px, py}, a0), d) / len2;
-    t_pick = std::clamp(t_pick, 0.0, 1.0);
+    double t_raw = dot(sub({px, py}, a0), d) / len2;
+    Vec2 on_seg = add(a0, mul(d, std::clamp(t_raw, 0.0, 1.0)));
+    if (hypot2(sub({px, py}, on_seg)) > k_trim_on_line_mm) return false;
+    double t_pick = std::clamp(t_raw, 0.0, 1.0);
 
     // Sub-segments: [0, t0], [t0, t1], ..., [tn-1, 1]. Find one containing pick.
     double lo = 0.0;

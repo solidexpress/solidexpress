@@ -2622,6 +2622,39 @@ func _nearest_entity_at(pos2: Vector2) -> String:
 	return best_id
 
 
+## Shift-select at a line-curve vertex is the curve. The handle end sits on
+## the C; picking the line again would toggle it off, and the major-axis tip
+## is the same vertex as a jaw (P2P coincident pulls the strip through the C).
+func _additive_entity_at(pos2: Vector2) -> Dictionary:
+	var best_id := _nearest_entity_at(pos2)
+	if best_id == "" or sketch == null:
+		return {}
+	var role := _endpoint_role_at(best_id, pos2)
+	var has_line := false
+	for id in selected:
+		if str(sketch.entity_info(id).get("type", "")) == "line":
+			has_line = true
+			break
+	if not has_line:
+		return {"id": best_id, "role": role}
+	var line_d := _entity_distance(sketch.entity_info(best_id), pos2)
+	var curve_id := ""
+	var curve_d := _pick_tolerance()
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id) or selected.has(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if not _is_curve_kind(str(info.get("type", ""))):
+			continue
+		var d := _entity_distance(info, pos2)
+		if d < curve_d:
+			curve_d = d
+			curve_id = str(id)
+	if curve_id != "" and curve_d <= line_d + 0.25:
+		return {"id": curve_id, "role": "self"}
+	return {"id": best_id, "role": role}
+
+
 func _select_at(pos2: Vector2) -> void:
 	var best_id := _nearest_entity_at(pos2)
 	var region_idx := _region_index_at(pos2)
@@ -2631,8 +2664,9 @@ func _select_at(pos2: Vector2) -> void:
 	# Additive is selection arithmetic. A region fill is a finish gesture
 	# and must not run under Shift (A12 second circle).
 	if _additive_pick():
-		if best_id != "":
-			toggle_pick_entity(best_id, _endpoint_role_at(best_id, pos2))
+		var hit := _additive_entity_at(pos2)
+		if not hit.is_empty():
+			toggle_pick_entity(str(hit["id"]), str(hit["role"]))
 		return
 	if region_idx >= 0 and not on_stroke:
 		_set_selected([])
