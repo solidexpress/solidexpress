@@ -347,7 +347,7 @@ func _cmd_graph_add_fillet(req: Dictionary) -> Dictionary:
 	var radius := float(req.get("radius", 1.0))
 	if not view.doc.has_method("graph_add_fillet"):
 		return {"error": "graph_add_fillet unavailable"}
-	var fid := view.doc.graph_add_fillet(host, edges, radius)
+	var fid: String = str(view.doc.graph_add_fillet(host, edges, radius))
 	if fid == "":
 		return {"error": "graph_add_fillet failed", "edges": edges.size()}
 	return {"id": fid, "edges": edges.size(), "radius": radius}
