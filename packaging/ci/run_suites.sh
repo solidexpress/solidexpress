@@ -315,10 +315,14 @@ if [[ ${#selected_scripts[@]} -gt 0 ]]; then
     (
       set +e
       # user:// is per process so parallel suites do not share autosaves.
+      # Clone game/ (with .godot) under a fake repo root and symlink tools/
+      # so SxChecker can still reach tools/check_*.py (res:// parent + tools/).
       jobhome="${work}/home-${i}"
-      jobproj="${work}/proj-${i}"
-      mkdir -p "${jobhome}/.local/share" "${jobhome}/.config"
+      jobroot="${work}/proj-${i}"
+      jobproj="${jobroot}/game"
+      mkdir -p "${jobhome}/.local/share" "${jobhome}/.config" "${jobroot}"
       clone_game_project "${jobproj}"
+      ln -sfn "${ROOT_DIR}/tools" "${jobroot}/tools"
       mapfile -t GODOT_RUN < <(godot_argv_for_render "${selected_renders[$i]}" "${jobproj}")
       HOME="${jobhome}" \
         XDG_DATA_HOME="${jobhome}/.local/share" \
