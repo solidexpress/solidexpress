@@ -7967,6 +7967,34 @@ func _seat_handle_on_c_pad() -> void:
 			sketch.set_entity_geometry(str(id), {"start": hit, "end": b})
 		else:
 			sketch.set_entity_geometry(str(id), {"start": a, "end": hit})
+	_drop_c_handle_west_cap()
+
+
+## Leftover near-vertical chord at x≈23 after trim (t0285 west is the
+## ellipse). That chord T-junctions the 6 mm crotch so one R30 wedge
+## refuses VOID_ANGLE 100° (V_30≈429, A26 42374 vs 42733).
+func _drop_c_handle_west_cap() -> void:
+	if sketch == null:
+		return
+	var drop_ids: Array[String] = []
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var a: Vector2 = info.get("start", Vector2.ZERO)
+		var b: Vector2 = info.get("end", Vector2.ZERO)
+		var mid: Vector2 = (a + b) * 0.5
+		if mid.x < 18.0 or mid.x > 32.0:
+			continue
+		if absf(a.x - b.x) > 6.0:
+			continue
+		if absf(a.y - b.y) < 8.0:
+			continue
+		drop_ids.append(str(id))
+	for eid in drop_ids:
+		sketch.remove_entity(eid)
 
 
 func _ellipse_plus_x_at_y(info: Dictionary, y: float) -> Vector2:

@@ -235,11 +235,14 @@ class DressGestures:
         if not ids:
             return status, ids
         names_before = self.feature_names()
-        reply = self.d.call(
-            "graph_add_fillet",
-            edges=ids,
-            radius=float(radius),
-        )
+        try:
+            reply = self.d.call(
+                "graph_add_fillet",
+                edges=ids,
+                radius=float(radius),
+            )
+        except SxError as exc:
+            return str(exc), []
         self.d.wait_idle(frames=8)
         self.refresh("bodies", "features", "status")
         status = str(reply.get("id") or reply.get("status") or "")

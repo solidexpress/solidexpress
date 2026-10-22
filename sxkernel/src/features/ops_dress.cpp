@@ -712,7 +712,7 @@ struct NeckFillet {
         std::vector<int> seen;
         for (const auto& mid : mids) {
             int best_i = 0;
-            double best_d = 2.0;
+            double best_d = 12.0;
             for (int i = 1; i <= edges.Extent(); ++i) {
                 if (std::find(seen.begin(), seen.end(), i) != seen.end()) continue;
                 const TopoDS_Edge edge = TopoDS::Edge(edges(i));
