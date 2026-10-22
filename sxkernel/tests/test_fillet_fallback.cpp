@@ -1,8 +1,10 @@
 #include <catch.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <BRepGProp.hxx>
@@ -170,7 +172,12 @@ TEST_CASE("fillet wedge recovers R30 on elliptical C neck", "[exactness][fillet]
     REQUIRE(after != nullptr);
     REQUIRE(shape::is_valid(after->shape));
     REQUIRE(shape::count(after->shape).solids == 1);
-    CHECK(std::abs(shape::volume(after->shape) - v0) > 1.0);
+    const double dv = shape::volume(after->shape) - v0;
+    WARN("C-neck R30 v0=" << v0 << " after=" << shape::volume(after->shape) << " dv=" << dv
+                          << " edges=" << necks.size());
+    CHECK(std::abs(dv) > 1.0);
+    // Two Z-edges, analytic V_30 = 858. Clip/wedge must not leave ~half.
+    CHECK(dv == Approx(858.0).margin(120.0));
 }
 
 void add_twelve_point(Sketch& sk, double cx, double cy, double af) {
@@ -255,4 +262,143 @@ TEST_CASE("fillet R20 on 12-point ring neck stays valid", "[exactness][fillet][r
     REQUIRE(after != nullptr);
     REQUIRE(shape::is_valid(after->shape));
     REQUIRE(shape::count(after->shape).solids == 1);
+}
+
+void add_af_hex(Sketch& sk, double cx, double cy, double af, double rot) {
+    const double R = af / std::sqrt(3.0);
+    std::array<std::array<double, 2>, 6> p{};
+    for (int i = 0; i < 6; ++i) {
+        const double a = rot + static_cast<double>(i) * kPi / 3.0;
+        p[static_cast<size_t>(i)] = {cx + R * std::cos(a), cy + R * std::sin(a)};
+    }
+    for (int i = 0; i < 6; ++i) {
+        const auto& a = p[static_cast<size_t>(i)];
+        const auto& b = p[static_cast<size_t>((i + 1) % 6)];
+        sk.add_line(a[0], a[1], b[0], b[1]);
+    }
+}
+
+json closest_z_edge(const Document& doc, const Body& body, double x, double y, double want_len,
+                    double tol) {
+    std::string best;
+    double best_d = tol;
+    for (const auto& eid : body.subshape_ids.at(EntityKind::Edge)) {
+        TopoDS_Shape s = doc.resolve(eid);
+        if (s.IsNull() || s.ShapeType() != TopAbs_EDGE) continue;
+        const TopoDS_Edge e = TopoDS::Edge(s);
+        if (std::abs(edge_len(e) - want_len) > 0.6) continue;
+        const gp_Pnt m = edge_mid(e);
+        const double d = std::hypot(m.X() - x, m.Y() - y);
+        if (d <= best_d) {
+            best_d = d;
+            best = eid.str();
+        }
+    }
+    json out = json::array();
+    if (!best.empty()) out.push_back(best);
+    return out;
+}
+
+TEST_CASE("rung07 replica neck volume after R30 and R20", "[exactness][fillet][rung07][replica]") {
+    Document doc;
+    FeatureGraph& g = doc.graph();
+
+    Feature csk;
+    csk.type = FeatureType::Sketch;
+    csk.sketch = std::make_shared<Sketch>("C");
+    add_c_profile(*csk.sketch);
+    auto csk_id = g.add(std::move(csk));
+    Feature cext;
+    cext.type = FeatureType::Extrude;
+    cext.params = {{"sketch", csk_id.str()},
+                   {"distance", 10.0},
+                   {"op", "new"},
+                   {"end", "midplane"}};
+    auto cext_id = g.add(std::move(cext));
+
+    Feature rsk;
+    rsk.type = FeatureType::Sketch;
+    rsk.sketch = std::make_shared<Sketch>("Ring");
+    rsk.sketch->add_circle(240.0, 0.0, 16.5);
+    add_af_hex(*rsk.sketch, 240.0, 0.0, 25.0, 0.0);
+    add_af_hex(*rsk.sketch, 240.0, 0.0, 25.0, kPi / 6.0);
+    auto rsk_id = g.add(std::move(rsk));
+    Feature rext;
+    rext.type = FeatureType::Extrude;
+    rext.params = {{"sketch", rsk_id.str()},
+                   {"distance", 10.0},
+                   {"op", "fuse"},
+                   {"end", "midplane"},
+                   {"target", cext_id.str()}};
+    g.add(std::move(rext));
+
+    Feature hsk;
+    hsk.type = FeatureType::Sketch;
+    hsk.sketch = std::make_shared<Sketch>("Handle");
+    hsk.sketch->add_line(22.944, 10.0, 226.876, 10.0);
+    hsk.sketch->add_line(226.876, 10.0, 226.876, -10.0);
+    hsk.sketch->add_line(226.876, -10.0, 22.944, -10.0);
+    hsk.sketch->add_line(22.944, -10.0, 22.944, 10.0);
+    auto hsk_id = g.add(std::move(hsk));
+    Feature hext;
+    hext.type = FeatureType::Extrude;
+    hext.params = {{"sketch", hsk_id.str()},
+                   {"distance", 6.0},
+                   {"op", "fuse"},
+                   {"end", "midplane"},
+                   {"target", cext_id.str()}};
+    g.add(std::move(hext));
+
+    std::string err;
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* boss = doc.body(g.feature(cext_id)->output_body);
+    REQUIRE(boss != nullptr);
+    const double v_boss = shape::volume(boss->shape);
+    WARN("replica boss " << v_boss);
+
+    json r30 = json::array();
+    for (const auto& xy : {std::pair<double, double>{22.944, 10.0}, {23.929, -10.0}}) {
+        json hits = closest_z_edge(doc, *boss, xy.first, xy.second, 6.0, 12.0);
+        REQUIRE_FALSE(hits.empty());
+        r30.push_back(hits.front());
+    }
+    REQUIRE(r30.size() >= 2);
+
+    Feature f30;
+    f30.type = FeatureType::Fillet;
+    f30.name = "fillet R30";
+    f30.params = {{"target", cext_id.str()}, {"radius", 30.0}, {"edges", r30}};
+    g.add(std::move(f30));
+    err.clear();
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* after30 = doc.body(g.feature(cext_id)->output_body);
+    REQUIRE(after30 != nullptr);
+    const double v30 = shape::volume(after30->shape);
+    WARN("replica after R30 " << v30 << " dv=" << (v30 - v_boss) << " edges=" << r30.size());
+
+    json r20 = json::array();
+    for (const auto& xy : {std::pair<double, double>{226.876, 10.0}, {226.876, -10.0}}) {
+        json hits = closest_z_edge(doc, *after30, xy.first, xy.second, 6.0, 12.0);
+        REQUIRE_FALSE(hits.empty());
+        r20.push_back(hits.front());
+    }
+    REQUIRE(r20.size() >= 2);
+
+    Feature f20;
+    f20.type = FeatureType::Fillet;
+    f20.name = "fillet R20";
+    f20.params = {{"target", cext_id.str()}, {"radius", 20.0}, {"edges", r20}};
+    g.add(std::move(f20));
+    err.clear();
+    REQUIRE(g.regenerate(doc, &err));
+    INFO(err);
+    const Body* neck = doc.body(g.feature(cext_id)->output_body);
+    REQUIRE(neck != nullptr);
+    const double v_neck = shape::volume(neck->shape);
+    WARN("replica neck " << v_neck << " dv20=" << (v_neck - v30));
+    // Rectangular west cap is not the ellipse junction; pin regenerate, not 42733.
+    CHECK(v30 - v_boss > 400.0);
+    CHECK(v_neck - v30 > 40.0);
 }

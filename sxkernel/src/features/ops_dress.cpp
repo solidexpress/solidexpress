@@ -696,11 +696,22 @@ struct NeckFillet {
                             double radius, TopoDS_Shape& out) {
         TopoDS_Shape acc = shape;
         bool any = false;
-        for (const auto& edge : drop_seam_duplicates(edges)) {
-            TopoDS_Shape next;
-            if (!fuse_wedge(acc, edge, radius, next)) continue;
-            acc = next;
-            any = true;
+        // Rematch after each fuse: the first R30 wedge replaces the other
+        // crotch's TopoDS_Edge, so a raw second pass skipped it (film V_30
+        // ~429 instead of 858).
+        const std::vector<TopoDS_Edge> original = drop_seam_duplicates(edges);
+        for (size_t n = 0; n < original.size() + 1; ++n) {
+            const std::vector<TopoDS_Edge> mapped = map_edges_onto(acc, original);
+            bool step = false;
+            for (const auto& edge : mapped) {
+                TopoDS_Shape next;
+                if (!fuse_wedge(acc, edge, radius, next)) continue;
+                acc = next;
+                any = true;
+                step = true;
+                break;
+            }
+            if (!step) break;
         }
         if (!any) return false;
         out = acc;

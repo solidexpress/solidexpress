@@ -204,39 +204,26 @@ static func z_edges_near(doc: SxDocument, body: String, xy: Vector2, want_len: f
 	return out
 
 
-## Every handle-thickness Z-edge in the neck band around the given hits.
-## Point-pick at handle_xy (±4 mm) missed one crotch and left V_30/V_20
-## about half (neck 42154 vs 42733; final 38300 vs 38782).
+## Closest handle-thickness Z-edge to each crotch hit (t0366 / t0380).
+## A band collect picked a third 6 mm edge and R30 added 550 instead of 858.
 static func neck_z_edges(doc: SxDocument, body: String, xys: Array, want_len: float) -> PackedStringArray:
 	var out: PackedStringArray = PackedStringArray()
 	if xys.is_empty() or body == "" or not doc.has_method("get_edge_lines"):
 		return out
-	var x_lo := 1e9
-	var x_hi := -1e9
 	for xy in xys:
-		var p: Vector2 = xy as Vector2
-		x_lo = minf(x_lo, p.x)
-		x_hi = maxf(x_hi, p.x)
-	x_lo -= 16.0
-	x_hi += 16.0
-	var lines: Dictionary = doc.get_edge_lines(body)
-	for eid in lines.keys():
-		var pts: PackedVector3Array = lines[eid]
-		if pts.size() < 2:
+		var ids := z_edges_near(doc, body, xy as Vector2, want_len, 12.0)
+		if ids.is_empty():
 			continue
-		var a: Vector3 = pts[0]
-		var b: Vector3 = pts[pts.size() - 1]
-		var chord := a.distance_to(b)
-		if absf(chord - want_len) > 0.6:
-			continue
-		if absf(a.x - b.x) > 0.6 or absf(a.y - b.y) > 0.6:
-			continue
-		var mid := Vector2((a.x + b.x) * 0.5, (a.y + b.y) * 0.5)
-		if mid.x < x_lo or mid.x > x_hi:
-			continue
-		if absf(mid.y) < 5.0 or absf(mid.y) > 28.0:
-			continue
-		out.append(str(eid))
+		var best := str(ids[0])
+		var best_d := 1e9
+		for eid in ids:
+			var mid := _edge_mid(doc, body, str(eid))
+			var d := Vector2(mid.x, mid.y).distance_to(xy as Vector2)
+			if d < best_d:
+				best_d = d
+				best = str(eid)
+		if best != "" and not out.has(best):
+			out.append(best)
 	return out
 
 

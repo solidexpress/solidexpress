@@ -54,22 +54,12 @@ class DressGestures:
         return best
 
     def _neck_z_edges(self, xys, want_len: float) -> list[str]:
-        """All 6 mm Z-edges in the neck band. Point-pick at handle_xy
-        missed one crotch (A26 42154 vs 42733 = half of V_30)."""
-        xs = [float(x) for x, _y in xys]
-        x_lo, x_hi = min(xs) - 16.0, max(xs) + 16.0
+        """Closest 6 mm Z-edge to each crotch hit. A band collect picked a
+        third edge and R30 added 550 instead of 858."""
         ids: list[str] = []
-        for edge in self.edges():
-            direction = edge.get("dir") or [0, 0, 0]
-            if abs(float(direction[2])) < 0.9:
-                continue
-            length = float(edge.get("length") or 0.0)
-            if abs(length - want_len) > 1.2:
-                continue
-            centre = self._edge_centre(edge)
-            if centre[0] < x_lo or centre[0] > x_hi:
-                continue
-            if abs(centre[1]) < 5.0 or abs(centre[1]) > 28.0:
+        for x, y in xys:
+            edge = self._z_edge_near(float(x), float(y), float(want_len), max_d=12.0)
+            if edge is None:
                 continue
             eid = str(edge.get("id") or "")
             if eid and eid not in ids:
