@@ -7172,6 +7172,7 @@ func run_solve() -> Dictionary:
 		_restore_c_head_geometry(c_head)
 	elif _c_head_armed or not _c_pad_golden.is_empty() or _front_c_ring_present():
 		_ensure_c_pad_recipe()
+	_seat_handle_on_c_pad()
 	return res
 
 
@@ -7922,6 +7923,66 @@ func _ensure_c_pad_recipe() -> void:
 		_c_head_armed = true
 		_capture_c_pad_golden()
 		_weld_nearby_curve_joints(0.8)
+
+
+## Frames t0285 / t0297: handle y=±10 meets the remaining elliptical arc at
+## different X (17° ellipse). Symmetric-about-X cannot sit both ends on that
+## curve, so trim left a vertical chord at x≈23.1 and R30 saw a 90° T-junction
+## (one crotch, V_30≈429). Write the west endpoints onto the arc.
+func _seat_handle_on_c_pad() -> void:
+	if sketch == null:
+		return
+	var ell: Dictionary = {}
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind == "elliptical_arc" or kind == "ellipse":
+			ell = info
+			break
+	if ell.is_empty():
+		return
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var a: Vector2 = info.get("start", Vector2.ZERO)
+		var b: Vector2 = info.get("end", Vector2.ZERO)
+		if absf(absf(a.y) - 10.0) > 0.6 or absf(absf(b.y) - 10.0) > 0.6:
+			continue
+		if maxf(a.x, b.x) < 80.0:
+			continue
+		var west_is_start := a.x <= b.x
+		var west: Vector2 = a if west_is_start else b
+		if west.x > 80.0:
+			continue
+		var hit := _ellipse_plus_x_at_y(ell, west.y)
+		if hit == Vector2.ZERO or west.distance_to(hit) < 0.02:
+			continue
+		if west_is_start:
+			sketch.set_entity_geometry(str(id), {"start": hit, "end": b})
+		else:
+			sketch.set_entity_geometry(str(id), {"start": a, "end": hit})
+
+
+func _ellipse_plus_x_at_y(info: Dictionary, y: float) -> Vector2:
+	var c: Vector2 = info.get("center", Vector2.ZERO)
+	var rx := float(info.get("rx", 27.5))
+	var ry := float(info.get("ry", 25.0))
+	var ang := float(info.get("angle", 0.0))
+	var best := Vector2.ZERO
+	var best_x := -1.0e9
+	for i in 720:
+		var t := TAU * float(i) / 720.0
+		var local := Vector2(rx * cos(t), ry * sin(t)).rotated(ang)
+		var p: Vector2 = c + local
+		if absf(p.y - y) <= 0.08 and p.x > best_x:
+			best_x = p.x
+			best = p
+	return best
 
 
 ## Two closed unconstrained AF hexes + Ø33 (t0181–t0235). Hold the C pad

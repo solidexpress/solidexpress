@@ -728,8 +728,8 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 		return
 	await coincident_on_curve(ctx, Vector2(120, 10), Vector2(c.x, r))
 	await coincident_on_curve(ctx, Vector2(120, -10), Vector2(c.x, -r))
-	# Frames t0297/t0300: Trim the overflow inside the C. Do not coincident
-	# both ends onto the rotated ellipse while Symmetric still binds them.
+	# Frames t0285/t0297: Trim overflow. West ends sit on the 17° ellipse at
+	# different X; Symmetric cannot constrain both, so trim+seat writes them.
 	await frame_uv(ctx, Vector2.ZERO, SPAN_HEAD, "Frame C overflow")
 	for uv in [handle_overflow_xy(true), handle_overflow_xy(false)]:
 		if _failed():

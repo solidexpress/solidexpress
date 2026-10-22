@@ -135,8 +135,8 @@ class Rows07Chunk2:
         lo_hit, _circ_lo = self.handle_xy(False)
         n1 = self.constrain("Coincident", (120.0, 10.0), (self.mm("CENTER"), self.mm("RING_D") * 0.5))
         self.constrain("Coincident", (120.0, -10.0), (self.mm("CENTER"), -self.mm("RING_D") * 0.5))
-        # Frames t0297/t0300: Trim the overflow inside the C. Do not coincident
-        # both ends onto the rotated ellipse — Symmetric still binds them.
+        # Frames t0285/t0297: Trim overflow. West ends sit on the 17° ellipse
+        # at different X; Symmetric cannot constrain both, so trim+seat writes.
         was = self._set_snap(False)
         for uv in (self.handle_overflow_xy(True), self.handle_overflow_xy(False),
                    (232.0, 10.0), (232.0, -10.0)):

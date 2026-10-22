@@ -692,16 +692,68 @@ struct NeckFillet {
         return true;
     }
 
+    static std::vector<gp_Pnt> edge_mids(const std::vector<TopoDS_Edge>& edges) {
+        std::vector<gp_Pnt> mids;
+        mids.reserve(edges.size());
+        for (const auto& edge : edges) {
+            BRepAdaptor_Curve curve(edge);
+            gp_Pnt mid;
+            curve.D0(0.5 * (curve.FirstParameter() + curve.LastParameter()), mid);
+            mids.push_back(mid);
+        }
+        return mids;
+    }
+
+    static std::vector<TopoDS_Edge> map_neck_xy(const TopoDS_Shape& shape,
+                                                const std::vector<gp_Pnt>& mids) {
+        sx::occt::ShapeIndexedMap edges;
+        TopExp::MapShapes(shape, TopAbs_EDGE, edges);
+        std::vector<TopoDS_Edge> chosen;
+        std::vector<int> seen;
+        for (const auto& mid : mids) {
+            int best_i = 0;
+            double best_d = 2.0;
+            for (int i = 1; i <= edges.Extent(); ++i) {
+                if (std::find(seen.begin(), seen.end(), i) != seen.end()) continue;
+                const TopoDS_Edge edge = TopoDS::Edge(edges(i));
+                if (BRep_Tool::Degenerated(edge)) continue;
+                BRepAdaptor_Curve curve(edge);
+                gp_Pnt a = curve.Value(curve.FirstParameter());
+                gp_Pnt b = curve.Value(curve.LastParameter());
+                if (std::abs(a.X() - b.X()) > XY_ALIGN_MM || std::abs(a.Y() - b.Y()) > XY_ALIGN_MM)
+                    continue;
+                GProp_GProps props;
+                BRepGProp::LinearProperties(edge, props);
+                if (std::abs(props.Mass() - std::abs(a.Z() - b.Z())) > 0.6 &&
+                    std::abs(props.Mass() - 6.0) > 1.0)
+                    continue;
+                const gp_Pnt em((a.X() + b.X()) * 0.5, (a.Y() + b.Y()) * 0.5, 0.0);
+                const double d = std::hypot(em.X() - mid.X(), em.Y() - mid.Y());
+                if (d < best_d) {
+                    best_d = d;
+                    best_i = i;
+                }
+            }
+            if (best_i < 1) continue;
+            seen.push_back(best_i);
+            chosen.push_back(TopoDS::Edge(edges(best_i)));
+        }
+        return drop_seam_duplicates(chosen);
+    }
+
     static bool fuse_wedges(const TopoDS_Shape& shape, const std::vector<TopoDS_Edge>& edges,
                             double radius, TopoDS_Shape& out) {
         TopoDS_Shape acc = shape;
         bool any = false;
         // Rematch after each fuse: the first R30 wedge replaces the other
         // crotch's TopoDS_Edge, so a raw second pass skipped it (film V_30
-        // ~429 instead of 858).
+        // ~429 instead of 858). Match by XY of the original midpoints — a
+        // 0.05 mm IsSame map missed the second 17° crotch.
         const std::vector<TopoDS_Edge> original = drop_seam_duplicates(edges);
+        const std::vector<gp_Pnt> mids = edge_mids(original);
         for (size_t n = 0; n < original.size() + 1; ++n) {
-            const std::vector<TopoDS_Edge> mapped = map_edges_onto(acc, original);
+            std::vector<TopoDS_Edge> mapped = map_neck_xy(acc, mids);
+            if (mapped.empty()) mapped = map_edges_onto(acc, original);
             bool step = false;
             for (const auto& edge : mapped) {
                 TopoDS_Shape next;
