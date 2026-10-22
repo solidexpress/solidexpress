@@ -204,6 +204,42 @@ static func z_edges_near(doc: SxDocument, body: String, xy: Vector2, want_len: f
 	return out
 
 
+## Every handle-thickness Z-edge in the neck band around the given hits.
+## Point-pick at handle_xy (±4 mm) missed one crotch and left V_30/V_20
+## about half (neck 42154 vs 42733; final 38300 vs 38782).
+static func neck_z_edges(doc: SxDocument, body: String, xys: Array, want_len: float) -> PackedStringArray:
+	var out: PackedStringArray = PackedStringArray()
+	if xys.is_empty() or body == "" or not doc.has_method("get_edge_lines"):
+		return out
+	var x_lo := 1e9
+	var x_hi := -1e9
+	for xy in xys:
+		var p: Vector2 = xy as Vector2
+		x_lo = minf(x_lo, p.x)
+		x_hi = maxf(x_hi, p.x)
+	x_lo -= 16.0
+	x_hi += 16.0
+	var lines: Dictionary = doc.get_edge_lines(body)
+	for eid in lines.keys():
+		var pts: PackedVector3Array = lines[eid]
+		if pts.size() < 2:
+			continue
+		var a: Vector3 = pts[0]
+		var b: Vector3 = pts[pts.size() - 1]
+		var chord := a.distance_to(b)
+		if absf(chord - want_len) > 0.6:
+			continue
+		if absf(a.x - b.x) > 0.6 or absf(a.y - b.y) > 0.6:
+			continue
+		var mid := Vector2((a.x + b.x) * 0.5, (a.y + b.y) * 0.5)
+		if mid.x < x_lo or mid.x > x_hi:
+			continue
+		if absf(mid.y) < 5.0 or absf(mid.y) > 28.0:
+			continue
+		out.append(str(eid))
+	return out
+
+
 static func mm_text(key: String) -> String:
 	var v := mm(key)
 	if is_equal_approx(v, round(v)):
@@ -987,6 +1023,7 @@ static func undo_last_fillet(ctx: FilmContext) -> void:
 
 
 ## Walk fillet_z_edges: Top view so 6 mm Z-edges are vertical, not iso (C occludes).
+## Both crotch Z-edges (t0366 / t0380). One edge left V_30≈429 instead of 858.
 static func fillet_z_edges(ctx: FilmContext, radius: float, xys: Array) -> void:
 	var body := only_body(ctx)
 	if body == "":
@@ -994,6 +1031,7 @@ static func fillet_z_edges(ctx: FilmContext, radius: float, xys: Array) -> void:
 		return
 	var want_len := mm("HANDLE_T")
 	var names_before := _feature_names(ctx)
+	var want_n := maxi(xys.size(), 2)
 	for _attempt in 3:
 		if _failed():
 			return
@@ -1016,7 +1054,13 @@ static func fillet_z_edges(ctx: FilmContext, radius: float, xys: Array) -> void:
 		await ctx.after_regen()
 		body = only_body(ctx)
 		var err := _graph_error(ctx)
-		if err.contains("fillet") or err.contains("invalid"):
+		var ids := neck_z_edges(ctx.view.doc, body, xys, want_len)
+		if ids.size() < want_n:
+			for xy in xys:
+				for eid in z_edges_near(ctx.view.doc, body, xy as Vector2, want_len, 12.0):
+					if not ids.has(str(eid)):
+						ids.append(str(eid))
+		if picked < want_n or err.contains("fillet") or err.contains("invalid"):
 			var added_now := false
 			for n in _feature_names(ctx):
 				if not names_before.has(n) and str(n).begins_with("fillet"):
@@ -1024,17 +1068,14 @@ static func fillet_z_edges(ctx: FilmContext, radius: float, xys: Array) -> void:
 			if added_now:
 				await undo_last_fillet(ctx)
 			body = only_body(ctx)
+			ids = neck_z_edges(ctx.view.doc, body, xys, want_len)
 			var host := ctx.view.feature_of_body(body) if body != "" else ""
-			var ids := PackedStringArray()
-			for xy in xys:
-				for eid in z_edges_near(ctx.view.doc, body, xy as Vector2, want_len, 4.0):
-					if not ids.has(str(eid)):
-						ids.append(str(eid))
-			if host != "" and ids.size() >= 1:
+			if host != "" and ids.size() >= want_n:
 				ctx.view.doc.graph_add_fillet(host, ids, radius)
 				await ctx.after_regen()
 				err = _graph_error(ctx)
-		if picked >= 1 and bbox_y_ok(ctx) and err == "":
+				picked = ids.size()
+		if picked >= want_n and bbox_y_ok(ctx) and err == "":
 			return
 	FilmUI._fail("neck fillet R%s did not keep bbox Y" % str(int(round(radius))))
 

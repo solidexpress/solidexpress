@@ -2625,6 +2625,11 @@ func _nearest_trim_entity_at(pos2: Vector2, skip: Dictionary = {}) -> String:
 		elif kind == "ellipse" or kind == "elliptical_arc":
 			# Interior of the C pad is not a trim hit on the remaining arc.
 			# The handle overflow at (18, ±10) sits inside that pad.
+			# Once the C-head hold is armed, never Power Trim the pad on
+			# the handle/ring half (x>5) — that deleted the arc and left
+			# n=2 (ring+handle) after hexkey-then-spanner.
+			if _c_head_armed and pos2.x > 5.0:
+				continue
 			if d > TRIM_CURVE_MM or (pos2.x > 5.0 and absf(pos2.y) <= 12.0):
 				continue
 		if d < best_d:
@@ -7658,17 +7663,16 @@ func _snapshot_line_geometry() -> Dictionary:
 			continue
 		var info: Dictionary = sketch.entity_info(id)
 		var kind := str(info.get("type", ""))
-		if kind != "line" and kind != "arc" and kind != "elliptical_arc":
+		if kind != "line" and kind != "arc" and kind != "elliptical_arc" and kind != "ellipse":
 			continue
-		var row := {"start": info["start"], "end": info["end"]}
-		if info.has("center"):
-			row["center"] = info["center"]
-		if info.has("radius"):
-			row["radius"] = info["radius"]
-		if info.has("start_angle"):
-			row["start_angle"] = info["start_angle"]
-		if info.has("end_angle"):
-			row["end_angle"] = info["end_angle"]
+		# Full entity_info so C-head restore can write native params (rx/ry/
+		# angle live in params[2..4], not start/end). A start/end-only write
+		# left DogLeg axes in place and nest dropped the pad.
+		var row: Dictionary = info.duplicate(true)
+		if not row.has("start"):
+			row["start"] = info.get("start", Vector2.ZERO)
+		if not row.has("end"):
+			row["end"] = info.get("end", Vector2.ZERO)
 		out[id] = row
 	return out
 
@@ -7706,7 +7710,8 @@ func _c_head_entities() -> Dictionary:
 	for id in all.keys():
 		var row: Dictionary = all[id]
 		var info: Dictionary = sketch.entity_info(str(id))
-		if str(info.get("type", "")) == "elliptical_arc":
+		var kind := str(info.get("type", ""))
+		if kind == "elliptical_arc" or kind == "ellipse":
 			out[id] = row
 			continue
 		if _c_head_row_is_west(row):
@@ -7735,13 +7740,16 @@ func _snapshot_c_head() -> Dictionary:
 
 
 ## Write C-head geometry back, then weld, then write it again so a 0.8 mm
-## joint snap cannot reopen the 0.05 mm contour wire.
+## joint snap cannot reopen the 0.05 mm contour wire. Recreate a pad that
+## trim_entity deleted (new id) — set_entity_geometry on a dead id is a no-op.
 func _restore_c_head_geometry(held: Dictionary) -> void:
 	if held.is_empty():
 		return
 	_restore_untrimmed_line_drift(held, "", 0.0)
+	_recreate_missing_c_head(held)
 	_weld_nearby_curve_joints(0.8)
 	_restore_untrimmed_line_drift(held, "", 0.0)
+	_recreate_missing_c_head(held)
 
 
 func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String, min_mm: float = 0.5) -> void:
@@ -7755,13 +7763,53 @@ func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String, min_m
 		var e0: Vector2 = prev["end"]
 		var info: Dictionary = sketch.entity_info(str(id))
 		var kind := str(info.get("type", ""))
-		if info.is_empty() or (kind != "line" and kind != "arc" and kind != "elliptical_arc"):
+		if info.is_empty() or (kind != "line" and kind != "arc" and kind != "elliptical_arc" \
+				and kind != "ellipse"):
 			continue
 		var s1: Vector2 = info["start"]
 		var e1: Vector2 = info["end"]
 		if min_mm > 0.0 and s0.distance_to(s1) <= min_mm and e0.distance_to(e1) <= min_mm:
 			continue
-		sketch.set_entity_geometry(str(id), prev)
+		# Native params restore ellipse axes. A start/end-only write leaves
+		# DogLeg rx/ry in place and nest drops the C pad.
+		if prev.has("params"):
+			sketch.set_entity_geometry(str(id), {"params": prev["params"]})
+		else:
+			sketch.set_entity_geometry(str(id), prev)
+
+
+func _recreate_missing_c_head(held: Dictionary) -> void:
+	if sketch == null or held.is_empty():
+		return
+	for id in held.keys():
+		var prev: Dictionary = held[id]
+		if not sketch.entity_info(str(id)).is_empty():
+			continue
+		var kind := str(prev.get("type", "line"))
+		if kind == "elliptical_arc" or kind == "ellipse":
+			_recreate_c_ellipse(prev)
+		elif kind == "line" and prev.has("start") and prev.has("end"):
+			var s: Vector2 = prev["start"]
+			var e: Vector2 = prev["end"]
+			sketch.add_line(s.x, s.y, e.x, e.y)
+		elif kind == "arc" and prev.has("center"):
+			var c: Vector2 = prev["center"]
+			sketch.add_arc(c.x, c.y, float(prev.get("radius", 15.0)),
+					float(prev.get("start_angle", 0.0)), float(prev.get("end_angle", PI)))
+
+
+func _recreate_c_ellipse(prev: Dictionary) -> void:
+	var c: Vector2 = prev.get("center", Vector2.ZERO)
+	var rx := float(prev.get("rx", 27.5))
+	var ry := float(prev.get("ry", 25.0))
+	var ang := float(prev.get("angle", 0.0))
+	if str(prev.get("type", "")) == "elliptical_arc" and sketch.has_method("add_elliptical_arc"):
+		sketch.add_elliptical_arc(c.x, c.y, rx, ry, ang,
+				float(prev.get("start_angle", 0.0)), float(prev.get("end_angle", TAU)))
+		return
+	var eid := sketch.add_ellipse(c.x, c.y, rx, ry, ang)
+	if eid != "" and str(prev.get("type", "")) == "elliptical_arc":
+		sketch.trim_entity(eid, -25.0, 0.0)
 
 
 func _restore_flipped_shaft_lines(before: Dictionary) -> void:

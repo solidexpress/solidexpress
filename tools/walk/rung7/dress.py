@@ -53,6 +53,29 @@ class DressGestures:
                 best, best_d = edge, dist
         return best
 
+    def _neck_z_edges(self, xys, want_len: float) -> list[str]:
+        """All 6 mm Z-edges in the neck band. Point-pick at handle_xy
+        missed one crotch (A26 42154 vs 42733 = half of V_30)."""
+        xs = [float(x) for x, _y in xys]
+        x_lo, x_hi = min(xs) - 16.0, max(xs) + 16.0
+        ids: list[str] = []
+        for edge in self.edges():
+            direction = edge.get("dir") or [0, 0, 0]
+            if abs(float(direction[2])) < 0.9:
+                continue
+            length = float(edge.get("length") or 0.0)
+            if abs(length - want_len) > 1.2:
+                continue
+            centre = self._edge_centre(edge)
+            if centre[0] < x_lo or centre[0] > x_hi:
+                continue
+            if abs(centre[1]) < 5.0 or abs(centre[1]) > 28.0:
+                continue
+            eid = str(edge.get("id") or "")
+            if eid and eid not in ids:
+                ids.append(eid)
+        return ids
+
     def _fillet_edge_count(self, text: str) -> int:
         low = text.lower()
         for n in (8, 7, 6, 5, 4, 3, 2, 1):
@@ -61,9 +84,17 @@ class DressGestures:
         return 0
 
     def pick_z_edges(self, xys, want_len: float) -> list[str]:
+        zone = self._neck_z_edges(xys, want_len)
+        hits = list(xys)
+        for eid in zone:
+            edge = next((e for e in self.edges() if str(e.get("id", "")) == eid), None)
+            if edge is None:
+                continue
+            centre = self._edge_centre(edge)
+            hits.append((centre[0], centre[1]))
         ids = []
-        for x, y in xys:
-            edge = self._z_edge_near(float(x), float(y), float(want_len))
+        for x, y in hits:
+            edge = self._z_edge_near(float(x), float(y), float(want_len), max_d=12.0)
             if edge is None:
                 continue
             eid = str(edge.get("id", ""))
@@ -117,9 +148,11 @@ class DressGestures:
         return self.S()
 
     def fillet_z_edges(self, radius: str, xys) -> tuple[str, list[str]]:
-        """Fillet the handle-thickness Z-edges. Undo if Y bbox balloons (R30
-        on the C generator instead of the 6 mm crotch)."""
+        """Fillet both handle-thickness Z-edges. Undo if Y bbox balloons (R30
+        on the C generator instead of the 6 mm crotch). One edge left
+        V_NECK ~42154 vs 42733 (half of V_30)."""
         want_len = self.mm("HANDLE_T")
+        want_n = max(len(xys), 2)
         status = ""
         ids: list[str] = []
         names_before = self.feature_names()
@@ -133,7 +166,22 @@ class DressGestures:
             status = self.apply_fillet()
             self.d.wait_idle(frames=8)
             self.refresh("bodies", "features", "status")
-            if "Fillet" in status and self.bbox_y_ok() and len(ids) >= 1:
+            if len(ids) < want_n or not self.bbox_y_ok():
+                zone = self._neck_z_edges(xys, want_len)
+                if len(zone) >= want_n:
+                    added = [n for n in self.feature_names() if n not in names_before]
+                    if added:
+                        self.undo_last_fillet()
+                    reply = self.d.call(
+                        "graph_add_fillet",
+                        edges=zone,
+                        radius=float(radius),
+                    )
+                    self.d.wait_idle(frames=8)
+                    self.refresh("bodies", "features", "status")
+                    ids = zone
+                    status = str(reply.get("id") or reply.get("status") or status)
+            if self.bbox_y_ok() and len(ids) >= want_n:
                 return status, ids
         return status, ids
 

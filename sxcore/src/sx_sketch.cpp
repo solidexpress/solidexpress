@@ -91,6 +91,11 @@ String SxSketch::add_ellipse(double cx, double cy, double rx, double ry, double 
     auto id = sketch_->add_ellipse(cx, cy, rx, ry, angle);
     return id.is_null() ? String() : to_gd(id.str());
 }
+String SxSketch::add_elliptical_arc(double cx, double cy, double rx, double ry, double angle,
+                                    double start_angle, double end_angle) {
+    auto id = sketch_->add_elliptical_arc(cx, cy, rx, ry, angle, start_angle, end_angle);
+    return id.is_null() ? String() : to_gd(id.str());
+}
 
 String SxSketch::add_spline(const PackedVector2Array& fit_points) {
     std::vector<std::array<double, 2>> pts;
@@ -663,6 +668,9 @@ void SxSketch::_bind_methods() {
     ClassDB::bind_method(D_METHOD("add_spline", "fit_points"), &SxSketch::add_spline);
     ClassDB::bind_method(D_METHOD("add_ellipse", "cx", "cy", "rx", "ry", "angle"),
                          &SxSketch::add_ellipse, DEFVAL(0.0));
+    ClassDB::bind_method(D_METHOD("add_elliptical_arc", "cx", "cy", "rx", "ry", "angle",
+                                 "start_angle", "end_angle"),
+                         &SxSketch::add_elliptical_arc);
     ClassDB::bind_method(D_METHOD("remove_entity", "id"), &SxSketch::remove_entity);
     ClassDB::bind_method(D_METHOD("set_construction", "id", "construction"),
                          &SxSketch::set_construction);

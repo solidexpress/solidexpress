@@ -276,9 +276,10 @@ failed_names=()
 # renderer skips Vulkan. render=viewport (parked for pixel suites) drops
 # --rendering-driver dummy and keeps --headless.
 #
-# Each suite gets its own copy of game/ (including .godot). Sharing
-# game/.godot leaked film_spanner C-pad state after film_hexkey even
-# with a unique HOME.
+# Each suite gets its own copy of game/ (including .godot) plus HOME,
+# XDG_* and TMPDIR. Sharing game/.godot leaked film_spanner C-pad state
+# after film_hexkey even with a unique HOME; Mesa/Godot caches in the
+# real ~/.cache were the leftover shared path.
 godot_argv_for_render() {
   local mode="$1"
   local proj="$2"
@@ -320,13 +321,18 @@ if [[ ${#selected_scripts[@]} -gt 0 ]]; then
       jobhome="${work}/home-${i}"
       jobroot="${work}/proj-${i}"
       jobproj="${jobroot}/game"
-      mkdir -p "${jobhome}/.local/share" "${jobhome}/.config" "${jobroot}"
+      mkdir -p "${jobhome}/.local/share" "${jobhome}/.config" "${jobhome}/.cache" \
+        "${jobhome}/.local/state" "${jobroot}" "${work}/tmp-${i}"
       clone_game_project "${jobproj}"
       ln -sfn "${ROOT_DIR}/tools" "${jobroot}/tools"
       mapfile -t GODOT_RUN < <(godot_argv_for_render "${selected_renders[$i]}" "${jobproj}")
       HOME="${jobhome}" \
         XDG_DATA_HOME="${jobhome}/.local/share" \
         XDG_CONFIG_HOME="${jobhome}/.config" \
+        XDG_CACHE_HOME="${jobhome}/.cache" \
+        XDG_STATE_HOME="${jobhome}/.local/state" \
+        TMPDIR="${work}/tmp-${i}" \
+        MESA_SHADER_CACHE_DIR="${jobhome}/.cache/mesa" \
         timeout --foreground "${secs}" "${GODOT_BIN}" "${GODOT_RUN[@]}" --script "${script}" >"${log}" 2>&1
       echo $? >"${rcfile}"
       rm -rf "${jobproj}"

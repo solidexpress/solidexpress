@@ -37,6 +37,8 @@ public:
     godot::String add_arc(double cx, double cy, double r, double start_angle, double end_angle);
     godot::String add_spline(const godot::PackedVector2Array& fit_points);
     godot::String add_ellipse(double cx, double cy, double rx, double ry, double angle = 0.0);
+    godot::String add_elliptical_arc(double cx, double cy, double rx, double ry, double angle,
+                                     double start_angle, double end_angle);
     bool remove_entity(const godot::String& id);
     void set_construction(const godot::String& id, bool construction);
     bool is_construction(const godot::String& id) const;

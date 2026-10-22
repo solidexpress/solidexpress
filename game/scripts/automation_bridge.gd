@@ -154,6 +154,7 @@ func _commands() -> Dictionary:
 		"sketch_pin_profile": {call=_cmd_sketch_pin_profile, frames=2, reports=true},
 		"sketch_add_twelve_point": {call=_cmd_sketch_add_twelve_point, frames=2, reports=true},
 		"sketch_seal_box_end": {call=_cmd_sketch_seal_box_end, frames=2, reports=true},
+		"graph_add_fillet": {call=_cmd_graph_add_fillet, frames=8, reports=true},
 	}
 
 
@@ -317,6 +318,39 @@ func _cmd_mate_remove(req: Dictionary) -> Dictionary:
 	if panel != null and panel.has_method("refresh_lists"):
 		panel.refresh_lists()
 	return {"target": "mate:Remove", "id": mid}
+
+
+func _cmd_graph_add_fillet(req: Dictionary) -> Dictionary:
+	var view = _main().get("view")
+	if view == null or view.doc == null:
+		return {"error": "no document"}
+	var bodies: PackedStringArray = view.doc.body_ids()
+	if bodies.is_empty():
+		return {"error": "no body"}
+	var body := str(req.get("body", bodies[0]))
+	var host := ""
+	if view.has_method("feature_of_body"):
+		host = str(view.feature_of_body(body))
+	if host == "":
+		return {"error": "no host feature"}
+	var edges := PackedStringArray()
+	var raw: Variant = req.get("edges", [])
+	if typeof(raw) == TYPE_PACKED_STRING_ARRAY:
+		edges = raw
+	elif typeof(raw) == TYPE_ARRAY:
+		for item in raw:
+			var eid := str(item).strip_edges()
+			if eid != "":
+				edges.append(eid)
+	if edges.size() < 1:
+		return {"error": "graph_add_fillet needs edges"}
+	var radius := float(req.get("radius", 1.0))
+	if not view.doc.has_method("graph_add_fillet"):
+		return {"error": "graph_add_fillet unavailable"}
+	var fid := view.doc.graph_add_fillet(host, edges, radius)
+	if fid == "":
+		return {"error": "graph_add_fillet failed", "edges": edges.size()}
+	return {"id": fid, "edges": edges.size(), "radius": radius}
 
 
 func _cmd_export_body(req: Dictionary) -> Dictionary:

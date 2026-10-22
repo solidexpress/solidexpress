@@ -50,6 +50,12 @@ SolidWorks Power Trim of the inner leftovers **keeps** those hex sides as a clos
 
 Analytic ring: Ø33 minus union of two AF-25 hexes = 855.299 − 580.127 = **275.172**. A 398 pad is that disc minus a partial hole (~123 mm² still solid). Cutting a 24-gon star later from a fused body is not the same 10 mm ring, which is why neck/final sit ~1.3 % low.
 
+## After in-sketch hex: the remaining delta is neck fillets
+
+Solo film with closed hexes (ring **275.2**, C **1494.5**, handle **3999.2**, FEATURES sketch1…mirror9, no star Cut) still read **38300** vs 38782.
+
+Budget from `check_rung07.py`: \(V_\mathrm{boss}+V_{30}+V_{20}=41705+858+170=42733\). Film/walk A26 **42154** is \(41692+462\): **one** of the two R30 Z-edges ([t0366.jpg](rung-07-frames/t0366.jpg) both flanks, length 6). Half of \(V_{30}\) is 429. Final 38300 ≈ 41692 + 429 − 1925×2 + 15 (racetrack recovery 175×11 vs SW 1895.51). Point-pick at `handle_xy` with ±4 mm missed the lower crotch. Fix: collect every 6 mm Z-edge in the neck band and require **two** edges; kernel `graph_add_fillet` if the named pick lands one. Do not loosen the 0.5 % band. Recess 1925 vs 1895 is 59 mm³ — inside the band once both necks land.
+
 ## Not this round
 
 Film C-pad leak after `film_hexkey` (shared `game/.godot`) is a suite-isolation bug, not a sketch difference. Walk 6 sweep / open 3MF and wrench-t14 DIAG are unchanged.
