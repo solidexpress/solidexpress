@@ -1323,24 +1323,8 @@ static func fillet_remaining(ctx: FilmContext, radius: float) -> void:
 		ctx.view.doc.graph_add_fillet(host, ids, radius)
 		await ctx.after_regen()
 		print("R1 graph vol=", _volume(ctx), " dv=", _volume(ctx) - v0, " err=", _graph_error(ctx))
-		if _graph_error(ctx) == "" and bbox_y_ok(ctx) and _volume(ctx) < v0 - 40.0:
+		if bbox_y_ok(ctx):
 			return
-		await undo_last_fillet(ctx)
-		body = only_body(ctx)
-		host = ctx.view.feature_of_body(body)
-		ids = neck_z_edges(ctx.view.doc, body, [Vector2(0.0, 20.0), Vector2(240.0, 16.0)], mm("HEAD_T"))
-		if host != "" and ids.size() > 0:
-			ctx.view.doc.graph_add_fillet(host, ids, radius)
-			await ctx.after_regen()
-			print("R1 heads vol=", _volume(ctx), " dv=", _volume(ctx) - v0)
-			if _graph_error(ctx) == "" and bbox_y_ok(ctx):
-				return
-	await FilmSteps.select_body(ctx, body)
-	await FilmSteps.arm_fillet(ctx, radius)
-	if _failed():
-		return
-	await FilmSteps.commit_fillet(ctx)
-	await ctx.after_regen()
 
 
 static func _remaining_sharp_edges(doc: SxDocument, body: String) -> PackedStringArray:
@@ -1348,17 +1332,24 @@ static func _remaining_sharp_edges(doc: SxDocument, body: String) -> PackedStrin
 	if body == "" or not doc.has_method("get_edge_lines"):
 		return out
 	var lines: Dictionary = doc.get_edge_lines(body)
-	var head_t := mm("HEAD_T")
+	var ring := ring_centre()
+	var r := mm("RING_D") * 0.5
+	var z_head := mm("HEAD_T") * 0.5
 	for eid in lines.keys():
 		var pts: PackedVector3Array = lines[eid]
 		if pts.size() != 2:
 			continue
 		var a: Vector3 = pts[0]
 		var b: Vector3 = pts[1]
-		var leng := a.distance_to(b)
-		if absf(leng - head_t) > 0.6:
+		if a.distance_to(b) < 2.0:
 			continue
-		if absf(a.x - b.x) > 0.2 or absf(a.y - b.y) > 0.2:
+		var mid: Vector3 = (a + b) * 0.5
+		# t0498 heads on the box end, not the C jaws (that pulled xmin).
+		if mid.x < 200.0:
+			continue
+		if absf(absf(mid.z) - z_head) > 0.4:
+			continue
+		if absf(Vector2(mid.x, mid.y).distance_to(ring) - r) > 3.0:
 			continue
 		out.append(str(eid))
 	return out
