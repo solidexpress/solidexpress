@@ -40,3 +40,24 @@ Andy’s three fixes were already on the branch (long-strip trim, trim rebind, d
 2. `drop_circle_slivers` keeps a disjoint r=3 / r=1 disk; only leftover cells inside a larger CircPad drop.
 3. Tangent is mid-edge; do not weld AF-hex vertices onto the inscribed circle. Distance pins still weld stadium rim hits. New contour islands default on.
 4. Once a ring circle exists, snapshot the Front C (x < 80) and put it back after solve so hex/handle DogLeg cannot open the 1496 pad.
+
+## Confirm follow-up — `c30e61a` (does not pass)
+
+One clean `SX_JOBS=1 SX_WALK_JOBS=1 tools/confirm_all.sh` from row 1, no restores, 2026-10-21T23:59:30Z–2026-10-22T03:31:39Z. Isolated film_spanner was **12/0**; in-suite film_spanner **12/7** (C pad gone after handle trim → R30 fillet fail). Walks 1–6 and 8 product rows green; each extra FAIL is the godot-floor gate. Walk 7 **41/46**.
+
+| Bar | Count |
+|---|---|
+| Confirm binary | `c30e61a` (pre-`f87eeced`) |
+| Walk 1 | **76/77** product; wrench **28/28**, t14 **18/22 DIAG**, nut **7/7** |
+| Walk 2 | **43/44** product; final **16/16** |
+| Walk 3 | **45/46** product; final **29/29** |
+| Walk 4 | **31/32** product; final **5/5** |
+| Walk 5 | **35/36** product; final **10/10** |
+| Walk 6 | **45/46** product; final **7/7** |
+| Walk 7 | **41/46**. A21 C **1495.7** + extra 1395.6 island. Boss **5/5** vol 41661 bbox **281.450**. Neck **4/5** vol **42274** vs 42733. Final **7/8** vol **38432** vs 38782. A18 trim-end assert |
+| Walk 8 | **47/48** product; pin **3/3**, pipes **5/5**, bolted **7/7**, final **10/10** bbox **322.5×229×1040** |
+| Headless | **262/1** (`film_spanner_tests`) |
+| Lint | **266** suites ok (89 ci, 173 full, 4 known-red) |
+| Critique | **7/10** for this confirm (C leak in-suite; neck/final volume) |
+
+Round-7 C-hold `f87eeced` (arm when any east profile exists; snapshot before trim). confirm-r7 on that binary is a separate pass (godot **262/0**, walks 1–6 green, walk 7 in flight).

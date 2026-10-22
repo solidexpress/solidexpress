@@ -20,4 +20,14 @@ wrench-t14 **18/22** is by-design DIAG (T=14). Grip slot / R10 / 1 mm fillet pro
 
 A14 hex Power Trim still logs “Nothing trimmed” on some clicks; the 12-point still punches (A21 ring 275.2) via leftover-hex recovery.
 
-No open walk rows after the C-head hold.
+## Open after confirm_all on `c30e61a`
+
+In-suite `film_spanner` **12/7**: after handle trim n=2 (handle 3999.3 + ring 275.2, C gone). Isolated same binary **12/0**. Cause: C-head hold required a live Ø33 and snapshotted after trim. Closed in product by `f87eeced` (arm on any east profile; snapshot before trim). confirm-r7 in-suite film **12/0**.
+
+Walk 7 A18: trim-at-C assert wants both ends at x=22.94. The 17° ellipse is not symmetric (y=+10 at 22.94, y=−10 at 23.93). Walk continued; A21 still had C 1495.7.
+
+Walk 7 A26/A34: neck volume **42274** vs 42733 (1.1%); final **38432** vs 38782 (0.90%). Bbox 281.450 still green. A21 showed a leftover 1395.6 island next to the 1495.7 C. Three-try volume work in round 4 was reverted; log as finding, do not retry here.
+
+Walks 1–6 and 8 godot-floor FAILs are the 262/1 film, not product rows.
+
+confirm-r7 (`f87eeced`) is the retry from row 1. Do not start a third confirm on this VM.
