@@ -89,6 +89,10 @@ var _jaw_wall_ids: Array[String] = []
 ## Power Trim must not eat the pad. Stays armed if hex trim drops Ø33
 ## (the in-suite leak); cleared on a new sketch session.
 var _c_head_armed := false
+## Ellipse / elliptical_arc of the Front C at first arm. Live snapshots of
+## jaws still track the handle junction; this pad is the fallback when
+## trim or solve deletes the arc (that disarmed the hold and left n=2).
+var _c_pad_golden := {}
 ## Draw next line as construction (centerline mode).
 var draw_construction := false
 ## Power-trim drag state: list of already-trimmed entity ids this stroke.
@@ -750,6 +754,7 @@ func _activate_session() -> void:
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
 	_c_head_armed = false
+	_c_pad_golden.clear()
 	dimensions.clear()
 	intersection_points.clear()
 	_clear_dimension_labels()
@@ -1321,6 +1326,7 @@ func _restore_undo_entry(entry: Dictionary) -> String:
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
 	_c_head_armed = false
+	_c_pad_golden.clear()
 	_drag.clear()
 	_trim_dragging = false
 	if sketch.entity_ids().is_empty():
@@ -7688,17 +7694,32 @@ func _snapshot_line_geometry() -> Dictionary:
 ## the handle–C junction (A21 n=2). Circle-only matches the 46/46 hold.
 func _c_head_ready() -> bool:
 	if sketch == null:
-		_c_head_armed = false
 		return false
-	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
-		_c_head_armed = false
-		return false
+	# Stay armed if the live pad was deleted. Disarming here made
+	# _snapshot_c_head return {} and handle trim left n=2 (ring+handle).
 	if _c_head_armed:
 		return true
+	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
+		return false
 	if _profile_has_type("circle"):
 		_c_head_armed = true
+		_c_pad_golden = _c_pad_only()
 		return true
 	return false
+
+
+func _c_pad_only() -> Dictionary:
+	var out := {}
+	if sketch == null:
+		return out
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		var kind := str(info.get("type", ""))
+		if kind == "elliptical_arc" or kind == "ellipse":
+			out[id] = info.duplicate(true)
+	return out
 
 
 ## Jaw lines + R15 + the remaining elliptical arc. The C arc is always
@@ -7734,9 +7755,13 @@ func _c_head_row_is_west(row: Dictionary) -> bool:
 func _snapshot_c_head() -> Dictionary:
 	if not _c_head_ready():
 		return {}
-	# Live, pre-solve / pre-trim. A golden-from-arming snapshot froze the
-	# A11 C and fought the A18 handle–C junction (walk 7 A21 n=2).
-	return _c_head_entities()
+	# Live jaws so the handle–C junction can still seat. If the pad id is
+	# already gone, keep the first-arm ellipse so restore can recreate it.
+	var live := _c_head_entities()
+	for id in _c_pad_golden.keys():
+		if not live.has(id):
+			live[id] = _c_pad_golden[id]
+	return live
 
 
 ## Write C-head geometry back, then weld, then write it again so a 0.8 mm
@@ -7750,6 +7775,8 @@ func _restore_c_head_geometry(held: Dictionary) -> void:
 	_weld_nearby_curve_joints(0.8)
 	_restore_untrimmed_line_drift(held, "", 0.0)
 	_recreate_missing_c_head(held)
+	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
+		_recreate_missing_c_head(_c_pad_golden)
 
 
 func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String, min_mm: float = 0.5) -> void:
