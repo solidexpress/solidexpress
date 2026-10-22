@@ -64,3 +64,4 @@
 - 21:00 confirm-hex godot **262/4**. Fails: `film_manifest_smoke` timeout; in-suite `film_spanner` **12/5**; `replan16_suites` packaging clone; `rung07_boss` neck vol **41864** vs 42733 (4/5). Walk 1 **76/77** and walk 2 **43/44** (godot-floor only). Walk 3 in flight. No PR.
 - confirm-r8 godot **262/2** (`film_spanner` recess 42816; `rung07_boss` Fillet R30). Kernel **483/0** (11370). Lint **266**. Walk 1 on :21. No PR.
 - 21:30 confirm-hex walks: 1 **76/77**, 2 **43/44**, 3 **40/46** (N8/A19 fillet r=30 applied 9 edges; A20 r=1.5; A22 shell; A26 godot-floor), 4 **31/32**, 5 **35/36**. Walk 6 in flight. No PR.
+- 22:00 confirm-hex walk 6 **45/46** (godot-floor). Walk 7 **42/46**: A26 neck **42370** vs 42733 (4/5, bbox **281.450**), A34 vol **38528** vs 38782, N4, A37 floor. Walk 8 in flight. No PR.
