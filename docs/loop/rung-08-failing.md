@@ -1,33 +1,29 @@
-# Rung 8 failing — round 6 leftover
+# Rung 8 failing — round 7
 
-Test-and-fix on `cursor/rung-08-20261019`. Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
+Test-and-fix on `cursor/rung-08-20261019` head `e024beb8`. Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
 
-Round-3 items stay closed. Glyphs/J6 stay closed.
+No clean `confirm_all` from row 1 this round. wrench-t14 **18/22** stays DIAG (T=14).
 
-## Closed this round
+## Remaining
 
-Walk 7 A21/A23/A26. Confirm_all at `6530e5c` had A21 with no C pad (n=2, handle 3999, ring 398). Cause: ring/hex/handle DogLeg translated the C jaws off the elliptical arc. Hold the x<80 head after solve once a ring circle exists (`99100e1`). Walk 7 from row 1: **46/46**, C **1495.7**, ring **275.2**, boss **41692** / neck **42734** / final **38892**, bbox **281.450×54.590×10**, checkers **5/5 5/5 8/8**.
+### film_spanner in-suite C pad (original item)
 
-Tag `rung01_replan20_tag` 67/0: disjoint r=3 was dropped as a hex sliver (`kPadArea` 50). Keep disks that are themselves CircPads.
+Isolated dummy+clean-HOME **12/0**: after handle trim n=3 C **1495.8** ring **275.2** handle **3999.2**, bbox **281.450×54.591×10**, `check_rung07` **8/8**.
 
-Wrench blank min X −10: always seal ground sketches; stale `[0,1]` after the third island skipped stadium seal.
+Same binary after `film_hexkey` (own HOME, own Godot process): **12/7**, after handle trim **n=2** (handle 3999.2 + ring 275.2, C gone, arc=1), R30 `limit 10.215; 6.000 mm vertical at (22.944, 10.000)`, bbox **233.56×33**.
 
-Nut/polygon extrude: do not weld Tangent endpoints onto the circle (AF hex vertices). Distance pins still weld stadium contacts.
+Per-suite HOME rules out preferences. Separate processes rule out SketchMode/solver singletons. Shared `game/.godot` import cache (or intra-sketch trim/solve flake that shows up on a warm run) remains. C-head now: arm on first ring circle, keep `_c_head_armed` if hex trim drops Ø33, snapshot **before** Power Trim, restore at 0 mm. East-x (A9 R15 freeze) and golden-from-A11 (A21 n=2) were reverted.
 
-## Still DIAG, not a regression
+### Walk 7 A26 / A34 / N4 volume
 
-wrench-t14 **18/22** is by-design DIAG (T=14). Grip slot / R10 / 1 mm fillet probes are the T=14 set.
+From row 1 at `e024beb8`: **43/46**. A9 r=15.006, A18 strip, A21 C **1495.7** handle **3999.3** ring **398.2**, A23 boss **5/5** bbox **281.450×54.590×10**.
 
-A14 hex Power Trim still logs “Nothing trimmed” on some clicks; the 12-point still punches (A21 ring 275.2) via leftover-hex recovery.
+- A26 neck vol **42154** vs 42733 (4/5, bbox still 281.450)
+- A34 final vol **38312** vs 38782
+- N4 reopen of that final
 
-## Open after confirm_all on `c30e61a`
+A21 ring **398** (hex not punched in-sketch; leftover-hex recovery adds sketch 4 / extrude 5). Round-4 volume retries were reverted; do not loosen bands.
 
-In-suite `film_spanner` **12/7**: after handle trim n=2 (handle 3999.3 + ring 275.2, C gone). Isolated same binary **12/0**. Cause: C-head hold required a live Ø33 and snapshotted after trim. Closed in product by `f87eeced` (arm on any east profile; snapshot before trim). confirm-r7 in-suite film **12/0**.
+## Closed / not remaining
 
-Walk 7 A18: trim-at-C assert wants both ends at x=22.94. The 17° ellipse is not symmetric (y=+10 at 22.94, y=−10 at 23.93). Walk continued; A21 still had C 1495.7.
-
-Walk 7 A26/A34: neck volume **42274** vs 42733 (1.1%); final **38432** vs 38782 (0.90%). Bbox 281.450 still green. A21 showed a leftover 1395.6 island next to the 1495.7 C. Three-try volume work in round 4 was reverted; log as finding, do not retry here.
-
-Walks 1–6 and 8 godot-floor FAILs are the 262/1 film, not product rows.
-
-confirm-r7 (`f87eeced`) is the retry from row 1. Do not start a third confirm on this VM.
+Walk 7 A21 C pad on this sweep (1495.7). confirm-r7 walks 1–6 **77/44/46/32/36/46**, walk 8 **48/48**, godot **262/0** (pre-sweep binary). Glyphs/J6 stay closed.
