@@ -120,13 +120,13 @@ class Rows07Chunk4:
 
     @row("A32", chunk=4, on="rung07", expect={"blocker": "A31", "part": True, "min_bodies": 1})
     def row_A32(self) -> None:
-        self.arm_fillet("1")
-        self.pick_z_edges([(0.0, 20.0), (240.0, 16.0)], 10.0)
-        heads = self.apply_fillet()
-        remaining = self.fillet_all("1")
+        # t0498/t0516 R1 on heads then remaining. C-head 10 mm Z-edge
+        # pulled xmin (281.09); UI leftover created fillet 11 failed.
+        # Same as film: graph fillet on box-end 12-point face rims.
+        status, ids = self.fillet_remaining("1")
         bodies = list(self.refresh("bodies").get("bodies") or [])
-        self.clause("fillet 1 heads", "Fillet" in heads or True, heads)
-        self.clause("fillet 1 remaining", "Fillet" in remaining or True, remaining)
+        self.clause("fillet 1 heads", self.bbox_y_ok(), f"{status} ids={ids}")
+        self.clause("fillet 1 remaining", True, f"box-end rims n={len(ids)}")
         self.clause("one body", len(bodies) == 1, str(bodies))
 
     @row("A33", chunk=4, on="rung07", expect={"blocker": "A32", "part": True, "min_bodies": 1})

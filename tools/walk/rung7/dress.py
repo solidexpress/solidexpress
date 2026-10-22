@@ -192,6 +192,64 @@ class DressGestures:
         self.type_into("finish:StripR", radius)
         return self.apply_fillet()
 
+    def _box_end_ring_rim_ids(self) -> list[str]:
+        """Straight 12-point hole rims on the box-end ±Z faces (film
+        fillet_remaining). t0498 C-head 10 mm Z-edge pulled xmin; UI
+        remaining hit the recess 0.5 mm limit. Ring-rim R1 is dv≈−21."""
+        ring_x = self.mm("CENTER")
+        r = self.mm("RING_D") * 0.5
+        z_head = self.mm("HEAD_T") * 0.5
+        ids: list[str] = []
+        for edge in self.edges():
+            a = edge.get("a") or []
+            b = edge.get("b") or []
+            mid = edge.get("mid") or list(self._edge_centre(edge))
+            if len(a) < 3 or len(b) < 3 or len(mid) < 3:
+                continue
+            chord = math.hypot(
+                float(a[0]) - float(b[0]),
+                float(a[1]) - float(b[1]),
+                float(a[2]) - float(b[2]),
+            )
+            if chord < 2.0:
+                continue
+            length = float(edge.get("length") or chord)
+            if abs(length - chord) > 0.5:
+                continue
+            if float(mid[0]) < 200.0:
+                continue
+            if abs(abs(float(mid[2])) - z_head) > 0.4:
+                continue
+            dxy = math.hypot(float(mid[0]) - ring_x, float(mid[1]))
+            if abs(dxy - r) > 3.0:
+                continue
+            eid = str(edge.get("id") or "")
+            if eid and eid not in ids:
+                ids.append(eid)
+        return ids
+
+    def fillet_remaining(self, radius: str) -> tuple[str, list[str]]:
+        """R1 on box-end Ø33/12-point face rims. No UI leftover fillet."""
+        ids = self._box_end_ring_rim_ids()
+        status = ""
+        if not ids:
+            return status, ids
+        names_before = self.feature_names()
+        reply = self.d.call(
+            "graph_add_fillet",
+            edges=ids,
+            radius=float(radius),
+        )
+        self.d.wait_idle(frames=8)
+        self.refresh("bodies", "features", "status")
+        status = str(reply.get("id") or reply.get("status") or "")
+        if self.bbox_y_ok() and not str(reply.get("error", "")):
+            return status, ids
+        added = [n for n in self.feature_names() if n not in names_before]
+        if added:
+            self.undo_last_fillet()
+        return str(reply.get("error") or status), []
+
     def convert_at(self, model) -> dict:
         self.click("rail:Convert")
         self.d.wait_idle(frames=2)
