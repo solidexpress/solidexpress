@@ -990,6 +990,38 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             if (!limit_edge.IsNull()) extra = "; " + edge_phrase(limit_edge);
             return "fillet failed (limit " + format_fixed(limit, 3) + extra + ")";
         };
+        // Fillet remaining: drop edges whose 0.5×departure cannot take the
+        // radius (recess 172 mm line limit 0.5) instead of failing the set.
+        {
+            std::vector<TopoDS_Edge> fitting;
+            int skipped = 0;
+            for (const auto& edge : resolved) {
+                gp_Pnt a, b;
+                double z0 = 0, z1 = 0;
+                const bool this_neck = NeckFillet::is_neck(edge, asked, a, b, z0, z1);
+                const double this_limit = 0.5 * min_departure_length(tb->shape, edge);
+                if (!this_neck && this_limit + 1e-4 < asked) {
+                    ++skipped;
+                    continue;
+                }
+                fitting.push_back(edge);
+            }
+            if (skipped > 0 && !fitting.empty()) {
+                ctx.graph.add_warning(ctx.feature.id,
+                                      ctx.feature.name + ": fillet skipped " +
+                                          std::to_string(skipped) + " edges over limit");
+                resolved = fitting;
+                limit = std::numeric_limits<double>::infinity();
+                limit_edge.Nullify();
+                for (const auto& edge : resolved) {
+                    const double this_limit = 0.5 * min_departure_length(tb->shape, edge);
+                    if (this_limit < limit) {
+                        limit = this_limit;
+                        limit_edge = edge;
+                    }
+                }
+            }
+        }
         // Keep the 0.5×departure refuse for slots / boxes. Neck R30 on a 6 mm
         // Z-edge is allowed to try MakeFillet and the void-angle fuse.
         if (limit < 1e290 && asked > limit + 1e-4 &&

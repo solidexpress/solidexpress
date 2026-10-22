@@ -1348,11 +1348,17 @@ static func _remaining_sharp_edges(doc: SxDocument, body: String) -> PackedStrin
 	if body == "" or not doc.has_method("get_edge_lines"):
 		return out
 	var lines: Dictionary = doc.get_edge_lines(body)
+	var head_t := mm("HEAD_T")
 	for eid in lines.keys():
 		var pts: PackedVector3Array = lines[eid]
 		if pts.size() != 2:
 			continue
-		if pts[0].distance_to(pts[1]) < 0.4:
+		var a: Vector3 = pts[0]
+		var b: Vector3 = pts[1]
+		var leng := a.distance_to(b)
+		if absf(leng - head_t) > 0.6:
+			continue
+		if absf(a.x - b.x) > 0.2 or absf(a.y - b.y) > 0.2:
 			continue
 		out.append(str(eid))
 	return out
