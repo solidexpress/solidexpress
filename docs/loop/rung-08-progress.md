@@ -46,3 +46,4 @@
 - 14:30 heartbeat: still idle. Result/failing unchanged. No film or confirm_all running. No fourth confirm. No PR.
 - 15:00 heartbeat: still idle. Result/failing unchanged. No film or confirm_all running. No fourth confirm. No PR.
 - 15:00 sibling product on origin: `3c53a26` walk-7 hex punched in-sketch; `e228546` per-suite `game/.godot`. Isolated film_spanner starting on that HEAD (new cycle; confirm-now was `e024beb`). No PR.
+- Isolation clone missed `tools/`; `39492c2` symlinks `tools/` next to cloned `game/`. Cloned `--only film_spanner` timed out 600s. Unique-HOME `--path game` on `39492c2`: **12/2** in 1463s. After handle trim **n=3** C **1496.4** ring **275.2** handle **3999.2**. FilmUI 0, bbox **281.509×54.593×10**, features sketch1…mirror9. `check_rung07` **7/8** volume **38318.8** vs 38782. Sibling then landed `e421b48` freeze hexes + `5731616` typed hex rotation. Re-running isolated film on that HEAD. No PR.
