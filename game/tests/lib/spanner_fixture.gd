@@ -1313,12 +1313,49 @@ static func feature_mirror_front(ctx: FilmContext) -> void:
 
 static func fillet_remaining(ctx: FilmContext, radius: float) -> void:
 	var body := only_body(ctx)
+	if body == "":
+		return
+	var v0 := _volume(ctx)
+	var host := ctx.view.feature_of_body(body)
+	var ids := _remaining_sharp_edges(ctx.view.doc, body)
+	print("R1 remaining n=", ids.size(), " vol=", v0)
+	if host != "" and ids.size() > 0:
+		ctx.view.doc.graph_add_fillet(host, ids, radius)
+		await ctx.after_regen()
+		print("R1 graph vol=", _volume(ctx), " dv=", _volume(ctx) - v0, " err=", _graph_error(ctx))
+		if _graph_error(ctx) == "" and bbox_y_ok(ctx) and _volume(ctx) < v0 - 40.0:
+			return
+		await undo_last_fillet(ctx)
+		body = only_body(ctx)
+		host = ctx.view.feature_of_body(body)
+		ids = neck_z_edges(ctx.view.doc, body, [Vector2(0.0, 20.0), Vector2(240.0, 16.0)], mm("HEAD_T"))
+		if host != "" and ids.size() > 0:
+			ctx.view.doc.graph_add_fillet(host, ids, radius)
+			await ctx.after_regen()
+			print("R1 heads vol=", _volume(ctx), " dv=", _volume(ctx) - v0)
+			if _graph_error(ctx) == "" and bbox_y_ok(ctx):
+				return
 	await FilmSteps.select_body(ctx, body)
 	await FilmSteps.arm_fillet(ctx, radius)
 	if _failed():
 		return
 	await FilmSteps.commit_fillet(ctx)
 	await ctx.after_regen()
+
+
+static func _remaining_sharp_edges(doc: SxDocument, body: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	if body == "" or not doc.has_method("get_edge_lines"):
+		return out
+	var lines: Dictionary = doc.get_edge_lines(body)
+	for eid in lines.keys():
+		var pts: PackedVector3Array = lines[eid]
+		if pts.size() != 2:
+			continue
+		if pts[0].distance_to(pts[1]) < 0.4:
+			continue
+		out.append(str(eid))
+	return out
 
 
 static func open_handle_top_sketch(ctx: FilmContext) -> void:
