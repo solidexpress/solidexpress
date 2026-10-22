@@ -398,7 +398,8 @@ TEST_CASE("rung07 replica neck volume after R30 and R20", "[exactness][fillet][r
     REQUIRE(neck != nullptr);
     const double v_neck = shape::volume(neck->shape);
     WARN("replica neck " << v_neck << " dv20=" << (v_neck - v30));
-    // Rectangular west cap is not the ellipse junction; pin regenerate, not 42733.
+    // Rectangular west cap is a T-junction; R30 stays ~542. R20 is the Ø33
+    // crotch and must land both edges (analytic 170).
     CHECK(v30 - v_boss > 400.0);
-    CHECK(v_neck - v30 > 40.0);
+    CHECK(v_neck - v30 > 100.0);
 }

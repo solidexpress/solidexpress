@@ -997,23 +997,23 @@ bool apply_fillet_chamfer(ApplyCtx& ctx) {
             return ctx.fail(limit_msg());
         std::string fault;
         const bool neck = NeckFillet::any(resolved, asked);
-        // MakeFillet leaves circular arcs on the handle-top face, which A28
-        // Convert needs (two lines + R30 + R20). The void-angle fuse is the
-        // fallback when OCCT refuses R30 on 6 mm. Either path is clipped to
-        // the start AABB so a T-point spike cannot grow Y past the ellipse.
-        if (!build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
+        const bool planar_vert = NeckFillet::any_planar_vertical(tb->shape, resolved);
+        // R30 on 6 mm: MakeFillet can "succeed" with a ~390 mm³ nick and skip
+        // the 112° void wedges (film V_30 390 vs 858). Wedges first; they also
+        // leave circular arcs on the handle top for A28 Convert.
+        bool have = false;
+        if (neck || planar_vert) {
+            TopoDS_Shape recovered;
+            if (NeckFillet::fuse_wedges(tb->shape, resolved, asked, recovered)) {
+                result = recovered;
+                have = true;
+                ctx.graph.add_warning(ctx.feature.id, ctx.feature.name + ": fillet wedge");
+            }
+        }
+        if (!have && !build_fillet(tb->shape, resolved, v, r2, result, &fault)) {
             TopoDS_Shape recovered;
             std::string fault2;
-            const bool planar_vert = NeckFillet::any_planar_vertical(tb->shape, resolved);
-            // Neck R30/R20 sits on a 6 mm Z-edge whose other wall is the C
-            // ellipse extrusion — not a plane. Void-angle fuse already
-            // refuses 90° boxes and cylindrical hole rims (those edges are
-            // not necks). Planar-vertical is sufficient, not required.
-            if ((neck || planar_vert) &&
-                NeckFillet::fuse_wedges(tb->shape, resolved, asked, recovered)) {
-                result = recovered;
-                ctx.graph.add_warning(ctx.feature.id, ctx.feature.name + ": fillet wedge");
-            } else if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
+            if (fillet_unified(tb->shape, resolved, v, r2, recovered, &fault2))
                 result = recovered;
             else {
                 if (!planar_vert && !neck)
