@@ -4043,6 +4043,8 @@ func trim_at(pos2: Vector2) -> bool:
 		_weld_nearby_curve_joints(0.8)
 	elif _c_head_armed or not _c_pad_golden.is_empty() or _front_c_ring_present():
 		_ensure_c_pad_recipe()
+	if _c_head_armed or _front_c_ring_present():
+		_seat_handle_on_c_pad()
 	_drop_stale_dimensions()
 	var alive: Array[String] = []
 	for sid in selected:
@@ -7172,7 +7174,6 @@ func run_solve() -> Dictionary:
 		_restore_c_head_geometry(c_head)
 	elif _c_head_armed or not _c_pad_golden.is_empty() or _front_c_ring_present():
 		_ensure_c_pad_recipe()
-	_seat_handle_on_c_pad()
 	return res
 
 
