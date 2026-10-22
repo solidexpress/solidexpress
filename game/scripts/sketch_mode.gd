@@ -90,10 +90,6 @@ var _jaw_wall_ids: Array[String] = []
 ## this sketch session only — not a live ring-circle test, so a missed
 ## Ø33 restore cannot drop the hold (in-suite film vs isolation).
 var _c_head_armed := false
-## Geometry of the open C at the moment the hold armed. Live snapshots
-## after a nick or handle trim must not replace this (that was the
-## in-suite C-pad leak: restore froze the broken pad).
-var _c_head_golden: Dictionary = {}
 ## Draw next line as construction (centerline mode).
 var draw_construction := false
 ## Power-trim drag state: list of already-trimmed entity ids this stroke.
@@ -755,7 +751,6 @@ func _activate_session() -> void:
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
 	_c_head_armed = false
-	_c_head_golden = {}
 	dimensions.clear()
 	intersection_points.clear()
 	_clear_dimension_labels()
@@ -1327,7 +1322,6 @@ func _restore_undo_entry(entry: Dictionary) -> String:
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
 	_c_head_armed = false
-	_c_head_golden = {}
 	_drag.clear()
 	_trim_dragging = false
 	if sketch.entity_ids().is_empty():
@@ -7713,16 +7707,14 @@ func _profile_has_east() -> bool:
 func _c_head_ready() -> bool:
 	if sketch == null:
 		_c_head_armed = false
-		_c_head_golden = {}
+		return false
+	if not _profile_has_type("elliptical_arc"):
+		_c_head_armed = false
 		return false
 	if _c_head_armed:
 		return true
-	if not _profile_has_type("elliptical_arc"):
-		return false
 	if _profile_has_type("circle") or _profile_has_east():
 		_c_head_armed = true
-		if _c_head_golden.is_empty():
-			_c_head_golden = _c_head_entities()
 		return true
 	return false
 
@@ -7759,8 +7751,8 @@ func _c_head_row_is_west(row: Dictionary) -> bool:
 func _snapshot_c_head() -> Dictionary:
 	if not _c_head_ready():
 		return {}
-	if not _c_head_golden.is_empty():
-		return _c_head_golden.duplicate(true)
+	# Live, pre-solve / pre-trim. A golden-from-arming snapshot froze the
+	# A11 C and fought the A18 handle–C junction (walk 7 A21 n=2).
 	return _c_head_entities()
 
 
