@@ -85,6 +85,11 @@ var _angle_datum_lines: Dictionary = {}
 var _jaw_floor_id := ""
 var _jaw_arc_id := ""
 var _jaw_wall_ids: Array[String] = []
+## Once the Front C coexists with ring/handle geometry (x > 80), later
+## solves and Power Trim must not eat the open-end pad. Armed for this
+## sketch session only — not a live ring-circle test, so a missed Ø33
+## restore cannot drop the hold (in-suite film vs isolation).
+var _c_head_armed := false
 ## Draw next line as construction (centerline mode).
 var draw_construction := false
 ## Power-trim drag state: list of already-trimmed entity ids this stroke.
@@ -745,6 +750,7 @@ func _activate_session() -> void:
 	_jaw_floor_id = ""
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
+	_c_head_armed = false
 	dimensions.clear()
 	intersection_points.clear()
 	_clear_dimension_labels()
@@ -1315,6 +1321,7 @@ func _restore_undo_entry(entry: Dictionary) -> String:
 	_jaw_floor_id = ""
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
+	_c_head_armed = false
 	_drag.clear()
 	_trim_dragging = false
 	if sketch.entity_ids().is_empty():
@@ -2594,13 +2601,15 @@ func _nearest_profile_entity_at(pos2: Vector2) -> String:
 ## Power Trim: a line under the pointer wins a close race against an
 ## ellipse/arc. Overflow clicks sit a few millimetres inside the C; picking
 ## the remaining elliptical arc would eat the pad instead of the handle.
-func _nearest_trim_entity_at(pos2: Vector2) -> String:
+func _nearest_trim_entity_at(pos2: Vector2, skip: Dictionary = {}) -> String:
 	var best_id := ""
 	var best_d := _pick_tolerance()
 	var best_line := ""
 	var best_line_d := _pick_tolerance()
 	const TRIM_CURVE_MM := 3.0
 	for id in sketch.entity_ids():
+		if skip.has(str(id)):
+			continue
 		var info: Dictionary = sketch.entity_info(id)
 		if bool(info.get("construction", false)):
 			continue
@@ -3983,9 +3992,12 @@ func trim_at(pos2: Vector2) -> bool:
 	if not active or sketch == null:
 		status.emit("Trim failed")
 		return false
+	# Snapshot the C before the cut. run_solve used to snapshot afterwards,
+	# so a Power Trim that nicked a jaw locked the broken pad in as the hold.
+	var held := _snapshot_c_head()
 	if _trim_open_jaw(pos2):
 		return true
-	var id := _nearest_trim_entity_at(pos2)
+	var id := _nearest_trim_entity_at(pos2, held)
 	if id == "":
 		status.emit("Trim failed — nothing under the pointer: click on a line or arc")
 		return false
@@ -4010,7 +4022,10 @@ func trim_at(pos2: Vector2) -> bool:
 	# and restoring distant lines there leaves extra glyphs / 22.5 callouts.
 	# Skip only the trimmed entity: a click-radius skip also ignored the C
 	# jaws when Power Trim ran on the handle overflow next to them.
-	if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
+	if not held.is_empty():
+		# Pre-trim C, including a jaw that trim_entity still touched.
+		_restore_c_head_geometry(held)
+	elif _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
 		_restore_untrimmed_line_drift(pre_lines, id)
 		_weld_nearby_curve_joints(0.8)
 	_drop_stale_dimensions()
@@ -7118,7 +7133,8 @@ func run_solve() -> Dictionary:
 		solve_updated.emit(-1, "", 0)
 		return {"dofs": -1, "status": "", "residual": 0.0, "conflicting": PackedStringArray(), "redundant": PackedStringArray()}
 	# Ring/handle/hex solves at x=240 DogLeg the C jaws. Hold the open-end
-	# pad (x < 80) once a disjoint ring circle exists.
+	# pad (x < 80) once ring/handle geometry exists — not only while a
+	# live Ø33 circle is still in the profile (hex trim can drop it).
 	var c_head := _snapshot_c_head()
 	var res: Dictionary = sketch.solve()
 	last_dofs = res["dofs"]
@@ -7136,8 +7152,7 @@ func run_solve() -> Dictionary:
 	if last_solve_status == "failed":
 		_weld_coincident_line_ends()
 	if not c_head.is_empty():
-		_restore_untrimmed_line_drift(c_head, "")
-		_weld_nearby_curve_joints(0.8)
+		_restore_c_head_geometry(c_head)
 	return res
 
 
@@ -7642,6 +7657,10 @@ func _snapshot_line_geometry() -> Dictionary:
 		if kind != "line" and kind != "arc" and kind != "elliptical_arc":
 			continue
 		var row := {"start": info["start"], "end": info["end"]}
+		if info.has("center"):
+			row["center"] = info["center"]
+		if info.has("radius"):
+			row["radius"] = info["radius"]
 		if info.has("start_angle"):
 			row["start_angle"] = info["start_angle"]
 		if info.has("end_angle"):
@@ -7656,12 +7675,44 @@ func _snapshot_line_geometry() -> Dictionary:
 ## Put back profile lines whose midpoint was far from `click` if solve moved
 ## them. Trim+solve of the 12-point at x=240 was translating the C jaws.
 ## Jaw lines + R15 + remaining elliptical arc of the Front C (x < 80).
-func _snapshot_c_head() -> Dictionary:
+func _profile_has_east() -> bool:
 	if sketch == null:
-		return {}
+		return false
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		var p := Vector2.ZERO
+		if info.has("center"):
+			p = info["center"]
+		elif info.has("start") and info.has("end"):
+			p = ((info["start"] as Vector2) + (info["end"] as Vector2)) * 0.5
+		else:
+			continue
+		if p.x > 80.0:
+			return true
+	return false
+
+
+## Arm once the Front C shares the sketch with ring/handle geometry. A missed
+## Ø33 restore must not drop the hold — that was the in-suite C-pad leak.
+func _c_head_ready() -> bool:
+	if sketch == null:
+		_c_head_armed = false
+		return false
 	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
-		return {}
-	if not _profile_has_type("circle"):
+		_c_head_armed = false
+		return false
+	if _c_head_armed:
+		return true
+	if _profile_has_type("circle") or _profile_has_east():
+		_c_head_armed = true
+		return true
+	return false
+
+
+func _snapshot_c_head() -> Dictionary:
+	if not _c_head_ready():
 		return {}
 	var all := _snapshot_line_geometry()
 	var out := {}
@@ -7673,7 +7724,17 @@ func _snapshot_c_head() -> Dictionary:
 	return out
 
 
-func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String) -> void:
+## Write C-head geometry back, then weld, then write it again so a 0.8 mm
+## joint snap cannot reopen the 0.05 mm contour wire.
+func _restore_c_head_geometry(held: Dictionary) -> void:
+	if held.is_empty():
+		return
+	_restore_untrimmed_line_drift(held, "", 0.0)
+	_weld_nearby_curve_joints(0.8)
+	_restore_untrimmed_line_drift(held, "", 0.0)
+
+
+func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String, min_mm: float = 0.5) -> void:
 	if sketch == null or before.is_empty():
 		return
 	for id in before.keys():
@@ -7688,7 +7749,7 @@ func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String) -> vo
 			continue
 		var s1: Vector2 = info["start"]
 		var e1: Vector2 = info["end"]
-		if s0.distance_to(s1) <= 0.5 and e0.distance_to(e1) <= 0.5:
+		if min_mm > 0.0 and s0.distance_to(s1) <= min_mm and e0.distance_to(e1) <= min_mm:
 			continue
 		sketch.set_entity_geometry(str(id), prev)
 
@@ -8389,7 +8450,7 @@ func hover(pos2: Vector2) -> void:
 	if camera != null and is_inside_tree():
 		_pointer_screen = camera.unproject_position(to_global(to_model(pos2)))
 	if tool == Tool.TRIM:
-		_trim_hover_id = _nearest_trim_entity_at(pos2)
+		_trim_hover_id = _nearest_trim_entity_at(pos2, _snapshot_c_head())
 		_hover = pos2
 		_hide_infer_hint()
 		_update_preview()
@@ -8425,7 +8486,7 @@ func begin_trim_drag(pos2: Vector2) -> void:
 	_trim_trail_pts.append(pos2)
 	_rebuild_trim_trail()
 	trim_at(pos2)
-	var id := _nearest_trim_entity_at(pos2)
+	var id := _nearest_trim_entity_at(pos2, _snapshot_c_head())
 	if id != "":
 		_trim_drag_ids.append(id)
 
@@ -8436,7 +8497,7 @@ func update_trim_drag(pos2: Vector2) -> void:
 		_rebuild_trim_trail()
 	if not _trim_dragging or _trim_jaw_done_in_drag:
 		return
-	var id := _nearest_trim_entity_at(pos2)
+	var id := _nearest_trim_entity_at(pos2, _snapshot_c_head())
 	if id != "" and id not in _trim_drag_ids:
 		if trim_at(pos2):
 			_trim_drag_ids.append(id)
