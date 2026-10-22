@@ -29,3 +29,4 @@
 - Re-run isolated film **12/7**: after handle trim **n=2** C gone (handle 3999.2 + ring 275.2, arc=1), R30 `limit 10.215` at (22.945, 10), bbox **233.56×33**. Live C-head snapshot after a nick froze the broken pad. Product: capture golden C at arming; restore that, never a post-trim live snapshot. Elliptical_arc always held; lines/arcs still midpoint x<80.
 - Golden hold isolated film **12/0**: after handle trim n=3 C **1490.7** ring **275.2** handle **3999.2**, bbox **281.450×54.591×10**, `check_rung07` **8/8**, features sketch1…mirror9. Starting walk 7 from row 1.
 - 05:00 heartbeat: this VM idle after `c30e61a` confirm. No competing walk 7 / confirm_all. Golden-hold film **12/0** (C **1490.7**) is current product (`238949b`).
+- 05:30: sibling still silent after “walk 7 from row 1” at 04:56Z. Starting golden-hold walk 7 from row 1 on this VM (`238949b`, `--a15`, out `build/confirm-golden/walk7`). GDScript-only; no kernel rebuild.
