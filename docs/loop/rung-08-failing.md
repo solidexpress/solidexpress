@@ -1,33 +1,39 @@
-# Rung 8 failing — round 7
+# Rung 8 failing — confirm-now
 
-Test-and-fix on `cursor/rung-08-20261019` head `e024beb8`. Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
+Test-and-fix on `cursor/rung-08-20261019` head `bf67c81` (product `e024beb`). Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
 
-No clean `confirm_all` from row 1 this round. wrench-t14 **18/22** stays DIAG (T=14).
+One-clean `confirm_all` from row 1 finished 2026-10-22T10:45:22Z at `build/confirm-now`. Third try this cycle. wrench-t14 **18/22** stays DIAG (T=14).
 
 ## Remaining
 
-### film_spanner in-suite C pad (original item)
+### film_spanner in-suite mouth unopened (godot 262/1)
 
-Isolated dummy+clean-HOME **12/0**: after handle trim n=3 C **1495.8** ring **275.2** handle **3999.2**, bbox **281.450×54.591×10**, `check_rung07` **8/8**.
+Isolated dummy+clean-HOME on this binary: **12/0**, after handle trim n=3 C **1494.5** / **1495.8**, ring **275.2**, handle **3999.2**, bbox **281.450**, `check_rung07` **8/8**.
 
-Same binary after `film_hexkey` (own HOME, own Godot process): **12/7**, after handle trim **n=2** (handle 3999.2 + ring 275.2, C gone, arc=1), R30 `limit 10.215; 6.000 mm vertical at (22.944, 10.000)`, bbox **233.56×33**.
+In-confirm `film_spanner` (suite after hexkey/lesson2/manifest): **4/2**. `C ellipse stayed closed after trim (n=1 #0 area=2159.8)`. Mouth never opened; no C pad, no body.
 
-This VM hexkey-then-spanner (`bf67c81`): hexkey **8/0**, spanner **12/0**, n=3 C **1494.5**. Flake not reproduced on a two-suite sequence.
+Different flake from the earlier after-hexkey **12/7** (n=2 C gone, bbox 233.56). This VM hexkey-then-spanner was **12/0**. Shared `game/.godot` or trim/solve nondeterminism. East-x and golden-from-A11 stay reverted.
 
-Per-suite HOME rules out preferences. Separate processes rule out SketchMode/solver singletons. Shared `game/.godot` import cache (or intra-sketch trim/solve flake that shows up on a warm run) remains. C-head now: arm on first ring circle, keep `_c_head_armed` if hex trim drops Ø33, snapshot **before** Power Trim, restore at 0 mm. East-x (A9 R15 freeze) and golden-from-A11 (A21 n=2) were reverted.
+### Walk 7 A9 R15 undersized
 
-### Walk 7 A26 / A34 / N4 volume
+From row 1: **r=13.642**. Three-point arc variant ok, inner ends ok. A10 still opened the mouth. Circle-only C-head arm did not freeze A9 the way east-x (r=20.93, closed ellipse) did, but the 15 mm dim still did not stick. Downstream C area **1404.9** vs **1495.8**.
 
-From row 1 at `e024beb8`: **43/46**. A9 r=15.006, A18 strip, A21 C **1495.7** handle **3999.3** ring **398.2**, A23 boss **5/5** bbox **281.450×54.590×10**.
+### Walk 7 A22 one-body / blocked boss
 
-- A26 neck vol **42154** vs 42733 (4/5, bbox still 281.450)
-- A34 final vol **38312** vs 38782
-- N4 reopen of that final
+A21 PASS: C + ring present, n=6 (C **1404.9**, handle **3989.0**, ring **275.2**, plus 13.3 + two 4.8 islands). Midplane 10 mm, two pads, z ±5.
 
-A21 ring **398** (hex not punched in-sketch; leftover-hex recovery adds sketch 4 / extrude 5). Round-4 volume retries were reverted; do not loosen bands.
+A22 FAIL `one body`: fuse reported, still a single `extrude 2` vol **16800.8**, bbox Y **54.64**. A23–A26 blocked (still in a sketch). No boss **5/5**, no neck, no final volume this run.
+
+### Walk 6 sweep boolean + open 3MF
+
+A27 `Sweep along path failed (sweep 6: boolean failed)`. A14/A28/A32–A34/N5 runner-gap: 3MF mesh open **627/183018** edges. L4/L5/A31 follow-on. New vs `c30e61a` / confirm-r7 (those were 46/46). Not a C-head change; do not chase as a fourth confirm.
+
+### Walk 7 A26 / A34 / N4 volume (logged, not re-tried)
+
+Round-4 volume retries reverted. Sweep at `e024beb` was A26 neck **42154** vs 42733 (4/5), A34 **38312** vs 38782. This confirm never reached those rows. Do not loosen bands.
 
 ## Closed / not remaining
 
-Walk 7 A21 C pad on this sweep (1495.7). confirm-r7 walks 1–6 **77/44/46/32/36/46**, walk 8 **48/48**, godot **262/0** (pre-sweep binary). Glyphs/J6 stay closed.
+Walks 1–5 product-green (only A15/A25/A26/A21/A25 godot-floor from film_spanner). Walk 8 **47/48** pin **3/3** pipes **5/5** bolted **7/7** final **10/10**. Walk 7 A10 mouth, A18 strip, A21 C-present. Kernel **482/0**. Lint **266**. Glyphs/J6 stay closed.
 
-Golden-hold walk 7 on this VM (`238949b`) finished **26/36** (5 FAIL + 4 blocked + runner-gap): A21 n=6 no C. Not remaining on current `e024beb` sweep.
+Golden-hold walk 7 (`238949b`) **26/36** and confirm-r7 walk 7 **26/46** (east-arm A9 freeze) are not remaining on `e024beb`.
