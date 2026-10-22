@@ -27,3 +27,5 @@ A21 ring **398** (hex not punched in-sketch; leftover-hex recovery adds sketch 4
 ## Closed / not remaining
 
 Walk 7 A21 C pad on this sweep (1495.7). confirm-r7 walks 1–6 **77/44/46/32/36/46**, walk 8 **48/48**, godot **262/0** (pre-sweep binary). Glyphs/J6 stay closed.
+
+Golden-hold walk 7 on this VM (`238949b`) finished **26/36** (5 FAIL + 4 blocked + runner-gap): A21 n=6 no C. Not remaining on current `e024beb` sweep.
