@@ -68,3 +68,5 @@
 - confirm-r8 walks: r1 **76/77** A15 floor, r2 **43/44** A25 floor, r3 **40/46** N8/A19/A20/A22/N12 product + A26 floor, r4 **31/32**, r5 **35/36**. Walk 6 in flight. No PR.
 - 22:20 confirm-r8 walk 6 at A11 (still in flight). Godot **262/2**. No PR.
 - confirm-hex **finished** 2026-10-22T22:12:07Z. Godot **262/4**. Walks **76/77, 43/44, 40/46, 31/32, 35/36, 45/46, 42/46, 47/48**. Walk 8 checkers pin **3/3** pipes **5/5** bolted **7/7** final **10/10**. Walk 7 boss **5/5** neck **4/5** final **7/8**. Isolated film **12/0**. Does not pass. Result + failing rewritten. No second confirm-hex. No PR.
+- 22:35 confirm-r8 walk 6 **45/46** (A36 floor). Sweep **7/7**. Walk 7 from row 1 past A19 (A14 hex sealed, A18 strip). Godot **262/2**. No PR.
+- 22:47 confirm-r8 walk 7 **42/46**: A26 neck **42370** (4/5, bbox **281.450**), A34 **38528**, N4, A37 floor. Boss **5/5**. Walk 8 in flight (L6). No PR.
