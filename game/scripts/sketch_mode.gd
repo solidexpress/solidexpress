@@ -85,10 +85,9 @@ var _angle_datum_lines: Dictionary = {}
 var _jaw_floor_id := ""
 var _jaw_arc_id := ""
 var _jaw_wall_ids: Array[String] = []
-## Once the open Front C (elliptical_arc) coexists with ring/handle
-## geometry, later solves and Power Trim must not eat the pad. Armed for
-## this sketch session only — not a live ring-circle test, so a missed
-## Ø33 restore cannot drop the hold (in-suite film vs isolation).
+## Once a ring circle has been seen with the Front C, later solves and
+## Power Trim must not eat the pad. Stays armed if hex trim drops Ø33
+## (the in-suite leak); cleared on a new sketch session.
 var _c_head_armed := false
 ## Draw next line as construction (centerline mode).
 var draw_construction := false
@@ -3997,7 +3996,10 @@ func trim_at(pos2: Vector2) -> bool:
 	var held := _snapshot_c_head()
 	if _trim_open_jaw(pos2):
 		return true
-	var id := _nearest_trim_entity_at(pos2, held)
+	# Do not skip C-head ids: that made handle overflow at (18, ±10) miss
+	# the strip (walk 7 A18) while the interior-arc skip already protects
+	# the remaining elliptical pad.
+	var id := _nearest_trim_entity_at(pos2)
 	if id == "":
 		status.emit("Trim failed — nothing under the pointer: click on a line or arc")
 		return false
@@ -7677,43 +7679,19 @@ func _snapshot_line_geometry() -> Dictionary:
 ## Put back profile lines whose midpoint was far from `click` if solve moved
 ## them. Trim+solve of the 12-point at x=240 was translating the C jaws.
 ## Jaw lines + R15 + remaining elliptical arc of the Front C (x < 80).
-## Ring lives at x=240; handle runs to ~227. The 17° CL plus-x end is 80
-## (same number as the C-head snapshot gate). Arm only when profile
-## geometry reaches past the handle mid (~125) — never from the C, the
-## CL, or a 3-point R15 whose circumcentre drifted past x=80.
-const _C_HEAD_EAST_X := 150.0
-
-func _profile_has_east() -> bool:
-	if sketch == null:
-		return false
-	for id in sketch.entity_ids():
-		if sketch.is_construction(id):
-			continue
-		var info: Dictionary = sketch.entity_info(id)
-		# Handle 23→227 has midpoint ~125; the ring-side end must still arm
-		# when the Ø33 circle is missing (in-suite C-pad leak).
-		if info.has("center") and (info["center"] as Vector2).x > _C_HEAD_EAST_X:
-			return true
-		if info.has("start") and (info["start"] as Vector2).x > _C_HEAD_EAST_X:
-			return true
-		if info.has("end") and (info["end"] as Vector2).x > _C_HEAD_EAST_X:
-			return true
-	return false
-
-
-## Arm once the mouth is already an elliptical_arc and ring/handle geometry
-## exists. A closed ellipse must not freeze R15 (walk 7 A9). A missed Ø33
-## restore must not drop the hold — that was the in-suite C-pad leak.
+## Arm once a ring circle shares the sketch with the Front C. East-x
+## proxies armed during R15 (walk 7 A9) and a golden A11 freeze fought
+## the handle–C junction (A21 n=2). Circle-only matches the 46/46 hold.
 func _c_head_ready() -> bool:
 	if sketch == null:
 		_c_head_armed = false
 		return false
-	if not _profile_has_type("elliptical_arc"):
+	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
 		_c_head_armed = false
 		return false
 	if _c_head_armed:
 		return true
-	if _profile_has_type("circle") or _profile_has_east():
+	if _profile_has_type("circle"):
 		_c_head_armed = true
 		return true
 	return false
@@ -8482,7 +8460,7 @@ func hover(pos2: Vector2) -> void:
 	if camera != null and is_inside_tree():
 		_pointer_screen = camera.unproject_position(to_global(to_model(pos2)))
 	if tool == Tool.TRIM:
-		_trim_hover_id = _nearest_trim_entity_at(pos2, _snapshot_c_head())
+		_trim_hover_id = _nearest_trim_entity_at(pos2)
 		_hover = pos2
 		_hide_infer_hint()
 		_update_preview()
@@ -8518,7 +8496,7 @@ func begin_trim_drag(pos2: Vector2) -> void:
 	_trim_trail_pts.append(pos2)
 	_rebuild_trim_trail()
 	trim_at(pos2)
-	var id := _nearest_trim_entity_at(pos2, _snapshot_c_head())
+	var id := _nearest_trim_entity_at(pos2)
 	if id != "":
 		_trim_drag_ids.append(id)
 
@@ -8529,7 +8507,7 @@ func update_trim_drag(pos2: Vector2) -> void:
 		_rebuild_trim_trail()
 	if not _trim_dragging or _trim_jaw_done_in_drag:
 		return
-	var id := _nearest_trim_entity_at(pos2, _snapshot_c_head())
+	var id := _nearest_trim_entity_at(pos2)
 	if id != "" and id not in _trim_drag_ids:
 		if trim_at(pos2):
 			_trim_drag_ids.append(id)

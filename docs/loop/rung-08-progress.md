@@ -30,3 +30,4 @@
 - Golden hold isolated film **12/0**: after handle trim n=3 C **1490.7** ring **275.2** handle **3999.2**, bbox **281.450×54.591×10**, `check_rung07` **8/8**, features sketch1…mirror9. Starting walk 7 from row 1.
 - 05:00 heartbeat: this VM idle after `c30e61a` confirm. Golden-hold film **12/0** (C **1490.7**) is current product (`238949b`).
 - Walk 7 golden: A9 **PASS** r=15.006; A10 mouth open; A18 strip trimmed at (22.94, 10)/(23.93, −10). A21 **FAIL** n=2 handle 3999.3 + ring 275.2, C gone. Golden freeze from A11 fights the later handle–C junction. Dropped golden; live pre-trim snapshot + elliptical_arc + x>150.
+- Sweep: circle-only arm (session flag keeps hold if Ø33 is dropped); live pre-trim snapshot; 0 mm restore; no pick-skip of C-head (A18). East/golden dropped. Walk 7 live after drop-golden had A9 r=15.85, A18 strip FAIL, A21 C split 725+359, bbox Y 43.8.
