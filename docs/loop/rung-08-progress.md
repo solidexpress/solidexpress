@@ -61,3 +61,4 @@
 - 20:00 confirm-hex godot **131/262** fail **3** (`--keep-going`). Fails: `film_manifest_smoke` timeout 900s; in-suite `film_spanner` **12/5**; `replan16_suites` missing `packaging/ci/suites.d` in clone (sibling `d1689f4` clones packaging). Now `rung01_replan21_angle`. Walks not started. No PR.
 - 20:30 confirm-hex godot **214/262** fail **3** (same three). Now `rung06_tangent_arc`. Walks not started. No PR.
 - confirm-r8 godot **180/262** fail **1** (`film_spanner` recess Blind Cut left neck 42816; C n=3 ring 275 R30 dv 972). kernel_cut fallback landed after that suite. Walks not started. No PR.
+- 21:00 confirm-hex godot **262/4**. Fails: `film_manifest_smoke` timeout; in-suite `film_spanner` **12/5**; `replan16_suites` packaging clone; `rung07_boss` neck vol **41864** vs 42733 (4/5). Walk 1 **76/77** and walk 2 **43/44** (godot-floor only). Walk 3 in flight. No PR.
