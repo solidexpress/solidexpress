@@ -67,6 +67,11 @@ class BossGestures:
                 return True
             if token == "recess" and 80.0 < long_side < 200.0 and 6.0 <= min(w, h) <= 16.0:
                 return True
+        # Walk A21 n=4 had a 1390 island at the C COM. Bbox fallback
+        # selected it with the real C 1496; Fuse then dropped the ring
+        # (xmax 256.5 → 226.876). Area that is not a keep token stays off.
+        if area > 10.0:
+            return False
         return self._contour_wanted(keep, note)
 
     def _contour_wanted(self, keep: set[str], note: str) -> bool:

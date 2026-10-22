@@ -912,6 +912,17 @@ static func _contour_wanted(keep: PackedStringArray, note: String) -> bool:
 
 
 static func _contour_wanted_outline(keep: PackedStringArray, row: Dictionary) -> bool:
+	var area := absf(float(row.get("area", 0.0)))
+	for token in keep:
+		if token == "c" and absf(area - mm("A_C")) < 80.0:
+			return true
+		if token == "ring" and absf(area - mm("A_RING")) < 50.0:
+			return true
+		if token == "handle" and absf(area - mm("A_H")) < 250.0:
+			return true
+	# Same as walk: a 1390 island at the C COM must not ride in on bbox.
+	if area > 10.0:
+		return false
 	var sz: Vector2 = row.get("size", Vector2.ZERO)
 	var mn: Vector2 = row.get("min", Vector2.ZERO)
 	var cx := mn.x + sz.x * 0.5

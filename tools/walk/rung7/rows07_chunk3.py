@@ -51,10 +51,14 @@ class Rows07Chunk3:
             made = self.try_extrude("10", "New", "Midplane", keep={"c", "ring"})
         zext = self.z_extent()
         z_ok = zext is not None and abs(abs(zext[1] - zext[0]) - 10.0) <= 0.3
+        xmax = 0.0
+        for body in made.get("bodies") or []:
+            mx = body.get("max") or [0, 0, 0]
+            xmax = max(xmax, float(mx[0]))
         self.clause("contours heads", heads_ok, "C + ring | " + " ; ".join(notes[:6]))
         self.clause("midplane", "Mid" in made.get("end", "") or "mid" in made["status"].lower(), str(made.get("end")))
         self.clause("10", "10" in str(made.get("field", "")) or "10" in made["status"], str(made.get("field")))
-        self.clause("two pads", len(made["bodies"]) >= 1, str(made["bodies"]))
+        self.clause("two pads", xmax >= 250.0, str(made["bodies"]))
         self.clause("z pm 5", z_ok, str(zext))
 
     @row("A22", chunk=3, on="rung07", expect={"blocker": "A21"})
@@ -75,11 +79,15 @@ class Rows07Chunk3:
         fused = "Fuse" in op or "fuse" in str(made.get("status") or "").lower()
         # Finish bar is gone after a successful extrude, so op is often blank.
         merged = (closed and added) or fused
+        xmax = 0.0
+        for body in made.get("bodies") or []:
+            mx = body.get("max") or [0, 0, 0]
+            xmax = max(xmax, float(mx[0]))
         self.clause("contour handle", True, "handle | " + " ; ".join(notes[:6]))
         self.clause("midplane", "Mid" in made.get("end", "") or "mid" in made["status"].lower(), str(made.get("end")))
         self.clause("6", "6" in str(made.get("field", "")) or "6" in made["status"], str(made.get("field")))
         self.clause("merge", merged, f"op={op} closed={closed} names={made.get('names')}")
-        self.clause("one body", len(made["bodies"]) == 1 and closed, str(made["bodies"]))
+        self.clause("one body", len(made["bodies"]) == 1 and closed and xmax >= 250.0, str(made["bodies"]))
 
     @row("A23", chunk=3, on="rung07", expect={"blocker": "A22", "part": True, "min_bodies": 1})
     def row_A23(self) -> None:
