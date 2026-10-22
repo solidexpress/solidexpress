@@ -31,6 +31,7 @@ GODOT_BIN="${GODOT_BIN:-tools/godot/godot}"
 if [[ "${GODOT_BIN}" != /* ]]; then
   GODOT_BIN="${ROOT_DIR}/${GODOT_BIN}"
 fi
+GAME_DIR="${ROOT_DIR}/game"
 
 TIER_ARG="full"
 LIST=0
@@ -274,13 +275,27 @@ failed_names=()
 # Headless object-model / bridge suites never open a window. The dummy
 # renderer skips Vulkan. render=viewport (parked for pixel suites) drops
 # --rendering-driver dummy and keeps --headless.
+#
+# Each suite gets its own copy of game/ (including .godot). Sharing
+# game/.godot leaked film_spanner C-pad state after film_hexkey even
+# with a unique HOME.
 godot_argv_for_render() {
   local mode="$1"
+  local proj="$2"
   if [[ "${mode}" == viewport ]]; then
-    printf '%s\n' --headless --path "${ROOT_DIR}/game"
+    printf '%s\n' --headless --path "${proj}"
   else
-    printf '%s\n' --headless --rendering-driver dummy --path "${ROOT_DIR}/game"
+    printf '%s\n' --headless --rendering-driver dummy --path "${proj}"
   fi
+}
+
+clone_game_project() {
+  local dest="$1"
+  mkdir -p "$(dirname "${dest}")"
+  if cp -a --reflink=auto "${GAME_DIR}" "${dest}" 2>/dev/null; then
+    return 0
+  fi
+  cp -a "${GAME_DIR}" "${dest}"
 }
 # Each suite gets its own HOME (below), which would hide pip --user packages
 # such as numpy from the python3 checkers. Pin the user site to the real one.
@@ -301,13 +316,16 @@ if [[ ${#selected_scripts[@]} -gt 0 ]]; then
       set +e
       # user:// is per process so parallel suites do not share autosaves.
       jobhome="${work}/home-${i}"
+      jobproj="${work}/proj-${i}"
       mkdir -p "${jobhome}/.local/share" "${jobhome}/.config"
-      mapfile -t GODOT_RUN < <(godot_argv_for_render "${selected_renders[$i]}")
+      clone_game_project "${jobproj}"
+      mapfile -t GODOT_RUN < <(godot_argv_for_render "${selected_renders[$i]}" "${jobproj}")
       HOME="${jobhome}" \
         XDG_DATA_HOME="${jobhome}/.local/share" \
         XDG_CONFIG_HOME="${jobhome}/.config" \
         timeout --foreground "${secs}" "${GODOT_BIN}" "${GODOT_RUN[@]}" --script "${script}" >"${log}" 2>&1
       echo $? >"${rcfile}"
+      rm -rf "${jobproj}"
     ) &
     pids+=($!)
     slot=$((slot + 1))
