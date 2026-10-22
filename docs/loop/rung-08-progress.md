@@ -22,3 +22,4 @@
 - Headless **262/0**. Lint **266** ok. Kernel **482/0**. Starting clean `SX_JOBS=1 SX_WALK_JOBS=1 tools/confirm_all.sh` from row 1 (no restores) at `build/confirm-r7`.
 - confirm-r7: build/import/kernel/lint/units **0**. Godot **96/262** (now `rung01_replan15_jawstub`). In-confirm film_spanner **12/0**, after handle trim n=3 C **1494.5** ring **275.2** handle **3999.2**.
 - confirm-r7 godot **262/0**. Walks started (`SX_WALK_JOBS=1`); walk 1 on :21.
+- confirm-r7 walks: r1 **77/77**, r2 **44/44**, r3 **46/46**, r4 **32/32**, r5 **36/36**, r6 **46/46**. Walk 7 from row 1 running (A8).
