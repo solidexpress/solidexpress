@@ -325,6 +325,10 @@ if [[ ${#selected_scripts[@]} -gt 0 ]]; then
         "${jobhome}/.local/state" "${jobroot}" "${work}/tmp-${i}"
       clone_game_project "${jobproj}"
       ln -sfn "${ROOT_DIR}/tools" "${jobroot}/tools"
+      # film_manifest_smoke _suite_owns looks at ../packaging/ci/suites.d
+      # from res://. Without this it re-ran hexkey+spanner in-process
+      # (timeout 124, after-trim n=4 closed ellipse 2257).
+      ln -sfn "${ROOT_DIR}/packaging" "${jobroot}/packaging"
       mapfile -t GODOT_RUN < <(godot_argv_for_render "${selected_renders[$i]}" "${jobproj}")
       HOME="${jobhome}" \
         XDG_DATA_HOME="${jobhome}/.local/share" \
