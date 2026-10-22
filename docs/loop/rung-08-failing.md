@@ -12,6 +12,8 @@ Isolated dummy+clean-HOME **12/0**: after handle trim n=3 C **1495.8** ring **27
 
 Same binary after `film_hexkey` (own HOME, own Godot process): **12/7**, after handle trim **n=2** (handle 3999.2 + ring 275.2, C gone, arc=1), R30 `limit 10.215; 6.000 mm vertical at (22.944, 10.000)`, bbox **233.56×33**.
 
+This VM hexkey-then-spanner (`bf67c81`): hexkey **8/0**, spanner **12/0**, n=3 C **1494.5**. Flake not reproduced on a two-suite sequence.
+
 Per-suite HOME rules out preferences. Separate processes rule out SketchMode/solver singletons. Shared `game/.godot` import cache (or intra-sketch trim/solve flake that shows up on a warm run) remains. C-head now: arm on first ring circle, keep `_c_head_armed` if hex trim drops Ø33, snapshot **before** Power Trim, restore at 0 mm. East-x (A9 R15 freeze) and golden-from-A11 (A21 n=2) were reverted.
 
 ### Walk 7 A26 / A34 / N4 volume
