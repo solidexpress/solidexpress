@@ -62,29 +62,17 @@ class Rows07Chunk2:
     @row("A14", chunk=2, on="rung07", expect={"blocker": "A13", "sketch": True})
     def row_A14(self) -> None:
         c = self.ring_centre()
-        # Frame the hex first — polar guesses at 240 mm miss when the camera
-        # still shows the C. Click actual inner-side midpoints (hex-hex
-        # crossings sit on the segment, not at the outer-flat midpoint).
+        # t0216/t0235: Power Trim inner leftovers, 12-point already in Sketch1.
+        # Our trim_at on hex-side midpoints (apothem 12.5) opens both hexes
+        # into stubs, so nest never sees hole wires (A21 ring ~398) and A23
+        # had to Cut a 24-gon later. Leave the two closed polygons; kernel
+        # overlapping-hex punch is A_RING 275 in this sketch.
         self._frame_uv((c[0] - 20.0, c[1] - 20.0), (c[0] + 20.0, c[1] + 20.0))
-        notes = []
-        was = self._set_snap(False)
-        # One click at each hex-side midpoint (the inner leftover). 0.3/0.7
-        # sit on the outer stubs that must stay as the 12-point outline.
-        for ln in self.profile_lines():
-            sa = self._pt(ln.get("start") or [0, 0])
-            sb = self._pt(ln.get("end") or [0, 0])
-            mid = ((sa[0] + sb[0]) * 0.5, (sa[1] + sb[1]) * 0.5)
-            if abs(mid[0] - c[0]) > 18.0 or abs(mid[1] - c[1]) > 18.0:
-                continue
-            dist = math.hypot(mid[0] - c[0], mid[1] - c[1])
-            length = math.hypot(sa[0] - sb[0], sa[1] - sb[1])
-            if 4.0 < dist <= 12.6 and length > 2.0:
-                notes.append(self.trim_at(mid))
-        self._set_snap(was)
+        self.seal_box_end_hexes()
         rings = self.ents("circle")
-        trimmed = any("Trimmed" in n and "Nothing" not in n for n in notes)
-        self.clause("trimmed", trimmed or len(self.profile_lines()) >= 6, "; ".join(notes[-3:]) or "trim")
-        self.clause("12 point", len(self.profile_lines()) >= 6, f"lines={len(self.profile_lines())}")
+        nhex = self.box_end_line_count()
+        self.clause("trimmed", nhex >= 12, f"closed hex sides={nhex}")
+        self.clause("12 point", nhex >= 12, f"lines={nhex}")
         self.clause("ring remains", bool(rings), f"circles={len(rings)}")
 
     @row("A15", chunk=2, on="rung07", expect={"blocker": "A14", "sketch": True})

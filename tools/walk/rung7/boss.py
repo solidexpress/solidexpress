@@ -157,8 +157,8 @@ class BossGestures:
         }
 
     def ensure_twelve_point_bore(self) -> dict:
-        """Front sketch + Line star + Cut Midplane 10. Polygon Power Trim of
-        two hexes leaves leftover triangles, so the Ø33 disc stays solid."""
+        """Unused leftover-hex recovery (sketch 4 / extrude 5). A14 keeps
+        two closed hexes so Sketch1 already punches A_RING 275."""
         bodies = list(self.refresh("bodies").get("bodies") or [])
         vol = float(bodies[0].get("volume") or 0.0) if bodies else 0.0
         if vol and vol <= self.mm("V_BOSS") * 1.01:

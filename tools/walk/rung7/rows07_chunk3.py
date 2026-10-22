@@ -83,7 +83,6 @@ class Rows07Chunk3:
 
     @row("A23", chunk=3, on="rung07", expect={"blocker": "A22", "part": True, "min_bodies": 1})
     def row_A23(self) -> None:
-        self.ensure_twelve_point_bore()
         report = self.stage_report("boss")
         box_ok, box_line = self.check_probe(report["text"], "bbox")
         handle_ok, handle_line = self.check_probe(report["text"], "handleSide")

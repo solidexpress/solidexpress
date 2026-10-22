@@ -666,13 +666,10 @@ static func sketch_ring_and_handle(ctx: FilmContext) -> void:
 	await place_hex(ctx, c, Vector2(c.x + r_v * cos(ang), c.y + r_v * sin(ang)), "Vertex")
 	if _failed():
 		return
-	await _trim_hex_inners(ctx)
-	if _failed():
-		return
-	# Walk A14 "ring remains": Power Trim of leftover hex sides must not
-	# eat Ø33. Redraw the circle so Midplane 10 still has a ring pad; the
-	# 12-point hole is then the A23 star Cut (walk leftover-triangles path).
-	await _ensure_ring_circle(ctx)
+	# t0216/t0235: 12-point is in Sketch1. Power Trim of hex-side midpoints
+	# opens stubs (A21 ring ~398) and forced the leftover star Cut. Keep
+	# the two closed hexes; kernel nest-punches A_RING 275 in this sketch.
+	await seal_box_end_hexes(ctx)
 	if _failed():
 		return
 	await construction_line(ctx, Vector2.ZERO, c, "centres CL")
@@ -742,14 +739,12 @@ static func _handle_line_at_y(sm: SketchMode, y: float) -> String:
 	return ""
 
 
-static func _trim_hex_inners(ctx: FilmContext) -> void:
-	var sm: SketchMode = ctx.main.sketch_mode
+static func _box_end_line_count(sm: SketchMode) -> int:
 	if sm == null or sm.sketch == null:
-		return
+		return 0
 	var c := ring_centre()
+	var n := 0
 	for id in sm.sketch.entity_ids():
-		if _failed():
-			return
 		if sm.sketch.is_construction(id):
 			continue
 		var info: Dictionary = sm.sketch.entity_info(id)
@@ -757,13 +752,29 @@ static func _trim_hex_inners(ctx: FilmContext) -> void:
 			continue
 		var a: Vector2 = info.get("start", Vector2.ZERO)
 		var b: Vector2 = info.get("end", Vector2.ZERO)
-		var mid := (a + b) * 0.5
-		if absf(mid.x - c.x) > 18.0 or absf(mid.y - c.y) > 18.0:
-			continue
-		var dist := mid.distance_to(c)
-		var length := a.distance_to(b)
-		if dist > 4.0 and dist <= 12.6 and length > 2.0:
-			await trim_at(ctx, mid, "Trim hex inner")
+		if ((a + b) * 0.5).distance_to(c) <= 16.0:
+			n += 1
+	return n
+
+
+## Two closed AF-25 hexes + Ø33 in the live Front sketch (t0181–t0235).
+static func seal_box_end_hexes(ctx: FilmContext) -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if count_type(sm, "circle") < 1:
+		await _ensure_ring_circle(ctx)
+		if _failed():
+			return
+		sm = ctx.main.sketch_mode
+	if _box_end_line_count(sm) >= 12:
+		return
+	var c := ring_centre()
+	var af := mm("HEX_AF")
+	var r_v := af / sqrt(3.0)
+	await place_hex(ctx, c, Vector2(c.x, c.y + r_v), "Across Flats")
+	if _failed():
+		return
+	var ang := deg_to_rad(30.0)
+	await place_hex(ctx, c, Vector2(c.x + r_v * cos(ang), c.y + r_v * sin(ang)), "Vertex")
 
 
 static func _ensure_ring_circle(ctx: FilmContext) -> void:
@@ -1096,6 +1107,8 @@ static func draw_twelve_point_star(ctx: FilmContext) -> void:
 		await line(ctx, pts[i], pts[(i + 1) % 24], "12-point", 0.0)
 
 
+## Leftover-hex recovery (sketch 4 / extrude 5). Unused: Sketch1 already
+## punches the 12-point from two closed hexes.
 static func ensure_twelve_point_bore(ctx: FilmContext) -> void:
 	var body := only_body(ctx)
 	if body == "":
@@ -1112,8 +1125,7 @@ static func ensure_twelve_point_bore(ctx: FilmContext) -> void:
 	await FilmSteps.midplane_extrude(ctx, mm_text("HEAD_T"), 1)
 
 
-## Walk A21 ring pad: if hex trim left no Ø33, xmax stops at the handle chord.
-## Fuse a Front Ø33 Midplane 10 so the box end exists; A23 then cuts the star.
+## Unused: Sketch1 already has Ø33. Kept so a one-off film can restore xmax.
 static func ensure_ring_pad(ctx: FilmContext) -> void:
 	var body := only_body(ctx)
 	if body == "":

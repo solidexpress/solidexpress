@@ -53,14 +53,6 @@ func run_film(ctx: FilmContext) -> void:
 	if not _ok():
 		return
 	await ctx.after_regen()
-	await SpannerFixture.ensure_ring_pad(ctx)
-	if not _ok():
-		return
-	await ctx.after_regen()
-	await SpannerFixture.ensure_twelve_point_bore(ctx)
-	if not _ok():
-		return
-	await ctx.after_regen()
 
 	await ctx.beat("R30 / R20 neck fillets", 0.4)
 	await SpannerFixture.fillet_z_edges(ctx, SpannerFixture.mm("R30"), [

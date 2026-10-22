@@ -176,6 +176,38 @@ class ProfileGestures:
         self.refresh("sketch", "status", "dims")
         return {"status": self.S(), "lines": self.profile_lines()}
 
+    def box_end_line_count(self) -> int:
+        c = self.ring_centre()
+        n = 0
+        for ln in self.profile_lines():
+            sa = self._pt(ln.get("start") or [0, 0])
+            sb = self._pt(ln.get("end") or [0, 0])
+            mid = ((sa[0] + sb[0]) * 0.5, (sa[1] + sb[1]) * 0.5)
+            if math.hypot(mid[0] - c[0], mid[1] - c[1]) <= 16.0:
+                n += 1
+        return n
+
+    def seal_box_end_hexes(self) -> None:
+        """Two closed AF-25 hexes + Ø33 in this Front sketch.
+
+        Tutorial t0181–t0235 punches the 12-point in Sketch1. Kernel
+        nest-punches overlapping closed hexes to A_RING 275. Click-trim
+        of hex-side midpoints opens stubs and forces the leftover
+        sketch-4 / extrude-5 star Cut — do not do that here.
+        """
+        c = self.ring_centre()
+        af = self.mm("HEX_AF")
+        r = self.mm("RING_D") * 0.5
+        if not self.ents("circle"):
+            self.circle_at(c, (c[0] + r, c[1]))
+        if self.box_end_line_count() >= 12:
+            return
+        r_v = af / math.sqrt(3.0)
+        self.place_af_hex(c, (c[0], c[1] + r_v))
+        ang = math.radians(30.0)
+        self.place_vertex_hex(
+            c, (c[0] + r_v * math.cos(ang), c[1] + r_v * math.sin(ang)))
+
     def trim_at(self, uv) -> str:
         self._frame_uv(uv)
         self.click("rail:Trim")
