@@ -37,12 +37,12 @@ Sketch wires still differ from [t0235.jpg](rung-07-frames/t0235.jpg) (lesson sho
 | Boss-Extrude2: **same Sketch1**, handle, Mid Plane 6, merge on ([t0347.jpg](rung-07-frames/t0347.jpg)) | A22 Fuse Midplane 6 | yes |
 | — no extra feature — | A23 is boss export only. `ensure_twelve_point_bore` is unused | yes |
 | R30 open-end neck, R20 box-end ([t0366.jpg](rung-07-frames/t0366.jpg), [t0380.jpg](rung-07-frames/t0380.jpg)) | A24 / A25 `graph_add_fillet` both 6 mm crotches first. Kernel fuses void-wedges **before** MakeFillet (MakeFillet alone nicked ~390) | yes (both flanks) |
-| Export neck. Volume **42733** | A26 | film **42841** (in 0.5%). Walk row to confirm |
+| Export neck. Volume **42733** | A26 | film **42841** (in 0.5%). Walk **42370** after 3 tries: R30 dv≈548 (one crotch, replica west-chord) vs 858/971. Logged as finding |
 | Handle-top face cyan, Convert two lines + R30 + R20 ([t0385.jpg](rung-07-frames/t0385.jpg)) | A28 convert; A29 Offset 5 then Cut Blind 1. If offset “breaks the chain”, draw a racetrack. Film always draws the racetrack when convert fails | convert is the lesson; racetrack is recovery |
 | Offset 5 inward ([t0415.jpg](rung-07-frames/t0415.jpg)); Cut Blind 1, area 1895.51 ([t0430.jpg](rung-07-frames/t0430.jpg)) | A29 | yes when convert+offset holds; racetrack ~1925 (+59 mm³) |
 | R3 pocket ends ([t0462.jpg](rung-07-frames/t0462.jpg)); Mirror Front Plane, Fillet3+Cut ([t0483.jpg](rung-07-frames/t0483.jpg), [t0492.jpg](rung-07-frames/t0492.jpg)) | A30 / A31 | yes |
 | R1 heads then remaining ([t0498.jpg](rung-07-frames/t0498.jpg) C-head outer, [t0516.jpg](rung-07-frames/t0516.jpg) remaining) | A32 / film `fillet_remaining`: **box-end 12-point face rims only**. C-head 10 mm Z-edge pulled xmin to 281.09; UI leftover created `fillet 11 failed` and hit recess limit 0.5. Rim-only dv≈−21 | **NO on C-head R1**; volume still in band |
-| Final volume **38782** | A34 / N4 | film **38954–38967** (in 0.5%). Walk row to confirm |
+| Final volume **38782** | A34 / N4 | film **38954–38967** (in 0.5%). Walk **38528** (7/8, volume only; neck deficit carries). Logged as finding |
 
 Lesson timeline ([t0385.jpg](rung-07-frames/t0385.jpg) tree): Sketch1, Boss-Extrude1, Boss-Extrude2, Fillet1, Fillet2, Sketch2, … — **no** extra Front sketch to cut the bore. Ours: sketch 1, extrude 2, extrude 3, fillet 4, fillet 5, sketch 6, extrude 7, fillet 8, mirror 9, fillet 10.
 

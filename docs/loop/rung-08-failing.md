@@ -1,39 +1,32 @@
-# Rung 8 failing — confirm-now
+# Rung 8 failing — round 8
 
-Test-and-fix on `cursor/rung-08-20261019` head `bf67c81` (product `e024beb`). Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
+Test-and-fix on `cursor/rung-08-20261019`. Do not open a PR. Do not edit `docs/plan/STATUS.md`. Do not commit `.uid`.
 
-One-clean `confirm_all` from row 1 finished 2026-10-22T10:45:22Z at `build/confirm-now`. Third try this cycle. wrench-t14 **18/22** stays DIAG (T=14).
+## Remaining (3 tries, do not loosen bands)
 
-## Remaining
+### Walk 7 A26 / A34 / N4 volume — one R30 crotch
 
-### film_spanner in-suite mouth unopened (godot 262/1)
+Hex is in-sketch (t0181–t0235). A14 `seal_box_end_hexes`, A23 recovery unused, ring **275.2**, boss **5/5** bbox **281.450**. Film on this binary: neck **42841**, final **38954–38967**, in 0.5% of 42733 / 38782. Isolated hexkey→spanner **8/0 + 12/0**.
 
-Isolated dummy+clean-HOME on this binary: **12/0**, after handle trim n=3 C **1494.5** / **1495.8**, ring **275.2**, handle **3999.2**, bbox **281.450**, `check_rung07` **8/8**.
+Walk from row 1 (no `--a15`, no restore):
 
-In-confirm `film_spanner` (suite after hexkey/lesson2/manifest): **4/2**. `C ellipse stayed closed after trim (n=1 #0 area=2159.8)`. Mouth never opened; no C pad, no body.
+| try | HEAD | A26 neck | A34 final | notes |
+|---|---|---|---|---|
+| 1 | `645a18f5` | bbox 251.8 (no ring) | 35609 | A21 bbox-keep extruded a 1390 C-COM island; Fuse dropped xmax 256.5→226.876 |
+| 2 | `3b23ccd3` | **42374** vs 42733 | **38531** vs 38782 | ring kept; R30 dv≈548 (replica T-junction) + R20 170 |
+| 3 | `fed0a886` | **42370** vs 42733 | **38528** vs 38782 | west-cap drop + map_neck_xy 12 mm; still one crotch. A32 R1 no longer runner-gap |
 
-Different flake from the earlier after-hexkey **12/7** (n=2 C gone, bbox 233.56). This VM hexkey-then-spanner was **12/0**. Shared `game/.godot` or trim/solve nondeterminism. East-x and golden-from-A11 stay reverted.
+Band: 42733×0.005 → [42519, 42947]; 38782×0.005 → [38588, 38976]. Neck is 146 below the floor (half of V_30). Kernel C+ellipse R30 dv=**971**; replica with west chord dv=**542**. Walk handle contour is still 202.9×20 (west chord). Film nest west follows the 17° ellipse (t0285 / t0315). Do not loosen.
 
-### Walk 7 A9 R15 undersized
+42 PASS / 3 FAIL / 1 A37 flag (diagnostic had no `--a15`). Boss **5/5**. Final **7/8** (volume only).
 
-From row 1: **r=13.642**. Three-point arc variant ok, inner ends ok. A10 still opened the mouth. Circle-only C-head arm did not freeze A9 the way east-x (r=20.93, closed ellipse) did, but the 15 mm dim still did not stick. Downstream C area **1404.9** vs **1495.8**.
+## Closed this round
 
-### Walk 7 A22 one-body / blocked boss
+- Hex punch in Sketch1; leftover-hex recovery unused. A21 ring 275.2. FEATURES sketch1…fillet10.
+- film_spanner after film_hexkey: per-suite cloned `game/` (incl `.godot`) + unique HOME/XDG/TMPDIR/`MESA_SHADER_CACHE_DIR`. Product C-pad hold. **8/0 + 12/0**.
+- automation_bridge `var fid := graph_add_fillet` parse error (walks never bound the port).
+- A21 C-COM bbox keep of a 1390 island.
 
-A21 PASS: C + ring present, n=6 (C **1404.9**, handle **3989.0**, ring **275.2**, plus 13.3 + two 4.8 islands). Midplane 10 mm, two pads, z ±5.
+## Not this round
 
-A22 FAIL `one body`: fuse reported, still a single `extrude 2` vol **16800.8**, bbox Y **54.64**. A23–A26 blocked (still in a sketch). No boss **5/5**, no neck, no final volume this run.
-
-### Walk 6 sweep boolean + open 3MF
-
-A27 `Sweep along path failed (sweep 6: boolean failed)`. A14/A28/A32–A34/N5 runner-gap: 3MF mesh open **627/183018** edges. L4/L5/A31 follow-on. New vs `c30e61a` / confirm-r7 (those were 46/46). Not a C-head change; do not chase as a fourth confirm.
-
-### Walk 7 A26 / A34 / N4 volume (logged, not re-tried)
-
-Round-4 volume retries reverted. Sweep at `e024beb` was A26 neck **42154** vs 42733 (4/5), A34 **38312** vs 38782. This confirm never reached those rows. Do not loosen bands.
-
-## Closed / not remaining
-
-Walks 1–5 product-green (only A15/A25/A26/A21/A25 godot-floor from film_spanner). Walk 8 **47/48** pin **3/3** pipes **5/5** bolted **7/7** final **10/10**. Walk 7 A10 mouth, A18 strip, A21 C-present. Kernel **482/0**. Lint **266**. Glyphs/J6 stay closed.
-
-Golden-hold walk 7 (`238949b`) **26/36** and confirm-r7 walk 7 **26/46** (east-arm A9 freeze) are not remaining on `e024beb`.
+Walk 6 sweep / open 3MF and wrench-t14 **18/22 DIAG** (T=14) are unchanged. No PR.
