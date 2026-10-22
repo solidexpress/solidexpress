@@ -90,6 +90,10 @@ var _jaw_wall_ids: Array[String] = []
 ## this sketch session only — not a live ring-circle test, so a missed
 ## Ø33 restore cannot drop the hold (in-suite film vs isolation).
 var _c_head_armed := false
+## Geometry of the open C at the moment the hold armed. Live snapshots
+## after a nick or handle trim must not replace this (that was the
+## in-suite C-pad leak: restore froze the broken pad).
+var _c_head_golden: Dictionary = {}
 ## Draw next line as construction (centerline mode).
 var draw_construction := false
 ## Power-trim drag state: list of already-trimmed entity ids this stroke.
@@ -751,6 +755,7 @@ func _activate_session() -> void:
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
 	_c_head_armed = false
+	_c_head_golden = {}
 	dimensions.clear()
 	intersection_points.clear()
 	_clear_dimension_labels()
@@ -1322,6 +1327,7 @@ func _restore_undo_entry(entry: Dictionary) -> String:
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
 	_c_head_armed = false
+	_c_head_golden = {}
 	_drag.clear()
 	_trim_dragging = false
 	if sketch.entity_ids().is_empty():
@@ -7707,14 +7713,45 @@ func _profile_has_east() -> bool:
 func _c_head_ready() -> bool:
 	if sketch == null:
 		_c_head_armed = false
-		return false
-	if not _profile_has_type("elliptical_arc"):
-		_c_head_armed = false
+		_c_head_golden = {}
 		return false
 	if _c_head_armed:
 		return true
+	if not _profile_has_type("elliptical_arc"):
+		return false
 	if _profile_has_type("circle") or _profile_has_east():
 		_c_head_armed = true
+		if _c_head_golden.is_empty():
+			_c_head_golden = _c_head_entities()
+		return true
+	return false
+
+
+## Jaw lines + R15 + the remaining elliptical arc. The C arc is always
+## held (it is the pad); lines/circular arcs only when they sit on the
+## open end (any of start/end/center/mid x < 80).
+func _c_head_entities() -> Dictionary:
+	var all := _snapshot_line_geometry()
+	var out := {}
+	for id in all.keys():
+		var row: Dictionary = all[id]
+		var info: Dictionary = sketch.entity_info(str(id))
+		if str(info.get("type", "")) == "elliptical_arc":
+			out[id] = row
+			continue
+		if _c_head_row_is_west(row):
+			out[id] = row
+	return out
+
+
+func _c_head_row_is_west(row: Dictionary) -> bool:
+	# Handle overflow 18→227 has an end inside the C; its midpoint (~122)
+	# is the ring half. Only freeze entities that live on the open end.
+	if row.has("start") and row.has("end"):
+		var mid: Vector2 = ((row["start"] as Vector2) + (row["end"] as Vector2)) * 0.5
+		if mid.x < 80.0:
+			return true
+	if row.has("center") and (row["center"] as Vector2).x < 80.0:
 		return true
 	return false
 
@@ -7722,14 +7759,9 @@ func _c_head_ready() -> bool:
 func _snapshot_c_head() -> Dictionary:
 	if not _c_head_ready():
 		return {}
-	var all := _snapshot_line_geometry()
-	var out := {}
-	for id in all.keys():
-		var row: Dictionary = all[id]
-		var mid: Vector2 = (row["start"] as Vector2 + row["end"] as Vector2) * 0.5
-		if mid.x < 80.0:
-			out[id] = row
-	return out
+	if not _c_head_golden.is_empty():
+		return _c_head_golden.duplicate(true)
+	return _c_head_entities()
 
 
 ## Write C-head geometry back, then weld, then write it again so a 0.8 mm
