@@ -23,4 +23,5 @@
 - confirm-r7: build/import/kernel/lint/units **0**. Godot **96/262** (now `rung01_replan15_jawstub`). In-confirm film_spanner **12/0**, after handle trim n=3 C **1494.5** ring **275.2** handle **3999.2**.
 - confirm-r7 godot **262/0**. Walks started (`SX_WALK_JOBS=1`); walk 1 on :21.
 - confirm-r7 walks: r1 **77/77**, r2 **44/44**, r3 **46/46**, r4 **32/32**, r5 **36/36**, r6 **46/46**. Walk 7 from row 1 running (A8).
-- 04:30 heartbeat: `c30e61a` confirm is filed (result/failing). confirm-r7 last published still walk 7 A8 (`5cadaa4`, 03:57Z). No third confirm on this VM.
+- 04:30 heartbeat: `c30e61a` confirm is filed (result/failing). confirm-r7 last published still walk 7 A8 (`5cadaa4`, 03:57Z).
+- confirm-r7 walk 7 **FAIL** (26/46): A9 R15 **r=20.93** (no 15 dim); A10 mouth opened; A18 strip untrimmed at (22.94, ±10); A21 C **2157.2** (closed ellipse) handle 4004.2 ring 275.2. Walk 8 **48/48**. Cause: x>80 east-arm + radius restore froze the unconstrained 3-point R15 (C still a closed ellipse). Hold now arms only after `elliptical_arc` and ring-side geometry (circle or any start/end/center x>150, so handle 23→227 still arms without Ø33). Kernel `[rung07]` **26/26**.

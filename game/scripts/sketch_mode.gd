@@ -85,10 +85,10 @@ var _angle_datum_lines: Dictionary = {}
 var _jaw_floor_id := ""
 var _jaw_arc_id := ""
 var _jaw_wall_ids: Array[String] = []
-## Once the Front C coexists with ring/handle geometry (x > 80), later
-## solves and Power Trim must not eat the open-end pad. Armed for this
-## sketch session only — not a live ring-circle test, so a missed Ø33
-## restore cannot drop the hold (in-suite film vs isolation).
+## Once the open Front C (elliptical_arc) coexists with ring/handle
+## geometry, later solves and Power Trim must not eat the pad. Armed for
+## this sketch session only — not a live ring-circle test, so a missed
+## Ø33 restore cannot drop the hold (in-suite film vs isolation).
 var _c_head_armed := false
 ## Draw next line as construction (centerline mode).
 var draw_construction := false
@@ -7133,8 +7133,10 @@ func run_solve() -> Dictionary:
 		solve_updated.emit(-1, "", 0)
 		return {"dofs": -1, "status": "", "residual": 0.0, "conflicting": PackedStringArray(), "redundant": PackedStringArray()}
 	# Ring/handle/hex solves at x=240 DogLeg the C jaws. Hold the open-end
-	# pad (x < 80) once ring/handle geometry exists — not only while a
-	# live Ø33 circle is still in the profile (hex trim can drop it).
+	# pad (x < 80) once the mouth is an elliptical_arc and ring/handle
+	# geometry exists — not only while a live Ø33 circle is still in the
+	# profile (hex trim can drop it), and not while the C is still a
+	# closed ellipse (that froze walk-7 R15 at the unconstrained 3-point).
 	var c_head := _snapshot_c_head()
 	var res: Dictionary = sketch.solve()
 	last_dofs = res["dofs"]
@@ -7675,6 +7677,12 @@ func _snapshot_line_geometry() -> Dictionary:
 ## Put back profile lines whose midpoint was far from `click` if solve moved
 ## them. Trim+solve of the 12-point at x=240 was translating the C jaws.
 ## Jaw lines + R15 + remaining elliptical arc of the Front C (x < 80).
+## Ring lives at x=240; handle runs to ~227. The 17° CL plus-x end is 80
+## (same number as the C-head snapshot gate). Arm only when profile
+## geometry reaches past the handle mid (~125) — never from the C, the
+## CL, or a 3-point R15 whose circumcentre drifted past x=80.
+const _C_HEAD_EAST_X := 150.0
+
 func _profile_has_east() -> bool:
 	if sketch == null:
 		return false
@@ -7682,25 +7690,25 @@ func _profile_has_east() -> bool:
 		if sketch.is_construction(id):
 			continue
 		var info: Dictionary = sketch.entity_info(id)
-		var p := Vector2.ZERO
-		if info.has("center"):
-			p = info["center"]
-		elif info.has("start") and info.has("end"):
-			p = ((info["start"] as Vector2) + (info["end"] as Vector2)) * 0.5
-		else:
-			continue
-		if p.x > 80.0:
+		# Handle 23→227 has midpoint ~125; the ring-side end must still arm
+		# when the Ø33 circle is missing (in-suite C-pad leak).
+		if info.has("center") and (info["center"] as Vector2).x > _C_HEAD_EAST_X:
+			return true
+		if info.has("start") and (info["start"] as Vector2).x > _C_HEAD_EAST_X:
+			return true
+		if info.has("end") and (info["end"] as Vector2).x > _C_HEAD_EAST_X:
 			return true
 	return false
 
 
-## Arm once the Front C shares the sketch with ring/handle geometry. A missed
-## Ø33 restore must not drop the hold — that was the in-suite C-pad leak.
+## Arm once the mouth is already an elliptical_arc and ring/handle geometry
+## exists. A closed ellipse must not freeze R15 (walk 7 A9). A missed Ø33
+## restore must not drop the hold — that was the in-suite C-pad leak.
 func _c_head_ready() -> bool:
 	if sketch == null:
 		_c_head_armed = false
 		return false
-	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
+	if not _profile_has_type("elliptical_arc"):
 		_c_head_armed = false
 		return false
 	if _c_head_armed:
