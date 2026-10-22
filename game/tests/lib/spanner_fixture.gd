@@ -988,7 +988,8 @@ static func undo_last_fillet(ctx: FilmContext) -> void:
 
 
 ## Walk fillet_z_edges: Top view so 6 mm Z-edges are vertical, not iso (C occludes).
-## Both crotch Z-edges (t0366 / t0380). One edge left V_30≈429 instead of 858.
+## Both crotch Z-edges (t0366 / t0380). Capture ids before topology changes,
+## then graph_add_fillet both — a UI "2 clicks" still left V_30≈429.
 static func fillet_z_edges(ctx: FilmContext, radius: float, xys: Array) -> void:
 	var body := only_body(ctx)
 	if body == "":
@@ -997,6 +998,26 @@ static func fillet_z_edges(ctx: FilmContext, radius: float, xys: Array) -> void:
 	var want_len := mm("HANDLE_T")
 	var names_before := _feature_names(ctx)
 	var want_n := maxi(xys.size(), 2)
+	var ids := neck_z_edges(ctx.view.doc, body, xys, want_len)
+	if ids.size() < want_n:
+		for xy in xys:
+			for eid in z_edges_near(ctx.view.doc, body, xy as Vector2, want_len, 12.0):
+				if not ids.has(str(eid)):
+					ids.append(str(eid))
+	var v0 := _volume(ctx)
+	print("neck R%s pre-edges=" % str(int(round(radius))), ids, " n=", ids.size(), " vol=", v0)
+	var host := ctx.view.feature_of_body(body) if body != "" else ""
+	var err := ""
+	if host != "" and ids.size() >= want_n:
+		ctx.view.doc.graph_add_fillet(host, ids, radius)
+		await ctx.after_regen()
+		err = _graph_error(ctx)
+		print("neck R%s graph vol=" % str(int(round(radius))), _volume(ctx),
+				" dv=", _volume(ctx) - v0, " err=", err, " y_ok=", bbox_y_ok(ctx))
+		if bbox_y_ok(ctx) and err == "":
+			return
+		await undo_last_fillet(ctx)
+		body = only_body(ctx)
 	for _attempt in 3:
 		if _failed():
 			return
@@ -1018,28 +1039,9 @@ static func fillet_z_edges(ctx: FilmContext, radius: float, xys: Array) -> void:
 		await FilmSteps.commit_fillet(ctx)
 		await ctx.after_regen()
 		body = only_body(ctx)
-		var err := _graph_error(ctx)
-		var ids := neck_z_edges(ctx.view.doc, body, xys, want_len)
-		if ids.size() < want_n:
-			for xy in xys:
-				for eid in z_edges_near(ctx.view.doc, body, xy as Vector2, want_len, 12.0):
-					if not ids.has(str(eid)):
-						ids.append(str(eid))
-		if picked < want_n or err.contains("fillet") or err.contains("invalid"):
-			var added_now := false
-			for n in _feature_names(ctx):
-				if not names_before.has(n) and str(n).begins_with("fillet"):
-					added_now = true
-			if added_now:
-				await undo_last_fillet(ctx)
-			body = only_body(ctx)
-			ids = neck_z_edges(ctx.view.doc, body, xys, want_len)
-			var host := ctx.view.feature_of_body(body) if body != "" else ""
-			if host != "" and ids.size() >= want_n:
-				ctx.view.doc.graph_add_fillet(host, ids, radius)
-				await ctx.after_regen()
-				err = _graph_error(ctx)
-				picked = ids.size()
+		err = _graph_error(ctx)
+		print("neck R%s ui picked=" % str(int(round(radius))), picked, " vol=", _volume(ctx),
+				" dv=", _volume(ctx) - v0)
 		if picked >= want_n and bbox_y_ok(ctx) and err == "":
 			return
 	FilmUI._fail("neck fillet R%s did not keep bbox Y" % str(int(round(radius))))

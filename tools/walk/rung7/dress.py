@@ -144,8 +144,22 @@ class DressGestures:
         want_len = self.mm("HANDLE_T")
         want_n = max(len(xys), 2)
         status = ""
-        ids: list[str] = []
+        ids = self._neck_z_edges(xys, want_len)
         names_before = self.feature_names()
+        if len(ids) >= want_n:
+            reply = self.d.call(
+                "graph_add_fillet",
+                edges=ids,
+                radius=float(radius),
+            )
+            self.d.wait_idle(frames=8)
+            self.refresh("bodies", "features", "status")
+            status = str(reply.get("id") or reply.get("status") or "")
+            if self.bbox_y_ok() and not str(reply.get("error", "")):
+                return status, ids
+            added = [n for n in self.feature_names() if n not in names_before]
+            if added:
+                self.undo_last_fillet()
         for attempt in range(NeckPolicy.ATTEMPTS):
             added = [n for n in self.feature_names() if n not in names_before]
             if added:
@@ -156,21 +170,6 @@ class DressGestures:
             status = self.apply_fillet()
             self.d.wait_idle(frames=8)
             self.refresh("bodies", "features", "status")
-            if len(ids) < want_n or not self.bbox_y_ok():
-                zone = self._neck_z_edges(xys, want_len)
-                if len(zone) >= want_n:
-                    added = [n for n in self.feature_names() if n not in names_before]
-                    if added:
-                        self.undo_last_fillet()
-                    reply = self.d.call(
-                        "graph_add_fillet",
-                        edges=zone,
-                        radius=float(radius),
-                    )
-                    self.d.wait_idle(frames=8)
-                    self.refresh("bodies", "features", "status")
-                    ids = zone
-                    status = str(reply.get("id") or reply.get("status") or status)
             if self.bbox_y_ok() and len(ids) >= want_n:
                 return status, ids
         return status, ids
