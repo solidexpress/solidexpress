@@ -757,24 +757,45 @@ static func _box_end_line_count(sm: SketchMode) -> int:
 	return n
 
 
-## Two closed AF-25 hexes + Ø33 in the live Front sketch (t0181–t0235).
+## Two closed unconstrained AF-25 hexes + Ø33 (t0181–t0235). Drops the
+## Polygon constraint graph so PlaneGCS does not DogLeg two overlaps.
 static func seal_box_end_hexes(ctx: FilmContext) -> void:
 	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null or sm.sketch == null:
+		return
 	if count_type(sm, "circle") < 1:
 		await _ensure_ring_circle(ctx)
 		if _failed():
 			return
 		sm = ctx.main.sketch_mode
-	if _box_end_line_count(sm) >= 12:
-		return
+		if sm == null or sm.sketch == null:
+			return
 	var c := ring_centre()
+	var drop_ids: Array[String] = []
+	for id in sm.sketch.entity_ids():
+		if sm.sketch.is_construction(id):
+			continue
+		var info: Dictionary = sm.sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var a: Vector2 = info.get("start", Vector2.ZERO)
+		var b: Vector2 = info.get("end", Vector2.ZERO)
+		if ((a + b) * 0.5).distance_to(c) > 16.0:
+			continue
+		drop_ids.append(str(id))
+	for eid in drop_ids:
+		sm.sketch.remove_entity(eid)
 	var af := mm("HEX_AF")
-	var r_v := af / sqrt(3.0)
-	await place_hex(ctx, c, Vector2(c.x, c.y + r_v), "Across Flats")
-	if _failed():
-		return
-	var ang := deg_to_rad(30.0)
-	await place_hex(ctx, c, Vector2(c.x + r_v * cos(ang), c.y + r_v * sin(ang)), "Vertex")
+	var R := af / sqrt(3.0)
+	for rot in [0.0, PI / 6.0]:
+		var pts: Array[Vector2] = []
+		for i in 6:
+			var ang := rot + float(i) * PI / 3.0
+			pts.append(c + Vector2(cos(ang), sin(ang)) * R)
+		for i in 6:
+			sm.sketch.add_line(pts[i].x, pts[i].y, pts[(i + 1) % 6].x, pts[(i + 1) % 6].y)
+	if sm.has_method("_redraw"):
+		sm._redraw()
 
 
 static func _ensure_ring_circle(ctx: FilmContext) -> void:

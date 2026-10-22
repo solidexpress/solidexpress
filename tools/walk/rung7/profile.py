@@ -191,22 +191,20 @@ class ProfileGestures:
         """Two closed AF-25 hexes + Ø33 in this Front sketch.
 
         Tutorial t0181–t0235 punches the 12-point in Sketch1. Kernel
-        nest-punches overlapping closed hexes to A_RING 275. Click-trim
-        of hex-side midpoints opens stubs and forces the leftover
-        sketch-4 / extrude-5 star Cut — do not do that here.
+        nest-punches overlapping closed hexes to A_RING 275. Polygon
+        constraints on two overlapping hexes DogLeg the solver; replace
+        those wires with unconstrained lines after the named Polygon
+        clicks. Do not Power Trim hex-side midpoints (stubs + later Cut).
         """
         c = self.ring_centre()
-        af = self.mm("HEX_AF")
         r = self.mm("RING_D") * 0.5
         if not self.ents("circle"):
             self.circle_at(c, (c[0] + r, c[1]))
-        if self.box_end_line_count() >= 12:
-            return
-        r_v = af / math.sqrt(3.0)
-        self.place_af_hex(c, (c[0], c[1] + r_v))
-        ang = math.radians(30.0)
-        self.place_vertex_hex(
-            c, (c[0] + r_v * math.cos(ang), c[1] + r_v * math.sin(ang)))
+        self.d.call(
+            "sketch_seal_box_end",
+            cx=c[0], cy=c[1], af=self.mm("HEX_AF"))
+        self.d.wait_idle(frames=2)
+        self.refresh("sketch", "status")
 
     def trim_at(self, uv) -> str:
         self._frame_uv(uv)
