@@ -787,7 +787,8 @@ static func seal_box_end_hexes(ctx: FilmContext) -> void:
 		sm.sketch.remove_entity(eid)
 	var af := mm("HEX_AF")
 	var R := af / sqrt(3.0)
-	for rot in [0.0, PI / 6.0]:
+	for rot_i in 2:
+		var rot := 0.0 if rot_i == 0 else PI / 6.0
 		var pts: Array[Vector2] = []
 		for i in 6:
 			var ang := rot + float(i) * PI / 3.0

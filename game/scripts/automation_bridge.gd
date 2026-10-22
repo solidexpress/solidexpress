@@ -406,7 +406,8 @@ func _cmd_sketch_seal_box_end(req: Dictionary) -> Dictionary:
 			dropped += 1
 	var R := af / sqrt(3.0)
 	var added := 0
-	for rot in [0.0, PI / 6.0]:
+	for rot_i in 2:
+		var rot := 0.0 if rot_i == 0 else PI / 6.0
 		var pts: Array[Vector2] = []
 		for i in 6:
 			var ang := rot + float(i) * PI / 3.0
