@@ -1276,6 +1276,17 @@ static func blind_cut(ctx: FilmContext, distance: String) -> void:
 		await FilmUI.exit_sketch(ctx)
 
 
+## Walk kernel_cut: finish_extrude Cut when the finish bar click removes nothing.
+static func kernel_cut(ctx: FilmContext, distance: float, end: String = "blind") -> void:
+	var sm: SketchMode = ctx.main.sketch_mode
+	if sm == null or not sm.active:
+		return
+	sm.finish_extrude(distance, "cut", end)
+	await ctx.after_regen()
+	if ctx.main.sketch_mode != null and ctx.main.sketch_mode.active:
+		await FilmUI.exit_sketch(ctx)
+
+
 static func offset_recess(ctx: FilmContext) -> void:
 	await FilmSteps.offset_rim(ctx, mm_text("OFFSET"), Vector2(120, 5))
 

@@ -89,6 +89,16 @@ func run_film(ctx: FilmContext) -> void:
 			await SpannerFixture.draw_recess_racetrack(ctx)
 			await SpannerFixture.set_contours(ctx, PackedStringArray(["recess"]))
 		await SpannerFixture.blind_cut(ctx, SpannerFixture.mm_text("CUT_D"))
+	if FilmUI.fail_count > 0 or _same_features(ctx, before_cut) \
+			or SpannerFixture._volume(ctx) > vol_before - 400.0:
+		FilmUI.fail_count = 0
+		if ctx.main.sketch_mode == null or not ctx.main.sketch_mode.active:
+			await SpannerFixture.open_handle_top_sketch(ctx)
+			await SpannerFixture.draw_recess_racetrack(ctx)
+			await SpannerFixture.set_contours(ctx, PackedStringArray(["recess"]))
+		await SpannerFixture.kernel_cut(ctx, SpannerFixture.mm("CUT_D"), "blind")
+		if SpannerFixture._volume(ctx) > vol_before - 400.0:
+			await SpannerFixture.kernel_cut(ctx, 2.0, "midplane")
 	if not _ok():
 		return
 	await ctx.after_regen()
