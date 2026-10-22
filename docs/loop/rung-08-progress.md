@@ -20,4 +20,4 @@
 - In-suite film_spanner (suite 22/262, after candlestick/pipe/hexkey/lesson2/manifest): **12/0**, C **1495.8**, ring **275.2**, handle **3999.2**. Headless continuing `SX_JOBS=1`.
 - Headless `SX_JOBS=1`: **141/262** failed **0**. Now `run_rung01_replan2_shell`. film_spanner stayed 12/0.
 - Headless **262/0**. Lint **266** ok. Kernel **482/0**. Starting clean `SX_JOBS=1 SX_WALK_JOBS=1 tools/confirm_all.sh` from row 1 (no restores) at `build/confirm-r7`.
-- confirm-r7: build/import/kernel/lint/units **0**. Godot **96/262** (now `rung01_replan15_jawstub`). film_spanner already ran in this confirm.
+- confirm-r7: build/import/kernel/lint/units **0**. Godot **96/262** (now `rung01_replan15_jawstub`). In-confirm film_spanner **12/0**, after handle trim n=3 C **1494.5** ring **275.2** handle **3999.2**.
