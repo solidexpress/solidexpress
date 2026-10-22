@@ -794,32 +794,10 @@ static func seal_box_end_hexes(ctx: FilmContext) -> void:
 		if sm == null or sm.sketch == null:
 			return
 	var c := ring_centre()
-	var drop_ids: Array[String] = []
-	for id in sm.sketch.entity_ids():
-		if sm.sketch.is_construction(id):
-			continue
-		var info: Dictionary = sm.sketch.entity_info(id)
-		if str(info.get("type", "")) != "line":
-			continue
-		var a: Vector2 = info.get("start", Vector2.ZERO)
-		var b: Vector2 = info.get("end", Vector2.ZERO)
-		if ((a + b) * 0.5).distance_to(c) > 16.0:
-			continue
-		drop_ids.append(str(id))
-	for eid in drop_ids:
-		sm.sketch.remove_entity(eid)
-	var af := mm("HEX_AF")
-	var R := af / sqrt(3.0)
-	for rot_i in 2:
-		var rot := 0.0 if rot_i == 0 else PI / 6.0
-		var pts: Array[Vector2] = []
-		for i in 6:
-			var ang := rot + float(i) * PI / 3.0
-			pts.append(c + Vector2(cos(ang), sin(ang)) * R)
-		for i in 6:
-			sm.sketch.add_line(pts[i].x, pts[i].y, pts[(i + 1) % 6].x, pts[(i + 1) % 6].y)
-	if sm.has_method("_redraw"):
-		sm._redraw()
+	if sm.has_method("seal_box_end_hexes"):
+		sm.seal_box_end_hexes(c.x, c.y, mm("HEX_AF"))
+		return
+	FilmUI._fail("seal_box_end_hexes missing")
 
 
 static func _ensure_ring_circle(ctx: FilmContext) -> void:

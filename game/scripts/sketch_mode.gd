@@ -753,8 +753,10 @@ func _activate_session() -> void:
 	_jaw_floor_id = ""
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
-	_c_head_armed = false
-	_c_pad_golden.clear()
+	# Pencil re-entry of Sketch1 still has the Front C. Wiping the hold
+	# here let the activation solve drop the pad (n=2 at contour keep).
+	# A new empty sketch / recess sketch has no ring circle, so clear.
+	_rearm_c_head_from_sketch()
 	dimensions.clear()
 	intersection_points.clear()
 	_clear_dimension_labels()
@@ -1325,8 +1327,7 @@ func _restore_undo_entry(entry: Dictionary) -> String:
 	_jaw_floor_id = ""
 	_jaw_arc_id = ""
 	_jaw_wall_ids.clear()
-	_c_head_armed = false
-	_c_pad_golden.clear()
+	_rearm_c_head_from_sketch()
 	_drag.clear()
 	_trim_dragging = false
 	if sketch.entity_ids().is_empty():
@@ -2631,12 +2632,11 @@ func _nearest_trim_entity_at(pos2: Vector2, skip: Dictionary = {}) -> String:
 		elif kind == "ellipse" or kind == "elliptical_arc":
 			# Interior of the C pad is not a trim hit on the remaining arc.
 			# The handle overflow at (18, ±10) sits inside that pad.
-			# Once the C-head hold is armed, never Power Trim the pad on
-			# the handle/ring half (x>5) — that deleted the arc and left
-			# n=2 (ring+handle) after hexkey-then-spanner.
-			if _c_head_armed and pos2.x > 5.0:
+			# Never Power Trim the pad on the handle/ring half (x>5) —
+			# waiting until the hold armed let hex-side clicks delete it.
+			if pos2.x > 5.0:
 				continue
-			if d > TRIM_CURVE_MM or (pos2.x > 5.0 and absf(pos2.y) <= 12.0):
+			if d > TRIM_CURVE_MM:
 				continue
 		if d < best_d:
 			best_d = d
@@ -4041,6 +4041,8 @@ func trim_at(pos2: Vector2) -> bool:
 	elif _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
 		_restore_untrimmed_line_drift(pre_lines, id)
 		_weld_nearby_curve_joints(0.8)
+	elif _c_head_armed or not _c_pad_golden.is_empty() or _front_c_ring_present():
+		_ensure_c_pad_recipe()
 	_drop_stale_dimensions()
 	var alive: Array[String] = []
 	for sid in selected:
@@ -7168,6 +7170,8 @@ func run_solve() -> Dictionary:
 		_weld_coincident_line_ends()
 	if not c_head.is_empty():
 		_restore_c_head_geometry(c_head)
+	elif _c_head_armed or not _c_pad_golden.is_empty() or _front_c_ring_present():
+		_ensure_c_pad_recipe()
 	return res
 
 
@@ -7695,17 +7699,65 @@ func _snapshot_line_geometry() -> Dictionary:
 func _c_head_ready() -> bool:
 	if sketch == null:
 		return false
+	_capture_c_pad_golden()
 	# Stay armed if the live pad was deleted. Disarming here made
 	# _snapshot_c_head return {} and handle trim left n=2 (ring+handle).
 	if _c_head_armed:
 		return true
 	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
+		if not _c_pad_golden.is_empty() and _front_c_ring_present():
+			_c_head_armed = true
+			return true
 		return false
 	if _profile_has_type("circle"):
 		_c_head_armed = true
-		_c_pad_golden = _c_pad_only()
+		if _c_pad_golden.is_empty():
+			_c_pad_golden = _c_pad_only()
 		return true
 	return false
+
+
+## Ø33 at x=240. Recess / hex-key / wrench sketches do not have this circle.
+func _front_c_ring_present() -> bool:
+	if sketch == null:
+		return false
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "circle":
+			continue
+		var c: Vector2 = info.get("center", Vector2.ZERO)
+		var r := float(info.get("radius", 0.0))
+		if absf(c.x - 240.0) <= 8.0 and absf(c.y) <= 2.0 and absf(r - 16.5) <= 2.0:
+			return true
+	return false
+
+
+## Snapshot the remaining C arc as soon as the mouth is open, before the
+## ring circle exists. Do not overwrite with a DogLeg'd pad later.
+func _capture_c_pad_golden() -> void:
+	if sketch == null or not _c_pad_golden.is_empty():
+		return
+	if not _profile_has_type("elliptical_arc") and not (
+			_profile_has_type("ellipse") and _profile_has_type("circle")):
+		return
+	var pad := _c_pad_only()
+	if not pad.is_empty():
+		_c_pad_golden = pad
+
+
+## Pencil / undo / new-session: keep the hold on Sketch1, clear it otherwise.
+func _rearm_c_head_from_sketch() -> void:
+	_capture_c_pad_golden()
+	if _front_c_ring_present() or _profile_has_type("elliptical_arc") \
+			or _profile_has_type("ellipse"):
+		_c_head_armed = true
+		if _c_pad_golden.is_empty():
+			_c_pad_golden = _c_pad_only()
+		return
+	_c_head_armed = false
+	_c_pad_golden.clear()
 
 
 func _c_pad_only() -> Dictionary:
@@ -7753,14 +7805,13 @@ func _c_head_row_is_west(row: Dictionary) -> bool:
 
 
 func _snapshot_c_head() -> Dictionary:
-	if not _c_head_ready():
+	if not _c_head_ready() and _c_pad_golden.is_empty():
 		return {}
-	# Live jaws so the handle–C junction can still seat. If the pad id is
-	# already gone, keep the first-arm ellipse so restore can recreate it.
+	# Live jaws so the handle–C junction can still seat. Golden pad always
+	# wins over a DogLeg'd live ellipse (params, not start/end).
 	var live := _c_head_entities()
 	for id in _c_pad_golden.keys():
-		if not live.has(id):
-			live[id] = _c_pad_golden[id]
+		live[id] = _c_pad_golden[id]
 	return live
 
 
@@ -7768,15 +7819,15 @@ func _snapshot_c_head() -> Dictionary:
 ## joint snap cannot reopen the 0.05 mm contour wire. Recreate a pad that
 ## trim_entity deleted (new id) — set_entity_geometry on a dead id is a no-op.
 func _restore_c_head_geometry(held: Dictionary) -> void:
-	if held.is_empty():
-		return
-	_restore_untrimmed_line_drift(held, "", 0.0)
-	_recreate_missing_c_head(held)
-	_weld_nearby_curve_joints(0.8)
-	_restore_untrimmed_line_drift(held, "", 0.0)
-	_recreate_missing_c_head(held)
-	if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
-		_recreate_missing_c_head(_c_pad_golden)
+	if not held.is_empty():
+		_restore_untrimmed_line_drift(held, "", 0.0)
+		_recreate_missing_c_head(held)
+		_weld_nearby_curve_joints(0.8)
+		_restore_untrimmed_line_drift(held, "", 0.0)
+		_recreate_missing_c_head(held)
+		if not _profile_has_type("elliptical_arc") and not _profile_has_type("ellipse"):
+			_recreate_missing_c_head(_c_pad_golden)
+	_ensure_c_pad_recipe()
 
 
 func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String, min_mm: float = 0.5) -> void:
@@ -7793,12 +7844,16 @@ func _restore_untrimmed_line_drift(before: Dictionary, trimmed_id: String, min_m
 		if info.is_empty() or (kind != "line" and kind != "arc" and kind != "elliptical_arc" \
 				and kind != "ellipse"):
 			continue
+		# Native params restore ellipse axes. A start/end-only write leaves
+		# DogLeg rx/ry in place and nest drops the C pad. Do this before the
+		# start/end distance skip — major-axis ends can stay put while rx/ry move.
+		if prev.has("params") and (kind == "elliptical_arc" or kind == "ellipse"):
+			sketch.set_entity_geometry(str(id), {"params": prev["params"]})
+			continue
 		var s1: Vector2 = info["start"]
 		var e1: Vector2 = info["end"]
 		if min_mm > 0.0 and s0.distance_to(s1) <= min_mm and e0.distance_to(e1) <= min_mm:
 			continue
-		# Native params restore ellipse axes. A start/end-only write leaves
-		# DogLeg rx/ry in place and nest drops the C pad.
 		if prev.has("params"):
 			sketch.set_entity_geometry(str(id), {"params": prev["params"]})
 		else:
@@ -7837,6 +7892,78 @@ func _recreate_c_ellipse(prev: Dictionary) -> void:
 	var eid := sketch.add_ellipse(c.x, c.y, rx, ry, ang)
 	if eid != "" and str(prev.get("type", "")) == "elliptical_arc":
 		sketch.trim_entity(eid, -25.0, 0.0)
+
+
+## Frames t0147–t0156: 55×50 ellipse at 17°, mouth trimmed on −X. Used when
+## the live pad and the golden snapshot are both gone (hexkey-then-spanner).
+func _ensure_c_pad_recipe() -> void:
+	if sketch == null:
+		return
+	if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
+		return
+	if not _c_head_armed and _c_pad_golden.is_empty() and not _front_c_ring_present():
+		return
+	if not _c_pad_golden.is_empty():
+		_recreate_missing_c_head(_c_pad_golden)
+		if _profile_has_type("elliptical_arc") or _profile_has_type("ellipse"):
+			_weld_nearby_curve_joints(0.8)
+			return
+	var ang := deg_to_rad(17.0) + PI * 0.5
+	var eid := ""
+	if sketch.has_method("add_elliptical_arc"):
+		# Long remaining arc through +X (handle side), mouth on −X.
+		eid = sketch.add_elliptical_arc(0.0, 0.0, 27.5, 25.0, ang, deg_to_rad(-153.0),
+				deg_to_rad(153.0))
+	if eid == "":
+		eid = sketch.add_ellipse(0.0, 0.0, 27.5, 25.0, ang)
+		if eid != "":
+			sketch.trim_entity(eid, -25.0, 0.0)
+	if eid != "":
+		_c_head_armed = true
+		_capture_c_pad_golden()
+		_weld_nearby_curve_joints(0.8)
+
+
+## Two closed unconstrained AF hexes + Ø33 (t0181–t0235). Hold the C pad
+## across the swap so PlaneGCS cannot delete it while the hex wires change.
+func seal_box_end_hexes(cx: float, cy: float, af: float) -> Dictionary:
+	if sketch == null:
+		return {"dropped": 0, "added": 0}
+	var held := _snapshot_c_head()
+	var c := Vector2(cx, cy)
+	var drop_ids: Array[String] = []
+	for id in sketch.entity_ids():
+		if sketch.is_construction(id):
+			continue
+		var info: Dictionary = sketch.entity_info(id)
+		if str(info.get("type", "")) != "line":
+			continue
+		var a: Vector2 = info.get("start", Vector2.ZERO)
+		var b: Vector2 = info.get("end", Vector2.ZERO)
+		if ((a + b) * 0.5).distance_to(c) > 16.0:
+			continue
+		drop_ids.append(str(id))
+	var dropped := 0
+	for eid in drop_ids:
+		if sketch.remove_entity(eid):
+			dropped += 1
+	var R := af / sqrt(3.0)
+	var added := 0
+	for rot_i in 2:
+		var rot := 0.0 if rot_i == 0 else PI / 6.0
+		var pts: Array[Vector2] = []
+		for i in 6:
+			var ang := rot + float(i) * PI / 3.0
+			pts.append(c + Vector2(cos(ang), sin(ang)) * R)
+		for i in 6:
+			var p: Vector2 = pts[i]
+			var q: Vector2 = pts[(i + 1) % 6]
+			if sketch.add_line(p.x, p.y, q.x, q.y) != "":
+				added += 1
+	_restore_c_head_geometry(held)
+	run_solve()
+	_redraw()
+	return {"dropped": dropped, "added": added}
 
 
 func _restore_flipped_shaft_lines(before: Dictionary) -> void:

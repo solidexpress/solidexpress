@@ -420,40 +420,12 @@ func _cmd_sketch_seal_box_end(req: Dictionary) -> Dictionary:
 	var sm = _main().get("sketch_mode")
 	if sm == null or not bool(sm.active) or sm.sketch == null:
 		return {"error": "no active sketch"}
-	var c := Vector2(float(req.get("cx", 240.0)), float(req.get("cy", 0.0)))
-	var af := float(req.get("af", 25.0))
-	var dropped := 0
-	var drop_ids: Array[String] = []
-	for id in sm.sketch.entity_ids():
-		if sm.sketch.is_construction(id):
-			continue
-		var info: Dictionary = sm.sketch.entity_info(id)
-		if str(info.get("type", "")) != "line":
-			continue
-		var a: Vector2 = info.get("start", Vector2.ZERO)
-		var b: Vector2 = info.get("end", Vector2.ZERO)
-		if ((a + b) * 0.5).distance_to(c) > 16.0:
-			continue
-		drop_ids.append(str(id))
-	for eid in drop_ids:
-		if sm.sketch.remove_entity(eid):
-			dropped += 1
-	var R := af / sqrt(3.0)
-	var added := 0
-	for rot_i in 2:
-		var rot := 0.0 if rot_i == 0 else PI / 6.0
-		var pts: Array[Vector2] = []
-		for i in 6:
-			var ang := rot + float(i) * PI / 3.0
-			pts.append(c + Vector2(cos(ang), sin(ang)) * R)
-		for i in 6:
-			var p: Vector2 = pts[i]
-			var q: Vector2 = pts[(i + 1) % 6]
-			if sm.sketch.add_line(p.x, p.y, q.x, q.y) != "":
-				added += 1
-	if sm.has_method("_redraw"):
-		sm._redraw()
-	return {"dropped": dropped, "added": added}
+	if sm.has_method("seal_box_end_hexes"):
+		return sm.seal_box_end_hexes(
+				float(req.get("cx", 240.0)),
+				float(req.get("cy", 0.0)),
+				float(req.get("af", 25.0)))
+	return {"error": "seal_box_end_hexes missing"}
 
 
 ## Union of two AF hexes as a 24-gon star. Click-drawn 12-point cuts leave
