@@ -45,3 +45,4 @@
 - 14:00 heartbeat: still idle. Result/failing unchanged. No film or confirm_all running. No fourth confirm. No PR.
 - 14:30 heartbeat: still idle. Result/failing unchanged. No film or confirm_all running. No fourth confirm. No PR.
 - 15:00 heartbeat: still idle. Result/failing unchanged. No film or confirm_all running. No fourth confirm. No PR.
+- 15:00 sibling product on origin: `3c53a26` walk-7 hex punched in-sketch; `e228546` per-suite `game/.godot`. Isolated film_spanner starting on that HEAD (new cycle; confirm-now was `e024beb`). No PR.
